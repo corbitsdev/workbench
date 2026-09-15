@@ -221,6 +221,14 @@ export type ChatOrchestrator = {
  * concern and is filtered out here. A missing `correlationId` means the
  * register co-write never ran (or hasn't landed yet) — nothing to look an
  * approval up by, so this is treated the same as "not an approval gate".
+ *
+ * Upstream ask (CL-7104 remainder, filed — do NOT implement cross-repo
+ * here): resolving the approval by the dispatched question card's own
+ * `Message-ID` — the answer dispatched as a reply naming it in
+ * `In-Reply-To`, per `docs/CHAT.md` — needs the reactor's `gate.blocked`
+ * event and the hub IPC register co-write to carry that id. That change
+ * lives in `vendor/intx` and the hub, outside this package; until it
+ * lands, this `correlationId` lookup stays.
  */
 function gateBlockedCorrelationId(event: unknown): string | undefined {
   if (
@@ -693,6 +701,39 @@ function correlateOriginatingWorkbench(
   return undefined;
 }
 
+/**
+ * Header-first attribution (CL-7104): the dispatch mail's `Message-ID` IS
+ * the source row's (`dispatchTurn` stamps `mailMessageIdFor` of the message
+ * it answers), so the open bracket's mail names the row the reply answers
+ * — and that row's own `workbenchId` is the originating room. Preferred
+ * over the event hints and the single-running-turn fallback in `postReply`:
+ * two turns pending against one agent are told apart because their
+ * dispatches carry different `Message-ID`s, not because one is newer.
+ *
+ * Only ever narrows to a membership: a correlation naming another
+ * workbench (or none at all — a pre-rollout mail) returns undefined and
+ * falls through to the existing fallbacks rather than posting somewhere
+ * the agent was never invited.
+ */
+async function correlateWorkbenchByMail(
+  turnMailCorrelation: TurnMailCorrelationStore | undefined,
+  tenantId: string,
+  members: readonly ReplyMember[],
+  mailId: string | undefined,
+): Promise<string | undefined> {
+  if (turnMailCorrelation === undefined || mailId === undefined) {
+    return undefined;
+  }
+  const source = await turnMailCorrelation.findTurnMailSource({
+    tenantId,
+    mailId,
+  });
+  if (source === undefined) return undefined;
+  return members.some((member) => member.workbenchId === source.workbenchId)
+    ? source.workbenchId
+    : undefined;
+}
+
 async function latestTurnForAgent(
   agentTurns: Pick<AgentTurnStore, "listTurns"> | undefined,
   tenantId: string,
@@ -766,7 +807,22 @@ async function postReply(
   const runningIds = members
     .filter((member) => member.turnId !== undefined)
     .map((member) => member.workbenchId);
-  const correlated = correlateOriginatingWorkbench(event, members);
+  // Attribution order is header, hints, then the running-turn fallbacks
+  // (CL-7104): the bracket mail's correlation names the row the reply
+  // answers, so it wins over every heuristic below it. The
+  // single-running-turn leg after it is deliberately retained until agent
+  // replies arrive as mail — the sidecar `agent.event` stream carries no
+  // threading headers today, so a header-less reply with exactly one
+  // running turn has nowhere else to go. Retiring this bridge is CL-6534
+  // slice 2's job, NOT this ticket: never extend the fallback to the
+  // ambiguous (several-running) case, which stays a reported drop.
+  const byMail = await correlateWorkbenchByMail(
+    deps.turnMailCorrelation,
+    resolved.tenantId,
+    members,
+    mailId,
+  );
+  const correlated = byMail ?? correlateOriginatingWorkbench(event, members);
   const resolvedTargets =
     correlated !== undefined
       ? [correlated]
