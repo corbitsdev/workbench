@@ -55,7 +55,7 @@ separate routine table.
 | Approve                           | Native `POST /api/tenants/:tenantId/approvals/:id/approve`                                                                                    | A principal holding `approval:*`/`resolve` — a human; no agent holds it                                                                                                                                                 | This is the approval                                                                                             |
 
 Credentials and resolved provider secrets never enter source trees or deploy
-requests recorded by `@corbits/workflows`'s `./deploy-source`.
+requests.
 Inference sources are re-resolved from the tenant catalog at deploy and
 redeploy (`resolveDefinitionSources`).
 

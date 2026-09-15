@@ -44,7 +44,6 @@ import { applyAgentDirectoryMigrations } from "../packages/agent-directory/src/m
 import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
 import { applyAccessPolicyMigrations } from "../packages/access-policy/src/migrations";
 import { applyRunKeyHistoryMigrations } from "../packages/run-key-history/src/migrations";
-import { applyWorkflowDeploySourceMigrations } from "../packages/workflows/src/deploy-source/migrations";
 import { applyInferenceCatalogMigrations } from "../packages/inference-catalog/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
@@ -77,10 +76,6 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
   { name: "@workbench/access-policy", apply: applyAccessPolicyMigrations },
   { name: "@corbits/run-key-history", apply: applyRunKeyHistoryMigrations },
-  {
-    name: "@corbits/workflows (deploy-source)",
-    apply: applyWorkflowDeploySourceMigrations,
-  },
   {
     name: "@corbits/inference-catalog",
     apply: applyInferenceCatalogMigrations,

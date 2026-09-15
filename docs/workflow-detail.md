@@ -11,10 +11,10 @@ useful version — read-only, no editing surface here.
 - **Lifecycle**: `source-only`, `pending-approval`, `deployed`,
   `superseded`, or `build-failed` — derived by the pure
   `deriveWorkflowLifecycle` (`packages/workflows/src/
-definition-lifecycle.ts`) from the asset's newest `workflow_definition`
-  row plus whether `@corbits/workflows`'s `./deploy-source` ever recorded a
-  deploy attempt for it. No new Postgres column: everything it reads is
-  native or already Workbench-owned.
+definition-lifecycle.ts`) from the asset's `workflow_definition` rows
+  alone. Native-only since CL-7591: the deleted Workbench deploy-source
+  store is no longer a deploy-attempt signal. No new Postgres column:
+  everything it reads is native.
 - **Steps**: read from the frozen `wire_projection` (`@intx/db`'s
   `loadFrozenWireProjection`) in `stepOrder`, each carrying its role
   (`kind`), best-effort director/model/tool pins (the wire step schema is
@@ -29,9 +29,9 @@ definition-lifecycle.ts`) from the asset's newest `workflow_definition`
   actually approved. Credential binding **names** only
   (`workflow_definition.credential_bindings[].handle`); no value is ever
   read or returned.
-- **Source**: the deploying commit sha, entry module, and origin kind, from
-  `@corbits/workflows`'s `./deploy-source`'s per-asset deploy record — `null` when
-  no deploy was ever attempted.
+- **Source**: always `null` since CL-7591 — the Workbench deploy-source
+  store is deleted, so the native-only read records no per-asset deploy
+  provenance.
 
 ## Authorization
 

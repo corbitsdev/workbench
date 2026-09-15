@@ -2002,8 +2002,8 @@ export async function createHub(config: HubConfig) {
   // `createWorkflowDefinitionRoutes` (`vendor/intx/hub-api/src/app.ts`
   // already mounts that one at this same `/workflows/definitions`
   // prefix): this GET is a Workbench-owned read composed over native
-  // rows plus `@corbits/workflows`'s `./deploy-source`, so it lives in
-  // `@corbits/workflows`'s `./detail`, not the vendored tree.
+  // rows, so it lives in `@corbits/workflows`'s `./detail`, not the
+  // vendored tree.
   app.route(
     `${TENANT_PREFIX}/workflows/definitions`,
     createWorkflowDetailRoute({

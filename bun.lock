@@ -1495,7 +1495,6 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/error-sink": "workspace:*",
-        "@corbits/migration-runner": "workspace:*",
         "@intx/authz": "0.3.0",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
@@ -1507,7 +1506,6 @@
         "cronstrue": "^3.24.0",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
-        "postgres": "catalog:",
       },
       "devDependencies": {
         "@corbits/connections": "workspace:*",

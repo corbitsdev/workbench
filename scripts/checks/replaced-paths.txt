@@ -31,3 +31,4 @@ packages/workflow-deploy-source
 packages/workflow-freeze
 packages/workflow-host-actions
 packages/workflow-source
+packages/workflows/src/deploy-source
