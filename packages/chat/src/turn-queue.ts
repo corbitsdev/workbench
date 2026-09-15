@@ -207,7 +207,50 @@ export function createWorkbenchTurnQueue(
 
   return {
     async run(workbenchId, turn, dispatch) {
-      const token = await deps.claims.tryClaim({ workbenchId });
+      // CL-6167: the claim store is durable I/O and can reject outright,
+      // not just resolve `false` — and this opening `tryClaim` was the one
+      // call `run` never guarded. The throw propagated into `routeMessage`'s
+      // log-and-swallow, dropping the turn with no notice on the timeline
+      // (message durable, no agent ever asked): the load-independent
+      // sequential drop. Report loudly and dispatch the turn claim-less
+      // instead of dropping it — ordering across concurrent runs degrades
+      // to the pre-queue behavior while the store is down, and the turn is
+      // deliberately NOT parked in the process-local pending map (nothing
+      // would ever drain it while the store keeps failing).
+      let token: TurnClaimToken | false;
+      try {
+        token = await deps.claims.tryClaim({ workbenchId });
+      } catch (err) {
+        const refId = reportError(err, {
+          operation: "chat.turnQueue.claim",
+          roomId: workbenchId,
+        });
+        log.error(
+          "turn queue: opening claim failed for workbench {workbenchId} (ref {refId}); dispatching without the claim rather than dropping the turn: {err}",
+          { workbenchId, refId, err },
+        );
+        try {
+          await dispatch([turn]);
+        } catch (dispatchErr) {
+          const dispatchRefId = reportError(dispatchErr, {
+            operation: "chat.turnQueue.dispatch",
+            roomId: workbenchId,
+            extra: { messageIds: [turn.messageId] },
+          });
+          // Same contract as `drain`'s own guard below: `dispatch`
+          // documents "must never reject" (see `DispatchTurnBatch`).
+          log.error(
+            'turn queue: dispatch rejected for workbench {workbenchId}, message(s) {messageIds} (ref {refId}), violating its "never reject" contract: {err}',
+            {
+              workbenchId,
+              messageIds: [turn.messageId],
+              refId: dispatchRefId,
+              err: dispatchErr,
+            },
+          );
+        }
+        return;
+      }
       if (token !== false) {
         await drain(workbenchId, token, [turn], dispatch);
         return;
