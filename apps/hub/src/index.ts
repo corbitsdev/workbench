@@ -930,6 +930,17 @@ export async function createHub(config: HubConfig) {
     // surviving loss loud (error-level cause, counted) instead of a
     // swallowed WRN.
     db: withTurnPartPersistGuard(withTurnPartWriteDefaults(db)),
+    // CL-7418: deliberately no terminal-status settle here. The folded
+    // routine-fire settle (CL-6778, keyed off routines.routine_run) died
+    // with the routines cut (CL-4455) and has no native equivalent: a
+    // scheduled definition owns a single self-anchored workflow_run that
+    // must stay live across fires — the scheduler launch path throws
+    // NativeWorkflowDeploymentMissingError for a non-live anchor, and a
+    // per-tick execution is a repo-local child run with no row of its
+    // own (vendor's decideTerminalRunFlip skips it as skip_repo_local).
+    // Stamping the anchor terminal per fire would brick the schedule,
+    // so a warm-kept fire settles through the runOutcomeStatus /
+    // FIRE_RUNNING_WINDOW_MS display-side reading instead.
     onTurnFinalized: (agentAddress, turn) => {
       artifactDeliveryHandlerRef.current?.(agentAddress, turn);
     },
