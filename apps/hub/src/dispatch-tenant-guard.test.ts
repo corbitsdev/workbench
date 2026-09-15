@@ -107,7 +107,8 @@ function guardedTestApp(
   loadAnchorDispatch: (
     anchorRunId: string,
   ) => Promise<
-    { anchorTenantId: string; allocationTenantIds: readonly string[] } | undefined
+    | { anchorTenantId: string; allocationTenantIds: readonly string[] }
+    | undefined
   >,
 ): { app: Hono<AppEnv>; state: { innerHits: number } } {
   const state = { innerHits: 0 };
