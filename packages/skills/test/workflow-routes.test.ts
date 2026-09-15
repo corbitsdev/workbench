@@ -7,7 +7,7 @@ import {
   type WorkflowRunAuthenticator,
   type WorkflowSkillsEnv,
 } from "../src/workflow-routes";
-import { createFakeSkillAccess, createFakeSkillAssets } from "./fakes";
+import { createFakeSkillAssets } from "./fakes";
 
 const AUTHOR_TOKEN = "sidecar-token";
 const AUTHOR_ADDRESS = "run-author@runs.example";
@@ -57,7 +57,6 @@ async function request(
 beforeEach(async () => {
   const registry = createSkillRegistry({
     assets: createFakeSkillAssets(),
-    access: createFakeSkillAccess(),
   });
   const author = { tenantId: "tenant_1", principalId: "principal_author" };
   await registry.create(author, {

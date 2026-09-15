@@ -3,7 +3,6 @@
 // double keeps a real per-asset commit list so version history and
 // restore are exercised against an append-only log, exactly the shape
 // the git-backed store serves.
-import type { SkillAccessRow, SkillAccessStore } from "../src/access";
 import type {
   SkillAssetRow,
   SkillAssetStore,
@@ -19,6 +18,9 @@ type StoredCommit = {
 
 export type FakeSkillAssets = SkillAssetStore & {
   readonly assets: Map<string, SkillAssetRow>;
+  /** Makes the next writeSkillMd call throw, simulating a crash between
+   * the asset-row write and the SKILL.md write. */
+  failNextWriteSkillMd: () => void;
 };
 
 /** A tenant's own id, then its parent, then its grandparent, and so on to
@@ -51,6 +53,7 @@ export function createFakeSkillAssets(
   const commits = new Map<string, StoredCommit[]>();
   let nextId = 1;
   let nextSha = 1;
+  let failNextWrite = false;
 
   function tip(assetId: string): StoredCommit | undefined {
     const log = commits.get(assetId);
@@ -66,6 +69,9 @@ export function createFakeSkillAssets(
 
   return {
     assets,
+    failNextWriteSkillMd() {
+      failNextWrite = true;
+    },
     async create(input) {
       const key = `${input.tenantId}${input.name}`;
       for (const existing of assets.values()) {
@@ -121,6 +127,10 @@ export function createFakeSkillAssets(
       return [...byName.values()];
     },
     async writeSkillMd(input) {
+      if (failNextWrite) {
+        failNextWrite = false;
+        throw new Error("simulated SKILL.md write failure");
+      }
       const log = commits.get(input.assetId);
       if (log === undefined) {
         throw new Error(`no such asset ${input.assetId}`);
@@ -164,34 +174,6 @@ export function createFakeSkillAssets(
         .reverse()
         .map((entry) => entry.commit)
         .filter((commit) => !isAssetGenesisCommit(commit.message));
-    },
-  };
-}
-
-export function createFakeSkillAccess(
-  tenantParents: TenantParents = {},
-): SkillAccessStore {
-  const rows = new Map<string, SkillAccessRow>();
-  return {
-    async upsert(row) {
-      rows.set(row.assetId, row);
-    },
-    async get(assetId) {
-      return rows.get(assetId) ?? null;
-    },
-    async listForTenant(tenantId) {
-      const bySkillName = new Map<string, SkillAccessRow>();
-      for (const tid of ancestorChain(tenantParents, tenantId)) {
-        for (const row of rows.values()) {
-          if (row.tenantId !== tid) continue;
-          if (bySkillName.has(row.skillName)) continue;
-          bySkillName.set(row.skillName, row);
-        }
-      }
-      return [...bySkillName.values()];
-    },
-    async remove(assetId) {
-      rows.delete(assetId);
     },
   };
 }
