@@ -8,6 +8,7 @@ import {
   CORBIT_VISOR_COLOR,
   CorbitAvatar,
   avatarClassForPrincipal,
+  avatarColorClass,
   avatarColorForPrincipal,
   resolveAvatarFill,
 } from "./avatar";
@@ -57,6 +58,25 @@ describe("avatarClassForPrincipal", () => {
   });
 });
 
+describe("avatar pastel tokens", () => {
+  test("the palette is token references, not hardcoded hex", () => {
+    expect(AVATAR_COLORS).toHaveLength(4);
+    for (const color of AVATAR_COLORS) {
+      expect(color.startsWith("--avatar-")).toBe(true);
+      expect(color).not.toContain("#");
+    }
+  });
+
+  test("every class pairs its token with the readable ink", () => {
+    for (const color of AVATAR_COLORS) {
+      const cls = avatarColorClass[color];
+      expect(cls).toContain(`bg-(${color})`);
+      expect(cls).toContain("text-black");
+      expect(cls).not.toContain("#");
+    }
+  });
+});
+
 describe("resolveAvatarFill", () => {
   test("a principal with no explicit image gets the generated fill", () => {
     const fill = resolveAvatarFill("prn_alice");
@@ -81,6 +101,19 @@ describe("resolveAvatarFill", () => {
 });
 
 describe("CorbitAvatar", () => {
+  test("paints its field from the identity token", () => {
+    const html = renderToStaticMarkup(<CorbitAvatar />);
+    expect(html).toContain(`fill:var(${CORBIT_DEFAULT_COLOR})`);
+    // The field's old hardcoded fill is gone. The shared visor/glint face
+    // geometry keeps its fixed constants — it is identical on every agent,
+    // so it was never part of the per-principal identity palette.
+    expect(html).not.toContain('fill="#C5D2DE"');
+  });
+
+  test("a chosen palette token paints the field", () => {
+    const html = renderToStaticMarkup(<CorbitAvatar color="--avatar-3" />);
+    expect(html).toContain("fill:var(--avatar-3)");
+  });
   test("renders an SVG with an accessible name and no visible label", () => {
     const html = renderToStaticMarkup(
       <CorbitAvatar ariaLabel="Myra" size="md" />,
@@ -91,14 +124,6 @@ describe("CorbitAvatar", () => {
     expect(html).toContain("<svg");
     expect(html).not.toContain("title=");
     expect(html).not.toContain(">Myra<");
-  });
-
-  test("uses the selected palette color", () => {
-    const defaultHtml = renderToStaticMarkup(<CorbitAvatar />);
-    expect(defaultHtml).toContain(`fill="${CORBIT_DEFAULT_COLOR}"`);
-
-    const colorHtml = renderToStaticMarkup(<CorbitAvatar color="#C1D1BE" />);
-    expect(colorHtml).toContain('fill="#C1D1BE"');
   });
 
   test("contains the visor and glint geometry", () => {

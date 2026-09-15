@@ -16,6 +16,16 @@
      its own. Falls back to the equivalent cubic-bezier only for the rare
      test/story context that doesn't load react-ui's theme stylesheet. */
   --chat-ease: var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+
+  /* Avatar identity pastels: the single definition of the deterministic
+     principal palette (CL-7478). Numbered like react-ui's --chart-1..5
+     series — slot order is the resolution order, not a ranking. These four
+     names are the proposed upstream contract: when @corbits/react-ui's
+     theme ships them natively, delete this block and consume them there. */
+  --avatar-1: #c5d2de;
+  --avatar-2: #c1d1be;
+  --avatar-3: #f7ead5;
+  --avatar-4: #f2b277;
 }
 
 .chat-workspace {

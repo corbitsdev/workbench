@@ -163,11 +163,13 @@ and the rest of its semantic palette. Never hardcode a hex value or an
 arbitrary Tailwind color class in product code; if a needed token doesn't
 exist yet, add it in react-ui, not locally.
 
-**Avatar identity** is the one deliberate color exception. A person without
-an explicit image receives deterministic initials from the approved pastel
-palette. `@corbits/chat-ui` owns the finite Tailwind background/text class
-map and resolves a principal to one class pair; consumers never use CSS
-variables or inline color styles. Agents use `CorbitAvatar`: a circular
+**Avatar identity** resolves through theme tokens, not local hex. A person without
+an explicit image receives deterministic initials from the `--avatar-1` through
+`--avatar-4` pastel tokens, defined once in `@corbits/chat-ui`'s stylesheet
+`:root` (the proposed upstream contract for `@corbits/react-ui`'s theme).
+`@corbits/chat-ui` owns the finite token-to-class map and resolves a principal
+to one class pair; consumers use the resolver's classes, never their own color
+styles. Agents use `CorbitAvatar`: a circular
 field with a dark lower visor and sensor glint. The two forms stay distinct
 at a glance in every collaborative surface.
 
