@@ -19,8 +19,7 @@ and [PRODUCT.md](PRODUCT.md)'s surface.
   database, reached through `DATABASE_URL`.
 - **[Drizzle](https://orm.drizzle.team)** — the ORM/query layer, both in
   vendored `@intx/db` and in workbench-owned packages that need their own
-  tables (e.g. `packages/chat`'s `chat` schema, `packages/skills`'s
-  `skills.skill_access`).
+  tables (e.g. `packages/chat`'s `chat` schema).
 - Package-owned migrations run through each package's own migration
   runner; see [docs/package-migrations.md](docs/package-migrations.md).
 

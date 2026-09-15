@@ -8,13 +8,12 @@ import { Hono } from "hono";
 
 import type { TenantEnv, RequireGrant } from "@intx/hub-api";
 
-import { skillAccessScopeSchema } from "./access";
 import {
   SkillRegistryError,
   type SkillRegistry,
   type SkillRegistryErrorReason,
 } from "./registry";
-import { parseSkillMd, SkillContentError } from "./skill-md";
+import { parseSkillMd, skillScopeSchema, SkillContentError } from "./skill-md";
 import { makeErrorEnvelope } from "@corbits/error-sink";
 
 /** Which workflow definitions pin a given skill. */
@@ -32,7 +31,7 @@ const CreateSkillFieldsBody = type({
   name: "string",
   description: "string",
   body: "string",
-  scope: skillAccessScopeSchema,
+  scope: skillScopeSchema,
 });
 
 /** The upload path: a whole SKILL.md, parsed at this boundary with the
@@ -41,7 +40,7 @@ const CreateSkillFieldsBody = type({
  * content would have. */
 const CreateSkillFileBody = type({
   source: "string",
-  scope: skillAccessScopeSchema,
+  scope: skillScopeSchema,
 });
 
 const CreateSkillBody = CreateSkillFieldsBody.or(CreateSkillFileBody);
@@ -63,7 +62,7 @@ const UpdateSkillBody = type({
 
 const RestoreBody = type({ commitSha: commitShaSchema });
 
-const ScopeBody = type({ scope: skillAccessScopeSchema });
+const ScopeBody = type({ scope: skillScopeSchema });
 
 const STATUS_BY_REASON: Record<
   SkillRegistryErrorReason,

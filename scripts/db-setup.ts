@@ -39,7 +39,6 @@ import {
 import { applyInsightsMigrations } from "../packages/insights/src/migrations";
 import { applyPreferencesMigrations } from "../packages/preferences/src/migrations";
 import { applyBenchMigrations } from "../packages/bench/src/migrations";
-import { applySkillsMigrations } from "../packages/skills/src/migrations";
 import { applyAgentDirectoryMigrations } from "../packages/agent-directory/src/migrations";
 import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
 import { applyAccessPolicyMigrations } from "../packages/access-policy/src/migrations";
@@ -71,7 +70,6 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/insights", apply: applyInsightsMigrations },
   { name: "@corbits/preferences", apply: applyPreferencesMigrations },
   { name: "@corbits/bench", apply: applyBenchMigrations },
-  { name: "@corbits/skills", apply: applySkillsMigrations },
   { name: "@corbits/agent-directory", apply: applyAgentDirectoryMigrations },
   { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
   { name: "@workbench/access-policy", apply: applyAccessPolicyMigrations },

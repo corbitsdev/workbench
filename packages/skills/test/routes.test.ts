@@ -10,7 +10,7 @@ import type { TenantEnv } from "@intx/hub-api";
 
 import { createSkillRegistry } from "../src/registry";
 import { createSkillRoutes } from "../src/routes";
-import { createFakeSkillAccess, createFakeSkillAssets } from "./fakes";
+import { createFakeSkillAssets } from "./fakes";
 
 const TENANT = { id: "tnt_1" };
 const PRINCIPAL = { id: "prn_author" };
@@ -18,7 +18,6 @@ const PRINCIPAL = { id: "prn_author" };
 function buildApp(): Hono<TenantEnv> {
   const registry = createSkillRegistry({
     assets: createFakeSkillAssets(),
-    access: createFakeSkillAccess(),
   });
   const routes = createSkillRoutes({
     registry,

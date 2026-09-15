@@ -3,7 +3,9 @@
 // walks each top-level directory of a skill asset, requires a SKILL.md
 // there, and rejects the push unless the YAML frontmatter carries a
 // kebab-case `name` matching the directory and a 1..1024-char
-// `description` free of HTML tags.
+// `description` free of HTML tags. This package always writes a `scope`
+// key as well; the handler ignores undeclared keys, so SKILL.md files
+// written before scope moved into the frontmatter still validate.
 //
 // Both halves of that contract are enforced here, at this package's own
 // boundary, so an author sees a plain-language rejection in the create
@@ -33,9 +35,18 @@ export const skillDescriptionSchema = type("1 <= string <= 1024").and(
   type(/^(?!.*<[^>]+>).*$/s),
 );
 
+/** Who may see a skill: `private` (only its creator) or `tenant` (every
+ * principal in the owning workbench). Lives in the SKILL.md frontmatter —
+ * the asset's own bytes — so visibility travels with the content it gates
+ * instead of in a side table that can drift from it. */
+export const skillScopeSchema = type("'private' | 'tenant'");
+
+export type SkillScope = typeof skillScopeSchema.infer;
+
 export const skillFrontmatterSchema = type({
   name: skillNameSchema,
   description: skillDescriptionSchema,
+  "scope?": skillScopeSchema,
 }).onUndeclaredKey("ignore");
 
 export type SkillFrontmatter = typeof skillFrontmatterSchema.infer;
@@ -43,6 +54,7 @@ export type SkillFrontmatter = typeof skillFrontmatterSchema.infer;
 export type ParsedSkillMd = {
   readonly name: string;
   readonly description: string;
+  readonly scope: SkillScope;
   readonly body: string;
 };
 
@@ -57,16 +69,20 @@ export class SkillContentError extends Error {
  * Renders a SKILL.md the hub's skill kind handler accepts. The
  * description is emitted as a single-quoted YAML scalar so a colon or a
  * leading `#` in an author's prose cannot re-open the frontmatter as a
- * different mapping.
+ * different mapping. Scope is required — a skill is never written without
+ * saying who may see it — and validated against the same vocabulary the
+ * parser accepts.
  */
 export function buildSkillMd(input: {
   readonly name: string;
   readonly description: string;
+  readonly scope: string;
   readonly body: string;
 }): string {
   const frontmatter = skillFrontmatterSchema({
     name: input.name,
     description: input.description,
+    scope: input.scope,
   });
   if (frontmatter instanceof type.errors) {
     throw new SkillContentError(
@@ -82,6 +98,7 @@ export function buildSkillMd(input: {
     FRONTMATTER_DELIMITER,
     `name: ${frontmatter.name}`,
     `description: ${quotedDescription}`,
+    `scope: ${frontmatter.scope}`,
     FRONTMATTER_DELIMITER,
     "",
     body,
@@ -90,10 +107,20 @@ export function buildSkillMd(input: {
 }
 
 /**
- * Parses a SKILL.md back into the three fields the registry surfaces.
+ * Parses a SKILL.md back into the fields the registry surfaces.
  * Fails closed: a missing or malformed frontmatter block is an error,
- * never a skill that silently reads as nameless.
- */
+ * never a skill that silently reads as nameless. A SKILL.md written
+ * before scope moved into the frontmatter carries no `scope` key and
+ * reads as `private` — the pre-cutover store's own default for a skill
+ * with no row — so old bytes stay invisible to everyone but their author
+ * instead of failing to parse.
+ *
+ * No backfill for the dropped `skill_access` table: every pre-cutover
+ * SKILL.md lacks `scope`, and no seed, fixture, template, or
+ * provisioning path plants a tenant-visible row (verified CL-7583), so
+ * there is nothing that would silently narrow. Pre-GA cutovers are not
+ * migrated — dev databases reseed via `bun run reset` (CL-7445 ruling;
+ * see docs/package-migrations.md). */
 export function parseSkillMd(text_: string): ParsedSkillMd {
   const lines = text_.split(/\r?\n/);
   if (lines[0] !== FRONTMATTER_DELIMITER) {
@@ -133,6 +160,7 @@ export function parseSkillMd(text_: string): ParsedSkillMd {
   return {
     name: frontmatter.name,
     description: frontmatter.description,
+    scope: frontmatter.scope ?? "private",
     body: lines
       .slice(endIdx + 1)
       .join("\n")

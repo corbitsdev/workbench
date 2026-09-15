@@ -8,20 +8,43 @@ import {
 } from "./skill-md";
 
 describe("buildSkillMd", () => {
-  test("round-trips name, description, and body", () => {
+  test("round-trips name, description, scope, and body", () => {
     const md = buildSkillMd({
       name: "summarize-transcript",
       description: "Condenses a meeting transcript into decisions and owners.",
       body: "1. Read the transcript.\n2. List every decision.",
+      scope: "tenant",
     });
     const parsed = parseSkillMd(md);
     expect(parsed.name).toBe("summarize-transcript");
     expect(parsed.description).toBe(
       "Condenses a meeting transcript into decisions and owners.",
     );
+    expect(parsed.scope).toBe("tenant");
     expect(parsed.body).toBe(
       "1. Read the transcript.\n2. List every decision.",
     );
+  });
+
+  test("a private scope survives the round trip", () => {
+    const md = buildSkillMd({
+      name: "triage",
+      description: "Sorts issues.",
+      body: "Sort them.",
+      scope: "private",
+    });
+    expect(parseSkillMd(md).scope).toBe("private");
+  });
+
+  test("rejects a scope outside the private/tenant vocabulary", () => {
+    expect(() =>
+      buildSkillMd({
+        name: "triage",
+        description: "Sorts issues.",
+        body: "Sort them.",
+        scope: "everyone",
+      }),
+    ).toThrow(SkillContentError);
   });
 
   test("quotes a description containing a colon so the frontmatter stays one mapping", () => {
@@ -29,6 +52,7 @@ describe("buildSkillMd", () => {
       name: "triage",
       description: "Sorts issues: bug, question, or feature.",
       body: "Sort them.",
+      scope: "private",
     });
     expect(parseSkillMd(md).description).toBe(
       "Sorts issues: bug, question, or feature.",
@@ -40,6 +64,7 @@ describe("buildSkillMd", () => {
       name: "triage",
       description: "Reads the reporter's own words first.",
       body: "Sort them.",
+      scope: "private",
     });
     expect(parseSkillMd(md).description).toBe(
       "Reads the reporter's own words first.",
@@ -52,13 +77,19 @@ describe("buildSkillMd", () => {
         name: "Summarize Transcript",
         description: "Anything.",
         body: "Body.",
+        scope: "private",
       }),
     ).toThrow(SkillContentError);
   });
 
   test("rejects the reserved vendor names", () => {
     expect(() =>
-      buildSkillMd({ name: "claude", description: "Anything.", body: "Body." }),
+      buildSkillMd({
+        name: "claude",
+        description: "Anything.",
+        body: "Body.",
+        scope: "private",
+      }),
     ).toThrow(SkillContentError);
   });
 
@@ -68,13 +99,19 @@ describe("buildSkillMd", () => {
         name: "triage",
         description: "Sorts <b>issues</b>.",
         body: "Body.",
+        scope: "private",
       }),
     ).toThrow(SkillContentError);
   });
 
   test("rejects an empty body", () => {
     expect(() =>
-      buildSkillMd({ name: "triage", description: "Sorts.", body: "   " }),
+      buildSkillMd({
+        name: "triage",
+        description: "Sorts.",
+        body: "   ",
+        scope: "private",
+      }),
     ).toThrow(SkillContentError);
   });
 });
@@ -94,6 +131,13 @@ describe("parseSkillMd", () => {
     expect(() => parseSkillMd("---\nname: triage\n---\nBody")).toThrow(
       SkillContentError,
     );
+  });
+
+  test("a SKILL.md written before scope moved into frontmatter reads as private", () => {
+    const parsed = parseSkillMd(
+      "---\nname: triage\ndescription: Sorts issues.\n---\nBody",
+    );
+    expect(parsed.scope).toBe("private");
   });
 
   test("ignores optional frontmatter keys the Claude Code superset allows", () => {

@@ -1,13 +1,14 @@
 export {
-  canAdministerSkill,
-  isSkillVisibleTo,
-  skillAccessScopeSchema,
-  type SkillAccessRow,
-  type SkillAccessScope,
-  type SkillAccessStore,
+  SkillRegistryError,
+  createSkillRegistry,
+  type CreateSkillRegistryDeps,
   type SkillCaller,
-} from "./access";
-export { createDrizzleSkillAccessStore } from "./access-store";
+  type SkillDetail,
+  type SkillRegistry,
+  type SkillRegistryErrorReason,
+  type SkillSummary,
+  type SkillVersion,
+} from "./registry";
 export { readAssetCommitHistory, isAssetGenesisCommit } from "./asset-history";
 export {
   skillMdPath,
@@ -29,21 +30,10 @@ export {
   type PinnedSkillIndexEntry,
 } from "./prompt";
 export {
-  SkillRegistryError,
-  createSkillRegistry,
-  type CreateSkillRegistryDeps,
-  type SkillDetail,
-  type SkillRegistry,
-  type SkillRegistryErrorReason,
-  type SkillSummary,
-  type SkillVersion,
-} from "./registry";
-export {
   createSkillRoutes,
   type CreateSkillRoutesDeps,
   type PinnedByResolver,
 } from "./routes";
-export { skillAccess, skillsSchema } from "./schema";
 export {
   SKILL_MD_FILENAME,
   SkillContentError,
@@ -53,8 +43,10 @@ export {
   skillDescriptionSchema,
   skillFrontmatterSchema,
   skillNameSchema,
+  skillScopeSchema,
   type ParsedSkillMd,
   type SkillFrontmatter,
+  type SkillScope,
 } from "./skill-md";
 export {
   createWorkflowSkillRoutes,

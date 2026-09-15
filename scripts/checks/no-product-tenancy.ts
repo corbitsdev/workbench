@@ -155,11 +155,6 @@ const ALLOWLIST: readonly {
     tables: ["slack_channel_binding"],
   },
   {
-    relPath: "packages/skills/src/schema.ts",
-    maxOccurrences: 1,
-    tables: ["skill_access"],
-  },
-  {
     relPath: "packages/preferences/src/schema.ts",
     maxOccurrences: 1,
     tables: ["user_preferences"],

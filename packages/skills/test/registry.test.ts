@@ -5,9 +5,8 @@ import {
   SkillRegistryError,
   type SkillRegistry,
 } from "../src/registry";
-import { createFakeSkillAccess, createFakeSkillAssets } from "./fakes";
+import { createFakeSkillAssets } from "./fakes";
 import type { FakeSkillAssets } from "./fakes";
-import type { SkillAccessStore } from "../src/access";
 
 const AUTHOR = { tenantId: "tenant_1", principalId: "principal_author" };
 const TEAMMATE = { tenantId: "tenant_1", principalId: "principal_teammate" };
@@ -20,13 +19,11 @@ const CREATE_INPUT = {
 };
 
 let assets: FakeSkillAssets;
-let access: SkillAccessStore;
 let registry: SkillRegistry;
 
 beforeEach(() => {
   assets = createFakeSkillAssets();
-  access = createFakeSkillAccess();
-  registry = createSkillRegistry({ assets, access });
+  registry = createSkillRegistry({ assets });
 });
 
 async function publish(scope: "private" | "tenant") {
@@ -100,68 +97,45 @@ describe("create", () => {
     ).rejects.toThrow("Description can't contain HTML tags.");
   });
 
-  test("retrying create after a failure between the asset write and the access-row write completes it, rather than 409ing forever", async () => {
+  test("retrying create after a crash between the asset write and the SKILL.md write completes it, rather than 409ing forever", async () => {
     // Simulates the exact crash window `create` cannot make transactional:
-    // the asset and its SKILL.md commit succeed, but the access-row write
-    // — the last step — fails once (a db timeout, say).
-    let failNext = true;
-    const flakyAccess: SkillAccessStore = {
-      ...access,
-      async upsert(row) {
-        if (failNext) {
-          failNext = false;
-          throw new Error("simulated write failure (e.g. db timeout)");
-        }
-        return access.upsert(row);
-      },
-    };
-    const flakyRegistry = createSkillRegistry({ assets, access: flakyAccess });
+    // the asset row exists, but its SKILL.md commit never landed.
+    assets.failNextWriteSkillMd();
 
     await expect(
-      flakyRegistry.create(AUTHOR, { ...CREATE_INPUT, scope: "private" }),
-    ).rejects.toThrow(/simulated write failure/);
+      registry.create(AUTHOR, { ...CREATE_INPUT, scope: "private" }),
+    ).rejects.toThrow(/simulated SKILL.md write failure/);
 
-    // The asset was created and left behind, but is invisible: no access
-    // row backs it yet.
+    // The asset was created and left behind, but is invisible: it carries
+    // no SKILL.md yet.
     expect(assets.assets.size).toBe(1);
-    expect(await flakyRegistry.list(AUTHOR)).toHaveLength(0);
+    expect(await registry.list(AUTHOR)).toHaveLength(0);
 
     // Retrying the exact same create — the natural recovery a user or
     // client would attempt — finishes the interrupted write instead of
     // 409ing on a name this same caller can never use again.
-    const completed = await flakyRegistry.create(AUTHOR, {
+    const completed = await registry.create(AUTHOR, {
       ...CREATE_INPUT,
       scope: "private",
     });
     expect(completed.name).toBe("triage");
     expect(assets.assets.size).toBe(1);
-    expect((await flakyRegistry.list(AUTHOR)).map((s) => s.name)).toEqual([
+    expect((await registry.list(AUTHOR)).map((s) => s.name)).toEqual([
       "triage",
     ]);
 
     // A third attempt now hits a fully-formed skill and is a genuine
     // conflict.
     await expect(
-      flakyRegistry.create(AUTHOR, { ...CREATE_INPUT, scope: "private" }),
+      registry.create(AUTHOR, { ...CREATE_INPUT, scope: "private" }),
     ).rejects.toThrow(/already exists/);
   });
 
   test("a caller can never complete another principal's half-written create", async () => {
-    let failNext = true;
-    const flakyAccess: SkillAccessStore = {
-      ...access,
-      async upsert(row) {
-        if (failNext) {
-          failNext = false;
-          throw new Error("simulated write failure");
-        }
-        return access.upsert(row);
-      },
-    };
-    const flakyRegistry = createSkillRegistry({ assets, access: flakyAccess });
+    assets.failNextWriteSkillMd();
     await expect(
-      flakyRegistry.create(AUTHOR, { ...CREATE_INPUT, scope: "private" }),
-    ).rejects.toThrow(/simulated write failure/);
+      registry.create(AUTHOR, { ...CREATE_INPUT, scope: "private" }),
+    ).rejects.toThrow(/simulated SKILL.md write failure/);
 
     // A different principal retrying the same name hits a conflict, not
     // a takeover of the first caller's orphaned asset.
@@ -216,6 +190,25 @@ describe("access scoping", () => {
     expect(await registry.list(TEAMMATE)).toHaveLength(1);
   });
 
+  test("setScope re-commits the same content under the new scope", async () => {
+    await publish("private");
+    const before = await registry.versions(AUTHOR, "triage");
+    expect(before).toHaveLength(1);
+
+    const shared = await registry.setScope(AUTHOR, "triage", "tenant");
+    expect(shared.scope).toBe("tenant");
+
+    // The rescope is itself a commit: the content is unchanged, but the
+    // history grew, so the previous scope stays restorable.
+    const loaded = await registry.load(AUTHOR, "triage");
+    expect(loaded.body).toBe(CREATE_INPUT.body);
+    expect(loaded.description).toBe(CREATE_INPUT.description);
+    const after = await registry.versions(AUTHOR, "triage");
+    expect(after).toHaveLength(2);
+    expect(after[0]?.current).toBe(true);
+    expect(await registry.list(TEAMMATE)).toHaveLength(1);
+  });
+
   test("setScope unshares a tenant skill back to its author", async () => {
     await publish("tenant");
     await registry.setScope(AUTHOR, "triage", "private");
@@ -254,7 +247,6 @@ describe("versions", () => {
     await publish("tenant");
     const first = (await registry.versions(AUTHOR, "triage"))[0];
     expect(first).toBeDefined();
-    await registry.setScope(AUTHOR, "triage", "tenant");
 
     // Author a second version by restoring, then confirm the rewind is
     // itself a new commit rather than a rewrite of the history.
@@ -307,12 +299,10 @@ describe("tenant inheritance", () => {
     const inheritingAssets = createFakeSkillAssets({
       tenantParents: PARENT_HIERARCHY,
     });
-    const inheritingAccess = createFakeSkillAccess(PARENT_HIERARCHY);
     return {
       assets: inheritingAssets,
       registry: createSkillRegistry({
         assets: inheritingAssets,
-        access: inheritingAccess,
       }),
     };
   }
