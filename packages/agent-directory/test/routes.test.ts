@@ -22,6 +22,8 @@ import {
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
   withAgentToolPackagePin,
+  readPinnedSkillNames,
+  reindexPinnedSkills,
 } from "../src/agent-workflow";
 import {
   agentDefinitionSourceTree,
@@ -34,19 +36,14 @@ import {
   createWorkflowSkillPinRoutes,
   type WorkflowRunAuthenticator,
 } from "../src/workflow-skill-pin-routes";
-import {
-  createInMemoryDefinitionSkillsStore,
-  type DefinitionSkillsStore,
-} from "../src/skills-store";
 import type { DefinitionAssetHistory } from "../src/definition-history";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
 import { definitionFrom, SOURCE_TREE_PATHS } from "./source-tree";
 
 /** A `readAssetBlob` that always answers the definition's entry module
- * with `workflowBytes` — pinned skills no longer live in the asset tree
- * (see `../src/skills-store.ts`), so a test that needs a definition's
- * skills seeds a `DefinitionSkillsStore` directly instead of stubbing a
- * second path here. */
+ * with `workflowBytes` — pins live in the asset's own stanza, so a test
+ * that needs a definition's skills stubs the bytes with
+ * `storedDefinitionBytesWithSkills` instead of seeding side state. */
 function readAssetBlobFor(
   workflowBytes: Uint8Array,
 ): AssetService["readAssetBlob"] {
@@ -216,6 +213,27 @@ function storedDefinitionBytesWithModel(model: string): Uint8Array {
   return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
 }
 
+/** A stored definition that already pins skills — the state every
+ * pin-reading route observes. The stanza is the seed: no side table to
+ * write, the bytes carry the pins like a real asset would. */
+function storedDefinitionBytesWithSkills(...names: string[]): Uint8Array {
+  const tree = agentDefinitionSourceTree({
+    handle: "research-buddy",
+    workflowJson: reindexPinnedSkills(
+      serializeAgentDefinitionWorkflow(
+        buildAgentDefinitionWorkflow({
+          handle: "research-buddy",
+          tenantDomain: TENANT.domain,
+          description: "",
+          systemPrompt: "You are a careful research assistant.",
+        }),
+      ),
+      names.map((name) => ({ name, description: `What ${name} does.` })),
+    ),
+  });
+  return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
+}
+
 /** The model the one step agent resolves against, or `undefined` when it
  * pins none. */
 function modelFrom(workflowJson: string): string | undefined {
@@ -369,7 +387,6 @@ function buildApp(
   requireGrant: RequireGrant = allowAllRequireGrant,
   history: DefinitionAssetHistory = fakeHistory(),
   capabilityInventory: CapabilityInventoryProvider = fakeCapabilityInventory,
-  skillsStore: DefinitionSkillsStore = createInMemoryDefinitionSkillsStore(),
   deployer: ReturnType<
     typeof recordingAgentDefinitionDeployer
   > = recordingAgentDefinitionDeployer(),
@@ -378,7 +395,6 @@ function buildApp(
     db,
     assetService,
     skillIndex: fakeSkillIndex,
-    skillsStore,
     history,
     capabilityInventory,
     requireGrant,
@@ -548,9 +564,8 @@ function fakeCreateDb(): DB["db"] {
   } as unknown as DB["db"];
 }
 
-test("a create request with skills writes the definition source tree to the asset and records skills in the skills store", async () => {
+test("a create request with skills writes the definition source tree to the asset with the pins indexed in its stanza", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
-  const skillsStore = createInMemoryDefinitionSkillsStore();
   const deployer = recordingAgentDefinitionDeployer();
   const app = buildApp(
     fakeAssetService({
@@ -574,7 +589,6 @@ test("a create request with skills writes the definition source tree to the asse
     allowAllRequireGrant,
     fakeHistory(),
     fakeCapabilityInventory,
-    skillsStore,
     deployer,
   );
   const response = await post(app, {
@@ -593,7 +607,8 @@ test("a create request with skills writes the definition source tree to the asse
   expect(deployer.deploys).toHaveLength(1);
   expect(deployer.deploys[0]?.assetId).toBe("ast_1");
   expect(deployer.deploys[0]?.commitSha).toBe("deadbeef");
-  expect(await skillsStore.getSkills("ast_1")).toEqual([
+  // The stanza the write indexed is the pins — no side table to consult.
+  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual([
     "web-research",
     "long-form-write",
   ]);
@@ -601,9 +616,8 @@ test("a create request with skills writes the definition source tree to the asse
   expect(body.skills).toEqual(["web-research", "long-form-write"]);
 });
 
-test("a create request without skills records an empty skills list", async () => {
+test("a create request without skills writes a stanza with no pins", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
-  const skillsStore = createInMemoryDefinitionSkillsStore();
   const app = buildApp(
     fakeAssetService({
       createAsset: () =>
@@ -626,7 +640,6 @@ test("a create request without skills records an empty skills list", async () =>
     allowAllRequireGrant,
     fakeHistory(),
     fakeCapabilityInventory,
-    skillsStore,
   );
   const response = await post(app, {
     name: "Research Buddy",
@@ -635,7 +648,7 @@ test("a create request without skills records an empty skills list", async () =>
   });
   expect(response.status).toBe(201);
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
-  expect(await skillsStore.getSkills("ast_1")).toEqual([]);
+  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual([]);
 });
 
 test("a create request with toolPackagePins pins each named package at its highest published version", async () => {
@@ -710,9 +723,11 @@ function fakeSkillsDb(
   } as unknown as DB["db"];
 }
 
-test("GET /skills returns an empty list for a definition with no skills store row", async () => {
+test("GET /skills returns an empty list for a definition with no pinned skills", async () => {
   const app = buildApp(
-    fakeAssetService(),
+    fakeAssetService({
+      readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
+    }),
     fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
   );
   const response = await app.request("/skills?ids=def_1");
@@ -723,16 +738,14 @@ test("GET /skills returns an empty list for a definition with no skills store ro
   expect(body.skills).toEqual({ def_1: [] });
 });
 
-test("GET /skills returns the stored skill list", async () => {
-  const skillsStore = createInMemoryDefinitionSkillsStore();
-  await skillsStore.setSkills("ast_1", ["web-research"]);
+test("GET /skills returns the stanza's pinned skills", async () => {
   const app = buildApp(
-    fakeAssetService(),
+    fakeAssetService({
+      readAssetBlob: readAssetBlobFor(
+        storedDefinitionBytesWithSkills("web-research"),
+      ),
+    }),
     fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
-    allowAllRequireGrant,
-    fakeHistory(),
-    fakeCapabilityInventory,
-    skillsStore,
   );
   const response = await app.request("/skills?ids=def_1");
   const body = (await response.json()) as {
@@ -752,7 +765,6 @@ test("GET /skills omits unknown definition ids from the map rather than erroring
 
 test("PUT /:definitionId/skills replaces the skill set, writing the definition source tree to the asset", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
-  const skillsStore = createInMemoryDefinitionSkillsStore();
   const app = buildApp(
     fakeAssetService({
       readAssetBlob: () => Promise.resolve(storedDefinitionBytes()),
@@ -765,14 +777,16 @@ test("PUT /:definitionId/skills replaces the skill set, writing the definition s
     allowAllRequireGrant,
     fakeHistory(),
     fakeCapabilityInventory,
-    skillsStore,
   );
   const response = await put(app, "/def_1/skills", {
     skills: ["long-form-write"],
   });
   expect(response.status).toBe(200);
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
-  expect(await skillsStore.getSkills("ast_1")).toEqual(["long-form-write"]);
+  // The written tree's stanza is the pins — no side table to consult.
+  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual([
+    "long-form-write",
+  ]);
   const body = (await response.json()) as { skills: readonly string[] };
   expect(body.skills).toEqual(["long-form-write"]);
 });
@@ -1032,7 +1046,6 @@ test("PUT /:definitionId writes the new system prompt in a single source-tree co
     allowAllRequireGrant,
     fakeHistory(),
     fakeCapabilityInventory,
-    createInMemoryDefinitionSkillsStore(),
     deployer,
   );
   const response = await put(app, "/def_1", {
@@ -1529,7 +1542,6 @@ test("pinning a skill the registry cannot resolve is a 400, not a 500", async ()
           new SkillRegistryError("not_found", 'cannot pin skill "ghost"'),
         ),
     },
-    skillsStore: createInMemoryDefinitionSkillsStore(),
     history: fakeHistory(),
     capabilityInventory: fakeCapabilityInventory,
     requireGrant: () => async (_c, next) => {
@@ -1902,9 +1914,8 @@ test("adding a skill the inventory doesn't offer is a 400, never written", async
   expect(populateCalled).toBe(false);
 });
 
-test("adding a skill merges it additively into the skills store and re-indexes the prompt", async () => {
+test("adding a skill merges it additively into the definition stanza and re-indexes the prompt", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
-  const skillsStore = createInMemoryDefinitionSkillsStore();
   const app = buildApp(
     fakeAssetService({
       readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
@@ -1921,7 +1932,6 @@ test("adding a skill merges it additively into the skills store and re-indexes t
     allowAllRequireGrant,
     fakeHistory(),
     fakeCapabilityInventory,
-    skillsStore,
   );
   const response = await postTo(app, "/def_1/capabilities", {
     kind: "skill",
@@ -1929,7 +1939,11 @@ test("adding a skill merges it additively into the skills store and re-indexes t
   });
   expect(response.status).toBe(200);
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
-  expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);
+  // Pins live in the definition's own workflow stanza now — no store to
+  // consult, the written source tree is the assertion.
+  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual([
+    "research",
+  ]);
   expect(definitionFrom(writtenFiles).includes("research")).toBe(true);
   const body = (await response.json()) as { skills: string[] };
   expect(body.skills).toEqual(["research"]);
@@ -2100,7 +2114,6 @@ test("concurrent PUT instructions and DELETE model both land", async () => {
 });
 
 test("concurrent PUT skills and DELETE model both land", async () => {
-  const skillsStore = createInMemoryDefinitionSkillsStore();
   const assetService = liveDefinitionAsset(
     storedDefinitionBytesWithModel("anthropic/claude-sonnet"),
   );
@@ -2114,7 +2127,6 @@ test("concurrent PUT skills and DELETE model both land", async () => {
     allowAllRequireGrant,
     fakeHistory(),
     fakeCapabilityInventory,
-    skillsStore,
   );
 
   const [skillsRes, delRes] = await Promise.all([
@@ -2128,7 +2140,7 @@ test("concurrent PUT skills and DELETE model both land", async () => {
     assetService,
     "ast_1",
   );
-  expect(await skillsStore.getSkills("ast_1")).toEqual(["long-form-write"]);
+  expect(readPinnedSkillNames(workflowJson)).toEqual(["long-form-write"]);
   expect(promptFrom(workflowJson)).toContain(
     "- long-form-write: What long-form-write does.",
   );
@@ -2171,7 +2183,6 @@ test("concurrent DELETE model and a capability-add both land", async () => {
 });
 
 test("concurrent pin_skill and DELETE model both land", async () => {
-  const skillsStore = createInMemoryDefinitionSkillsStore();
   const assetService = liveDefinitionAsset(
     storedDefinitionBytesWithModel("anthropic/claude-sonnet"),
   );
@@ -2186,7 +2197,6 @@ test("concurrent pin_skill and DELETE model both land", async () => {
     allowAllRequireGrant,
     fakeHistory(),
     fakeCapabilityInventory,
-    skillsStore,
   );
   const pinAuthenticator: WorkflowRunAuthenticator = {
     resolve: (token, address) =>
@@ -2204,7 +2214,6 @@ test("concurrent pin_skill and DELETE model both land", async () => {
     db,
     assetService,
     skillIndex: fakeSkillIndex,
-    skillsStore,
     authenticator: pinAuthenticator,
     deployer: recordingAgentDefinitionDeployer(),
   });
@@ -2231,7 +2240,7 @@ test("concurrent pin_skill and DELETE model both land", async () => {
     assetService,
     "ast_1",
   );
-  expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);
+  expect(readPinnedSkillNames(workflowJson)).toEqual(["research"]);
   expect(promptFrom(workflowJson)).toContain("- research: What research does.");
   expect(modelFrom(workflowJson)).toBeUndefined();
 });

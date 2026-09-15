@@ -102,7 +102,6 @@ export type CreateWorkflowAgentCreateRoutesDeps = {
   readonly db: DB["db"];
   readonly assetService: AssetService;
   readonly skillIndex: CreateAgentDefinitionCoreDeps["skillIndex"];
-  readonly skillsStore: CreateAgentDefinitionCoreDeps["skillsStore"];
   readonly capabilityInventory: CapabilityInventoryProvider;
   readonly authenticator: WorkflowRunAuthenticator;
   readonly deployer: CreateAgentDefinitionCoreDeps["deployer"];
@@ -248,7 +247,6 @@ export function createWorkflowAgentCreateRoutes(
         db: deps.db,
         assetService: deps.assetService,
         skillIndex: deps.skillIndex,
-        skillsStore: deps.skillsStore,
         deployer: deps.deployer,
         ...(deps.tenantDefaultModel !== undefined
           ? { tenantDefaultModel: deps.tenantDefaultModel }

@@ -25,6 +25,14 @@ export const agentDirectoryMigrations: readonly AgentDirectoryMigration[] = [
       );
     `,
   },
+  // CL-7592 cuts the Workbench-owned directory store over to the
+  // definition assets' own pinned-skills stanzas: the table 0001 created
+  // is dropped, never read again. Append-only like every ledger entry
+  // before it — history is not rewritten, the store is deleted forward.
+  {
+    name: "0002_drop_definition_skills",
+    sql: `DROP TABLE IF EXISTS "agent_directory"."definition_skills";`,
+  },
 ];
 
 const LEDGER_TABLE = "agent_directory_migrations";

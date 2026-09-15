@@ -13,6 +13,8 @@ import type { DB } from "@intx/db";
 import {
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
+  readPinnedSkillNames,
+  reindexPinnedSkills,
 } from "../src/agent-workflow";
 import {
   createWorkflowSkillPinRoutes,
@@ -24,11 +26,7 @@ import {
   AGENT_DEFINITION_ENTRY_PATH,
 } from "../src/definition-asset";
 import type { PinnedSkillIndexResolver } from "../src/routes";
-import {
-  createInMemoryDefinitionSkillsStore,
-  type DefinitionSkillsStore,
-} from "../src/skills-store";
-import { SOURCE_TREE_PATHS } from "./source-tree";
+import { definitionFrom, SOURCE_TREE_PATHS } from "./source-tree";
 
 const TENANT_ID = "tnt_1";
 const OTHER_TENANT_ID = "tnt_2";
@@ -54,6 +52,27 @@ function storedDefinitionBytes(): Uint8Array {
         description: "",
         systemPrompt: "You are a careful research assistant.",
       }),
+    ),
+  });
+  return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
+}
+
+/** A stored definition that already pins skills — the state every
+ * pin-reading route observes. The stanza is the seed: no side table to
+ * write, the bytes carry the pins like a real asset would. */
+function storedDefinitionBytesWithSkills(...names: string[]): Uint8Array {
+  const tree = agentDefinitionSourceTree({
+    handle: "research-buddy",
+    workflowJson: reindexPinnedSkills(
+      serializeAgentDefinitionWorkflow(
+        buildAgentDefinitionWorkflow({
+          handle: "research-buddy",
+          tenantDomain: "acme.example",
+          description: "",
+          systemPrompt: "You are a careful research assistant.",
+        }),
+      ),
+      names.map((name) => ({ name, description: `What ${name} does.` })),
     ),
   });
   return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
@@ -174,14 +193,12 @@ function buildApp(opts: {
   assetService?: AssetService;
   db?: DB["db"];
   authenticator?: WorkflowRunAuthenticator;
-  skillsStore?: DefinitionSkillsStore;
   deployer?: ReturnType<typeof recordingAgentDefinitionDeployer>;
 }): Hono {
   return createWorkflowSkillPinRoutes({
     db: opts.db ?? fakeDbWithRows([]),
     assetService: opts.assetService ?? fakeAssetService(),
     skillIndex: fakeSkillIndex,
-    skillsStore: opts.skillsStore ?? createInMemoryDefinitionSkillsStore(),
     authenticator: opts.authenticator ?? authenticateAsTenant1,
     deployer: opts.deployer ?? recordingAgentDefinitionDeployer(),
   }) as unknown as Hono;
@@ -270,7 +287,6 @@ test("pins a skill onto another definition in the same tenant and re-indexes its
   lookupTenant = TENANT_ID;
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   let writtenMessage: string | undefined;
-  const skillsStore = createInMemoryDefinitionSkillsStore();
   const deployer = recordingAgentDefinitionDeployer();
   const app = buildApp({
     db: fakeDbWithRows([
@@ -288,7 +304,6 @@ test("pins a skill onto another definition in the same tenant and re-indexes its
         return Promise.resolve({ commitSha: "deadbeef" });
       },
     }),
-    skillsStore,
     deployer,
   });
   const response = await postPin(app, {
@@ -303,7 +318,10 @@ test("pins a skill onto another definition in the same tenant and re-indexes its
   expect(deployer.deploys[0]?.commitSha).toBe("deadbeef");
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(writtenMessage).toBe("Pin research skill to research-buddy");
-  expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);
+  // The written tree's stanza is the pins — no side table to consult.
+  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual([
+    "research",
+  ]);
   const body = (await response.json()) as { skills: string[] };
   expect(body.skills).toEqual(["research"]);
 });
@@ -346,8 +364,6 @@ test("a definition still on the retired envelope is a 409, never a 500, and writ
 test("pinning the same skill twice is idempotent, never duplicated", async () => {
   lookupId = TARGET_DEFINITION_ID;
   lookupTenant = TENANT_ID;
-  const skillsStore = createInMemoryDefinitionSkillsStore();
-  await skillsStore.setSkills("ast_1", ["research"]);
   const app = buildApp({
     db: fakeDbWithRows([
       {
@@ -357,7 +373,11 @@ test("pinning the same skill twice is idempotent, never duplicated", async () =>
         name: "research-buddy",
       },
     ]),
-    skillsStore,
+    assetService: fakeAssetService({
+      readAssetBlob: readAssetBlobFor(
+        storedDefinitionBytesWithSkills("research"),
+      ),
+    }),
   });
   const response = await postPin(app, {
     definitionId: TARGET_DEFINITION_ID,
@@ -366,7 +386,6 @@ test("pinning the same skill twice is idempotent, never duplicated", async () =>
   expect(response.status).toBe(200);
   const body = (await response.json()) as { skills: string[] };
   expect(body.skills).toEqual(["research"]);
-  expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);
 });
 
 test("a malformed body is a 400", async () => {

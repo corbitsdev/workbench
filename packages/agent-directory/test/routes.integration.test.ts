@@ -6,12 +6,13 @@
 // `AssetService` never exercises that validator, so it could not have
 // caught this. A definition created WITH skills used to write
 // `skills.json` into the asset tree beside its definition, which that
-// validator rejected. Pinned skills now live in this package's own
-// `agent_directory.definition_skills` table (see
-// `../src/skills-store.ts`), so the asset tree only ever carries the
-// source codebase `agentDefinitionSourceTree` renders — the one shape
-// the validator now accepts, the retired `workflow.json` envelope
-// having been refused at the push boundary.
+// validator rejected. Pinned skills now live in the definition's own
+// entry-module stanza (read back out of the asset, never a side table —
+// CL-7592 cut the Workbench-owned `definition_skills` store), so the
+// asset tree only ever carries the source codebase
+// `agentDefinitionSourceTree` renders — the one shape the validator now
+// accepts, the retired `workflow.json` envelope having been refused at
+// the push boundary.
 //
 // DB-gated: skipped when DATABASE_URL is unset, so a fresh checkout
 // still runs the unit gates. Run with e.g.
@@ -21,13 +22,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 
 import { createDB } from "@intx/db";
 import {
-  asset as assetTable,
   principal as principalTable,
   tenant as tenantTable,
   workflowDefinition,
@@ -38,10 +38,8 @@ import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { applyAgentDirectoryMigrations } from "../src/migrations";
-import { definitionSkills } from "../src/schema";
 import { createAgentDefinitionRoutes } from "../src/routes";
 import type { PinnedSkillIndexResolver } from "../src/routes";
-import { createDrizzleDefinitionSkillsStore } from "../src/skills-store";
 import type { DefinitionAssetHistory } from "../src/definition-history";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
 import { dbGate } from "../../../scripts/e2e/db-gate";
@@ -180,14 +178,12 @@ describeIfDb("agent-directory routes against a real assetService", () => {
       db,
       repoStore: agentRepoStore.repoStore,
     });
-    const skillsStore = createDrizzleDefinitionSkillsStore(db);
     deployer = recordingAgentDefinitionDeployer(db);
 
     const routes = createAgentDefinitionRoutes({
       db,
       assetService,
       skillIndex: fakeSkillIndex,
-      skillsStore,
       history: fakeHistory,
       capabilityInventory: fakeCapabilityInventory,
       requireGrant: allowAllRequireGrant,
@@ -204,16 +200,6 @@ describeIfDb("agent-directory routes against a real assetService", () => {
   }, 30000);
 
   afterAll(async () => {
-    const assetRows = await db
-      .select({ id: assetTable.id })
-      .from(assetTable)
-      .where(eq(assetTable.tenantId, TENANT.id));
-    const assetIds = assetRows.map((row) => row.id);
-    if (assetIds.length > 0) {
-      await db
-        .delete(definitionSkills)
-        .where(inArray(definitionSkills.assetId, assetIds));
-    }
     await db.delete(tenantTable).where(eq(tenantTable.id, TENANT.id));
     await close();
     await rm(dataDir, { recursive: true, force: true });

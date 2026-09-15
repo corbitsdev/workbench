@@ -19,7 +19,10 @@ function scratchUrlFor(e2eUrl: string): string {
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
-const migrationNames = ["0001_definition_skills"];
+const migrationNames = [
+  "0001_definition_skills",
+  "0002_drop_definition_skills",
+];
 
 describeIfDb("applyAgentDirectoryMigrations", () => {
   const scratchUrl = scratchUrlFor(
@@ -56,7 +59,7 @@ describeIfDb("applyAgentDirectoryMigrations", () => {
     }
   }, 20000);
 
-  test("applies the table into its own schema and is idempotent on a second run", async () => {
+  test("drops the store table forward and is idempotent on a second run", async () => {
     const first = await applyAgentDirectoryMigrations(scratchUrl);
     expect(first.applied).toEqual(migrationNames);
 
@@ -66,13 +69,13 @@ describeIfDb("applyAgentDirectoryMigrations", () => {
 
     const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
     try {
+      // 0002 dropped what 0001 created: the cutover deletes the
+      // Workbench-owned store forward, never by rewriting history.
       const tables = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'agent_directory' AND table_name = 'definition_skills'`,
       );
-      expect(tables.map((row) => String(row["table_name"]))).toEqual([
-        "definition_skills",
-      ]);
+      expect(tables).toHaveLength(0);
 
       const inPublic = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +

@@ -14,6 +14,7 @@ import type { DB } from "@intx/db";
 import {
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
+  readPinnedSkillNames,
 } from "../src/agent-workflow";
 import {
   createWorkflowCapabilityRoutes,
@@ -25,11 +26,7 @@ import {
   AGENT_DEFINITION_ENTRY_PATH,
 } from "../src/definition-asset";
 import type { PinnedSkillIndexResolver } from "../src/routes";
-import {
-  createInMemoryDefinitionSkillsStore,
-  type DefinitionSkillsStore,
-} from "../src/skills-store";
-import { SOURCE_TREE_PATHS } from "./source-tree";
+import { definitionFrom, SOURCE_TREE_PATHS } from "./source-tree";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
 import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
 
@@ -72,9 +69,9 @@ function storedDefinitionBytes(): Uint8Array {
 }
 
 /** A `readAssetBlob` that always answers the definition's entry module
- * — pinned skills no longer live in the asset tree, so a test that needs
- * a definition's skills seeds a `DefinitionSkillsStore` directly
- * instead. */
+ * with `workflowBytes` — pins live in the asset's own stanza, so a test
+ * that needs a definition's skills reads them back out of the written
+ * tree instead of seeding side state. */
 function readAssetBlobFor(
   workflowBytes: Uint8Array,
 ): AssetService["readAssetBlob"] {
@@ -184,14 +181,12 @@ function buildApp(opts: {
   db?: DB["db"];
   authenticator?: WorkflowRunAuthenticator;
   capabilityInventory?: CapabilityInventoryProvider;
-  skillsStore?: DefinitionSkillsStore;
   deployer?: ReturnType<typeof recordingAgentDefinitionDeployer>;
 }): Hono {
   return createWorkflowCapabilityRoutes({
     db: opts.db ?? fakeDb(),
     assetService: opts.assetService ?? fakeAssetService(),
     skillIndex: fakeSkillIndex,
-    skillsStore: opts.skillsStore ?? createInMemoryDefinitionSkillsStore(),
     capabilityInventory: opts.capabilityInventory ?? fakeCapabilityInventory,
     authenticator: opts.authenticator ?? authenticateAsOwnRun,
     deployer: opts.deployer ?? recordingAgentDefinitionDeployer(),
@@ -317,9 +312,8 @@ test("adding a capability the tenant's inventory doesn't offer is a 400, never w
   expect(populateCalled).toBe(false);
 });
 
-test("adding a skill merges it additively into the skills store and re-indexes the prompt", async () => {
+test("adding a skill merges it additively into the definition stanza and re-indexes the prompt", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
-  const skillsStore = createInMemoryDefinitionSkillsStore();
   const app = buildApp({
     assetService: fakeAssetService({
       readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
@@ -328,7 +322,6 @@ test("adding a skill merges it additively into the skills store and re-indexes t
         return Promise.resolve({ commitSha: "deadbeef" });
       },
     }),
-    skillsStore,
   });
   const response = await postCapability(app, OWN_DEFINITION_ID, {
     kind: "skill",
@@ -336,7 +329,10 @@ test("adding a skill merges it additively into the skills store and re-indexes t
   });
   expect(response.status).toBe(200);
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
-  expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);
+  // The written tree's stanza is the pins — no side table to consult.
+  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual([
+    "research",
+  ]);
   const body = (await response.json()) as { skills: string[] };
   expect(body.skills).toEqual(["research"]);
 });

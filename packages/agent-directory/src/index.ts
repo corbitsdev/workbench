@@ -2,6 +2,7 @@ export {
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
   readAgentCapabilities,
+  readPinnedSkillNames,
   reindexPinnedSkills,
   withAgentModel,
   withAgentToolPackagePin,
@@ -29,11 +30,6 @@ export {
   AGENT_DEFINITION_ENTRY_PATH,
   RetiredWorkflowEnvelopeError,
 } from "./definition-asset";
-export {
-  createDrizzleDefinitionSkillsStore,
-  createInMemoryDefinitionSkillsStore,
-  type DefinitionSkillsStore,
-} from "./skills-store";
 export {
   agentDirectoryMigrations,
   applyAgentDirectoryMigrations,

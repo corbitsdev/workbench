@@ -1,16 +1,17 @@
 // Composition for `@corbits/skills`: the registry itself plus the two
 // adapters that only this composition root can supply — "which agent
-// definitions pin this skill" (read from `@corbits/agent-directory`'s
-// own `definition_skills` table, keyed by each definition's asset id)
-// and "what index does a definition's pinned names resolve to" (read
-// from the registry, on behalf of the pushing principal).
+// definitions pin this skill" (read from each definition's own asset
+// snapshot, where its pinned-skills stanza lives) and "what index does
+// a definition's pinned names resolve to" (read from the registry, on
+// behalf of the pushing principal).
 import { and, eq } from "drizzle-orm";
 
 import type { DB } from "@intx/db";
 import { workflowDefinition } from "@intx/db/schema";
 import { type AssetService, type RepoStore } from "@intx/hub-sessions";
 import {
-  createDrizzleDefinitionSkillsStore,
+  readAgentDefinitionWorkflowJson,
+  readPinnedSkillNames,
   type PinnedSkillIndexResolver,
 } from "@corbits/agent-directory";
 import {
@@ -42,8 +43,6 @@ export function mountSkills(deps: {
     access: createDrizzleSkillAccessStore(deps.db),
   });
 
-  const definitionSkills = createDrizzleDefinitionSkillsStore(deps.db);
-
   const pinnedBy: PinnedByResolver = {
     async resolve(tenantId, skillName) {
       const rows = await deps.db.query.workflowDefinition.findMany({
@@ -52,8 +51,13 @@ export function mountSkills(deps: {
       const pinning: { definitionId: string; name: string }[] = [];
       for (const row of rows) {
         if (row.assetId === null) continue;
-        const skills = await definitionSkills.getSkills(row.assetId);
-        if (skills.includes(skillName)) {
+        // Pins live in the definition's own asset snapshot — the same
+        // stanza every agent-directory read goes through.
+        const workflowJson = await readAgentDefinitionWorkflowJson(
+          deps.assetService,
+          row.assetId,
+        );
+        if (readPinnedSkillNames(workflowJson).includes(skillName)) {
           pinning.push({ definitionId: row.id, name: row.name });
         }
       }

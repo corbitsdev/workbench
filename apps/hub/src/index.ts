@@ -55,7 +55,6 @@ import {
   createAgentDefinitionDraftRoutes,
   createAgentDefinitionRoutes,
   createDefinitionAssetHistory,
-  createDrizzleDefinitionSkillsStore,
   createWorkflowAgentCreateRoutes,
   createWorkflowCapabilityRoutes,
   createWorkflowSkillPinRoutes,
@@ -2183,7 +2182,6 @@ export async function createHub(config: HubConfig) {
     assetService,
     repoStore: agentRepoStore.repoStore,
   });
-  const definitionSkillsStore = createDrizzleDefinitionSkillsStore(db);
   app.route(
     `${TENANT_PREFIX}/skills`,
     createSkillRoutes({
@@ -2354,7 +2352,6 @@ export async function createHub(config: HubConfig) {
       assetService,
       deployer: workflowDeployer,
       skillIndex: skills.skillIndex,
-      skillsStore: definitionSkillsStore,
       history: createDefinitionAssetHistory({
         repoStore: agentRepoStore.repoStore,
       }),
@@ -2384,7 +2381,6 @@ export async function createHub(config: HubConfig) {
       assetService,
       deployer: workflowDeployer,
       skillIndex: skills.skillIndex,
-      skillsStore: definitionSkillsStore,
       capabilityInventory,
       authenticator: createWorkflowRunAuthenticator({ db }),
       tenantDefaultModel: async (tenantId) =>
@@ -2406,7 +2402,6 @@ export async function createHub(config: HubConfig) {
       assetService,
       deployer: workflowDeployer,
       skillIndex: skills.skillIndex,
-      skillsStore: definitionSkillsStore,
       capabilityInventory,
       authenticator: createWorkflowRunAuthenticator({ db }),
     }),
@@ -2423,7 +2418,6 @@ export async function createHub(config: HubConfig) {
       assetService,
       deployer: workflowDeployer,
       skillIndex: skills.skillIndex,
-      skillsStore: definitionSkillsStore,
       authenticator: createWorkflowRunAuthenticator({ db }),
     }),
   );

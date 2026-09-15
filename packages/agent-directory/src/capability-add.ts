@@ -12,6 +12,7 @@ import type { AssetService } from "@intx/hub-sessions";
 
 import {
   readAgentCapabilities,
+  readPinnedSkillNames,
   reindexPinnedSkills,
   withAgentModel,
   withAgentToolPackagePin,
@@ -22,14 +23,12 @@ import {
   writeAndDeployAgentDefinition,
   type AgentDefinitionDeployer,
 } from "./definition-asset";
-import type { DefinitionSkillsStore } from "./skills-store";
 import { resolvePinnedVersion } from "./tool-package-version";
 
 export type CommitAgentCapabilityAddArgs = {
   db: DB["db"];
   assetService: AssetService;
   deployer: AgentDefinitionDeployer;
-  skillsStore: DefinitionSkillsStore;
   skillIndex: {
     resolve(
       tenantId: string,
@@ -66,17 +65,10 @@ export async function commitAgentCapabilityAdd(
     operation: "capability add",
     prepare: async (snapshot) => {
       const prepared = await prepareCapabilityAdd(snapshot, args);
-      const nextSkills = prepared.nextSkills;
       return {
         workflowJson: prepared.workflowJson,
         message: prepared.message,
         result: prepared.result,
-        ...(nextSkills !== null
-          ? {
-              afterWrite: () =>
-                args.skillsStore.setSkills(args.assetId, nextSkills),
-            }
-          : {}),
       };
     },
     write: async ({ workflowJson, message }) => {
@@ -97,7 +89,6 @@ export async function commitAgentCapabilityAdd(
 type PreparedCapabilityAdd = {
   workflowJson: string;
   message: string;
-  nextSkills: readonly string[] | null;
   result: CommitAgentCapabilityAddResult;
 };
 
@@ -107,8 +98,11 @@ async function prepareCapabilityAdd(
 ): Promise<PreparedCapabilityAdd> {
   let nextWorkflowJson: string;
   let message: string;
-  let skills = await args.skillsStore.getSkills(args.assetId);
-  let nextSkills: readonly string[] | null = null;
+  // Pins read out of the snapshot itself — the asset's stanza is the
+  // source of truth, so a concurrent writer's pins survive a retry
+  // against the latest snapshot instead of being clobbered by a stale
+  // side-table read.
+  let skills = readPinnedSkillNames(workflowJson);
 
   switch (args.body.kind) {
     case "toolPackage": {
@@ -137,7 +131,7 @@ async function prepareCapabilityAdd(
       break;
     }
     case "skill": {
-      nextSkills = skills.includes(args.body.name)
+      const nextSkills = skills.includes(args.body.name)
         ? skills
         : [...skills, args.body.name];
       nextWorkflowJson = reindexPinnedSkills(
@@ -163,7 +157,6 @@ async function prepareCapabilityAdd(
   return {
     workflowJson: nextWorkflowJson,
     message,
-    nextSkills,
     result: {
       toolPackagePins: capabilities.toolPackagePins,
       skills,

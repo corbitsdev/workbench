@@ -31,7 +31,7 @@ import type { AssetService } from "@intx/hub-sessions";
 
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 
-import { reindexPinnedSkills } from "./agent-workflow";
+import { readPinnedSkillNames, reindexPinnedSkills } from "./agent-workflow";
 import { commitLatestAgentAssetSnapshot } from "./asset-write";
 import {
   RetiredWorkflowEnvelopeError,
@@ -41,7 +41,6 @@ import {
   type AgentDefinitionDeployer,
 } from "./definition-asset";
 import type { PinnedSkillIndexResolver } from "./routes";
-import type { DefinitionSkillsStore } from "./skills-store";
 import { makeErrorEnvelope } from "@corbits/error-sink";
 import type {
   WorkflowCapabilityRunScope,
@@ -90,7 +89,6 @@ export type CreateWorkflowSkillPinRoutesDeps = {
   db: DB["db"];
   assetService: AssetService;
   skillIndex: PinnedSkillIndexResolver;
-  skillsStore: DefinitionSkillsStore;
   authenticator: WorkflowRunAuthenticator;
   /** Deploys the definition's commit through the native source pipeline
    * after the rewrite; the composition root injects the SAME
@@ -172,7 +170,10 @@ export function createWorkflowSkillPinRoutes(
       assetId: row.assetId,
       operation: "pin skill",
       prepare: async (snapshot) => {
-        const skills = await deps.skillsStore.getSkills(row.assetId);
+        // Pins read out of the commit being prepared: the asset's
+        // stanza is the source of truth, so a concurrent writer's pins
+        // survive the retry instead of being clobbered by a stale read.
+        const skills = readPinnedSkillNames(snapshot);
         const nextSkills = skills.includes(body.skillName)
           ? skills
           : [...skills, body.skillName];
@@ -186,7 +187,6 @@ export function createWorkflowSkillPinRoutes(
             ),
           ),
           message: `Pin ${body.skillName} skill to ${row.name}`,
-          afterWrite: () => deps.skillsStore.setSkills(row.assetId, nextSkills),
           result: { skills: nextSkills },
         };
       },

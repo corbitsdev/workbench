@@ -20,7 +20,6 @@ import {
   SKILLS_TOOL_PACKAGE_PIN,
   withAgentToolPackagePin,
 } from "./agent-workflow";
-import { createInMemoryDefinitionSkillsStore } from "./skills-store";
 
 describe("SKILLS_TOOL_PACKAGE_PIN", () => {
   test("resolves through the corbits-tools registry", async () => {
@@ -205,7 +204,6 @@ describe("createAgentDefinitionCore: shared registry resolution across pins", ()
         db,
         assetService,
         skillIndex: { resolve: () => Promise.resolve([]) },
-        skillsStore: createInMemoryDefinitionSkillsStore(),
         deployer: {
           deploy: () =>
             Promise.resolve({
