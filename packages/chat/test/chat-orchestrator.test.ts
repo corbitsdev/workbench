@@ -1,8 +1,8 @@
 // Proves the orchestrator's own wiring: a `connector.reply` on the
 // shared `agent.event` stream resolves the replying address to its
-// folded run, finds the originating workbench (the room with a running
-// turn, a unique membership, or an explicit from/replyTo/turn hint on
-// the event), and posts the reply onto that timeline via
+// folded run, finds the originating workbench (the room with a mail-header
+// correlation, a running turn, a unique membership, or an explicit
+// from/turn hint on the event), and posts the reply onto that timeline via
 // `postRoomMessage`. A host in two rooms never gets one reply sprayed
 // into both. Non-reply events are ignored for posting but still bump
 // activity; an address the store never produced (no folded run) is
@@ -324,6 +324,193 @@ describe("createChatOrchestrator", () => {
       workbenchId: "ins_room_b",
       parts: [{ kind: "text", text: "reply for room B" }],
     });
+
+    orchestrator.dispose();
+  });
+
+  test("a reply is attributed header-first when two rooms each have a running turn (CL-7104)", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    const agentAddress = "ins_echo1@ten1.workbench.test";
+    await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_room_a",
+      agentAddress,
+      requestMessageIds: ["msg_a"],
+    });
+    await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_room_b",
+      agentAddress,
+      requestMessageIds: ["msg_b"],
+    });
+    const turnMail = createInMemoryTurnMailCorrelationStore();
+    // What `dispatchTurn` wrote when it delivered room A's waking message:
+    // the dispatch mail's `Message-ID` IS that row's.
+    await turnMail.recordTurnMail({
+      tenantId: "ten_1",
+      mailId: "mail_a",
+      workbenchId: "ins_room_a",
+      sourceMessageId: "msg_a",
+    });
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_room_a", [agentAddress]),
+          workbenchRow("ins_room_b", [agentAddress]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      turnMailCorrelation: turnMail,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    const bracket = bracketed("mail_a", "mrun_a");
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      event: bracket.started,
+    });
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      event: {
+        type: "connector.reply",
+        data: { content: "answer for room A" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Two running turns and no event hint: the single-running fallback
+    // cannot fire, so only the bracket mail's header names room A.
+    expect(room.posted.map((message) => message.workbenchId)).toEqual([
+      "ins_room_a",
+    ]);
+
+    orchestrator.dispose();
+  });
+
+  test("a header naming a non-member workbench never sprays the reply (CL-7104)", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    const agentAddress = "ins_echo1@ten1.workbench.test";
+    await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_room_a",
+      agentAddress,
+      requestMessageIds: ["msg_a"],
+    });
+    await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_room_b",
+      agentAddress,
+      requestMessageIds: ["msg_b"],
+    });
+    const turnMail = createInMemoryTurnMailCorrelationStore();
+    // A correlation for a room the agent was never invited to: stale or
+    // cross-tenant, never a license to post into it.
+    await turnMail.recordTurnMail({
+      tenantId: "ten_1",
+      mailId: "mail_x",
+      workbenchId: "ins_room_x",
+      sourceMessageId: "msg_x",
+    });
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_room_a", [agentAddress]),
+          workbenchRow("ins_room_b", [agentAddress]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      turnMailCorrelation: turnMail,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    const bracket = bracketed("mail_x", "mrun_x");
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      event: bracket.started,
+    });
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      event: {
+        type: "connector.reply",
+        data: { content: "answer for nowhere" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // The header narrows to memberships only: room X is not one, and two
+    // running turns with no other hint is the ambiguous case that drops.
+    expect(room.posted).toHaveLength(0);
+
+    orchestrator.dispose();
+  });
+
+  test("a header-less reply with exactly one running turn still attributes (bridge retained, CL-7104)", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    const agentAddress = "ins_echo1@ten1.workbench.test";
+    await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_room_a",
+      agentAddress,
+      requestMessageIds: ["msg_a"],
+    });
+    const turnMail = createInMemoryTurnMailCorrelationStore();
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_room_a", [agentAddress]),
+          workbenchRow("ins_room_b", [agentAddress]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      turnMailCorrelation: turnMail,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    // No bracket, no header, no hint: the sidecar stream carries no
+    // threading headers, so with exactly one running turn the retained
+    // bridge is the only leg that can attribute. Retiring it is CL-6534
+    // slice 2's job — this test pins the contract until then.
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      event: {
+        type: "connector.reply",
+        data: { content: "answer with no headers at all" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted.map((message) => message.workbenchId)).toEqual([
+      "ins_room_a",
+    ]);
 
     orchestrator.dispose();
   });
