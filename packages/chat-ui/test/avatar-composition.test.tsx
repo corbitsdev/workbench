@@ -18,7 +18,7 @@ describe("avatar composition and identity resolution", () => {
     expect(corbitHtml).toContain('data-corbit="true"');
     expect(corbitHtml).toContain('aria-label="Echo Agent"');
     expect(corbitHtml).toContain("<svg");
-    expect(corbitHtml).toContain(CORBIT_DEFAULT_COLOR);
+    expect(corbitHtml).toContain(`fill:var(${CORBIT_DEFAULT_COLOR})`);
     expect(corbitHtml).not.toContain(">EA<");
   });
 
@@ -29,7 +29,9 @@ describe("avatar composition and identity resolution", () => {
     expect(AVATAR_COLORS).toContain(aliceColor);
     expect(AVATAR_COLORS).toContain(bobColor);
 
-    expect(avatarClassForPrincipal("usr_alice")).toContain(aliceColor);
+    expect(avatarClassForPrincipal("usr_alice")).toBe(
+      `bg-(${aliceColor}) text-black`,
+    );
 
     expect(avatarColorForPrincipal("usr_alice")).toBe(aliceColor);
   });
