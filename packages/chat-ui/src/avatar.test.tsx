@@ -8,6 +8,7 @@ import {
   CORBIT_VISOR_COLOR,
   CorbitAvatar,
   avatarClassForPrincipal,
+  avatarColorClass,
   avatarColorForPrincipal,
   resolveAvatarFill,
 } from "./avatar";
@@ -57,6 +58,25 @@ describe("avatarClassForPrincipal", () => {
   });
 });
 
+describe("avatar pastel tokens", () => {
+  test("the palette is token references, not hardcoded hex", () => {
+    expect(AVATAR_COLORS).toHaveLength(4);
+    for (const color of AVATAR_COLORS) {
+      expect(color.startsWith("--avatar-")).toBe(true);
+      expect(color).not.toContain("#");
+    }
+  });
+
+  test("every class pairs its token with the readable ink", () => {
+    for (const color of AVATAR_COLORS) {
+      const cls = avatarColorClass[color];
+      expect(cls).toContain(`bg-(${color})`);
+      expect(cls).toContain("text-black");
+      expect(cls).not.toContain("#");
+    }
+  });
+});
+
 describe("resolveAvatarFill", () => {
   test("a principal with no explicit image gets the generated fill", () => {
     const fill = resolveAvatarFill("prn_alice");
@@ -81,6 +101,19 @@ describe("resolveAvatarFill", () => {
 });
 
 describe("CorbitAvatar", () => {
+  test("paints its field from the identity token, never a hardcoded hex", () => {
+    const html = renderToStaticMarkup(<CorbitAvatar />);
+    expect(html).toContain(`fill:var(${CORBIT_DEFAULT_COLOR})`);
+    expect(html).not.toContain("#C5D2DE");
+    expect(html).not.toContain("#C1D1BE");
+    expect(html).not.toContain("#F7EAD5");
+    expect(html).not.toContain("#F2B277");
+  });
+
+  test("a chosen palette token paints the field", () => {
+    const html = renderToStaticMarkup(<CorbitAvatar color="--avatar-3" />);
+    expect(html).toContain("fill:var(--avatar-3)");
+  });
   test("renders an SVG with an accessible name and no visible label", () => {
     const html = renderToStaticMarkup(
       <CorbitAvatar ariaLabel="Myra" size="md" />,
