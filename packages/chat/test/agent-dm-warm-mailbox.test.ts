@@ -13,6 +13,12 @@ import {
   definitionIdOfSettings,
   isAgentDmSettings,
 } from "../src/agent-dm-mode";
+import type { WorkbenchLauncher } from "../src/platform-port";
+import type {
+  CreateWorkbenchTenantResult,
+  WorkbenchTenancyRow,
+} from "../src/workbench-tenancy";
+import { findExistingAgentChat, mintAgentDm } from "../src/workbench-service";
 import { createInMemoryAgentTurnStore } from "../src/agent-turns";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import { createInMemoryChatStore } from "../src/store";
@@ -33,8 +39,15 @@ const DEFINITION_ID = "def_echo";
 
 function dmSettings() {
   return {
-    "chat/kind": "chat",
-    "chat/definitionId": DEFINITION_ID,
+    // Built from the DM pin, never re-typed wire literals: the kind reads
+    // as the pin's kind, the definition id sits under the pin's computed
+    // key. ("chat/kind" / "chat/participants" keep their product-spelled
+    // keys — no pin constant names them, and the product writes them the
+    // same way.) The ONE test that names the pin's wire values as
+    // literals is "the pin names the exact settings keys on the wire"
+    // below; everything else here references the constants.
+    "chat/kind": AGENT_DM_KIND,
+    [AGENT_DM_DEFINITION_ID_KEY]: DEFINITION_ID,
     "chat/participants": [
       { address: SENDER, handle: SENDER },
       { address: AGENT_ADDRESS, handle: "echo" },
@@ -61,21 +74,131 @@ describe("agent DM pin (CL-7108)", () => {
   });
 
   test("a chat without a definition id is not a DM", () => {
-    const { "chat/definitionId": _dropped, ...rest } = dmSettings();
+    const { [AGENT_DM_DEFINITION_ID_KEY]: _dropped, ...rest } = dmSettings();
     expect(isAgentDmSettings(rest)).toBe(false);
     expect(definitionIdOfSettings(rest)).toBeUndefined();
   });
 
   test("a non-string definition id is not a DM", () => {
     expect(
-      isAgentDmSettings({ ...dmSettings(), "chat/definitionId": 42 }),
+      isAgentDmSettings({ ...dmSettings(), [AGENT_DM_DEFINITION_ID_KEY]: 42 }),
     ).toBe(false);
-    expect(definitionIdOfSettings({ "chat/definitionId": 42 })).toBeUndefined();
+    expect(
+      definitionIdOfSettings({ [AGENT_DM_DEFINITION_ID_KEY]: 42 }),
+    ).toBeUndefined();
   });
 
   test("a missing kind reads as chat, like the workbench view does", () => {
     const { "chat/kind": _dropped, ...rest } = dmSettings();
     expect(isAgentDmSettings(rest)).toBe(true);
+  });
+});
+
+// A group conversation is never an agent DM — even one that happens to
+// carry a definition id must never take the DM find-or-reopen path: the
+// pin (kind chat + definition id) is what opens that path, and the group
+// kind keeps it closed. Red-proven by flipping the seeded kind to chat
+// and watching the find-half fail (the row is found); the mint-fresh
+// half is red-proven by inverting its inequality to toBe.
+describe("non-DM settings never take the DM path (CL-7108)", () => {
+  const GROUP_WORKBENCH_ID = "wb_group_1";
+
+  function stubPlatform(): WorkbenchLauncher {
+    return {
+      async launchInvite() {
+        return { instanceId: "run_echo1", address: AGENT_ADDRESS };
+      },
+      async ensureAwake() {},
+      async listInvitableDefinitions() {
+        return [{ id: DEFINITION_ID, name: "echo", description: "Echo" }];
+      },
+      async resolveDefinitionIdByAddress() {
+        return undefined;
+      },
+      async resolveDefinitionAssetId() {
+        return "asset_echo";
+      },
+      async resolveDefinitionNameSource() {
+        return undefined;
+      },
+      async refreshAgentInstanceFromDefinition() {},
+    };
+  }
+
+  function stubTenancy() {
+    return {
+      async createWorkbenchTenant(input: {
+        readonly parentTenantId: string;
+        readonly workbenchId: string;
+        readonly name: string;
+        readonly creatorUserId: string;
+        readonly cookies: string[];
+      }): Promise<CreateWorkbenchTenantResult> {
+        return {
+          tenantId: `tnt_child_${input.workbenchId}`,
+          parentTenantId: input.parentTenantId,
+          domain: DOMAIN,
+          slug: input.workbenchId,
+          ownerPrincipalId: SENDER,
+        };
+      },
+      async compensateWorkbenchTenant() {},
+      async getWorkbenchTenancy(): Promise<WorkbenchTenancyRow | undefined> {
+        return undefined;
+      },
+    };
+  }
+
+  test("a group chat carrying a definition id is invisible to findExistingAgentChat, and mintAgentDm mints fresh", async () => {
+    const store = createInMemoryChatStore();
+    const roomMessages = createInMemoryRoomMessageStore();
+    const groupSettings = { ...dmSettings(), "chat/kind": "group" };
+    await store.createWorkbenchSettings({
+      tenantId: TENANT_ID,
+      workbenchId: GROUP_WORKBENCH_ID,
+      updatedBy: SENDER,
+      settings: groupSettings,
+    });
+    expect(isAgentDmSettings(groupSettings)).toBe(false);
+
+    const deps = {
+      store,
+      roomMessages,
+      publish: () => undefined,
+      platform: stubPlatform(),
+      tenancy: stubTenancy(),
+    };
+
+    // The DM find-or-reopen path never sees the group row...
+    expect(
+      await findExistingAgentChat(deps, TENANT_ID, DEFINITION_ID),
+    ).toBeUndefined();
+
+    // ...so minting for that definition mints a fresh DM beside it.
+    const minted = await mintAgentDm(deps, {
+      tenantId: TENANT_ID,
+      callerWorkbenchId: "wb_myra_dm",
+      callerPrincipalId: SENDER,
+      creatorUserId: "usr_alice",
+      cookies: [],
+      definitionId: DEFINITION_ID,
+    });
+    expect(minted.workbenchId).not.toBe(GROUP_WORKBENCH_ID);
+    expect(minted.definitionId).toBe(DEFINITION_ID);
+    const mintedRow = await store.getWorkbenchSettings(
+      TENANT_ID,
+      minted.workbenchId,
+    );
+    expect(isAgentDmSettings(mintedRow?.settings ?? {})).toBe(true);
+
+    // And the fresh DM — a real DM — is exactly what a later
+    // find-or-reopen finds.
+    const reopened = await findExistingAgentChat(
+      deps,
+      TENANT_ID,
+      DEFINITION_ID,
+    );
+    expect(reopened?.workbenchId).toBe(minted.workbenchId);
   });
 });
 

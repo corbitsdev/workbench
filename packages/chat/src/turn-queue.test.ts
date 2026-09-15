@@ -1,8 +1,32 @@
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { createInMemoryTurnClaimStore } from "./turn-claims";
 import type { TurnClaimStore } from "./turn-claims";
-import { createWorkbenchTurnQueue, type QueuedTurn } from "./turn-queue";
+import type { QueuedTurn } from "./turn-queue";
 import type { ChatWorkbenchEvent } from "./platform-port";
+
+// Stub the error sink: the queue reports dispatch/drain failures through
+// `reportError` and keeps draining — the keeper test below pins the refId
+// it hands back and the drain continuing, so the sink must be a stub that
+// records calls instead of the real logger. `mock.module` must run before
+// the queue module loads, hence the dynamic import below.
+const reportErrorCalls: {
+  readonly error: unknown;
+  readonly context: Record<string, unknown>;
+}[] = [];
+
+mock.module("@corbits/error-sink", () => ({
+  reportError: (error: unknown, context: Record<string, unknown>) => {
+    reportErrorCalls.push({ error, context });
+    return "ref_test_turn_queue";
+  },
+  generateRefId: () => "ref_test_turn_queue",
+}));
+
+const { createWorkbenchTurnQueue } = await import("./turn-queue");
+
+beforeEach(() => {
+  reportErrorCalls.length = 0;
+});
 
 function turn(messageId: string, text: string): QueuedTurn {
   return {
@@ -447,5 +471,91 @@ describe("turn queue drains everything that was enqueued", () => {
     // turn still reaches dispatch rather than dropping silently.
     await queue.run("wb", turn("m2", "two"), dispatch);
     expect(dispatched).toEqual(["m1", "m2"]);
+  });
+});
+
+// Keeper: concurrent runs never double-dispatch, and a rejecting drain
+// reports its refId and keeps draining (CL-7108). Red-proven by
+// inverting each test's core assertion and watching it fail (the
+// never-double-dispatch assertion by expecting a solo second batch; the
+// drain assertions by expecting zero reportError calls / a missing
+// second dispatch); each restored to assert the kept behavior.
+describe("turn-queue keeper races (CL-7108)", () => {
+  test("concurrent runs never double-dispatch: one claim winner drains the whole batch", async () => {
+    const events: ChatWorkbenchEvent[] = [];
+    const deferred = deferredDispatcher();
+    const queue = createWorkbenchTurnQueue({
+      claims: createInMemoryTurnClaimStore({ ttlMs: 60_000 }),
+      publish: (_workbenchId, event) => events.push(event),
+    });
+
+    // Five runs race while the winner's first dispatch is still
+    // in-flight: the four losers must observe the held claim and queue
+    // behind it, never dispatching on their own. No sleeps — progress
+    // is microtask pumps only, and the queued-strip events (one per
+    // loser) are the deterministic gate proving every run arrived before
+    // the first dispatch is released.
+    const runs = Promise.all([
+      queue.run("wb", turn("msg_1", "one"), deferred.dispatch),
+      queue.run("wb", turn("msg_2", "two"), deferred.dispatch),
+      queue.run("wb", turn("msg_3", "three"), deferred.dispatch),
+      queue.run("wb", turn("msg_4", "four"), deferred.dispatch),
+      queue.run("wb", turn("msg_5", "five"), deferred.dispatch),
+    ]);
+    for (let i = 0; i < 100 && events.length < 4; i++) {
+      await Promise.resolve();
+    }
+    expect(events.map((e) => e.type)).toEqual([
+      "chat.turn-queued",
+      "chat.turn-queued",
+      "chat.turn-queued",
+      "chat.turn-queued",
+    ]);
+    expect(deferred.calls).toHaveLength(1);
+    expect(deferred.calls[0]?.map((t) => t.messageId)).toEqual(["msg_1"]);
+
+    // Releasing the winner's batch lets it reclaim its own still-held
+    // claim and drain the four queued turns in one second batch — still
+    // exactly two dispatch calls for five runs, every id exactly once.
+    deferred.resolveNext();
+    for (let i = 0; i < 100 && deferred.calls.length < 2; i++) {
+      await Promise.resolve();
+    }
+    expect(deferred.calls).toHaveLength(2);
+    deferred.resolveNext();
+    await runs;
+
+    const allIds = deferred.calls.flat().map((t) => t.messageId);
+    expect(allIds).toEqual(["msg_1", "msg_2", "msg_3", "msg_4", "msg_5"]);
+  });
+
+  test("a rejecting drain reports its refId and keeps draining what queued behind it", async () => {
+    const seen: (readonly QueuedTurn[])[] = [];
+    let calls = 0;
+    const queue = createWorkbenchTurnQueue({
+      claims: createInMemoryTurnClaimStore({ ttlMs: 60_000 }),
+      publish: () => undefined,
+    });
+    const flaky = async (batch: readonly QueuedTurn[]): Promise<void> => {
+      calls += 1;
+      seen.push(batch);
+      if (calls === 1) throw new Error("dispatch blew up");
+    };
+
+    // The failing batch is reported through the stubbed sink and treated
+    // as settled — run() still resolves instead of stranding the queue.
+    await queue.run("wb", turn("msg_1", "one"), flaky);
+    expect(reportErrorCalls).toHaveLength(1);
+    expect(reportErrorCalls[0]?.context).toMatchObject({
+      operation: "chat.turnQueue.dispatch",
+      roomId: "wb",
+      extra: { messageIds: ["msg_1"] },
+    });
+
+    // Whatever arrives after the failure still drains, with no second
+    // report.
+    await queue.run("wb", turn("msg_2", "two"), flaky);
+    expect(seen).toEqual([[turn("msg_1", "one")], [turn("msg_2", "two")]]);
+    expect(reportErrorCalls).toHaveLength(1);
   });
 });
