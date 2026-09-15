@@ -84,4 +84,5 @@ export type {
   NotifyDeliverOpts,
   NotifyInboxItem,
   NotifyMailRef,
+  ResolveExistingMailIds,
 } from "./mailbox";

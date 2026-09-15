@@ -13,7 +13,9 @@ import {
   type MailboxDelivery,
   type NotifyAddressing,
   type NotifyDeliveryDeps,
+  type NotifyDispatchStore,
   type NotifyInboxItem,
+  type ResolveExistingMailIds,
   type SinkDeliveryResult,
 } from "../src/index";
 
@@ -249,5 +251,129 @@ describe("deliverNotification", () => {
 
     expect(first.deliveredMailboxRowIds).toEqual(["mail-cred_hf_1"]);
     expect(second.deliveredMailboxRowIds).toEqual([]);
+  });
+});
+
+describe("deliverNotification crash window (CL-7238)", () => {
+  function durableMailbox(): {
+    mail: MailboxDelivery;
+    resolveExistingMailIds: ResolveExistingMailIds;
+  } {
+    const rows = new Map<string, string>();
+    let next = 0;
+    const keyOf = (item: NotifyInboxItem) =>
+      `${item.tenantId}\n${item.principalId}\n${item.externalId}`;
+    const mail: MailboxDelivery = async (items, opts) =>
+      items.map((item) => {
+        const existing = rows.get(keyOf(item));
+        if (existing !== undefined)
+          return { messageKey: item.externalId, id: null };
+        next += 1;
+        const id = `mail-${next}`;
+        rows.set(keyOf(item), id);
+        opts?.enqueue?.({ id, item });
+        return { messageKey: item.externalId, id };
+      });
+    const resolveExistingMailIds: ResolveExistingMailIds = async (items) =>
+      items.map((item) => rows.get(keyOf(item)) ?? null);
+    return { mail, resolveExistingMailIds };
+  }
+
+  function crashableDispatch(): {
+    dispatch: NotifyDispatchStore;
+    armCrash: () => void;
+  } {
+    const inner = createInMemoryNotifyDispatchStore();
+    let crashNext = false;
+    const dispatch: NotifyDispatchStore = {
+      ...inner,
+      enqueue: async (inputs) => {
+        if (crashNext) {
+          crashNext = false;
+          throw new Error(
+            "boom: crash between the mail write and the dispatch enqueue",
+          );
+        }
+        await inner.enqueue(inputs);
+      },
+    };
+    return {
+      dispatch,
+      armCrash: () => {
+        crashNext = true;
+      },
+    };
+  }
+
+  function crashDeps(
+    mail: MailboxDelivery,
+    dispatch: NotifyDispatchStore,
+    resolveExistingMailIds?: ResolveExistingMailIds,
+  ): NotifyDeliveryDeps {
+    const sinks = createSinkRegistry();
+    const delivered: SinkDeliveryResult = { status: "delivered" };
+    sinks.register({
+      name: "always",
+      isEnabledFor: async () => true,
+      deliver: async () => delivered,
+    });
+    const deps: NotifyDeliveryDeps = { mail, addressing, dispatch, sinks };
+    return resolveExistingMailIds === undefined
+      ? deps
+      : { ...deps, resolveExistingMailIds };
+  }
+
+  test("a redelivery repairs the crash window without double-queueing", async () => {
+    const { mail, resolveExistingMailIds } = durableMailbox();
+    const { dispatch, armCrash } = crashableDispatch();
+    const deps = crashDeps(mail, dispatch, resolveExistingMailIds);
+
+    armCrash();
+    await expect(deliverNotification(deps, approval)).rejects.toThrow("boom");
+
+    const redelivery = await deliverNotification(deps, approval);
+    expect(redelivery.deliveredMailboxRowIds).toEqual([]);
+    expect(redelivery.queuedDispatchCount).toBe(1);
+    expect(await dispatch.listFor("mail-1")).toHaveLength(1);
+
+    const third = await deliverNotification(deps, approval);
+    expect(third.queuedDispatchCount).toBe(1);
+    expect(await dispatch.listFor("mail-1")).toHaveLength(1);
+  });
+
+  test("a redelivery without the read-back still loses the dispatch", async () => {
+    const { mail } = durableMailbox();
+    const { dispatch, armCrash } = crashableDispatch();
+    const deps = crashDeps(mail, dispatch);
+
+    armCrash();
+    await expect(deliverNotification(deps, approval)).rejects.toThrow("boom");
+
+    const redelivery = await deliverNotification(deps, approval);
+    expect(redelivery).toEqual({
+      deliveredMailboxRowIds: [],
+      queuedDispatchCount: 0,
+    });
+    expect(await dispatch.listFor("mail-1")).toHaveLength(0);
+  });
+
+  test("a mixed batch dispatches fresh and repaired rows together", async () => {
+    const { mail, resolveExistingMailIds } = durableMailbox();
+    const { dispatch } = crashableDispatch();
+    const deps = crashDeps(mail, dispatch, resolveExistingMailIds);
+
+    await deliverNotification(deps, approval);
+    const mixed = await deliverNotification(deps, {
+      ...approval,
+      recipients: [
+        { tenantId: "tnt_1", principalId: "prn_1" },
+        { tenantId: "tnt_1", principalId: "prn_2" },
+      ],
+    });
+
+    expect(mixed.deliveredMailboxRowIds).toEqual(["mail-2"]);
+    expect(mixed.queuedDispatchCount).toBe(2);
+    expect(await dispatch.listFor("mail-1")).toHaveLength(1);
+    expect(await dispatch.listFor("mail-2")).toHaveLength(1);
   });
 });
