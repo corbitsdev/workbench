@@ -24,6 +24,7 @@ export {
   type WorkbenchInboxStatus,
 } from "./vocabulary";
 export {
+  createResolveExistingMailIds,
   createWorkbenchMailboxDelivery,
   type CreateWorkbenchMailboxDeliveryOpts,
 } from "./delivery";

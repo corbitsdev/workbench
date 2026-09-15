@@ -20,12 +20,18 @@ import {
   deliverCredentialMail,
   deliverMentionMail,
   deliverRunFailureMail,
+  type ApprovalNotification,
   type NotifyDeliveryDeps,
+  type NotifyDispatchStore,
+  type SinkDeliveryResult,
 } from "@corbits/notify";
 
 import { setupDatabase } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
-import { createWorkbenchMailboxDelivery } from "../src/delivery";
+import {
+  createResolveExistingMailIds,
+  createWorkbenchMailboxDelivery,
+} from "../src/delivery";
 import { inboxGroupOf } from "../src/group";
 import { WORKBENCH_INBOX_PRIORITIES } from "../src/vocabulary";
 import { dbGate } from "../../../scripts/e2e/db-gate";
@@ -209,6 +215,92 @@ describeIfDb(
         expect(groupBySubject("Reconnect")).toBe("action");
 
         expect(page.items.every((item) => item.read === false)).toBe(true);
+      } finally {
+        await mailboxDb.close();
+      }
+    }, 15000);
+
+    test("a crash between mail write and dispatch enqueue is repaired on redelivery without doubles (CL-7238)", async () => {
+      const mailboxDb = createMailboxDb(scratchUrl);
+      try {
+        const innerDispatch = createInMemoryNotifyDispatchStore();
+        let crashNext = true;
+        const dispatch: NotifyDispatchStore = {
+          ...innerDispatch,
+          enqueue: async (inputs) => {
+            if (crashNext) {
+              crashNext = false;
+              throw new Error(
+                "boom: crash between the mail write and the dispatch enqueue",
+              );
+            }
+            await innerDispatch.enqueue(inputs);
+          },
+        };
+        const delivered: SinkDeliveryResult = { status: "delivered" };
+        const sinks = createSinkRegistry();
+        sinks.register({
+          name: "always",
+          isEnabledFor: async () => true,
+          deliver: async () => delivered,
+        });
+        const deps: NotifyDeliveryDeps = {
+          mail: createWorkbenchMailboxDelivery({ db: mailboxDb.db }),
+          addressing: {
+            inbox: (recipient) => `${recipient.principalId}@inbox.test`,
+            from: (kind) => `${kind}@notify.test`,
+          },
+          dispatch,
+          resolveExistingMailIds: createResolveExistingMailIds(mailboxDb.db),
+          sinks,
+        };
+        const event: ApprovalNotification = {
+          kind: "approval",
+          approvalId: generateId("approval"),
+          tenantId,
+          runId: generateId("workflowRun"),
+          deploymentId: generateId("workflowRun"),
+          toolName: "quarantine_token",
+          toolArguments: { repo: "corbitsdev/workbench" },
+          recipients: [{ tenantId, principalId }],
+          createdAt: new Date().toISOString(),
+        };
+
+        // The first attempt commits its mail row through the real adapter,
+        // then dies before the dispatch enqueue — the crash window.
+        await expect(deliverApprovalMail(deps, event)).rejects.toThrow("boom");
+
+        // The redelivery dedupes on the mail key (no new row), resolves the
+        // committed row's id through the adapter read-back, and queues the
+        // dispatch the crash swallowed.
+        const redelivery = await deliverApprovalMail(deps, event);
+        expect(redelivery.deliveredMailboxRowIds).toEqual([]);
+        expect(redelivery.queuedDispatchCount).toBe(1);
+
+        const page = await listUserMailbox(mailboxDb.db, {
+          tenantId,
+          principalId,
+          limit: 10,
+          view: "all",
+          priorities: WORKBENCH_INBOX_PRIORITIES,
+        });
+        // Exactly one mail row for the redelivered event — the crash and
+        // both redeliveries deduped onto the first attempt's row.
+        const matching = page.items.filter((item) =>
+          (item.subject ?? "").includes("quarantine_token"),
+        );
+        expect(matching).toHaveLength(1);
+        const mailId = matching[0]?.id;
+        if (mailId === undefined)
+          throw new Error("expected the redelivered mail row to list");
+        expect(await dispatch.listFor(mailId)).toHaveLength(1);
+
+        // A further benign redelivery repairs the same row again, and the
+        // dispatch store's (mail row, sink) dedupe holds it to one row.
+        const third = await deliverApprovalMail(deps, event);
+        expect(third.deliveredMailboxRowIds).toEqual([]);
+        expect(third.queuedDispatchCount).toBe(1);
+        expect(await dispatch.listFor(mailId)).toHaveLength(1);
       } finally {
         await mailboxDb.close();
       }
