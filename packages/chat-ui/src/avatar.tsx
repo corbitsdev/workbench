@@ -1,20 +1,27 @@
 import type { CSSProperties } from "react";
 
-export const CORBIT_DEFAULT_COLOR = "#C5D2DE";
+/* Avatar identity pastels (CL-7478). The palette is token references, not
+   hex: --avatar-1 through --avatar-4 are defined once in this package's
+   stylesheet :root (the proposed upstream contract for @corbits/react-ui's
+   theme) and consumed here by reference, so no product code hardcodes a
+   color value. Numbered like react-ui's --chart-1..5 series — slot order is
+   the deterministic resolution order, not a ranking. */
 export const AVATAR_COLORS = [
-  CORBIT_DEFAULT_COLOR,
-  "#C1D1BE",
-  "#F7EAD5",
-  "#F2B277",
+  "--avatar-1",
+  "--avatar-2",
+  "--avatar-3",
+  "--avatar-4",
 ] as const;
 
 export type AvatarColor = (typeof AVATAR_COLORS)[number];
 
+export const CORBIT_DEFAULT_COLOR: AvatarColor = "--avatar-1";
+
 export const avatarColorClass: Record<AvatarColor, string> = {
-  "#C5D2DE": "bg-[#C5D2DE] text-black",
-  "#C1D1BE": "bg-[#C1D1BE] text-black",
-  "#F7EAD5": "bg-[#F7EAD5] text-black",
-  "#F2B277": "bg-[#F2B277] text-black",
+  "--avatar-1": "bg-(--avatar-1) text-black",
+  "--avatar-2": "bg-(--avatar-2) text-black",
+  "--avatar-3": "bg-(--avatar-3) text-black",
+  "--avatar-4": "bg-(--avatar-4) text-black",
 };
 
 export function hashPrincipal(principalId: string): number {
@@ -111,7 +118,14 @@ export function CorbitAvatar({
         className="block size-full"
         aria-hidden="true"
       >
-        <circle cx="50" cy="50" r="50" fill={color} />
+        <circle
+          cx="50"
+          cy="50"
+          r="50"
+          /* A presentation attribute cannot read var(), so the token
+             reference rides the CSS fill property instead. */
+          style={{ fill: `var(${color})` }}
+        />
         <path
           d="M 11.47 59.04 C 16.17 47.15, 33.73 66.85, 45.03 65.78 C 57.11 71.28, 75.14 64.43, 83.53 71.00 C 78.24 85.08, 58.92 92.65, 44.56 89.83 C 28.55 87.40, 15.10 75.30, 11.47 59.49 Z"
           fill={CORBIT_VISOR_COLOR}

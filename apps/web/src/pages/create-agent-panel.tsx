@@ -434,11 +434,11 @@ export function CreateAgentPanel({
               size="lg"
             />
             <div role="group" aria-label="Agent color" className="flex gap-1.5">
-              {AVATAR_COLORS.map((color) => (
+              {AVATAR_COLORS.map((color, index) => (
                 <button
                   key={color}
                   type="button"
-                  aria-label={`Choose ${color} avatar color`}
+                  aria-label={`Choose avatar color ${index + 1}`}
                   aria-pressed={avatarColor === color}
                   className={`size-6 cursor-pointer rounded-full border-2 border-transparent p-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground aria-pressed:border-foreground ${avatarColorClass[color]}`}
                   disabled={submitting}

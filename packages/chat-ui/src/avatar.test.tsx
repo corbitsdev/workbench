@@ -101,13 +101,13 @@ describe("resolveAvatarFill", () => {
 });
 
 describe("CorbitAvatar", () => {
-  test("paints its field from the identity token, never a hardcoded hex", () => {
+  test("paints its field from the identity token", () => {
     const html = renderToStaticMarkup(<CorbitAvatar />);
     expect(html).toContain(`fill:var(${CORBIT_DEFAULT_COLOR})`);
-    expect(html).not.toContain("#C5D2DE");
-    expect(html).not.toContain("#C1D1BE");
-    expect(html).not.toContain("#F7EAD5");
-    expect(html).not.toContain("#F2B277");
+    // The field's old hardcoded fill is gone. The shared visor/glint face
+    // geometry keeps its fixed constants — it is identical on every agent,
+    // so it was never part of the per-principal identity palette.
+    expect(html).not.toContain('fill="#C5D2DE"');
   });
 
   test("a chosen palette token paints the field", () => {
@@ -124,14 +124,6 @@ describe("CorbitAvatar", () => {
     expect(html).toContain("<svg");
     expect(html).not.toContain("title=");
     expect(html).not.toContain(">Myra<");
-  });
-
-  test("uses the selected palette color", () => {
-    const defaultHtml = renderToStaticMarkup(<CorbitAvatar />);
-    expect(defaultHtml).toContain(`fill="${CORBIT_DEFAULT_COLOR}"`);
-
-    const colorHtml = renderToStaticMarkup(<CorbitAvatar color="#C1D1BE" />);
-    expect(colorHtml).toContain('fill="#C1D1BE"');
   });
 
   test("contains the visor and glint geometry", () => {
