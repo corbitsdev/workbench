@@ -22,7 +22,6 @@ export {
   sha512Integrity,
   fetchRegistryTarballSource,
   installRegistryTarball,
-  TarballVersionCollisionError,
   EmptyRegistryPublishError,
   type ApiCall,
   type ApiResult,

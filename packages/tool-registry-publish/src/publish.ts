@@ -145,25 +145,6 @@ const TarballSummary = type({
 const TarballListResponse = TarballSummary.array();
 
 /**
- * Thrown when a tarball whose filename (hence its `name@version`) is
- * already published to the registry would be overwritten with
- * different bytes. Republishing under an unchanged version is the
- * exact failure mode that leaves running agents on stale tool code —
- * the resolver and sidecar caches key on `name@version`, not on
- * content, so a same-version overwrite never reaches an already
- * -launched or freshly-materialized run. Bumping the package's
- * `version` is the only supported way to ship new tool-package bytes.
- */
-export class TarballVersionCollisionError extends Error {
-  constructor(filename: string) {
-    super(
-      `publishCorbitsToolsRegistry: ${filename} is already published with different content; bump the package's version before republishing. Tool-package resolution keys on name@version, so overwriting an unchanged version never reaches a running or freshly-launched agent.`,
-    );
-    this.name = "TarballVersionCollisionError";
-  }
-}
-
-/**
  * Thrown when a publish run leaves `corbits-tools` without the required
  * seed tarballs (`@corbits/memory-tools`). Covers both zero uploads onto
  * an empty/dangling registry (`GET tarballs` → `[]`) and a partial run

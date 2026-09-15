@@ -71,6 +71,18 @@ for how a pin resolves through it).
 - Any workflow definition or `DEFAULT_WORKFLOWS` — this package knows
   which tool packages to publish, never which workflows pin them.
 
+## CL-7587 end state
+
+This package stays pack + explicit publish: no boot-time publish (the
+hub only reads the registry; `seedTenant` never packs), no daemon or
+freshness loop (freshness is a `check:structural` gate and a publish
+precondition, never a background task), no registry table (the registry
+is a `package-registry` asset, not a SQL row), and pins resolve on
+immutable `name@version` tarball filenames. Full deletion is blocked
+until `@corbits/seeding`, `@workbench/onboarding`, and
+`scripts/checks/tool-package-freshness` migrate off this package's
+library entry (their lanes own those moves).
+
 ## Running tests
 
 ```sh
