@@ -75,9 +75,9 @@ Convergence has three triggers, all driving the same reconciler:
 1. A tenant-create observation: a 201 from `POST /api/tenants` fires a
    fire-and-forget reconcile under the creator's minted session
    (`apps/hub/src/tenant-create-onboard.ts`).
-2. The pending-seed drain: `runOnce` delegates to the same reconcile;
-   the `pending_seed` row stays the only durable work item (ready
-   clears it, blocked keeps it, failed keeps it and backs off).
+2. The credential-connect kick: persisting a credential (onboarding's
+   `/complete`, or a provider connected through Settings) fires a
+   fire-and-forget reconcile for that tenant.
 3. The revisit kick: `POST /api/onboarding/provision` fires a kick when
    the caller's tenant still has pending pins — how a joined member's
    bench converges.

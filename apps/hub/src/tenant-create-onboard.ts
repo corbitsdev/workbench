@@ -7,12 +7,11 @@
 // the kick never touches the DB directly — so a fresh tenant gets Myra
 // and the core pins without hub boot seeding anything.
 //
-// There is no durable work item here on purpose: the pending_seed row
-// stays the only durable queue (a connect's credential), and a
-// tenant-create kick that dies with the process is re-covered by the
+// There is no durable work item here on purpose: nothing is queued, and
+// a tenant-create kick that dies with the process is re-covered by the
 // revisit kick (`POST /api/onboarding/provision`) on the next visit.
-// In-process dedupe by tenantId is the same class of optimization the
-// provisioner's in-flight map is: never a fact the system needs correct.
+// In-process dedupe by tenantId is purely an optimization against double
+// kicks, never a fact the system needs correct.
 import { Hono } from "hono";
 import type { AppEnv } from "@intx/hub-api";
 import { cookiesFromHeader, type ApiCall } from "@corbits/hub-api-client";
@@ -35,10 +34,10 @@ export type TenantCreateOnboardDeps = {
    * The convergence step. Production resolves the tenant's deploy model
    * from its resolved catalog plus the creator's deploy identity (owner
    * principal + domain, via `resolveTenantDeployer` — a fresh native
-   * tenant has no pending-seed row to read those from) and delegates to
-   * `reconcileTenantDesiredState`; with no offerings it reports the
-   * workflow pins blocked (logged, never thrown). Tests replace the
-   * whole thing.
+   * tenant carries no credential material to read those from) and
+   * delegates to `reconcileTenantDesiredState`; with no offerings it
+   * reports the workflow pins blocked (logged, never thrown). Tests
+   * replace the whole thing.
    */
   reconcileFn?: (args: {
     tenantId: string;
@@ -77,8 +76,8 @@ export function createTenantCreateObserver(
   wrapped: Hono<AppEnv>,
 ): TenantCreateObserver {
   const logError = deps.logError ?? deps.log;
-  // In-process tenantId dedupe, same pattern as the provisioner's
-  // in-flight map: an optimization against double kicks, never a fact.
+  // In-process tenantId dedupe against double kicks: an optimization,
+  // never a fact the system needs correct.
   const kicked = new Set<string>();
   const inFlight = new Set<Promise<void>>();
   let stopped = false;
@@ -99,9 +98,8 @@ export function createTenantCreateObserver(
         );
         if (model === undefined) {
           // No catalog offerings yet — nothing is launchable. Report the
-          // workflow pins blocked; the next trigger (a connect's drain
-          // pass, a revisit probe) sees the pins still pending and
-          // re-kicks.
+          // workflow pins blocked; the next trigger (a revisit probe)
+          // sees the pins still pending and re-kicks.
           deps.log(
             `tenant-create onboarding for ${reconcileArgs.tenantId} is blocked: no catalog offerings to deploy against yet`,
           );
@@ -115,8 +113,8 @@ export function createTenantCreateObserver(
             })),
           } satisfies ReconcileReport;
         }
-        // A fresh native tenant has no pending-seed row to read deploy
-        // identity from — resolve the creator's owner principal (minted
+        // A fresh native tenant carries no credential material to read
+        // deploy identity from — resolve the creator's owner principal
         // in the create transaction) plus the tenant domain before
         // reconciling, so the deploy lands under a real identity.
         const deployer = await resolveTenantDeployer(
@@ -157,7 +155,7 @@ export function createTenantCreateObserver(
     const operation = runReconcile(args)
       .catch((cause: unknown) => {
         logError(
-          `tenant-create onboarding for ${args.tenantId} failed (the revisit kick or drain will cover it): ${cause instanceof Error ? cause.message : String(cause)}`,
+          `tenant-create onboarding for ${args.tenantId} failed (the revisit kick will cover it): ${cause instanceof Error ? cause.message : String(cause)}`,
         );
       })
       .finally(() => {

@@ -1042,9 +1042,10 @@ describe("the OpenRouter connect card", () => {
   });
 
   test("a connected return falls back to the credential phase, not a dead end, when completeSetup reports unseeded", async () => {
-    // The degraded-but-correct path: the pending-seed cookie can be
-    // missing (a loser duplicate-callback response the browser never
-    // applied, a cookie that already expired) even though the
+    // The degraded-but-correct path: nothing is parked server-side for
+    // the follow-up (CL-7586 deleted the pending-seed drain — a loser
+    // duplicate-callback response the browser never applied, or an
+    // already-expired cookie, leaves no row behind) even though the
     // credential itself connected fine. `completeSetup` answers
     // `unseeded` — not an error — and the wizard must land somewhere a
     // person can actually finish from, never stuck on the spinner or a

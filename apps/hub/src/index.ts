@@ -281,11 +281,7 @@ import {
 import { supportedCredentialProviders } from "@corbits/connections/credential-test";
 import { CATALOG_WORKFLOWS, createGitWorkflowPusher } from "@corbits/seeding";
 import { createHubAPI } from "@corbits/hub-api-client";
-import {
-  createDrizzlePendingSeedStore,
-  createBenchProvisioner,
-  createOnboardingRoutes,
-} from "@workbench/onboarding";
+import { createOnboardingRoutes } from "@workbench/onboarding";
 import {
   createConnectionRoutes,
   isInferenceProvider,
@@ -474,13 +470,9 @@ export function createStaticHandler(staticDir: string) {
 /**
  * The `CredentialCipher` (see `@intx/types`) every secret-at-rest seam
  * in this composition root shares — `webhookTriggerStore`'s signing
- * secrets, `@workbench/onboarding`'s in-flight OAuth connect state
+ * secrets and `@workbench/onboarding`'s in-flight OAuth connect state
  * (the PKCE verifier parked between `/start` and `/callback`, sealed
- * into the state itself so it survives a restart between the two), and
- * (since CL-6031) the same package's `pending_seed` table — a
- * just-connected credential's plaintext key, parked server-side
- * between the OAuth callback and the onboarding page's own
- * `/complete-setup` follow-up (see `packages/onboarding/src/pending-seed.ts`).
+ * into the state itself so it survives a restart between the two).
  * A real key (`CREDENTIAL_ENCRYPTION_KEY`) builds an AES-256-GCM
  * cipher. An unset key hard-fails boot — a self-hosting operator who
  * forgets this variable must not silently end up storing those secrets
@@ -496,9 +488,9 @@ export function credentialCipherFrom(
       throw new Error(
         [
           "CREDENTIAL_ENCRYPTION_KEY is not set.",
-          "It encrypts secrets at rest — webhook-trigger signing secrets,",
-          "onboarding's OAuth PKCE connect state, and its pending-seed",
-          "table — so the hub refuses to boot without it. Generate one and",
+          "It encrypts secrets at rest — webhook-trigger signing secrets",
+          "and onboarding's OAuth PKCE connect state — so the hub refuses",
+          "to boot without it. Generate one and",
           "add it to .env:",
           "",
           "  openssl rand -hex 32",
@@ -509,7 +501,7 @@ export function credentialCipherFrom(
         ].join("\n"),
       );
     }
-    log.warn`No CREDENTIAL_ENCRYPTION_KEY configured; secrets (e.g. webhook-trigger signing secrets, onboarding OAuth connect state, onboarding's pending-seed table) will NOT be encrypted at rest. ALLOW_PLAINTEXT_SECRETS is set — expected in dev/test only, never for a real deployment.`;
+    log.warn`No CREDENTIAL_ENCRYPTION_KEY configured; secrets (e.g. webhook-trigger signing secrets, onboarding OAuth connect state) will NOT be encrypted at rest. ALLOW_PLAINTEXT_SECRETS is set — expected in dev/test only, never for a real deployment.`;
     return createNoopCredentialCipher();
   }
   return createEnvKeyCredentialCipher(
@@ -2621,31 +2613,33 @@ export async function createHub(config: HubConfig) {
       // CL-6568's other half: a tenant whose only provider is one it
       // connected itself through Settings — never an operator-configured
       // hub key — must converge on Myra and the default workflow set the
-      // same way an onboarding-connected one does. `pendingSeedStore` and
-      // `benchProvisioner` are declared further down this function, but
+      // same way an onboarding-connected one does. The drain is gone
+      // (CL-7586), so this kicks the same desired-state reconcile the
+      // tenant-create observer and the onboarding routes kick, under the
+      // connecting user's own minted session — `sessionFor` is declared
+      // further up this function, and `observerRef` further down, but
       // this closure only runs on a future request, well after both are
-      // constructed below — the same forward-reference this file already
-      // relies on for `onboardingDeps`.
+      // constructed below. Best-effort like every other kick: absent or
+      // unmintable means convergence waits for the revisit probe.
       onInferenceCredentialUsable: async (info) => {
         const provider = supportedCredentialProviders().find(
           (candidate) => candidate.id === info.provider,
         )?.id;
         if (provider === undefined) {
-          log.error`onInferenceCredentialUsable fired for an unsupported provider ${info.provider} on tenant ${info.tenantId}; skipping the pending-seed row`;
+          log.error`onInferenceCredentialUsable fired for an unsupported provider ${info.provider} on tenant ${info.tenantId}; skipping the desired-state kick`;
           return;
         }
-        await pendingSeedStore.put({
+        const cookies = await sessionFor({
           userId: info.userId,
           tenantId: info.tenantId,
-          principalId: info.principalId,
-          tenantDomain: info.tenantDomain,
-          provider,
-          apiKey: info.apiKey,
-          ...(info.baseURLOverride !== undefined
-            ? { baseURLOverride: info.baseURLOverride }
-            : {}),
         });
-        benchProvisioner.wake();
+        if (cookies === undefined) {
+          log.error`onInferenceCredentialUsable could not mint a session for user ${info.userId} on tenant ${info.tenantId}; skipping the desired-state kick`;
+          return;
+        }
+        void observerRef.current
+          ?.kick({ tenantId: info.tenantId, cookies })
+          .catch(() => undefined);
       },
     }),
   );
@@ -3378,29 +3372,18 @@ export async function createHub(config: HubConfig) {
   // session it serves belongs to no tenant yet. The route is
   // `@workbench/onboarding`'s; what it decides is documented in that
   // package's provision.ts.
-  // Connecting a provider deploys nothing (CL-6457): the onboarding
-  // routes persist the credential and hand the workflow deploys to this
-  // drain, which converges every bench with a pending row — including
-  // one a previous process died halfway through, since the row itself is
-  // the durable work item.
-  const pendingSeedStore = createDrizzlePendingSeedStore(db, credentialCipher);
-  const benchProvisioner = createBenchProvisioner({
-    api: selfApi,
-    hubUrl: config.baseUrl,
-    store: pendingSeedStore,
-    pushWorkflow: createGitWorkflowPusher(),
-    sessionFor,
-    log: (line) => log.info`${line}`,
-    logError: (line) => log.error`${line}`,
-  });
-  benchProvisioner.start();
+  // Connecting a provider deploys nothing by itself (CL-6457): the
+  // onboarding routes persist the credential and kick the desired-state
+  // reconcile below, which converges the bench on the next kick (tenant
+  // create, connect, revisit probe) — including one a previous process
+  // died halfway through, since the reconcile re-reads
+  // the pins on every kick rather than consuming a durable work item.
+  // (CL-7586 removed the pending-seed drain that used to do this.)
 
   // CL-7584: the tenant-create trigger. A 201 from the native
   // `POST /api/tenants` route kicks a fire-and-forget desired-state
-  // reconcile for the new tenant under the creator's minted session —
-  // the revisit kick below and the drain above share this one
-  // reconciler. No durable row: the pending_seed row stays the only
-  // durable work item, and a kick lost to a restart is re-covered by
+  // reconcile for the new tenant under the creator's minted session.
+  // No durable row anywhere: a kick lost to a restart is re-covered by
   // the revisit kick on the tenant's next visit. The observer itself is
   // composed just before the guard wrap, after every route mount: Hono
   // copies routes at `.route()` time, so wrapping earlier would strand
@@ -3417,8 +3400,6 @@ export async function createHub(config: HubConfig) {
     log: (line) => log.info`${line}`,
     logError: (line) => log.error`${line}`,
     credentialCipher,
-    pendingSeedStore,
-    benchProvisioner,
     desiredStateKick: (args) => {
       // Fire-and-forget; the route already decided pins are pending.
       void observerRef.current
@@ -3687,7 +3668,6 @@ export async function createHub(config: HubConfig) {
       workflowScheduler.stop();
       credentialExpirySweep.stop();
       inboxUnsnoozeSweep.stop();
-      benchProvisioner.stop();
       await insightsUsage.close();
       await insightsLatency.close();
       await preferences.close();

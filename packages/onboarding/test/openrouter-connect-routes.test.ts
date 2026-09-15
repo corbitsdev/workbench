@@ -11,18 +11,11 @@ import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import {
-  createEnvKeyCredentialCipher,
-  createNoopCredentialCipher,
-} from "@intx/crypto";
+import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
 import type { CreateOnboardingRoutesDeps } from "../src/routes";
 import { testAndPersistCredential } from "../src/complete-credential";
 import { s256Challenge } from "../src/openrouter-connect";
-import {
-  createInMemoryPendingSeedStore,
-  type PendingSeedStore,
-} from "../src/pending-seed";
 
 const MOCK_TIMESTAMP = "2026-01-01T00:00:00.000Z";
 
@@ -224,10 +217,9 @@ function connectRoutes(
       overrides.pushWorkflow ??
       (async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) })),
     log: overrides.log ?? (() => undefined),
-    pendingSeedStore:
-      overrides.pendingSeedStore ??
-      createInMemoryPendingSeedStore(createNoopCredentialCipher()),
   };
+  if (overrides.desiredStateKick !== undefined)
+    deps.desiredStateKick = overrides.desiredStateKick;
   if (overrides.openrouterConnect !== undefined)
     deps.openrouterConnect = overrides.openrouterConnect;
   if (overrides.credentialCipher !== undefined)
@@ -323,11 +315,11 @@ describe("GET /oauth/openrouter/callback", () => {
       apiKey: string;
       userId: string;
     }[] = [];
-    const pendingSeedStore: PendingSeedStore = createInMemoryPendingSeedStore(
-      createNoopCredentialCipher(),
-    );
+    const kickedTenants: string[] = [];
     const app = connectRoutes({
-      pendingSeedStore,
+      desiredStateKick: ({ tenantId }) => {
+        kickedTenants.push(tenantId);
+      },
       openrouterConnect: {
         exchange: async ({ code, codeVerifier }) => {
           exchanges.push({ code, codeVerifier });
@@ -384,25 +376,15 @@ describe("GET /oauth/openrouter/callback", () => {
       { provider: "openrouter", apiKey: "sk-or-v1-minted", userId: "user_1" },
     ]);
 
-    // The plaintext key is carried forward for the deferred deploy step
-    // server-side, in the pending-seed store — never as a cookie (this
+    // The callback kicks the desired-state reconcile for the
+    // just-connected bench and carries the minted key nowhere: no
+    // pending-seed row (CL-7586 deleted the drain), no cookie (this
     // response still clears the connect-state cookies, but never sets
-    // the pre-CL-6031 `workbench_pending_seed` one) or a redirect query
+    // the pre-CL-6031 `workbench_pending_seed` one), no redirect query
     // parameter.
     const setCookie = response.headers.get("set-cookie") ?? "";
     expect(setCookie).not.toContain("workbench_pending_seed=");
-    const pending = await pendingSeedStore.read({
-      userId: "user_1",
-      tenantId: "ten_1",
-    });
-    expect(pending).toEqual({
-      userId: "user_1",
-      tenantId: "ten_1",
-      principalId: "prn_1",
-      tenantDomain: "alice-user1.bench.local",
-      provider: "openrouter",
-      apiKey: "sk-or-v1-minted",
-    });
+    expect(kickedTenants).toEqual(["ten_1"]);
   });
 
   test("a callback without the state cookie never exchanges", async () => {

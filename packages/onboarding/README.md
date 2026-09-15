@@ -21,10 +21,11 @@ workflow deploys.
   `@corbits/connections` (CL-6028 generalized both flows into that
   package's OAuth route factory) and are kept here only so existing
   imports don't break.
-- `@intx/crypto`'s `CredentialCipher` seals the plaintext key carried from
-  an OAuth callback to onboarding's own follow-up request (see
-  `pending-seed.ts`); `@workbench/access-policy` and `@corbits/hub-api-client`
-  supply the grant and tenant primitives provisioning reuses.
+- `@intx/crypto`'s `CredentialCipher` seals the OAuth connect state
+  (PKCE verifier included) parked between `/start` and `/callback`
+  (see `@corbits/connections`' `pkce.ts`); `@workbench/access-policy`
+  and `@corbits/hub-api-client` supply the grant and tenant primitives
+  provisioning reuses.
 
 ## Key modules
 
@@ -36,10 +37,14 @@ workflow deploys.
 testAndPersistCredential` (fast, safe for an OAuth callback to await)
   and `ensureSeeded` (slow, the workflow-deploy half, run separately so a
   browser is never left waiting mid-redirect).
-- `pending-seed.ts` — server-side custody of a just-connected credential's
-  plaintext key between the OAuth callback and the follow-up seed request.
-- `schema.ts` / `migrations.ts` — the package's own `onboarding.pending_seed`
-  table, in its own Postgres schema, with its own migration ledger.
+- `desired-state.ts` — the desired-state reconcile and its status reader:
+  connecting or polling a bench kicks the reconcile fire-and-forget and
+  answers from hub reads (`ready` / `provisioning` / `unseeded`). There
+  is no parked row and no deferred deploy step anywhere.
+- `migrations.ts` — the package's migration ledger. `0001_pending_seed`
+  stays so replays from an old base still run; `0002_drop_pending_seed`
+  (CL-7586) drops the retired `onboarding.pending_seed` table, so a
+  migrated database holds no pending-seed table anywhere.
 
 ## Running tests
 
@@ -47,5 +52,5 @@ testAndPersistCredential` (fast, safe for an OAuth callback to await)
 cd packages/onboarding && bun test
 ```
 
-`test/migrations.test.ts` and `test/pending-seed-store.drizzle.test.ts`
-need a live Postgres: `DATABASE_URL=postgres://localhost:5432/workbench_e2e`.
+`test/migrations.test.ts` needs a live Postgres:
+`DATABASE_URL=postgres://localhost:5432/workbench_e2e`.

@@ -27,6 +27,16 @@ export const onboardingMigrations: readonly OnboardingMigration[] = [
       );
     `,
   },
+  // CL-7586: the pending-seed drain is gone — provisioning is the
+  // explicit setup-CLI/installer flow now — so the table it converged
+  // goes with it. 0001 stays: replays from an empty database still need
+  // the full history.
+  {
+    name: "0002_drop_pending_seed",
+    sql: `
+      DROP TABLE IF EXISTS "onboarding"."pending_seed";
+    `,
+  },
 ];
 
 const LEDGER_TABLE = "onboarding_migrations";

@@ -1,44 +1,24 @@
 // `POST /complete-setup` reports where a bench stands; it never
-// deploys. CL-6457 moved every workflow deploy onto the background
-// drain in `../src/bench-provisioning.ts`, because a request that
-// waits on deploys is the two-minute "Connecting…" onboarding was
-// stuck behind. What is left here is a status reporter over two cheap
-// hub reads, and it has to answer three cases correctly: every default
-// workflow live (`ready` — clear the pending row, the drain has
-// nothing left to do), still deploying with a pending row parked
-// (`provisioning` — nudge the drain and leave the row alone, it is the
-// drain's durable work item), and nothing live with no row to work
-// from (`unseeded`, a 200 and not an error, telling the caller to fall
-// back to the ordinary credential step).
+// deploys. CL-6457 moved every workflow deploy off the request path,
+// and CL-7586 deleted the pending-seed drain entirely: there is no
+// parked row, no deferred deploy step, no nudge target. What is left
+// here is a status reporter over hub reads, and it has to answer three
+// cases correctly: every default workflow live (`ready` — answered
+// from the read alone), a credential with pins still missing
+// (`provisioning` — kick the desired-state reconcile fire-and-forget
+// and answer the status for the waiting surface to poll on), and
+// nothing to converge with (`unseeded`, a 200 and not an error,
+// telling the caller to fall back to the ordinary credential step).
 //
-// The deploying itself — its idempotency, its retries, its
-// half-provisioned recovery — is covered where it now lives, in
-// `./bench-provisioning.test.ts`.
-//
-// CL-6031 moved the pending credential off the browser: what used to
-// be a sealed HttpOnly cookie is now a row in
-// `createInMemoryPendingSeedStore` (the same store shape
-// `createDrizzlePendingSeedStore` gives Postgres — see
-// `../src/pending-seed.test.ts` for that logic's own direct coverage),
-// written by calling `store.put(...)` the way the OAuth callback would,
-// instead of round-tripping a cookie header.
+// The converging itself — the desired-state reconcile's idempotency,
+// its retries, its half-provisioned recovery — is covered where it
+// now lives, in `./desired-state.test.ts`.
 import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { createEnvKeyCredentialCipher } from "@intx/crypto";
-import type { CredentialCipher } from "@intx/types";
-import { DEFAULT_WORKFLOWS } from "@corbits/seeding";
+import { DEFAULT_WORKFLOWS, inferenceCredentialName } from "@corbits/seeding";
 import { createOnboardingRoutes } from "../src/routes";
-import {
-  createInMemoryPendingSeedStore,
-  type PendingSeedStore,
-} from "../src/pending-seed";
-
-const TEST_KEY = Buffer.alloc(32, 21);
-function testCipher(): CredentialCipher {
-  return createEnvKeyCredentialCipher(TEST_KEY);
-}
 
 // These tests never exercise the genesis-or-join join path — the stub
 // satisfies the required tenancy wiring without standing up a DB.
@@ -101,20 +81,32 @@ function principalsRoute(hub: Hono) {
   );
 }
 
-async function withPendingSeed(
-  store: PendingSeedStore,
-  args: { userId?: string; ttlMs?: number } = {},
-): Promise<void> {
-  await store.put(
-    {
-      userId: args.userId ?? "user_1",
-      tenantId: TENANT_ID,
-      principalId: PRINCIPAL_ID,
-      tenantDomain: TENANT_DOMAIN,
-      provider: "openrouter",
-      apiKey: "sk-or-v1-minted",
-    },
-    args.ttlMs !== undefined ? { ttlMs: args.ttlMs } : {},
+/** The one row `/complete-setup`'s credential check looks for: an
+ * active credential under the name the setup catalog persists
+ * inference keys as. */
+function activeCredentialRow() {
+  return {
+    id: "cre_1",
+    tenantId: TENANT_ID,
+    providerId: "prv_1",
+    name: inferenceCredentialName("anthropic"),
+    type: "api_key",
+    status: "active",
+    metadata: null,
+    createdAt: TIMESTAMP,
+    updatedAt: TIMESTAMP,
+  };
+}
+
+function credentialsRoute(
+  hub: Hono,
+  args: { inferenceCredential?: boolean } = {},
+) {
+  hub.get(`/api/tenants/${TENANT_ID}/credentials`, (c) =>
+    c.json({
+      data: args.inferenceCredential === true ? [activeCredentialRow()] : [],
+      nextCursor: null,
+    }),
   );
 }
 
@@ -132,7 +124,6 @@ describe("POST /complete-setup", () => {
           commitSha: "a".repeat(40),
         }),
         log: () => undefined,
-        pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
       }),
     );
 
@@ -160,7 +151,6 @@ describe("POST /complete-setup", () => {
             commitSha: "a".repeat(40),
           }),
           log: () => undefined,
-          pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
         }),
       );
 
@@ -223,7 +213,6 @@ describe("POST /complete-setup", () => {
             commitSha: "a".repeat(40),
           }),
           log: () => undefined,
-          pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
         }),
       );
 
@@ -265,7 +254,7 @@ describe("POST /complete-setup", () => {
         })),
       ),
     );
-    let ensureSeededCalls = 0;
+    const kicks: string[] = [];
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const app = mountAuthenticated(
@@ -278,16 +267,14 @@ describe("POST /complete-setup", () => {
             commitSha: "a".repeat(40),
           }),
           log: () => undefined,
-          pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
-          ensureSeededFn: async () => {
-            ensureSeededCalls += 1;
-            return { kind: "seeded", workflows: [] };
+          desiredStateKick: ({ tenantId }) => {
+            kicks.push(tenantId);
           },
         }),
       );
 
-      // No pending-seed row at all — an already-seeded bench must
-      // answer from the read alone, no pending row required.
+      // An already-seeded bench answers from the read alone — and a
+      // `ready` read kicks nothing, there is nothing to converge.
       const response = await app.request("/api/onboarding/complete-setup", {
         method: "POST",
       });
@@ -305,13 +292,13 @@ describe("POST /complete-setup", () => {
         DEFAULT_WORKFLOWS.map((w) => w.assetName).sort(),
       );
       expect(body.pending).toEqual([]);
-      expect(ensureSeededCalls).toBe(0);
+      expect(kicks).toEqual([]);
     } finally {
       server.stop(true);
     }
   });
 
-  test("unseeded with no pending row reports unseeded, not an error", async () => {
+  test("nothing live and no credential reports unseeded, not an error", async () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
@@ -330,7 +317,6 @@ describe("POST /complete-setup", () => {
             commitSha: "a".repeat(40),
           }),
           log: () => undefined,
-          pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
         }),
       );
 
@@ -346,17 +332,18 @@ describe("POST /complete-setup", () => {
     }
   });
 
-  test("a bench still deploying reports provisioning and never deploys inline", async () => {
+  test("a credential with nothing live reports provisioning and kicks without waiting", async () => {
     const hub = new Hono();
     principalsRoute(hub);
+    credentialsRoute(hub, { inferenceCredential: true });
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
     hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
       c.json([]),
     );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
+    let kickStarted = false;
+    let kickFinished = false;
     try {
-      let ensureSeededCalls = 0;
       const app = mountAuthenticated(
         createOnboardingRoutes({
           tenancy: emptyHubTenancy,
@@ -367,18 +354,22 @@ describe("POST /complete-setup", () => {
             commitSha: "a".repeat(40),
           }),
           log: () => undefined,
-          pendingSeedStore,
-          ensureSeededFn: async () => {
-            ensureSeededCalls += 1;
-            return { kind: "seeded", workflows: [] };
+          desiredStateKick: () => {
+            kickStarted = true;
+            void new Promise((resolve) => setTimeout(resolve, 5_000)).then(
+              () => {
+                kickFinished = true;
+              },
+            );
           },
         }),
       );
-      await withPendingSeed(pendingSeedStore);
 
+      const startedAt = Date.now();
       const response = await app.request("/api/onboarding/complete-setup", {
         method: "POST",
       });
+      const elapsedMs = Date.now() - startedAt;
 
       expect(response.status).toBe(200);
       const body = (await response.json()) as {
@@ -399,33 +390,29 @@ describe("POST /complete-setup", () => {
         pending: DEFAULT_WORKFLOWS.map((w) => w.assetName),
         steps: expect.any(Array),
       });
-      // The point of CL-6457: a pending row in front of it is not a
-      // licence to deploy on the request path. The seam still exists,
-      // it just belongs to the drain now.
-      expect(ensureSeededCalls).toBe(0);
-      // And the row stays exactly where it is — it is the drain's
-      // durable work item, not this request's scratch state.
-      const stillThere = await pendingSeedStore.read({
-        userId: "user_1",
-        tenantId: TENANT_ID,
-      });
-      expect(stillThere).toBeDefined();
+      // The point of CL-6457, kept by CL-7586: a credential waiting on
+      // pins is not a licence to do the converge on the request path.
+      // The kick started, but the route never waited on its five
+      // seconds — it answered from the status read alone.
+      expect(elapsedMs).toBeLessThan(1_000);
+      expect(kickStarted).toBe(true);
+      expect(kickFinished).toBe(false);
     } finally {
       server.stop(true);
     }
   });
 
-  test("a still-provisioning bench nudges the drain instead of waiting on it", async () => {
+  test("a still-provisioning bench kicks the reconcile instead of waiting on it", async () => {
     const hub = new Hono();
     principalsRoute(hub);
+    credentialsRoute(hub, { inferenceCredential: true });
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
     hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
       c.json([]),
     );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
-      let wakes = 0;
+      const kicks: string[] = [];
       const app = mountAuthenticated(
         createOnboardingRoutes({
           tenancy: emptyHubTenancy,
@@ -436,15 +423,11 @@ describe("POST /complete-setup", () => {
             commitSha: "a".repeat(40),
           }),
           log: () => undefined,
-          pendingSeedStore,
-          benchProvisioner: {
-            wake: () => {
-              wakes += 1;
-            },
+          desiredStateKick: ({ tenantId }) => {
+            kicks.push(tenantId);
           },
         }),
       );
-      await withPendingSeed(pendingSeedStore);
 
       const response = await app.request("/api/onboarding/complete-setup", {
         method: "POST",
@@ -453,178 +436,27 @@ describe("POST /complete-setup", () => {
       expect(response.status).toBe(200);
       const body = (await response.json()) as { kind: string };
       expect(body.kind).toBe("provisioning");
-      // Without the nudge a freshly parked row waits out the drain's
-      // whole tick interval before anything happens — the reason a
-      // waiting onboarding page calls this route at all.
-      expect(wakes).toBe(1);
+      // Without the kick a credential with missing pins waits out the
+      // reconcile's whole tick interval before anything happens — the
+      // reason a waiting onboarding page calls this route at all.
+      expect(kicks).toEqual([TENANT_ID]);
     } finally {
       server.stop(true);
     }
   });
 
-  test("an already fully seeded bench also clears a stray pending row, not just the never-written case", async () => {
-    const hub = new Hono();
-    principalsRoute(hub);
-    hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) =>
-      c.json(
-        DEFAULT_WORKFLOWS.map((workflow, index) => ({
-          id: `ast_${index}`,
-          tenantId: TENANT_ID,
-          kind: "workflow",
-          name: workflow.assetName,
-          displayName: workflow.displayName,
-          creatorPrincipalId: PRINCIPAL_ID,
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-          origin: { tenantId: TENANT_ID, direct: true },
-        })),
-      ),
-    );
-    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
-      c.json(
-        DEFAULT_WORKFLOWS.map((_workflow, index) => ({
-          definitionAssetId: `ast_${index}`,
-          status: "deployed",
-        })),
-      ),
-    );
-    const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
-    try {
-      const app = mountAuthenticated(
-        createOnboardingRoutes({
-          tenancy: emptyHubTenancy,
-          defaultTenantSlug: "workbench",
-          hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => ({
-            outcome: "pushed" as const,
-            commitSha: "a".repeat(40),
-          }),
-          log: () => undefined,
-          pendingSeedStore,
-        }),
-      );
-
-      // The drain finished this bench a moment ago but its row is
-      // still sitting there — a crash between the last deploy and the
-      // clear, or a connect that parked a fresh row over an already
-      // complete bench. A `ready` read is the authority: the row has no
-      // work left in it and must not be left for the drain to pick up
-      // again.
-      await withPendingSeed(pendingSeedStore);
-
-      const response = await app.request("/api/onboarding/complete-setup", {
-        method: "POST",
-      });
-
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as { kind: string };
-      expect(body.kind).toBe("ready");
-      const stillThere = await pendingSeedStore.read({
-        userId: "user_1",
-        tenantId: TENANT_ID,
-      });
-      expect(stillThere).toBeUndefined();
-    } finally {
-      server.stop(true);
-    }
-  });
-
-  test("an expired pending row is cleared rather than left to linger unused", async () => {
-    const hub = new Hono();
-    principalsRoute(hub);
-    hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
-    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
-      c.json([]),
-    );
-    const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
-    try {
-      await withPendingSeed(pendingSeedStore, { ttlMs: -1 });
-      const app = mountAuthenticated(
-        createOnboardingRoutes({
-          tenancy: emptyHubTenancy,
-          defaultTenantSlug: "workbench",
-          hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => ({
-            outcome: "pushed" as const,
-            commitSha: "a".repeat(40),
-          }),
-          log: () => undefined,
-          pendingSeedStore,
-        }),
-      );
-
-      const response = await app.request("/api/onboarding/complete-setup", {
-        method: "POST",
-      });
-
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as { kind: string };
-      expect(body.kind).toBe("unseeded");
-      const stillThere = await pendingSeedStore.read({
-        userId: "user_1",
-        tenantId: TENANT_ID,
-      });
-      expect(stillThere).toBeUndefined();
-    } finally {
-      server.stop(true);
-    }
-  });
-
-  test("a pending row written for a different user is invisible to this session", async () => {
-    const hub = new Hono();
-    principalsRoute(hub);
-    hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
-    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
-      c.json([]),
-    );
-    const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
-    try {
-      await withPendingSeed(pendingSeedStore, { userId: "someone_else" });
-      let ensureSeededCalls = 0;
-      const app = mountAuthenticated(
-        createOnboardingRoutes({
-          tenancy: emptyHubTenancy,
-          defaultTenantSlug: "workbench",
-          hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => ({
-            outcome: "pushed" as const,
-            commitSha: "a".repeat(40),
-          }),
-          log: () => undefined,
-          pendingSeedStore,
-          ensureSeededFn: async () => {
-            ensureSeededCalls += 1;
-            return { kind: "seeded", workflows: [] };
-          },
-        }),
-      );
-
-      const response = await app.request("/api/onboarding/complete-setup", {
-        method: "POST",
-      });
-
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as { kind: string };
-      expect(body.kind).toBe("unseeded");
-      expect(ensureSeededCalls).toBe(0);
-    } finally {
-      server.stop(true);
-    }
-  });
-
-  test("two overlapping calls both report provisioning and neither deploys", async () => {
+  test("two overlapping calls both report provisioning and each kicks", async () => {
     // Two "finish setup" requests racing (a double effect fire, a
     // retried fetch) used to be this route's sharpest edge, because
     // both would deploy. Post-CL-6457 the route deploys nothing at all,
     // so the only thing left to hold is that overlapping callers get
     // the same honest status and still start no work of their own. The
-    // dedupe that matters now lives one layer down and is covered
-    // there: "overlapping drains never double-deploy the same bench" in
-    // ./bench-provisioning.test.ts.
+    // route deliberately does not dedupe the kicks either — one
+    // fire-and-forget nudge per caller, and the reconcile itself
+    // converges (covered where it lives, in
+    // `./desired-state-reconcile.test.ts`).
     const hub = new Hono();
+    credentialsRoute(hub, { inferenceCredential: true });
     // Deterministic overlap, not a race against real wall-clock
     // scheduling: `findPersonalTenant` is the first hub call each
     // `/complete-setup` request makes, so gating it on "both requests
@@ -671,9 +503,8 @@ describe("POST /complete-setup", () => {
       c.json([]),
     );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
-      let ensureSeededCalls = 0;
+      const kicks: string[] = [];
       const app = mountAuthenticated(
         createOnboardingRoutes({
           tenancy: emptyHubTenancy,
@@ -684,14 +515,11 @@ describe("POST /complete-setup", () => {
             commitSha: "a".repeat(40),
           }),
           log: () => undefined,
-          pendingSeedStore,
-          ensureSeededFn: async () => {
-            ensureSeededCalls += 1;
-            return { kind: "seeded", workflows: [] };
+          desiredStateKick: ({ tenantId }) => {
+            kicks.push(tenantId);
           },
         }),
       );
-      await withPendingSeed(pendingSeedStore);
 
       const [first, second] = await Promise.all([
         app.request("/api/onboarding/complete-setup", {
@@ -708,38 +536,35 @@ describe("POST /complete-setup", () => {
       const secondBody = (await second.json()) as { kind: string };
       expect(firstBody.kind).toBe("provisioning");
       expect(secondBody.kind).toBe("provisioning");
-      expect(ensureSeededCalls).toBe(0);
 
-      // One work item, however many callers ask about it.
-      const stillThere = await pendingSeedStore.read({
-        userId: "user_1",
-        tenantId: TENANT_ID,
-      });
-      expect(stillThere).toBeDefined();
+      // One kick per caller — the route never dedupes, the reconcile
+      // converges on its own.
+      expect(kicks).toEqual([TENANT_ID, TENANT_ID]);
     } finally {
       server.stop(true);
     }
   });
 
-  // CL-6264, re-homed by CL-6457: a bench that got partway through its
-  // workflows must read as still provisioning, and must keep its
-  // pending row so the drain can finish the rest. The convergence
-  // itself — deploying only what is missing on a later pass — is
-  // covered by "a half-provisioned bench keeps its row and converges on
-  // a later pass" in ./bench-provisioning.test.ts.
+  // CL-6264, re-homed by CL-6457 and kept by CL-7586: a bench that got
+  // partway through its workflows must read as still provisioning, and
+  // must kick the reconcile so the rest actually goes live. The
+  // convergence itself — deploying only what is missing on a later
+  // pass — is covered by "a non-sidecar failure reports failed, and a
+  // re-run can converge" in ./desired-state-reconcile.test.ts.
   //
   // CL-7074 narrowed DEFAULT_WORKFLOWS to just the setup agent, so
   // "partway through" no longer means "one of several live, the rest
   // pending" — it means the one default workflow's asset exists but
   // has not gone live yet (the sidecar push landed, the deploy
   // confirmation has not).
-  test("a bench whose agent is not yet live keeps its pending row for the drain", async () => {
+  test("a bench whose agent is not yet live reports provisioning and kicks", async () => {
     const liveWorkflow = DEFAULT_WORKFLOWS[0];
     if (liveWorkflow === undefined) {
       throw new Error("DEFAULT_WORKFLOWS is empty");
     }
     const hub = new Hono();
     principalsRoute(hub);
+    credentialsRoute(hub, { inferenceCredential: true });
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) =>
       c.json(
         DEFAULT_WORKFLOWS.map((workflow, index) => ({
@@ -760,8 +585,8 @@ describe("POST /complete-setup", () => {
       c.json([]),
     );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
+      const kicks: string[] = [];
       const app = mountAuthenticated(
         createOnboardingRoutes({
           tenancy: emptyHubTenancy,
@@ -772,10 +597,11 @@ describe("POST /complete-setup", () => {
             commitSha: "a".repeat(40),
           }),
           log: () => undefined,
-          pendingSeedStore,
+          desiredStateKick: ({ tenantId }) => {
+            kicks.push(tenantId);
+          },
         }),
       );
-      await withPendingSeed(pendingSeedStore);
 
       const response = await app.request("/api/onboarding/complete-setup", {
         method: "POST",
@@ -801,13 +627,8 @@ describe("POST /complete-setup", () => {
         steps: expect.any(Array),
       });
 
-      // Not finished yet — clearing the row here would strand the
-      // remaining agents with nothing left to deploy them.
-      const stillThere = await pendingSeedStore.read({
-        userId: "user_1",
-        tenantId: TENANT_ID,
-      });
-      expect(stillThere).toBeDefined();
+      // Not finished yet — and the kick is what finishes it.
+      expect(kicks).toEqual([TENANT_ID]);
     } finally {
       server.stop(true);
     }

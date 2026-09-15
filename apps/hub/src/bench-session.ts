@@ -1,7 +1,7 @@
 // The one thing a background loop cannot inherit: a session. The bench
-// provisioner (`@workbench/onboarding`'s `createBenchProvisioner`) runs
-// with no request to borrow cookies from, yet everything it drives —
-// `seedTenant`'s asset creates, deployments, grants, and the git push
+// provisioned by an explicit flow (a desired-state revisit kick, the
+// setup CLI) runs with no request to borrow cookies from, yet everything
+// it drives — asset creates, deployments, grants, and the git push
 // underneath them — speaks the hub's own HTTP API as the bench's owner.
 // This mints that session in-process.
 //
@@ -11,17 +11,27 @@
 // parent-org admin does not inherit rights over a child bench — RBAC
 // resolves grants within a single tenant — so "just use the operator
 // account" would 403 on every call. The owner's own session is the only
-// identity that can provision their bench, which is also the honest
+// identity that can act for their bench, which is also the honest
 // one: the work is theirs, done on their behalf, and it shows up in the
 // session table as such (tagged by user agent, so these are greppable
 // and never mistaken for a human sign-in).
 //
 // Sessions are cached per user and re-minted well before expiry, so a
-// drain tick every few seconds does not write a session row every few
+// kick every few seconds does not write a session row every few
 // seconds.
 
 import { makeSignature } from "better-auth/crypto";
-import type { SessionForUser } from "@workbench/onboarding";
+
+/**
+ * Mints the hub session an explicit provisioning flow acts under for
+ * one user's own bench, or `undefined` when no session can be minted
+ * (an account since deleted, an auth backend briefly unavailable).
+ * Returning `undefined` skips that run — it never discards anything.
+ */
+export type SessionForUser = (args: {
+  userId: string;
+  tenantId: string;
+}) => Promise<string[] | undefined>;
 
 /** Re-mint this far ahead of a cached session's own expiry, so a long
  * provisioning pass can never have its session expire mid-flight. */
@@ -53,16 +63,16 @@ export type BenchSessionAuth = {
 };
 
 /**
- * Builds the `sessionFor` seam the bench provisioner takes. Returns the
- * bare `name=value` cookie pairs `ApiCall` sends, signed exactly the way
- * better-auth's own cookie writer signs them — the same HMAC helper the
- * library uses, rather than a hand-rolled copy that could drift from the
- * verifier.
+ * Builds the `sessionFor` seam the explicit provisioning flows take.
+ * Returns the bare `name=value` cookie pairs `ApiCall` sends, signed
+ * exactly the way better-auth's own cookie writer signs them — the same
+ * HMAC helper the library uses, rather than a hand-rolled copy that
+ * could drift from the verifier.
  *
  * `undefined` means "no session could be minted right now" (an account
- * since deleted, an auth backend briefly unavailable). The provisioner
- * treats that as a reason to hold the bench for a later pass, never as a
- * reason to discard its pending work.
+ * since deleted, an auth backend briefly unavailable). The caller
+ * treats that as a reason to skip the run, never as a reason to
+ * discard anything.
  */
 export function createBenchSessionMinter(args: {
   auth: BenchSessionAuth;

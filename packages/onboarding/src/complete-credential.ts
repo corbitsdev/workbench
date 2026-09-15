@@ -23,14 +23,14 @@
 //
 // CL-6457 finished that split: NO HTTP route runs the slow half any
 // more. Connecting a provider persists the credential, seeds its
-// catalog, and returns in seconds; the deploys belong to the background
-// drain in `./bench-provisioning.ts`, which is also what makes them
-// survive a hub restart. `completeCredentialSetup` at the bottom of this
-// file still composes both halves back-to-back, but it is an
-// eval-harness convenience — a bench that must be fully deployed before
-// a scenario runs — and never the connect path. A route that calls it
-// re-creates the 2+ minute "Connecting…" freeze this split exists to
-// prevent.
+// catalog, and returns in seconds; the deploys converge afterwards
+// through the desired-state revisit kicks (`desiredStateKick`, fired
+// from the connect routes) and the tenant-create observer — never on a
+// request path. `completeCredentialSetup` at the bottom of this file
+// still composes both halves back-to-back, but it is an eval-harness
+// convenience — a bench that must be fully deployed before a scenario
+// runs — and never the connect path. A route that calls it re-creates
+// the 2+ minute "Connecting…" freeze this split exists to prevent.
 //
 // `ensureSeeded` runs with `confirmDeployments: false`: there is nothing
 // to confirm by triggering a real, billed inference call against an
@@ -141,12 +141,8 @@ export type CompleteCredentialResult =
       readonly kind: "seeded-pending-agents";
       readonly tenantId: string;
       readonly tenantSlug: string;
-      /** Threaded through to `routes.ts`'s `/complete` handler, which
-       * writes them into the same `pendingSeedStore` row an OAuth
-       * connect writes (see `./pending-seed.ts`) so `POST
-       * /complete-setup`'s existing retry path — no new queue — finishes
-       * the deferred workflows on this account's next onboarding-page
-       * visit. */
+      /** Carried through to `routes.ts`'s `/complete` handler for the
+       * desired-state revisit kick and status answer. */
       readonly principalId: string;
       readonly tenantDomain: string;
       readonly deployed: string[];

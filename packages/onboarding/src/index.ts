@@ -55,29 +55,6 @@ export type {
   WorkflowPin,
 } from "./desired-state";
 export {
-  createBenchProvisioner,
-  PROVISIONING_POLL_INTERVAL_MS,
-} from "./bench-provisioning";
-export type {
-  BenchProvisioner,
-  BenchProvisionerDeps,
-  BenchProvisionOutcome,
-  DrainReport,
-  SessionForUser,
-} from "./bench-provisioning";
-export {
-  createDrizzlePendingSeedStore,
-  createInMemoryPendingSeedStore,
-  PENDING_SEED_TTL_MS,
-} from "./pending-seed";
-export type {
-  PendingSeed,
-  PendingSeedDb,
-  PendingSeedDuePage,
-  PendingSeedListCursor,
-  PendingSeedStore,
-} from "./pending-seed";
-export {
   envProviderBaseUrlsFrom,
   envProviderKeysFrom,
   plantEnvProviderCredentials,
