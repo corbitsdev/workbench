@@ -114,7 +114,13 @@ export function buildSkillMd(input: {
  * reads as `private` — the pre-cutover store's own default for a skill
  * with no row — so old bytes stay invisible to everyone but their author
  * instead of failing to parse.
- */
+ *
+ * No backfill for the dropped `skill_access` table: every pre-cutover
+ * SKILL.md lacks `scope`, and no seed, fixture, template, or
+ * provisioning path plants a tenant-visible row (verified CL-7583), so
+ * there is nothing that would silently narrow. Pre-GA cutovers are not
+ * migrated — dev databases reseed via `bun run reset` (CL-7445 ruling;
+ * see docs/package-migrations.md). */
 export function parseSkillMd(text_: string): ParsedSkillMd {
   const lines = text_.split(/\r?\n/);
   if (lines[0] !== FRONTMATTER_DELIMITER) {
