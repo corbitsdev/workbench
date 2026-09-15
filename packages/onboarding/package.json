@@ -7,6 +7,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./desired-state": "./src/desired-state.ts",
     "./migrations": "./src/migrations.ts"
   },
   "scripts": {
@@ -23,6 +24,7 @@
     "@corbits/connections": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
     "@corbits/seeding": "workspace:*",
+    "@corbits/tool-registry-publish": "workspace:*",
     "@workbench/templates": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",

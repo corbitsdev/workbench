@@ -388,6 +388,7 @@ describe("POST /complete-setup", () => {
         setupAgentReady: boolean;
         deployed: string[];
         pending: string[];
+        steps: { name: string; status: string }[];
       };
       expect(body).toEqual({
         kind: "provisioning",
@@ -396,6 +397,7 @@ describe("POST /complete-setup", () => {
         setupAgentReady: false,
         deployed: [],
         pending: DEFAULT_WORKFLOWS.map((w) => w.assetName),
+        steps: expect.any(Array),
       });
       // The point of CL-6457: a pending row in front of it is not a
       // licence to deploy on the request path. The seam still exists,
@@ -787,6 +789,7 @@ describe("POST /complete-setup", () => {
         setupAgentReady: boolean;
         deployed: string[];
         pending: string[];
+        steps: { name: string; status: string }[];
       };
       expect(body).toEqual({
         kind: "provisioning",
@@ -795,6 +798,7 @@ describe("POST /complete-setup", () => {
         setupAgentReady: false,
         deployed: [],
         pending: [liveWorkflow.assetName],
+        steps: expect.any(Array),
       });
 
       // Not finished yet — clearing the row here would strand the

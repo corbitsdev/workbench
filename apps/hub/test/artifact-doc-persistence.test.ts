@@ -130,7 +130,20 @@ describeIfDb(
       text.insert(0, "edited by a co-editor");
       registry.applyDocUpdate(key, Y.encodeStateAsUpdate(doc), principalId);
 
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      // The snapshot path is a 10ms-debounce timer followed by a real
+      // Postgres write — a fixed sleep flakes under load, so poll to a
+      // deadline for the version row instead of assuming any fixed delay.
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        const row = await getArtifact(artifactDb, created.id);
+        if (row?.version === 2) break;
+        if (Date.now() > deadline) {
+          throw new Error(
+            `the debounced snapshot never landed a version-2 row (last version: ${row?.version})`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
 
       expect(errors).toEqual([]);
       const updated = await getArtifact(artifactDb, created.id);

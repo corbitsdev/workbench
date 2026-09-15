@@ -555,12 +555,22 @@ export async function submitCredential(
   }
 }
 
+export const OnboardingStep = type({
+  name: "string",
+  label: "string",
+  status: "'present' | 'pending' | 'blocked'",
+});
+export type OnboardingStep = typeof OnboardingStep.infer;
+
 const CompleteSetupResult = type({
   kind: "'ready' | 'provisioning' | 'unseeded'",
   "tenantId?": "string",
   "tenantSlug?": "string",
   "deployed?": "string[]",
   "pending?": "string[]",
+  // CL-7584: the doc-labeled desired-state steps the finishing-setup
+  // view renders while agents are still coming online.
+  "steps?": OnboardingStep.array(),
 });
 
 export type CompleteSetupOutcome =
@@ -571,6 +581,9 @@ export type CompleteSetupOutcome =
       readonly tenantSlug: string;
       /** See `CredentialOutcome.agentsPending`. */
       readonly agentsPending: boolean;
+      /** CL-7584: the desired-state steps still pending, when the hub
+       * reports any; absent (collapsed) once everything is present. */
+      readonly steps?: readonly OnboardingStep[];
     }
   | { readonly kind: "unseeded" }
   | {
@@ -610,18 +623,15 @@ export async function completeSetup(): Promise<CompleteSetupOutcome> {
       return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
     }
     const agentsPending = parsed.pending.length > 0;
+    const steps = parsed.steps;
+    const common = {
+      tenantSlug: parsed.tenantSlug,
+      agentsPending,
+      ...(steps !== undefined && steps.length > 0 ? { steps } : {}),
+    };
     return parsed.tenantId === undefined
-      ? {
-          kind: "connected",
-          tenantSlug: parsed.tenantSlug,
-          agentsPending,
-        }
-      : {
-          kind: "connected",
-          tenantId: parsed.tenantId,
-          tenantSlug: parsed.tenantSlug,
-          agentsPending,
-        };
+      ? { kind: "connected", ...common }
+      : { kind: "connected", tenantId: parsed.tenantId, ...common };
   } catch {
     return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
   }

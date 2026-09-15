@@ -574,7 +574,7 @@ describe("App landing fresh on a hub-seeded workbench", () => {
 
   test("existing-member, seeded: true does NOT hard-skip when no active credential is confirmed (CL-6101 review)", async () => {
     // `seeded: true` for an existing member means every default workflow
-    // has an active deployment (`isFullySeeded`'s own check) — never
+    // has an active deployment (the doc reader's workflow pins) — never
     // that a credential was checked. With the credentials read
     // confirming nothing active, the page must fall through to the
     // credential step.
@@ -970,6 +970,70 @@ describe("the OpenRouter connect card", () => {
       });
 
       expect(calls).toEqual(["/"]);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  test("a blocked desired-state step renders distinctly from a pending one", async () => {
+    // CL-7584: `blocked` (sidecar unavailable — the hub keeps retrying)
+    // must not read as plain `pending` (still working). A person staring
+    // at "Preparing your agent" while the sidecar is down deserves to see
+    // which pin is held up rather than an identical spinner row.
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/api/onboarding/complete-setup") {
+        return json({
+          kind: "provisioning",
+          tenantSlug: "ada-user1",
+          deployed: [],
+          pending: ["assistant"],
+          steps: [
+            { name: "assistant", label: "Myra", status: "pending" },
+            {
+              name: "corbits-tools",
+              label: "Tool packages",
+              status: "blocked",
+            },
+          ],
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    window.history.replaceState(
+      null,
+      "",
+      "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
+    );
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      act(() => {
+        root.render(
+          <App
+            path={ONBOARDING_PATH}
+            navigate={noop}
+            session={signedIn}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      const blocked = container.querySelector('li[data-status="blocked"]');
+      const pending = container.querySelector('li[data-status="pending"]');
+      expect(blocked?.textContent).toContain("Tool packages");
+      expect(pending?.textContent).toContain("Myra");
+      // The blocked row carries retry copy the pending row does not.
+      expect(blocked?.textContent).toContain("retrying");
+      expect(pending?.textContent).not.toContain("retrying");
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -1476,5 +1540,105 @@ describe("skipping the onboarding credential step", () => {
       act(() => root.unmount());
       container.remove();
     }
+  });
+});
+
+// CL-7584: the finishing-setup view renders the hub's own desired-state
+// step list while agents are still coming online, and a ready answer
+// collapses it — the page hands off to `/` without ever showing one.
+describe("CL-7584 desired-state steps in finishing-setup", () => {
+  const settle = (ms = 10) =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    });
+
+  let container: HTMLDivElement | null = null;
+  let root: Root | null = null;
+
+  afterEach(() => {
+    if (root !== null) act(() => root?.unmount());
+    container?.remove();
+    container = null;
+    root = null;
+  });
+
+  function renderFinishingSetup(navigate: (path: string) => void) {
+    window.history.replaceState(
+      null,
+      "",
+      "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
+    );
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root?.render(
+        <App
+          path={ONBOARDING_PATH}
+          navigate={navigate}
+          session={signedIn}
+          onSignedIn={noop}
+          onSignOut={noop}
+          onRetry={noop}
+        />,
+      );
+    });
+  }
+
+  test("renders the doc-labeled steps from the status body while pins are pending", async () => {
+    let calls = 0;
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/api/onboarding/complete-setup") {
+        calls += 1;
+        return json({
+          kind: "provisioning",
+          tenantId: "ten_1",
+          tenantSlug: "ada-user1",
+          setupAgentReady: false,
+          deployed: [],
+          pending: ["assistant"],
+          steps: [
+            { name: "assistant", label: "Myra", status: "pending" },
+            {
+              name: "writing-system-prompts",
+              label: "writing-system-prompts",
+              status: "pending",
+            },
+          ],
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    renderFinishingSetup(noop);
+    await settle(50);
+
+    expect(calls).toBeGreaterThan(0);
+    expect(container?.querySelector(".onboarding-steps")).not.toBeNull();
+    expect(container?.textContent).toContain("Myra");
+    expect(container?.querySelector('[data-status="pending"]')).not.toBeNull();
+  });
+
+  test("a ready answer collapses the steps and hands off to /", async () => {
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/api/onboarding/complete-setup") {
+        return json({
+          kind: "ready",
+          tenantId: "ten_1",
+          tenantSlug: "ada-user1",
+          setupAgentReady: true,
+          deployed: ["assistant"],
+          pending: [],
+          steps: [{ name: "assistant", label: "Myra", status: "present" }],
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const { navigate, calls } = trackedNavigate();
+    renderFinishingSetup(navigate);
+    await settle(50);
+
+    expect(calls).toEqual(["/"]);
   });
 });

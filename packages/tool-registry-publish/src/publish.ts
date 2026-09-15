@@ -297,7 +297,7 @@ async function putTarball(
   cookies: string[],
   tenantId: string,
   assetId: string,
-  tarball: PackedTarball,
+  tarball: { filename: string; bytes: Uint8Array },
   fetchImpl: FetchTarballPut,
 ): Promise<PublishSummary> {
   const headers: Record<string, string> = {
@@ -341,6 +341,91 @@ export type PublishCorbitsToolsRegistryArgs = {
   /** Test seam. Production omits this and uses `packToolPackageTarball`. */
   pack?: (packageDir: string) => Promise<PackedTarball>;
 };
+
+export type FetchTarballSource = (
+  url: string,
+  init?: RequestInit,
+) => Promise<Response>;
+
+/**
+ * Fetches a prebuilt tarball from a `tarball-url` pin's URL and verifies
+ * its bytes against the pin's SRI-shaped `sha512-…` integrity — the same
+ * hash shape `sha512Integrity` computes and the hub's tarball routes
+ * store. A mismatched fetch must never be published: the registry's
+ * name@version immutability means bad bytes, once in, stay in.
+ */
+export async function fetchRegistryTarballSource(args: {
+  url: string;
+  integrity: string;
+  fetchImpl?: FetchTarballSource;
+}): Promise<Uint8Array> {
+  const fetchImpl = args.fetchImpl ?? fetch;
+  const response = await fetchImpl(args.url, { redirect: "follow" });
+  if (!response.ok) {
+    throw new Error(
+      `fetchRegistryTarballSource: ${args.url} responded ${String(response.status)}`,
+    );
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const actual = sha512Integrity(bytes);
+  if (actual !== args.integrity) {
+    throw new Error(
+      `fetchRegistryTarballSource: integrity mismatch for ${args.url} (expected ${args.integrity}, got ${actual})`,
+    );
+  }
+  return bytes;
+}
+
+/**
+ * Installs one externally-sourced tarball into the tenant's
+ * `corbits-tools` registry through the same native PUT
+ * `publishCorbitsToolsRegistry` uses: ensure the registry asset, skip an
+ * already-published filename (name@version is immutable — a rebuild is
+ * not byte-deterministic, so re-PUTs are never attempted), fetch the
+ * bytes through `fetchSource`, verify, and upload. This is the
+ * tarball-url half of the desired-state reconcile's tool install; it is
+ * deliberately NOT wired into any pin set yet — no external artifacts
+ * exist — but ships tested so populating a pin is a data edit.
+ */
+export async function installRegistryTarball(args: {
+  api: ApiCall;
+  cookies: string[];
+  hubUrl: string;
+  tenantId: string;
+  name: string;
+  version: string;
+  fetchSource: () => Promise<Uint8Array>;
+  fetchImpl?: FetchTarballPut;
+  log?: (line: string) => void;
+}): Promise<"installed" | "present"> {
+  const filename = `${args.name.replace(/^@/, "").replace("/", "-")}-${args.version}.tgz`;
+  const assetId = await ensureRegistryAsset(
+    args.api,
+    args.cookies,
+    args.tenantId,
+  );
+  const existing = await listExistingTarballs(
+    args.api,
+    args.cookies,
+    args.tenantId,
+    assetId,
+  );
+  if (!shouldPublishTarball(filename, existing.get(filename))) {
+    args.log?.(`${filename} already published (skipped)`);
+    return "present";
+  }
+  const bytes = await args.fetchSource();
+  await putTarball(
+    args.hubUrl,
+    args.cookies,
+    args.tenantId,
+    assetId,
+    { filename, bytes },
+    args.fetchImpl ?? fetch,
+  );
+  args.log?.(`published ${filename} from an external tarball source`);
+  return "installed";
+}
 
 function missingRequiredSeedPackages(filenames: readonly string[]): string[] {
   return REQUIRED_SEED_TOOL_PACKAGES.filter(

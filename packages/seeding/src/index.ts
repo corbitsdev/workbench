@@ -34,10 +34,14 @@ export {
   isLiveDeploymentStatus,
   SETUP_AGENT_ASSET_NAME,
 } from "./seed";
+export { DEFAULT_SKILLS, type DefaultSkill } from "./default-skills";
 export {
   publishCorbitsToolsRegistry,
   isCorbitsToolsRegistrySeeded,
   tarballsCoverRequiredSeedPackages,
+  REQUIRED_SEED_TOOL_PACKAGES,
+  fetchRegistryTarballSource,
+  installRegistryTarball,
   type PublishCorbitsToolsRegistryArgs,
   type PublishCorbitsToolsRegistryResult,
   type PublishSummary,

@@ -41,8 +41,12 @@ import {
   personalTenantSlug,
   provisionPersonalTenantIfNeeded,
   ProvisionError,
-  seededWorkflowStatus,
 } from "./provision";
+import {
+  desiredStateSteps,
+  readTenantDesiredStateStatus,
+  TENANT_DESIRED_STATE,
+} from "./desired-state";
 
 import type { HubSignupTenancy } from "./genesis";
 
@@ -178,6 +182,16 @@ export type CreateOnboardingRoutesDeps = {
    * than a correctness dependency.
    */
   benchProvisioner?: Pick<BenchProvisioner, "wake">;
+  /**
+   * CL-7584 revisit kick: fire-and-forget desired-state reconcile for the
+   * caller's tenant, fired unconditionally — never gated on a pending
+   * check (the reconciler itself is reads-only when converged). The hub
+   * wires this to the same reconciler the tenant-create observer and the
+   * drain use; the route never awaits it. Absent means no kick —
+   * convergence then relies on the drain's own poll, which is why this is
+   * a latency optimization rather than a correctness dependency.
+   */
+  desiredStateKick?: (args: { tenantId: string; cookies: string[] }) => void;
   /** Test seam standing in for the deploy step, so a route test can
    * prove the response never waits on one. */
   ensureSeededFn?: typeof ensureSeeded;
@@ -241,6 +255,13 @@ type ProvisioningStatusBody = {
   readonly setupAgentReady: boolean;
   readonly deployed: string[];
   readonly pending: string[];
+  /** CL-7584: the desired-state step list, doc-labeled, for the
+   * onboarding page's waiting surfaces. */
+  readonly steps: readonly {
+    readonly name: string;
+    readonly label: string;
+    readonly status: "present" | "pending" | "blocked";
+  }[];
 };
 
 /**
@@ -354,18 +375,32 @@ export function createOnboardingRoutes(
     cookies: string[],
     tenant: Pick<PersonalTenant, "tenantId" | "tenantSlug">,
   ): Promise<ProvisioningStatusBody> {
-    const { deployed, pending } = await seededWorkflowStatus(
+    const status = await readTenantDesiredStateStatus(
       api,
       cookies,
       tenant.tenantId,
     );
+    const steps = desiredStateSteps(status);
+    const deployed = TENANT_DESIRED_STATE.workflows
+      .filter((pin) => status.workflows[pin.assetName] === "present")
+      .map((pin) => pin.assetName);
+    const pending = TENANT_DESIRED_STATE.workflows
+      .filter((pin) => status.workflows[pin.assetName] !== "present")
+      .map((pin) => pin.assetName);
     return {
+      // The person-facing readiness gate stays on the workflow set: Myra
+      // live is "can they start". Tool packages and skills ride in
+      // `steps` for the waiting surface without holding the door shut.
+      // (Cf. `DesiredStateStatus.ready` in `./desired-state.ts`, which
+      // covers the full tools+skills+workflows state — the reconcile
+      // loop's gate, not this response's.)
       kind: pending.length === 0 ? "ready" : "provisioning",
       tenantId: tenant.tenantId,
       tenantSlug: tenant.tenantSlug,
-      setupAgentReady: deployed.includes(SETUP_AGENT_ASSET_NAME),
+      setupAgentReady: status.workflows[SETUP_AGENT_ASSET_NAME] === "present",
       deployed,
       pending,
+      steps,
     };
   }
 
@@ -461,8 +496,65 @@ export function createOnboardingRoutes(
 
       const result = await provisionPersonalTenantIfNeeded(provisionArgs);
 
+      // CL-7584 revisit kick: fire unconditionally — never await the
+      // multi-GET status read on this hot path. `reconcileTenantDesiredState`
+      // is reads-only when converged (it never enters `seedTenant` with
+      // every pin present), so a pending-check here would only ever delay
+      // this response; the reconcile itself re-reads the pins behind the
+      // fire-and-forget boundary. Repeat probes re-kick safely
+      // (idempotent) and `pending_seed` stays the only durable row.
+      if (
+        (result.kind === "provisioned" || result.kind === "existing-member") &&
+        deps.desiredStateKick !== undefined
+      ) {
+        const kick = deps.desiredStateKick;
+        const fire = (tenantId: string) => {
+          try {
+            kick({ tenantId, cookies });
+          } catch (cause) {
+            // report-error-ignore: the kick is best-effort — convergence
+            // falls back to the pending_seed drain, so a failed kick only
+            // ever costs one delayed pass.
+            deps.log(
+              `desired-state kick for user ${user.id} failed (convergence falls back to the drain): ${cause instanceof Error ? cause.message : String(cause)}`,
+            );
+          }
+        };
+        // A just-joined or just-minted tenant carries its id and fires
+        // synchronously, before this response is even serialized.
+        const directTenantId = result.tenantId;
+        if (directTenantId !== undefined) {
+          fire(directTenantId);
+        } else {
+          // A plain existing member carries no id — resolve it the same
+          // way the connect flow does (first active principal) behind the
+          // fire-and-forget boundary, so the response never waits on it
+          // either.
+          void (async () => {
+            try {
+              const found = await findPersonalTenant(
+                api,
+                cookies,
+                personalTenantSlug(user.email, user.id),
+                { fallbackToFirstPrincipal: true },
+              );
+              if (found?.tenantId !== undefined) fire(found.tenantId);
+            } catch (cause) {
+              // report-error-ignore: the kick lookup is best-effort —
+              // convergence falls back to the pending_seed drain, so a
+              // failed lookup only ever costs one delayed pass.
+              deps.log(
+                `desired-state kick lookup for user ${user.id} failed (convergence falls back to the drain): ${cause instanceof Error ? cause.message : String(cause)}`,
+              );
+            }
+          })();
+        }
+      }
+
       return c.json(result, 200);
     } catch (cause) {
+      // report-error-ignore: both branches below route through
+      // reportOnboardingError, this package's reportError wrapper.
       if (cause instanceof ProvisionError) {
         const status =
           cause.code === "signup_not_allowed"
