@@ -43,6 +43,11 @@ import {
   participantsOf,
   resolveContextWindow,
 } from "./workbench-settings";
+import {
+  AGENT_DM_DEFINITION_ID_KEY,
+  AGENT_DM_KIND,
+  definitionIdOfSettings,
+} from "./agent-dm-mode";
 import { presetForKind } from "./kinds";
 import type {
   WorkbenchLauncher,
@@ -232,9 +237,11 @@ export type FindExistingAgentChatDeps = {
  * tenant with that agent. Uniqueness is per (bench, definitionId).
  * Product reopens; it does not clone.
  *
- * Matches forward, by the `chat/definitionId` every agent chat has
- * carried in its settings since this landed, and falls back to
- * `matchesLegacyAgentChat` for a chat minted before that key existed.
+ * Matches forward, by the DM pin (`definitionIdOfSettings` in
+ * `./agent-dm-mode.ts` — the one place that says what an agent DM is)
+ * every agent chat has carried in its settings since this landed, and
+ * falls back to `matchesLegacyAgentChat` for a chat minted before that
+ * key existed.
  * The comparison is on the definition's ASSET, not the row id: a
  * code-sourced deploy projects a new `workflow_definition` row per
  * frozen wire projection, so the id a chat recorded at creation and the
@@ -255,11 +262,10 @@ export async function findExistingAgentChat(
   const assetId = await deps.platform.resolveDefinitionAssetId(definitionId);
   const matches: { row: WorkbenchSettingsRow; createdAt: Date }[] = [];
   for (const row of chats) {
-    const storedDefinitionId = row.settings["chat/definitionId"];
+    const storedDefinitionId = definitionIdOfSettings(row.settings);
     const isMatch =
       storedDefinitionId !== undefined
-        ? typeof storedDefinitionId === "string" &&
-          (await sameAgent(deps, storedDefinitionId, definitionId, assetId))
+        ? await sameAgent(deps, storedDefinitionId, definitionId, assetId)
         : await matchesLegacyAgentChat(deps, row, definitionId);
     if (!isMatch) continue;
     const link = await deps.tenancy.getWorkbenchTenancy(row.workbenchId);
@@ -384,10 +390,10 @@ export async function mintAgentDm(
 
   const preset = presetForKind("chat");
   const baseSettings: Record<string, unknown> = {
-    "chat/kind": "chat",
+    "chat/kind": AGENT_DM_KIND,
     "chat/pinned": preset.pinned,
     "chat/participants": [],
-    "chat/definitionId": input.definitionId,
+    [AGENT_DM_DEFINITION_ID_KEY]: input.definitionId,
   };
   const settings: Record<string, unknown> =
     chatTitle !== undefined
@@ -680,8 +686,8 @@ export async function launchAndJoinAgent(
     };
   }
 
-  if (kindOf(input.existingSettings) === "chat") {
-    const boundDefinitionId = input.existingSettings["chat/definitionId"];
+  if (kindOf(input.existingSettings) === AGENT_DM_KIND) {
+    const boundDefinitionId = definitionIdOfSettings(input.existingSettings);
     const alreadyHasAgent = participants.some((participant) =>
       isAgentAddress(participant.address),
     );
@@ -1980,9 +1986,9 @@ export type DispatchTurnInput = {
  * Asks one agent for a turn — the seam between the room (rows on a
  * timeline) and the execution plane.
  *
- * A room agent deploys as an `onTrigger` section (CL-6329, see
- * `./standalone-launch.ts`'s `AGENT_SECTION_MODE`), so this fires that
- * section's trigger: one occurrence, running as its own child run
+ * An agent runs as one warm folded run provisioned from the
+ * conversation's definition asset, so this fires that run's mail trigger:
+ * one occurrence, running as its own child run
  * (`turn__<n>`) with its own event log, against the one warm run the
  * (agent, workbench) pair already holds. The trigger is a mail trigger —
  * that is the primitive the section subscribes on — so `sendMail`

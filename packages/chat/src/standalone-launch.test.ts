@@ -4,11 +4,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { workbenchLaunch } from "./schema";
-import {
-  AGENT_SECTION_MODE,
-  workbenchLaunchPersistExtra,
-} from "./standalone-launch";
-import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
+import { workbenchLaunchPersistExtra } from "./standalone-launch";
 
 const FOLDED_BODY = {
   systemPrompt: "be helpful",
@@ -17,15 +13,6 @@ const FOLDED_BODY = {
   credentialBindings: [],
   model: "claude-sonnet-5",
 };
-
-describe("AGENT_SECTION_MODE", () => {
-  test("is the onTrigger section shape with the chat turn timeout", () => {
-    expect(AGENT_SECTION_MODE).toEqual({
-      kind: "section",
-      turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
-    });
-  });
-});
 
 describe("workbenchLaunchPersistExtra", () => {
   test("writes the identity mapping into workbench_launch", async () => {

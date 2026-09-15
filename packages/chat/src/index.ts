@@ -129,10 +129,13 @@ export {
   createInMemoryTurnClaimStore,
 } from "./turn-claims";
 export type { TurnClaim, TurnClaimStore, TurnClaimToken } from "./turn-claims";
+export { workbenchLaunchPersistExtra } from "./standalone-launch";
 export {
-  AGENT_SECTION_MODE,
-  workbenchLaunchPersistExtra,
-} from "./standalone-launch";
+  AGENT_DM_DEFINITION_ID_KEY,
+  AGENT_DM_KIND,
+  definitionIdOfSettings,
+  isAgentDmSettings,
+} from "./agent-dm-mode";
 export { recordSourcesDigest } from "./agent-binding";
 export { createWorkbenchTurnQueue, TurnQueuedEvent } from "./turn-queue";
 export type {

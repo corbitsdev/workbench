@@ -64,6 +64,7 @@ import {
   validateSettingsPatch,
   visibilityOf,
 } from "./workbench-settings";
+import { AGENT_DM_DEFINITION_ID_KEY } from "./agent-dm-mode";
 import { listWorkbenchLiveState } from "./workbench-reply-activity";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
 import { WorkbenchOnboardingStep } from "./blocks";
@@ -1191,7 +1192,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const withDefinitionId: Record<string, unknown> = isChatWithDefinition(
         body,
       )
-        ? { ...baseSettings, "chat/definitionId": body.definitionId }
+        ? { ...baseSettings, [AGENT_DM_DEFINITION_ID_KEY]: body.definitionId }
         : baseSettings;
       const settings: Record<string, unknown> =
         chatTitle !== undefined
