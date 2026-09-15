@@ -14,6 +14,8 @@ import {
 import {
   buildAgentDefinitionWorkflow,
   createAgentDefinitionCore,
+  readPinnedSkillNames,
+  reindexPinnedSkills,
   serializeAgentDefinitionWorkflow,
   SKILLS_TOOL_PACKAGE_PIN,
   withAgentToolPackagePin,
@@ -88,6 +90,45 @@ describe("withAgentToolPackagePin", () => {
       name: "@corbits/memory-tools",
       version: "1.2.3",
     });
+  });
+});
+
+// CL-7592: pinned skill names read back out of the definition's own
+// serialized `workflow.json` (the `<available_skills>` stanza
+// `reindexPinnedSkills` writes) — the asset is the source of truth for
+// pins now that the Workbench-owned `definition_skills` store is gone.
+describe("readPinnedSkillNames", () => {
+  function freshWorkflowJson(): string {
+    return serializeAgentDefinitionWorkflow(
+      buildAgentDefinitionWorkflow({
+        handle: "pin-test",
+        tenantDomain: "example.test",
+        description: "",
+        systemPrompt: "You are a test agent.",
+      }),
+    );
+  }
+
+  test("a definition with no pins reads back no names", () => {
+    expect(readPinnedSkillNames(freshWorkflowJson())).toEqual([]);
+  });
+
+  test("round-trips the names `reindexPinnedSkills` writes", () => {
+    const workflowJson = reindexPinnedSkills(freshWorkflowJson(), [
+      { name: "web-research", description: "Researches the web." },
+      { name: "long-form-write", description: "Writes long documents." },
+    ]);
+    expect(readPinnedSkillNames(workflowJson)).toEqual([
+      "web-research",
+      "long-form-write",
+    ]);
+  });
+
+  test("unpinning everything reads back no names", () => {
+    const pinned = reindexPinnedSkills(freshWorkflowJson(), [
+      { name: "web-research", description: "Researches the web." },
+    ]);
+    expect(readPinnedSkillNames(reindexPinnedSkills(pinned, []))).toEqual([]);
   });
 });
 
