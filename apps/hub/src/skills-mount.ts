@@ -14,6 +14,7 @@ import {
   readPinnedSkillNames,
   type PinnedSkillIndexResolver,
 } from "@corbits/agent-directory";
+import { reportError } from "@corbits/error-sink";
 import {
   createDrizzleSkillAccessStore,
   createHubSkillAssetStore,
@@ -28,6 +29,37 @@ export type SkillsMount = {
   pinnedBy: PinnedByResolver;
   skillIndex: PinnedSkillIndexResolver;
 };
+
+/** At most this many concurrent asset-blob reads while resolving who
+ * pins a skill — a tenant's definition count is unbounded, and one
+ * `readAssetBlob` per definition with no cap is a self-inflicted load
+ * spike against the asset store. */
+const PINNED_BY_READ_CONCURRENCY = 8;
+
+/** Runs `fn` over `items` with at most `limit` in flight, preserving
+ * order — the same bounded fan-out every per-row asset read in this
+ * composition root needs, so a many-definition tenant cannot open a
+ * blob read per definition at once. */
+async function mapWithConcurrencyLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<readonly R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (next < items.length) {
+        const index = next;
+        next += 1;
+        results[index] = await fn(items[index] as T);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
+}
 
 export function mountSkills(deps: {
   db: DB["db"];
@@ -48,20 +80,37 @@ export function mountSkills(deps: {
       const rows = await deps.db.query.workflowDefinition.findMany({
         where: and(eq(workflowDefinition.tenantId, tenantId)),
       });
-      const pinning: { definitionId: string; name: string }[] = [];
-      for (const row of rows) {
-        if (row.assetId === null) continue;
-        // Pins live in the definition's own asset snapshot — the same
-        // stanza every agent-directory read goes through.
-        const workflowJson = await readAgentDefinitionWorkflowJson(
-          deps.assetService,
-          row.assetId,
-        );
-        if (readPinnedSkillNames(workflowJson).includes(skillName)) {
-          pinning.push({ definitionId: row.id, name: row.name });
-        }
-      }
-      return pinning;
+      const candidates = rows.filter(
+        (row): row is typeof row & { assetId: string } => row.assetId !== null,
+      );
+      // Pins live in each definition's own asset snapshot — the same
+      // stanza every agent-directory read goes through. Bounded fan-out
+      // instead of the old sequential N+1, and one unreadable asset
+      // (a pre-cutover retired envelope, a missing blob) skips its
+      // row — reported, never failing the whole resolve.
+      const matches = await mapWithConcurrencyLimit(
+        candidates,
+        PINNED_BY_READ_CONCURRENCY,
+        async (row) => {
+          try {
+            const workflowJson = await readAgentDefinitionWorkflowJson(
+              deps.assetService,
+              row.assetId,
+            );
+            return readPinnedSkillNames(workflowJson).includes(skillName)
+              ? { definitionId: row.id, name: row.name }
+              : null;
+          } catch (err) {
+            reportError(err, {
+              operation: "skills.pinnedBy.resolve",
+              tenantId,
+              extra: { definitionId: row.id, skillName },
+            });
+            return null;
+          }
+        },
+      );
+      return matches.filter((match) => match !== null);
     },
   };
 

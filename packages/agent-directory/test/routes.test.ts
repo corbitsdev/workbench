@@ -23,12 +23,12 @@ import {
   serializeAgentDefinitionWorkflow,
   withAgentToolPackagePin,
   readPinnedSkillNames,
-  reindexPinnedSkills,
 } from "../src/agent-workflow";
 import {
   agentDefinitionSourceTree,
   AGENT_DEFINITION_ENTRY_PATH,
   readAgentDefinitionWorkflowJson,
+  RetiredWorkflowEnvelopeError,
 } from "../src/definition-asset";
 import { createAgentDefinitionRoutes } from "../src/routes";
 import type { PinnedSkillIndexResolver } from "../src/routes";
@@ -38,7 +38,11 @@ import {
 } from "../src/workflow-skill-pin-routes";
 import type { DefinitionAssetHistory } from "../src/definition-history";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
-import { definitionFrom, SOURCE_TREE_PATHS } from "./source-tree";
+import {
+  definitionFrom,
+  SOURCE_TREE_PATHS,
+  storedDefinitionBytesWithSkills,
+} from "./source-tree";
 
 /** A `readAssetBlob` that always answers the definition's entry module
  * with `workflowBytes` — pins live in the asset's own stanza, so a test
@@ -208,27 +212,6 @@ function storedDefinitionBytesWithModel(model: string): Uint8Array {
         systemPrompt: "You are a careful research assistant.",
         model,
       }),
-    ),
-  });
-  return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
-}
-
-/** A stored definition that already pins skills — the state every
- * pin-reading route observes. The stanza is the seed: no side table to
- * write, the bytes carry the pins like a real asset would. */
-function storedDefinitionBytesWithSkills(...names: string[]): Uint8Array {
-  const tree = agentDefinitionSourceTree({
-    handle: "research-buddy",
-    workflowJson: reindexPinnedSkills(
-      serializeAgentDefinitionWorkflow(
-        buildAgentDefinitionWorkflow({
-          handle: "research-buddy",
-          tenantDomain: TENANT.domain,
-          description: "",
-          systemPrompt: "You are a careful research assistant.",
-        }),
-      ),
-      names.map((name) => ({ name, description: `What ${name} does.` })),
     ),
   });
   return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
@@ -761,6 +744,49 @@ test("GET /skills omits unknown definition ids from the map rather than erroring
     skills: Record<string, readonly string[]>;
   };
   expect(body.skills).toEqual({});
+});
+
+test("GET /skills serves the healthy ids when one asset is on the retired envelope", async () => {
+  // The route issues one `findFirst` per requested id, in request order
+  // (each `map` callback runs synchronously to its first await), so the
+  // fake answers each call from this queue — drizzle's `where`
+  // expression tree isn't inspectable without a real query builder.
+  const rows = [
+    { id: "def_healthy", assetId: "ast_healthy" },
+    { id: "def_retired", assetId: "ast_retired" },
+  ];
+  const db = {
+    query: {
+      workflowDefinition: {
+        findFirst: async () => {
+          const row = rows.shift();
+          return row === undefined
+            ? undefined
+            : {
+                id: row.id,
+                tenantId: TENANT.id,
+                assetId: row.assetId,
+                name: "Research Buddy",
+              };
+        },
+      },
+    },
+  } as unknown as DB["db"];
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: (params) =>
+        params.assetId === "ast_healthy"
+          ? Promise.resolve(storedDefinitionBytesWithSkills("web-research"))
+          : Promise.reject(new RetiredWorkflowEnvelopeError(params.assetId)),
+    }),
+    db,
+  );
+  const response = await app.request("/skills?ids=def_healthy,def_retired");
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as {
+    skills: Record<string, readonly string[]>;
+  };
+  expect(body.skills).toEqual({ def_healthy: ["web-research"] });
 });
 
 test("PUT /:definitionId/skills replaces the skill set, writing the definition source tree to the asset", async () => {

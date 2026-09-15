@@ -14,7 +14,6 @@ import {
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
   readPinnedSkillNames,
-  reindexPinnedSkills,
 } from "../src/agent-workflow";
 import {
   createWorkflowSkillPinRoutes,
@@ -26,7 +25,11 @@ import {
   AGENT_DEFINITION_ENTRY_PATH,
 } from "../src/definition-asset";
 import type { PinnedSkillIndexResolver } from "../src/routes";
-import { definitionFrom, SOURCE_TREE_PATHS } from "./source-tree";
+import {
+  definitionFrom,
+  SOURCE_TREE_PATHS,
+  storedDefinitionBytesWithSkills,
+} from "./source-tree";
 
 const TENANT_ID = "tnt_1";
 const OTHER_TENANT_ID = "tnt_2";
@@ -52,27 +55,6 @@ function storedDefinitionBytes(): Uint8Array {
         description: "",
         systemPrompt: "You are a careful research assistant.",
       }),
-    ),
-  });
-  return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
-}
-
-/** A stored definition that already pins skills — the state every
- * pin-reading route observes. The stanza is the seed: no side table to
- * write, the bytes carry the pins like a real asset would. */
-function storedDefinitionBytesWithSkills(...names: string[]): Uint8Array {
-  const tree = agentDefinitionSourceTree({
-    handle: "research-buddy",
-    workflowJson: reindexPinnedSkills(
-      serializeAgentDefinitionWorkflow(
-        buildAgentDefinitionWorkflow({
-          handle: "research-buddy",
-          tenantDomain: "acme.example",
-          description: "",
-          systemPrompt: "You are a careful research assistant.",
-        }),
-      ),
-      names.map((name) => ({ name, description: `What ${name} does.` })),
     ),
   });
   return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);

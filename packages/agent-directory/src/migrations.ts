@@ -29,6 +29,19 @@ export const agentDirectoryMigrations: readonly AgentDirectoryMigration[] = [
   // definition assets' own pinned-skills stanzas: the table 0001 created
   // is dropped, never read again. Append-only like every ledger entry
   // before it — history is not rewritten, the store is deleted forward.
+  //
+  // Parity (stanza ⊇ store, so the drop loses nothing): from the
+  // table's introduction (baabe260) to this cutover, every `setSkills`
+  // writer dual-wrote the identical skill set into the asset stanza
+  // first — create (`createAgentDefinitionCore`), `PUT
+  // /:definitionId/skills`, the skill-pin route, and the
+  // capability-add skill path all `reindexPinnedSkills` the written
+  // workflow and persist the store only in `afterWrite`, which runs
+  // after the asset write succeeds. The store has no delete path and
+  // reads a missing row as []. A crash between the two writes leaves
+  // the stanza ahead (safe: reads now come from the stanza); no path
+  // writes the store without first writing the stanza, so no dropped
+  // row can name a skill its asset's stanza lacks.
   {
     name: "0002_drop_definition_skills",
     sql: `DROP TABLE IF EXISTS "agent_directory"."definition_skills";`,

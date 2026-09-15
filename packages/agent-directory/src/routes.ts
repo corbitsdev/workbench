@@ -274,22 +274,34 @@ export function createAgentDefinitionRoutes({
 
       const entries = await Promise.all(
         ids.map(async (definitionId) => {
-          const row = await db.query.workflowDefinition.findFirst({
-            where: and(
-              eq(workflowDefinition.id, definitionId),
-              eq(workflowDefinition.tenantId, tenant.id),
-            ),
-          });
-          if (row === undefined || row.assetId === null) return null;
-          // Pins read out of the asset's own stanza: the bulk read
-          // survives the side table's deletion by going to the same
-          // source `GET /:definitionId` reads.
-          const workflowJson = await readAgentDefinitionWorkflowJson(
-            assetService,
-            row.assetId,
-          );
-          const skills = readPinnedSkillNames(workflowJson);
-          return [definitionId, skills] as const;
+          try {
+            const row = await db.query.workflowDefinition.findFirst({
+              where: and(
+                eq(workflowDefinition.id, definitionId),
+                eq(workflowDefinition.tenantId, tenant.id),
+              ),
+            });
+            if (row === undefined || row.assetId === null) return null;
+            // Pins read out of the asset's own stanza: the bulk read
+            // survives the side table's deletion by going to the same
+            // source `GET /:definitionId` reads. One unreadable asset
+            // (a pre-cutover retired envelope, a missing blob) must not
+            // fail the whole batch — skip that id, report it, serve the
+            // healthy ones.
+            const workflowJson = await readAgentDefinitionWorkflowJson(
+              assetService,
+              row.assetId,
+            );
+            const skills = readPinnedSkillNames(workflowJson);
+            return [definitionId, skills] as const;
+          } catch (err) {
+            reportError(err, {
+              operation: "agentDirectory.bulkSkills",
+              tenantId: tenant.id,
+              extra: { definitionId },
+            });
+            return null;
+          }
         }),
       );
 
