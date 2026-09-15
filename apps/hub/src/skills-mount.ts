@@ -16,7 +16,6 @@ import {
 } from "@corbits/agent-directory";
 import { reportError } from "@corbits/error-sink";
 import {
-  createDrizzleSkillAccessStore,
   createHubSkillAssetStore,
   createSkillRegistry,
   SkillRegistryError,
@@ -72,7 +71,6 @@ export function mountSkills(deps: {
       assetService: deps.assetService,
       repoStore: deps.repoStore,
     }),
-    access: createDrizzleSkillAccessStore(deps.db),
   });
 
   const pinnedBy: PinnedByResolver = {

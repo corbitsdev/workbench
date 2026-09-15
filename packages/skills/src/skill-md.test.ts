@@ -52,6 +52,7 @@ describe("buildSkillMd", () => {
       name: "triage",
       description: "Sorts issues: bug, question, or feature.",
       body: "Sort them.",
+      scope: "private",
     });
     expect(parseSkillMd(md).description).toBe(
       "Sorts issues: bug, question, or feature.",
@@ -63,6 +64,7 @@ describe("buildSkillMd", () => {
       name: "triage",
       description: "Reads the reporter's own words first.",
       body: "Sort them.",
+      scope: "private",
     });
     expect(parseSkillMd(md).description).toBe(
       "Reads the reporter's own words first.",
@@ -75,13 +77,19 @@ describe("buildSkillMd", () => {
         name: "Summarize Transcript",
         description: "Anything.",
         body: "Body.",
+        scope: "private",
       }),
     ).toThrow(SkillContentError);
   });
 
   test("rejects the reserved vendor names", () => {
     expect(() =>
-      buildSkillMd({ name: "claude", description: "Anything.", body: "Body." }),
+      buildSkillMd({
+        name: "claude",
+        description: "Anything.",
+        body: "Body.",
+        scope: "private",
+      }),
     ).toThrow(SkillContentError);
   });
 
@@ -91,13 +99,19 @@ describe("buildSkillMd", () => {
         name: "triage",
         description: "Sorts <b>issues</b>.",
         body: "Body.",
+        scope: "private",
       }),
     ).toThrow(SkillContentError);
   });
 
   test("rejects an empty body", () => {
     expect(() =>
-      buildSkillMd({ name: "triage", description: "Sorts.", body: "   " }),
+      buildSkillMd({
+        name: "triage",
+        description: "Sorts.",
+        body: "   ",
+        scope: "private",
+      }),
     ).toThrow(SkillContentError);
   });
 });

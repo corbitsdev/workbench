@@ -1,5 +1,5 @@
-// In-memory doubles for the two ports the registry stands on. They keep
-// the registry suite honest without a live hub or a database: the asset
+// In-memory double for the one port the registry stands on. It keeps the
+// registry suite honest without a live hub or a database: the asset
 // double keeps a real per-asset commit list so version history and
 // restore are exercised against an append-only log, exactly the shape
 // the git-backed store serves.

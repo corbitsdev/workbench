@@ -7,22 +7,19 @@ and scope access to per-principal.
 
 ## Composition with @intx/*
 
-A skill's storage, version history, and body are entirely the platform's
-own asset/git machinery — this package writes no versions table and no
-content cache, only reading and committing through the asset store. Routes
-are built on `@intx/hub-api`'s `TenantEnv`/`requireGrant` convention, with
-`@intx/hub-sessions` for session-authenticated calls; persistence for the
-one table this package does own goes through `@intx/db`.
+A skill's storage, version history, body, and visibility are entirely
+the platform's own asset/git machinery — this package owns no tables
+and ships no migrations, only reading and committing through the asset
+store. Routes are built on `@intx/hub-api`'s `TenantEnv`/`requireGrant`
+convention, with `@intx/hub-sessions` for session-authenticated calls.
 
 ## Key modules
 
 - `src/registry.ts` — `SkillRegistry`: create/list/get/versions/restore
   over the `kind:"skill"` asset, with no intermediate pending/draft state.
-- `src/access.ts` / `src/access-store.ts` — the `skill_access` table and
-  visibility rules (`private` to the author, `tenant`-wide, or scoped),
-  the one thing this package persists beyond the asset itself.
-- `src/skill-md.ts` — `SKILL.md` frontmatter parsing/building and the
-  `name`/`description` validation schemas.
+- `src/skill-md.ts` — the SKILL.md grammar: builds, parses, and validates
+  the `name`/`description`/`scope` frontmatter and the markdown body. This
+  is the only place visibility is decided — there is no side table.
 - `src/hub-asset-store.ts` — the production `SkillAssetStore` binding
   against the platform's native asset kind handler.
 - `src/routes.ts` — `createSkillRoutes`: tenant-session routes under
@@ -33,8 +30,6 @@ one table this package does own goes through `@intx/db`.
 - `src/prompt.ts` — `withAvailableSkills`: appends/replaces the
   `<available_skills>` system-prompt stanza for a definition's pinned
   skills.
-- `src/migrations.ts` — this package's own `skills_migrations` ledger,
-  covering only the `skill_access` table.
 
 ## Running tests
 
@@ -42,6 +37,5 @@ one table this package does own goes through `@intx/db`.
 cd packages/skills && bun test
 ```
 
-No drizzle suite in this package's `test/` directory; no `DATABASE_URL`
-needed for `bun test` here (`src/migrations.ts` applies against a real
-Postgres only when a host runs it).
+No drizzle suite in this package's `test/` directory and no migrations
+to apply; no `DATABASE_URL` needed for `bun test` here.

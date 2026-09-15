@@ -1,23 +1,23 @@
 // The skill registry. One surface, one store: every skill is a native
 // `kind:"skill"` hub asset carrying a single `<name>/SKILL.md`, and every
-// version of it is a commit on that asset's default ref. Creating a skill
-// creates that asset directly — there is no intermediate pending state.
-import {
-  canAdministerSkill,
-  isSkillVisibleTo,
-  skillAccessScopeSchema,
-  type SkillAccessRow,
-  type SkillAccessScope,
-  type SkillAccessStore,
-  type SkillCaller,
-} from "./access";
-import type { SkillAssetStore, SkillCommit } from "./asset-store";
+// version of it is a commit on that asset's default ref. Visibility lives
+// in the SKILL.md frontmatter — the asset's own bytes — so there is no
+// side table to drift from the content it gates. Creating a skill creates
+// that asset directly — there is no intermediate pending state.
+import type {
+  SkillAssetRow,
+  SkillAssetStore,
+  SkillCommit,
+} from "./asset-store";
 import {
   buildSkillMd,
   parseSkillMd,
   skillDescriptionSchema,
   skillNameSchema,
+  skillScopeSchema,
   SkillContentError,
+  type ParsedSkillMd,
+  type SkillScope,
 } from "./skill-md";
 import { type } from "arktype";
 
@@ -42,11 +42,25 @@ export class SkillRegistryError extends Error {
   }
 }
 
+export type SkillCaller = {
+  readonly tenantId: string;
+  readonly principalId: string;
+};
+
+/** A skill as the registry resolved it: the parsed tip SKILL.md plus the
+ * asset it was read from. Scope and authorship both come from these two —
+ * nothing else is consulted. */
+type ResolvedSkill = {
+  readonly asset: SkillAssetRow;
+  readonly parsed: ParsedSkillMd;
+  readonly updatedAtIso: string;
+};
+
 export type SkillSummary = {
   readonly assetId: string;
   readonly name: string;
   readonly description: string;
-  readonly scope: SkillAccessScope;
+  readonly scope: SkillScope;
   readonly creatorPrincipalId: string;
   readonly updatedAtIso: string;
 };
@@ -73,10 +87,13 @@ export type SkillRegistry = {
     name: string,
     commitSha: string,
   ): Promise<SkillDetail>;
+  /** Republishes the skill's current content under a new scope as its own
+   * commit, so the previous scope stays restorable like any other version.
+   * Only the skill's own creator may rescope it. */
   setScope(
     caller: SkillCaller,
     name: string,
-    scope: SkillAccessScope,
+    scope: SkillScope,
   ): Promise<SkillSummary>;
   create(
     caller: SkillCaller,
@@ -84,14 +101,14 @@ export type SkillRegistry = {
       readonly name: string;
       readonly description: string;
       readonly body: string;
-      readonly scope: SkillAccessScope;
+      readonly scope: SkillScope;
     },
   ): Promise<SkillSummary>;
   /** Republishes an existing skill's body/description as a new commit on
-   * its same asset, scope untouched — the "republish" `canAdministerSkill`
-   * documents. Distinct from `create`, which always 409s on a name a
+   * its same asset, scope untouched — only the skill's own creator may
+   * `update` it. Distinct from `create`, which always 409s on a name a
    * fully-formed skill already owns (see `create`'s own conflict
-   * handling) — only the skill's own creator may `update` it. */
+   * handling). */
   update(
     caller: SkillCaller,
     name: string,
@@ -108,7 +125,6 @@ export type SkillRegistry = {
 
 export type CreateSkillRegistryDeps = {
   assets: SkillAssetStore;
-  access: SkillAccessStore;
 };
 
 /** True when an arktype failure includes a regex `pattern` check — the
@@ -146,8 +162,8 @@ function assertDescription(raw: string): string {
   return parsed;
 }
 
-function assertScope(raw: string): SkillAccessScope {
-  const parsed = skillAccessScopeSchema(raw);
+function assertScope(raw: string): SkillScope {
+  const parsed = skillScopeSchema(raw);
   if (parsed instanceof type.errors) {
     throw new SkillRegistryError(
       "invalid",
@@ -165,26 +181,61 @@ function contentErrorToRegistryError(cause: unknown): never {
 }
 
 /**
+ * A `tenant`-scoped skill is visible to every principal in the tenant
+ * that can already reach the asset; a `private` one only to the principal
+ * who created it, tenant notwithstanding — a private skill inherited from
+ * a parent stays invisible to everyone in the child but its author.
+ *
+ * This predicate only ever runs on assets `SkillAssetStore.findByName`
+ * and `SkillAssetStore.listForTenant` already resolved, both of which
+ * bound their results to the caller's own tenant plus its ancestors (the
+ * same chain-walk the native asset resolver uses) — so the tenant
+ * boundary is enforced once, at the resolution layer, not duplicated
+ * here. This function's whole job is the scope check.
+ */
+function isSkillVisibleTo(skill: ResolvedSkill, caller: SkillCaller): boolean {
+  if (skill.parsed.scope === "tenant") return true;
+  return skill.asset.creatorPrincipalId === caller.principalId;
+}
+
+/**
+ * Only the creating principal, calling from the tenant that owns the
+ * skill, may republish, restore, or change its scope. An asset inherited
+ * from an ancestor tenant is never administerable from a descendant —
+ * even by its own author — so writes never touch an ancestor's asset;
+ * the registry refuses those explicitly rather than silently forking a
+ * copy (see `requireOwnTenant`).
+ */
+function canAdministerSkill(
+  skill: ResolvedSkill,
+  caller: SkillCaller,
+): boolean {
+  return (
+    skill.asset.tenantId === caller.tenantId &&
+    skill.asset.creatorPrincipalId === caller.principalId
+  );
+}
+
+/**
  * Guards every write path (`update`, `restore`, `setScope`). A skill
  * inherited from an ancestor tenant is refused loudly and specifically —
  * never silently forked into a same-named copy in the caller's own
  * tenant — before falling through to the ordinary "only the author"
- * check `canAdministerSkill` already makes for skills the caller's own
- * tenant does own.
+ * check for skills the caller's own tenant does own.
  */
 function requireOwnTenant(
-  row: SkillAccessRow,
+  skill: ResolvedSkill,
   caller: SkillCaller,
   name: string,
   action: string,
 ): void {
-  if (row.tenantId !== caller.tenantId) {
+  if (skill.asset.tenantId !== caller.tenantId) {
     throw new SkillRegistryError(
       "forbidden",
       `"${name}" is inherited from a parent workbench — ${action} it from the workbench that owns it, not from a child.`,
     );
   }
-  if (!canAdministerSkill(row, caller)) {
+  if (!canAdministerSkill(skill, caller)) {
     throw new SkillRegistryError(
       "forbidden",
       `only the author of "${name}" may ${action} it`,
@@ -192,116 +243,97 @@ function requireOwnTenant(
   }
 }
 
+function summarize(skill: ResolvedSkill): SkillSummary {
+  return {
+    assetId: skill.asset.id,
+    name: skill.parsed.name,
+    description: skill.parsed.description,
+    scope: skill.parsed.scope,
+    creatorPrincipalId: skill.asset.creatorPrincipalId ?? "unknown",
+    updatedAtIso: skill.updatedAtIso,
+  };
+}
+
+function detailOf(skill: ResolvedSkill): SkillDetail {
+  return { ...summarize(skill), body: skill.parsed.body };
+}
+
 export function createSkillRegistry(
   deps: CreateSkillRegistryDeps,
 ): SkillRegistry {
-  const { assets, access } = deps;
+  const { assets } = deps;
+
+  /** Reads a skill's tip SKILL.md and parses it. Returns null when the
+   * asset carries no SKILL.md yet — the half-written state a crashed
+   * `create` leaves behind — so callers treat it as invisible rather
+   * than as a skill with empty content. */
+  async function readTip(asset: SkillAssetRow): Promise<ResolvedSkill | null> {
+    const contents = await assets.readSkillMd({
+      assetId: asset.id,
+      skillName: asset.name,
+    });
+    if (contents === null) return null;
+    return {
+      asset,
+      parsed: parseSkillMd(contents),
+      updatedAtIso: asset.updatedAt.toISOString(),
+    };
+  }
 
   async function resolveVisible(
     caller: SkillCaller,
     name: string,
-  ): Promise<{ row: SkillAccessRow; assetId: string }> {
+  ): Promise<ResolvedSkill> {
     const asset = await assets.findByName(caller.tenantId, name);
     if (asset === null) {
       throw new SkillRegistryError("not_found", `no skill named "${name}"`);
     }
-    const row = await access.get(asset.id);
-    if (row === null || !isSkillVisibleTo(row, caller)) {
+    const skill = await readTip(asset);
+    if (skill === null || !isSkillVisibleTo(skill, caller)) {
       throw new SkillRegistryError("not_found", `no skill named "${name}"`);
     }
-    return { row, assetId: asset.id };
+    return skill;
   }
 
-  async function readDetail(
-    row: SkillAccessRow,
-    updatedAtIso: string,
-  ): Promise<SkillDetail> {
-    const contents = await assets.readSkillMd({
-      assetId: row.assetId,
-      skillName: row.skillName,
-    });
-    if (contents === null) {
-      throw new SkillRegistryError(
-        "not_found",
-        `skill "${row.skillName}" has no SKILL.md on its default ref`,
-      );
-    }
-    const parsed = parseSkillMd(contents);
-    return {
-      assetId: row.assetId,
-      name: parsed.name,
-      description: parsed.description,
-      body: parsed.body,
-      scope: row.scope,
-      creatorPrincipalId: row.creatorPrincipalId,
-      updatedAtIso,
-    };
-  }
-
-  async function summarize(
+  async function visibleSkills(
     caller: SkillCaller,
-    rows: readonly SkillAccessRow[],
-  ): Promise<readonly SkillSummary[]> {
+  ): Promise<readonly ResolvedSkill[]> {
     const assetRows = await assets.listForTenant(caller.tenantId);
-    const updatedById = new Map(
-      assetRows.map((row) => [row.id, row.updatedAt.toISOString()]),
-    );
-    const out: SkillSummary[] = [];
-    for (const row of rows) {
-      const contents = await assets.readSkillMd({
-        assetId: row.assetId,
-        skillName: row.skillName,
-      });
-      if (contents === null) continue;
-      const parsed = parseSkillMd(contents);
-      out.push({
-        assetId: row.assetId,
-        name: parsed.name,
-        description: parsed.description,
-        scope: row.scope,
-        creatorPrincipalId: row.creatorPrincipalId,
-        updatedAtIso: updatedById.get(row.assetId) ?? new Date(0).toISOString(),
-      });
+    const out: ResolvedSkill[] = [];
+    for (const asset of assetRows) {
+      const skill = await readTip(asset);
+      if (skill === null) continue;
+      if (!isSkillVisibleTo(skill, caller)) continue;
+      out.push(skill);
     }
-    return out.sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  async function visibleRows(
-    caller: SkillCaller,
-  ): Promise<readonly SkillAccessRow[]> {
-    const rows = await access.listForTenant(caller.tenantId);
-    return rows.filter((row) => isSkillVisibleTo(row, caller));
+    return out.sort((a, b) => a.parsed.name.localeCompare(b.parsed.name));
   }
 
   return {
     async list(caller) {
-      return summarize(caller, await visibleRows(caller));
+      return (await visibleSkills(caller)).map(summarize);
     },
 
     async search(caller, query) {
       const needle = query.trim().toLowerCase();
-      const summaries = await summarize(caller, await visibleRows(caller));
-      if (needle === "") return summaries;
-      return summaries.filter(
-        (skill) =>
-          skill.name.toLowerCase().includes(needle) ||
-          skill.description.toLowerCase().includes(needle),
-      );
+      const skills = await visibleSkills(caller);
+      if (needle === "") return skills.map(summarize);
+      return skills
+        .filter(
+          (skill) =>
+            skill.parsed.name.toLowerCase().includes(needle) ||
+            skill.parsed.description.toLowerCase().includes(needle),
+        )
+        .map(summarize);
     },
 
     async load(caller, name) {
-      const { row } = await resolveVisible(caller, name);
-      const assetRows = await assets.listForTenant(caller.tenantId);
-      const assetRow = assetRows.find((entry) => entry.id === row.assetId);
-      return readDetail(
-        row,
-        (assetRow?.updatedAt ?? new Date(0)).toISOString(),
-      );
+      return detailOf(await resolveVisible(caller, name));
     },
 
     async versions(caller, name) {
-      const { row } = await resolveVisible(caller, name);
-      const commits = await assets.history(row.assetId);
+      const skill = await resolveVisible(caller, name);
+      const commits = await assets.history(skill.asset.id);
       return commits.map((commit, index) => ({
         ...commit,
         current: index === 0,
@@ -309,10 +341,10 @@ export function createSkillRegistry(
     },
 
     async versionContent(caller, name, commitSha) {
-      const { row } = await resolveVisible(caller, name);
+      const skill = await resolveVisible(caller, name);
       const contents = await assets.readSkillMd({
-        assetId: row.assetId,
-        skillName: row.skillName,
+        assetId: skill.asset.id,
+        skillName: skill.asset.name,
         commitSha,
       });
       if (contents === null) {
@@ -321,8 +353,7 @@ export function createSkillRegistry(
           `skill "${name}" has no SKILL.md at commit ${commitSha}`,
         );
       }
-      const parsed = parseSkillMd(contents);
-      const commit = (await assets.history(row.assetId)).find(
+      const commit = (await assets.history(skill.asset.id)).find(
         (entry) => entry.commitSha === commitSha,
       );
       if (commit === undefined) {
@@ -331,23 +362,24 @@ export function createSkillRegistry(
           `commit ${commitSha} is not in "${name}"'s history`,
         );
       }
+      const parsed = parseSkillMd(contents);
       return {
-        assetId: row.assetId,
+        assetId: skill.asset.id,
         name: parsed.name,
         description: parsed.description,
         body: parsed.body,
-        scope: row.scope,
-        creatorPrincipalId: row.creatorPrincipalId,
+        scope: parsed.scope,
+        creatorPrincipalId: skill.asset.creatorPrincipalId ?? "unknown",
         updatedAtIso: commit.committedAtIso,
       };
     },
 
     async restore(caller, name, commitSha) {
-      const { row } = await resolveVisible(caller, name);
-      requireOwnTenant(row, caller, name, "restore");
+      const skill = await resolveVisible(caller, name);
+      requireOwnTenant(skill, caller, name, "restore");
       const contents = await assets.readSkillMd({
-        assetId: row.assetId,
-        skillName: row.skillName,
+        assetId: skill.asset.id,
+        skillName: skill.asset.name,
         commitSha,
       });
       if (contents === null) {
@@ -357,35 +389,45 @@ export function createSkillRegistry(
         );
       }
       await assets.writeSkillMd({
-        assetId: row.assetId,
-        skillName: row.skillName,
+        assetId: skill.asset.id,
+        skillName: skill.asset.name,
         contents,
         message: `Restore ${name} to ${commitSha.slice(0, 8)}`,
       });
-      return readDetail(row, new Date().toISOString());
-    },
-
-    async setScope(caller, name, scope) {
-      const parsedScope = assertScope(scope);
-      const { row } = await resolveVisible(caller, name);
-      requireOwnTenant(row, caller, name, "change who can see");
-      const next: SkillAccessRow = {
-        assetId: row.assetId,
-        tenantId: row.tenantId,
-        skillName: row.skillName,
-        creatorPrincipalId: row.creatorPrincipalId,
-        scope: parsedScope,
-      };
-      await access.upsert(next);
-      const summaries = await summarize(caller, [next]);
-      const summary = summaries[0];
-      if (summary === undefined) {
+      const restored = await readTip(skill.asset);
+      if (restored === null) {
         throw new SkillRegistryError(
           "not_found",
           `skill "${name}" has no SKILL.md on its default ref`,
         );
       }
-      return summary;
+      return detailOf(restored);
+    },
+
+    async setScope(caller, name, scope) {
+      const parsedScope = assertScope(scope);
+      const skill = await resolveVisible(caller, name);
+      requireOwnTenant(skill, caller, name, "change who can see");
+      const rescoped = buildSkillMd({
+        name: skill.parsed.name,
+        description: skill.parsed.description,
+        scope: parsedScope,
+        body: skill.parsed.body,
+      });
+      await assets.writeSkillMd({
+        assetId: skill.asset.id,
+        skillName: skill.asset.name,
+        contents: rescoped,
+        message: `Set scope of ${name} to ${parsedScope}`,
+      });
+      const updated = await readTip(skill.asset);
+      if (updated === null) {
+        throw new SkillRegistryError(
+          "not_found",
+          `skill "${name}" has no SKILL.md on its default ref`,
+        );
+      }
+      return summarize(updated);
     },
 
     async create(caller, input) {
@@ -394,29 +436,25 @@ export function createSkillRegistry(
       const parsedScope = assertScope(input.scope);
       let contents: string;
       try {
-        contents = buildSkillMd({ name, description, body: input.body });
+        contents = buildSkillMd({
+          name,
+          description,
+          scope: parsedScope,
+          body: input.body,
+        });
       } catch (cause) {
         contentErrorToRegistryError(cause);
       }
 
-      async function finish(assetId: string): Promise<SkillSummary> {
-        const row: SkillAccessRow = {
-          assetId,
-          tenantId: caller.tenantId,
-          skillName: name,
-          creatorPrincipalId: caller.principalId,
-          scope: parsedScope,
-        };
-        await access.upsert(row);
-        const summaries = await summarize(caller, [row]);
-        const summary = summaries[0];
-        if (summary === undefined) {
+      async function finish(asset: SkillAssetRow): Promise<SkillSummary> {
+        const skill = await readTip(asset);
+        if (skill === null) {
           throw new SkillRegistryError(
             "not_found",
             `created skill "${name}" is not readable back`,
           );
         }
-        return summary;
+        return summarize(skill);
       }
 
       // Own-tenant only, deliberately not inheritance-aware: a name
@@ -425,9 +463,9 @@ export function createSkillRegistry(
       // not a conflict.
       const existing = await assets.findOwnByName(caller.tenantId, name);
       if (existing !== null) {
-        const existingRow = await access.get(existing.id);
+        const existingSkill = await readTip(existing);
         if (
-          existingRow !== null ||
+          existingSkill !== null ||
           existing.creatorPrincipalId !== caller.principalId
         ) {
           // Either a fully-formed skill already owns this name, or the
@@ -438,25 +476,18 @@ export function createSkillRegistry(
             `a skill named "${name}" already exists in this workbench`,
           );
         }
-        // The asset exists but has no access row: a prior create for this
-        // exact name got as far as `assets.create` (and maybe
-        // `writeSkillMd`) and then failed or timed out before finishing.
-        // Finish it — write the SKILL.md commit if it's still missing,
-        // then the access row — rather than 409ing on a name this same
-        // caller can never use again. Never re-create the asset itself.
-        const existingContents = await assets.readSkillMd({
+        // The asset exists but carries no SKILL.md yet: a prior create
+        // for this exact name got as far as `assets.create` and then
+        // failed or timed out before the SKILL.md commit landed. Finish
+        // it — write the commit, never re-create the asset — rather than
+        // 409ing on a name this same caller can never use again.
+        await assets.writeSkillMd({
           assetId: existing.id,
           skillName: name,
+          contents,
+          message: `Create ${name}`,
         });
-        if (existingContents === null) {
-          await assets.writeSkillMd({
-            assetId: existing.id,
-            skillName: name,
-            contents,
-            message: `Create ${name}`,
-          });
-        }
-        return finish(existing.id);
+        return finish(existing);
       }
 
       const created = await assets.create({
@@ -471,27 +502,16 @@ export function createSkillRegistry(
         contents,
         message: `Create ${name}`,
       });
-      return finish(created.id);
+      return finish(created);
     },
 
     async update(caller, name, input) {
       const parsedName = assertSkillName(name);
       const description = assertDescription(input.description);
-      let contents: string;
-      try {
-        contents = buildSkillMd({
-          name: parsedName,
-          description,
-          body: input.body,
-        });
-      } catch (cause) {
-        contentErrorToRegistryError(cause);
-      }
-
-      const { row } = await resolveVisible(caller, parsedName);
-      requireOwnTenant(row, caller, parsedName, "update");
+      const skill = await resolveVisible(caller, parsedName);
+      requireOwnTenant(skill, caller, parsedName, "update");
       if (input.expectedHeadSha !== undefined) {
-        const head = (await assets.history(row.assetId))[0];
+        const head = (await assets.history(skill.asset.id))[0];
         if (head?.commitSha !== input.expectedHeadSha) {
           throw new SkillRegistryError(
             "conflict",
@@ -499,21 +519,31 @@ export function createSkillRegistry(
           );
         }
       }
+      let contents: string;
+      try {
+        contents = buildSkillMd({
+          name: parsedName,
+          description,
+          scope: skill.parsed.scope,
+          body: input.body,
+        });
+      } catch (cause) {
+        contentErrorToRegistryError(cause);
+      }
       await assets.writeSkillMd({
-        assetId: row.assetId,
+        assetId: skill.asset.id,
         skillName: parsedName,
         contents,
         message: `Update ${parsedName}`,
       });
-      const summaries = await summarize(caller, [row]);
-      const summary = summaries[0];
-      if (summary === undefined) {
+      const updated = await readTip(skill.asset);
+      if (updated === null) {
         throw new SkillRegistryError(
           "not_found",
           `updated skill "${parsedName}" is not readable back`,
         );
       }
-      return summary;
+      return summarize(updated);
     },
   };
 }
