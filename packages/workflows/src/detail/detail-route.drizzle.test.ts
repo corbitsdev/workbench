@@ -10,6 +10,7 @@ import type { MiddlewareHandler } from "hono";
 import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { applyWorkflowDeploySourceMigrations } from "../deploy-source/migrations";
+import { createDrizzleWorkflowDeploySourceStore } from "../deploy-source/store";
 
 import { dbTargetFromUrl } from "../../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../../scripts/e2e/harness";
@@ -161,6 +162,64 @@ describeIfDb("createWorkflowDetailRoute", () => {
         approved: ["mail:*:send"],
       });
       expect(body.credentialBindings).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
+  // CL-7591 (native cutover): a stale Workbench deploy-source row must NOT
+  // feed the detail read. The detail surface derives lifecycle and source
+  // from native deployment rows only, so even with a recorded row present
+  // `source` stays null. RED: the current route returns the recorded row.
+  test("a stale Workbench deploy-source row no longer feeds the detail read", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      await db.insert(schema.tenant).values(TENANT).onConflictDoNothing();
+      await db.insert(schema.principal).values(PRINCIPAL).onConflictDoNothing();
+      await db.insert(schema.asset).values({
+        id: "asset_native_cutover_wf",
+        tenantId: TENANT.id,
+        kind: "workflow",
+        name: "native-cutover",
+        displayName: "Native Cutover",
+      });
+      await db.insert(schema.workflowDefinition).values({
+        id: "wfd_native_cutover_1",
+        tenantId: TENANT.id,
+        assetId: "asset_native_cutover_wf",
+        wireHash: "hash_cutover",
+        name: "native-cutover",
+        description: "Cut over to native deployments",
+        status: "deployed",
+        currentVersion: "1",
+        grantRequirements: [],
+        wireProjection: {
+          stepOrder: [],
+          steps: {},
+        },
+      });
+      await createDrizzleWorkflowDeploySourceStore(db).record({
+        anchorRunId: "asset_native_cutover_wf",
+        tenantId: TENANT.id,
+        deploymentDomain: "acme-detail-route.workbench.test",
+        source: {
+          kind: "asset",
+          assetId: "asset_native_cutover_wf",
+          package: { format: "source", commitSha: "d".repeat(40) },
+        },
+        entry: "workflow.ts",
+        definitionAssetId: "asset_native_cutover_wf",
+        sourceAuthorityPrincipalId: PRINCIPAL.id,
+      });
+
+      const app = mount(
+        createWorkflowDetailRoute({ db, requireGrant: allowAll }),
+      );
+      const res = await app.request("/asset_native_cutover_wf/detail");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body.source).toBeNull();
+      expect(body.lifecycle).toBe("deployed");
     } finally {
       await close();
     }
