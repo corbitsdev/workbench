@@ -396,4 +396,20 @@ describe("launchWebhookTrigger", () => {
     expect(result.instanceId).toBe(INTERCHANGE_RUN_ID);
     expect(cryptoGetKeys).toEqual([INTERCHANGE_RUN_ID]);
   });
+
+  // CL-6534 part 1: a webhook delivery is a one-off native run — the
+  // native `workflow_run` row Interchange commits answers identity, so
+  // launch must not write a `workbench_launch` mirror row (nor its
+  // sources digest) for it.
+  test("writes no workbench_launch mirror row for the one-off native run", async () => {
+    resetLaunchSpies();
+
+    const result = await launchWebhookTrigger(baseDeps(), TRIGGER, {
+      status: "ok",
+    });
+
+    expect(result.instanceId).toBe(INTERCHANGE_RUN_ID);
+    expect(persistLaunchCalls).toEqual([]);
+    expect(recordLaunchSourcesCalls).toEqual([]);
+  });
 });
