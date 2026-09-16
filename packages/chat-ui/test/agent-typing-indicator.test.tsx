@@ -19,26 +19,33 @@ function render(names: readonly string[]) {
     container,
     label: () =>
       container.querySelector(".chat-typing-indicator-label")?.textContent,
-    unmount: () => root.unmount(),
+    unmount: () => act(() => root.unmount()),
   };
 }
 
 describe("AgentTypingIndicator", () => {
   test("renders nothing when no agent is streaming", () => {
     const { container, unmount } = render([]);
-    expect(container.querySelector(".chat-typing-indicator")).toBeNull();
+    expect(container.querySelector(".chat-silk-thinking-indicator")).toBeNull();
     unmount();
   });
 
-  test("one agent reads as a single typist", () => {
+  test("one agent renders the branded Silk thinking state", () => {
     const { container, label, unmount } = render(["Myra"]);
     expect(label()).toBe("Myra is typing…");
     expect(
-      container.querySelector(".chat-typing-indicator-dots"),
+      container.querySelector(".chat-silk-thinking-indicator"),
     ).not.toBeNull();
     expect(
-      container.querySelectorAll(".chat-agent-typing-avatar"),
-    ).toHaveLength(0);
+      container.querySelector(".chat-silk-thinking-mark-base"),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(".chat-silk-thinking-mark-active"),
+    ).not.toBeNull();
+    expect(container.querySelector(".chat-silk-beam-x")).not.toBeNull();
+    expect(
+      container.querySelector(".chat-silk-thinking-text")?.textContent,
+    ).toBe("Thinking…");
     expect(
       container.querySelector(".chat-typing-row")?.getAttribute("data-own"),
     ).toBe("false");
