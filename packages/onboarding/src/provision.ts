@@ -59,8 +59,6 @@ export type ProvisionArgs = {
    * domain allowlist still bind the first user. */
   accessPolicy?: {
     store: AccessPolicyStore;
-    envSignupMode: "open" | "closed";
-    envAllowedDomains: readonly string[];
     allowUnverifiedEmails: boolean;
   };
 };

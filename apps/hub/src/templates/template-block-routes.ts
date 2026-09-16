@@ -27,7 +27,7 @@ export type TemplateBlockRoutesDeps = {
    * `userMessage`, the raw detail lands here. */
   log: (line: string) => void;
   /** The tenant's default inference preferences — the same resolution a
-   * fresh workbench host launches against (`@corbits/chat`'s
+   * fresh chat host launches against (`@corbits/chat`'s
    * `createWorkbenchHostInferencePreferencesResolver`), so a deployed
    * block runs on the model the bench actually connected. */
   inferencePreferences(

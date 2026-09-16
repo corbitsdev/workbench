@@ -3,14 +3,17 @@
 // provider. One sequential scenario against a real hub, a real
 // sidecar, and a real Postgres.
 //
-// Phase A (onboard → connect): alice signs up first as genesis owner
-// → a tester joins the genesis root as a plain member (the genesis
-// path — first signup on a truly empty hub mints the root — is also
-// covered in-process by `apps/hub/test/signup-genesis.test.ts`) →
-// occupied closed signup is refused → the root's owner (alice)
-// connects a real inference credential through the key path
-// (`POST /api/onboarding/complete`'s own machinery, called directly —
-// see the stubbing note below), which fully seeds every default
+// Phase A (onboard → connect): alice signs up first as genesis owner,
+// then mints the root bench herself through the stock tenant route
+// (stock composition mounts no provisioning hook — signup mints
+// nothing, so the first tenant comes from an ordinary
+// `POST /api/tenants` with a caller-chosen slug, and its creator is
+// the native owner) → a tester signs up as a plain account and the
+// owner invites them onto the root as a member (the stock
+// `members/invite` route plus activation) → occupied signup stays
+// ungated → the root's owner (alice) connects a real inference
+// credential through the key path (the connect flow's own machinery,
+// called directly — see the stubbing note below), which fully seeds every default
 // workflow, including "assistant" → the Connections surface (the
 // tenant's own credentials list, the same route `connectorStatus` in
 // `@workbench/settings-ui` reads) honestly reflects the connected
@@ -27,12 +30,12 @@
 // `runPublishTools` hop onto the root stands in for
 // setup, then `ensureSeeded` deploys without packing.
 //
-// Stubbing note: onboarding's own `POST /api/onboarding/complete` route
+// Stubbing note: the key-path connect flow's own machinery
 // (`testAndPersistCredential`, from `@workbench/onboarding`'s
 // `complete-credential.ts`) stores a pasted key immediately, with no
 // live probe of the provider gating it (CL-6123) — so there is nothing
 // left to stub there. This suite still drives the same two halves the
-// route itself calls (`testAndPersistCredential`/`ensureSeeded`)
+// connect flow itself calls (`testAndPersistCredential`/`ensureSeeded`)
 // directly rather than through HTTP, the same way `chat.test.ts` drives
 // `seedCatalog` directly rather than going through an HTTP surface that
 // has no test seam. Every call these two halves make is real HTTP
@@ -77,7 +80,9 @@ import {
   modelSourceFor,
 } from "../../packages/onboarding/src/complete-credential.ts";
 import {
+  readTenantDesiredStateStatus,
   reconcileTenantDesiredState,
+  resolveTenantDeployer,
   resolveTenantModelSource,
 } from "../../packages/onboarding/src/desired-state.ts";
 import { CredentialResponse, paginatedSchema } from "@intx/types";
@@ -189,56 +194,61 @@ describe.skipIf(databaseUrl === undefined)(
         );
         const probe = await api(
           hub.baseUrl,
-          "POST",
-          "/api/onboarding/provision",
+          "GET",
+          "/api/me/principals",
           undefined,
           res.cookies,
         );
         expectStatus("alice genesis probe", probe, 200);
-        expect((probe.data as { kind: string }).kind).toBe("needs-onboarding");
+        expect((probe.data as { data: unknown[] }).data).toEqual([]);
+        // Stock composition mounts no provisioning hook — signup mints
+        // nothing — so the first tenant comes from an ordinary
+        // `POST /api/tenants` with a caller-chosen slug, and its
+        // creator is the native owner.
         const minted = await api(
           hub.baseUrl,
           "POST",
-          "/api/onboarding/provision",
-          { name: "Workbench" },
+          "/api/tenants",
+          { slug: "workbench", name: "Workbench" },
           res.cookies,
         );
-        expectStatus("alice genesis provision", minted, 200);
-        expect((minted.data as { kind: string }).kind).toBe("provisioned");
-        return { cookies: res.cookies, userId };
+        expectStatus("alice genesis tenant create", minted, 201);
+        const mintedBody = minted.data as {
+          id?: string;
+          tenantId?: string;
+        };
+        const tenantId =
+          typeof mintedBody.id === "string"
+            ? mintedBody.id
+            : typeof mintedBody.tenantId === "string"
+              ? mintedBody.tenantId
+              : undefined;
+        if (tenantId === undefined) {
+          throw new Error(
+            `create tenant answered no id: ${JSON.stringify(minted.data)}`,
+          );
+        }
+        return {
+          cookies: res.cookies,
+          userId,
+          tenantId,
+          tenantSlug: "workbench",
+        };
       });
 
-      // Occupied closed signup: a hub with WORKBENCH_SIGNUP=closed
-      // refuses a brand-new person once the hub is no longer empty —
-      // the empty-hub exception already admitted alice. Proven against
-      // a short-lived hub of its own so the rest of this scenario's
-      // open hub never muddies the assertion.
-      await hop("closed-by-default signup is respected", async () => {
-        const closedHub = await startHub({
-          databaseUrl: url,
-          port: freePort(),
-          sessionSecret: Buffer.from(
-            crypto.getRandomValues(new Uint8Array(32)),
-          ).toString("hex"),
-          dataDir: await tempDir("e2e-local-rip-closed-hub-data-"),
-          extraEnv: { WORKBENCH_SIGNUP: "closed" },
+      // Stock composition leaves self-serve signup ungated: a brand-new
+      // person can still sign up once the hub is occupied (there is no
+      // signup mode left to close). Proven against the main hub itself,
+      // so no second boot is needed.
+      await hop("signup stays ungated once the hub is occupied", async () => {
+        const res = await api(hub.baseUrl, "POST", "/api/auth/sign-up/email", {
+          name: "Open Signup Tester",
+          email: `local-rip-open-${crypto.randomUUID()}@example.invalid`,
+          password: `pw-${crypto.randomUUID()}`,
         });
-        try {
-          const res = await api(
-            closedHub.baseUrl,
-            "POST",
-            "/api/auth/sign-up/email",
-            {
-              name: "Closed Signup Tester",
-              email: `local-rip-closed-${crypto.randomUUID()}@example.invalid`,
-              password: `pw-${crypto.randomUUID()}`,
-            },
-          );
-          expectStatus("closed-signup sign-up attempt", res, 403);
-          const body = res.data as { error: string };
-          expect(body.error).toBe("signup_closed");
-        } finally {
-          await closedHub.stop();
+        expectStatus("open-signup sign-up attempt", res, 200);
+        if (res.cookies.length === 0) {
+          throw new Error("open-signup sign-up returned no session cookie");
         }
       });
 
@@ -246,79 +256,93 @@ describe.skipIf(databaseUrl === undefined)(
         signUp(hub.baseUrl, "Local Rip Tester"),
       );
 
-      const provisioned = await hop(
-        "a membership probe joins the genesis root as a member",
-        async () => {
-          const res = await api(
-            hub.baseUrl,
-            "POST",
-            "/api/onboarding/provision",
-            undefined,
-            user.cookies,
-          );
-          expectStatus("provision probe", res, 200);
-          const data = res.data as {
-            kind: string;
-            tenantId: string;
-            tenantSlug: string;
-            seeded: boolean;
-            seedSkipReason?: string;
-          };
-          expect(data.kind).toBe("existing-member");
-          stringField(data, "tenantId", "provision result");
-          stringField(data, "tenantSlug", "provision result");
-          return data;
-        },
-      );
-
-      await hop("re-provisioning the same account is idempotent", async () => {
-        const res = await api(
-          hub.baseUrl,
-          "POST",
-          "/api/onboarding/provision",
-          { name: "Local Rip Tester's Bench" },
-          user.cookies,
-        );
-        expectStatus("re-provision", res, 200);
-        const data = res.data as { kind: string };
-        expect(data.kind).toBe("existing-member");
-      });
-
+      // Stock composition auto-joins nobody: a second signup only
+      // registers an account. The owner brings the tester onto the
+      // root through the native invite route (member role, so read-only
+      // by design) and activates the membership.
       await hop(
-        "the provisioned bench is a real tenant membership",
+        "the owner invites the tester onto the root bench as a member",
         async () => {
-          const res = await api(
+          const rolesRes = await api(
             hub.baseUrl,
             "GET",
-            "/api/me/principals",
+            `/api/tenants/${admin.tenantId}/roles`,
             undefined,
-            user.cookies,
+            admin.cookies,
           );
-          expectStatus("list principals", res, 200);
-          const rows = (res.data as { data: { tenantId: string }[] }).data;
-          const own = rows.find((row) => row.tenantId === provisioned.tenantId);
-          if (own === undefined) {
+          expectStatus("list root roles", rolesRes, 200);
+          const roles = (
+            rolesRes.data as { data: { id: string; name: string }[] }
+          ).data;
+          const memberRole = roles.find((role) => role.name === "member");
+          if (memberRole === undefined) {
             throw new Error(
-              `provisioned tenant ${provisioned.tenantId} is missing from the caller's own principals: ${JSON.stringify(rows)}`,
+              `no member role on the root tenant: ${JSON.stringify(roles)}`,
             );
           }
+          const invited = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${admin.tenantId}/members/invite`,
+            { email: user.email, roleId: memberRole.id },
+            admin.cookies,
+          );
+          expectStatus("invite tester", invited, 201);
+          const principalId = stringField(invited.data, "id", "invite result");
+          const activated = await api(
+            hub.baseUrl,
+            "PATCH",
+            `/api/tenants/${admin.tenantId}/principals/${principalId}`,
+            { status: "active" },
+            admin.cookies,
+          );
+          expectStatus("activate tester", activated, 200);
+          // Inviting the same account again mints nothing: stock answers
+          // 409, the surviving idempotency half of the removed
+          // re-provision hop.
+          const repeat = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${admin.tenantId}/members/invite`,
+            { email: user.email, roleId: memberRole.id },
+            admin.cookies,
+          );
+          expectStatus("re-invite", repeat, 409);
         },
       );
 
+      await hop("the invited bench is a real tenant membership", async () => {
+        const res = await api(
+          hub.baseUrl,
+          "GET",
+          "/api/me/principals",
+          undefined,
+          user.cookies,
+        );
+        expectStatus("list principals", res, 200);
+        const rows = (res.data as { data: { tenantId: string }[] }).data;
+        const own = rows.find((row) => row.tenantId === admin.tenantId);
+        if (own === undefined) {
+          throw new Error(
+            `invited tenant ${admin.tenantId} is missing from the caller's own principals: ${JSON.stringify(rows)}`,
+          );
+        }
+      });
+
       const tenant = await hop(
-        "the freshly provisioned bench resolves through findPersonalTenant",
+        "the freshly created bench resolves through findPersonalTenant",
         async () => {
           const found = await findPersonalTenant(
             hubApi,
             admin.cookies,
-            provisioned.tenantSlug,
+            admin.tenantSlug,
           );
           if (found === undefined) {
             throw new Error(
-              `findPersonalTenant found nothing for slug ${provisioned.tenantSlug}`,
+              `findPersonalTenant found nothing for slug ${admin.tenantSlug}`,
             );
           }
-          expect(found.tenantId).toBe(provisioned.tenantId);
+          expect(found.tenantId).toBe(admin.tenantId);
           return found;
         },
       );
@@ -427,13 +451,13 @@ describe.skipIf(databaseUrl === undefined)(
       // publisher with a privileged cookie jar directly. Then
       // ensureSeeded deploys assistant without packing.
       await hop(
-        "publish-tools installs corbits-tools onto the provisioned root bench (setup's job, not seed's)",
+        "publish-tools installs corbits-tools onto the created root bench (setup's job, not seed's)",
         async () => {
           const result = await runPublishTools({
             hubUrl: hub.baseUrl,
             email: "alice@example.com",
             password: "password123",
-            tenant: provisioned.tenantSlug,
+            tenant: admin.tenantSlug,
             log: () => undefined,
           });
           expect(result.success).toBe(true);
@@ -563,21 +587,20 @@ describe.skipIf(databaseUrl === undefined)(
       // CL-7584: the doc-driven reconcile converges without reinstalling,
       // a second member never mints a second Myra, and a second tenant
       // created through the native route converges onto its own.
+      //
+      // Stock Interchange cutover (hub fd3a43e2): the skills mount is
+      // gone, so the plant writes nothing and the reconcile re-read pins
+      // every skill "blocked" — the report is never ready, and a second
+      // pass re-enters the seed half. The old zero-non-GET idempotence
+      // assertion is unachievable against that steady state; it now lives
+      // in the `desired-state-reconcile` unit test, whose faithful mount
+      // still converges. This hop proves the stock-reality steady state
+      // instead: workflows installed and present, skills pending-but-absent.
       await hop(
-        "CL-7584: a second reconcile pass over the converged root issues zero non-GET calls",
+        "CL-7584: reconcile converges workflows while skills stay pending (stock cutover)",
         async () => {
-          const calls: string[] = [];
-          const countingApi: ApiCall = ((
-            method: string,
-            path: string,
-            body?: unknown,
-            cookies?: string[],
-          ) => {
-            calls.push(method);
-            return hubApi(method, path, body, cookies);
-          }) as unknown as ApiCall;
           const args = {
-            api: countingApi,
+            api: hubApi,
             cookies: admin.cookies,
             hubUrl: hub.baseUrl,
             tenant: {
@@ -595,13 +618,28 @@ describe.skipIf(databaseUrl === undefined)(
             log: () => undefined,
           };
           const first = await reconcileTenantDesiredState(args);
-          expect(first.ready).toBe(true);
-          const nonGets = calls.filter((method) => method !== "GET").length;
-          const second = await reconcileTenantDesiredState(args);
-          expect(second.ready).toBe(true);
-          expect(calls.filter((method) => method !== "GET").length).toBe(
-            nonGets,
+          expect(first.ready).toBe(false);
+          expect(
+            first.pins
+              .filter((pin) => pin.kind === "workflow")
+              .every((pin) => pin.status === "installed"),
+          ).toBe(true);
+          expect(
+            first.pins
+              .filter((pin) => pin.kind === "skill")
+              .every((pin) => pin.status === "blocked"),
+          ).toBe(true);
+          const status = await readTenantDesiredStateStatus(
+            hubApi,
+            admin.cookies,
+            tenant.tenantId,
           );
+          expect(
+            Object.values(status.workflows).every((s) => s === "present"),
+          ).toBe(true);
+          expect(
+            Object.values(status.skills).every((s) => s === "pending"),
+          ).toBe(true);
         },
       );
 
@@ -659,11 +697,11 @@ describe.skipIf(databaseUrl === undefined)(
               `create tenant answered no id: ${JSON.stringify(body)}`,
             );
           }
-          // Pre-poll guard through the same `resolveTenantModelSource`
-          // path the kick reconciles with: the child must resolve the
-          // root's inherited offerings before the kick can deploy
-          // anything. If this is undefined the poll below can only time
-          // out as blocked, so fail fast with the reason.
+          // Pre-kick guard through the same `resolveTenantModelSource`
+          // path the reconcile below deploys with: the child must resolve
+          // the root's inherited offerings before anything can deploy.
+          // If this is undefined the poll below can only time out as
+          // blocked, so fail fast with the reason.
           const model = await resolveTenantModelSource(
             hubApi,
             admin.cookies,
@@ -674,29 +712,52 @@ describe.skipIf(databaseUrl === undefined)(
               "the second tenant resolves no catalog models (expected the root's inherited offerings)",
             );
           }
-          // The tenant-create observer reconciles fire-and-forget; poll
-          // for the new tenant's own live assistant. The status read is
-          // the same doc lookup the kick reconciles against, so a timeout
-          // reports per-pin pending/blocked/failed instead of a bare
-          // "never converged".
+          // Stock Interchange cutover (hub fd3a43e2): the tenant-create
+          // observer is deleted, so no server kick converges this tenant.
+          // The suite drives the same `reconcileTenantDesiredState` the
+          // observer used to call, under the creator's owner principal,
+          // then polls for the live assistant exactly as before.
+          const deployer = await resolveTenantDeployer(
+            hubApi,
+            admin.cookies,
+            secondTenantId,
+          );
+          if (deployer === undefined) {
+            throw new Error(
+              "the second tenant resolves no deployable owner principal",
+            );
+          }
+          const kick = await reconcileTenantDesiredState({
+            api: hubApi,
+            cookies: admin.cookies,
+            hubUrl: hub.baseUrl,
+            tenant: {
+              tenantId: secondTenantId,
+              principalId: deployer.principalId,
+              domain: deployer.tenantDomain,
+            },
+            model,
+            pushWorkflow,
+            log: () => undefined,
+          });
+          // Workflows install; skills stay pending (stock cutover — the
+          // skills mount is gone), so the report is never ready.
+          expect(kick.ready).toBe(false);
+          expect(
+            kick.pins
+              .filter((pin) => pin.kind === "workflow")
+              .every((pin) => pin.status === "installed"),
+          ).toBe(true);
+          // Poll the new tenant's own assets and deployments for its
+          // live assistant.
           const deadline = Date.now() + 90_000;
-          let lastSteps: unknown;
+          let lastSeen: unknown;
           for (;;) {
             if (hub.exited()) {
               throw new Error(
                 `hub exited before the second tenant converged; output:\n${hub.output()}`,
               );
             }
-            const statusRes = await api(
-              hub.baseUrl,
-              "GET",
-              `/api/onboarding/provisioning-status?tenantId=${secondTenantId}`,
-              undefined,
-              admin.cookies,
-            );
-            if (statusRes.status === 200) lastSteps = statusRes.data;
-            else
-              lastSteps = `provisioning-status ${statusRes.status}: ${JSON.stringify(statusRes.data)}`;
             const assetsRes = await api(
               hub.baseUrl,
               "GET",
@@ -706,6 +767,7 @@ describe.skipIf(databaseUrl === undefined)(
             );
             expectStatus("list second-tenant assets", assetsRes, 200);
             const assets = assetsRes.data as { id: string; name: string }[];
+            lastSeen = assets.map((a) => a.name);
             const assistant = assets.find((a) => a.name === "assistant");
             if (assistant !== undefined) {
               const deploymentsRes = await api(
@@ -736,11 +798,21 @@ describe.skipIf(databaseUrl === undefined)(
             }
             if (Date.now() > deadline) {
               throw new Error(
-                `the second tenant never converged onto its own assistant; last provisioning-status: ${JSON.stringify(lastSteps ?? "no provisioning-status read yet")}`,
+                `the second tenant never converged onto its own assistant; last asset names: ${JSON.stringify(lastSeen)}`,
               );
             }
             await Bun.sleep(500);
           }
+          // The converged second tenant carries its own live assistant
+          // while its skills stay pending (stock cutover).
+          const secondStatus = await readTenantDesiredStateStatus(
+            hubApi,
+            admin.cookies,
+            secondTenantId,
+          );
+          expect(
+            Object.values(secondStatus.skills).every((s) => s === "pending"),
+          ).toBe(true);
         },
       );
     }, 180_000);

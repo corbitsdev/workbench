@@ -4,7 +4,7 @@ import * as errorSink from "@corbits/error-sink";
 import {
   createWorkflowScheduler,
   DEFAULT_WORKFLOW_SCHEDULER_POLL_INTERVAL_MS,
-  joinScheduledDefinitionToWorkbench,
+  joinScheduledDefinitionToChat,
   runNowScheduledDefinition,
   tickWorkflowScheduler,
   type ScheduledDefinition,
@@ -239,14 +239,14 @@ describe("createWorkflowScheduler's setInterval wiring", () => {
   });
 });
 
-describe("joinScheduledDefinitionToWorkbench", () => {
-  test("joins the first workbench when delivery is required", async () => {
+describe("joinScheduledDefinitionToChat", () => {
+  test("joins the first chat when delivery is required", async () => {
     const joined: unknown[] = [];
-    await joinScheduledDefinitionToWorkbench(
+    await joinScheduledDefinitionToChat(
       {
-        deliveryWorkbenchRequired: async () => true,
-        resolveDeliveryWorkbench: async () => "chn_1",
-        joinDeliveryWorkbench: async (input) => {
+        deliveryChatRequired: async () => true,
+        resolveDeliveryChat: async () => "chn_1",
+        joinDeliveryChat: async (input) => {
           joined.push(input);
         },
       },
@@ -264,13 +264,13 @@ describe("joinScheduledDefinitionToWorkbench", () => {
     ]);
   });
 
-  test("omits join when the tenant has no workbench and still returns", async () => {
+  test("omits join when the tenant has no chat and still returns", async () => {
     let joined = 0;
-    await joinScheduledDefinitionToWorkbench(
+    await joinScheduledDefinitionToChat(
       {
-        deliveryWorkbenchRequired: async () => true,
-        resolveDeliveryWorkbench: async () => undefined,
-        joinDeliveryWorkbench: async () => {
+        deliveryChatRequired: async () => true,
+        resolveDeliveryChat: async () => undefined,
+        joinDeliveryChat: async () => {
           joined += 1;
         },
       },
@@ -282,11 +282,11 @@ describe("joinScheduledDefinitionToWorkbench", () => {
 
   test("omits join when the catalog says inbox delivery", async () => {
     let joined = 0;
-    await joinScheduledDefinitionToWorkbench(
+    await joinScheduledDefinitionToChat(
       {
-        deliveryWorkbenchRequired: async () => false,
-        resolveDeliveryWorkbench: async () => "chn_1",
-        joinDeliveryWorkbench: async () => {
+        deliveryChatRequired: async () => false,
+        resolveDeliveryChat: async () => "chn_1",
+        joinDeliveryChat: async () => {
           joined += 1;
         },
       },
@@ -347,15 +347,15 @@ function runNowArgs() {
 }
 
 describe("runNowScheduledDefinition", () => {
-  test("joins the first workbench after a successful trigger", async () => {
+  test("joins the first chat after a successful trigger", async () => {
     const joined: unknown[] = [];
     const result = await runNowScheduledDefinition(
       {
         db: createFakeTriggerDb([LIVE_ANCHOR]) as never,
         sidecarRouter: { routeMail: () => true } as never,
-        deliveryWorkbenchRequired: async () => true,
-        resolveDeliveryWorkbench: async () => "chn_1",
-        joinDeliveryWorkbench: async (input) => {
+        deliveryChatRequired: async () => true,
+        resolveDeliveryChat: async () => "chn_1",
+        joinDeliveryChat: async (input) => {
           joined.push(input);
         },
       },
@@ -381,9 +381,9 @@ describe("runNowScheduledDefinition", () => {
         {
           db: createFakeTriggerDb([LIVE_ANCHOR]) as never,
           sidecarRouter: { routeMail: () => true } as never,
-          deliveryWorkbenchRequired: async () => true,
-          resolveDeliveryWorkbench: async () => "chn_1",
-          joinDeliveryWorkbench: async () => {
+          deliveryChatRequired: async () => true,
+          resolveDeliveryChat: async () => "chn_1",
+          joinDeliveryChat: async () => {
             throw boom;
           },
         },
@@ -393,7 +393,7 @@ describe("runNowScheduledDefinition", () => {
       expect(report).toHaveBeenCalledTimes(1);
       expect(report.mock.calls[0]?.[0]).toBe(boom);
       expect(report.mock.calls[0]?.[1]).toEqual({
-        operation: "scheduled-workflow.run-now.join-workbench",
+        operation: "scheduled-workflow.run-now.join-chat",
         tenantId: "t1",
         extra: {
           definitionId: "wfd_digest",

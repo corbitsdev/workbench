@@ -127,10 +127,5 @@ export { CONNECTOR_PINNED_WORKFLOWS } from "./connections-pinned-by";
 
 export { SETTINGS_STRINGS } from "./strings";
 
-export {
-  SettingsApiError,
-  getAccount,
-  getAuthConfig,
-  renameBench,
-} from "./api";
-export type { Account, AuthConfig, Bench } from "./api";
+export { SettingsApiError, getAccount, renameBench } from "./api";
+export type { Account, Bench } from "./api";

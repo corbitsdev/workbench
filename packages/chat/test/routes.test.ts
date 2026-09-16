@@ -5,14 +5,11 @@
 // `workbench-service.test.ts`, and the SSE registry in
 // `workbench-events.test.ts`.
 import { describe, expect, test } from "bun:test";
-import { Hono } from "hono";
-import type { TenantEnv } from "@intx/hub-api";
 import { InferenceResolutionError } from "../src/model-unavailable";
 import { DefinitionProjectionMissingError } from "@corbits/workflows";
 import { postRoomMessage } from "../src/room-messages";
 import type { Part } from "../src/parts";
 import { createChatRoutes } from "../src/routes";
-import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { createInMemoryChatStore } from "../src/store";
 import { createInMemoryThreadStore } from "../src/threads";
 import {
@@ -20,7 +17,7 @@ import {
   createWorkbench,
   fakePlatform,
   mountAs,
-  principal,
+  OTHER_TENANT,
   sendText,
   TENANT,
   timelineEvents,
@@ -148,7 +145,7 @@ describe("POST /workbenches", () => {
     expect(body.error.code).toBe("bad_request");
   });
 
-  test("creating an unnamed chat titles it by the agent's display name, tenant row included", async () => {
+  test("creating an unnamed chat titles it by the agent's display name", async () => {
     const deliveries: (() => Promise<void>)[] = [];
     const deps = buildDeps({
       platform: fakePlatform({
@@ -181,11 +178,6 @@ describe("POST /workbenches", () => {
     expect(settled?.settings["chat/participants"]).toEqual([
       { address: "ins_invited1@acme.example", handle: "myra" },
     ]);
-    const tenancy = deps.tenancy as ReturnType<
-      typeof createInMemoryWorkbenchTenancyStore
-    >;
-    const [minted] = await tenancy.listChildWorkbenchTenancies(TENANT.id);
-    expect(minted?.slug.startsWith("myra")).toBe(true);
   });
 
   test("creating a chat auto-invites its agent and titles it by handle", async () => {
@@ -346,7 +338,7 @@ describe("POST /workbenches", () => {
     expect(body.title).toBe("My Assistant");
   });
 
-  test("an agent mint failure compensates the workbench before returning", async () => {
+  test("an agent mint failure leaves the client-minted settings row in place", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
@@ -379,21 +371,18 @@ describe("POST /workbenches", () => {
     );
     expect(errorBody.error.userMessage).not.toMatch(/HTTP/);
 
-    const tenancy = deps.tenancy as ReturnType<
-      typeof createInMemoryWorkbenchTenancyStore
-    >;
-    expect(await deps.store.listWorkbenchSettings(TENANT.id)).toHaveLength(0);
-    expect(await tenancy.listChildWorkbenchTenancies(TENANT.id)).toHaveLength(
-      0,
-    );
+    // No server compensation: the tenant is client-minted through
+    // Interchange, so this settings row stands for the client to reuse
+    // or delete — chat never cleans up behind it.
+    expect(await deps.store.listWorkbenchSettings(TENANT.id)).toHaveLength(1);
   });
 
   // A workbench create must never 500 on a definition row with no
   // frozen wire projection stored on it (a pre-cutover row, or one
   // whose approval never completed) — it answers a named 4xx with
-  // consumer-language guidance, and still compensates the orphaned
-  // tenant/settings exactly as every other agent-mint failure does.
-  test("a definition with no stored launch body answers 409 with recovery guidance, not 500, and still compensates", async () => {
+  // consumer-language guidance, and the client-minted settings row
+  // stands exactly as with every other agent-mint failure.
+  test("a definition with no stored launch body answers 409 with recovery guidance, not 500, and keeps the settings row", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
@@ -417,16 +406,13 @@ describe("POST /workbenches", () => {
     expect(errorBody.error.code).toBe("not_launchable");
     expect(errorBody.error.userMessage).toMatch(/save its instructions/);
 
-    const tenancy = deps.tenancy as ReturnType<
-      typeof createInMemoryWorkbenchTenancyStore
-    >;
-    expect(await deps.store.listWorkbenchSettings(TENANT.id)).toHaveLength(0);
-    expect(await tenancy.listChildWorkbenchTenancies(TENANT.id)).toHaveLength(
-      0,
-    );
+    // No server compensation: the tenant is client-minted through
+    // Interchange, so this settings row stands for the client to reuse
+    // or delete — chat never cleans up behind it.
+    expect(await deps.store.listWorkbenchSettings(TENANT.id)).toHaveLength(1);
   });
 
-  test("a generic agent mint failure compensates the workbench so a retry starts clean", async () => {
+  test("a generic agent mint failure keeps the settings row so a retry reuses it", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
@@ -444,16 +430,13 @@ describe("POST /workbenches", () => {
 
     expect(response.status).toBe(500);
 
-    const tenancy = deps.tenancy as ReturnType<
-      typeof createInMemoryWorkbenchTenancyStore
-    >;
-    expect(await deps.store.listWorkbenchSettings(TENANT.id)).toHaveLength(0);
-    expect(await tenancy.listChildWorkbenchTenancies(TENANT.id)).toHaveLength(
-      0,
-    );
+    // No server compensation: the tenant is client-minted through
+    // Interchange, so this settings row stands for the client to reuse
+    // or delete — chat never cleans up behind it.
+    expect(await deps.store.listWorkbenchSettings(TENANT.id)).toHaveLength(1);
   });
 
-  test("an agent mint failure compensates the workbench", async () => {
+  test("an agent mint failure never removes the client-minted settings row", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
@@ -469,13 +452,10 @@ describe("POST /workbenches", () => {
     });
     expect(response.status).toBe(500);
 
-    const tenancy = deps.tenancy as ReturnType<
-      typeof createInMemoryWorkbenchTenancyStore
-    >;
-    expect(await deps.store.listWorkbenchSettings(TENANT.id)).toHaveLength(0);
-    expect(await tenancy.listChildWorkbenchTenancies(TENANT.id)).toHaveLength(
-      0,
-    );
+    // No server compensation: the tenant is client-minted through
+    // Interchange, so this settings row stands for the client to reuse
+    // or delete — chat never cleans up behind it.
+    expect(await deps.store.listWorkbenchSettings(TENANT.id)).toHaveLength(1);
   });
 
   test("a failed agent pre-warm leaves the minted chat ready for first-message retry", async () => {
@@ -498,13 +478,7 @@ describe("POST /workbenches", () => {
     expect(response.status).toBe(201);
     await deliveries[0]?.();
 
-    const tenancy = deps.tenancy as ReturnType<
-      typeof createInMemoryWorkbenchTenancyStore
-    >;
     expect(await deps.store.listWorkbenchSettings(TENANT.id)).toHaveLength(1);
-    expect(await tenancy.listChildWorkbenchTenancies(TENANT.id)).toHaveLength(
-      1,
-    );
     const settled = await deps.store.getWorkbenchSettings(TENANT.id, body.id);
     expect(settled?.settings["chat/participants"]).toEqual([
       { address: "ins_invited1@acme.example", handle: "echo" },
@@ -514,8 +488,12 @@ describe("POST /workbenches", () => {
   });
 });
 
-describe("POST /workbenches — kind: chat + definitionId always find-or-reopens (CL-6981)", () => {
-  test("creating a chat with the same agent twice, reuseExisting: true both times, reuses the first chat instead of forking a duplicate", async () => {
+describe("POST /workbenches — kind: chat always mints, never find-or-reopens", () => {
+  test("creating a chat with the same agent twice runs the mint both times — the server never dedups", async () => {
+    // The workbench id is the tenant id, so both creates land on the
+    // same settings row — but each runs the full agent mint rather
+    // than reusing ("reopening") the first chat's agent. Reuse is the
+    // client's call, by listing its conversation tenants.
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
     });
@@ -524,59 +502,22 @@ describe("POST /workbenches — kind: chat + definitionId always find-or-reopens
     const first = await createWorkbench(app, {
       kind: "chat",
       definitionId: "wfd_echo",
-      reuseExisting: true,
     });
     expect(first.response.status).toBe(201);
 
     const second = await createWorkbench(app, {
       kind: "chat",
       definitionId: "wfd_echo",
-      reuseExisting: true,
     });
 
-    expect(second.response.status).toBe(200);
-    expect(second.body.id).toBe(first.body.id);
-    expect(second.body.kind).toBe("chat");
+    expect(second.response.status).toBe(201);
+    expect(second.body.id).toBe(TENANT.id);
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    expect(platform.launchInviteCalls).toHaveLength(1);
-    const chats = await deps.store.listWorkbenchSettings(TENANT.id, "chat");
-    expect(chats).toHaveLength(1);
+    expect(platform.launchInviteCalls).toHaveLength(2);
   });
 
-  test("reuses the chat when the agent's definition was re-projected under a new id over the same asset", async () => {
-    const deps = buildDeps({
-      platform: fakePlatform({
-        invitable: [
-          { id: "wfd_echo_v1", name: "Echo" },
-          { id: "wfd_echo_v2", name: "Echo" },
-        ],
-        resolveDefinitionAssetId: async (definitionId: string) =>
-          definitionId.startsWith("wfd_echo") ? "ast_echo" : undefined,
-      }),
-    });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-
-    const first = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo_v1",
-      reuseExisting: true,
-    });
-    expect(first.response.status).toBe(201);
-
-    const second = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo_v2",
-      reuseExisting: true,
-    });
-
-    expect(second.response.status).toBe(200);
-    expect(second.body.id).toBe(first.body.id);
-    const chats = await deps.store.listWorkbenchSettings(TENANT.id, "chat");
-    expect(chats).toHaveLength(1);
-  });
-
-  test("a new agent chat records its definitionId for future dedup", async () => {
+  test("a new agent chat records its definitionId on the settings row", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
     });
@@ -590,230 +531,11 @@ describe("POST /workbenches — kind: chat + definitionId always find-or-reopens
     const stored = await deps.store.getWorkbenchSettings(TENANT.id, body.id);
     expect(stored?.settings["chat/definitionId"]).toBe("wfd_echo");
   });
-
-  test("a chat minted before chat/definitionId existed is still found, by reverse-resolving its agent participant's address", async () => {
-    const deps = buildDeps({
-      platform: fakePlatform({
-        resolveDefinitionIdByAddress: async (address) =>
-          address === "ins_legacy@acme.example" ? "wfd_echo" : undefined,
-      }),
-    });
-    const legacyWorkbenchId = "run_legacy1";
-    const legacyTenant = await deps.tenancy.createWorkbenchTenant({
-      parentTenantId: TENANT.id,
-      workbenchId: legacyWorkbenchId,
-      name: "echo",
-      creatorUserId: "prn_alice",
-      cookies: ["session=test"],
-    });
-    await deps.store.createWorkbenchSettings({
-      tenantId: TENANT.id,
-      workbenchId: legacyWorkbenchId,
-      settings: {
-        "chat/kind": "chat",
-        "chat/pinned": false,
-        "chat/name": "echo",
-        "chat/participants": [
-          { address: "ins_legacy@acme.example", handle: "echo" },
-        ],
-      },
-      updatedBy: "prn_alice",
-    });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-
-    const { response, body } = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-      reuseExisting: true,
-    });
-
-    expect(response.status).toBe(200);
-    expect(body.id).toBe(legacyWorkbenchId);
-    expect(body.tenancy).toEqual({
-      tenantId: legacyTenant.tenantId,
-      parentTenantId: TENANT.id,
-      slug: legacyTenant.slug,
-    });
-    const chats = await deps.store.listWorkbenchSettings(TENANT.id, "chat");
-    expect(chats).toHaveLength(1);
-  });
-
-  test("two pre-existing duplicate chats for the same agent resolve to the oldest, not whichever the caller hits first", async () => {
-    const deps = buildDeps({
-      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
-    });
-    const olderWorkbenchId = "run_older1";
-    await deps.tenancy.createWorkbenchTenant({
-      parentTenantId: TENANT.id,
-      workbenchId: olderWorkbenchId,
-      name: "echo",
-      creatorUserId: "prn_alice",
-      cookies: ["session=test"],
-    });
-    await deps.store.createWorkbenchSettings({
-      tenantId: TENANT.id,
-      workbenchId: olderWorkbenchId,
-      settings: {
-        "chat/kind": "chat",
-        "chat/pinned": false,
-        "chat/name": "echo",
-        "chat/definitionId": "wfd_echo",
-        "chat/participants": [],
-      },
-      updatedBy: "prn_alice",
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 5));
-
-    const newerWorkbenchId = "run_newer1";
-    await deps.tenancy.createWorkbenchTenant({
-      parentTenantId: TENANT.id,
-      workbenchId: newerWorkbenchId,
-      name: "echo",
-      creatorUserId: "prn_alice",
-      cookies: ["session=test"],
-    });
-    await deps.store.createWorkbenchSettings({
-      tenantId: TENANT.id,
-      workbenchId: newerWorkbenchId,
-      settings: {
-        "chat/kind": "chat",
-        "chat/pinned": false,
-        "chat/name": "echo",
-        "chat/definitionId": "wfd_echo",
-        "chat/participants": [],
-      },
-      updatedBy: "prn_alice",
-    });
-
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { response, body } = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-      reuseExisting: true,
-    });
-
-    expect(response.status).toBe(200);
-    expect(body.id).toBe(olderWorkbenchId);
-  });
-
-  test("a message sent to the found-or-created chat still auto-responds without a mention", async () => {
-    const deps = buildDeps({
-      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
-    });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-
-    const first = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-      reuseExisting: true,
-    });
-    const second = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-      reuseExisting: true,
-    });
-    expect(second.response.status).toBe(200);
-
-    const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    const mailBefore = platform.sentMail.length;
-    await sendText(app, second.body.id, "hello");
-
-    expect(platform.sentMail.length).toBeGreaterThan(mailBefore);
-    const fanOut = platform.sentMail[platform.sentMail.length - 1];
-    expect(fanOut?.workbenchId).toBe("ins_invited1");
-    expect(fanOut?.fromWorkbenchId).toBe(first.body.id);
-  });
-});
-
-describe("POST /workbenches — reuseExisting no longer opts out of find-or-reopen (CL-6981)", () => {
-  test("creating a chat with the same agent twice, reuseExisting omitted both times, reopens the first chat", async () => {
-    const deps = buildDeps({
-      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
-    });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-
-    const first = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-    });
-    expect(first.response.status).toBe(201);
-
-    const second = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-    });
-
-    expect(second.response.status).toBe(200);
-    expect(second.body.id).toBe(first.body.id);
-    expect(second.body.kind).toBe("chat");
-
-    const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    expect(platform.launchInviteCalls).toHaveLength(1);
-    const chats = await deps.store.listWorkbenchSettings(TENANT.id, "chat");
-    expect(chats).toHaveLength(1);
-
-    const firstTenancy = await deps.tenancy.getWorkbenchTenancy(first.body.id);
-    const secondTenancy = await deps.tenancy.getWorkbenchTenancy(
-      second.body.id,
-    );
-    expect(firstTenancy?.tenantId).toBeDefined();
-    expect(secondTenancy?.tenantId).toBe(firstTenancy?.tenantId);
-  });
-
-  test("creating a chat with the same agent twice, reuseExisting: false explicitly, still reopens the first chat", async () => {
-    const deps = buildDeps({
-      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
-    });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-
-    const first = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-      reuseExisting: false,
-    });
-    const second = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-      reuseExisting: false,
-    });
-
-    expect(first.response.status).toBe(201);
-    expect(second.response.status).toBe(200);
-    expect(second.body.id).toBe(first.body.id);
-  });
-
-  test("a pre-existing chat for the same agent is reopened even when reuseExisting is omitted", async () => {
-    const deps = buildDeps({
-      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
-    });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-
-    const landHop = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-      reuseExisting: true,
-    });
-    expect(landHop.response.status).toBe(201);
-
-    const picked = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-    });
-
-    expect(picked.response.status).toBe(200);
-    expect(picked.body.id).toBe(landHop.body.id);
-    const chats = await deps.store.listWorkbenchSettings(TENANT.id, "chat");
-    expect(chats).toHaveLength(1);
-  });
 });
 
 describe("POST /workbenches — chat with a person (DM)", () => {
   function registerBob(deps: ReturnType<typeof buildDeps>) {
-    const tenancy = deps.tenancy as ReturnType<
-      typeof createInMemoryWorkbenchTenancyStore
-    >;
-    tenancy.registerPrincipal(TENANT.id, {
+    deps.principals.registerPrincipal(TENANT.id, {
       id: "prn_bob",
       kind: "user",
       status: "active",
@@ -921,10 +643,7 @@ describe("POST /workbenches — chat with a person (DM)", () => {
 
   test("rejects a principalId naming a suspended member — 400", async () => {
     const deps = buildDeps();
-    const tenancy = deps.tenancy as ReturnType<
-      typeof createInMemoryWorkbenchTenancyStore
-    >;
-    tenancy.registerPrincipal(TENANT.id, {
+    deps.principals.registerPrincipal(TENANT.id, {
       id: "prn_bob",
       kind: "user",
       status: "suspended",
@@ -939,6 +658,81 @@ describe("POST /workbenches — chat with a person (DM)", () => {
     });
 
     expect(response.status).toBe(400);
+  });
+
+  test("rejects a principalId naming a non-user (agent) member — 400", async () => {
+    const deps = buildDeps();
+    deps.principals.registerPrincipal(TENANT.id, {
+      id: "prn_bot",
+      kind: "agent",
+      status: "active",
+      refId: "prn_bot",
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request("/workbenches", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "chat", principalId: "prn_bot" }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("bad_request");
+
+    const workbenches = await deps.store.listWorkbenchSettings(TENANT.id);
+    expect(workbenches).toHaveLength(0);
+  });
+
+  test("rejects a principalId naming a member of another bench — 400", async () => {
+    const deps = buildDeps();
+    // prn_bob exists, but on OTHER_TENANT — never on the caller's bench.
+    deps.principals.registerPrincipal(OTHER_TENANT.id, {
+      id: "prn_bob",
+      kind: "user",
+      status: "active",
+      refId: "prn_bob",
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request("/workbenches", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "chat", principalId: "prn_bob" }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("bad_request");
+
+    const workbenches = await deps.store.listWorkbenchSettings(TENANT.id);
+    expect(workbenches).toHaveLength(0);
+  });
+
+  test("validates the person-DM counterpart with a single principal lookup", async () => {
+    const deps = buildDeps();
+    const inner = deps.principals;
+    let lookups = 0;
+    deps.principals = {
+      registerPrincipal: (...args) => inner.registerPrincipal(...args),
+      getTenantPrincipal: async (...args) => {
+        lookups += 1;
+        return inner.getTenantPrincipal(...args);
+      },
+    };
+    registerBob(deps);
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { response } = await createWorkbench(app, {
+      kind: "chat",
+      principalId: "prn_bob",
+      name: "Bob",
+    });
+
+    expect(response.status).toBe(201);
+    // The pre-mint gate's validated principal is reused at join time —
+    // a second fetch could only re-check a weaker predicate.
+    expect(lookups).toBe(1);
   });
 });
 
@@ -1276,9 +1070,7 @@ describe("DELETE /workbenches/:id/participants/:address", () => {
 
   test("refuses to remove a chat's person counterpart (409)", async () => {
     const deps = buildDeps();
-    (
-      deps.tenancy as ReturnType<typeof createInMemoryWorkbenchTenancyStore>
-    ).registerPrincipal(TENANT.id, {
+    deps.principals.registerPrincipal(TENANT.id, {
       id: "prn_bob",
       kind: "user",
       status: "active",
@@ -1855,9 +1647,7 @@ describe("POST /workbenches/:id/messages — invite pre-step (CL-5879 mention-pu
 
   test("a person mention of a non-participant bench member invites them, then sends", async () => {
     const deps = buildDeps();
-    (
-      deps.tenancy as ReturnType<typeof createInMemoryWorkbenchTenancyStore>
-    ).registerPrincipal(TENANT.id, {
+    deps.principals.registerPrincipal(TENANT.id, {
       id: "prn_bob",
       kind: "user",
       status: "active",
@@ -2023,17 +1813,13 @@ describe("POST /workbenches/:id/messages — invite pre-step (CL-5879 mention-pu
   // people invited in the same request both survive, not just the last.
   test("inviting multiple people in one request lands every one of them", async () => {
     const deps = buildDeps();
-    (
-      deps.tenancy as ReturnType<typeof createInMemoryWorkbenchTenancyStore>
-    ).registerPrincipal(TENANT.id, {
+    deps.principals.registerPrincipal(TENANT.id, {
       id: "prn_bob",
       kind: "user",
       status: "active",
       refId: "prn_bob",
     });
-    (
-      deps.tenancy as ReturnType<typeof createInMemoryWorkbenchTenancyStore>
-    ).registerPrincipal(TENANT.id, {
+    deps.principals.registerPrincipal(TENANT.id, {
       id: "prn_carol",
       kind: "user",
       status: "active",
@@ -2709,8 +2495,8 @@ describe("typing", () => {
   });
 });
 
-describe("workbench tenancy", () => {
-  test("creating a workbench mints a child tenant parented under the bench", async () => {
+describe("chat hard cutover — no server tenancy", () => {
+  test("creating a workbench returns the settings view only — no tenancy, no legacy flag", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
@@ -2719,37 +2505,57 @@ describe("workbench tenancy", () => {
       name: "General",
     });
 
-    const view = body as unknown as {
-      tenancy: { tenantId: string; parentTenantId: string; slug: string };
-      legacy: boolean;
-    };
-    expect(view.legacy).toBe(false);
-    expect(view.tenancy.parentTenantId).toBe(TENANT.id);
-    expect(view.tenancy.tenantId).toMatch(/^tnt_/);
-
-    const link = await deps.tenancy.getWorkbenchTenancy(body.id);
-    expect(link?.tenantId).toBe(view.tenancy.tenantId);
-    expect(link?.parentTenantId).toBe(TENANT.id);
+    expect(body).not.toHaveProperty("tenancy");
+    expect(body).not.toHaveProperty("legacy");
+    expect(body.id).toBe(TENANT.id);
   });
 
-  test("a compensation failure after a launch failure still surfaces the original launch error, never the compensation's", async () => {
-    const tenancy = createInMemoryWorkbenchTenancyStore();
-    const uncompensatableTenancy = {
-      ...tenancy,
-      async compensateWorkbenchTenant(): Promise<void> {
-        throw new Error("compensation storage unavailable");
-      },
+  test("GET /workbenches rows carry no tenancy or legacy fields", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    await createWorkbench(app, {
+      kind: "workbench",
+      name: "General",
+    });
+
+    const response = await app.request("/workbenches");
+    const body = (await response.json()) as {
+      items: Record<string, unknown>[];
     };
+
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]).not.toHaveProperty("tenancy");
+    expect(body.items[0]).not.toHaveProperty("legacy");
+  });
+
+  test("POST /workbenches/:id/move is gone — re-parenting is the client's Interchange call, not a chat route", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    await createWorkbench(app, {
+      kind: "workbench",
+      name: "General",
+    });
+
+    const response = await app.request(`/workbenches/${TENANT.id}/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ newParentTenantId: "tnt_new_bench" }),
+    });
+
+    expect(response.status).toBe(404);
+  });
+
+  test("a launch failure still surfaces the original launch error, never a masked one", async () => {
     const platform = fakePlatform({
       launchInvite: async () => {
         throw new Error("agent launch failed");
       },
     });
-    const deps = buildDeps({ tenancy: uncompensatableTenancy, platform });
+    const deps = buildDeps({ platform });
     const routes = createChatRoutes(deps);
     // Hono's default error handling swallows a thrown error into a
     // generic 500 body, which is useless for telling "the original
-    // error propagated" apart from "the compensation error masked it"
+    // error propagated" apart from "some other error masked it"
     // — both look identical over HTTP. `onError` intercepts the actual
     // thrown value before Hono discards it, so the assertion below
     // can inspect the real error rather than its flattened response.
@@ -2760,10 +2566,6 @@ describe("workbench tenancy", () => {
     });
     const app = mountAs(routes, "prn_alice");
 
-    // Both the launch and its compensation fail. The double failure
-    // must never produce a silently swallowed error: the route
-    // re-throws the ORIGINAL launch error, not the compensation
-    // failure that masked it in the bug this test guards against.
     const response = await app.request("/workbenches", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -2773,217 +2575,11 @@ describe("workbench tenancy", () => {
     expect(response.status).toBe(500);
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).toBe("agent launch failed");
-
-    // The tenant this mint created is now an orphan the compensation
-    // could not clean up — that is the accepted, loudly-logged
-    // consequence of a double failure, not something this test can
-    // observe through the in-memory store (which has no "orphaned
-    // tenants" ledger), but the workbench itself must never have been
-    // recorded as ready to use.
   });
 
-  test("GET /workbenches annotates every created workbench with its tenancy and marks a linkless row legacy", async () => {
-    const deps = buildDeps();
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: created } = await createWorkbench(app, {
-      kind: "workbench",
-      name: "Tenanted",
-    });
-
-    // Simulates a workbench that predates the tenancy rollout: a
-    // workbench_settings row with no workbench_tenancy link.
-    await deps.store.createWorkbenchSettings({
-      tenantId: TENANT.id,
-      workbenchId: "ins_legacy",
-      settings: { "chat/kind": "workbench", "chat/name": "Legacy" },
-      updatedBy: "prn_alice",
-    });
-
-    const response = await app.request("/workbenches");
-    const body = (await response.json()) as {
-      items: {
-        id: string;
-        legacy: boolean;
-        tenancy: { tenantId: string } | null;
-      }[];
-    };
-
-    const tenantedRow = body.items.find((item) => item.id === created.id);
-    expect(tenantedRow?.legacy).toBe(false);
-    expect(tenantedRow?.tenancy).not.toBeNull();
-
-    const legacyRow = body.items.find((item) => item.id === "ins_legacy");
-    expect(legacyRow?.legacy).toBe(true);
-    expect(legacyRow?.tenancy).toBeNull();
-  });
-
-  test("POST /workbenches/:id/move re-parents the workbench's tenancy when the caller manages the destination", async () => {
-    const tenancy = createInMemoryWorkbenchTenancyStore();
-    tenancy.registerExistingTenant("tnt_new_bench");
-    tenancy.grantManageInTenant("prn_alice", "tnt_new_bench");
-    const deps = buildDeps({ tenancy });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: workbench } = await createWorkbench(app, {
-      kind: "workbench",
-      name: "Movable",
-    });
-
-    const response = await app.request(`/workbenches/${workbench.id}/move`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ newParentTenantId: "tnt_new_bench" }),
-    });
-
-    expect(response.status).toBe(200);
-    const moved = (await response.json()) as {
-      tenancy: { parentTenantId: string };
-    };
-    expect(moved.tenancy.parentTenantId).toBe("tnt_new_bench");
-
-    const link = await deps.tenancy.getWorkbenchTenancy(workbench.id);
-    expect(link?.parentTenantId).toBe("tnt_new_bench");
-  });
-
-  test("GET /workbenches still reports a moved workbench's current tenancy from the bench it was created in", async () => {
-    // A workbench's workbench_settings row stays keyed to the bench it was
-    // created in forever — a move only ever changes the tenancy link's
-    // parent, never that row. The regression this guards against: GET
-    // /workbenches used to look up tenancy links by "children of this
-    // bench", which goes stale the moment a workbench moves elsewhere,
-    // so the creating bench reported the moved workbench as `legacy`
-    // with a null tenancy instead of its real, current parent.
-    const tenancy = createInMemoryWorkbenchTenancyStore();
-    tenancy.registerExistingTenant("tnt_new_bench");
-    tenancy.grantManageInTenant("prn_alice", "tnt_new_bench");
-    const deps = buildDeps({ tenancy });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: workbench } = await createWorkbench(app, {
-      kind: "workbench",
-      name: "Movable",
-    });
-
-    const moveResponse = await app.request(
-      `/workbenches/${workbench.id}/move`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ newParentTenantId: "tnt_new_bench" }),
-      },
-    );
-    expect(moveResponse.status).toBe(200);
-
-    const listResponse = await app.request("/workbenches");
-    const body = (await listResponse.json()) as {
-      items: {
-        id: string;
-        legacy: boolean;
-        tenancy: { parentTenantId: string } | null;
-      }[];
-    };
-    const row = body.items.find((item) => item.id === workbench.id);
-    expect(row?.legacy).toBe(false);
-    expect(row?.tenancy?.parentTenantId).toBe("tnt_new_bench");
-  });
-
-  test("POST /workbenches/:id/move is refused when the destination tenant does not exist", async () => {
-    const deps = buildDeps();
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: workbench } = await createWorkbench(app, {
-      kind: "workbench",
-      name: "Movable",
-    });
-
-    const response = await app.request(`/workbenches/${workbench.id}/move`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ newParentTenantId: "tnt_does_not_exist" }),
-    });
-
-    expect(response.status).toBe(404);
-    const body = (await response.json()) as { error: { code: string } };
-    expect(body.error.code).toBe("not_found");
-
-    const link = await deps.tenancy.getWorkbenchTenancy(workbench.id);
-    expect(link?.parentTenantId).toBe(TENANT.id);
-  });
-
-  test("POST /workbenches/:id/move is refused when the caller has no standing in a real destination tenant", async () => {
-    const tenancy = createInMemoryWorkbenchTenancyStore();
-    tenancy.registerExistingTenant("tnt_someone_elses_bench");
-    const deps = buildDeps({ tenancy });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: workbench } = await createWorkbench(app, {
-      kind: "workbench",
-      name: "Movable",
-    });
-
-    const response = await app.request(`/workbenches/${workbench.id}/move`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ newParentTenantId: "tnt_someone_elses_bench" }),
-    });
-
-    expect(response.status).toBe(403);
-    const body = (await response.json()) as { error: { code: string } };
-    expect(body.error.code).toBe("forbidden");
-
-    const link = await deps.tenancy.getWorkbenchTenancy(workbench.id);
-    expect(link?.parentTenantId).toBe(TENANT.id);
-  });
-
-  test("POST /workbenches/:id/move is refused when the destination would make the workbench its own ancestor", async () => {
-    const tenancy = createInMemoryWorkbenchTenancyStore();
-    const deps = buildDeps({ tenancy });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: workbench } = await createWorkbench(app, {
-      kind: "workbench",
-      name: "Movable",
-    });
-    const link = await deps.tenancy.getWorkbenchTenancy(workbench.id);
-    if (link === undefined) throw new Error("expected a tenancy link");
-    // The caller manages its own workbench's tenant (seeded as owner at
-    // creation) — proving this rejection is structural, not
-    // authorization: full grants and it is still refused.
-    tenancy.grantManageInTenant("prn_alice", link.tenantId);
-
-    const response = await app.request(`/workbenches/${workbench.id}/move`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ newParentTenantId: link.tenantId }),
-    });
-
-    expect(response.status).toBe(409);
-    const body = (await response.json()) as { error: { code: string } };
-    expect(body.error.code).toBe("conflict");
-
-    const unchanged = await deps.tenancy.getWorkbenchTenancy(workbench.id);
-    expect(unchanged?.parentTenantId).toBe(TENANT.id);
-  });
-
-  test("POST /workbenches/:id/move on a legacy workbench is a loud 409, never a silent no-op", async () => {
-    const deps = buildDeps();
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-    await deps.store.createWorkbenchSettings({
-      tenantId: TENANT.id,
-      workbenchId: "ins_legacy",
-      settings: { "chat/kind": "workbench" },
-      updatedBy: "prn_alice",
-    });
-
-    const response = await app.request(`/workbenches/ins_legacy/move`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ newParentTenantId: "tnt_new_bench" }),
-    });
-
-    expect(response.status).toBe(409);
-  });
-
-  test("a bench never sees another bench's workbench tenancies", async () => {
-    const OTHER_TENANT = { ...TENANT, id: "tnt_2", domain: "other.example" };
+  test("a bench never sees another bench's workbenches", async () => {
     const store = createInMemoryChatStore();
-    const tenancy = createInMemoryWorkbenchTenancyStore();
-    const deps = buildDeps({ store, tenancy });
+    const deps = buildDeps({ store });
     const routes = createChatRoutes(deps);
 
     const appBenchA = mountAs(routes, "prn_alice");
@@ -2992,13 +2588,7 @@ describe("workbench tenancy", () => {
       name: "Bench A Only",
     });
 
-    const appBenchB = new Hono<TenantEnv>();
-    appBenchB.use("*", async (c, next) => {
-      c.set("tenant", OTHER_TENANT);
-      c.set("principal", principal("prn_bob"));
-      await next();
-    });
-    appBenchB.route("/", routes);
+    const appBenchB = mountAs(routes, "prn_bob", OTHER_TENANT);
     const { body: benchBWorkbench } = await createWorkbench(appBenchB, {
       kind: "workbench",
       name: "Bench B Only",
@@ -3016,37 +2606,15 @@ describe("workbench tenancy", () => {
       items: { id: string; title: string }[];
     };
     expect(listB.items.map((item) => item.title)).toEqual(["Bench B Only"]);
-
-    const tenancyA = await tenancy.listChildWorkbenchTenancies(TENANT.id);
-    const tenancyB = await tenancy.listChildWorkbenchTenancies(OTHER_TENANT.id);
-    expect(tenancyA).toHaveLength(1);
-    expect(tenancyB).toHaveLength(1);
-    expect(tenancyA[0]?.tenantId).not.toBe(tenancyB[0]?.tenantId);
   });
 });
 
 describe("cross-tenant workbench isolation", () => {
-  function mountTenant(
-    routes: ReturnType<typeof createChatRoutes>,
-    tenant: typeof TENANT,
-    principalId: string,
-  ) {
-    const app = new Hono<TenantEnv>();
-    app.use("*", async (c, next) => {
-      c.set("tenant", tenant);
-      c.set("principal", principal(principalId));
-      await next();
-    });
-    app.route("/", routes);
-    return app;
-  }
-
   test("POST/GET messages reject a workbench owned by another tenant", async () => {
-    const OTHER_TENANT = { ...TENANT, id: "tnt_2", domain: "other.example" };
     const deps = buildDeps();
     const routes = createChatRoutes(deps);
-    const appA = mountTenant(routes, TENANT, "prn_alice");
-    const appB = mountTenant(routes, OTHER_TENANT, "prn_bob");
+    const appA = mountAs(routes, "prn_alice");
+    const appB = mountAs(routes, "prn_bob", OTHER_TENANT);
 
     const { body: workbench } = await createWorkbench(appA, {
       kind: "workbench",
@@ -3069,11 +2637,10 @@ describe("cross-tenant workbench isolation", () => {
   });
 
   test("typing and stream reject a workbench owned by another tenant", async () => {
-    const OTHER_TENANT = { ...TENANT, id: "tnt_2", domain: "other.example" };
     const deps = buildDeps();
     const routes = createChatRoutes(deps);
-    const appA = mountTenant(routes, TENANT, "prn_alice");
-    const appB = mountTenant(routes, OTHER_TENANT, "prn_bob");
+    const appA = mountAs(routes, "prn_alice");
+    const appB = mountAs(routes, "prn_bob", OTHER_TENANT);
 
     const { body: workbench } = await createWorkbench(appA, {
       kind: "workbench",
@@ -3089,11 +2656,10 @@ describe("cross-tenant workbench isolation", () => {
   });
 
   test("read-state and invitable reject a workbench owned by another tenant", async () => {
-    const OTHER_TENANT = { ...TENANT, id: "tnt_2", domain: "other.example" };
     const deps = buildDeps();
     const routes = createChatRoutes(deps);
-    const appA = mountTenant(routes, TENANT, "prn_alice");
-    const appB = mountTenant(routes, OTHER_TENANT, "prn_bob");
+    const appA = mountAs(routes, "prn_alice");
+    const appB = mountAs(routes, "prn_bob", OTHER_TENANT);
 
     const { body: workbench } = await createWorkbench(appA, {
       kind: "workbench",
@@ -3125,7 +2691,7 @@ describe("cross-tenant workbench isolation", () => {
 
   test("GET messages allows a launched agent instance in the same tenant", async () => {
     // Agent mailboxes are instance ids with a workbench_launch row, not a
-    // workbench_settings row. The tenancy gate must accept those so the
+    // workbench_settings row. The tenant gate must accept those so the
     // e2e "invite agent → list its messages" path keeps working.
     const baseStore = createInMemoryChatStore();
     const launchedKeys = new Set<string>();
@@ -3137,18 +2703,14 @@ describe("cross-tenant workbench isolation", () => {
     };
     const deps = buildDeps({ store: gatedStore });
     const routes = createChatRoutes(deps);
-    const app = mountTenant(routes, TENANT, "prn_alice");
+    const app = mountAs(routes, "prn_alice");
 
     launchedKeys.add(`${TENANT.id}:ins_agent_mailbox`);
     const res = await app.request(`/workbenches/ins_agent_mailbox/messages`);
     expect(res.status).toBe(200);
 
     // Foreign tenant still 404s even with the same instance id shape.
-    const other = mountTenant(
-      routes,
-      { ...TENANT, id: "tnt_2", domain: "other.example" },
-      "prn_bob",
-    );
+    const other = mountAs(routes, "prn_bob", OTHER_TENANT);
     const denied = await other.request(
       `/workbenches/ins_agent_mailbox/messages`,
     );

@@ -426,7 +426,10 @@ export async function resolveTenantDeployer(
  * already published under its name@version is skipped (immutable).
  * Sidecar-unavailable (502-class) pins report `blocked` without
  * throwing — the same class `ensureSeeded` treats as pending; any other
- * failure reports `failed` and is safe to re-run.
+ * failure reports `failed` and is safe to re-run. Skill pins are
+ * re-read after the seed pass: still-absent (stock cutover — the skills
+ * mount is gone, so the 404-tolerant plant writes nothing) reports
+ * `blocked`, never `installed`.
  */
 export async function reconcileTenantDesiredState(
   args: ReconcileArgs,
@@ -586,7 +589,21 @@ export async function reconcileTenantDesiredState(
         });
       }
       for (const pin of TENANT_DESIRED_STATE.skills) {
-        pins.push({ name: pin.name, kind: "skill", status: "installed" });
+        // The seed pass just ran, but a 404-tolerant plant (stock
+        // cutover: the skills mount is gone, so nothing was written) must
+        // not be reported installed. Re-read each skill: still-absent
+        // pins "blocked" and holds the report unready; present pins
+        // "installed" as before.
+        const state = await readSkillState(api, cookies, tenantId, pin);
+        if (state === "present") {
+          pins.push({ name: pin.name, kind: "skill", status: "installed" });
+          continue;
+        }
+        sawBlocked = true;
+        log(
+          `skill pin ${pin.name} still ${state} after the seed pass (skills surface removed by the stock cutover); reporting blocked without failing`,
+        );
+        pins.push({ name: pin.name, kind: "skill", status: "blocked" });
       }
     } catch (cause) {
       if (isSidecarUnavailableError(cause) || model === undefined) {

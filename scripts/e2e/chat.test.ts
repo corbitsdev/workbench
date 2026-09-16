@@ -1,21 +1,34 @@
-// The permanent booted-stack chat e2e: two principals in one tenant,
+// The permanent booted-stack chat e2e: two principals per tenant,
 // messages fanning in to a single converged timeline through the
 // mounted `@corbits/chat` HTTP surface, settings and read-state live,
 // and mention fan-out driving a second run off its own mailbox.
 // Deterministic — no credentials, no real inference, no API keys.
 //
 // The path proven: database setup (chat migrations apply) → hub boot
-// → sidecar boot → two sign-ups in one tenant (an invited principal
-// activated by the owner) → an inference catalog chain seeded with a
-// placeholder key → a workbench created (data only since CL-6330 — no
-// host run, the go/no-go test) → both users posting messages and
-// reading back the converged, decoded timeline with sender identity →
-// a second message proving the room keeps accepting mail → a settings
-// patch that both updates the record and appends an audit event to
-// the timeline → independent per-user read-state cursors → mentioning
-// an already-resident agent participant twice, fanning each mention
-// into its existing run and never minting a sibling (CL-6451) → the
-// workbench kind filter.
+// → sidecar boot → two sign-ups, an owner and an invited-then-activated
+// member → an inference catalog chain seeded with a placeholder key →
+// the stock assistant default workflow seeded the same way
+// `greeting-delivery` proves invitable → a workbench created (data only
+// since CL-6330 — no host run, the go/no-go test) → both users posting
+// messages and reading back the converged, decoded timeline with sender
+// identity → a second message proving the room keeps accepting mail →
+// a settings patch that both updates the record and appends an audit
+// event to the timeline → independent per-user read-state cursors →
+// mentioning an already-resident agent participant twice, fanning each
+// mention into its existing run and never minting a sibling (CL-6451) →
+// the workbench kind filter.
+//
+// Stock Interchange cutover: one workbench per conversation tenant —
+// `POST .../chat/workbenches` stamps `workbenchId = tenant.id`
+// (`packages/chat/src/routes.ts`), so a second creation inside the same
+// tenant conflicts on the settings row (500). Every test that mints its
+// own workbench therefore builds its own tenant through the
+// suite-scoped `setupTenant` fixture below (owner + invited member +
+// grants + catalog), and the assistant deploy it needs rides the stock
+// `seedTenant` default-workflow path — never the deleted
+// `agent-definitions/by-name` surface, and never a second agent chat
+// for one definition (the `chat/definitionId` 1:1 in
+// `packages/chat/src/agent-dm-mode.ts`).
 //
 // Structured as one shared-boot stack (`beforeAll`) with a separate
 // `test` per capability, rather than one long test: a real defect
@@ -30,15 +43,18 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 
 import { seedCatalog } from "../../packages/connections/src/seed-catalog.ts";
+import { createGitWorkflowPusher } from "../../packages/connections/src/workflow-push.ts";
 import {
   createHubAPI,
   type ApiCall,
 } from "../../packages/hub-api-client/src/index.ts";
 import type { Part } from "../../packages/chat/src/index.ts";
 import {
-  buildEchoWorkflow,
-  serializeEchoWorkflow,
-} from "../../workflows/echo/src/index.ts";
+  DEFAULT_WORKFLOWS,
+  seedTenant,
+} from "../../packages/onboarding/src/tenant-seed.ts";
+import { modelSourceFor } from "../../packages/onboarding/src/complete-credential.ts";
+import { publishCorbitsToolsRegistry } from "../../packages/tool-registry-publish/src/publish.ts";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
@@ -50,7 +66,6 @@ import {
   type ApiResult,
   type HubHandle,
 } from "./harness.ts";
-import { pushWorkflowSource, workflowDeployBody } from "./workflow-source.ts";
 
 const databaseUrl = e2eDatabaseUrl();
 if (databaseUrl === undefined) {
@@ -141,7 +156,226 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   let tenantId: string;
   let domain: string;
   let workbenchId: string;
-  let chatId: string;
+  let pushWorkflow: ReturnType<typeof createGitWorkflowPusher>;
+  let assistantId: string;
+
+  type TenantFixture = {
+    tenantId: string;
+    domain: string;
+    ownerPrincipalId: string;
+    user2PrincipalId: string;
+  };
+
+  // Suite-scoped tenancy fixture: one conversation tenant carrying both
+  // users — user1 as owner, user2 invited by email and activated by the
+  // owner, carrying the read/write grants chat's routes gate on (the
+  // same pair `packages/onboarding/src/tenant-seed.ts`'s `plantGrant`
+  // plants for a bench's own principal), over a placeholder-credential
+  // catalog chain. Stock Interchange cutover: `POST .../chat/workbenches`
+  // stamps `workbenchId = tenant.id`, so a tenant hosts exactly one
+  // workbench — every test that mints its own workbench builds its own
+  // fixture rather than sharing the `beforeAll` tenant.
+  async function setupTenant(): Promise<TenantFixture> {
+    const slug = `chate2e${crypto.randomUUID().slice(0, 8)}`;
+    const created = await api(
+      "POST",
+      "/api/tenants",
+      { name: "Chat E2E", slug },
+      user1.cookies,
+    );
+    expectStatus("create tenant", created, 201);
+    const fixtureTenantId = stringField(created.data, "id", "create tenant");
+    const fixtureDomain = stringField(created.data, "domain", "create tenant");
+
+    // user2 joins the tenant: invited by email, then activated by the
+    // owner — an invited principal is refused by tenant middleware
+    // (403) until its status is "active". Being a non-owner
+    // principal, user2 carries no grants of its own by default (only
+    // the tenant creator gets the platform's wildcard owner grant).
+    const invited = await api(
+      "POST",
+      `/api/tenants/${fixtureTenantId}/members/invite`,
+      { email: user2.email },
+      user1.cookies,
+    );
+    expectStatus("invite user2", invited, 201);
+    const principal2Id = stringField(invited.data, "id", "invite user2");
+    expect(stringField(invited.data, "status", "invite user2")).toBe("invited");
+
+    const activated = await api(
+      "PATCH",
+      `/api/tenants/${fixtureTenantId}/principals/${principal2Id}`,
+      { status: "active" },
+      user1.cookies,
+    );
+    expectStatus("activate user2", activated, 200);
+    expect(stringField(activated.data, "status", "activate user2")).toBe(
+      "active",
+    );
+
+    async function plantGrant(
+      principalId: string,
+      resource: string,
+      action: string,
+    ): Promise<void> {
+      const res = await api(
+        "POST",
+        `/api/tenants/${fixtureTenantId}/grants`,
+        { principalId, resource, action, effect: "allow", origin: "creator" },
+        user1.cookies,
+      );
+      expectStatus(`grant ${resource}/${action} to ${principalId}`, res, 201);
+    }
+    await plantGrant(principal2Id, "workflow-run:*", "read");
+    await plantGrant(principal2Id, "workflow-run:*", "write");
+    // The room routes gate on `room:<id>` since CL-6346, not on the
+    // run pair above — same two grants `seed.ts` plants for a bench's
+    // own principal.
+    await plantGrant(principal2Id, "room:*", "read");
+    await plantGrant(principal2Id, "room:*", "write");
+
+    // A workbench host's folded launch pins a real inference source
+    // chain against the tenant catalog before it will launch at all,
+    // even though it never performs inference — the placeholder key
+    // is never used to call a model.
+    await seedCatalog({
+      api,
+      cookies: user1.cookies,
+      tenantId: fixtureTenantId,
+      placeholderCredential: true,
+      log: () => undefined,
+    });
+
+    // The creator's owner principal, for `seedTenant`'s seed grants:
+    // resolved through the stock tenant principals listing rather than
+    // assumed, matching on the signup's user id. The stock route is
+    // cursor-paginated (`{ data, nextCursor }` — see
+    // `vendor/intx/hub-api/src/routes/principals.ts`), not an `items`
+    // envelope.
+    const principalsListed = await api(
+      "GET",
+      `/api/tenants/${fixtureTenantId}/principals?kind=user`,
+      undefined,
+      user1.cookies,
+    );
+    expectStatus("list tenant principals", principalsListed, 200);
+    const owner = arrayField(
+      principalsListed.data,
+      "data",
+      "list tenant principals",
+    ).find((row) => (row as { refId?: unknown }).refId === user1.userId) as
+      { id: string } | undefined;
+    if (owner === undefined) {
+      throw new Error(
+        `no owner principal for user1 in tenant ${fixtureTenantId}: ` +
+          JSON.stringify(principalsListed.data),
+      );
+    }
+    return {
+      tenantId: fixtureTenantId,
+      domain: fixtureDomain,
+      ownerPrincipalId: owner.id,
+      user2PrincipalId: principal2Id,
+    };
+  }
+
+  // The stock `invitable-definitions` listing is the only definition
+  // source this suite uses: the deleted `agent-definitions/by-name`
+  // surface resolved the old echo workflow directly by name, and the
+  // invite dialog's own listing filters non-conversational definitions.
+  // Polls until the seeded "assistant" appears (the deploy converges
+  // behind the seed call).
+  async function assistantDefinitionId(forTenant: string): Promise<string> {
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+      const res = await api(
+        "GET",
+        `/api/tenants/${forTenant}/chat/invitable-definitions`,
+        undefined,
+        user1.cookies,
+      );
+      if (res.status === 200) {
+        const items = arrayField(
+          res.data,
+          "items",
+          "list invitable definitions",
+        ) as { id: string; name: string }[];
+        const assistant = items.find((item) => item.name === "assistant");
+        if (assistant !== undefined) return assistant.id;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(
+          `"assistant" never appeared as invitable: ${JSON.stringify(res.data)}`,
+        );
+      }
+      await Bun.sleep(1000);
+    }
+  }
+
+  // Seeds the stock assistant default workflow onto a fixture tenant —
+  // the same `seedTenant` path `greeting-delivery` proves leaves
+  // "assistant" invitable — and returns its listed definition id. The
+  // deploy needs the sidecar's dial-in to have completed (its call
+  // throws until it has), and every step is ensure-then-create, so the
+  // whole call retries safely; deployments are never confirmed here
+  // (no inference turns — the placeholder key is never dialed).
+  async function deployAssistant(fixture: TenantFixture): Promise<string> {
+    const deadline = Date.now() + 120_000;
+    for (;;) {
+      if (hub.exited()) {
+        throw new Error(
+          `hub exited before assistant deploy; output:\n${hub.output()}`,
+        );
+      }
+      try {
+        // CL-7071 cutover: seeding no longer packs, and a launched
+        // agent's sidecar initialization resolves its `@corbits` scope
+        // pins against the tenant's own `corbits-tools` package
+        // registry — without it the allocation fails with
+        // `sidecar_initialization_failed` and the agent's run never
+        // commits events. Install the registry the same way the
+        // connect flow's setup step does (see `local-rip`'s
+        // publish-tools hop), before seedTenant deploys assistant.
+        const published = await publishCorbitsToolsRegistry({
+          api,
+          cookies: user1.cookies,
+          hubUrl: hub.baseUrl,
+          tenantId: fixture.tenantId,
+          log: () => undefined,
+        });
+        if (!published.success) {
+          throw new Error(
+            `corbits-tools registry publish failed: ${JSON.stringify(published.summaries)}`,
+          );
+        }
+        await seedTenant({
+          api,
+          cookies: user1.cookies,
+          hubUrl: hub.baseUrl,
+          tenant: {
+            tenantId: fixture.tenantId,
+            principalId: fixture.ownerPrincipalId,
+            domain: fixture.domain,
+          },
+          model: await modelSourceFor(
+            api,
+            user1.cookies,
+            fixture.tenantId,
+            "anthropic",
+          ),
+          pushWorkflow,
+          log: () => undefined,
+          workflows: DEFAULT_WORKFLOWS,
+          confirmDeployments: false,
+        });
+        break;
+      } catch (cause) {
+        if (Date.now() > deadline) throw cause;
+        await Bun.sleep(1000);
+      }
+    }
+    return assistantDefinitionId(fixture.tenantId);
+  }
 
   beforeAll(async () => {
     const url = databaseUrl;
@@ -171,207 +405,15 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     user1 = await signUp(api, "Chat Tester One");
     user2 = await signUp(api, "Chat Tester Two");
 
-    // user1 becomes the owner and, via the platform's own wildcard
-    // owner grant, needs no grants planted by this suite for anything
-    // that follows.
-    const slug = `chate2e${crypto.randomUUID().slice(0, 8)}`;
-    const created = await api(
-      "POST",
-      "/api/tenants",
-      { name: "Chat E2E", slug },
-      user1.cookies,
-    );
-    expectStatus("create tenant", created, 201);
-    tenantId = stringField(created.data, "id", "create tenant");
-    domain = stringField(created.data, "domain", "create tenant");
-
-    // user2 joins the tenant: invited by email, then activated by the
-    // owner — an invited principal is refused by tenant middleware
-    // (403) until its status is "active". Being a non-owner
-    // principal, user2 carries no grants of its own by default (only
-    // the tenant creator gets the platform's wildcard owner grant),
-    // so this also plants the read/write grants chat's routes gate
-    // on, exactly as `packages/onboarding/src/tenant-seed.ts`'s
-    // `plantGrant` does for a tenant's own owner.
-    const invited = await api(
-      "POST",
-      `/api/tenants/${tenantId}/members/invite`,
-      { email: user2.email },
-      user1.cookies,
-    );
-    expectStatus("invite user2", invited, 201);
-    const principal2Id = stringField(invited.data, "id", "invite user2");
-    expect(stringField(invited.data, "status", "invite user2")).toBe("invited");
-
-    const activated = await api(
-      "PATCH",
-      `/api/tenants/${tenantId}/principals/${principal2Id}`,
-      { status: "active" },
-      user1.cookies,
-    );
-    expectStatus("activate user2", activated, 200);
-    expect(stringField(activated.data, "status", "activate user2")).toBe(
-      "active",
-    );
-
-    async function plantGrant(
-      principalId: string,
-      resource: string,
-      action: string,
-    ): Promise<void> {
-      const res = await api(
-        "POST",
-        `/api/tenants/${tenantId}/grants`,
-        { principalId, resource, action, effect: "allow", origin: "creator" },
-        user1.cookies,
-      );
-      expectStatus(`grant ${resource}/${action} to ${principalId}`, res, 201);
-    }
-    await plantGrant(principal2Id, "workflow-run:*", "read");
-    await plantGrant(principal2Id, "workflow-run:*", "write");
-    // The room routes gate on `room:<id>` since CL-6346, not on the
-    // run pair above — same two grants `seed.ts` plants for a bench's
-    // own principal.
-    await plantGrant(principal2Id, "room:*", "read");
-    await plantGrant(principal2Id, "room:*", "write");
-
-    // A workbench host's folded launch pins a real inference source
-    // chain against the tenant catalog before it will launch at all,
-    // even though it never performs inference — the placeholder key
-    // is never used to call a model.
-    await seedCatalog({
-      api,
-      cookies: user1.cookies,
-      tenantId,
-      placeholderCredential: true,
-      log: () => undefined,
-    });
-
-    // The echo deploy resolves against the catalog offering `seedCatalog`
-    // just planted for the same provider/model this workflow declares,
-    // rather than seeding a second inference chain.
-    const echoModelsListed = await api(
-      "GET",
-      `/api/tenants/${tenantId}/catalog/models`,
-      undefined,
-      user1.cookies,
-    );
-    expectStatus("list catalog models", echoModelsListed, 200);
-    const echoModelRows = (
-      echoModelsListed.data as { data: { id: string; canonicalName: string }[] }
-    ).data;
-    const echoModelId = echoModelRows.find(
-      (row) => row.canonicalName === "claude-sonnet-5",
-    )?.id;
-    if (echoModelId === undefined) {
-      throw new Error(
-        `no catalog model named "claude-sonnet-5": ${JSON.stringify(echoModelsListed.data)}`,
-      );
-    }
-
-    const echoOfferingsListed = await api(
-      "GET",
-      `/api/tenants/${tenantId}/catalog/offerings`,
-      undefined,
-      user1.cookies,
-    );
-    expectStatus("list catalog offerings", echoOfferingsListed, 200);
-    const echoOfferingRows = (
-      echoOfferingsListed.data as { data: { id: string; modelId: string }[] }
-    ).data;
-    const echoOfferingId = echoOfferingRows.find(
-      (row) => row.modelId === echoModelId,
-    )?.id;
-    if (echoOfferingId === undefined) {
-      throw new Error(
-        `no catalog offering for model "${echoModelId}": ${JSON.stringify(echoOfferingsListed.data)}`,
-      );
-    }
-
-    // Seed the echo workflow as a deployed, invitable definition: the
-    // same asset-publish → git-token → smart-HTTP push → native deploy
-    // path `scripts/e2e/walking-skeleton.test.ts` proves end to end.
-    // The native deploy call's own inference source is a placeholder
-    // (that deployment's own execution is never exercised here); the
-    // invite launch this suite proves instead resolves its source
-    // against the tenant catalog seeded just above, matching the
-    // provider/model this workflow declares.
-    const echoAssetCreated = await api(
-      "POST",
-      `/api/tenants/${tenantId}/assets`,
-      { kind: "workflow", name: "echo" },
-      user1.cookies,
-    );
-    expectStatus("create echo workflow asset", echoAssetCreated, 201);
-    const echoAssetId = stringField(
-      echoAssetCreated.data,
-      "id",
-      "create echo workflow asset",
-    );
-
-    const echoGitToken = await api(
-      "POST",
-      `/api/tenants/${tenantId}/git-tokens`,
-      {
-        name: "chat-e2e-echo-push",
-        resource: "asset:*",
-        refPattern: "**",
-        actions: ["can_read", "can_push"],
-        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
-      },
-      user1.cookies,
-    );
-    expectStatus("mint echo git token", echoGitToken, 201);
-
-    const echoPushed = await pushWorkflowSource({
-      baseUrl: hub.baseUrl,
-      tenantId,
-      assetName: "echo",
-      tokenSecret: stringField(echoGitToken.data, "secret", "mint git token"),
-      workflowJson: serializeEchoWorkflow(
-        buildEchoWorkflow({
-          triggerAddress: `echo@${domain}`,
-          inferencePreferences: [
-            { provider: "anthropic", model: "claude-sonnet-5" },
-          ],
-          turnTimeoutMs: 60_000,
-        }),
-      ),
-    });
-
-    // Retries while the hub still answers 502 (the process
-    // provisioner's spawned sidecar may not have dialed in yet),
-    // matching `createWorkbench`'s own retry loop below.
-    const echoDeployDeadline = Date.now() + 60_000;
-    let echoDeployed: ApiResult;
-    for (;;) {
-      if (hub.exited()) {
-        throw new Error(
-          `hub exited before echo deploy; output:\n${hub.output()}`,
-        );
-      }
-      echoDeployed = await api(
-        "POST",
-        `/api/tenants/${tenantId}/workflows/deployments`,
-        workflowDeployBody({
-          assetId: echoAssetId,
-          commitSha: echoPushed.commitSha,
-          sourceOfferingIds: [echoOfferingId],
-          defaultSourceOfferingId: echoOfferingId,
-        }),
-        user1.cookies,
-      );
-      if (echoDeployed.status !== 502) break;
-      if (Date.now() > echoDeployDeadline) {
-        throw new Error(
-          `echo workflow never became deployable (hub kept answering 502): ` +
-            `${JSON.stringify(echoDeployed.data)}\nhub output:\n${hub.output()}`,
-        );
-      }
-      await Bun.sleep(1000);
-    }
-    expectStatus("deploy echo workflow", echoDeployed, 201);
-  }, 120_000);
+    pushWorkflow = createGitWorkflowPusher();
+    // The shared tenant carries the room the timeline/read-state/
+    // settings tests share, plus the stock assistant the invite test
+    // resolves through the `invitable-definitions` listing.
+    const shared = await setupTenant();
+    tenantId = shared.tenantId;
+    domain = shared.domain;
+    assistantId = await deployAssistant(shared);
+  }, 180_000);
 
   // Launching a workbench is the go/no-go signal for the whole suite: it
   // launches the anchor instance in-process, which needs its
@@ -383,6 +425,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   // walking skeleton retries a 502 for the native deploy route.
   async function createWorkbench(
     body: Record<string, unknown>,
+    forTenant: string = tenantId,
   ): Promise<ApiResult> {
     const deadline = Date.now() + 60_000;
     let res: ApiResult;
@@ -394,7 +437,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       }
       res = await api(
         "POST",
-        `/api/tenants/${tenantId}/chat/workbenches`,
+        `/api/tenants/${forTenant}/chat/workbenches`,
         body,
         user1.cookies,
       );
@@ -414,10 +457,11 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     cookies: string[],
     workbench: string,
     text: string,
+    forTenant: string = tenantId,
   ): Promise<string> {
     const res = await api(
       "POST",
-      `/api/tenants/${tenantId}/chat/workbenches/${workbench}/messages`,
+      `/api/tenants/${forTenant}/chat/workbenches/${workbench}/messages`,
       { parts: textPart(text) },
       cookies,
     );
@@ -428,10 +472,11 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   async function listMessages(
     cookies: string[],
     workbench: string,
+    forTenant: string = tenantId,
   ): Promise<ListedMessage[]> {
     const res = await api(
       "GET",
-      `/api/tenants/${tenantId}/chat/workbenches/${workbench}/messages`,
+      `/api/tenants/${forTenant}/chat/workbenches/${workbench}/messages`,
       undefined,
       cookies,
     );
@@ -458,10 +503,11 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   async function runEvents(
     cookies: string[],
     runId: string,
+    forTenant: string = tenantId,
   ): Promise<RunEvent[]> {
     const res = await api(
       "GET",
-      `/api/tenants/${tenantId}/workflows/runs/${runId}/events`,
+      `/api/tenants/${forTenant}/workflows/runs/${runId}/events`,
       undefined,
       cookies,
     );
@@ -488,10 +534,11 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     cookies: string[],
     runId: string,
     sinceSeq: number,
+    forTenant: string = tenantId,
   ): Promise<RunEvent[]> {
     const deadline = Date.now() + 60_000;
     for (;;) {
-      const fresh = (await runEvents(cookies, runId)).filter(
+      const fresh = (await runEvents(cookies, runId, forTenant)).filter(
         (event) => event.seq > sinceSeq,
       );
       if (fresh.length > 0) return fresh;
@@ -599,6 +646,10 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     );
   });
 
+  // Stock Interchange cutover: one workbench per conversation tenant,
+  // and the shared tenant's room already occupies it — so this test
+  // builds its own fixture tenant (with its own assistant deploy) and
+  // threads that tenant through every call below.
   // CL-6330 deleted the workbench-anchor machinery: a bare `kind:
   // "workbench"` room mints only a child tenant and settings rows — no
   // host workflow, no run, nothing `/workflows/runs/:runId/events` can
@@ -610,20 +661,26 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   // participant already resident in the room drives that participant's
   // existing run — twice, never minting a sibling.
   // A dedicated `kind: "workbench"` room, never `kind: "chat"`: an agent
-  // chat this test minted for itself would sit in the tenant forever as
-  // a second, older "echo" conversation, and `findExistingAgentChat`'s
-  // tenant-wide dedup (below) would then find *this* leftover instead
-  // of the one the "reuses it" test just created and expects back
-  // (CL-6481 — this collision, introduced when this test was rewritten
-  // around a real resident agent, was the reuse test's actual failure).
-  // A plain workbench never enters that dedup's `kind: "chat"` listing,
-  // so it can host a resident participant to mention without leaving
-  // that trap behind.
+  // chat this test minted for itself used to sit in the tenant forever
+  // as a second, older conversation, and the old `findExistingAgentChat`
+  // tenant-wide dedup would then have found *this* leftover instead of
+  // the one the reuse test created and expected back (CL-6481 — this
+  // collision, introduced when this test was rewritten around a real
+  // resident agent, was the reuse test's actual failure). The stock
+  // Interchange cutover deleted that dedup surface entirely — one chat
+  // per definition 1:1 (`packages/chat/src/agent-dm-mode.ts`) — so a
+  // plain workbench now doubles as proof the room never enters a
+  // `kind: "chat"` listing at all.
   test("mention fan-out drives the mentioned run", async () => {
-    const mentionRoom = await createWorkbench({
-      kind: "workbench",
-      name: "mention fan-out room",
-    });
+    const mention = await setupTenant();
+    const mentionAssistantId = await deployAssistant(mention);
+    const mentionRoom = await createWorkbench(
+      {
+        kind: "workbench",
+        name: "mention fan-out room",
+      },
+      mention.tenantId,
+    );
     expectStatus("create mention fan-out room", mentionRoom, 201);
     const mentionRoomId = stringField(
       mentionRoom.data,
@@ -633,59 +690,64 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
 
     const invited = await api(
       "POST",
-      `/api/tenants/${tenantId}/chat/workbenches/${mentionRoomId}/invite`,
-      { definitionId: await echoDefinitionId() },
+      `/api/tenants/${mention.tenantId}/chat/workbenches/${mentionRoomId}/invite`,
+      { definitionId: mentionAssistantId },
       user1.cookies,
     );
-    expectStatus("invite echo into mention fan-out room", invited, 201);
-    const echoAddress = stringField(
+    expectStatus("invite assistant into mention fan-out room", invited, 201);
+    const assistantAddress = stringField(
       invited.data,
       "address",
-      "invite echo into mention fan-out room",
+      "invite assistant into mention fan-out room",
     );
-    const echoLocalPart = echoAddress.split("@")[0];
-    if (echoLocalPart === undefined || echoLocalPart === "") {
-      throw new Error(`malformed echo address: ${echoAddress}`);
+    const assistantLocalPart = assistantAddress.split("@")[0];
+    if (assistantLocalPart === undefined || assistantLocalPart === "") {
+      throw new Error(`malformed assistant address: ${assistantAddress}`);
     }
 
     const beforeFirst = highestSeq(
-      await runEvents(user1.cookies, echoLocalPart),
+      await runEvents(user1.cookies, assistantLocalPart, mention.tenantId),
     );
     await postMessage(
       user1.cookies,
       mentionRoomId,
-      `hey @echo take a look ${crypto.randomUUID()}`,
+      `hey @myra take a look ${crypto.randomUUID()}`,
+      mention.tenantId,
     );
     const afterFirst = await waitForRunProgress(
       user1.cookies,
-      echoLocalPart,
+      assistantLocalPart,
       beforeFirst,
+      mention.tenantId,
     );
     expect(afterFirst.length).toBeGreaterThan(0);
 
     // The resident-reuse claim (CL-6451): a second mention of the same
     // already-resident participant drives the SAME run id further —
-    // never mints a sibling — so this polls that same `echoLocalPart`
-    // run again rather than any newly-discovered address, and confirms
-    // the room still lists exactly the one agent participant.
+    // never mints a sibling — so this polls that same
+    // `assistantLocalPart` run again rather than any newly-discovered
+    // address, and confirms the room still lists exactly the one agent
+    // participant.
     const beforeSecond = highestSeq(
-      await runEvents(user1.cookies, echoLocalPart),
+      await runEvents(user1.cookies, assistantLocalPart, mention.tenantId),
     );
     await postMessage(
       user1.cookies,
       mentionRoomId,
-      `hey @echo one more thing ${crypto.randomUUID()}`,
+      `hey @myra one more thing ${crypto.randomUUID()}`,
+      mention.tenantId,
     );
     const afterSecond = await waitForRunProgress(
       user1.cookies,
-      echoLocalPart,
+      assistantLocalPart,
       beforeSecond,
+      mention.tenantId,
     );
     expect(afterSecond.length).toBeGreaterThan(0);
 
     const settingsAfterSecondMention = await api(
       "GET",
-      `/api/tenants/${tenantId}/chat/workbenches/${mentionRoomId}/settings`,
+      `/api/tenants/${mention.tenantId}/chat/workbenches/${mentionRoomId}/settings`,
       undefined,
       user1.cookies,
     );
@@ -700,31 +762,29 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       "get settings after second mention",
     ) as { address: string; handle: string }[];
     expect(participantsAfterSecondMention).toHaveLength(1);
-    expect(participantsAfterSecondMention[0]?.address).toBe(echoAddress);
+    expect(participantsAfterSecondMention[0]?.address).toBe(assistantAddress);
   }, 90_000);
 
-  test("inviting the echo agent launches its own run, joins the workbench, and receives @mentions", async () => {
-    // Echo is a non-conversational wiring check (`conversational: false`
-    // in the workflow catalog, CL-6649) — the invite dialog's own
-    // listing correctly excludes it, so this test resolves its
-    // definition id directly by name rather than through that filtered
-    // listing.
-    const echoId = await echoDefinitionId();
-
+  test("inviting the assistant launches its own run, joins the workbench, and receives @mentions", async () => {
+    // The stock assistant deploy the shared fixture seeded in
+    // `beforeAll` is invitable (conversational, carried in the invite
+    // dialog's own listing) — this test invites it by the definition id
+    // that deploy resolved, proving the same path `greeting-delivery`
+    // covers end to end from a second suite.
     const invited = await api(
       "POST",
       `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invite`,
-      { definitionId: echoId },
+      { definitionId: assistantId },
       user1.cookies,
     );
-    expectStatus("invite echo agent", invited, 201);
+    expectStatus("invite assistant", invited, 201);
     const invitedAddress = stringField(
       invited.data,
       "address",
-      "invite echo agent",
+      "invite assistant",
     );
-    expect(stringField(invited.data, "definitionId", "invite echo agent")).toBe(
-      echoId,
+    expect(stringField(invited.data, "definitionId", "invite assistant")).toBe(
+      assistantId,
     );
     const invitedLocalPart = invitedAddress.split("@")[0];
     if (invitedLocalPart === undefined || invitedLocalPart === "") {
@@ -733,8 +793,8 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
 
     // The invited agent's own run's address joined this workbench's
     // participants — as a record carrying a friendly mention handle
-    // derived from the invited definition's name ("echo"), never the
-    // unusable raw local part — and the join event landed on this
+    // derived from the invited definition's display name ("Myra"), never
+    // the unusable raw local part — and the join event landed on this
     // workbench's own timeline.
     const settingsAfterInvite = await api(
       "GET",
@@ -756,7 +816,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
         `invited participant record missing: ${JSON.stringify(participantsAfterInvite)}`,
       );
     }
-    expect(invitedParticipant.handle).toBe("echo");
+    expect(invitedParticipant.handle).toBe("myra");
 
     // The join event itself lands on this workbench's timeline as an
     // `EventPart` (see `POST /workbenches/:id/invite` in
@@ -793,40 +853,37 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     expect(fresh.length).toBeGreaterThan(0);
   }, 90_000);
 
-  // Echo is a non-conversational wiring check (`conversational: false` in
-  // the workflow catalog, CL-6649) — it never appears in the invite
-  // dialog's own (correctly filtered) listing, so its definition id is
-  // resolved directly by name instead.
-  async function echoDefinitionId(): Promise<string> {
-    const byNameRes = await api(
-      "GET",
-      `/api/tenants/${tenantId}/agent-definitions/by-name/echo`,
-      undefined,
-      user1.cookies,
+  // Stock Interchange cutover: a tenant hosts exactly one workbench
+  // and the shared tenant's room already occupies it, so this chat
+  // lives on its own fixture tenant (with its own assistant deploy).
+  // The old test's second half — inviting the same definition into the
+  // chat again to launch a second run — is gone with the
+  // `chat/definitionId` 1:1: a second agent chat for one definition is
+  // now a 409, and the kind-filter test below proves the reuse side of
+  // that dedup instead.
+  test("a chat auto-invites the assistant and delivers un-mentioned messages to it", async () => {
+    const direct = await setupTenant();
+    const directAssistantId = await deployAssistant(direct);
+    const chatCreated = await createWorkbench(
+      {
+        kind: "chat",
+        definitionId: directAssistantId,
+      },
+      direct.tenantId,
     );
-    expectStatus("resolve echo definition by name", byNameRes, 200);
-    return stringField(byNameRes.data, "id", "resolve echo definition by name");
-  }
-
-  test("a chat auto-invites the echo agent and delivers un-mentioned messages to it", async () => {
-    const chatCreated = await createWorkbench({
-      kind: "chat",
-      definitionId: await echoDefinitionId(),
-    });
     expectStatus("create chat", chatCreated, 201);
     expect(stringField(chatCreated.data, "kind", "create chat")).toBe("chat");
-    expect(stringField(chatCreated.data, "title", "create chat")).toBe("echo");
-    chatId = stringField(chatCreated.data, "id", "create chat");
-
+    expect(stringField(chatCreated.data, "title", "create chat")).toBe("Myra");
+    const chatId = stringField(chatCreated.data, "id", "create chat");
     const chatParticipants = arrayField(
       chatCreated.data,
       "participants",
       "create chat",
     ) as { address: string; handle: string }[];
-    const chatAgent = chatParticipants.find((p) => p.handle === "echo");
+    const chatAgent = chatParticipants.find((p) => p.handle === "myra");
     if (chatAgent === undefined) {
       throw new Error(
-        `chat has no "echo" agent participant: ${JSON.stringify(chatParticipants)}`,
+        `chat has no "myra" agent participant: ${JSON.stringify(chatParticipants)}`,
       );
     }
     const chatAgentLocalPart = chatAgent.address.split("@")[0];
@@ -834,63 +891,48 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       throw new Error(`malformed chat agent address: ${chatAgent.address}`);
     }
 
-    // Inviting into a chat now grows its participants like any other
-    // workbench (the single-concept collapse: a workbench IS an agent
-    // conversation) — only participant removal still refuses a chat.
-    const secondInvite = await api(
-      "POST",
-      `/api/tenants/${tenantId}/chat/workbenches/${chatId}/invite`,
-      { definitionId: await echoDefinitionId() },
-      user1.cookies,
-    );
-    expectStatus("invite into a chat launches a second run", secondInvite, 201);
-
     // No @mention is needed: a chat delivers every message to its one
     // agent unconditionally. The agent's own inference source is a
     // placeholder key in CI, so its reply attempt is expected to error
     // and is never asserted here — only that the fan-out mail reached
     // it.
     const before = highestSeq(
-      await runEvents(user1.cookies, chatAgentLocalPart),
+      await runEvents(user1.cookies, chatAgentLocalPart, direct.tenantId),
     );
     const unmentionedText = `no mention needed ${crypto.randomUUID()}`;
-    await postMessage(user1.cookies, chatId, unmentionedText);
+    await postMessage(user1.cookies, chatId, unmentionedText, direct.tenantId);
 
     const fresh = await waitForRunProgress(
       user1.cookies,
       chatAgentLocalPart,
       before,
+      direct.tenantId,
     );
     expect(fresh.length).toBeGreaterThan(0);
   }, 90_000);
 
-  test("kind filter excludes and includes by kind, and re-creating an existing agent chat reuses it", async () => {
-    const room = await createWorkbench({
-      kind: "workbench",
-      name: "kind filter room",
-    });
+  // Stock Interchange cutover: `workbenchId = tenant.id`, so one
+  // tenant hosts exactly one workbench — the old test's room-plus-chat
+  // pair on the shared tenant is now a PK-duplicate 500 on the second
+  // create, and `reuseExisting` is gone from `CreateWorkbenchBody`
+  // (arktype silently ignores the unknown key). The kind filter is
+  // proven over the tenant's single row instead, on its own fixture
+  // tenant so the shared tenant's room is untouched.
+  test("kind filter includes the tenant's workbench under its own kind and excludes it under the other", async () => {
+    const fixture = await setupTenant();
+    const room = await createWorkbench(
+      {
+        kind: "workbench",
+        name: "kind filter room",
+      },
+      fixture.tenantId,
+    );
     expectStatus("create kind filter room", room, 201);
     const roomId = stringField(room.data, "id", "create kind filter room");
-    const existing = await createWorkbench({
-      kind: "chat",
-      definitionId: await echoDefinitionId(),
-      reuseExisting: true,
-    });
-    expect([200, 201]).toContain(existing.status);
-    chatId = stringField(existing.data, "id", "ensure echo agent chat");
-    const reopened = await createWorkbench({
-      kind: "chat",
-      definitionId: await echoDefinitionId(),
-      reuseExisting: true,
-    });
-    expectStatus("re-create existing agent chat", reopened, 200);
-    expect(
-      stringField(reopened.data, "id", "re-create existing agent chat"),
-    ).toBe(chatId);
 
     const workbenchKindListed = await api(
       "GET",
-      `/api/tenants/${tenantId}/chat/workbenches?kind=workbench`,
+      `/api/tenants/${fixture.tenantId}/chat/workbenches?kind=workbench`,
       undefined,
       user1.cookies,
     );
@@ -900,12 +942,11 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       "items",
       "list kind=workbench",
     ).map((item) => (item as { id: string }).id);
-    expect(workbenchKindIds).not.toContain(chatId);
     expect(workbenchKindIds).toContain(roomId);
 
     const chatKindListed = await api(
       "GET",
-      `/api/tenants/${tenantId}/chat/workbenches?kind=chat`,
+      `/api/tenants/${fixture.tenantId}/chat/workbenches?kind=chat`,
       undefined,
       user1.cookies,
     );
@@ -915,10 +956,40 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       "items",
       "list kind=chat",
     ).map((item) => (item as { id: string }).id);
-    // Exactly one row for the echo agent chat — not two — is the whole
-    // point of CL-6070: the sidebar never shows a duplicate for an agent
-    // already talked to.
-    expect(chatKindIds.filter((id) => id === chatId)).toHaveLength(1);
+    // The tenant's one row is a room, so the chat listing is empty —
+    // the filter never leaks a workbench into the other kind's view.
+    expect(chatKindIds).not.toContain(roomId);
+  }, 90_000);
+
+  // Stock Interchange cutover: the old test's second half — inviting
+  // the same definition into its chat again to launch a second run —
+  // is gone with the chat 1:1 (`launchAndJoinAgent` throws
+  // `KindIsChatError`, mapped to 409, for any non-mint join into a
+  // chat). A seeded tenant carries exactly one invitable definition
+  // (CL-7074), so the enforcement is proven the other way the stock
+  // surface allows: a person-DM chat already bound to its one
+  // counterpart refuses an agent invite with a 409, never a sibling
+  // participant.
+  test("a chat stays one-counterpart: inviting an agent into a person-DM chat is a 409", async () => {
+    const fixture = await setupTenant();
+    const fixtureAssistantId = await deployAssistant(fixture);
+    const dm = await createWorkbench(
+      {
+        kind: "chat",
+        principalId: fixture.user2PrincipalId,
+      },
+      fixture.tenantId,
+    );
+    expectStatus("create person-DM chat", dm, 201);
+    const dmId = stringField(dm.data, "id", "create person-DM chat");
+
+    const refused = await api(
+      "POST",
+      `/api/tenants/${fixture.tenantId}/chat/workbenches/${dmId}/invite`,
+      { definitionId: fixtureAssistantId },
+      user1.cookies,
+    );
+    expectStatus("invite an agent into a person-DM chat", refused, 409);
   }, 90_000);
 
   // Settings is exercised last: `PATCH .../settings` folds the patch
@@ -978,8 +1049,8 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   }, 30_000);
 
   // Every chat/folded run above (the workbench anchor, the mentioned
-  // second workbench, the invited echo agent, the auto-invited chat
-  // agent) writes its own `workflow-run` mail pack over the course of
+  // second workbench, the invited Myra assistant, the auto-invited
+  // chat agent) writes its own `workflow-run` mail pack over the course of
   // this suite. Before CL-6043's self-anchor fix, every one of those
   // packs was permanently rejected — `receiveWorkflowRunPack`
   // (vendor/intx/hub-sessions/src/hub-session-lookups.ts) requires the
@@ -994,9 +1065,9 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   // before that run's own DB row has committed, logging the identical
   // "no live deployment anchor" warning; the hub's redelivery retries
   // it and it self-heals within a second or two. That race reproduces
-  // for the echo workflow's plain native deployment too (which has
-  // always self-anchored), so it is orthogonal to CL-6043 and made a
-  // hub-log assertion flake (confirmed empirically: 4 such transient
+  // for a plain native deployment too (which has always
+  // self-anchored), so it is orthogonal to CL-6043 and made a hub-log
+  // assertion flake (confirmed empirically: 4 such transient
   // warnings even with the fix applied and every test green).
   //
   // The sidecar side is the clean signal instead: a permanently

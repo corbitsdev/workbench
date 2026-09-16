@@ -19,12 +19,9 @@
 # `occurrence` is this evidence string's 1-based rank among matches in
 # the same file — line numbers aren't used as the key because they
 # drift as unrelated code around a catch changes.
-apps/hub/src/bench-session.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
 apps/hub/src/credential-expiry-sweep.ts	1	log.error`credential expiry sweep failed: ${
 apps/hub/src/grant-allowance.ts	1	return null;
-apps/hub/src/index.ts	1	email = "";
 apps/hub/src/index.ts	1	email = undefined;
-apps/hub/src/index.ts	1	log.warn(
 apps/hub/src/index.ts	1	sidecarAllocationLog.error`Sidecar allocation reconciliation failed: ${error instanceof Error ? error.message : String(error)}`;
 apps/hub/src/mail-redelivery.ts	1	log.warn`could not wake ${recipient} ahead of redelivery: ${
 apps/hub/src/shutdown.ts	1	return { kind: "failed", error };
@@ -92,7 +89,6 @@ apps/web/src/profile-relations.ts	1	return {
 apps/web/src/session.ts	1	return {
 apps/web/src/session.ts	2	return {
 apps/web/src/session.ts	3	return {
-apps/web/src/session.ts	4	return {
 apps/web/src/shell/context-menu/items.tsx	1	toast("Couldn't copy the link");
 apps/web/src/shell/workbench-list.tsx	1	// Revert the optimistic title on failure; the list will refetch on
 apps/web/src/shell/workbench-list.tsx	1	setPinned(!next);
@@ -126,13 +122,9 @@ packages/chat/src/platform-adapter.ts	1	wakeLogger.error`drift check for ${bindi
 packages/chat/src/platform-adapter.ts	1	wakeLogger.error`inference-source reconcile for ${binding.roomAddress} (run ${run.id}) failed, leaving it as-is: ${
 packages/chat/src/platform-adapter.ts	1	wakeLogger.error`pinned-tool-package reconcile for ${live.binding.roomAddress} (run ${live.run.id}) failed, leaving it as-is: ${
 packages/chat/src/platform-adapter.ts	1	wakeLogger.error`relaunch sweep: could not relaunch ${live.binding.roomAddress} (run ${live.run.id} is ${live.run.status}): ${
-packages/chat/src/routes.ts	1	log.error(
-packages/chat/src/routes.ts	2	log.error(
 packages/chat/src/turn-context.ts	1	contextLog.warn`failed to assemble turn context on workbench ${input.workbenchId}: ${
 packages/chat/src/workbench-service.ts	1	fanoutLog.error(
 packages/chat/src/workbench-service.ts	1	greetingLog.error(
-packages/chat/src/workbench-service.ts	1	mintAgentDmLog.error(
-packages/chat/src/workbench-service.ts	1	provisionLog.error(
 packages/chat/src/workbench-service.ts	1	removeLog.error(
 packages/chat/src/workbench-service.ts	2	fanoutLog.error(
 packages/code-review/src/report.ts	1	return { ok: false, reason: "the reply was not JSON" };

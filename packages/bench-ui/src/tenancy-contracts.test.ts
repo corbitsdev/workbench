@@ -4,10 +4,7 @@ import {
   canShareWorkbenchWithinParent,
   createDmWorkbenchSpec,
   dmWorkbenchName,
-  emailAllowedForSignup,
   isInterchangeRole,
-  parseAllowedEmailDomains,
-  parseSignupMode,
   validateParentId,
   wouldCreateParentCycle,
   type TenantParentLookup,
@@ -26,75 +23,6 @@ function memoryLookup(
     },
   };
 }
-
-describe("parseSignupMode", () => {
-  test("defaults to closed", () => {
-    expect(parseSignupMode(undefined)).toBe("closed");
-    expect(parseSignupMode("")).toBe("closed");
-  });
-
-  test("accepts open and closed", () => {
-    expect(parseSignupMode("open")).toBe("open");
-    expect(parseSignupMode("CLOSED")).toBe("closed");
-  });
-
-  test("rejects garbage", () => {
-    expect(() => parseSignupMode("maybe")).toThrow(/WORKBENCH_SIGNUP/);
-  });
-});
-
-describe("emailAllowedForSignup", () => {
-  test("closed rejects everyone", () => {
-    expect(
-      emailAllowedForSignup({
-        email: "alice@acme.example",
-        mode: "closed",
-        allowedDomains: [],
-      }),
-    ).toBe(false);
-  });
-
-  test("open with empty allowlist accepts any email", () => {
-    expect(
-      emailAllowedForSignup({
-        email: "alice@acme.example",
-        mode: "open",
-        allowedDomains: [],
-      }),
-    ).toBe(true);
-  });
-
-  test("open with allowlist filters domains", () => {
-    expect(
-      emailAllowedForSignup({
-        email: "alice@acme.example",
-        mode: "open",
-        allowedDomains: ["acme.example"],
-      }),
-    ).toBe(true);
-    expect(
-      emailAllowedForSignup({
-        email: "bob@other.example",
-        mode: "open",
-        allowedDomains: ["acme.example"],
-      }),
-    ).toBe(false);
-  });
-});
-
-describe("parseAllowedEmailDomains", () => {
-  test("splits and trims", () => {
-    expect(parseAllowedEmailDomains("acme.example, other.example")).toEqual([
-      "acme.example",
-      "other.example",
-    ]);
-  });
-
-  test("empty is empty list", () => {
-    expect(parseAllowedEmailDomains(undefined)).toEqual([]);
-    expect(parseAllowedEmailDomains("  ")).toEqual([]);
-  });
-});
 
 describe("validateParentId", () => {
   test("null parent is ok (root)", async () => {

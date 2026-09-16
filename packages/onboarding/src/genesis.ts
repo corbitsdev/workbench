@@ -31,8 +31,6 @@ export type GenesisOrJoinArgs = {
   tenancy: HubSignupTenancy;
   accessPolicy?: {
     store: AccessPolicyStore;
-    envSignupMode: "open" | "closed";
-    envAllowedDomains: readonly string[];
     allowUnverifiedEmails: boolean;
   };
   log: (line: string) => void;
@@ -116,8 +114,6 @@ async function requireSignupAllowed(
   if (args.accessPolicy === undefined) return;
   const gate = await checkSignupGate({
     store: args.accessPolicy.store,
-    envSignupMode: args.accessPolicy.envSignupMode,
-    envAllowedDomains: args.accessPolicy.envAllowedDomains,
     email: args.userEmail,
     emailVerified: args.userEmailVerified,
     allowUnverifiedEmails: args.accessPolicy.allowUnverifiedEmails,

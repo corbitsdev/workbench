@@ -1,9 +1,10 @@
-// CL-7543 follow-up: the planner's one-shot runner and the webhook
-// launch path must both consult the hub's live sidecar routing table
-// through the shared `isSidecarRoutable` local. A regression replacing
-// either wiring with a constant (`() => true`) or dropping the hoisted
-// predicate would still typecheck; this source scan is the pin, in the
-// same style as `crypto-provider-cache-wiring.test.ts`.
+// CL-7543 follow-up: the webhook launch path must consult the hub's live
+// sidecar routing table through the shared `isSidecarRoutable` local. A
+// regression replacing the wiring with a constant (`() => true`) or
+// dropping the hoisted predicate would still typecheck; this source scan
+// is the pin, in the same style as `crypto-provider-cache-wiring.test.ts`.
+// (The planner's one-shot runner pinned alongside it was cut with the
+// stock-hub cutover, leaving this single launch path.)
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -44,9 +45,6 @@ describe("hub sidecar routability wiring", () => {
     );
     expect(definitionCount).toHaveLength(1);
 
-    expect(firstCall(source, "runOneShotPrompt")).toContain(
-      "isRoutable: isSidecarRoutable",
-    );
     expect(firstCall(source, "launchWebhookTrigger")).toContain(
       "isRoutable: isSidecarRoutable",
     );

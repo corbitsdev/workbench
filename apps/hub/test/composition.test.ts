@@ -31,16 +31,12 @@ const config: HubConfig = {
   sessionSecret: "insecure-test-only-session-secret-0000",
   hubDataDir: path.join(root, "data"),
   hubStaticDir: staticDir,
-  defaultTenantSlug: "workbench",
   signupRateLimit: { windowSeconds: 60, max: 5 },
   signInRateLimit: { windowSeconds: 60, max: 10 },
   socialProviders: {},
-  signupMode: "closed",
-  allowedEmailDomains: [],
   // No CREDENTIAL_ENCRYPTION_KEY here: this suite never touches the
   // credential-cipher seam, so the dev opt-in keeps boot working.
   allowPlaintextSecrets: true,
-  allowUnverifiedEmails: true,
   sidecarProvisioners: [],
   chatIdleReapMs: 30 * 60_000,
 };
@@ -132,41 +128,6 @@ describeIfDb("extension mounting", () => {
     // path falls through to the interface shell.
     const outside = await hub.app.request("/chat/workbenches");
     expect(await outside.text()).toBe("<html>shell</html>");
-  });
-
-  test("the first-login onboarding hook is gated the same way", async () => {
-    const hub = await bootHub();
-
-    const gated = await hub.app.request("/api/onboarding/provision", {
-      method: "POST",
-    });
-    expect(gated.status).toBe(401);
-    // Onboarding answers in CL-6360's envelope: a consumer-language
-    // `userMessage` and a `refId` that ties the response to the log
-    // line, never a raw internal `message`.
-    const body = (await gated.json()) as {
-      error: { code: string; userMessage: string; refId: string };
-    };
-    expect(body.error.code).toBe("unauthorized");
-    expect(body.error.userMessage).toBe("Sign in to continue.");
-    expect(body.error.refId).toMatch(/\S/);
-  });
-
-  test("the workbench-tenancy kind lookup the bench switcher uses is mounted and gated", async () => {
-    const hub = await bootHub();
-
-    const gated = await hub.app.request("/api/workbench-tenancies/kinds", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ tenantIds: [] }),
-    });
-    expect(gated.status).toBe(401);
-    const kindsBody = (await gated.json()) as {
-      error: { code: string; userMessage: string; refId: string };
-    };
-    expect(kindsBody.error.code).toBe("unauthorized");
-    expect(kindsBody.error.userMessage).toBe("Authentication required");
-    expect(kindsBody.error.refId).toMatch(/\S/);
   });
 });
 
@@ -273,7 +234,6 @@ describeIfDb(
     test("an attacker exhausting the account's budget with wrong guesses never blocks the owner's correct password, and a successful sign-in resets the budget", async () => {
       const hub = await createHub({
         ...config,
-        signupMode: "open",
         signInRateLimit: { windowSeconds: 60, max: 2 },
       });
       closers.push(hub.close);
@@ -341,12 +301,9 @@ describeIfDb(
   },
 );
 
-describeIfDb("dev-mode email verification", () => {
-  test("ALLOW_UNVERIFIED_EMAILS auto-verifies a fresh self-serve signup, so it never 403s on the unverified-email gate", async () => {
-    const hub = await createHub({
-      ...config,
-      signupMode: "open",
-    });
+describeIfDb("stock signup carries no email-verification gate", () => {
+  test("a fresh self-serve signup can create a tenant without verifying anything", async () => {
+    const hub = await createHub(config);
     closers.push(hub.close);
 
     const email = `first-run-${crypto.randomUUID()}@example.com`;
@@ -360,12 +317,6 @@ describeIfDb("dev-mode email verification", () => {
       }),
     });
     expect(signUp.status).toBe(200);
-    const body = (await signUp.json()) as { user: { emailVerified: boolean } };
-    // No mailer exists anywhere in this stack, so better-auth itself
-    // would leave this false forever without the dev-mode auto-verify
-    // hook -- this is the exact condition that used to dead-end fresh
-    // signup at signup_not_allowed.
-    expect(body.user.emailVerified).toBe(true);
 
     const cookie = signUp.headers.get("set-cookie");
     expect(cookie).not.toBeNull();
@@ -377,8 +328,9 @@ describeIfDb("dev-mode email verification", () => {
       },
       body: JSON.stringify({
         slug: `bench-${crypto.randomUUID().slice(0, 8)}`,
+        name: "First Bench",
       }),
     });
-    expect(createTenant.status).not.toBe(403);
+    expect(createTenant.status).toBe(201);
   });
 });

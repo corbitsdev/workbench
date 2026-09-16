@@ -1,6 +1,6 @@
 // Product tables @corbits/chat owns (see scripts/checks/no-product-tenancy
 // ALLOWLIST): workbench_settings, workbench_read_state, workbench_launch,
-// workbench_tenancy, message_reactions, and pinned_messages. These tables
+// message_reactions, and pinned_messages. These tables
 // live in their own `chat` Postgres schema,
 // fully siloed from the platform's `public` schema — see
 // docs/package-migrations.md. `tenantId`/`principalId` are plain text
@@ -126,26 +126,6 @@ export const workbenchLaunch = chatSchema.table("workbench_launch", {
    * deploy, and for rows that predate the column.
    */
   sourcesDigest: text("sources_digest"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
-
-/**
- * The parent↔child link between a bench and the native tenant a
- * workbench was minted as (see `./workbench-tenancy.ts`). No native
- * child-tenant listing route exists upstream (`parentId` is stored on
- * `tenant` but never queried by any hub-api route), so this table is
- * the honest source for "which workbenches are child tenancies of this
- * bench" — chat owns it rather than leaving the question unanswerable.
- * `tenantId` is unique: a workbench tenant is minted for exactly one
- * workbench, never shared.
- */
-export const workbenchTenancy = chatSchema.table("workbench_tenancy", {
-  workbenchId: text("workbench_id").primaryKey(),
-  tenantId: text("tenant_id").notNull().unique(),
-  parentTenantId: text("parent_tenant_id").notNull(),
-  slug: text("slug").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -285,7 +265,7 @@ export const workbenchThreadMessages = chatSchema.table(
  * One workbench's projection into a sibling tenant (CL-5882's
  * Slack-Connect-style shared workbenches). The owning tenant is never
  * inferable from `workbenchId` alone (a workbench's own tenancy lives in
- * `workbenchTenancy`/`workbench_settings`, not here), so it's carried
+ * `workbench_settings`, not here), so it's carried
  * explicitly — `getShare`/`listSharesForWorkbench` in `./workbench-share.ts`
  * always take it rather than re-deriving it. A row here is created only
  * after `FederationTrustStore.hasBilateralTrust` passes (see

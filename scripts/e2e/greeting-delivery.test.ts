@@ -35,6 +35,7 @@ import {
   ensureSeeded,
   modelSourceFor,
 } from "../../packages/onboarding/src/complete-credential.ts";
+import { publishCorbitsToolsRegistry } from "../../packages/tool-registry-publish/src/publish.ts";
 import { OLLAMA_PLACEHOLDER_SECRET } from "../../packages/connections/src/credential-test.ts";
 import {
   api,
@@ -163,53 +164,84 @@ describe.skipIf(databaseUrl === undefined)(
           "id",
           "alice sign-up user field",
         );
+        // Stock cutover: composition mounts no provisioning hook —
+        // signup mints nothing — so the genesis root comes from an
+        // ordinary `POST /api/tenants` with a caller-chosen slug, and
+        // its creator is the native owner (same shape `local-rip`
+        // proves).
         const probe = await api(
           hub.baseUrl,
-          "POST",
-          "/api/onboarding/provision",
+          "GET",
+          "/api/me/principals",
           undefined,
           res.cookies,
         );
         expectStatus("alice genesis probe", probe, 200);
-        expect((probe.data as { kind: string }).kind).toBe("needs-onboarding");
+        expect((probe.data as { data: unknown[] }).data).toEqual([]);
         const minted = await api(
           hub.baseUrl,
           "POST",
-          "/api/onboarding/provision",
-          { name: "Workbench" },
+          "/api/tenants",
+          { slug: "workbench", name: "Workbench" },
           res.cookies,
         );
-        expectStatus("alice genesis provision", minted, 200);
-        expect((minted.data as { kind: string }).kind).toBe("provisioned");
-        return { cookies: res.cookies, userId };
+        expectStatus("alice genesis tenant create", minted, 201);
+        const mintedBody = minted.data as { id?: string };
+        const tenantId = mintedBody.id;
+        if (tenantId === undefined) {
+          throw new Error(
+            `create tenant answered no id: ${JSON.stringify(minted.data)}`,
+          );
+        }
+        return { cookies: res.cookies, userId, tenantId };
       });
 
       const user = await hop("sign-up", () =>
         signUp(hub.baseUrl, "Greeting Delivery Tester"),
       );
 
-      // Under the CL-7578 genesis-or-join contract the tester joins the
-      // genesis root as a plain member — the genesis path is covered
-      // in-process by `apps/hub/test/signup-genesis.test.ts`.
+      // Stock composition auto-joins nobody: a second signup only
+      // registers an account. Alice brings the tester onto the root
+      // through the native invite route (member role, so read-only by
+      // design) and activates the membership. Every owner-level leg
+      // below — seeding, chat mint, turns — still runs as alice.
       const provisioned = await hop(
-        "a membership probe joins the genesis root as a member",
+        "the owner invites the tester onto the root bench as a member",
         async () => {
-          const res = await api(
+          const roles = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${admin.tenantId}/roles`,
+            undefined,
+            admin.cookies,
+          );
+          expectStatus("list root roles", roles, 200);
+          const memberRole = (
+            roles.data as { data: { id: string; name: string }[] }
+          ).data.find((role) => role.name === "member");
+          if (memberRole === undefined) {
+            throw new Error(
+              `no member role on the root tenant: ${JSON.stringify(roles.data)}`,
+            );
+          }
+          const invited = await api(
             hub.baseUrl,
             "POST",
-            "/api/onboarding/provision",
-            undefined,
-            user.cookies,
+            `/api/tenants/${admin.tenantId}/members/invite`,
+            { email: user.email, roleId: memberRole.id },
+            admin.cookies,
           );
-          expectStatus("provision probe", res, 200);
-          const data = res.data as {
-            kind: string;
-            tenantSlug: string;
-            seeded: boolean;
-          };
-          expect(data.kind).toBe("existing-member");
-          stringField(data, "tenantSlug", "provision result");
-          return data;
+          expectStatus("invite tester", invited, 201);
+          const principalId = stringField(invited.data, "id", "invite result");
+          const activated = await api(
+            hub.baseUrl,
+            "PATCH",
+            `/api/tenants/${admin.tenantId}/principals/${principalId}`,
+            { status: "active" },
+            admin.cookies,
+          );
+          expectStatus("activate tester", activated, 200);
+          return { tenantSlug: "workbench" };
         },
       );
 
@@ -307,6 +339,26 @@ describe.skipIf(databaseUrl === undefined)(
             );
           }
           try {
+            // CL-7071 cutover: the chat mint below launches an agent
+            // whose sidecar initialization resolves its `@corbits`
+            // scope pins against the tenant's own `corbits-tools`
+            // package registry — without it the allocation fails with
+            // `sidecar_initialization_failed` and the greeting never
+            // rides a live instance. Install the registry the same way
+            // the connect flow's setup step does (see `local-rip`'s
+            // publish-tools hop).
+            const published = await publishCorbitsToolsRegistry({
+              api: hubApi,
+              cookies: admin.cookies,
+              hubUrl: hub.baseUrl,
+              tenantId: tenant.tenantId,
+              log: () => undefined,
+            });
+            if (!published.success) {
+              throw new Error(
+                `corbits-tools registry publish failed: ${JSON.stringify(published.summaries)}`,
+              );
+            }
             await seedTenant({
               api: hubApi,
               cookies: admin.cookies,

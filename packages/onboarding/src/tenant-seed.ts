@@ -33,7 +33,6 @@ import {
   AssetWithOriginResponse,
   GrantResponse,
   WorkflowRunHealth,
-  WorkflowDefinitionResponse,
   paginatedSchema,
 } from "@intx/types";
 import { type } from "arktype";
@@ -742,6 +741,18 @@ async function plantDefaultSkills(
       log(`skill ${skill.name} already exists (skipped)`);
       continue;
     }
+    if (created.status === 404) {
+      // Stock Interchange cutover (hub fd3a43e2): the skills mount is
+      // gone, so the plant endpoint 404s with the rest. Bounded and
+      // loud — log through the pipeline (swallowing is acceptable here;
+      // the reconcile re-read below reports these pins "blocked" on its
+      // own) and stop trying further default skills. Every other status
+      // keeps its old meaning.
+      log(
+        `[seed] default skill "${skill.name}" unavailable: POST /api/tenants/${tenantId}/skills returned 404 (skills surface removed by the stock cutover); skipping remaining default skills`,
+      );
+      return;
+    }
     if (created.status !== 201) {
       throw new HubApiError(
         `the hub rejected the default skill "${skill.name}" with status ${created.status}: ${JSON.stringify(created.data)}`,
@@ -1051,88 +1062,6 @@ async function resolveRealSourceOfferingIds(
   };
 }
 
-async function stopPristineScheduledDefinition(
-  api: ApiCall,
-  cookies: string[],
-  args: { tenantId: string; assetName: string },
-  log: (line: string) => void,
-): Promise<void> {
-  const definitions = await listAllWorkflowDefinitions(
-    api,
-    cookies,
-    args.tenantId,
-  );
-  const row = definitions.find(
-    (definition) => definition.name === args.assetName,
-  );
-  if (row === undefined) {
-    throw new HubApiError(
-      `seeded workflow ${args.assetName} has no authored definition to stop`,
-      "re-run: workbench seed after the deploy has projected a definition row",
-    );
-  }
-  if (row.status === "stopped") {
-    log(`definition ${args.assetName} already stopped (skipped)`);
-    return;
-  }
-  if (row.createdAt !== row.updatedAt) {
-    log(
-      `definition ${args.assetName} was touched; leaving status ${row.status}`,
-    );
-    return;
-  }
-  const updated = await api(
-    "PUT",
-    `/api/tenants/${args.tenantId}/agent-definitions/${row.id}/status`,
-    { status: "stopped" },
-    cookies,
-  );
-  if (updated.status !== 200) {
-    throw new HubApiError(
-      `the hub rejected stopping definition ${args.assetName} with status ${updated.status}: ${JSON.stringify(updated.data)}`,
-      "check the hub logs for the underlying failure, then re-run: workbench seed",
-    );
-  }
-  log(
-    `stopped definition ${args.assetName} so its native schedule does not fire until restored`,
-  );
-}
-
-async function listAllWorkflowDefinitions(
-  api: ApiCall,
-  cookies: string[],
-  tenantId: string,
-): Promise<(typeof WorkflowDefinitionResponse.infer)[]> {
-  const items: (typeof WorkflowDefinitionResponse.infer)[] = [];
-  let cursor: string | undefined;
-  for (;;) {
-    const query =
-      cursor === undefined
-        ? "limit=200"
-        : `limit=200&cursor=${encodeURIComponent(cursor)}`;
-    const listed = await api(
-      "GET",
-      `/api/tenants/${tenantId}/workflows/definitions?${query}`,
-      undefined,
-      cookies,
-    );
-    const page = parseAs(
-      paginatedSchema(WorkflowDefinitionResponse),
-      listed.data,
-      "definitions response",
-    );
-    items.push(...page.data);
-    if (page.nextCursor === null) return items;
-    if (items.length > 10_000) {
-      throw new HubApiError(
-        `definitions list for tenant ${tenantId} did not terminate while paging`,
-        "check the hub logs for the underlying failure, then re-run: workbench seed",
-      );
-    }
-    cursor = page.nextCursor;
-  }
-}
-
 async function confirmDeploymentAnswers(
   api: ApiCall,
   cookies: string[],
@@ -1371,11 +1300,15 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     );
 
     if (workflow.startStopped === true) {
-      await stopPristineScheduledDefinition(
-        api,
-        cookies,
-        { tenantId: tenant.tenantId, assetName: workflow.assetName },
-        log,
+      // Stock Interchange cutover: the old
+      // `PUT .../agent-definitions/:id/status` stop surface is gone and
+      // stock `@intx/hub-api` exposes no deployment-stop route, so a
+      // `startStopped` seed can no longer stop its definition after
+      // deploy. The flag is honored best-effort: schedule suppression
+      // now lives in the workflow source itself. Logged, not thrown —
+      // a seed must not fail because a stop surface no longer exists.
+      log(
+        `startStopped requested for ${workflow.assetName} but stock composition exposes no stop route; leaving it deployed`,
       );
     }
     if (confirmDeployments) {

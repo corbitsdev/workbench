@@ -1,13 +1,15 @@
 // CL-7108: the agent-DM pin — the ONE place that says what an agent DM
 // is. An agent DM is a `kind: "chat"` conversation carrying a
-// `chat/definitionId`: the one 1:1 (tenant, agent) conversation, minted by
-// `mintAgentDm` and found-or-reopened by `findExistingAgentChat` (see
-// `./workbench-service.ts`) rather than invited like a room agent.
+// `chat/definitionId`: the one 1:1 (tenant, agent) conversation. The
+// client mints it through stock Interchange and stamps the definition
+// id in the settings it writes; the server never mints DMs — this
+// module only validates what the client wrote (see
+// `definitionIdOfSettings` / `isAgentDmSettings` below).
 //
 // Why DMs differ from rooms is chat-layer only — the execution plane is
 // identical. A DM's agent runs the same interactive warm-mailbox shape a
-// room agent does: one standing per-agent run, provisioned once (at mint,
-// ahead of the member's first message) from the conversation's
+// room agent does: one standing per-agent run, provisioned once (at first
+// message, ahead of the member's first turn) from the conversation's
 // single-definition asset, every inbound mail a header-threaded turn on
 // that run, the turn rows a durable per-run INBOX verifiable in the hub
 // replica, and the agent's `mail_wait` wired in the one place the
@@ -15,8 +17,8 @@
 // never parks awaiting agent mail; dispatch is fire-and-forget and the
 // agent-turns projection plus the turn-mail correlation carry the trail).
 // What makes a DM a DM lives entirely here at the chat layer: the 1:1
-// identity this pin names, find-or-reopen instead of invite, the sidebar
-// bucket, the greeting, mint-not-invite.
+// identity this pin names, the sidebar bucket, the greeting —
+// validated, never minted.
 //
 // Every settings-level reader and writer of DM-ness goes through this
 // module's keys and predicate — never a second inline `chat/definitionId`

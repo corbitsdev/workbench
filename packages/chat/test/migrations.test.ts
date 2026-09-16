@@ -26,8 +26,10 @@ const migrationNames = [
   "0002_channel_read_state",
   "0003_channel_launch",
   "0004_channel_launch_noop_inference",
-  "0005_channel_tenancy",
-  "0006_channel_tenancy_parent_index",
+  // Hard refresh: 0005_channel_tenancy and 0006_channel_tenancy_parent_index
+  // are purged from chatMigrations (see the note above 0007 there) — the
+  // link table they served was dropped outright by 0031, so fresh databases
+  // never create it. Existing databases reset rather than migrate.
   "0007_chat_bench_settings",
   "0008_channel_context_window_explicit_inherit",
   "0009_channel_threads",
@@ -52,6 +54,7 @@ const migrationNames = [
   "0028_turn_mail_correlation",
   "0029_workbench_messages_mail_message_id",
   "0030_agent_turns_agent_occurrence_key",
+  "0031_drop_workbench_tenancy",
 ];
 
 describeIfDb("applyChatMigrations", () => {
@@ -100,17 +103,20 @@ describeIfDb("applyChatMigrations", () => {
 
     const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
     try {
+      // Hard cutover: 0031 drops `workbench_tenancy` (and its index)
+      // outright — the client mints conversation tenants through stock
+      // Interchange now, so chat keeps no link table. It must be absent
+      // here, not merely unlisted.
       const tables = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'chat' AND table_name IN ` +
-          `('workbench_settings', 'workbench_read_state', 'workbench_launch', 'workbench_tenancy', 'chat_bench_settings', 'workbench_threads', 'workbench_thread_messages', 'message_reactions', 'pinned_messages', 'finalized_turn_write_claim', 'workbench_messages', 'agent_turns')`,
+          `('workbench_settings', 'workbench_read_state', 'workbench_launch', 'chat_bench_settings', 'workbench_threads', 'workbench_thread_messages', 'message_reactions', 'pinned_messages', 'finalized_turn_write_claim', 'workbench_messages', 'agent_turns')`,
       );
       expect(tables.map((row) => String(row["table_name"])).sort()).toEqual(
         [
           "workbench_launch",
           "workbench_read_state",
           "workbench_settings",
-          "workbench_tenancy",
           "workbench_thread_messages",
           "workbench_threads",
           "chat_bench_settings",
@@ -121,6 +127,11 @@ describeIfDb("applyChatMigrations", () => {
           "agent_turns",
         ].sort(),
       );
+      const droppedTenancy = await sql.unsafe(
+        `SELECT table_name FROM information_schema.tables ` +
+          `WHERE table_schema = 'chat' AND table_name = 'workbench_tenancy'`,
+      );
+      expect(droppedTenancy).toHaveLength(0);
 
       // Renamed away (CL-6260): the old "channel"-named tables must not
       // linger alongside their renamed replacements.
@@ -136,19 +147,16 @@ describeIfDb("applyChatMigrations", () => {
       const publicTables = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'public' AND table_name IN ` +
-          `('workbench_settings', 'workbench_read_state', 'workbench_launch', 'workbench_tenancy', 'chat_bench_settings', 'workbench_threads', 'workbench_thread_messages', 'block_responses', 'message_reactions', 'pinned_messages')`,
+          `('workbench_settings', 'workbench_read_state', 'workbench_launch', 'chat_bench_settings', 'workbench_threads', 'workbench_thread_messages', 'block_responses', 'message_reactions', 'pinned_messages')`,
       );
       expect(publicTables).toHaveLength(0);
 
-      // `listChildWorkbenchTenancies` filters on `parent_tenant_id` on
-      // every `GET /workbenches` call — without an index that is a
-      // sequential scan on every request.
-      const indexes = await sql.unsafe(
+      // 0031 dropped `workbench_tenancy` with its parent index — no
+      // index on the dropped table may linger either.
+      const droppedIndexes = await sql.unsafe(
         `SELECT indexname FROM pg_indexes WHERE schemaname = 'chat' AND tablename = 'workbench_tenancy'`,
       );
-      expect(indexes.map((row) => String(row["indexname"]))).toContain(
-        "workbench_tenancy_parent_tenant_id_idx",
-      );
+      expect(droppedIndexes).toHaveLength(0);
 
       // The batched per-message reaction/pin reads on `GET /messages`
       // filter on (tenant, workbench[, message]) — without these, both

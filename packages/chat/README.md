@@ -2,12 +2,18 @@
 
 Workbenches as the workbench's chat surface: workbench lifecycle (create, join,
 invite), message send with mention fan-out, threads, reactions, pins,
-poll/form block responses, settings, tenancy (workbenches as child tenants),
-cross-tenant workbench sharing gated by bilateral trust, and the SSE stream a
+poll/form block responses, settings, cross-tenant workbench sharing
+gated by bilateral trust, and the SSE stream a
 workbench's UI subscribes to. Invited agents are provisioned
 workflow runs — this package launches and wakes them through
 Interchange `prepareProvisionedDeployment`, never reimplementing that
 machinery itself.
+
+Tenancy model: the client creates each conversation tenant through
+stock Interchange before initializing chat, and the tenant id is the
+workbench id. Chat never mints, links, or drops tenants — there is no
+tenancy table (migration `0031` dropped `workbench_tenancy`) and no
+server mint route.
 
 ## Composing with `@intx/*`
 
@@ -37,11 +43,11 @@ primitives, `@intx/authz` for grant checks, `@intx/crypto` for signing,
 - **`src/chat-orchestrator.ts`** — turns invited-agent replies and
   approval-gate events into workbench messages and in-chat approve blocks.
 - **`src/workbench-service.ts`** — workbench-level orchestration above the
-  platform port: joining an agent, sending with mention fan-out,
-  provisioning a bare space workbench.
-- **`src/workbench-tenancy.ts`** / **`src/workbench-share.ts`** — workbenches as
-  child tenants, and cross-tenant workbench projection gated by
-  `src/federation-trust.ts`'s bilateral trust.
+  platform port: joining an agent and sending with mention fan-out.
+- **`src/native-principal.ts`** / **`src/workbench-share.ts`** — reads of
+  native principals (DM counterpart validation) and cross-tenant
+  workbench projection gated by `src/federation-trust.ts`'s bilateral
+  trust.
 - **`src/threads.ts`**, **`src/reactions.ts`**, **`src/pins.ts`**,
   **`src/block-responses.ts`** — thread identity, message reactions,
   pinned messages, and poll/form response persistence and aggregation.

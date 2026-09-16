@@ -1,7 +1,8 @@
 // Process-boot and createHub proof that hub production boot does not
 // mint a root tenant or an admin account. An empty database is a valid
 // hub: /status, health, and auth mechanics serve with zero tenant rows.
-// First signup (signup-genesis.test.ts) is the 0→1 path.
+// First self-serve signup plus a stock POST /api/tenants call is the
+// 0→1 path.
 //
 // DB-gated: boots against its own scratch database so a reachable
 // DATABASE_URL is required and the suite skips without one.
@@ -169,14 +170,10 @@ describeIfDb("createHub on a scratch database inserts no tenant", () => {
         sessionSecret: "insecure-test-only-session-secret-0000",
         hubDataDir: path.join(root, "data"),
         hubStaticDir: staticDir,
-        defaultTenantSlug: "workbench",
         signupRateLimit: { windowSeconds: 60, max: 5 },
         signInRateLimit: { windowSeconds: 60, max: 10 },
         socialProviders: {},
-        signupMode: "closed",
-        allowedEmailDomains: [],
         allowPlaintextSecrets: true,
-        allowUnverifiedEmails: true,
         sidecarProvisioners: [],
         chatIdleReapMs: 30 * 60_000,
       };
@@ -201,7 +198,7 @@ describeIfDb("createHub on a scratch database inserts no tenant", () => {
 
 // CL-7579: hub boot must never plant provider credentials from
 // environment variables. Operators connect providers through the
-// onboarding/connect flow instead, so a hub booted with curated
+// client-driven connect flow instead, so a hub booted with curated
 // provider env vars set (e.g. OLLAMA_BASE_URL) inserts zero credential
 // rows and zero catalog offerings — verified against a local fake
 // Ollama whose probe the old env-plant would have passed.
@@ -269,23 +266,24 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
     expect(signUp.status).toBe(200);
     const cookies = signUp.headers.getSetCookie();
     expect(cookies.length).toBeGreaterThan(0);
-    const provision = await fetch(`${baseUrl}/api/onboarding/provision`, {
+    const createTenant = await fetch(`${baseUrl}/api/tenants`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         cookie: cookies.join("; "),
       },
-      body: JSON.stringify({ name: "Workbench" }),
+      body: JSON.stringify({ slug: "workbench", name: "Workbench" }),
     });
-    expect(provision.status).toBe(200);
+    expect(createTenant.status).toBe(201);
   }
 
   test("process boot with OLLAMA_BASE_URL set inserts no credential or offering rows", async () => {
     await withScratchDatabase("boot_env_key_no_plant", async (url) => {
-      // Phase 1: mint the operator identity (signup genesis) so the old
-      // plant's target — admin sign-in + root tenant by slug — resolves
-      // immediately on the second boot. Without it the plant would sit
-      // in its retry loop and the test would prove nothing.
+      // Phase 1: mint the operator identity (self-serve signup plus the
+      // stock first-tenant create) so the old plant's target — an
+      // existing operator bench — resolves immediately on the second
+      // boot. Without it the plant would sit in its retry loop and the
+      // test would prove nothing.
       const genesis = await hop("hub process boot", async () =>
         startHub({
           databaseUrl: url,
@@ -324,7 +322,7 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
     });
   }, 90_000);
 
-  test("createHub with a resolved operator bench plants no credential rows", async () => {
+  test("createHub with an existing operator tenant plants no credential rows", async () => {
     await withScratchDatabase("create_hub_env_key_no_plant", async (url) => {
       const root = mkdtempSync(path.join(tmpdir(), "hub-createhub-plant-"));
       const staticDir = path.join(root, "static");
@@ -332,8 +330,8 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
       writeFileSync(path.join(staticDir, "index.html"), "<html>shell</html>");
       mkdirSync(path.join(root, "data"), { recursive: true });
 
-      // Onboarding routes reach the hub over HTTP, so the composed app
-      // must be served on a real port and `baseUrl` must name it.
+      // Phase 1 works in-process: the signup and tenant routes are
+      // exercised through the composed app directly.
       const server = Bun.serve({
         port: 0,
         fetch: () => new Response("booting", { status: 503 }),
@@ -345,19 +343,15 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
         sessionSecret: "insecure-test-only-session-secret-0000",
         hubDataDir: path.join(root, "data"),
         hubStaticDir: staticDir,
-        defaultTenantSlug: "workbench",
         signupRateLimit: { windowSeconds: 60, max: 5 },
         signInRateLimit: { windowSeconds: 60, max: 10 },
         socialProviders: {},
-        signupMode: "closed",
-        allowedEmailDomains: [],
         allowPlaintextSecrets: true,
-        allowUnverifiedEmails: true,
         sidecarProvisioners: [],
         chatIdleReapMs: 30 * 60_000,
       };
 
-      // Phase 1: mint the operator bench the old plant targeted.
+      // Phase 1: mint the operator tenant the old plant targeted.
       const genesis = await createHub(baseConfig);
       server.reload({ fetch: genesis.app.fetch });
       const signUp = await genesis.app.request("/api/auth/sign-up/email", {
@@ -373,15 +367,15 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
         }),
       });
       expect(signUp.status).toBe(200);
-      const provision = await genesis.app.request("/api/onboarding/provision", {
+      const createTenant = await genesis.app.request("/api/tenants", {
         method: "POST",
         headers: {
           "content-type": "application/json",
           cookie: signUp.headers.getSetCookie().join("; "),
         },
-        body: JSON.stringify({ name: "Workbench" }),
+        body: JSON.stringify({ slug: "workbench", name: "Workbench" }),
       });
-      expect(provision.status).toBe(200);
+      expect(createTenant.status).toBe(201);
       await genesis.close();
 
       const hub = await createHub({

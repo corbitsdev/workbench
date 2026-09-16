@@ -14,7 +14,6 @@ import {
   UnauthenticatedError,
   describeQueryError,
 } from "@corbits/api-query";
-import { getAuthConfig } from "./api";
 import {
   getAccessPolicy,
   updateAccessPolicy,
@@ -26,14 +25,6 @@ export function AccessPolicyBlock({ tenantId }: { readonly tenantId: string }) {
   const [query, setQuery] = useState<APIQuery<AccessPolicy>>({
     kind: "loading",
   });
-  // Whether the operator's own env-level signup switch is still closed —
-  // independent of this bench's policy row and never editable here.
-  // `undefined` while loading or on a failed probe: the notice only
-  // renders once this is known to be `true`, never as a false positive
-  // from a still-loading state.
-  const [envSignupClosed, setEnvSignupClosed] = useState<boolean | undefined>(
-    undefined,
-  );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -55,13 +46,6 @@ export function AccessPolicyBlock({ tenantId }: { readonly tenantId: string }) {
           message: describeQueryError(cause),
           retry: load,
         });
-      });
-    getAuthConfig()
-      .then((config) => {
-        if (!cancelled) setEnvSignupClosed(config.signupMode === "closed");
-      })
-      .catch(() => {
-        // Best-effort: the notice simply stays off rather than guessing.
       });
     return () => {
       cancelled = true;
@@ -86,7 +70,6 @@ export function AccessPolicyBlock({ tenantId }: { readonly tenantId: string }) {
           policy={policy}
           saving={saving}
           error={saveError}
-          envSignupClosed={envSignupClosed === true}
           onChange={save}
         />
       )}
@@ -98,17 +81,11 @@ export function AccessPolicyEditor({
   policy,
   saving,
   error = null,
-  envSignupClosed = false,
   onChange,
 }: {
   readonly policy: AccessPolicy;
   readonly saving: boolean;
   readonly error?: string | null;
-  /** True once it's known the operator's WORKBENCH_SIGNUP env switch is
-   * closed — shows an inline notice when this policy would otherwise
-   * allow self-signup, since that env switch still gates the
-   * underlying sign-up form itself regardless of this policy. */
-  readonly envSignupClosed?: boolean;
   readonly onChange: (patch: Partial<AccessPolicy>) => void;
 }) {
   const [domainDraft, setDomainDraft] = useState("");
@@ -158,12 +135,6 @@ export function AccessPolicyEditor({
           </option>
         </select>
       </label>
-
-      {policy.selfSignup !== "off" && envSignupClosed && (
-        <p className="settings-field-hint" role="status">
-          {SETTINGS_STRINGS.accessPolicyEnvOverrideNotice}
-        </p>
-      )}
 
       {policy.selfSignup === "allowed-domains" && (
         <div className="settings-form-field">

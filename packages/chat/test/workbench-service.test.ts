@@ -7,7 +7,6 @@ import { InferenceResolutionError } from "../src/model-unavailable";
 import { createChatRoutes } from "../src/routes";
 import { decodeParts } from "../src/codec";
 import type { Part, TextPart } from "../src/parts";
-import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { AgentUnreachableError } from "../src/platform-port";
 import {
   cannedGreeting,
@@ -24,6 +23,7 @@ import {
   fakePlatform,
   mountAs,
   nextTimelineMoment,
+  OTHER_TENANT,
   settleFanout,
   TENANT,
   timelineEvents,
@@ -458,10 +458,7 @@ describe("message fan-out", () => {
 
   test("a message to a person-DM chat fans out to no one — the other party reads the workbench's own timeline", async () => {
     const deps = buildDeps();
-    const tenancy = deps.tenancy as ReturnType<
-      typeof createInMemoryWorkbenchTenancyStore
-    >;
-    tenancy.registerPrincipal(TENANT.id, {
+    deps.principals.registerPrincipal(TENANT.id, {
       id: "prn_bob",
       kind: "user",
       status: "active",
@@ -697,19 +694,25 @@ describe("message fan-out", () => {
 
   test("a default-route turn in room B does not include room A's rows", async () => {
     const deps = buildDeps();
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: roomA } = await createWorkbench(app, {
+    const routes = createChatRoutes(deps);
+    // One workbench per conversation tenant — the tenant id IS the
+    // workbench id — so two rooms are two tenants sharing one store,
+    // exactly as two client-minted conversation tenants would.
+    const appA = mountAs(routes, "prn_alice", TENANT);
+    const appB = mountAs(routes, "prn_alice", OTHER_TENANT);
+    const { body: roomA } = await createWorkbench(appA, {
       kind: "workbench",
       name: "room A",
       participants: ["ins_echo1@acme.example"],
     });
-    const { body: roomB } = await createWorkbench(app, {
+    const { body: roomB } = await createWorkbench(appB, {
       kind: "workbench",
       name: "room B",
       participants: ["ins_echo1@acme.example"],
     });
+    expect(roomB.id).not.toBe(roomA.id);
 
-    await app.request(`/workbenches/${roomA.id}/messages`, {
+    await appA.request(`/workbenches/${roomA.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -719,7 +722,7 @@ describe("message fan-out", () => {
     await settleFanout();
     await nextTimelineMoment();
 
-    await app.request(`/workbenches/${roomB.id}/messages`, {
+    await appB.request(`/workbenches/${roomB.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -729,7 +732,7 @@ describe("message fan-out", () => {
     await settleFanout();
     await nextTimelineMoment();
 
-    const response = await app.request(`/workbenches/${roomB.id}/messages`, {
+    const response = await appB.request(`/workbenches/${roomB.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -1543,8 +1546,6 @@ describe("launchAndJoinAgent 1:1 chats", () => {
 });
 
 describe("joinHumanParticipant / removeWorkbenchParticipant (CL-7194)", () => {
-  const tenancy = { addWorkbenchMember: async () => undefined };
-
   test("joinHumanParticipant adds the member without a caller-supplied settings snapshot", async () => {
     const store = createInMemoryChatStore();
     await store.createWorkbenchSettings({
@@ -1559,14 +1560,12 @@ describe("joinHumanParticipant / removeWorkbenchParticipant (CL-7194)", () => {
         store,
         roomMessages: createInMemoryRoomMessageStore(),
         publish: () => undefined,
-        tenancy,
       },
       {
         tenantId: TENANT.id,
         principalId: "prn_alice",
         workbenchId: "chan_1",
         memberPrincipalId: "prn_bob",
-        memberRefId: "prn_bob",
         memberHandle: "bob",
       },
     );
@@ -1596,7 +1595,6 @@ describe("joinHumanParticipant / removeWorkbenchParticipant (CL-7194)", () => {
       store,
       roomMessages: createInMemoryRoomMessageStore(),
       publish: () => undefined,
-      tenancy,
     };
 
     await Promise.all([
@@ -1605,7 +1603,6 @@ describe("joinHumanParticipant / removeWorkbenchParticipant (CL-7194)", () => {
         principalId: "prn_alice",
         workbenchId: "chan_1",
         memberPrincipalId: "prn_bob",
-        memberRefId: "prn_bob",
         memberHandle: "bob",
       }),
       joinHumanParticipant(deps, {
@@ -1613,7 +1610,6 @@ describe("joinHumanParticipant / removeWorkbenchParticipant (CL-7194)", () => {
         principalId: "prn_alice",
         workbenchId: "chan_1",
         memberPrincipalId: "prn_carol",
-        memberRefId: "prn_carol",
         memberHandle: "carol",
       }),
     ]);

@@ -219,8 +219,6 @@ export type CreateOnboardingRoutesDeps = {
    * is wired in at all; never a valid production shape. */
   accessPolicy?: {
     store: AccessPolicyStore;
-    envSignupMode: "open" | "closed";
-    envAllowedDomains: readonly string[];
     allowUnverifiedEmails: boolean;
   };
   /** Seals the OAuth connect state (PKCE verifier included) parked

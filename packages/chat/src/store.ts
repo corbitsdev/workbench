@@ -189,7 +189,7 @@ export interface ChatStore {
   /**
    * True when `instanceId` is a workflow instance this tenant launched
    * (workbench host or invited agent). Agent mailboxes are addressed by
-   * instance id, not by a `workbench_settings` row, so tenancy gates on
+   * instance id, not by a `workbench_settings` row, so the tenant gates on
    * message routes must consult this as well as `getWorkbenchSettings`.
    */
   hasLaunchedInstance(tenantId: string, instanceId: string): Promise<boolean>;
