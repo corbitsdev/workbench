@@ -140,19 +140,11 @@ describe("dispatch mail threading", () => {
     const h = harness();
     const first = await postRow(h.roomMessages, "question one");
     const firstTid = replyThreadId(first.id);
-    const inFirst = await postRow(
-      h.roomMessages,
-      "@ins_echo1 one",
-      firstTid,
-    );
+    const inFirst = await postRow(h.roomMessages, "@ins_echo1 one", firstTid);
 
     const second = await postRow(h.roomMessages, "question two");
     const secondTid = replyThreadId(second.id);
-    const inSecond = await postRow(
-      h.roomMessages,
-      "@ins_echo1 two",
-      secondTid,
-    );
+    const inSecond = await postRow(h.roomMessages, "@ins_echo1 two", secondTid);
 
     // Both turns are in flight against the same agent address.
     await dispatch(h, [inFirst.id], firstTid);
