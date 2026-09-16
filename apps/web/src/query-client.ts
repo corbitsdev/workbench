@@ -77,8 +77,6 @@ export function createAppQueryClient(
 export const meKeys = {
   profile: ["me", "profile"] as const,
   principals: ["me", "principals"] as const,
-  workbenchTenancyKinds: (tenantIds: readonly string[]) =>
-    ["me", "workbench-tenancy-kinds", [...tenantIds].sort()] as const,
 };
 
 /** Tenant-scoped keys — removed wholesale when the user leaves a bench. */

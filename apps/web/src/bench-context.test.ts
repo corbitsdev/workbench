@@ -18,19 +18,18 @@ function membership(
 }
 
 describe("resolveSelection", () => {
-  test("a workbench tenant sorting first is skipped in favor of the first workbench", () => {
+  test("a named tenant sorting first wins — no kinds lookup to skip it", () => {
     const memberships = [
-      membership({ tenantId: "tnt_workbench", tenantName: "Myra" }),
+      membership({ tenantId: "tnt_first", tenantName: "Myra" }),
       membership({ tenantId: "tnt_bench", tenantName: "Launch Team" }),
     ];
-    const workbenchTenantIds = new Set(["tnt_workbench"]);
 
-    const resolved = resolveSelection(memberships, null, workbenchTenantIds);
+    const resolved = resolveSelection(memberships, null);
 
-    expect(resolved?.tenantId).toBe("tnt_bench");
+    expect(resolved?.tenantId).toBe("tnt_first");
   });
 
-  test("a raw-id tenant sorting first is skipped even before workbenchTenantIds resolves", () => {
+  test("a raw-id tenant sorting first is skipped in favor of the first named bench", () => {
     const memberships = [
       membership({
         tenantId: "tnt_raw",
@@ -39,57 +38,52 @@ describe("resolveSelection", () => {
       membership({ tenantId: "tnt_bench", tenantName: "Launch Team" }),
     ];
 
-    const resolved = resolveSelection(memberships, null, new Set());
+    const resolved = resolveSelection(memberships, null);
 
     expect(resolved?.tenantId).toBe("tnt_bench");
   });
 
-  test("a stored selection that still names a workbench wins over the first membership", () => {
+  test("a stored selection that still names a bench wins over the first membership", () => {
     const memberships = [
       membership({ tenantId: "tnt_bench_a", tenantName: "A" }),
       membership({ tenantId: "tnt_bench_b", tenantName: "B" }),
     ];
 
-    const resolved = resolveSelection(memberships, "tnt_bench_b", new Set());
+    const resolved = resolveSelection(memberships, "tnt_bench_b");
 
     expect(resolved?.tenantId).toBe("tnt_bench_b");
   });
 
-  test("a stored selection that turns out to be a workbench self-corrects to a workbench", () => {
+  test("a stored selection naming a raw-id tenant falls through to the first named bench", () => {
     const memberships = [
-      membership({ tenantId: "tnt_workbench", tenantName: "Myra" }),
+      membership({
+        tenantId: "tnt_raw",
+        tenantName: "ins_71f5c0c9c30026859014ccd9df8b1",
+      }),
       membership({ tenantId: "tnt_bench", tenantName: "Launch Team" }),
     ];
 
-    // Before the kinds lookup resolves, the stored workbench id still
-    // matches — nothing to distinguish it yet.
-    const beforeKinds = resolveSelection(
-      memberships,
-      "tnt_workbench",
-      new Set(),
-    );
-    expect(beforeKinds?.tenantId).toBe("tnt_workbench");
+    const resolved = resolveSelection(memberships, "tnt_raw");
 
-    // Once workbenchTenantIds arrives, the same stored id is re-evaluated
-    // and no longer honored.
-    const afterKinds = resolveSelection(
-      memberships,
-      "tnt_workbench",
-      new Set(["tnt_workbench"]),
-    );
-    expect(afterKinds?.tenantId).toBe("tnt_bench");
+    expect(resolved?.tenantId).toBe("tnt_bench");
   });
 
-  test("undefined when every membership is a workbench or raw-id tenant", () => {
+  test("a stored selection for a tenant no longer in memberships falls through", () => {
     const memberships = [
-      membership({ tenantId: "tnt_workbench", tenantName: "Myra" }),
+      membership({ tenantId: "tnt_bench", tenantName: "Launch Team" }),
     ];
 
-    const resolved = resolveSelection(
-      memberships,
-      null,
-      new Set(["tnt_workbench"]),
-    );
+    const resolved = resolveSelection(memberships, "tnt_gone");
+
+    expect(resolved?.tenantId).toBe("tnt_bench");
+  });
+
+  test("undefined when every membership is a raw-id tenant", () => {
+    const memberships = [
+      membership({ tenantId: "tnt_raw", tenantName: "tnt_raw" }),
+    ];
+
+    const resolved = resolveSelection(memberships, null);
 
     expect(resolved).toBeUndefined();
   });

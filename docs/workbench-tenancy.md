@@ -6,6 +6,27 @@ hierarchy (`tenant.parentId`). This document describes the model, the seams
 `@corbits/chat` owns because no native route covers them, and the gaps
 still open upstream.
 
+> Cutover note (thread-native client-driver branch): this branch cut the
+> web/`bench-ui` client usage of the tenancy-kind surface only —
+> `classifyBenchMembership`/`filterBenchMemberships`/`TenancyKind` and the
+> web kinds client (`meKeys.workbenchTenancyKinds`,
+> `POST /api/workbench-tenancies/kinds` callers) are gone; bench selection,
+> the routines roster, and the command palette now filter by
+> human-assigned name (`isBenchMembership` in
+> `apps/web/src/bench-context.tsx`, backed by `isRawIdentifier` from
+> `@corbits/bench-ui`), with child-tenant exclusion living in the
+> client-held workbench list (`apps/web/src/needs-list.ts`'s
+> `childTenantStore`). The server-side surface this document describes —
+> `WorkbenchTenancyStore`, the `workbench_tenancy` table, and
+> `POST /api/workbench-tenancies/kinds` — is untouched on this branch;
+> server removal lands separately (sibling chat branch). The body below is
+> kept as the record of that design.
+>
+> Open question (no code change): named child tenants now flow into
+> selection, the palette, and rosters, with exclusion only via the
+> client-held list — whether that is the product behavior we want is
+> still undecided.
+
 ## Why workbenches are tenants
 
 A workbench needs its own membership and permissions — who can post, who can
