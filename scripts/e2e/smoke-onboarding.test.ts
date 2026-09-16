@@ -1,12 +1,10 @@
-// Smoke scenario 2/5 (CL-6004): provisioning. A signed-up user with no
-// tenant yet calls the first-login provisioning hook
-// (POST /api/onboarding/provision). The e2e hub boots empty, so under
-// the CL-7578 genesis-or-join contract the first signup mints the root
-// as owner — the same genesis path covered in-process by
-// `apps/hub/test/signup-genesis.test.ts`. This asserts genesis over
-// the wire: `kind: "needs-onboarding"` then `kind: "provisioned"`
-// naming the minted root via `tenantId`/`tenantSlug`, and an
-// idempotent re-provision.
+// Smoke scenario 2/5 (CL-6004): first-tenant provisioning. Stock
+// Interchange cutover: composition mounts no provisioning hook
+// (`POST /api/onboarding/provision` is gone) — signup mints nothing,
+// and the first bench comes from an ordinary `POST /api/tenants` with
+// a caller-chosen slug, its creator the native owner. This asserts
+// that stock flow over the wire: a benchless signup, the mint, and
+// the minted root showing up in the creator's own principals.
 
 import { describe, expect, test } from "bun:test";
 
@@ -43,9 +41,9 @@ function stringField(data: unknown, field: string, what: string): string {
 }
 
 describe.skipIf(databaseUrl === undefined)(
-  "smoke: onboarding provision",
+  "smoke: first-tenant provisioning",
   () => {
-    test("a brand-new signup mints the root as owner, unseeded", async () => {
+    test("a brand-new signup starts benchless and mints its first tenant via POST /api/tenants", async () => {
       const url = databaseUrl;
       if (url === undefined) throw new Error("unreachable: suite is skipped");
 
@@ -84,38 +82,38 @@ describe.skipIf(databaseUrl === undefined)(
       });
 
       const provisioned = await hop(
-        "the first signup mints the root as owner",
+        "signup mints nothing — the account starts benchless",
         async () => {
           const probe = await api(
             baseUrl,
-            "POST",
-            "/api/onboarding/provision",
+            "GET",
+            "/api/me/principals",
             undefined,
             cookies,
           );
-          expectStatus("provision probe", probe, 200);
-          expect((probe.data as { kind: string }).kind).toBe(
-            "needs-onboarding",
-          );
+          expectStatus("principals probe", probe, 200);
+          const rows = (probe.data as { data: unknown[] }).data;
+          expect(rows).toEqual([]);
+          return { benchless: true };
+        },
+      );
+      expect(provisioned.benchless).toBe(true);
+
+      const minted = await hop(
+        "the first tenant comes from an ordinary POST /api/tenants",
+        async () => {
+          const slug = `smoke-onboarding-${crypto.randomUUID().slice(0, 8)}`;
           const res = await api(
             baseUrl,
             "POST",
-            "/api/onboarding/provision",
-            { name: "Smoke Onboarding" },
+            "/api/tenants",
+            { name: "Smoke Onboarding", slug },
             cookies,
           );
-          expectStatus("genesis provision", res, 200);
-          const data = res.data as {
-            kind: string;
-            tenantId: string;
-            tenantSlug: string;
-            seeded: boolean;
-            seedSkipReason?: string;
-          };
-          expect(data.kind).toBe("provisioned");
-          stringField(data, "tenantId", "provision result");
-          stringField(data, "tenantSlug", "provision result");
-          return data;
+          expectStatus("create tenant", res, 201);
+          const data = res.data as { id: string; slug?: string };
+          const tenantId = stringField(data, "id", "create tenant");
+          return { tenantId, tenantSlug: slug };
         },
       );
 
@@ -131,27 +129,14 @@ describe.skipIf(databaseUrl === undefined)(
           );
           expectStatus("list principals", res, 200);
           const rows = (res.data as { data: { tenantId: string }[] }).data;
-          const own = rows.find((row) => row.tenantId === provisioned.tenantId);
+          const own = rows.find((row) => row.tenantId === minted.tenantId);
           if (own === undefined) {
             throw new Error(
-              `provisioned tenant ${provisioned.tenantId} is missing from the caller's own principals: ${JSON.stringify(rows)}`,
+              `minted tenant ${minted.tenantId} is missing from the caller's own principals: ${JSON.stringify(rows)}`,
             );
           }
         },
       );
-
-      await hop("re-provisioning the same account is idempotent", async () => {
-        const res = await api(
-          baseUrl,
-          "POST",
-          "/api/onboarding/provision",
-          undefined,
-          cookies,
-        );
-        expectStatus("re-provision probe", res, 200);
-        const data = res.data as { kind: string };
-        expect(data.kind).toBe("existing-member");
-      });
     }, 60_000);
   },
 );

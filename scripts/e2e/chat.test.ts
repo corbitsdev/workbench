@@ -54,6 +54,7 @@ import {
   seedTenant,
 } from "../../packages/onboarding/src/tenant-seed.ts";
 import { modelSourceFor } from "../../packages/onboarding/src/complete-credential.ts";
+import { publishCorbitsToolsRegistry } from "../../packages/tool-registry-publish/src/publish.ts";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
@@ -327,6 +328,26 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
         );
       }
       try {
+        // CL-7071 cutover: seeding no longer packs, and a launched
+        // agent's sidecar initialization resolves its `@corbits` scope
+        // pins against the tenant's own `corbits-tools` package
+        // registry — without it the allocation fails with
+        // `sidecar_initialization_failed` and the agent's run never
+        // commits events. Install the registry the same way the
+        // connect flow's setup step does (see `local-rip`'s
+        // publish-tools hop), before seedTenant deploys assistant.
+        const published = await publishCorbitsToolsRegistry({
+          api,
+          cookies: user1.cookies,
+          hubUrl: hub.baseUrl,
+          tenantId: fixture.tenantId,
+          log: () => undefined,
+        });
+        if (!published.success) {
+          throw new Error(
+            `corbits-tools registry publish failed: ${JSON.stringify(published.summaries)}`,
+          );
+        }
         await seedTenant({
           api,
           cookies: user1.cookies,

@@ -209,51 +209,22 @@ if (!databaseUrl) {
 
   // Extension-specific block — the pattern every future extension
   // copies: the generic sweep above already covers its surface entry;
-  // a block like this asserts the behavior only that extension has (the
-  // echo demo agent that used to live here was deleted in CL-7381).
+  // a block like this asserts the behavior only that extension has.
+  //
+  // Cutover note (stock Interchange): `POST .../chat/workbenches/:id/move`
+  // was deleted with the workbench-tenancy cutover. Workbenches are
+  // client-managed now — the client creates the conversation tenant and
+  // `POST .../chat/workbenches` stamps `workbenchId = tenant.id` (one
+  // bench per tenant, see `packages/chat/src/routes.ts`) — so there is
+  // no move to refuse and no `workbench_tenancy` link to re-parent. The
+  // extension-specific guarantee that survives is cross-tenant refusal
+  // on the chat detail routes themselves.
 
-  describe("chat workbench move", () => {
-    /** The `tenancy` annotation `GET .../chat/workbenches` carries for one
-     * workbench id, or `undefined` if the id is absent from the list —
-     * the actual, current `workbench_tenancy` state, read fresh on every
-     * call rather than trusted from an earlier response. */
-    async function readWorkbenchTenancy(
-      tenantId: string,
-      cookie: string,
-      workbenchId: string,
-    ): Promise<{ tenantId: string; parentTenantId: string } | undefined> {
-      const response = await app.request(
-        `/api/tenants/${tenantId}/chat/workbenches`,
-        { headers: { cookie } },
-      );
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as {
-        items: {
-          id: string;
-          tenancy: { tenantId: string; parentTenantId: string } | null;
-        }[];
-      };
-      const item = body.items.find((entry) => entry.id === workbenchId);
-      return item?.tenancy ?? undefined;
-    }
-
-    /** The native `tenant.parentId` for a tenant, read straight from
-     * `GET /api/tenants/:id` rather than trusted from a prior write —
-     * the same route `provisionTenant` itself calls to prove a create
-     * landed. */
-    async function readTenantParentId(
-      tenantId: string,
-      cookie: string,
-    ): Promise<string | null> {
-      const response = await app.request(`/api/tenants/${tenantId}`, {
-        headers: { cookie },
-      });
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as { parentId: string | null };
-      return body.parentId;
-    }
-
-    test("a member of A cannot move A's workbench under B without standing in B", async () => {
+  describe("chat workbench cross-tenant refusals", () => {
+    test("a foreign principal cannot read the other tenant's workbench settings or messages", async () => {
+      // Stock cutover: a tenant hosts exactly one workbench and its id
+      // is the conversation tenant's own id, so A's bench id is
+      // tenantA.tenantId.
       const createResponse = await app.request(
         `/api/tenants/${tenantA.tenantId}/chat/workbenches`,
         {
@@ -262,230 +233,47 @@ if (!databaseUrl) {
             cookie: tenantA.cookie,
             "content-type": "application/json",
           },
-          body: JSON.stringify({ kind: "workbench", name: "Movable" }),
+          body: JSON.stringify({ kind: "workbench", name: "Home Bench" }),
         },
       );
       expect(createResponse.status).toBe(201);
-      const created = (await createResponse.json()) as {
-        id: string;
-        tenancy: { tenantId: string };
-      };
+      const created = (await createResponse.json()) as { id: string };
+      expect(created.id).toBe(tenantA.tenantId);
 
-      // Tenant A's own member holds no principal at all in tenant B —
-      // the destination-authorization check must refuse this before
-      // either the workbench_tenancy link or tenant.parentId is touched,
-      // even though the caller has full authority over the workbench in
-      // its own bench.
-      const moveResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/workbenches/${created.id}/move`,
-        {
-          method: "POST",
-          headers: {
-            cookie: tenantA.cookie,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ newParentTenantId: tenantB.tenantId }),
-        },
-      );
-      await expectRefusal(moveResponse, 403, "forbidden", tenantB.markers);
+      for (const [, actor, victim] of pairs) {
+        const settings = await app.request(
+          `/api/tenants/${victim.tenantId}/chat/workbenches/${victim.tenantId}/settings`,
+          { headers: { cookie: actor.cookie } },
+        );
+        await expectRefusal(settings, 403, "forbidden", victim.markers);
 
-      const settingsResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/workbenches/${created.id}/settings`,
-        { headers: { cookie: tenantA.cookie } },
-      );
-      expect(settingsResponse.status).toBe(200);
-
-      // A denied move must leave no trace in either place it would
-      // have written: re-read both the chat-owned link and the native
-      // tenant row, straight from the database, rather than trusting
-      // the 403 response alone — a write-then-deny implementation
-      // would still return 403 here but would fail these reads.
-      const link = await readWorkbenchTenancy(
-        tenantA.tenantId,
-        tenantA.cookie,
-        created.id,
-      );
-      expect(link?.parentTenantId).toBe(tenantA.tenantId);
-      const parentId = await readTenantParentId(
-        created.tenancy.tenantId,
-        tenantA.cookie,
-      );
-      expect(parentId).toBe(tenantA.tenantId);
-    });
-
-    test("a member of A holding only a read-only principal in B still cannot move A's workbench into B", async () => {
-      const createResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/workbenches`,
-        {
-          method: "POST",
-          headers: {
-            cookie: tenantA.cookie,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            kind: "workbench",
-            name: "Movable Read Only",
-          }),
-        },
-      );
-      expect(createResponse.status).toBe(201);
-      const created = (await createResponse.json()) as {
-        id: string;
-        tenancy: { tenantId: string };
-      };
-
-      // Give tenant A's owner a real, active foothold in tenant B —
-      // invited onto B's own "member" system role (read-only grants
-      // only) and activated by B's owner, entirely through native
-      // routes and the real database. This is the case a fake grant
-      // store can't exercise: the caller is no longer a stranger to
-      // the destination tenant, so the check must fall through to a
-      // real `@intx/authz` evaluation of B's live grant rows and find
-      // no manage grant among them, rather than short-circuiting on
-      // "no principal at all" as the sibling test above does.
-      const rolesResponse = await app.request(
-        `/api/tenants/${tenantB.tenantId}/roles`,
-        { headers: { cookie: tenantB.cookie } },
-      );
-      expect(rolesResponse.status).toBe(200);
-      const roles = listItems(await rolesResponse.json()) as {
-        id: string;
-        name: string;
-      }[];
-      const memberRole = roles.find((role) => role.name === "member");
-      if (!memberRole) {
-        throw new Error("expected a system member role in tenant B");
+        const messages = await app.request(
+          `/api/tenants/${victim.tenantId}/chat/workbenches/${victim.tenantId}/messages`,
+          { headers: { cookie: actor.cookie } },
+        );
+        await expectRefusal(messages, 403, "forbidden", victim.markers);
       }
 
-      const inviteResponse = await app.request(
-        `/api/tenants/${tenantB.tenantId}/members/invite`,
-        {
-          method: "POST",
-          headers: {
-            cookie: tenantB.cookie,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            email: `owner-a-${nonce}@isolation.test`,
-            roleId: memberRole.id,
-          }),
-        },
-      );
-      expect(inviteResponse.status).toBe(201);
-      const invited = (await inviteResponse.json()) as { id: string };
-
-      const activateResponse = await app.request(
-        `/api/tenants/${tenantB.tenantId}/principals/${invited.id}`,
-        {
-          method: "PATCH",
-          headers: {
-            cookie: tenantB.cookie,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ status: "active" }),
-        },
-      );
-      expect(activateResponse.status).toBe(200);
-
-      const moveResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/workbenches/${created.id}/move`,
-        {
-          method: "POST",
-          headers: {
-            cookie: tenantA.cookie,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ newParentTenantId: tenantB.tenantId }),
-        },
-      );
-      await expectRefusal(moveResponse, 403, "forbidden", tenantB.markers);
-
-      const settingsResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/workbenches/${created.id}/settings`,
+      // The refusals above are the tenant gate, not dead routes: the
+      // owner's own reads on the same ids still reach the handlers.
+      const own = await app.request(
+        `/api/tenants/${tenantA.tenantId}/chat/workbenches/${tenantA.tenantId}/settings`,
         { headers: { cookie: tenantA.cookie } },
       );
-      expect(settingsResponse.status).toBe(200);
-
-      // Same non-negotiable as the sibling test: a real, active
-      // principal in the destination is still not a manage grant, and
-      // the denial must leave the actual rows untouched.
-      const link = await readWorkbenchTenancy(
-        tenantA.tenantId,
-        tenantA.cookie,
-        created.id,
-      );
-      expect(link?.parentTenantId).toBe(tenantA.tenantId);
-      const parentId = await readTenantParentId(
-        created.tenancy.tenantId,
-        tenantA.cookie,
-      );
-      expect(parentId).toBe(tenantA.tenantId);
+      expect(own.status).toBe(200);
     });
 
-    test("a member of A who genuinely manages tenant C can move A's workbench there, and the write actually lands", async () => {
-      const createResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/workbenches`,
-        {
-          method: "POST",
-          headers: {
-            cookie: tenantA.cookie,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ kind: "workbench", name: "Movable To Own" }),
-        },
-      );
-      expect(createResponse.status).toBe(201);
-      const created = (await createResponse.json()) as {
-        id: string;
-        tenancy: { tenantId: string; parentTenantId: string };
-      };
-      expect(created.tenancy.parentTenantId).toBe(tenantA.tenantId);
-
-      // A second, real tenant owned by the same user as tenant A — a
-      // genuine manage grant in the destination, not a fake store's
-      // `Set`. `createDrizzleWorkbenchTenancyStore` is the only
-      // implementation that takes the `SELECT ... FOR UPDATE` locks
-      // and calls the real `evaluateGrants`, so this is the only test
-      // that instantiates it end to end.
-      const tenantC: ProvisionedTenant = await provisionTenant(
-        app,
-        tenantA.cookie,
-        "c",
-        nonce,
-      );
-
-      const moveResponse = await app.request(
-        `/api/tenants/${tenantA.tenantId}/chat/workbenches/${created.id}/move`,
-        {
-          method: "POST",
-          headers: {
-            cookie: tenantA.cookie,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ newParentTenantId: tenantC.tenantId }),
-        },
-      );
-      expect(moveResponse.status).toBe(200);
-      const moved = (await moveResponse.json()) as {
-        tenancy: { tenantId: string; parentTenantId: string };
-      };
-      expect(moved.tenancy.parentTenantId).toBe(tenantC.tenantId);
-
-      // The response body alone proves nothing about what actually
-      // landed — re-read both places the move writes, fresh, to
-      // confirm the transaction really committed both halves: the
-      // chat-owned link row, and the native `tenant.parentId` column.
-      const link = await readWorkbenchTenancy(
-        tenantA.tenantId,
-        tenantA.cookie,
-        created.id,
-      );
-      expect(link?.parentTenantId).toBe(tenantC.tenantId);
-      const parentId = await readTenantParentId(
-        created.tenancy.tenantId,
-        tenantA.cookie,
-      );
-      expect(parentId).toBe(tenantC.tenantId);
+    test("a foreign workbench id under your own tenant path resolves as not found", async () => {
+      // Workbench ids are tenant ids under the stock cutover, so B's
+      // bench id addressed inside A's own tenant path must never
+      // resolve — it is an unknown resource, not a boundary crossing.
+      for (const [, actor, victim] of pairs) {
+        const response = await app.request(
+          `/api/tenants/${actor.tenantId}/chat/workbenches/${victim.tenantId}/settings`,
+          { headers: { cookie: actor.cookie } },
+        );
+        await expectRefusal(response, 404, "not_found", victim.markers);
+      }
     });
   });
 }
