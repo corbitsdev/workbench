@@ -66,7 +66,8 @@ import {
 } from "./workbench-settings";
 import { AGENT_DM_DEFINITION_ID_KEY } from "./agent-dm-mode";
 import { listWorkbenchLiveState } from "./workbench-reply-activity";
-import { postRoomMessage, type RoomMessageStore } from "./room-messages";
+import { postMailboxMessage } from "./workbench-service";
+import type { RoomMessageStore } from "./room-messages";
 import { WorkbenchOnboardingStep } from "./blocks";
 import type { ConnectGithubBlockData } from "./blocks";
 import {
@@ -100,8 +101,8 @@ import {
   createTurnCancelRegistry,
   type TurnCancelRegistry,
 } from "./turn-cancellation";
-import type { TurnMailCorrelationStore } from "./turn-mail-correlation";
 import type { ChatPlatform } from "./platform-port";
+import type { MessagePartsStore } from "./message-parts";
 import type { ChatStore } from "./store";
 import {
   dispatchAtCommand,
@@ -209,29 +210,23 @@ export type CreateChatRoutesDeps = {
    */
   onMessageFanout?: (fanoutDelivered: Promise<void>) => void;
   /**
-   * Thread identity store (root / reply / delivery). When omitted,
-   * thread list routes return empty and delivery-thread creation is
-   * unavailable — composition that wants threads (hub) injects a
-   * real store. Optional so unit tests that only exercise workbench
-   * CRUD stay free of thread tables.
+   * Thread identity (root / reply / delivery) over mailbox scans — the
+   * hub injects the descriptor store (`./threads-native.ts`), so every
+   * thread read here derives off the reader's own copies. Required: the
+   * thread routes serve every scope from it, and sends resolve their
+   * target thread through it before publish (CL-6660).
    */
-  threads?: ThreadStore;
+  threads: ThreadStore;
   /**
-   * CL-7450's mailbox fan-out: writes a sent human message into every
+   * CL-7594's mailbox fan-out: every send writes its batch into every
    * human participant's `@corbits/mailbox` inbox — see
    * `SendWorkbenchMessageDeps`'s field of the same name in
-   * `./workbench-service.ts`. Omitted, a sent message reaches only the
-   * room's own timeline, the pre-CL-7450 behavior.
+   * `./workbench-service.ts`. Required — the mailbox batch IS the send's
+   * durable write.
    */
-  mailbox?: MailboxFanoutDeps;
-  /**
-   * Durable dispatch-mail -> source-message correlation (CL-6314) —
-   * threaded through to every `sendWorkbenchMessage` call this router
-   * makes, so the reply path can land an agent's answer in its source
-   * message's thread. Omitted, dispatches still send; their replies
-   * just post unthreaded.
-   */
-  turnMailCorrelation?: TurnMailCorrelationStore;
+  mailbox: MailboxFanoutDeps;
+  /** The `message_parts` sidecar every send records its rich parts into. */
+  parts: MessagePartsStore;
   /**
    * The turn projection (CL-6329) — one row per agent turn, which is
    * what makes a reply traceable back to the child run that produced
@@ -1224,7 +1219,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             {
               store: deps.store,
               platform: deps.platform,
-              roomMessages: deps.roomMessages,
+              mailbox: deps.mailbox,
+              parts: deps.parts,
               publish,
             },
             {
@@ -1289,7 +1285,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           // joined-then-hello; neither ever rejects.
           await joinEventDelivered;
           await postCannedGreeting(
-            { roomMessages: deps.roomMessages, publish },
+            {
+              store: deps.store,
+              mailbox: deps.mailbox,
+              parts: deps.parts,
+              publish,
+            },
             {
               tenantId: tenant.id,
               workbenchId,
@@ -1348,7 +1349,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           const joined = await joinHumanParticipant(
             {
               store: deps.store,
-              roomMessages: deps.roomMessages,
+              mailbox: deps.mailbox,
+              parts: deps.parts,
               publish,
               tenancy: deps.tenancy,
             },
@@ -1568,23 +1570,24 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   // when it was never assigned at all — `workbench_thread_messages` states
   // that default ("root feed by default"), and `POST /messages` is the only
   // caller that records membership, so every agent-originated message
-  // arrives with none. Both thread-aware read routes resolve it the same
-  // way, from one assignments read rather than a request per thread.
+  // Both thread-aware read routes resolve it the same way, from one
+  // assignments read rather than a request per thread. Derived off the
+  // reader's own mailbox copies — anything without a resolvable thread
+  // reads in the root feed, the way unassigned rows always defaulted
+  // there.
   async function resolveThreadMembership(
     tenantId: string,
     workbenchId: string,
-  ): Promise<
-    | {
-        readonly rootThreadId: string;
-        readonly threadIdOf: (id: string) => string;
-      }
-    | undefined
-  > {
-    if (deps.threads === undefined) return undefined;
+    principalId: string,
+  ): Promise<{
+    readonly rootThreadId: string;
+    readonly threadIdOf: (id: string) => string;
+  }> {
     const root = await deps.threads.ensureRootThread(tenantId, workbenchId);
     const assignments = await deps.threads.listThreadAssignments(
       tenantId,
       workbenchId,
+      principalId,
     );
     return {
       rootThreadId: root.id,
@@ -1597,6 +1600,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
+      const principal = c.get("principal");
       const workbenchId = c.req.param("id");
       if (!(await workbenchInTenant(deps.store, tenant.id, workbenchId))) {
         return c.json(
@@ -1607,14 +1611,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           404,
         );
       }
-      if (deps.threads === undefined) {
-        return c.json({ rootThreadId: "", items: [] as const });
-      }
-      const membership = await resolveThreadMembership(tenant.id, workbenchId);
-      if (membership === undefined) {
-        return c.json({ rootThreadId: "", items: [] as const });
-      }
-      const items = await deps.threads.listThreads(tenant.id, workbenchId);
+      const membership = await resolveThreadMembership(
+        tenant.id,
+        workbenchId,
+        principal.id,
+      );
+      const items = await deps.threads.listThreads(
+        tenant.id,
+        workbenchId,
+        principal.id,
+      );
 
       // Reply activity for every thread from the one mailbox read the
       // per-thread feed would otherwise repeat once per thread (CL-6313):
@@ -1679,15 +1685,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           404,
         );
       }
-      if (deps.threads === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_found",
-            userMessage: "threads not available",
-          }),
-          404,
-        );
-      }
       const body = type({
         parentMessageId: "string",
         "title?": "string",
@@ -1743,16 +1740,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           404,
         );
       }
-      if (deps.threads === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_found",
-            userMessage: "threads not available",
-          }),
-          404,
-        );
-      }
-      const thread = await deps.threads.getThread(tenant.id, threadId);
+      const thread = await deps.threads.getThread(
+        tenant.id,
+        workbenchId,
+        threadId,
+        principal.id,
+      );
       if (thread === undefined || thread.workbenchId !== workbenchId) {
         return c.json(
           makeErrorEnvelope({
@@ -1762,25 +1755,21 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           404,
         );
       }
-      // A message's thread is the one it was assigned to, or the root
-      // thread when it was never assigned at all — `workbench_thread_messages`
-      // states that default ("root feed by default"), and this is the
-      // one place that resolves it. `POST /messages` is the only caller
-      // that records membership, so every agent-originated message
-      // (`chat-orchestrator`'s reply/approve-block/artifact posters,
-      // `workbench-service`'s join and leave notices) arrives with none:
-      // listing a feed by membership rows alone would silently hide all
-      // of them, a fresh chat's very first agent reply included.
-      const membership = await resolveThreadMembership(tenant.id, workbenchId);
-      if (membership === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_found",
-            userMessage: "threads not available",
-          }),
-          404,
-        );
-      }
+      // A message's thread is derived off the reader's own copies — a
+      // reply's `chat-thread` ref, a delivery's `chat-delivery` ref, or
+      // the `In-Reply-To` walk — defaulting to the root feed, the way
+      // unassigned rows always defaulted there. `POST /messages` is the
+      // only caller that stamps membership, so every agent-originated
+      // message (`chat-orchestrator`'s reply/approve-block/artifact
+      // posters, `workbench-service`'s join and leave notices) derives
+      // its thread the same way: listing a feed by anything narrower
+      // would silently hide all of them, a fresh chat's very first
+      // agent reply included.
+      const membership = await resolveThreadMembership(
+        tenant.id,
+        workbenchId,
+        principal.id,
+      );
       const listed = await deps.roomMessages.listMessages({
         tenantId: tenant.id,
         workbenchId,
@@ -1825,15 +1814,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           makeErrorEnvelope({
             code: "not_found",
             userMessage: "workbench not found",
-          }),
-          404,
-        );
-      }
-      if (deps.threads === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_found",
-            userMessage: "threads not available",
           }),
           404,
         );
@@ -1909,11 +1889,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // query serve the root feed, every open thread, and reply counts
       // (CL-6313) — this route already reads the whole mailbox, so the
       // membership resolve costs one extra read, not one per thread.
-      // Absent (not a fabricated id) on a host that mounts no thread
-      // store, matching `GET /threads`' own `rootThreadId: ""` there.
       const membership = await resolveThreadMembership(
         access.ownerTenantId,
         workbenchId,
+        principal.id,
       );
 
       const items = await Promise.all(
@@ -1933,9 +1912,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                 : message.sender,
             parts: message.parts,
           };
-          return membership === undefined
-            ? base
-            : { ...base, threadId: membership.threadIdOf(message.id) };
+          return {
+            ...base,
+            threadId: membership.threadIdOf(message.id),
+          };
         }),
       );
 
@@ -2131,7 +2111,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                 {
                   store: deps.store,
                   platform: deps.platform,
-                  roomMessages: deps.roomMessages,
+                  mailbox: deps.mailbox,
+                  parts: deps.parts,
                   publish,
                 },
                 {
@@ -2198,7 +2179,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           const joined = await joinHumanParticipant(
             {
               store: deps.store,
-              roomMessages: deps.roomMessages,
+              mailbox: deps.mailbox,
+              parts: deps.parts,
               publish,
               tenancy: deps.tenancy,
             },
@@ -2248,8 +2230,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         const commandResult = commandDecision.command;
         const resultText = textForCommandResult(commandResult);
         if (resultText !== undefined) {
-          await postRoomMessage(
-            { roomMessages: deps.roomMessages, publish },
+          await postMailboxMessage(
+            {
+              store: deps.store,
+              mailbox: deps.mailbox,
+              parts: deps.parts,
+              publish,
+            },
             {
               tenantId: ownerTenantId,
               workbenchId,
@@ -2263,53 +2250,52 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       // Resolve the target thread *before* publish so the `chat.message`
-      // SSE payload carries `threadId` (CL-6660). Assignment still runs
-      // after the insert — membership needs the new message id — but
-      // subscribers must not see a root-feed echo of a reply send.
-      let targetThreadId: string | undefined;
-      if (deps.threads !== undefined) {
-        const root = await deps.threads.ensureRootThread(
+      // SSE payload carries `threadId` (CL-6660) — the send stamps the
+      // descriptor as its `chat-thread` ref, so subscribers never see a
+      // root-feed echo of a reply send.
+      const root = await deps.threads.ensureRootThread(
+        ownerTenantId,
+        workbenchId,
+      );
+      let targetThreadId: string = root.id;
+      if (parsed.threadId !== undefined) {
+        const existing = await deps.threads.getThread(
           ownerTenantId,
           workbenchId,
+          parsed.threadId,
+          principal.id,
         );
-        targetThreadId = root.id;
-        if (parsed.threadId !== undefined) {
-          const existing = await deps.threads.getThread(
-            ownerTenantId,
-            parsed.threadId,
+        if (existing === undefined || existing.workbenchId !== workbenchId) {
+          return c.json(
+            makeErrorEnvelope({
+              code: "not_found",
+              userMessage: "thread not found",
+            }),
+            404,
           );
-          if (existing === undefined || existing.workbenchId !== workbenchId) {
+        }
+        targetThreadId = existing.id;
+      } else if (parsed.inReplyToMessageId !== undefined) {
+        let reply;
+        try {
+          reply = await deps.threads.openReplyThread({
+            tenantId: ownerTenantId,
+            workbenchId,
+            parentMessageId: parsed.inReplyToMessageId,
+          });
+        } catch (cause) {
+          if (cause instanceof ThreadDepthCapError) {
             return c.json(
               makeErrorEnvelope({
-                code: "not_found",
-                userMessage: "thread not found",
+                code: "conflict",
+                userMessage: cause.message,
               }),
-              404,
+              409,
             );
           }
-          targetThreadId = existing.id;
-        } else if (parsed.inReplyToMessageId !== undefined) {
-          let reply;
-          try {
-            reply = await deps.threads.openReplyThread({
-              tenantId: ownerTenantId,
-              workbenchId,
-              parentMessageId: parsed.inReplyToMessageId,
-            });
-          } catch (cause) {
-            if (cause instanceof ThreadDepthCapError) {
-              return c.json(
-                makeErrorEnvelope({
-                  code: "conflict",
-                  userMessage: cause.message,
-                }),
-                409,
-              );
-            }
-            throw cause;
-          }
-          targetThreadId = reply.id;
+          throw cause;
         }
+        targetThreadId = reply.id;
       }
 
       // No unreachable-agent branch: the message is a room write, and
@@ -2332,12 +2318,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             publish,
             turnQueue,
             turnCancellation,
+            mailbox: deps.mailbox,
+            parts: deps.parts,
             ...(deps.agentTurns !== undefined
               ? { agentTurns: deps.agentTurns }
-              : {}),
-            ...(deps.threads !== undefined ? { threads: deps.threads } : {}),
-            ...(deps.turnMailCorrelation !== undefined
-              ? { turnMailCorrelation: deps.turnMailCorrelation }
               : {}),
             ...(deps.turnDispatchTimeoutMs !== undefined
               ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
@@ -2345,7 +2329,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ...(deps.waitUntilFreeTimeoutMs !== undefined
               ? { waitUntilFreeTimeoutMs: deps.waitUntilFreeTimeoutMs }
               : {}),
-            ...(deps.mailbox !== undefined ? { mailbox: deps.mailbox } : {}),
           },
           {
             tenantId: ownerTenantId,
@@ -2356,9 +2339,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ...(parsed.inReplyToMessageId !== undefined
               ? { inReplyToMessageId: parsed.inReplyToMessageId }
               : {}),
-            ...(targetThreadId !== undefined
-              ? { threadId: targetThreadId }
-              : {}),
+            threadId: targetThreadId,
             ...(commandDecision !== undefined &&
             "routeToParticipant" in commandDecision
               ? { forcedRecipientAddress: commandDecision.routeToParticipant }
@@ -2391,30 +2372,14 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         });
       }
 
-      if (deps.threads !== undefined && targetThreadId !== undefined) {
-        await deps.threads.assignMessage({
-          tenantId: ownerTenantId,
-          workbenchId,
-          threadId: targetThreadId,
-          messageId: sent.id,
-        });
-        return c.json(
-          {
-            id: sent.id,
-            createdAt: sent.createdAt,
-            threadId: targetThreadId,
-            ...(parsed.clientId !== undefined
-              ? { clientId: parsed.clientId }
-              : {}),
-          },
-          201,
-        );
-      }
-
+      // The thread rides the send itself — `threadId` stamps the
+      // `chat-thread` ref — so there is no membership row to record
+      // after it. The response echoes the thread the send read in.
       return c.json(
         {
           id: sent.id,
           createdAt: sent.createdAt,
+          threadId: targetThreadId,
           ...(parsed.clientId !== undefined
             ? { clientId: parsed.clientId }
             : {}),
@@ -2513,8 +2478,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // question branch below ever gets a chance to dispatch a turn, so an
       // agent reading the timeline for its turn always finds this event
       // already there (CL-7192).
-      await postRoomMessage(
-        { roomMessages: deps.roomMessages, publish },
+      await postMailboxMessage(
+        {
+          store: deps.store,
+          mailbox: deps.mailbox,
+          parts: deps.parts,
+          publish,
+        },
         {
           tenantId: ownerTenantId,
           workbenchId,
@@ -2552,14 +2522,11 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           // card's own thread — which is also what gives its dispatch
           // the card's `Message-ID` in `In-Reply-To` (CL-7104), the one
           // thing that ties an answer to the question it answers.
-          const answerThread =
-            deps.threads === undefined
-              ? undefined
-              : await deps.threads.openReplyThread({
-                  tenantId: ownerTenantId,
-                  workbenchId,
-                  parentMessageId: messageId,
-                });
+          const answerThread = await deps.threads.openReplyThread({
+            tenantId: ownerTenantId,
+            workbenchId,
+            parentMessageId: messageId,
+          });
           try {
             const answer = await sendWorkbenchMessage(
               {
@@ -2569,23 +2536,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                 publish,
                 turnQueue,
                 turnCancellation,
+                mailbox: deps.mailbox,
+                parts: deps.parts,
                 ...(deps.agentTurns !== undefined
                   ? { agentTurns: deps.agentTurns }
-                  : {}),
-                ...(deps.threads !== undefined
-                  ? { threads: deps.threads }
-                  : {}),
-                ...(deps.turnMailCorrelation !== undefined
-                  ? { turnMailCorrelation: deps.turnMailCorrelation }
                   : {}),
                 ...(deps.turnDispatchTimeoutMs !== undefined
                   ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
                   : {}),
                 ...(deps.waitUntilFreeTimeoutMs !== undefined
                   ? { waitUntilFreeTimeoutMs: deps.waitUntilFreeTimeoutMs }
-                  : {}),
-                ...(deps.mailbox !== undefined
-                  ? { mailbox: deps.mailbox }
                   : {}),
               },
               {
@@ -2600,20 +2560,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                 // ties an answer to the question it answers. There is no
                 // correlation id on the wire.
                 inReplyToMessageId: messageId,
-                ...(answerThread !== undefined
-                  ? { threadId: answerThread.id }
-                  : {}),
+                threadId: answerThread.id,
               },
             );
             deps.onMessageFanout?.(answer.fanoutDelivered);
-            if (deps.threads !== undefined && answerThread !== undefined) {
-              await deps.threads.assignMessage({
-                tenantId: ownerTenantId,
-                workbenchId,
-                threadId: answerThread.id,
-                messageId: answer.id,
-              });
-            }
           } catch (err) {
             // `MailboxFanoutFailedError` already reported itself under its
             // own `refId` — quoting that instead of calling `reportError`
@@ -3213,7 +3163,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           {
             store: deps.store,
             platform: deps.platform,
-            roomMessages: deps.roomMessages,
+            mailbox: deps.mailbox,
+            parts: deps.parts,
             publish,
           },
           {
@@ -3305,8 +3256,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         steps: step.steps,
         state: "disconnected",
       };
-      const posted = await postRoomMessage(
-        { roomMessages: deps.roomMessages, publish },
+      const posted = await postMailboxMessage(
+        {
+          store: deps.store,
+          mailbox: deps.mailbox,
+          parts: deps.parts,
+          publish,
+        },
         {
           tenantId: tenant.id,
           workbenchId,
@@ -3397,7 +3353,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       await removeWorkbenchParticipant(
         {
           store: deps.store,
-          roomMessages: deps.roomMessages,
+          mailbox: deps.mailbox,
+          parts: deps.parts,
           publish,
           releaseAgentInstance: deps.releaseAgentInstance,
         },
@@ -4024,8 +3981,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.id,
       );
       for (const event of events) {
-        await postRoomMessage(
-          { roomMessages: deps.roomMessages, publish },
+        await postMailboxMessage(
+          {
+            store: deps.store,
+            mailbox: deps.mailbox,
+            parts: deps.parts,
+            publish,
+          },
           {
             tenantId: tenant.id,
             workbenchId,
@@ -4340,7 +4302,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const result = await cancelWorkbenchTurn(
         {
           turnCancellation,
-          roomMessages: deps.roomMessages,
+          mailbox: deps.mailbox,
+          parts: deps.parts,
           publish,
           ...(deps.agentTurns !== undefined
             ? { agentTurns: deps.agentTurns }
