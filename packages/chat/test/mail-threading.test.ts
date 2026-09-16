@@ -8,9 +8,7 @@ import { describe, expect, test } from "bun:test";
 import { dispatchTurn } from "../src/workbench-service";
 import type { MailContent } from "../src/codec";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
-import { createInMemoryThreadStore } from "../src/threads";
-import { createInMemoryTurnMailCorrelationStore } from "../src/turn-mail-correlation";
-import { mailIdFromBracketMessageId } from "../src/turn-mail-correlation";
+import { replyThreadId, subThreadId } from "../src/threads-native";
 
 const TENANT = "ten_1";
 const WORKBENCH = "ins_workbench1";
@@ -19,8 +17,6 @@ const DOMAIN = "acme.example";
 
 function harness() {
   const roomMessages = createInMemoryRoomMessageStore();
-  const threads = createInMemoryThreadStore();
-  const turnMailCorrelation = createInMemoryTurnMailCorrelationStore();
   const sent: MailContent[] = [];
   const deps = {
     platform: {
@@ -33,8 +29,6 @@ function harness() {
       },
     },
     roomMessages,
-    threads,
-    turnMailCorrelation,
     publish: () => undefined,
     mailbox: {
       writer: {
@@ -52,7 +46,7 @@ function harness() {
       resolveTenantDomain: async () => DOMAIN,
     },
   };
-  return { deps, roomMessages, threads, turnMailCorrelation, sent };
+  return { deps, roomMessages, sent };
 }
 
 async function postRow(
@@ -80,6 +74,7 @@ async function postRow(
 async function dispatch(
   h: ReturnType<typeof harness>,
   requestMessageIds: readonly string[],
+  threadId?: string,
 ) {
   await dispatchTurn(h.deps as never, {
     tenantId: TENANT,
@@ -88,6 +83,7 @@ async function dispatch(
     agentAddress: AGENT,
     parts: [{ kind: "text", text: "over to you" }],
     requestMessageIds,
+    ...(threadId !== undefined ? { threadId } : {}),
   });
 }
 
@@ -124,32 +120,12 @@ describe("dispatch mail threading", () => {
   test("a dispatch from inside a sub-thread carries the full References chain, oldest first", async () => {
     const h = harness();
     const anchor = await postRow(h.roomMessages, "the original");
-    const thread = await h.threads.openReplyThread({
-      tenantId: TENANT,
-      workbenchId: WORKBENCH,
-      parentMessageId: anchor.id,
-    });
-    const inThread = await postRow(h.roomMessages, "a reply", thread.id);
-    await h.threads.assignMessage({
-      tenantId: TENANT,
-      workbenchId: WORKBENCH,
-      threadId: thread.id,
-      messageId: inThread.id,
-    });
-    const sub = await h.threads.forkThread({
-      tenantId: TENANT,
-      workbenchId: WORKBENCH,
-      parentMessageId: inThread.id,
-    });
-    const inSub = await postRow(h.roomMessages, "@ins_echo1 look", sub.id);
-    await h.threads.assignMessage({
-      tenantId: TENANT,
-      workbenchId: WORKBENCH,
-      threadId: sub.id,
-      messageId: inSub.id,
-    });
+    const replyTid = replyThreadId(anchor.id);
+    const inThread = await postRow(h.roomMessages, "a reply", replyTid);
+    const subTid = subThreadId(replyTid, inThread.id);
+    const inSub = await postRow(h.roomMessages, "@ins_echo1 look", subTid);
 
-    await dispatch(h, [inSub.id]);
+    await dispatch(h, [inSub.id], subTid);
 
     expect(h.sent[0]?.messageId).toBe(`<${inSub.id}@acme.example>`);
     expect(h.sent[0]?.references).toEqual([
@@ -163,74 +139,35 @@ describe("dispatch mail threading", () => {
   test("two turns pending for one address stay told apart by their Message-IDs, not by the address", async () => {
     const h = harness();
     const first = await postRow(h.roomMessages, "question one");
-    const firstThread = await h.threads.openReplyThread({
-      tenantId: TENANT,
-      workbenchId: WORKBENCH,
-      parentMessageId: first.id,
-    });
+    const firstTid = replyThreadId(first.id);
     const inFirst = await postRow(
       h.roomMessages,
       "@ins_echo1 one",
-      firstThread.id,
+      firstTid,
     );
-    await h.threads.assignMessage({
-      tenantId: TENANT,
-      workbenchId: WORKBENCH,
-      threadId: firstThread.id,
-      messageId: inFirst.id,
-    });
 
     const second = await postRow(h.roomMessages, "question two");
-    const secondThread = await h.threads.openReplyThread({
-      tenantId: TENANT,
-      workbenchId: WORKBENCH,
-      parentMessageId: second.id,
-    });
+    const secondTid = replyThreadId(second.id);
     const inSecond = await postRow(
       h.roomMessages,
       "@ins_echo1 two",
-      secondThread.id,
+      secondTid,
     );
-    await h.threads.assignMessage({
-      tenantId: TENANT,
-      workbenchId: WORKBENCH,
-      threadId: secondThread.id,
-      messageId: inSecond.id,
-    });
 
     // Both turns are in flight against the same agent address.
-    await dispatch(h, [inFirst.id]);
-    await dispatch(h, [inSecond.id]);
+    await dispatch(h, [inFirst.id], firstTid);
+    await dispatch(h, [inSecond.id], secondTid);
 
     expect(h.sent.map((mail) => mail.messageId)).toEqual([
       `<${inFirst.id}@acme.example>`,
       `<${inSecond.id}@acme.example>`,
     ]);
 
-    // A reply arriving inside the SECOND dispatch's bracket resolves to
-    // the second turn's source, not the newest-per-address guess: the
-    // bracket's Message-ID is what names it.
-    const secondBracket = h.sent[1]?.messageId ?? "";
-    expect(
-      await h.turnMailCorrelation.findTurnMailSource({
-        tenantId: TENANT,
-        mailId: mailIdFromBracketMessageId(secondBracket),
-      }),
-    ).toEqual({
-      tenantId: TENANT,
-      workbenchId: WORKBENCH,
-      sourceMessageId: inSecond.id,
-    });
-
-    // And the first turn's bracket still names the first source — one
-    // address, two pending turns, no ambiguity.
-    const firstBracket = h.sent[0]?.messageId ?? "";
-    expect(
-      await h.turnMailCorrelation.findTurnMailSource({
-        tenantId: TENANT,
-        mailId: mailIdFromBracketMessageId(firstBracket),
-      }),
-    ).toMatchObject({ sourceMessageId: inFirst.id });
+    // Each dispatch's bracket names its own source thread, not the
+    // newest-per-address guess: the thread descriptor is what tells them
+    // apart.
+    expect(h.sent[0]?.inReplyTo).toBe(`<${first.id}@acme.example>`);
+    expect(h.sent[1]?.inReplyTo).toBe(`<${second.id}@acme.example>`);
   });
 
   test("a dispatch answering nothing threads under nothing rather than guessing a parent", async () => {

@@ -11,10 +11,11 @@ import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import { postRoomMessage } from "../src/room-messages";
 import { ChatMessageEventData } from "../src/stream-events";
 import { createInMemoryChatStore } from "../src/store";
-import { createInMemoryThreadStore } from "../src/threads";
+import { createInMemoryMessagePartsStore } from "../src/message-parts";
 import { createInMemoryTurnClaimStore } from "../src/turn-claims";
 import { createWorkbenchTurnQueue } from "../src/turn-queue";
 import { createTurnCancelRegistry } from "../src/turn-cancellation";
+import { replyThreadId } from "../src/threads-native";
 import type { MailboxWriter } from "../src/mailbox-fanout";
 import type { ParticipantRecord } from "../src/participants";
 
@@ -40,7 +41,6 @@ function participantsOf(
 function harness() {
   const store = createInMemoryChatStore();
   const roomMessages = createInMemoryRoomMessageStore();
-  const threads = createInMemoryThreadStore();
   const claims = createInMemoryTurnClaimStore({ ttlMs: 60_000 });
   const turnQueue = createWorkbenchTurnQueue({
     claims,
@@ -59,7 +59,6 @@ function harness() {
   const deps = {
     store,
     roomMessages,
-    threads,
     publish: (_workbenchId: string, event: { type: string; data: unknown }) => {
       events.push(event);
     },
@@ -70,6 +69,7 @@ function harness() {
     },
     turnQueue,
     turnCancellation: createTurnCancelRegistry(),
+    parts: createInMemoryMessagePartsStore(),
     mailbox: {
       writer,
       resolveKnownPrincipalIds: async (
@@ -79,7 +79,7 @@ function harness() {
       resolveTenantDomain: async (_tenantId: string) => DOMAIN,
     },
   };
-  return { deps, store, roomMessages, threads, events };
+  return { deps, store, roomMessages, events };
 }
 
 async function messageEventOf(
@@ -154,26 +154,15 @@ describe("chat.message SSE event mail headers (CL-7448)", () => {
     });
     await root.fanoutDelivered;
 
-    const thread = await h.threads.openReplyThread({
-      tenantId: TENANT_ID,
-      workbenchId: WORKBENCH_ID,
-      parentMessageId: root.id,
-    });
     const reply = await sendWorkbenchMessage(h.deps, {
       tenantId: TENANT_ID,
       principalId: SENDER,
       senderAddress: `${SENDER}@${DOMAIN}`,
       workbenchId: WORKBENCH_ID,
       messageParts: [{ kind: "text", text: "a reply" }],
-      threadId: thread.id,
+      threadId: replyThreadId(root.id),
     });
     await reply.fanoutDelivered;
-    await h.threads.assignMessage({
-      tenantId: TENANT_ID,
-      workbenchId: WORKBENCH_ID,
-      threadId: thread.id,
-      messageId: reply.id,
-    });
 
     const parsed = ChatMessageEventData.assert(
       await messageEventOf(h, reply.id),
