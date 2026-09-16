@@ -2726,17 +2726,6 @@ export async function createHub(config: HubConfig) {
       : {}),
   });
 
-  // Tells the signed-out screen which OAuth buttons to draw, without
-  // exposing the credentials themselves — just which providers a full
-  // pair was configured for. No session or tenant is required to ask,
-  // since this decides what the sign-in screen even offers.
-  const enabledSocialProviders = Object.keys(config.socialProviders);
-  app.get("/api/auth-config", (c) =>
-    c.json({
-      socialProviders: enabledSocialProviders,
-    }),
-  );
-
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));
 
   // Stock Interchange currently leaves tenant creation and dispatch ungated.

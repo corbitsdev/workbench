@@ -14,7 +14,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/app";
 import { AuthScreen } from "../src/auth-screen";
 import {
-  fetchAuthConfig,
+  SOCIAL_SIGN_IN_PROVIDERS,
   fetchSession,
   signIn,
   signOut,
@@ -240,36 +240,22 @@ describe("the gate", () => {
   });
 });
 
-describe("auth config fetch", () => {
-  test("a genuinely empty provider list is ready, not unavailable", async () => {
-    stubFetch(() => json({ socialProviders: [] }));
-    const result = await fetchAuthConfig();
-    expect(result).toEqual({ kind: "ready", providers: [] });
+// Stock Interchange exposes no sign-in discovery endpoint, so the buttons
+// come from client config: the providers this client knows how to draw.
+// The hub still decides which of them actually work (better-auth only
+// wires the credential pairs it was given); an unconfigured click surfaces
+// better-auth's own error on the form, never a new endpoint.
+describe("social sign-in buttons", () => {
+  test("the client config lists the providers the sign-in screen offers", () => {
+    expect([...SOCIAL_SIGN_IN_PROVIDERS].sort()).toEqual(["github", "google"]);
   });
 
-  test("a configured provider list is ready", async () => {
-    stubFetch(() => json({ socialProviders: ["google"] }));
-    const result = await fetchAuthConfig();
-    expect(result).toEqual({ kind: "ready", providers: ["google"] });
-  });
-
-  test("a non-2xx response is unavailable, not an empty list", async () => {
-    stubFetch(() => json({ message: "boom" }, 500));
-    const result = await fetchAuthConfig();
-    expect(result.kind).toBe("unavailable");
-  });
-
-  test("a body that fails the schema is unavailable", async () => {
-    stubFetch(() => json({ socialProviders: "not-an-array" }));
-    const result = await fetchAuthConfig();
-    expect(result.kind).toBe("unavailable");
-  });
-
-  test("a network failure is unavailable", async () => {
-    globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
-      Promise.reject(new Error("network down"))) as typeof fetch;
-    const result = await fetchAuthConfig();
-    expect(result).toEqual({ kind: "unavailable", message: "network down" });
+  test("the auth screen draws every client-configured provider button with no fetch", () => {
+    const calls = stubFetch();
+    const markup = renderToStaticMarkup(<AuthScreen onSignedIn={noop} />);
+    expect(calls).toHaveLength(0);
+    expect(markup).toContain("Continue with Google");
+    expect(markup).toContain("Continue with GitHub");
   });
 });
 
