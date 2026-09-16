@@ -137,48 +137,18 @@ export function signUp(email: string, password: string): Promise<AuthResult> {
 const SocialProviderId = type("'google' | 'github'");
 export type SocialProviderId = typeof SocialProviderId.infer;
 
-const AuthConfig = type({ socialProviders: SocialProviderId.array() });
-
-export type AuthConfigResult =
-  | { readonly kind: "ready"; readonly providers: readonly SocialProviderId[] }
-  | { readonly kind: "unavailable"; readonly message: string };
-
 /**
- * Asks the hub which OAuth providers a full credential pair was
- * configured for, so the sign-in screen only draws buttons for
- * providers that actually work. Distinguishes "the hub answered and
- * genuinely has none configured" (`ready` with an empty list) from a
- * network failure, a non-2xx response, or an unparseable body
- * (`unavailable`) — the auth screen still degrades to email/password
- * either way, but only the latter is worth telling the operator about.
+ * Client config for the sign-in screen's OAuth buttons: the providers
+ * this client knows how to draw. Stock Interchange exposes no sign-in
+ * discovery endpoint, so the client drives — there is intentionally no
+ * fetch here. The hub still decides which of these actually work:
+ * better-auth only wires the credential pairs it was given, so an
+ * unconfigured click surfaces better-auth's own error on the form.
  */
-export async function fetchAuthConfig(): Promise<AuthConfigResult> {
-  try {
-    const response = await fetch("/api/auth-config", {
-      headers: { accept: "application/json" },
-    });
-    if (!response.ok) {
-      return {
-        kind: "unavailable",
-        message: `The server answered ${response.status} for the auth config.`,
-      };
-    }
-    const body: unknown = await response.json();
-    const parsed = AuthConfig(body);
-    if (parsed instanceof type.errors) {
-      return {
-        kind: "unavailable",
-        message: `Unexpected auth config shape: ${parsed.summary}`,
-      };
-    }
-    return { kind: "ready", providers: parsed.socialProviders };
-  } catch (cause) {
-    return {
-      kind: "unavailable",
-      message: cause instanceof Error ? cause.message : String(cause),
-    };
-  }
-}
+export const SOCIAL_SIGN_IN_PROVIDERS: readonly SocialProviderId[] = [
+  "google",
+  "github",
+];
 
 const SocialSignInResponse = type({ url: "string" });
 

@@ -53,10 +53,7 @@ export function domainOf(email: string): string | undefined {
   return domain.length > 0 ? domain : undefined;
 }
 
-/** An empty allowlist means "any domain" — matching the existing
- * `emailAllowedForSignup` semantics in `@corbits/bench-ui`'s
- * `tenancy-contracts.ts`, which this package supersedes as the actual
- * enforcement point. */
+/** An empty allowlist means "any domain". */
 export function domainAllowed(
   domain: string,
   allowedDomains: readonly string[],
@@ -72,8 +69,7 @@ export type SignupGateReason =
   | "signup_closed"
   | "domain_not_allowed"
   | "policy_open"
-  | "policy_domain_match"
-  | "env_open";
+  | "policy_domain_match";
 
 export type SignupGateResult = {
   readonly allowed: boolean;
@@ -82,30 +78,24 @@ export type SignupGateResult = {
 
 export type SignupGateArgs = {
   /** The tenant's own policy row, resolved through `resolveAccessPolicy`
-   * — pass `undefined` only when no row exists at all (bootstrap
-   * phase); an explicit closed-default row is not the same as absence
-   * and always wins over the env flag. */
+   * — pass `undefined` only when no row exists at all, in which case
+   * the closed defaults apply. */
   readonly policy: AccessPolicy | undefined;
-  readonly envSignupMode: "open" | "closed";
-  readonly envAllowedDomains: readonly string[];
   readonly email: string;
   /** better-auth is configured without `requireEmailVerification`, so
    * an unverified address can claim any domain. Every email-trust
    * decision this gate makes requires `emailVerified` unless
-   * `allowUnverifiedEmails` opts out (dev/test only — see
-   * `ALLOW_UNVERIFIED_EMAILS`, mirroring `ALLOW_PLAINTEXT_SECRETS`).
-   * Checked before policy/env are ever consulted, so no combination
-   * of settings can allow an unverified email through. */
+   * `allowUnverifiedEmails` opts out (dev/test only). Checked before
+   * the policy is ever consulted, so no policy can allow an
+   * unverified email through. */
   readonly emailVerified: boolean;
   readonly allowUnverifiedEmails: boolean;
 };
 
 /**
- * The one signup-gate evaluation function. `WORKBENCH_SIGNUP` bootstraps
- * a hub with no policy row yet; once an operator (or the default row an
- * operator tenant gets on creation) sets a policy row, that row wins
- * outright and the env flag is no longer consulted — no fallback path
- * runs beside it.
+ * The one signup-gate evaluation function. The tenant's policy row
+ * decides outright; with no row yet the closed defaults apply, so a
+ * hub without an explicit open row never self-grants membership.
  */
 export function evaluateSignupGate(args: SignupGateArgs): SignupGateResult {
   const domain = domainOf(args.email);
@@ -115,23 +105,15 @@ export function evaluateSignupGate(args: SignupGateArgs): SignupGateResult {
     return { allowed: false, reason: "email_unverified" };
   }
 
-  if (args.policy !== undefined) {
-    if (args.policy.selfSignup === "off") {
-      return { allowed: false, reason: "signup_closed" };
-    }
-    if (args.policy.selfSignup === "open") {
-      return { allowed: true, reason: "policy_open" };
-    }
-    return domainAllowed(domain, args.policy.allowedDomains)
-      ? { allowed: true, reason: "policy_domain_match" }
-      : { allowed: false, reason: "domain_not_allowed" };
-  }
-
-  if (args.envSignupMode !== "open") {
+  const policy = args.policy ?? DEFAULT_ACCESS_POLICY;
+  if (policy.selfSignup === "off") {
     return { allowed: false, reason: "signup_closed" };
   }
-  return domainAllowed(domain, args.envAllowedDomains)
-    ? { allowed: true, reason: "env_open" }
+  if (policy.selfSignup === "open") {
+    return { allowed: true, reason: "policy_open" };
+  }
+  return domainAllowed(domain, policy.allowedDomains)
+    ? { allowed: true, reason: "policy_domain_match" }
     : { allowed: false, reason: "domain_not_allowed" };
 }
 

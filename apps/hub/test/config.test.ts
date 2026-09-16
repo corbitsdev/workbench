@@ -28,14 +28,10 @@ describe("readHubConfig", () => {
       sessionSecret: validEnv.SESSION_SECRET,
       hubDataDir: validEnv.HUB_DATA_DIR,
       hubStaticDir: validEnv.HUB_STATIC_DIR,
-      defaultTenantSlug: "workbench",
       socialProviders: {},
-      signupMode: "closed",
-      allowedEmailDomains: [],
       signupRateLimit: { windowSeconds: 60, max: 5 },
       signInRateLimit: { windowSeconds: 60, max: 10 },
       allowPlaintextSecrets: false,
-      allowUnverifiedEmails: false,
       sidecarProvisioners: [{ id: "process" }],
       defaultSidecarProvisionerId: "process",
       chatIdleReapMs: 30 * 60_000,
@@ -54,18 +50,14 @@ describe("readHubConfig", () => {
     expect(Object.keys(config).sort()).toEqual(
       [
         "allowPlaintextSecrets",
-        "allowUnverifiedEmails",
-        "allowedEmailDomains",
         "baseUrl",
         "chatIdleReapMs",
         "databaseUrl",
         "defaultSidecarProvisionerId",
-        "defaultTenantSlug",
         "hubDataDir",
         "hubStaticDir",
         "sessionSecret",
         "signInRateLimit",
-        "signupMode",
         "signupRateLimit",
         "socialProviders",
         "sidecarProvisioners",
@@ -133,49 +125,6 @@ describe("readHubConfig", () => {
     });
   });
 
-  test("WORKBENCH_DEFAULT_TENANT defaults to workbench and accepts an explicit slug", () => {
-    expect(readHubConfig(validEnv).defaultTenantSlug).toBe("workbench");
-    expect(
-      readHubConfig({ ...validEnv, WORKBENCH_DEFAULT_TENANT: "acme" })
-        .defaultTenantSlug,
-    ).toBe("acme");
-  });
-
-  test("ORG_SLUG aliases WORKBENCH_DEFAULT_TENANT when the latter is unset", () => {
-    const config = readHubConfig({ ...validEnv, ORG_SLUG: "acme" });
-    expect(config.defaultTenantSlug).toBe("acme");
-  });
-
-  test("WORKBENCH_DEFAULT_TENANT wins over ORG_SLUG when both are set", () => {
-    const config = readHubConfig({
-      ...validEnv,
-      WORKBENCH_DEFAULT_TENANT: "root",
-      ORG_SLUG: "acme",
-    });
-    expect(config.defaultTenantSlug).toBe("root");
-  });
-
-  test("OPERATOR_TENANT_ID fails loudly with an actionable message", () => {
-    const message = readExpectingError({
-      ...validEnv,
-      OPERATOR_TENANT_ID: "tnt_stale",
-    });
-    expect(message).toContain("OPERATOR_TENANT_ID");
-    expect(message).toContain("WORKBENCH_DEFAULT_TENANT");
-  });
-
-  test("WORKBENCH_DEFAULT_TENANT rejects a non-slug value", () => {
-    expect(
-      readExpectingError({ ...validEnv, WORKBENCH_DEFAULT_TENANT: "" }),
-    ).toContain("WORKBENCH_DEFAULT_TENANT");
-    expect(
-      readExpectingError({
-        ...validEnv,
-        WORKBENCH_DEFAULT_TENANT: "Not A Slug",
-      }),
-    ).toContain("WORKBENCH_DEFAULT_TENANT");
-  });
-
   test("the signup rate limit is configurable and defaults sanely", () => {
     const config = readHubConfig({
       ...validEnv,
@@ -208,22 +157,6 @@ describe("readHubConfig", () => {
       SIGNIN_RATE_LIMIT_MAX: "2",
     });
     expect(config.signInRateLimit).toEqual({ windowSeconds: 30, max: 2 });
-  });
-
-  test("WORKBENCH_SIGNUP defaults closed and accepts open", () => {
-    expect(readHubConfig(validEnv).signupMode).toBe("closed");
-    expect(
-      readHubConfig({ ...validEnv, WORKBENCH_SIGNUP: "open" }).signupMode,
-    ).toBe("open");
-  });
-
-  test("WORKBENCH_ALLOWED_EMAIL_DOMAINS parses a comma list", () => {
-    expect(
-      readHubConfig({
-        ...validEnv,
-        WORKBENCH_ALLOWED_EMAIL_DOMAINS: "acme.example, corp.example",
-      }).allowedEmailDomains,
-    ).toEqual(["acme.example", "corp.example"]);
   });
 
   test("huggingfaceOAuthClientId is absent by default", () => {
@@ -316,10 +249,6 @@ describe("readHubConfig", () => {
     expect(readHubConfig(validEnv).allowPlaintextSecrets).toBe(false);
   });
 
-  test("allowUnverifiedEmails is false by default", () => {
-    expect(readHubConfig(validEnv).allowUnverifiedEmails).toBe(false);
-  });
-
   test("allowGitInsideWorkTree is omitted by default", () => {
     expect(readHubConfig(validEnv).allowGitInsideWorkTree).toBeUndefined();
   });
@@ -341,17 +270,6 @@ describe("readHubConfig", () => {
       HUB_ALLOW_GIT_INSIDE_WORK_TREE: "yes",
     });
     expect(message).toContain("HUB_ALLOW_GIT_INSIDE_WORK_TREE");
-  });
-
-  test("ALLOW_UNVERIFIED_EMAILS='1' or 'true' opts in", () => {
-    expect(
-      readHubConfig({ ...validEnv, ALLOW_UNVERIFIED_EMAILS: "1" })
-        .allowUnverifiedEmails,
-    ).toBe(true);
-    expect(
-      readHubConfig({ ...validEnv, ALLOW_UNVERIFIED_EMAILS: "true" })
-        .allowUnverifiedEmails,
-    ).toBe(true);
   });
 
   test("ALLOW_PLAINTEXT_SECRETS='1' or 'true' opts in", () => {
@@ -554,14 +472,14 @@ describe("readHubConfig", () => {
   });
 
   describe("chatIdleReapMs", () => {
-    test("defaults to 30 minutes when WORKBENCH_CHAT_IDLE_REAP_MS is unset", () => {
+    test("defaults to 30 minutes when HUB_CHAT_IDLE_REAP_MS is unset", () => {
       expect(readHubConfig(validEnv).chatIdleReapMs).toBe(30 * 60_000);
     });
 
-    test("is read from WORKBENCH_CHAT_IDLE_REAP_MS when set", () => {
+    test("is read from HUB_CHAT_IDLE_REAP_MS when set", () => {
       const config = readHubConfig({
         ...validEnv,
-        WORKBENCH_CHAT_IDLE_REAP_MS: "5000",
+        HUB_CHAT_IDLE_REAP_MS: "5000",
       });
       expect(config.chatIdleReapMs).toBe(5000);
     });
@@ -569,17 +487,17 @@ describe("readHubConfig", () => {
     test("rejects zero", () => {
       const message = readExpectingError({
         ...validEnv,
-        WORKBENCH_CHAT_IDLE_REAP_MS: "0",
+        HUB_CHAT_IDLE_REAP_MS: "0",
       });
-      expect(message).toContain("WORKBENCH_CHAT_IDLE_REAP_MS");
+      expect(message).toContain("HUB_CHAT_IDLE_REAP_MS");
     });
 
     test("rejects a non-integer value", () => {
       const message = readExpectingError({
         ...validEnv,
-        WORKBENCH_CHAT_IDLE_REAP_MS: "not-a-number",
+        HUB_CHAT_IDLE_REAP_MS: "not-a-number",
       });
-      expect(message).toContain("WORKBENCH_CHAT_IDLE_REAP_MS");
+      expect(message).toContain("HUB_CHAT_IDLE_REAP_MS");
     });
   });
 

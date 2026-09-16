@@ -1,4 +1,4 @@
-// CL-6225: workbench mint is slow because every agent launch re-reads every
+// CL-6225: chat mint is slow because every agent launch re-reads every
 // tarball in a tenant's `corbits-tools` package-registry asset and rebuilds
 // a full git pack for every asset attachment — see
 // `AssetRegistrySource.#buildPackuments` in

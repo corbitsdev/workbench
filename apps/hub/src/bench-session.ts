@@ -27,7 +27,7 @@ import type { SessionForUser } from "@workbench/onboarding";
  * provisioning pass can never have its session expire mid-flight. */
 const REMINT_LEAD_MS = 60 * 60 * 1000;
 
-const PROVISIONER_USER_AGENT = "workbench-bench-provisioner";
+const PROVISIONER_USER_AGENT = "hub-bench-provisioner";
 
 type MintedSession = {
   readonly cookies: string[];

@@ -143,28 +143,28 @@ export function createHubMailboxAuthorizeSender(
 
 /**
  * Build the `resolveRefs` seam: stamps
- * `refs: [{ kind: "workbench", id: workbenchId }]` onto every recipient row
+ * `refs: [{ kind: "workbench", id: chatId }]` onto every recipient row
  * of one frame.
  *
- * `workbenchId` is NOT `senderAuthorization.tenantId`. An agent run is
+ * The chat id is NOT `senderAuthorization.tenantId`. An agent run is
  * launched in its parent BENCH tenant -- that tenant is what
  * `authorizeSender` resolves, and it is also what the resulting
  * `principal_mail` rows themselves are scoped under (same tenant the
- * addressed human principals belong to). The workbench the run is a
+ * addressed human principals belong to). The chat the run is a
  * participant of is a separate id `@corbits/chat` tracks inside that same
  * bench tenant, on `workbench_settings.workbenchId` -- one bench tenant
- * hosts many workbenches. Stamping the bench's tenant id here instead would
- * point every row at an id no workbench thread read can ever resolve.
+ * hosts many chats. Stamping the bench's tenant id here instead would
+ * point every row at an id no chat thread read can ever resolve.
  *
  * Header-first (CL-7449): an agent that participates in several
- * workbenches at once has no single "the" workbench a bare participant
+ * chats at once has no single "the" chat a bare participant
  * scan can name honestly, so `@corbits/chat`'s
  * `resolveWorkbenchIdForAgentFrame` reads the frame's own `In-Reply-To` /
  * `References` and maps that Message-ID back to the timeline row it
  * answers -- that row's `workbenchId` is authoritative. Only when the
  * frame carries no such header does it fall back to the participant scan,
  * and only takes that scan's answer when it is unambiguous (exactly one
- * workbench); this seam is a thin adapter handing that helper the two
+ * chat); this seam is a thin adapter handing that helper the two
  * stores it needs (`chatStore`, `roomMessages`) plus the frame's own
  * decoded headers.
  */
@@ -175,7 +175,7 @@ export function createHubMailboxResolveRefs(
   return async ({ senderAddress, senderAuthorization, decoded }) => {
     const inReplyTo = decoded?.headers.get("in-reply-to") ?? undefined;
     const references = decoded?.references;
-    const workbenchId = await resolveWorkbenchIdForAgentFrame(
+    const chatId = await resolveWorkbenchIdForAgentFrame(
       { chatStore, roomMessages },
       senderAuthorization.tenantId,
       {
@@ -184,8 +184,8 @@ export function createHubMailboxResolveRefs(
         ...(references !== undefined ? { references } : {}),
       },
     );
-    if (workbenchId === undefined) return undefined;
-    const ref: MailboxRef = { kind: "workbench", id: workbenchId };
+    if (chatId === undefined) return undefined;
+    const ref: MailboxRef = { kind: "workbench", id: chatId };
     return [ref];
   };
 }

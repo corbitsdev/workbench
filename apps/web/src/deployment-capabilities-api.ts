@@ -4,8 +4,9 @@
 // same `SLACK_BOT_TOKEN`/`SLACK_SIGNING_SECRET` env gate
 // `slack-tag-mount.ts` checks). No session or tenant is required: the
 // routine trigger popover (see `shell/routine-panel.tsx`) reads this to
-// decide whether a Slack-bound webhook trigger is honestly offerable, the
-// same way `/api/auth-config` decides which sign-in buttons to draw.
+// decide whether a Slack-bound webhook trigger is honestly offerable —
+// the same probe pattern the sign-in screen used to follow before its
+// OAuth buttons moved to client config (`SOCIAL_SIGN_IN_PROVIDERS`).
 //
 // Distinguishes "the hub answered and Slack is not configured" (`ready`
 // with `slackConfigured: false`) from a network failure, non-2xx, or

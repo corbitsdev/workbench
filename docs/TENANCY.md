@@ -3,7 +3,7 @@
 Workbench tenancy is **not** a parallel product schema. Membership,
 principals, grants, roles, and the tenant hierarchy live in Interchange
 (`@intx/db`, `@intx/hub-api`). Workbench adds product contracts on top:
-signup mode, workbench icons, DM workbench shape, invite links, and
+workbench icons, DM workbench shape, invite links, and
 parent-validation at creation time.
 
 This document is the authoritative gap list for anything that still
@@ -17,105 +17,59 @@ requires an upstream Interchange change. **Do not patch `vendor/intx`.**
 | Live ancestor-chain inheritance | `getAncestorChain` in `@intx/db` — catalog, credentials, providers walk ancestors at read time                                                                                                                                                         |
 | Descendant walk                 | `getDescendantTenants` in `@intx/db`                                                                                                                                                                                                                   |
 | Roles                           | Interchange native `owner` / `admin` / `member` — mirror 1:1 in UI; never invent a parallel role table                                                                                                                                                 |
-| First-signup genesis / join     | `packages/onboarding`'s `genesisOrJoinHubSignup`: on an empty hub (zero tenants) the first signup mints the root tenant and becomes its `owner`; every later signup joins the root as a plain `member`. Signup never seeds workflows, tools, or grants |
+| First-signup genesis / join     | `packages/onboarding`'s `genesisOrJoinHubSignup` is retained but unwired: stock composition mounts no first-login provisioning hook, so signup mints no tenants — the first tenant still comes from an ordinary `POST /api/tenants` with a chosen slug |
 | Memberships                     | Native principal + membership routes                                                                                                                                                                                                                   |
 
 Inheritance is **live**. Creating a sub-workbench must **not** copy
 catalog rows, credentials, or providers from the parent — resolution
 walks the chain on every read.
 
-### Root tenant slug (one deployment fact)
+### Root tenant slug (caller-chosen)
 
-The default tenant slug is a deployment fact, not a boot insert. An
-empty database is a valid hub: boot mints no root. First signup
-creates the root with this slug, and `workbench setup`/`seed` resolve
-the same slug:
+The root tenant slug is a caller choice, not hub env. Stock
+composition mints no root at boot and reads no slug key:
+`WORKBENCH_DEFAULT_TENANT`, its `ORG_SLUG` alias, and the retired
+`OPERATOR_TENANT_ID` are all gone. The first tenant comes from an
+ordinary `POST /api/tenants` with a caller-chosen slug (see the
+stock-signup test in `apps/hub/test/composition.test.ts`), and its
+creator is the native `owner`.
 
-1. `WORKBENCH_DEFAULT_TENANT` if set
-2. else `ORG_SLUG` (alias)
-3. else `workbench`
+There is no signup fallback to configure: stock composition carries
+no signup gate, so a freshly minted root needs no `access_policy` row
+for signup to work. This cutover does not migrate policy rows from a
+previous operator tenant.
 
-Set only one. Custom-slug upgrades whose existing root is not
-`workbench` must set `WORKBENCH_DEFAULT_TENANT=<existing-org-slug>`
-— otherwise first signup mints a `workbench` root. Leftover
-`OPERATOR_TENANT_ID` is no longer read: `readHubConfig` fails loudly
-and tells the operator to set `WORKBENCH_DEFAULT_TENANT` (or remove
-the stale key for the default slug).
-
-A freshly minted root has no `access_policy` row yet, so signup falls
-back to `WORKBENCH_SIGNUP` until Settings → People → "Who can join"
-writes one. This cutover does not migrate policy rows from a previous
-operator tenant.
-
-### The 0→1 contract (first signup is genesis)
+### The 0→1 contract (no genesis mint)
 
 On a hub that starts with **zero tenants and zero users** — the
 default after boot, which never mints a root — nobody has to pre-seed
-an admin:
+an admin, and the first signup mints nothing either:
 
-- The sign-up/email route admits the very first signup even when
-  `WORKBENCH_SIGNUP=closed` (the empty-hub exception in
-  `apps/hub/src/index.ts`'s `authHandler`: allowed only while both
-  `countUsers()` and `countTenants()` are zero).
-- The tenant-create guard allows that caller's unparented
-  `POST /api/tenants` while `countTenants() === 0`.
-- `genesisOrJoinHubSignup` mints the root tenant with the default
-  slug; the creator is its native `owner`.
-- Every later signup (tenants > 0, or more than one user) joins the
-  existing root as a native `member` — and never mints a tenant of its
-  own. Signup never seeds the default workflow set; seeding belongs to
-  the credential step.
+- The sign-up/email route registers the very first account ungated —
+  stock composition carries no signup mode, so there is no closed
+  default and no empty-hub exception to grant.
+- The caller's composition creates the first tenant through an
+  ordinary `POST /api/tenants` with a caller-chosen slug; the creator
+  is its native `owner`.
+- Every later signup only registers an account — it never mints a
+  tenant of its own. Signup never seeds the default workflow set;
+  seeding belongs to the credential step.
 
 ## Workbench-side contracts (this repo)
 
-### Signup mode
+### Signup (ungated in stock composition)
 
-`@workbench/access-policy` (CL-5886) is the actual enforcement point,
-called from `packages/onboarding`'s first-login provisioning hook — it
-is never patched into a vendor route. Two layers, in order:
+Stock composition carries no signup gate: `WORKBENCH_SIGNUP`,
+`WORKBENCH_ALLOWED_EMAIL_DOMAINS`, and `ALLOW_UNVERIFIED_EMAILS` are
+all gone, and nothing gates better-auth's `/sign-up/email` route or
+requires `user.emailVerified`. Anyone can register (rate-limited
+only — see `SIGNUP_RATE_LIMIT_*` in `.env.example`).
 
-1. **Bootstrap (env, no policy row yet)**: `WORKBENCH_SIGNUP=open|closed`
-   (default **`closed`**) plus optional `WORKBENCH_ALLOWED_EMAIL_DOMAINS`
-   (comma-separated). Local `bun run dev` injects `WORKBENCH_SIGNUP=open`
-   when the variable is unset, so a zero-edit `.env` can still seed the
-   admin account; an explicit value in `.env` always wins; production
-   deploys that do not use the dev launcher keep the closed default.
-2. **Policy row (root tenant)**: the boot-ensured root tenant can carry an
-   explicit `access_policy.policy` row (editable from Settings
-   → People → "Who can join"); that row decides outright and the env
-   flag is no longer consulted — `selfSignup` is `"off"`, `"allowed-
-domains"` (with an `allowedDomains` list), or `"open"`. An absent row
-   is closed defaults, identical in effect to `selfSignup: "off"`.
-
-**closed** — self-serve email signup is rejected. New humans join only
-when an operator creates them through native APIs, or an owner shares a
-**copy-link invite** (token in the URL, out of scope for delivery).
-
-**Email must be verified.** better-auth is configured without
-`requireEmailVerification`, so a freshly-registered address is not
-proof of ownership on its own. Every email-trust decision
-`@workbench/access-policy` makes — an allowed-domains match or an
-open-policy pass — requires
-`user.emailVerified === true`; an unverified email is denied, fail-
-closed, regardless of what the policy or env otherwise allow.
-`ALLOW_UNVERIFIED_EMAILS=1` opts out for local dev/test only, mirroring
-`ALLOW_PLAINTEXT_SECRETS` — never set it for a real deployment.
-
-**A policy row and the env switch can disagree**, and that disagreement
-is not resolved automatically: `WORKBENCH_SIGNUP` also gates the
-underlying better-auth `/sign-up/email` route directly (see
-`apps/hub/src/index.ts`'s `authHandler`), independent of anything
-`@workbench/access-policy` decides. Setting a bench's own policy to
-`selfSignup: "allowed-domains"` or `"open"` while the operator's env
-still has `WORKBENCH_SIGNUP=closed` does not open the sign-up form —
-people still cannot create a password account at all, even though the
-policy would otherwise let them join once they had one. The "Who can
-join" settings panel surfaces this with an inline notice whenever the
-policy would allow signup but the env switch is still closed, rather
-than leaving it silently broken. There is no plan to make the policy
-row flip the env switch automatically — the env switch is an operator
-deployment fact, the policy row is a per-bench product setting, and the
-mismatch is meant to be visible, not auto-resolved.
+`@workbench/access-policy` and `packages/onboarding`'s first-login
+provisioning hook are retained as packages but unwired: the hub never
+calls them, so no policy row or env flag decides signup. A deployment
+that needs closed signup gates it in the composition that embeds the
+hub.
 
 ### Workbench icon
 
@@ -128,27 +82,19 @@ and avatar badges. See `WorkbenchIcon` in `@corbits/bench-ui`.
 
 **[Intx gap] CL-6041**: `POST /api/tenants` itself is ungated at the
 platform level — any authenticated caller can hit it directly with an
-arbitrary `parentId` and become owner of a child under any tenant,
-bypassing the wrapper below entirely. Filed upstream; until it lands,
-`apps/hub/src/tenant-create-guard.ts` wraps the whole hub app in a guard
-registered in front of the native route (Hono composes handlers in
-registration order, so this has to be an outer wrap, not a middleware
-added after the route already exists) — see that file's module comment.
-Every `POST /api/tenants` call, whoever originates it, is decided the
-same way:
-
-- No `parentId`, or `parentId` equal to the operator tenant: the
-  signup gate (same decision as above) — this is the self-service
-  landing zone.
-- Any other `parentId`: the caller must already be a member of that
-  exact tenant, with a role its own `tenancyCreation` policy accepts —
-  `"owners"` (default), `"owners-admins"`, or `"none"`.
+arbitrary `parentId` and become owner of a child under any tenant.
+Filed upstream; the workbench-side outer guard
+(`apps/hub/src/tenant-create-guard.ts`) was removed in the stock-
+composition cutover, so until the platform check lands this gap is
+open: every `POST /api/tenants` call, whoever originates it, mints a
+tenant with the caller as owner — no signup-gate landing zone, no
+membership check on `parentId`.
 
 `@workbench/access-policy`'s `POST /api/tenants/:tenantId/access-policy/
 child-tenants` is the polished UI-facing wrapper for creating a child
 tenant under a parent — it makes the same decision and gives a clean
-pre-flight 403, but the guard above is what actually closes the gap; the
-wrapper alone would not.
+pre-flight 403, but with the guard above removed in the cutover the
+wrapper alone does not close the gap.
 
 Interchange currently does **not** validate `parentId` on POST and has
 **no** cycle constraint — see gaps below.
@@ -305,7 +251,8 @@ fork or shim inside `vendor/intx`.
 
 7. **Signup is always open at the auth layer** — better-auth
    email+password enablement is hub-config, not a platform tenancy
-   primitive. Workbench gates via `WORKBENCH_SIGNUP`.
+   primitive, and stock composition adds no gate on top — signup stays
+   ungated.
 
 8. **Invite is membership-side, not token-link** — native invite is
    "add principal"; copy-link invite tokens are a workbench product
@@ -319,9 +266,10 @@ fork or shim inside `vendor/intx`.
 10. **[Intx gap] CL-6041 — `POST /api/tenants` has no grant/policy
     check of its own** — any authenticated user may call it directly
     with an arbitrary `parentId` and become owner of a freshly-minted
-    child under any tenant. Workbench closes this with an outer guard
-    in `apps/hub/src/tenant-create-guard.ts` (see "Sub-workbench
-    creation" above) rather than waiting on an upstream fix; the
+    child under any tenant. Workbench's outer guard
+    (`apps/hub/src/tenant-create-guard.ts`) was removed in the stock-
+    composition cutover, so this gap is currently open rather than
+    closed workbench-side (see "Sub-workbench creation" above); the
     platform should reject the request unless the caller already holds
     a create-child grant on `parentId`.
 
@@ -340,8 +288,9 @@ needs a weaker role, that is an Interchange conversation first.
 
 - `@corbits/bench-ui` — `isRawIdentifier` raw-id guard, tenancy contracts (tenancy-kind helpers and the workbench-tenancy client were removed in the thread-native client-driver cutover)
 - `@workbench/onboarding` — genesis-or-join first-signup provisioning
-- `@workbench/access-policy` — closed-by-default signup/sub-workbench-
-  creation policy
-- `apps/hub` — `WORKBENCH_SIGNUP`, invite routes, icon routes; one of the
+  (retained, unwired in stock composition)
+- `@workbench/access-policy` — signup/sub-workbench-creation policy
+  package (retained, but the hub's stock composition mounts no gate)
+- `apps/hub` — invite routes, icon routes; one of the
   explicitly-listed apps/hub mounts pending extraction into a package (see
   [ARCHITECTURE.md](../ARCHITECTURE.md), CL-6127)

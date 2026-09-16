@@ -74,6 +74,8 @@ describe("hub crypto-provider cache wiring", () => {
     expect(firstCall(source, "launchWebhookTrigger")).toContain(
       `cryptoProviderCache: ${assigned}`,
     );
-    expect(firstCall(source, "runOneShotPrompt")).toContain(assigned);
+    // The planner draft route's `runOneShotPrompt` mail sender was cut
+    // with the stock-hub cutover (its inventory read through the deleted
+    // memory/skills mounts), so only the two senders above remain pinned.
   });
 });

@@ -119,10 +119,9 @@ async function trySignIn(
 
 /**
  * Sign the administrator in — sign-in only, never sign-up. For callers
- * that must never mint an account (e.g. the env-key auto-plant, which
- * runs unattended at boot and must not self-provision the default
- * admin credential on a virgin, open-signup database), this is the only
- * safe entry point.
+ * that must never mint an account (e.g. automated setup, which runs
+ * unattended and must not self-provision the default admin credential
+ * on a fresh database), this is the only safe entry point.
  */
 export async function signIn(
   api: ApiCall,
@@ -138,10 +137,10 @@ export async function signIn(
 
 /**
  * Sign the administrator in, or sign up when the account does not exist
- * yet. Sign-in is tried first so `WORKBENCH_SIGNUP=closed` still works
- * for an existing admin (the product gate only blocks self-serve
- * registration). Fresh sign-up is allowed only when the hub is open;
- * a closed hub with no matching account is reported with the env fix.
+ * yet. Sign-in is tried first so an existing admin never mints a
+ * duplicate account. Signup is ungated in stock composition, so a
+ * rejected sign-up is reported with the hub logs as the fix — never
+ * with an env key.
  */
 export async function authenticate(
   api: ApiCall,
@@ -172,19 +171,6 @@ export async function authenticate(
     throw new HubApiError(
       `${args.email} already exists on the hub but HUB_ADMIN_PASSWORD does not match it (sign-in returned ${signInAttempt.failedStatus})`,
       "set HUB_ADMIN_PASSWORD to the password this account was created with, or use a fresh HUB_ADMIN_EMAIL, then re-run the command",
-    );
-  }
-
-  const closed =
-    signUp.status === 403 &&
-    signUp.data !== null &&
-    typeof signUp.data === "object" &&
-    "error" in signUp.data &&
-    (signUp.data as { error: unknown }).error === "signup_closed";
-  if (closed) {
-    throw new HubApiError(
-      `self-serve signup is closed and ${args.email} does not exist yet`,
-      "set WORKBENCH_SIGNUP=open in .env, restart the hub, re-run this command once to create the admin, then set WORKBENCH_SIGNUP=closed again if you want a closed deploy",
     );
   }
 

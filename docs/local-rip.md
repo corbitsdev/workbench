@@ -56,13 +56,11 @@ Once `bun run dev` reports the hub and web server up, open
 
 The app root renders the sign-in screen when you're not authenticated
 (`apps/web/src/app.tsx`'s `<AuthScreen>`); toggle it to sign-up and create
-an account with any email/password. `WORKBENCH_SIGNUP` defaults to
-`closed` — `bun run dev` forces it `open` for the duration of the dev
-process regardless of what `.env` says (unless `.env` sets it explicitly),
-so self-serve sign-up works out of the box here. On a deployed hub with no
-override, the same sign-up attempt is refused at `POST /api/auth/sign-up/email`
-with `signup_closed` — `scripts/e2e/local-rip.test.ts`'s first hop proves
-exactly that response.
+an account with any email/password. Self-serve sign-up is ungated in
+stock composition — there is no signup mode left to open, so sign-up
+works out of the box here, against `bun run dev` and any deployed hub
+alike. `scripts/e2e/local-rip.test.ts`'s "signup stays ungated once the
+hub is occupied" hop proves exactly that response.
 
 ## 3. Name your bench
 
@@ -118,9 +116,8 @@ bench, and **assistant** comes up live by default; `scripts/e2e/local-rip.test.t
 also deploys **echo** and **workbench-digest** from `CATALOG_WORKFLOWS`
 onto that same bench (the on-demand path, exercised directly rather
 than assumed) to prove they still come up live too. The default
-self-serve story is the other way: the hub ensures a root tenant at boot
-(`WORKBENCH_DEFAULT_TENANT`, default `workbench`), and first-login
-personal benches parent under it.
+self-serve story is the other way: the hub ensures no root tenant at
+boot — the walkthrough's personal bench is itself the root.
 
 ## 5. Check the Connections surface
 

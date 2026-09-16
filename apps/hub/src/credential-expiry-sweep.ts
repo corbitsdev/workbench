@@ -53,7 +53,7 @@ const POLL_INTERVAL_MS = 5 * 60 * 1000;
 // is refreshed — a token expiring before the *next* tick is refreshed
 // this tick, so a live session never sees the gap.
 const MCP_REFRESH_LEAD_MS = POLL_INTERVAL_MS;
-const MCP_OAUTH_CLIENT_NAME = "Corbits Workbench";
+const MCP_OAUTH_CLIENT_NAME = "Corbits Hub";
 const log = getLogger(["hub", "credential-expiry-sweep"]);
 
 // Mail-first-claim-after (see `mailThenClaimExpiry`) leaves a still-due

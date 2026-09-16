@@ -4,14 +4,16 @@
 
 import { Button } from "@corbits/react-ui";
 import { LoginForm } from "@corbits/react-ui/blocks/login/login-form";
-import { getLogger } from "@corbits/client-log";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { AuthLayout } from "./auth/auth-layout";
-import { fetchAuthConfig, signIn, signInSocial, signUp } from "./session";
+import {
+  SOCIAL_SIGN_IN_PROVIDERS,
+  signIn,
+  signInSocial,
+  signUp,
+} from "./session";
 import type { SessionUser, SocialProviderId } from "./session";
-
-const log = getLogger("web.auth-screen");
 
 type Mode = "sign-in" | "sign-up";
 
@@ -41,42 +43,6 @@ export function AuthScreen({
   const [mode, setMode] = useState<Mode>("sign-in");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [socialProviders, setSocialProviders] = useState<
-    readonly SocialProviderId[]
-  >([]);
-  const [authConfigUnavailable, setAuthConfigUnavailable] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchAuthConfig().then((result) => {
-      if (cancelled) return;
-      if (result.kind === "unavailable") {
-        log.error("Could not load sign-in options", {
-          message: result.message,
-        });
-        setAuthConfigUnavailable(true);
-        return;
-      }
-      setSocialProviders(result.providers);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const retryAuthConfig = () => {
-    setAuthConfigUnavailable(false);
-    void fetchAuthConfig().then((result) => {
-      if (result.kind === "unavailable") {
-        log.error("Could not load sign-in options", {
-          message: result.message,
-        });
-        setAuthConfigUnavailable(true);
-        return;
-      }
-      setSocialProviders(result.providers);
-    });
-  };
 
   const submit = async (credentials: {
     readonly email: string;
@@ -118,34 +84,19 @@ export function AuthScreen({
         error={error}
         footer={
           <>
-            {authConfigUnavailable && (
-              <p className="auth-config-notice">
-                Google and GitHub sign-in aren't loading. Email and password
-                still work.{" "}
-                <button
+            <div className="auth-social-providers">
+              {SOCIAL_SIGN_IN_PROVIDERS.map((provider) => (
+                <Button
+                  key={provider}
                   type="button"
-                  className="auth-switch"
-                  onClick={retryAuthConfig}
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void submitSocial(provider)}
                 >
-                  Retry
-                </button>
-              </p>
-            )}
-            {socialProviders.length > 0 && (
-              <div className="auth-social-providers">
-                {socialProviders.map((provider) => (
-                  <Button
-                    key={provider}
-                    type="button"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => void submitSocial(provider)}
-                  >
-                    {SOCIAL_PROVIDER_LABEL[provider]}
-                  </Button>
-                ))}
-              </div>
-            )}
+                  {SOCIAL_PROVIDER_LABEL[provider]}
+                </Button>
+              ))}
+            </div>
             {copy.switchPrompt}{" "}
             <button
               type="button"
