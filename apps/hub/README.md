@@ -18,15 +18,18 @@ native tenant middleware.
   explicit import plus one `app.route(...)` call, inside or outside the
   tenant prefix as the extension requires. `src/index.ts` is the single
   file where all of this comes together.
-- `src/*-mount.ts` files (`artifacts-mount.ts`, `memory-mount.ts`,
-  `skills-mount.ts`, `slack-tag-mount.ts`) are wiring helpers that resolve
-  and mount one extension's routes with its own DB handle/config.
+- There are no local `src/*-mount.ts` wiring helpers: each extension's
+  routes mount directly in `src/index.ts` with the shared DB
+  handle/config passed inline at the `app.route(...)` call site.
 - Serves the built `apps/web` SPA from its own origin
   (`HUB_STATIC_DIR` points at `apps/web/dist`), so every `/api` call the
   interface makes is same-origin.
-- `credential-expiry-sweep.ts`, `cron-due.ts`, `workflow-scheduler.ts`,
-  `tenant-create-guard.ts` are host-level
-  background jobs and guards wired at boot, alongside the route mounts.
+- `credential-expiry-sweep.ts`, `workflow-scheduler.ts`, and
+  `inbox-unsnooze-sweep.ts` are host-level periodic sweeps wired at boot,
+  alongside the route mounts; `cron-due.ts` is a re-export seam onto
+  `@corbits/workflows`' own cron matcher, not a second implementation.
+  Tenancy is the stock platform's own middleware — there is no local
+  tenant-create guard.
 - `in-flight-requests.ts` and `shutdown.ts` bound SIGINT/SIGTERM: the hub
   waits for Hono handlers that have not yet returned a Response (a
   request still in a Postgres transaction, a git write), then
@@ -47,7 +50,6 @@ bun run start
 cd apps/hub && bun test
 ```
 
-Several suites (`artifacts-mount.test.ts`, `memory-mount.test.ts`,
-`memory-workflow-routes.test.ts`) exercise mount wiring against a real
-database:
+Suites under `test/` exercise composition and wiring; the DB-backed
+ones run against a real database:
 `DATABASE_URL=postgres://localhost:5432/workbench_e2e bun test`.

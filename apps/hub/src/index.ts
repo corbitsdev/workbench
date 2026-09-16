@@ -708,8 +708,8 @@ export async function createHub(config: HubConfig) {
     principalKeyStore,
     grantStore: createGrantStore(db),
   });
-  // Hoisted ahead of their other uses below (`mountMemory`'s neighbors,
-  // the room timeline store at CL-6327) so `createHubMailboxResolveRefs`
+  // Hoisted ahead of their other uses below (chat routes, the room
+  // timeline store at CL-6327) so `createHubMailboxResolveRefs`
   // can share these two instances rather than constructing its own just
   // for the mailbox wiring.
   const chatStore = createDrizzleChatStore(db);
@@ -1630,10 +1630,8 @@ export async function createHub(config: HubConfig) {
   // see `@corbits/agent-directory`'s `stale-task-agent-naming.ts`)
   // existed for exactly one now-retired task; any that still linger
   // must stay out of a picker meant for agents a person deliberately
-  // keeps around. Wired into every picker surface:
-  // chat's invite/new-chat dialogs (`chatDeps.isInvitableDefinition` below)
-  // and the agent-definition drafting inventory
-  // (`listMyraConversationalAgents` below).
+  // keeps around. Wired into the picker surface: chat's invite/new-chat
+  // dialogs (`chatDeps.isInvitableDefinition` below).
   const isPickerListableDefinition = (definition: { name: string }) =>
     isConversationalAgentDefinition(definition) &&
     !isPlannerCreatedDefinitionName(definition.name);
@@ -2691,11 +2689,6 @@ export async function createHub(config: HubConfig) {
     store: createDrizzleInboxUnsnoozeSweepStore(mailboxDb),
     bus: mailboxBus,
   });
-
-  // One-shot Myra prompt (agent-definition drafting): provisions a run
-  // through Interchange, awaits its single reply, and tears the run
-  // down immediately — never a resident that outlives the request, so no
-  // idle-sleep lifecycle is needed for it.
 
   // Every genuine top-level deployment run, chat-hosted and invited-agent
   // runs excluded — the scoped listing CL-6061 adds so the Agent Directory
