@@ -154,6 +154,10 @@ export type CreateWorkflowParticipantRoutesDeps = {
     SendWorkbenchMessageDeps["store"];
   readonly platform: LaunchAndJoinAgentDeps["platform"] &
     SendWorkbenchMessageDeps["platform"];
+  readonly mailbox: SendWorkbenchMessageDeps["mailbox"];
+  readonly parts: SendWorkbenchMessageDeps["parts"];
+  /** Timeline reads for routing and context — see
+   * `SendWorkbenchMessageDeps`'s field of the same name. */
   readonly roomMessages: SendWorkbenchMessageDeps["roomMessages"];
   readonly publish: LaunchAndJoinAgentDeps["publish"];
   /** The same one-in-flight-turn-per-workbench queue `createChatRoutes`
@@ -165,10 +169,6 @@ export type CreateWorkflowParticipantRoutesDeps = {
    * (CL-7201) — shared, never a second instance, so a cancel request
    * reaches a controller registered from either entry point. */
   readonly turnCancellation: SendWorkbenchMessageDeps["turnCancellation"];
-  /** The same dispatch-mail correlation `createChatRoutes` is given
-   * (CL-6314) — shared, never a second instance, so a workflow-child
-   * message's dispatch records the same way a person's own send does. */
-  readonly turnMailCorrelation?: SendWorkbenchMessageDeps["turnMailCorrelation"];
   readonly authenticator: WorkflowRunAuthenticator;
   readonly tenancy: Pick<
     WorkbenchTenancyStore,
@@ -248,7 +248,8 @@ export function createWorkflowParticipantRoutes(
         {
           store: deps.store,
           platform: deps.platform,
-          roomMessages: deps.roomMessages,
+          mailbox: deps.mailbox,
+          parts: deps.parts,
           publish: deps.publish,
         },
         {
@@ -382,7 +383,8 @@ export function createWorkflowParticipantRoutes(
           tenancy: deps.tenancy,
           store: deps.store,
           platform: deps.platform,
-          roomMessages: deps.roomMessages,
+          mailbox: deps.mailbox,
+          parts: deps.parts,
           publish: deps.publish,
         },
         {
@@ -532,12 +534,11 @@ export function createWorkflowParticipantRoutes(
         store: deps.store,
         platform: deps.platform,
         roomMessages: deps.roomMessages,
+        mailbox: deps.mailbox,
+        parts: deps.parts,
         publish: deps.publish,
         turnQueue: deps.turnQueue,
         turnCancellation: deps.turnCancellation,
-        ...(deps.turnMailCorrelation !== undefined
-          ? { turnMailCorrelation: deps.turnMailCorrelation }
-          : {}),
       },
       {
         tenantId: scope.tenantId,

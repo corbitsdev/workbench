@@ -4301,6 +4301,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
       const result = await cancelWorkbenchTurn(
         {
+          store: deps.store,
           turnCancellation,
           mailbox: deps.mailbox,
           parts: deps.parts,

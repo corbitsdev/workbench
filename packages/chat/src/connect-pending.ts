@@ -99,12 +99,20 @@ function bareConnectorId(connectorId: string): string {
 
 export type SettleConnectedServiceDeps = Pick<
   SendWorkbenchMessageDeps,
-  "platform" | "agentTurns" | "roomMessages" | "publish"
+  "platform" | "agentTurns" | "mailbox" | "parts" | "publish"
 > & {
   readonly store: Pick<
     ChatStore,
-    "listWorkbenchSettings" | "updateWorkbenchSettings"
+    | "listWorkbenchSettings"
+    | "updateWorkbenchSettings"
+    | "getWorkbenchSettings"
+    | "getBenchSettings"
   >;
+  /**
+   * Timeline reads for the answered-messages scan: the hub injects the
+   * native store, so the scan pages the connecting person's own copies.
+   */
+  readonly roomMessages: Pick<RoomMessageStore, "listMessages">;
 };
 
 export type SettleConnectedServiceInput = {
@@ -134,7 +142,11 @@ function arrivalOrder(left: RoomMessage, right: RoomMessage): number {
 
 async function existingRequestMessageIds(
   roomMessages: Pick<RoomMessageStore, "listMessages">,
-  input: { readonly tenantId: string; readonly workbenchId: string },
+  input: {
+    readonly tenantId: string;
+    readonly workbenchId: string;
+    readonly principalId: string;
+  },
 ): Promise<readonly string[]> {
   const listed = await roomMessages.listMessages(input);
   const lastUser = listed.items.find(
@@ -231,7 +243,11 @@ export async function settleConnectedService(
 
     const requestMessageIds = await existingRequestMessageIds(
       deps.roomMessages,
-      { tenantId: input.tenantId, workbenchId: row.workbenchId },
+      {
+        tenantId: input.tenantId,
+        workbenchId: row.workbenchId,
+        principalId: input.principalId,
+      },
     );
     await dispatchTurn(deps, {
       tenantId: input.tenantId,
