@@ -628,6 +628,129 @@ describe("sub-thread forking", () => {
       },
     ]);
   });
+
+  test("resends when the same parent + subject carries an edited body", async () => {
+    const storage = memoryStorage();
+    const sent: { subject: string; body: string }[] = [];
+    let next = 0;
+    const hub: StockHub = {
+      listMyPrincipals: () => Promise.resolve([ownerMembership]),
+      getTenant: (id) => Promise.resolve({ ...primary, id }),
+      listPrincipals: () => Promise.resolve([ownerPrincipal, myraPrincipal]),
+      createTenant: () => Promise.reject(new Error("unexpected create")),
+      inviteMember: () => Promise.reject(new Error("unexpected invite")),
+      deployWorkflow: () => Promise.reject(new Error("unexpected deploy")),
+      sendRunMail: (input) => {
+        next += 1;
+        sent.push({ subject: input.subject, body: input.body });
+        return Promise.resolve({ messageId: `<sub${next}@example>` });
+      },
+      listRunMail: () => Promise.resolve([]),
+      searchAgentMailbox: () =>
+        Promise.reject(new Error("unexpected mailbox search")),
+      readMailThread: () => Promise.reject(new Error("unexpected thread read")),
+    };
+
+    const parent = {
+      workbenchLocalId: "atlas",
+      tenantId: "tnt_atlas",
+      messageId: "<primary@example>",
+      references: [] as readonly string[],
+    };
+    const first = await forkSubThread(
+      storage,
+      hub,
+      HUB_SCOPE,
+      ACCOUNT_ID,
+      parent,
+      {
+        to: ["bea@example.com"],
+        subject: "Atlas delivery",
+        body: "First delivery update.",
+      },
+    );
+    const edited = await forkSubThread(
+      storage,
+      hub,
+      HUB_SCOPE,
+      ACCOUNT_ID,
+      parent,
+      {
+        to: ["bea@example.com"],
+        subject: "Atlas delivery",
+        body: "Edited delivery update.",
+      },
+    );
+
+    // An edited body is a new send, never a replay of the recorded id.
+    expect(first).toBe("<sub1@example>");
+    expect(edited).toBe("<sub2@example>");
+    expect(sent).toEqual([
+      { subject: "Atlas delivery", body: "First delivery update." },
+      { subject: "Atlas delivery", body: "Edited delivery update." },
+    ]);
+  });
+
+  test("resends when the same parent + subject targets new recipients", async () => {
+    const storage = memoryStorage();
+    const sent: { to: readonly string[] }[] = [];
+    let next = 0;
+    const hub: StockHub = {
+      listMyPrincipals: () => Promise.resolve([ownerMembership]),
+      getTenant: (id) => Promise.resolve({ ...primary, id }),
+      listPrincipals: () => Promise.resolve([ownerPrincipal, myraPrincipal]),
+      createTenant: () => Promise.reject(new Error("unexpected create")),
+      inviteMember: () => Promise.reject(new Error("unexpected invite")),
+      deployWorkflow: () => Promise.reject(new Error("unexpected deploy")),
+      sendRunMail: (input) => {
+        next += 1;
+        sent.push({ to: input.to });
+        return Promise.resolve({ messageId: `<sub${next}@example>` });
+      },
+      listRunMail: () => Promise.resolve([]),
+      searchAgentMailbox: () =>
+        Promise.reject(new Error("unexpected mailbox search")),
+      readMailThread: () => Promise.reject(new Error("unexpected thread read")),
+    };
+
+    const parent = {
+      workbenchLocalId: "atlas",
+      tenantId: "tnt_atlas",
+      messageId: "<primary@example>",
+      references: [] as readonly string[],
+    };
+    const first = await forkSubThread(
+      storage,
+      hub,
+      HUB_SCOPE,
+      ACCOUNT_ID,
+      parent,
+      {
+        to: ["bea@example.com"],
+        subject: "Atlas delivery",
+        body: "First delivery update.",
+      },
+    );
+    const retargeted = await forkSubThread(
+      storage,
+      hub,
+      HUB_SCOPE,
+      ACCOUNT_ID,
+      parent,
+      {
+        to: ["bea@example.com", "cal@example.com"],
+        subject: "Atlas delivery",
+        body: "First delivery update.",
+      },
+    );
+
+    expect(first).toBe("<sub1@example>");
+    expect(retargeted).toBe("<sub2@example>");
+    expect(sent).toEqual([
+      { to: ["bea@example.com"] },
+      { to: ["bea@example.com", "cal@example.com"] },
+    ]);
+  });
 });
 
 describe("stock-only fetch hub", () => {

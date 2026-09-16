@@ -89,7 +89,7 @@ function Root() {
   // client's needs-list against stock Interchange routes and persists the
   // child tenant ids it created (scoped by hub origin and account). It
   // never gates the shell — stock hubs cannot project workflow principals
-  // into DM children by refId yet, so a capability gap is the normal
+  // into child rooms by refId yet, so a capability gap is the normal
   // outcome until that lands upstream; it is logged, not shown.
   const signedInUser = session.kind === "signed-in" ? session.user : null;
   useEffect(() => {

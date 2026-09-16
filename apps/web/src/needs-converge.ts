@@ -350,6 +350,13 @@ export async function convergeNeedsList(
     if (stored === undefined) continue;
     const mail = await hub.listRunMail({ tenantId: stored.tenantId });
     const grouped = deriveThreads(mail);
+    // Ordering assumption: the stock mailbox list returns rows oldest-first,
+    // so mail[0] is the primary-thread first message. The recorded
+    // primaryThreadMessageId (written at send time) is authoritative and this
+    // fallback only covers mail sent before the id was recorded; if the hub
+    // ever returns newest-first or unordered rows, the root mistargets and
+    // the real sub-threads misclassify — until the hub documents ordering,
+    // prefer the recorded id.
     const rootMessageId = stored.primaryThreadMessageId ?? mail[0]?.messageId;
     if (rootMessageId === undefined) continue;
     primaryThreads.push({
@@ -386,7 +393,10 @@ export type ForkSubThreadInput = {
  * (parent as In-Reply-To closing the References chain) rides the sent
  * first message natively, and the linkage is recorded in the client-held
  * thread store beside created ids. A fork already recorded for the same
- * parent + subject returns its native Message-ID instead of resending. */
+ * parent + subject + recipients + body returns its native Message-ID
+ * instead of resending; any of those differing (including an edited body)
+ * sends anew. Rows recorded before recipients/body were stored match on
+ * parent + subject only, preserving their exactly-once replay. */
 export async function forkSubThread(
   storage: StringStorage,
   hub: StockHub,
@@ -402,7 +412,11 @@ export async function forkSubThread(
       (link) =>
         link.workbenchLocalId === parent.workbenchLocalId &&
         link.inReplyTo === parent.messageId &&
-        link.subject === input.subject,
+        link.subject === input.subject &&
+        (link.to === undefined ||
+          (link.to.length === input.to.length &&
+            link.to.every((address, index) => address === input.to[index]))) &&
+        (link.body === undefined || link.body === input.body),
     );
   if (replay !== undefined) return replay.messageId;
   const fork = buildForkReference(parent);
@@ -419,6 +433,8 @@ export async function forkSubThread(
     inReplyTo: fork.inReplyTo,
     references: [...fork.references],
     subject: input.subject,
+    to: [...input.to],
+    body: input.body,
   });
   return sent.messageId;
 }

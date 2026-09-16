@@ -2,9 +2,10 @@
 // needs-list against a stock Interchange hub using only stock routes — no
 // workbench server proxies, tables, or mounts. Auth owns the primary
 // tenant; this lane converges everything beneath it (top-level Myra,
-// workbench child tenants, one DM child per owned workflow principal) and
+// workbench child tenants plus each workbench's primary thread) and
 // persists the child tenant ids it created in client storage scoped by
 // hub origin and account, so a reinstall reclaims by id, never by slug.
+// DMs are participant-filtered threads derived client-side, never tenants.
 // Myra's definition refId resolves from the client workflow catalog, and
 // deployment source/offering ids only ever come from explicit caller
 // config — this module never guesses them. When stock Interchange lacks a
@@ -25,7 +26,7 @@ import {
   createFetchStockHub,
   StockHubCapabilityError,
   StockHubRequestError,
-  type DesiredDirectMessage,
+  type PrimaryThread,
   type StockHub,
   type StockHubCapability,
 } from "./needs-converge";
@@ -62,7 +63,7 @@ export type ClientBootstrapResult =
       readonly kind: "ready";
       readonly primaryTenantId: string;
       readonly createdTenantIds: readonly string[];
-      readonly directMessages: readonly DesiredDirectMessage[];
+      readonly primaryThreads: readonly PrimaryThread[];
     }
   | {
       readonly kind: "error";
@@ -94,9 +95,13 @@ export const UPSTREAM_GAP_NOTES: Record<StockHubCapability, string> = {
   "deploy-workflow-inputs":
     "Myra is absent and the client was not given the exact stock source and offering ids — supply myraDeploy from client config.",
   "project-workflow-principal":
-    "Stock Interchange cannot carry a workflow identity into a child room by refId, so DM and workbench member setup waits on an upstream capability.",
+    "Stock Interchange cannot carry a workflow identity into a child room by refId, so workbench member setup waits on an upstream capability.",
   "principal-roles":
     "The stock member invite route cannot assign the requested child-room roles.",
+  "agent-mailbox-reads":
+    "Stock Interchange exposes no per-agent mailbox search, so participant-filtered thread derivation waits on a stock search route.",
+  "thread-fork-context":
+    "Stock Interchange exposes no full thread read, so sub-thread fork context waits on a stock thread route.",
 };
 
 export async function bootstrapClientSession(
@@ -125,7 +130,7 @@ export async function bootstrapClientSession(
       kind: "ready",
       primaryTenantId: report.primaryTenantId,
       createdTenantIds: report.createdTenantIds,
-      directMessages: report.directMessages,
+      primaryThreads: report.primaryThreads,
     };
   } catch (cause) {
     if (cause instanceof StockHubCapabilityError) {

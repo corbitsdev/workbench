@@ -67,7 +67,11 @@ function parentIdOf(
 
 /** Groups supplied messages into threads: shared List-ID wins (M:N via
  * the List-ID header where the hub carries it), then In-Reply-To/References
- * chains, then normalized-subject fallback. Input order decides roots. */
+ * chains, then normalized-subject fallback scoped to a single participant
+ * set — two reply-less groups sharing a subject but talking to different
+ * correspondents never merge (each 1:1 pair keeps its own thread), while
+ * same-participant groups with matching subjects still join. Input order
+ * decides roots. */
 export function deriveThreads(messages: readonly ThreadMessage[]): Thread[] {
   const knownIds = new Set(messages.map((message) => message.messageId));
   const parent = new Map<string, string>();
@@ -85,6 +89,14 @@ export function deriveThreads(messages: readonly ThreadMessage[]): Thread[] {
   };
 
   type Group = { members: ThreadMessage[]; listId?: string; subject?: string };
+  const participantKeyOf = (group: Group): string => {
+    const members = new Set<string>();
+    for (const member of group.members) {
+      for (const participant of participantsOf(member))
+        members.add(participant);
+    }
+    return JSON.stringify([...members].sort());
+  };
   const byRoot = new Map<string, Group>();
   for (const message of messages) {
     const root = rootOf(message.messageId);
@@ -118,7 +130,7 @@ export function deriveThreads(messages: readonly ThreadMessage[]): Thread[] {
       solo.push(group);
       continue;
     }
-    const key = `subject:${subject}`;
+    const key = `subject:${subject}\u0000participants:${participantKeyOf(group)}`;
     const existing = merged.get(key);
     if (existing === undefined) merged.set(key, group);
     else existing.members.push(...group.members);
@@ -185,7 +197,9 @@ export function buildForkReference(parent: {
 
 /** Native Message-ID replay check: a returned id already recorded for its
  * intent means the send already happened — never resend, never mint a
- * custom key. */
+ * custom key. Kept as the single shared definition of that rule (rather
+ * than inlining `includes` at each send site) so every send wrapper
+ * compares returned ids against recorded ones through one tested helper. */
 export function isDuplicateMessageId(
   seenMessageIds: readonly string[],
   messageId: string,

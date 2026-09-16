@@ -73,6 +73,11 @@ test("session bootstrap drives the portable client manifest", async () => {
     createTenant: () => Promise.reject(new Error("unexpected create")),
     inviteMember: () => Promise.reject(new Error("unexpected invite")),
     deployWorkflow: () => Promise.reject(new Error("unexpected deploy")),
+    sendRunMail: () => Promise.reject(new Error("unexpected send")),
+    listRunMail: () => Promise.resolve([]),
+    searchAgentMailbox: () =>
+      Promise.reject(new Error("unexpected mailbox search")),
+    readMailThread: () => Promise.reject(new Error("unexpected thread read")),
   };
 
   const result = await bootstrapClientSession(
@@ -84,10 +89,13 @@ test("session bootstrap drives the portable client manifest", async () => {
     },
   );
 
-  expect(result).toMatchObject({
-    kind: "error",
-    code: "stock-capability-missing",
-    capability: "project-workflow-principal",
+  // Myra is present top-level and there are no workbenches: no tenants to
+  // create, no DMs to project — DMs derive from threads, never tenants.
+  expect(result).toEqual({
+    kind: "ready",
+    primaryTenantId: "tnt_primary",
+    createdTenantIds: [],
+    primaryThreads: [],
   });
   expect(calls).toEqual([
     "listMyPrincipals",
@@ -118,7 +126,7 @@ describe("logBootstrapResult", () => {
       kind: "ready",
       primaryTenantId: "tnt_primary",
       createdTenantIds: ["tnt_atlas"],
-      directMessages: [],
+      primaryThreads: [],
     });
     expect(entries).toEqual([
       {

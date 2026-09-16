@@ -192,9 +192,14 @@ const ThreadLinkSchema = type({
   // submission route accepts threading headers.
   "inReplyTo?": "string > 0",
   "references?": type("string > 0").array(),
-  // The forked subject, so a retry of the same fork replays its recorded
-  // Message-ID while a different subject off the same parent sends anew.
+  // The forked subject, recipients, and body, so a retry of the same fork
+  // replays its recorded Message-ID while a different subject, recipient
+  // set, or edited body off the same parent sends anew. Rows written before
+  // recipients/body were recorded carry neither and match on parent+subject
+  // only, preserving their exactly-once replay.
   "subject?": "string > 0",
+  "to?": type("string").array(),
+  "body?": "string",
 });
 export type ThreadLink = typeof ThreadLinkSchema.infer;
 

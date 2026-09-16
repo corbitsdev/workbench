@@ -88,6 +88,41 @@ describe("thread grouping", () => {
       ["<b@example>"],
     ]);
   });
+
+  test("keeps same-subject messages with distinct correspondents separate", () => {
+    const threads = deriveThreads([
+      message("<a@example>", "ada@example.com", ["myra@example.com"], {
+        subject: "Hello",
+      }),
+      message("<b@example>", "ada@example.com", ["reviewer@example.com"], {
+        subject: "Re: hello",
+      }),
+    ]);
+
+    expect(threads.map((thread) => thread.messageIds)).toEqual([
+      ["<a@example>"],
+      ["<b@example>"],
+    ]);
+  });
+
+  test("scopes the subject fallback to a single participant set", () => {
+    const threads = deriveThreads([
+      message("<a@example>", "ada@example.com", ["myra@example.com"], {
+        subject: "Status update",
+      }),
+      message("<b@example>", "myra@example.com", ["ada@example.com"], {
+        subject: "Re: STATUS update",
+      }),
+      message("<c@example>", "ada@example.com", ["reviewer@example.com"], {
+        subject: "status update",
+      }),
+    ]);
+
+    expect(threads.map((thread) => thread.messageIds)).toEqual([
+      ["<a@example>", "<b@example>"],
+      ["<c@example>"],
+    ]);
+  });
 });
 
 describe("DM derivation from participant-filtered threads", () => {
@@ -121,6 +156,33 @@ describe("DM derivation from participant-filtered threads", () => {
         agentAddress: "reviewer@example.com",
         rootMessageId: "<c@example>",
         messageIds: ["<c@example>"],
+      },
+    ]);
+  });
+
+  test("keeps distinct 1:1 pairs sharing a subject as separate DMs", () => {
+    const threads = deriveDmThreads(
+      [
+        message("<a@example>", "ada@example.com", ["myra@example.com"], {
+          subject: "Hello",
+        }),
+        message("<b@example>", "ada@example.com", ["reviewer@example.com"], {
+          subject: "Re: hello",
+        }),
+      ],
+      user,
+    );
+
+    expect(threads).toEqual([
+      {
+        agentAddress: "myra@example.com",
+        rootMessageId: "<a@example>",
+        messageIds: ["<a@example>"],
+      },
+      {
+        agentAddress: "reviewer@example.com",
+        rootMessageId: "<b@example>",
+        messageIds: ["<b@example>"],
       },
     ]);
   });
