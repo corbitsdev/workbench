@@ -1,9 +1,7 @@
 // Contract tests for the in-memory `FederationTrustStore`: bilateral
 // trust requires both directions, revocation removes both, and
 // `resolveSharedViaParent` distinguishes true siblings from unrelated
-// or parent-less tenants. Exercised the same way `workbench-tenancy.test.ts`
-// exercises the in-memory `WorkbenchTenancyStore` — pure store contract,
-// no HTTP.
+// or parent-less tenants — pure store contract, no HTTP.
 import { expect, test } from "bun:test";
 import { createInMemoryFederationTrustStore } from "../src/federation-trust";
 

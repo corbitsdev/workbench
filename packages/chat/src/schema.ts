@@ -265,7 +265,7 @@ export const workbenchThreadMessages = chatSchema.table(
  * One workbench's projection into a sibling tenant (CL-5882's
  * Slack-Connect-style shared workbenches). The owning tenant is never
  * inferable from `workbenchId` alone (a workbench's own tenancy lives in
- * `workbenchTenancy`/`workbench_settings`, not here), so it's carried
+ * `workbench_settings`, not here), so it's carried
  * explicitly — `getShare`/`listSharesForWorkbench` in `./workbench-share.ts`
  * always take it rather than re-deriving it. A row here is created only
  * after `FederationTrustStore.hasBilateralTrust` passes (see

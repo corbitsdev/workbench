@@ -109,7 +109,7 @@ import {
 import type { CommandRegistry, CommandResult } from "@corbits/commands";
 import { InferenceResolutionError } from "./model-unavailable";
 import { DefinitionProjectionMissingError } from "@corbits/workflows";
-import type { NativePrincipalStore } from "./native-principal";
+import type { NativePrincipal, NativePrincipalStore } from "./native-principal";
 import type { AgentTurnStore } from "./agent-turns";
 import type { ThreadStore } from "./threads";
 import { ThreadDepthCapError } from "./threads";
@@ -989,6 +989,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // `principalId` must name a real, active member of this bench.
       // Both fail closed with an ordinary client error rather than
       // seeding a workbench with a participant record nothing backs.
+      // The validated counterpart is carried to the join below — one
+      // lookup, one predicate, no second read that could drift.
+      let dmCounterpart: NativePrincipal | undefined;
       if (isChatWithPrincipal(body)) {
         if (body.principalId === principal.id) {
           return c.json(
@@ -1017,6 +1020,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             400,
           );
         }
+        dmCounterpart = target;
       }
 
       // The client creates the conversation tenant through Interchange before
@@ -1196,11 +1200,15 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         // the local-part-of-the-principal-id fallback below only
         // fires for a bare API call that omits `name` entirely.
         const memberHandle = handleFromName(body.name ?? "", body.principalId);
-        const memberPrincipal = await deps.principals.getTenantPrincipal(
-          tenant.id,
-          body.principalId,
-        );
-        if (memberPrincipal === undefined) {
+        // The pre-mint gate above already validated this counterpart —
+        // reused here with the full predicate rather than re-fetched, so
+        // the kind/status check cannot drift between the two reads. The
+        // fail-closed shape stays: an unset counterpart is still a 400.
+        if (
+          dmCounterpart === undefined ||
+          dmCounterpart.kind !== "user" ||
+          dmCounterpart.status !== "active"
+        ) {
           return c.json(
             makeErrorEnvelope({
               code: "bad_request",

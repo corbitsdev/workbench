@@ -1,8 +1,7 @@
 // Contract tests for the in-memory `WorkbenchShareStore`: fail-closed
 // creation (no share without bilateral trust), fail-closed membership
 // (no member row for a share that doesn't exist), and per-tenant
-// membership isolation. Exercised the same way `workbench-tenancy.test.ts`
-// exercises `WorkbenchTenancyStore` — pure store contract, no HTTP.
+// membership isolation — pure store contract, no HTTP.
 import { expect, test } from "bun:test";
 import { createInMemoryWorkbenchShareStore } from "../src/workbench-share";
 import { createInMemoryFederationTrustStore } from "../src/federation-trust";

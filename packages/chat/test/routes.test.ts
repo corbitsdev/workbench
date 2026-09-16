@@ -659,6 +659,81 @@ describe("POST /workbenches — chat with a person (DM)", () => {
 
     expect(response.status).toBe(400);
   });
+
+  test("rejects a principalId naming a non-user (agent) member — 400", async () => {
+    const deps = buildDeps();
+    deps.principals.registerPrincipal(TENANT.id, {
+      id: "prn_bot",
+      kind: "agent",
+      status: "active",
+      refId: "prn_bot",
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request("/workbenches", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "chat", principalId: "prn_bot" }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("bad_request");
+
+    const workbenches = await deps.store.listWorkbenchSettings(TENANT.id);
+    expect(workbenches).toHaveLength(0);
+  });
+
+  test("rejects a principalId naming a member of another bench — 400", async () => {
+    const deps = buildDeps();
+    // prn_bob exists, but on OTHER_TENANT — never on the caller's bench.
+    deps.principals.registerPrincipal(OTHER_TENANT.id, {
+      id: "prn_bob",
+      kind: "user",
+      status: "active",
+      refId: "prn_bob",
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request("/workbenches", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "chat", principalId: "prn_bob" }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("bad_request");
+
+    const workbenches = await deps.store.listWorkbenchSettings(TENANT.id);
+    expect(workbenches).toHaveLength(0);
+  });
+
+  test("validates the person-DM counterpart with a single principal lookup", async () => {
+    const deps = buildDeps();
+    const inner = deps.principals;
+    let lookups = 0;
+    deps.principals = {
+      registerPrincipal: (...args) => inner.registerPrincipal(...args),
+      getTenantPrincipal: async (...args) => {
+        lookups += 1;
+        return inner.getTenantPrincipal(...args);
+      },
+    };
+    registerBob(deps);
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { response } = await createWorkbench(app, {
+      kind: "chat",
+      principalId: "prn_bob",
+      name: "Bob",
+    });
+
+    expect(response.status).toBe(201);
+    // The pre-mint gate's validated principal is reused at join time —
+    // a second fetch could only re-check a weaker predicate.
+    expect(lookups).toBe(1);
+  });
 });
 
 describe("POST /workbenches/:id/invite", () => {
