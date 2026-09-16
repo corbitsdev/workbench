@@ -46,9 +46,9 @@ describe("createInMemoryMessagePartsStore", () => {
       workbenchId: "run_1",
       parts: [textPart()],
     });
-    expect(
-      await store.readMessageParts("ten_1", "<m1@chat>"),
-    ).toEqual([TEXT_PART]);
+    expect(await store.readMessageParts("ten_1", "<m1@chat>")).toEqual([
+      TEXT_PART,
+    ]);
   });
 
   test("a frame with no row reads null", async () => {
@@ -142,9 +142,7 @@ describeIfDb("createDrizzleMessagePartsStore", () => {
         TEXT_PART,
         BLOCK_PART,
       ]);
-      expect(
-        await store.readMessageParts("ten_1", "<absent@chat>"),
-      ).toBeNull();
+      expect(await store.readMessageParts("ten_1", "<absent@chat>")).toBeNull();
       const rows = await store.listMessagePartsForFrames("ten_1", [
         "<m1@chat>",
       ]);

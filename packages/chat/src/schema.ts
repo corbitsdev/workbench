@@ -566,10 +566,7 @@ export const messageParts = chatSchema.table(
     primaryKey({
       columns: [table.tenantId, table.mailMessageId],
     }),
-    index("message_parts_workbench_idx").on(
-      table.tenantId,
-      table.workbenchId,
-    ),
+    index("message_parts_workbench_idx").on(table.tenantId, table.workbenchId),
   ],
 );
 

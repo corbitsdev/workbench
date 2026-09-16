@@ -44,9 +44,7 @@ function depsFor(frames: readonly NativeTimelineFrame[]): NativeTimelineDeps {
       frames.find((entry) => entry.messageId === mailMessageId),
     findFrames: async (_tenantId, messageIds) =>
       frames.filter((entry) =>
-        messageIds.includes(
-          entry.messageId.replace(/^<(.+?)@.+>$/, "$1"),
-        ),
+        messageIds.includes(entry.messageId.replace(/^<(.+?)@.+>$/, "$1")),
       ),
     countFramesSince: async () => frames.length,
     resolveRunIds: async () => new Map(),
@@ -100,7 +98,9 @@ describe("createNativeRoomMessageStore", () => {
       workbenchId: BENCH,
       principalId: READER,
     });
-    expect(page.items[0]?.parts).toEqual([{ kind: "text", text: "plain body" }]);
+    expect(page.items[0]?.parts).toEqual([
+      { kind: "text", text: "plain body" },
+    ]);
     expect(page.items[1]?.parts).toEqual([]);
   });
 

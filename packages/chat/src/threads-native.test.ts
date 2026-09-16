@@ -115,7 +115,10 @@ describe("ancestryOfDescriptor", () => {
 
   it("frames ancestry as Message-IDs for dispatches", () => {
     expect(
-      threadAncestryMessageIds(subThreadId(replyThreadId("msg_a"), "msg_b"), (rowId) => `<${rowId}@mail.test>`),
+      threadAncestryMessageIds(
+        subThreadId(replyThreadId("msg_a"), "msg_b"),
+        (rowId) => `<${rowId}@mail.test>`,
+      ),
     ).toEqual(["<msg_a@mail.test>", "<msg_b@mail.test>"]);
     expect(threadAncestryMessageIds(null, (rowId) => rowId)).toEqual([]);
   });
@@ -182,9 +185,9 @@ describe("deriveThreadId", () => {
       rootThreadId(BENCH),
     );
     const bracket = header("msg_g", { inReplyTo: "<run.started@mail.test>" });
-    expect(
-      deriveThreadId(bracket, new Map([["msg_g", bracket]]), BENCH),
-    ).toBe(rootThreadId(BENCH));
+    expect(deriveThreadId(bracket, new Map([["msg_g", bracket]]), BENCH)).toBe(
+      rootThreadId(BENCH),
+    );
   });
 
   it("derives a whole scan consistently", () => {
@@ -237,9 +240,7 @@ describe("createDescriptorThreadStore", () => {
       workbenchId: BENCH,
       parentMessageId: "msg_c",
     });
-    expect(forked.id).toBe(
-      subThreadId(replyThreadId("msg_a"), "msg_c"),
-    );
+    expect(forked.id).toBe(subThreadId(replyThreadId("msg_a"), "msg_c"));
   });
 
   it("resolves delivery titles off the reader's copies", async () => {
@@ -266,18 +267,24 @@ describe("createDescriptorThreadStore", () => {
     const store = createDescriptorThreadStore(depsFor([a, b, delivered]));
     const threads = await store.listThreads(TENANT, BENCH, "u_1");
     expect(threads.map((entry) => entry.id).sort()).toEqual(
-      [rootThreadId(BENCH), replyThreadId("msg_a"), deliveryThreadId("run_7")].sort(),
+      [
+        rootThreadId(BENCH),
+        replyThreadId("msg_a"),
+        deliveryThreadId("run_7"),
+      ].sort(),
     );
     const assignments = await store.listThreadAssignments(TENANT, BENCH, "u_1");
     expect(assignments.get("msg_a")).toBe(rootThreadId(BENCH));
     expect(assignments.get("msg_b")).toBe(replyThreadId("msg_a"));
-    expect(await store.listMessageIds(TENANT, BENCH, replyThreadId("msg_a"), "u_1")).toEqual([
-      "msg_b",
-    ]);
+    expect(
+      await store.listMessageIds(TENANT, BENCH, replyThreadId("msg_a"), "u_1"),
+    ).toEqual(["msg_b"]);
     expect(await store.threadIdForMessage(TENANT, BENCH, "msg_b")).toBe(
       replyThreadId("msg_a"),
     );
-    expect(await store.threadIdForMessage(TENANT, BENCH, "msg_missing")).toBeUndefined();
+    expect(
+      await store.threadIdForMessage(TENANT, BENCH, "msg_missing"),
+    ).toBeUndefined();
   });
 
   it("creates delivery descriptors purely", async () => {
