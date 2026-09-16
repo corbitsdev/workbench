@@ -177,12 +177,25 @@ export type MailboxFanoutDeps = {
 export type WriteChatMailboxFanoutInput = {
   readonly tenantId: string;
   readonly workbenchId: string;
+  /** Local part of the sender's `From:` — an agent local part marks every
+   * copy inbound, since an agent's own inbox is its run's live mail queue,
+   * never this package's `@corbits/mailbox` mount. */
   readonly senderAddress: string;
-  readonly senderPrincipalId: string;
+  /** The sender's principal when a human sends. Absent for agent and system
+   * sends, whose copies are all inbound. A human sender's own copy is the
+   * one outbound row; every other copy is inbound. */
+  readonly senderPrincipalId?: string;
   readonly participants: readonly ParticipantRecord[];
   /** This row's own RFC 5322 `Message-ID` (`mailMessageIdFor`), already
    * minted against the row's OWNING tenant's domain. */
   readonly messageId: string;
+  /**
+   * Extra refs stored on every copy beside the workbench ref: the
+   * `chat-thread` descriptor id a reply belongs to, the `chat-delivery`
+   * descriptor id a delivery turn's mail carries. Root sends carry only the
+   * workbench ref.
+   */
+  readonly extraRefs?: readonly MailboxRef[];
   readonly inReplyTo?: string;
   /** The full ancestry chain, oldest first — see `MailboxBatchItem`'s own
    * doc comment. */
@@ -225,7 +238,12 @@ export async function writeChatMailboxFanout(
   const domain = await deps.resolveTenantDomain(input.tenantId);
 
   const candidateIds = new Set(humanPrincipalIds(input.participants));
-  candidateIds.add(input.senderPrincipalId);
+  if (input.senderPrincipalId !== undefined) {
+    // A caller-supplied principal can be a system identity the participant
+    // list does not carry — the sender's own copy rides on this candidacy
+    // exactly like a legacy copied sender.
+    candidateIds.add(input.senderPrincipalId);
+  }
   const candidateList = [...candidateIds];
 
   const known = await deps.resolveKnownPrincipalIds(
@@ -233,7 +251,10 @@ export async function writeChatMailboxFanout(
     candidateList,
   );
 
-  const refs: MailboxRef[] = [{ kind: "workbench", id: input.workbenchId }];
+  const refs: MailboxRef[] = [
+    { kind: "workbench", id: input.workbenchId },
+    ...(input.extraRefs ?? []),
+  ];
   const batch: MailboxBatchItem[] = [];
 
   for (const principalId of candidateList) {

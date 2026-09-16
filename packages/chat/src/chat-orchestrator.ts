@@ -192,10 +192,7 @@ export type ChatOrchestratorDeps = {
    * threads keeps every post on the root feed exactly as before this
    * landed.
    */
-  threads?: Pick<
-    ThreadStore,
-    "ensureRootThread" | "threadIdForMessage" | "assignMessage"
-  >;
+  threads?: Pick<ThreadStore, "ensureRootThread" | "threadIdForMessage">;
   /**
    * Durable dispatch-mail -> source-message correlation (CL-6314): what
    * lets a reply find the message that woke its turn, whether a human
@@ -902,15 +899,6 @@ async function postReply(
         ...(outcome.status === "failed" ? { error: outcome.error } : {}),
       });
     }
-    if (threadId !== undefined && deps.threads !== undefined) {
-      await deps.threads.assignMessage({
-        tenantId: resolved.tenantId,
-        workbenchId,
-        threadId,
-        messageId: posted.id,
-      });
-    }
-
     // The delegation hop: when the host's reply @mentions other agent
     // teammates, they must receive it exactly as they would a human's
     // @mention — otherwise a handoff only reaches the human side of
@@ -1067,14 +1055,6 @@ async function postApproveBlock(
       runId: localPartOf(resolved.roomAddress),
       ...(threadId !== undefined ? { threadId } : {}),
     });
-    if (threadId !== undefined && deps.threads !== undefined) {
-      await deps.threads.assignMessage({
-        tenantId: resolved.tenantId,
-        workbenchId,
-        threadId,
-        messageId: posted.id,
-      });
-    }
   }
 }
 
@@ -1138,14 +1118,6 @@ async function postFinalizedTurnArtifacts(
         runId: localPartOf(resolved.roomAddress),
         ...(threadId !== undefined ? { threadId } : {}),
       });
-      if (threadId !== undefined && deps.threads !== undefined) {
-        await deps.threads.assignMessage({
-          tenantId: resolved.tenantId,
-          workbenchId,
-          threadId,
-          messageId: posted.id,
-        });
-      }
     } catch (error) {
       await deps.claims.release(claim);
       throw error;

@@ -36,8 +36,8 @@ export function rowIdFromMailMessageId(header: string): string {
 
 /**
  * The threading headers for a row being dispatched as mail. `ancestors`
- * is the row's parent chain, root first (see `mailAncestryOf` in
- * `./threads.ts`); `References` is exactly that chain and `In-Reply-To`
+ * is the row's parent chain, root first (see `threadAncestryMessageIds`
+ * in `./threads-native.ts`); `References` is exactly that chain and `In-Reply-To`
  * is its tail, per RFC 5322. A root-feed row has neither.
  */
 export function mailThreadHeaders(input: {

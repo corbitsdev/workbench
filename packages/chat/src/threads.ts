@@ -376,17 +376,6 @@ export function createInMemoryThreadStore(): ThreadStore {
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
     },
 
-    async assignMessage(input) {
-      messageToThread.set(
-        messageKey(input.tenantId, input.workbenchId, input.messageId),
-        input.threadId,
-      );
-      const list = threadMessages.get(input.threadId) ?? [];
-      if (!list.includes(input.messageId)) {
-        threadMessages.set(input.threadId, [...list, input.messageId]);
-      }
-    },
-
     async listMessageIds(tenantId, threadId) {
       const t = threads.get(threadId);
       if (t === undefined || t.tenantId !== tenantId) return [];
@@ -703,18 +692,6 @@ export function createDrizzleThreadStore<
         )
         .orderBy(asc(workbenchThreads.createdAt));
       return rows.map(mapThreadRow);
-    },
-
-    async assignMessage(input) {
-      await db
-        .insert(workbenchThreadMessages)
-        .values({
-          tenantId: input.tenantId,
-          workbenchId: input.workbenchId,
-          threadId: input.threadId,
-          messageId: input.messageId,
-        })
-        .onConflictDoNothing();
     },
 
     async listMessageIds(tenantId, threadId) {

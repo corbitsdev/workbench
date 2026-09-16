@@ -62,6 +62,12 @@ export interface ListRoomMessagesInput {
   readonly tenantId: string;
   readonly workbenchId: string;
   readonly cursor?: string;
+  /**
+   * The reader, for stores that read its own mailbox copies (CL-7594):
+   * the native timeline pages the reader's frames. Legacy and in-memory
+   * stores ignore it.
+   */
+  readonly principalId?: string;
 }
 
 export interface ListedRoomMessages {
@@ -84,6 +90,11 @@ export interface RoomActivitySummary {
 
 export interface ListRoomActivityInput {
   readonly tenantId: string;
+  /**
+   * The reader, for stores that count its own mailbox copies (CL-7594).
+   * Legacy and in-memory stores ignore it.
+   */
+  readonly principalId?: string;
   readonly workbenches: readonly {
     readonly workbenchId: string;
     /** The caller's own read cursor; absent means everything is unread. */
@@ -104,6 +115,8 @@ export interface RoomMessageStore {
     readonly tenantId: string;
     readonly workbenchId: string;
     readonly messageId: string;
+    /** The reader, when the caller has one — see `ListRoomMessagesInput`. */
+    readonly principalId?: string;
   }): Promise<RoomMessage | undefined>;
   /**
    * Records the `Message-ID` a row went out as (CL-7104). The header is
@@ -161,7 +174,7 @@ let mintsThisMillisecond = 0;
  * it never render in the wrong order. The random tail keeps ids
  * unguessable and separates two hubs minting in the same millisecond.
  */
-function newMessageId(): string {
+export function newMessageId(): string {
   const now = Date.now();
   if (now === lastMintedAt) {
     mintsThisMillisecond += 1;
@@ -249,7 +262,7 @@ function needsPreviewLookback(parts: readonly Part[]): boolean {
   return isFailurePreviewParts(parts) || previewOf(parts).length === 0;
 }
 
-function summaryOf(
+export function summaryOf(
   newest: RoomMessage,
   unreadCount: number,
   newestFirstForPreview: readonly RoomMessage[] = [newest],
@@ -271,7 +284,7 @@ function summaryOf(
  * `ChatMessageEventData` is the wire contract this shape is asserted
  * against before it ever reaches `publish`.
  */
-function consumerFacingParts(parts: readonly Part[]): Part[] {
+export function consumerFacingParts(parts: readonly Part[]): Part[] {
   return parts.map((part) => {
     if (part.kind !== "text") return part;
     const text = consumerFacingInferenceText(part.text);
@@ -368,7 +381,9 @@ function decodeCursor(
   return { createdAt, id: cursor.slice(separator + 1) };
 }
 
-function pageOf(newestFirst: readonly RoomMessage[]): ListedRoomMessages {
+export function pageOf(
+  newestFirst: readonly RoomMessage[],
+): ListedRoomMessages {
   const items = newestFirst.slice(0, PAGE_SIZE);
   const last = items[items.length - 1];
   return newestFirst.length > PAGE_SIZE && last !== undefined

@@ -77,8 +77,13 @@ export function deliveryThreadId(runRef: string): string {
 /** Parses a descriptor back into its anchor. Undefined for anything that
  * was never a descriptor — notably the legacy `thr_<uuid>` rows, which
  * read as unknown rather than guessing a thread. */
-export function parseThreadDescriptor(threadId: string): ThreadDescriptor | undefined {
-  if (threadId.startsWith(ROOT_PREFIX) && threadId.length > ROOT_PREFIX.length) {
+export function parseThreadDescriptor(
+  threadId: string,
+): ThreadDescriptor | undefined {
+  if (
+    threadId.startsWith(ROOT_PREFIX) &&
+    threadId.length > ROOT_PREFIX.length
+  ) {
     return { kind: "root", workbenchId: threadId.slice(ROOT_PREFIX.length) };
   }
   if (
@@ -103,7 +108,11 @@ export function parseThreadDescriptor(threadId: string): ThreadDescriptor | unde
     const parentThreadId = rest.slice(0, anchorAt);
     const anchorMessageId = rest.slice(anchorAt + 1);
     const parent = parseThreadDescriptor(parentThreadId);
-    if (parent === undefined || parent.kind === "root" || parent.kind === "sub") {
+    if (
+      parent === undefined ||
+      parent.kind === "root" ||
+      parent.kind === "sub"
+    ) {
       return undefined;
     }
     return { kind: "sub", parentThreadId, anchorMessageId };
@@ -202,9 +211,9 @@ export interface DescriptorThreadDeps {
 /** The parent msg_ a frame answers, when the parent is a chat frame at
  * all: anything not shaped `msg_*` (foreign mail, bracket ids) threads
  * under nothing. */
-export function parentMsgIdOf(frame: Pick<NativeFrameHeaders, "inReplyTo">):
-  | string
-  | undefined {
+export function parentMsgIdOf(
+  frame: Pick<NativeFrameHeaders, "inReplyTo">,
+): string | undefined {
   const parent = frame.inReplyTo;
   if (parent === undefined || parent === "") return undefined;
   const local = localPartOf(
@@ -331,7 +340,10 @@ export function createDescriptorThreadStore(
     tenantId: string,
     workbenchId: string,
     messageId: string,
-  ): Promise<{ readonly threadId: string; readonly descriptor: ThreadDescriptor }> {
+  ): Promise<{
+    readonly threadId: string;
+    readonly descriptor: ThreadDescriptor;
+  }> {
     const root: ThreadDescriptor = { kind: "root", workbenchId };
     const found = await headersFor(tenantId, [messageId]);
     const header = found.get(messageId);
@@ -377,7 +389,10 @@ export function createDescriptorThreadStore(
   function containerThread(
     tenantId: string,
     workbenchId: string,
-    container: { readonly threadId: string; readonly descriptor: ThreadDescriptor },
+    container: {
+      readonly threadId: string;
+      readonly descriptor: ThreadDescriptor;
+    },
   ): WorkbenchThread {
     switch (container.descriptor.kind) {
       case "root":
@@ -417,13 +432,18 @@ export function createDescriptorThreadStore(
 
   return {
     async ensureRootThread(tenantId, workbenchId) {
-      return threadForDescriptor(tenantId, workbenchId, rootThreadId(workbenchId), {
-        parentMessageId: null,
-        parentThreadId: null,
-        runRef: null,
-        title: null,
-        createdAt: new Date(0),
-      });
+      return threadForDescriptor(
+        tenantId,
+        workbenchId,
+        rootThreadId(workbenchId),
+        {
+          parentMessageId: null,
+          parentThreadId: null,
+          runRef: null,
+          title: null,
+          createdAt: new Date(0),
+        },
+      );
     },
 
     async createDeliveryThread(input: CreateDeliveryThreadInput) {
@@ -683,7 +703,11 @@ export function createDescriptorThreadStore(
         header.deliveryRef !== undefined ||
         parentMsgIdOf(header) === undefined
       ) {
-        return deriveThreadId(header, new Map([[messageId, header]]), workbenchId);
+        return deriveThreadId(
+          header,
+          new Map([[messageId, header]]),
+          workbenchId,
+        );
       }
       // Walk at most two ancestors up — the same bound the store's
       // container check uses, and exact for every send-time shape.

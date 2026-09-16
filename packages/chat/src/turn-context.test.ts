@@ -9,7 +9,9 @@ const PARTICIPANTS = [
   { address: "ins_echo1@acme.example", handle: "echo" },
 ] as const;
 
-async function seed(texts: readonly { from: string; text: string }[]) {
+async function seed(
+  texts: readonly { from: string; text: string; threadId?: string }[],
+) {
   const roomMessages = createInMemoryRoomMessageStore();
   const ids: string[] = [];
   for (const entry of texts) {
@@ -19,6 +21,7 @@ async function seed(texts: readonly { from: string; text: string }[]) {
       workbenchId: WORKBENCH,
       sender: { name: null, address: entry.from },
       parts: [{ kind: "text", text: entry.text }],
+      ...(entry.threadId !== undefined ? { threadId: entry.threadId } : {}),
     });
     ids.push(posted.id);
   }
@@ -90,15 +93,22 @@ describe("assembleTurnContext", () => {
   });
 
   test("a thread-scoped turn sees its own thread, never the whole room", async () => {
-    const { roomMessages, ids } = await seed([
-      { from: "prn_alice@acme.example", text: "root feed chatter" },
-      { from: "prn_alice@acme.example", text: "in the thread" },
-      { from: "ins_echo1@acme.example", text: "also in the thread" },
-    ]);
-    const threadOf = new Map<string, string>([
-      [ids[0] ?? "", "thr_root"],
-      [ids[1] ?? "", "thr_reply"],
-      [ids[2] ?? "", "thr_reply"],
+    const { roomMessages } = await seed([
+      {
+        from: "prn_alice@acme.example",
+        text: "root feed chatter",
+        threadId: "thr_root",
+      },
+      {
+        from: "prn_alice@acme.example",
+        text: "in the thread",
+        threadId: "thr_reply",
+      },
+      {
+        from: "ins_echo1@acme.example",
+        text: "also in the thread",
+        threadId: "thr_reply",
+      },
     ]);
 
     const context = await assembleTurnContext({
@@ -108,10 +118,7 @@ describe("assembleTurnContext", () => {
       excludeMessageId: "msg_none",
       participants: PARTICIPANTS,
       contextWindow: 10,
-      thread: {
-        threadId: "thr_reply",
-        threadIdOf: (messageId) => threadOf.get(messageId) ?? "thr_root",
-      },
+      thread: { threadId: "thr_reply" },
     });
 
     expect(context).toContain("in the thread");

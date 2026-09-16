@@ -26,14 +26,14 @@ import {
 const contextLog = getLogger(["chat", "turn-context"]);
 
 /**
- * Restricts a turn's context to one thread. Thread membership lives in
- * its own store (`./threads.ts`), not on the message row, so the caller
- * injects the resolver rather than this module reaching for a second
- * store.
+ * Restricts a turn's context to one thread. Threads are descriptors, not
+ * rows (`./threads-native.ts`): every timeline row already carries the
+ * descriptor id it was sent into, so the scope is just that id and the
+ * context walk compares it against each row's own — no membership table,
+ * no resolver, no second store.
  */
 export interface TurnContextThreadScope {
   readonly threadId: string;
-  threadIdOf(messageId: string): string;
 }
 
 /**
@@ -81,6 +81,11 @@ export interface AssembleTurnContextInput {
   readonly roomMessages: Pick<RoomMessageStore, "listMessages">;
   readonly tenantId: string;
   readonly workbenchId: string;
+  /**
+   * The turn's agent, whose mailbox copy the context reads — a native
+   * timeline pages one principal's frames. Absent, reads run systematic.
+   */
+  readonly principalId?: string;
   /** The message this turn is answering; never re-rendered as context. */
   readonly excludeMessageId: string;
   readonly participants: readonly ParticipantRecord[];
@@ -114,18 +119,27 @@ export async function assembleTurnContext(
     const inScope = (message: RoomMessage): boolean =>
       message.id !== input.excludeMessageId &&
       (input.thread === undefined ||
-        input.thread.threadIdOf(message.id) === input.thread.threadId);
+        message.threadId === input.thread.threadId);
 
     const newestFirst: RoomMessage[] = [];
     let cursor: string | undefined;
     do {
       const page = await input.roomMessages.listMessages(
         cursor === undefined
-          ? { tenantId: input.tenantId, workbenchId: input.workbenchId }
+          ? {
+              tenantId: input.tenantId,
+              workbenchId: input.workbenchId,
+              ...(input.principalId !== undefined
+                ? { principalId: input.principalId }
+                : {}),
+            }
           : {
               tenantId: input.tenantId,
               workbenchId: input.workbenchId,
               cursor,
+              ...(input.principalId !== undefined
+                ? { principalId: input.principalId }
+                : {}),
             },
       );
       newestFirst.push(...page.items.filter(inScope));

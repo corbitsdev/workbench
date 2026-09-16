@@ -146,7 +146,6 @@ export interface NativeTimelineDeps {
   readonly parts: MessagePartsStore;
 }
 
-
 function textFallbackParts(text: string): Part[] {
   return [{ kind: "text", text }];
 }
@@ -260,9 +259,9 @@ export async function mapNativeFrames(
 
 /** The delivery ref that promotes a frame out of the thread its headers
  * would otherwise put it in — see `./threads-native.ts`. */
-export function deliveryRefOf(frame: Pick<NativeTimelineFrame, "refs">):
-  | { readonly id: string; readonly label?: string }
-  | undefined {
+export function deliveryRefOf(
+  frame: Pick<NativeTimelineFrame, "refs">,
+): { readonly id: string; readonly label?: string } | undefined {
   return frame.refs.find((ref) => ref.kind === "chat-delivery");
 }
 

@@ -42,6 +42,8 @@ export type TurnQueuedEvent = typeof TurnQueuedEvent.infer;
 
 export type QueuedTurn = {
   readonly messageId: string;
+  /** The descriptor id the message was sent into; absent sends headerless. */
+  readonly threadId?: string;
   readonly principalId: string;
   readonly recipients: readonly string[];
   readonly parts: readonly PartType[];

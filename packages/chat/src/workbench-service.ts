@@ -26,7 +26,6 @@ import {
   type TurnContextThreadScope,
 } from "./turn-context";
 import type { AgentTurnStore } from "./agent-turns";
-import type { ThreadStore } from "./threads";
 import {
   TurnCancelledError,
   type TurnCancelRegistry,
@@ -56,21 +55,27 @@ import type {
   InvitableDefinition,
 } from "./platform-port";
 import {
-  postRoomMessage,
-  insertRoomMessageRow,
+  consumerFacingParts,
+  newMessageId,
   publishRoomMessageEvent,
   type PublishedMailHeaders,
+  type RoomMessage,
+  type RoomMessageSender,
   type RoomMessageStore,
 } from "./room-messages";
 import { mailMessageIdFor, mailThreadHeaders } from "./mail-headers";
-import { mailAncestryOf } from "./threads";
+import {
+  parseThreadDescriptor,
+  rootThreadId,
+  threadAncestryMessageIds,
+} from "./threads-native";
+import type { MessagePartsStore } from "./message-parts";
 import {
   writeChatMailboxFanout,
   mailboxBodyOf,
   mailboxSubjectOf,
   type MailboxFanoutDeps,
 } from "./mailbox-fanout";
-import type { TurnMailCorrelationStore } from "./turn-mail-correlation";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
 import type { QueuedTurn, WorkbenchTurnQueue } from "./turn-queue";
 import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
@@ -192,7 +197,8 @@ export type MintAgentDmDeps = {
     | "mutateWorkbenchParticipants"
   >;
   readonly platform: LaunchAndJoinAgentDeps["platform"];
-  readonly roomMessages: LaunchAndJoinAgentDeps["roomMessages"];
+  readonly mailbox: LaunchAndJoinAgentDeps["mailbox"];
+  readonly parts: LaunchAndJoinAgentDeps["parts"];
   readonly publish: LaunchAndJoinAgentDeps["publish"];
 };
 
@@ -420,7 +426,8 @@ export async function mintAgentDm(
       {
         store: deps.store,
         platform: deps.platform,
-        roomMessages: deps.roomMessages,
+        mailbox: deps.mailbox,
+        parts: deps.parts,
         publish: deps.publish,
       },
       {
@@ -494,7 +501,8 @@ async function reopenAgentDm(
     {
       store: deps.store,
       platform: deps.platform,
-      roomMessages: deps.roomMessages,
+      mailbox: deps.mailbox,
+      parts: deps.parts,
       publish: deps.publish,
     },
     {
@@ -518,8 +526,15 @@ async function reopenAgentDm(
 export type LaunchAndJoinAgentDeps = {
   readonly store: Pick<ChatStore, "mutateWorkbenchParticipants">;
   readonly platform: WorkbenchLauncher;
-  readonly roomMessages: RoomMessageStore;
+  /**
+   * The mailbox-first fanout for the timeline's `workbench.agent-joined`
+   * event: the join line lands in each human participant's inbox, no
+   * `workbench_messages` row. The hub always injects a real one.
+   */
+  readonly mailbox: MailboxFanoutDeps;
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
+  /** The `message_parts` sidecar the join event's rich parts land in. */
+  readonly parts: MessagePartsStore;
 };
 
 export type LaunchAndJoinAgentInput = {
@@ -745,7 +760,7 @@ export async function launchAndJoinAgent(
   // truth, and this send may be the host's first traffic — the wake it
   // triggers deploys the host, which must never put deploy time back
   // on the caller's path. A delivery failure is logged, never thrown.
-  const joinEventDelivered = postRoomMessage(deps, {
+  const joinEventDelivered = postMailboxMessage(deps, {
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
     sender: { name: null, address: launched.address },
@@ -778,7 +793,8 @@ export async function launchAndJoinAgent(
 }
 
 export type PostCannedGreetingDeps = {
-  readonly roomMessages: RoomMessageStore;
+  readonly mailbox: MailboxFanoutDeps;
+  readonly parts: MessagePartsStore;
   readonly publish: WorkbenchSubscriberRegistry["publish"];
 };
 
@@ -885,7 +901,7 @@ export async function postCannedGreeting(
   input: PostCannedGreetingInput,
 ): Promise<void> {
   try {
-    await postRoomMessage(deps, {
+    await postMailboxMessage(deps, {
       tenantId: input.tenantId,
       workbenchId: input.workbenchId,
       sender: { name: null, address: input.agentAddress },
@@ -904,7 +920,8 @@ export async function postCannedGreeting(
 
 export type JoinHumanParticipantDeps = {
   readonly store: Pick<ChatStore, "mutateWorkbenchParticipants">;
-  readonly roomMessages: RoomMessageStore;
+  readonly mailbox: MailboxFanoutDeps;
+  readonly parts: MessagePartsStore;
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
   readonly tenancy: Pick<WorkbenchTenancyStore, "addWorkbenchMember">;
 };
@@ -988,7 +1005,7 @@ export async function joinHumanParticipant(
   // Not awaited, for the same reason `launchAndJoinAgent`'s own join
   // event isn't: the participant record above is the durable source of
   // truth, and this send can carry the host's deploy.
-  const joinEventDelivered = postRoomMessage(deps, {
+  const joinEventDelivered = postMailboxMessage(deps, {
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
     sender: { name: null, address: input.principalId },
@@ -1024,7 +1041,8 @@ export async function joinHumanParticipant(
 
 export type RemoveWorkbenchParticipantDeps = {
   readonly store: Pick<ChatStore, "mutateWorkbenchParticipants">;
-  readonly roomMessages: RoomMessageStore;
+  readonly mailbox: MailboxFanoutDeps;
+  readonly parts: MessagePartsStore;
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
   /**
    * Releases an invited agent's launched instance the way the idle-sleep
@@ -1099,7 +1117,7 @@ export async function removeWorkbenchParticipant(
           removedBy: input.principalId,
         },
       };
-  await postRoomMessage(deps, {
+  await postMailboxMessage(deps, {
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
     sender: { name: null, address: input.principalId },
@@ -1151,7 +1169,8 @@ export type StartWorkflowCommandDeps = {
     "getWorkbenchSettings" | "mutateWorkbenchParticipants"
   >;
   readonly platform: WorkbenchLauncher & Pick<WorkbenchMail, "sendMail">;
-  readonly roomMessages: RoomMessageStore;
+  readonly mailbox: LaunchAndJoinAgentDeps["mailbox"];
+  readonly parts: LaunchAndJoinAgentDeps["parts"];
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
 };
 
@@ -1221,7 +1240,8 @@ export async function startWorkflowCommand(
     {
       store: deps.store,
       platform: deps.platform,
-      roomMessages: deps.roomMessages,
+      mailbox: deps.mailbox,
+      parts: deps.parts,
       publish: deps.publish,
     },
     {
@@ -1249,7 +1269,6 @@ export async function startWorkflowCommand(
 
 export type SendWorkbenchMessageDeps = {
   readonly store: Pick<ChatStore, "getWorkbenchSettings" | "getBenchSettings">;
-  readonly roomMessages: RoomMessageStore;
   readonly publish: WorkbenchSubscriberRegistry["publish"];
   /** Dispatch only: reaching an agent's own mailbox to ask it for a
    * turn. Nothing on the human write path touches it. */
@@ -1276,41 +1295,33 @@ export type SendWorkbenchMessageDeps = {
    */
   readonly turnCancellation: TurnCancelRegistry;
   /**
-   * Durable dispatch-mail -> source-message correlation (CL-6314), what
-   * `dispatchTurn` records after its send resolves so the reply path can
-   * land the agent's answer in its source message's thread. Optional so
-   * unit suites that only exercise routing stay free of the table; a
-   * composition that wants threaded replies (the hub) injects a real
-   * store. Absent, dispatches still send — their replies just post
-   * unthreaded.
+   * Timeline reads for routing and context: the hub injects the native
+   * store (`./room-messages-native.ts`), so every read here pages the
+   * reader's own mailbox copies plus the `message_parts` sidecar. Writes
+   * are gone — sends are mailbox-first (`postMailboxMessage`), so the
+   * store's `insertMessage`/`stampMailMessageId`/`deleteMessage` throw.
    */
-  readonly turnMailCorrelation?: TurnMailCorrelationStore;
+  readonly roomMessages: RoomMessageStore;
   /**
-   * The turn projection (CL-6329). `dispatchTurn` opens a row before it
-   * touches the execution plane, so an in-flight turn is visible from
-   * its first moment and the child run id its reply will carry is
-   * already allocated. Optional so unit suites that only exercise
-   * routing stay free of the table; a composition that wants traceable
-   * replies (the hub) injects a real store.
+   * The turn projection (`./agent-turns.ts`): `dispatchTurn` opens a row
+   * before it touches the execution plane so an in-flight turn is visible
+   * from its first moment, and `cancelWorkbenchTurn` settles running rows
+   * directly. The table survives the cutover — it keys on the run and the
+   * surviving msg_ ids, never on a dropped tracking row. Optional so unit
+   * suites that only exercise routing stay free of the table; absent,
+   * dispatches still send and cancels only reach the call stack.
    */
   readonly agentTurns?: AgentTurnStore;
   /**
-   * Narrows a turn's context to its own thread. Absent, a turn is asked
-   * with the whole room. See `./turn-context.ts`.
+   * The mail domain and fan-out target for the mailbox-first send: every
+   * sent message lands in each human participant's `@corbits/mailbox`
+   * inbox, addressed by its own RFC 5322 Message-ID (`./mail-headers.ts`).
+   * Required — the mailbox batch IS the send's durable write. The hub
+   * always injects a real one (`platform-adapter.ts`'s composition).
    */
-  readonly threads?: Pick<
-    ThreadStore,
-    "listThreadAssignments" | "getThread" | "threadIdForMessage"
-  >;
-  /**
-   * The mail domain and fan-out target for CL-7450's mailbox copy:
-   * writing a sent human message into every human participant's
-   * `@corbits/mailbox` inbox, addressed by this row's own RFC 5322
-   * Message-ID (`./mail-headers.ts`). Optional so unit suites that only
-   * exercise routing stay free of the mailbox tables; the hub always
-   * injects a real one (`platform-adapter.ts`'s composition).
-   */
-  readonly mailbox?: MailboxFanoutDeps;
+  readonly mailbox: MailboxFanoutDeps;
+  /** The `message_parts` sidecar every send records its rich parts into. */
+  readonly parts: MessagePartsStore;
   /**
    * The turn-level deadline (CL-6644): `dispatchTurnBatch` wraps every
    * recipient's `dispatchTurn` call in this single wall-clock budget,
@@ -1412,11 +1423,12 @@ export type SendWorkbenchMessageInput = {
    */
   readonly inReplyToMessageId?: string;
   /**
-   * Thread membership stamped onto the published `chat.message` so
-   * stream subscribers see the same scope the POST response returns
-   * (CL-6660). Assignment into `workbench_thread_messages` still happens
-   * in the route after the insert — this field only fills the row and
-   * the SSE payload.
+   * The descriptor id this send belongs to (`./threads-native.ts`) — a
+   * reply's `thr_reply_<parent>`, a sub-thread's `thr_sub_…`, a delivery
+   * turn's `thr_delivery_<run>`, absent for the root feed. Stamped onto
+   * the row and the SSE payload so stream subscribers see the same scope
+   * the POST response returns (CL-6660), and carried into the turn queue
+   * so the dispatch's threading headers derive from it structurally.
    */
   readonly threadId?: string;
   /**
@@ -1483,76 +1495,59 @@ async function replyTargetAgent(
 }
 
 /**
- * Posts a message into a workbench and routes it to every agent its
- * mentions, reply target, and host-default resolve to. The message
- * itself is one row plus one publish — no mail, no wake, no sidecar hop
- * — so a workbench with every agent process stopped still takes
- * messages and still renders them.
+ * Posts a message, mailbox-first (CL-7594): the message IS its mailbox
+ * fan-out — one batch into every human participant's `@corbits/mailbox`
+ * inbox, addressed by its own RFC 5322 Message-ID — with the rich parts
+ * in the `message_parts` sidecar and the `chat.message` publish last,
+ * before any agent is dispatched: fan-out (one batch) -> sidecar ->
+ * publish -> dispatch. A fan-out failure fails the send before anything
+ * is VISIBLE: no phantom bubble on the sender's own timeline (no
+ * `chat.message` publish yet), and no duplicate row on a client retry —
+ * there is no row to delete, because the mailbox batch is the first
+ * durable write. Unlike agent dispatch (`routeMessage`, fire-and-forget
+ * so a slept agent's wake never blocks the sender's own bubble), a
+ * mailbox write failure is never swallowed into an
+ * apparently-successful send: it surfaces as `MailboxFanoutFailedError`
+ * (`./mailbox-fanout.ts`), which already carries the one `refId`
+ * `writeChatMailboxFanout` reported under — the route layer quotes that
+ * ref rather than reporting again.
  *
- * Routing never branches on the workbench's `kind` (a chat and a
- * workbench are routed identically): an `@mention` always reaches its
- * agent; a plain reply to an agent's message reaches that agent too,
- * even unmentioned; and a message naming no agent at all (no mention,
- * no agent reply target) defaults to the workbench's host — its first
- * agent participant — so a single-agent workbench still auto-responds
- * and a multi-agent one routes through its host instead of going
- * silent.
- */
-/**
- * Posts a message, then — CL-7450 — writes it into every human
- * participant's mailbox BEFORE the row is published or any agent is
- * dispatched: store row -> stamp Message-ID -> fan-out (one batch) ->
- * publish -> dispatch. A fan-out failure must fail the send before
- * anything is VISIBLE: no phantom bubble on the sender's own timeline
- * (no `chat.message` publish yet), and no duplicate row on a client
- * retry. The just-inserted row is therefore deleted on a fan-out failure
- * and the failure is rethrown to the caller — unlike agent dispatch
- * (`routeMessage`, fire-and-forget so a slept agent's wake never blocks
- * the sender's own bubble), a mailbox write failure is never swallowed
- * into an apparently-successful send.
+ * The Message-ID is minted with the message's OWNING tenant's domain
+ * (`input.tenantId`, always `ownerTenantId` at the route layer — see
+ * `routes.ts`'s `resolveWorkbenchAccess`), never the acting caller's own
+ * tenant: a shared-workbench (projected-tenant) sender's
+ * `input.senderAddress` carries their OWN tenant's domain, which would
+ * otherwise stamp a message living in the owner tenant with a Message-ID
+ * nobody else's mail agrees is addressed under.
  *
- * This is not a transactional guarantee: the row and the mailbox batch
- * are two separate writes (`insertRoomMessageRow` commits before
- * `mailboxFanOutForSend` ever runs), so a concurrent `GET` of the
- * timeline between the two CAN read the row before this function decides
- * whether to delete it again. The window is real, not merely believed
- * closed — it is bounded to the time between those two writes, not open
- * indefinitely, and nothing durable is built on top of what that window
- * exposes (no reply has been dispatched, no mailbox row written) before
- * the delete either lands or the row survives for good. A fan-out
- * failure surfaces as `MailboxFanoutFailedError` (`./mailbox-fanout.ts`),
- * which already carries the one `refId` `writeChatMailboxFanout` reported
- * under — the route layer quotes that ref rather than reporting again.
+ * Threading rides the descriptor id, never a tracking row: a reply
+ * stamps the `chat-thread` descriptor ref its ancestry derives from (and
+ * answers it over mail with `In-Reply-To`/`References` off that same
+ * ancestry), a delivery turn's mail stamps the `chat-delivery`
+ * descriptor ref, and a root-feed send carries only the workbench ref. An
+ * unknown (legacy) thread id sends headerless — a root-feed send, never
+ * a guess.
  */
 export async function sendWorkbenchMessage(
   deps: SendWorkbenchMessageDeps,
   input: SendWorkbenchMessageInput,
 ): Promise<SendWorkbenchMessageResult> {
-  const posted = await insertRoomMessageRow(deps, {
-    tenantId: input.tenantId,
-    workbenchId: input.workbenchId,
-    sender: { name: null, address: input.senderAddress },
-    senderPrincipalId: input.principalId,
-    parts: input.messageParts,
-    ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
-  });
-
-  const mailboxDeps = deps.mailbox;
-  let mail: PublishedMailHeaders | undefined;
-  if (mailboxDeps !== undefined) {
-    try {
-      mail = await mailboxFanOutForSend(deps, mailboxDeps, input, posted.id);
-    } catch (err) {
-      await deps.roomMessages.deleteMessage({
-        tenantId: input.tenantId,
-        workbenchId: input.workbenchId,
-        messageId: posted.id,
-      });
-      throw err;
-    }
-  }
-
-  publishRoomMessageEvent(deps, posted, mail);
+  const posted = await postMailboxMessage(
+    {
+      store: deps.store,
+      mailbox: deps.mailbox,
+      parts: deps.parts,
+      publish: deps.publish,
+    },
+    {
+      tenantId: input.tenantId,
+      workbenchId: input.workbenchId,
+      sender: { name: null, address: input.senderAddress },
+      senderPrincipalId: input.principalId,
+      parts: input.messageParts,
+      ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
+    },
+  );
 
   return {
     id: posted.id,
@@ -1561,86 +1556,133 @@ export async function sendWorkbenchMessage(
   };
 }
 
+export type PostMailboxMessageDeps = {
+  readonly store: Pick<ChatStore, "getWorkbenchSettings">;
+  readonly mailbox: MailboxFanoutDeps;
+  readonly parts: MessagePartsStore;
+  readonly publish: WorkbenchSubscriberRegistry["publish"];
+};
+
+export type PostMailboxMessageInput = {
+  readonly tenantId: string;
+  readonly workbenchId: string;
+  readonly sender: RoomMessageSender;
+  /** The sender's principal when a human sends; absent for agent and
+   * system sends, whose copies are all inbound. */
+  readonly senderPrincipalId?: string;
+  readonly parts: readonly PartType[];
+  /** The agent run this message came out of; absent for a human's. */
+  readonly runId?: string;
+  /**
+   * The descriptor id this send belongs to. A reply or sub-thread send
+   * stamps the `chat-thread` ref; a delivery turn's send stamps the
+   * `chat-delivery` ref; absent (or the root descriptor) sends to the
+   * root feed with only the workbench ref.
+   */
+  readonly threadId?: string;
+  /** Skip the settings load when the caller already holds them. */
+  readonly participants?: readonly ParticipantRecord[];
+};
+
+export type PostMailboxMessageResult = PublishedMailHeaders & {
+  readonly id: string;
+  readonly createdAt: string;
+};
+
 /**
- * CL-7450: the human write path's own copy — every human participant's
- * `@corbits/mailbox` inbox gets this row, addressed by its own RFC 5322
- * Message-ID, before this call returns. Unlike agent dispatch
- * (`routeMessage`, fire-and-forget so a slept agent's wake never blocks
- * the sender's own bubble), a mailbox write failure must reach the
- * caller: `writeChatMailboxFanout` throws on anything but a genuinely
- * unknown participant, and this function does not catch it (its own
- * caller, `sendWorkbenchMessage`, does — to delete the just-inserted row).
- *
- * The Message-ID (and any `In-Reply-To` it carries) is minted with the
- * row's OWNING tenant's domain (`input.tenantId`, always `ownerTenantId`
- * at the route layer — see `routes.ts`'s `resolveWorkbenchAccess`), never
- * the acting caller's own tenant: a shared-workbench (projected-tenant)
- * sender's `input.senderAddress` carries their OWN tenant's domain, which
- * would otherwise stamp a row living in the owner tenant with a
- * Message-ID nobody else's mail agrees is addressed under.
- *
- * Returns the stamped mail identity — the row's own Message-ID plus the
- * threading headers when the row answers a thread — so the send's own
- * `chat.message` publish names the same thread the mail went out as.
+ * The one way a message enters a workbench (CL-7594): the message IS its
+ * mailbox fan-out — one batch into every human participant's
+ * `@corbits/mailbox` inbox — with the rich parts in the `message_parts`
+ * sidecar and the `chat.message` publish last. Every send below, human or
+ * agent or system, funnels through here; the only differences are the
+ * sender identity and the refs the send carries.
  */
-async function mailboxFanOutForSend(
-  deps: SendWorkbenchMessageDeps,
-  mailboxDeps: MailboxFanoutDeps,
-  input: SendWorkbenchMessageInput,
-  messageId: string,
-): Promise<PublishedMailHeaders> {
-  const domain = await mailboxDeps.resolveTenantDomain(input.tenantId);
+export async function postMailboxMessage(
+  deps: PostMailboxMessageDeps,
+  input: PostMailboxMessageInput,
+): Promise<PostMailboxMessageResult> {
+  const messageId = newMessageId();
+  const createdAt = new Date().toISOString();
+  const parts = consumerFacingParts(input.parts);
+  const domain = await deps.mailbox.resolveTenantDomain(input.tenantId);
   const mailMessageId = mailMessageIdFor(messageId, domain);
-  await deps.roomMessages.stampMailMessageId({
-    tenantId: input.tenantId,
-    workbenchId: input.workbenchId,
-    messageId,
-    mailMessageId,
-  });
-
-  const settingsRow = await deps.store.getWorkbenchSettings(
-    input.tenantId,
-    input.workbenchId,
+  const ancestors = threadAncestryMessageIds(
+    input.threadId ?? null,
+    (ancestor) => mailMessageIdFor(ancestor, domain),
   );
-  const participants =
-    settingsRow !== undefined ? participantsOf(settingsRow.settings) : [];
+  const inReplyTo =
+    ancestors.length > 0 ? ancestors[ancestors.length - 1] : undefined;
+  const references = ancestors.length > 0 ? ancestors : undefined;
 
-  const ancestors =
-    deps.threads !== undefined
-      ? await mailAncestryOf(
-          deps.threads,
+  const settingsRow =
+    input.participants !== undefined
+      ? undefined
+      : await deps.store.getWorkbenchSettings(
           input.tenantId,
           input.workbenchId,
-          input.threadId ?? null,
-        )
-      : [];
-  const inReplyTo =
-    ancestors.length > 0
-      ? mailMessageIdFor(ancestors[ancestors.length - 1] as string, domain)
-      : undefined;
-  const references = ancestors.map((ancestor) =>
-    mailMessageIdFor(ancestor, domain),
-  );
+        );
+  const participants =
+    input.participants ??
+    (settingsRow !== undefined ? participantsOf(settingsRow.settings) : []);
 
-  const body = mailboxBodyOf(input.messageParts);
-  await writeChatMailboxFanout(mailboxDeps, {
+  const descriptor =
+    input.threadId !== undefined
+      ? parseThreadDescriptor(input.threadId)
+      : undefined;
+  const threadRef =
+    descriptor !== undefined &&
+    (descriptor.kind === "reply" || descriptor.kind === "sub")
+      ? [{ kind: "chat-thread" as const, id: input.threadId as string }]
+      : [];
+  const deliveryRef =
+    descriptor !== undefined && descriptor.kind === "delivery"
+      ? [{ kind: "chat-delivery" as const, id: input.threadId as string }]
+      : [];
+
+  const body = mailboxBodyOf(parts);
+  await writeChatMailboxFanout(deps.mailbox, {
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
-    senderAddress: input.senderAddress,
-    senderPrincipalId: input.principalId,
+    senderAddress: input.sender.address,
+    ...(input.senderPrincipalId !== undefined
+      ? { senderPrincipalId: input.senderPrincipalId }
+      : {}),
     participants,
     messageId: mailMessageId,
     subject: mailboxSubjectOf(body),
     body,
+    ...([...threadRef, ...deliveryRef].length > 0
+      ? { extraRefs: [...threadRef, ...deliveryRef] }
+      : {}),
     ...(inReplyTo !== undefined ? { inReplyTo } : {}),
-    ...(references.length > 0 ? { references } : {}),
+    ...(references !== undefined ? { references } : {}),
+  });
+  await deps.parts.recordMessageParts({
+    tenantId: input.tenantId,
+    mailMessageId,
+    workbenchId: input.workbenchId,
+    parts,
   });
 
-  return {
+  const posted: RoomMessage = {
+    id: messageId,
+    workbenchId: input.workbenchId,
+    createdAt,
+    sender: input.sender,
+    senderPrincipalId: input.senderPrincipalId ?? null,
+    runId: input.runId ?? null,
+    threadId: input.threadId ?? rootThreadId(input.workbenchId),
+    mailMessageId,
+    parts,
+  };
+  const mail: PublishedMailHeaders = {
     messageId: mailMessageId,
     ...(inReplyTo !== undefined ? { inReplyTo } : {}),
-    ...(references.length > 0 ? { references } : {}),
+    ...(references !== undefined ? { references } : {}),
   };
+  publishRoomMessageEvent({ publish: deps.publish }, posted, mail);
+
+  return { id: messageId, createdAt, ...mail };
 }
 
 /**
@@ -1677,30 +1719,18 @@ async function routeMessage(
 /**
  * The thread a turn's context is confined to (CL-6329): a message inside
  * a sub-thread is answered with that sub-thread, never the whole room.
- * Returns nothing at all when the workbench has no thread store or the
- * triggering message carries no membership row — the room itself is the
- * scope then, which is exactly `assembleTurnContext`'s no-thread case.
- *
- * Membership is read once, in bulk, so the resolver `assembleTurnContext`
- * calls per message stays synchronous rather than fanning a query out
- * per timeline row.
+ * The scope is the triggering send's own descriptor id — the id
+ * `postMailboxMessage` stamped on its row — defaulting to the root feed
+ * for a send with no thread, exactly the membership the old thread table
+ * used to record. Native rows carry their own descriptor, so
+ * `assembleTurnContext` compares it directly; no store read happens here.
  */
-async function turnThreadScope(
-  deps: Pick<SendWorkbenchMessageDeps, "threads">,
-  input: Pick<SendWorkbenchMessageInput, "tenantId" | "workbenchId">,
-  messageId: string,
-): Promise<{ thread?: TurnContextThreadScope }> {
-  if (deps.threads === undefined) return {};
-  const assignments = await deps.threads.listThreadAssignments(
-    input.tenantId,
-    input.workbenchId,
-  );
-  const threadId = assignments.get(messageId);
-  if (threadId === undefined) return {};
+function turnThreadScope(
+  input: Pick<SendWorkbenchMessageInput, "workbenchId" | "threadId">,
+): { thread: TurnContextThreadScope } {
   return {
     thread: {
-      threadId,
-      threadIdOf: (id) => assignments.get(id) ?? "",
+      threadId: input.threadId ?? rootThreadId(input.workbenchId),
     },
   };
 }
@@ -1770,6 +1800,10 @@ async function routeToRecipients(
           roomMessages: deps.roomMessages,
           tenantId: input.tenantId,
           workbenchId: input.workbenchId,
+          // The context reads the sender's own copies: every send lands
+          // one copy per human participant, so the sender's mailbox holds
+          // the whole timeline including its own just-sent message.
+          principalId: input.principalId,
           excludeMessageId: messageId,
           participants,
           contextWindow: resolveContextWindow(
@@ -1779,7 +1813,7 @@ async function routeToRecipients(
                 {},
             ),
           ).value,
-          ...(await turnThreadScope(deps, input, messageId)),
+          ...turnThreadScope(input),
         })
       : undefined;
   const turnParts =
@@ -1791,6 +1825,7 @@ async function routeToRecipients(
     input.workbenchId,
     {
       messageId,
+      ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
       principalId: input.principalId,
       recipients,
       parts: turnParts,
@@ -1815,15 +1850,14 @@ async function dispatchTurnBatch(
   deps: Pick<
     SendWorkbenchMessageDeps,
     | "platform"
-    | "roomMessages"
-    | "publish"
-    | "turnDispatchTimeoutMs"
-    | "waitUntilFreeTimeoutMs"
     | "agentTurns"
     | "turnCancellation"
-    | "turnMailCorrelation"
+    | "turnDispatchTimeoutMs"
+    | "waitUntilFreeTimeoutMs"
     | "mailbox"
-    | "threads"
+    | "store"
+    | "parts"
+    | "publish"
   >,
   tenantId: string,
   workbenchId: string,
@@ -1928,6 +1962,9 @@ async function dispatchTurnBatch(
                 agentAddress,
                 parts,
                 requestMessageIds: messageIds,
+                ...(last.threadId !== undefined
+                  ? { threadId: last.threadId }
+                  : {}),
               },
               signal,
             ),
@@ -1992,6 +2029,12 @@ export type DispatchTurnInput = {
   readonly parts: PartType[];
   /** The room messages this turn answers, in arrival order. */
   readonly requestMessageIds: readonly string[];
+  /**
+   * The descriptor id the answered messages were sent into. The dispatch
+   * frame's threading headers derive from it structurally — never from a
+   * membership lookup. Absent dispatches headerless.
+   */
+  readonly threadId?: string;
 };
 
 /**
@@ -2039,13 +2082,7 @@ export type DispatchTurnInput = {
 export async function dispatchTurn(
   deps: Pick<
     SendWorkbenchMessageDeps,
-    | "platform"
-    | "agentTurns"
-    | "roomMessages"
-    | "publish"
-    | "turnMailCorrelation"
-    | "mailbox"
-    | "threads"
+    "platform" | "agentTurns" | "mailbox" | "store" | "parts" | "publish"
   >,
   input: DispatchTurnInput,
   signal?: AbortSignal,
@@ -2101,43 +2138,26 @@ export async function dispatchTurn(
   signal?.addEventListener("abort", closeAsTimedOut, { once: true });
 
   try {
-    // RFC 5322 threading (CL-7450): the dispatched frame carries the same
-    // identity the row it answers already carries on the timeline — its
-    // Message-ID is derived, never minted separately (`mailMessageIdFor`),
-    // so it always equals what `mailboxFanOutForSend` already stamped for
-    // that row — and names the row's own parent chain in
-    // `In-Reply-To`/`References`. Degrades to unthreaded (as before) when
-    // this composition has no mailbox domain to derive it from.
+    // RFC 5322 threading, derived structurally: the answered messages'
+    // descriptor id already encodes the ancestry (`threads-native.ts`),
+    // so `In-Reply-To`/`References` frame that chain for the tenant's
+    // domain — no membership lookup, no separate ancestry walk. Degrades
+    // to unthreaded (as before) when the turn answers nothing at all.
     const sourceMessageId =
       input.requestMessageIds[input.requestMessageIds.length - 1];
-    const mailboxDeps = deps.mailbox;
     const threadHeaders =
-      mailboxDeps !== undefined && sourceMessageId !== undefined
+      sourceMessageId !== undefined
         ? await (async () => {
-            const domain = await mailboxDeps.resolveTenantDomain(
+            const domain = await deps.mailbox.resolveTenantDomain(
               input.tenantId,
             );
-            const threadId =
-              deps.threads !== undefined
-                ? ((await deps.threads.threadIdForMessage(
-                    input.tenantId,
-                    input.workbenchId,
-                    sourceMessageId,
-                  )) ?? null)
-                : null;
-            const ancestors =
-              deps.threads !== undefined
-                ? await mailAncestryOf(
-                    deps.threads,
-                    input.tenantId,
-                    input.workbenchId,
-                    threadId,
-                  )
-                : [];
             return mailThreadHeaders({
               rowId: sourceMessageId,
               domain,
-              ancestors,
+              ancestors: threadAncestryMessageIds(
+                input.threadId ?? null,
+                (rowId) => rowId,
+              ),
             });
           })()
         : undefined;
@@ -2152,34 +2172,11 @@ export async function dispatchTurn(
       }),
       fromWorkbenchId: input.workbenchId,
     });
-    // The reply path threads under the turn that produced it (CL-6314),
-    // and this mail is what opens that turn's bracket — so record which
-    // message it answers while both halves are in hand. The latest
-    // message, matching how a batch already attributes its principal:
-    // the conversation is where its newest message is. A record that
-    // fails is reported, never thrown: the turn was dispatched, and
-    // threading degrades to unthreaded rather than failing it.
-    if (
-      sourceMessageId !== undefined &&
-      deps.turnMailCorrelation !== undefined
-    ) {
-      try {
-        await deps.turnMailCorrelation.recordTurnMail({
-          tenantId: input.tenantId,
-          mailId: sourceMessageId,
-          workbenchId: input.workbenchId,
-          sourceMessageId,
-        });
-      } catch (err) {
-        reportError(err, {
-          operation: "chat.dispatchTurn.recordTurnMail",
-          tenantId: input.tenantId,
-          roomId: input.workbenchId,
-          agentId: input.agentAddress,
-          extra: { mailId: sourceMessageId, sourceMessageId },
-        });
-      }
-    }
+    // The reply path threads under the turn structurally (CL-6314's
+    // bracket is the dispatch frame's own `In-Reply-To`/`References`,
+    // derived above): the reply answers that frame over mail, and the
+    // descriptor derivation maps it into the source message's thread
+    // with no correlation row to record.
   } catch (err) {
     if (turn !== undefined) {
       await deps.agentTurns?.finishTurn({
@@ -2244,7 +2241,10 @@ function isCredentialDispatchFailure(cause: unknown): boolean {
  * and the error is already logged by the caller.
  */
 async function postUndeliveredNotice(
-  deps: Pick<SendWorkbenchMessageDeps, "roomMessages" | "publish">,
+  deps: Pick<
+    SendWorkbenchMessageDeps,
+    "store" | "mailbox" | "parts" | "publish"
+  >,
   input: {
     readonly tenantId: string;
     readonly workbenchId: string;
@@ -2263,7 +2263,7 @@ async function postUndeliveredNotice(
       : isCredentialDispatchFailure(input.cause)
         ? CREDENTIAL_UNDELIVERED_NOTICE
         : RETRYABLE_UNDELIVERED_NOTICE;
-    await postRoomMessage(deps, {
+    await postMailboxMessage(deps, {
       tenantId: input.tenantId,
       workbenchId: input.workbenchId,
       sender: { name: null, address: input.agentAddress },
@@ -2303,7 +2303,10 @@ const CANCELLED_NOTICE = "This turn was cancelled.";
  * there is nowhere left to say so.
  */
 async function postCancelledNotice(
-  deps: Pick<SendWorkbenchMessageDeps, "roomMessages" | "publish">,
+  deps: Pick<
+    SendWorkbenchMessageDeps,
+    "store" | "mailbox" | "parts" | "publish"
+  >,
   input: {
     readonly tenantId: string;
     readonly workbenchId: string;
@@ -2311,7 +2314,7 @@ async function postCancelledNotice(
   },
 ): Promise<void> {
   try {
-    await postRoomMessage(deps, {
+    await postMailboxMessage(deps, {
       tenantId: input.tenantId,
       workbenchId: input.workbenchId,
       sender: { name: null, address: input.agentAddress },
@@ -2381,7 +2384,12 @@ export type CancelWorkbenchTurnResult = {
 export async function cancelWorkbenchTurn(
   deps: Pick<
     SendWorkbenchMessageDeps,
-    "agentTurns" | "turnCancellation" | "roomMessages" | "publish"
+    | "agentTurns"
+    | "turnCancellation"
+    | "store"
+    | "mailbox"
+    | "parts"
+    | "publish"
   >,
   input: { readonly tenantId: string; readonly workbenchId: string },
 ): Promise<CancelWorkbenchTurnResult> {
