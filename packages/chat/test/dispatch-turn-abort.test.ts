@@ -1,4 +1,4 @@
-// CL-7201 (Critique finding): `dispatchTurn` must never call `sendMail`
+// CL-7201: `dispatchTurn` must refuse to start a mail send at all
 // for a turn whose signal was ALREADY aborted before the call — as
 // opposed to CL-7230's disclosed ceiling (a signal that aborts WHILE
 // `sendMail` is already in flight, which genuinely cannot be stopped).
@@ -9,21 +9,34 @@
 import { describe, expect, test } from "bun:test";
 
 import { createInMemoryAgentTurnStore } from "../src/agent-turns";
-import { createInMemoryRoomMessageStore } from "../src/room-messages";
+import { ChatMessageEventData } from "../src/stream-events";
 import { TurnCancelledError } from "../src/turn-cancellation";
 import { dispatchTurn } from "../src/workbench-service";
-import { fakePlatform, TENANT } from "./test-support";
+import { buildDeps, fakePlatform, TENANT } from "./test-support";
 
 describe("dispatchTurn with an already-aborted signal (CL-7201)", () => {
   test("never calls sendMail, and settles the row cancelled", async () => {
     const platform = fakePlatform();
     const agentTurns = createInMemoryAgentTurnStore();
-    const roomMessages = createInMemoryRoomMessageStore();
+    const deps = buildDeps({ platform, agentTurns });
+    const events: { type: string; data: unknown }[] = [];
     const controller = new AbortController();
     controller.abort(new TurnCancelledError());
 
     await dispatchTurn(
-      { platform, agentTurns, roomMessages, publish: () => undefined },
+      {
+        platform: deps.platform,
+        agentTurns,
+        store: deps.store,
+        mailbox: deps.mailbox,
+        parts: deps.parts,
+        publish: (
+          _workbenchId: string,
+          event: { type: string; data: unknown },
+        ) => {
+          events.push(event);
+        },
+      },
       {
         tenantId: TENANT.id,
         workbenchId: "wb_1",
@@ -34,6 +47,9 @@ describe("dispatchTurn with an already-aborted signal (CL-7201)", () => {
       },
       controller.signal,
     );
+    // The abort-close runs on a fire-and-forget `.then` off `finishTurn`,
+    // so flush before asserting on the notice it posts.
+    await Bun.sleep(5);
 
     expect(platform.sentMail).toHaveLength(0);
 
@@ -44,15 +60,17 @@ describe("dispatchTurn with an already-aborted signal (CL-7201)", () => {
     expect(turns).toHaveLength(1);
     expect(turns[0]?.status).toBe("cancelled");
 
-    const messages = await roomMessages.listMessages({
-      tenantId: TENANT.id,
-      workbenchId: "wb_1",
-    });
-    const notice = messages.items.find((message) =>
-      message.parts.some(
-        (part) => part.kind === "text" && part.turnCancelled === true,
-      ),
-    );
-    expect(notice).toBeDefined();
+    // The cancelled notice goes out mailbox-first (fanout + parts sidecar)
+    // like every other timeline write now, so it surfaces as a published
+    // `chat.message` rather than a sidecar row.
+    const notices = events
+      .filter((event) => event.type === "chat.message")
+      .map((event) => ChatMessageEventData.assert(event.data))
+      .filter((data) =>
+        data.parts.some(
+          (part) => part.kind === "text" && part.turnCancelled === true,
+        ),
+      );
+    expect(notices).toHaveLength(1);
   });
 });
