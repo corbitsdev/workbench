@@ -8,12 +8,6 @@ import { type } from "arktype";
 export const INTERCHANGE_ROLES = ["owner", "admin", "member"] as const;
 export type InterchangeRole = (typeof INTERCHANGE_ROLES)[number];
 
-export const SignupMode = type("'open' | 'closed'");
-export type SignupMode = typeof SignupMode.infer;
-
-/** Default is closed — opening signup is an explicit operator choice. */
-export const DEFAULT_SIGNUP_MODE: SignupMode = "closed";
-
 export const WorkbenchIcon = type({
   /** 1–2 character monogram shown in the switcher and badges. */
   monogram: type("string >= 1").pipe((s) => s.slice(0, 2)),
@@ -114,44 +108,6 @@ export async function wouldCreateParentCycle(
     current = await lookup.getParentId(current);
   }
   return false;
-}
-
-/**
- * Whether an email may sign up under the current mode and domain allowlist.
- * Domain list is compared case-insensitively to the email's host part.
- */
-export function emailAllowedForSignup(args: {
-  readonly email: string;
-  readonly mode: SignupMode;
-  readonly allowedDomains: readonly string[];
-}): boolean {
-  if (args.mode === "closed") return false;
-  if (args.allowedDomains.length === 0) return true;
-  const at = args.email.lastIndexOf("@");
-  if (at < 0) return false;
-  const domain = args.email.slice(at + 1).toLowerCase();
-  const allow = new Set(args.allowedDomains.map((d) => d.toLowerCase()));
-  return allow.has(domain);
-}
-
-/** Parse comma-separated domain list; empty tokens dropped. */
-export function parseAllowedEmailDomains(raw: string | undefined): string[] {
-  if (raw === undefined || raw.trim() === "") return [];
-  return raw
-    .split(",")
-    .map((d) => d.trim())
-    .filter((d) => d.length > 0);
-}
-
-export function parseSignupMode(raw: string | undefined): SignupMode {
-  if (raw === undefined || raw.trim() === "") return DEFAULT_SIGNUP_MODE;
-  const parsed = SignupMode(raw.trim().toLowerCase());
-  if (parsed instanceof type.errors) {
-    throw new Error(
-      `WORKBENCH_SIGNUP must be "open" or "closed", got ${JSON.stringify(raw)}`,
-    );
-  }
-  return parsed;
 }
 
 /**

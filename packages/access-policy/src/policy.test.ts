@@ -78,48 +78,22 @@ describe("evaluateSignupGate", () => {
   test("rejects an unparseable email regardless of policy", () => {
     const result = evaluateSignupGate({
       policy: { ...DEFAULT_ACCESS_POLICY, selfSignup: "open" },
-      envSignupMode: "open",
-      envAllowedDomains: [],
       email: "not-an-email",
       ...verified,
     });
     expect(result).toEqual({ allowed: false, reason: "invalid_email" });
   });
 
-  test("no policy row, env closed (the platform default) -> closed", () => {
+  test("no policy row -> closed defaults", () => {
     const result = evaluateSignupGate({
       policy: undefined,
-      envSignupMode: "closed",
-      envAllowedDomains: [],
       email,
       ...verified,
     });
     expect(result).toEqual({ allowed: false, reason: "signup_closed" });
   });
 
-  test("no policy row, env open with no domain restriction -> allowed (bootstrap)", () => {
-    const result = evaluateSignupGate({
-      policy: undefined,
-      envSignupMode: "open",
-      envAllowedDomains: [],
-      email,
-      ...verified,
-    });
-    expect(result).toEqual({ allowed: true, reason: "env_open" });
-  });
-
-  test("no policy row, env open with a non-matching allowlist -> rejected", () => {
-    const result = evaluateSignupGate({
-      policy: undefined,
-      envSignupMode: "open",
-      envAllowedDomains: ["other.example"],
-      email,
-      ...verified,
-    });
-    expect(result).toEqual({ allowed: false, reason: "domain_not_allowed" });
-  });
-
-  test("policy row wins outright: selfSignup off ignores env open", () => {
+  test("an explicit closed row stays closed", () => {
     const policy: AccessPolicy = {
       selfSignup: "off",
       allowedDomains: [],
@@ -127,15 +101,13 @@ describe("evaluateSignupGate", () => {
     };
     const result = evaluateSignupGate({
       policy,
-      envSignupMode: "open",
-      envAllowedDomains: [],
       email,
       ...verified,
     });
     expect(result).toEqual({ allowed: false, reason: "signup_closed" });
   });
 
-  test("policy row wins outright: selfSignup open ignores env closed", () => {
+  test("an explicit open row allows", () => {
     const policy: AccessPolicy = {
       selfSignup: "open",
       allowedDomains: [],
@@ -143,8 +115,6 @@ describe("evaluateSignupGate", () => {
     };
     const result = evaluateSignupGate({
       policy,
-      envSignupMode: "closed",
-      envAllowedDomains: [],
       email,
       ...verified,
     });
@@ -159,8 +129,6 @@ describe("evaluateSignupGate", () => {
     };
     const result = evaluateSignupGate({
       policy,
-      envSignupMode: "closed",
-      envAllowedDomains: [],
       email,
       ...verified,
     });
@@ -175,8 +143,6 @@ describe("evaluateSignupGate", () => {
     };
     const result = evaluateSignupGate({
       policy,
-      envSignupMode: "open",
-      envAllowedDomains: [],
       email,
       ...verified,
     });
@@ -191,8 +157,6 @@ describe("evaluateSignupGate", () => {
     };
     const result = evaluateSignupGate({
       policy,
-      envSignupMode: "closed",
-      envAllowedDomains: [],
       email,
       emailVerified: false,
       allowUnverifiedEmails: false,
@@ -208,8 +172,6 @@ describe("evaluateSignupGate", () => {
     };
     const result = evaluateSignupGate({
       policy,
-      envSignupMode: "closed",
-      envAllowedDomains: [],
       email,
       emailVerified: false,
       allowUnverifiedEmails: false,
@@ -217,19 +179,7 @@ describe("evaluateSignupGate", () => {
     expect(result).toEqual({ allowed: false, reason: "email_unverified" });
   });
 
-  test("exploit: an unverified email cannot pass the env bootstrap", () => {
-    const result = evaluateSignupGate({
-      policy: undefined,
-      envSignupMode: "open",
-      envAllowedDomains: [],
-      email,
-      emailVerified: false,
-      allowUnverifiedEmails: false,
-    });
-    expect(result).toEqual({ allowed: false, reason: "email_unverified" });
-  });
-
-  test("the ALLOW_UNVERIFIED_EMAILS dev escape hatch restores the normal decision", () => {
+  test("the allowUnverifiedEmails dev escape hatch restores the normal decision", () => {
     const policy: AccessPolicy = {
       selfSignup: "open",
       allowedDomains: [],
@@ -237,8 +187,6 @@ describe("evaluateSignupGate", () => {
     };
     const result = evaluateSignupGate({
       policy,
-      envSignupMode: "closed",
-      envAllowedDomains: [],
       email,
       emailVerified: false,
       allowUnverifiedEmails: true,
@@ -249,8 +197,6 @@ describe("evaluateSignupGate", () => {
   test("email-verification is checked before policy, so it also fails closed for selfSignup off", () => {
     const result = evaluateSignupGate({
       policy: { ...DEFAULT_ACCESS_POLICY, selfSignup: "off" },
-      envSignupMode: "closed",
-      envAllowedDomains: [],
       email,
       emailVerified: false,
       allowUnverifiedEmails: false,

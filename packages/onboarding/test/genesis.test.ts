@@ -57,20 +57,19 @@ function accessPolicy(
   overrides?: Partial<
     Pick<
       NonNullable<GenesisOrJoinArgs["accessPolicy"]>,
-      "envSignupMode" | "envAllowedDomains" | "allowUnverifiedEmails"
+      "allowUnverifiedEmails"
     >
   >,
 ): NonNullable<GenesisOrJoinArgs["accessPolicy"]> {
   return {
-    // Env-only evaluation: no operator tenant is threaded here, so the
-    // store is never read — a throwing store proves that.
+    // No operator tenant is threaded here, so the store is never read —
+    // a throwing store proves that. With no policy row the closed
+    // defaults apply.
     store: {
       getPolicy: async () => {
-        throw new Error("signup gate must evaluate env-only here");
+        throw new Error("signup gate must evaluate rowless here");
       },
     } as unknown as AccessPolicyStore,
-    envSignupMode: "open",
-    envAllowedDomains: [],
     allowUnverifiedEmails: false,
     ...overrides,
   };
@@ -136,9 +135,10 @@ function argsFor(partial: {
     userEmailVerified: partial.userEmailVerified ?? true,
     defaultTenantSlug: TENANT_SLUG,
     tenancy: partial.tenancy,
-    accessPolicy: partial.accessPolicy ?? accessPolicy(),
     log: partial.log ?? collector().log,
   };
+  if (partial.accessPolicy !== undefined)
+    args.accessPolicy = partial.accessPolicy;
   if (partial.displayName !== undefined) args.displayName = partial.displayName;
   return args;
 }
@@ -238,7 +238,7 @@ describe("genesisOrJoinHubSignup", () => {
             joins,
           }),
           displayName: "Bob",
-          accessPolicy: accessPolicy({ envSignupMode: "closed" }),
+          accessPolicy: accessPolicy(),
         }),
       ),
     ).rejects.toMatchObject({
@@ -247,31 +247,6 @@ describe("genesisOrJoinHubSignup", () => {
       errorKind: "permanent",
     });
     expect(joins).toEqual([]);
-  });
-
-  test("an open hub still joins with a closed-store policy absent: env decides", async () => {
-    const joins: { tenantId: string; userId: string; roleName: string }[] = [];
-    const api: ApiCall = async (method, path) => {
-      if (method === "GET" && path === "/api/me/principals") {
-        return principalsResponse([]);
-      }
-      throw new Error(`unexpected call: ${method} ${path}`);
-    };
-
-    const result = await genesisOrJoinHubSignup(
-      argsFor({
-        api,
-        tenancy: tenancy({
-          users: 2,
-          tenants: 1,
-          root: { id: TENANT_ID, slug: TENANT_SLUG },
-          joins,
-        }),
-      }),
-    );
-
-    expect(result.kind).toBe("joined");
-    expect(joins).toHaveLength(1);
   });
 
   test("genesis rejects an unverified email unless allowUnverifiedEmails", async () => {
@@ -289,6 +264,7 @@ describe("genesisOrJoinHubSignup", () => {
           tenancy: tenancy({ users: 1, tenants: 0, root: null }),
           displayName: "Acme",
           userEmailVerified: false,
+          accessPolicy: accessPolicy(),
         }),
       ),
     ).rejects.toMatchObject({
@@ -304,44 +280,6 @@ describe("genesisOrJoinHubSignup", () => {
         displayName: "Acme",
         userEmailVerified: false,
         accessPolicy: accessPolicy({ allowUnverifiedEmails: true }),
-      }),
-    );
-    expect(result.kind).toBe("genesis");
-  });
-
-  test("genesis enforces the env domain allowlist for the first user", async () => {
-    const probeOnly: ApiCall = async (method, path) => {
-      if (method === "GET" && path === "/api/me/principals") {
-        return principalsResponse([]);
-      }
-      throw new Error(`unexpected call: ${method} ${path}`);
-    };
-
-    await expect(
-      genesisOrJoinHubSignup(
-        argsFor({
-          api: probeOnly,
-          tenancy: tenancy({ users: 1, tenants: 0, root: null }),
-          displayName: "Acme",
-          userEmail: "alice@example.com",
-          accessPolicy: accessPolicy({ envAllowedDomains: ["corp.com"] }),
-        }),
-      ),
-    ).rejects.toMatchObject({
-      name: "ProvisionError",
-      code: "signup_not_allowed",
-    });
-
-    const result = await genesisOrJoinHubSignup(
-      argsFor({
-        api: genesisApi(),
-        tenancy: tenancy({ users: 1, tenants: 0, root: null }),
-        displayName: "Acme",
-        userEmail: "alice@corp.com",
-        accessPolicy: accessPolicy({
-          envSignupMode: "closed",
-          envAllowedDomains: ["corp.com"],
-        }),
       }),
     );
     expect(result.kind).toBe("genesis");
@@ -561,14 +499,14 @@ describe("genesisOrJoinHubSignup", () => {
   });
 
   test("genesis on an empty hub waives signup_closed but still evaluates the gate", async () => {
-    // signupMode closed: the empty-hub exception waives signup_closed,
-    // so the first verified, domain-allowed user still mints the root.
+    // No policy row: the empty-hub exception waives signup_closed, so
+    // the first verified user still mints the root.
     const result = await genesisOrJoinHubSignup(
       argsFor({
         api: genesisApi(),
         tenancy: tenancy({ users: 1, tenants: 0, root: null }),
         displayName: "Acme",
-        accessPolicy: accessPolicy({ envSignupMode: "closed" }),
+        accessPolicy: accessPolicy(),
       }),
     );
     expect(result.kind).toBe("genesis");

@@ -6,53 +6,45 @@ import { createInMemoryAccessPolicyStore } from "./store";
 const verified = { emailVerified: true, allowUnverifiedEmails: false };
 
 describe("checkSignupGate", () => {
-  test("no operator tenant configured -> only the env flag can gate", async () => {
+  test("no operator tenant configured -> closed defaults", async () => {
     const store = createInMemoryAccessPolicyStore();
     const result = await checkSignupGate({
       store,
-      envSignupMode: "closed",
-      envAllowedDomains: [],
       email: "person@acme.example",
       ...verified,
     });
     expect(result).toEqual({ allowed: false, reason: "signup_closed" });
   });
 
-  test("operator tenant with no policy row yet -> env flag bootstraps", async () => {
+  test("operator tenant with no policy row yet -> closed defaults", async () => {
     const store = createInMemoryAccessPolicyStore();
     const result = await checkSignupGate({
       store,
       operatorTenantId: "tnt_operator",
-      envSignupMode: "open",
-      envAllowedDomains: [],
       email: "person@acme.example",
       ...verified,
     });
-    expect(result).toEqual({ allowed: true, reason: "env_open" });
+    expect(result).toEqual({ allowed: false, reason: "signup_closed" });
   });
 
-  test("operator tenant with an explicit closed row overrides an open env flag", async () => {
+  test("operator tenant with an explicit closed row stays closed", async () => {
     const store = createInMemoryAccessPolicyStore();
     await store.upsertPolicy("tnt_operator", { selfSignup: "off" });
     const result = await checkSignupGate({
       store,
       operatorTenantId: "tnt_operator",
-      envSignupMode: "open",
-      envAllowedDomains: [],
       email: "person@acme.example",
       ...verified,
     });
     expect(result).toEqual({ allowed: false, reason: "signup_closed" });
   });
 
-  test("operator tenant with an explicit open row overrides a closed env flag", async () => {
+  test("operator tenant with an explicit open row allows", async () => {
     const store = createInMemoryAccessPolicyStore();
     await store.upsertPolicy("tnt_operator", { selfSignup: "open" });
     const result = await checkSignupGate({
       store,
       operatorTenantId: "tnt_operator",
-      envSignupMode: "closed",
-      envAllowedDomains: [],
       email: "person@acme.example",
       ...verified,
     });
@@ -65,8 +57,6 @@ describe("checkSignupGate", () => {
     const result = await checkSignupGate({
       store,
       operatorTenantId: "tnt_operator",
-      envSignupMode: "closed",
-      envAllowedDomains: [],
       email: "person@acme.example",
       ...verified,
     });
@@ -79,8 +69,6 @@ describe("checkSignupGate", () => {
     const result = await checkSignupGate({
       store,
       operatorTenantId: "tnt_operator",
-      envSignupMode: "closed",
-      envAllowedDomains: [],
       email: "attacker@acme.example",
       emailVerified: false,
       allowUnverifiedEmails: false,
@@ -88,14 +76,12 @@ describe("checkSignupGate", () => {
     expect(result).toEqual({ allowed: false, reason: "email_unverified" });
   });
 
-  test("ALLOW_UNVERIFIED_EMAILS opt-out restores the ordinary decision", async () => {
+  test("allowUnverifiedEmails opt-out restores the ordinary decision", async () => {
     const store = createInMemoryAccessPolicyStore();
     await store.upsertPolicy("tnt_operator", { selfSignup: "open" });
     const result = await checkSignupGate({
       store,
       operatorTenantId: "tnt_operator",
-      envSignupMode: "closed",
-      envAllowedDomains: [],
       email: "dev@acme.example",
       emailVerified: false,
       allowUnverifiedEmails: true,

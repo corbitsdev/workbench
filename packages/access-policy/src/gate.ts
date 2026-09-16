@@ -9,10 +9,8 @@ export type SignupGateCheckArgs = {
   /** The tenant a fresh personal bench would be parented under, if
    * any — the same `operatorTenantId` the onboarding hook already
    * threads into tenant creation. No operator tenant means there is no
-   * tenant to hold a policy row, so only the env flag can gate. */
+   * tenant to hold a policy row, so the closed defaults apply. */
   readonly operatorTenantId?: string;
-  readonly envSignupMode: "open" | "closed";
-  readonly envAllowedDomains: readonly string[];
   readonly email: string;
   readonly emailVerified: boolean;
   readonly allowUnverifiedEmails: boolean;
@@ -22,7 +20,7 @@ export type SignupGateCheckArgs = {
  * The one signup-gate check the first-login hook calls before minting a
  * personal bench. Looks up whether the operator tenant carries an
  * explicit policy row; if so that row decides outright, otherwise the
- * env flag bootstraps.
+ * closed defaults apply.
  */
 export async function checkSignupGate(
   args: SignupGateCheckArgs,
@@ -34,8 +32,6 @@ export async function checkSignupGate(
   }
   return evaluateSignupGate({
     policy,
-    envSignupMode: args.envSignupMode,
-    envAllowedDomains: args.envAllowedDomains,
     email: args.email,
     emailVerified: args.emailVerified,
     allowUnverifiedEmails: args.allowUnverifiedEmails,
