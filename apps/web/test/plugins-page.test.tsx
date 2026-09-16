@@ -96,8 +96,6 @@ function stubFetch(
       return Promise.resolve(json({ data: mcpPresets }));
     if (path.includes("/api/me/principals"))
       return Promise.resolve(json(membership));
-    if (path.includes("/api/workbench-tenancies/kinds"))
-      return Promise.resolve(json({ workbenchTenantIds: [] }));
     if (path.includes("/credentials/resolve/GitHub")) {
       return Promise.resolve(
         json({
@@ -304,8 +302,6 @@ describe("PluginsRoute", () => {
       const path = typeof input === "string" ? input : String(input);
       if (path.includes("/api/me/principals"))
         return Promise.resolve(json(membership));
-      if (path.includes("/api/workbench-tenancies/kinds"))
-        return Promise.resolve(json({ workbenchTenantIds: [] }));
       if (path.includes("/credentials/resolve/OpenRouter")) {
         return Promise.resolve(
           json({
@@ -589,8 +585,6 @@ describe("PluginsRoute", () => {
         return Promise.resolve(new Response(null, { status: 204 }));
       if (path.includes("/api/me/principals"))
         return Promise.resolve(json(membership));
-      if (path.includes("/api/workbench-tenancies/kinds"))
-        return Promise.resolve(json({ workbenchTenantIds: [] }));
       if (path.includes("/credentials/resolve/GitHub")) {
         if (deferCredentialResolves) {
           return new Promise<Response>((resolve) => {
@@ -772,8 +766,6 @@ describe("PluginsRoute refresh-on-visibility effect", () => {
         return Promise.resolve(json({ data: [] }));
       if (path.includes("/api/me/principals"))
         return Promise.resolve(json(membership));
-      if (path.includes("/api/workbench-tenancies/kinds"))
-        return Promise.resolve(json({ workbenchTenantIds: [] }));
       if (path.includes("/credentials/resolve/GitHub")) {
         resolveGithubCalls += 1;
         return Promise.resolve(json(null, 404));

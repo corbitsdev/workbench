@@ -78,8 +78,6 @@ function stubFetch(runsBody: { data: readonly unknown[] }): RecordedCall[] {
     calls.push({ path });
     if (path.includes("/api/me/principals"))
       return Promise.resolve(json(membership));
-    if (path.includes("/api/workbench-tenancies/kinds"))
-      return Promise.resolve(json({ workbenchTenantIds: [] }));
     if (path.includes("/top-level-runs"))
       return Promise.resolve(json({ data: runsBody.data, nextCursor: null }));
     if (path.includes("/insights/usage"))

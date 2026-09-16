@@ -1,7 +1,7 @@
 {
   "name": "@corbits/bench-ui",
   "private": true,
-  "description": "Bench tenancy helpers: membership kind classification, workbench-tenancy client, and shared tenancy contracts over Interchange's native tenant model",
+  "description": "Bench tenancy helpers: raw-identifier guard and shared tenancy contracts over Interchange's native tenant model",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",

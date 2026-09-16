@@ -6,6 +6,19 @@ hierarchy (`tenant.parentId`). This document describes the model, the seams
 `@corbits/chat` owns because no native route covers them, and the gaps
 still open upstream.
 
+> Cutover note: the server-side surface this document describes —
+> `WorkbenchTenancyStore` (`createWorkbenchTenant`,
+> `compensateWorkbenchTenant`, `listChildWorkbenchTenancies`,
+> `moveWorkbenchTenancy`, `getTenantPrincipalByRefId`), the
+> `workbench_tenancy` table, and `POST /api/workbench-tenancies/kinds` —
+> was removed in the thread-native client-driver cutover. The body below is
+> kept as the record of that design; the live seams are the client-held
+> workbench list (`apps/web/src/needs-list.ts`'s `childTenantStore`),
+> bench selection by human-assigned name (`isBenchMembership` in
+> `apps/web/src/bench-context.tsx`, backed by `isRawIdentifier` from
+> `@corbits/bench-ui`), and stock tenant/thread routes with
+> participant-filtered threads.
+
 ## Why workbenches are tenants
 
 A workbench needs its own membership and permissions — who can post, who can

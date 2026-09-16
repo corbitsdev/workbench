@@ -239,9 +239,6 @@ describe("RoutineDetailRoute", () => {
       if (url.includes("/api/me/principals")) {
         return jsonResponse({ data: memberships, nextCursor: null });
       }
-      if (url.includes("/api/workbench-tenancies/kinds")) {
-        return jsonResponse({ workbenchTenantIds: [] });
-      }
       const scheduledMatch = url.match(
         /\/api\/tenants\/([^/]+)\/workflows\/scheduled$/,
       );

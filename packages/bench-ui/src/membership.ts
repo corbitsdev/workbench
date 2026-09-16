@@ -1,5 +1,5 @@
-// Pure helpers still needed by the tenancy-kind discriminator. Display-
-// name and slug helpers left with the deleted switcher / member list.
+// Raw platform-id detection for display decisions. Display-name and slug
+// helpers left with the deleted switcher / member list.
 
 /** Every platform id prefix this UI must never render verbatim. Mirrors the
  * same floor `packages/chat-ui` enforces over its own fixture surface. */
