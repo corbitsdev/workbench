@@ -61,15 +61,14 @@ inherit (CL-7233).
 
 A background loop has no request to borrow cookies from, and everything
 `seedTenant` drives speaks the hub's own HTTP API. The provisioner takes
-`sessionFor` as a seam; the hub fills it (`apps/hub/src/bench-session.ts`)
-by minting the bench owner's own session in process.
+`sessionFor` as a seam for the composition root to fill by minting the
+bench owner's own session in process. The hub currently has no filler
+wired for it.
 
 It has to be the owner's session. The hub resolves a tenant by looking
 up a principal for that user, and rights do not flow from a parent org
 down to a child bench — an administrator acting on someone else's
-personal bench is refused outright. These sessions are tagged with a
-`workbench-bench-provisioner` user agent so they are never mistaken for
-a human sign-in, and are cached per user rather than minted per tick.
+personal bench is refused outright.
 
 ## What someone sees
 
