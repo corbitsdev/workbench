@@ -223,34 +223,6 @@ const InertWorkflowDefinitionSchema = type({
   "credentialBindings?": CredentialBinding.array(),
 });
 
-/**
- * The launch-relevant subset of a LIVE serialized `WorkflowDefinition`'s
- * step — the pre-projection shape, where the inference chain is still
- * nested at `agent.inference.sources`. This is not an alternative source
- * for a deployed definition's body: it serves the one caller that builds
- * its definition in process and launches it in the same breath (the
- * workbench host, `buildWorkbenchHostWorkflow`), which has the live
- * object in hand and never round-trips through a deploy freeze.
- */
-const LiveWorkflowStepSchema = type({
-  kind: "'step'",
-  agent: {
-    systemPrompt: "string",
-    "toolPackagePins?": ToolPackagePin.array(),
-    inference: {
-      sources: type({ "model?": "string | null" }).array(),
-    },
-  },
-});
-
-const LiveWorkflowDefinitionSchema = type({
-  id: "string",
-  stepOrder: "string[]",
-  steps: "Record<string, unknown>",
-  "grantRequirements?": GrantRequirement.array(),
-  "credentialBindings?": CredentialBinding.array(),
-});
-
 export const FoldedBodySchema = type({
   systemPrompt: "string",
   toolPackagePins: ToolPackagePin.array(),
@@ -297,45 +269,6 @@ export function readFoldedBody(
   if (foldedBody instanceof type.errors) {
     throw new Error(
       `definition ${definition.id} produced an invalid folded body: ${foldedBody.summary}`,
-    );
-  }
-  return foldedBody;
-}
-
-/**
- * Reads the launch body out of a live serialized `WorkflowDefinition` —
- * the in-process launch path described on `LiveWorkflowStepSchema`.
- * Unlike the projection, a live definition still carries its own
- * `grantRequirements`, so nothing is passed in beside it.
- */
-export function readLiveFoldedBody(raw: unknown): FoldedBody {
-  const definition = LiveWorkflowDefinitionSchema(raw);
-  if (definition instanceof type.errors) {
-    throw new Error(`live definition is malformed: ${definition.summary}`);
-  }
-  const [stepId, ...rest] = definition.stepOrder;
-  if (stepId === undefined || rest.length > 0) {
-    throw new MultiStepFoldUnsupportedError(
-      definition.id,
-      definition.stepOrder.length,
-    );
-  }
-  const step = LiveWorkflowStepSchema(definition.steps[stepId]);
-  if (step instanceof type.errors) {
-    throw new Error(
-      `live definition ${definition.id} step ${stepId} is not a step primitive: ${step.summary}`,
-    );
-  }
-  const foldedBody = FoldedBodySchema({
-    systemPrompt: step.agent.systemPrompt,
-    toolPackagePins: step.agent.toolPackagePins ?? [],
-    grantRequirements: definition.grantRequirements ?? [],
-    credentialBindings: definition.credentialBindings ?? [],
-    model: step.agent.inference.sources[0]?.model ?? null,
-  });
-  if (foldedBody instanceof type.errors) {
-    throw new Error(
-      `live definition ${definition.id} produced an invalid folded body: ${foldedBody.summary}`,
     );
   }
   return foldedBody;

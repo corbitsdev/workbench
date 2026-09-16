@@ -129,7 +129,6 @@ export {
   createInMemoryTurnClaimStore,
 } from "./turn-claims";
 export type { TurnClaim, TurnClaimStore, TurnClaimToken } from "./turn-claims";
-export { workbenchLaunchPersistExtra } from "./standalone-launch";
 export {
   AGENT_DM_DEFINITION_ID_KEY,
   AGENT_DM_KIND,

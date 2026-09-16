@@ -33,7 +33,6 @@ export {
   authoredDefinitionCandidates,
   readDefinitionProjection,
   readFoldedBody,
-  readLiveFoldedBody,
   resolveNewestProjectedDefinition,
   DefinitionProjectionMissingError,
   MultiStepFoldUnsupportedError,

@@ -26,14 +26,6 @@ const INERT_PROJECTION = {
   credentialBindings: [],
 };
 
-const EXPECTED_FOLDED_BODY = {
-  systemPrompt: "you are a webhook-triggered agent",
-  toolPackagePins: [],
-  grantRequirements: [],
-  credentialBindings: [],
-  model: "claude-sonnet-5",
-};
-
 const DEFAULT_VISIBLE_OFFERINGS = [
   {
     offering: { id: "off_1", priority: 0 },
@@ -154,8 +146,6 @@ type PrepareArgs = {
   readonly toolPackagePins?: readonly unknown[];
 };
 
-let persistLaunchCalls: unknown[] = [];
-let recordLaunchSourcesCalls: unknown[] = [];
 let resolveRefCalls: unknown[] = [];
 let prepareCalls: PrepareArgs[] = [];
 let sendUserMessageCalls: unknown[] = [];
@@ -173,12 +163,6 @@ function baseDeps() {
         cryptoGetKeys.push(key);
         return {} as never;
       },
-    },
-    persistLaunch: async (input: unknown) => {
-      persistLaunchCalls.push(input);
-    },
-    recordLaunchSources: async (input: unknown) => {
-      recordLaunchSourcesCalls.push(input);
     },
     repoStore: {
       resolveRef: async (...args: unknown[]) => {
@@ -209,8 +193,6 @@ function baseDeps() {
 }
 
 function resetLaunchSpies() {
-  persistLaunchCalls = [];
-  recordLaunchSourcesCalls = [];
   resolveRefCalls = [];
   prepareCalls = [];
   sendUserMessageCalls = [];
@@ -376,32 +358,12 @@ describe("launchWebhookTrigger", () => {
     expect(prepareCalls[0]?.toolPackagePins).toBeUndefined();
   });
 
-  test("persists the relaunch mapping against Interchange's returned run id", async () => {
-    resetLaunchSpies();
-
-    const result = await launchWebhookTrigger(baseDeps(), TRIGGER, {
-      status: "ok",
-    });
-
-    expect(persistLaunchCalls).toEqual([
-      {
-        tenantId: "ten_1",
-        instanceId: INTERCHANGE_RUN_ID,
-        foldedBody: EXPECTED_FOLDED_BODY,
-      },
-    ]);
-    expect(recordLaunchSourcesCalls).toEqual([
-      { instanceId: INTERCHANGE_RUN_ID, sourcesDigest: "off_1\0off_2" },
-    ]);
-    expect(result.instanceId).toBe(INTERCHANGE_RUN_ID);
-    expect(cryptoGetKeys).toEqual([INTERCHANGE_RUN_ID]);
-  });
-
   // CL-6534 part 1: a webhook delivery is a one-off native run — the
   // native `workflow_run` row Interchange commits answers identity, so
-  // launch must not write a `workbench_launch` mirror row (nor its
-  // sources digest) for it.
-  test("writes no workbench_launch mirror row for the one-off native run", async () => {
+  // launch provisions it and delivers the opening mail with no
+  // `workbench_launch` mirror write (the deps surface no longer carries
+  // `persistLaunch`/`recordLaunchSources` at all).
+  test("provisions the native run with no workbench_launch mirror write", async () => {
     resetLaunchSpies();
 
     const result = await launchWebhookTrigger(baseDeps(), TRIGGER, {
@@ -409,7 +371,8 @@ describe("launchWebhookTrigger", () => {
     });
 
     expect(result.instanceId).toBe(INTERCHANGE_RUN_ID);
-    expect(persistLaunchCalls).toEqual([]);
-    expect(recordLaunchSourcesCalls).toEqual([]);
+    expect(prepareCalls).toHaveLength(1);
+    expect(sendUserMessageCalls).toHaveLength(1);
+    expect(cryptoGetKeys).toEqual([INTERCHANGE_RUN_ID]);
   });
 });

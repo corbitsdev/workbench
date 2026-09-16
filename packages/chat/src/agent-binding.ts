@@ -380,10 +380,9 @@ export async function repointBinding(
 
 /**
  * Records the inference chain a deploy just pinned for the participant
- * `stableId` names — a wake, or a standalone launch whose mapping row
- * `workbenchLaunchPersistExtra` wrote before the deploy resolved — so
- * the next send can tell whether the tenant's catalog (a rotated key, a
- * moved endpoint) has moved on from it since.
+ * `stableId` names — a wake or a relaunch — so the next send can tell
+ * whether the tenant's catalog (a rotated key, a moved endpoint) has
+ * moved on from it since.
  */
 export async function recordSourcesDigest(
   db: DB["db"],
