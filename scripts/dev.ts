@@ -140,15 +140,11 @@ const hubApp: App = {
   dir: join(repoRoot, "apps", "hub"),
   command: ["bun", "--watch", "--env-file=../../.env", "src/index.ts"],
 };
-// Zero-edit local bootstrap: when the operator has not set a signup
-// mode, open it so seedDevAccount can create alice. Production hub
-// still defaults closed when this script is not the launcher.
-// Explicit WORKBENCH_SIGNUP in .env always wins (bun loads env-file).
+// Local bootstrap needs no signup env: stock Interchange composition
+// leaves self-serve signup ungated (rate-limited only), so seedDevAccount
+// below can always register alice on a fresh checkout.
 function mergeHubEnv(extra: Record<string, string>): void {
   hubApp.env = { ...hubApp.env, ...extra };
-}
-if (process.env["WORKBENCH_SIGNUP"] === undefined) {
-  mergeHubEnv({ WORKBENCH_SIGNUP: "open" });
 }
 const localMemoryEmbed = localDevMemoryEmbedEnv(process.env, {
   hasNativeOllama: Bun.which("ollama") !== null,
@@ -354,12 +350,12 @@ async function requireDatabaseSetUp(config: HubConfig): Promise<void> {
  * Create the administrator account once the hub answers, so a fresh
  * checkout can sign in immediately. Runs beside the apps; unset
  * identity variables fall back to the same defaults the CLI uses, so a
- * zero-edit .env still yields a signable account when signup is open.
+ * zero-edit .env still yields a signable account: stock composition
+ * leaves self-serve signup ungated, so fresh registration always works.
  * "Already exists" is a skip, not an error — re-runs stay quiet.
  *
- * Sign-in is tried first so a closed signup mode still works once the
- * admin has been created. Fresh registration needs WORKBENCH_SIGNUP=open
- * (local `bun run dev` opens it when the env var is unset — see apps).
+ * Sign-in is tried first so a re-run against an existing account skips
+ * registration entirely.
  */
 async function seedDevAccount(config: HubConfig): Promise<void> {
   const email = process.env["HUB_ADMIN_EMAIL"] ?? "alice@example.com";
@@ -422,15 +418,6 @@ async function seedDevAccount(config: HubConfig): Promise<void> {
     if (/exist/i.test(body)) {
       console.log(`[dev] account ${email} already exists`);
       return;
-    }
-    if (signUp.status === 403 && /signup_closed/i.test(body)) {
-      fail(
-        [
-          `[dev] could not seed account ${email}: self-serve signup is closed`,
-          "and the account does not exist yet. Set WORKBENCH_SIGNUP=open in",
-          ".env, restart, then re-run `bun run dev` once.",
-        ].join(" "),
-      );
     }
     fail(`[dev] could not seed account ${email}: ${signUp.status} ${body}`);
   } catch (error) {

@@ -7,7 +7,7 @@
 // → a tester joins the genesis root as a plain member (the genesis
 // path — first signup on a truly empty hub mints the root — is also
 // covered in-process by `apps/hub/test/signup-genesis.test.ts`) →
-// occupied closed signup is refused → the root's owner (alice)
+// occupied signup stays ungated → the root's owner (alice)
 // connects a real inference credential through the key path
 // (`POST /api/onboarding/complete`'s own machinery, called directly —
 // see the stubbing note below), which fully seeds every default
@@ -208,37 +208,19 @@ describe.skipIf(databaseUrl === undefined)(
         return { cookies: res.cookies, userId };
       });
 
-      // Occupied closed signup: a hub with WORKBENCH_SIGNUP=closed
-      // refuses a brand-new person once the hub is no longer empty —
-      // the empty-hub exception already admitted alice. Proven against
-      // a short-lived hub of its own so the rest of this scenario's
-      // open hub never muddies the assertion.
-      await hop("closed-by-default signup is respected", async () => {
-        const closedHub = await startHub({
-          databaseUrl: url,
-          port: freePort(),
-          sessionSecret: Buffer.from(
-            crypto.getRandomValues(new Uint8Array(32)),
-          ).toString("hex"),
-          dataDir: await tempDir("e2e-local-rip-closed-hub-data-"),
-          extraEnv: { WORKBENCH_SIGNUP: "closed" },
+      // Stock composition leaves self-serve signup ungated: a brand-new
+      // person can still sign up once the hub is occupied (there is no
+      // signup mode left to close). Proven against the main hub itself,
+      // so no second boot is needed.
+      await hop("signup stays ungated once the hub is occupied", async () => {
+        const res = await api(hub.baseUrl, "POST", "/api/auth/sign-up/email", {
+          name: "Open Signup Tester",
+          email: `local-rip-open-${crypto.randomUUID()}@example.invalid`,
+          password: `pw-${crypto.randomUUID()}`,
         });
-        try {
-          const res = await api(
-            closedHub.baseUrl,
-            "POST",
-            "/api/auth/sign-up/email",
-            {
-              name: "Closed Signup Tester",
-              email: `local-rip-closed-${crypto.randomUUID()}@example.invalid`,
-              password: `pw-${crypto.randomUUID()}`,
-            },
-          );
-          expectStatus("closed-signup sign-up attempt", res, 403);
-          const body = res.data as { error: string };
-          expect(body.error).toBe("signup_closed");
-        } finally {
-          await closedHub.stop();
+        expectStatus("open-signup sign-up attempt", res, 200);
+        if (res.cookies.length === 0) {
+          throw new Error("open-signup sign-up returned no session cookie");
         }
       });
 
