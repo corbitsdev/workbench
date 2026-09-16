@@ -742,6 +742,17 @@ async function plantDefaultSkills(
       log(`skill ${skill.name} already exists (skipped)`);
       continue;
     }
+    if (created.status === 404) {
+      // Stock Interchange cutover (hub fd3a43e2): the skills mount is
+      // gone, so the plant endpoint 404s with the rest. Bounded and
+      // loud — warn on the real console (the pipeline `log` callback is
+      // diagnostic and may be swallowed) and stop trying further
+      // default skills. Every other status keeps its old meaning.
+      console.warn(
+        `[seed] default skill "${skill.name}" unavailable: POST /api/tenants/${tenantId}/skills returned 404 (skills surface removed by the stock cutover); skipping remaining default skills`,
+      );
+      return;
+    }
     if (created.status !== 201) {
       throw new HubApiError(
         `the hub rejected the default skill "${skill.name}" with status ${created.status}: ${JSON.stringify(created.data)}`,

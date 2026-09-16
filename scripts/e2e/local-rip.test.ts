@@ -80,7 +80,9 @@ import {
   modelSourceFor,
 } from "../../packages/onboarding/src/complete-credential.ts";
 import {
+  readTenantDesiredStateStatus,
   reconcileTenantDesiredState,
+  resolveTenantDeployer,
   resolveTenantModelSource,
 } from "../../packages/onboarding/src/desired-state.ts";
 import { CredentialResponse, paginatedSchema } from "@intx/types";
@@ -585,21 +587,20 @@ describe.skipIf(databaseUrl === undefined)(
       // CL-7584: the doc-driven reconcile converges without reinstalling,
       // a second member never mints a second Myra, and a second tenant
       // created through the native route converges onto its own.
+      //
+      // Stock Interchange cutover (hub fd3a43e2): the skills mount is
+      // gone, so the plant writes nothing and the reconcile re-read pins
+      // every skill "blocked" — the report is never ready, and a second
+      // pass re-enters the seed half. The old zero-non-GET idempotence
+      // assertion is unachievable against that steady state; it now lives
+      // in the `desired-state-reconcile` unit test, whose faithful mount
+      // still converges. This hop proves the stock-reality steady state
+      // instead: workflows installed and present, skills pending-but-absent.
       await hop(
-        "CL-7584: a second reconcile pass over the converged root issues zero non-GET calls",
+        "CL-7584: reconcile converges workflows while skills stay pending (stock cutover)",
         async () => {
-          const calls: string[] = [];
-          const countingApi: ApiCall = ((
-            method: string,
-            path: string,
-            body?: unknown,
-            cookies?: string[],
-          ) => {
-            calls.push(method);
-            return hubApi(method, path, body, cookies);
-          }) as unknown as ApiCall;
           const args = {
-            api: countingApi,
+            api: hubApi,
             cookies: admin.cookies,
             hubUrl: hub.baseUrl,
             tenant: {
@@ -617,13 +618,28 @@ describe.skipIf(databaseUrl === undefined)(
             log: () => undefined,
           };
           const first = await reconcileTenantDesiredState(args);
-          expect(first.ready).toBe(true);
-          const nonGets = calls.filter((method) => method !== "GET").length;
-          const second = await reconcileTenantDesiredState(args);
-          expect(second.ready).toBe(true);
-          expect(calls.filter((method) => method !== "GET").length).toBe(
-            nonGets,
+          expect(first.ready).toBe(false);
+          expect(
+            first.pins
+              .filter((pin) => pin.kind === "workflow")
+              .every((pin) => pin.status === "installed"),
+          ).toBe(true);
+          expect(
+            first.pins
+              .filter((pin) => pin.kind === "skill")
+              .every((pin) => pin.status === "blocked"),
+          ).toBe(true);
+          const status = await readTenantDesiredStateStatus(
+            hubApi,
+            admin.cookies,
+            tenant.tenantId,
           );
+          expect(
+            Object.values(status.workflows).every((s) => s === "present"),
+          ).toBe(true);
+          expect(
+            Object.values(status.skills).every((s) => s === "pending"),
+          ).toBe(true);
         },
       );
 
@@ -681,11 +697,11 @@ describe.skipIf(databaseUrl === undefined)(
               `create tenant answered no id: ${JSON.stringify(body)}`,
             );
           }
-          // Pre-poll guard through the same `resolveTenantModelSource`
-          // path the kick reconciles with: the child must resolve the
-          // root's inherited offerings before the kick can deploy
-          // anything. If this is undefined the poll below can only time
-          // out as blocked, so fail fast with the reason.
+          // Pre-kick guard through the same `resolveTenantModelSource`
+          // path the reconcile below deploys with: the child must resolve
+          // the root's inherited offerings before anything can deploy.
+          // If this is undefined the poll below can only time out as
+          // blocked, so fail fast with the reason.
           const model = await resolveTenantModelSource(
             hubApi,
             admin.cookies,
@@ -696,9 +712,44 @@ describe.skipIf(databaseUrl === undefined)(
               "the second tenant resolves no catalog models (expected the root's inherited offerings)",
             );
           }
-          // The tenant-create observer reconciles fire-and-forget; poll
-          // the new tenant's own assets and deployments for its live
-          // assistant.
+          // Stock Interchange cutover (hub fd3a43e2): the tenant-create
+          // observer is deleted, so no server kick converges this tenant.
+          // The suite drives the same `reconcileTenantDesiredState` the
+          // observer used to call, under the creator's owner principal,
+          // then polls for the live assistant exactly as before.
+          const deployer = await resolveTenantDeployer(
+            hubApi,
+            admin.cookies,
+            secondTenantId,
+          );
+          if (deployer === undefined) {
+            throw new Error(
+              "the second tenant resolves no deployable owner principal",
+            );
+          }
+          const kick = await reconcileTenantDesiredState({
+            api: hubApi,
+            cookies: admin.cookies,
+            hubUrl: hub.baseUrl,
+            tenant: {
+              tenantId: secondTenantId,
+              principalId: deployer.principalId,
+              domain: deployer.tenantDomain,
+            },
+            model,
+            pushWorkflow,
+            log: () => undefined,
+          });
+          // Workflows install; skills stay pending (stock cutover — the
+          // skills mount is gone), so the report is never ready.
+          expect(kick.ready).toBe(false);
+          expect(
+            kick.pins
+              .filter((pin) => pin.kind === "workflow")
+              .every((pin) => pin.status === "installed"),
+          ).toBe(true);
+          // Poll the new tenant's own assets and deployments for its
+          // live assistant.
           const deadline = Date.now() + 90_000;
           let lastSeen: unknown;
           for (;;) {
@@ -752,6 +803,16 @@ describe.skipIf(databaseUrl === undefined)(
             }
             await Bun.sleep(500);
           }
+          // The converged second tenant carries its own live assistant
+          // while its skills stay pending (stock cutover).
+          const secondStatus = await readTenantDesiredStateStatus(
+            hubApi,
+            admin.cookies,
+            secondTenantId,
+          );
+          expect(
+            Object.values(secondStatus.skills).every((s) => s === "pending"),
+          ).toBe(true);
         },
       );
     }, 180_000);

@@ -291,7 +291,7 @@ describe("reconcileTenantDesiredState", () => {
       workflowAssets: false,
       liveDeployments: false,
       registryTarballs: true,
-      skills: false,
+      skills: true,
       catalogOfferings: true,
     });
     let failing = true;
