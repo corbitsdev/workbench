@@ -88,25 +88,36 @@ describeIfDb("createDrizzleRoomMessageStore: listActivity", () => {
           parts: [{ kind: "text", text }],
         });
 
-      // Serial, so the timestamps are strictly increasing and the
-      // "newest" the summary reports is unambiguous.
-      const first = await post(TENANT, BUSY, "msg_busy_1", "first");
+      // `created_at` defaults to `now()` at millisecond precision, so
+      // serial inserts under contention can share one timestamp and a
+      // message lands exactly on the read cursor, dropping out of the
+      // strict-`>` unread count (2-vs-1 / 2-vs-0 flake). Pin explicit
+      // whole-second-apart timestamps so the cursor boundary is
+      // unambiguous regardless of clock granularity or contention.
+      await post(TENANT, BUSY, "msg_busy_1", "first");
       await post(TENANT, BUSY, "msg_busy_2", "second");
-      const newest = await post(TENANT, BUSY, "msg_busy_3", "  third   one ");
+      await post(TENANT, BUSY, "msg_busy_3", "  third   one ");
       await post(TENANT, QUIET, "msg_quiet_1", "only");
       await post(OTHER_TENANT, BUSY, "msg_other_1", "another tenant's");
+
+      const base = Date.parse("2026-01-01T00:00:00.000Z");
+      const at = (offsetSeconds: number): string =>
+        new Date(base + offsetSeconds * 1_000).toISOString();
+      await sql`UPDATE "chat"."workbench_messages" SET "created_at" = ${at(0)}::timestamptz WHERE "id" = 'msg_busy_1'`;
+      await sql`UPDATE "chat"."workbench_messages" SET "created_at" = ${at(1)}::timestamptz WHERE "id" = 'msg_busy_2'`;
+      await sql`UPDATE "chat"."workbench_messages" SET "created_at" = ${at(2)}::timestamptz WHERE "id" = 'msg_busy_3'`;
 
       const activity = await store.listActivity({
         tenantId: TENANT,
         workbenches: [
-          { workbenchId: BUSY, sinceCreatedAt: first.createdAt },
+          { workbenchId: BUSY, sinceCreatedAt: at(0) },
           { workbenchId: QUIET },
           { workbenchId: EMPTY },
         ],
       });
 
       expect(activity[BUSY]).toEqual({
-        lastActivityAt: newest.createdAt,
+        lastActivityAt: at(2),
         unreadCount: 2,
         preview: "third one",
       });
