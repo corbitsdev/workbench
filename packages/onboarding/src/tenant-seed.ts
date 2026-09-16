@@ -745,10 +745,11 @@ async function plantDefaultSkills(
     if (created.status === 404) {
       // Stock Interchange cutover (hub fd3a43e2): the skills mount is
       // gone, so the plant endpoint 404s with the rest. Bounded and
-      // loud — warn on the real console (the pipeline `log` callback is
-      // diagnostic and may be swallowed) and stop trying further
-      // default skills. Every other status keeps its old meaning.
-      console.warn(
+      // loud — log through the pipeline (swallowing is acceptable here;
+      // the reconcile re-read below reports these pins "blocked" on its
+      // own) and stop trying further default skills. Every other status
+      // keeps its old meaning.
+      log(
         `[seed] default skill "${skill.name}" unavailable: POST /api/tenants/${tenantId}/skills returned 404 (skills surface removed by the stock cutover); skipping remaining default skills`,
       );
       return;
