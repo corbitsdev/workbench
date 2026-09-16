@@ -1047,7 +1047,7 @@ async function postApproveBlock(
       mailId,
       turn,
     );
-    const posted = await postRoomMessage(deps, {
+    await postRoomMessage(deps, {
       tenantId: resolved.tenantId,
       workbenchId,
       sender: { name: null, address: resolved.roomAddress },
@@ -1110,7 +1110,7 @@ async function postFinalizedTurnArtifacts(
         workbenchId,
         turnId,
       );
-      const posted = await postRoomMessage(deps, {
+      await postRoomMessage(deps, {
         tenantId: resolved.tenantId,
         workbenchId,
         sender: { name: null, address: resolved.roomAddress },
