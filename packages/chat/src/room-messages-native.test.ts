@@ -178,7 +178,7 @@ describe("createNativeRoomMessageStore", () => {
     const activity = await store.listActivity({
       tenantId: TENANT,
       principalId: READER,
-      workbenches: [{ workbenchId: BENCH, sinceCreatedAt: undefined }],
+      workbenches: [{ workbenchId: BENCH }],
     });
     expect(activity[BENCH]?.unreadCount).toBe(1);
     expect(activity[BENCH]?.lastActivityAt).toBe("2026-09-01T00:00:00.000Z");
@@ -193,6 +193,7 @@ describe("createNativeRoomMessageStore", () => {
       store.insertMessage({
         tenantId: TENANT,
         workbenchId: BENCH,
+        id: "msg_new",
         sender: { name: null, address: "u@mail.test" },
         parts: [],
       }),
@@ -206,7 +207,11 @@ describe("createNativeRoomMessageStore", () => {
       }),
     ).rejects.toThrow();
     await expect(
-      store.deleteMessage({ tenantId: TENANT, messageId: "msg_a" }),
+      store.deleteMessage({
+        tenantId: TENANT,
+        workbenchId: BENCH,
+        messageId: "msg_a",
+      }),
     ).rejects.toThrow();
   });
 });

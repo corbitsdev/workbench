@@ -441,5 +441,7 @@ function pageOfWithCursor(
 export function parentOfFrame(
   frame: Pick<NativeTimelineFrame, "inReplyTo">,
 ): string | undefined {
-  return parentMailMessageId({ inReplyTo: frame.inReplyTo });
+  return parentMailMessageId(
+    frame.inReplyTo === undefined ? {} : { inReplyTo: frame.inReplyTo },
+  );
 }

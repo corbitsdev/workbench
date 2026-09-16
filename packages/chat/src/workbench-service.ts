@@ -194,6 +194,7 @@ export type MintAgentDmDeps = {
     | "deleteWorkbenchSettings"
     | "updateWorkbenchSettings"
     | "listWorkbenchSettings"
+    | "getWorkbenchSettings"
     | "mutateWorkbenchParticipants"
   >;
   readonly platform: LaunchAndJoinAgentDeps["platform"];
@@ -524,7 +525,10 @@ async function reopenAgentDm(
 }
 
 export type LaunchAndJoinAgentDeps = {
-  readonly store: Pick<ChatStore, "mutateWorkbenchParticipants">;
+  readonly store: Pick<
+    ChatStore,
+    "mutateWorkbenchParticipants" | "getWorkbenchSettings"
+  >;
   readonly platform: WorkbenchLauncher;
   /**
    * The mailbox-first fanout for the timeline's `workbench.agent-joined`
@@ -793,6 +797,7 @@ export async function launchAndJoinAgent(
 }
 
 export type PostCannedGreetingDeps = {
+  readonly store: Pick<ChatStore, "getWorkbenchSettings">;
   readonly mailbox: MailboxFanoutDeps;
   readonly parts: MessagePartsStore;
   readonly publish: WorkbenchSubscriberRegistry["publish"];
@@ -919,7 +924,10 @@ export async function postCannedGreeting(
 }
 
 export type JoinHumanParticipantDeps = {
-  readonly store: Pick<ChatStore, "mutateWorkbenchParticipants">;
+  readonly store: Pick<
+    ChatStore,
+    "mutateWorkbenchParticipants" | "getWorkbenchSettings"
+  >;
   readonly mailbox: MailboxFanoutDeps;
   readonly parts: MessagePartsStore;
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
@@ -1040,7 +1048,10 @@ export async function joinHumanParticipant(
 }
 
 export type RemoveWorkbenchParticipantDeps = {
-  readonly store: Pick<ChatStore, "mutateWorkbenchParticipants">;
+  readonly store: Pick<
+    ChatStore,
+    "mutateWorkbenchParticipants" | "getWorkbenchSettings"
+  >;
   readonly mailbox: MailboxFanoutDeps;
   readonly parts: MessagePartsStore;
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
