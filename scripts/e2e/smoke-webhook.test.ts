@@ -28,6 +28,8 @@ import {
   serializeHeartbeatWorkflow,
 } from "../../workflows/heartbeat/src/index.ts";
 import { ensureNoopCatalogOffering } from "../../packages/connections/src/seed-catalog.ts";
+import { publishCorbitsToolsRegistry } from "../../packages/tool-registry-publish/src/publish.ts";
+import { createHubAPI } from "../../packages/hub-api-client/src/index.ts";
 import {
   api,
   connectE2eDb,
@@ -185,6 +187,30 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
             throw new Error(
               `hub exited before deploy; output:\n${hub.output()}`,
             );
+          }
+          // CL-7071 cutover: the launched run's sidecar initialization
+          // resolves its `@corbits` scope pins against the tenant's own
+          // `corbits-tools` package registry — without it the allocation
+          // fails with `sidecar_initialization_failed` and the run never
+          // commits events (no `inference_turn` row). Install the
+          // registry the same way the chat/greeting lanes do, inside the
+          // retry loop because the sidecar dial-in must have completed
+          // before the publish succeeds.
+          const published = await publishCorbitsToolsRegistry({
+            api: createHubAPI(hub.baseUrl),
+            cookies,
+            hubUrl: hub.baseUrl,
+            tenantId,
+            log: () => undefined,
+          });
+          if (!published.success) {
+            if (Date.now() > deadline) {
+              throw new Error(
+                `corbits-tools registry publish failed: ${JSON.stringify(published.summaries)}`,
+              );
+            }
+            await Bun.sleep(200);
+            continue;
           }
           const res = await api(
             hub.baseUrl,
