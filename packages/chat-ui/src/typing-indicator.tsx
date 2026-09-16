@@ -6,7 +6,8 @@
 // forwards that event type (see use-workbench-stream.ts) — so this is wiring
 // an existing read, not new realtime backend.
 
-import { useEffect, useRef, useState } from "react";
+import { CORBITS_MARK_PATH } from "@corbits/react-ui";
+import { useEffect, useId, useRef, useState } from "react";
 
 import type { ParticipantRecord } from "./api";
 import { localPartOf, type CurrentUser } from "./timeline";
@@ -166,6 +167,69 @@ function TypingDotsBubble({ status }: { readonly status: string }) {
   );
 }
 
+function SilkThinkingIndicator({ status }: { readonly status: string }) {
+  const gradientId = useId();
+  const maskId = useId();
+
+  return (
+    <div className="chat-bubble-row chat-typing-row" data-own="false">
+      <div
+        className="chat-silk-thinking-indicator"
+        role="status"
+        aria-label={status}
+      >
+        <svg
+          className="chat-silk-thinking-mark"
+          viewBox="0 0 100 70"
+          aria-hidden="true"
+        >
+          <defs>
+            <linearGradient id={gradientId}>
+              <stop stopColor="white" stopOpacity="0" />
+              <stop offset=".45" stopColor="white" stopOpacity=".65" />
+              <stop offset=".78" stopColor="white" />
+              <stop offset="1" stopColor="white" stopOpacity="0" />
+            </linearGradient>
+            <mask
+              id={maskId}
+              maskUnits="userSpaceOnUse"
+              x="-10"
+              y="-10"
+              width="120"
+              height="90"
+            >
+              <rect
+                className="chat-silk-beam-x"
+                x="-35"
+                y="0"
+                width="48"
+                height="75"
+                fill={`url(#${gradientId})`}
+              />
+            </mask>
+          </defs>
+          <path
+            className="chat-silk-thinking-mark-base"
+            d={CORBITS_MARK_PATH}
+            transform="translate(-2.3 -15) scale(.213)"
+            opacity=".7"
+          />
+          <path
+            className="chat-silk-thinking-mark-active"
+            d={CORBITS_MARK_PATH}
+            transform="translate(-2.3 -15) scale(.213)"
+            mask={`url(#${maskId})`}
+          />
+        </svg>
+        <span className="chat-silk-thinking-text" aria-hidden="true">
+          Thinking…
+        </span>
+        <span className="chat-typing-indicator-label">{status}</span>
+      </div>
+    </div>
+  );
+}
+
 export function TypingIndicator({ label }: { readonly label: string }) {
   return <TypingDotsBubble status={CHAT_STRINGS.typingIndicator(label)} />;
 }
@@ -182,5 +246,5 @@ export function AgentTypingIndicator({
   readonly names: readonly string[];
 }) {
   if (names.length === 0) return null;
-  return <TypingDotsBubble status={CHAT_STRINGS.agentsTyping(names)} />;
+  return <SilkThinkingIndicator status={CHAT_STRINGS.agentsTyping(names)} />;
 }

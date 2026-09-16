@@ -2561,6 +2561,50 @@
   background: color-mix(in srgb, var(--foreground) 55%, transparent);
 }
 
+.chat-silk-thinking-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.chat-silk-thinking-mark {
+  width: 1.875rem;
+  height: auto;
+  overflow: visible;
+  flex: 0 0 auto;
+}
+
+.chat-silk-thinking-mark-base {
+  fill: var(--muted-foreground);
+}
+
+.chat-silk-thinking-mark-active {
+  fill: var(--primary);
+}
+
+.chat-silk-beam-x {
+  animation: chat-silk-sweep 1.45s cubic-bezier(0.22, 0.05, 0.38, 1) infinite;
+}
+
+@keyframes chat-silk-sweep {
+  0% {
+    transform: translateX(8px);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  86% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(130px);
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .chat-typing-indicator-dots span {
     animation: chat-typing-dot 1.2s ease-in-out infinite;
@@ -2572,6 +2616,14 @@
 
   .chat-typing-indicator-dots span:nth-child(3) {
     animation-delay: 0.32s;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-silk-beam-x {
+    animation: none;
+    opacity: 1;
+    transform: translateX(44px);
   }
 }
 
