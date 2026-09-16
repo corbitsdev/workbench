@@ -588,6 +588,13 @@ export const chatMigrations: readonly ChatMigration[] = [
         ("tenant_id", "agent_address", "occurrence");
     `,
   },
+  {
+    name: "0031_drop_workbench_tenancy",
+    sql: `
+      DROP INDEX IF EXISTS "chat"."workbench_tenancy_parent_tenant_id_idx";
+      DROP TABLE IF EXISTS "chat"."workbench_tenancy";
+    `,
+  },
 ];
 
 // Bookkeeping table for this package's own migrations. Named

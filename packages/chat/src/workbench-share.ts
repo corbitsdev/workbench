@@ -2,9 +2,9 @@
 // (bench) projected into another, gated by bilateral federation trust
 // (see `./federation-trust.ts`) and, within the projected tenant, by an
 // explicit per-principal membership list its own admins maintain (see
-// `workbench_share_member` in `./schema.ts`). Mirrors `workbench-tenancy.ts`'s
-// shape: a store interface, a drizzle implementation, and an in-memory
-// test double.
+// `workbench_share_member` in `./schema.ts`). The module's shape is a
+// store interface, a drizzle implementation, and an in-memory test
+// double.
 //
 // Both write paths here are deliberately fail-closed: `createShare` never
 // inserts a row without bilateral trust (checked first, inside the same

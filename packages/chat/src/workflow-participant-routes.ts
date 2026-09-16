@@ -1,16 +1,13 @@
 // Workflow-run-authenticated surfaces for a child process that is itself
 // messaging in a workbench:
 //
-// - `POST /participants/mint-dm` — `create_agent`'s default path: mint or
-//   reopen the specialist's `kind: chat` 1:1 for a definition and launch
-//   the agent into THAT workbench (never into Myra's own DM).
 // - `POST /participants/invite` — invite an already-created definition
 //   into a non-chat workbench the caller already participates in.
 // - `POST /participants/messages` — post a message (e.g. ask_user block)
 //   into the caller's own workbench.
 //
-// Invite reuses `./workbench-service.ts`'s `launchAndJoinAgent`; mint-dm
-// reuses `mintAgentDm`. Mirrors `@corbits/agent-directory`'s
+// Invite reuses `./workbench-service.ts`'s `launchAndJoinAgent`. Mirrors
+// `@corbits/agent-directory`'s
 // `workflow-capability-routes.ts`/`workflow-create-routes.ts`: a
 // workflow child has no browser session, only its sidecar bearer token
 // and its own run address, so it authenticates through a
@@ -51,7 +48,6 @@ import { DefinitionProjectionMissingError } from "@corbits/workflows";
 import {
   KindIsChatError,
   launchAndJoinAgent,
-  mintAgentDm,
   sendWorkbenchMessage,
   type LaunchAndJoinAgentDeps,
   type SendWorkbenchMessageDeps,
@@ -67,9 +63,7 @@ import {
   connectServiceConnectorIds,
   pendingConnectionsOf,
 } from "./connect-pending";
-import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 import { MODEL_UNAVAILABLE_CONSUMER_MESSAGE } from "./model-unavailable";
-import { reportError } from "@corbits/error-sink";
 import { makeErrorEnvelope } from "@corbits/error-sink";
 
 /**
@@ -106,7 +100,6 @@ export type WorkflowParticipantEnv = {
 };
 
 const InviteParticipantInput = type({ definitionId: "string > 0" });
-const MintDmInput = type({ definitionId: "string > 0" });
 
 const PostMessageInput = type({ parts: Part.array() });
 
@@ -170,21 +163,6 @@ export type CreateWorkflowParticipantRoutesDeps = {
    * message's dispatch records the same way a person's own send does. */
   readonly turnMailCorrelation?: SendWorkbenchMessageDeps["turnMailCorrelation"];
   readonly authenticator: WorkflowRunAuthenticator;
-  readonly tenancy: Pick<
-    WorkbenchTenancyStore,
-    | "createWorkbenchTenant"
-    | "compensateWorkbenchTenant"
-    | "getWorkbenchTenancy"
-    | "getWorkbenchOwnerUserId"
-  >;
-  /**
-   * Mints a session for the bench owner when a workflow child has no
-   * browser cookies. Production binds `createBenchSessionMinter`.
-   */
-  readonly sessionFor: (args: {
-    userId: string;
-    tenantId: string;
-  }) => Promise<string[] | undefined>;
 };
 
 export function createWorkflowParticipantRoutes(
@@ -298,136 +276,6 @@ export function createWorkflowParticipantRoutes(
         address: joined.address,
         definitionId: joined.definitionId,
         handle: joined.handle,
-      },
-      201,
-    );
-  });
-
-  // create_agent's default path: mint or reopen the specialist's own
-  // kind:chat 1:1 under the caller's bench. Never invites into the
-  // caller's DM.
-  app.post("/participants/mint-dm", async (c) => {
-    const scope = c.get("workflowParticipantScope");
-    const body = MintDmInput(await c.req.json().catch(() => undefined));
-    if (body instanceof type.errors) {
-      return c.json(
-        makeErrorEnvelope({
-          code: "bad_request",
-          userMessage: `invalid mint-dm body: ${body.summary}`,
-        }),
-        400,
-      );
-    }
-
-    const workbench = await deps.store.findWorkbenchByParticipantAddress(
-      scope.tenantId,
-      scope.address,
-    );
-    if (workbench === undefined) {
-      return c.json(
-        makeErrorEnvelope({
-          code: "not_found",
-          userMessage: `The calling run "${scope.address}" is not a participant of any workbench in this workbench`,
-        }),
-        404,
-      );
-    }
-
-    // Prefer the human owner of the parent bench: Myra's DM is itself a
-    // child workbench whose parentTenantId is the bench.
-    const link = await deps.tenancy.getWorkbenchTenancy(workbench.workbenchId);
-    const ownerTenantId = link?.parentTenantId ?? scope.tenantId;
-    const creatorUserId =
-      await deps.tenancy.getWorkbenchOwnerUserId(ownerTenantId);
-    if (creatorUserId === undefined) {
-      const userMessage = `No owner user id for tenant "${ownerTenantId}" — cannot mint an agent DM`;
-      const refId = reportError(new Error(userMessage), {
-        operation: "chat.mintDm.ownerUnresolved",
-        tenantId: ownerTenantId,
-      });
-      return c.json(
-        makeErrorEnvelope({
-          code: "owner_unresolved",
-          userMessage,
-          refId,
-        }),
-        500,
-      );
-    }
-
-    const cookies = await deps.sessionFor({
-      userId: creatorUserId,
-      tenantId: ownerTenantId,
-    });
-    if (cookies === undefined) {
-      const userMessage = `Could not mint a session for owner "${creatorUserId}" to create an agent DM`;
-      const refId = reportError(new Error(userMessage), {
-        operation: "chat.mintDm.sessionUnmintable",
-        tenantId: ownerTenantId,
-      });
-      return c.json(
-        makeErrorEnvelope({
-          code: "session_unmintable",
-          userMessage,
-          refId,
-        }),
-        500,
-      );
-    }
-
-    let minted: Awaited<ReturnType<typeof mintAgentDm>>;
-    try {
-      minted = await mintAgentDm(
-        {
-          tenancy: deps.tenancy,
-          store: deps.store,
-          platform: deps.platform,
-          roomMessages: deps.roomMessages,
-          publish: deps.publish,
-        },
-        {
-          tenantId: scope.tenantId,
-          callerWorkbenchId: workbench.workbenchId,
-          callerPrincipalId: scope.principalId,
-          creatorUserId,
-          cookies,
-          definitionId: body.definitionId,
-        },
-      );
-    } catch (err) {
-      if (err instanceof DefinitionProjectionMissingError) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_launchable",
-            userMessage: err.guidance,
-          }),
-          409,
-        );
-      }
-      if (err instanceof InferenceResolutionError) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_launchable",
-            userMessage: MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
-          }),
-          409,
-        );
-      }
-      if (err instanceof KindIsChatError) {
-        return c.json(
-          makeErrorEnvelope({ code: err.code, userMessage: err.message }),
-          409,
-        );
-      }
-      throw err;
-    }
-
-    return c.json(
-      {
-        workbenchId: minted.workbenchId,
-        address: minted.address,
-        definitionId: minted.definitionId,
-        handle: minted.handle,
       },
       201,
     );

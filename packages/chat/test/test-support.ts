@@ -13,7 +13,7 @@ import {
   createInMemoryRoomMessageStore,
   type RoomMessage,
 } from "../src/room-messages";
-import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
+import { createInMemoryNativePrincipalStore } from "../src/native-principal";
 import type { MailContent } from "../src/codec";
 import type { MailboxFanoutDeps } from "../src/mailbox-fanout";
 
@@ -28,10 +28,18 @@ export const TENANT = {
   updatedAt: new Date(),
 };
 
-export function principal(id: string) {
+export const OTHER_TENANT = {
+  ...TENANT,
+  id: "tnt_2",
+  name: "Other",
+  slug: "other",
+  domain: "other.example",
+};
+
+export function principal(id: string, tenantId: string = TENANT.id) {
   return {
     id,
-    tenantId: TENANT.id,
+    tenantId,
     kind: "user" as const,
     refId: id,
     status: "active" as const,
@@ -209,10 +217,11 @@ export function fakePlatform(
 export function mountAs(
   routes: Hono<TenantEnv>,
   principalId: string,
+  tenant: typeof TENANT = TENANT,
 ): Hono<TenantEnv> {
   const asPrincipal: MiddlewareHandler<TenantEnv> = async (c, next) => {
-    c.set("tenant", TENANT);
-    c.set("principal", principal(principalId));
+    c.set("tenant", tenant);
+    c.set("principal", principal(principalId, tenant.id));
     await next();
   };
   const app = new Hono<TenantEnv>();
@@ -243,14 +252,18 @@ export function stubMailbox(domain: string = TENANT.domain): MailboxFanoutDeps {
   };
 }
 
+export type TestDeps = Omit<CreateChatRoutesDeps, "principals"> & {
+  principals: ReturnType<typeof createInMemoryNativePrincipalStore>;
+};
+
 export function buildDeps(
   overrides: Partial<CreateChatRoutesDeps> = {},
-): CreateChatRoutesDeps {
+): TestDeps {
   const deps: CreateChatRoutesDeps = {
     store: createInMemoryChatStore(),
     roomMessages: createInMemoryRoomMessageStore(),
     platform: fakePlatform(),
-    tenancy: createInMemoryWorkbenchTenancyStore(),
+    principals: createInMemoryNativePrincipalStore(),
     requireGrant: () => async (_c, next) => {
       await next();
     },
@@ -262,7 +275,10 @@ export function buildDeps(
     },
     ...overrides,
   };
-  return deps;
+  // Sound while no caller overrides `principals` with a store lacking
+  // the test-only `registerPrincipal` (none do — every test registers
+  // counterpart principals on the default in-memory store).
+  return deps as TestDeps;
 }
 
 /**
@@ -327,13 +343,6 @@ export interface WorkbenchView {
   kind: string;
   pinned: boolean;
   participants: { address: string; handle: string }[];
-  /** Present on create/reopen responses: the workbench's own tenancy
-   * link, or null (with `legacy: true`) for a pre-tenancy workbench. */
-  tenancy?: {
-    tenantId: string;
-    parentTenantId: string;
-    slug: string;
-  } | null;
 }
 
 export async function createWorkbench(
