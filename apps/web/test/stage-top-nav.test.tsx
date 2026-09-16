@@ -291,8 +291,6 @@ describe("Plugins declares its nav through the top-bar contract", () => {
             nextCursor: null,
           }),
         );
-      if (path.includes("/api/workbench-tenancies/kinds"))
-        return Promise.resolve(json({ workbenchTenantIds: [] }));
       if (path.includes("/connections/provider-health"))
         return Promise.resolve(
           json({ providers: {}, connectedProviderCount: 0 }),

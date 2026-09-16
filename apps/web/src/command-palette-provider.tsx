@@ -7,12 +7,7 @@ import {
 import type { CommandPaletteGroup } from "@corbits/react-ui";
 import { listWorkbenches } from "@corbits/chat-ui";
 import { libraryArtifactPath } from "@corbits/artifact-ui";
-import {
-  filterBenchMemberships,
-  listWorkbenchTenantIds,
-} from "@corbits/bench-ui";
 import { reportError } from "@corbits/error-sink";
-import { useQuery } from "@tanstack/react-query";
 import {
   buildCommandPaletteGroups,
   buildStaticCommands,
@@ -51,7 +46,7 @@ import { WORKBENCH_NOT_FOUND_EVENT } from "./workbench-not-found-event";
 import { recentsStoreForBench } from "./command-palette-recents";
 import { NAV_ROUTES } from "./routes";
 import { ArtifactListPageSchema, useAPIQuery } from "./api";
-import { useBench } from "./bench-context";
+import { isBenchMembership, useBench } from "./bench-context";
 import { useCloseCanvas } from "./shell/canvas-availability";
 import { listMcpServers } from "@corbits/plugins-ui";
 import {
@@ -65,7 +60,7 @@ import {
   useTenantQuery,
 } from "./routines-api";
 import { listSkills } from "./skills-api";
-import { meKeys, tenantKeys } from "./query-client";
+import { tenantKeys } from "./query-client";
 import type { Navigate } from "./navigation";
 
 const STATIC_COMMANDS = buildStaticCommands(
@@ -296,21 +291,13 @@ export function CommandPaletteProvider({
   // labeled, cycling to the next workbench in membership order — the
   // simplest honest thing a single command-palette entry can do without
   // reinventing a picker. Absent entirely for the common one-workbench
-  // account, same principle the old dock used to hide itself by.
-  const workbenchMembershipTenantIds =
-    memberships.kind === "ready"
-      ? memberships.data.data.map((membership) => membership.tenantId)
-      : [];
-  const workbenchTenancyKinds = useQuery({
-    queryKey: meKeys.workbenchTenancyKinds(workbenchMembershipTenantIds),
-    queryFn: () => listWorkbenchTenantIds(workbenchMembershipTenantIds),
-    enabled: workbenchMembershipTenantIds.length > 0,
-  });
+  // account, same principle the old dock used to hide itself by. Benches
+  // are the named memberships — the kinds lookup is gone, so a raw-id
+  // tenancy is the only thing filtered out here.
   const workbenchMemberships =
     memberships.kind === "ready"
-      ? filterBenchMemberships(
-          memberships.data.data,
-          workbenchTenancyKinds.data ?? new Set(),
+      ? memberships.data.data.filter((membership) =>
+          isBenchMembership(membership),
         )
       : [];
   const nextWorkbench =

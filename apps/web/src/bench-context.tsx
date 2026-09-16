@@ -4,11 +4,8 @@
 // bench (the chat page, the benches page, the header switcher) reads this
 // context instead of re-deriving "membership[0]" on its own.
 
-import {
-  classifyBenchMembership,
-  listWorkbenchTenantIds,
-} from "@corbits/bench-ui";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { isRawIdentifier } from "@corbits/bench-ui";
+import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -51,37 +48,35 @@ export type BenchState = {
 export const BenchContext = createContext<BenchState | null>(null);
 
 /** The membership this context currently treats as selected: the stored
- * choice if it still names a bench the account belongs to *and* still
- * classifies as a bench, otherwise the first bench-kind
- * membership — the same personal-bench convention `chat-page.tsx` used
- * to apply inline, minus the workbench and raw-id tenancies that same
- * unfiltered "first membership" pick let default in.
+ * choice if it still names a bench the account belongs to, otherwise the
+ * first named membership — the same personal-bench convention
+ * `chat-page.tsx` used to apply inline, minus the raw-id tenancies that
+ * same unfiltered "first membership" pick let default in.
  *
- * `workbenchTenantIds` may still be empty because the kinds lookup
- * hasn't resolved yet — never blocks boot on it (`isRawIdentifier`
- * inside `classifyBenchMembership` catches a raw-id tenant with no
- * fetch at all). A stored selection that was picked before the fetch
- * resolved, and turns out to be a workbench, is re-evaluated on every
- * call, so the default self-corrects once `workbenchTenantIds` arrives
- * rather than sticking with whatever `resolveSelection` picked first. */
+ * A bench is a membership with a human-assigned name: a tenant whose name
+ * is a raw platform id never hosts the shell. The server-side kinds lookup
+ * (`POST /api/workbench-tenancies/kinds`) is gone with chat's
+ * `workbench_tenancy` table — child-tenant exclusion now lives in the
+ * client-held workbench list (`needs-list.ts`'s `childTenantStore`), not in
+ * this selector.
+ *
+ * True for a membership the shell may treat as a bench: named, never raw. */
+export function isBenchMembership(membership: Principal): boolean {
+  return !isRawIdentifier(membership.tenantName);
+}
+
 export function resolveSelection(
   memberships: readonly Principal[],
   stored: string | null,
-  workbenchTenantIds: ReadonlySet<string>,
 ): Principal | undefined {
   const storedMatch =
     stored !== null
       ? memberships.find((m) => m.tenantId === stored)
       : undefined;
-  if (
-    storedMatch !== undefined &&
-    classifyBenchMembership(storedMatch, workbenchTenantIds) === "bench"
-  ) {
+  if (storedMatch !== undefined && isBenchMembership(storedMatch)) {
     return storedMatch;
   }
-  return memberships.find(
-    (m) => classifyBenchMembership(m, workbenchTenantIds) === "bench",
-  );
+  return memberships.find((m) => isBenchMembership(m));
 }
 
 export function BenchProvider({ children }: { readonly children: ReactNode }) {
@@ -91,27 +86,9 @@ export function BenchProvider({ children }: { readonly children: ReactNode }) {
     readStoredTenantId(),
   );
 
-  const tenantIds =
-    memberships.kind === "ready"
-      ? memberships.data.data.map((membership) => membership.tenantId)
-      : [];
-  // Never gates boot: `resolveSelection` below runs against `new Set()`
-  // until this resolves, catching only the raw-id case immediately —
-  // the workbench case self-corrects once `workbenchTenancyKinds.data` lands
-  // and this component re-renders.
-  const workbenchTenancyKinds = useQuery({
-    queryKey: meKeys.workbenchTenancyKinds(tenantIds),
-    queryFn: () => listWorkbenchTenantIds(tenantIds),
-    enabled: tenantIds.length > 0,
-  });
-
   const resolved =
     memberships.kind === "ready"
-      ? resolveSelection(
-          memberships.data.data,
-          stored,
-          workbenchTenancyKinds.data ?? new Set(),
-        )
+      ? resolveSelection(memberships.data.data, stored)
       : undefined;
 
   useEffect(() => {

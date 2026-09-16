@@ -52,9 +52,6 @@ function routeFetch(input: RequestInfo | URL): Promise<Response> {
       jsonResponse({ data: [membership], nextCursor: null }),
     );
   }
-  if (url.includes("/api/workbench-tenancies/kinds")) {
-    return Promise.resolve(jsonResponse({ workbenchTenantIds: [] }));
-  }
   return Promise.reject(
     new Error(`unrouted fetch in canvas-column test: ${url}`),
   );
@@ -118,10 +115,9 @@ describe("canvas profile card Message action", () => {
         </TestQueryProvider>,
       );
     });
-    // Let BenchProvider's membership fetch (and, once it resolves, the
-    // workbench-tenancy-kinds follow-up) actually settle before interacting —
-    // a button exists from the very first render regardless, so presence
-    // alone can't gate this.
+    // Let BenchProvider's membership fetch actually settle before
+    // interacting — a button exists from the very first render regardless,
+    // so presence alone can't gate this.
     for (let i = 0; i < 20; i++) {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));

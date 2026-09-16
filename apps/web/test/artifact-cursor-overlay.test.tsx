@@ -47,9 +47,6 @@ function routeFetch(input: RequestInfo | URL): Promise<Response> {
       jsonResponse({ data: [membership], nextCursor: null }),
     );
   }
-  if (url.includes("/api/workbench-tenancies/kinds")) {
-    return Promise.resolve(jsonResponse({ workbenchTenantIds: [] }));
-  }
   return Promise.reject(
     new Error(`unrouted fetch in cursor overlay test: ${url}`),
   );

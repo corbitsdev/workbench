@@ -72,8 +72,6 @@ function stubShellFetch(): void {
           nextCursor: null,
         }),
       );
-    if (path.includes("/api/workbench-tenancies/kinds"))
-      return Promise.resolve(json({ workbenchTenantIds: [] }));
     if (path.includes("/workflows/definitions"))
       return Promise.resolve(json({ data: [slugHandled], nextCursor: null }));
     if (path.includes("/mcp-servers"))

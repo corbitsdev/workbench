@@ -1,15 +1,6 @@
 export { isRawIdentifier } from "./membership";
 
 export {
-  classifyBenchMembership,
-  filterBenchMemberships,
-} from "./tenancy-kind";
-export type { TenancyKind } from "./tenancy-kind";
-
-export { BenchApiError, listWorkbenchTenantIds } from "./api";
-export type { BenchMembership } from "./api";
-
-export {
   INTERCHANGE_ROLES,
   DEFAULT_SIGNUP_MODE,
   SignupMode,

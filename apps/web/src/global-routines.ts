@@ -1,21 +1,17 @@
 // Scheduled workflow definitions across every bench the signed-in account
 // belongs to — the aggregation both Routines surfaces read from: the
 // roster at `/routines` and the detail page at `/routines/<definitionId>`.
-import {
-  classifyBenchMembership,
-  listWorkbenchTenantIds,
-} from "@corbits/bench-ui";
 import { toast } from "@corbits/react-ui";
 import { reportError } from "@corbits/error-sink";
 import { useMemo } from "react";
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { describeApiError } from "@corbits/api-query";
 import type { APIQuery } from "@corbits/api-query";
 
 import type { Principal } from "./api";
-import { useBench } from "./bench-context";
+import { isBenchMembership, useBench } from "./bench-context";
 import { ROUTINES_PATH_PREFIX } from "./path-ids";
-import { meKeys, tenantKeys } from "./query-client";
+import { tenantKeys } from "./query-client";
 import {
   listScheduledWorkflows,
   runScheduledWorkflowNow,
@@ -42,27 +38,14 @@ function useMemberBenches(): {
   const { memberships } = useBench();
   const allMemberships: readonly Principal[] =
     memberships.kind === "ready" ? memberships.data.data : [];
-  const tenantIds = useMemo(
-    () => allMemberships.map((m) => m.tenantId),
-    [allMemberships],
-  );
-  const workbenchTenancyKinds = useQuery({
-    queryKey: meKeys.workbenchTenancyKinds(tenantIds),
-    queryFn: () => listWorkbenchTenantIds(tenantIds),
-    enabled: tenantIds.length > 0,
-  });
+  // No kinds lookup: a bench is a named membership, and the Routines
+  // roster aggregates per bench. Raw-id tenancies never host routines.
   const benches = useMemo(
     () =>
       allMemberships
-        .filter(
-          (m) =>
-            classifyBenchMembership(
-              m,
-              workbenchTenancyKinds.data ?? new Set(),
-            ) === "bench",
-        )
+        .filter((m) => isBenchMembership(m))
         .map((m) => ({ tenantId: m.tenantId, tenantName: m.tenantName })),
-    [allMemberships, workbenchTenancyKinds.data],
+    [allMemberships],
   );
   if (memberships.kind !== "ready") return { kind: "loading", benches: [] };
   return { kind: "ready", benches };
