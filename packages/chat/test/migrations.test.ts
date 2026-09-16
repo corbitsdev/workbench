@@ -26,8 +26,10 @@ const migrationNames = [
   "0002_channel_read_state",
   "0003_channel_launch",
   "0004_channel_launch_noop_inference",
-  "0005_channel_tenancy",
-  "0006_channel_tenancy_parent_index",
+  // Hard refresh: 0005_channel_tenancy and 0006_channel_tenancy_parent_index
+  // are purged from chatMigrations (see the note above 0007 there) — the
+  // link table they served was dropped outright by 0031, so fresh databases
+  // never create it. Existing databases reset rather than migrate.
   "0007_chat_bench_settings",
   "0008_channel_context_window_explicit_inherit",
   "0009_channel_threads",
