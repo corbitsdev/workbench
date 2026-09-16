@@ -36,7 +36,11 @@ import { OLLAMA_PLACEHOLDER_SECRET } from "@corbits/connections/credential-test"
 
 import { getLogger } from "@corbits/client-log";
 import { useNavigate } from "../navigation";
-import { runPortableClientBootstrap } from "../client-bootstrap";
+import {
+  logBootstrapResult,
+  logBootstrapThrown,
+  runPortableClientBootstrap,
+} from "../client-bootstrap";
 import {
   completeSetup,
   CREDENTIAL_PROBE_FAILURE_MESSAGE,
@@ -225,25 +229,10 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
       // never shown, until the upstream capability lands.
       void runPortableClientBootstrap(user).then(
         (bootstrap) => {
-          if (bootstrap.kind === "ready") {
-            log.info("Portable client bootstrap converged", {
-              primaryTenantId: bootstrap.primaryTenantId,
-            });
-          } else if (bootstrap.code === "stock-capability-missing") {
-            log.warn("Portable client bootstrap waiting on stock capability", {
-              capability: bootstrap.capability,
-              gap: bootstrap.gap,
-            });
-          } else {
-            log.warn("Portable client bootstrap failed", {
-              message: bootstrap.message,
-            });
-          }
+          logBootstrapResult(log, bootstrap);
         },
         (error) => {
-          log.warn("Portable client bootstrap threw", {
-            message: error instanceof Error ? error.message : String(error),
-          });
+          logBootstrapThrown(log, error);
         },
       );
       void triggerFirstLoginProvisioning(name).then(async (result) => {

@@ -19,7 +19,7 @@ or shims — the lane ports to nearly any stock hub.
 - `apps/web/src/needs-list.ts` — manifest (`buildNeedsList`,
   arktype `NeedsListSchema`/`parseNeedsList`) plus the client-side child
   tenant store (`childTenantStore`), scoped by hub origin and account id.
-  Corrupt rows read as empty, never throw.
+  Invalid rows are skipped per row, never discarding the whole store.
 - `apps/web/src/needs-converge.ts` — the `StockHub` port, snapshot read,
   DM derivation (`deriveDesiredDirectMessages`: one chat child per active
   top-level workflow `refId`, idempotent by `dm:<refId>`), and
@@ -36,9 +36,11 @@ or shims — the lane ports to nearly any stock hub.
 
 ## Stock endpoints used
 
-- `GET /api/me/principals` — owned memberships (finds the primary tenant)
+- `GET /api/me/principals` — owned memberships (finds the primary tenant),
+  every page followed via `nextCursor`
 - `GET /api/tenants/:id` — tenant read
-- `GET /api/tenants/:id/principals?limit=100` — principals incl. workflows
+- `GET /api/tenants/:id/principals?limit=100` — principals incl. workflows,
+  every page followed via `nextCursor`
 - `POST /api/tenants` — create workbench child tenants
 - `POST /api/tenants/:id/members/invite` — invite by email
 - `POST /api/tenants/:id/workflows/deployments` — deploy Myra when absent

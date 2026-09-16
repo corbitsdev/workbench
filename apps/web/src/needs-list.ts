@@ -124,7 +124,6 @@ const ChildTenantRecordSchema = type({
   kind: "'chat' | 'workbench'",
   "principalRefId?": "string > 0",
 });
-const ChildTenantRecordsSchema = ChildTenantRecordSchema.array();
 export type ChildTenantRecord = typeof ChildTenantRecordSchema.infer;
 
 export type ChildTenantStore = {
@@ -142,10 +141,17 @@ export function childTenantStore(
     const raw = storage.getItem(key);
     if (raw === null) return [];
     try {
-      const parsed = ChildTenantRecordsSchema(JSON.parse(raw) as unknown);
-      return parsed instanceof type.errors
-        ? []
-        : parsed.map((row) => ({ ...row }));
+      const parsed = JSON.parse(raw) as unknown;
+      // One bad row must not discard every tracked id — validate per row
+      // and keep the rows that parse, so a single corrupt entry only loses
+      // itself.
+      if (!Array.isArray(parsed)) return [];
+      const rows: ChildTenantRecord[] = [];
+      for (const row of parsed) {
+        const validated = ChildTenantRecordSchema(row);
+        if (!(validated instanceof type.errors)) rows.push({ ...validated });
+      }
+      return rows;
     } catch {
       // report-error-ignore: corrupt client storage is ordinary state, not an
       // incident — an unreadable row reads as empty and is overwritten on the

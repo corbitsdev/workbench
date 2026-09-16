@@ -120,4 +120,22 @@ describe("account and hub scoped child-tenant store", () => {
       childTenantStore(storage, "https://one.example", "usr_ada").load(),
     ).toEqual([]);
   });
+
+  test("keeps valid rows when one row is corrupt", () => {
+    const storage = memoryStorage({
+      "workbench.child-tenants:https%3A%2F%2Fone.example:usr_ada":
+        JSON.stringify([
+          { localId: "atlas", tenantId: "tnt_atlas", kind: "workbench" },
+          { localId: "", tenantId: "tnt_bad", kind: "workbench" },
+          { localId: "dm:run_myra", tenantId: "tnt_dm", kind: "chat" },
+          null,
+        ]),
+    });
+    expect(
+      childTenantStore(storage, "https://one.example", "usr_ada").load(),
+    ).toEqual([
+      { localId: "atlas", tenantId: "tnt_atlas", kind: "workbench" },
+      { localId: "dm:run_myra", tenantId: "tnt_dm", kind: "chat" },
+    ]);
+  });
 });

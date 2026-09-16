@@ -67,7 +67,6 @@ export type StockHubCapability =
   | "primary-tenant-bootstrap"
   | "deploy-workflow-inputs"
   | "project-workflow-principal"
-  | "tenant-kind"
   | "principal-roles";
 
 export class StockHubCapabilityError extends Error {
@@ -111,17 +110,11 @@ export async function readHubSnapshot(hub: StockHub): Promise<HubSnapshot> {
   const primaryCandidates = tenants.filter(
     (tenant) => tenant.parentId === null,
   );
-  if (primaryCandidates.length !== 1) {
+  const [primaryTenant] = primaryCandidates;
+  if (primaryCandidates.length !== 1 || primaryTenant === undefined) {
     throw new StockHubCapabilityError(
       "primary-tenant-bootstrap",
       `Sign-in must leave exactly one owned top-level home; found ${primaryCandidates.length}.`,
-    );
-  }
-  const primaryTenant = primaryCandidates[0];
-  if (primaryTenant === undefined) {
-    throw new StockHubCapabilityError(
-      "primary-tenant-bootstrap",
-      "Sign-in did not leave an owned top-level home behind.",
     );
   }
   const childTenants = tenants.filter(
@@ -356,14 +349,38 @@ function parseBoundary<T>(
   return parsed;
 }
 
+/** Follows every page of a `{ data, nextCursor }` stock listing — the hub
+ * caps pages at its own limit, so reading only the first page would
+ * silently mistarget accounts past ~100 principals or memberships. */
+async function fetchAllPages<T>(
+  fetchImpl: typeof fetch,
+  basePath: string,
+  operation: string,
+  parsePage: (body: unknown) => { data: T[]; nextCursor: string | null },
+): Promise<T[]> {
+  const rows: T[] = [];
+  let cursor: string | null = null;
+  for (;;) {
+    const path =
+      cursor === null
+        ? `${basePath}?limit=100`
+        : `${basePath}?limit=100&cursor=${encodeURIComponent(cursor)}`;
+    const page = parsePage(await readJson(await fetchImpl(path), operation));
+    rows.push(...page.data);
+    if (page.nextCursor === null) return rows;
+    cursor = page.nextCursor;
+  }
+}
+
 export function createFetchStockHub(fetchImpl: typeof fetch = fetch): StockHub {
   return {
     async listMyPrincipals() {
-      const body = await readJson(
-        await fetchImpl("/api/me/principals"),
+      return fetchAllPages(
+        fetchImpl,
+        "/api/me/principals",
         "listMyPrincipals",
+        (body) => parseBoundary(MembershipPageShape, body, "listMyPrincipals"),
       );
-      return parseBoundary(MembershipPageShape, body, "listMyPrincipals").data;
     },
     async getTenant(id) {
       const response = await fetchImpl(
@@ -378,13 +395,12 @@ export function createFetchStockHub(fetchImpl: typeof fetch = fetch): StockHub {
       return { ...parsed, parentId: parsed.parentId ?? null };
     },
     async listPrincipals(tenantId) {
-      const body = await readJson(
-        await fetchImpl(
-          `/api/tenants/${encodeURIComponent(tenantId)}/principals?limit=100`,
-        ),
+      return fetchAllPages(
+        fetchImpl,
+        `/api/tenants/${encodeURIComponent(tenantId)}/principals`,
         "listPrincipals",
+        (body) => parseBoundary(PrincipalPageShape, body, "listPrincipals"),
       );
-      return parseBoundary(PrincipalPageShape, body, "listPrincipals").data;
     },
     async createTenant(input) {
       const body = await readJson(

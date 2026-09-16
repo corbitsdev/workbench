@@ -12,6 +12,8 @@
 
 import { WORKFLOW_CATALOG } from "@workbench/templates";
 
+import type { ClientLogger } from "@corbits/client-log";
+
 import {
   buildNeedsList,
   childTenantStore,
@@ -93,8 +95,6 @@ export const UPSTREAM_GAP_NOTES: Record<StockHubCapability, string> = {
     "Myra is absent and the client was not given the exact stock source and offering ids — supply myraDeploy from client config.",
   "project-workflow-principal":
     "Stock Interchange cannot carry a workflow identity into a child room by refId, so DM and workbench member setup waits on an upstream capability.",
-  "tenant-kind":
-    "Stock Interchange rooms carry no product kind, so the client tracks workbench versus DM children in its own scoped store.",
   "principal-roles":
     "The stock member invite route cannot assign the requested child-room roles.",
 };
@@ -148,6 +148,39 @@ export async function bootstrapClientSession(
     }
     throw cause;
   }
+}
+
+/** One shared landing for the bootstrap outcome at both entry points
+ * (first-open in main, signup in the onboarding page): a converged lane
+ * logs at info, a stock gap or any other failure logs at warn — never
+ * shown, never gating the shell. */
+export function logBootstrapResult(
+  log: ClientLogger,
+  result: ClientBootstrapResult,
+): void {
+  if (result.kind === "ready") {
+    log.info("Portable client bootstrap converged", {
+      primaryTenantId: result.primaryTenantId,
+      createdTenantIds: [...result.createdTenantIds],
+    });
+  } else if (result.code === "stock-capability-missing") {
+    log.warn("Portable client bootstrap waiting on stock capability", {
+      capability: result.capability,
+      gap: result.gap,
+    });
+  } else {
+    log.warn("Portable client bootstrap failed", {
+      message: result.message,
+    });
+  }
+}
+
+/** The thrown twin of logBootstrapResult — a bootstrap that rejects (rather
+ * than returning a typed error) is logged, never surfaced. */
+export function logBootstrapThrown(log: ClientLogger, error: unknown): void {
+  log.warn("Portable client bootstrap threw", {
+    message: error instanceof Error ? error.message : String(error),
+  });
 }
 
 /** The bootstrap with its production ports already attached: stock fetch

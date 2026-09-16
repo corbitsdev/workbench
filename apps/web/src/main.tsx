@@ -9,7 +9,11 @@ import { createRoot } from "react-dom/client";
 import { getLogger } from "@corbits/client-log";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { App } from "./app";
-import { runPortableClientBootstrap } from "./client-bootstrap";
+import {
+  logBootstrapResult,
+  logBootstrapThrown,
+  runPortableClientBootstrap,
+} from "./client-bootstrap";
 import { validatedNextPath } from "./login-next";
 import { triggerFirstLoginProvisioning } from "./onboarding";
 import { ONBOARDING_PATH } from "./routes";
@@ -94,27 +98,11 @@ function Root() {
     void runPortableClientBootstrap(signedInUser).then(
       (result) => {
         if (cancelled) return;
-        if (result.kind === "ready") {
-          log.info("Portable client bootstrap converged", {
-            primaryTenantId: result.primaryTenantId,
-            createdTenantIds: result.createdTenantIds,
-          });
-        } else if (result.code === "stock-capability-missing") {
-          log.warn("Portable client bootstrap waiting on stock capability", {
-            capability: result.capability,
-            gap: result.gap,
-          });
-        } else {
-          log.warn("Portable client bootstrap failed", {
-            message: result.message,
-          });
-        }
+        logBootstrapResult(log, result);
       },
       (error) => {
         if (cancelled) return;
-        log.warn("Portable client bootstrap threw", {
-          message: error instanceof Error ? error.message : String(error),
-        });
+        logBootstrapThrown(log, error);
       },
     );
     return () => {
