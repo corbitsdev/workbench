@@ -129,23 +129,6 @@ describeIfDb("extension mounting", () => {
     const outside = await hub.app.request("/chat/workbenches");
     expect(await outside.text()).toBe("<html>shell</html>");
   });
-
-  test("the workbench-tenancy kind lookup the bench switcher uses is mounted and gated", async () => {
-    const hub = await bootHub();
-
-    const gated = await hub.app.request("/api/workbench-tenancies/kinds", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ tenantIds: [] }),
-    });
-    expect(gated.status).toBe(401);
-    const kindsBody = (await gated.json()) as {
-      error: { code: string; userMessage: string; refId: string };
-    };
-    expect(kindsBody.error.code).toBe("unauthorized");
-    expect(kindsBody.error.userMessage).toBe("Authentication required");
-    expect(kindsBody.error.refId).toMatch(/\S/);
-  });
 });
 
 describeIfDb(

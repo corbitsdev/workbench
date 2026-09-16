@@ -12,7 +12,6 @@ import {
   createDB,
   createGrantStore,
   createPrincipalKeyStore,
-  createPrincipalStore,
   createSidecarAllocationStore,
   createSignalCorrelationStore,
   createWorkflowRunDispatchStore,
@@ -59,16 +58,15 @@ import {
   createInMemoryTurnClaimStore,
   createWorkbenchHostInferencePreferencesResolver,
   createWorkbenchSubscriberRegistry,
-  createWorkbenchTenancyRoutes,
   createWorkbenchTurnQueue,
   createTurnCancelRegistry,
   createChatOrchestrator,
   createChatRoutes,
   joinRunParticipant,
   createDrizzleBlockResponseStore,
-  createDrizzleWorkbenchTenancyStore,
   createDrizzleChatStore,
   createDrizzleClientIdStore,
+  createDrizzleNativePrincipalStore,
   createDrizzlePinStore,
   createDrizzleReactionStore,
   createDrizzleRoomMessageStore,
@@ -290,7 +288,6 @@ import {
 
 import { type } from "arktype";
 import { betterAuth } from "better-auth";
-import { createBenchSessionMinter } from "./bench-session";
 import {
   hasRepoGrantViaHttp,
   mintRepoGrantViaHttp,
@@ -1352,22 +1349,6 @@ export async function createHub(config: HubConfig) {
   // what makes the URL usable from a sidecar on another machine.
   app.route("/api/chat/noop-inference", createNoopInferenceRoutes());
   const selfApi = createHubAPI(config.baseUrl);
-  const sessionFor = createBenchSessionMinter({
-    auth,
-    log: (line) => log.warn`${line}`,
-  });
-  const chatTenancy = createDrizzleWorkbenchTenancyStore(db, {
-    conditionRegistry: chatConditionRegistry,
-    api: selfApi,
-    principalStore: createPrincipalStore(db, principalKeyStore),
-  });
-  // Mounted outside the tenant prefix, like `/api/onboarding`: the bench
-  // switcher asks this across every tenant a signed-in user belongs to,
-  // not one tenant at a time (see `apps/web/src/bench-context.tsx`).
-  app.route(
-    "/api/workbench-tenancies",
-    createWorkbenchTenancyRoutes({ tenancy: chatTenancy }),
-  );
   // The chat platform's invite-launch fallback: a definition with no
   // model requirements of its own resolves the tenant-catalog default.
   const chatHostInferencePreferencesResolver =
@@ -1640,7 +1621,7 @@ export async function createHub(config: HubConfig) {
     store: chatStore,
     roomMessages,
     platform: chatPlatform,
-    tenancy: chatTenancy,
+    principals: createDrizzleNativePrincipalStore(db),
     threads: threadStore,
     turnMailCorrelation,
     agentTurns,
@@ -1736,8 +1717,6 @@ export async function createHub(config: HubConfig) {
       turnCancellation,
       turnMailCorrelation,
       authenticator: createWorkflowRunAuthenticator({ db }),
-      tenancy: chatTenancy,
-      sessionFor,
     }),
   );
   // Product inbox over `@corbits/mailbox` — three groups, mark-all-read
