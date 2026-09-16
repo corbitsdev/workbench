@@ -49,7 +49,7 @@ export const BenchContext = createContext<BenchState | null>(null);
 
 /** The membership this context currently treats as selected: the stored
  * choice if it still names a bench the account belongs to, otherwise the
- * first bench-kind membership — the same personal-bench convention
+ * first named membership — the same personal-bench convention
  * `chat-page.tsx` used to apply inline, minus the raw-id tenancies that
  * same unfiltered "first membership" pick let default in.
  *

@@ -243,22 +243,30 @@ workbench child tenancies alike, indistinguishable to the platform. The
 web client needs to treat only real workbenches as selectable benches, so
 workbench owns the discriminator:
 
-- `packages/chat`'s `workbench_tenancy` link table is the source of truth
+- `packages/chat`'s `workbench_tenancy` link table was the source of truth
   for "this tenant is a workbench". `WorkbenchTenancyStore.listWorkbenchTenantIds`
-  answers it in bulk; `POST /api/workbench-tenancies/kinds` (mounted
-  outside the tenant prefix, alongside `/api/onboarding`) exposes it to
-  the web client for the caller's own tenant ids.
-- `@corbits/bench-ui`'s `classifyBenchMembership` combines that set with
+  answered it in bulk; `POST /api/workbench-tenancies/kinds` (mounted
+  outside the tenant prefix, alongside `/api/onboarding`) exposed it to
+  the web client for the caller's own tenant ids. The web/`bench-ui`
+  client usage of that surface was removed in the thread-native
+  client-driver cutover (this branch cut the client only; the server
+  table, store, and route remain — their removal lands separately).
+- `@corbits/bench-ui`'s `classifyBenchMembership` used to combine that set with
   `isRawIdentifier` (a tenant with no human-assigned name never renders,
   regardless of kind) to produce a `TenancyKind`: `"bench"`,
-  `"workbench"`, or `"unknown"`. `filterBenchMemberships` is what callers
-  use to keep only real benches.
+  `"workbench"`, or `"unknown"`. `filterBenchMemberships` was what callers
+  used to keep only real benches. Both helpers and `TenancyKind` were
+  removed; the client-side replacement is `isBenchMembership` in
+  `apps/web/src/bench-context.tsx` (named, never raw), with child-tenant
+  exclusion living in the client-held workbench list
+  (`apps/web/src/needs-list.ts`'s `childTenantStore`).
 
-This is the extension point for every other tenancy kind the product
-adds (sub-workbenches, DMs, shared workbenches): each is still a tenant
-underneath, and stays distinguishable only by adding a case to
-`classifyBenchMembership`, never by inventing a parallel field on the
-native tenant row.
+That discriminator was the extension point for every other tenancy kind
+the product added (sub-workbenches, DMs, shared workbenches): each was
+still a tenant underneath, and stayed distinguishable only by adding a
+case to `classifyBenchMembership`, never by inventing a parallel field
+on the native tenant row — that discriminator no longer exists
+client-side.
 
 ## Interchange gaps (upstream only)
 
@@ -330,7 +338,7 @@ needs a weaker role, that is an Interchange conversation first.
 
 ## Related packages
 
-- `@corbits/bench-ui` — tenancy-kind helpers, workbench-tenancy client, tenancy contracts
+- `@corbits/bench-ui` — `isRawIdentifier` raw-id guard, tenancy contracts (tenancy-kind helpers and the workbench-tenancy client were removed in the thread-native client-driver cutover)
 - `@workbench/onboarding` — genesis-or-join first-signup provisioning
 - `@workbench/access-policy` — closed-by-default signup/sub-workbench-
   creation policy
