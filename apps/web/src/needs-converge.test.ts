@@ -206,9 +206,7 @@ describe("fetch StockHub", () => {
       "/api/tenants/tnt_primary/members/invite",
       "/api/tenants/tnt_primary/workflows/deployments",
     ]);
-    expect(
-      JSON.parse(String(calls.at(-1)?.init?.body)),
-    ).toEqual(deploy);
+    expect(JSON.parse(String(calls.at(-1)?.init?.body))).toEqual(deploy);
     expect(
       calls.some((call) =>
         /onboarding|workbench-tenancies|chat\//.test(call.path),
