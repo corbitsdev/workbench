@@ -41,7 +41,7 @@ function isLoopbackBaseUrl(baseUrl: string): boolean {
 
 const HubEnv = type({
   DATABASE_URL: type(/^postgres(ql)?:\/\/.+$/).describe(
-    "a Postgres connection URL, e.g. postgres://workbench:workbench@localhost:5432/workbench",
+    "a Postgres connection URL, e.g. postgres://hub:hub@localhost:5432/hub",
   ),
   BASE_URL: type(HTTP_URL).describe(
     "an http(s) origin, e.g. http://localhost:3000",
@@ -58,11 +58,6 @@ const HubEnv = type({
   HUB_STATIC_DIR: type("string > 0").describe(
     "a directory of built user-interface files the hub serves, e.g. apps/hub/public",
   ),
-  "WORKBENCH_DEFAULT_TENANT?": type(
-    /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
-  ).describe(
-    'slug of the root tenant the hub ensures at boot; every self-served personal bench parents under it, and setup/seed resolve the same slug — ORG_SLUG is an alias when this is unset; default "workbench"',
-  ),
   "SIGNUP_RATE_LIMIT_WINDOW_SECONDS?": type(/^[1-9]\d*$/).describe(
     "the per-IP sign-up rate-limit window, in seconds, e.g. 60",
   ),
@@ -75,17 +70,8 @@ const HubEnv = type({
   "SIGNIN_RATE_LIMIT_MAX?": type(/^[1-9]\d*$/).describe(
     "the maximum failed sign-in attempts a single account may accrue per window before further failures are rejected, e.g. 10 — keyed on the target email, not client IP (see sign-in-rate-limit.ts); a correct password always succeeds regardless of this budget",
   ),
-  "WORKBENCH_SIGNUP?": type("'open' | 'closed'").describe(
-    "open = self-serve email signup allowed; closed (default) = owner adds users or copy-link invite only",
-  ),
-  "WORKBENCH_ALLOWED_EMAIL_DOMAINS?": type("string").describe(
-    "comma-separated email domains allowed when WORKBENCH_SIGNUP=open, e.g. acme.example",
-  ),
   "ROUTINE_SCHEDULER_POLL_INTERVAL_MS?": type(/^[1-9]\d*$/).describe(
     "dev/test-only override for the routine scheduler's poll interval, in milliseconds — unset (default) runs the real 30s production cadence; the e2e harness sets this to a fast interval so a scheduled-routine test doesn't wait out the real cadence",
-  ),
-  "ORG_SLUG?": type(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/).describe(
-    'alias for WORKBENCH_DEFAULT_TENANT when that is unset — the same root/operator slug setup and seed resolve; default "workbench"',
   ),
   "GOOGLE_CLIENT_ID?": type("string > 0").describe(
     "Google OAuth client id; set together with GOOGLE_CLIENT_SECRET to enable Google sign-in",
@@ -126,14 +112,11 @@ const HubEnv = type({
   "ALLOW_PLAINTEXT_SECRETS?": type("'1' | 'true'").describe(
     "dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY or PRINCIPAL_KEY_ENCRYPTION_KEY, storing secrets and signing keys at rest unencrypted with a boot warning; refused unless BASE_URL is a loopback address, so a real deployment can never inherit it by accident",
   ),
-  "ALLOW_UNVERIFIED_EMAILS?": type("'1' | 'true'").describe(
-    "dev/test-only opt-in to let @workbench/access-policy trust an email that better-auth has not verified — self-signup domain checks normally require emailVerified; never set this for a real deployment",
-  ),
   "HUB_ALLOW_GIT_INSIDE_WORK_TREE?": type("'1' | 'true'").describe(
     "opt-in to initialize hub git-on-disk state inside a directory that is already a git work tree; refused by default because a nested init that misses its own .git walks up and commits onto the enclosing working branch",
   ),
   "SIDECAR_PROVISIONERS?": type("string").describe(
-    "comma-separated sidecar-allocation backend ids to register for workbenches placed on their own exclusive sidecar: 'process' (a child process on this host), 'docker', or 'e2b'; unset or empty (default) registers 'process' alone, so a single-server install provisions exclusive sidecars with no operator configuration",
+    "comma-separated sidecar-allocation backend ids to register for chats placed on their own exclusive sidecar: 'process' (a child process on this host), 'docker', or 'e2b'; unset or empty (default) registers 'process' alone, so a single-server install provisions exclusive sidecars with no operator configuration",
   ),
   "SIDECAR_DEFAULT_PROVISIONER?": type("string > 0").describe(
     "which id listed in SIDECAR_PROVISIONERS is the default backend exclusive placements provision on; required when SIDECAR_PROVISIONERS lists more than one id, optional (defaults to that one id) when it lists exactly one",
@@ -159,8 +142,8 @@ const HubEnv = type({
   "HUB_SIDECAR_WEBSOCKET_URL?": type(/^wss?:\/\/.+$/).describe(
     "the ws(s):// URL a provisioned sidecar container dials back to reach this hub; unset (default) derives it from BASE_URL, which is wrong for a docker sidecar provisioner — that container's own localhost is itself, not the hub host — so set this whenever SIDECAR_PROVISIONER=docker",
   ),
-  "WORKBENCH_CHAT_IDLE_REAP_MS?": type("string").describe(
-    "how long a chat resident (workbench host or invited agent) may sit idle before the hub reaps it via a state-preserving undeploy, in milliseconds; unset defaults to 30 minutes",
+  "HUB_CHAT_IDLE_REAP_MS?": type("string").describe(
+    "how long a chat resident (host or invited agent) may sit idle before the hub reaps it via a state-preserving undeploy, in milliseconds; unset defaults to 30 minutes",
   ),
 });
 
@@ -182,7 +165,7 @@ const DEFAULT_SIGNIN_RATE_LIMIT_WINDOW_SECONDS = 60;
 const DEFAULT_SIGNIN_RATE_LIMIT_MAX = 10;
 
 /**
- * Production default for `WORKBENCH_CHAT_IDLE_REAP_MS`: 30 minutes,
+ * Production default for `HUB_CHAT_IDLE_REAP_MS`: 30 minutes,
  * matching the old sidecar-side `WORKBENCH_CHILD_IDLE_REAP_MS` default
  * this replaces for chat.
  */
@@ -209,21 +192,16 @@ function parsePositiveMsEnv(
   return n;
 }
 
-const DEFAULT_TENANT_SLUG = "workbench";
-
 // One member per implemented `SidecarProvisioner` backend. Adding a new
 // backend (e.g. a remote sandbox) is: implement the contract in its own
 // package, add a member here with its settings, add its id to
 // `SIDECAR_PROVISIONER_IDS`, and register it in
 // `sidecarProvisionerFrom`'s per-id parsing below.
 //
-// CL-7324: this is the CLOSED dispatchable-backend set — dispatchable
-// work may only ever land on one of these hub-provisioned backends, and
-// only ever tenant-bound (the anchor run's tenant; see
-// `./dispatch-tenant-guard.ts`). No schema change carries that rule: it is
-// enforced at the dispatch seams, not declared in config, so a new backend
-// id added here is provisionable but never implicitly dispatchable
-// cross-tenant.
+// The ids here are the provisionable set exclusive placements may land
+// on. Tenant binding is the caller's composition concern, not declared
+// in config, so a new backend id added here is provisionable but never
+// implicitly dispatchable cross-tenant.
 export type DockerSidecarProvisionerConfig = {
   readonly id: "docker";
   readonly image: string;
@@ -276,7 +254,6 @@ export type HubConfig = {
   readonly sessionSecret: string;
   readonly hubDataDir: string;
   readonly hubStaticDir: string;
-  readonly defaultTenantSlug: string;
   readonly signupRateLimit: {
     readonly windowSeconds: number;
     readonly max: number;
@@ -285,10 +262,6 @@ export type HubConfig = {
     readonly windowSeconds: number;
     readonly max: number;
   };
-  /** Self-serve signup. Default closed — see docs/TENANCY.md. */
-  readonly signupMode: "open" | "closed";
-  /** Domains allowed when signupMode is open. Empty = any domain. */
-  readonly allowedEmailDomains: readonly string[];
   readonly socialProviders: Readonly<
     Partial<Record<SocialProviderId, SocialProviderCredential>>
   >;
@@ -307,9 +280,6 @@ export type HubConfig = {
   readonly principalKeyEncryptionKeyHex?: string;
   /** Dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY. */
   readonly allowPlaintextSecrets: boolean;
-  /** Dev/test-only opt-in to skip @workbench/access-policy's email-
-   * verification requirement. */
-  readonly allowUnverifiedEmails: boolean;
   /** Opt-in to initialize git-on-disk state inside an existing git work tree. */
   readonly allowGitInsideWorkTree?: boolean;
   /** Dev/test-only override for the routine scheduler's poll interval —
@@ -534,14 +504,6 @@ function sidecarProvisionerConfigFor(
 export function readHubConfig(
   env: Record<string, string | undefined>,
 ): HubConfig {
-  if (env.OPERATOR_TENANT_ID !== undefined) {
-    throw new Error(
-      "OPERATOR_TENANT_ID is no longer read: first signup mints the root tenant by slug. " +
-        "Set WORKBENCH_DEFAULT_TENANT to your existing root tenant's slug " +
-        '(or remove OPERATOR_TENANT_ID to keep the default slug "workbench"), then restart.',
-    );
-  }
-
   const parsed = HubEnv(env);
   if (parsed instanceof type.errors) {
     throw new Error(
@@ -555,32 +517,14 @@ export function readHubConfig(
   const socialProviders = socialProvidersFrom(parsed);
   const sidecarProvisioners = sidecarProvisionersFrom(parsed);
 
-  const allowedEmailDomains =
-    parsed.WORKBENCH_ALLOWED_EMAIL_DOMAINS === undefined ||
-    parsed.WORKBENCH_ALLOWED_EMAIL_DOMAINS.trim() === ""
-      ? []
-      : parsed.WORKBENCH_ALLOWED_EMAIL_DOMAINS.split(",")
-          .map((d) => d.trim())
-          .filter((d) => d.length > 0);
-
-  // One deployment fact shared by first-signup genesis, setup, and seed.
-  // WORKBENCH_DEFAULT_TENANT wins; ORG_SLUG is the alias when that is
-  // unset.
-  const defaultTenantSlug =
-    parsed.WORKBENCH_DEFAULT_TENANT ?? parsed.ORG_SLUG ?? DEFAULT_TENANT_SLUG;
-
   const hubConfig: { -readonly [K in keyof HubConfig]: HubConfig[K] } = {
     databaseUrl: parsed.DATABASE_URL,
     baseUrl: parsed.BASE_URL,
     sessionSecret: parsed.SESSION_SECRET,
     hubDataDir: parsed.HUB_DATA_DIR,
     hubStaticDir: parsed.HUB_STATIC_DIR,
-    defaultTenantSlug,
     socialProviders,
-    signupMode: parsed.WORKBENCH_SIGNUP ?? "closed",
-    allowedEmailDomains,
     allowPlaintextSecrets: parsed.ALLOW_PLAINTEXT_SECRETS !== undefined,
-    allowUnverifiedEmails: parsed.ALLOW_UNVERIFIED_EMAILS !== undefined,
     sidecarProvisioners: sidecarProvisioners.provisioners,
     signupRateLimit: {
       windowSeconds: parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS
@@ -599,8 +543,8 @@ export function readHubConfig(
         : DEFAULT_SIGNIN_RATE_LIMIT_MAX,
     },
     chatIdleReapMs: parsePositiveMsEnv(
-      parsed.WORKBENCH_CHAT_IDLE_REAP_MS,
-      "WORKBENCH_CHAT_IDLE_REAP_MS",
+      parsed.HUB_CHAT_IDLE_REAP_MS,
+      "HUB_CHAT_IDLE_REAP_MS",
       DEFAULT_CHAT_IDLE_REAP_MS,
     ),
   };

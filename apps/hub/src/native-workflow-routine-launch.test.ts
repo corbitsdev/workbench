@@ -43,7 +43,7 @@ const LIVE_ANCHOR: FakeRow = {
   definitionId: "wfd_multistep",
   tenantId: "ten_1",
   anchorRunId: "wfr_anchor1",
-  address: "wfr_anchor1@acme.workbench.test",
+  address: "wfr_anchor1@acme.hub.test",
   status: "deployed",
   createdAt: new Date("2026-01-01T00:00:00Z"),
 };
@@ -53,7 +53,7 @@ function baseParams(overrides: Record<string, unknown> = {}) {
     tenantId: "ten_1",
     definitionId: "wfd_multistep",
     principalId: "usr_1",
-    fromDomain: "acme.workbench.test",
+    fromDomain: "acme.hub.test",
     content: "Run this routine now.",
     ...overrides,
   };
@@ -77,13 +77,13 @@ describe("triggerNativeWorkflowRoutineRun", () => {
 
     expect(result).toEqual({
       runId: "wfr_anchor1",
-      address: "wfr_anchor1@acme.workbench.test",
+      address: "wfr_anchor1@acme.hub.test",
     });
     expect(routeMailCalls).toHaveLength(1);
     const [call] = routeMailCalls as [
       { address: string; base64: string; messageId: string },
     ];
-    expect(call.address).toBe("wfr_anchor1@acme.workbench.test");
+    expect(call.address).toBe("wfr_anchor1@acme.hub.test");
     expect(typeof call.base64).toBe("string");
     expect(call.base64.length).toBeGreaterThan(0);
   });

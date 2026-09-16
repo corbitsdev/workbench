@@ -22,9 +22,7 @@
 apps/hub/src/bench-session.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
 apps/hub/src/credential-expiry-sweep.ts	1	log.error`credential expiry sweep failed: ${
 apps/hub/src/grant-allowance.ts	1	return null;
-apps/hub/src/index.ts	1	email = "";
 apps/hub/src/index.ts	1	email = undefined;
-apps/hub/src/index.ts	1	log.warn(
 apps/hub/src/index.ts	1	sidecarAllocationLog.error`Sidecar allocation reconciliation failed: ${error instanceof Error ? error.message : String(error)}`;
 apps/hub/src/mail-redelivery.ts	1	log.warn`could not wake ${recipient} ahead of redelivery: ${
 apps/hub/src/shutdown.ts	1	return { kind: "failed", error };

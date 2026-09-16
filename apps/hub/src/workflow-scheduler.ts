@@ -38,40 +38,40 @@ export type ScheduledDefinition = {
 };
 
 export type ScheduledDeliveryJoinDeps = {
-  deliveryWorkbenchRequired?: (name: string) => boolean | Promise<boolean>;
-  resolveDeliveryWorkbench?: (tenantId: string) => Promise<string | undefined>;
-  joinDeliveryWorkbench?: (input: JoinRunParticipantInput) => Promise<void>;
+  deliveryChatRequired?: (name: string) => boolean | Promise<boolean>;
+  resolveDeliveryChat?: (tenantId: string) => Promise<string | undefined>;
+  joinDeliveryChat?: (input: JoinRunParticipantInput) => Promise<void>;
 };
 
 /**
- * After a scheduled tick launches, join the run to a workbench when the
- * catalog says this workflow delivers there. No workbench → still launched
+ * After a scheduled tick launches, join the run to a chat when the
+ * catalog says this workflow delivers there. No chat → still launched
  * (join omitted). Inbox-mode workflows skip the join. A join throw is the
  * caller's to log; this helper rethrows.
  */
-export async function joinScheduledDefinitionToWorkbench(
+export async function joinScheduledDefinitionToChat(
   deps: ScheduledDeliveryJoinDeps,
   def: ScheduledDefinition,
   address: string,
 ): Promise<void> {
   if (def.creatorPrincipalId === null) return;
   if (
-    deps.deliveryWorkbenchRequired !== undefined &&
-    (await deps.deliveryWorkbenchRequired(def.name)) !== true
+    deps.deliveryChatRequired !== undefined &&
+    (await deps.deliveryChatRequired(def.name)) !== true
   ) {
     return;
   }
   if (
-    deps.resolveDeliveryWorkbench === undefined ||
-    deps.joinDeliveryWorkbench === undefined
+    deps.resolveDeliveryChat === undefined ||
+    deps.joinDeliveryChat === undefined
   ) {
     return;
   }
-  const workbenchId = await deps.resolveDeliveryWorkbench(def.tenantId);
-  if (workbenchId === undefined) return;
-  await deps.joinDeliveryWorkbench({
+  const chatId = await deps.resolveDeliveryChat(def.tenantId);
+  if (chatId === undefined) return;
+  await deps.joinDeliveryChat({
     tenantId: def.tenantId,
-    workbenchId,
+    workbenchId: chatId,
     principalId: def.creatorPrincipalId,
     address,
     handle: handleFromName(def.name, address),
@@ -250,10 +250,10 @@ export function launchScheduledDefinitionFromDb(
       content: SCHEDULE_TICK_CONTENT,
     });
     try {
-      await joinScheduledDefinitionToWorkbench(deps, def, triggered.address);
+      await joinScheduledDefinitionToChat(deps, def, triggered.address);
     } catch (error) {
       reportError(error, {
-        operation: "workflow-scheduler.join-workbench",
+        operation: "workflow-scheduler.join-chat",
         tenantId: def.tenantId,
         extra: {
           definitionId: def.definitionId,
@@ -275,7 +275,7 @@ export type RunNowScheduledDefinitionArgs = {
 };
 
 /**
- * Fire a scheduled definition now, then join the run to a workbench the
+ * Fire a scheduled definition now, then join the run to a chat the
  * same way the poller does. Join failures are reported and do not fail
  * the launch — the caller still gets `{ runId }`.
  */
@@ -291,7 +291,7 @@ export async function runNowScheduledDefinition(
     content: args.content,
   });
   try {
-    await joinScheduledDefinitionToWorkbench(
+    await joinScheduledDefinitionToChat(
       deps,
       {
         definitionId: args.definitionId,
@@ -305,7 +305,7 @@ export async function runNowScheduledDefinition(
     );
   } catch (error) {
     reportError(error, {
-      operation: "scheduled-workflow.run-now.join-workbench",
+      operation: "scheduled-workflow.run-now.join-chat",
       tenantId: args.tenantId,
       extra: {
         definitionId: args.definitionId,

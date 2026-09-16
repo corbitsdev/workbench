@@ -34,15 +34,11 @@ const config: HubConfig = {
   sessionSecret: "insecure-test-only-session-secret-0000",
   hubDataDir: path.join(root, "data"),
   hubStaticDir: staticDir,
-  defaultTenantSlug: "workbench",
   signupRateLimit: { windowSeconds: 60, max: 5 },
   signInRateLimit: { windowSeconds: 60, max: 10 },
   socialProviders: {},
-  allowUnverifiedEmails: true,
   sidecarProvisioners: [],
   chatIdleReapMs: 30 * 60_000,
-  signupMode: "closed",
-  allowedEmailDomains: [],
   allowPlaintextSecrets: true,
 };
 

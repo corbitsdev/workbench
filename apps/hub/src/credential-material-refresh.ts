@@ -162,7 +162,7 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
           `/api/tenants/${args.tenantId}/mcp-servers/oauth/${mcpSlugOf(args.providerName)}/callback`,
           deps.hubUrl,
         ).toString(),
-        clientName: "Corbits Workbench",
+        clientName: "Corbits Hub",
       });
       if (!result.ok) throw new Error(result.message);
       return {
