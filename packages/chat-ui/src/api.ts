@@ -54,6 +54,7 @@ const WorkbenchWire = type({
   pinned: "boolean",
   "definitionId?": "string | null",
   participants: "unknown[]",
+  "owner?": type({ address: "string", handle: "string" }).or("null"),
   "legacy?": "boolean",
   // Row signals `GET /workbenches` annotates when it can resolve a
   // workbench's mailbox (see `packages/chat/src/routes.ts`): absent,

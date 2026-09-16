@@ -113,9 +113,6 @@ export const CHAT_STRINGS = {
 
   inviteAgentAction: "Invite agent",
   workbenchMembersLabel: "Members",
-  workbenchPresenceLabel: "Live",
-  teamStackOverflow: (count: number) =>
-    `${count} more ${count === 1 ? "member" : "members"}`,
   threadsMenuCount: (count: number) =>
     `${count} ${count === 1 ? "thread" : "threads"}`,
   inviteAgentDialogTitle: "Invite an agent",
