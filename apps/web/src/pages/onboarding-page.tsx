@@ -34,7 +34,9 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { OLLAMA_PLACEHOLDER_SECRET } from "@corbits/connections/credential-test";
 
+import { getLogger } from "@corbits/client-log";
 import { useNavigate } from "../navigation";
+import { runPortableClientBootstrap } from "../client-bootstrap";
 import {
   completeSetup,
   CREDENTIAL_PROBE_FAILURE_MESSAGE,
@@ -199,6 +201,7 @@ function initialWizardState(): WizardState {
 
 export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   const navigate = useNavigate();
+  const log = getLogger("web.onboarding");
   const [state, setState] = useState<WizardState>(initialWizardState);
   const [provider, setProvider] = useState<CredentialProvider>("anthropic");
   const [apiKey, setApiKey] = useState("");
@@ -216,6 +219,33 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   const runProvisioning = useCallback(
     (name: string) => {
       setState({ phase: "provisioning" });
+      // The portable client lane runs beside server provisioning: it
+      // converges the needs-list over stock routes and persists created
+      // child tenant ids. Non-gating — a stock capability gap is logged,
+      // never shown, until the upstream capability lands.
+      void runPortableClientBootstrap(user).then(
+        (bootstrap) => {
+          if (bootstrap.kind === "ready") {
+            log.info("Portable client bootstrap converged", {
+              primaryTenantId: bootstrap.primaryTenantId,
+            });
+          } else if (bootstrap.code === "stock-capability-missing") {
+            log.warn("Portable client bootstrap waiting on stock capability", {
+              capability: bootstrap.capability,
+              gap: bootstrap.gap,
+            });
+          } else {
+            log.warn("Portable client bootstrap failed", {
+              message: bootstrap.message,
+            });
+          }
+        },
+        (error) => {
+          log.warn("Portable client bootstrap threw", {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        },
+      );
       void triggerFirstLoginProvisioning(name).then(async (result) => {
         if (result.kind === "error") {
           setState(
@@ -295,7 +325,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         }
       });
     },
-    [navigate],
+    [navigate, user],
   );
 
   // A connect round-trip's outcome is consumed into the initial wizard
