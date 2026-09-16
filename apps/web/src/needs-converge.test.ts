@@ -4,16 +4,15 @@ import { buildNeedsList, childTenantStore } from "./needs-list";
 import {
   convergeNeedsList,
   createFetchStockHub,
-  deriveDesiredDirectMessages,
+  forkSubThread,
   StockHubCapabilityError,
   type HubSnapshot,
+  type MailMessage,
   type StockHub,
 } from "./needs-converge";
 
-const manifest = buildNeedsList({
-  account: { id: "usr_1", email: "ada@example.com", name: "Ada" },
-  myraDefinitionRefId: "assistant",
-});
+const HUB_SCOPE = "https://hub.example";
+const ACCOUNT_ID = "usr_1";
 
 const primary = {
   id: "tnt_primary",
@@ -22,33 +21,58 @@ const primary = {
   parentId: null,
 };
 
-const myra = {
+const ownerMembership = {
+  principalId: "prn_user",
+  tenantId: "tnt_primary",
+  tenantName: "Ada",
+  tenantSlug: "ada",
+  kind: "user",
+  status: "active",
+  roles: [{ id: "role_owner", name: "owner" }],
+};
+
+const ownerPrincipal = {
+  id: "prn_user",
+  tenantId: "tnt_primary",
+  kind: "user",
+  refId: "usr_1",
+  displayName: "Ada",
+  email: "ada@example.com",
+  status: "active",
+  roles: [{ id: "role_owner", name: "owner" }],
+};
+
+const myraPrincipal = {
   id: "prn_myra",
   tenantId: "tnt_primary",
   kind: "workflow",
-  refId: "run_myra",
+  refId: "assistant",
   displayName: "Myra",
   status: "active",
   roles: [],
 };
 
-function snapshot(principals = [myra]): HubSnapshot {
+function snapshotWithMyra(): HubSnapshot {
   return {
     primaryTenant: primary,
-    primaryPrincipals: [
-      {
-        id: "prn_user",
-        tenantId: "tnt_primary",
-        kind: "user",
-        refId: "usr_1",
-        displayName: "Ada",
-        email: "ada@example.com",
-        status: "active",
-        roles: [{ id: "role_owner", name: "owner" }],
-      },
-      ...principals,
-    ],
+    primaryPrincipals: [ownerPrincipal, myraPrincipal],
     childTenants: [],
+    childPrincipals: {},
+  };
+}
+
+function snapshotWithChild(childId: string): HubSnapshot {
+  return {
+    primaryTenant: primary,
+    primaryPrincipals: [ownerPrincipal, myraPrincipal],
+    childTenants: [
+      {
+        id: childId,
+        name: "Atlas",
+        slug: "ada-atlas",
+        parentId: "tnt_primary",
+      },
+    ],
     childPrincipals: {},
   };
 }
@@ -63,262 +87,30 @@ function memoryStorage() {
   };
 }
 
-function noWriteHub(): StockHub {
-  return {
-    listMyPrincipals: () => Promise.resolve([]),
-    getTenant: () => Promise.resolve(null),
-    listPrincipals: () => Promise.resolve([]),
-    createTenant: () => Promise.reject(new Error("unexpected create")),
-    inviteMember: () => Promise.reject(new Error("unexpected invite")),
-    deployWorkflow: () => Promise.reject(new Error("unexpected deploy")),
-  };
+function mailMessage(
+  messageId: string,
+  from: string,
+  to: string[],
+  extra?: Partial<MailMessage>,
+): MailMessage {
+  return { messageId, from, to, ...extra };
 }
 
-describe("DM derivation", () => {
-  test("derives exactly one chat child per active top-level workflow refId", () => {
-    const desired = deriveDesiredDirectMessages(
-      snapshot([
-        myra,
-        { ...myra, id: "prn_duplicate" },
-        {
-          ...myra,
-          id: "prn_reviewer",
-          refId: "run_reviewer",
-          displayName: "Reviewer",
-        },
-        {
-          ...myra,
-          id: "prn_suspended",
-          refId: "run_suspended",
-          status: "suspended",
-        },
-      ]),
-    );
-
-    expect(desired).toEqual([
-      {
-        kind: "chat",
-        localId: "dm:run_myra",
-        name: "Myra",
-        workflowRefId: "run_myra",
-      },
-      {
-        kind: "chat",
-        localId: "dm:run_reviewer",
-        name: "Reviewer",
-        workflowRefId: "run_reviewer",
-      },
-    ]);
-  });
-
-  test("fails before writes when stock Interchange cannot project the workflow principal", async () => {
-    const store = childTenantStore(
-      memoryStorage(),
-      "https://hub.example",
-      "usr_1",
-    );
-    try {
-      await convergeNeedsList(manifest, noWriteHub(), store, snapshot());
-      throw new Error("expected convergence to fail");
-    } catch (cause) {
-      expect(cause).toBeInstanceOf(StockHubCapabilityError);
-      expect((cause as StockHubCapabilityError).capability).toBe(
-        "project-workflow-principal",
-      );
-    }
-    expect(store.load()).toEqual([]);
-  });
-
-  test("requires exact deployment inputs instead of guessing when Myra is absent", async () => {
-    const store = childTenantStore(
-      memoryStorage(),
-      "https://hub.example",
-      "usr_1",
-    );
-    await expect(
-      convergeNeedsList(manifest, noWriteHub(), store, snapshot([])),
-    ).rejects.toMatchObject({ capability: "deploy-workflow-inputs" });
-  });
-});
-
-describe("fetch StockHub", () => {
-  const json = (body: unknown, status = 200) =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { "content-type": "application/json" },
-    });
-
-  test("uses stock Interchange routes only and posts caller-supplied deploy input unchanged", async () => {
-    const calls: { path: string; init?: RequestInit }[] = [];
-    const deploy = {
-      source: {
-        kind: "asset" as const,
-        assetId: "ast_myra",
-        package: { format: "source" as const, commitSha: "abc123" },
-      },
-      entry: "./src/index.ts",
-      sourceOfferingIds: ["offering_1"],
-      defaultSourceOfferingId: "offering_1",
-    };
-    const fetchImpl = (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = String(input);
-      calls.push(init === undefined ? { path } : { path, init });
-      if (path === "/api/me/principals?limit=100") {
-        return Promise.resolve(json({ data: [], nextCursor: null }));
-      }
-      if (path === "/api/tenants/tnt_primary") {
-        return Promise.resolve(json(primary));
-      }
-      if (path === "/api/tenants/tnt_primary/principals?limit=100") {
-        return Promise.resolve(json({ data: [], nextCursor: null }));
-      }
-      if (path === "/api/tenants" && init?.method === "POST") {
-        return Promise.resolve(
-          json({ ...primary, id: "tnt_child", parentId: "tnt_primary" }, 201),
-        );
-      }
-      if (path === "/api/tenants/tnt_primary/members/invite") {
-        return Promise.resolve(json({}, 201));
-      }
-      if (path === "/api/tenants/tnt_primary/workflows/deployments") {
-        return Promise.resolve(json({ id: "dep_1" }, 201));
-      }
-      throw new Error(`unexpected route ${path}`);
-    };
-    const hub = createFetchStockHub(fetchImpl as typeof fetch);
-
-    await hub.listMyPrincipals();
-    await hub.getTenant("tnt_primary");
-    await hub.listPrincipals("tnt_primary");
-    await hub.createTenant({
-      name: "Chat",
-      slug: "chat",
-      parentId: "tnt_primary",
-    });
-    await hub.inviteMember("tnt_primary", { email: "bea@example.com" });
-    await hub.deployWorkflow("tnt_primary", deploy);
-
-    expect(calls.map((call) => call.path)).toEqual([
-      "/api/me/principals?limit=100",
-      "/api/tenants/tnt_primary",
-      "/api/tenants/tnt_primary/principals?limit=100",
-      "/api/tenants",
-      "/api/tenants/tnt_primary/members/invite",
-      "/api/tenants/tnt_primary/workflows/deployments",
-    ]);
-    expect(JSON.parse(String(calls.at(-1)?.init?.body))).toEqual(deploy);
-    expect(
-      calls.some((call) =>
-        /onboarding|workbench-tenancies|chat\//.test(call.path),
-      ),
-    ).toBe(false);
-  });
-
-  test("follows nextCursor on both listings instead of stopping at the first page", async () => {
+describe("group workbench creation sequence", () => {
+  test("creates the child tenant, sends its primary thread, then reports it", async () => {
+    const storage = memoryStorage();
     const calls: string[] = [];
-    const membership = (principalId: string) => ({
-      principalId,
-      tenantId: "tnt_primary",
-      tenantName: "Ada",
-      tenantSlug: "ada",
-      kind: "user",
-      status: "active",
-      roles: [{ id: "role_owner", name: "owner" }],
-    });
-    const principal = (id: string) => ({
-      id,
-      tenantId: "tnt_primary",
-      kind: "user",
-      refId: id,
-      displayName: id,
-      status: "active",
-      roles: [],
-    });
-    const pages: Record<string, unknown> = {
-      "/api/me/principals?limit=100": {
-        data: [membership("prn_1")],
-        nextCursor: "cursor-b",
-      },
-      "/api/me/principals?limit=100&cursor=cursor-b": {
-        data: [membership("prn_2")],
-        nextCursor: null,
-      },
-      "/api/tenants/tnt_primary/principals?limit=100": {
-        data: [principal("prn_1")],
-        nextCursor: "cursor-c",
-      },
-      "/api/tenants/tnt_primary/principals?limit=100&cursor=cursor-c": {
-        data: [principal("prn_2")],
-        nextCursor: null,
-      },
-    };
-    const fetchImpl = (input: RequestInfo | URL) => {
-      const path = String(input);
-      calls.push(path);
-      const page = pages[path];
-      if (page === undefined) throw new Error(`unexpected route ${path}`);
-      return Promise.resolve(json(page));
-    };
-    const hub = createFetchStockHub(fetchImpl as typeof fetch);
-
-    expect(await hub.listMyPrincipals()).toEqual([
-      membership("prn_1"),
-      membership("prn_2"),
-    ]);
-    expect(await hub.listPrincipals("tnt_primary")).toEqual([
-      principal("prn_1"),
-      principal("prn_2"),
-    ]);
-    expect(calls).toEqual([
-      "/api/me/principals?limit=100",
-      "/api/me/principals?limit=100&cursor=cursor-b",
-      "/api/tenants/tnt_primary/principals?limit=100",
-      "/api/tenants/tnt_primary/principals?limit=100&cursor=cursor-c",
-    ]);
-  });
-});
-
-describe("workbench write path", () => {
-  const deploy = {
-    source: {
-      kind: "asset" as const,
-      assetId: "ast_myra",
-      package: { format: "source" as const, commitSha: "abc123" },
-    },
-    entry: "./src/index.ts",
-    sourceOfferingIds: ["offering_1"],
-    defaultSourceOfferingId: "offering_1",
-  };
-  const writeManifest = buildNeedsList({
-    account: { id: "usr_1", email: "ada@example.com", name: "Ada" },
-    myraDefinitionRefId: "assistant",
-    myraDeploy: deploy,
-    workbenches: [
-      {
-        localId: "atlas",
-        slug: "ada-atlas",
-        name: "Atlas",
-        principals: [
-          {
-            kind: "user",
-            refId: "usr_2",
-            email: "bea@example.com",
-            roles: ["member"],
-          },
-        ],
-      },
-    ],
-  });
-
-  function writeHub(calls: string[]): StockHub {
-    return {
-      ...noWriteHub(),
-      deployWorkflow: (tenantId) => {
-        calls.push(`deploy:${tenantId}`);
-        return Promise.resolve();
-      },
+    const hub: StockHub = {
+      listMyPrincipals: () => Promise.resolve([ownerMembership]),
+      getTenant: (id) => Promise.resolve({ ...primary, id }),
+      listPrincipals: () => Promise.resolve([ownerPrincipal, myraPrincipal]),
       createTenant: (input) => {
-        calls.push(`create:${input.slug}`);
+        calls.push(`createTenant:${input.parentId}`);
+        expect(input).toMatchObject({
+          name: "Atlas",
+          slug: "ada-atlas",
+          parentId: "tnt_primary",
+        });
         return Promise.resolve({
           id: "tnt_atlas",
           name: input.name,
@@ -327,68 +119,614 @@ describe("workbench write path", () => {
         });
       },
       inviteMember: (tenantId, input) => {
-        calls.push(`invite:${tenantId}:${input.email}`);
+        calls.push(`inviteMember:${tenantId}:${input.email}`);
         return Promise.resolve();
       },
+      deployWorkflow: () => Promise.reject(new Error("unexpected deploy")),
+      sendRunMail: (input) => {
+        calls.push(`sendRunMail:${input.tenantId}`);
+        expect(input).toMatchObject({
+          tenantId: "tnt_atlas",
+          runId: "run_atlas",
+          to: ["bea@example.com"],
+          subject: "Atlas",
+          body: "Kick off Atlas.",
+        });
+        return Promise.resolve({ messageId: "<primary@example>" });
+      },
+      listRunMail: (input) => {
+        calls.push(`listRunMail:${input.tenantId}`);
+        return Promise.resolve([
+          mailMessage("<primary@example>", "ada@example.com", [
+            "bea@example.com",
+          ]),
+        ]);
+      },
+      searchAgentMailbox: () =>
+        Promise.reject(new Error("unexpected mailbox search")),
+      readMailThread: () => Promise.reject(new Error("unexpected thread read")),
     };
-  }
 
-  test("creates the workbench child and invites its members when Myra deploys from caller input", async () => {
-    const storage = memoryStorage();
-    const store = childTenantStore(storage, "https://hub.example", "usr_1");
-    const calls: string[] = [];
+    const manifest = buildNeedsList({
+      account: { id: ACCOUNT_ID, email: "ada@example.com", name: "Ada" },
+      myraDefinitionRefId: "assistant",
+      workbenches: [
+        {
+          localId: "atlas",
+          slug: "ada-atlas",
+          name: "Atlas",
+          principals: [
+            {
+              kind: "user",
+              refId: "usr_2",
+              email: "bea@example.com",
+              roles: ["member"],
+            },
+          ],
+          initialMessage: { runId: "run_atlas", content: "Kick off Atlas." },
+        },
+      ],
+    });
 
     const report = await convergeNeedsList(
-      writeManifest,
-      writeHub(calls),
-      store,
-      snapshot([]),
+      manifest,
+      hub,
+      childTenantStore(storage, HUB_SCOPE, ACCOUNT_ID),
+      snapshotWithMyra(),
     );
 
+    // Stock POST /api/tenants { parentId }, then the primary-thread first
+    // message, then the stock mailbox read that splits primary + sub-threads.
+    expect(calls).toEqual([
+      "createTenant:tnt_primary",
+      "inviteMember:tnt_atlas:bea@example.com",
+      "sendRunMail:tnt_atlas",
+      "listRunMail:tnt_atlas",
+    ]);
     expect(report).toEqual({
       primaryTenantId: "tnt_primary",
       createdTenantIds: ["tnt_atlas"],
       directMessages: [],
+      primaryThreads: [
+        {
+          tenantId: "tnt_atlas",
+          rootMessageId: "<primary@example>",
+          subThreads: [],
+        },
+      ],
     });
-    expect(calls).toEqual([
-      "deploy:tnt_primary",
-      "create:ada-atlas",
-      "invite:tnt_atlas:bea@example.com",
-    ]);
-    expect(store.load()).toEqual([
-      { localId: "atlas", tenantId: "tnt_atlas", kind: "workbench" },
+    expect(childTenantStore(storage, HUB_SCOPE, ACCOUNT_ID).load()).toEqual([
+      {
+        localId: "atlas",
+        tenantId: "tnt_atlas",
+        kind: "workbench",
+        primaryThreadMessageId: "<primary@example>",
+      },
     ]);
   });
 
-  test("reclaims the stored child id on re-run instead of creating again", async () => {
+  test("skips the primary-thread send when its Message-ID is already recorded", async () => {
     const storage = memoryStorage();
-    const store = childTenantStore(storage, "https://hub.example", "usr_1");
+    const store = childTenantStore(storage, HUB_SCOPE, ACCOUNT_ID);
     store.record({
       localId: "atlas",
       tenantId: "tnt_atlas",
       kind: "workbench",
+      primaryThreadMessageId: "<primary@example>",
     });
-    const calls: string[] = [];
-    const reclaimed: HubSnapshot = {
-      ...snapshot([]),
-      childTenants: [
+    const sends: string[] = [];
+    const hub: StockHub = {
+      listMyPrincipals: () => Promise.resolve([ownerMembership]),
+      getTenant: (id) => Promise.resolve({ ...primary, id }),
+      listPrincipals: () => Promise.resolve([ownerPrincipal, myraPrincipal]),
+      createTenant: () => Promise.reject(new Error("unexpected create")),
+      inviteMember: () => Promise.reject(new Error("unexpected invite")),
+      deployWorkflow: () => Promise.reject(new Error("unexpected deploy")),
+      sendRunMail: (input) => {
+        sends.push(input.subject);
+        return Promise.resolve({ messageId: "<resent@example>" });
+      },
+      listRunMail: () =>
+        Promise.resolve([
+          mailMessage("<primary@example>", "ada@example.com", [
+            "bea@example.com",
+          ]),
+          mailMessage("<reply@example>", "bea@example.com", [
+            "ada@example.com",
+          ]),
+        ]),
+      searchAgentMailbox: () =>
+        Promise.reject(new Error("unexpected mailbox search")),
+      readMailThread: () => Promise.reject(new Error("unexpected thread read")),
+    };
+
+    const manifest = buildNeedsList({
+      account: { id: ACCOUNT_ID, email: "ada@example.com", name: "Ada" },
+      myraDefinitionRefId: "assistant",
+      workbenches: [
         {
+          localId: "atlas",
+          slug: "ada-atlas",
+          name: "Atlas",
+          principals: [
+            {
+              kind: "user",
+              refId: "usr_2",
+              email: "bea@example.com",
+              roles: ["member"],
+            },
+          ],
+          initialMessage: { runId: "run_atlas", content: "Kick off Atlas." },
+        },
+      ],
+    });
+
+    const report = await convergeNeedsList(
+      manifest,
+      hub,
+      store,
+      snapshotWithChild("tnt_atlas"),
+    );
+
+    // No resend: the recorded native Message-ID is the idempotency proof.
+    // The reply carries no In-Reply-To, so it groups as a sub-thread.
+    expect(sends).toEqual([]);
+    expect(report.createdTenantIds).toEqual([]);
+    expect(report.primaryThreads).toEqual([
+      {
+        tenantId: "tnt_atlas",
+        rootMessageId: "<primary@example>",
+        subThreads: [
+          {
+            key: "message:<reply@example>",
+            rootMessageId: "<reply@example>",
+            messageIds: ["<reply@example>"],
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("recreates the child tenant when the stored id no longer resolves", async () => {
+    const storage = memoryStorage();
+    const store = childTenantStore(storage, HUB_SCOPE, ACCOUNT_ID);
+    store.record({
+      localId: "atlas",
+      tenantId: "tnt_stale",
+      kind: "workbench",
+    });
+    const hub: StockHub = {
+      listMyPrincipals: () => Promise.resolve([ownerMembership]),
+      getTenant: (id) => Promise.resolve({ ...primary, id }),
+      listPrincipals: () => Promise.resolve([ownerPrincipal, myraPrincipal]),
+      createTenant: (input) =>
+        Promise.resolve({
+          id: "tnt_atlas",
+          name: input.name,
+          slug: input.slug,
+          parentId: input.parentId,
+        }),
+      inviteMember: () => Promise.resolve(),
+      deployWorkflow: () => Promise.reject(new Error("unexpected deploy")),
+      sendRunMail: () => Promise.resolve({ messageId: "<primary@example>" }),
+      listRunMail: () => Promise.resolve([]),
+      searchAgentMailbox: () =>
+        Promise.reject(new Error("unexpected mailbox search")),
+      readMailThread: () => Promise.reject(new Error("unexpected thread read")),
+    };
+
+    const manifest = buildNeedsList({
+      account: { id: ACCOUNT_ID, email: "ada@example.com", name: "Ada" },
+      myraDefinitionRefId: "assistant",
+      workbenches: [{ localId: "atlas", slug: "ada-atlas", name: "Atlas" }],
+    });
+
+    const report = await convergeNeedsList(
+      manifest,
+      hub,
+      store,
+      snapshotWithMyra(),
+    );
+
+    // No initialMessage supplied, so no primary-thread send — and no mail
+    // to read means no primary thread entry either.
+    expect(report.createdTenantIds).toEqual(["tnt_atlas"]);
+    expect(report.primaryThreads).toEqual([]);
+    expect(store.load()).toEqual([
+      { localId: "atlas", tenantId: "tnt_atlas", kind: "workbench" },
+    ]);
+  });
+});
+
+describe("writes after gap checks", () => {
+  function gapHub(calls: string[]): StockHub {
+    return {
+      listMyPrincipals: () => Promise.resolve([ownerMembership]),
+      getTenant: (id) => Promise.resolve({ ...primary, id }),
+      listPrincipals: () => Promise.resolve([ownerPrincipal, myraPrincipal]),
+      createTenant: () => {
+        calls.push("createTenant");
+        return Promise.reject(new Error("must not write past a gap"));
+      },
+      inviteMember: () => {
+        calls.push("inviteMember");
+        return Promise.resolve();
+      },
+      deployWorkflow: () => {
+        calls.push("deployWorkflow");
+        return Promise.resolve();
+      },
+      sendRunMail: () => {
+        calls.push("sendRunMail");
+        return Promise.resolve({ messageId: "<late@example>" });
+      },
+      listRunMail: () => Promise.resolve([]),
+      searchAgentMailbox: () =>
+        Promise.reject(new Error("unexpected mailbox search")),
+      readMailThread: () => Promise.reject(new Error("unexpected thread read")),
+    };
+  }
+
+  test("requires exact deployment inputs before writing anything", async () => {
+    const calls: string[] = [];
+    const manifest = buildNeedsList({
+      account: { id: ACCOUNT_ID, email: "ada@example.com", name: "Ada" },
+      myraDefinitionRefId: "assistant",
+      workbenches: [{ localId: "atlas", slug: "ada-atlas", name: "Atlas" }],
+    });
+    const snapshot: HubSnapshot = {
+      primaryTenant: primary,
+      primaryPrincipals: [ownerPrincipal],
+      childTenants: [],
+      childPrincipals: {},
+    };
+
+    const failure = await convergeNeedsList(
+      manifest,
+      gapHub(calls),
+      childTenantStore(memoryStorage(), HUB_SCOPE, ACCOUNT_ID),
+      snapshot,
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(StockHubCapabilityError);
+    expect((failure as StockHubCapabilityError).capability).toBe(
+      "deploy-workflow-inputs",
+    );
+    expect(calls).toEqual([]);
+  });
+
+  test("deploys Myra from caller-supplied inputs before workbench writes", async () => {
+    const calls: string[] = [];
+    const deployed: { tenantId: string; input: unknown }[] = [];
+    const hub = gapHub(calls);
+    hub.deployWorkflow = (tenantId, input) => {
+      calls.push("deployWorkflow");
+      deployed.push({ tenantId, input });
+      return Promise.resolve();
+    };
+    hub.createTenant = (input) => {
+      calls.push("createTenant");
+      return Promise.resolve({
+        id: "tnt_atlas",
+        name: input.name,
+        slug: input.slug,
+        parentId: input.parentId,
+      });
+    };
+
+    const manifest = buildNeedsList({
+      account: { id: ACCOUNT_ID, email: "ada@example.com", name: "Ada" },
+      myraDefinitionRefId: "assistant",
+      myraDeploy: {
+        source: { kind: "registry", registry: "npm" },
+        entry: "dist/myra.js",
+        sourceOfferingIds: ["off_1"],
+        defaultSourceOfferingId: "off_1",
+      },
+      workbenches: [{ localId: "atlas", slug: "ada-atlas", name: "Atlas" }],
+    });
+    const snapshot: HubSnapshot = {
+      primaryTenant: primary,
+      primaryPrincipals: [ownerPrincipal],
+      childTenants: [],
+      childPrincipals: {},
+    };
+
+    const report = await convergeNeedsList(
+      manifest,
+      hub,
+      childTenantStore(memoryStorage(), HUB_SCOPE, ACCOUNT_ID),
+      snapshot,
+    );
+
+    expect(calls).toEqual(["deployWorkflow", "createTenant"]);
+    expect(deployed).toEqual([
+      {
+        tenantId: "tnt_primary",
+        input: {
+          source: { kind: "registry", registry: "npm" },
+          entry: "dist/myra.js",
+          sourceOfferingIds: ["off_1"],
+          defaultSourceOfferingId: "off_1",
+        },
+      },
+    ]);
+    expect(report.primaryTenantId).toBe("tnt_primary");
+  });
+
+  test("stops before writes on workflow and role gaps", async () => {
+    const calls: string[] = [];
+    const manifest = buildNeedsList({
+      account: { id: ACCOUNT_ID, email: "ada@example.com", name: "Ada" },
+      myraDefinitionRefId: "assistant",
+      workbenches: [
+        {
+          localId: "bot",
+          slug: "ada-bot",
+          name: "Bot",
+          principals: [
+            { kind: "workflow", refId: "run_bot", roles: ["member"] },
+          ],
+        },
+        {
+          localId: "bossy",
+          slug: "ada-bossy",
+          name: "Bossy",
+          principals: [
+            {
+              kind: "user",
+              refId: "usr_2",
+              email: "bea@example.com",
+              roles: ["admin"],
+            },
+          ],
+        },
+      ],
+    });
+
+    const failure = await convergeNeedsList(
+      manifest,
+      gapHub(calls),
+      childTenantStore(memoryStorage(), HUB_SCOPE, ACCOUNT_ID),
+      snapshotWithMyra(),
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(StockHubCapabilityError);
+    expect((failure as StockHubCapabilityError).capability).toBe(
+      "project-workflow-principal",
+    );
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("thread-native DM derivation", () => {
+  test("DMs are participant-filtered threads, never tenants", async () => {
+    const storage = memoryStorage();
+    const created: string[] = [];
+    const hub: StockHub = {
+      listMyPrincipals: () => Promise.resolve([ownerMembership]),
+      getTenant: (id) => Promise.resolve({ ...primary, id }),
+      listPrincipals: () => Promise.resolve([ownerPrincipal, myraPrincipal]),
+      createTenant: (input) => {
+        created.push(input.name);
+        return Promise.resolve({
+          id: `tnt_${input.slug}`,
+          name: input.name,
+          slug: input.slug,
+          parentId: input.parentId,
+        });
+      },
+      inviteMember: () => Promise.resolve(),
+      deployWorkflow: () => Promise.reject(new Error("unexpected deploy")),
+      sendRunMail: () => Promise.reject(new Error("unexpected send")),
+      listRunMail: () => Promise.resolve([]),
+      searchAgentMailbox: () =>
+        Promise.reject(new Error("unexpected mailbox search")),
+      readMailThread: () => Promise.reject(new Error("unexpected thread read")),
+    };
+
+    const manifest = buildNeedsList({
+      account: { id: ACCOUNT_ID, email: "ada@example.com", name: "Ada" },
+      myraDefinitionRefId: "assistant",
+    });
+
+    const report = await convergeNeedsList(
+      manifest,
+      hub,
+      childTenantStore(storage, HUB_SCOPE, ACCOUNT_ID),
+      snapshotWithMyra(),
+      [
+        mailMessage("<one@example>", "myra@example.com", ["ada@example.com"], {
+          subject: "Myra daily",
+        }),
+        mailMessage("<two@example>", "ada@example.com", ["myra@example.com"], {
+          subject: "Myra daily",
+        }),
+        mailMessage("<group@example>", "myra@example.com", [
+          "ada@example.com",
+          "bea@example.com",
+        ]),
+      ],
+    );
+
+    // One DM for the user↔Myra thread; the group thread is not a DM; and
+    // no tenant was created for any of them.
+    expect(report.directMessages).toHaveLength(1);
+    expect(report.directMessages[0]).toMatchObject({
+      agentAddress: "myra@example.com",
+    });
+    expect(created).toEqual([]);
+  });
+});
+
+describe("sub-thread forking", () => {
+  test("forks with native ancestry and replays the recorded Message-ID", async () => {
+    const storage = memoryStorage();
+    const sent: { headers: unknown; subject: string }[] = [];
+    const hub: StockHub = {
+      listMyPrincipals: () => Promise.resolve([ownerMembership]),
+      getTenant: (id) => Promise.resolve({ ...primary, id }),
+      listPrincipals: () => Promise.resolve([ownerPrincipal, myraPrincipal]),
+      createTenant: () => Promise.reject(new Error("unexpected create")),
+      inviteMember: () => Promise.reject(new Error("unexpected invite")),
+      deployWorkflow: () => Promise.reject(new Error("unexpected deploy")),
+      sendRunMail: (input) => {
+        sent.push({ headers: input.headers, subject: input.subject });
+        return Promise.resolve({ messageId: "<sub@example>" });
+      },
+      listRunMail: () => Promise.resolve([]),
+      searchAgentMailbox: () =>
+        Promise.reject(new Error("unexpected mailbox search")),
+      readMailThread: () => Promise.reject(new Error("unexpected thread read")),
+    };
+
+    const parent = {
+      workbenchLocalId: "atlas",
+      tenantId: "tnt_atlas",
+      messageId: "<primary@example>",
+      references: [] as readonly string[],
+    };
+    const first = await forkSubThread(
+      storage,
+      hub,
+      HUB_SCOPE,
+      ACCOUNT_ID,
+      parent,
+      {
+        to: ["bea@example.com"],
+        subject: "Atlas delivery",
+        body: "First delivery update.",
+      },
+    );
+    const replay = await forkSubThread(
+      storage,
+      hub,
+      HUB_SCOPE,
+      ACCOUNT_ID,
+      parent,
+      {
+        to: ["bea@example.com"],
+        subject: "Atlas delivery",
+        body: "First delivery update.",
+      },
+    );
+
+    expect(first).toBe("<sub@example>");
+    // Same parent + subject replays the recorded id instead of resending.
+    expect(replay).toBe("<sub@example>");
+    expect(sent).toEqual([
+      {
+        headers: {
+          inReplyTo: "<primary@example>",
+          references: ["<primary@example>"],
+        },
+        subject: "Atlas delivery",
+      },
+    ]);
+  });
+});
+
+describe("stock-only fetch hub", () => {
+  function stubFetch(
+    seen: { method: string; url: string; body: unknown }[],
+    routes: Record<string, unknown>,
+  ) {
+    return (async (url: unknown, init?: { method?: string; body?: string }) => {
+      const method = init?.method ?? "GET";
+      const path = String(url).split("?")[0] ?? String(url);
+      const body =
+        init?.body === undefined ? undefined : JSON.parse(init.body as string);
+      seen.push({ method, url: String(url), body });
+      const key = `${method} ${path}`;
+      const payload = key in routes ? routes[key] : routes[path];
+      if (payload === undefined) {
+        return new Response("not found", { status: 404 });
+      }
+      return new Response(JSON.stringify(payload), { status: 200 });
+    }) as typeof fetch;
+  }
+
+  test("mailbox search and thread reads stay typed upstream gaps", async () => {
+    const hub = createFetchStockHub(stubFetch([], {}));
+
+    const search = await hub
+      .searchAgentMailbox({ address: "myra@example.com" })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(search).toBeInstanceOf(StockHubCapabilityError);
+    expect((search as StockHubCapabilityError).capability).toBe(
+      "agent-mailbox-reads",
+    );
+
+    const thread = await hub.readMailThread({ messageId: "<a@example>" }).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(thread).toBeInstanceOf(StockHubCapabilityError);
+    expect((thread as StockHubCapabilityError).capability).toBe(
+      "thread-fork-context",
+    );
+  });
+
+  test("every request stays on stock routes with no custom idempotency keys", async () => {
+    const seen: { method: string; url: string; body: unknown }[] = [];
+    const hub = createFetchStockHub(
+      stubFetch(seen, {
+        "/api/tenants": {
           id: "tnt_atlas",
           name: "Atlas",
           slug: "ada-atlas",
           parentId: "tnt_primary",
         },
-      ],
-    };
-
-    const report = await convergeNeedsList(
-      writeManifest,
-      writeHub(calls),
-      store,
-      reclaimed,
+        "POST /api/tenants/tnt_atlas/mailbox/messages": {
+          messageId: "<primary@example>",
+        },
+        "/api/tenants/tnt_atlas/mailbox/messages": {
+          data: [
+            {
+              messageId: "<primary@example>",
+              from: "ada@example.com",
+              to: ["bea@example.com"],
+            },
+          ],
+          nextCursor: null,
+        },
+      }),
     );
 
-    expect(report.createdTenantIds).toEqual([]);
-    expect(calls).toEqual(["deploy:tnt_primary"]);
+    const created = await hub.createTenant({
+      name: "Atlas",
+      slug: "ada-atlas",
+      parentId: "tnt_primary",
+    });
+    expect(created.id).toBeDefined();
+    const sent = await hub.sendRunMail({
+      tenantId: "tnt_atlas",
+      to: ["bea@example.com"],
+      subject: "Atlas",
+      body: "Kick off Atlas.",
+    });
+    expect(sent.messageId).toBeDefined();
+    const mail = await hub.listRunMail({ tenantId: "tnt_atlas" });
+    expect(mail).toHaveLength(1);
+
+    expect(seen.length).toBeGreaterThan(0);
+    for (const request of seen) {
+      // Stock surface only: tenant bootstrap, invites, deploys, mailbox.
+      // Never a product path, never a DM tenancy path.
+      expect(request.url.startsWith("/api/")).toBe(true);
+      expect(request.url).not.toContain("/workbenches");
+      expect(request.url).not.toContain("dm:");
+    }
+    const send = seen.find((request) => request.method === "POST");
+    expect(send).toBeDefined();
+    expect(JSON.stringify(send?.body)).not.toContain("idempotency");
+    expect(JSON.stringify(send?.body)).not.toContain("dm:");
   });
 });

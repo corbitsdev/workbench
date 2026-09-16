@@ -46,12 +46,11 @@ export const NeedsListSchema = type({
     kind: "'workbench'",
     parent: "'primary'",
     principals: DesiredPrincipalSchema.array(),
+    "initialMessage?": type({
+      runId: "string > 0",
+      content: "string > 0",
+    }),
   }).array(),
-  directMessages: {
-    kind: "'chat'",
-    onePer: "'owned-top-level-workflow'",
-    projectedPrincipalKind: "'workflow'",
-  },
 });
 export type NeedsList = typeof NeedsListSchema.infer;
 
@@ -73,6 +72,12 @@ export type NeedsListInput = {
       readonly email?: string;
       readonly roles: readonly string[];
     }[];
+    /** Caller-supplied primary-thread first message for the child tenant:
+     * the run to address and the exact content to send. Never synthesized. */
+    readonly initialMessage?: {
+      readonly runId: string;
+      readonly content: string;
+    };
   }[];
 };
 
@@ -100,12 +105,15 @@ export function buildNeedsList(input: NeedsListInput): NeedsList {
         status: "active" as const,
         roles: [...principal.roles],
       })),
+      ...(workbench.initialMessage === undefined
+        ? {}
+        : {
+            initialMessage: {
+              runId: workbench.initialMessage.runId,
+              content: workbench.initialMessage.content,
+            },
+          }),
     })),
-    directMessages: {
-      kind: "chat",
-      onePer: "owned-top-level-workflow",
-      projectedPrincipalKind: "workflow",
-    },
   };
 }
 
@@ -121,8 +129,15 @@ export type StringStorage = {
 const ChildTenantRecordSchema = type({
   localId: "string > 0",
   tenantId: "string > 0",
-  kind: "'chat' | 'workbench'",
-  "principalRefId?": "string > 0",
+  kind: "'workbench'",
+  // The workbench's primary thread: the native Message-ID of the first
+  // conversation.message sent in the child tenant. Recorded beside the
+  // created id so a retry never resends — idempotency rides this id.
+  // Workbench metadata beyond Subject/List-ID (icon, prefs) lives here
+  // too: client-held, never a server table.
+  "primaryThreadMessageId?": "string > 0",
+  "icon?": "string > 0",
+  "prefs?": "Record<string, unknown>",
 });
 export type ChildTenantRecord = typeof ChildTenantRecordSchema.infer;
 
@@ -165,6 +180,63 @@ export function childTenantStore(
       const records = load().filter((row) => row.localId !== record.localId);
       records.push(record);
       storage.setItem(key, JSON.stringify(records));
+    },
+  };
+}
+
+const ThreadLinkSchema = type({
+  workbenchLocalId: "string > 0",
+  messageId: "string > 0",
+  // The native fork ancestry for this sub-thread first message: the parent
+  // becomes In-Reply-To and closes References. Held here until the stock
+  // submission route accepts threading headers.
+  "inReplyTo?": "string > 0",
+  "references?": type("string > 0").array(),
+  // The forked subject, so a retry of the same fork replays its recorded
+  // Message-ID while a different subject off the same parent sends anew.
+  "subject?": "string > 0",
+});
+export type ThreadLink = typeof ThreadLinkSchema.infer;
+
+export type ThreadLinkStore = {
+  load(): ThreadLink[];
+  record(link: ThreadLink): void;
+};
+
+/** Client-held sub-thread fork links, scoped exactly like the child-tenant
+ * store: one entry per sub-thread first message, deduped by native
+ * Message-ID, corrupt rows skipped per row. */
+export function threadLinkStore(
+  storage: StringStorage,
+  hubScope: string,
+  accountId: string,
+): ThreadLinkStore {
+  const key = `workbench.thread-links:${encodeURIComponent(hubScope)}:${encodeURIComponent(accountId)}`;
+  const load = (): ThreadLink[] => {
+    const raw = storage.getItem(key);
+    if (raw === null) return [];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      const rows: ThreadLink[] = [];
+      for (const row of parsed) {
+        const validated = ThreadLinkSchema(row);
+        if (!(validated instanceof type.errors)) rows.push({ ...validated });
+      }
+      return rows;
+    } catch {
+      // report-error-ignore: corrupt client storage is ordinary state, not an
+      // incident — an unreadable row reads as empty and is overwritten on the
+      // next record, so reporting it would spam the sink on every load.
+      return [];
+    }
+  };
+  return {
+    load,
+    record(link) {
+      const links = load().filter((row) => row.messageId !== link.messageId);
+      links.push(link);
+      storage.setItem(key, JSON.stringify(links));
     },
   };
 }

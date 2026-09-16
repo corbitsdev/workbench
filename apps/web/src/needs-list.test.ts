@@ -6,6 +6,7 @@ import {
   childTenantStore,
   NeedsListSchema,
   parseNeedsList,
+  threadLinkStore,
   type StringStorage,
 } from "./needs-list";
 
@@ -20,7 +21,7 @@ function memoryStorage(initial: Record<string, string> = {}): StringStorage {
 }
 
 describe("portable needs-list", () => {
-  test("represents the primary tenant, top-level Myra, children, projections, and DM policy", () => {
+  test("represents the primary tenant, top-level Myra, and workbench children — never DMs", () => {
     const manifest = buildNeedsList({
       account: { id: "usr_1", email: "ada@example.com", name: "Ada" },
       myraDefinitionRefId: "assistant",
@@ -37,6 +38,7 @@ describe("portable needs-list", () => {
               roles: ["member"],
             },
           ],
+          initialMessage: { runId: "run_atlas", content: "Kick off Atlas." },
         },
       ],
     });
@@ -50,16 +52,13 @@ describe("portable needs-list", () => {
         scope: "top-level",
         want: "running",
       },
-      directMessages: {
-        kind: "chat",
-        onePer: "owned-top-level-workflow",
-        projectedPrincipalKind: "workflow",
-      },
     });
+    expect("directMessages" in manifest).toBe(false);
     expect(manifest.workbenches[0]).toMatchObject({
       kind: "workbench",
       parent: "primary",
       principals: [{ kind: "user", refId: "usr_2", status: "active" }],
+      initialMessage: { runId: "run_atlas", content: "Kick off Atlas." },
     });
     expect(parseNeedsList(manifest) instanceof type.errors).toBe(false);
     expect(NeedsListSchema).toBeDefined();
@@ -88,24 +87,27 @@ describe("account and hub scoped child-tenant store", () => {
     );
 
     ada.record({
-      localId: "dm:workflow_1",
+      localId: "atlas",
       tenantId: "tnt_old",
-      kind: "chat",
-      principalRefId: "workflow_1",
+      kind: "workbench",
     });
     ada.record({
-      localId: "dm:workflow_1",
+      localId: "atlas",
       tenantId: "tnt_current",
-      kind: "chat",
-      principalRefId: "workflow_1",
+      kind: "workbench",
+      primaryThreadMessageId: "<primary@example>",
+      icon: "mountain",
+      prefs: { tone: "brief" },
     });
 
     expect(ada.load()).toEqual([
       {
-        localId: "dm:workflow_1",
+        localId: "atlas",
         tenantId: "tnt_current",
-        kind: "chat",
-        principalRefId: "workflow_1",
+        kind: "workbench",
+        primaryThreadMessageId: "<primary@example>",
+        icon: "mountain",
+        prefs: { tone: "brief" },
       },
     ]);
     expect(bea.load()).toEqual([]);
@@ -121,21 +123,90 @@ describe("account and hub scoped child-tenant store", () => {
     ).toEqual([]);
   });
 
-  test("keeps valid rows when one row is corrupt", () => {
+  test("keeps valid rows when one row is corrupt, and drops legacy DM rows", () => {
     const storage = memoryStorage({
       "workbench.child-tenants:https%3A%2F%2Fone.example:usr_ada":
         JSON.stringify([
-          { localId: "atlas", tenantId: "tnt_atlas", kind: "workbench" },
+          {
+            localId: "atlas",
+            tenantId: "tnt_atlas",
+            kind: "workbench",
+            primaryThreadMessageId: "<primary@example>",
+          },
           { localId: "", tenantId: "tnt_bad", kind: "workbench" },
-          { localId: "dm:run_myra", tenantId: "tnt_dm", kind: "chat" },
+          {
+            localId: "dm:run_myra",
+            tenantId: "tnt_dm",
+            kind: "chat",
+            principalRefId: "run_myra",
+          },
           null,
         ]),
     });
     expect(
       childTenantStore(storage, "https://one.example", "usr_ada").load(),
     ).toEqual([
-      { localId: "atlas", tenantId: "tnt_atlas", kind: "workbench" },
-      { localId: "dm:run_myra", tenantId: "tnt_dm", kind: "chat" },
+      {
+        localId: "atlas",
+        tenantId: "tnt_atlas",
+        kind: "workbench",
+        primaryThreadMessageId: "<primary@example>",
+      },
     ]);
+  });
+});
+
+describe("account and hub scoped thread-link store", () => {
+  test("holds sub-thread fork links beside created ids, deduped by Message-ID", () => {
+    const storage = memoryStorage();
+    const ada = threadLinkStore(storage, "https://one.example", "usr_ada");
+    const bea = threadLinkStore(storage, "https://one.example", "usr_bea");
+
+    ada.record({
+      workbenchLocalId: "atlas",
+      messageId: "<sub@example>",
+      inReplyTo: "<primary@example>",
+      references: ["<primary@example>"],
+    });
+    ada.record({
+      workbenchLocalId: "atlas",
+      messageId: "<sub@example>",
+      inReplyTo: "<primary@example>",
+      references: ["<primary@example>", "<sub@example>"],
+    });
+
+    expect(ada.load()).toEqual([
+      {
+        workbenchLocalId: "atlas",
+        messageId: "<sub@example>",
+        inReplyTo: "<primary@example>",
+        references: ["<primary@example>", "<sub@example>"],
+      },
+    ]);
+    expect(bea.load()).toEqual([]);
+  });
+
+  test("treats corrupt client state as empty and skips bad rows", () => {
+    const storage = memoryStorage({
+      "workbench.thread-links:https%3A%2F%2Fone.example:usr_ada":
+        JSON.stringify([
+          { workbenchLocalId: "atlas", messageId: "<sub@example>" },
+          { workbenchLocalId: "", messageId: "<bad@example>" },
+          null,
+        ]),
+    });
+    expect(
+      threadLinkStore(storage, "https://one.example", "usr_ada").load(),
+    ).toEqual([{ workbenchLocalId: "atlas", messageId: "<sub@example>" }]);
+    expect(
+      threadLinkStore(
+        memoryStorage({
+          "workbench.thread-links:https%3A%2F%2Fone.example:usr_ada":
+            "not json",
+        }),
+        "https://one.example",
+        "usr_ada",
+      ).load(),
+    ).toEqual([]);
   });
 });

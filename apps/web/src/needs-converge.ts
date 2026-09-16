@@ -1,10 +1,37 @@
+// Convergence for the portable client manifest: stock writes only, after
+// gap checks. Group workbench creation sequence per workbench: stock
+// `POST /api/tenants { parentId }` → send the primary-thread first message
+// (the workbench's chat, only when the caller supplied its exact content)
+// → fork sub-threads as needed via `forkSubThread`. DMs are never created
+// here — they derive from participant-filtered threads over stock mail
+// snapshots the caller supplies, via `deriveDmThreads` in threads.ts.
+//
+// Creation idempotency rides native Message-IDs the hub stamps and returns:
+// the primary thread id is recorded on the child-tenant row and fork links
+// in the thread store, beside created ids — never a custom key. Reads stay
+// stock routes (mailbox list); writes stay stock routes (tenant create,
+// member invite, workflow deploy, run-mail send). Per-agent mailbox search
+// and full thread reads stay typed upstream gaps until the hub exposes
+// stock routes for them.
+
 import { type } from "arktype";
 
-import type {
-  ChildTenantStore,
-  NeedsList,
-  WorkflowDeployInput,
+import {
+  childTenantStore,
+  threadLinkStore,
+  type ChildTenantStore,
+  type NeedsList,
+  type StringStorage,
+  type WorkflowDeployInput,
 } from "./needs-list";
+import {
+  buildForkReference,
+  deriveDmThreads,
+  deriveThreads,
+  type DmThread,
+  type Thread,
+  type ThreadMessage,
+} from "./threads";
 
 export type HubTenant = {
   id: string;
@@ -36,6 +63,27 @@ export type MyMembership = {
   roles: HubRole[];
 };
 
+/** One stock `conversation.message` row: the native Message-ID plus the
+ * threading headers thread derivation reads (In-Reply-To, References,
+ * List-ID) and the To/Cc membership set. */
+export type MailMessage = ThreadMessage & {
+  runId?: string;
+};
+
+export type SendRunMailInput = {
+  tenantId: string;
+  runId?: string;
+  to: readonly string[];
+  cc?: readonly string[];
+  subject: string;
+  body: string;
+  /** Native fork ancestry for a sub-thread first message. */
+  headers?: {
+    inReplyTo?: string;
+    references?: readonly string[];
+  };
+};
+
 export type StockHub = {
   listMyPrincipals(): Promise<MyMembership[]>;
   getTenant(id: string): Promise<HubTenant | null>;
@@ -47,6 +95,14 @@ export type StockHub = {
   }): Promise<HubTenant>;
   inviteMember(tenantId: string, input: { email: string }): Promise<void>;
   deployWorkflow(tenantId: string, input: WorkflowDeployInput): Promise<void>;
+  sendRunMail(input: SendRunMailInput): Promise<{ messageId: string }>;
+  listRunMail(input: { tenantId: string }): Promise<MailMessage[]>;
+  /** Stock per-agent mailbox search: participant-filtered thread derivation
+   * reads through this once the hub exposes a stock route for it. */
+  searchAgentMailbox(input: { address: string }): Promise<MailMessage[]>;
+  /** Stock full thread read: sub-thread fork context reads through this
+   * once the hub exposes a stock route for it. */
+  readMailThread(input: { messageId: string }): Promise<MailMessage[]>;
 };
 
 export type HubSnapshot = {
@@ -56,18 +112,19 @@ export type HubSnapshot = {
   childPrincipals: Record<string, HubPrincipal[]>;
 };
 
-export type DesiredDirectMessage = {
-  kind: "chat";
-  localId: string;
-  name: string;
-  workflowRefId: string;
+export type PrimaryThread = {
+  tenantId: string;
+  rootMessageId: string;
+  subThreads: Thread[];
 };
 
 export type StockHubCapability =
   | "primary-tenant-bootstrap"
   | "deploy-workflow-inputs"
   | "project-workflow-principal"
-  | "principal-roles";
+  | "principal-roles"
+  | "agent-mailbox-reads"
+  | "thread-fork-context";
 
 export class StockHubCapabilityError extends Error {
   readonly code = "stock-capability-missing" as const;
@@ -137,24 +194,6 @@ export async function readHubSnapshot(hub: StockHub): Promise<HubSnapshot> {
   };
 }
 
-export function deriveDesiredDirectMessages(
-  snapshot: HubSnapshot,
-): DesiredDirectMessage[] {
-  const byRefId = new Map<string, DesiredDirectMessage>();
-  for (const principal of snapshot.primaryPrincipals) {
-    if (principal.kind !== "workflow" || principal.status !== "active")
-      continue;
-    if (byRefId.has(principal.refId)) continue;
-    byRefId.set(principal.refId, {
-      kind: "chat",
-      localId: `dm:${principal.refId}`,
-      name: principal.displayName,
-      workflowRefId: principal.refId,
-    });
-  }
-  return [...byRefId.values()];
-}
-
 function hasMyra(manifest: NeedsList, snapshot: HubSnapshot): boolean {
   const expected = manifest.myra.definitionRefId.toLowerCase();
   return snapshot.primaryPrincipals.some(
@@ -167,61 +206,95 @@ function hasMyra(manifest: NeedsList, snapshot: HubSnapshot): boolean {
   );
 }
 
-function directMessageExists(
-  desired: DesiredDirectMessage,
-  snapshot: HubSnapshot,
-  store: ChildTenantStore,
-): boolean {
-  const record = store
-    .load()
-    .find(
-      (candidate) =>
-        candidate.localId === desired.localId && candidate.kind === "chat",
-    );
-  if (record === undefined) return false;
-  const tenant = snapshot.childTenants.find(
-    (candidate) => candidate.id === record.tenantId,
-  );
-  if (tenant === undefined || tenant.parentId !== snapshot.primaryTenant.id) {
-    return false;
-  }
-  return (snapshot.childPrincipals[tenant.id] ?? []).some(
-    (principal) =>
-      principal.kind === "workflow" &&
-      principal.status === "active" &&
-      principal.refId === desired.workflowRefId,
-  );
-}
-
 export type ConvergeReport = {
   primaryTenantId: string;
   createdTenantIds: string[];
-  directMessages: DesiredDirectMessage[];
+  /** DMs derived from participant-filtered threads — never tenants. */
+  directMessages: DmThread[];
+  primaryThreads: PrimaryThread[];
 };
+
+/** Ensures the group workbench child tenant exists (stock `POST
+ * /api/tenants { parentId }` when the stored id no longer resolves) and
+ * invites its email members. Returns the converged tenant id, whether it
+ * was just created, and its stored record. */
+async function convergeWorkbenchTenant(
+  hub: StockHub,
+  store: ChildTenantStore,
+  snapshot: HubSnapshot,
+  workbench: NeedsList["workbenches"][number],
+): Promise<{ tenantId: string; created: boolean }> {
+  const stored = store.load().find((row) => row.localId === workbench.localId);
+  const existing = snapshot.childTenants.find(
+    (tenant) => tenant.id === stored?.tenantId,
+  );
+  if (existing !== undefined && stored !== undefined) {
+    return { tenantId: existing.id, created: false };
+  }
+  const created = await hub.createTenant({
+    name: workbench.name,
+    slug: workbench.slug,
+    parentId: snapshot.primaryTenant.id,
+  });
+  store.record({
+    ...(stored ?? {}),
+    localId: workbench.localId,
+    tenantId: created.id,
+    kind: "workbench",
+  });
+  for (const principal of workbench.principals) {
+    if (principal.email !== undefined) {
+      await hub.inviteMember(created.id, { email: principal.email });
+    }
+  }
+  return { tenantId: created.id, created: true };
+}
+
+/** Sends the workbench's primary-thread first message — the workbench's
+ * chat — exactly when the caller supplied its content and no native
+ * Message-ID is recorded yet. A recorded id means the send already
+ * happened: never resend, never mint a custom key. */
+async function convergePrimaryThread(
+  hub: StockHub,
+  store: ChildTenantStore,
+  workbench: NeedsList["workbenches"][number],
+  tenantId: string,
+): Promise<void> {
+  const stored = store.load().find((row) => row.localId === workbench.localId);
+  if (stored?.primaryThreadMessageId !== undefined) return;
+  if (workbench.initialMessage === undefined) return;
+  const sent = await hub.sendRunMail({
+    tenantId,
+    runId: workbench.initialMessage.runId,
+    to: workbench.principals.flatMap((principal) =>
+      principal.email === undefined ? [] : [principal.email],
+    ),
+    subject: workbench.name,
+    body: workbench.initialMessage.content,
+  });
+  store.record({
+    ...(stored ?? {}),
+    localId: workbench.localId,
+    tenantId,
+    kind: "workbench",
+    primaryThreadMessageId: sent.messageId,
+  });
+}
 
 export async function convergeNeedsList(
   manifest: NeedsList,
   hub: StockHub,
   store: ChildTenantStore,
   suppliedSnapshot?: HubSnapshot,
+  directMail: readonly ThreadMessage[] = [],
 ): Promise<ConvergeReport> {
   const snapshot = suppliedSnapshot ?? (await readHubSnapshot(hub));
-  const directMessages = deriveDesiredDirectMessages(snapshot);
 
+  // Gap checks first: nothing is written until every need is satisfiable.
   if (!hasMyra(manifest, snapshot) && manifest.myra.deploy === undefined) {
     throw new StockHubCapabilityError(
       "deploy-workflow-inputs",
       "Myra is absent and the client was not supplied the exact stock workflow source and offering ids.",
-    );
-  }
-
-  const missingDirectMessage = directMessages.find(
-    (desired) => !directMessageExists(desired, snapshot, store),
-  );
-  if (missingDirectMessage !== undefined) {
-    throw new StockHubCapabilityError(
-      "project-workflow-principal",
-      `Stock Interchange cannot carry workflow ${missingDirectMessage.workflowRefId} into a child room by refId; no DM was created.`,
     );
   }
 
@@ -252,38 +325,102 @@ export async function convergeNeedsList(
     await hub.deployWorkflow(snapshot.primaryTenant.id, manifest.myra.deploy);
   }
 
+  // Writes after gap checks, in needs-list order: child tenant, then its
+  // primary-thread first message.
   const createdTenantIds: string[] = [];
   for (const workbench of manifest.workbenches) {
-    const existingRecord = store
-      .load()
-      .find((record) => record.localId === workbench.localId);
-    const existing = snapshot.childTenants.find(
-      (tenant) => tenant.id === existingRecord?.tenantId,
+    const converged = await convergeWorkbenchTenant(
+      hub,
+      store,
+      snapshot,
+      workbench,
     );
-    if (existing !== undefined) continue;
-    const created = await hub.createTenant({
-      name: workbench.name,
-      slug: workbench.slug,
-      parentId: snapshot.primaryTenant.id,
+    if (converged.created) createdTenantIds.push(converged.tenantId);
+    await convergePrimaryThread(hub, store, workbench, converged.tenantId);
+  }
+
+  // Reads stay stock routes: split each workbench mailbox into its primary
+  // thread (first conversation.message sent in the child tenant, or the
+  // recorded primary id) plus forked sub-threads.
+  const primaryThreads: PrimaryThread[] = [];
+  for (const workbench of manifest.workbenches) {
+    const stored = store
+      .load()
+      .find((row) => row.localId === workbench.localId);
+    if (stored === undefined) continue;
+    const mail = await hub.listRunMail({ tenantId: stored.tenantId });
+    const grouped = deriveThreads(mail);
+    const rootMessageId = stored.primaryThreadMessageId ?? mail[0]?.messageId;
+    if (rootMessageId === undefined) continue;
+    primaryThreads.push({
+      tenantId: stored.tenantId,
+      rootMessageId,
+      subThreads: grouped.filter(
+        (thread) => thread.rootMessageId !== rootMessageId,
+      ),
     });
-    store.record({
-      localId: workbench.localId,
-      tenantId: created.id,
-      kind: "workbench",
-    });
-    createdTenantIds.push(created.id);
-    for (const principal of workbench.principals) {
-      if (principal.email !== undefined) {
-        await hub.inviteMember(created.id, { email: principal.email });
-      }
-    }
   }
 
   return {
     primaryTenantId: snapshot.primaryTenant.id,
     createdTenantIds,
-    directMessages,
+    directMessages: deriveDmThreads(directMail, [manifest.account.email]),
+    primaryThreads,
   };
+}
+
+export type ForkSubThreadParent = {
+  workbenchLocalId: string;
+  tenantId: string;
+  messageId: string;
+  references?: readonly string[];
+};
+
+export type ForkSubThreadInput = {
+  to: readonly string[];
+  subject: string;
+  body: string;
+};
+
+/** Forks a sub-thread off a primary-thread message: the fork ancestry
+ * (parent as In-Reply-To closing the References chain) rides the sent
+ * first message natively, and the linkage is recorded in the client-held
+ * thread store beside created ids. A fork already recorded for the same
+ * parent + subject returns its native Message-ID instead of resending. */
+export async function forkSubThread(
+  storage: StringStorage,
+  hub: StockHub,
+  hubScope: string,
+  accountId: string,
+  parent: ForkSubThreadParent,
+  input: ForkSubThreadInput,
+): Promise<string> {
+  const links = threadLinkStore(storage, hubScope, accountId);
+  const replay = links
+    .load()
+    .find(
+      (link) =>
+        link.workbenchLocalId === parent.workbenchLocalId &&
+        link.inReplyTo === parent.messageId &&
+        link.subject === input.subject,
+    );
+  if (replay !== undefined) return replay.messageId;
+  const fork = buildForkReference(parent);
+  const sent = await hub.sendRunMail({
+    tenantId: parent.tenantId,
+    to: input.to,
+    subject: input.subject,
+    body: input.body,
+    headers: { inReplyTo: fork.inReplyTo, references: fork.references },
+  });
+  links.record({
+    workbenchLocalId: parent.workbenchLocalId,
+    messageId: sent.messageId,
+    inReplyTo: fork.inReplyTo,
+    references: [...fork.references],
+    subject: input.subject,
+  });
+  return sent.messageId;
 }
 
 const TenantShape = type({
@@ -318,6 +455,22 @@ const PrincipalPageShape = type({
   }).array(),
   nextCursor: "string | null",
 });
+const MailRowShape = type({
+  messageId: "string",
+  from: "string",
+  to: type("string").array(),
+  "cc?": type("string").array(),
+  "subject?": "string",
+  "listId?": "string",
+  "inReplyTo?": "string",
+  "references?": type("string").array(),
+  "runId?": "string",
+});
+const MailPageShape = type({
+  data: MailRowShape.array(),
+  nextCursor: "string | null",
+});
+const SentMailShape = type({ messageId: "string" });
 
 async function readJson(
   response: Response,
@@ -372,6 +525,10 @@ async function fetchAllPages<T>(
   }
 }
 
+/** Builds the StockHub port over stock routes only: tenant bootstrap,
+ * member invite, workflow deploy, and run-mail send/list under the tenant
+ * mailbox surface. Per-agent mailbox search and full thread reads stay
+ * typed upstream gaps until the hub exposes stock routes for them. */
 export function createFetchStockHub(fetchImpl: typeof fetch = fetch): StockHub {
   return {
     async listMyPrincipals() {
@@ -440,5 +597,43 @@ export function createFetchStockHub(fetchImpl: typeof fetch = fetch): StockHub {
         "deployWorkflow",
       );
     },
+    async sendRunMail(input) {
+      const { tenantId, ...message } = input;
+      const body = await readJson(
+        await fetchImpl(
+          `/api/tenants/${encodeURIComponent(tenantId)}/mailbox/messages`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(message),
+          },
+        ),
+        "sendRunMail",
+      );
+      return parseBoundary(SentMailShape, body, "sendRunMail");
+    },
+    async listRunMail(input) {
+      return fetchAllPages(
+        fetchImpl,
+        `/api/tenants/${encodeURIComponent(input.tenantId)}/mailbox/messages`,
+        "listRunMail",
+        (body) => parseBoundary(MailPageShape, body, "listRunMail"),
+      );
+    },
+    async searchAgentMailbox(input) {
+      throw new StockHubCapabilityError(
+        "agent-mailbox-reads",
+        `Stock Interchange exposes no per-agent mailbox search route for ${input.address}; no DM was derived.`,
+      );
+    },
+    async readMailThread(input) {
+      throw new StockHubCapabilityError(
+        "thread-fork-context",
+        `Stock Interchange exposes no full thread route for ${input.messageId}; no fork context was read.`,
+      );
+    },
   };
 }
+
+export { childTenantStore };
+export type { ChildTenantStore };
