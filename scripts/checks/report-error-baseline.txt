@@ -126,13 +126,9 @@ packages/chat/src/platform-adapter.ts	1	wakeLogger.error`drift check for ${bindi
 packages/chat/src/platform-adapter.ts	1	wakeLogger.error`inference-source reconcile for ${binding.roomAddress} (run ${run.id}) failed, leaving it as-is: ${
 packages/chat/src/platform-adapter.ts	1	wakeLogger.error`pinned-tool-package reconcile for ${live.binding.roomAddress} (run ${live.run.id}) failed, leaving it as-is: ${
 packages/chat/src/platform-adapter.ts	1	wakeLogger.error`relaunch sweep: could not relaunch ${live.binding.roomAddress} (run ${live.run.id} is ${live.run.status}): ${
-packages/chat/src/routes.ts	1	log.error(
-packages/chat/src/routes.ts	2	log.error(
 packages/chat/src/turn-context.ts	1	contextLog.warn`failed to assemble turn context on workbench ${input.workbenchId}: ${
 packages/chat/src/workbench-service.ts	1	fanoutLog.error(
 packages/chat/src/workbench-service.ts	1	greetingLog.error(
-packages/chat/src/workbench-service.ts	1	mintAgentDmLog.error(
-packages/chat/src/workbench-service.ts	1	provisionLog.error(
 packages/chat/src/workbench-service.ts	1	removeLog.error(
 packages/chat/src/workbench-service.ts	2	fanoutLog.error(
 packages/code-review/src/report.ts	1	return { ok: false, reason: "the reply was not JSON" };

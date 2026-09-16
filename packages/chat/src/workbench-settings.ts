@@ -216,9 +216,9 @@ export type WorkbenchVisibility = "bench" | "members";
  * A workbench's visibility, read off its settings the same way `kindOf`
  * reads kind: `"bench"` — every member of the owning bench opens it —
  * unless the creator has explicitly flipped it to `"members"` (CL-6332),
- * where only principals the workbench's own child tenant has minted may.
- * Defaults to `"bench"` for any other or absent value, never fails
- * closed to `"members"` from a malformed setting.
+ * where only the creator (`chat/createdBy`) and invited human
+ * participants may. Defaults to `"bench"` for any other or absent
+ * value, never fails closed to `"members"` from a malformed setting.
  */
 export function visibilityOf(
   settings: Record<string, unknown>,

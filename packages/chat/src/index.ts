@@ -81,7 +81,7 @@ export {
 } from "./participants";
 export type { ParticipantRecord } from "./participants";
 
-export { createChatRoutes, findExistingAgentChat } from "./routes";
+export { createChatRoutes } from "./routes";
 export type { CreateChatRoutesDeps } from "./routes";
 
 export {
@@ -250,21 +250,16 @@ export {
   waitUntilFreeTimeoutMessage,
   launchAndJoinAgent,
   KindIsChatError,
-  mintAgentDm,
   postCannedGreeting,
   cannedGreeting,
   sendWorkbenchMessage,
   startWorkflowCommand,
-  provisionSpaceWorkbench,
   cancelWorkbenchTurn,
 } from "./workbench-service";
 export type {
   LaunchAndJoinAgentDeps,
   LaunchAndJoinAgentInput,
   LaunchAndJoinAgentResult,
-  MintAgentDmDeps,
-  MintAgentDmInput,
-  MintAgentDmResult,
   PostCannedGreetingDeps,
   PostCannedGreetingInput,
   CannedGreetingInput,
@@ -275,26 +270,13 @@ export type {
   StartWorkflowCommandDeps,
   StartWorkflowCommandInput,
   StartWorkflowCommandResult,
-  ProvisionSpaceWorkbenchDeps,
-  ProvisionSpaceWorkbenchInput,
-  ProvisionSpaceWorkbenchResult,
 } from "./workbench-service";
 
 export {
-  createDrizzleWorkbenchTenancyStore,
-  createInMemoryWorkbenchTenancyStore,
-} from "./workbench-tenancy";
-export type {
-  WorkbenchTenancyDb,
-  WorkbenchTenancyRow,
-  WorkbenchTenancyStore,
-  CreateWorkbenchTenantInput,
-  CreateWorkbenchTenantResult,
-  MoveWorkbenchTenancyInput,
-} from "./workbench-tenancy";
-
-export { createWorkbenchTenancyRoutes } from "./workbench-tenancy-routes";
-export type { CreateWorkbenchTenancyRoutesDeps } from "./workbench-tenancy-routes";
+  createDrizzleNativePrincipalStore,
+  createInMemoryNativePrincipalStore,
+} from "./native-principal";
+export type { NativePrincipal, NativePrincipalStore } from "./native-principal";
 
 export {
   createDrizzleFederationTrustStore,

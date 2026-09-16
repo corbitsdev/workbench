@@ -41,7 +41,7 @@ const ALLOWLIST: readonly {
 }[] = [
   {
     relPath: "packages/chat/src/schema.ts",
-    maxOccurrences: 17,
+    maxOccurrences: 16,
     tables: [
       // Created as channel_settings et al.; renamed to workbench_* by
       // 0018_rename_channel_to_workbench (CL-6260) — see migrations.ts.
@@ -49,7 +49,6 @@ const ALLOWLIST: readonly {
       "chat_bench_settings",
       "workbench_read_state",
       "workbench_launch",
-      "workbench_tenancy",
       "workbench_threads",
       "workbench_thread_messages",
       "workbench_share",

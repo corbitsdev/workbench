@@ -6,9 +6,8 @@
 // — both tenants have separately opted in — which is what
 // `packages/chat/src/workbench-share.ts` gates workbench projection on.
 //
-// Mirrors `workbench-tenancy.ts`'s shape: a store interface, a drizzle
-// implementation, and an in-memory test double with `registerTenant` test
-// support.
+// Shape: a store interface, a drizzle implementation, and an in-memory
+// test double with `registerTenant` test support.
 import { and, eq, inArray } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { generateId } from "@intx/hub-common";
@@ -176,8 +175,7 @@ export function createDrizzleFederationTrustStore<
  * An in-memory `FederationTrustStore`, for tests and any host wiring chat
  * routes without a database. `registerTenant` is test-support only —
  * standing up a fake native `tenant` row (name + optional parent) without
- * a database, mirroring `createInMemoryWorkbenchTenancyStore`'s
- * `registerExistingTenant`. `seedDirectionalTrust` lets a test construct
+ * a database. `seedDirectionalTrust` lets a test construct
  * the "only one direction exists" case directly, without going through
  * `establishBilateralTrust` (which always writes both).
  */

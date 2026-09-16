@@ -65,27 +65,18 @@ export const chatMigrations: readonly ChatMigration[] = [
         ADD COLUMN IF NOT EXISTS "noop_inference" boolean NOT NULL DEFAULT false;
     `,
   },
-  {
-    name: "0005_channel_tenancy",
-    sql: `
-      CREATE TABLE IF NOT EXISTS "chat"."channel_tenancy" (
-        "channel_id" text NOT NULL,
-        "tenant_id" text NOT NULL,
-        "parent_tenant_id" text NOT NULL,
-        "slug" text NOT NULL,
-        "created_at" timestamptz NOT NULL DEFAULT now(),
-        PRIMARY KEY ("channel_id"),
-        UNIQUE ("tenant_id")
-      );
-    `,
-  },
-  {
-    name: "0006_channel_tenancy_parent_index",
-    sql: `
-      CREATE INDEX IF NOT EXISTS "channel_tenancy_parent_tenant_id_idx"
-        ON "chat"."channel_tenancy" ("parent_tenant_id");
-    `,
-  },
+  // Hard refresh (chat tenancy cutover): the channel/workbench tenancy
+  // link table is gone — 0031 drops `workbench_tenancy` outright and the
+  // client mints conversation tenants through stock Interchange now, so
+  // chat keeps no link table. The 0005 CREATE, the 0006 parent index, and
+  // the three 0018 tenancy rename rows that only ever served that table
+  // are deleted here rather than replayed: fresh databases build clean
+  // with no legacy rows, and existing dev/test databases reset
+  // (`bun run reset`) instead of migrating — there is no upgrade path for
+  // the removed entries. Later entries keep their stable ledger names, so
+  // the numbering has gaps and must never be renumbered (the ledger skips
+  // by name, and a rename would replay against databases that already ran
+  // the old name).
   {
     name: "0007_chat_bench_settings",
     sql: `
@@ -263,6 +254,8 @@ export const chatMigrations: readonly ChatMigration[] = [
   // one place that carries them forward. Plain renames only: no data
   // moves, no column ever changes type, so this is a metadata-only
   // operation on Postgres and safe to run against a live table.
+  // (Hard refresh: the purged channel/workbench tenancy table has no rows
+  // here — see the note above 0007. 0031 still drops it outright.)
   {
     name: "0018_rename_channel_to_workbench",
     sql: `
@@ -273,10 +266,6 @@ export const chatMigrations: readonly ChatMigration[] = [
       ALTER TABLE "chat"."workbench_read_state" RENAME COLUMN "channel_id" TO "workbench_id";
 
       ALTER TABLE "chat"."channel_launch" RENAME TO "workbench_launch";
-
-      ALTER TABLE "chat"."channel_tenancy" RENAME TO "workbench_tenancy";
-      ALTER TABLE "chat"."workbench_tenancy" RENAME COLUMN "channel_id" TO "workbench_id";
-      ALTER INDEX "chat"."channel_tenancy_parent_tenant_id_idx" RENAME TO "workbench_tenancy_parent_tenant_id_idx";
 
       ALTER TABLE "chat"."channel_threads" RENAME TO "workbench_threads";
       ALTER TABLE "chat"."workbench_threads" RENAME COLUMN "channel_id" TO "workbench_id";
@@ -586,6 +575,19 @@ export const chatMigrations: readonly ChatMigration[] = [
       CREATE UNIQUE INDEX IF NOT EXISTS "agent_turns_occurrence_key"
         ON "chat"."agent_turns"
         ("tenant_id", "agent_address", "occurrence");
+    `,
+  },
+  {
+    // Hard cutover: chat keeps no tenancy link table — the client mints
+    // conversation tenants through stock Interchange now. On a fresh
+    // database this is a no-op guard (0005/0006/0018-tenancy rows are
+    // purged above, so the table is never created); on a pre-purge
+    // database it drops the leftover table and its index outright. Either
+    // way the table stays dropped — see the hard-refresh note above 0007.
+    name: "0031_drop_workbench_tenancy",
+    sql: `
+      DROP INDEX IF EXISTS "chat"."workbench_tenancy_parent_tenant_id_idx";
+      DROP TABLE IF EXISTS "chat"."workbench_tenancy";
     `,
   },
 ];

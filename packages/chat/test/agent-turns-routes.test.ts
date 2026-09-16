@@ -6,7 +6,13 @@ import { describe, expect, test } from "bun:test";
 import { createInMemoryAgentTurnStore } from "../src/agent-turns";
 import type { AgentTurn } from "../src/agent-turns";
 import { createChatRoutes } from "../src/routes";
-import { buildDeps, createWorkbench, mountAs, TENANT } from "./test-support";
+import {
+  buildDeps,
+  createWorkbench,
+  mountAs,
+  OTHER_TENANT,
+  TENANT,
+} from "./test-support";
 
 describe("GET /workbenches/:id/turns", () => {
   test("404s when the host injected no turn store", async () => {
@@ -209,22 +215,33 @@ describe("GET /workbenches/:id/turns/:turnId", () => {
   test("a turn belonging to another workbench is not found here", async () => {
     const agentTurns = createInMemoryAgentTurnStore();
     const deps = buildDeps({ agentTurns });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const routes = createChatRoutes(deps);
+    // One workbench per conversation tenant — the tenant id IS the
+    // workbench id — so "another workbench" can only mean a workbench
+    // created under another tenant.
+    const appHere = mountAs(routes, "prn_alice", TENANT);
+    const appElsewhere = mountAs(routes, "prn_alice", OTHER_TENANT);
     const here = (
-      await createWorkbench(app, { kind: "workbench", name: "here" })
+      await createWorkbench(appHere, { kind: "workbench", name: "here" })
     ).body.id;
     const elsewhere = (
-      await createWorkbench(app, { kind: "workbench", name: "elsewhere" })
+      await createWorkbench(appElsewhere, {
+        kind: "workbench",
+        name: "elsewhere",
+      })
     ).body.id;
+    expect(elsewhere).not.toBe(here);
 
     const opened = await agentTurns.startTurn({
-      tenantId: TENANT.id,
+      tenantId: OTHER_TENANT.id,
       workbenchId: elsewhere,
       agentAddress: "ins_echo1@acme.example",
       requestMessageIds: ["msg_1"],
     });
 
-    const res = await app.request(`/workbenches/${here}/turns/${opened.id}`);
+    const res = await appHere.request(
+      `/workbenches/${here}/turns/${opened.id}`,
+    );
     expect(res.status).toBe(404);
   });
 

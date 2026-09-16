@@ -11,7 +11,6 @@
 // `./platform-port`, the settings vocabulary in `./workbench-settings`,
 // join/fan-out orchestration in `./workbench-service`, and the SSE
 // subscriber registry in `./workbench-events`.
-import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -75,7 +74,6 @@ import {
   joinHumanParticipant,
   KindIsChatError,
   launchAndJoinAgent,
-  findExistingAgentChat,
   removeWorkbenchParticipant,
   resolveInvitedDisplayName,
   sendWorkbenchMessage,
@@ -111,8 +109,7 @@ import {
 import type { CommandRegistry, CommandResult } from "@corbits/commands";
 import { InferenceResolutionError } from "./model-unavailable";
 import { DefinitionProjectionMissingError } from "@corbits/workflows";
-import type { WorkbenchTenancyStore } from "./workbench-tenancy";
-import { cookiesFromHeader } from "@corbits/hub-api-client";
+import type { NativePrincipal, NativePrincipalStore } from "./native-principal";
 import type { AgentTurnStore } from "./agent-turns";
 import type { ThreadStore } from "./threads";
 import { ThreadDepthCapError } from "./threads";
@@ -143,15 +140,8 @@ export type CreateChatRoutesDeps = {
   platform: ChatPlatform;
   /** The workbench timeline itself: every message a room holds. */
   roomMessages: RoomMessageStore;
-  /**
-   * Mints and tracks the native child tenant every workbench is anchored
-   * as (see `./workbench-tenancy.ts`) — required, never optional: a
-   * workbench created without a tenancy would be a silent legacy path
-   * reopened, which "no fallbacks" forbids. Every workbench created
-   * through this route carries a tenancy link from creation onward;
-   * only workbenches that predate this rollout lack one.
-   */
-  tenancy: WorkbenchTenancyStore;
+  /** Native principal reads used to validate a person DM counterpart. */
+  principals: NativePrincipalStore;
   requireGrant: RequireGrant;
   /**
    * The host's verdict on whether a deployed definition belongs in the
@@ -373,13 +363,6 @@ const CreateWorkbenchBody = type({
   "participants?": "string[]",
   "definitionId?": "string",
   "principalId?": "string",
-  /**
-   * Accepted and ignored. `kind: "chat"` + `definitionId` always
-   * find-or-reopens via `findExistingAgentChat` (CL-6981); this flag is
-   * no longer an opt-in. Callers that still send it (Myra land-hop,
-   * `openAgentDm`) are not 400'd.
-   */
-  "reuseExisting?": "boolean",
 });
 type CreateWorkbenchBodyT = typeof CreateWorkbenchBody.infer;
 
@@ -617,35 +600,30 @@ async function checkGrant(
  * A bench member may open a workbench its own bench owns when either
  * the workbench is bench-visible (the default — every member of the
  * owning bench opens it, which reaching this check at all already
- * proves the caller is) or, for a members-only workbench, the caller's
- * own auth identity (`refId`) holds an active principal in the
- * workbench's own child tenant — the native "invited" signal (CL-6332):
- * a workbench IS a tenant and mints one for whoever it's shared with,
- * with no separate membership table to fall out of sync with it. A
- * legacy workbench with no tenancy link at all (predates workbench
- * tenancy) has no such tenant to check membership against, so it stays
- * bench-visible regardless of its `chat/visibility` setting.
+ * proves the caller is) or, for a members-only workbench, the caller
+ * is its creator (`chat/createdBy`, stamped at creation and immutable
+ * through PATCH — `validateSettingsPatch` rejects unknown `chat/`
+ * keys) or holds a human participant row on it: `joinHumanParticipant`
+ * records a person invite under their bare principal id, which is
+ * exactly what the caller is compared against, so agent addresses
+ * (always `local@domain`) can never match. No link table and no
+ * child-tenant principal lookup — the workbench's own settings row
+ * carries both signals.
  */
 async function benchCallerCanOpenWorkbench(
-  deps: CreateChatRoutesDeps,
+  store: ChatStore,
   benchTenantId: string,
   workbenchId: string,
-  principalRefId: string,
+  principalId: string,
 ): Promise<boolean> {
-  const settings = await deps.store.getWorkbenchSettings(
-    benchTenantId,
-    workbenchId,
-  );
+  const settings = await store.getWorkbenchSettings(benchTenantId, workbenchId);
   if (settings === undefined || visibilityOf(settings.settings) === "bench") {
     return true;
   }
-  const link = await deps.tenancy.getWorkbenchTenancy(workbenchId);
-  if (link === undefined) return true;
-  const member = await deps.tenancy.getTenantPrincipalByRefId(
-    link.tenantId,
-    principalRefId,
+  if (settings.settings["chat/createdBy"] === principalId) return true;
+  return participantsOf(settings.settings).some(
+    (participant) => participant.address === principalId,
   );
-  return member !== undefined && member.status === "active";
 }
 
 async function resolveWorkbenchAccess(
@@ -653,15 +631,14 @@ async function resolveWorkbenchAccess(
   actingTenantId: string,
   workbenchId: string,
   principalId: string,
-  principalRefId: string,
 ): Promise<{ ownerTenantId: string } | undefined> {
   if (await workbenchInTenant(deps.store, actingTenantId, workbenchId)) {
     if (
       !(await benchCallerCanOpenWorkbench(
-        deps,
+        deps.store,
         actingTenantId,
         workbenchId,
-        principalRefId,
+        principalId,
       ))
     ) {
       return undefined;
@@ -937,36 +914,6 @@ async function dispatchWorkbenchCommand(
   return undefined;
 }
 
-const MoveWorkbenchBody = type({
-  newParentTenantId: "string",
-});
-
-export { findExistingAgentChat };
-
-/** Annotates a workbench view with its native child-tenancy — the
- * `tenancy` field every workbench created after this rollout carries,
- * never `null` unless a caller reaches a route that skips the
- * annotation (there are none; `GET /workbenches` handles the one place a
- * link can be legitimately missing itself, via its own `legacy`
- * branch). */
-function withTenancy(
-  view: ReturnType<typeof workbenchView>,
-  link: { tenantId: string; parentTenantId: string; slug: string },
-): ReturnType<typeof workbenchView> & {
-  tenancy: { tenantId: string; parentTenantId: string; slug: string };
-  legacy: false;
-} {
-  return {
-    ...view,
-    tenancy: {
-      tenantId: link.tenantId,
-      parentTenantId: link.parentTenantId,
-      slug: link.slug,
-    },
-    legacy: false,
-  };
-}
-
 export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
   const registry =
@@ -1036,37 +983,15 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
 
-      // kind: chat + definitionId always find-or-reopens (CL-6981): a DM
-      // is the one 1:1 tenant with that agent. `reuseExisting` is accepted
-      // and ignored — omitted and `false` reopen the same as `true`.
-      // Checked before anything is minted, and before the (cheaper,
-      // in-memory) principal-self-chat validation below, since a found
-      // match short-circuits the whole handler.
-      if (isChatWithDefinition(body)) {
-        const existing = await findExistingAgentChat(
-          deps,
-          tenant.id,
-          body.definitionId,
-        );
-        if (existing !== undefined) {
-          const link = await deps.tenancy.getWorkbenchTenancy(
-            existing.workbenchId,
-          );
-          return c.json(
-            link !== undefined
-              ? withTenancy(workbenchView(existing), link)
-              : { ...workbenchView(existing), tenancy: null, legacy: true },
-            200,
-          );
-        }
-      }
-
       // A person-DM's counterpart is validated before anything is
       // minted: a caller cannot start a direct chat with themselves
       // (structurally never a DM — there is no second party), and
       // `principalId` must name a real, active member of this bench.
       // Both fail closed with an ordinary client error rather than
       // seeding a workbench with a participant record nothing backs.
+      // The validated counterpart is carried to the join below — one
+      // lookup, one predicate, no second read that could drift.
+      let dmCounterpart: NativePrincipal | undefined;
       if (isChatWithPrincipal(body)) {
         if (body.principalId === principal.id) {
           return c.json(
@@ -1077,7 +1002,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             409,
           );
         }
-        const target = await deps.tenancy.getTenantPrincipal(
+        const target = await deps.principals.getTenantPrincipal(
           tenant.id,
           body.principalId,
         );
@@ -1095,14 +1020,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             400,
           );
         }
+        dmCounterpart = target;
       }
 
-      const workbenchId = generateId("workflowRun");
-      // An unnamed agent chat is titled by its agent's display name
-      // ("Myra"), resolved before the workbench tenant is minted so the
-      // tenant row carries the same readable name instead of the raw
-      // workbench id. An unknown definition leaves this undefined; the
-      // post-join handle fallback below still names the chat then.
+      // The client creates the conversation tenant through Interchange before
+      // initializing chat. The tenant id is therefore the stable workbench id;
+      // chat never mints or links another tenant behind it.
+      const workbenchId = tenant.id;
+      // An unnamed agent chat is titled by its agent's display name. An
+      // unknown definition leaves this undefined; the post-join handle
+      // fallback below still names the chat then.
       const invitable = isChatWithDefinition(body)
         ? await deps.platform.listInvitableDefinitions(tenant.id)
         : [];
@@ -1113,62 +1040,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           ? invitable.find((definition) => definition.id === body.definitionId)
               ?.description
           : undefined);
-
-      // A workbench is a child tenant of the bench it is created in from
-      // the moment it exists. Native tenant/role/grant rows are minted
-      // through POST /api/tenants as this caller; the workbench_tenancy
-      // link is written after. A later launch failure compensates the
-      // link only — the native tenant stays, same as a later launch
-      // failure already lives with. The creator becomes the child
-      // tenant's native owner exactly as POST /api/tenants seeds its
-      // own creator.
-      const workbenchTenant = await deps.tenancy.createWorkbenchTenant({
-        parentTenantId: tenant.id,
-        workbenchId,
-        name: chatTitle ?? workbenchId,
-        creatorUserId: principal.refId,
-        cookies: cookiesFromHeader(c.req.header("cookie")),
-      });
-
-      // Compensation can itself fail (a dropped connection, the same
-      // outage that failed the launch). That must never swallow the
-      // launch failure that triggered it — compensation failure is its
-      // own loud log line, tagged with the orphaned tenant id for an
-      // operator to clean up by hand, and the ORIGINAL launch error
-      // always propagates to the caller (sync paths) or the log
-      // (the async mint path below).
-      async function compensateMint(err: unknown, phase: string) {
-        log.error(
-          "Workbench {phase} failed for {workbenchId} after minting " +
-            "{tenantId}; compensating the orphaned tenant and settings: " +
-            "{cause}",
-          {
-            phase,
-            workbenchId,
-            tenantId: workbenchTenant.tenantId,
-            cause: err instanceof Error ? err.message : String(err),
-            err,
-          },
-        );
-        try {
-          await deps.store.deleteWorkbenchSettings(tenant.id, workbenchId);
-          await deps.tenancy.compensateWorkbenchTenant(
-            workbenchTenant.tenantId,
-          );
-        } catch (compensationErr) {
-          log.error(
-            "Compensation failed for orphaned tenant {tenantId} after " +
-              "workbench {workbenchId}'s {phase} failure; this tenant is now " +
-              "a privileged orphan and requires manual cleanup",
-            {
-              phase,
-              workbenchId,
-              tenantId: workbenchTenant.tenantId,
-              compensationErr,
-            },
-          );
-        }
-      }
 
       const preset = presetForKind(body.kind);
       // Initial participants arrive as bare addresses; each gets a
@@ -1185,10 +1056,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         "chat/kind": body.kind,
         "chat/pinned": preset.pinned,
         "chat/participants": initialParticipants,
+        // The creator's standing invite: members-only visibility admits
+        // exactly this principal plus participant-row holders (see
+        // `benchCallerCanOpenWorkbench`), so creation stamps it here —
+        // the one write path that knows who the creator is.
+        "chat/createdBy": principal.id,
       };
-      // Recorded so a later `POST /workbenches` for the same agent can find
-      // this chat by it directly (see `findExistingAgentChat`) instead of
-      // reverse-resolving a participant address every time.
+      // The definition pin identifies the agent bound to this client-minted DM.
       const withDefinitionId: Record<string, unknown> = isChatWithDefinition(
         body,
       )
@@ -1237,7 +1111,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             },
           );
         } catch (err) {
-          await compensateMint(err, "agent mint");
           // CL-6357: a definition whose every asset candidate has gone
           // unresolvable (DB/blob drift) is a named, consumer-facing
           // 4xx — never an unhandled 500 — with the same compensation
@@ -1310,10 +1183,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         });
 
         return c.json(
-          withTenancy(
-            workbenchView({ workbenchId, settings: finalSettings }),
-            workbenchTenant,
-          ),
+          workbenchView({ workbenchId, settings: finalSettings }),
           201,
         );
       }
@@ -1330,11 +1200,15 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         // the local-part-of-the-principal-id fallback below only
         // fires for a bare API call that omits `name` entirely.
         const memberHandle = handleFromName(body.name ?? "", body.principalId);
-        const memberPrincipal = await deps.tenancy.getTenantPrincipal(
-          tenant.id,
-          body.principalId,
-        );
-        if (memberPrincipal === undefined) {
+        // The pre-mint gate above already validated this counterpart —
+        // reused here with the full predicate rather than re-fetched, so
+        // the kind/status check cannot drift between the two reads. The
+        // fail-closed shape stays: an unset counterpart is still a 400.
+        if (
+          dmCounterpart === undefined ||
+          dmCounterpart.kind !== "user" ||
+          dmCounterpart.status !== "active"
+        ) {
           return c.json(
             makeErrorEnvelope({
               code: "bad_request",
@@ -1350,14 +1224,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               store: deps.store,
               roomMessages: deps.roomMessages,
               publish,
-              tenancy: deps.tenancy,
             },
             {
               tenantId: tenant.id,
               principalId: principal.id,
               workbenchId,
               memberPrincipalId: body.principalId,
-              memberRefId: memberPrincipal.refId,
               memberHandle,
             },
           );
@@ -1381,42 +1253,19 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               : joined.settings;
 
           return c.json(
-            withTenancy(
-              workbenchView({ workbenchId, settings: finalSettings }),
-              workbenchTenant,
-            ),
+            workbenchView({ workbenchId, settings: finalSettings }),
             201,
           );
         } catch (err) {
-          log.error(
-            "Adding the person-DM participant failed for workbench " +
-              "{workbenchId} after the host was minted and settings were " +
-              "written; compensating the workbench tenant and deleting " +
-              "its settings",
-            { workbenchId, tenantId: workbenchTenant.tenantId, err },
-          );
-          try {
-            await deps.tenancy.compensateWorkbenchTenant(
-              workbenchTenant.tenantId,
-            );
-            await deps.store.deleteWorkbenchSettings(tenant.id, workbenchId);
-          } catch (compensationErr) {
-            log.error(
-              "Compensation failed after person-DM join failure for " +
-                "workbench {workbenchId}; the orphaned tenant {tenantId} " +
-                "and/or its settings require manual cleanup",
-              {
-                workbenchId,
-                tenantId: workbenchTenant.tenantId,
-                compensationErr,
-              },
-            );
-          }
+          reportError(err, {
+            operation: "chat.joinHumanParticipant",
+            tenantId: tenant.id,
+          });
           throw err;
         }
       }
 
-      return c.json(withTenancy(workbenchView(row), workbenchTenant), 201);
+      return c.json(workbenchView(row), 201);
     },
   );
 
@@ -1427,23 +1276,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const kind = c.req.query("kind");
       const rows = await deps.store.listWorkbenchSettings(tenant.id, kind);
-      // Every workbench_settings row here is scoped to this bench
-      // already — the tenancy link is annotated on top, never used to
-      // widen or narrow this query. A moved workbench keeps its
-      // workbench_settings row in the bench it was created in forever,
-      // so its link must be read by its own workbench id, never by
-      // "children of this bench" — that filter goes stale the moment
-      // a workbench moves elsewhere and would wrongly report it as
-      // legacy. A row with no link at all is a genuine LEGACY workbench:
-      // it predates this rollout (created before workbench tenancy
-      // existed) and carries no native tenant of its own. Legacy rows
-      // are surfaced here, never silently dropped — "no fallbacks"
-      // means the gap stays visible until every legacy workbench is
-      // backfilled a tenancy, at which point this branch and the
-      // `legacy` field below should both be deleted.
-      const links = await Promise.all(
-        rows.map((row) => deps.tenancy.getWorkbenchTenancy(row.workbenchId)),
-      );
 
       // Message signals (unread count, preview, relative time) in two bulk
       // calls covering every row — never one per workbench. The caller's
@@ -1479,12 +1311,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         roomMessages: deps.roomMessages,
       });
 
-      const ownItems = rows.map((row, index) => {
-        const link = links[index];
-        const view =
-          link !== undefined
-            ? withTenancy(workbenchView(row), link)
-            : { ...workbenchView(row), tenancy: null, legacy: true };
+      const ownItems = rows.map((row) => {
+        const view = workbenchView(row);
         const activity = activityByWorkbenchId[row.workbenchId];
         const withLiveState = {
           ...view,
@@ -1551,8 +1379,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                     : `shared · ${owningTenantName ?? "another tenant"}`;
                 items.push({
                   ...view,
-                  tenancy: null,
-                  legacy: false,
                   sharedLabel,
                   live: "idle",
                 });
@@ -1888,7 +1714,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
-        principal.refId,
       );
       if (access === undefined) {
         return c.json(
@@ -1974,7 +1799,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           tenant.id,
           workbenchId,
           principal.id,
-          principal.refId,
         )) === undefined
       ) {
         return c.json(
@@ -2052,7 +1876,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
-        principal.refId,
       );
       if (access === undefined) {
         return c.json(
@@ -2177,7 +2000,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             continue;
           }
 
-          const target = await deps.tenancy.getTenantPrincipal(
+          const target = await deps.principals.getTenantPrincipal(
             ownerTenantId,
             entry.principalId,
           );
@@ -2200,14 +2023,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               store: deps.store,
               roomMessages: deps.roomMessages,
               publish,
-              tenancy: deps.tenancy,
             },
             {
               tenantId: ownerTenantId,
               principalId: principal.id,
               workbenchId,
               memberPrincipalId: entry.principalId,
-              memberRefId: target.refId,
               memberHandle: handleFromName(entry.name ?? "", entry.principalId),
             },
           );
@@ -2449,7 +2270,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
-        principal.refId,
       );
       if (access === undefined) {
         return c.json(
@@ -2671,7 +2491,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
-        principal.refId,
       );
       if (access === undefined) {
         return c.json(
@@ -2729,7 +2548,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
-        principal.refId,
       );
       if (access === undefined) {
         return c.json(
@@ -2833,7 +2651,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
-        principal.refId,
       );
       if (access === undefined) {
         return c.json(
@@ -2911,7 +2728,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
-        principal.refId,
       );
       if (access === undefined) {
         return c.json(
@@ -2961,7 +2777,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
-        principal.refId,
       );
       if (access === undefined) {
         return c.json(
@@ -3413,117 +3228,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     },
   );
 
-  app.post(
-    "/workbenches/:id/move",
-    deps.requireGrant(idResource("workflow-run", "id"), "manage"),
-    async (c) => {
-      const body = MoveWorkbenchBody(await c.req.json().catch(() => undefined));
-      if (body instanceof type.errors) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: `invalid move body: ${body.summary}`,
-          }),
-          400,
-        );
-      }
-
-      const tenant = c.get("tenant");
-      const workbenchId = c.req.param("id");
-
-      // The move is only ever initiated from the bench that currently
-      // owns the workbench — `getWorkbenchSettings` scopes by `tenant.id`,
-      // so a caller cannot move a workbench it does not already see.
-      const existing = await deps.store.getWorkbenchSettings(
-        tenant.id,
-        workbenchId,
-      );
-      if (existing === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_found",
-            userMessage: "workbench not found",
-          }),
-          404,
-        );
-      }
-
-      const principal = c.get("principal");
-
-      // The destination is verified and the move is written inside a
-      // single call: `newParentTenantId` must name a real tenant, and
-      // the caller must hold an active, manage-granted principal there
-      // — the same grant machinery `requireGrant` uses, evaluated
-      // against the destination tenant rather than the caller's own —
-      // but re-checked from inside the very transaction that performs
-      // the write, under row locks, rather than as a separate round
-      // trip beforehand (see `WorkbenchTenancyStore.moveWorkbenchTenancy`).
-      // A caller with standing only in the workbench's current bench can
-      // never move it into a tenant it has no authority over, and
-      // nothing can revoke that authority in the gap between checking
-      // it and acting on it, because there is no gap.
-      const outcome = await deps.tenancy.moveWorkbenchTenancy({
-        workbenchId,
-        newParentTenantId: body.newParentTenantId,
-        callerRefId: principal.refId,
-      });
-
-      switch (outcome.kind) {
-        case "no_tenancy":
-          return c.json(
-            makeErrorEnvelope({
-              code: "conflict",
-              userMessage:
-                "this workbench predates the child-tenancy rollout and carries " +
-                "no native tenant of its own; it cannot be moved until it " +
-                "is backfilled a tenancy",
-            }),
-            409,
-          );
-        case "destination_not_found":
-          return c.json(
-            makeErrorEnvelope({
-              code: "not_found",
-              userMessage: "destination tenant not found",
-            }),
-            404,
-          );
-        case "cycle":
-          return c.json(
-            makeErrorEnvelope({
-              code: "conflict",
-              userMessage:
-                "the destination is this workbench's own tenant, or a " +
-                "descendant of it; moving it there would make the " +
-                "workbench its own ancestor",
-            }),
-            409,
-          );
-        case "forbidden":
-          return c.json(
-            makeErrorEnvelope({
-              code: "forbidden",
-              userMessage:
-                "you do not have a manage grant in the destination tenant",
-            }),
-            403,
-          );
-        case "moved":
-          return c.json(
-            {
-              workbenchId,
-              tenancy: {
-                tenantId: outcome.row.tenantId,
-                parentTenantId: outcome.row.parentTenantId,
-                slug: outcome.row.slug,
-              },
-            },
-            200,
-          );
-      }
-    },
-  );
-
   const CreateShareBody = type({ projectedTenantId: "string" });
 
   app.post(
@@ -3555,7 +3259,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const workbenchId = c.req.param("id");
 
       // A share can only ever be created by the tenant that already
-      // owns the workbench — the same ownership check `/move` runs.
+      // owns the workbench — `getWorkbenchSettings` scopes by
+      // `tenant.id`, so a caller cannot share one it does not own.
       const existing = await deps.store.getWorkbenchSettings(
         tenant.id,
         workbenchId,
@@ -4057,7 +3762,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
-        principal.refId,
       );
       if (access === undefined) {
         return c.json(
@@ -4107,7 +3811,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
-        principal.refId,
       );
       if (access === undefined) {
         return c.json(
@@ -4147,7 +3850,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           tenant.id,
           workbenchId,
           principal.id,
-          principal.refId,
         )) === undefined
       ) {
         return c.json(
@@ -4186,7 +3888,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           tenant.id,
           workbenchId,
           principal.id,
-          principal.refId,
         )) === undefined
       ) {
         return c.json(
@@ -4233,7 +3934,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           tenant.id,
           workbenchId,
           principal.id,
-          principal.refId,
         )) === undefined
       ) {
         return c.json(
@@ -4257,7 +3957,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               tenant.id,
               workbenchId,
               principal.id,
-              principal.refId,
             ).then((access) => access !== undefined),
           presence: { registry: presence, principalId: principal.id },
         });
@@ -4291,7 +3990,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
-        principal.refId,
       );
       if (access === undefined) {
         return c.json(
@@ -4326,7 +4024,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
-        principal.refId,
       );
       if (access === undefined) {
         return c.json(
@@ -4373,7 +4070,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         tenant.id,
         workbenchId,
         principal.id,
-        principal.refId,
       );
       if (access === undefined) {
         return c.json(
