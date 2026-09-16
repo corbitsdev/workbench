@@ -3,14 +3,17 @@
 // provider. One sequential scenario against a real hub, a real
 // sidecar, and a real Postgres.
 //
-// Phase A (onboard → connect): alice signs up first as genesis owner
-// → a tester joins the genesis root as a plain member (the genesis
-// path — first signup on a truly empty hub mints the root — is also
-// covered in-process by `apps/hub/test/signup-genesis.test.ts`) →
-// occupied signup stays ungated → the root's owner (alice)
-// connects a real inference credential through the key path
-// (`POST /api/onboarding/complete`'s own machinery, called directly —
-// see the stubbing note below), which fully seeds every default
+// Phase A (onboard → connect): alice signs up first as genesis owner,
+// then mints the root bench herself through the stock tenant route
+// (stock composition mounts no provisioning hook — signup mints
+// nothing, so the first tenant comes from an ordinary
+// `POST /api/tenants` with a caller-chosen slug, and its creator is
+// the native owner) → a tester signs up as a plain account and the
+// owner invites them onto the root as a member (the stock
+// `members/invite` route plus activation) → occupied signup stays
+// ungated → the root's owner (alice) connects a real inference
+// credential through the key path (the connect flow's own machinery,
+// called directly — see the stubbing note below), which fully seeds every default
 // workflow, including "assistant" → the Connections surface (the
 // tenant's own credentials list, the same route `connectorStatus` in
 // `@workbench/settings-ui` reads) honestly reflects the connected
@@ -27,12 +30,12 @@
 // `runPublishTools` hop onto the root stands in for
 // setup, then `ensureSeeded` deploys without packing.
 //
-// Stubbing note: onboarding's own `POST /api/onboarding/complete` route
+// Stubbing note: the key-path connect flow's own machinery
 // (`testAndPersistCredential`, from `@workbench/onboarding`'s
 // `complete-credential.ts`) stores a pasted key immediately, with no
 // live probe of the provider gating it (CL-6123) — so there is nothing
 // left to stub there. This suite still drives the same two halves the
-// route itself calls (`testAndPersistCredential`/`ensureSeeded`)
+// connect flow itself calls (`testAndPersistCredential`/`ensureSeeded`)
 // directly rather than through HTTP, the same way `chat.test.ts` drives
 // `seedCatalog` directly rather than going through an HTTP surface that
 // has no test seam. Every call these two halves make is real HTTP
@@ -189,23 +192,46 @@ describe.skipIf(databaseUrl === undefined)(
         );
         const probe = await api(
           hub.baseUrl,
-          "POST",
-          "/api/onboarding/provision",
+          "GET",
+          "/api/me/principals",
           undefined,
           res.cookies,
         );
         expectStatus("alice genesis probe", probe, 200);
-        expect((probe.data as { kind: string }).kind).toBe("needs-onboarding");
+        expect((probe.data as { data: unknown[] }).data).toEqual([]);
+        // Stock composition mounts no provisioning hook — signup mints
+        // nothing — so the first tenant comes from an ordinary
+        // `POST /api/tenants` with a caller-chosen slug, and its
+        // creator is the native owner.
         const minted = await api(
           hub.baseUrl,
           "POST",
-          "/api/onboarding/provision",
-          { name: "Workbench" },
+          "/api/tenants",
+          { slug: "workbench", name: "Workbench" },
           res.cookies,
         );
-        expectStatus("alice genesis provision", minted, 200);
-        expect((minted.data as { kind: string }).kind).toBe("provisioned");
-        return { cookies: res.cookies, userId };
+        expectStatus("alice genesis tenant create", minted, 201);
+        const mintedBody = minted.data as {
+          id?: string;
+          tenantId?: string;
+        };
+        const tenantId =
+          typeof mintedBody.id === "string"
+            ? mintedBody.id
+            : typeof mintedBody.tenantId === "string"
+              ? mintedBody.tenantId
+              : undefined;
+        if (tenantId === undefined) {
+          throw new Error(
+            `create tenant answered no id: ${JSON.stringify(minted.data)}`,
+          );
+        }
+        return {
+          cookies: res.cookies,
+          userId,
+          tenantId,
+          tenantSlug: "workbench",
+        };
       });
 
       // Stock composition leaves self-serve signup ungated: a brand-new
@@ -228,79 +254,93 @@ describe.skipIf(databaseUrl === undefined)(
         signUp(hub.baseUrl, "Local Rip Tester"),
       );
 
-      const provisioned = await hop(
-        "a membership probe joins the genesis root as a member",
-        async () => {
-          const res = await api(
-            hub.baseUrl,
-            "POST",
-            "/api/onboarding/provision",
-            undefined,
-            user.cookies,
-          );
-          expectStatus("provision probe", res, 200);
-          const data = res.data as {
-            kind: string;
-            tenantId: string;
-            tenantSlug: string;
-            seeded: boolean;
-            seedSkipReason?: string;
-          };
-          expect(data.kind).toBe("existing-member");
-          stringField(data, "tenantId", "provision result");
-          stringField(data, "tenantSlug", "provision result");
-          return data;
-        },
-      );
-
-      await hop("re-provisioning the same account is idempotent", async () => {
-        const res = await api(
-          hub.baseUrl,
-          "POST",
-          "/api/onboarding/provision",
-          { name: "Local Rip Tester's Bench" },
-          user.cookies,
-        );
-        expectStatus("re-provision", res, 200);
-        const data = res.data as { kind: string };
-        expect(data.kind).toBe("existing-member");
-      });
-
+      // Stock composition auto-joins nobody: a second signup only
+      // registers an account. The owner brings the tester onto the
+      // root through the native invite route (member role, so read-only
+      // by design) and activates the membership.
       await hop(
-        "the provisioned bench is a real tenant membership",
+        "the owner invites the tester onto the root bench as a member",
         async () => {
-          const res = await api(
+          const rolesRes = await api(
             hub.baseUrl,
             "GET",
-            "/api/me/principals",
+            `/api/tenants/${admin.tenantId}/roles`,
             undefined,
-            user.cookies,
+            admin.cookies,
           );
-          expectStatus("list principals", res, 200);
-          const rows = (res.data as { data: { tenantId: string }[] }).data;
-          const own = rows.find((row) => row.tenantId === provisioned.tenantId);
-          if (own === undefined) {
+          expectStatus("list root roles", rolesRes, 200);
+          const roles = (
+            rolesRes.data as { data: { id: string; name: string }[] }
+          ).data;
+          const memberRole = roles.find((role) => role.name === "member");
+          if (memberRole === undefined) {
             throw new Error(
-              `provisioned tenant ${provisioned.tenantId} is missing from the caller's own principals: ${JSON.stringify(rows)}`,
+              `no member role on the root tenant: ${JSON.stringify(roles)}`,
             );
           }
+          const invited = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${admin.tenantId}/members/invite`,
+            { email: user.email, roleId: memberRole.id },
+            admin.cookies,
+          );
+          expectStatus("invite tester", invited, 201);
+          const principalId = stringField(invited.data, "id", "invite result");
+          const activated = await api(
+            hub.baseUrl,
+            "PATCH",
+            `/api/tenants/${admin.tenantId}/principals/${principalId}`,
+            { status: "active" },
+            admin.cookies,
+          );
+          expectStatus("activate tester", activated, 200);
+          // Inviting the same account again mints nothing: stock answers
+          // 409, the surviving idempotency half of the removed
+          // re-provision hop.
+          const repeat = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${admin.tenantId}/members/invite`,
+            { email: user.email, roleId: memberRole.id },
+            admin.cookies,
+          );
+          expectStatus("re-invite", repeat, 409);
         },
       );
 
+      await hop("the invited bench is a real tenant membership", async () => {
+        const res = await api(
+          hub.baseUrl,
+          "GET",
+          "/api/me/principals",
+          undefined,
+          user.cookies,
+        );
+        expectStatus("list principals", res, 200);
+        const rows = (res.data as { data: { tenantId: string }[] }).data;
+        const own = rows.find((row) => row.tenantId === admin.tenantId);
+        if (own === undefined) {
+          throw new Error(
+            `invited tenant ${admin.tenantId} is missing from the caller's own principals: ${JSON.stringify(rows)}`,
+          );
+        }
+      });
+
       const tenant = await hop(
-        "the freshly provisioned bench resolves through findPersonalTenant",
+        "the freshly created bench resolves through findPersonalTenant",
         async () => {
           const found = await findPersonalTenant(
             hubApi,
             admin.cookies,
-            provisioned.tenantSlug,
+            admin.tenantSlug,
           );
           if (found === undefined) {
             throw new Error(
-              `findPersonalTenant found nothing for slug ${provisioned.tenantSlug}`,
+              `findPersonalTenant found nothing for slug ${admin.tenantSlug}`,
             );
           }
-          expect(found.tenantId).toBe(provisioned.tenantId);
+          expect(found.tenantId).toBe(admin.tenantId);
           return found;
         },
       );
@@ -409,13 +449,13 @@ describe.skipIf(databaseUrl === undefined)(
       // publisher with a privileged cookie jar directly. Then
       // ensureSeeded deploys assistant without packing.
       await hop(
-        "publish-tools installs corbits-tools onto the provisioned root bench (setup's job, not seed's)",
+        "publish-tools installs corbits-tools onto the created root bench (setup's job, not seed's)",
         async () => {
           const result = await runPublishTools({
             hubUrl: hub.baseUrl,
             email: "alice@example.com",
             password: "password123",
-            tenant: provisioned.tenantSlug,
+            tenant: admin.tenantSlug,
             log: () => undefined,
           });
           expect(result.success).toBe(true);
@@ -657,28 +697,16 @@ describe.skipIf(databaseUrl === undefined)(
             );
           }
           // The tenant-create observer reconciles fire-and-forget; poll
-          // for the new tenant's own live assistant. The status read is
-          // the same doc lookup the kick reconciles against, so a timeout
-          // reports per-pin pending/blocked/failed instead of a bare
-          // "never converged".
+          // the new tenant's own assets and deployments for its live
+          // assistant.
           const deadline = Date.now() + 90_000;
-          let lastSteps: unknown;
+          let lastSeen: unknown;
           for (;;) {
             if (hub.exited()) {
               throw new Error(
                 `hub exited before the second tenant converged; output:\n${hub.output()}`,
               );
             }
-            const statusRes = await api(
-              hub.baseUrl,
-              "GET",
-              `/api/onboarding/provisioning-status?tenantId=${secondTenantId}`,
-              undefined,
-              admin.cookies,
-            );
-            if (statusRes.status === 200) lastSteps = statusRes.data;
-            else
-              lastSteps = `provisioning-status ${statusRes.status}: ${JSON.stringify(statusRes.data)}`;
             const assetsRes = await api(
               hub.baseUrl,
               "GET",
@@ -688,6 +716,7 @@ describe.skipIf(databaseUrl === undefined)(
             );
             expectStatus("list second-tenant assets", assetsRes, 200);
             const assets = assetsRes.data as { id: string; name: string }[];
+            lastSeen = assets.map((a) => a.name);
             const assistant = assets.find((a) => a.name === "assistant");
             if (assistant !== undefined) {
               const deploymentsRes = await api(
@@ -718,7 +747,7 @@ describe.skipIf(databaseUrl === undefined)(
             }
             if (Date.now() > deadline) {
               throw new Error(
-                `the second tenant never converged onto its own assistant; last provisioning-status: ${JSON.stringify(lastSteps ?? "no provisioning-status read yet")}`,
+                `the second tenant never converged onto its own assistant; last asset names: ${JSON.stringify(lastSeen)}`,
               );
             }
             await Bun.sleep(500);
