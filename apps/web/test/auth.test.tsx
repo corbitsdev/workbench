@@ -257,6 +257,48 @@ describe("social sign-in buttons", () => {
     expect(markup).toContain("Continue with Google");
     expect(markup).toContain("Continue with GitHub");
   });
+
+  // Keeper: stock Interchange exposes no sign-in discovery endpoint, so the
+  // buttons always render and the hub decides which providers work — an
+  // unconfigured click must surface better-auth's own message on the form.
+  test("a failed social sign-in surfaces better-auth's message on the form", async () => {
+    const calls = stubFetch(() =>
+      json(
+        { message: "Social sign-in is not configured for this provider" },
+        400,
+      ),
+    );
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => {
+        root.render(<AuthScreen onSignedIn={noop} />);
+      });
+      const button = [...container.querySelectorAll("button")].find(
+        (element) => element.textContent === "Continue with Google",
+      );
+      expect(button).toBeDefined();
+      await act(async () => {
+        button?.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(calls.map((call) => call.path)).toEqual([
+        "/api/auth/sign-in/social",
+      ]);
+      expect(container.textContent).toContain(
+        "Social sign-in is not configured for this provider",
+      );
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      container.remove();
+    }
+  });
 });
 
 describe("auth screen modes", () => {
