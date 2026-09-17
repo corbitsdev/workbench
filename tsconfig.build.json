@@ -56,28 +56,16 @@
       "path": "./packages/error-sink/tsconfig.src.json"
     },
     {
-      "path": "./packages/gotenberg-render/tsconfig.src.json"
-    },
-    {
       "path": "./packages/hub-api-client/tsconfig.src.json"
     },
     {
       "path": "./packages/icons/tsconfig.src.json"
     },
     {
-      "path": "./packages/inbox/tsconfig.src.json"
-    },
-    {
       "path": "./packages/inference-catalog/tsconfig.src.json"
     },
     {
       "path": "./packages/migration-runner/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/mocks/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/notify/tsconfig.src.json"
     },
     {
       "path": "./packages/ollama-adapter/tsconfig.src.json"
