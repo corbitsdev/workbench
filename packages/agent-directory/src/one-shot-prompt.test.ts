@@ -30,9 +30,7 @@ const AGENT_WIRE_PROJECTION = {
       kind: "step",
       agent: {
         systemPrompt: "You are Myra.",
-        modelSources: [
-          { provider: "anthropic", model: "declared-default-model" },
-        ],
+        modelSources: [{ provider: "anthropic", model: "declared-default-model" }],
       },
     },
   },
@@ -207,9 +205,7 @@ describe("runOneShotPrompt", () => {
     expect(launchCalls).toHaveLength(1);
     expect(fakeSend.calls).toBe(1);
     expect(fake.listenerCount("agent.event")).toBe(0);
-    expect(undeployCalls).toEqual([
-      { address: triggerAddress, reason: "planning-run-complete" },
-    ]);
+    expect(undeployCalls).toEqual([{ address: triggerAddress, reason: "planning-run-complete" }]);
   });
 
   test("a failed run rejects with OneShotRunFailedError, unsubscribes, and tears the run down", async () => {
@@ -239,9 +235,7 @@ describe("runOneShotPrompt", () => {
 
     await expect(promise).rejects.toBeInstanceOf(OneShotRunFailedError);
     expect(fake.listenerCount("agent.event")).toBe(0);
-    expect(undeployCalls).toEqual([
-      { address: triggerAddress, reason: "planning-run-failed" },
-    ]);
+    expect(undeployCalls).toEqual([{ address: triggerAddress, reason: "planning-run-failed" }]);
   });
 
   test("an unknown definition throws OneShotDefinitionNotFoundError", async () => {
@@ -323,16 +317,14 @@ describe("timeout tears the launched run down", () => {
       undeploy,
     } as never;
 
-    await expect(
-      runOneShotPrompt(deps, { ...INPUT, timeoutMs: 100 }),
-    ).rejects.toBeInstanceOf(OneShotRunTimedOutError);
+    await expect(runOneShotPrompt(deps, { ...INPUT, timeoutMs: 100 })).rejects.toBeInstanceOf(
+      OneShotRunTimedOutError,
+    );
     const triggerAddress = firstCall(launchCalls).address;
 
     expect(launchCalls).toHaveLength(1);
     expect(fake.listenerCount("agent.event")).toBe(0);
-    expect(undeployCalls).toEqual([
-      { address: triggerAddress, reason: "planning-run-timed-out" },
-    ]);
+    expect(undeployCalls).toEqual([{ address: triggerAddress, reason: "planning-run-timed-out" }]);
   });
 });
 
@@ -373,9 +365,7 @@ describe("routable wait on the opening send", () => {
     const result = await promise;
     expect(result.content).toBe("Hello");
     expect(send.calls).toBe(2);
-    expect(undeployCalls).toEqual([
-      { address: triggerAddress, reason: "planning-run-complete" },
-    ]);
+    expect(undeployCalls).toEqual([{ address: triggerAddress, reason: "planning-run-complete" }]);
   });
 
   test("rejects OneShotRunUnreachableError when the routable wait expires", async () => {
@@ -491,9 +481,7 @@ describe("routable wait on the opening send", () => {
     // runner consults.
     expect(routabilityAddresses).toContain(triggerAddress);
     expect(send.calls).toBe(2);
-    expect(undeployCalls).toEqual([
-      { address: triggerAddress, reason: "planning-run-complete" },
-    ]);
+    expect(undeployCalls).toEqual([{ address: triggerAddress, reason: "planning-run-complete" }]);
   });
 
   test("the reply timer wins over the routable wait and no send follows the teardown", async () => {
@@ -526,9 +514,7 @@ describe("routable wait on the opening send", () => {
 
     expect(caught).toBeInstanceOf(OneShotRunTimedOutError);
     const triggerAddress = firstCall(launchCalls).address;
-    expect(undeployCalls).toEqual([
-      { address: triggerAddress, reason: "planning-run-timed-out" },
-    ]);
+    expect(undeployCalls).toEqual([{ address: triggerAddress, reason: "planning-run-timed-out" }]);
     // Let any post-teardown send attempt surface before pinning the count.
     await new Promise((r) => setTimeout(r, 20));
     expect(send.calls).toBeLessThanOrEqual(1);

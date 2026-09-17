@@ -164,9 +164,7 @@ export function createWorkflowClosureMaterializer(
         registries: config.registries,
         host,
         maxRegistryTarballBytes: config.registryMaxTarballBytes,
-        ...(config.fetchTarball !== undefined
-          ? { fetchTarball: config.fetchTarball }
-          : {}),
+        ...(config.fetchTarball !== undefined ? { fetchTarball: config.fetchTarball } : {}),
       });
 
       // Materialize any inline-delivered assets under the probe scratch:
@@ -221,11 +219,7 @@ export function createWorkflowClosureMaterializer(
       });
 
       const storeDir = path.join(scratchDir, "store");
-      const packageDir = storeEntryDir(
-        storeDir,
-        workflowPin.name,
-        workflowPin.version,
-      );
+      const packageDir = storeEntryDir(storeDir, workflowPin.name, workflowPin.version);
 
       await assertFrameEntryMatchesPackage(packageDir, frame.entry);
 

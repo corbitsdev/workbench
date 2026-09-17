@@ -1,7 +1,4 @@
-import {
-  responsesAdapterFactory,
-  type ResponsesQuirks,
-} from "@corbits/openai-responses";
+import { responsesAdapterFactory, type ResponsesQuirks } from "@corbits/openai-responses";
 import type { AdapterFactory } from "@intx/inference";
 import {
   XAI_CLIENT_IDENTIFIER,

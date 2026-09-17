@@ -26,19 +26,13 @@ test("parses a well-formed recording", () => {
 });
 
 test("rejects a recording missing required fields", () => {
-  expect(() => parseMcpFakeRecording({ server: "github" })).toThrow(
-    /invalid MCP fake recording/,
-  );
+  expect(() => parseMcpFakeRecording({ server: "github" })).toThrow(/invalid MCP fake recording/);
 });
 
 test("rejects a call whose response is missing isError", () => {
   const broken = {
     ...valid,
-    calls: [
-      { tool: "list_pull_requests", arguments: {}, response: { content: "x" } },
-    ],
+    calls: [{ tool: "list_pull_requests", arguments: {}, response: { content: "x" } }],
   };
-  expect(() => parseMcpFakeRecording(broken)).toThrow(
-    /invalid MCP fake recording/,
-  );
+  expect(() => parseMcpFakeRecording(broken)).toThrow(/invalid MCP fake recording/);
 });

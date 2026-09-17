@@ -21,10 +21,7 @@
 // own try/catch is the last line of defense either way.
 import { getLogger } from "@intx/log";
 import { type } from "arktype";
-import {
-  ErrorContext,
-  type ErrorContext as ErrorContextInput,
-} from "./context";
+import { ErrorContext, type ErrorContext as ErrorContextInput } from "./context";
 import { redactExtra, redactText } from "./redact";
 import { generateRefId } from "./ref-id";
 
@@ -53,10 +50,7 @@ function redactedCopyOf(error: Error, depth = 0): Error {
  * show the person who hit it. Never throws, never blocks the caller's
  * control flow.
  */
-export function reportError(
-  error: unknown,
-  context: ErrorContextInput,
-): string {
+export function reportError(error: unknown, context: ErrorContextInput): string {
   try {
     const refId = context.refId ?? generateRefId();
     const parsed = ErrorContext(context);
@@ -87,9 +81,5 @@ export function reportError(
 
 export type { ErrorContext } from "./context";
 export { generateRefId } from "./ref-id";
-export {
-  ErrorEnvelopeShape,
-  makeErrorEnvelope,
-  parseErrorEnvelope,
-} from "./error-envelope";
+export { ErrorEnvelopeShape, makeErrorEnvelope, parseErrorEnvelope } from "./error-envelope";
 export type { ErrorEnvelope } from "./error-envelope";

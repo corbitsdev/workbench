@@ -25,16 +25,9 @@ import { localPartOf } from "./agent-address";
 import { ConnectServiceBlockData } from "./blocks";
 import { isAgentAddress } from "./mentions";
 import type { Part as PartType } from "./parts";
-import {
-  postRoomMessage,
-  type RoomMessage,
-  type RoomMessageStore,
-} from "./room-messages";
+import { postRoomMessage, type RoomMessage, type RoomMessageStore } from "./room-messages";
 import type { ChatStore } from "./store";
-import {
-  dispatchTurn,
-  type SendWorkbenchMessageDeps,
-} from "./workbench-service";
+import { dispatchTurn, type SendWorkbenchMessageDeps } from "./workbench-service";
 import { participantsOf } from "./workbench-settings";
 
 export const CONNECTIONS_PENDING_KEY = "connections/pending";
@@ -54,27 +47,20 @@ const TEMPLATE_PENDING_CONNECTIONS_KEY = "template/pendingConnections";
 
 const PendingConnections = type("string[]");
 
-function pendingConnectionsAt(
-  settings: Record<string, unknown>,
-  key: string,
-): readonly string[] {
+function pendingConnectionsAt(settings: Record<string, unknown>, key: string): readonly string[] {
   const parsed = PendingConnections(settings[key]);
   if (parsed instanceof type.errors) return [];
   return parsed;
 }
 
-export function pendingConnectionsOf(
-  settings: Record<string, unknown>,
-): readonly string[] {
+export function pendingConnectionsOf(settings: Record<string, unknown>): readonly string[] {
   return pendingConnectionsAt(settings, CONNECTIONS_PENDING_KEY);
 }
 
 /** Connector ids named by `connect-service` block parts in a message —
  * parsed through the block's own schema so a malformed block registers
  * nothing. */
-export function connectServiceConnectorIds(
-  parts: readonly PartType[],
-): readonly string[] {
+export function connectServiceConnectorIds(parts: readonly PartType[]): readonly string[] {
   const ids: string[] = [];
   for (const part of parts) {
     if (part.kind !== "block" || part.block.type !== "connect-service") {
@@ -92,19 +78,14 @@ export function connectServiceConnectorIds(
  * matching strips the prefix from both sides so the card settles
  * whichever spelling registered it. */
 function bareConnectorId(connectorId: string): string {
-  return connectorId.startsWith("mcp:")
-    ? connectorId.slice("mcp:".length)
-    : connectorId;
+  return connectorId.startsWith("mcp:") ? connectorId.slice("mcp:".length) : connectorId;
 }
 
 export type SettleConnectedServiceDeps = Pick<
   SendWorkbenchMessageDeps,
   "platform" | "agentTurns" | "roomMessages" | "publish"
 > & {
-  readonly store: Pick<
-    ChatStore,
-    "listWorkbenchSettings" | "updateWorkbenchSettings"
-  >;
+  readonly store: Pick<ChatStore, "listWorkbenchSettings" | "updateWorkbenchSettings">;
 };
 
 export type SettleConnectedServiceInput = {
@@ -121,8 +102,7 @@ function hostAgentAddress(
 ): string | undefined {
   return participantsOf(settings).find(
     (participant) =>
-      isAgentAddress(participant.address) &&
-      localPartOf(participant.address) !== principalId,
+      isAgentAddress(participant.address) && localPartOf(participant.address) !== principalId,
   )?.address;
 }
 
@@ -137,9 +117,7 @@ async function existingRequestMessageIds(
   input: { readonly tenantId: string; readonly workbenchId: string },
 ): Promise<readonly string[]> {
   const listed = await roomMessages.listMessages(input);
-  const lastUser = listed.items.find(
-    (message) => message.senderPrincipalId !== null,
-  );
+  const lastUser = listed.items.find((message) => message.senderPrincipalId !== null);
   const lastAgent = listed.items.find((message) => message.runId !== null);
   return [lastUser, lastAgent]
     .filter((message): message is RoomMessage => message !== undefined)
@@ -160,19 +138,14 @@ export async function settleConnectedService(
   const isSettled = (entry: string) => bareConnectorId(entry) === connected;
   for (const row of rows) {
     const pending = pendingConnectionsOf(row.settings);
-    const templatePending = pendingConnectionsAt(
-      row.settings,
-      TEMPLATE_PENDING_CONNECTIONS_KEY,
-    );
+    const templatePending = pendingConnectionsAt(row.settings, TEMPLATE_PENDING_CONNECTIONS_KEY);
     const matchedPending = pending.some(isSettled);
     const matchedTemplatePending = templatePending.some(isSettled);
     if (!matchedPending && !matchedTemplatePending) continue;
 
     const settingsPatch: Record<string, unknown> = { ...row.settings };
     if (matchedPending) {
-      settingsPatch[CONNECTIONS_PENDING_KEY] = pending.filter(
-        (entry) => !isSettled(entry),
-      );
+      settingsPatch[CONNECTIONS_PENDING_KEY] = pending.filter((entry) => !isSettled(entry));
     }
     if (matchedTemplatePending) {
       settingsPatch[TEMPLATE_PENDING_CONNECTIONS_KEY] = templatePending.filter(
@@ -229,10 +202,10 @@ export async function settleConnectedService(
 
     if (agentAddress === undefined) continue;
 
-    const requestMessageIds = await existingRequestMessageIds(
-      deps.roomMessages,
-      { tenantId: input.tenantId, workbenchId: row.workbenchId },
-    );
+    const requestMessageIds = await existingRequestMessageIds(deps.roomMessages, {
+      tenantId: input.tenantId,
+      workbenchId: row.workbenchId,
+    });
     await dispatchTurn(deps, {
       tenantId: input.tenantId,
       workbenchId: row.workbenchId,

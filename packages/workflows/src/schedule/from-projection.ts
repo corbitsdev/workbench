@@ -12,9 +12,7 @@ const ScheduleTrigger = type({
   cron: "string",
 });
 
-export function scheduleCronFromProjection(
-  wireProjection: unknown,
-): string | undefined {
+export function scheduleCronFromProjection(wireProjection: unknown): string | undefined {
   const projection = WorkflowProjectionDefinition(wireProjection);
   if (projection instanceof type.errors) return undefined;
   for (const trigger of projection.triggers) {

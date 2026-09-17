@@ -9,10 +9,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import type {
-  BlockResponseActions,
-  BlockResponseQuery,
-} from "../src/blocks/block-responses";
+import type { BlockResponseActions, BlockResponseQuery } from "../src/blocks/block-responses";
 import type { MessageItem } from "../src/api";
 import { WorkbenchTimeline } from "../src/timeline";
 
@@ -29,9 +26,7 @@ function messageWithFormBlock(): MessageItem[] {
             data: {
               formId: "blk_form1",
               title: "Release notes",
-              fields: [
-                { id: "name", label: "Name", input: "text", required: true },
-              ],
+              fields: [{ id: "name", label: "Name", input: "text", required: true }],
               submitLabel: "Save",
             },
           },
@@ -78,10 +73,7 @@ function fakeBackend() {
 // workaround, the same one Testing Library's `fireEvent` performs
 // internally.
 function setInputValue(input: HTMLInputElement, value: string): void {
-  const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
-    "value",
-  )?.set;
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
   setter?.call(input, value);
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
@@ -101,12 +93,7 @@ async function mount(actions: BlockResponseActions) {
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root?.render(
-      <WorkbenchTimeline
-        items={messageWithFormBlock()}
-        blockResponses={actions}
-      />,
-    );
+    root?.render(<WorkbenchTimeline items={messageWithFormBlock()} blockResponses={actions} />);
   });
   return container;
 }
@@ -148,9 +135,7 @@ describe("form card round-trip", () => {
     const backend = fakeBackend();
     const el = await mount(backend.actions);
 
-    const firstInput = el.querySelector(
-      "input[type='text']",
-    ) as HTMLInputElement;
+    const firstInput = el.querySelector("input[type='text']") as HTMLInputElement;
     await act(async () => {
       setInputValue(firstInput, "v2.0");
     });
@@ -158,18 +143,14 @@ describe("form card round-trip", () => {
       (el.querySelector("form") as HTMLFormElement).requestSubmit();
     });
 
-    const editButton = [
-      ...el.querySelectorAll(".chat-block-actions button"),
-    ].find(
+    const editButton = [...el.querySelectorAll(".chat-block-actions button")].find(
       (button) => button.textContent === "Edit response",
     ) as HTMLButtonElement;
     await act(async () => {
       editButton.click();
     });
 
-    const secondInput = el.querySelector(
-      "input[type='text']",
-    ) as HTMLInputElement;
+    const secondInput = el.querySelector("input[type='text']") as HTMLInputElement;
     expect(secondInput.disabled).toBe(false);
     await act(async () => {
       setInputValue(secondInput, "v2.1");
@@ -191,9 +172,7 @@ describe("form card round-trip", () => {
       root?.render(<WorkbenchTimeline items={messageWithFormBlock()} />);
     });
 
-    const input = container.querySelector(
-      "input[type='text']",
-    ) as HTMLInputElement;
+    const input = container.querySelector("input[type='text']") as HTMLInputElement;
     expect(input.disabled).toBe(true);
     expect(container.querySelector("form")).toBeNull();
   });

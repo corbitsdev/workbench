@@ -35,12 +35,8 @@ export interface GranolaClientConfig {
   readonly fetchImpl?: typeof fetch;
 }
 
-function authHeaders(
-  apiKey: string | undefined,
-): Record<string, string> | undefined {
-  return apiKey === undefined
-    ? undefined
-    : { authorization: `Bearer ${apiKey}` };
+function authHeaders(apiKey: string | undefined): Record<string, string> | undefined {
+  return apiKey === undefined ? undefined : { authorization: `Bearer ${apiKey}` };
 }
 
 const DEFAULT_BASE_URL = "https://api.granola.ai";
@@ -64,9 +60,7 @@ export async function listRecentGranolaNotes(
     headers: authHeaders(config.apiKey),
   });
   if (!response.ok) {
-    throw new Error(
-      `Granola list-notes request failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Granola list-notes request failed: ${response.status} ${response.statusText}`);
   }
   const body: unknown = await response.json();
   const parsed = GranolaListNotesResponse(body);
@@ -98,9 +92,7 @@ export async function getGranolaNote(
     headers: authHeaders(config.apiKey),
   });
   if (!response.ok) {
-    throw new Error(
-      `Granola get-note request failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Granola get-note request failed: ${response.status} ${response.statusText}`);
   }
   const body: unknown = await response.json();
   const parsed = GranolaNote(body);

@@ -28,9 +28,7 @@ export function createCryptoProviderCache(options?: {
         providers.set(key, pending);
         return pending;
       }
-      const minted = generateKeyPair().then((keyPair) =>
-        createEd25519Crypto(keyPair),
-      );
+      const minted = generateKeyPair().then((keyPair) => createEd25519Crypto(keyPair));
       providers.set(key, minted);
       return minted;
     },

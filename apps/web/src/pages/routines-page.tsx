@@ -26,10 +26,7 @@ import type { GlobalRoutineRow } from "../global-routines";
 import { routineDetailPath } from "../global-routines";
 import { useBench } from "../bench-context";
 import { tenantKeys } from "../query-client";
-import {
-  listAvailableCatalogWorkflows,
-  type AvailableCatalogWorkflow,
-} from "../routines-api";
+import { listAvailableCatalogWorkflows, type AvailableCatalogWorkflow } from "../routines-api";
 import { Link } from "../navigation";
 import { PLUGINS_PATH_PREFIX } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
@@ -42,11 +39,7 @@ import {
 
 export type { GlobalRoutineRow } from "../global-routines";
 
-export function AvailableCatalogWorkflowsSection({
-  tenantId,
-}: {
-  readonly tenantId: string;
-}) {
+export function AvailableCatalogWorkflowsSection({ tenantId }: { readonly tenantId: string }) {
   const query = useQuery({
     queryKey: tenantKeys.availableCatalogWorkflows(tenantId),
     queryFn: () => listAvailableCatalogWorkflows(tenantId),
@@ -60,9 +53,7 @@ export function AvailableCatalogWorkflowsSection({
     <div className="flex flex-col gap-2 border-b border-[var(--ui-border)] p-4">
       <div className="flex flex-col">
         <h2 className="text-sm font-medium">{AVAILABLE_SECTION_TITLE}</h2>
-        <p className="text-xs text-[var(--ui-fg-muted)]">
-          {AVAILABLE_SECTION_SUBTITLE}
-        </p>
+        <p className="text-xs text-[var(--ui-fg-muted)]">{AVAILABLE_SECTION_SUBTITLE}</p>
       </div>
       <ul className="flex flex-col gap-2">
         {items.map((entry) => {
@@ -74,9 +65,7 @@ export function AvailableCatalogWorkflowsSection({
             >
               <div className="flex flex-col gap-1">
                 <span className="text-sm font-medium">{entry.displayName}</span>
-                <span className="text-xs text-[var(--ui-fg-muted)]">
-                  {entry.description}
-                </span>
+                <span className="text-xs text-[var(--ui-fg-muted)]">{entry.description}</span>
                 {!entry.connectionsSatisfied ? (
                   <span className="flex items-center gap-2 text-xs text-[var(--ui-fg-muted)]">
                     {missingConnectionsReason(entry.missingConnections)}
@@ -143,15 +132,11 @@ export function GlobalRoutinesList({
                   >
                     {row.definition.name}
                   </Link>
-                  <span className="text-xs text-[var(--ui-fg-muted)]">
-                    {row.tenantName}
-                  </span>
+                  <span className="text-xs text-[var(--ui-fg-muted)]">{row.tenantName}</span>
                 </span>
               </TableCell>
               <TableCell>
-                <span className="text-sm">
-                  {scheduleSentence(row.definition.cron)}
-                </span>
+                <span className="text-sm">{scheduleSentence(row.definition.cron)}</span>
               </TableCell>
               <TableCell>
                 <Switch
@@ -161,11 +146,7 @@ export function GlobalRoutinesList({
                 />
               </TableCell>
               <TableCell>
-                <RunNowButton
-                  variant="outline"
-                  size="sm"
-                  onRun={() => onRunNow(row)}
-                />
+                <RunNowButton variant="outline" size="sm" onRun={() => onRunNow(row)} />
               </TableCell>
             </TableRow>
           );

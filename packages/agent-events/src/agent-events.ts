@@ -47,9 +47,7 @@ export type ReplyContentBlock =
  * which part of a reply's text was actually tool-call JSON the model
  * emitted inline — it reads the split the harness already made instead of
  * re-deriving it from prose. */
-export function inferenceDoneBlocks(
-  event: unknown,
-): ReplyContentBlock[] | undefined {
+export function inferenceDoneBlocks(event: unknown): ReplyContentBlock[] | undefined {
   if (
     typeof event !== "object" ||
     event === null ||
@@ -57,8 +55,7 @@ export function inferenceDoneBlocks(
   ) {
     return undefined;
   }
-  const content = (event as { data?: { turn?: { content?: unknown } } }).data
-    ?.turn?.content;
+  const content = (event as { data?: { turn?: { content?: unknown } } }).data?.turn?.content;
   if (!Array.isArray(content)) return undefined;
 
   const blocks: ReplyContentBlock[] = [];
@@ -97,9 +94,7 @@ export function inferenceDoneBlocks(
  * entries to fill in a tool-trace part's outcome once its call settles. */
 export function toolDoneResult(
   event: unknown,
-):
-  | { callId: string; content: unknown; isError: boolean; detail?: unknown }
-  | undefined {
+): { callId: string; content: unknown; isError: boolean; detail?: unknown } | undefined {
   if (
     typeof event !== "object" ||
     event === null ||
@@ -138,21 +133,14 @@ export type MessageRunBracket = {
   readonly messageRunId: string;
 };
 
-export function messageRunBracket(
-  event: unknown,
-): MessageRunBracket | undefined {
+export function messageRunBracket(event: unknown): MessageRunBracket | undefined {
   if (typeof event !== "object" || event === null) return undefined;
   const type = (event as { type?: unknown }).type;
   if (type !== "message.run.started" && type !== "message.run.ended") {
     return undefined;
   }
-  const data = (
-    event as { data?: { messageId?: unknown; messageRunId?: unknown } }
-  ).data;
-  if (
-    typeof data?.messageId !== "string" ||
-    typeof data?.messageRunId !== "string"
-  ) {
+  const data = (event as { data?: { messageId?: unknown; messageRunId?: unknown } }).data;
+  if (typeof data?.messageId !== "string" || typeof data?.messageRunId !== "string") {
     return undefined;
   }
   return { messageId: data.messageId, messageRunId: data.messageRunId };
@@ -183,13 +171,10 @@ export function messageRunEnded(event: unknown): MessageRunEnded | undefined {
   ) {
     return undefined;
   }
-  const data = (
-    event as { data?: { status?: unknown; error?: { message?: unknown } } }
-  ).data;
+  const data = (event as { data?: { status?: unknown; error?: { message?: unknown } } }).data;
   if (data?.status !== "completed" && data?.status !== "failed") {
     return undefined;
   }
-  const errorMessage =
-    typeof data.error?.message === "string" ? data.error.message : undefined;
+  const errorMessage = typeof data.error?.message === "string" ? data.error.message : undefined;
   return { status: data.status, errorMessage };
 }

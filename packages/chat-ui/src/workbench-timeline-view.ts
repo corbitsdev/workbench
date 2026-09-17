@@ -34,10 +34,7 @@ export type MessagesState =
     }
   | { readonly kind: "ready"; readonly items: readonly MessageItem[] };
 
-export function messagesStateFor(
-  status: FeedStatus,
-  items: readonly MessageItem[],
-): MessagesState {
+export function messagesStateFor(status: FeedStatus, items: readonly MessageItem[]): MessagesState {
   return status.kind === "ready" ? { kind: "ready", items } : status;
 }
 
@@ -61,8 +58,7 @@ export function useWorkbenchTimelineView(args: {
   // exists, and from the message the reader is replying to before it
   // does — one value either way, so the feed never has to know which case
   // it is in.
-  const parentMessageId =
-    openThread?.parentMessageId ?? pendingParentMessageId ?? null;
+  const parentMessageId = openThread?.parentMessageId ?? pendingParentMessageId ?? null;
 
   const feedItems = useMemo(
     () =>
@@ -103,14 +99,7 @@ export function useWorkbenchTimelineView(args: {
           roomId: activeWorkbenchId,
         });
       });
-  }, [
-    tenantId,
-    activeWorkbenchId,
-    openThreadId,
-    pendingParentMessageId,
-    feedItems,
-    queryClient,
-  ]);
+  }, [tenantId, activeWorkbenchId, openThreadId, pendingParentMessageId, feedItems, queryClient]);
 
   return {
     messagesState: messagesStateFor(feedStatus, feedItems),

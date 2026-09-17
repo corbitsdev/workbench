@@ -17,8 +17,7 @@ import { createSpawnTestRepoStore } from "./support/workflow-lifecycle-fixture";
 
 const DEPLOYMENT_ID = "dep-barrier";
 const STEP_ORDER = ["step-a", "step-b"];
-const deriveStepAddress = ({ stepId }: { stepId: string }) =>
-  `${DEPLOYMENT_ID}-${stepId}@local`;
+const deriveStepAddress = ({ stepId }: { stepId: string }) => `${DEPLOYMENT_ID}-${stepId}@local`;
 
 // Wrapped in an object: the stub store is a Proxy that throws on any
 // unknown property, so returning it bare from an async function makes the
@@ -87,8 +86,6 @@ describe("assembleRunCredentialsSnapshot", () => {
       expect(step.grants).toEqual(grants);
       expect(step.address).toBe(deriveStepAddress({ stepId: step.stepId }));
     }
-    expect(new Set(snapshot.steps.map((step) => step.contentHash)).size).toBe(
-      1,
-    );
+    expect(new Set(snapshot.steps.map((step) => step.contentHash)).size).toBe(1);
   });
 });

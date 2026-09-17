@@ -7,9 +7,7 @@ export function StreamBlockView({ data }: { readonly data: StreamBlockData }) {
     <BlockCard title={data.title}>
       <pre className="chat-block-stream">
         {data.text}
-        {!data.done && (
-          <span className="chat-block-cursor" aria-hidden="true" />
-        )}
+        {!data.done && <span className="chat-block-cursor" aria-hidden="true" />}
       </pre>
     </BlockCard>
   );

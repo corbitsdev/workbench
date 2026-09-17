@@ -61,8 +61,7 @@ const MissionControlRoute = lazy(async () => ({
   default: (await import("./pages/mission-control-page")).MissionControlRoute,
 }));
 const NewWorkbenchPickerRoute = lazy(async () => ({
-  default: (await import("./pages/new-workbench-picker"))
-    .NewWorkbenchPickerRoute,
+  default: (await import("./pages/new-workbench-picker")).NewWorkbenchPickerRoute,
 }));
 const ChatPage = lazy(async () => ({
   default: (await import("./pages/chat-page")).ChatPage,
@@ -176,9 +175,7 @@ function slugForDetailRoute(routePath: string, path: string): Slug | null {
 function routineDetailSegment(path: string): string {
   const segment = routineSegmentFromPath(path);
   if (segment === null) {
-    throw new Error(
-      `${ROUTINE_DETAIL_PATH} rendered for a path with no routine: ${path}`,
-    );
+    throw new Error(`${ROUTINE_DETAIL_PATH} rendered for a path with no routine: ${path}`);
   }
   return segment;
 }
@@ -197,10 +194,7 @@ export type AppRoute = {
   readonly path: string;
   readonly label: string;
   readonly icon: ReactNode;
-  readonly render: (
-    path: string,
-    navigate: (to: string) => void,
-  ) => ReactElement;
+  readonly render: (path: string, navigate: (to: string) => void) => ReactElement;
   /** False only for the one screen with no `StageTopBar` of its own — Myra
    * land (`/`) is a bare ensure+redirect hop (see `pages/home-page.tsx`)
    * with nothing in the stage to title itself while it resolves. `AppShell`
@@ -252,11 +246,7 @@ export function matchesRoute(routePath: string, path: string): boolean {
 
 /** Bounces old `/inbox` links and bookmarks home (CL-6151: the Inbox page
  * is gone — tasks and approvals don't flow into a workbench). */
-function InboxRedirect({
-  navigate,
-}: {
-  readonly navigate: (to: string) => void;
-}) {
+function InboxRedirect({ navigate }: { readonly navigate: (to: string) => void }) {
   useEffect(() => {
     navigate("/");
   }, [navigate]);
@@ -308,9 +298,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: ROUTINE_DETAIL_PATH,
     label: "Routine",
     icon: <FlowArrow />,
-    render: (path: string) => (
-      <RoutineDetailRoute segment={routineDetailSegment(path)} />
-    ),
+    render: (path: string) => <RoutineDetailRoute segment={routineDetailSegment(path)} />,
   },
   {
     path: "/routines",
@@ -349,10 +337,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     label: "Agent",
     icon: <Robot />,
     render: (path: string, navigate: (to: string) => void) => (
-      <AgentDetailRoute
-        slug={detailRouteSlug(AGENT_DETAIL_PATH, path)}
-        navigate={navigate}
-      />
+      <AgentDetailRoute slug={detailRouteSlug(AGENT_DETAIL_PATH, path)} navigate={navigate} />
     ),
   },
   {
@@ -383,9 +368,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: "/skills",
     label: "Skills",
     icon: <Lightning />,
-    render: (_path: string, navigate: (to: string) => void) => (
-      <SkillsRoute navigate={navigate} />
-    ),
+    render: (_path: string, navigate: (to: string) => void) => <SkillsRoute navigate={navigate} />,
   },
   {
     // Skills spent CL-5990 through CL-6355 as a Settings section — this

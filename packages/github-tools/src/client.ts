@@ -62,16 +62,11 @@ function buildHeaders(apiKey: string | undefined): Record<string, string> {
   return headers;
 }
 
-async function fetchGitHubJSON(
-  url: URL,
-  config: GitHubClientConfig,
-): Promise<unknown> {
+async function fetchGitHubJSON(url: URL, config: GitHubClientConfig): Promise<unknown> {
   const doFetch = config.fetchImpl ?? fetch;
   const response = await doFetch(url, { headers: buildHeaders(config.apiKey) });
   if (!response.ok) {
-    throw new Error(
-      `GitHub search request failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`GitHub search request failed: ${response.status} ${response.statusText}`);
   }
   return response.json();
 }
@@ -87,9 +82,7 @@ function normalizeRepo(repo: typeof GitHubRepo.infer): GitHubActivityItem {
   };
 }
 
-function normalizeIssueOrPR(
-  item: typeof GitHubIssueOrPR.infer,
-): GitHubActivityItem {
+function normalizeIssueOrPR(item: typeof GitHubIssueOrPR.infer): GitHubActivityItem {
   return {
     url: item.html_url,
     title: item.title,
@@ -103,11 +96,7 @@ function normalizeIssueOrPR(
 }
 
 function clampPerList(requested: number | undefined): number {
-  if (
-    requested === undefined ||
-    !Number.isInteger(requested) ||
-    requested <= 0
-  ) {
+  if (requested === undefined || !Number.isInteger(requested) || requested <= 0) {
     return DEFAULT_PER_LIST;
   }
   return Math.min(requested, MAX_PER_LIST);
@@ -128,9 +117,7 @@ export async function searchGitHubActivity(
   },
 ): Promise<readonly GitHubActivityItem[]> {
   const days =
-    typeof params.days === "number" && params.days > 0
-      ? Math.floor(params.days)
-      : DEFAULT_DAYS;
+    typeof params.days === "number" && params.days > 0 ? Math.floor(params.days) : DEFAULT_DAYS;
   const cutoff = new Date(Date.now() - days * 86400 * 1000);
   const cutoffDate = cutoff.toISOString().slice(0, 10);
   const perPage = String(clampPerList(params.limit));
@@ -142,10 +129,7 @@ export async function searchGitHubActivity(
   reposUrl.searchParams.set("per_page", perPage);
 
   const issuesUrl = new URL(`${base}/search/issues`);
-  issuesUrl.searchParams.set(
-    "q",
-    `${params.query} is:issue updated:>=${cutoffDate}`,
-  );
+  issuesUrl.searchParams.set("q", `${params.query} is:issue updated:>=${cutoffDate}`);
   issuesUrl.searchParams.set("sort", "reactions");
   issuesUrl.searchParams.set("per_page", perPage);
 
@@ -174,9 +158,7 @@ export async function searchGitHubActivity(
     );
   }
   if (prs instanceof type.errors) {
-    throw new Error(
-      `GitHub PR search response did not match the expected shape: ${prs.summary}`,
-    );
+    throw new Error(`GitHub PR search response did not match the expected shape: ${prs.summary}`);
   }
 
   return [

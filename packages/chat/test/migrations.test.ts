@@ -58,9 +58,7 @@ const migrationNames = [
 ];
 
 describeIfDb("applyChatMigrations", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchTarget = new URL(scratchUrl);
   const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
 
@@ -182,9 +180,7 @@ describeIfDb("applyChatMigrations", () => {
       const threadIndexes = await sql.unsafe(
         `SELECT indexname FROM pg_indexes WHERE schemaname = 'chat' AND tablename = 'workbench_threads'`,
       );
-      const threadIndexNames = threadIndexes.map((row) =>
-        String(row["indexname"]),
-      );
+      const threadIndexNames = threadIndexes.map((row) => String(row["indexname"]));
       expect(threadIndexNames).toContain("workbench_threads_root_key");
       expect(threadIndexNames).toContain("workbench_threads_reply_key");
 
@@ -214,8 +210,7 @@ describeIfDb("applyChatMigrations", () => {
       // means restating its `jsonb_set` logic against the current table
       // name rather than replaying that stale literal text.
       const contextWindowInheritSql = chatMigrations.find(
-        (candidate) =>
-          candidate.name === "0008_channel_context_window_explicit_inherit",
+        (candidate) => candidate.name === "0008_channel_context_window_explicit_inherit",
       );
       if (contextWindowInheritSql === undefined) {
         throw new Error("0008 migration missing from chatMigrations");
@@ -229,19 +224,9 @@ describeIfDb("applyChatMigrations", () => {
       const rows = await sql.unsafe(
         `SELECT workbench_id, settings FROM "chat"."workbench_settings" ORDER BY workbench_id`,
       );
-      const byId = new Map(
-        rows.map((row) => [String(row["workbench_id"]), row["settings"]]),
-      );
-      expect(
-        (byId.get("chn_absent") as Record<string, unknown>)[
-          "chat/contextWindow"
-        ],
-      ).toBeNull();
-      expect(
-        (byId.get("chn_override") as Record<string, unknown>)[
-          "chat/contextWindow"
-        ],
-      ).toBe(5);
+      const byId = new Map(rows.map((row) => [String(row["workbench_id"]), row["settings"]]));
+      expect((byId.get("chn_absent") as Record<string, unknown>)["chat/contextWindow"]).toBeNull();
+      expect((byId.get("chn_override") as Record<string, unknown>)["chat/contextWindow"]).toBe(5);
     } finally {
       await sql.end();
     }
@@ -249,9 +234,10 @@ describeIfDb("applyChatMigrations", () => {
 });
 
 describeIfDb("0025_workbench_threads_unique_key dedupe", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  ).replace("_chat_migrations_test", "_chat_migrations_dedupe_test");
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused").replace(
+    "_chat_migrations_test",
+    "_chat_migrations_dedupe_test",
+  );
   const scratchTarget = new URL(scratchUrl);
   const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
 
@@ -302,10 +288,9 @@ describeIfDb("0025_workbench_threads_unique_key dedupe", () => {
       for (const migration of preDedupeMigrations) {
         await seed.begin(async (tx) => {
           await tx.unsafe(migration.sql);
-          await tx.unsafe(
-            `INSERT INTO "chat"."chat_migrations" (name) VALUES ($1)`,
-            [migration.name],
-          );
+          await tx.unsafe(`INSERT INTO "chat"."chat_migrations" (name) VALUES ($1)`, [
+            migration.name,
+          ]);
         });
       }
 
@@ -370,9 +355,7 @@ describeIfDb("0025_workbench_threads_unique_key dedupe", () => {
           `WHERE tenant_id = 'tnt_dedupe' AND workbench_id = 'wb_dedupe' ` +
           `AND kind = 'reply' AND parent_message_id = 'msg_parent'`,
       );
-      expect(replies.map((row) => String(row["id"]))).toEqual([
-        "thr_reply_old",
-      ]);
+      expect(replies.map((row) => String(row["id"]))).toEqual(["thr_reply_old"]);
 
       const messageThreadId = await verify.unsafe(
         `SELECT thread_id FROM "chat"."workbench_messages" WHERE id = 'msg_in_dropped_reply'`,
@@ -382,9 +365,7 @@ describeIfDb("0025_workbench_threads_unique_key dedupe", () => {
       const childParentThreadId = await verify.unsafe(
         `SELECT parent_thread_id FROM "chat"."workbench_threads" WHERE id = 'thr_child_of_dropped_root'`,
       );
-      expect(String(childParentThreadId[0]?.["parent_thread_id"])).toBe(
-        "thr_root_old",
-      );
+      expect(String(childParentThreadId[0]?.["parent_thread_id"])).toBe("thr_root_old");
 
       // The reply unique index holds: a second reply row for the same
       // (tenant, workbench, parent_message_id) key is now rejected
@@ -407,9 +388,10 @@ describeIfDb("0025_workbench_threads_unique_key dedupe", () => {
 });
 
 describeIfDb("0026_workbench_threads_delivery_key dedupe", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  ).replace("_chat_migrations_test", "_chat_migrations_delivery_dedupe_test");
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused").replace(
+    "_chat_migrations_test",
+    "_chat_migrations_delivery_dedupe_test",
+  );
   const scratchTarget = new URL(scratchUrl);
   const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
 
@@ -459,10 +441,9 @@ describeIfDb("0026_workbench_threads_delivery_key dedupe", () => {
       for (const migration of preDeliveryKeyMigrations) {
         await seed.begin(async (tx) => {
           await tx.unsafe(migration.sql);
-          await tx.unsafe(
-            `INSERT INTO "chat"."chat_migrations" (name) VALUES ($1)`,
-            [migration.name],
-          );
+          await tx.unsafe(`INSERT INTO "chat"."chat_migrations" (name) VALUES ($1)`, [
+            migration.name,
+          ]);
         });
       }
 
@@ -526,9 +507,7 @@ describeIfDb("0026_workbench_threads_delivery_key dedupe", () => {
           `WHERE tenant_id = 'tnt_ddedupe' AND workbench_id = 'wb_ddedupe' ` +
           `AND kind = 'delivery' AND run_ref = 'run_1'`,
       );
-      expect(deliveries.map((row) => String(row["id"]))).toEqual([
-        "thr_delivery_old",
-      ]);
+      expect(deliveries.map((row) => String(row["id"]))).toEqual(["thr_delivery_old"]);
 
       const nullRunRefRows = await verify.unsafe(
         `SELECT id FROM "chat"."workbench_threads" ` +
@@ -548,16 +527,12 @@ describeIfDb("0026_workbench_threads_delivery_key dedupe", () => {
       const messageThreadId = await verify.unsafe(
         `SELECT thread_id FROM "chat"."workbench_messages" WHERE id = 'msg_in_dropped_delivery'`,
       );
-      expect(String(messageThreadId[0]?.["thread_id"])).toBe(
-        "thr_delivery_old",
-      );
+      expect(String(messageThreadId[0]?.["thread_id"])).toBe("thr_delivery_old");
 
       const childParentThreadId = await verify.unsafe(
         `SELECT parent_thread_id FROM "chat"."workbench_threads" WHERE id = 'thr_child_of_dropped_delivery'`,
       );
-      expect(String(childParentThreadId[0]?.["parent_thread_id"])).toBe(
-        "thr_delivery_old",
-      );
+      expect(String(childParentThreadId[0]?.["parent_thread_id"])).toBe("thr_delivery_old");
 
       // The delivery unique index holds: a second delivery row for the
       // same (tenant, workbench, run_ref) key is now rejected rather

@@ -31,9 +31,7 @@ describe("E2B provisioner configuration", () => {
       E2B_API_KEY: `e2b_${"a".repeat(32)}`,
       E2B_TEMPLATE: "template-one",
     };
-    expect(() => readProvisionerConfig(base, "relative-state")).toThrow(
-      /absolute path/,
-    );
+    expect(() => readProvisionerConfig(base, "relative-state")).toThrow(/absolute path/);
     expect(() =>
       readProvisionerConfig(
         {

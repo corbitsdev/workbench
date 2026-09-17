@@ -37,9 +37,7 @@ export type CreateSidecarProvisionerOpts = {
   readonly store: AllocationStateStore;
 };
 
-export function createSidecarProvisioner(
-  opts: CreateSidecarProvisionerOpts,
-): SidecarProvisioner {
+export function createSidecarProvisioner(opts: CreateSidecarProvisionerOpts): SidecarProvisioner {
   const { backend, store } = opts;
 
   // Coalesces concurrent ensure() calls for the same allocation so two
@@ -48,9 +46,7 @@ export function createSidecarProvisioner(
   // own compute unit.
   const inFlightEnsures = new Map<string, Promise<EnsureSidecarResult>>();
 
-  async function ensureOnce(
-    request: EnsureSidecarRequest,
-  ): Promise<EnsureSidecarResult> {
+  async function ensureOnce(request: EnsureSidecarRequest): Promise<EnsureSidecarResult> {
     const validation = validateEnsureRequest(request);
     if (validation !== null) {
       return rejected("invalid_ensure_request", validation, false);
@@ -65,11 +61,7 @@ export function createSidecarProvisioner(
       return rejected(observation.code, observation.message, false);
     }
     if (observation.record.externalRef !== null) {
-      await sweepObsoleteUnits(
-        backend,
-        request.allocationId,
-        observation.record.externalRef,
-      );
+      await sweepObsoleteUnits(backend, request.allocationId, observation.record.externalRef);
       return {
         kind: "accepted",
         externalRef: observation.record.externalRef,
@@ -138,9 +130,7 @@ export function createSidecarProvisioner(
       return operation;
     },
 
-    async destroy(
-      request: DestroySidecarRequest,
-    ): Promise<DestroySidecarResult> {
+    async destroy(request: DestroySidecarRequest): Promise<DestroySidecarResult> {
       const validation = validateDestroyRequest(request);
       if (validation !== null) {
         return rejected("invalid_destroy_request", validation, false);
@@ -161,9 +151,7 @@ export function createSidecarProvisioner(
       } else if (observation.record.externalRef !== null) {
         externalRefs.add(observation.record.externalRef);
       } else {
-        for (const externalRef of await backend.findUnitsByAllocation(
-          request.allocationId,
-        )) {
+        for (const externalRef of await backend.findUnitsByAllocation(request.allocationId)) {
           externalRefs.add(externalRef);
         }
       }
@@ -193,9 +181,7 @@ async function sweepObsoleteUnits(
   keepExternalRef: string,
 ): Promise<void> {
   const candidates = await backend.findUnitsByAllocation(allocationId);
-  const obsolete = candidates.filter(
-    (externalRef) => externalRef !== keepExternalRef,
-  );
+  const obsolete = candidates.filter((externalRef) => externalRef !== keepExternalRef);
   for (const externalRef of obsolete) {
     try {
       await backend.stopUnit(externalRef);
@@ -216,8 +202,7 @@ function validateEnsureRequest(request: EnsureSidecarRequest): string | null {
   if (request.allocationId === "") return "allocationId must not be empty";
   if (request.sidecarId === "") return "sidecarId must not be empty";
   if (request.token === "") return "token must not be empty";
-  if (request.hubWebSocketUrl === "")
-    return "hubWebSocketUrl must not be empty";
+  if (request.hubWebSocketUrl === "") return "hubWebSocketUrl must not be empty";
   if (!Number.isInteger(request.generation) || request.generation < 0) {
     return "generation must be a non-negative integer";
   }
@@ -244,9 +229,5 @@ function classify(
   if (error instanceof BackendOperationError) {
     return [error.code, error.message, error.retryable];
   }
-  return [
-    defaultCode,
-    error instanceof Error ? error.message : String(error),
-    true,
-  ];
+  return [defaultCode, error instanceof Error ? error.message : String(error), true];
 }

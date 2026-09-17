@@ -44,18 +44,14 @@ describe("workbench settings path helpers", () => {
   });
 
   test("builds a section-scoped settings path", () => {
-    expect(workbenchSettingsPath("ch_1", "members")).toBe(
-      "/w/ch_1/settings/members",
-    );
+    expect(workbenchSettingsPath("ch_1", "members")).toBe("/w/ch_1/settings/members");
   });
 
   test("builds a section entity deep link and encodes the entity id", () => {
     expect(workbenchSettingsPath("ch_1", "agents", "wfd_myra")).toBe(
       "/w/ch_1/settings/agents/wfd_myra",
     );
-    expect(workbenchSettingsPath("ch_1", "agents", "a/b")).toBe(
-      "/w/ch_1/settings/agents/a%2Fb",
-    );
+    expect(workbenchSettingsPath("ch_1", "agents", "a/b")).toBe("/w/ch_1/settings/agents/a%2Fb");
   });
 
   test("workbenchIdFromPath resolves ids under /settings", () => {
@@ -69,12 +65,8 @@ describe("workbench settings path helpers", () => {
   });
 
   test("workbenchIdFromPath resolves ids under a section entity deep link", () => {
-    expect(workbenchIdFromPath("/w/ch_1/settings/agents/wfd_myra")).toBe(
-      "ch_1",
-    );
-    expect(workbenchIdFromPath("/chat/ch_1/settings/agents/wfd_myra")).toBe(
-      "ch_1",
-    );
+    expect(workbenchIdFromPath("/w/ch_1/settings/agents/wfd_myra")).toBe("ch_1");
+    expect(workbenchIdFromPath("/chat/ch_1/settings/agents/wfd_myra")).toBe("ch_1");
   });
 
   test("isWorkbenchSettingsPath is true for /settings, /settings/:section, and entity", () => {
@@ -86,72 +78,42 @@ describe("workbench settings path helpers", () => {
   });
 
   test("workbenchSettingsSectionFromPath extracts the trailing section segment", () => {
-    expect(workbenchSettingsSectionFromPath("/w/ch_1/settings/members")).toBe(
-      "members",
-    );
-    expect(workbenchSettingsSectionFromPath("/chat/ch_1/settings/agents")).toBe(
-      "agents",
-    );
-    expect(
-      workbenchSettingsSectionFromPath("/w/ch_1/settings"),
-    ).toBeUndefined();
+    expect(workbenchSettingsSectionFromPath("/w/ch_1/settings/members")).toBe("members");
+    expect(workbenchSettingsSectionFromPath("/chat/ch_1/settings/agents")).toBe("agents");
+    expect(workbenchSettingsSectionFromPath("/w/ch_1/settings")).toBeUndefined();
     expect(workbenchSettingsSectionFromPath("/w/ch_1")).toBeUndefined();
   });
 
   test("workbenchSettingsSectionFromPath reads an unrecognized section id as no section", () => {
-    expect(
-      workbenchSettingsSectionFromPath("/w/ch_1/settings/not-a-real-section"),
-    ).toBeUndefined();
+    expect(workbenchSettingsSectionFromPath("/w/ch_1/settings/not-a-real-section")).toBeUndefined();
   });
 
   test("workbenchSettingsSectionFromPath ignores a trailing entity id", () => {
-    expect(
-      workbenchSettingsSectionFromPath("/w/ch_1/settings/agents/wfd_myra"),
-    ).toBe("agents");
-    expect(
-      workbenchSettingsSectionFromPath("/chat/ch_1/settings/agents/a%2Fb"),
-    ).toBe("agents");
+    expect(workbenchSettingsSectionFromPath("/w/ch_1/settings/agents/wfd_myra")).toBe("agents");
+    expect(workbenchSettingsSectionFromPath("/chat/ch_1/settings/agents/a%2Fb")).toBe("agents");
   });
 
   test("workbenchSettingsEntityIdFromPath extracts the entity under a section", () => {
+    expect(workbenchSettingsEntityIdFromPath("/w/ch_1/settings/agents/wfd_myra", "agents")).toBe(
+      "wfd_myra",
+    );
+    expect(workbenchSettingsEntityIdFromPath("/chat/ch_1/settings/agents/a%2Fb", "agents")).toBe(
+      "a/b",
+    );
+    expect(workbenchSettingsEntityIdFromPath("/w/ch_1/settings/agents", "agents")).toBeNull();
     expect(
-      workbenchSettingsEntityIdFromPath(
-        "/w/ch_1/settings/agents/wfd_myra",
-        "agents",
-      ),
-    ).toBe("wfd_myra");
-    expect(
-      workbenchSettingsEntityIdFromPath(
-        "/chat/ch_1/settings/agents/a%2Fb",
-        "agents",
-      ),
-    ).toBe("a/b");
-    expect(
-      workbenchSettingsEntityIdFromPath("/w/ch_1/settings/agents", "agents"),
+      workbenchSettingsEntityIdFromPath("/w/ch_1/settings/agents/wfd_myra", "members"),
     ).toBeNull();
-    expect(
-      workbenchSettingsEntityIdFromPath(
-        "/w/ch_1/settings/agents/wfd_myra",
-        "members",
-      ),
-    ).toBeNull();
-    expect(
-      workbenchSettingsEntityIdFromPath("/w/ch_1/settings", "agents"),
-    ).toBeNull();
+    expect(workbenchSettingsEntityIdFromPath("/w/ch_1/settings", "agents")).toBeNull();
   });
 
   test("workbenchSettingsSectionFromPath reads a malformed escape as no section", () => {
-    expect(
-      workbenchSettingsSectionFromPath("/w/ch_1/settings/%E0%A4%A"),
-    ).toBeUndefined();
+    expect(workbenchSettingsSectionFromPath("/w/ch_1/settings/%E0%A4%A")).toBeUndefined();
   });
 
   test("workbenchSettingsEntityIdFromPath reads a malformed escape as no entity", () => {
     expect(
-      workbenchSettingsEntityIdFromPath(
-        "/w/ch_1/settings/agents/%E0%A4%A",
-        "agents",
-      ),
+      workbenchSettingsEntityIdFromPath("/w/ch_1/settings/agents/%E0%A4%A", "agents"),
     ).toBeNull();
   });
 });

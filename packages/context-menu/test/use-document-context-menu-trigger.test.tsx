@@ -7,9 +7,7 @@ import { useDocumentContextMenuTrigger } from "../src/use-document-context-menu-
 import type { ContextMenu } from "../src/menu";
 
 const MENU: ContextMenu = {
-  entries: [
-    contextMenuItem({ id: "open", label: "Open", onSelect: () => undefined }),
-  ],
+  entries: [contextMenuItem({ id: "open", label: "Open", onSelect: () => undefined })],
 };
 
 function mount(resolve: (target: EventTarget | null) => ContextMenu | null) {
@@ -41,10 +39,7 @@ function mount(resolve: (target: EventTarget | null) => ContextMenu | null) {
   };
 }
 
-function fireContextMenu(
-  target: EventTarget,
-  coords: { x: number; y: number },
-) {
+function fireContextMenu(target: EventTarget, coords: { x: number; y: number }) {
   const event = new MouseEvent("contextmenu", {
     bubbles: true,
     cancelable: true,

@@ -7,12 +7,7 @@ import { describe, expect, test } from "bun:test";
 
 import { createInMemoryAgentTurnStore } from "@corbits/agent-runtime";
 import { createChatRoutes } from "../src/routes";
-import {
-  buildDeps,
-  createWorkbench,
-  fakePlatform,
-  mountAs,
-} from "./test-support";
+import { buildDeps, createWorkbench, fakePlatform, mountAs } from "./test-support";
 
 describe("POST /workbenches/:id/turns/cancel (CL-7201)", () => {
   test("cancels a stuck turn and clears it via the response body", async () => {
@@ -39,10 +34,9 @@ describe("POST /workbenches/:id/turns/cancel (CL-7201)", () => {
     });
     await Bun.sleep(5);
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/turns/cancel`,
-      { method: "POST" },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/turns/cancel`, {
+      method: "POST",
+    });
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toEqual({ cancelledCount: 1 });
@@ -52,18 +46,16 @@ describe("POST /workbenches/:id/turns/cancel (CL-7201)", () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
-    const response = await app.request(
-      "/workbenches/run_does_not_exist/turns/cancel",
-      { method: "POST" },
-    );
+    const response = await app.request("/workbenches/run_does_not_exist/turns/cancel", {
+      method: "POST",
+    });
 
     expect(response.status).toBe(404);
   });
 
   test("denies the request when the write grant is refused", async () => {
     const deps = buildDeps({
-      requireGrant: () => async (c) =>
-        c.json({ error: { code: "forbidden" } }, 403),
+      requireGrant: () => async (c) => c.json({ error: { code: "forbidden" } }, 403),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 

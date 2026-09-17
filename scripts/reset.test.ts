@@ -34,9 +34,9 @@ describe("requireLocalDatabase", () => {
   }
 
   test("refuses a remote host", () => {
-    expect(() =>
-      requireLocalDatabase("postgres://prod.example.com:5432/workbench"),
-    ).toThrow(/not local/);
+    expect(() => requireLocalDatabase("postgres://prod.example.com:5432/workbench")).toThrow(
+      /not local/,
+    );
   });
 });
 
@@ -92,9 +92,7 @@ describe("resetLocalState", () => {
     expect(schemaCalls).toEqual([VALID_ENV.DATABASE_URL]);
     expect(removed).toEqual([path.resolve("/repo/apps/hub/.data/hub")]);
     expect(report.database).toBe("workbench");
-    expect(report.removedDirs).toEqual([
-      path.resolve("/repo/apps/hub/.data/hub"),
-    ]);
+    expect(report.removedDirs).toEqual([path.resolve("/repo/apps/hub/.data/hub")]);
   });
 
   test("reports no removed directories when it is not present", async () => {

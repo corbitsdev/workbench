@@ -19,10 +19,10 @@ Thanks for your interest in Corbits Workbench.
 ## The short version
 
 1. `bun install` (or `bun run hooks:install`) sets a repo-local pre-push
-   hook. That hook is the local stand-in for the cheap CI jobs: lint,
-   typecheck, and unit tests. GitHub still runs walking-skeleton, e2e,
-   isolation, and database-backed suites. Skip the hook with
-   `git push --no-verify` or `SKIP_WORKBENCH_HOOKS=1`. Typecheck and
+   hook. That hook is the local stand-in for CI's jobs: typecheck, lint
+   (oxlint + `oxfmt --check`), structural checks, and unit tests. Skip
+   the hook with `git push --no-verify` or `SKIP_WORKBENCH_HOOKS=1`.
+   Typecheck and
    tests narrow to the packages your change touches; a change under
    `package.json`, `bun.lock`, a shared tsconfig, `scripts/`, or
    `.github/` falls back to checking every package instead, which takes

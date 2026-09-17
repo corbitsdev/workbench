@@ -124,9 +124,7 @@ describe("SkillDetailPage", () => {
       },
     });
     const el = await mount({ name: kebab });
-    expect(el.querySelector("h1")?.textContent?.trim()).toBe(
-      "Writing System Prompts",
-    );
+    expect(el.querySelector("h1")?.textContent?.trim()).toBe("Writing System Prompts");
   });
 
   test("a name the roster doesn't carry renders the missing empty state", async () => {
@@ -147,12 +145,9 @@ describe("SkillDetailPage", () => {
     expect(el.textContent).toContain("Couldn't load this skill");
     // describeApiError deliberately never surfaces raw server text — the
     // page shows its generic copy for the 500 instead.
-    expect(el.textContent).toContain(
-      "Something went wrong loading this skill.",
-    );
+    expect(el.textContent).toContain("Something went wrong loading this skill.");
     expect(el.textContent).not.toContain("The hub fell over.");
-    const reads = () =>
-      requested.filter((entry) => entry.path === LIST_PATH).length;
+    const reads = () => requested.filter((entry) => entry.path === LIST_PATH).length;
     expect(reads()).toBe(1);
     const retry = Array.from(el.querySelectorAll("button")).find((button) =>
       button.textContent?.includes("Retry"),

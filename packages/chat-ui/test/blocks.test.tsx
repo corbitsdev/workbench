@@ -177,9 +177,7 @@ describe("block rendering", () => {
 
   test("unknown block type renders the labeled fallback, not raw JSON", () => {
     const markup = renderToStaticMarkup(
-      <WorkbenchTimeline
-        items={messageWithBlock("carousel", { secret: "payload" })}
-      />,
+      <WorkbenchTimeline items={messageWithBlock("carousel", { secret: "payload" })} />,
     );
     expect(markup).toContain("Unsupported block");
     expect(markup).toContain("carousel");
@@ -188,9 +186,7 @@ describe("block rendering", () => {
 
   test("malformed data for a known type renders the fallback", () => {
     const markup = renderToStaticMarkup(
-      <WorkbenchTimeline
-        items={messageWithBlock("metrics", { title: 42, metrics: "nope" })}
-      />,
+      <WorkbenchTimeline items={messageWithBlock("metrics", { title: 42, metrics: "nope" })} />,
     );
     expect(markup).toContain("Unsupported block");
     expect(markup).not.toContain("nope");

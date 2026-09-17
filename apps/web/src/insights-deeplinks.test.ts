@@ -33,9 +33,7 @@ describe("runDetailPath", () => {
 
 describe("runDeepLinkTarget", () => {
   test("returns the insights run-detail path for a purpose run", () => {
-    expect(runDeepLinkTarget(run("run_42"))).toBe(
-      `${INSIGHTS_RUNS_PATH}/run_42`,
-    );
+    expect(runDeepLinkTarget(run("run_42"))).toBe(`${INSIGHTS_RUNS_PATH}/run_42`);
   });
 
   test("is stable across two runs that differ only by id", () => {
@@ -49,8 +47,6 @@ describe("workbenchInsightsPath", () => {
   });
 
   test("encodes a workbench id so a slash or space cannot break out of the segment", () => {
-    expect(workbenchInsightsPath("a/b c")).toBe(
-      "/insights/workbench/a%2Fb%20c",
-    );
+    expect(workbenchInsightsPath("a/b c")).toBe("/insights/workbench/a%2Fb%20c");
   });
 });

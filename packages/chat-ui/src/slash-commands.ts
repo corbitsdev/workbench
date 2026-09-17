@@ -10,8 +10,7 @@
 // and are omitted rather than wired to a no-op — a command that appears
 // in the popover promises a real action.
 
-export type SlashCommandId =
-  "invite" | "summarize" | "routine" | "agents" | "help";
+export type SlashCommandId = "invite" | "summarize" | "routine" | "agents" | "help";
 
 export type SlashCommandSpec = {
   readonly id: SlashCommandId;
@@ -57,10 +56,7 @@ export type SlashQuery = {
  * command — with the caret inside it and no whitespace since. Returns null
  * everywhere else, including once the token is closed by a space.
  */
-export function activeSlashQuery(
-  text: string,
-  caret: number,
-): SlashQuery | null {
+export function activeSlashQuery(text: string, caret: number): SlashQuery | null {
   if (text.charAt(0) !== "/") return null;
   const upToCaret = text.slice(0, caret);
   if (!/^\/[\w-]*$/.test(upToCaret)) return null;
@@ -71,9 +67,7 @@ export function activeSlashQuery(
  * Commands whose id starts with the query, case-insensitively. An empty
  * query matches every command — the popover opens on a bare "/".
  */
-export function filterSlashCommands(
-  query: string,
-): readonly SlashCommandSpec[] {
+export function filterSlashCommands(query: string): readonly SlashCommandSpec[] {
   const needle = query.toLowerCase();
   return SLASH_COMMANDS.filter((command) => command.id.startsWith(needle));
 }

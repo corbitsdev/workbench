@@ -28,8 +28,7 @@ type RecordedCall = { readonly path: string; readonly init?: RequestInit };
 function stubFetch(respond: (path: string) => Response): RecordedCall[] {
   const calls: RecordedCall[] = [];
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const path =
-      typeof input === "string" ? input : new URL(String(input)).pathname;
+    const path = typeof input === "string" ? input : new URL(String(input)).pathname;
     calls.push(init === undefined ? { path } : { path, init });
     return Promise.resolve(respond(path));
   }) as typeof fetch;
@@ -71,25 +70,19 @@ describe("approveApproval", () => {
 
   test("throws an ApiQueryError on a non-2xx response", async () => {
     stubFetch(() => json({ error: { code: "already_resolved" } }, 409));
-    await expect(approveApproval("tnt_1", "apr_1")).rejects.toBeInstanceOf(
-      ApiQueryError,
-    );
+    await expect(approveApproval("tnt_1", "apr_1")).rejects.toBeInstanceOf(ApiQueryError);
   });
 });
 
 describe("rejectApproval", () => {
   test("omits the message body when none is given", async () => {
-    const calls = stubFetch(() =>
-      json({ ...approvalFixture, status: "rejected" }),
-    );
+    const calls = stubFetch(() => json({ ...approvalFixture, status: "rejected" }));
     await rejectApproval("tnt_1", "apr_1");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({});
   });
 
   test("sends the message when given", async () => {
-    const calls = stubFetch(() =>
-      json({ ...approvalFixture, status: "rejected" }),
-    );
+    const calls = stubFetch(() => json({ ...approvalFixture, status: "rejected" }));
     await rejectApproval("tnt_1", "apr_1", "Not now");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
       message: "Not now",

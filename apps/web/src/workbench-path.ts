@@ -8,10 +8,7 @@
 // `/settings/:section` and `settingsEntityIdFromPath` for the app-level
 // Settings page.
 
-import {
-  isWorkbenchSettingsSectionId,
-  type WorkbenchSettingsSectionId,
-} from "@corbits/chat-ui";
+import { isWorkbenchSettingsSectionId, type WorkbenchSettingsSectionId } from "@corbits/chat-ui";
 import { decodedOrNull } from "@corbits/url-path";
 
 export const WORKBENCH_PATH_PREFIX = "/w";
@@ -117,10 +114,7 @@ export function workbenchSettingsSectionFromPath(
  * no sub-id. Mirrors `settingsEntityIdFromPath` in `path-ids.ts`, but
  * locates the settings suffix the same way `workbenchSettingsSectionFromPath`
  * does (`indexOf`), because workbench paths are not rooted at `/settings`. */
-export function workbenchSettingsEntityIdFromPath(
-  path: string,
-  sectionId: string,
-): string | null {
+export function workbenchSettingsEntityIdFromPath(path: string, sectionId: string): string | null {
   const sectionPrefix = `${SETTINGS_SUFFIX}/${sectionId}/`;
   const index = path.indexOf(sectionPrefix);
   if (index === -1) return null;

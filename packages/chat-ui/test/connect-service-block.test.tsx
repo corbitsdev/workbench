@@ -138,8 +138,7 @@ describe("ConnectServiceBlockView key-paste arm", () => {
       reason: "Connect Linear so I can file this for you.",
       affordance: "api-key",
       onConnect: () => undefined,
-      onSubmitKey: () =>
-        Promise.resolve({ ok: false, message: "That key was rejected." }),
+      onSubmitKey: () => Promise.resolve({ ok: false, message: "That key was rejected." }),
     });
     await act(async () => {
       buttonByText(host, "Connect Linear").click();

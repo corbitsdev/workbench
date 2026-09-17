@@ -18,10 +18,7 @@ import {
   routineCreated,
   routineCreatedOnlyAfterOk,
 } from "../scorers/scorers.ts";
-import {
-  CREATE_AGENT_TOOL,
-  ROUTINE_CREATE_TOOL,
-} from "../scorers/tool-names.ts";
+import { CREATE_AGENT_TOOL, ROUTINE_CREATE_TOOL } from "../scorers/tool-names.ts";
 
 export const aiDailyResearchEval = defineEval({
   name: "ai-daily-research",

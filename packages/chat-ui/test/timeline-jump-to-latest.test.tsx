@@ -51,8 +51,7 @@ async function mount(props?: {
     readonly pinned: boolean;
   };
 }) {
-  globalThis.ResizeObserver =
-    NoopResizeObserver as unknown as typeof ResizeObserver;
+  globalThis.ResizeObserver = NoopResizeObserver as unknown as typeof ResizeObserver;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -60,15 +59,11 @@ async function mount(props?: {
     root?.render(
       <WorkbenchTimeline
         items={props?.items ?? items()}
-        {...(props?.scrollRestore !== undefined
-          ? { scrollRestore: props.scrollRestore }
-          : {})}
+        {...(props?.scrollRestore !== undefined ? { scrollRestore: props.scrollRestore } : {})}
       />,
     );
   });
-  const scrollEl = container.querySelector(
-    ".chat-timeline",
-  ) as HTMLElement | null;
+  const scrollEl = container.querySelector(".chat-timeline") as HTMLElement | null;
   if (scrollEl !== null) {
     Object.defineProperty(scrollEl, "scrollHeight", {
       value: 900,

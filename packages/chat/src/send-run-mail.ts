@@ -97,8 +97,7 @@ async function signLocalRunMailCopy(
     messageId,
     subject: undefined,
     inReplyTo: params.inReplyTo ?? params.replyTo,
-    references:
-      params.references !== undefined ? [...params.references] : undefined,
+    references: params.references !== undefined ? [...params.references] : undefined,
     mimeVersion: "1.0",
     interchangeType: "conversation.message",
     interchangeCorrelationId: undefined,
@@ -113,14 +112,9 @@ async function signLocalRunMailCopy(
   const signedContent = assembleSignedContent({
     kind: "conversation",
     text: params.content,
-    ...(params.attachments !== undefined
-      ? { attachments: params.attachments }
-      : {}),
+    ...(params.attachments !== undefined ? { attachments: params.attachments } : {}),
   });
-  const signature = await createDetachedSignatureFromProvider(
-    signedContent,
-    params.cryptoProvider,
-  );
+  const signature = await createDetachedSignatureFromProvider(signedContent, params.cryptoProvider);
   return assembleMessage(headers, signedContent, signature);
 }
 

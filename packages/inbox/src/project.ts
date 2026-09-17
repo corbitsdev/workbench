@@ -72,9 +72,7 @@ export function projectInboxItem(message: MailboxMessage): InboxItem {
   return item;
 }
 
-export function projectInboxItemDetail(
-  message: MailboxMessageDetail,
-): InboxItemDetail {
+export function projectInboxItemDetail(message: MailboxMessageDetail): InboxItemDetail {
   return {
     ...projectInboxItem(message),
     body: message.body,

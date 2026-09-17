@@ -21,9 +21,7 @@ export function addRecentEntry(
   entry: RecentEntry,
   max = MAX_RECENTS,
 ): readonly RecentEntry[] {
-  const withoutEntry = entries.filter(
-    (existing) => recentKey(existing) !== recentKey(entry),
-  );
+  const withoutEntry = entries.filter((existing) => recentKey(existing) !== recentKey(entry));
   return [entry, ...withoutEntry].slice(0, max);
 }
 
@@ -47,9 +45,7 @@ export type RecentsStorage = {
 export type RecentsStore = {
   readonly load: () => readonly RecentEntry[];
   readonly push: (entry: RecentEntry) => readonly RecentEntry[];
-  readonly remove: (
-    entry: Pick<RecentEntry, "kind" | "id">,
-  ) => readonly RecentEntry[];
+  readonly remove: (entry: Pick<RecentEntry, "kind" | "id">) => readonly RecentEntry[];
 };
 
 function isRecentEntry(value: unknown): value is RecentEntry {
@@ -99,9 +95,7 @@ export function createRecentsStore(
     return next;
   }
 
-  function remove(
-    entry: Pick<RecentEntry, "kind" | "id">,
-  ): readonly RecentEntry[] {
+  function remove(entry: Pick<RecentEntry, "kind" | "id">): readonly RecentEntry[] {
     const next = removeRecentEntry(load(), entry);
     try {
       storage.setItem(storageKey, JSON.stringify(next));

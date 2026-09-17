@@ -17,10 +17,7 @@ import {
   WORKFLOW_RUN_GITIGNORE_PATH,
 } from "@intx/hub-sessions";
 import type { AuthorizeFn } from "@intx/hub-sessions";
-import type {
-  RepoId,
-  WorkflowRunWorkflowProcessPrincipal,
-} from "@intx/hub-sessions/substrate";
+import type { RepoId, WorkflowRunWorkflowProcessPrincipal } from "@intx/hub-sessions/substrate";
 import type { KeyPair } from "@intx/types/runtime";
 import {
   createInMemoryRepoStore,
@@ -28,10 +25,7 @@ import {
   defineWorkflow,
   step,
 } from "@intx/workflow";
-import {
-  createWorkflowHostSignalChannel,
-  type RunChildWorkflow,
-} from "@intx/workflow-host";
+import { createWorkflowHostSignalChannel, type RunChildWorkflow } from "@intx/workflow-host";
 
 import {
   createSidecarRunChild,
@@ -68,13 +62,9 @@ afterAll(async () => {
 test("a cancel rejection during abort is reported and is not unhandled", async () => {
   const forced = new Error("forced cancel reject");
   const cancelMock = mock(() => Promise.reject(forced));
-  const reportErrorMock = mock(
-    (_error: unknown, _context: unknown) => "ref-test",
-  );
+  const reportErrorMock = mock((_error: unknown, _context: unknown) => "ref-test");
 
-  const dataDir = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), "run-child-cancel-report-"),
-  );
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "run-child-cancel-report-"));
   tempDirs.push(dataDir);
   const substrate = createRepoStore({
     dataDir,
@@ -157,13 +147,9 @@ test("a cancel rejection during abort is reported and is not unhandled", async (
 test("a signalChannel.stop rejection is reported and is not unhandled", async () => {
   const forced = new Error("forced stop reject");
   const stopMock = mock(() => Promise.reject(forced));
-  const reportErrorMock = mock(
-    (_error: unknown, _context: unknown) => "ref-test",
-  );
+  const reportErrorMock = mock((_error: unknown, _context: unknown) => "ref-test");
 
-  const dataDir = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), "run-child-stop-report-"),
-  );
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "run-child-stop-report-"));
   tempDirs.push(dataDir);
   const substrate = createRepoStore({
     dataDir,
@@ -253,9 +239,7 @@ test("a signalChannel.stop rejection is reported and is not unhandled", async ()
 test("a spawn-suspendable abort cancel rejection is reported and is not unhandled", async () => {
   const forced = new Error("forced suspendable cancel reject");
   const cancelMock = mock(() => Promise.reject(forced));
-  const reportErrorMock = mock(
-    (_error: unknown, _context: unknown) => "ref-test",
-  );
+  const reportErrorMock = mock((_error: unknown, _context: unknown) => "ref-test");
 
   const dataDir = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), "run-suspendable-cancel-report-"),

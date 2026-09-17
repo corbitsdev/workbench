@@ -16,14 +16,8 @@ import { type } from "arktype";
 import { headlineFor } from "../../packages/approvals/src/headline.ts";
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import { createGitWorkflowPusher } from "../../packages/connections/src/workflow-push.ts";
-import {
-  DEFAULT_WORKFLOWS,
-  seedTenant,
-} from "../../packages/onboarding/src/tenant-seed.ts";
-import {
-  createHubAPI,
-  type ApiCall,
-} from "../../packages/hub-api-client/src/index.ts";
+import { DEFAULT_WORKFLOWS, seedTenant } from "../../packages/onboarding/src/tenant-seed.ts";
+import { createHubAPI, type ApiCall } from "../../packages/hub-api-client/src/index.ts";
 import {
   findPersonalTenant,
   testAndPersistCredential,
@@ -89,11 +83,8 @@ const STUB_API_KEY = "e2e-greeting-delivery-stub-key-not-real";
 // greeting kickoff, so the final assertion below expects real prose
 // instead of the stub key's credential-error report.
 const OLLAMA_BASE_URL = process.env["OLLAMA_BASE_URL"];
-const USE_OLLAMA =
-  process.env["E2E_PROVIDER"] === "ollama" && OLLAMA_BASE_URL !== undefined;
-const CONNECT_PROVIDER = USE_OLLAMA
-  ? ("ollama" as const)
-  : ("anthropic" as const);
+const USE_OLLAMA = process.env["E2E_PROVIDER"] === "ollama" && OLLAMA_BASE_URL !== undefined;
+const CONNECT_PROVIDER = USE_OLLAMA ? ("ollama" as const) : ("anthropic" as const);
 const CONNECT_API_KEY = USE_OLLAMA ? OLLAMA_PLACEHOLDER_SECRET : STUB_API_KEY;
 
 function stringField(data: unknown, field: string, what: string): string {
@@ -101,9 +92,7 @@ function stringField(data: unknown, field: string, what: string): string {
     const value = (data as Record<string, unknown>)[field];
     if (typeof value === "string" && value !== "") return value;
   }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing string field "${field}": ${JSON.stringify(data)}`);
 }
 
 function arrayField(data: unknown, field: string, what: string): unknown[] {
@@ -111,9 +100,7 @@ function arrayField(data: unknown, field: string, what: string): unknown[] {
     const value = (data as Record<string, unknown>)[field];
     if (Array.isArray(value)) return value;
   }
-  throw new Error(
-    `${what}: missing array field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing array field "${field}": ${JSON.stringify(data)}`);
 }
 
 async function signUp(
@@ -160,9 +147,7 @@ async function main(): Promise<void> {
     startHub({
       databaseUrl: url,
       port: freePort(),
-      sessionSecret: Buffer.from(
-        crypto.getRandomValues(new Uint8Array(32)),
-      ).toString("hex"),
+      sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
       dataDir: await tempDir("e2e-greeting-delivery-hub-data-"),
     }),
   );
@@ -214,9 +199,7 @@ async function main(): Promise<void> {
     return { cookies: res.cookies, userId };
   });
 
-  const user = await hop("sign-up", () =>
-    signUp(hub.baseUrl, "Greeting Delivery Tester"),
-  );
+  const user = await hop("sign-up", () => signUp(hub.baseUrl, "Greeting Delivery Tester"));
 
   const provisioned = await hop(
     "a membership probe joins the genesis root as a member",
@@ -241,22 +224,13 @@ async function main(): Promise<void> {
 
   // A joined member is read-only by design, so every owner-level leg
   // below runs as alice, the genesis owner.
-  const tenant = await hop(
-    "the joined root resolves through findPersonalTenant",
-    async () => {
-      const found = await findPersonalTenant(
-        hubApi,
-        admin.cookies,
-        provisioned.tenantSlug,
-      );
-      if (found === undefined) {
-        throw new Error(
-          `findPersonalTenant found nothing for slug ${provisioned.tenantSlug}`,
-        );
-      }
-      return found;
-    },
-  );
+  const tenant = await hop("the joined root resolves through findPersonalTenant", async () => {
+    const found = await findPersonalTenant(hubApi, admin.cookies, provisioned.tenantSlug);
+    if (found === undefined) {
+      throw new Error(`findPersonalTenant found nothing for slug ${provisioned.tenantSlug}`);
+    }
+    return found;
+  });
 
   const pushWorkflow = createGitWorkflowPusher();
 
@@ -280,9 +254,7 @@ async function main(): Promise<void> {
           : testArgs,
       );
       if (result.kind !== "connected") {
-        throw new Error(
-          `expected the key-path connect to succeed, got: ${JSON.stringify(result)}`,
-        );
+        throw new Error(`expected the key-path connect to succeed, got: ${JSON.stringify(result)}`);
       }
       return result;
     },
@@ -341,12 +313,7 @@ async function main(): Promise<void> {
             principalId: tenant.principalId,
             domain: tenant.tenantDomain,
           },
-          model: await modelSourceFor(
-            hubApi,
-            admin.cookies,
-            tenant.tenantId,
-            CONNECT_PROVIDER,
-          ),
+          model: await modelSourceFor(hubApi, admin.cookies, tenant.tenantId, CONNECT_PROVIDER),
           pushWorkflow,
           log: () => undefined,
           workflows: DEFAULT_WORKFLOWS,
@@ -360,10 +327,7 @@ async function main(): Promise<void> {
     }
   }
 
-  await hop(
-    "every default workflow deploys and goes live",
-    deploySeededWorkflows,
-  );
+  await hop("every default workflow deploys and goes live", deploySeededWorkflows);
 
   const assistantDefinitionId = await hop(
     "the 'assistant' default workflow is invitable tenant-wide",
@@ -378,18 +342,15 @@ async function main(): Promise<void> {
           admin.cookies,
         );
         if (res.status === 200) {
-          const items = arrayField(
-            res.data,
-            "items",
-            "list invitable definitions",
-          ) as { id: string; name: string }[];
+          const items = arrayField(res.data, "items", "list invitable definitions") as {
+            id: string;
+            name: string;
+          }[];
           const assistant = items.find((item) => item.name === "assistant");
           if (assistant !== undefined) return assistant.id;
         }
         if (Date.now() > deadline) {
-          throw new Error(
-            `"assistant" never appeared as invitable: ${JSON.stringify(res.data)}`,
-          );
+          throw new Error(`"assistant" never appeared as invitable: ${JSON.stringify(res.data)}`);
         }
         await Bun.sleep(1000);
       }
@@ -403,9 +364,7 @@ async function main(): Promise<void> {
       let res: ApiResult;
       for (;;) {
         if (sidecar.exited()) {
-          throw new Error(
-            `sidecar exited before chat creation; output:\n${sidecar.output()}`,
-          );
+          throw new Error(`sidecar exited before chat creation; output:\n${sidecar.output()}`);
         }
         res = await api(
           hub.baseUrl,
@@ -425,16 +384,13 @@ async function main(): Promise<void> {
       }
       expectStatus("create chat", res, 201);
       const id = stringField(res.data, "id", "create chat");
-      const participants = arrayField(
-        res.data,
-        "participants",
-        "create chat",
-      ) as { address: string; handle: string }[];
+      const participants = arrayField(res.data, "participants", "create chat") as {
+        address: string;
+        handle: string;
+      }[];
       const agent = participants.find((p) => p.handle === "myra");
       if (agent === undefined) {
-        throw new Error(
-          `chat has no "myra" agent participant: ${JSON.stringify(participants)}`,
-        );
+        throw new Error(`chat has no "myra" agent participant: ${JSON.stringify(participants)}`);
       }
       return { chatId: id, agentAddress: agent.address };
     },
@@ -471,8 +427,7 @@ async function main(): Promise<void> {
         }[];
         const agentMessage = items.find(
           (item) =>
-            item.sender.address === agentAddress &&
-            item.parts.some((p) => p.kind === "text"),
+            item.sender.address === agentAddress && item.parts.some((p) => p.kind === "text"),
         );
         if (agentMessage !== undefined) {
           const text = agentMessage.parts
@@ -489,10 +444,7 @@ async function main(): Promise<void> {
               );
             }
             console.log(`  Myra's unprompted greeting (ollama): ${text}`);
-          } else if (
-            !text.includes("credential error") ||
-            !/40[13]/.test(text)
-          ) {
+          } else if (!text.includes("credential error") || !/40[13]/.test(text)) {
             throw new Error(
               `expected the agent's greeting-turn message to report the ` +
                 `stub key's credential error, got: ${JSON.stringify(agentMessage)}`,
@@ -514,9 +466,7 @@ async function main(): Promise<void> {
 
   // ---- play loop -----------------------------------------------------
   const seenIds = new Set<string>();
-  async function listAgentMessages(): Promise<
-    { id: string; text: string; createdAt: string }[]
-  > {
+  async function listAgentMessages(): Promise<{ id: string; text: string; createdAt: string }[]> {
     const res = await api(
       hub.baseUrl,
       "GET",
@@ -531,11 +481,7 @@ async function main(): Promise<void> {
       parts: { kind: string; text?: string }[];
     }[];
     return items
-      .filter(
-        (i) =>
-          i.sender.address === agentAddress &&
-          i.parts.some((p) => p.kind === "text"),
-      )
+      .filter((i) => i.sender.address === agentAddress && i.parts.some((p) => p.kind === "text"))
       .map((i) => ({
         id: i.id,
         createdAt: i.createdAt,
@@ -575,9 +521,7 @@ async function main(): Promise<void> {
       }
       const page = TenantApprovalsSchema(res.data);
       if (page instanceof type.errors) {
-        throw new Error(
-          `auto-approve: malformed pending approvals list: ${page.summary}`,
-        );
+        throw new Error(`auto-approve: malformed pending approvals list: ${page.summary}`);
       }
       for (const item of page.data) {
         const approved = await api(
@@ -591,9 +535,7 @@ async function main(): Promise<void> {
         if (approved.status === 200) {
           console.log(`  [auto-approved] ${headline}`);
         } else {
-          console.log(
-            `  [auto-approve FAILED ${String(approved.status)}] ${headline}`,
-          );
+          console.log(`  [auto-approve FAILED ${String(approved.status)}] ${headline}`);
         }
       }
       if (page.nextCursor === null) break;
@@ -615,21 +557,15 @@ async function main(): Promise<void> {
     let answered = false;
     while (Date.now() - t0 < TURN_TIMEOUT_MS) {
       await autoApproveAll();
-      const fresh = (await listAgentMessages()).filter(
-        (m) => !seenIds.has(m.id),
-      );
+      const fresh = (await listAgentMessages()).filter((m) => !seenIds.has(m.id));
       if (fresh.length > 0) {
         for (const m of fresh) {
           seenIds.add(m.id);
-          console.log(
-            `<<< MYRA (${Math.round((Date.now() - t0) / 1000)}s): ${m.text}`,
-          );
+          console.log(`<<< MYRA (${Math.round((Date.now() - t0) / 1000)}s): ${m.text}`);
         }
         // wait a little for follow-up messages in the same turn
         await Bun.sleep(4000);
-        const more = (await listAgentMessages()).filter(
-          (m) => !seenIds.has(m.id),
-        );
+        const more = (await listAgentMessages()).filter((m) => !seenIds.has(m.id));
         for (const m of more) {
           seenIds.add(m.id);
           console.log(`<<< MYRA (+): ${m.text}`);
@@ -647,17 +583,12 @@ async function main(): Promise<void> {
           .filter(
             (l) =>
               /WRN|ERR/.test(l) &&
-              !/pack push failed|bootstrap retry|no live deployment anchor|heartbeat/.test(
-                l,
-              ),
+              !/pack push failed|bootstrap retry|no live deployment anchor|heartbeat/.test(l),
           )
           .slice(-15)
           .join("\n");
       console.log(
-        "--- hub ---\n" +
-          tail(hub.output()) +
-          "\n--- sidecar ---\n" +
-          tail(sidecar.output()),
+        "--- hub ---\n" + tail(hub.output()) + "\n--- sidecar ---\n" + tail(sidecar.output()),
       );
       break;
     }
@@ -677,8 +608,7 @@ async function main(): Promise<void> {
         .split("\n")
         .filter(
           (l) =>
-            /capabilit|tool|Tool|grants|ERR/.test(l) &&
-            !/hub·requests|pack push|bootstrap/.test(l),
+            /capabilit|tool|Tool|grants|ERR/.test(l) && !/hub·requests|pack push|bootstrap/.test(l),
         )
         .slice(-60)
         .join("\n"),

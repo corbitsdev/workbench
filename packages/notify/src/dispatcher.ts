@@ -16,9 +16,7 @@ export interface NotifyDispatcherDeps {
   readonly sinks: SinkRegistry;
   readonly log: NotifyDispatchLogger;
   /** Rebuilds the event a mail row came from, so a sink renders the same thing the mailbox shows. */
-  readonly loadEvent: (
-    row: NotifyDispatchRow,
-  ) => Promise<NotificationEvent | null>;
+  readonly loadEvent: (row: NotifyDispatchRow) => Promise<NotificationEvent | null>;
   readonly tickIntervalMs: number;
   readonly batchSize: number;
   readonly maxAttempts: number;
@@ -36,9 +34,7 @@ function backoffFrom(now: Date, attempts: number, baseMs: number): Date {
   return new Date(now.getTime() + baseMs * 2 ** (attempts - 1));
 }
 
-export function createNotifyDispatcher(
-  deps: NotifyDispatcherDeps,
-): NotifyDispatcher {
+export function createNotifyDispatcher(deps: NotifyDispatcherDeps): NotifyDispatcher {
   let timer: ReturnType<typeof setInterval> | undefined;
 
   async function settleOne(row: NotifyDispatchRow, now: Date): Promise<void> {
@@ -113,9 +109,7 @@ export function createNotifyDispatcher(
       status: exhausted ? "dead" : "failed",
       attempts,
       lastError: result.error,
-      nextAttemptAt: exhausted
-        ? now
-        : backoffFrom(now, attempts, deps.retryBackoffMs),
+      nextAttemptAt: exhausted ? now : backoffFrom(now, attempts, deps.retryBackoffMs),
     });
   }
 

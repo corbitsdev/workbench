@@ -29,11 +29,7 @@ import { aggregateReview, type ReviewerPass } from "./aggregate";
 import { isBotAuthor } from "./bot-guard";
 import { fingerprintsIn } from "./fingerprint";
 import { renderReviewPrompt } from "./prompt";
-import {
-  CODE_REVIEW_REVIEWERS,
-  reviewerReportPrompt,
-  type ReviewerDefinition,
-} from "./reviewers";
+import { CODE_REVIEW_REVIEWERS, reviewerReportPrompt, type ReviewerDefinition } from "./reviewers";
 
 /** The GitHub reach a review run needs, under the connection's credential. */
 export interface CodeReviewGitHub {
@@ -44,9 +40,7 @@ export interface CodeReviewGitHub {
     review: PullRequestReviewDraft,
   ): Promise<PostedPullRequestReview>;
   /** Bodies of every review comment already posted, for the fingerprint scan. */
-  listPostedComments(
-    ref: PullRequestRef,
-  ): Promise<PullRequestReviewCommentsPage>;
+  listPostedComments(ref: PullRequestRef): Promise<PullRequestReviewCommentsPage>;
 }
 
 /** Runs one reviewer's turn and returns its raw reply. `systemPrompt`
@@ -81,8 +75,7 @@ export interface PullRequestReviewSkipped {
   readonly reason: string;
 }
 
-export type PullRequestReviewResult =
-  PullRequestReviewRun | PullRequestReviewSkipped;
+export type PullRequestReviewResult = PullRequestReviewRun | PullRequestReviewSkipped;
 
 function reasonOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -129,15 +122,8 @@ export async function runPullRequestReview(
   const prompt = renderReviewPrompt(diff);
   const postedComments = await deps.github.listPostedComments(ref);
   const alreadyPosted = fingerprintsIn(postedComments.comments);
-  const passes = await Promise.all(
-    reviewers.map((reviewer) => runOne(deps, reviewer, prompt)),
-  );
-  const review = aggregateReview(
-    passes,
-    diff,
-    alreadyPosted,
-    postedComments.truncated,
-  );
+  const passes = await Promise.all(reviewers.map((reviewer) => runOne(deps, reviewer, prompt)));
+  const review = aggregateReview(passes, diff, alreadyPosted, postedComments.truncated);
   const posted = await deps.github.postReview(ref, diff.headSha, review);
   return { skipped: false, diff, passes, review, posted };
 }

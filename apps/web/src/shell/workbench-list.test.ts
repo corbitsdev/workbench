@@ -50,12 +50,8 @@ describe("renamePayload", () => {
 
 describe("workbenchRowSignals", () => {
   test("opening clears a ready reply but keeps an active orbit", () => {
-    expect(
-      workbenchRowSignals(workbench({ live: "reply-ready" }), true).live,
-    ).toBe("idle");
-    expect(workbenchRowSignals(workbench({ live: "working" }), true).live).toBe(
-      "working",
-    );
+    expect(workbenchRowSignals(workbench({ live: "reply-ready" }), true).live).toBe("idle");
+    expect(workbenchRowSignals(workbench({ live: "working" }), true).live).toBe("working");
   });
 
   test("passes through only the signals the platform actually sent", () => {
@@ -70,9 +66,7 @@ describe("workbenchRowSignals", () => {
   });
 
   test("an open workbench never shows a stale unread badge", () => {
-    expect(
-      workbenchRowSignals(workbench({ unreadCount: 5 }), true).unread,
-    ).toBe(0);
+    expect(workbenchRowSignals(workbench({ unreadCount: 5 }), true).unread).toBe(0);
   });
 });
 
@@ -84,12 +78,7 @@ describe("orderWorkbenchRows", () => {
       workbench({ id: "c" }),
       workbench({ id: "d", pinned: true }),
     ];
-    expect(orderWorkbenchRows(rows).map((row) => row.id)).toEqual([
-      "b",
-      "d",
-      "a",
-      "c",
-    ]);
+    expect(orderWorkbenchRows(rows).map((row) => row.id)).toEqual(["b", "d", "a", "c"]);
   });
 
   test("orders most-recent activity first within each half", () => {
@@ -121,11 +110,7 @@ describe("orderWorkbenchRows", () => {
       workbench({ id: "b", kind: "workbench" }),
       workbench({ id: "c", kind: "chat" }),
     ];
-    expect(orderWorkbenchRows(rows).map((row) => row.id)).toEqual([
-      "a",
-      "b",
-      "c",
-    ]);
+    expect(orderWorkbenchRows(rows).map((row) => row.id)).toEqual(["a", "b", "c"]);
   });
 });
 
@@ -137,9 +122,7 @@ describe("filterSidebarRows", () => {
       row({ id: "ch_a", title: "Launch plan" }),
       row({ id: "ch_b", title: "Research brief" }),
     ];
-    expect(
-      filterSidebarRows(rows, "launch").map((r) => r.workbench.id),
-    ).toEqual(["ch_a"]);
+    expect(filterSidebarRows(rows, "launch").map((r) => r.workbench.id)).toEqual(["ch_a"]);
   });
 
   test("matches preview text even when the title does not (CL-6662)", () => {
@@ -155,33 +138,19 @@ describe("filterSidebarRows", () => {
         preview: "Weekly digest ready",
       }),
     ];
-    expect(
-      filterSidebarRows(rows, "Solvora").map((r) => r.workbench.id),
-    ).toEqual(["ch_solvora"]);
+    expect(filterSidebarRows(rows, "Solvora").map((r) => r.workbench.id)).toEqual(["ch_solvora"]);
   });
 
   test("is case-insensitive across title and preview", () => {
-    const rows = [
-      row({ id: "ch_1", title: "Myra", preview: "Talked about Acme pricing" }),
-    ];
-    expect(filterSidebarRows(rows, "ACME").map((r) => r.workbench.id)).toEqual([
-      "ch_1",
-    ]);
-    expect(filterSidebarRows(rows, "myra").map((r) => r.workbench.id)).toEqual([
-      "ch_1",
-    ]);
+    const rows = [row({ id: "ch_1", title: "Myra", preview: "Talked about Acme pricing" })];
+    expect(filterSidebarRows(rows, "ACME").map((r) => r.workbench.id)).toEqual(["ch_1"]);
+    expect(filterSidebarRows(rows, "myra").map((r) => r.workbench.id)).toEqual(["ch_1"]);
   });
 
   test("an empty or whitespace-only query returns every row", () => {
     const rows = [row({ id: "ch_a" }), row({ id: "ch_b", title: "Other" })];
-    expect(filterSidebarRows(rows, "").map((r) => r.workbench.id)).toEqual([
-      "ch_a",
-      "ch_b",
-    ]);
-    expect(filterSidebarRows(rows, "   ").map((r) => r.workbench.id)).toEqual([
-      "ch_a",
-      "ch_b",
-    ]);
+    expect(filterSidebarRows(rows, "").map((r) => r.workbench.id)).toEqual(["ch_a", "ch_b"]);
+    expect(filterSidebarRows(rows, "   ").map((r) => r.workbench.id)).toEqual(["ch_a", "ch_b"]);
   });
 
   test("returns no rows when neither title nor preview matches", () => {
@@ -191,9 +160,7 @@ describe("filterSidebarRows", () => {
 
   test("a missing preview still matches on title alone", () => {
     const rows = [row({ id: "ch_1", title: "Launch plan" })];
-    expect(
-      filterSidebarRows(rows, "launch").map((r) => r.workbench.id),
-    ).toEqual(["ch_1"]);
+    expect(filterSidebarRows(rows, "launch").map((r) => r.workbench.id)).toEqual(["ch_1"]);
   });
 
   test("filters a mixed list without splitting by kind", () => {
@@ -210,16 +177,9 @@ describe("filterSidebarRows", () => {
         title: "Launch plan",
       }),
     ];
-    expect(
-      filterSidebarRows(rows, "launch").map((r) => r.workbench.id),
-    ).toEqual(["ch_room"]);
-    expect(
-      filterSidebarRows(rows, "Solvora").map((r) => r.workbench.id),
-    ).toEqual(["ch_dm"]);
-    expect(filterSidebarRows(rows, "").map((r) => r.workbench.id)).toEqual([
-      "ch_dm",
-      "ch_room",
-    ]);
+    expect(filterSidebarRows(rows, "launch").map((r) => r.workbench.id)).toEqual(["ch_room"]);
+    expect(filterSidebarRows(rows, "Solvora").map((r) => r.workbench.id)).toEqual(["ch_dm"]);
+    expect(filterSidebarRows(rows, "").map((r) => r.workbench.id)).toEqual(["ch_dm", "ch_room"]);
   });
 });
 

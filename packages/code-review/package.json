@@ -1,24 +1,24 @@
 {
   "name": "@corbits/code-review",
-  "description": "Multi-reviewer pull-request review: three reviewer definitions, one aggregated review, posted to GitHub",
   "version": "0.0.2",
+  "description": "Multi-reviewer pull-request review: three reviewer definitions, one aggregated review, posted to GitHub",
   "license": "LGPL-2.1-or-later",
-  "type": "module",
-  "exports": {
-    ".": "./src/index.ts",
-    "./reviewers": "./src/reviewers.ts",
-    "./agent-requests": "./src/agent-requests.ts",
-    "./introductions": "./src/introductions.ts"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "packages/code-review"
   },
   "files": [
     "src",
     "LICENSE",
     "README.md"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "packages/code-review"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./reviewers": "./src/reviewers.ts",
+    "./agent-requests": "./src/agent-requests.ts",
+    "./introductions": "./src/introductions.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -30,12 +30,12 @@
   "dependencies": {
     "arktype": "catalog:"
   },
-  "peerDependencies": {
-    "@corbits/github-tools": "0.0.10"
-  },
   "devDependencies": {
     "@corbits/agent-directory": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@corbits/github-tools": "0.0.11"
   }
 }

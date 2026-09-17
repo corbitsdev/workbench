@@ -5,20 +5,14 @@
 // field on a rejected code).
 import { describe, expect, spyOn, test } from "bun:test";
 import * as errorSink from "@corbits/error-sink";
-import {
-  exchangeCodeForGithubToken,
-  type ExchangeFetch,
-} from "./github-connect";
+import { exchangeCodeForGithubToken, type ExchangeFetch } from "./github-connect";
 
 describe("exchangeCodeForGithubToken", () => {
   test("posts code, client id/secret, and redirect uri to the exchange endpoint", async () => {
     const requests: { url: string; body: unknown }[] = [];
     const fetchImpl: ExchangeFetch = async (url, init) => {
       requests.push({ url, body: JSON.parse(init.body) });
-      return new Response(
-        JSON.stringify({ access_token: "gho_minted_token" }),
-        { status: 200 },
-      );
+      return new Response(JSON.stringify({ access_token: "gho_minted_token" }), { status: 200 });
     };
 
     const result = await exchangeCodeForGithubToken({
@@ -30,9 +24,7 @@ describe("exchangeCodeForGithubToken", () => {
     });
 
     expect(result).toEqual({ ok: true, key: "gho_minted_token" });
-    expect(requests[0]?.url).toBe(
-      "https://github.com/login/oauth/access_token",
-    );
+    expect(requests[0]?.url).toBe("https://github.com/login/oauth/access_token");
     expect(requests[0]?.body).toEqual({
       client_id: "client_1",
       client_secret: "secret_1",

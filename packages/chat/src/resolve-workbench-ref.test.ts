@@ -74,11 +74,10 @@ describe("resolveWorkbenchIdForAgentFrame", () => {
       mailMessageId,
     });
 
-    const workbenchId = await resolveWorkbenchIdForAgentFrame(
-      { chatStore, roomMessages },
-      TENANT,
-      { senderAddress, inReplyTo: mailMessageId },
-    );
+    const workbenchId = await resolveWorkbenchIdForAgentFrame({ chatStore, roomMessages }, TENANT, {
+      senderAddress,
+      inReplyTo: mailMessageId,
+    });
 
     expect(workbenchId).toBe("wb_two");
     expect(reportErrorCalls).toHaveLength(0);
@@ -91,11 +90,9 @@ describe("resolveWorkbenchIdForAgentFrame", () => {
 
     await seedWorkbench(chatStore, "wb_only", senderAddress);
 
-    const workbenchId = await resolveWorkbenchIdForAgentFrame(
-      { chatStore, roomMessages },
-      TENANT,
-      { senderAddress },
-    );
+    const workbenchId = await resolveWorkbenchIdForAgentFrame({ chatStore, roomMessages }, TENANT, {
+      senderAddress,
+    });
 
     expect(workbenchId).toBe("wb_only");
     expect(reportErrorCalls).toHaveLength(0);
@@ -109,17 +106,13 @@ describe("resolveWorkbenchIdForAgentFrame", () => {
     await seedWorkbench(chatStore, "wb_a", senderAddress);
     await seedWorkbench(chatStore, "wb_b", senderAddress);
 
-    const workbenchId = await resolveWorkbenchIdForAgentFrame(
-      { chatStore, roomMessages },
-      TENANT,
-      { senderAddress },
-    );
+    const workbenchId = await resolveWorkbenchIdForAgentFrame({ chatStore, roomMessages }, TENANT, {
+      senderAddress,
+    });
 
     expect(workbenchId).toBeUndefined();
     expect(reportErrorCalls).toHaveLength(1);
-    expect(reportErrorCalls[0]?.context["operation"]).toBe(
-      "mailbox_ref_unresolved",
-    );
+    expect(reportErrorCalls[0]?.context["operation"]).toBe("mailbox_ref_unresolved");
     expect(reportErrorCalls[0]?.context["tenantId"]).toBe(TENANT);
   });
 
@@ -128,16 +121,12 @@ describe("resolveWorkbenchIdForAgentFrame", () => {
     const roomMessages = createInMemoryRoomMessageStore();
     const senderAddress = `ins_agent4@${DOMAIN}`;
 
-    const workbenchId = await resolveWorkbenchIdForAgentFrame(
-      { chatStore, roomMessages },
-      TENANT,
-      { senderAddress },
-    );
+    const workbenchId = await resolveWorkbenchIdForAgentFrame({ chatStore, roomMessages }, TENANT, {
+      senderAddress,
+    });
 
     expect(workbenchId).toBeUndefined();
     expect(reportErrorCalls).toHaveLength(1);
-    expect(reportErrorCalls[0]?.context["operation"]).toBe(
-      "mailbox_ref_unresolved",
-    );
+    expect(reportErrorCalls[0]?.context["operation"]).toBe("mailbox_ref_unresolved");
   });
 });

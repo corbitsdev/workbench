@@ -7,9 +7,7 @@ import { sidecarCapabilityDeclarations } from "./capabilities";
 describe("sidecarCapabilityDeclarations", () => {
   test("every backend's declarations parse as Interchange declarations", () => {
     for (const isolation of ["process", "container", "vm"] as const) {
-      const parsed = SidecarCapabilityDeclaration.array()(
-        sidecarCapabilityDeclarations(isolation),
-      );
+      const parsed = SidecarCapabilityDeclaration.array()(sidecarCapabilityDeclarations(isolation));
       expect(parsed instanceof type.errors).toBe(false);
     }
   });
@@ -33,10 +31,8 @@ describe("sidecarCapabilityDeclarations", () => {
   });
 
   test("a vm reaches every rung of the ladder", () => {
-    expect(
-      sidecarCapabilityDeclarations("vm").every(
-        ({ state }) => state === "available",
-      ),
-    ).toBe(true);
+    expect(sidecarCapabilityDeclarations("vm").every(({ state }) => state === "available")).toBe(
+      true,
+    );
   });
 });

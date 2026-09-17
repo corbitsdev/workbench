@@ -33,9 +33,7 @@ async function chatWithAnAgent() {
       return (...args: unknown[]) => {
         calls.push(String(property));
         if (refuseCalls) {
-          throw new Error(
-            `the write path called the platform: ${String(property)}`,
-          );
+          throw new Error(`the write path called the platform: ${String(property)}`);
         }
         return (value as (...a: unknown[]) => unknown).apply(target, args);
       };
@@ -104,9 +102,7 @@ describe("a message POST", () => {
     // itself must not notice.
     await settleFanout();
 
-    const listed = await chat.app.request(
-      `/workbenches/${chat.workbenchId}/messages`,
-    );
+    const listed = await chat.app.request(`/workbenches/${chat.workbenchId}/messages`);
     const body = (await listed.json()) as {
       items: { id: string; parts: { kind: string; text?: string }[] }[];
     };

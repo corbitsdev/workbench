@@ -4,8 +4,7 @@
 // platform-side noun (see `scripts/checks/ui-vocabulary.ts`).
 
 export const AVAILABLE_SECTION_TITLE = "Available";
-export const AVAILABLE_SECTION_SUBTITLE =
-  "Workflows this workbench hasn't added yet.";
+export const AVAILABLE_SECTION_SUBTITLE = "Workflows this workbench hasn't added yet.";
 
 /**
  * Every connector id `WORKFLOW_CATALOG` currently names as a required
@@ -31,9 +30,7 @@ function connectorDisplayName(connectorId: string): string {
   );
 }
 
-export function missingConnectionsReason(
-  missingConnections: readonly string[],
-): string {
+export function missingConnectionsReason(missingConnections: readonly string[]): string {
   const names = missingConnections.map(connectorDisplayName);
   if (names.length === 1) {
     return `Connect ${names[0]} first.`;

@@ -17,10 +17,7 @@
 import { isAgentAddress } from "./wire/mentions";
 import { handleFromName } from "./wire/participants";
 import type { ParticipantRecord } from "./api";
-import {
-  displayNameForAddress,
-  type AgentDisplayNames,
-} from "./agent-display-names";
+import { displayNameForAddress, type AgentDisplayNames } from "./agent-display-names";
 
 export type MentionCandidate = {
   readonly id: string;
@@ -36,9 +33,7 @@ export type MentionCandidate = {
 function readableLabel(handle: string): string {
   const words = handle.split(/[-_]+/).filter((word) => word.length > 0);
   if (words.length === 0) return handle;
-  return words
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
 }
 
 /**
@@ -127,9 +122,7 @@ export function bringInOptionsFromMembersAndAgents(
   invitableAgents: readonly BringInAgentDefinition[],
   participants: readonly ParticipantRecord[],
 ): readonly MentionOption[] {
-  const participantAddresses = new Set(
-    participants.map((participant) => participant.address),
-  );
+  const participantAddresses = new Set(participants.map((participant) => participant.address));
   const people: MentionOption[] = members
     .filter((member) => !participantAddresses.has(member.id))
     .map((member) => {
@@ -189,19 +182,10 @@ export function mentionOptionsFromWorkbench(
         label: readableLabel(participant.handle),
       },
     }));
-  const bringIn = bringInOptionsFromMembersAndAgents(
-    members,
-    invitableAgents,
-    participants,
-  );
+  const bringIn = bringInOptionsFromMembersAndAgents(members, invitableAgents, participants);
   const bringInAgents = bringIn.filter((option) => option.section === "agents");
   const bringInPeople = bringIn.filter((option) => option.section === "people");
-  return [
-    ...agentParticipants,
-    ...bringInAgents,
-    ...peopleParticipants,
-    ...bringInPeople,
-  ];
+  return [...agentParticipants, ...bringInAgents, ...peopleParticipants, ...bringInPeople];
 }
 
 /**
@@ -234,10 +218,7 @@ export type MentionQuery = {
  * caret. Returns `null` when the caret is not inside one — including right
  * after a mention that was closed by a space.
  */
-export function activeMentionQuery(
-  text: string,
-  caret: number,
-): MentionQuery | null {
+export function activeMentionQuery(text: string, caret: number): MentionQuery | null {
   const upToCaret = text.slice(0, caret);
   const at = upToCaret.lastIndexOf("@");
   if (at === -1) return null;
@@ -305,9 +286,7 @@ type BringInQuerySlice<T> = {
  */
 export function resolveBringInLists(input: {
   readonly members: BringInQuerySlice<readonly BringInMember[]>;
-  readonly invitableAgents: BringInQuerySlice<
-    readonly BringInAgentDefinition[]
-  >;
+  readonly invitableAgents: BringInQuerySlice<readonly BringInAgentDefinition[]>;
 }): {
   readonly members: readonly BringInMember[];
   readonly invitableAgents: readonly BringInAgentDefinition[];
@@ -319,9 +298,7 @@ export function resolveBringInLists(input: {
   if (input.invitableAgents.isError) failures.push("invitableAgents");
   return {
     members: input.members.isError ? [] : (input.members.data ?? []),
-    invitableAgents: input.invitableAgents.isError
-      ? []
-      : (input.invitableAgents.data ?? []),
+    invitableAgents: input.invitableAgents.isError ? [] : (input.invitableAgents.data ?? []),
     failures,
     firstError:
       failures[0] === "members"

@@ -13,13 +13,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { App } from "../src/app";
 import { AuthScreen } from "../src/auth-screen";
-import {
-  SOCIAL_SIGN_IN_PROVIDERS,
-  fetchSession,
-  signIn,
-  signOut,
-  signUp,
-} from "../src/session";
+import { SOCIAL_SIGN_IN_PROVIDERS, fetchSession, signIn, signOut, signUp } from "../src/session";
 import type { SessionState } from "../src/session";
 
 const realFetch = globalThis.fetch;
@@ -37,8 +31,7 @@ function stubFetch(
 ): RecordedCall[] {
   const calls: RecordedCall[] = [];
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const path =
-      typeof input === "string" ? input : new URL(String(input)).pathname;
+    const path = typeof input === "string" ? input : new URL(String(input)).pathname;
     calls.push(init === undefined ? { path } : { path, init });
     return Promise.resolve(respond(path));
   }) as typeof fetch;
@@ -231,9 +224,7 @@ describe("the gate", () => {
   });
 
   test("loading and error are their own screens, not a broken shell", () => {
-    expect(renderApp({ kind: "loading" })).toContain(
-      "Getting your workbench ready",
-    );
+    expect(renderApp({ kind: "loading" })).toContain("Getting your workbench ready");
     const markup = renderApp({ kind: "error", message: "socket hang up" });
     expect(markup).toContain("socket hang up");
     expect(markup).toContain("Try again");
@@ -263,10 +254,7 @@ describe("social sign-in buttons", () => {
   // unconfigured click must surface better-auth's own message on the form.
   test("a failed social sign-in surfaces better-auth's message on the form", async () => {
     const calls = stubFetch(() =>
-      json(
-        { message: "Social sign-in is not configured for this provider" },
-        400,
-      ),
+      json({ message: "Social sign-in is not configured for this provider" }, 400),
     );
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -286,12 +274,8 @@ describe("social sign-in buttons", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      expect(calls.map((call) => call.path)).toEqual([
-        "/api/auth/sign-in/social",
-      ]);
-      expect(container.textContent).toContain(
-        "Social sign-in is not configured for this provider",
-      );
+      expect(calls.map((call) => call.path)).toEqual(["/api/auth/sign-in/social"]);
+      expect(container.textContent).toContain("Social sign-in is not configured for this provider");
     } finally {
       await act(async () => {
         root.unmount();

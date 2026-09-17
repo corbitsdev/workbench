@@ -118,13 +118,7 @@ test("a catch that rethrows passes", () => {
     [
       {
         relPath: "packages/chat/src/thing.ts",
-        contents: [
-          `try {`,
-          `  doWork();`,
-          `} catch (error) {`,
-          `  throw error;`,
-          `}`,
-        ].join("\n"),
+        contents: [`try {`, `  doWork();`, `} catch (error) {`, `  throw error;`, `}`].join("\n"),
       },
     ],
     NO_BASELINE,
@@ -204,9 +198,7 @@ test("a catch with the opt-out marker in its body passes with a note", () => {
     NO_BASELINE,
   );
   expect(report.violations).toEqual([]);
-  expect(
-    report.notes.some((n) => n.includes("CL-7234 tracked separately")),
-  ).toBe(true);
+  expect(report.notes.some((n) => n.includes("CL-7234 tracked separately"))).toBe(true);
 });
 
 test("a catch with the opt-out marker on its own line passes", () => {
@@ -244,9 +236,7 @@ test("an opted-out catch is never a candidate for the baseline", () => {
     ],
     {
       baseline: new Set(),
-      changedLines: new Map([
-        ["apps/hub/src/stream.ts", [{ start: 1, end: 4 }]],
-      ]),
+      changedLines: new Map([["apps/hub/src/stream.ts", [{ start: 1, end: 4 }]]]),
     },
   );
   expect(report.violations).toEqual([]);
@@ -334,9 +324,7 @@ test("a finding already in the baseline passes when its file isn't touched", () 
     [
       {
         relPath: "c.ts",
-        contents: [`try {`, `  x();`, `} catch {`, `  return null;`, `}`].join(
-          "\n",
-        ),
+        contents: [`try {`, `  x();`, `} catch {`, `  return null;`, `}`].join("\n"),
       },
     ],
     { baseline: new Set([key]) },
@@ -349,15 +337,11 @@ test("a finding not in the baseline is a new violation even with other entries p
     [
       {
         relPath: "c.ts",
-        contents: [`try {`, `  x();`, `} catch {`, `  return null;`, `}`].join(
-          "\n",
-        ),
+        contents: [`try {`, `  x();`, `} catch {`, `  return null;`, `}`].join("\n"),
       },
       {
         relPath: "other.ts",
-        contents: [`try {`, `  x();`, `} catch {`, `  return null;`, `}`].join(
-          "\n",
-        ),
+        contents: [`try {`, `  x();`, `} catch {`, `  return null;`, `}`].join("\n"),
       },
     ],
     { baseline: new Set([baselineKey("other.ts", 1, "return null;")]) },
@@ -375,9 +359,7 @@ test("a baselined finding whose line the diff touches still fails, forcing clean
     [
       {
         relPath: "c.ts",
-        contents: [`try {`, `  x();`, `} catch {`, `  return null;`, `}`].join(
-          "\n",
-        ),
+        contents: [`try {`, `  x();`, `} catch {`, `  return null;`, `}`].join("\n"),
       },
     ],
     {
@@ -396,9 +378,7 @@ test("a baselined finding elsewhere in a touched file passes — the ratchet is 
     [
       {
         relPath: "c.ts",
-        contents: [`try {`, `  x();`, `} catch {`, `  return null;`, `}`].join(
-          "\n",
-        ),
+        contents: [`try {`, `  x();`, `} catch {`, `  return null;`, `}`].join("\n"),
       },
     ],
     {
@@ -413,10 +393,9 @@ test("a baselined finding elsewhere in a touched file passes — the ratchet is 
 });
 
 test("a stale baseline entry with no matching finding fails", () => {
-  const report = auditReportError(
-    [{ relPath: "c.ts", contents: "export const x = 1;" }],
-    { baseline: new Set([baselineKey("c.ts", 1, "return null;")]) },
-  );
+  const report = auditReportError([{ relPath: "c.ts", contents: "export const x = 1;" }], {
+    baseline: new Set([baselineKey("c.ts", 1, "return null;")]),
+  });
   expect(report.violations).toHaveLength(1);
   expect(report.violations[0]).toContain("stale entry");
   expect(report.violations[0]).toContain(BASELINE_REGENERATE_HINT);
@@ -453,18 +432,14 @@ test("parseBaseline ignores comments and blank lines", () => {
     "b.ts\t1\treturn undefined;",
   ].join("\n");
   const keys = parseBaseline(text);
-  expect(keys).toEqual(
-    new Set(["a.ts\t1\treturn null;", "b.ts\t1\treturn undefined;"]),
-  );
+  expect(keys).toEqual(new Set(["a.ts\t1\treturn null;", "b.ts\t1\treturn undefined;"]));
 });
 
 test("serializeBaseline sorts entries and includes the debt-ledger header", () => {
   const text = serializeBaseline(["b.ts\t1\tx", "a.ts\t1\ty"]);
   expect(text).toContain("debt ledger — NOT an allowlist");
   expect(text).toContain("--write-baseline");
-  const body = text
-    .split("\n")
-    .filter((line) => !line.startsWith("#") && line.trim().length > 0);
+  const body = text.split("\n").filter((line) => !line.startsWith("#") && line.trim().length > 0);
   expect(body).toEqual(["a.ts\t1\ty", "b.ts\t1\tx"]);
 });
 

@@ -19,11 +19,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "bun:test";
-import {
-  createEd25519Crypto,
-  generateKeyPair,
-  verifySSHSignature,
-} from "@intx/crypto";
+import { createEd25519Crypto, generateKeyPair, verifySSHSignature } from "@intx/crypto";
 import {
   createAgentKeyStore,
   createAgentRepoStore as createSidecarSideRepoStore,
@@ -49,9 +45,7 @@ import {
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(
-    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
 async function makeDataDir(): Promise<string> {
@@ -96,9 +90,7 @@ async function makeRouter(
     materializeDeploymentClosure: ({ deploymentId }) => {
       const definition = closureDefinitions.get(deploymentId);
       if (definition === undefined) {
-        throw new Error(
-          `test closure materializer: no definition registered for ${deploymentId}`,
-        );
+        throw new Error(`test closure materializer: no definition registered for ${deploymentId}`);
       }
       return Promise.resolve({
         definition,

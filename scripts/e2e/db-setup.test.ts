@@ -20,13 +20,7 @@ import { assertDatabaseConfigured, skippedDatabaseWarning } from "./db-gate.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..");
 const HUB_DIR = path.join(REPO_ROOT, "apps", "hub");
-const VENDORED_MIGRATIONS_DIR = path.join(
-  REPO_ROOT,
-  "vendor",
-  "intx",
-  "db",
-  "migrations",
-);
+const VENDORED_MIGRATIONS_DIR = path.join(REPO_ROOT, "vendor", "intx", "db", "migrations");
 
 function scratchDatabaseUrl(): string | undefined {
   const base = process.env["DATABASE_URL"];

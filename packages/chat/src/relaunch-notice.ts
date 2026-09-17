@@ -85,9 +85,7 @@ export function createRelaunchNoticePoster(deps: {
         tenantId: notice.tenantId,
         workbenchId: room.workbenchId,
         sender: { name: null, address: notice.roomAddress },
-        parts: [
-          { kind: "text", text: relaunchNoticeText(notice.deadRunStatus) },
-        ],
+        parts: [{ kind: "text", text: relaunchNoticeText(notice.deadRunStatus) }],
         runId: localPartOf(notice.roomAddress),
       });
     }

@@ -83,10 +83,7 @@ describe("thread grouping", () => {
       message("<b@example>", "ada@example.com", ["myra@example.com"]),
     ]);
 
-    expect(threads.map((thread) => thread.messageIds)).toEqual([
-      ["<a@example>"],
-      ["<b@example>"],
-    ]);
+    expect(threads.map((thread) => thread.messageIds)).toEqual([["<a@example>"], ["<b@example>"]]);
   });
 
   test("keeps same-subject messages with distinct correspondents separate", () => {
@@ -99,10 +96,7 @@ describe("thread grouping", () => {
       }),
     ]);
 
-    expect(threads.map((thread) => thread.messageIds)).toEqual([
-      ["<a@example>"],
-      ["<b@example>"],
-    ]);
+    expect(threads.map((thread) => thread.messageIds)).toEqual([["<a@example>"], ["<b@example>"]]);
   });
 
   test("scopes the subject fallback to a single participant set", () => {
@@ -190,14 +184,9 @@ describe("DM derivation from participant-filtered threads", () => {
   test("excludes group threads, user-only threads, and agent-only threads", () => {
     const threads = deriveDmThreads(
       [
-        message("<group@example>", "ada@example.com", [
-          "myra@example.com",
-          "reviewer@example.com",
-        ]),
+        message("<group@example>", "ada@example.com", ["myra@example.com", "reviewer@example.com"]),
         message("<solo@example>", "ada@example.com", ["ada@example.com"]),
-        message("<agents@example>", "myra@example.com", [
-          "reviewer@example.com",
-        ]),
+        message("<agents@example>", "myra@example.com", ["reviewer@example.com"]),
       ],
       user,
     );
@@ -233,9 +222,7 @@ describe("participants", () => {
           cc: ["bea@example.com"],
         }),
       ),
-    ).toEqual(
-      new Set(["ada@example.com", "myra@example.com", "bea@example.com"]),
-    );
+    ).toEqual(new Set(["ada@example.com", "myra@example.com", "bea@example.com"]));
   });
 });
 

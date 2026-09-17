@@ -1,18 +1,7 @@
-export {
-  SettingsShell,
-  resolveActiveSection,
-  flattenSettingsSections,
-} from "./shell";
-export type {
-  SettingsContext,
-  SettingsSection,
-  SettingsSectionGroup,
-} from "./shell";
+export { SettingsShell, resolveActiveSection, flattenSettingsSections } from "./shell";
+export type { SettingsContext, SettingsSection, SettingsSectionGroup } from "./shell";
 
-export {
-  resolveSettingsSectionGroups,
-  insertEveryoneSections,
-} from "./section-registry";
+export { resolveSettingsSectionGroups, insertEveryoneSections } from "./section-registry";
 
 export {
   AccountSection,
@@ -24,17 +13,8 @@ export {
 // registry (CL-6843). Re-export when a preference store backs it.
 export { AuditSection } from "./audit-section";
 export { PeopleSection, PeopleTable } from "./people-section";
-export {
-  RolesSection,
-  RolesTable,
-  RoleAssignments,
-  CreateRoleDialog,
-} from "./roles-section";
-export {
-  GrantsSection,
-  GrantsTable,
-  CreateGrantDialog,
-} from "./grants-section";
+export { RolesSection, RolesTable, RoleAssignments, CreateRoleDialog } from "./roles-section";
+export { GrantsSection, GrantsTable, CreateGrantDialog } from "./grants-section";
 export {
   ConnectionsSection,
   ConnectorRowList,
@@ -44,17 +24,9 @@ export {
 
 export { GranolaWebhookCard } from "./granola-webhook-card";
 
-export {
-  CopyButton,
-  CopyableCodeRow,
-  WebhookSecretPanel,
-} from "./webhook-secret-panel";
+export { CopyButton, CopyableCodeRow, WebhookSecretPanel } from "./webhook-secret-panel";
 
-export {
-  grantPreviewSentence,
-  expiryIsoFromPreset,
-  expiryLabelFromPreset,
-} from "./grant-preview";
+export { grantPreviewSentence, expiryIsoFromPreset, expiryLabelFromPreset } from "./grant-preview";
 export type { GrantPreviewInput } from "./grant-preview";
 export { KindCards } from "./kind-cards";
 export type { KindCardOption } from "./kind-cards";
@@ -65,11 +37,7 @@ export type { PrincipalLabel } from "./identity";
 export { GRANT_RESOURCES, GRANT_ACTIONS } from "./resource-vocabulary";
 export type { GrantResource, GrantAction } from "./resource-vocabulary";
 
-export {
-  useTenancyAccess,
-  probeSectionAccess,
-  coalesceSectionAccess,
-} from "./access";
+export { useTenancyAccess, probeSectionAccess, coalesceSectionAccess } from "./access";
 export type { SectionAccess, TenancyAccess } from "./access";
 
 export {
@@ -88,13 +56,7 @@ export {
   revokeGrant,
   evaluate,
 } from "./tenancy-api";
-export type {
-  Principal,
-  Role,
-  Grant,
-  GrantFilters,
-  CreateGrantInput,
-} from "./tenancy-api";
+export type { Principal, Role, Grant, GrantFilters, CreateGrantInput } from "./tenancy-api";
 
 export {
   CredentialsApiError,
@@ -103,11 +65,7 @@ export {
   createCredential,
   deleteCredential,
 } from "./credentials-api";
-export type {
-  Credential,
-  Provider,
-  CreateCredentialInput,
-} from "./credentials-api";
+export type { Credential, Provider, CreateCredentialInput } from "./credentials-api";
 
 export {
   ConnectionsApiError,
@@ -117,10 +75,7 @@ export {
 } from "./connections-api";
 
 export { connectorStatus } from "./connections-status";
-export type {
-  ConnectorStatus,
-  ConnectorStatusResult,
-} from "./connections-status";
+export type { ConnectorStatus, ConnectorStatusResult } from "./connections-status";
 
 export { CONNECTOR_PINNED_WORKFLOWS } from "./connections-pinned-by";
 

@@ -3,11 +3,7 @@
 // ran, and never at a tick that fell during a slow fire.
 import { describe, expect, test } from "bun:test";
 
-import {
-  createCronEmitter,
-  timerIdForTick,
-  type CronDeployment,
-} from "./emitter";
+import { createCronEmitter, timerIdForTick, type CronDeployment } from "./emitter";
 
 const deployment: CronDeployment = {
   deploymentId: "def_digest",
@@ -39,10 +35,7 @@ describe("createCronEmitter re-arm", () => {
       {
         deploymentId: "def_digest",
         tick: {
-          timerId: timerIdForTick(
-            "def_digest",
-            new Date("2026-01-01T09:01:00.000Z"),
-          ),
+          timerId: timerIdForTick("def_digest", new Date("2026-01-01T09:01:00.000Z")),
           fireAt: "2026-01-01T09:01:00.000Z",
           cron: "* * * * *",
         },

@@ -1,7 +1,4 @@
-import {
-  chatCapableModels,
-  providerDisplayName,
-} from "@corbits/inference-settings";
+import { chatCapableModels, providerDisplayName } from "@corbits/inference-settings";
 import type { ModelInfo } from "@corbits/inference-settings";
 
 import { CHAT_STRINGS } from "./strings";
@@ -14,9 +11,7 @@ export type FailedTurnModelChoice = {
 };
 
 function offeringSupportsTools(capabilities: readonly string[]): boolean {
-  return capabilities.some((capability) =>
-    capability.startsWith("function-calling"),
-  );
+  return capabilities.some((capability) => capability.startsWith("function-calling"));
 }
 
 function toolCapableModels(models: readonly ModelInfo[]): readonly ModelInfo[] {
@@ -27,18 +22,13 @@ function toolCapableModels(models: readonly ModelInfo[]): readonly ModelInfo[] {
     );
     if (offerings.length === 0) continue;
     kept.push(
-      offerings.length === model.offerings.length
-        ? model
-        : { ...model, offerings: [...offerings] },
+      offerings.length === model.offerings.length ? model : { ...model, offerings: [...offerings] },
     );
   }
   return kept;
 }
 
-function toChoices(
-  models: readonly ModelInfo[],
-  limit: number,
-): readonly FailedTurnModelChoice[] {
+function toChoices(models: readonly ModelInfo[], limit: number): readonly FailedTurnModelChoice[] {
   return models
     .filter((model) => model.offerings.length > 0)
     .slice(0, limit)
@@ -48,9 +38,7 @@ function toChoices(
         canonicalName: model.canonicalName,
         label: CHAT_STRINGS.workbenchSettingsAgentDetailModelOption(
           model.displayName ?? model.canonicalName,
-          topOffering === undefined
-            ? ""
-            : providerDisplayName(topOffering.providerName),
+          topOffering === undefined ? "" : providerDisplayName(topOffering.providerName),
         ),
       };
     });

@@ -14,26 +14,19 @@ import { LIBRARY_BULK_OPERATION_IDS } from "../library-artifacts";
 
 function itemIds(entries: readonly ContextMenuEntry[]): readonly string[] {
   return entries
-    .filter(
-      (entry): entry is Extract<ContextMenuEntry, { kind: "item" }> =>
-        entry.kind === "item",
-    )
+    .filter((entry): entry is Extract<ContextMenuEntry, { kind: "item" }> => entry.kind === "item")
     .map((entry) => entry.id);
 }
 
 function findItem(entries: readonly ContextMenuEntry[], id: string) {
-  const entry = entries.find(
-    (candidate) => candidate.kind === "item" && candidate.id === id,
-  );
+  const entry = entries.find((candidate) => candidate.kind === "item" && candidate.id === id);
   if (entry === undefined || entry.kind !== "item") {
     throw new Error(`no item "${id}" in menu`);
   }
   return entry;
 }
 
-function actions(
-  overrides: Partial<ShellContextMenuActions> = {},
-): ShellContextMenuActions {
+function actions(overrides: Partial<ShellContextMenuActions> = {}): ShellContextMenuActions {
   return {
     tenantId: "tenant-1",
     navigate: mock(() => undefined),
@@ -126,9 +119,7 @@ describe("shellContextMenuFor: workbench", () => {
     const menu = shellContextMenuFor(target, actions());
     findItem(menu.entries, "copy-link").onSelect();
     await Promise.resolve();
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      `${window.location.origin}/w/ch-1`,
-    );
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(`${window.location.origin}/w/ch-1`);
     expect(toastMock).toHaveBeenCalledWith("Launch Planning link copied");
   });
 
@@ -278,10 +269,7 @@ describe("shellContextMenuFor: account", () => {
 
   test("settings navigates to the settings route", () => {
     const navigate = mock((_to: string) => undefined);
-    const menu = shellContextMenuFor(
-      { type: "account" },
-      actions({ navigate }),
-    );
+    const menu = shellContextMenuFor({ type: "account" }, actions({ navigate }));
     findItem(menu.entries, "settings").onSelect();
     expect(navigate).toHaveBeenCalledWith("/settings");
   });
@@ -303,10 +291,7 @@ describe("shellContextMenuFor: shell", () => {
 
   test("theme item calls cycleTheme", () => {
     const cycleTheme = mock(() => undefined);
-    const menu = shellContextMenuFor(
-      { type: "shell" },
-      actions({ cycleTheme }),
-    );
+    const menu = shellContextMenuFor({ type: "shell" }, actions({ cycleTheme }));
     findItem(menu.entries, "theme").onSelect();
     expect(cycleTheme).toHaveBeenCalledTimes(1);
   });

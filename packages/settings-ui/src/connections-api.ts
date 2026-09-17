@@ -40,9 +40,7 @@ function request<T>(
  * the muted "Not configured" state instead of a button that would
  * round-trip into the provider's own consent screen and dead-end.
  */
-export function fetchOAuthConfigured(
-  tenantId: string,
-): Promise<Record<string, boolean>> {
+export function fetchOAuthConfigured(tenantId: string): Promise<Record<string, boolean>> {
   return request(
     `/api/tenants/${tenantId}/connections/oauth-configured`,
     OAuthConfiguredResult,
@@ -88,10 +86,7 @@ export function completeConnectorCredential(
  * credentials) — see `@corbits/connections`' `disconnectConnector` for
  * the full ordering and why (CL-6258).
  */
-export function disconnectConnector(
-  tenantId: string,
-  connectorId: string,
-): Promise<void> {
+export function disconnectConnector(tenantId: string, connectorId: string): Promise<void> {
   return request<void>(
     `/api/tenants/${tenantId}/connections/${connectorId}/disconnect`,
     (data) => data as void,

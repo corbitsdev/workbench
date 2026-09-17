@@ -5,10 +5,7 @@
 // routes (`getBlockResponses`/`submitPollResponse`/`submitFormResponse` in
 // `api.ts`).
 
-import type {
-  BlockResponseActions,
-  BlockResponseSubmitResult,
-} from "@corbits/chat-ui";
+import type { BlockResponseActions, BlockResponseSubmitResult } from "@corbits/chat-ui";
 import {
   CHAT_STRINGS,
   ChatApiError,
@@ -22,9 +19,7 @@ export function createChatBlockResponseActions(
   tenantId: string,
   workbenchId: string,
 ): BlockResponseActions {
-  async function submit(
-    call: () => Promise<void>,
-  ): Promise<BlockResponseSubmitResult> {
+  async function submit(call: () => Promise<void>): Promise<BlockResponseSubmitResult> {
     try {
       await call();
       return { kind: "submitted" };
@@ -37,10 +32,7 @@ export function createChatBlockResponseActions(
       }
       return {
         kind: "error",
-        message:
-          cause instanceof Error
-            ? cause.message
-            : CHAT_STRINGS.blockFormSubmitError,
+        message: cause instanceof Error ? cause.message : CHAT_STRINGS.blockFormSubmitError,
       };
     }
   }
@@ -48,12 +40,7 @@ export function createChatBlockResponseActions(
   return {
     async getResponses(messageId, blockId) {
       try {
-        const result = await getBlockResponses(
-          tenantId,
-          workbenchId,
-          messageId,
-          blockId,
-        );
+        const result = await getBlockResponses(tenantId, workbenchId, messageId, blockId);
         return {
           kind: "ready",
           tally: result.tally,
@@ -66,37 +53,19 @@ export function createChatBlockResponseActions(
         }
         return {
           kind: "error",
-          message:
-            cause instanceof Error ? cause.message : "Couldn't load responses.",
+          message: cause instanceof Error ? cause.message : "Couldn't load responses.",
         };
       }
     },
     submitPoll(messageId, blockId, choiceIds) {
-      return submit(() =>
-        submitPollResponse(
-          tenantId,
-          workbenchId,
-          messageId,
-          blockId,
-          choiceIds,
-        ),
-      );
+      return submit(() => submitPollResponse(tenantId, workbenchId, messageId, blockId, choiceIds));
     },
     submitForm(messageId, blockId, values) {
-      return submit(() =>
-        submitFormResponse(tenantId, workbenchId, messageId, blockId, values),
-      );
+      return submit(() => submitFormResponse(tenantId, workbenchId, messageId, blockId, values));
     },
     submitQuestion(messageId, blockId, answer, optionIndex) {
       return submit(() =>
-        submitQuestionResponse(
-          tenantId,
-          workbenchId,
-          messageId,
-          blockId,
-          answer,
-          optionIndex,
-        ),
+        submitQuestionResponse(tenantId, workbenchId, messageId, blockId, answer, optionIndex),
       );
     },
   };

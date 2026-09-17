@@ -5,10 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
-import {
-  createInMemoryMailboxEventBus,
-  type MailboxDb,
-} from "@corbits/mailbox";
+import { createInMemoryMailboxEventBus, type MailboxDb } from "@corbits/mailbox";
 import { createInboxRoutes } from "../src/routes";
 
 const TENANT = { id: "tnt_1" };
@@ -65,9 +62,7 @@ describe("GET / cursor/filter cross-check", () => {
     };
     const cursor = Buffer.from(JSON.stringify(payload)).toString("base64url");
 
-    const response = await app.request(
-      `/?group=mention&cursor=${encodeURIComponent(cursor)}`,
-    );
+    const response = await app.request(`/?group=mention&cursor=${encodeURIComponent(cursor)}`);
 
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: string };

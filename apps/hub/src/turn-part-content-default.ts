@@ -28,9 +28,7 @@ export function withTurnPartWriteDefaults(db: DB["db"]): DB["db"] {
       if (prop !== "insert") {
         return Reflect.get(target, prop, receiver);
       }
-      const insert = Reflect.get(target, prop, target) as (
-        table: unknown,
-      ) => InsertBuilder;
+      const insert = Reflect.get(target, prop, target) as (table: unknown) => InsertBuilder;
       return (table: unknown) => {
         const builder = insert.call(target, table);
         if (table !== turnPart) {
@@ -42,11 +40,7 @@ export function withTurnPartWriteDefaults(db: DB["db"]): DB["db"] {
         const originalValues = builder.values.bind(builder);
         return {
           values: (values: unknown) =>
-            originalValues(
-              Array.isArray(values)
-                ? values.map(fillContent)
-                : fillContent(values),
-            ),
+            originalValues(Array.isArray(values) ? values.map(fillContent) : fillContent(values)),
         };
       };
     },

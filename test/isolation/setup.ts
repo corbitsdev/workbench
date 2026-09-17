@@ -8,11 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import {
-  freePort,
-  startHub,
-  type HubHandle,
-} from "../../scripts/e2e/harness.ts";
+import { freePort, startHub, type HubHandle } from "../../scripts/e2e/harness.ts";
 import { assertDatabaseConfigured } from "../../scripts/e2e/db-gate.ts";
 
 /**
@@ -52,9 +48,7 @@ export const ISOLATION_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
 export function resolveDatabaseUrl(): string | undefined {
   const isolationUrl = process.env["ISOLATION_DATABASE_URL"];
   const url =
-    isolationUrl !== undefined && isolationUrl !== ""
-      ? isolationUrl
-      : process.env["DATABASE_URL"];
+    isolationUrl !== undefined && isolationUrl !== "" ? isolationUrl : process.env["DATABASE_URL"];
   if (url !== undefined && url !== "") return url;
   assertDatabaseConfigured(undefined, "isolation suite");
   return undefined;
@@ -97,9 +91,7 @@ export async function prepareDatabase(databaseUrl: string): Promise<void> {
  * `AppLike.request` wraps `fetch` against the hub's real port, matching
  * how a client actually reaches it.
  */
-export async function bootIsolationHub(
-  databaseUrl: string,
-): Promise<IsolationHub> {
+export async function bootIsolationHub(databaseUrl: string): Promise<IsolationHub> {
   const root = mkdtempSync(path.join(tmpdir(), "isolation-suite-"));
   const hubDataDir = path.join(root, "hub-data");
 
@@ -113,9 +105,7 @@ export async function bootIsolationHub(
       // surface; stock Interchange composition leaves signup ungated
       // (rate-limited only), so this boot needs no signup env at all.
       SIGNUP_RATE_LIMIT_MAX: String(ISOLATION_SIGNUP_RATE_LIMIT_MAX),
-      SIGNUP_RATE_LIMIT_WINDOW_SECONDS: String(
-        ISOLATION_SIGNUP_RATE_LIMIT_WINDOW_SECONDS,
-      ),
+      SIGNUP_RATE_LIMIT_WINDOW_SECONDS: String(ISOLATION_SIGNUP_RATE_LIMIT_WINDOW_SECONDS),
     },
   });
 
@@ -145,10 +135,7 @@ export async function bootIsolationHub(
  * tenant this suite mints — it is not the database under test's
  * concern to stay clean.
  */
-async function waitForSidecarDialIn(
-  app: AppLike,
-  hub: HubHandle,
-): Promise<void> {
+async function waitForSidecarDialIn(app: AppLike, hub: HubHandle): Promise<void> {
   const cookie = await signUpUser(
     app,
     `sidecar-probe-${crypto.randomUUID()}@isolation.test`,
@@ -175,14 +162,11 @@ async function waitForSidecarDialIn(
     if (hub.exited()) {
       throw new Error(`hub exited before dialing in; output:\n${hub.output()}`);
     }
-    const workbenchResponse = await app.request(
-      `/api/tenants/${tenant.id}/chat/workbenches`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json", cookie },
-        body: JSON.stringify({ kind: "workbench", name: "sidecar-probe" }),
-      },
-    );
+    const workbenchResponse = await app.request(`/api/tenants/${tenant.id}/chat/workbenches`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ kind: "workbench", name: "sidecar-probe" }),
+    });
     if (workbenchResponse.status === 201) return;
     if (Date.now() > deadline) {
       throw new Error(
@@ -202,9 +186,7 @@ async function requireJson(
 ): Promise<Record<string, unknown>> {
   const text = await response.text();
   if (response.status !== expected) {
-    throw new Error(
-      `${what}: expected ${expected}, got ${response.status}: ${text}`,
-    );
+    throw new Error(`${what}: expected ${expected}, got ${response.status}: ${text}`);
   }
   return JSON.parse(text) as Record<string, unknown>;
 }
@@ -213,11 +195,7 @@ async function requireJson(
  * Signs up a fresh user through the platform's own auth surface and
  * returns the session cookie a browser would hold.
  */
-export async function signUpUser(
-  app: AppLike,
-  email: string,
-  name: string,
-): Promise<string> {
+export async function signUpUser(app: AppLike, email: string, name: string): Promise<string> {
   const response = await app.request("/api/auth/sign-up/email", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -290,9 +268,7 @@ export async function provisionTenant(
   const principals = listItems(principalsJson);
   const principal = principals[0] as { id: string } | undefined;
   if (principals.length !== 1 || !principal) {
-    throw new Error(
-      `expected exactly the owner principal in ${tag}, got ${principals.length}`,
-    );
+    throw new Error(`expected exactly the owner principal in ${tag}, got ${principals.length}`);
   }
 
   const grantsJson = await requireJson(

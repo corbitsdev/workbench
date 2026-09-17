@@ -12,18 +12,9 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Glob } from "bun";
 import { type } from "arktype";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
-const DEPENDENCY_FIELDS = [
-  "dependencies",
-  "devDependencies",
-  "peerDependencies",
-] as const;
+const DEPENDENCY_FIELDS = ["dependencies", "devDependencies", "peerDependencies"] as const;
 
 const PackageJson = type({
   "dependencies?": "Record<string, string>",
@@ -77,9 +68,7 @@ export function resolveCatalogs(rootPackageJson: PackageJson): {
 export function auditCatalogPins(
   catalog: Readonly<Record<string, string>>,
   workspaces: readonly { dir: string; packageJson: PackageJson }[],
-  namedCatalogs: Readonly<
-    Record<string, Readonly<Record<string, string>>>
-  > = {},
+  namedCatalogs: Readonly<Record<string, Readonly<Record<string, string>>>> = {},
 ): CheckReport {
   const report = emptyReport();
   const catalogued = new Set(Object.keys(catalog));
@@ -124,9 +113,7 @@ export function auditCatalogPins(
   return report;
 }
 
-async function listWorkspaces(
-  root: string,
-): Promise<{ dir: string; packageJson: PackageJson }[]> {
+async function listWorkspaces(root: string): Promise<{ dir: string; packageJson: PackageJson }[]> {
   const workspaces: { dir: string; packageJson: PackageJson }[] = [];
   for (const pattern of WORKSPACE_GLOBS) {
     const glob = new Glob(pattern);
@@ -146,13 +133,9 @@ async function main(): Promise<void> {
   const root = rootFromArgs(Bun.argv.slice(2));
   const rootPackageJsonPath = path.join(root, "package.json");
   const rootPackageJson = existsSync(rootPackageJsonPath)
-    ? parsePackageJson(
-        readFileSync(rootPackageJsonPath, "utf8"),
-        "package.json",
-      )
+    ? parsePackageJson(readFileSync(rootPackageJsonPath, "utf8"), "package.json")
     : ({} as PackageJson);
-  const { default: catalog, named: namedCatalogs } =
-    resolveCatalogs(rootPackageJson);
+  const { default: catalog, named: namedCatalogs } = resolveCatalogs(rootPackageJson);
   const workspaces = await listWorkspaces(root);
   const report = auditCatalogPins(catalog, workspaces, namedCatalogs);
   if (workspaces.length === 0) {

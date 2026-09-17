@@ -17,10 +17,7 @@ import { isAgentAddress, mentionedParticipants } from "./wire/mentions";
 import { reportError } from "@corbits/error-sink";
 import type { Part, ParticipantRecord } from "./api";
 import { REAL_CLOCK, type Clock } from "./clock";
-import {
-  displayNameForAddress,
-  type AgentDisplayNames,
-} from "./agent-display-names";
+import { displayNameForAddress, type AgentDisplayNames } from "./agent-display-names";
 import { displayNameFromHandle } from "./timeline";
 
 /**
@@ -205,11 +202,7 @@ export function nextStreamingReplyState(
   if (event.eventType === "chat.message") {
     if (hasTurnCancelledPart(event.data)) return REPLIED;
     if (hasTurnFailedPart(event.data)) return null;
-    if (
-      current !== null &&
-      current.phase === "awaiting" &&
-      isRenderedAgentReply(event.data)
-    ) {
+    if (current !== null && current.phase === "awaiting" && isRenderedAgentReply(event.data)) {
       return REPLIED;
     }
     return current;
@@ -260,9 +253,7 @@ export function nextStreamingReplyState(
  * even though no `reactor.start` has streamed yet. Never resets a reply
  * already streaming.
  */
-export function openPendingReply(
-  current: StreamingReplyState,
-): StreamingReplyState {
+export function openPendingReply(current: StreamingReplyState): StreamingReplyState {
   // A `"replied"` previous turn is over — the send that called this opens
   // the next one, so the pulse comes back.
   if (current === null || current.phase === "replied") return awaiting("");
@@ -325,15 +316,10 @@ export function useStreamingReply(
   readonly handleStreamEvent: (eventType: string, data: unknown) => void;
   readonly noteAwaitingReply: () => void;
   /** See `resumeFromTurn`'s own doc comment below. */
-  readonly resumeFromTurn: (
-    runningTurn: { readonly textSnapshot?: string | null } | null,
-  ) => void;
+  readonly resumeFromTurn: (runningTurn: { readonly textSnapshot?: string | null } | null) => void;
 } {
-  const [streamingReply, setStreamingReply] =
-    useState<StreamingReplyState>(null);
-  const [replyTimedOutRefId, setReplyTimedOutRefId] = useState<string | null>(
-    null,
-  );
+  const [streamingReply, setStreamingReply] = useState<StreamingReplyState>(null);
+  const [replyTimedOutRefId, setReplyTimedOutRefId] = useState<string | null>(null);
   const pendingSinceRef = useRef<number | null>(null);
   const holdTimerRef = useRef<unknown>(null);
 
@@ -394,8 +380,7 @@ export function useStreamingReply(
       pendingSinceRef.current !== null &&
       now - pendingSinceRef.current < minVisibleMs
     ) {
-      if (holdTimerRef.current !== null)
-        clock.clearTimeout(holdTimerRef.current);
+      if (holdTimerRef.current !== null) clock.clearTimeout(holdTimerRef.current);
       const remaining = minVisibleMs - (now - pendingSinceRef.current);
       const held = next;
       holdTimerRef.current = clock.setTimeout(() => {
@@ -417,18 +402,13 @@ export function useStreamingReply(
   function handleStreamEvent(eventType: string, data: unknown) {
     setReplyTimedOutRefId(null);
     setStreamingReply((current) =>
-      commitReply(
-        nextStreamingReplyState(current, { eventType, data }),
-        current,
-      ),
+      commitReply(nextStreamingReplyState(current, { eventType, data }), current),
     );
   }
 
   function noteAwaitingReply() {
     setReplyTimedOutRefId(null);
-    setStreamingReply((current) =>
-      commitReply(openPendingReply(current), current),
-    );
+    setStreamingReply((current) => commitReply(openPendingReply(current), current));
   }
 
   /**
@@ -441,14 +421,10 @@ export function useStreamingReply(
    * must never clear a reply a fast SSE `reactor.start` already opened
    * while the snapshot fetch was in flight.
    */
-  function resumeFromTurn(
-    runningTurn: { readonly textSnapshot?: string | null } | null,
-  ) {
+  function resumeFromTurn(runningTurn: { readonly textSnapshot?: string | null } | null) {
     if (runningTurn === null) return;
     setReplyTimedOutRefId(null);
-    setStreamingReply(
-      (current) => current ?? hydrateStreamingReplyFromTurn(runningTurn),
-    );
+    setStreamingReply((current) => current ?? hydrateStreamingReplyFromTurn(runningTurn));
   }
 
   return {
@@ -475,13 +451,10 @@ export function typingAgentNames(
   displayNames?: AgentDisplayNames,
 ): readonly string[] {
   if (!isPendingReply(streamingReply)) return [];
-  const agents = participants.filter((participant) =>
-    isAgentAddress(participant.address),
-  );
+  const agents = participants.filter((participant) => isAgentAddress(participant.address));
   if (agents.length === 0) return [];
 
-  const addressed =
-    parts === undefined ? [] : mentionedParticipants(parts, participants);
+  const addressed = parts === undefined ? [] : mentionedParticipants(parts, participants);
   const named =
     addressed.length > 0
       ? agents.filter((agent) => addressed.includes(agent.address))
@@ -490,8 +463,7 @@ export function typingAgentNames(
         : [];
   return named.map(
     (agent) =>
-      displayNameForAddress(agent.address, displayNames) ??
-      displayNameFromHandle(agent.handle),
+      displayNameForAddress(agent.address, displayNames) ?? displayNameFromHandle(agent.handle),
   );
 }
 

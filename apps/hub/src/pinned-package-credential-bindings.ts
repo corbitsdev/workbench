@@ -20,10 +20,7 @@ export type PinnedPackageCredentialBindingsFor = (
   pins: readonly ToolPackagePin[],
 ) => Promise<readonly CredentialBinding[]>;
 
-export type IsConnectorConnected = (
-  tenantId: string,
-  connectorId: string,
-) => Promise<boolean>;
+export type IsConnectorConnected = (tenantId: string, connectorId: string) => Promise<boolean>;
 
 export function bindingsForConnectedPins(
   pins: readonly ToolPackagePin[],

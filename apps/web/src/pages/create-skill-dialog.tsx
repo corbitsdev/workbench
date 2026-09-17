@@ -56,9 +56,7 @@ export function validationIssues(values: SkillCreateInput): readonly string[] {
   if (name === "") {
     issues.push("Name is required.");
   } else if (!SKILL_NAME_PATTERN.test(name)) {
-    issues.push(
-      "Name must be lowercase letters, digits, and hyphens — no whitespace or capitals.",
-    );
+    issues.push("Name must be lowercase letters, digits, and hyphens — no whitespace or capitals.");
   } else if (name.length > 64) {
     issues.push("Name must be at most 64 characters.");
   }
@@ -97,10 +95,7 @@ export function CreateSkillDialog({
   function handleFormChange(next: Record<string, unknown>) {
     setValues({
       name: typeof next.name === "string" ? next.name : values.name,
-      displayName:
-        typeof next.displayName === "string"
-          ? next.displayName
-          : values.displayName,
+      displayName: typeof next.displayName === "string" ? next.displayName : values.displayName,
     });
   }
 
@@ -132,9 +127,8 @@ export function CreateSkillDialog({
         <DialogHeader>
           <DialogTitle>Create skill</DialogTitle>
           <DialogDescription>
-            Names a new skill asset in this workbench. Its instructions are
-            written separately — there is no stock hub route yet to author
-            SKILL.md content in this dialog.
+            Names a new skill asset in this workbench. Its instructions are written separately —
+            there is no stock hub route yet to author SKILL.md content in this dialog.
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -144,10 +138,7 @@ export function CreateSkillDialog({
             </p>
           )}
           {showIssues && issues.length > 0 && (
-            <ul
-              className="mb-3 list-inside list-disc text-sm text-destructive"
-              role="alert"
-            >
+            <ul className="mb-3 list-inside list-disc text-sm text-destructive" role="alert">
               {issues.map((issue) => (
                 <li key={issue}>{issue}</li>
               ))}
@@ -161,11 +152,7 @@ export function CreateSkillDialog({
           />
         </DialogBody>
         <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => handleOpenChange(false)}
-          >
+          <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>
           <Button

@@ -27,10 +27,7 @@ function isBundle(value: unknown): value is Bundle {
 describe("corbits tool packages fit the 64-char OpenAI-compatible tool-name cap", () => {
   for (const dir of CORBITS_TOOL_PACKAGE_DIRS) {
     test(path.basename(dir), async () => {
-      const mod = (await import(path.join(dir, "src", "index.ts"))) as Record<
-        string,
-        unknown
-      >;
+      const mod = (await import(path.join(dir, "src", "index.ts"))) as Record<string, unknown>;
       const bundles = Object.values(mod).filter(isBundle);
       expect(bundles.length).toBeGreaterThan(0);
       for (const bundle of bundles) {

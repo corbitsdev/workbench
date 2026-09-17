@@ -32,9 +32,7 @@ export function InstalledStrip({
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Connected
         </h3>
-        <span className="text-xs text-muted-foreground">
-          {installed.length} active
-        </span>
+        <span className="text-xs text-muted-foreground">{installed.length} active</span>
       </div>
       <div
         className="flex flex-wrap items-center gap-2"

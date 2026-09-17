@@ -50,12 +50,9 @@ describeIfDb("chat mount", () => {
     const hub = await createHub(config);
     closers.push(hub.close);
 
-    const gated = await hub.app.request(
-      "/api/tenants/some-tenant/chat/workbenches",
-      {
-        method: "GET",
-      },
-    );
+    const gated = await hub.app.request("/api/tenants/some-tenant/chat/workbenches", {
+      method: "GET",
+    });
     expect(gated.status).toBe(401);
     expect(await gated.json()).toEqual({
       error: { code: "unauthorized", message: "Authentication required" },

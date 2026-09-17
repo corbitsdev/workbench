@@ -4,11 +4,7 @@
 // that crashed the hosted one-click connect when three parallel copies
 // of this sequence disagreed.
 import { describe, expect, test } from "bun:test";
-import type {
-  EnsureCredentialArgs,
-  EnsureProviderArgs,
-  SeedCatalogArgs,
-} from "./seed-catalog";
+import type { EnsureCredentialArgs, EnsureProviderArgs, SeedCatalogArgs } from "./seed-catalog";
 import type { ConnectorDescriptor } from "./descriptor";
 import {
   isInferenceProvider,
@@ -84,19 +80,11 @@ function recordingFns() {
     credentials,
     seeds,
     fns: {
-      ensureProviderFn: async (
-        _api: unknown,
-        _cookies: string[],
-        args: EnsureProviderArgs,
-      ) => {
+      ensureProviderFn: async (_api: unknown, _cookies: string[], args: EnsureProviderArgs) => {
         providers.push(args);
         return `prv_${args.name}`;
       },
-      ensureCredentialFn: async (
-        _api: unknown,
-        _cookies: string[],
-        args: EnsureCredentialArgs,
-      ) => {
+      ensureCredentialFn: async (_api: unknown, _cookies: string[], args: EnsureCredentialArgs) => {
         credentials.push(args);
         return `cred_${args.providerId}`;
       },
@@ -127,9 +115,7 @@ describe("persistConnectorCredential", () => {
       ...fns,
     });
 
-    expect(providers).toEqual([
-      { tenantId: "tnt_1", name: "github", plugin: "http" },
-    ]);
+    expect(providers).toEqual([{ tenantId: "tnt_1", name: "github", plugin: "http" }]);
     expect(credentials).toEqual([
       {
         tenantId: "tnt_1",
@@ -269,10 +255,9 @@ test("a refresh secret rides into the credential row alongside oauth_token typin
 });
 
 test("persist does not take a credentialCipher — wiring is asserted at tag construction and hub boot, not per persist", () => {
-  type PersistHasCipher =
-    "credentialCipher" extends keyof PersistConnectorCredentialArgs
-      ? true
-      : false;
+  type PersistHasCipher = "credentialCipher" extends keyof PersistConnectorCredentialArgs
+    ? true
+    : false;
   const persistHasCipher: PersistHasCipher = false;
   expect(persistHasCipher).toBe(false);
 });

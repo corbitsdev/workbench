@@ -40,11 +40,7 @@ export function DetailSkeleton() {
   );
 }
 
-function QuerySkeleton({
-  variant,
-}: {
-  readonly variant: QuerySkeletonVariant;
-}) {
+function QuerySkeleton({ variant }: { readonly variant: QuerySkeletonVariant }) {
   switch (variant) {
     case "rows":
       return <ListSkeleton />;
@@ -103,10 +99,7 @@ export function QueryView<T>({
         <EmptyState
           icon={<WarningCircle />}
           title={`Couldn't load ${label}`}
-          description={describeApiError(
-            { status: query.status },
-            `loading ${label}`,
-          )}
+          description={describeApiError({ status: query.status }, `loading ${label}`)}
           action={
             <Button variant="outline" onClick={query.retry}>
               Retry

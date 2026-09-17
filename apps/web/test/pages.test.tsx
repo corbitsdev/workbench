@@ -20,18 +20,14 @@ describe("empty states", () => {
   test("library teaches what will appear once the seam is real", () => {
     const markup = renderToStaticMarkup(<LibraryPage artifacts={[]} />);
     expect(markup).toContain("No files yet");
-    expect(markup).toContain(
-      "Upload a file, or let your agents drop their work here",
-    );
+    expect(markup).toContain("Upload a file, or let your agents drop their work here");
   });
 
   // CL-6750 — empty Files must tell one story: invite to add files. A
   // "0 files" count beside the poster reads as a second empty announcement,
   // and a labeled ghost file input twins the visible Upload button.
   test("empty library is one invitation, not count + poster + twin uploads", () => {
-    const markup = renderToStaticMarkup(
-      <LibraryPage artifacts={[]} onUpload={() => undefined} />,
-    );
+    const markup = renderToStaticMarkup(<LibraryPage artifacts={[]} onUpload={() => undefined} />);
     expect(markup).toContain("No files yet");
     expect(markup).not.toContain("0 files");
     // One visible Upload in the top bar.
@@ -62,9 +58,7 @@ describe("live data", () => {
   };
 
   test("library renders every artifact it's given", () => {
-    const markup = renderToStaticMarkup(
-      <LibraryPage artifacts={[reportArtifact, csvArtifact]} />,
-    );
+    const markup = renderToStaticMarkup(<LibraryPage artifacts={[reportArtifact, csvArtifact]} />);
     expect(markup).toContain("Q3 report");
     expect(markup).toContain("Signups export");
   });
@@ -95,10 +89,7 @@ describe("settings top bar", () => {
       <TestQueryProvider>
         <NavigationProvider navigate={() => undefined}>
           <BenchProvider>
-            <SettingsRoute
-              path="/settings/account"
-              navigate={() => undefined}
-            />
+            <SettingsRoute path="/settings/account" navigate={() => undefined} />
           </BenchProvider>
         </NavigationProvider>
       </TestQueryProvider>,

@@ -27,9 +27,7 @@ function mount() {
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(
-      <WorkbenchTimeline items={[]} participants={[]} settingUpAgent />,
-    );
+    root?.render(<WorkbenchTimeline items={[]} participants={[]} settingUpAgent />);
   });
   return container;
 }

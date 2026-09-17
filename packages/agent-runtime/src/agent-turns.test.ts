@@ -39,10 +39,7 @@ describe("createInMemoryAgentTurnStore", () => {
       workbenchId: "wb_2",
     });
 
-    expect([first.childRunId, second.childRunId]).toEqual([
-      "turn__0",
-      "turn__1",
-    ]);
+    expect([first.childRunId, second.childRunId]).toEqual(["turn__0", "turn__1"]);
     expect(otherAgent.childRunId).toBe("turn__0");
     expect(otherWorkbench.childRunId).toBe("turn__2");
   });
@@ -85,9 +82,7 @@ describe("createInMemoryAgentTurnStore", () => {
     const store = createInMemoryAgentTurnStore();
     const opened = await store.startTurn(BASE);
 
-    expect(
-      await store.getTurn({ tenantId: "ten_other", turnId: opened.id }),
-    ).toBeUndefined();
+    expect(await store.getTurn({ tenantId: "ten_other", turnId: opened.id })).toBeUndefined();
     expect(
       await store.finishTurn({
         tenantId: "ten_other",
@@ -125,15 +120,9 @@ describe("createInMemoryAgentTurnStore", () => {
     expect(second.status).toBe("running");
 
     expect((await store.findRunningTurn(BASE))?.id).toBe(second.id);
-    expect(
-      (await store.findRunningTurn({ ...BASE, childRunId: "turn__0" }))?.id,
-    ).toBe(first.id);
-    expect(
-      (await store.findRunningTurn({ ...BASE, childRunId: "turn__1" }))?.id,
-    ).toBe(second.id);
-    expect(
-      await store.findRunningTurn({ ...BASE, childRunId: "turn__9" }),
-    ).toBeUndefined();
+    expect((await store.findRunningTurn({ ...BASE, childRunId: "turn__0" }))?.id).toBe(first.id);
+    expect((await store.findRunningTurn({ ...BASE, childRunId: "turn__1" }))?.id).toBe(second.id);
+    expect(await store.findRunningTurn({ ...BASE, childRunId: "turn__9" })).toBeUndefined();
   });
 
   // CL-7200: listing used to sort by startedAt string alone, while
@@ -198,10 +187,9 @@ describe("createInMemoryAgentTurnStore", () => {
     const fresh = await store.startTurn(BASE);
 
     expect((await store.findRunningTurn(BASE))?.id).toBe(fresh.id);
-    expect(
-      (await store.getTurn({ tenantId: BASE.tenantId, turnId: stale.id }))
-        ?.status,
-    ).toBe("failed");
+    expect((await store.getTurn({ tenantId: BASE.tenantId, turnId: stale.id }))?.status).toBe(
+      "failed",
+    );
   });
 
   // CL-6670: `dispatchTurn` awaits this before opening a second occurrence
@@ -300,9 +288,7 @@ describe("createInMemoryAgentTurnStore", () => {
       const controller = new AbortController();
       controller.abort(new Error("already gone"));
 
-      await expect(
-        store.waitUntilFree(BASE, controller.signal),
-      ).rejects.toThrow("already gone");
+      await expect(store.waitUntilFree(BASE, controller.signal)).rejects.toThrow("already gone");
     });
   });
 
@@ -415,9 +401,7 @@ describe("createInMemoryAgentTurnStore", () => {
         workbenchId: BASE.workbenchId,
       });
 
-      expect(new Set(running.map((turn) => turn.id))).toEqual(
-        new Set([first.id, second.id]),
-      );
+      expect(new Set(running.map((turn) => turn.id))).toEqual(new Set([first.id, second.id]));
     });
 
     test("returns nothing for a workbench with no running turns", async () => {

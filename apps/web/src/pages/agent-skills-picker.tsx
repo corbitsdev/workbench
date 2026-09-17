@@ -121,9 +121,7 @@ export function AgentSkillsPicker({
             checked={selected.includes(skill.name)}
             disabled={disabled}
             onCheckedChange={() => toggle(skill.name)}
-            {...(skill.description !== ""
-              ? { description: skill.description }
-              : {})}
+            {...(skill.description !== "" ? { description: skill.description } : {})}
           />
         );
       })}

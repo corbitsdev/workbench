@@ -92,5 +92,4 @@ export const ChatPresenceSnapshotEventData = type({
     lastActiveAt: "string",
   }).array(),
 });
-export type ChatPresenceSnapshotEventData =
-  typeof ChatPresenceSnapshotEventData.infer;
+export type ChatPresenceSnapshotEventData = typeof ChatPresenceSnapshotEventData.infer;

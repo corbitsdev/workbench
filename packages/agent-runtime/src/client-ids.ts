@@ -48,11 +48,7 @@ export interface ClientIdStore {
   ): Promise<readonly ClientIdRow[]>;
 }
 
-function clientIdKey(
-  tenantId: string,
-  workbenchId: string,
-  messageId: string,
-): string {
+function clientIdKey(tenantId: string, workbenchId: string, messageId: string): string {
   return `${tenantId}::${workbenchId}::${messageId}`;
 }
 
@@ -61,15 +57,12 @@ export function createInMemoryClientIdStore(): ClientIdStore {
 
   return {
     async recordClientId(input) {
-      rows.set(
-        clientIdKey(input.tenantId, input.workbenchId, input.messageId),
-        {
-          tenantId: input.tenantId,
-          workbenchId: input.workbenchId,
-          messageId: input.messageId,
-          clientId: input.clientId,
-        },
-      );
+      rows.set(clientIdKey(input.tenantId, input.workbenchId, input.messageId), {
+        tenantId: input.tenantId,
+        workbenchId: input.workbenchId,
+        messageId: input.messageId,
+        clientId: input.clientId,
+      });
     },
 
     async listClientIdsForMessages(tenantId, workbenchId, messageIds) {
@@ -77,21 +70,18 @@ export function createInMemoryClientIdStore(): ClientIdStore {
       const wanted = new Set(messageIds);
       return [...rows.values()].filter(
         (row) =>
-          row.tenantId === tenantId &&
-          row.workbenchId === workbenchId &&
-          wanted.has(row.messageId),
+          row.tenantId === tenantId && row.workbenchId === workbenchId && wanted.has(row.messageId),
       );
     },
   };
 }
 
-export type ClientIdDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> = PostgresJsDatabase<TSchema>;
+export type ClientIdDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+  PostgresJsDatabase<TSchema>;
 
-export function createDrizzleClientIdStore<
-  TSchema extends Record<string, unknown>,
->(db: ClientIdDb<TSchema>): ClientIdStore {
+export function createDrizzleClientIdStore<TSchema extends Record<string, unknown>>(
+  db: ClientIdDb<TSchema>,
+): ClientIdStore {
   return {
     async recordClientId(input) {
       await db

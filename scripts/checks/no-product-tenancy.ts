@@ -19,12 +19,7 @@
 // allowlisted file fails if it grows past its max.
 import { Glob } from "bun";
 import path from "node:path";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 const SCAN_DIRS = ["apps", "packages", "workflows"];
 // Matches the plain `pgTable(...)` builder and `xyzSchema.table(...)` —
@@ -126,10 +121,7 @@ const ALLOWLIST: readonly {
   },
 ];
 
-export async function scanFiles(
-  root: string,
-  dirs: readonly string[],
-): Promise<string[]> {
+export async function scanFiles(root: string, dirs: readonly string[]): Promise<string[]> {
   const files: string[] = [];
   for (const dir of dirs) {
     const glob = new Glob(`${dir}/**/*.{ts,tsx}`);
@@ -179,8 +171,7 @@ export function auditProductTenancy(
       continue;
     }
     report.notes.push(
-      `${relPath}: ${occurrences} pgTable(...) call(s) allowed ` +
-        `(${allowed.tables.join(", ")})`,
+      `${relPath}: ${occurrences} pgTable(...) call(s) allowed ` + `(${allowed.tables.join(", ")})`,
     );
   }
   return report;
@@ -197,9 +188,7 @@ async function main(): Promise<void> {
     })),
   );
   const report = auditProductTenancy(files);
-  report.notes.push(
-    `scanned ${files.length} file(s) under ${SCAN_DIRS.join(", ")}`,
-  );
+  report.notes.push(`scanned ${files.length} file(s) under ${SCAN_DIRS.join(", ")}`);
   reportAndExit("check:no-product-tenancy", report);
 }
 

@@ -59,17 +59,14 @@ describe("reaction routes — gating", () => {
     const store = createInMemoryReactionStore();
     const deps = buildDeps({
       reactions: store,
-      requireGrant: () => async (c) =>
-        c.json({ error: { code: "forbidden", message: "no" } }, 403),
+      requireGrant: () => async (c) => c.json({ error: { code: "forbidden", message: "no" } }, 403),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const workbenchId = "run_workbench1";
 
     const response = await toggle(app, workbenchId, "m1", "👍");
     expect(response.status).toBe(403);
-    expect(
-      await store.listReactionsForMessages("tnt_1", workbenchId, ["m1"]),
-    ).toHaveLength(0);
+    expect(await store.listReactionsForMessages("tnt_1", workbenchId, ["m1"])).toHaveLength(0);
   });
 
   test("an unknown workbench id 404s rather than accepting a reaction into nowhere", async () => {
@@ -119,9 +116,9 @@ describe("reaction routes — gating", () => {
 
     const response = await toggle(app, workbench.id, "m_ghost", "👍");
     expect(response.status).toBe(404);
-    expect(
-      await store.listReactionsForMessages("tnt_1", workbench.id, ["m_ghost"]),
-    ).toHaveLength(0);
+    expect(await store.listReactionsForMessages("tnt_1", workbench.id, ["m_ghost"])).toHaveLength(
+      0,
+    );
   });
 });
 
@@ -195,9 +192,7 @@ describe("reaction routes — the message wire type carries reactions", () => {
         reactions?: { emoji: string; count: number; reactedByMe: boolean }[];
       }[];
     };
-    expect(afterBody.items[0]?.reactions).toEqual([
-      { emoji: "👀", count: 1, reactedByMe: true },
-    ]);
+    expect(afterBody.items[0]?.reactions).toEqual([{ emoji: "👀", count: 1, reactedByMe: true }]);
   });
 
   test("without a reactions store, the reactions field is simply absent", async () => {
@@ -228,9 +223,7 @@ describe("reaction routes — chat.reaction SSE event", () => {
     const messageId = await sendAndGetMessageId(app, workbench.id);
 
     const received: ChatWorkbenchEvent[] = [];
-    workbenchSubscribers.subscribe(workbench.id, (event) =>
-      received.push(event),
-    );
+    workbenchSubscribers.subscribe(workbench.id, (event) => received.push(event));
 
     await toggle(app, workbench.id, messageId, "🚀");
 

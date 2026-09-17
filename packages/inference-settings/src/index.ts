@@ -20,9 +20,5 @@ export {
   restrictedOfferings,
   rowsByModel,
 } from "./effective-list";
-export type {
-  DefaultProviderModel,
-  EffectiveInferenceRow,
-  PriorityPatch,
-} from "./effective-list";
+export type { DefaultProviderModel, EffectiveInferenceRow, PriorityPatch } from "./effective-list";
 export { hasUsableModel } from "./usable-model";

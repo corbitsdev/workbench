@@ -46,8 +46,7 @@ function stubFetch(options: {
     if (/\/sidecar-placement$/.test(path)) {
       return json({ enabled: false, provisionerAvailable: false });
     }
-    const removeMatch =
-      /\/chat\/workbenches\/[^/]+\/participants\/([^/]+)$/.exec(path);
+    const removeMatch = /\/chat\/workbenches\/[^/]+\/participants\/([^/]+)$/.exec(path);
     if (removeMatch !== null && init?.method === "DELETE") {
       const address = decodeURIComponent(removeMatch[1] as string);
       if (options.gateRemoveOn !== undefined) {
@@ -112,9 +111,7 @@ afterEach(() => {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const settle = () => act(() => sleep(10));
 
-function baseProps(
-  overrides: Partial<Parameters<typeof WorkbenchSettingsSurface>[0]> = {},
-) {
+function baseProps(overrides: Partial<Parameters<typeof WorkbenchSettingsSurface>[0]> = {}) {
   return {
     tenantId: "tnt_1",
     workbenchId: "ch_1",
@@ -127,8 +124,8 @@ function baseProps(
 }
 
 function rowFor(el: HTMLElement, handle: string) {
-  return Array.from(el.querySelectorAll(".chat-settings-participant-row")).find(
-    (row) => row.textContent?.includes(handle),
+  return Array.from(el.querySelectorAll(".chat-settings-participant-row")).find((row) =>
+    row.textContent?.includes(handle),
   ) as HTMLElement | undefined;
 }
 

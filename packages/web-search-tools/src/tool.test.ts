@@ -22,9 +22,7 @@ function fakeCredentials(secret: string | undefined): CredentialCapability {
   return {
     resolve(handle: string): Promise<MediatedCredential> {
       if (secret === undefined) {
-        return Promise.reject(
-          new Error(`no credential is bound to handle "${handle}"`),
-        );
+        return Promise.reject(new Error(`no credential is bound to handle "${handle}"`));
       }
       return Promise.resolve({
         kind: "http",
@@ -86,9 +84,7 @@ test("rejects a missing query without calling the network", async () => {
 test("returns results as JSON content on a successful call", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
-    expect((init?.headers as Headers | undefined)?.get("x-api-key")).toBe(
-      "key",
-    );
+    expect((init?.headers as Headers | undefined)?.get("x-api-key")).toBe("key");
     return new Response(
       JSON.stringify({
         results: [
@@ -117,8 +113,7 @@ test("returns results as JSON content on a successful call", async () => {
 
 test("degrades to an error result (never throws) when the underlying call fails", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
   try {
     const bundle = webSearchTools(fakeEnv(fakeCredentials("key")));
     const result = await bundle.run(CALL, new AbortController().signal);

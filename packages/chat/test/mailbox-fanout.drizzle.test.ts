@@ -17,10 +17,7 @@ import { createMailboxDb, runMailboxMigrations } from "@corbits/mailbox";
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { dbGate } from "../../../scripts/e2e/db-gate";
-import {
-  createDrizzleMailboxWriter,
-  type MailboxBatchItem,
-} from "../src/mailbox-fanout";
+import { createDrizzleMailboxWriter, type MailboxBatchItem } from "../src/mailbox-fanout";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -38,9 +35,7 @@ const OTHER_PRINCIPAL_ID = "prn_bob";
 const DOMAIN = "acme.example";
 
 describeIfDb("createDrizzleMailboxWriter", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchTarget = new URL(scratchUrl);
   const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
 
@@ -280,8 +275,7 @@ describeIfDb("createDrizzleMailboxWriter", () => {
       );
       const headers = [...rows].map((r) => {
         const text = Buffer.from(r.raw).toString("utf8");
-        const h = (n: string) =>
-          text.match(new RegExp(`^${n}:\\s*(.*)$`, "im"))?.[1] ?? null;
+        const h = (n: string) => text.match(new RegExp(`^${n}:\\s*(.*)$`, "im"))?.[1] ?? null;
         return {
           principal: r.principal_id,
           messageId: h("Message-ID"),

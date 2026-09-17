@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MessageItem } from "./api";
-import {
-  selectThreadFeed,
-  threadAffordanceMeta,
-  type ThreadActivityRow,
-} from "./thread-feed";
+import { selectThreadFeed, threadAffordanceMeta, type ThreadActivityRow } from "./thread-feed";
 
 function message(
   id: string,
@@ -25,11 +21,7 @@ const ROOT = "thr_root";
 
 describe("selectThreadFeed (CL-6313: one query, filtered by membership)", () => {
   test("root feed is root-thread membership only", () => {
-    const items = [
-      message("1", ROOT),
-      message("2", "thr_reply"),
-      message("3", ROOT),
-    ];
+    const items = [message("1", ROOT), message("2", "thr_reply"), message("3", ROOT)];
     const feed = selectThreadFeed(items, {
       openThreadId: null,
       parentMessageId: null,
@@ -39,11 +31,7 @@ describe("selectThreadFeed (CL-6313: one query, filtered by membership)", () => 
   });
 
   test("an open thread shows its own membership with the parent for context", () => {
-    const items = [
-      message("1", ROOT),
-      message("2", "thr_reply"),
-      message("3", "thr_reply"),
-    ];
+    const items = [message("1", ROOT), message("2", "thr_reply"), message("3", "thr_reply")];
     const feed = selectThreadFeed(items, {
       openThreadId: "thr_reply",
       parentMessageId: "1",

@@ -27,10 +27,7 @@ import type {
  * `@intx/harness`'s `FetchLike` so a caller can inject a stub in tests
  * without pulling the full `fetch` type's extra members.
  */
-export type FetchLike = (
-  input: string | URL | Request,
-  init?: RequestInit,
-) => Promise<Response>;
+export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export interface HttpRawAuthorizationCredentialProviderOptions {
   /**
@@ -70,10 +67,7 @@ export function createHttpRawAuthorizationCredentialProvider(
 
       return {
         kind: "http",
-        async fetch(
-          input: string | URL | Request,
-          init?: RequestInit,
-        ): Promise<Response> {
+        async fetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
           const target = resolveTargetUrl(input, pinnedOrigin);
           if (target.origin !== pinnedOrigin) {
             throw new Error(
@@ -88,9 +82,7 @@ export function createHttpRawAuthorizationCredentialProvider(
           if (input instanceof Request) {
             const headers = new Headers(input.headers);
             headers.set("authorization", secret);
-            return fetchImpl(
-              new Request(input, { headers, redirect: "manual" }),
-            );
+            return fetchImpl(new Request(input, { headers, redirect: "manual" }));
           }
 
           const headers = new Headers(init?.headers);
@@ -112,10 +104,7 @@ export function createHttpRawAuthorizationCredentialProvider(
  * origin, an absolute string or URL keeps its own origin (refused above if
  * it differs), and a `Request` already carries an absolute URL.
  */
-function resolveTargetUrl(
-  input: string | URL | Request,
-  pinnedOrigin: string,
-): URL {
+function resolveTargetUrl(input: string | URL | Request, pinnedOrigin: string): URL {
   if (typeof input === "string") {
     return new URL(input, pinnedOrigin);
   }

@@ -39,10 +39,7 @@ import {
 import { type } from "arktype";
 import { deriveRunPrincipalId } from "@intx/hub-common";
 import type { InferencePreference } from "@intx/agent";
-import {
-  buildAssistantWorkflow,
-  serializeAssistantWorkflow,
-} from "@corbits/assistant-workflow";
+import { buildAssistantWorkflow, serializeAssistantWorkflow } from "@corbits/assistant-workflow";
 import {
   buildCodeReviewWorkflow,
   serializeCodeReviewWorkflow,
@@ -51,10 +48,7 @@ import {
   buildWorkbenchDigestWorkflow,
   serializeWorkbenchDigestWorkflow,
 } from "@corbits/workbench-digest-workflow";
-import {
-  buildEchoWorkflow,
-  serializeEchoWorkflow,
-} from "@corbits/echo-workflow";
+import { buildEchoWorkflow, serializeEchoWorkflow } from "@corbits/echo-workflow";
 import {
   buildLast30DaysResearchWorkflow,
   serializeLast30DaysResearchWorkflow,
@@ -196,10 +190,7 @@ export type DefaultWorkflow = {
    * (`apps/hub/src/templates/block-workflows.ts`) that only ever has the
    * tenant's real, possibly multi-entry inference preferences on hand.
    */
-  buildJson: (
-    tenantDomain: string,
-    inferencePreferences: readonly InferencePreference[],
-  ) => string;
+  buildJson: (tenantDomain: string, inferencePreferences: readonly InferencePreference[]) => string;
   /**
    * When true, PUT the authored definition to `stopped` after deploy so
    * a native ScheduleTrigger does not fire every tenant at the next
@@ -209,17 +200,11 @@ export type DefaultWorkflow = {
 };
 
 function catalogDisplayName(assetName: string): string {
-  return (
-    WORKFLOW_CATALOG.find((entry) => entry.assetName === assetName)
-      ?.displayName ?? assetName
-  );
+  return WORKFLOW_CATALOG.find((entry) => entry.assetName === assetName)?.displayName ?? assetName;
 }
 
 function catalogAutomatable(assetName: string): boolean {
-  return (
-    WORKFLOW_CATALOG.find((entry) => entry.assetName === assetName)
-      ?.automatable ?? false
-  );
+  return WORKFLOW_CATALOG.find((entry) => entry.assetName === assetName)?.automatable ?? false;
 }
 
 /**
@@ -467,8 +452,9 @@ export const CATALOG_WORKFLOWS: readonly DefaultWorkflow[] = [
  * rather than `CATALOG_WORKFLOWS` itself, so no per-workflow `buildJson`
  * closure crosses into their code.
  */
-export const CATALOG_WORKFLOW_ASSET_NAMES: readonly string[] =
-  CATALOG_WORKFLOWS.map((workflow) => workflow.assetName);
+export const CATALOG_WORKFLOW_ASSET_NAMES: readonly string[] = CATALOG_WORKFLOWS.map(
+  (workflow) => workflow.assetName,
+);
 
 /**
  * The deployable-through-the-catalog-instantiate-route entry for one
@@ -478,9 +464,7 @@ export const CATALOG_WORKFLOW_ASSET_NAMES: readonly string[] =
  * (seeded already, never re-deployed through this path) answers
  * `undefined` here on purpose.
  */
-export function deployableCatalogWorkflow(
-  assetName: string,
-): DefaultWorkflow | undefined {
+export function deployableCatalogWorkflow(assetName: string): DefaultWorkflow | undefined {
   return CATALOG_WORKFLOWS.find((workflow) => workflow.assetName === assetName);
 }
 
@@ -593,11 +577,7 @@ async function plantGrant(
     undefined,
     cookies,
   );
-  const grants = parseAs(
-    paginatedSchema(GrantResponse),
-    listed.data,
-    "grants response",
-  ).data;
+  const grants = parseAs(paginatedSchema(GrantResponse), listed.data, "grants response").data;
   const existing = grants.find(
     (g) =>
       g.resource === args.resource &&
@@ -679,10 +659,7 @@ async function plantAssistantRunPrincipalGrants(
   args: { tenantId: string; deploymentId: string },
   log: (line: string) => void,
 ): Promise<void> {
-  const runPrincipalId = await deriveRunPrincipalId(
-    args.tenantId,
-    args.deploymentId,
-  );
+  const runPrincipalId = await deriveRunPrincipalId(args.tenantId, args.deploymentId);
   for (const grant of ASSISTANT_RUN_PRINCIPAL_GRANTS) {
     await plantGrant(
       api,
@@ -790,11 +767,7 @@ async function ensureWorkflowAsset(
     undefined,
     cookies,
   );
-  const assets = parseAs(
-    AssetWithOriginResponse.array(),
-    listed.data,
-    "assets response",
-  );
+  const assets = parseAs(AssetWithOriginResponse.array(), listed.data, "assets response");
   const existing = assets.find((a) => a.name === args.assetName);
   if (!existing) {
     throw new HubApiError(
@@ -806,11 +779,7 @@ async function ensureWorkflowAsset(
   return existing.id;
 }
 
-async function mintGitToken(
-  api: ApiCall,
-  cookies: string[],
-  tenantId: string,
-): Promise<string> {
+async function mintGitToken(api: ApiCall, cookies: string[], tenantId: string): Promise<string> {
   const minted = await api(
     "POST",
     `/api/tenants/${tenantId}/git-tokens`,
@@ -833,8 +802,7 @@ async function mintGitToken(
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
   }
-  return parseAs(GitTokenMintResponse, minted.data, "git token response")
-    .secret;
+  return parseAs(GitTokenMintResponse, minted.data, "git token response").secret;
 }
 
 async function listRunIds(
@@ -882,10 +850,7 @@ async function isDeploymentRoutable(
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
   }
-  return (
-    parseAs(WorkflowRunHealth, health.data, "run health response").liveness ===
-    "ok"
-  );
+  return parseAs(WorkflowRunHealth, health.data, "run health response").liveness === "ok";
 }
 
 async function ensureDeployment(
@@ -913,14 +878,11 @@ async function ensureDeployment(
     "deployments response",
   );
   const active = deployments.find(
-    (d) =>
-      d.definitionAssetId === args.assetId && isLiveDeploymentStatus(d.status),
+    (d) => d.definitionAssetId === args.assetId && isLiveDeploymentStatus(d.status),
   );
   if (active) {
     if (await isDeploymentRoutable(api, cookies, args.tenantId, active.id)) {
-      log(
-        `workflow ${args.assetName} already deployed as ${active.id} (skipped)`,
-      );
+      log(`workflow ${args.assetName} already deployed as ${active.id} (skipped)`);
       return active.id;
     }
     // The DB row survives a stack restart; the in-memory sidecar
@@ -963,11 +925,7 @@ async function ensureDeployment(
       "re-run: workbench seed (it re-pushes the workflow definition); if this persists, check the hub logs for the hydration failure",
     );
   }
-  const deployment = parseAs(
-    WorkflowDeploymentResponse,
-    deployed.data,
-    "deployment response",
-  );
+  const deployment = parseAs(WorkflowDeploymentResponse, deployed.data, "deployment response");
   log(`deployed workflow ${args.assetName} as ${deployment.id}`);
   return deployment.id;
 }
@@ -988,17 +946,8 @@ async function listDiscoveredModelOfferings(
   cookies: string[],
   tenantId: string,
 ): Promise<{ id: string; priority: number }[]> {
-  const listed = await api(
-    "GET",
-    `/api/tenants/${tenantId}/models`,
-    undefined,
-    cookies,
-  );
-  const models = parseAs(
-    DiscoveredModelsResponse,
-    listed.data,
-    "discovered models response",
-  );
+  const listed = await api("GET", `/api/tenants/${tenantId}/models`, undefined, cookies);
+  const models = parseAs(DiscoveredModelsResponse, listed.data, "discovered models response");
   return models.flatMap((model) =>
     model.offerings.map((offering) => ({
       id: offering.offeringId,
@@ -1029,9 +978,9 @@ async function resolveRealSourceOfferingIds(
   sourceOfferingIds: readonly string[];
   defaultSourceOfferingId: string;
 }> {
-  const offerings = (
-    await listDiscoveredModelOfferings(api, cookies, tenantId)
-  ).sort((a, b) => a.priority - b.priority);
+  const offerings = (await listDiscoveredModelOfferings(api, cookies, tenantId)).sort(
+    (a, b) => a.priority - b.priority,
+  );
   const defaultSourceOfferingId = offerings[0]?.id;
   if (defaultSourceOfferingId === undefined) {
     throw new HubApiError(
@@ -1173,8 +1122,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     workflows = DEFAULT_WORKFLOWS,
     confirmDeployments = true,
   } = args;
-  const sleep =
-    args.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const sleep = args.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const timeoutMs = args.runStartTimeoutMs ?? RUN_START_TIMEOUT_MS;
   const intervalMs = args.runPollIntervalMs ?? RUN_POLL_INTERVAL_MS;
 
@@ -1185,13 +1133,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     );
   }
 
-  await reconcileSeedGrants(
-    api,
-    cookies,
-    tenant.tenantId,
-    tenant.principalId,
-    log,
-  );
+  await reconcileSeedGrants(api, cookies, tenant.tenantId, tenant.principalId, log);
 
   await plantDefaultSkills(api, cookies, tenant.tenantId, log);
 
@@ -1207,11 +1149,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
   for (const workflow of workflows) {
     const workflowModel = model;
 
-    realOfferings ??= await resolveRealSourceOfferingIds(
-      api,
-      cookies,
-      tenant.tenantId,
-    );
+    realOfferings ??= await resolveRealSourceOfferingIds(api, cookies, tenant.tenantId);
     const { sourceOfferingIds, defaultSourceOfferingId } = realOfferings;
 
     const assetId = await ensureWorkflowAsset(

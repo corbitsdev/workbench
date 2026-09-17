@@ -100,7 +100,5 @@ test("a tree missing package.json is rejected, matching the retired-envelope err
 
   expect(result.ok).toBe(false);
   if (result.ok) return;
-  expect(result.reason).toContain(
-    "workflow.json envelope form is no longer supported",
-  );
+  expect(result.reason).toContain("workflow.json envelope form is no longer supported");
 });

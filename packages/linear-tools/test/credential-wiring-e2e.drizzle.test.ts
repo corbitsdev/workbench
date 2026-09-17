@@ -37,22 +37,14 @@
 // for why (no scripted tool-call inference adapter exists anywhere in
 // this repo today).
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import {
-  buildCredentialDelivery,
-  createDB,
-  runMigrations,
-  dropSchema,
-} from "@intx/db";
+import { buildCredentialDelivery, createDB, runMigrations, dropSchema } from "@intx/db";
 import { schema } from "@intx/db";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import { credentialAad } from "@intx/types";
 import type { CredentialBinding } from "@intx/types";
 import { toolConsumer } from "@intx/authz";
 import type { GrantRule } from "@intx/authz";
-import {
-  createCredentialCapability,
-  createCredentialProviderRegistry,
-} from "@intx/harness";
+import { createCredentialCapability, createCredentialProviderRegistry } from "@intx/harness";
 import {
   createHttpRawAuthorizationCredentialProvider,
   deriveResolvedBindings,
@@ -82,10 +74,7 @@ const LINEAR_BINDING: CredentialBinding = {
 };
 
 /** A delivered binding descriptor, reshaped into the launch-time `GrantRule`. */
-function toGrantRule(descriptor: {
-  credentialId: string;
-  consumer: string;
-}): GrantRule {
+function toGrantRule(descriptor: { credentialId: string; consumer: string }): GrantRule {
   return {
     id: "grant_launch_1",
     resource: `credential:${descriptor.credentialId}`,
@@ -99,138 +88,128 @@ function toGrantRule(descriptor: {
   };
 }
 
-describeIfDb(
-  "credential wiring end to end: seed -> delivery -> capability -> tool",
-  () => {
-    const target = dbTargetFromUrl(
-      databaseUrl ?? "postgres://localhost:5432/unused",
-    );
+describeIfDb("credential wiring end to end: seed -> delivery -> capability -> tool", () => {
+  const target = dbTargetFromUrl(databaseUrl ?? "postgres://localhost:5432/unused");
 
-    beforeAll(async () => {
-      await runMigrations(target, { schema: SCHEMA });
-    });
+  beforeAll(async () => {
+    await runMigrations(target, { schema: SCHEMA });
+  });
 
-    afterAll(async () => {
-      await dropSchema(target, { schema: SCHEMA });
-    });
+  afterAll(async () => {
+    await dropSchema(target, { schema: SCHEMA });
+  });
 
-    test("a tenant-seeded credential reaches linearTools's tool call as Linear's raw-key header", async () => {
-      const { db, close } = createDB({ ...target, schema: SCHEMA });
-      try {
-        await db.insert(schema.tenant).values({
-          id: "tnt_credential_wiring_e2e_linear",
-          name: "Credential Wiring E2E Tenant (Linear)",
-          slug: "credential-wiring-e2e-tenant-linear",
-          domain: "credential-wiring-e2e-linear.workbench.test",
-        });
-        // Seeded with `plugin: "http-raw-authorization"`: Linear's API
-        // expects the raw key in `authorization`, not a Bearer token, so
-        // its provider row must opt into
-        // `@corbits/credential-providers`'s plugin rather than the
-        // vendored `http` default other connectors use (see
-        // `docs/credential-wiring.md`).
-        await db.insert(schema.provider).values({
-          id: "prov_linear_e2e",
-          tenantId: "tnt_credential_wiring_e2e_linear",
-          name: "linear",
-          plugin: HTTP_RAW_AUTHORIZATION_PROVIDER_KEY,
-          apiBaseUrl: "https://api.linear.app",
-        });
-        const credentialId = "cred_linear_e2e";
-        await db.insert(schema.credential).values({
-          id: credentialId,
-          tenantId: "tnt_credential_wiring_e2e_linear",
-          providerId: "prov_linear_e2e",
-          name: "linear-key",
-          type: "api_key",
-          secret: await CIPHER.encrypt(
-            "seeded-linear-secret",
-            credentialAad(credentialId, "secret"),
-          ),
-          status: "active",
-        });
+  test("a tenant-seeded credential reaches linearTools's tool call as Linear's raw-key header", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      await db.insert(schema.tenant).values({
+        id: "tnt_credential_wiring_e2e_linear",
+        name: "Credential Wiring E2E Tenant (Linear)",
+        slug: "credential-wiring-e2e-tenant-linear",
+        domain: "credential-wiring-e2e-linear.workbench.test",
+      });
+      // Seeded with `plugin: "http-raw-authorization"`: Linear's API
+      // expects the raw key in `authorization`, not a Bearer token, so
+      // its provider row must opt into
+      // `@corbits/credential-providers`'s plugin rather than the
+      // vendored `http` default other connectors use (see
+      // `docs/credential-wiring.md`).
+      await db.insert(schema.provider).values({
+        id: "prov_linear_e2e",
+        tenantId: "tnt_credential_wiring_e2e_linear",
+        name: "linear",
+        plugin: HTTP_RAW_AUTHORIZATION_PROVIDER_KEY,
+        apiBaseUrl: "https://api.linear.app",
+      });
+      const credentialId = "cred_linear_e2e";
+      await db.insert(schema.credential).values({
+        id: credentialId,
+        tenantId: "tnt_credential_wiring_e2e_linear",
+        providerId: "prov_linear_e2e",
+        name: "linear-key",
+        type: "api_key",
+        secret: await CIPHER.encrypt("seeded-linear-secret", credentialAad(credentialId, "secret")),
+        status: "active",
+      });
 
-        // Step 2: launch-time resolution, unmodified platform function.
-        const result = await buildCredentialDelivery({
-          db,
-          tenantId: "tnt_credential_wiring_e2e_linear",
-          bindings: [LINEAR_BINDING],
-          creatorPrincipalId: null,
-          invokerPrincipalId: null,
-          credentialCipher: CIPHER,
-        });
-        expect(result.ok).toBe(true);
-        if (!result.ok) throw new Error("expected delivery to resolve");
-        const delivery = result.delivery;
-        if (delivery === undefined) throw new Error("expected a delivery");
+      // Step 2: launch-time resolution, unmodified platform function.
+      const result = await buildCredentialDelivery({
+        db,
+        tenantId: "tnt_credential_wiring_e2e_linear",
+        bindings: [LINEAR_BINDING],
+        creatorPrincipalId: null,
+        invokerPrincipalId: null,
+        credentialCipher: CIPHER,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("expected delivery to resolve");
+      const delivery = result.delivery;
+      if (delivery === undefined) throw new Error("expected a delivery");
 
-        // Step 3: the exact composition
-        // `createToolBearingAgentFactory`'s `credentialCapabilityFor`
-        // performs at a real step build.
-        const captured: { auth: string | null } = { auth: null };
-        const providers = createCredentialProviderRegistry([
-          createHttpRawAuthorizationCredentialProvider({
-            fetch: async (_input, init) => {
-              captured.auth =
-                (init?.headers as Headers | undefined)?.get("authorization") ??
-                null;
-              return new Response(
-                JSON.stringify({
-                  data: {
-                    issues: {
-                      nodes: [
-                        {
-                          id: "issue_1",
-                          identifier: "CL-1",
-                          title: "Fix the thing",
-                          updatedAt: "2026-08-12T09:00:00.000Z",
-                        },
-                      ],
-                    },
+      // Step 3: the exact composition
+      // `createToolBearingAgentFactory`'s `credentialCapabilityFor`
+      // performs at a real step build.
+      const captured: { auth: string | null } = { auth: null };
+      const providers = createCredentialProviderRegistry([
+        createHttpRawAuthorizationCredentialProvider({
+          fetch: async (_input, init) => {
+            captured.auth = (init?.headers as Headers | undefined)?.get("authorization") ?? null;
+            return new Response(
+              JSON.stringify({
+                data: {
+                  issues: {
+                    nodes: [
+                      {
+                        id: "issue_1",
+                        identifier: "CL-1",
+                        title: "Fix the thing",
+                        updatedAt: "2026-08-12T09:00:00.000Z",
+                      },
+                    ],
                   },
-                }),
-                { status: 200 },
-              );
-            },
-          }),
-        ]);
-        const capability = createCredentialCapability({
-          consumer: CONSUMER,
-          bindings: deriveResolvedBindings(delivery, CONSUMER),
-          providers,
-          grants: delivery.bindings.map(toGrantRule),
-        });
+                },
+              }),
+              { status: 200 },
+            );
+          },
+        }),
+      ]);
+      const capability = createCredentialCapability({
+        consumer: CONSUMER,
+        bindings: deriveResolvedBindings(delivery, CONSUMER),
+        providers,
+        grants: delivery.bindings.map(toGrantRule),
+      });
 
-        // Step 4: the real tool bundle, driven exactly as
-        // `../src/tool.test.ts` drives it, sees the seeded secret in
-        // Linear's expected header shape.
-        const env = { credentials: capability } as unknown as LinearEnv;
-        const bundle = linearTools(env);
-        const call: ToolCall = {
-          id: "call_1",
-          name: LINEAR_LIST_RECENT_ISSUES_TOOL,
-          arguments: {},
-        };
-        const callResult = await bundle.run(call, new AbortController().signal);
+      // Step 4: the real tool bundle, driven exactly as
+      // `../src/tool.test.ts` drives it, sees the seeded secret in
+      // Linear's expected header shape.
+      const env = { credentials: capability } as unknown as LinearEnv;
+      const bundle = linearTools(env);
+      const call: ToolCall = {
+        id: "call_1",
+        name: LINEAR_LIST_RECENT_ISSUES_TOOL,
+        arguments: {},
+      };
+      const callResult = await bundle.run(call, new AbortController().signal);
 
-        expect(callResult.isError).toBeUndefined();
-        expect(captured.auth).toBe("seeded-linear-secret");
-        expect(captured.auth).not.toBe("Bearer seeded-linear-secret");
-        expect(JSON.parse(callResult.content as string)).toEqual({
-          issues: [
-            {
-              id: "issue_1",
-              identifier: "CL-1",
-              title: "Fix the thing",
-              updatedAt: "2026-08-12T09:00:00.000Z",
-            },
-          ],
-        });
+      expect(callResult.isError).toBeUndefined();
+      expect(captured.auth).toBe("seeded-linear-secret");
+      expect(captured.auth).not.toBe("Bearer seeded-linear-secret");
+      expect(JSON.parse(callResult.content as string)).toEqual({
+        issues: [
+          {
+            id: "issue_1",
+            identifier: "CL-1",
+            title: "Fix the thing",
+            updatedAt: "2026-08-12T09:00:00.000Z",
+          },
+        ],
+      });
 
-        await capability.dispose();
-      } finally {
-        await close();
-      }
-    });
-  },
-);
+      await capability.dispose();
+    } finally {
+      await close();
+    }
+  });
+});

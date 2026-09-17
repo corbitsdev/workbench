@@ -28,8 +28,7 @@ export function titleFromFirstMessage(
 
   const sliced = collapsed.slice(0, maxLength);
   const lastSpace = sliced.lastIndexOf(" ");
-  const cut =
-    lastSpace > Math.floor(maxLength / 2) ? sliced.slice(0, lastSpace) : sliced;
+  const cut = lastSpace > Math.floor(maxLength / 2) ? sliced.slice(0, lastSpace) : sliced;
   return `${cut.replace(/[.,;:!?]+$/u, "")}…`;
 }
 

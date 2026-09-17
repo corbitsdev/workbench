@@ -74,8 +74,7 @@ function stubShellFetch(): void {
       );
     if (path.includes("/workflows/definitions"))
       return Promise.resolve(json({ data: [slugHandled], nextCursor: null }));
-    if (path.includes("/mcp-servers"))
-      return Promise.resolve(json({ data: [] }));
+    if (path.includes("/mcp-servers")) return Promise.resolve(json({ data: [] }));
     if (path.includes("/skills")) return Promise.resolve(json({ skills: [] }));
     if (path.includes("/routines")) return Promise.resolve(json({ data: [] }));
     return Promise.resolve(json({ data: [], nextCursor: null }));
@@ -136,10 +135,7 @@ async function pressCmdK(): Promise<void> {
 }
 
 async function typeInPalette(value: string): Promise<void> {
-  const setValue = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
-    "value",
-  )?.set;
+  const setValue = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
   if (setValue === undefined) throw new Error("no native value setter");
   const input = paletteInput();
   await act(async () => {
@@ -150,9 +146,9 @@ async function typeInPalette(value: string): Promise<void> {
 }
 
 function resultRow(text: string): HTMLElement {
-  const row = [
-    ...document.querySelectorAll<HTMLElement>('[role="option"]'),
-  ].find((option) => option.textContent?.includes(text));
+  const row = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) =>
+    option.textContent?.includes(text),
+  );
   if (row === undefined) throw new Error(`no result row for ${text}`);
   return row;
 }
@@ -233,9 +229,7 @@ describe("Cmd+K opens the global command palette", () => {
     await typeInPalette("@");
 
     await act(async () => {
-      resultRow("research-analyst").dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      resultRow("research-analyst").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     expect(navigated).toContain("/agents/research-analyst");

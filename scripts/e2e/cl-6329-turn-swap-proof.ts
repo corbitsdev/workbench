@@ -28,14 +28,8 @@ import { join as pathJoin } from "node:path";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import { createGitWorkflowPusher } from "../../packages/connections/src/workflow-push.ts";
-import {
-  DEFAULT_WORKFLOWS,
-  seedTenant,
-} from "../../packages/onboarding/src/tenant-seed.ts";
-import {
-  createHubAPI,
-  type ApiCall,
-} from "../../packages/hub-api-client/src/index.ts";
+import { DEFAULT_WORKFLOWS, seedTenant } from "../../packages/onboarding/src/tenant-seed.ts";
+import { createHubAPI, type ApiCall } from "../../packages/hub-api-client/src/index.ts";
 import {
   findPersonalTenant,
   testAndPersistCredential,
@@ -130,9 +124,7 @@ function stringField(data: unknown, field: string, what: string): string {
     const value = (data as Record<string, unknown>)[field];
     if (typeof value === "string" && value !== "") return value;
   }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing string field "${field}": ${JSON.stringify(data)}`);
 }
 
 function arrayField(data: unknown, field: string, what: string): unknown[] {
@@ -140,9 +132,7 @@ function arrayField(data: unknown, field: string, what: string): unknown[] {
     const value = (data as Record<string, unknown>)[field];
     if (Array.isArray(value)) return value;
   }
-  throw new Error(
-    `${what}: missing array field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing array field "${field}": ${JSON.stringify(data)}`);
 }
 
 async function signUp(
@@ -197,9 +187,7 @@ async function main(): Promise<void> {
     startHub({
       databaseUrl: url,
       port: freePort(),
-      sessionSecret: Buffer.from(
-        crypto.getRandomValues(new Uint8Array(32)),
-      ).toString("hex"),
+      sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
       dataDir: await tempDir("cl6329-hub-data-"),
     }),
   );
@@ -256,39 +244,28 @@ async function main(): Promise<void> {
     return { cookies: res.cookies, userId };
   });
 
-  const user = await hop("sign up", async () =>
-    signUp(hub.baseUrl, "CL-6329 Proof"),
-  );
+  const user = await hop("sign up", async () => signUp(hub.baseUrl, "CL-6329 Proof"));
 
-  const provisioned = await hop(
-    "a membership probe joins the genesis root",
-    async () => {
-      const res = await api(
-        hub.baseUrl,
-        "POST",
-        "/api/onboarding/provision",
-        undefined,
-        user.cookies,
-      );
-      expectStatus("provision probe", res, 200);
-      const data = res.data as { kind: string; tenantSlug: string };
-      expect(data.kind).toBe("existing-member");
-      return data;
-    },
-  );
+  const provisioned = await hop("a membership probe joins the genesis root", async () => {
+    const res = await api(
+      hub.baseUrl,
+      "POST",
+      "/api/onboarding/provision",
+      undefined,
+      user.cookies,
+    );
+    expectStatus("provision probe", res, 200);
+    const data = res.data as { kind: string; tenantSlug: string };
+    expect(data.kind).toBe("existing-member");
+    return data;
+  });
 
   // A joined member is read-only by design, so every owner-level leg
   // below runs as alice, the genesis owner.
   const tenant = await hop("joined root resolves", async () => {
-    const found = await findPersonalTenant(
-      hubApi,
-      admin.cookies,
-      provisioned.tenantSlug,
-    );
+    const found = await findPersonalTenant(hubApi, admin.cookies, provisioned.tenantSlug);
     if (found === undefined) {
-      throw new Error(
-        `findPersonalTenant found nothing for slug ${provisioned.tenantSlug}`,
-      );
+      throw new Error(`findPersonalTenant found nothing for slug ${provisioned.tenantSlug}`);
     }
     return found;
   });
@@ -307,9 +284,7 @@ async function main(): Promise<void> {
       log: () => undefined,
     });
     if (result.kind !== "connected") {
-      throw new Error(
-        `expected the key-path connect to succeed, got: ${JSON.stringify(result)}`,
-      );
+      throw new Error(`expected the key-path connect to succeed, got: ${JSON.stringify(result)}`);
     }
     return result;
   });
@@ -343,9 +318,7 @@ async function main(): Promise<void> {
       const deadline = Date.now() + 180_000;
       for (;;) {
         if (sidecar.exited()) {
-          throw new Error(
-            `sidecar exited before the seed finished; output:\n${sidecar.output()}`,
-          );
+          throw new Error(`sidecar exited before the seed finished; output:\n${sidecar.output()}`);
         }
         try {
           await seedTenant({
@@ -419,9 +392,7 @@ async function main(): Promise<void> {
       id: string;
       canonicalName: string;
     }[];
-    const pinned = modelRows.find(
-      (row) => row.canonicalName === proofModelSource.model,
-    );
+    const pinned = modelRows.find((row) => row.canonicalName === proofModelSource.model);
     if (pinned === undefined) {
       throw new Error(
         `the bench catalog carries no model named ${proofModelSource.model}; ` +
@@ -437,11 +408,11 @@ async function main(): Promise<void> {
       admin.cookies,
     );
     expectStatus("list the bench model offerings", offerings, 200);
-    const offeringRows = arrayField(
-      offerings.data,
-      "data",
-      "model offerings",
-    ) as { id: string; modelId: string; disabled: boolean }[];
+    const offeringRows = arrayField(offerings.data, "data", "model offerings") as {
+      id: string;
+      modelId: string;
+      disabled: boolean;
+    }[];
     for (const offering of offeringRows) {
       if (offering.modelId === pinned.id || offering.disabled) continue;
       const patched = await api(
@@ -480,9 +451,7 @@ async function main(): Promise<void> {
           if (assistant !== undefined) return assistant.id;
         }
         if (Date.now() > deadline) {
-          throw new Error(
-            `"assistant" never became invitable: ${JSON.stringify(res.data)}`,
-          );
+          throw new Error(`"assistant" never became invitable: ${JSON.stringify(res.data)}`);
         }
         await Bun.sleep(1000);
       }
@@ -493,55 +462,45 @@ async function main(): Promise<void> {
   const { chatId, agentAddress, agentRunId } = await timed(
     "setup: mint → probe → closure materialization",
     () =>
-      hop(
-        "SETUP — POST /workbenches mints a chat with its agent joined",
-        async () => {
-          const deadline = Date.now() + 120_000;
-          let res: ApiResult;
-          for (;;) {
-            if (sidecar.exited()) {
-              throw new Error(
-                `sidecar exited before chat creation; output:\n${sidecar.output()}`,
-              );
-            }
-            res = await api(
-              hub.baseUrl,
-              "POST",
-              `/api/tenants/${tenant.tenantId}/chat/workbenches`,
-              { kind: "chat", definitionId: assistantDefinitionId },
-              admin.cookies,
-            );
-            if (res.status !== 500) break;
-            if (Date.now() > deadline) {
-              throw new Error(
-                `chat never became mintable: ${JSON.stringify(res.data)}\n` +
-                  `sidecar output:\n${sidecar.output()}`,
-              );
-            }
-            await Bun.sleep(1000);
+      hop("SETUP — POST /workbenches mints a chat with its agent joined", async () => {
+        const deadline = Date.now() + 120_000;
+        let res: ApiResult;
+        for (;;) {
+          if (sidecar.exited()) {
+            throw new Error(`sidecar exited before chat creation; output:\n${sidecar.output()}`);
           }
-          expectStatus("create chat", res, 201);
-          const id = stringField(res.data, "id", "create chat");
-          const participants = arrayField(
-            res.data,
-            "participants",
-            "create chat",
-          ) as { address: string; handle: string }[];
-          const agent = participants.find((p) => p.handle === "myra");
-          if (agent === undefined) {
+          res = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${tenant.tenantId}/chat/workbenches`,
+            { kind: "chat", definitionId: assistantDefinitionId },
+            admin.cookies,
+          );
+          if (res.status !== 500) break;
+          if (Date.now() > deadline) {
             throw new Error(
-              `chat has no "myra" participant: ${JSON.stringify(participants)}`,
+              `chat never became mintable: ${JSON.stringify(res.data)}\n` +
+                `sidecar output:\n${sidecar.output()}`,
             );
           }
-          const [runId] = agent.address.split("@");
-          if (runId === undefined) {
-            throw new Error(
-              `agent address is not a run address: ${agent.address}`,
-            );
-          }
-          return { chatId: id, agentAddress: agent.address, agentRunId: runId };
-        },
-      ),
+          await Bun.sleep(1000);
+        }
+        expectStatus("create chat", res, 201);
+        const id = stringField(res.data, "id", "create chat");
+        const participants = arrayField(res.data, "participants", "create chat") as {
+          address: string;
+          handle: string;
+        }[];
+        const agent = participants.find((p) => p.handle === "myra");
+        if (agent === undefined) {
+          throw new Error(`chat has no "myra" participant: ${JSON.stringify(participants)}`);
+        }
+        const [runId] = agent.address.split("@");
+        if (runId === undefined) {
+          throw new Error(`agent address is not a run address: ${agent.address}`);
+        }
+        return { chatId: id, agentAddress: agent.address, agentRunId: runId };
+      }),
   );
 
   type Turn = {
@@ -594,9 +553,7 @@ async function main(): Promise<void> {
   }
 
   /** Every message in the room, whoever sent it, with its run id. */
-  async function listRoomMessages(): Promise<
-    { id: string; address: string; text: string }[]
-  > {
+  async function listRoomMessages(): Promise<{ id: string; address: string; text: string }[]> {
     const res = await api(
       hub.baseUrl,
       "GET",
@@ -681,269 +638,221 @@ async function main(): Promise<void> {
   const firstHandle = await handleOf(agentAddress);
 
   await timed("proof 1: both agents answer one message", () =>
-    hop(
-      "PROOF 1 — two agents reply in one room, each under its own turn",
-      async () => {
-        const before = new Set((await listRoomMessages()).map((m) => m.id));
-        await sendRoomMessage(
-          `@${firstHandle} @${secondAgent.handle} say hi in one short sentence.`,
-        );
+    hop("PROOF 1 — two agents reply in one room, each under its own turn", async () => {
+      const before = new Set((await listRoomMessages()).map((m) => m.id));
+      await sendRoomMessage(`@${firstHandle} @${secondAgent.handle} say hi in one short sentence.`);
 
-        const deadline = Date.now() + TURN_TIMEOUT_MS;
-        for (;;) {
-          const turns = await listTurns();
-          const settled = turns.filter(
-            (t) => t.status === "completed" && t.replyMessageId !== null,
-          );
-          const addresses = new Set(settled.map((t) => t.agentAddress));
-          if (addresses.size >= 2) {
-            const replies = (await listRoomMessages()).filter(
-              (m) => !before.has(m.id),
-            );
-            for (const turn of settled) {
-              if (!isOccurrenceRunId(turn.childRunId)) {
-                throw new Error(
-                  `turn ${turn.id} carries child run id ${turn.childRunId}, ` +
-                    `which is not an occurrence id — the reply is not ` +
-                    `traceable to a section occurrence`,
-                );
-              }
-              const reply = replies.find((m) => m.id === turn.replyMessageId);
-              console.log(
-                `  TRANSCRIPT — ${turn.agentAddress} turn ${turn.childRunId}: ` +
-                  `${reply?.text.slice(0, 120) ?? "(reply row not listed)"}`,
+      const deadline = Date.now() + TURN_TIMEOUT_MS;
+      for (;;) {
+        const turns = await listTurns();
+        const settled = turns.filter((t) => t.status === "completed" && t.replyMessageId !== null);
+        const addresses = new Set(settled.map((t) => t.agentAddress));
+        if (addresses.size >= 2) {
+          const replies = (await listRoomMessages()).filter((m) => !before.has(m.id));
+          for (const turn of settled) {
+            if (!isOccurrenceRunId(turn.childRunId)) {
+              throw new Error(
+                `turn ${turn.id} carries child run id ${turn.childRunId}, ` +
+                  `which is not an occurrence id — the reply is not ` +
+                  `traceable to a section occurrence`,
               );
             }
-            // Distinct per agent is the point: two agents in one room
-            // must not share an occurrence id.
-            const byAgent = new Map<string, string>();
-            for (const turn of settled) byAgent.set(turn.agentAddress, turn.id);
-            expect(byAgent.size).toBeGreaterThanOrEqual(2);
-            return settled;
-          }
-          if (Date.now() > deadline) {
-            throw new Error(
-              `only ${String(addresses.size)} of 2 agents produced a settled ` +
-                `turn: ${JSON.stringify(turns)}\n` +
-                `sidecar output:\n${sidecar.output()}`,
+            const reply = replies.find((m) => m.id === turn.replyMessageId);
+            console.log(
+              `  TRANSCRIPT — ${turn.agentAddress} turn ${turn.childRunId}: ` +
+                `${reply?.text.slice(0, 120) ?? "(reply row not listed)"}`,
             );
           }
-          await Bun.sleep(2000);
+          // Distinct per agent is the point: two agents in one room
+          // must not share an occurrence id.
+          const byAgent = new Map<string, string>();
+          for (const turn of settled) byAgent.set(turn.agentAddress, turn.id);
+          expect(byAgent.size).toBeGreaterThanOrEqual(2);
+          return settled;
         }
-      },
-    ),
+        if (Date.now() > deadline) {
+          throw new Error(
+            `only ${String(addresses.size)} of 2 agents produced a settled ` +
+              `turn: ${JSON.stringify(turns)}\n` +
+              `sidecar output:\n${sidecar.output()}`,
+          );
+        }
+        await Bun.sleep(2000);
+      }
+    }),
   );
 
   // The occurrence ids the projection allocated must be the ones the
   // runtime actually ran — read straight off the deployment's own
   // workflow-run repo, not off our own rows.
-  await hop(
-    "PROOF 1 — the projection's occurrence ids are the runtime's own",
-    async () => {
-      const runIds = await listDeploymentRunIds(agentRunId);
-      const occurrences = runIds.filter(isOccurrenceRunId);
-      console.log(
-        `  TRANSCRIPT — run ${agentRunId} child runs: ${JSON.stringify(runIds)}`,
+  await hop("PROOF 1 — the projection's occurrence ids are the runtime's own", async () => {
+    const runIds = await listDeploymentRunIds(agentRunId);
+    const occurrences = runIds.filter(isOccurrenceRunId);
+    console.log(`  TRANSCRIPT — run ${agentRunId} child runs: ${JSON.stringify(runIds)}`);
+    if (occurrences.length === 0) {
+      throw new Error(
+        `the room agent's deployment started NO per-occurrence child run ` +
+          `(${JSON.stringify(runIds)}); it is still deploying as a folded ` +
+          `step rather than an onTrigger section`,
       );
-      if (occurrences.length === 0) {
+    }
+    const projected = new Set(
+      (await listTurns()).filter((t) => t.agentAddress === agentAddress).map((t) => t.childRunId),
+    );
+    for (const id of occurrences) {
+      if (!projected.has(id)) {
         throw new Error(
-          `the room agent's deployment started NO per-occurrence child run ` +
-            `(${JSON.stringify(runIds)}); it is still deploying as a folded ` +
-            `step rather than an onTrigger section`,
+          `the runtime ran occurrence ${id}, which the turn projection ` +
+            `never allocated: ${JSON.stringify([...projected])}`,
         );
       }
-      const projected = new Set(
-        (await listTurns())
-          .filter((t) => t.agentAddress === agentAddress)
-          .map((t) => t.childRunId),
-      );
-      for (const id of occurrences) {
-        if (!projected.has(id)) {
-          throw new Error(
-            `the runtime ran occurrence ${id}, which the turn projection ` +
-              `never allocated: ${JSON.stringify([...projected])}`,
-          );
-        }
-      }
-    },
-  );
+    }
+  });
 
   // ---- proof 2: three rapid messages serialize into ordered turns ---
   await timed("proof 2: three rapid messages serialize", () =>
-    hop(
-      "PROOF 2 — a burst of three messages becomes ordered turns",
-      async () => {
-        const before = (await listTurns()).filter(
-          (t) => t.agentAddress === agentAddress,
-        ).length;
+    hop("PROOF 2 — a burst of three messages becomes ordered turns", async () => {
+      const before = (await listTurns()).filter((t) => t.agentAddress === agentAddress).length;
 
-        // Sent back to back with no wait between: the queue, not the
-        // sender, is what has to order them.
-        await sendRoomMessage(`@${firstHandle} one`);
-        await sendRoomMessage(`@${firstHandle} two`);
-        await sendRoomMessage(`@${firstHandle} three`);
+      // Sent back to back with no wait between: the queue, not the
+      // sender, is what has to order them.
+      await sendRoomMessage(`@${firstHandle} one`);
+      await sendRoomMessage(`@${firstHandle} two`);
+      await sendRoomMessage(`@${firstHandle} three`);
 
-        const deadline = Date.now() + TURN_TIMEOUT_MS;
-        for (;;) {
-          const mine = (await listTurns())
-            .filter((t) => t.agentAddress === agentAddress)
-            .sort((a, b) => a.occurrence - b.occurrence);
-          if (mine.length >= before + 3) {
-            const occurrences = mine.map((t) => t.occurrence);
-            console.log(
-              `  TRANSCRIPT — occurrences after the burst: ` +
-                JSON.stringify(occurrences),
-            );
-            // Contiguous and ascending from zero: no gap, no duplicate,
-            // no two turns sharing a child run id.
-            expect(occurrences).toEqual(occurrences.map((_, i) => i));
-            expect(new Set(mine.map((t) => t.childRunId)).size).toBe(
-              mine.length,
-            );
-            return;
-          }
-          if (Date.now() > deadline) {
-            throw new Error(
-              `the burst produced ${String(mine.length)} turns, expected more ` +
-                `than ${String(before)}: ${JSON.stringify(mine)}`,
-            );
-          }
-          await Bun.sleep(2000);
+      const deadline = Date.now() + TURN_TIMEOUT_MS;
+      for (;;) {
+        const mine = (await listTurns())
+          .filter((t) => t.agentAddress === agentAddress)
+          .sort((a, b) => a.occurrence - b.occurrence);
+        if (mine.length >= before + 3) {
+          const occurrences = mine.map((t) => t.occurrence);
+          console.log(`  TRANSCRIPT — occurrences after the burst: ` + JSON.stringify(occurrences));
+          // Contiguous and ascending from zero: no gap, no duplicate,
+          // no two turns sharing a child run id.
+          expect(occurrences).toEqual(occurrences.map((_, i) => i));
+          expect(new Set(mine.map((t) => t.childRunId)).size).toBe(mine.length);
+          return;
         }
-      },
-    ),
+        if (Date.now() > deadline) {
+          throw new Error(
+            `the burst produced ${String(mine.length)} turns, expected more ` +
+              `than ${String(before)}: ${JSON.stringify(mine)}`,
+          );
+        }
+        await Bun.sleep(2000);
+      }
+    }),
   );
 
   // ---- proof 3: a failed turn kills neither the room nor the section -
   const seenIds = new Set((await listRoomMessages()).map((m) => m.id));
 
   await timed("proof 3: kill the sidecar mid-occurrence", () =>
-    hop(
-      "PROOF 3 — the sidecar dies while an occurrence is running",
-      async () => {
-        await sendRoomMessage(`@${firstHandle} ${MID_TURN_PROMPT}`);
-        await Bun.sleep(MID_TURN_KILL_DELAY_MS);
-        await sidecar.stop();
-        console.log("  TRANSCRIPT — sidecar killed mid-occurrence");
-      },
-    ),
+    hop("PROOF 3 — the sidecar dies while an occurrence is running", async () => {
+      await sendRoomMessage(`@${firstHandle} ${MID_TURN_PROMPT}`);
+      await Bun.sleep(MID_TURN_KILL_DELAY_MS);
+      await sidecar.stop();
+      console.log("  TRANSCRIPT — sidecar killed mid-occurrence");
+    }),
   );
 
   await timed("proof 3: restart and restore", () =>
-    hop(
-      "PROOF 3 — the sidecar restarts and restores its deployments",
-      async () => {
-        sidecar = startSidecar({
-          hubPort,
-          sidecarId,
-          token: sidecarToken,
-          dataDir: sidecarDataDir,
-        });
-        track(sidecar);
-        const deadline = Date.now() + 120_000;
-        for (;;) {
-          const res = await api(
-            hub.baseUrl,
-            "GET",
-            `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/turns`,
-            undefined,
-            admin.cookies,
+    hop("PROOF 3 — the sidecar restarts and restores its deployments", async () => {
+      sidecar = startSidecar({
+        hubPort,
+        sidecarId,
+        token: sidecarToken,
+        dataDir: sidecarDataDir,
+      });
+      track(sidecar);
+      const deadline = Date.now() + 120_000;
+      for (;;) {
+        const res = await api(
+          hub.baseUrl,
+          "GET",
+          `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/turns`,
+          undefined,
+          admin.cookies,
+        );
+        if (res.status === 200) return;
+        if (Date.now() > deadline) {
+          throw new Error(
+            `the room never came back after the restart: ${JSON.stringify(res.data)}`,
           );
-          if (res.status === 200) return;
-          if (Date.now() > deadline) {
-            throw new Error(
-              `the room never came back after the restart: ${JSON.stringify(res.data)}`,
-            );
-          }
-          await Bun.sleep(2000);
         }
-      },
-    ),
+        await Bun.sleep(2000);
+      }
+    }),
   );
 
-  await hop(
-    "PROOF 3 — the interrupted turn surfaces visibly rather than silently",
-    async () => {
-      const deadline = Date.now() + 180_000;
-      for (;;) {
-        const fresh = (await listRoomMessages()).filter(
-          (m) => !seenIds.has(m.id) && m.address !== `${tenant.principalId}`,
+  await hop("PROOF 3 — the interrupted turn surfaces visibly rather than silently", async () => {
+    const deadline = Date.now() + 180_000;
+    for (;;) {
+      const fresh = (await listRoomMessages()).filter(
+        (m) => !seenIds.has(m.id) && m.address !== `${tenant.principalId}`,
+      );
+      const agentFresh = fresh.filter((m) => m.text.trim().length > 0);
+      if (agentFresh.length > 0) {
+        console.log(
+          `  TRANSCRIPT — the interrupted turn surfaced as: ` +
+            JSON.stringify(agentFresh.map((m) => m.text.slice(0, 160))),
         );
-        const agentFresh = fresh.filter((m) => m.text.trim().length > 0);
-        if (agentFresh.length > 0) {
+        for (const m of fresh) seenIds.add(m.id);
+        return;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(
+          "the turn the kill interrupted left NOTHING in the room: no " +
+            "partial answer and no notice, so the reader's message was " +
+            "accepted and silently dropped",
+        );
+      }
+      await Bun.sleep(3000);
+    }
+  });
+
+  await timed("proof 3: the room still answers after the failed turn", () =>
+    hop("PROOF 3 — the section is still subscribed and answers the next message", async () => {
+      const before = new Set((await listRoomMessages()).map((m) => m.id));
+      const beforeTurns = (await listTurns()).filter((t) => t.agentAddress === agentAddress).length;
+      // Resent on a loop rather than once: the room's own rows come
+      // back the moment the hub is up, but the section's run only
+      // becomes routable again once the restarted sidecar has
+      // re-registered it, and a send that lands in that window fails
+      // as "no sidecar available" — a failed turn, correctly recorded,
+      // that says nothing about whether the section survived.
+      let nextAsk = 0;
+      const deadline = Date.now() + TURN_TIMEOUT_MS;
+      for (;;) {
+        if (Date.now() >= nextAsk) {
+          await sendRoomMessage(`@${firstHandle} are you still there? One word.`);
+          nextAsk = Date.now() + 20_000;
+        }
+        const mine = (await listTurns()).filter((t) => t.agentAddress === agentAddress);
+        const settled = mine.find(
+          (t) =>
+            t.status === "completed" && t.replyMessageId !== null && !before.has(t.replyMessageId),
+        );
+        if (settled !== undefined) {
+          const reply = (await listRoomMessages()).find((m) => m.id === settled.replyMessageId);
           console.log(
-            `  TRANSCRIPT — the interrupted turn surfaced as: ` +
-              JSON.stringify(agentFresh.map((m) => m.text.slice(0, 160))),
+            `  TRANSCRIPT — post-failure occurrence ${settled.childRunId}: ` +
+              `${reply?.text.slice(0, 160) ?? "(row not listed)"}`,
           );
-          for (const m of fresh) seenIds.add(m.id);
+          expect(mine.length).toBeGreaterThan(beforeTurns);
           return;
         }
         if (Date.now() > deadline) {
           throw new Error(
-            "the turn the kill interrupted left NOTHING in the room: no " +
-              "partial answer and no notice, so the reader's message was " +
-              "accepted and silently dropped",
+            `the room never answered after the failed turn — the section ` +
+              `did not survive it: ${JSON.stringify(mine)}\n` +
+              `sidecar output:\n${sidecar.output()}`,
           );
         }
-        await Bun.sleep(3000);
+        await Bun.sleep(2000);
       }
-    },
-  );
-
-  await timed("proof 3: the room still answers after the failed turn", () =>
-    hop(
-      "PROOF 3 — the section is still subscribed and answers the next message",
-      async () => {
-        const before = new Set((await listRoomMessages()).map((m) => m.id));
-        const beforeTurns = (await listTurns()).filter(
-          (t) => t.agentAddress === agentAddress,
-        ).length;
-        // Resent on a loop rather than once: the room's own rows come
-        // back the moment the hub is up, but the section's run only
-        // becomes routable again once the restarted sidecar has
-        // re-registered it, and a send that lands in that window fails
-        // as "no sidecar available" — a failed turn, correctly recorded,
-        // that says nothing about whether the section survived.
-        let nextAsk = 0;
-        const deadline = Date.now() + TURN_TIMEOUT_MS;
-        for (;;) {
-          if (Date.now() >= nextAsk) {
-            await sendRoomMessage(
-              `@${firstHandle} are you still there? One word.`,
-            );
-            nextAsk = Date.now() + 20_000;
-          }
-          const mine = (await listTurns()).filter(
-            (t) => t.agentAddress === agentAddress,
-          );
-          const settled = mine.find(
-            (t) =>
-              t.status === "completed" &&
-              t.replyMessageId !== null &&
-              !before.has(t.replyMessageId),
-          );
-          if (settled !== undefined) {
-            const reply = (await listRoomMessages()).find(
-              (m) => m.id === settled.replyMessageId,
-            );
-            console.log(
-              `  TRANSCRIPT — post-failure occurrence ${settled.childRunId}: ` +
-                `${reply?.text.slice(0, 160) ?? "(row not listed)"}`,
-            );
-            expect(mine.length).toBeGreaterThan(beforeTurns);
-            return;
-          }
-          if (Date.now() > deadline) {
-            throw new Error(
-              `the room never answered after the failed turn — the section ` +
-                `did not survive it: ${JSON.stringify(mine)}\n` +
-                `sidecar output:\n${sidecar.output()}`,
-            );
-          }
-          await Bun.sleep(2000);
-        }
-      },
-    ),
+    }),
   );
 
   await hop("PROOF 3 — the failed turn is on the record", async () => {

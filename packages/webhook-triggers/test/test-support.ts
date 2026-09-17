@@ -7,10 +7,7 @@ import type { MiddlewareHandler } from "hono";
 
 import type { TenantEnv } from "@intx/hub-api";
 import type { WebhookTriggerRow } from "../src/schema";
-import type {
-  CreateWebhookTriggerInput,
-  WebhookTriggerStore,
-} from "../src/store";
+import type { CreateWebhookTriggerInput, WebhookTriggerStore } from "../src/store";
 
 export const TENANT = {
   id: "tnt_1",
@@ -73,9 +70,7 @@ export function createInMemoryWebhookTriggerStore(): WebhookTriggerStore {
         // violation, so callers exercising `isUniqueViolation`-style
         // handling against this fake see the same thing production does.
         throw Object.assign(
-          new Error(
-            `webhook trigger ${input.name} already exists for this workflow definition`,
-          ),
+          new Error(`webhook trigger ${input.name} already exists for this workflow definition`),
           { code: "23505" },
         );
       }
@@ -84,11 +79,7 @@ export function createInMemoryWebhookTriggerStore(): WebhookTriggerStore {
       return row;
     },
     async ensure(input: CreateWebhookTriggerInput) {
-      const existing = findByName(
-        input.tenantId,
-        input.workflowDefinitionId,
-        input.name,
-      );
+      const existing = findByName(input.tenantId, input.workflowDefinitionId, input.name);
       if (existing) return existing;
       const row = newRow(input);
       rows.set(row.id, row);
@@ -132,10 +123,7 @@ export function createInMemoryWebhookTriggerStore(): WebhookTriggerStore {
   };
 }
 
-export function mountAs(
-  routes: Hono<TenantEnv>,
-  principalId: string,
-): Hono<TenantEnv> {
+export function mountAs(routes: Hono<TenantEnv>, principalId: string): Hono<TenantEnv> {
   const asPrincipal: MiddlewareHandler<TenantEnv> = async (c, next) => {
     c.set("tenant", TENANT);
     c.set("principal", principal(principalId));

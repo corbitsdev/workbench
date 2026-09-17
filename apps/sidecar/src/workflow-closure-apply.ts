@@ -165,9 +165,7 @@ export async function applyFrozenWorkflowClosure(
     registries: args.registries,
     host: { os: process.platform, cpu: process.arch },
     maxRegistryTarballBytes: args.registryMaxTarballBytes,
-    ...(args.fetchTarball !== undefined
-      ? { fetchTarball: args.fetchTarball }
-      : {}),
+    ...(args.fetchTarball !== undefined ? { fetchTarball: args.fetchTarball } : {}),
   });
 
   // Apply EXACTLY the frozen entries. `topLevel` is emptied so `applyAtomic`
@@ -209,22 +207,17 @@ export async function applyFrozenWorkflowClosure(
   // under the same name@version reimports rather than resolving to the prior
   // instance.
   const workflowEntry = args.closure.entries.find(
-    (entry) =>
-      entry.name === workflowPin.name && entry.version === workflowPin.version,
+    (entry) => entry.name === workflowPin.name && entry.version === workflowPin.version,
   );
 
   const definition = await loadWorkflowDefinitionFromClosure({
     packageDir,
     ...(workflowEntry !== undefined
       ? {
-          importCacheKey: getToolPackageSourceContentIdentity(
-            workflowEntry.source,
-          ),
+          importCacheKey: getToolPackageSourceContentIdentity(workflowEntry.source),
         }
       : {}),
-    ...(args.importModule !== undefined
-      ? { importModule: args.importModule }
-      : {}),
+    ...(args.importModule !== undefined ? { importModule: args.importModule } : {}),
   });
 
   logger.debug`applied frozen workflow closure ${workflowPin.name}@${workflowPin.version}: loaded definition ${definition.id}`;

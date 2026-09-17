@@ -16,10 +16,7 @@
 // child, from those two reads.
 import { type } from "arktype";
 import { DiscoveredModel } from "@corbits/inference-catalog/catalog";
-import {
-  readModelPolicy,
-  type BenchModelPolicy,
-} from "@corbits/inference-catalog/policy";
+import { readModelPolicy, type BenchModelPolicy } from "@corbits/inference-catalog/policy";
 
 export interface CatalogToolClientConfig {
   /** The hub's plain HTTP origin — the same value connections-tools'
@@ -74,15 +71,12 @@ async function read<T>(
   );
   if (!response.ok) {
     const detail: unknown = await response.json().catch(() => undefined);
-    const message =
-      errorMessageFrom(detail) ?? `${response.status} ${response.statusText}`;
+    const message = errorMessageFrom(detail) ?? `${response.status} ${response.statusText}`;
     throw new Error(`${what} failed: ${message}`);
   }
   const parsed = schema(await response.json());
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `${what} came back in an unexpected shape: ${parsed.summary}`,
-    );
+    throw new Error(`${what} came back in an unexpected shape: ${parsed.summary}`);
   }
   return parsed;
 }
@@ -98,14 +92,9 @@ export async function fetchCatalog(
 }
 
 /** This bench's model policy, out of its own tenant config blob. */
-export async function fetchModelPolicy(
-  config: CatalogToolClientConfig,
-): Promise<BenchModelPolicy> {
-  const tenant = await read(
-    config,
-    "",
-    "Reading this bench's settings",
-    (raw) => TenantResponse(raw),
+export async function fetchModelPolicy(config: CatalogToolClientConfig): Promise<BenchModelPolicy> {
+  const tenant = await read(config, "", "Reading this bench's settings", (raw) =>
+    TenantResponse(raw),
   );
   return readModelPolicy(tenant.config ?? {});
 }

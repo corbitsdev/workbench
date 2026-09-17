@@ -45,10 +45,7 @@ import {
   type AgentInstance,
   type CatalogModel,
 } from "../agents-api";
-import {
-  purposeAgentDefinitions,
-  type AgentDefinitionWithDisplayName,
-} from "../agents-directory";
+import { purposeAgentDefinitions, type AgentDefinitionWithDisplayName } from "../agents-directory";
 import { useBench } from "../bench-context";
 import { isAdditiveSelectClick } from "../activatable-row";
 import { Link } from "../navigation";
@@ -102,9 +99,7 @@ export function agentRosterStatus(
   instances: readonly AgentInstance[],
 ): AgentRosterStatus {
   if (definition.status === "stopped") return "archived";
-  const own = instances.filter(
-    (instance) => instance.definitionId === definition.id,
-  );
+  const own = instances.filter((instance) => instance.definitionId === definition.id);
   if (own.some((instance) => instance.status === "running")) return "running";
   if (own.some((instance) => instance.status === "error")) return "blocked";
   return "idle";
@@ -155,10 +150,7 @@ export async function archiveDefinitions(
 
 /** The toast copy for a bulk archive — an honest count either way, never
  * a blanket success/failure message that could describe a partial run. */
-export function archiveResultToast({
-  succeededIds,
-  failedIds,
-}: ArchiveDefinitionsResult): string {
+export function archiveResultToast({ succeededIds, failedIds }: ArchiveDefinitionsResult): string {
   const total = succeededIds.length + failedIds.length;
   if (failedIds.length === 0) {
     return succeededIds.length === 1
@@ -166,9 +158,7 @@ export function archiveResultToast({
       : `Archived ${succeededIds.length} agents`;
   }
   if (succeededIds.length === 0) {
-    return failedIds.length === 1
-      ? "Couldn't archive that agent"
-      : "Couldn't archive those agents";
+    return failedIds.length === 1 ? "Couldn't archive that agent" : "Couldn't archive those agents";
   }
   return `Archived ${succeededIds.length} of ${total} — the rest failed`;
 }
@@ -374,15 +364,10 @@ function AgentDetailPanel({
   return (
     <aside className="flex min-h-0 min-w-0 flex-col gap-4 border-l border-border bg-card p-4">
       <div>
-        <p className="truncate text-sm font-semibold">
-          {definition.displayName}
-        </p>
-        <p className="truncate font-mono text-xs text-muted-foreground">
-          {definition.name}
-        </p>
+        <p className="truncate text-sm font-semibold">{definition.displayName}</p>
+        <p className="truncate font-mono text-xs text-muted-foreground">{definition.name}</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          {definition.description !== null &&
-          definition.description !== undefined
+          {definition.description !== null && definition.description !== undefined
             ? definition.description
             : "No description"}
         </p>
@@ -391,10 +376,7 @@ function AgentDetailPanel({
         <div className="flex items-center justify-between gap-2">
           <dt className="text-muted-foreground">Status</dt>
           <dd>
-            <Badge
-              tone={DEFINITION_STATUS_TONE[definition.status]}
-              className="normal-case"
-            >
+            <Badge tone={DEFINITION_STATUS_TONE[definition.status]} className="normal-case">
               {DEFINITION_STATUS_LABEL[definition.status]}
             </Badge>
           </dd>
@@ -402,9 +384,7 @@ function AgentDetailPanel({
         <div className="flex items-center justify-between gap-2">
           <dt className="text-muted-foreground">Model</dt>
           <dd>
-            {capabilities.status === "loading" ? (
-              <Skeleton className="h-4 w-16" />
-            ) : null}
+            {capabilities.status === "loading" ? <Skeleton className="h-4 w-16" /> : null}
             {capabilities.status === "error" ? (
               <span className="text-destructive">{capabilities.message}</span>
             ) : null}
@@ -486,10 +466,7 @@ export function AgentsPage({
 }: {
   readonly tenantId: string | null;
   readonly definitions: readonly AgentDefinitionWithDisplayName[];
-  readonly workbenches: ReadonlyMap<
-    string,
-    readonly DefinitionWorkbenchInstance[]
-  >;
+  readonly workbenches: ReadonlyMap<string, readonly DefinitionWorkbenchInstance[]>;
   readonly instances: readonly AgentInstance[];
   /** When the top-level-runs fetch failed — Status/Runs · 7d must not pretend
    * the history is empty (CL-6842). */
@@ -515,14 +492,9 @@ export function AgentsPage({
     [definitions],
   );
   const selection = useListSelection({ ids: definitionIds });
-  const allSelected =
-    definitions.length > 0 && selection.selectedCount === definitions.length;
+  const allSelected = definitions.length > 0 && selection.selectedCount === definitions.length;
   const headerChecked: SelectionCheckboxState =
-    selection.selectedCount === 0
-      ? false
-      : allSelected
-        ? true
-        : "indeterminate";
+    selection.selectedCount === 0 ? false : allSelected ? true : "indeterminate";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -531,11 +503,7 @@ export function AgentsPage({
         subtitle={`${definitions.length} agents`}
         actions={
           tenantId !== null ? (
-            <Button
-              size="sm"
-              onClick={() => onCreateOpenChange(true)}
-              aria-label="Create an agent"
-            >
+            <Button size="sm" onClick={() => onCreateOpenChange(true)} aria-label="Create an agent">
               <Plus /> New agent
             </Button>
           ) : null
@@ -545,10 +513,7 @@ export function AgentsPage({
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
           <PageShell width="full" className="page-fill">
             {skillsError !== undefined ? (
-              <p
-                className="px-4 pb-3 text-sm text-destructive sm:px-7"
-                role="alert"
-              >
+              <p className="px-4 pb-3 text-sm text-destructive sm:px-7" role="alert">
                 Could not load agent skills: {skillsError}
               </p>
             ) : null}
@@ -571,27 +536,17 @@ export function AgentsPage({
                       <TableHead className="w-10">
                         <SelectionCheckbox
                           checked={headerChecked}
-                          onToggle={() =>
-                            allSelected
-                              ? selection.clear()
-                              : selection.selectAll()
-                          }
+                          onToggle={() => (allSelected ? selection.clear() : selection.selectAll())}
                           rowLabel="all agents"
                           ariaLabel="Select all agents"
                           className="opacity-100"
                         />
                       </TableHead>
                       <TableHead>Agent</TableHead>
-                      <TableHead className="hidden lg:table-cell">
-                        Description
-                      </TableHead>
+                      <TableHead className="hidden lg:table-cell">Description</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="hidden lg:table-cell">
-                        Model
-                      </TableHead>
-                      <TableHead className="hidden text-right lg:table-cell">
-                        Runs · 7d
-                      </TableHead>
+                      <TableHead className="hidden lg:table-cell">Model</TableHead>
+                      <TableHead className="hidden text-right lg:table-cell">Runs · 7d</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -604,56 +559,35 @@ export function AgentsPage({
                         instancesError,
                       );
                       const status =
-                        runs.kind === "error"
-                          ? null
-                          : agentRosterStatus(definition, instances);
+                        runs.kind === "error" ? null : agentRosterStatus(definition, instances);
                       return (
                         <TableRow
                           key={definition.id}
-                          data-state={
-                            selectedId === definition.id
-                              ? "selected"
-                              : undefined
-                          }
+                          data-state={selectedId === definition.id ? "selected" : undefined}
                           className="group cursor-pointer"
                           role="button"
                           tabIndex={0}
                           onClick={(event) => {
-                            if (
-                              event.shiftKey ||
-                              isAdditiveSelectClick(event)
-                            ) {
+                            if (event.shiftKey || isAdditiveSelectClick(event)) {
                               selection.toggle(definition.id, {
                                 shiftKey: event.shiftKey,
                               });
                               return;
                             }
-                            onSelect(
-                              selectedId === definition.id
-                                ? null
-                                : definition.id,
-                            );
+                            onSelect(selectedId === definition.id ? null : definition.id);
                           }}
                           onKeyDown={(event) => {
                             if (event.key !== "Enter" && event.key !== " ") {
                               return;
                             }
                             event.preventDefault();
-                            onSelect(
-                              selectedId === definition.id
-                                ? null
-                                : definition.id,
-                            );
+                            onSelect(selectedId === definition.id ? null : definition.id);
                           }}
                         >
-                          <TableCell
-                            onClick={(event) => event.stopPropagation()}
-                          >
+                          <TableCell onClick={(event) => event.stopPropagation()}>
                             <SelectionCheckbox
                               checked={isSelected}
-                              onToggle={(modifiers) =>
-                                selection.toggle(definition.id, modifiers)
-                              }
+                              onToggle={(modifiers) => selection.toggle(definition.id, modifiers)}
                               rowLabel={definition.displayName}
                             />
                           </TableCell>
@@ -675,12 +609,7 @@ export function AgentsPage({
                             ) : (
                               <span className="inline-flex items-center gap-1.5">
                                 {status === "running" ? (
-                                  <StatusDot
-                                    label="Live"
-                                    live
-                                    tone="emphasis"
-                                    size="xs"
-                                  />
+                                  <StatusDot label="Live" live tone="emphasis" size="xs" />
                                 ) : null}
                                 <Badge
                                   tone={AGENT_ROSTER_STATUS_TONE[status]}
@@ -812,9 +741,7 @@ export function AgentsRoute({
   }
 
   const definitions = purposeAgentDefinitions(directory.data.definitions);
-  const workbenches = workbenchesByDefinition(
-    activity.kind === "ready" ? activity.chats : [],
-  );
+  const workbenches = workbenchesByDefinition(activity.kind === "ready" ? activity.chats : []);
 
   return (
     <AgentsPage
@@ -823,17 +750,13 @@ export function AgentsRoute({
       workbenches={workbenches}
       instances={runsQuery.data ?? []}
       instancesError={
-        runsQuery.isError
-          ? describeApiError(runsQuery.error, "loading run history")
-          : null
+        runsQuery.isError ? describeApiError(runsQuery.error, "loading run history") : null
       }
       models={directory.data.models}
       selectedId={selectedId}
       onSelect={(id) =>
         navigate(
-          id === null
-            ? AGENTS_PATH_PREFIX
-            : `${AGENTS_PATH_PREFIX}/${encodeURIComponent(id)}`,
+          id === null ? AGENTS_PATH_PREFIX : `${AGENTS_PATH_PREFIX}/${encodeURIComponent(id)}`,
         )
       }
       createOpen={createOpen}

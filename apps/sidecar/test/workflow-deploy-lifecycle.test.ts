@@ -44,9 +44,7 @@ describe("workflow deployment lifecycle through the deploy router", () => {
       stepOrder: ["body-step"],
       steps: { "body-step": { kind: "step" } },
     };
-    frame.workflow.referencedDefinitions = [
-      { definition: bodyDefinition, sources: bodySources },
-    ];
+    frame.workflow.referencedDefinitions = [{ definition: bodyDefinition, sources: bodySources }];
 
     const deployPromise = router.deploy(frame);
     await answerReadyHandshake(spawns, 0);
@@ -55,16 +53,14 @@ describe("workflow deployment lifecycle through the deploy router", () => {
     // A body child runs in-process and loses its env across a restart, so its
     // per-step source pins must be durable on disk.
     const bodyDir = path.join(dataDir, "assets", "workflow", bodyDefinition.id);
-    expect(
-      JSON.parse(await fs.readFile(path.join(bodyDir, "sources.json"), "utf8")),
-    ).toEqual(bodySources);
+    expect(JSON.parse(await fs.readFile(path.join(bodyDir, "sources.json"), "utf8"))).toEqual(
+      bodySources,
+    );
 
     // The body DEFINITION is never staged: the run child resolves each body
     // in-memory from the parent's re-verified closure. A staged copy would be
     // a second, un-verified source of the body's bytes.
-    await expect(
-      fs.stat(path.join(bodyDir, "workflow.json")),
-    ).rejects.toThrow();
+    await expect(fs.stat(path.join(bodyDir, "workflow.json"))).rejects.toThrow();
     await expect(
       fs.stat(path.join(dataDir, "assets", "workflow", "wf-lifecycle")),
     ).rejects.toThrow();
@@ -82,9 +78,7 @@ describe("workflow deployment lifecycle through the deploy router", () => {
     // The child EVALUATES the pinned code from this dir rather than reading an
     // inert definition off disk, and re-verifies its projection against the
     // hub-approved hash -- never a sidecar recompute.
-    expect(spawn.env.CLOSURE_PACKAGE_DIR).toBe(
-      path.join(dataDir, "closure-package", deploymentId),
-    );
+    expect(spawn.env.CLOSURE_PACKAGE_DIR).toBe(path.join(dataDir, "closure-package", deploymentId));
     expect(spawn.env.DEFINITION_HASH).toBe(LIFECYCLE_APPROVED_WIRE_HASH);
     expect(spawn.env.WORKFLOW_DEFINITION_REF).toBeUndefined();
     expect(spawn.env.REFERENCED_DEFINITION_HASHES).toBeUndefined();
@@ -119,12 +113,7 @@ describe("workflow deployment lifecycle through the deploy router", () => {
     expect(router.activeAddresses()).toEqual([frame.agentAddress]);
     // The durable deployment record the next boot restores from.
     const deploymentId = deriveDeploymentId(frame.agentAddress);
-    const recordFile = path.join(
-      dataDir,
-      "workflow-runs",
-      deploymentId,
-      "deployment.json",
-    );
+    const recordFile = path.join(dataDir, "workflow-runs", deploymentId, "deployment.json");
     await expect(fs.stat(recordFile)).resolves.toBeDefined();
   });
 
@@ -136,12 +125,7 @@ describe("workflow deployment lifecycle through the deploy router", () => {
     await deployPromise;
 
     const deploymentId = deriveDeploymentId(frame.agentAddress);
-    const recordFile = path.join(
-      dataDir,
-      "workflow-runs",
-      deploymentId,
-      "deployment.json",
-    );
+    const recordFile = path.join(dataDir, "workflow-runs", deploymentId, "deployment.json");
     const durableConversationFile = path.join(
       dataDir,
       "agent-conversation-state",
@@ -246,15 +230,11 @@ describe("workflow deployment lifecycle through the deploy router", () => {
     // The deployment's whole step-state subtree is reclaimed -- warm
     // stable workspace AND any cold leftover -- now that its supervisor
     // and child are torn down.
-    await expect(
-      fs.stat(path.join(stepStateRoot, deploymentId)),
-    ).rejects.toThrow();
+    await expect(fs.stat(path.join(stepStateRoot, deploymentId))).rejects.toThrow();
     // So is the deployment record: an undeployed deployment must not be
     // restored on the next boot.
     await expect(
-      fs.stat(
-        path.join(dataDir, "workflow-runs", deploymentId, "deployment.json"),
-      ),
+      fs.stat(path.join(dataDir, "workflow-runs", deploymentId, "deployment.json")),
     ).rejects.toThrow();
     // A different deployment's scratch is untouched: the sweep is scoped
     // to this deployment's `<deploymentId>` subtree only.
@@ -269,8 +249,7 @@ describe("workflow deployment lifecycle through the deploy router", () => {
   // port, no `MultistepCredentialsRouter` handler was ever installed, so an
   // inbound `credentials.update` frame was unrouted for every deployment.
   test("a hub credentials.update frame reaches the child as a credentials-updated control frame", async () => {
-    const { router, spawns, multistepCredentialsRouter } =
-      await makeLifecycleFixture();
+    const { router, spawns, multistepCredentialsRouter } = await makeLifecycleFixture();
     const frame = makeWorkflowFrame("run_lifecycle-credentials@example.com");
 
     const deployPromise = router.deploy(frame);
@@ -304,8 +283,8 @@ describe("workflow deployment lifecycle through the deploy router", () => {
     expect(routed).toBe(true);
     const credentialsUpdatedLine = spawn.sentControlLines.find(
       (line) =>
-        (JSON.parse(line) as { envelope: { payload: { type: string } } })
-          .envelope.payload.type === "credentials-updated",
+        (JSON.parse(line) as { envelope: { payload: { type: string } } }).envelope.payload.type ===
+        "credentials-updated",
     );
     if (credentialsUpdatedLine === undefined) {
       throw new Error(

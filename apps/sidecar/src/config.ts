@@ -106,10 +106,7 @@ const SidecarEnv = type({
  * for an unset key so the caller's binding falls back to the vendor's own
  * default rather than this boundary inventing one.
  */
-function parsePositiveMsEnv(
-  raw: string | undefined,
-  name: string,
-): number | undefined {
+function parsePositiveMsEnv(raw: string | undefined, name: string): number | undefined {
   if (raw === undefined) return undefined;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) {
@@ -171,18 +168,15 @@ export type SidecarConfig = {
  * rather than surfacing as a deep-stack `loadAdapterRegistry` import
  * failure.
  */
-export function parseSidecarAdapterManifest(
-  raw: string | undefined,
-): AdapterManifest {
+export function parseSidecarAdapterManifest(raw: string | undefined): AdapterManifest {
   if (raw === undefined) return DEFAULT_ADAPTER_MANIFEST;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (cause) {
-    throw new Error(
-      "invalid sidecar environment: SIDECAR_ADAPTER_MANIFEST is not valid JSON",
-      { cause },
-    );
+    throw new Error("invalid sidecar environment: SIDECAR_ADAPTER_MANIFEST is not valid JSON", {
+      cause,
+    });
   }
   const validated = AdapterManifest(parsed);
   if (validated instanceof type.errors) {
@@ -199,9 +193,7 @@ export function parseSidecarAdapterManifest(
  * variable and the shape it must have, so a misconfigured process dies
  * at boot instead of failing at first use.
  */
-export function readSidecarConfig(
-  env: Record<string, string | undefined>,
-): SidecarConfig {
+export function readSidecarConfig(env: Record<string, string | undefined>): SidecarConfig {
   const parsed = SidecarEnv(env);
   if (parsed instanceof type.errors) {
     throw new Error(`invalid sidecar environment: ${parsed.summary}`);
@@ -221,20 +213,9 @@ export function readSidecarConfig(
     home: parsed.HOME,
     tmpdir: parsed.TMPDIR,
     toolRegistries: parsed.SIDECAR_TOOL_REGISTRIES,
-    adapterManifest: parseSidecarAdapterManifest(
-      parsed.SIDECAR_ADAPTER_MANIFEST,
-    ),
-    consumedRetentionMs: parsePositiveMsEnv(
-      parsed.CONSUMED_RETENTION_MS,
-      "CONSUMED_RETENTION_MS",
-    ),
-    readyTimeoutMs: parsePositiveMsEnv(
-      parsed.CHILD_READY_TIMEOUT_MS,
-      "CHILD_READY_TIMEOUT_MS",
-    ),
-    idleHibernateMs: parsePositiveMsEnv(
-      parsed.CHAT_IDLE_HIBERNATE_MS,
-      "CHAT_IDLE_HIBERNATE_MS",
-    ),
+    adapterManifest: parseSidecarAdapterManifest(parsed.SIDECAR_ADAPTER_MANIFEST),
+    consumedRetentionMs: parsePositiveMsEnv(parsed.CONSUMED_RETENTION_MS, "CONSUMED_RETENTION_MS"),
+    readyTimeoutMs: parsePositiveMsEnv(parsed.CHILD_READY_TIMEOUT_MS, "CHILD_READY_TIMEOUT_MS"),
+    idleHibernateMs: parsePositiveMsEnv(parsed.CHAT_IDLE_HIBERNATE_MS, "CHAT_IDLE_HIBERNATE_MS"),
   };
 }

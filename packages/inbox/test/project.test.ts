@@ -32,9 +32,7 @@ describe("projectInboxItem", () => {
   });
 
   test("maps classification delivery + open status", () => {
-    const item = projectInboxItem(
-      message({ classification: "delivery", status: "open" }),
-    );
+    const item = projectInboxItem(message({ classification: "delivery", status: "open" }));
     expect(item.group).toBe("delivery");
     expect(item.status).toBe("open");
   });

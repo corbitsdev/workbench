@@ -70,9 +70,7 @@ describe("encodeParts / decodeParts", () => {
 
   test("bare text mail with no attachments decodes to a single TextPart", () => {
     const mail: MailContent = { content: "sent from a plain mail client" };
-    expect(decodeParts(mail)).toEqual([
-      { kind: "text", text: "sent from a plain mail client" },
-    ]);
+    expect(decodeParts(mail)).toEqual([{ kind: "text", text: "sent from a plain mail client" }]);
   });
 
   test("mail with an empty attachments array decodes as bare text", () => {
@@ -114,9 +112,7 @@ describe("encodeParts / decodeParts", () => {
       attachments: [
         {
           mimeType: "application/json",
-          data: Buffer.from(JSON.stringify({ kind: "nonsense" })).toString(
-            "base64",
-          ),
+          data: Buffer.from(JSON.stringify({ kind: "nonsense" })).toString("base64"),
           name: "part-0.json",
         },
       ],
@@ -143,9 +139,7 @@ describe("decodeMail", () => {
       attachments: [],
     };
     const parts = await decodeMail(mail, { fetchBlob: fakeFetchBlob({}) });
-    expect(parts).toEqual([
-      { kind: "text", text: "sent from a plain mail client" },
-    ]);
+    expect(parts).toEqual([{ kind: "text", text: "sent from a plain mail client" }]);
   });
 
   test("every Part kind round-trips through the JMAP read shape", async () => {
@@ -250,9 +244,7 @@ describe("decodeMail", () => {
     const mail: MailReadContent = {
       textBody: [{ partId: "1", type: "text/plain" }],
       bodyValues: { "1": { value: "" } },
-      attachments: [
-        { blobId: "blob_m2_2", name: "note.txt", type: "text/plain", size: 5 },
-      ],
+      attachments: [{ blobId: "blob_m2_2", name: "note.txt", type: "text/plain", size: 5 }],
     };
     const parts = await decodeMail(mail, {
       fetchBlob: fakeFetchBlob({ blob_m2_2: "hello" }),
@@ -274,9 +266,7 @@ describe("decodeMail", () => {
       ],
     };
     const fetchBlob: FetchBlob = async () => {
-      throw new Error(
-        "fetchBlob should not be called for non-json/text attachments",
-      );
+      throw new Error("fetchBlob should not be called for non-json/text attachments");
     };
     const parts = await decodeMail(mail, { fetchBlob });
     expect(parts).toEqual([
@@ -332,9 +322,9 @@ describe("decodeMail", () => {
   });
 
   test("decodeMail rejects a structurally invalid mail read shape", async () => {
-    await expect(
-      decodeMail({ textBody: [] }, { fetchBlob: fakeFetchBlob({}) }),
-    ).rejects.toThrow(/invalid mail read content/);
+    await expect(decodeMail({ textBody: [] }, { fetchBlob: fakeFetchBlob({}) })).rejects.toThrow(
+      /invalid mail read content/,
+    );
   });
 });
 
@@ -434,9 +424,7 @@ describe("decodeMail leaf-header compensation", () => {
   const mailWith = (blobId: string) => ({
     textBody: [],
     bodyValues: {},
-    attachments: [
-      { blobId, name: "part.json", type: "application/json", size: 10 },
-    ],
+    attachments: [{ blobId, name: "part.json", type: "application/json", size: 10 }],
   });
 
   test("strips a leaf attachment's own MIME header block before parsing", async () => {
@@ -477,8 +465,6 @@ describe("decodeMail leaf-header compensation", () => {
     const parts = await decodeMail(mailWith("blob_x_3"), {
       fetchBlob: async () => tricky,
     });
-    expect(parts).toEqual([
-      { kind: "text", text: "Content-Type: not a header" },
-    ]);
+    expect(parts).toEqual([{ kind: "text", text: "Content-Type: not a header" }]);
   });
 });

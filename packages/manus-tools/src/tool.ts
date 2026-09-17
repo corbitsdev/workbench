@@ -69,9 +69,7 @@ const MESSAGE_SKILL_PROPERTIES = {
   force_skills: STRING_ARRAY(
     "Skill ids the agent must invoke. Forced skills are available even when not listed in enable_skills.",
   ),
-  connectors: STRING_ARRAY(
-    "Connector ids from connector_list to attach to this message.",
-  ),
+  connectors: STRING_ARRAY("Connector ids from connector_list to attach to this message."),
   task_references: STRING_ARRAY(
     "Task ids (up to 20) the agent may browse. Pass the 22-character id, not a URL.",
   ),
@@ -90,16 +88,10 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
       title: STRING("Optional custom task title."),
       project_id: STRING("Project to associate this task with."),
       locale: STRING("Output locale, e.g. en or zh-CN."),
-      interactive_mode: BOOLEAN(
-        "When true, the agent may pause to ask questions.",
-      ),
-      hide_in_task_list: BOOLEAN(
-        "When true, hide the task from the Manus task list.",
-      ),
+      interactive_mode: BOOLEAN("When true, the agent may pause to ask questions."),
+      hide_in_task_list: BOOLEAN("When true, hide the task from the Manus task list."),
       share_visibility: STRING("private, team, or public."),
-      agent_profile: STRING(
-        "Defaults to manus-1.6-lite. Other values: manus-1.6, manus-1.6-max.",
-      ),
+      agent_profile: STRING("Defaults to manus-1.6-lite. Other values: manus-1.6, manus-1.6-max."),
       ...MESSAGE_SKILL_PROPERTIES,
       structured_output_schema: OBJECT(
         "JSON Schema for structured output extraction. Sent on the create body, not inside message.",
@@ -133,16 +125,13 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
     name: "task_update",
     method: "POST",
     path: "/v2/task.update",
-    description:
-      "Updates a Manus task's title, visibility, or list visibility.",
+    description: "Updates a Manus task's title, visibility, or list visibility.",
     required: ["task_id"],
     properties: {
       task_id: STRING("Task id."),
       title: STRING("New title."),
       share_visibility: STRING("private, team, or public."),
-      enable_visible_in_task_list: BOOLEAN(
-        "Show the task in the Manus task list.",
-      ),
+      enable_visible_in_task_list: BOOLEAN("Show the task in the Manus task list."),
     },
   },
   {
@@ -171,9 +160,7 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
     required: ["task_id", "content"],
     properties: {
       task_id: STRING("Task id."),
-      content: STRING(
-        "Follow-up prompt text (sent as message.content ContentPart text).",
-      ),
+      content: STRING("Follow-up prompt text (sent as message.content ContentPart text)."),
       agent_profile: STRING("Optional agent profile override."),
       ...MESSAGE_SKILL_PROPERTIES,
     },
@@ -198,8 +185,7 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
     name: "task_confirm",
     method: "POST",
     path: "/v2/task.confirmAction",
-    description:
-      "Confirms a waiting Manus task action (event_id from a waiting status).",
+    description: "Confirms a waiting Manus task action (event_id from a waiting status).",
     required: ["task_id", "event_id"],
     properties: {
       task_id: STRING("Task id."),
@@ -448,9 +434,7 @@ function notConnectedResult(callId: string): ToolResult {
   };
 }
 
-async function resolveManusCredential(
-  env: ManusEnv,
-): Promise<{ fetchImpl: typeof fetch } | null> {
+async function resolveManusCredential(env: ManusEnv): Promise<{ fetchImpl: typeof fetch } | null> {
   if (env.credentials === undefined) return null;
   try {
     const mediated = await env.credentials.resolve(MANUS_CREDENTIAL_HANDLE);
@@ -460,9 +444,7 @@ async function resolveManusCredential(
   }
 }
 
-function asClientConfig(credential: {
-  fetchImpl: typeof fetch;
-}): ManusClientConfig {
+function asClientConfig(credential: { fetchImpl: typeof fetch }): ManusClientConfig {
   return { fetchImpl: credential.fetchImpl };
 }
 
@@ -471,10 +453,7 @@ function stringArg(call: ToolCall, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function pickParams(
-  call: ToolCall,
-  keys: readonly string[],
-): Record<string, unknown> {
+function pickParams(call: ToolCall, keys: readonly string[]): Record<string, unknown> {
   const params: Record<string, unknown> = {};
   for (const key of keys) {
     const value = call.arguments[key];
@@ -483,10 +462,7 @@ function pickParams(
   return params;
 }
 
-function missingRequired(
-  call: ToolCall,
-  required: readonly string[],
-): string | undefined {
+function missingRequired(call: ToolCall, required: readonly string[]): string | undefined {
   for (const key of required) {
     const value = call.arguments[key];
     if (value === undefined || value === "") return key;
@@ -502,11 +478,7 @@ function errorResult(callId: string, err: unknown): ToolResult {
   };
 }
 
-async function runEndpoint(
-  env: ManusEnv,
-  call: ToolCall,
-  spec: EndpointSpec,
-): Promise<ToolResult> {
+async function runEndpoint(env: ManusEnv, call: ToolCall, spec: EndpointSpec): Promise<ToolResult> {
   const credential = await resolveManusCredential(env);
   if (credential === null) return notConnectedResult(call.id);
   const missing = missingRequired(call, spec.required);
@@ -673,20 +645,14 @@ function optionalCreateFields(call: ToolCall): {
   return fields;
 }
 
-function stringArrayArg(
-  call: ToolCall,
-  key: string,
-): readonly string[] | undefined {
+function stringArrayArg(call: ToolCall, key: string): readonly string[] | undefined {
   const value = call.arguments[key];
   if (!Array.isArray(value)) return undefined;
   if (!value.every((item) => typeof item === "string")) return undefined;
   return value;
 }
 
-function objectArg(
-  call: ToolCall,
-  key: string,
-): Readonly<Record<string, unknown>> | undefined {
+function objectArg(call: ToolCall, key: string): Readonly<Record<string, unknown>> | undefined {
   const value = call.arguments[key];
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return undefined;
@@ -809,9 +775,7 @@ export const manusTools = defineTool<ManusEnv>({
   definitions: [
     { name: CREATE_SLIDES_TOOL },
     ...MANUS_ENDPOINTS.map((spec) =>
-      spec.approval === "ask"
-        ? { name: spec.name, approval: "ask" as const }
-        : { name: spec.name },
+      spec.approval === "ask" ? { name: spec.name, approval: "ask" as const } : { name: spec.name },
     ),
   ],
   factory: (env) => ({

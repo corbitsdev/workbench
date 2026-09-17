@@ -3,10 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  createAllocationStateStore,
-  type AllocationStateStore,
-} from "./state-store";
+import { createAllocationStateStore, type AllocationStateStore } from "./state-store";
 import { createSidecarProvisioner } from "./provisioner";
 import type { SidecarBackend } from "./backend";
 
@@ -70,9 +67,7 @@ describe("ensure request validation", () => {
   test("accepts generation 0, the allocation service's initial generation", async () => {
     const provisioner = makeProvisioner();
 
-    const result = await provisioner.ensure(
-      baseEnsureRequest({ generation: 0 }),
-    );
+    const result = await provisioner.ensure(baseEnsureRequest({ generation: 0 }));
 
     expect(result).toEqual({ kind: "accepted", externalRef: "unit-1" });
   });
@@ -81,9 +76,7 @@ describe("ensure request validation", () => {
     const provisioner = makeProvisioner();
 
     await provisioner.ensure(baseEnsureRequest({ generation: 0 }));
-    const result = await provisioner.ensure(
-      baseEnsureRequest({ generation: 1 }),
-    );
+    const result = await provisioner.ensure(baseEnsureRequest({ generation: 1 }));
 
     expect(result).toEqual({ kind: "accepted", externalRef: "unit-2" });
   });
@@ -92,9 +85,7 @@ describe("ensure request validation", () => {
     const provisioner = makeProvisioner();
 
     await provisioner.ensure(baseEnsureRequest({ generation: 1 }));
-    const result = await provisioner.ensure(
-      baseEnsureRequest({ generation: 0 }),
-    );
+    const result = await provisioner.ensure(baseEnsureRequest({ generation: 0 }));
 
     expect(result).toMatchObject({
       kind: "rejected",

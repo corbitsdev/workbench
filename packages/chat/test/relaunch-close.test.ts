@@ -16,10 +16,7 @@ import { createCryptoProviderCache } from "../src/crypto-cache";
 import { agentSession } from "@intx/db/schema";
 import { workbenchLaunch } from "../src/schema";
 import { createHubChatPlatform } from "../src/platform-adapter";
-import {
-  createRelaunchNoticePoster,
-  relaunchNoticeText,
-} from "../src/relaunch-notice";
+import { createRelaunchNoticePoster, relaunchNoticeText } from "../src/relaunch-notice";
 
 const FOLDED_BODY = {
   systemPrompt: "be helpful",
@@ -73,9 +70,7 @@ function createFakeDb(opts: {
       sessionMail: {
         findFirst: async ({ where }: { where: unknown }) => {
           const [id, sessionId] = comparedValues(where);
-          return opts.mail.find(
-            (row) => row.id === id && row.sessionId === sessionId,
-          );
+          return opts.mail.find((row) => row.id === id && row.sessionId === sessionId);
         },
       },
       // CL-7481: `resolveRunSessionIdOrThrow` reads the launch spec by
@@ -111,8 +106,7 @@ function createFakeDb(opts: {
                   : [];
               }
               if (table !== workbenchLaunch) return [];
-              return value === opts.launch.instanceId ||
-                value === opts.launch.currentRunId
+              return value === opts.launch.instanceId || value === opts.launch.currentRunId
                 ? [opts.launch]
                 : [];
             },
@@ -193,14 +187,9 @@ describe("fetchBlob across a relaunch", () => {
       mail: [{ id: "mail_1", sessionId: "ses_prin_dead", raw: RAW_MAIL }],
     });
 
-    const body = await createPlatform(db).fetchBlob(
-      "ins_room1",
-      "blob_mail_1_1",
-    );
+    const body = await createPlatform(db).fetchBlob("ins_room1", "blob_mail_1_1");
 
-    expect(new TextDecoder().decode(body as Uint8Array)).toContain(
-      "the receipt you asked for",
-    );
+    expect(new TextDecoder().decode(body as Uint8Array)).toContain("the receipt you asked for");
   });
 
   test("a blob on no session this participant ever held is still refused", async () => {
@@ -210,9 +199,9 @@ describe("fetchBlob across a relaunch", () => {
       mail: [{ id: "mail_1", sessionId: "ses_prin_stranger", raw: RAW_MAIL }],
     });
 
-    await expect(
-      createPlatform(db).fetchBlob("ins_room1", "blob_mail_1_1"),
-    ).rejects.toThrow('No mail "mail_1"');
+    await expect(createPlatform(db).fetchBlob("ins_room1", "blob_mail_1_1")).rejects.toThrow(
+      'No mail "mail_1"',
+    );
   });
 
   test("a retired run whose row is gone is skipped, not fatal", async () => {
@@ -225,14 +214,9 @@ describe("fetchBlob across a relaunch", () => {
       mail: [{ id: "mail_1", sessionId: "ses_prin_dead", raw: RAW_MAIL }],
     });
 
-    const body = await createPlatform(db).fetchBlob(
-      "ins_room1",
-      "blob_mail_1_1",
-    );
+    const body = await createPlatform(db).fetchBlob("ins_room1", "blob_mail_1_1");
 
-    expect(new TextDecoder().decode(body as Uint8Array)).toContain(
-      "the receipt you asked for",
-    );
+    expect(new TextDecoder().decode(body as Uint8Array)).toContain("the receipt you asked for");
   });
 });
 

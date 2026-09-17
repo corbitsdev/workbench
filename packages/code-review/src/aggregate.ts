@@ -73,10 +73,7 @@ function collect(
   passes: readonly ReviewerPass[],
   alreadyPosted: ReadonlySet<string>,
 ): CollectedPasses {
-  const byFingerprint = new Map<
-    string,
-    { finding: ReviewerFinding; who: string[] }
-  >();
+  const byFingerprint = new Map<string, { finding: ReviewerFinding; who: string[] }>();
   const summaries: { name: string; summary: string }[] = [];
   const silent: { name: string; reason: string }[] = [];
 
@@ -103,9 +100,7 @@ function collect(
         continue;
       }
       existing.who.push(name);
-      if (
-        severityRank(finding.severity) < severityRank(existing.finding.severity)
-      ) {
+      if (severityRank(finding.severity) < severityRank(existing.finding.severity)) {
         byFingerprint.set(fingerprint, { finding, who: existing.who });
       }
     }
@@ -118,17 +113,12 @@ function collect(
       reviewers: entry.who,
     }))
     .sort(
-      (left, right) =>
-        severityRank(left.finding.severity) -
-        severityRank(right.finding.severity),
+      (left, right) => severityRank(left.finding.severity) - severityRank(right.finding.severity),
     );
   return { findings, summaries, silent };
 }
 
-function anchorable(
-  finding: ReviewerFinding,
-  diff: PullRequestDiff,
-): number | undefined {
+function anchorable(finding: ReviewerFinding, diff: PullRequestDiff): number | undefined {
   if (finding.line === undefined) return undefined;
   const file = diff.files.find((entry) => entry.path === finding.file);
   if (file === undefined) return undefined;
@@ -149,16 +139,11 @@ function rightHandLines(patch: string): string {
   return patch
     .split("\n")
     .filter((line) => !line.startsWith("-") && !line.startsWith("@@"))
-    .map((line) =>
-      line.startsWith("+") || line.startsWith(" ") ? line.slice(1) : line,
-    )
+    .map((line) => (line.startsWith("+") || line.startsWith(" ") ? line.slice(1) : line))
     .join("\n");
 }
 
-function existingCodeAnchors(
-  finding: ReviewerFinding,
-  diff: PullRequestDiff,
-): boolean {
+function existingCodeAnchors(finding: ReviewerFinding, diff: PullRequestDiff): boolean {
   if (finding.existingCode === undefined) return false;
   const file = diff.files.find((entry) => entry.path === finding.file);
   if (file?.patch === undefined) return false;
@@ -167,10 +152,7 @@ function existingCodeAnchors(
 
 function bodyLine(entry: AggregatedFinding): string {
   const path = inlineCodeSafe(entry.finding.file);
-  const where =
-    entry.finding.line === undefined
-      ? path
-      : `${path}:${String(entry.finding.line)}`;
+  const where = entry.finding.line === undefined ? path : `${path}:${String(entry.finding.line)}`;
   return (
     `- \`${where}\` — ${singleLine(entry.finding.summary)} ` +
     `_(${attribution(entry.reviewers)})_ ` +
@@ -183,10 +165,7 @@ function commentBody(entry: AggregatedFinding, diff: PullRequestDiff): string {
     `**${SEVERITY_HEADING[entry.finding.severity]}** — ` +
     `${singleLine(entry.finding.summary)}\n\n_${attribution(entry.reviewers)}_`;
   const marker = fingerprintMarker(entry.fingerprint);
-  if (
-    entry.finding.suggestedFix === undefined ||
-    !existingCodeAnchors(entry.finding, diff)
-  ) {
+  if (entry.finding.suggestedFix === undefined || !existingCodeAnchors(entry.finding, diff)) {
     return `${head}\n\n${marker}`;
   }
   return (
@@ -210,12 +189,8 @@ function countLine(findings: readonly AggregatedFinding[]): string {
     return "No findings — the reviewers read the change and had nothing to raise.";
   }
   const counts = SEVERITY_ORDER.map((severity) => {
-    const total = findings.filter(
-      (entry) => entry.finding.severity === severity,
-    ).length;
-    return total === 0
-      ? undefined
-      : `${String(total)} ${SEVERITY_HEADING[severity].toLowerCase()}`;
+    const total = findings.filter((entry) => entry.finding.severity === severity).length;
+    return total === 0 ? undefined : `${String(total)} ${SEVERITY_HEADING[severity].toLowerCase()}`;
   }).filter((part): part is string => part !== undefined);
   return `${counts.join(", ")}.`;
 }
@@ -232,20 +207,14 @@ export function aggregateReview(
   commentsTruncated = false,
 ): PullRequestReviewDraft {
   const collected = collect(passes, alreadyPosted);
-  const sections: string[] = [
-    "## Code review",
-    "",
-    countLine(collected.findings),
-  ];
+  const sections: string[] = ["## Code review", "", countLine(collected.findings)];
 
   if (diff.truncated || commentsTruncated) {
     sections.push("", TRUNCATED_NOTE);
   }
 
   for (const severity of SEVERITY_ORDER) {
-    const forSeverity = collected.findings.filter(
-      (entry) => entry.finding.severity === severity,
-    );
+    const forSeverity = collected.findings.filter((entry) => entry.finding.severity === severity);
     if (forSeverity.length === 0) continue;
     sections.push("", `### ${SEVERITY_HEADING[severity]}`, "");
     sections.push(...forSeverity.map(bodyLine));
@@ -254,19 +223,13 @@ export function aggregateReview(
   if (collected.summaries.length > 0) {
     sections.push("", "### What each reviewer looked at", "");
     sections.push(
-      ...collected.summaries.map(
-        (entry) => `- **${entry.name}** — ${singleLine(entry.summary)}`,
-      ),
+      ...collected.summaries.map((entry) => `- **${entry.name}** — ${singleLine(entry.summary)}`),
     );
   }
 
   if (collected.silent.length > 0) {
     sections.push("", "### Reviewers that did not report", "");
-    sections.push(
-      ...collected.silent.map(
-        (entry) => `- **${entry.name}** — ${entry.reason}`,
-      ),
-    );
+    sections.push(...collected.silent.map((entry) => `- **${entry.name}** — ${entry.reason}`));
   }
 
   const comments: PullRequestReviewComment[] = [];

@@ -41,10 +41,7 @@ function headers(apiKey: string | undefined): Record<string, string> {
   return base;
 }
 
-async function fetchJSON(
-  config: GitHubClientConfig,
-  url: URL,
-): Promise<unknown> {
+async function fetchJSON(config: GitHubClientConfig, url: URL): Promise<unknown> {
   const doFetch = config.fetchImpl ?? fetch;
   const response = await doFetch(url, { headers: headers(config.apiKey) });
   if (!response.ok) {
@@ -62,9 +59,7 @@ async function fetchJSON(
  * failure; the connect-github card's own host catches at its render
  * boundary.
  */
-export async function listRepos(
-  config: GitHubClientConfig,
-): Promise<readonly GitHubRepoSummary[]> {
+export async function listRepos(config: GitHubClientConfig): Promise<readonly GitHubRepoSummary[]> {
   const base = config.baseUrl ?? DEFAULT_BASE_URL;
   const url = new URL(`${base}/user/repos`);
   url.searchParams.set("per_page", String(PER_PAGE));
@@ -73,17 +68,13 @@ export async function listRepos(
   const raw = await fetchJSON(config, url);
   const repos = GitHubUserReposResponse(raw);
   if (repos instanceof type.errors) {
-    throw new Error(
-      `GitHub repos response did not match the expected shape: ${repos.summary}`,
-    );
+    throw new Error(`GitHub repos response did not match the expected shape: ${repos.summary}`);
   }
 
   return repos.map((repo) => ({
     id: String(repo.id),
     name: repo.full_name,
-    ...(typeof repo.pushed_at === "string"
-      ? { lastPushedAt: repo.pushed_at }
-      : {}),
+    ...(typeof repo.pushed_at === "string" ? { lastPushedAt: repo.pushed_at } : {}),
   }));
 }
 
@@ -95,9 +86,7 @@ const GitHubAuthenticatedUser = type({ login: "string" });
  * CL-6343, not built here), so a caller showing "connected as" shows
  * this login, not an org name.
  */
-export async function fetchAuthenticatedLogin(
-  config: GitHubClientConfig,
-): Promise<string> {
+export async function fetchAuthenticatedLogin(config: GitHubClientConfig): Promise<string> {
   const base = config.baseUrl ?? DEFAULT_BASE_URL;
   const raw = await fetchJSON(config, new URL(`${base}/user`));
   const parsed = GitHubAuthenticatedUser(raw);

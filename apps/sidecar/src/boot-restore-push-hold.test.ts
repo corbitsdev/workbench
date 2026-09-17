@@ -22,10 +22,7 @@ describe("createBootRestorePushHold", () => {
     hold.onDeploymentRegistered("run_b@bench.localhost");
     hold.end();
 
-    expect(store.held).toEqual([
-      "run_a@bench.localhost",
-      "run_b@bench.localhost",
-    ]);
+    expect(store.held).toEqual(["run_a@bench.localhost", "run_b@bench.localhost"]);
   });
 
   test("does not hold a deployment that arrives over a live link", () => {

@@ -95,10 +95,7 @@ function headerCheckbox(): HTMLButtonElement {
   return button as HTMLButtonElement;
 }
 
-function click(
-  button: HTMLButtonElement,
-  modifiers: { shiftKey?: boolean } = {},
-) {
+function click(button: HTMLButtonElement, modifiers: { shiftKey?: boolean } = {}) {
   act(() => {
     button.dispatchEvent(
       new MouseEvent("click", {
@@ -159,9 +156,7 @@ describe("LibraryPage selection", () => {
     expect(bar?.textContent).toContain("1 selected");
 
     act(() => {
-      window.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-      );
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });
     expect(bulkActionBar()).toBeNull();
   });
@@ -170,8 +165,8 @@ describe("LibraryPage selection", () => {
     render();
     click(checkboxFor("Alpha"));
     click(checkboxFor("Bravo"), { shiftKey: false });
-    const ids = [...container.querySelectorAll("[data-bulk-action]")].map(
-      (node) => node.getAttribute("data-bulk-action"),
+    const ids = [...container.querySelectorAll("[data-bulk-action]")].map((node) =>
+      node.getAttribute("data-bulk-action"),
     );
     expect(ids).toEqual([...LIBRARY_BULK_OPERATION_IDS]);
   });
@@ -180,9 +175,7 @@ describe("LibraryPage selection", () => {
     render();
     const row = rowFor("Alpha");
     act(() => {
-      row.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, metaKey: true }),
-      );
+      row.dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true }));
     });
     expect(checkboxFor("Alpha").getAttribute("aria-checked")).toBe("true");
   });
@@ -193,9 +186,7 @@ describe("LibraryPage selection", () => {
     render();
     const row = rowFor("Alpha");
     act(() => {
-      row.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, ctrlKey: true }),
-      );
+      row.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
     });
     expect(checkboxFor("Alpha").getAttribute("aria-checked")).toBe("false");
   });
@@ -204,9 +195,7 @@ describe("LibraryPage selection", () => {
     render();
     click(checkboxFor("Charlie"));
     click(checkboxFor("Alpha"), { shiftKey: true });
-    const button = container.querySelector(
-      '[data-bulk-action="copy-link"]',
-    ) as HTMLButtonElement;
+    const button = container.querySelector('[data-bulk-action="copy-link"]') as HTMLButtonElement;
     act(() => button.click());
     await Promise.resolve();
     await Promise.resolve();
@@ -240,9 +229,7 @@ describe("LibraryPage selection", () => {
     render();
     click(checkboxFor("Alpha"));
     click(checkboxFor("Bravo"), { shiftKey: true });
-    const button = container.querySelector(
-      '[data-bulk-action="copy-link"]',
-    ) as HTMLButtonElement;
+    const button = container.querySelector('[data-bulk-action="copy-link"]') as HTMLButtonElement;
     act(() => button.click());
     await Promise.resolve();
     await Promise.resolve();
@@ -256,13 +243,9 @@ describe("LibraryPage selection", () => {
 describe("LibraryPage top-nav action placement", () => {
   test("primary page actions render inside the StageTopBar action slot, not the page body", () => {
     act(() => {
-      root.render(
-        <LibraryPage artifacts={artifacts} onUpload={() => undefined} />,
-      );
+      root.render(<LibraryPage artifacts={artifacts} onUpload={() => undefined} />);
     });
-    const topBarActions = container.querySelector(
-      '[data-testid="stage-top-bar-actions"]',
-    );
+    const topBarActions = container.querySelector('[data-testid="stage-top-bar-actions"]');
     expect(topBarActions).not.toBeNull();
     expect(topBarActions?.textContent).toContain("Upload");
 
@@ -283,19 +266,11 @@ describe("LibraryPage top-nav action placement", () => {
         />,
       );
     });
-    const topBarActions = container.querySelector(
-      '[data-testid="stage-top-bar-actions"]',
-    );
+    const topBarActions = container.querySelector('[data-testid="stage-top-bar-actions"]');
     expect(topBarActions).not.toBeNull();
-    expect(
-      topBarActions?.querySelector('[aria-label="Filter files"]'),
-    ).not.toBeNull();
-    expect(
-      topBarActions?.querySelector('[aria-label="Files scope"]'),
-    ).not.toBeNull();
-    expect(
-      topBarActions?.querySelector('[aria-label="Newest first"]'),
-    ).not.toBeNull();
+    expect(topBarActions?.querySelector('[aria-label="Filter files"]')).not.toBeNull();
+    expect(topBarActions?.querySelector('[aria-label="Files scope"]')).not.toBeNull();
+    expect(topBarActions?.querySelector('[aria-label="Newest first"]')).not.toBeNull();
     expect(topBarActions?.querySelector('[aria-label="View"]')).not.toBeNull();
     expect(container.querySelector(".page-toolbar")).toBeNull();
   });
@@ -328,15 +303,11 @@ describe("LibraryPage top-nav action placement", () => {
         />,
       );
     });
-    const topBarActions = container.querySelector(
-      '[data-testid="stage-top-bar-actions"]',
-    );
+    const topBarActions = container.querySelector('[data-testid="stage-top-bar-actions"]');
     // The two-state scope toggle is visually one control (a bordered
     // segmented group, the same idiom `ViewToggle` already uses in this
     // bar) rather than two stray buttons that read as independent chips.
-    const scopeGroup = topBarActions?.querySelector(
-      '[aria-label="Files scope"]',
-    );
+    const scopeGroup = topBarActions?.querySelector('[aria-label="Files scope"]');
     expect(scopeGroup?.className).toContain("border");
     expect(scopeGroup?.textContent).toContain("Launch plan");
     expect(scopeGroup?.textContent).toContain("All workbenches");
@@ -345,9 +316,7 @@ describe("LibraryPage top-nav action placement", () => {
     // no button labelled bare "All" sits beside "All workbenches".
     const buttons = [...(topBarActions?.querySelectorAll("button") ?? [])];
     expect(buttons.some((b) => b.textContent?.trim() === "All")).toBe(false);
-    expect(buttons.some((b) => b.textContent?.trim() === "Back to files")).toBe(
-      true,
-    );
+    expect(buttons.some((b) => b.textContent?.trim() === "Back to files")).toBe(true);
   });
 
   test("the files scope control stays in the document below the lg breakpoint", () => {
@@ -361,9 +330,7 @@ describe("LibraryPage top-nav action placement", () => {
         />,
       );
     });
-    const topBarActions = container.querySelector(
-      '[data-testid="stage-top-bar-actions"]',
-    );
+    const topBarActions = container.querySelector('[data-testid="stage-top-bar-actions"]');
     const scopeControls = [
       ...(topBarActions?.querySelectorAll('[aria-label="Files scope"]') ?? []),
     ];
@@ -372,19 +339,13 @@ describe("LibraryPage top-nav action placement", () => {
     // behind `hidden lg:flex` vanishes below 1024px with no way to reach
     // All workbenches. At least one control must stay in the tree without
     // that class — the overflow menu in this bar, or the group itself.
-    expect(
-      scopeControls.some((el) => !el.className.split(/\s+/).includes("hidden")),
-    ).toBe(true);
+    expect(scopeControls.some((el) => !el.className.split(/\s+/).includes("hidden"))).toBe(true);
   });
 
   test("the file detail pane fills the available height", () => {
     act(() => {
       root.render(
-        <LibraryPage
-          artifacts={artifacts}
-          selectedId="art_1"
-          onSelect={() => undefined}
-        />,
+        <LibraryPage artifacts={artifacts} selectedId="art_1" onSelect={() => undefined} />,
       );
     });
     const pane = container.querySelector("aside");

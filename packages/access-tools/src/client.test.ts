@@ -107,9 +107,7 @@ test("listGrants passes filters through and reads the stock page envelope", asyn
 });
 
 test("listGrants follows nextCursor so a full page plus one all return", async () => {
-  const all = Array.from({ length: 51 }, (_, i) =>
-    nativeGrant(`grant_${i + 1}`),
-  );
+  const all = Array.from({ length: 51 }, (_, i) => nativeGrant(`grant_${i + 1}`));
   const seen: string[] = [];
   const fetchImpl = (async (url: string | URL | Request) => {
     const raw = String(url);
@@ -130,15 +128,10 @@ test("listGrants follows nextCursor so a full page plus one all return", async (
 
 test("grantAccess reads the caller's own grants first, then posts one stock single-action body per action", async () => {
   const posted: unknown[] = [];
-  const fetchImpl = (async (
-    url: string | URL | Request,
-    init?: RequestInit,
-  ) => {
+  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
     if (init?.method !== "POST") {
       expect(String(url)).toContain("principalId=prin_caller");
-      return ceilingPage([
-        nativeGrant("own_1", { principalId: "prin_caller", action: "*" }),
-      ]);
+      return ceilingPage([nativeGrant("own_1", { principalId: "prin_caller", action: "*" })]);
     }
     expect(String(url)).toBe(`${TENANT_BASE}/grants`);
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
@@ -178,14 +171,9 @@ test("grantAccess reads the caller's own grants first, then posts one stock sing
 
 test("grantAccess refuses a pair outside the caller's own authority, before any write", async () => {
   const methods: (string | undefined)[] = [];
-  const fetchImpl = (async (
-    _url: string | URL | Request,
-    init?: RequestInit,
-  ) => {
+  const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
     methods.push(init?.method);
-    return ceilingPage([
-      nativeGrant("own_1", { principalId: "prin_caller", action: "read" }),
-    ]);
+    return ceilingPage([nativeGrant("own_1", { principalId: "prin_caller", action: "read" })]);
   }) as unknown as typeof fetch;
 
   await expect(
@@ -225,23 +213,18 @@ test("a 404 looking up the grant to revoke surfaces as AccessNotFoundError", asy
       { status: 404 },
     )) as unknown as typeof fetch;
 
-  await expect(
-    revokeAccess(testConfig(fetchImpl), "grant_missing"),
-  ).rejects.toThrow(AccessNotFoundError);
+  await expect(revokeAccess(testConfig(fetchImpl), "grant_missing")).rejects.toThrow(
+    AccessNotFoundError,
+  );
 });
 
 test("revokeAccess checks the ceiling against the grant it read back, then deletes", async () => {
   const calls: string[] = [];
-  const fetchImpl = (async (
-    url: string | URL | Request,
-    init?: RequestInit,
-  ) => {
+  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
     calls.push(`${init?.method ?? "GET"} ${String(url)}`);
     if (init?.method === "DELETE") return new Response(null, { status: 204 });
     if (String(url).includes("principalId=prin_caller")) {
-      return ceilingPage([
-        nativeGrant("own_1", { principalId: "prin_caller", action: "*" }),
-      ]);
+      return ceilingPage([nativeGrant("own_1", { principalId: "prin_caller", action: "*" })]);
     }
     return Response.json(nativeGrant("grant_1"));
   }) as unknown as typeof fetch;
@@ -253,10 +236,7 @@ test("revokeAccess checks the ceiling against the grant it read back, then delet
 
 test("revokeAccess refuses a grant outside the caller's own authority", async () => {
   const methods: (string | undefined)[] = [];
-  const fetchImpl = (async (
-    url: string | URL | Request,
-    init?: RequestInit,
-  ) => {
+  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
     methods.push(init?.method);
     if (String(url).includes("principalId=prin_caller")) {
       return ceilingPage([]);

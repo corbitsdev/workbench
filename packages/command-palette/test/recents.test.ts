@@ -38,10 +38,7 @@ describe("addRecentEntry", () => {
 
 describe("removeRecentEntry", () => {
   test("drops the entry matching kind+id", () => {
-    const result = removeRecentEntry(
-      [entry("a"), entry("b"), entry("c")],
-      entry("b"),
-    );
+    const result = removeRecentEntry([entry("a"), entry("b"), entry("c")], entry("b"));
     expect(result).toEqual([entry("a"), entry("c")]);
   });
 
@@ -145,10 +142,7 @@ describe("createRecentsStore", () => {
 
   test("stored entries missing required fields are dropped", () => {
     const storage = inMemoryStorage();
-    storage.setItem(
-      "bench:1",
-      JSON.stringify([entry("a"), { id: "bad" }, entry("b")]),
-    );
+    storage.setItem("bench:1", JSON.stringify([entry("a"), { id: "bad" }, entry("b")]));
     const store = createRecentsStore(storage, "bench:1");
     expect(store.load()).toEqual([entry("a"), entry("b")]);
   });

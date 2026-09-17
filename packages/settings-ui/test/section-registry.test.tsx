@@ -11,10 +11,7 @@
 import { describe, expect, test } from "bun:test";
 import { Robot } from "@corbits/icons";
 
-import {
-  insertEveryoneSections,
-  resolveSettingsSectionGroups,
-} from "../src/section-registry";
+import { insertEveryoneSections, resolveSettingsSectionGroups } from "../src/section-registry";
 import type { TenancyAccess } from "../src/access";
 import type { SettingsSection } from "../src/shell";
 
@@ -69,9 +66,7 @@ describe("resolveSettingsSectionGroups", () => {
       { id: "account", sections: ["account"] },
       { id: "everyone", sections: ["grants", "audit"] },
     ]);
-    expect(
-      groups.find((group) => group.id === "everyone")?.accessProbeFailed,
-    ).toBe(undefined);
+    expect(groups.find((group) => group.id === "everyone")?.accessProbeFailed).toBe(undefined);
   });
 
   test("a probe error withholds gated sections but is not an authenticated deny", () => {
@@ -86,16 +81,11 @@ describe("resolveSettingsSectionGroups", () => {
       { id: "account", sections: ["account"] },
       { id: "everyone", sections: ["audit"] },
     ]);
+    expect(groups.find((group) => group.id === "account")?.accessProbeFailed).toBe(undefined);
+    expect(groups.find((group) => group.id === "everyone")?.accessProbeFailed).toBe(true);
     expect(
-      groups.find((group) => group.id === "account")?.accessProbeFailed,
-    ).toBe(undefined);
-    expect(
-      groups.find((group) => group.id === "everyone")?.accessProbeFailed,
-    ).toBe(true);
-    expect(
-      resolveSettingsSectionGroups(denied).find(
-        (group) => group.id === "everyone",
-      )?.accessProbeFailed,
+      resolveSettingsSectionGroups(denied).find((group) => group.id === "everyone")
+        ?.accessProbeFailed,
     ).toBe(undefined);
   });
 
@@ -114,42 +104,35 @@ describe("resolveSettingsSectionGroups", () => {
         sections: ["connections", "roles", "grants", "audit"],
       },
     ]);
-    expect(
-      groups.find((group) => group.id === "everyone")?.accessProbeFailed,
-    ).toBe(true);
+    expect(groups.find((group) => group.id === "everyone")?.accessProbeFailed).toBe(true);
   });
 
   test("Roles, Grants, and Audit are tucked under Advanced; Connections and People are not", () => {
     const sections = resolveSettingsSectionGroups(allowed).find(
       (group) => group.id === "everyone",
     )?.sections;
-    expect(
-      sections?.filter((section) => section.advanced === true).map((s) => s.id),
-    ).toEqual(["roles", "grants", "audit"]);
-    expect(
-      sections?.filter((section) => section.advanced !== true).map((s) => s.id),
-    ).toEqual(["connections", "people"]);
+    expect(sections?.filter((section) => section.advanced === true).map((s) => s.id)).toEqual([
+      "roles",
+      "grants",
+      "audit",
+    ]);
+    expect(sections?.filter((section) => section.advanced !== true).map((s) => s.id)).toEqual([
+      "connections",
+      "people",
+    ]);
   });
 
   test("never registers the personal agent section — no preference store exists to back it yet", () => {
     for (const access of [denied, allowed]) {
-      const account = resolveSettingsSectionGroups(access).find(
-        (group) => group.id === "account",
-      );
-      expect(account?.sections.map((section) => section.id)).not.toContain(
-        "agent",
-      );
+      const account = resolveSettingsSectionGroups(access).find((group) => group.id === "account");
+      expect(account?.sections.map((section) => section.id)).not.toContain("agent");
     }
   });
 
   test("never registers the notifications section — no preference store exists to back it yet", () => {
     for (const access of [denied, allowed]) {
-      const account = resolveSettingsSectionGroups(access).find(
-        (group) => group.id === "account",
-      );
-      expect(account?.sections.map((section) => section.id)).not.toContain(
-        "chat",
-      );
+      const account = resolveSettingsSectionGroups(access).find((group) => group.id === "account");
+      expect(account?.sections.map((section) => section.id)).not.toContain("chat");
     }
   });
 
@@ -169,10 +152,7 @@ describe("insertEveryoneSections", () => {
   ];
 
   test("splices host sections into Everyone, at its front", () => {
-    const groups = insertEveryoneSections(
-      resolveSettingsSectionGroups(denied),
-      extra,
-    );
+    const groups = insertEveryoneSections(resolveSettingsSectionGroups(denied), extra);
     expect(ids(groups)).toEqual([
       { id: "account", sections: ["account"] },
       { id: "everyone", sections: ["agents", "skills", "audit"] },
@@ -180,10 +160,7 @@ describe("insertEveryoneSections", () => {
   });
 
   test("leaves Account untouched", () => {
-    const groups = insertEveryoneSections(
-      resolveSettingsSectionGroups(allowed),
-      extra,
-    );
+    const groups = insertEveryoneSections(resolveSettingsSectionGroups(allowed), extra);
     const account = groups.find((group) => group.id === "account");
     expect(account?.sections.map((section) => section.id)).toEqual(["account"]);
   });

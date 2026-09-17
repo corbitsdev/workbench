@@ -56,10 +56,7 @@ const last30DaysResearchDefinition = {
 
 describe("purposeAgentDefinitions", () => {
   test("drops the chat anchor machinery's workbench-host definitions", () => {
-    const result = purposeAgentDefinitions([
-      researcher,
-      workbenchHostDefinition,
-    ]);
+    const result = purposeAgentDefinitions([researcher, workbenchHostDefinition]);
     expect(result).toEqual([researcher]);
   });
 
@@ -108,10 +105,7 @@ describe("purposeAgentInstances", () => {
   });
 
   test("does not exclude an ordinary deployment merely because a different id is in the set", () => {
-    const result = purposeAgentInstances(
-      [instance],
-      new Set([invitedAgentInstance.id]),
-    );
+    const result = purposeAgentInstances([instance], new Set([invitedAgentInstance.id]));
     expect(result).toEqual([instance]);
   });
 });
@@ -187,27 +181,25 @@ describe("deriveDisplayName", () => {
   });
 
   test("backfills a humanized name when description is null", () => {
-    expect(
-      deriveDisplayName({ name: "research-analyst", description: null }),
-    ).toBe("Research Analyst");
-  });
-
-  test("backfills a humanized name when description is missing entirely", () => {
-    expect(deriveDisplayName({ name: "research-analyst" })).toBe(
+    expect(deriveDisplayName({ name: "research-analyst", description: null })).toBe(
       "Research Analyst",
     );
   });
 
+  test("backfills a humanized name when description is missing entirely", () => {
+    expect(deriveDisplayName({ name: "research-analyst" })).toBe("Research Analyst");
+  });
+
   test("backfills when description is an empty string", () => {
-    expect(
-      deriveDisplayName({ name: "research-analyst", description: "" }),
-    ).toBe("Research Analyst");
+    expect(deriveDisplayName({ name: "research-analyst", description: "" })).toBe(
+      "Research Analyst",
+    );
   });
 
   test("backfills when description is whitespace-only, never rendering a blank name", () => {
-    expect(
-      deriveDisplayName({ name: "research-analyst", description: "   " }),
-    ).toBe("Research Analyst");
+    expect(deriveDisplayName({ name: "research-analyst", description: "   " })).toBe(
+      "Research Analyst",
+    );
   });
 
   test("trims incidental whitespace around a real description", () => {

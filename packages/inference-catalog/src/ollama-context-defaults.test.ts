@@ -3,10 +3,7 @@ import { createOllamaAdapter } from "@corbits/ollama-adapter";
 import type { LastCycleSource } from "@intx/types/runtime";
 import type { ConversationTurn, InferenceOptions } from "@intx/types/runtime";
 
-import {
-  OLLAMA_MODEL_DEFAULTS,
-  quirksForDeployment,
-} from "./ollama-context-defaults";
+import { OLLAMA_MODEL_DEFAULTS, quirksForDeployment } from "./ollama-context-defaults";
 
 describe("quirksForDeployment", () => {
   test("a curated Ollama model resolves its advertised native context window", () => {
@@ -31,9 +28,7 @@ describe("quirksForDeployment", () => {
     });
     expect(bigModel?.default?.numCtx).toBe(131_072);
     expect(smallerModel?.default?.numCtx).toBe(32_768);
-    expect(smallerModel?.default?.numCtx).toBeLessThan(
-      bigModel?.default?.numCtx ?? 0,
-    );
+    expect(smallerModel?.default?.numCtx).toBeLessThan(bigModel?.default?.numCtx ?? 0);
   });
 
   test("a caller-supplied override wins over the built-in table", () => {

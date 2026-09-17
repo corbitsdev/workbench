@@ -44,16 +44,11 @@ export type RefreshedTokens = {
   readonly expiresAt: Date | null;
 };
 
-export type RefreshGrant = (
-  credential: CredentialTokenRow,
-) => Promise<RefreshedTokens>;
+export type RefreshGrant = (credential: CredentialTokenRow) => Promise<RefreshedTokens>;
 
 export type CredentialTokenSessionDeps = {
   loadProfile: (credentialId: string) => Promise<CredentialTokenRow | null>;
-  updateTokens: (
-    credentialId: string,
-    tokens: RefreshedTokens,
-  ) => Promise<void>;
+  updateTokens: (credentialId: string, tokens: RefreshedTokens) => Promise<void>;
   refresh: RefreshGrant;
   /** Epoch-ms clock; defaults to `Date.now`. Injectable for tests. */
   now?: () => number;
@@ -76,9 +71,9 @@ export type TokenResolution =
 
 const DEFAULT_SKEW_LEAD_MS = 60 * 1000;
 
-export function createCredentialTokenSession(
-  deps: CredentialTokenSessionDeps,
-): { getValidToken(credentialId: string): Promise<TokenResolution> } {
+export function createCredentialTokenSession(deps: CredentialTokenSessionDeps): {
+  getValidToken(credentialId: string): Promise<TokenResolution>;
+} {
   const now = deps.now ?? Date.now;
   const skewLeadMs = deps.skewLeadMs ?? DEFAULT_SKEW_LEAD_MS;
 
@@ -86,10 +81,7 @@ export function createCredentialTokenSession(
   // the credential id, so concurrent calls for one credential coalesce
   // into exactly one grant while different credentials refresh in
   // parallel.
-  const sessions = new Map<
-    string,
-    ReturnType<typeof createTokenSession<BaseTokens, string>>
-  >();
+  const sessions = new Map<string, ReturnType<typeof createTokenSession<BaseTokens, string>>>();
 
   function sessionFor(credentialId: string) {
     const existing = sessions.get(credentialId);
@@ -113,16 +105,13 @@ export function createCredentialTokenSession(
         // it; don't rewrite the column when nothing changed.
         const prior = await deps.loadProfile(id);
         const changedRefresh =
-          prior === null ||
-          tokens.refresh === undefined ||
-          tokens.refresh !== prior.refreshSecret;
+          prior === null || tokens.refresh === undefined || tokens.refresh !== prior.refreshSecret;
         await deps.updateTokens(id, {
           secret: tokens.access,
           ...(tokens.refresh !== undefined && changedRefresh
             ? { refreshSecret: tokens.refresh }
             : {}),
-          expiresAt:
-            tokens.expiresAt === undefined ? null : new Date(tokens.expiresAt),
+          expiresAt: tokens.expiresAt === undefined ? null : new Date(tokens.expiresAt),
         });
       },
       refreshTokens: async (refreshToken) => {
@@ -138,9 +127,7 @@ export function createCredentialTokenSession(
         return {
           access: refreshed.secret,
           refresh: refreshed.refreshSecret ?? refreshToken,
-          ...(refreshed.expiresAt === null
-            ? {}
-            : { expiresAt: refreshed.expiresAt.getTime() }),
+          ...(refreshed.expiresAt === null ? {} : { expiresAt: refreshed.expiresAt.getTime() }),
         };
       },
       toAccess: (tokens) => tokens.access,
@@ -163,9 +150,7 @@ export function createCredentialTokenSession(
         return { ok: true, secret: row.secret, refreshed: false };
       }
       if (row.refreshSecret === null) {
-        const expired =
-          row.expiresAt !== null &&
-          now() >= row.expiresAt.getTime() - skewLeadMs;
+        const expired = row.expiresAt !== null && now() >= row.expiresAt.getTime() - skewLeadMs;
         if (!expired) {
           return { ok: true, secret: row.secret, refreshed: false };
         }
@@ -176,10 +161,7 @@ export function createCredentialTokenSession(
         };
       }
       try {
-        const secret = await sessionFor(credentialId).getValidToken(
-          credentialId,
-          now(),
-        );
+        const secret = await sessionFor(credentialId).getValidToken(credentialId, now());
         return { ok: true, secret, refreshed: secret !== row.secret };
       } catch (cause) {
         reportError(cause, {
@@ -187,8 +169,7 @@ export function createCredentialTokenSession(
           extra: { credentialId },
         });
         const message =
-          cause instanceof OAuthRefreshFailedError ||
-          cause instanceof OAuthProfileNotFoundError
+          cause instanceof OAuthRefreshFailedError || cause instanceof OAuthProfileNotFoundError
             ? cause.cause instanceof Error
               ? cause.cause.message
               : cause.message

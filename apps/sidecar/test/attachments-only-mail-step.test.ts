@@ -9,10 +9,7 @@ import { expect, test } from "bun:test";
 import type { Agent, SendResult } from "@intx/agent";
 import type { AuthzCallResult } from "@intx/inference";
 import type { StepInvokeRequest } from "@intx/workflow";
-import {
-  createWorkflowStepInvoker,
-  type StepEnvBase,
-} from "@intx/workflow-host";
+import { createWorkflowStepInvoker, type StepEnvBase } from "@intx/workflow-host";
 import type { InboundMessage, Mail } from "@intx/types/runtime";
 
 const ALLOW: AuthzCallResult = {

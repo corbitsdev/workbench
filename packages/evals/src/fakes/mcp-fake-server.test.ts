@@ -1,9 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import {
-  callMcpTool,
-  listMcpTools,
-  withMcpConnection,
-} from "@corbits/mcp-tools";
+import { callMcpTool, listMcpTools, withMcpConnection } from "@corbits/mcp-tools";
 
 import githubFixture from "./recordings/github.json";
 import { parseMcpFakeRecording } from "./recording.ts";
@@ -20,22 +16,19 @@ afterEach(() => {
 
 test("tools/list surfaces exactly the fixture's tools", async () => {
   handle = startMcpFake(recording);
-  const tools = await withMcpConnection(
-    { url: handle.url, fetchImpl: fetch },
-    (client) => listMcpTools(client),
+  const tools = await withMcpConnection({ url: handle.url, fetchImpl: fetch }, (client) =>
+    listMcpTools(client),
   );
   expect(tools.map((tool) => tool.name)).toEqual(["list_pull_requests"]);
 });
 
 test("tools/call replays the recorded response and logs a receipt", async () => {
   handle = startMcpFake(recording);
-  const result = await withMcpConnection(
-    { url: handle.url, fetchImpl: fetch },
-    (client) =>
-      callMcpTool(client, {
-        name: "list_pull_requests",
-        arguments: { owner: "acme-corp", repo: "widget-service" },
-      }),
+  const result = await withMcpConnection({ url: handle.url, fetchImpl: fetch }, (client) =>
+    callMcpTool(client, {
+      name: "list_pull_requests",
+      arguments: { owner: "acme-corp", repo: "widget-service" },
+    }),
   );
   expect(result.isError).toBe(false);
   expect(JSON.stringify(result.content)).toContain("Fix flaky checkout test");
@@ -63,13 +56,11 @@ test("an unrecorded call fails loudly instead of silently defaulting", async () 
 
 test("argument key order does not affect matching", async () => {
   handle = startMcpFake(recording);
-  const result = await withMcpConnection(
-    { url: handle.url, fetchImpl: fetch },
-    (client) =>
-      callMcpTool(client, {
-        name: "list_pull_requests",
-        arguments: { repo: "widget-service", owner: "acme-corp" },
-      }),
+  const result = await withMcpConnection({ url: handle.url, fetchImpl: fetch }, (client) =>
+    callMcpTool(client, {
+      name: "list_pull_requests",
+      arguments: { repo: "widget-service", owner: "acme-corp" },
+    }),
   );
   expect(result.isError).toBe(false);
 });

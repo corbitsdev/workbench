@@ -34,9 +34,7 @@ async function readErrorBody(response: Response): Promise<string> {
   const envelope = type({
     error: { code: "string", userMessage: "string", refId: "string" },
   })(body);
-  return envelope instanceof type.errors
-    ? `HTTP ${response.status}`
-    : envelope.error.userMessage;
+  return envelope instanceof type.errors ? `HTTP ${response.status}` : envelope.error.userMessage;
 }
 
 /** Idempotently ensures the `package-registry` asset Myra's tarball is
@@ -46,31 +44,24 @@ export async function ensureMyraSourceAsset(
   tenantId: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
-  const created = await fetchImpl(
-    `/api/tenants/${encodeURIComponent(tenantId)}/assets`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        kind: MYRA_SOURCE_CONFIG.assetKind,
-        name: MYRA_SOURCE_CONFIG.assetName,
-        displayName: MYRA_SOURCE_CONFIG.displayName,
-      }),
-    },
-  );
+  const created = await fetchImpl(`/api/tenants/${encodeURIComponent(tenantId)}/assets`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: MYRA_SOURCE_CONFIG.assetKind,
+      name: MYRA_SOURCE_CONFIG.assetName,
+      displayName: MYRA_SOURCE_CONFIG.displayName,
+    }),
+  });
   if (created.status === 201) {
     const parsed = AssetCreatedShape(await created.json());
     if (parsed instanceof type.errors) {
-      throw new MyraDeployError(
-        `Myra's source came back an unexpected shape: ${parsed.summary}`,
-      );
+      throw new MyraDeployError(`Myra's source came back an unexpected shape: ${parsed.summary}`);
     }
     return parsed.id;
   }
   if (created.status !== 409) {
-    throw new MyraDeployError(
-      `preparing Myra's source failed: ${await readErrorBody(created)}`,
-    );
+    throw new MyraDeployError(`preparing Myra's source failed: ${await readErrorBody(created)}`);
   }
   const listed = await fetchImpl(
     `/api/tenants/${encodeURIComponent(tenantId)}/assets?kind=${MYRA_SOURCE_CONFIG.assetKind}&inherited=false`,
@@ -86,9 +77,7 @@ export async function ensureMyraSourceAsset(
       `this workbench's setup list came back an unexpected shape: ${parsed.summary}`,
     );
   }
-  const existing = parsed.find(
-    (asset) => asset.name === MYRA_SOURCE_CONFIG.assetName,
-  );
+  const existing = parsed.find((asset) => asset.name === MYRA_SOURCE_CONFIG.assetName);
   if (existing === undefined) {
     throw new MyraDeployError(
       "Myra's source reported a name conflict but is not listed on this workbench",
@@ -141,8 +130,7 @@ function tarEntry(path: string, content: Uint8Array): Uint8Array {
   for (const byte of header) checksum += byte;
   writeField(148, padOctal(checksum, 8).slice(0, 7) + "\0 ");
 
-  const paddedLength =
-    Math.ceil(content.length / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
+  const paddedLength = Math.ceil(content.length / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
   const body = new Uint8Array(paddedLength);
   body.set(content);
 
@@ -155,17 +143,14 @@ function tarEntry(path: string, content: Uint8Array): Uint8Array {
 /** Packs a `{ path: contents }` tree (as `renderWorkflowSourceTree`
  * returns) into an npm-shaped tar archive rooted at `package/`, then
  * gzips it. */
-export async function packTarball(
-  tree: Readonly<Record<string, string>>,
-): Promise<Uint8Array> {
+export async function packTarball(tree: Readonly<Record<string, string>>): Promise<Uint8Array> {
   const encoder = new TextEncoder();
   const entries: Uint8Array[] = [];
   for (const [path, contents] of Object.entries(tree)) {
     entries.push(tarEntry(`package/${path}`, encoder.encode(contents)));
   }
   const endOfArchive = new Uint8Array(TAR_BLOCK_SIZE * 2);
-  const totalLength =
-    entries.reduce((sum, entry) => sum + entry.length, 0) + endOfArchive.length;
+  const totalLength = entries.reduce((sum, entry) => sum + entry.length, 0) + endOfArchive.length;
   const tar = new Uint8Array(totalLength);
   let offset = 0;
   for (const entry of entries) {
@@ -174,17 +159,12 @@ export async function packTarball(
   }
   tar.set(endOfArchive, offset);
 
-  const gzipStream = new Blob([tar])
-    .stream()
-    .pipeThrough(new CompressionStream("gzip"));
+  const gzipStream = new Blob([tar]).stream().pipeThrough(new CompressionStream("gzip"));
   return new Uint8Array(await new Response(gzipStream).arrayBuffer());
 }
 
 function tarballFilename(): string {
-  const safeName = MYRA_SOURCE_CONFIG.packageName.replace(
-    /[^A-Za-z0-9_.@+-]/g,
-    "-",
-  );
+  const safeName = MYRA_SOURCE_CONFIG.packageName.replace(/[^A-Za-z0-9_.@+-]/g, "-");
   return `${safeName}-${MYRA_SOURCE_CONFIG.packageVersion}.tgz`;
 }
 
@@ -252,9 +232,7 @@ export async function publishMyraTarball(
 ): Promise<void> {
   const tree = renderWorkflowSourceTree({
     packageName: MYRA_SOURCE_CONFIG.packageName,
-    workflowJson: JSON.stringify(
-      buildMyraDefinitionJson(`assistant@${tenantDomain}`),
-    ),
+    workflowJson: JSON.stringify(buildMyraDefinitionJson(`assistant@${tenantDomain}`)),
   });
   const tarball = await packTarball(tree);
   const filename = tarballFilename();
@@ -267,9 +245,7 @@ export async function publishMyraTarball(
     },
   );
   if (!response.ok) {
-    throw new MyraDeployError(
-      `publishing Myra's tarball failed: ${await readErrorBody(response)}`,
-    );
+    throw new MyraDeployError(`publishing Myra's tarball failed: ${await readErrorBody(response)}`);
   }
   const parsed = TarballPutShape(await response.json());
   if (parsed instanceof type.errors) {
@@ -290,9 +266,7 @@ export function buildMyraDeployInput(args: {
   defaultSourceOfferingId: string;
 }): WorkflowDeployInput {
   if (args.sourceOfferingIds.length === 0) {
-    throw new MyraDeployError(
-      "at least one source offering id is required to start Myra",
-    );
+    throw new MyraDeployError("at least one source offering id is required to start Myra");
   }
   if (!args.sourceOfferingIds.includes(args.defaultSourceOfferingId)) {
     throw new MyraDeployError(
@@ -324,12 +298,7 @@ export async function deployMyraSource(
   fetchImpl: typeof fetch = fetch,
 ): Promise<WorkflowDeployInput> {
   const assetId = await ensureMyraSourceAsset(args.tenantId, fetchImpl);
-  await publishMyraTarball(
-    args.tenantId,
-    assetId,
-    args.tenantDomain,
-    fetchImpl,
-  );
+  await publishMyraTarball(args.tenantId, assetId, args.tenantDomain, fetchImpl);
   return buildMyraDeployInput({
     assetId,
     sourceOfferingIds: args.sourceOfferingIds,

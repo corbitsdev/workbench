@@ -52,9 +52,7 @@ export type CatalogProviderSeed = {
   readonly models: readonly CatalogModelSpec[];
 };
 
-export const CATALOG_SEEDS: Readonly<
-  Record<SupportedCredentialProvider, CatalogProviderSeed>
-> = {
+export const CATALOG_SEEDS: Readonly<Record<SupportedCredentialProvider, CatalogProviderSeed>> = {
   anthropic: {
     provider: {
       name: "anthropic",

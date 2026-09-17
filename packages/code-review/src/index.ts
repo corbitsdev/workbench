@@ -1,14 +1,7 @@
-export {
-  codeReviewAgentRequests,
-  type CodeReviewAgentRequest,
-} from "./agent-requests";
+export { codeReviewAgentRequests, type CodeReviewAgentRequest } from "./agent-requests";
 export { aggregateReview, type ReviewerPass } from "./aggregate";
 export { isBotAuthor } from "./bot-guard";
-export {
-  fingerprintMarker,
-  fingerprintOf,
-  fingerprintsIn,
-} from "./fingerprint";
+export { fingerprintMarker, fingerprintOf, fingerprintsIn } from "./fingerprint";
 export { createGitHubReviewClient } from "./github";
 export { renderReviewPrompt } from "./prompt";
 export {
@@ -24,10 +17,7 @@ export {
   reviewerById,
   type ReviewerDefinition,
 } from "./reviewers";
-export {
-  reviewerIntroductions,
-  type ReviewerIntroduction,
-} from "./introductions";
+export { reviewerIntroductions, type ReviewerIntroduction } from "./introductions";
 export {
   runPullRequestReview,
   type CodeReviewGitHub,

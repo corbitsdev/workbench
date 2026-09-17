@@ -8,8 +8,6 @@
 // deliberately keeps around must keep excluding them.
 const PLANNER_CREATED_HANDLE_PREFIX = "myra-task-";
 
-export function isPlannerCreatedDefinitionName(
-  definitionName: string,
-): boolean {
+export function isPlannerCreatedDefinitionName(definitionName: string): boolean {
   return definitionName.startsWith(PLANNER_CREATED_HANDLE_PREFIX);
 }

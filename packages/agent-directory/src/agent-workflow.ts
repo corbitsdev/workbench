@@ -30,10 +30,7 @@ import {
 import { type } from "arktype";
 import semver from "semver";
 
-import {
-  writeAndDeployAgentDefinition,
-  type AgentDefinitionDeployer,
-} from "./definition-asset";
+import { writeAndDeployAgentDefinition, type AgentDefinitionDeployer } from "./definition-asset";
 import { createPinnedVersionResolver } from "./tool-package-version";
 
 export const AGENT_DEFINITION_STEP_ID = "agent";
@@ -46,7 +43,7 @@ export const AGENT_DEFINITION_STEP_ID = "agent";
  */
 export const SKILLS_TOOL_PACKAGE_PIN = {
   name: "@corbits/tools-skills",
-  version: "0.0.3",
+  version: "0.0.4",
 } as const;
 
 /**
@@ -90,9 +87,7 @@ function withSkillsToolPin(
   existing: AgentToolPackagePins,
   pinsSkills: boolean,
 ): AgentToolPackagePins {
-  const others = existing.filter(
-    (pin) => pin.name !== SKILLS_TOOL_PACKAGE_PIN.name,
-  );
+  const others = existing.filter((pin) => pin.name !== SKILLS_TOOL_PACKAGE_PIN.name);
   return pinsSkills ? [...others, { ...SKILLS_TOOL_PACKAGE_PIN }] : others;
 }
 
@@ -114,10 +109,7 @@ export function reindexPinnedSkills(
     );
   }
   for (const step of Object.values(definition.steps)) {
-    step.agent.systemPrompt = withAvailableSkills(
-      step.agent.systemPrompt,
-      entries,
-    );
+    step.agent.systemPrompt = withAvailableSkills(step.agent.systemPrompt, entries);
     step.agent.toolPackagePins = withSkillsToolPin(
       step.agent.toolPackagePins ?? [],
       entries.length > 0,
@@ -152,10 +144,7 @@ export function readPinnedSkillNames(workflowJson: string): readonly string[] {
   // Stanza lines render as `- name: description`, and skill names can
   // never contain a space or a colon, so the first colon on a `- ` line
   // always ends the name — even when the description itself holds colons.
-  const body = step.agent.systemPrompt.slice(
-    open + AVAILABLE_SKILLS_OPEN_TAG.length,
-    close,
-  );
+  const body = step.agent.systemPrompt.slice(open + AVAILABLE_SKILLS_OPEN_TAG.length, close);
   const names: string[] = [];
   for (const line of body.split("\n")) {
     const trimmed = line.trim();
@@ -192,10 +181,7 @@ export function readAgentSystemPrompt(workflowJson: string): string {
 /** Replaces a definition's system prompt in its serialized
  * `workflow.json`, leaving every other field — the trigger, timeouts,
  * inference sources, tool-package pins — untouched. */
-export function withAgentSystemPrompt(
-  workflowJson: string,
-  systemPrompt: string,
-): string {
+export function withAgentSystemPrompt(workflowJson: string, systemPrompt: string): string {
   const raw: unknown = JSON.parse(workflowJson);
   const definition = DefinitionWithAgentSteps(raw);
   if (definition instanceof type.errors) {
@@ -224,9 +210,7 @@ export type AgentDefinitionCapabilities = {
  * serialized `workflow.json` — the same fields `withAgentToolPackagePin`/
  * `withAgentModel` write, read back for the settings surface's
  * "Capabilities" list and for merging an additive pin. */
-export function readAgentCapabilities(
-  workflowJson: string,
-): AgentDefinitionCapabilities {
+export function readAgentCapabilities(workflowJson: string): AgentDefinitionCapabilities {
   const raw: unknown = JSON.parse(workflowJson);
   const definition = DefinitionWithAgentSteps(raw);
   if (definition instanceof type.errors) {
@@ -281,9 +265,7 @@ export function withAgentToolPackagePin(
 ): string {
   const parsedPin = NonWildcardToolPackagePin(pin);
   if (parsedPin instanceof type.errors) {
-    throw new Error(
-      `withAgentToolPackagePin: pin must be ${parsedPin.summary}`,
-    );
+    throw new Error(`withAgentToolPackagePin: pin must be ${parsedPin.summary}`);
   }
   const raw: unknown = JSON.parse(workflowJson);
   const definition = DefinitionWithAgentSteps(raw);
@@ -394,9 +376,7 @@ export function buildAgentDefinitionWorkflow(
     throw new Error("buildAgentDefinitionWorkflow requires a non-empty handle");
   }
   if (input.systemPrompt === "") {
-    throw new Error(
-      "buildAgentDefinitionWorkflow requires a non-empty systemPrompt",
-    );
+    throw new Error("buildAgentDefinitionWorkflow requires a non-empty systemPrompt");
   }
   const agent = defineAgent({
     id: AGENT_DEFINITION_STEP_ID,
@@ -410,10 +390,7 @@ export function buildAgentDefinitionWorkflow(
       // provider fresh against the tenant catalog (see
       // `resolveDefinitionSources`), so a placeholder here costs
       // nothing real.
-      sources:
-        input.model !== undefined
-          ? [{ provider: "catalog", model: input.model }]
-          : [],
+      sources: input.model !== undefined ? [{ provider: "catalog", model: input.model }] : [],
     },
   });
   const trigger = {
@@ -430,8 +407,7 @@ export function buildAgentDefinitionWorkflow(
       triggers: "unbounded",
     }),
   };
-  return input.credentialBindings !== undefined &&
-    input.credentialBindings.length > 0
+  return input.credentialBindings !== undefined && input.credentialBindings.length > 0
     ? defineWorkflow({
         id: `wf_agent_${input.handle}`,
         trigger,
@@ -455,9 +431,7 @@ const AGENT_DEFINITION_TURN_TIMEOUT_MS = 2 * 60 * 1000;
  * copy stays consistent with that convention rather than reaching
  * into another package's internals.
  */
-export function serializeAgentDefinitionWorkflow(
-  definition: WorkflowDefinition,
-): string {
+export function serializeAgentDefinitionWorkflow(definition: WorkflowDefinition): string {
   assertJsonPortable(definition, "definition");
   return JSON.stringify(definition);
 }
@@ -491,9 +465,7 @@ export type CreateAgentDefinitionCoreDeps = {
    * launch time. Omitted, or a tenant with no connected provider,
    * leaves the definition exactly as empty as before this dep existed.
    */
-  readonly tenantDefaultModel?: (
-    tenantId: string,
-  ) => Promise<string | undefined>;
+  readonly tenantDefaultModel?: (tenantId: string) => Promise<string | undefined>;
 };
 
 export type CreateAgentDefinitionCoreInput = {
@@ -561,12 +533,9 @@ export async function createAgentDefinitionCore(
     description: input.description ?? "",
     systemPrompt: input.systemPrompt,
   };
-  const model =
-    input.model ?? (await deps.tenantDefaultModel?.(input.tenantId));
+  const model = input.model ?? (await deps.tenantDefaultModel?.(input.tenantId));
   const definition = buildAgentDefinitionWorkflow(
-    model !== undefined
-      ? { ...baseDefinitionInput, model }
-      : baseDefinitionInput,
+    model !== undefined ? { ...baseDefinitionInput, model } : baseDefinitionInput,
   );
   // The definition's own system prompt is what the caller supplied; the
   // pinned-skills index and any directly-named tool-package pins are
@@ -574,11 +543,7 @@ export async function createAgentDefinitionCore(
   // describes exactly what the definition currently carries.
   let workflowJson = reindexPinnedSkills(
     serializeAgentDefinitionWorkflow(definition),
-    await deps.skillIndex.resolve(
-      input.tenantId,
-      input.principalId,
-      input.skills,
-    ),
+    await deps.skillIndex.resolve(input.tenantId, input.principalId, input.skills),
   );
   // One resolver shared across every named pin: it loads the tenant's
   // registry asset and tarball listing at most once, so a five-pin
@@ -604,10 +569,7 @@ export async function createAgentDefinitionCore(
     });
     assetId = created.id;
   } catch (cause) {
-    if (
-      cause instanceof AssetServiceError &&
-      cause.reason === "duplicate_asset"
-    ) {
+    if (cause instanceof AssetServiceError && cause.reason === "duplicate_asset") {
       // A previous attempt may have created the asset row but failed
       // before populateAsset wrote its source tree — an empty shell that
       // blocks retries with a misleading conflict. Recover: look up the
@@ -661,9 +623,7 @@ export async function createAgentDefinitionCore(
     orderBy: desc(workflowDefinition.createdAt),
   });
   if (row === undefined) {
-    throw new Error(
-      `agent definition for asset "${assetId}" was created but is not readable back`,
-    );
+    throw new Error(`agent definition for asset "${assetId}" was created but is not readable back`);
   }
   return { row };
 }
@@ -682,9 +642,7 @@ function assertJsonPortable(value: unknown, path: string): void {
     case "object":
       break;
     default:
-      throw new Error(
-        `${path} is a ${typeof value}, which does not survive JSON serialization`,
-      );
+      throw new Error(`${path} is a ${typeof value}, which does not survive JSON serialization`);
   }
   if (Array.isArray(value)) {
     value.forEach((element, index) => {
@@ -694,9 +652,7 @@ function assertJsonPortable(value: unknown, path: string): void {
   }
   const proto: unknown = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) {
-    throw new Error(
-      `${path} is a non-plain object; JSON would flatten it lossily`,
-    );
+    throw new Error(`${path} is a non-plain object; JSON would flatten it lossily`);
   }
   for (const [key, entry] of Object.entries(value)) {
     assertJsonPortable(entry, `${path}.${key}`);

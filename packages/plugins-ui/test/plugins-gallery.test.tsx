@@ -147,18 +147,13 @@ function GalleryHarness({
   );
 }
 
-async function renderGallery(
-  plugins: readonly ResolvedPlugin[] = PLUGINS,
-  initialQuery = "",
-) {
+async function renderGallery(plugins: readonly ResolvedPlugin[] = PLUGINS, initialQuery = "") {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root: Root = createRoot(container);
   mountedRoots.push(root);
   act(() => {
-    root.render(
-      <GalleryHarness plugins={plugins} initialQuery={initialQuery} />,
-    );
+    root.render(<GalleryHarness plugins={plugins} initialQuery={initialQuery} />);
   });
   await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
   return { container, root };
@@ -185,15 +180,11 @@ describe("PluginsGallery", () => {
     expect(container.querySelectorAll('[role="tablist"]')).toHaveLength(1);
     expect(container.querySelectorAll('[role="tab"]')).toHaveLength(2);
     expect(
-      container.querySelectorAll(
-        '[aria-label="Plugin catalog filters"] [role="tab"]',
-      ),
+      container.querySelectorAll('[aria-label="Plugin catalog filters"] [role="tab"]'),
     ).toHaveLength(0);
     expect(container.querySelector('[aria-label="Filter plugins"]')).toBeNull();
     expect(chip(container, "All").getAttribute("aria-pressed")).toBe("true");
-    expect(
-      chip(container, "Research & data").getAttribute("aria-pressed"),
-    ).toBe("false");
+    expect(chip(container, "Research & data").getAttribute("aria-pressed")).toBe("false");
   });
 
   test("chip counts describe the query-matched catalog", async () => {
@@ -215,14 +206,8 @@ describe("PluginsGallery", () => {
       chip(container, "Research & data").click();
     });
 
-    expect(catalogNames(container)).toEqual([
-      "Exa",
-      "Sumble",
-      "ScrapeCreators",
-    ]);
-    expect(
-      container.querySelectorAll('[aria-label="Plugin catalog"]'),
-    ).toHaveLength(1);
+    expect(catalogNames(container)).toEqual(["Exa", "Sumble", "ScrapeCreators"]);
+    expect(container.querySelectorAll('[aria-label="Plugin catalog"]')).toHaveLength(1);
   });
 
   test("search and a chip filter intersect instead of replacing each other", async () => {
@@ -240,21 +225,14 @@ describe("PluginsGallery", () => {
     const { container } = await renderGallery();
 
     act(() => chip(container, "Productivity").click());
-    expect(catalogNames(container)).toEqual([
-      "Granola",
-      "Notion",
-      "Canva",
-      "Manus",
-    ]);
+    expect(catalogNames(container)).toEqual(["Granola", "Notion", "Canva", "Manus"]);
 
     act(() => chip(container, "Sales & customer").click());
     expect(catalogNames(container)).toEqual(["Attio"]);
 
     act(() => chip(container, "Communication").click());
     expect(catalogNames(container)).toEqual([]);
-    expect(container.textContent).toContain(
-      "No plugins are available in this filter.",
-    );
+    expect(container.textContent).toContain("No plugins are available in this filter.");
   });
 
   test("search matches the original category labels", async () => {
@@ -282,12 +260,8 @@ describe("PluginsGallery", () => {
   test("connected and disconnected entries preserve Manage and Connect flows", async () => {
     const { container } = await renderGallery();
 
-    expect(
-      container.querySelector('[aria-label="Manage GitHub"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('[aria-label="Connect Manus"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('[aria-label="Manage GitHub"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Connect Manus"]')).not.toBeNull();
     const exa = container.querySelector('[data-plugin-slug="exa"]');
     expect(exa?.textContent).toContain("Connected");
     expect(exa?.textContent).toContain("Manage");
@@ -298,9 +272,7 @@ describe("PluginsGallery", () => {
       plugin("huggingface", "Hugging Face", "not_connected", "oauth-pkce"),
     ]);
 
-    const connect = container.querySelector(
-      '[aria-label="Connect Hugging Face"]',
-    );
+    const connect = container.querySelector('[aria-label="Connect Hugging Face"]');
     expect(connect?.tagName).toBe("A");
     expect(connect?.getAttribute("href")).toBe(
       "/api/tenants/tenant_test/connections/oauth/huggingface/start?return=%2Fplugins",
@@ -310,9 +282,7 @@ describe("PluginsGallery", () => {
 
   test("a token preset keeps its catalog row compact and collects credentials in a drawer", async () => {
     const { container } = await renderGallery();
-    const githubMcp = container.querySelector(
-      '[data-plugin-slug="github-mcp"]',
-    );
+    const githubMcp = container.querySelector('[data-plugin-slug="github-mcp"]');
     const connect = githubMcp?.querySelector(
       '[aria-label="Connect GitHub MCP"]',
     ) as HTMLButtonElement | null;
@@ -322,9 +292,7 @@ describe("PluginsGallery", () => {
     expect(githubMcp?.querySelector("input")).toBeNull();
     const dialog = document.body.querySelector('[role="dialog"]');
     expect(dialog?.textContent).toContain("GitHub MCP");
-    expect(
-      dialog?.querySelector("#mcp-preset-token-github-mcp"),
-    ).not.toBeNull();
+    expect(dialog?.querySelector("#mcp-preset-token-github-mcp")).not.toBeNull();
   });
 
   test("dismissing a token drawer discards its pasted token before reopening", async () => {
@@ -335,13 +303,8 @@ describe("PluginsGallery", () => {
 
     connect.focus();
     act(() => connect.click());
-    const field = document.body.querySelector(
-      "#mcp-preset-token-github-mcp",
-    ) as HTMLInputElement;
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value",
-    )?.set;
+    const field = document.body.querySelector("#mcp-preset-token-github-mcp") as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
     await act(async () => {
       setter?.call(field, "ghp_unsubmitted");
       field.dispatchEvent(new Event("input", { bubbles: true }));
@@ -359,11 +322,7 @@ describe("PluginsGallery", () => {
 
     act(() => connect.click());
     expect(
-      (
-        document.body.querySelector(
-          "#mcp-preset-token-github-mcp",
-        ) as HTMLInputElement
-      ).value,
+      (document.body.querySelector("#mcp-preset-token-github-mcp") as HTMLInputElement).value,
     ).toBe("");
   });
 
@@ -398,9 +357,7 @@ describe("PluginsGallery", () => {
   test("every preset returned by the route reaches a fresh catalog", async () => {
     const { container } = await renderGallery([]);
 
-    expect(container.querySelectorAll("[data-plugin-slug]")).toHaveLength(
-      MCP_PRESETS.length,
-    );
+    expect(container.querySelectorAll("[data-plugin-slug]")).toHaveLength(MCP_PRESETS.length);
     for (const preset of MCP_PRESETS) {
       expect(container.textContent).toContain(preset.displayName);
     }

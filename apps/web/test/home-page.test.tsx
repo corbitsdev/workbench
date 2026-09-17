@@ -37,12 +37,9 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 
-function stubFetch(
-  respond: (path: string, method: string, init?: RequestInit) => Response,
-) {
+function stubFetch(respond: (path: string, method: string, init?: RequestInit) => Response) {
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const path =
-      typeof input === "string" ? input : new URL(String(input)).pathname;
+    const path = typeof input === "string" ? input : new URL(String(input)).pathname;
     return Promise.resolve(respond(path, init?.method ?? "GET", init));
   }) as typeof fetch;
 }
@@ -130,9 +127,7 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
         });
       }
       if (path.endsWith("/chat/workbenches") && method === "POST") {
-        throw new Error(
-          `unexpected POST ${path} — HomeRoute must not mint a Myra workbench`,
-        );
+        throw new Error(`unexpected POST ${path} — HomeRoute must not mint a Myra workbench`);
       }
       throw new Error(`unexpected fetch: ${method} ${path}`);
     });
@@ -215,9 +210,7 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
     expect(navigated).toEqual(["/w/chan_myra_dm"]);
     // The land above is the no-error state: no `/api/onboarding/*`
     // request fired, and no error copy rendered on the way there.
-    expect(
-      requestedPaths.filter((path) => path.includes("/api/onboarding")),
-    ).toEqual([]);
+    expect(requestedPaths.filter((path) => path.includes("/api/onboarding"))).toEqual([]);
     expect(container?.textContent).not.toContain("Couldn't open the workbench");
   });
 });
@@ -278,10 +271,7 @@ describe("the wait right after connecting a provider", () => {
         <TestQueryProvider>
           <NavigationProvider navigate={(to) => props.navigated.push(to)}>
             <BenchProvider>
-              <HomeRoute
-                retryMs={props.retryMs}
-                stallAfterMs={props.stallAfterMs}
-              />
+              <HomeRoute retryMs={props.retryMs} stallAfterMs={props.stallAfterMs} />
             </BenchProvider>
           </NavigationProvider>
         </TestQueryProvider>,
@@ -296,8 +286,7 @@ describe("the wait right after connecting a provider", () => {
     let failDefinitions = true;
     stubFetch((path, method) => {
       if (path === "/api/me/principals") return json(PRINCIPALS_RESPONSE);
-      if (path.endsWith("/chat/workbenches") && method === "GET")
-        return json({ items: [] });
+      if (path.endsWith("/chat/workbenches") && method === "GET") return json({ items: [] });
       if (path.includes("/workflows/definitions")) {
         return failDefinitions
           ? json({ error: "boom" }, 500)
@@ -418,9 +407,7 @@ describe("the wait right after connecting a provider", () => {
       await settle();
       if ((container?.textContent ?? "").includes("longer than usual")) break;
     }
-    expect(container?.textContent ?? "").toContain(
-      "Myra is taking longer than usual",
-    );
+    expect(container?.textContent ?? "").toContain("Myra is taking longer than usual");
 
     for (let i = 0; i < 60; i++) {
       await settle();
@@ -460,9 +447,7 @@ describe('a failed memberships fetch never reads as "pick from the switcher"', (
     await settle();
 
     expect(container.textContent).not.toContain("No workbench selected");
-    expect(container.textContent).not.toContain(
-      "Pick a workbench from the switcher",
-    );
+    expect(container.textContent).not.toContain("Pick a workbench from the switcher");
     expect(container.textContent).toContain("Couldn't load your workbenches");
 
     const retryButton = Array.from(container.querySelectorAll("button")).find(
@@ -487,10 +472,7 @@ describe("the other two entries land on the same `/` hop", () => {
     // through `/login?next=...` returns to that path instead, so the
     // literal `navigate("/")` call this test used to pin no longer
     // applies unconditionally.
-    const source = readFileSync(
-      new URL("../src/main.tsx", import.meta.url),
-      "utf8",
-    );
+    const source = readFileSync(new URL("../src/main.tsx", import.meta.url), "utf8");
     expect(source).toMatch(
       /handleSignedIn[\s\S]*?navigate\(validatedNextPath\(window\.location\.search\)\)/,
     );

@@ -73,15 +73,10 @@ export type CreateWebhookTriggerRoutesDeps = {
    * When provided, `POST /` rejects with 404 if the workflow definition
    * is not in the request tenant. Tests may omit (always-allow).
    */
-  workflowDefinitionInTenant?: (
-    tenantId: string,
-    definitionId: string,
-  ) => Promise<boolean>;
+  workflowDefinitionInTenant?: (tenantId: string, definitionId: string) => Promise<boolean>;
 };
 
-export function createWebhookTriggerRoutes(
-  deps: CreateWebhookTriggerRoutesDeps,
-): Hono<TenantEnv> {
+export function createWebhookTriggerRoutes(deps: CreateWebhookTriggerRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
 
   app.post("/", deps.requireGrant("webhook-trigger:*", "create"), async (c) => {
@@ -100,10 +95,7 @@ export function createWebhookTriggerRoutes(
     const principal = c.get("principal");
 
     if (deps.workflowDefinitionInTenant !== undefined) {
-      const owned = await deps.workflowDefinitionInTenant(
-        tenant.id,
-        body.workflowDefinitionId,
-      );
+      const owned = await deps.workflowDefinitionInTenant(tenant.id, body.workflowDefinitionId);
       if (!owned) {
         return c.json(
           makeErrorEnvelope({
@@ -133,8 +125,7 @@ export function createWebhookTriggerRoutes(
         return c.json(
           makeErrorEnvelope({
             code: "conflict",
-            userMessage:
-              "a trigger with this name already exists for this workflow definition",
+            userMessage: "a trigger with this name already exists for this workflow definition",
           }),
           409,
         );
@@ -151,24 +142,20 @@ export function createWebhookTriggerRoutes(
     return c.json({ items: rows.map(publicView) });
   });
 
-  app.get(
-    "/:id",
-    deps.requireGrant(idResource("webhook-trigger", "id"), "read"),
-    async (c) => {
-      const tenant = c.get("tenant");
-      const row = await deps.store.get(tenant.id, c.req.param("id"));
-      if (row === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_found",
-            userMessage: "trigger not found",
-          }),
-          404,
-        );
-      }
-      return c.json(publicView(row));
-    },
-  );
+  app.get("/:id", deps.requireGrant(idResource("webhook-trigger", "id"), "read"), async (c) => {
+    const tenant = c.get("tenant");
+    const row = await deps.store.get(tenant.id, c.req.param("id"));
+    if (row === undefined) {
+      return c.json(
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: "trigger not found",
+        }),
+        404,
+      );
+    }
+    return c.json(publicView(row));
+  });
 
   app.post(
     "/:id/rotate-secret",
@@ -176,11 +163,7 @@ export function createWebhookTriggerRoutes(
     async (c) => {
       const tenant = c.get("tenant");
       const secret = generateWebhookSecret();
-      const row = await deps.store.rotateSecret(
-        tenant.id,
-        c.req.param("id"),
-        secret,
-      );
+      const row = await deps.store.rotateSecret(tenant.id, c.req.param("id"), secret);
       if (row === undefined) {
         return c.json(
           makeErrorEnvelope({
@@ -209,11 +192,7 @@ export function createWebhookTriggerRoutes(
         );
       }
       const tenant = c.get("tenant");
-      const row = await deps.store.setEnabled(
-        tenant.id,
-        c.req.param("id"),
-        body.enabled,
-      );
+      const row = await deps.store.setEnabled(tenant.id, c.req.param("id"), body.enabled);
       if (row === undefined) {
         return c.json(
           makeErrorEnvelope({

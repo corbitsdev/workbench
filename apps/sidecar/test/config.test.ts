@@ -52,9 +52,7 @@ test("an unset SIDECAR_ADAPTER_MANIFEST defaults to the shipped Ollama adapter, 
 
 test("the shipped default manifest registers the loopback-OAuth Responses adapters (CL-7510)", () => {
   const config = readSidecarConfig(VALID_ENV);
-  const byProvider = new Map(
-    config.adapterManifest.map((entry) => [entry.provider, entry]),
-  );
+  const byProvider = new Map(config.adapterManifest.map((entry) => [entry.provider, entry]));
   expect(byProvider.get("codex")).toEqual({
     provider: "codex",
     specifier: "@corbits/codex-provider",
@@ -98,9 +96,9 @@ test("carries a valid adapter manifest through as its parsed form", () => {
 });
 
 test("a malformed adapter manifest fails boot naming the variable", () => {
-  expect(() =>
-    readSidecarConfig({ ...VALID_ENV, SIDECAR_ADAPTER_MANIFEST: "{not json" }),
-  ).toThrow(/SIDECAR_ADAPTER_MANIFEST/);
+  expect(() => readSidecarConfig({ ...VALID_ENV, SIDECAR_ADAPTER_MANIFEST: "{not json" })).toThrow(
+    /SIDECAR_ADAPTER_MANIFEST/,
+  );
 });
 
 test("an adapter manifest entry missing a required field fails boot", () => {
@@ -123,21 +121,19 @@ test("carries operator overrides for consumedRetentionMs/readyTimeoutMs through 
 });
 
 test("a non-numeric CONSUMED_RETENTION_MS fails boot naming the variable", () => {
-  expect(() =>
-    readSidecarConfig({ ...VALID_ENV, CONSUMED_RETENTION_MS: "not-a-number" }),
-  ).toThrow(/CONSUMED_RETENTION_MS/);
+  expect(() => readSidecarConfig({ ...VALID_ENV, CONSUMED_RETENTION_MS: "not-a-number" })).toThrow(
+    /CONSUMED_RETENTION_MS/,
+  );
 });
 
 test("a non-positive CHILD_READY_TIMEOUT_MS fails boot naming the variable", () => {
-  expect(() =>
-    readSidecarConfig({ ...VALID_ENV, CHILD_READY_TIMEOUT_MS: "0" }),
-  ).toThrow(/CHILD_READY_TIMEOUT_MS/);
+  expect(() => readSidecarConfig({ ...VALID_ENV, CHILD_READY_TIMEOUT_MS: "0" })).toThrow(
+    /CHILD_READY_TIMEOUT_MS/,
+  );
 });
 
 test("carries a valid tool-registry pin through as the raw JSON", () => {
-  const pin = JSON.stringify([
-    { name: "internal", url: "https://npm.example.com" },
-  ]);
+  const pin = JSON.stringify([{ name: "internal", url: "https://npm.example.com" }]);
   const config = readSidecarConfig({
     ...VALID_ENV,
     SIDECAR_TOOL_REGISTRIES: pin,
@@ -146,15 +142,15 @@ test("carries a valid tool-registry pin through as the raw JSON", () => {
 });
 
 test("a malformed tool-registry pin fails boot naming the variable", () => {
-  expect(() =>
-    readSidecarConfig({ ...VALID_ENV, SIDECAR_TOOL_REGISTRIES: "{not json" }),
-  ).toThrow(/SIDECAR_TOOL_REGISTRIES/);
+  expect(() => readSidecarConfig({ ...VALID_ENV, SIDECAR_TOOL_REGISTRIES: "{not json" })).toThrow(
+    /SIDECAR_TOOL_REGISTRIES/,
+  );
 });
 
 test("an empty tool-registry pin fails boot instead of defaulting to npmjs", () => {
-  expect(() =>
-    readSidecarConfig({ ...VALID_ENV, SIDECAR_TOOL_REGISTRIES: "" }),
-  ).toThrow(/SIDECAR_TOOL_REGISTRIES/);
+  expect(() => readSidecarConfig({ ...VALID_ENV, SIDECAR_TOOL_REGISTRIES: "" })).toThrow(
+    /SIDECAR_TOOL_REGISTRIES/,
+  );
 });
 
 test("carries the optional child-env OS facts through when present", () => {
@@ -185,19 +181,15 @@ test("a missing variable errors naming it", () => {
 });
 
 test("an empty variable errors naming it", () => {
-  expect(() => readSidecarConfig({ ...VALID_ENV, SIDECAR_ID: "" })).toThrow(
-    /SIDECAR_ID/,
-  );
+  expect(() => readSidecarConfig({ ...VALID_ENV, SIDECAR_ID: "" })).toThrow(/SIDECAR_ID/);
 });
 
 test("a non-websocket hub URL errors naming the expected shape", () => {
-  expect(() =>
-    readSidecarConfig({ ...VALID_ENV, HUB_WS_URL: "https://hub.example.com" }),
-  ).toThrow(/ws:\/\/ or wss:\/\//);
+  expect(() => readSidecarConfig({ ...VALID_ENV, HUB_WS_URL: "https://hub.example.com" })).toThrow(
+    /ws:\/\/ or wss:\/\//,
+  );
 });
 
 test("an unparseable hub URL errors", () => {
-  expect(() =>
-    readSidecarConfig({ ...VALID_ENV, HUB_WS_URL: "ws://" }),
-  ).toThrow(/HUB_WS_URL/);
+  expect(() => readSidecarConfig({ ...VALID_ENV, HUB_WS_URL: "ws://" })).toThrow(/HUB_WS_URL/);
 });

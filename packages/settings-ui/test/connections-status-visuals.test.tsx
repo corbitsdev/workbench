@@ -21,8 +21,7 @@ const json = (body: unknown) =>
     headers: { "content-type": "application/json" },
   });
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 describe("Connections status chips", () => {
   test("an unconfigured OAuth connector reads distinctly from a not-connected api-key one", async () => {
@@ -57,9 +56,7 @@ describe("Connections status chips", () => {
       expect(container.textContent).toContain("Needs setup");
       expect(container.textContent).toContain("Not connected");
 
-      const statusCaptions = [
-        ...container.querySelectorAll(".settings-connection-row-status"),
-      ];
+      const statusCaptions = [...container.querySelectorAll(".settings-connection-row-status")];
       const needsSetupCaption = statusCaptions.find(
         (caption) => caption.textContent === "Needs setup",
       );
@@ -72,12 +69,8 @@ describe("Connections status chips", () => {
       // is not a colored-accent state -- but they're still rendered from
       // distinct branches (the muted, no-Connect-button OAuth row vs. an
       // ordinary api-key row), each identifiable by its own row wrapper.
-      expect(
-        needsSetupCaption?.closest(".settings-connection-row-muted"),
-      ).not.toBeNull();
-      expect(
-        notConnectedCaption?.closest(".settings-connection-row-muted"),
-      ).toBeNull();
+      expect(needsSetupCaption?.closest(".settings-connection-row-muted")).not.toBeNull();
+      expect(notConnectedCaption?.closest(".settings-connection-row-muted")).toBeNull();
     } finally {
       act(() => root.unmount());
       container.remove();

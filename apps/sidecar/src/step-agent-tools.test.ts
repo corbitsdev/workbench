@@ -21,10 +21,7 @@ import type { GrantRule } from "@intx/authz";
 import type { CredentialDelivery } from "@intx/types/sidecar";
 import type { CredentialWiring } from "@intx/workflow-host";
 
-import {
-  consumerBindings,
-  type StepCredentialContext,
-} from "./step-agent-tools";
+import { consumerBindings, type StepCredentialContext } from "./step-agent-tools";
 
 const CONSUMER = toolConsumer("@corbits/granola-tools");
 const OTHER_CONSUMER = toolConsumer("@corbits/linear-tools");
@@ -46,8 +43,7 @@ function providersWithCapturedAuth(): {
   const providers = createCredentialProviderRegistry([
     createHttpCredentialProvider({
       fetch: async (_input, init) => {
-        captured =
-          (init?.headers as Headers | undefined)?.get("authorization") ?? null;
+        captured = (init?.headers as Headers | undefined)?.get("authorization") ?? null;
         return new Response("{}", { status: 200 });
       },
     }),
@@ -57,9 +53,7 @@ function providersWithCapturedAuth(): {
 
 function delivery(secret: string): CredentialDelivery {
   return {
-    bindings: [
-      { handle: "granola", credentialId: CREDENTIAL_ID, consumer: CONSUMER },
-    ],
+    bindings: [{ handle: "granola", credentialId: CREDENTIAL_ID, consumer: CONSUMER }],
     materials: [
       {
         credentialId: CREDENTIAL_ID,
@@ -178,9 +172,7 @@ describe("createCredentialCapability composed over a fake CredentialWiring", () 
       grants: [],
     });
 
-    await expect(capability.resolve("granola")).rejects.toThrow(
-      /no credential is bound to handle/,
-    );
+    await expect(capability.resolve("granola")).rejects.toThrow(/no credential is bound to handle/);
   });
 
   test("a bound handle with no matching grant fails closed even though the binding exists", async () => {
@@ -196,8 +188,6 @@ describe("createCredentialCapability composed over a fake CredentialWiring", () 
       grants: [...context.wiring.resolveStepGrants(STEP_ID)] as GrantRule[],
     });
 
-    await expect(capability.resolve("granola")).rejects.toThrow(
-      /not authorized to use credential/,
-    );
+    await expect(capability.resolve("granola")).rejects.toThrow(/not authorized to use credential/);
   });
 });

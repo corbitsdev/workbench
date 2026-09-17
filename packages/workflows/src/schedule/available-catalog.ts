@@ -86,10 +86,7 @@ async function connectionSatisfactionByConnector(
 
   const chain = await getAncestorChain(db, tenantId);
   const providerRows = await db.query.provider.findMany({
-    where: and(
-      inArray(provider.tenantId, chain),
-      inArray(provider.name, [...connectorIds]),
-    ),
+    where: and(inArray(provider.tenantId, chain), inArray(provider.name, [...connectorIds])),
     columns: { id: true, tenantId: true, name: true },
   });
 
@@ -104,10 +101,7 @@ async function connectionSatisfactionByConnector(
           columns: { providerId: true, status: true, createdAt: true },
           orderBy: [desc(credential.createdAt)],
         });
-  const newestCredentialByProviderId = new Map<
-    string,
-    (typeof credentialRows)[number]
-  >();
+  const newestCredentialByProviderId = new Map<string, (typeof credentialRows)[number]>();
   for (const row of credentialRows) {
     if (!newestCredentialByProviderId.has(row.providerId)) {
       newestCredentialByProviderId.set(row.providerId, row);
@@ -175,7 +169,6 @@ export async function listAvailableCatalogWorkflows(args: {
   return availableCatalogWorkflowsFrom({
     catalogAssetNames,
     deployedNames,
-    isConnectorSatisfied: (connectorId) =>
-      connectorSatisfaction.get(connectorId) ?? false,
+    isConnectorSatisfied: (connectorId) => connectorSatisfaction.get(connectorId) ?? false,
   });
 }

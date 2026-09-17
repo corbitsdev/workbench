@@ -35,9 +35,7 @@ function request<T>(
   return apiRequest(path, schema, verb, CredentialsApiError, init);
 }
 
-export function listCredentials(
-  tenantId: string,
-): Promise<readonly Credential[]> {
+export function listCredentials(tenantId: string): Promise<readonly Credential[]> {
   return request(
     `/api/tenants/${tenantId}/credentials`,
     CredentialsPage,
@@ -46,11 +44,9 @@ export function listCredentials(
 }
 
 export function listProviders(tenantId: string): Promise<readonly Provider[]> {
-  return request(
-    `/api/tenants/${tenantId}/providers`,
-    ProvidersPage,
-    "loading providers",
-  ).then((page) => page.data);
+  return request(`/api/tenants/${tenantId}/providers`, ProvidersPage, "loading providers").then(
+    (page) => page.data,
+  );
 }
 
 export type CreateCredentialInput = {
@@ -73,10 +69,7 @@ export function createCredential(
   );
 }
 
-export function deleteCredential(
-  tenantId: string,
-  credentialId: string,
-): Promise<void> {
+export function deleteCredential(tenantId: string, credentialId: string): Promise<void> {
   return request<void>(
     `/api/tenants/${tenantId}/credentials/${credentialId}`,
     (data) => data as void,

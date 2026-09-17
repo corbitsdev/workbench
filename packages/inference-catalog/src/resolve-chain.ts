@@ -127,10 +127,8 @@ function resolveNeed(need: ChainNeed, policy: BenchModelPolicy): Need {
     override === undefined
       ? concept.ceiling
       : {
-          maxInputUsdPerMTok:
-            override.maxInputUsdPerMTok ?? concept.ceiling.maxInputUsdPerMTok,
-          maxOutputUsdPerMTok:
-            override.maxOutputUsdPerMTok ?? concept.ceiling.maxOutputUsdPerMTok,
+          maxInputUsdPerMTok: override.maxInputUsdPerMTok ?? concept.ceiling.maxInputUsdPerMTok,
+          maxOutputUsdPerMTok: override.maxOutputUsdPerMTok ?? concept.ceiling.maxOutputUsdPerMTok,
         };
   return {
     conceptId: concept.id,
@@ -147,17 +145,11 @@ function overCeiling(
   maxOutput: number | null,
 ): boolean {
   if (!price.known) return false;
-  if (
-    maxInput !== null &&
-    price.inputUsdPerMTok !== null &&
-    price.inputUsdPerMTok > maxInput
-  ) {
+  if (maxInput !== null && price.inputUsdPerMTok !== null && price.inputUsdPerMTok > maxInput) {
     return true;
   }
   return (
-    maxOutput !== null &&
-    price.outputUsdPerMTok !== null &&
-    price.outputUsdPerMTok > maxOutput
+    maxOutput !== null && price.outputUsdPerMTok !== null && price.outputUsdPerMTok > maxOutput
   );
 }
 
@@ -173,12 +165,10 @@ function compareCandidates(order: ChainOrder) {
   return (left: Candidate, right: Candidate): number => {
     const leftCost = left.entry.referenceCostUsd;
     const rightCost = right.entry.referenceCostUsd;
-    const byCost =
-      leftCost === null || rightCost === null ? 0 : leftCost - rightCost;
+    const byCost = leftCost === null || rightCost === null ? 0 : leftCost - rightCost;
     const byPriority = left.entry.priority - right.entry.priority;
     const byPreferred = right.preferScore - left.preferScore;
-    const primary =
-      order === "cheapest" ? byCost || byPriority : byPriority || byCost;
+    const primary = order === "cheapest" ? byCost || byPriority : byPriority || byCost;
     return primary || byPreferred || compareStrings(left.entry, right.entry);
   };
 }
@@ -199,8 +189,7 @@ function applyProviderPreference(
   const named = entries.filter((entry) => rank.has(entry.providerName));
   const rest = entries.filter((entry) => !rank.has(entry.providerName));
   const ordered = [...named].sort(
-    (left, right) =>
-      (rank.get(left.providerName) ?? 0) - (rank.get(right.providerName) ?? 0),
+    (left, right) => (rank.get(left.providerName) ?? 0) - (rank.get(right.providerName) ?? 0),
   );
   return [...ordered, ...rest];
 }
@@ -240,10 +229,7 @@ export function resolveModelChain(input: ResolveChainInput): ModelChain {
       continue;
     }
 
-    const price = priceForOffering(
-      pricingByOffering.get(offeringId) ?? [],
-      currency,
-    );
+    const price = priceForOffering(pricingByOffering.get(offeringId) ?? [], currency);
     const overBenchCeiling = overCeiling(
       price,
       policy.maxInputUsdPerMTok,
@@ -276,9 +262,7 @@ export function resolveModelChain(input: ResolveChainInput): ModelChain {
     };
     const candidate: Candidate = {
       entry,
-      preferScore: need.preferred.filter((wanted) =>
-        capabilities.includes(wanted),
-      ).length,
+      preferScore: need.preferred.filter((wanted) => capabilities.includes(wanted)).length,
     };
 
     if (!price.known) unpriced.push(candidate);
@@ -315,8 +299,7 @@ export function resolveModelChain(input: ResolveChainInput): ModelChain {
 }
 
 function ceilingMode(policy: BenchModelPolicy): "none" | "soft" | "hard" {
-  const hasCeiling =
-    policy.maxInputUsdPerMTok !== null || policy.maxOutputUsdPerMTok !== null;
+  const hasCeiling = policy.maxInputUsdPerMTok !== null || policy.maxOutputUsdPerMTok !== null;
   if (!hasCeiling) return "none";
   return policy.ceilingIsHard ? "hard" : "soft";
 }
@@ -324,10 +307,7 @@ function ceilingMode(policy: BenchModelPolicy): "none" | "soft" | "hard" {
 /** A chain whose every entry sits behind one provider fails whenever that
  * provider does. When the bench has another provider that qualifies, the
  * last slot goes to it. */
-function shouldDiversify(
-  capped: readonly ChainEntry[],
-  ranked: readonly ChainEntry[],
-): boolean {
+function shouldDiversify(capped: readonly ChainEntry[], ranked: readonly ChainEntry[]): boolean {
   if (capped.length < 2) return false;
   const soleProvider = capped[0]?.providerName;
   if (capped.some((entry) => entry.providerName !== soleProvider)) return false;
@@ -339,9 +319,7 @@ function diversify(
   ranked: readonly ChainEntry[],
 ): readonly ChainEntry[] {
   const soleProvider = capped[0]?.providerName;
-  const alternative = ranked.find(
-    (entry) => entry.providerName !== soleProvider,
-  );
+  const alternative = ranked.find((entry) => entry.providerName !== soleProvider);
   if (alternative === undefined) return capped;
   return [...capped.slice(0, capped.length - 1), alternative];
 }

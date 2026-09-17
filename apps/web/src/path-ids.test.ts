@@ -10,20 +10,16 @@ import {
 
 describe("detailSlugFromPath", () => {
   test("reads the slug a detail path carries", () => {
-    expect<string | null>(
-      detailSlugFromPath("/agents/triage-bot", AGENTS_PATH_PREFIX),
-    ).toBe("triage-bot");
+    expect<string | null>(detailSlugFromPath("/agents/triage-bot", AGENTS_PATH_PREFIX)).toBe(
+      "triage-bot",
+    );
   });
 
   test("rejects the bare prefix, another prefix, and a nested path", () => {
     expect(detailSlugFromPath("/agents", AGENTS_PATH_PREFIX)).toBeNull();
     expect(detailSlugFromPath("/agents/", AGENTS_PATH_PREFIX)).toBeNull();
-    expect(
-      detailSlugFromPath("/skills/triage-bot", AGENTS_PATH_PREFIX),
-    ).toBeNull();
-    expect(
-      detailSlugFromPath("/agents/triage-bot/runs", AGENTS_PATH_PREFIX),
-    ).toBeNull();
+    expect(detailSlugFromPath("/skills/triage-bot", AGENTS_PATH_PREFIX)).toBeNull();
+    expect(detailSlugFromPath("/agents/triage-bot/runs", AGENTS_PATH_PREFIX)).toBeNull();
   });
 
   test("rejects an id-shaped segment so id deep links stay with the roster", () => {
@@ -32,12 +28,8 @@ describe("detailSlugFromPath", () => {
 
   test("rejects percent-escapes rather than decoding them", () => {
     expect(detailSlugFromPath("/agents/%", AGENTS_PATH_PREFIX)).toBeNull();
-    expect(
-      detailSlugFromPath("/agents/%E0%A4%A", AGENTS_PATH_PREFIX),
-    ).toBeNull();
-    expect(
-      detailSlugFromPath("/agents/triage%2Dbot", AGENTS_PATH_PREFIX),
-    ).toBeNull();
+    expect(detailSlugFromPath("/agents/%E0%A4%A", AGENTS_PATH_PREFIX)).toBeNull();
+    expect(detailSlugFromPath("/agents/triage%2Dbot", AGENTS_PATH_PREFIX)).toBeNull();
   });
 });
 

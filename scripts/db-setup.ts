@@ -31,10 +31,7 @@ import { readdir } from "node:fs/promises";
 import { applyChatMigrations } from "../packages/chat/src/migrations";
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";
-import {
-  applyInboxMigrations,
-  applyMailboxMigrations,
-} from "../packages/inbox/src/migrations";
+import { applyInboxMigrations, applyMailboxMigrations } from "../packages/inbox/src/migrations";
 import { applyAgentDirectoryMigrations } from "../packages/agent-directory/src/migrations";
 import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
 
@@ -70,16 +67,13 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
  * package owns its own idempotence and bookkeeping (see
  * applyChatMigrations); this only sequences them and reports what ran.
  */
-async function applyInstalledPackageMigrations(
-  databaseUrl: string,
-): Promise<void> {
+async function applyInstalledPackageMigrations(databaseUrl: string): Promise<void> {
   for (const { name, apply } of INSTALLED_PACKAGE_MIGRATIONS) {
     try {
       const { applied } = await apply(databaseUrl);
       if (applied.length > 0) {
         console.log(
-          `db-setup: applied ${applied.length} migration(s) for ${name}: ` +
-            applied.join(", "),
+          `db-setup: applied ${applied.length} migration(s) for ${name}: ` + applied.join(", "),
         );
       }
     } catch (error) {
@@ -146,10 +140,7 @@ function resolveHubDependency(specifier: string): string {
 async function loadIntxDb(): Promise<IntxDbMigrate> {
   const resolved = resolveHubDependency("@intx/db");
   const loaded = (await import(resolved)) as Partial<IntxDbMigrate>;
-  if (
-    typeof loaded.runMigrations !== "function" ||
-    typeof loaded.dropSchema !== "function"
-  ) {
+  if (typeof loaded.runMigrations !== "function" || typeof loaded.dropSchema !== "function") {
     throw new Error(
       [
         `@intx/db at ${resolved} does not export runMigrations/dropSchema;`,
@@ -233,9 +224,7 @@ export function dbTargetFromUrl(databaseUrl: string): DbTarget {
     );
   }
   if (url.protocol !== "postgres:" && url.protocol !== "postgresql:") {
-    throw new Error(
-      `DATABASE_URL must be a postgres:// URL, got ${url.protocol}//.`,
-    );
+    throw new Error(`DATABASE_URL must be a postgres:// URL, got ${url.protocol}//.`);
   }
   const database = url.pathname.replace(/^\//, "");
   if (database === "") {
@@ -253,10 +242,7 @@ export function dbTargetFromUrl(databaseUrl: string): DbTarget {
   };
 }
 
-async function connect(
-  postgres: PostgresFactory,
-  target: DbTarget,
-): Promise<SqlClient> {
+async function connect(postgres: PostgresFactory, target: DbTarget): Promise<SqlClient> {
   return postgres({
     host: target.host,
     port: target.port,
@@ -317,9 +303,7 @@ async function ensureDatabase(
     database: "postgres",
   });
   try {
-    await maintenance.unsafe(
-      `CREATE DATABASE ${quoteIdentifier(target.database)}`,
-    );
+    await maintenance.unsafe(`CREATE DATABASE ${quoteIdentifier(target.database)}`);
   } catch (error) {
     throw new Error(
       `Database ${JSON.stringify(target.database)} does not exist and ` +
@@ -347,11 +331,7 @@ const LEDGER_TABLE = "workbench_setup_migration";
 // script.
 const SENTINEL_TABLE = "user";
 
-async function tableExists(
-  sql: SqlClient,
-  schema: string,
-  table: string,
-): Promise<boolean> {
+async function tableExists(sql: SqlClient, schema: string, table: string): Promise<boolean> {
   const rows = await sql.unsafe(
     "SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2",
     [schema, table],
@@ -370,9 +350,7 @@ async function tableExists(
  */
 export const DIGEST_HANDOFF_SQL = `UPDATE workflow_definition wd SET status = CASE WHEN r.enabled THEN 'deployed' ELSE 'stopped' END, updated_at = now() FROM routines.routine r WHERE r.preset_key = 'workbench-digest' AND wd.name = 'workbench-digest' AND wd.tenant_id = r.tenant_id AND wd.origin = 'authored'`;
 
-async function dropRoutinesSchemaAfterDigestHandoff(
-  databaseUrl: string,
-): Promise<void> {
+async function dropRoutinesSchemaAfterDigestHandoff(databaseUrl: string): Promise<void> {
   const postgres = await loadPostgres();
   const target = dbTargetFromUrl(databaseUrl);
   const sql = await connect(postgres, target);
@@ -384,9 +362,7 @@ async function dropRoutinesSchemaAfterDigestHandoff(
     if (existing.length === 0) return;
     await sql.unsafe(DIGEST_HANDOFF_SQL);
     await sql.unsafe("DROP SCHEMA IF EXISTS routines CASCADE");
-    console.log(
-      "db-setup: dropped routines schema after digest enablement handoff",
-    );
+    console.log("db-setup: dropped routines schema after digest enablement handoff");
   } finally {
     await sql.end();
   }
@@ -403,10 +379,7 @@ async function dropRoutinesSchemaAfterDigestHandoff(
  * gone — Insights UI now reads stock observability/workflow routes
  * client-side instead. Absent schema is a no-op; safe to re-run.
  */
-async function dropSchemaIfPresent(
-  databaseUrl: string,
-  schema: string,
-): Promise<void> {
+async function dropSchemaIfPresent(databaseUrl: string, schema: string): Promise<void> {
   const postgres = await loadPostgres();
   const target = dbTargetFromUrl(databaseUrl);
   const sql = await connect(postgres, target);
@@ -416,19 +389,14 @@ async function dropSchemaIfPresent(
       [schema],
     );
     if (existing.length === 0) return;
-    await sql.unsafe(
-      `DROP SCHEMA IF EXISTS ${quoteIdentifier(schema)} CASCADE`,
-    );
+    await sql.unsafe(`DROP SCHEMA IF EXISTS ${quoteIdentifier(schema)} CASCADE`);
     console.log(`db-setup: dropped ${schema} schema (dead mount)`);
   } finally {
     await sql.end();
   }
 }
 
-async function appliedMigrations(
-  sql: SqlClient,
-  schema: string,
-): Promise<string[]> {
+async function appliedMigrations(sql: SqlClient, schema: string): Promise<string[]> {
   const rows = await sql.unsafe(
     `SELECT filename FROM ${quoteIdentifier(schema)}.${quoteIdentifier(LEDGER_TABLE)} ORDER BY filename`,
   );
@@ -483,8 +451,7 @@ export async function setupDatabase(
     if (hasLedger) {
       const applied = await appliedMigrations(sql, schema);
       const same =
-        applied.length === shipped.length &&
-        applied.every((file, i) => file === shipped[i]);
+        applied.length === shipped.length && applied.every((file, i) => file === shipped[i]);
       if (same) {
         await applyInstalledPackageMigrations(databaseUrl);
         return {

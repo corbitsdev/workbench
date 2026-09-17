@@ -19,11 +19,7 @@ import {
   type SaveReport,
 } from "../src/pages/agent-detail-page";
 import type { AgentDefinitionWithDisplayName } from "../src/agents-directory";
-import type {
-  AgentDefinitionDetail,
-  AgentInstance,
-  CatalogModel,
-} from "../src/agents-api";
+import type { AgentDefinitionDetail, AgentInstance, CatalogModel } from "../src/agents-api";
 
 const definition: AgentDefinitionWithDisplayName = {
   id: "wfd_1",
@@ -81,9 +77,7 @@ function run(overrides: Partial<AgentInstance> = {}): AgentInstance {
 
 const noop = () => undefined;
 
-function renderPage(
-  props: Partial<Parameters<typeof AgentDetailPage>[0]> = {},
-) {
+function renderPage(props: Partial<Parameters<typeof AgentDetailPage>[0]> = {}) {
   return renderToStaticMarkup(
     <AgentDetailPage
       tenantId="tnt_1"
@@ -138,8 +132,7 @@ describe("AgentDetailPage render", () => {
 
   test("puts Duplicate, Archive, and Save in the top bar's action slot", () => {
     const markup = renderPage();
-    const actions =
-      markup.split('data-testid="stage-top-bar-actions"')[1] ?? "";
+    const actions = markup.split('data-testid="stage-top-bar-actions"')[1] ?? "";
     expect(actions).toContain('aria-label="Duplicate this agent"');
     expect(actions).toContain('aria-label="Archive this agent"');
     expect(actions).toContain('aria-label="Save this agent"');
@@ -214,9 +207,7 @@ describe("AgentDetailPage render", () => {
 
 describe("describeSaveReport", () => {
   test("a clean save names what it wrote", () => {
-    expect(describeSaveReport({ saved: ["model"], failed: null })).toBe(
-      "Saved default model.",
-    );
+    expect(describeSaveReport({ saved: ["model"], failed: null })).toBe("Saved default model.");
   });
 
   test("a partial save names both halves, never just the failure", () => {
@@ -244,8 +235,7 @@ function json(body: unknown, status = 200) {
 function stubFetch(): void {
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    const body =
-      init?.body !== undefined ? JSON.parse(String(init.body)) : undefined;
+    const body = init?.body !== undefined ? JSON.parse(String(init.body)) : undefined;
     requests.push({ method: init?.method ?? "GET", url, body });
     if (url.endsWith("/skills") && (init?.method ?? "GET") === "GET") {
       return Promise.resolve(json({ skills: [] }));
@@ -257,9 +247,7 @@ function stubFetch(): void {
       return Promise.resolve(json({ skills: ["triage"] }));
     }
     if (url.endsWith("/capabilities")) {
-      return Promise.resolve(
-        json({ skills: ["triage"], model: "claude-opus" }),
-      );
+      return Promise.resolve(json({ skills: ["triage"], model: "claude-opus" }));
     }
     if (url.endsWith("/status")) {
       return Promise.resolve(json({ id: "wfd_1", status: "stopped" }));
@@ -282,9 +270,7 @@ function stubFetch(): void {
         ),
       );
     }
-    return Promise.resolve(
-      json({ name: "Triage bot", systemPrompt: "You sort inbound issues." }),
-    );
+    return Promise.resolve(json({ name: "Triage bot", systemPrompt: "You sort inbound issues." }));
   }) as typeof fetch;
 }
 
@@ -306,9 +292,7 @@ afterEach(() => {
   container = null;
 });
 
-async function mount(
-  overrides: Partial<Parameters<typeof AgentDetailPage>[0]> = {},
-) {
+async function mount(overrides: Partial<Parameters<typeof AgentDetailPage>[0]> = {}) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -334,10 +318,7 @@ async function mount(
   return container;
 }
 
-function setValue(
-  element: HTMLInputElement | HTMLTextAreaElement,
-  value: string,
-) {
+function setValue(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(
     element instanceof HTMLTextAreaElement
       ? HTMLTextAreaElement.prototype
@@ -365,9 +346,7 @@ describe("AgentDetailPage edits", () => {
     let saved = 0;
     const node = await mount({ onSaved: () => (saved += 1) });
     const name = node.querySelector<HTMLInputElement>("#agent-display-name");
-    const prompt = node.querySelector<HTMLTextAreaElement>(
-      "#agent-system-prompt",
-    );
+    const prompt = node.querySelector<HTMLTextAreaElement>("#agent-system-prompt");
     if (name === null || prompt === null) throw new Error("editor not mounted");
 
     await act(async () => {
@@ -381,8 +360,7 @@ describe("AgentDetailPage edits", () => {
 
     const put = requests.find(
       (request) =>
-        request.method === "PUT" &&
-        request.url === "/api/tenants/tnt_1/agent-definitions/wfd_1",
+        request.method === "PUT" && request.url === "/api/tenants/tnt_1/agent-definitions/wfd_1",
     );
     expect(put?.body).toEqual({
       name: "Inbox triage",
@@ -413,8 +391,7 @@ describe("AgentDetailPage edits", () => {
     expect(
       requests.some(
         (request) =>
-          request.url === "/api/tenants/tnt_1/agent-definitions/wfd_1" &&
-          request.method === "PUT",
+          request.url === "/api/tenants/tnt_1/agent-definitions/wfd_1" && request.method === "PUT",
       ),
     ).toBe(false);
   });
@@ -431,9 +408,7 @@ describe("AgentDetailPage edits", () => {
       await Promise.resolve();
     });
 
-    const post = requests.find(
-      (request) => request.url === "/api/tenants/tnt_1/agent-definitions",
-    );
+    const post = requests.find((request) => request.url === "/api/tenants/tnt_1/agent-definitions");
     expect(post?.body).toEqual({
       name: "Triage bot copy",
       handle: "triage-bot-copy",
@@ -452,9 +427,7 @@ describe("AgentDetailPage edits", () => {
     await act(async () => {
       archive.click();
     });
-    expect(requests.some((request) => request.url.endsWith("/status"))).toBe(
-      false,
-    );
+    expect(requests.some((request) => request.url.endsWith("/status"))).toBe(false);
 
     await act(async () => {
       archive.click();
@@ -477,9 +450,7 @@ describe("AgentDetailPage edits", () => {
       Promise.resolve(
         json({ error: { message: "The agent is locked." } }, 500),
       )) as unknown as typeof fetch;
-    const prompt = node.querySelector<HTMLTextAreaElement>(
-      "#agent-system-prompt",
-    );
+    const prompt = node.querySelector<HTMLTextAreaElement>("#agent-system-prompt");
     if (prompt === null) throw new Error("editor not mounted");
 
     await act(async () => {
@@ -513,9 +484,7 @@ describe("AgentDetailPage edits", () => {
     });
 
     const cleared = requests.find(
-      (request) =>
-        request.url ===
-        "/api/tenants/tnt_1/agent-definitions/wfd_1/capabilities/model",
+      (request) => request.url === "/api/tenants/tnt_1/agent-definitions/wfd_1/capabilities/model",
     );
     expect(cleared?.method).toBe("DELETE");
     // Never the inventory-checked add route with an empty name.
@@ -523,8 +492,7 @@ describe("AgentDetailPage edits", () => {
       requests.some(
         (request) =>
           request.url.endsWith("/capabilities") &&
-          (request.body as { canonicalName?: string } | undefined)
-            ?.canonicalName === "",
+          (request.body as { canonicalName?: string } | undefined)?.canonicalName === "",
       ),
     ).toBe(false);
   });
@@ -533,24 +501,19 @@ describe("AgentDetailPage edits", () => {
     const reports: SaveReport[] = [];
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      const body =
-        init?.body !== undefined ? JSON.parse(String(init.body)) : undefined;
+      const body = init?.body !== undefined ? JSON.parse(String(init.body)) : undefined;
       requests.push({ method: init?.method ?? "GET", url, body });
       if (url.endsWith("/capabilities")) {
         return Promise.resolve(json({ error: { message: "model gone" } }, 500));
       }
       if (url.endsWith("/skills")) return Promise.resolve(json({ skills: [] }));
-      return Promise.resolve(
-        json({ name: "Inbox triage", systemPrompt: "New instructions." }),
-      );
+      return Promise.resolve(json({ name: "Inbox triage", systemPrompt: "New instructions." }));
     }) as unknown as typeof fetch;
 
     const node = await mount({
       onSaved: (report: SaveReport) => reports.push(report),
     });
-    const prompt = node.querySelector<HTMLTextAreaElement>(
-      "#agent-system-prompt",
-    );
+    const prompt = node.querySelector<HTMLTextAreaElement>("#agent-system-prompt");
     const select = node.querySelector<HTMLSelectElement>("#agent-model");
     if (prompt === null || select === null) {
       throw new Error("editor not mounted");
@@ -569,9 +532,7 @@ describe("AgentDetailPage edits", () => {
 
     expect(reports[0]?.saved).toEqual(["instructions"]);
     expect(reports[0]?.failed?.part).toBe("model");
-    expect(describeSaveReport(reports[0] as SaveReport)).toContain(
-      "name and system prompt",
-    );
+    expect(describeSaveReport(reports[0] as SaveReport)).toContain("name and system prompt");
   });
 
   test("a duplicate whose handle already exists says what collided, never 'try again'", async () => {
@@ -583,8 +544,7 @@ describe("AgentDetailPage edits", () => {
             {
               error: {
                 code: "conflict",
-                message:
-                  'An agent with the handle "triage-bot-copy" already exists',
+                message: 'An agent with the handle "triage-bot-copy" already exists',
               },
             },
             409,
@@ -607,19 +567,14 @@ describe("AgentDetailPage edits", () => {
 
   test("Duplicate waits for unsaved edits rather than silently copying the saved version", async () => {
     const node = await mount();
-    const prompt = node.querySelector<HTMLTextAreaElement>(
-      "#agent-system-prompt",
-    );
+    const prompt = node.querySelector<HTMLTextAreaElement>("#agent-system-prompt");
     if (prompt === null) throw new Error("editor not mounted");
 
     await act(async () => {
       setValue(prompt, "Edited, not yet saved.");
     });
 
-    const duplicate = byLabel(
-      node,
-      "Duplicate this agent",
-    ) as HTMLButtonElement;
+    const duplicate = byLabel(node, "Duplicate this agent") as HTMLButtonElement;
     expect(duplicate.disabled).toBe(true);
     expect(node.textContent).toContain("Duplicate copies the saved version");
   });

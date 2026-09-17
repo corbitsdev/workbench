@@ -1,15 +1,9 @@
 import type { FetchLike, TokenResponse } from "@corbits/oauth-core";
 import { describe, expect, test } from "bun:test";
-import {
-  accountIdFromIdToken,
-  refreshCodexTokens,
-  type CodexTokens,
-} from "./index";
+import { accountIdFromIdToken, refreshCodexTokens, type CodexTokens } from "./index";
 
 function jwtWithPayload(payload: unknown): string {
-  const header = Buffer.from(JSON.stringify({ alg: "none" })).toString(
-    "base64url",
-  );
+  const header = Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url");
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${header}.${body}.`;
 }
@@ -31,9 +25,7 @@ describe("Codex oauth — account id decoding", () => {
     expect(accountIdFromIdToken(undefined)).toBeUndefined();
     expect(accountIdFromIdToken("not-a-jwt")).toBeUndefined();
     expect(accountIdFromIdToken("header.%%%not-base64%%%.sig")).toBeUndefined();
-    expect(
-      accountIdFromIdToken(jwtWithPayload({ sub: "user-1" })),
-    ).toBeUndefined();
+    expect(accountIdFromIdToken(jwtWithPayload({ sub: "user-1" }))).toBeUndefined();
   });
 });
 

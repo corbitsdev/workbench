@@ -16,13 +16,9 @@
 import { type } from "arktype";
 import { reportError } from "@corbits/error-sink";
 
-import {
-  postExchangeRequest,
-  type OAuthExchangeFetch,
-} from "./oauth-exchange-fetch";
+import { postExchangeRequest, type OAuthExchangeFetch } from "./oauth-exchange-fetch";
 
-export const HUGGINGFACE_AUTHORIZE_URL =
-  "https://huggingface.co/oauth/authorize";
+export const HUGGINGFACE_AUTHORIZE_URL = "https://huggingface.co/oauth/authorize";
 export const HUGGINGFACE_TOKEN_URL = "https://huggingface.co/oauth/token";
 
 /** `inference-api` is the one scope this flow needs: "make inference

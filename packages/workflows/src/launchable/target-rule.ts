@@ -4,7 +4,10 @@
 // (`resolveLaunchableDefinition`) that queries rows and hands them to
 // `pickLaunchableDefinition` below.
 export type LaunchableDefinitionRejection =
-  "not_found" | "unfrozen" | "not_deployed" | "cross_tenant";
+  | "not_found"
+  | "unfrozen"
+  | "not_deployed"
+  | "cross_tenant";
 
 export type LaunchableDefinitionResolution =
   | {
@@ -142,10 +145,7 @@ export function routineTargetRejection(reason: LaunchableDefinitionRejection): {
 export class RoutineTargetUnresolvableError extends Error {
   readonly reason: LaunchableDefinitionRejection;
   readonly definitionAssetId: string;
-  constructor(
-    definitionAssetId: string,
-    reason: LaunchableDefinitionRejection,
-  ) {
+  constructor(definitionAssetId: string, reason: LaunchableDefinitionRejection) {
     super(
       `routine target ${definitionAssetId} has no launchable definition (${reason}): ${
         routineTargetRejection(reason).userMessage

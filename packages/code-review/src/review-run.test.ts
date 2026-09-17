@@ -112,9 +112,7 @@ test("every reviewer sees the same diff and the review is posted once", async ()
   );
 
   expect(github.diffReads).toEqual([REF]);
-  expect(seen.sort()).toEqual(
-    CODE_REVIEW_REVIEWERS.map((reviewer) => reviewer.id).sort(),
-  );
+  expect(seen.sort()).toEqual(CODE_REVIEW_REVIEWERS.map((reviewer) => reviewer.id).sort());
   expect(new Set(prompts).size).toBe(1);
   expect(prompts[0]).toContain("src/loop.ts");
   expect(github.posted.length).toBe(1);
@@ -214,8 +212,7 @@ test("a finding whose fingerprint was already posted is not raised again", async
   const result = await runPullRequestReview(
     {
       github: github.client,
-      runReviewerTurn: ({ reviewer }) =>
-        Promise.resolve(reportFor(reviewer.id)),
+      runReviewerTurn: ({ reviewer }) => Promise.resolve(reportFor(reviewer.id)),
     },
     REF,
   );
@@ -233,8 +230,7 @@ test("a truncated diff surfaces an incompleteness note in the posted review", as
   const result = await runPullRequestReview(
     {
       github: github.client,
-      runReviewerTurn: ({ reviewer }) =>
-        Promise.resolve(reportFor(reviewer.id)),
+      runReviewerTurn: ({ reviewer }) => Promise.resolve(reportFor(reviewer.id)),
     },
     REF,
   );
@@ -249,8 +245,7 @@ test("a truncated already-posted-comments page surfaces the same note", async ()
   const result = await runPullRequestReview(
     {
       github: github.client,
-      runReviewerTurn: ({ reviewer }) =>
-        Promise.resolve(reportFor(reviewer.id)),
+      runReviewerTurn: ({ reviewer }) => Promise.resolve(reportFor(reviewer.id)),
     },
     REF,
   );

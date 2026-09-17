@@ -82,8 +82,9 @@ export const PROCESS_GRANOLA_CALL_SYSTEM_PROMPT =
   "error.";
 
 /** Tool packages this definition pins (CL-5999); see the header comment. */
-export const PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] =
-  [{ name: "@corbits/granola-tools", version: "0.0.4" }];
+export const PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
+  { name: "@corbits/granola-tools", version: "0.0.5" },
+];
 
 /**
  * Binds `@corbits/granola-tools`' declared "granola" handle to a
@@ -91,15 +92,14 @@ export const PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] =
  * `workflows/granola-call/src/index.ts`'s sibling constant for the full
  * rationale.
  */
-export const PROCESS_GRANOLA_CALL_CREDENTIAL_BINDINGS: readonly CredentialBinding[] =
-  [
-    {
-      package: "@corbits/granola-tools",
-      handle: "granola",
-      provider: "granola",
-      locator: "tenant",
-    },
-  ];
+export const PROCESS_GRANOLA_CALL_CREDENTIAL_BINDINGS: readonly CredentialBinding[] = [
+  {
+    package: "@corbits/granola-tools",
+    handle: "granola",
+    provider: "granola",
+    locator: "tenant",
+  },
+];
 
 /**
  * Everything the definition needs that is per-deployment data. The
@@ -134,9 +134,7 @@ export function buildProcessGranolaCallWorkflow(
   input: ProcessGranolaCallWorkflowInput,
 ): WorkflowDefinition {
   if (input.triggerAddress === "") {
-    throw new Error(
-      "buildProcessGranolaCallWorkflow requires a non-empty triggerAddress",
-    );
+    throw new Error("buildProcessGranolaCallWorkflow requires a non-empty triggerAddress");
   }
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
     throw new Error(
@@ -152,8 +150,7 @@ export function buildProcessGranolaCallWorkflow(
         agent: {
           id: PROCESS_GRANOLA_CALL_STEP_ID,
           description:
-            "Processes one Granola call into a verified, published " +
-            "call-notes artifact",
+            "Processes one Granola call into a verified, published " + "call-notes artifact",
           systemPrompt: PROCESS_GRANOLA_CALL_SYSTEM_PROMPT,
           toolFactories: [],
           capabilities: [],
@@ -173,9 +170,7 @@ export function buildProcessGranolaCallWorkflow(
  * symbols, bigints, non-finite numbers, class instances — is a loud
  * error naming the offending path instead of a corrupted asset.
  */
-export function serializeProcessGranolaCallWorkflow(
-  definition: WorkflowDefinition,
-): string {
+export function serializeProcessGranolaCallWorkflow(definition: WorkflowDefinition): string {
   assertJsonPortable(definition, "definition");
   return JSON.stringify(definition);
 }
@@ -195,8 +190,7 @@ function assertJsonPortable(value: unknown, path: string): void {
       break;
     default:
       throw new Error(
-        `${path} is a ${typeof value}, which does not survive JSON ` +
-          "serialization",
+        `${path} is a ${typeof value}, which does not survive JSON ` + "serialization",
       );
   }
   if (Array.isArray(value)) {
@@ -207,9 +201,7 @@ function assertJsonPortable(value: unknown, path: string): void {
   }
   const proto: unknown = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) {
-    throw new Error(
-      `${path} is a non-plain object; JSON would flatten it lossily`,
-    );
+    throw new Error(`${path} is a non-plain object; JSON would flatten it lossily`);
   }
   for (const [key, entry] of Object.entries(value)) {
     assertJsonPortable(entry, `${path}.${key}`);

@@ -16,9 +16,7 @@ import { assertHubDataDirGitSafety } from "./hub-data-dir-git-safety";
 
 // Host policy constant, not configuration — shared by boot (tool-package
 // registry routing) and asset-service construction.
-export const REGISTRIES = new Map([
-  ["npmjs", { url: "https://registry.npmjs.org" }],
-]);
+export const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
 
 export interface BootAssetWiring {
   readonly signingKey: Awaited<ReturnType<typeof generateKeyPair>>;

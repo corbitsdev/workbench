@@ -60,16 +60,12 @@ describe("mentionCandidatesFromParticipants", () => {
       mentionCandidatesFromParticipants([
         { address: "ins_cd03d8e3@agents.example", handle: "echo" },
       ]),
-    ).toEqual([
-      { id: "ins_cd03d8e3@agents.example", handle: "echo", label: "Echo" },
-    ]);
+    ).toEqual([{ id: "ins_cd03d8e3@agents.example", handle: "echo", label: "Echo" }]);
   });
 
   test("returns nothing when no participant is an agent address", () => {
     expect(
-      mentionCandidatesFromParticipants([
-        { address: "user_abc123", handle: "user_abc123" },
-      ]),
+      mentionCandidatesFromParticipants([{ address: "user_abc123", handle: "user_abc123" }]),
     ).toEqual([]);
   });
 
@@ -192,10 +188,7 @@ describe("mentionOptionsFromWorkbench and filterMentionOptions (CL-5879 mention-
       [{ id: "wfd_echo", name: "echo", description: "Echo" }],
     );
     const filtered = filterMentionOptions(options, "re");
-    expect(filtered.map((option) => option.candidate.handle)).toEqual([
-      "researcher",
-      "reed",
-    ]);
+    expect(filtered.map((option) => option.candidate.handle)).toEqual(["researcher", "reed"]);
   });
 
   test("in-workbench agent rows show the resolved display name (CL-6424)", () => {
@@ -206,31 +199,19 @@ describe("mentionOptionsFromWorkbench and filterMentionOptions (CL-5879 mention-
       new Map([["researcher@agents.example", "Myra"]]),
     );
     expect(options.map((option) => option.candidate.label)).toEqual(["Myra"]);
-    expect(options.map((option) => option.candidate.handle)).toEqual([
-      "researcher",
-    ]);
+    expect(options.map((option) => option.candidate.handle)).toEqual(["researcher"]);
   });
 });
 
 describe("insertMention", () => {
   test("splices the mention in with a trailing space and advances the caret", () => {
-    const result = insertMention(
-      "hi @re",
-      6,
-      { start: 3, query: "re" },
-      "researcher",
-    );
+    const result = insertMention("hi @re", 6, { start: 3, query: "re" }, "researcher");
     expect(result.text).toBe("hi @researcher ");
     expect(result.caret).toBe(result.text.length);
   });
 
   test("preserves text after the caret", () => {
-    const result = insertMention(
-      "hi @re please",
-      6,
-      { start: 3, query: "re" },
-      "researcher",
-    );
+    const result = insertMention("hi @re please", 6, { start: 3, query: "re" }, "researcher");
     expect(result.text).toBe("hi @researcher  please");
   });
 });

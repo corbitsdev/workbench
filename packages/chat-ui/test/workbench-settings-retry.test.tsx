@@ -47,12 +47,9 @@ afterEach(() => {
   }
 });
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
-function baseProps(
-  overrides: Partial<Parameters<typeof WorkbenchSettingsSurface>[0]> = {},
-) {
+function baseProps(overrides: Partial<Parameters<typeof WorkbenchSettingsSurface>[0]> = {}) {
   return {
     tenantId: "tnt_1",
     workbenchId: "ch_1",

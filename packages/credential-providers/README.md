@@ -17,10 +17,7 @@ Register it alongside the vendored built-ins in the sidecar's
 `CredentialProviderRegistry`:
 
 ```ts
-import {
-  builtinCredentialProviders,
-  createCredentialProviderRegistry,
-} from "@intx/harness";
+import { builtinCredentialProviders, createCredentialProviderRegistry } from "@intx/harness";
 import { createHttpRawAuthorizationCredentialProvider } from "@corbits/credential-providers";
 
 const providers = createCredentialProviderRegistry([

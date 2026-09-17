@@ -7,9 +7,7 @@ import { writeFileAtomicDurable } from "../src/atomic-write";
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(
-    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
 async function makeDir(): Promise<string> {

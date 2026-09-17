@@ -36,11 +36,7 @@ import { type } from "arktype";
 import type { AppEnv } from "@intx/hub-api";
 import type { CredentialCipher } from "@intx/types";
 import { cookiesFromHeader } from "@corbits/hub-api-client";
-import {
-  createConnectStateStore,
-  generatePKCEPair,
-  type ConnectStateStore,
-} from "./pkce";
+import { createConnectStateStore, generatePKCEPair, type ConnectStateStore } from "./pkce";
 import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
 import { reportError } from "@corbits/error-sink";
 import type { ConnectorDescriptor } from "./descriptor";
@@ -54,10 +50,7 @@ import type { ConnectorDescriptor } from "./descriptor";
  * `sanitizeReturnPath`'s own header for why an allowlist and not just
  * shape validation.
  */
-export const DEFAULT_RETURN_PATH_ALLOWLIST: readonly string[] = [
-  "/onboarding",
-  "/settings/",
-];
+export const DEFAULT_RETURN_PATH_ALLOWLIST: readonly string[] = ["/onboarding", "/settings/"];
 
 /**
  * Turns an untrusted `?return=` hint (or the cookie that carries it
@@ -132,9 +125,7 @@ export function sanitizeReturnPath(
   // target itself).
   if (candidate.includes("://")) return defaultReturnPath;
 
-  const allowed = allowlist.some(
-    (prefix) => candidate === prefix || candidate.startsWith(prefix),
-  );
+  const allowed = allowlist.some((prefix) => candidate === prefix || candidate.startsWith(prefix));
   return allowed ? candidate : defaultReturnPath;
 }
 
@@ -238,9 +229,7 @@ const VerifierStatePayload = type({
 });
 type VerifierStatePayload = typeof VerifierStatePayload.infer;
 
-function parseVerifierStatePayload(
-  value: unknown,
-): VerifierStatePayload | undefined {
+function parseVerifierStatePayload(value: unknown): VerifierStatePayload | undefined {
   const parsed = VerifierStatePayload(value);
   return parsed instanceof type.errors ? undefined : parsed;
 }
@@ -252,14 +241,10 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
   const registry = deps.registry;
   const oauthEnv = deps.oauthEnv ?? {};
   const defaultReturnPath = deps.defaultReturnPath ?? "/onboarding";
-  const returnPathAllowlist =
-    deps.returnPathAllowlist ?? DEFAULT_RETURN_PATH_ALLOWLIST;
+  const returnPathAllowlist = deps.returnPathAllowlist ?? DEFAULT_RETURN_PATH_ALLOWLIST;
   const secureCookies = deps.hubUrl.startsWith("https:");
 
-  const stateStores = new Map<
-    string,
-    ConnectStateStore<VerifierStatePayload>
-  >();
+  const stateStores = new Map<string, ConnectStateStore<VerifierStatePayload>>();
   function stateStoreFor(connectorId: string) {
     let store = stateStores.get(connectorId);
     if (store === undefined) {
@@ -377,10 +362,7 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
     const rateLimitKey = `${connectorId}:${user.id}`;
     const now = Date.now();
     const lastStart = lastStartByKey.get(rateLimitKey);
-    if (
-      lastStart !== undefined &&
-      now - lastStart < CONNECT_START_RATE_LIMIT_MS
-    ) {
+    if (lastStart !== undefined && now - lastStart < CONNECT_START_RATE_LIMIT_MS) {
       return c.redirect(
         redirectPath(returnPath, connectorId, {
           outcome: "error",
@@ -391,9 +373,7 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
     }
     lastStartByKey.set(rateLimitKey, now);
 
-    const pkce = descriptor.oauth.usesPKCE
-      ? await generatePKCEPair()
-      : undefined;
+    const pkce = descriptor.oauth.usesPKCE ? await generatePKCEPair() : undefined;
     const state = await stateStoreFor(connectorId).issue({
       userId: user.id,
       payload: { codeVerifier: pkce?.codeVerifier ?? "" },
@@ -421,9 +401,7 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
       c.req.path.replace(/\/start$/, "/callback"),
       deps.hubUrl,
     ).toString();
-    const authorizeUrlArgs: Parameters<
-      typeof descriptor.oauth.buildAuthorizeUrl
-    >[0] = {
+    const authorizeUrlArgs: Parameters<typeof descriptor.oauth.buildAuthorizeUrl>[0] = {
       callbackUrl,
       state,
       ...(pkce !== undefined ? { codeChallenge: pkce.codeChallenge } : {}),
@@ -486,10 +464,7 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
       );
     }
     const clientSecret = descriptor.oauth.clientSecret?.(oauthEnv);
-    if (
-      descriptor.oauth.clientSecret !== undefined &&
-      clientSecret === undefined
-    ) {
+    if (descriptor.oauth.clientSecret !== undefined && clientSecret === undefined) {
       return c.redirect(
         redirectPath(returnPath, connectorId, {
           outcome: "error",
@@ -562,9 +537,7 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
     const exchangeArgs: Parameters<typeof descriptor.oauth.exchange>[0] = {
       code,
       redirectUri: callbackUrl,
-      ...(descriptor.oauth.usesPKCE
-        ? { codeVerifier: statePayload.codeVerifier }
-        : {}),
+      ...(descriptor.oauth.usesPKCE ? { codeVerifier: statePayload.codeVerifier } : {}),
       ...(clientId !== undefined ? { clientId } : {}),
       ...(clientSecret !== undefined ? { clientSecret } : {}),
     };
@@ -583,9 +556,7 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
     }
 
     try {
-      const connectCredentialArgs: Parameters<
-        typeof deps.connectCredential
-      >[0] = {
+      const connectCredentialArgs: Parameters<typeof deps.connectCredential>[0] = {
         c,
         connectorId,
         userId: user.id,
@@ -662,9 +633,7 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
       );
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      deps.log(
-        `${connectorId} connect setup failed for user ${user.id}: ${message}`,
-      );
+      deps.log(`${connectorId} connect setup failed for user ${user.id}: ${message}`);
       // Never widen `extra` beyond identifiers safe to print — `cause` here
       // can carry the exchanged material (apiKey/refreshToken) or the
       // connector's clientSecret in scope above; reportError's redaction

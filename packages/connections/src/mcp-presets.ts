@@ -2,13 +2,7 @@
 // preset list, and Workbench's curated remote MCP servers — folded back in
 // here by CL-8156 from `templates/connectors.ts` (CL-7384 had split them
 // out) now that `@workbench/templates` no longer exists to own them.
-import {
-  siGithub,
-  siNotion,
-  siPosthog,
-  siRailway,
-  siSentry,
-} from "simple-icons";
+import { siGithub, siNotion, siPosthog, siRailway, siSentry } from "simple-icons";
 
 export type McpPresetConnectionMode = "oauth" | "keyless" | "token";
 
@@ -31,9 +25,7 @@ export type McpPreset = {
   readonly oauthScopes?: readonly string[];
 };
 
-export function mcpPresetConnectorIds(
-  presets: readonly McpPreset[],
-): readonly string[] {
+export function mcpPresetConnectorIds(presets: readonly McpPreset[]): readonly string[] {
   return presets.flatMap((preset) =>
     preset.nativeConnectorId === undefined ? [] : [preset.nativeConnectorId],
   );
@@ -52,8 +44,7 @@ export function mcpPresetByName(
 ): McpPreset | undefined {
   const needle = name.trim().toLowerCase();
   return presets.find(
-    (preset) =>
-      preset.slug === needle || preset.displayName.toLowerCase() === needle,
+    (preset) => preset.slug === needle || preset.displayName.toLowerCase() === needle,
   );
 }
 
@@ -195,5 +186,4 @@ export const MCP_PRESETS: readonly McpPreset[] = [
   },
 ];
 
-export const MCP_PRESET_CONNECTOR_IDS: readonly string[] =
-  mcpPresetConnectorIds(MCP_PRESETS);
+export const MCP_PRESET_CONNECTOR_IDS: readonly string[] = mcpPresetConnectorIds(MCP_PRESETS);

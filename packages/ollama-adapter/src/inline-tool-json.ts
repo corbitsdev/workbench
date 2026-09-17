@@ -36,11 +36,7 @@ const INLINE_TOOL_CALL_ID = "ollama-inline-0";
 const EMPTY_PARTIAL = { text: "" };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    Array.isArray(value) === false
-  );
+  return typeof value === "object" && value !== null && Array.isArray(value) === false;
 }
 
 type ParseResult =
@@ -72,12 +68,7 @@ function salvageToolCall(
   declaredNames: ReadonlySet<string>,
 ): { name: string; args: Record<string, unknown> } | null {
   for (const key of Object.keys(value)) {
-    if (
-      key !== "name" &&
-      key !== "parameters" &&
-      key !== "arguments" &&
-      key !== "id"
-    ) {
+    if (key !== "name" && key !== "parameters" && key !== "arguments" && key !== "id") {
       return null;
     }
   }
@@ -101,9 +92,7 @@ function salvageToolCall(
   return { name, args: raw };
 }
 
-function lastHeldText(
-  held: readonly InferenceEvent[],
-): InferenceEvent | undefined {
+function lastHeldText(held: readonly InferenceEvent[]): InferenceEvent | undefined {
   for (let i = held.length - 1; i >= 0; i--) {
     const event = held[i];
     if (event?.type === "inference.text.delta") {
@@ -119,8 +108,7 @@ function emitToolCallEvents(
 ): InferenceEvent[] {
   const seq = template?.seq ?? 0;
   const index =
-    template?.type === "inference.text.delta" &&
-    template.data.index !== undefined
+    template?.type === "inference.text.delta" && template.data.index !== undefined
       ? template.data.index
       : 0;
   return [
@@ -162,19 +150,13 @@ function matchingSalvage(
   return salvageToolCall(parsed.value, state.declaredNames);
 }
 
-function releaseHeldAsText(
-  output: InferenceEvent[],
-  state: InlineToolJsonState,
-): void {
+function releaseHeldAsText(output: InferenceEvent[], state: InlineToolJsonState): void {
   output.push(...state.held);
   state.held = [];
   state.verdict = "text";
 }
 
-function flushPending(
-  output: InferenceEvent[],
-  state: InlineToolJsonState,
-): void {
+function flushPending(output: InferenceEvent[], state: InlineToolJsonState): void {
   if (state.verdict !== "pending") {
     return;
   }
@@ -191,10 +173,7 @@ function flushPending(
   releaseHeldAsText(output, state);
 }
 
-function inspectHeldText(
-  output: InferenceEvent[],
-  state: InlineToolJsonState,
-): void {
+function inspectHeldText(output: InferenceEvent[], state: InlineToolJsonState): void {
   const parsed = parseExactObject(state.acc);
   if (parsed.kind === "incomplete") {
     return;

@@ -75,9 +75,7 @@ type ProviderHealthContextValue = {
   readonly clearPendingConnectProvider: () => void;
 };
 
-const ProviderHealthContext = createContext<ProviderHealthContextValue | null>(
-  null,
-);
+const ProviderHealthContext = createContext<ProviderHealthContextValue | null>(null);
 
 function firstUnhealthyProvider(
   providers: Readonly<Record<string, ProviderHealthRecord>>,
@@ -147,28 +145,18 @@ export function deriveProviderHealthChrome(
   return { kind: "unhealthy", banner };
 }
 
-export function ProviderHealthProvider({
-  children,
-}: {
-  readonly children: ReactNode;
-}) {
+export function ProviderHealthProvider({ children }: { readonly children: ReactNode }) {
   const { selectedTenantId } = useBench();
-  const [providers, setProviders] = useState<
-    Readonly<Record<string, ProviderHealthRecord>>
-  >({});
-  const [connectedProviderCount, setConnectedProviderCount] = useState<
-    number | undefined
-  >(undefined);
+  const [providers, setProviders] = useState<Readonly<Record<string, ProviderHealthRecord>>>({});
+  const [connectedProviderCount, setConnectedProviderCount] = useState<number | undefined>(
+    undefined,
+  );
   const [status, setStatus] = useState<ProviderHealthPollStatus>("unknown");
   // Keyed by provider, remembers the `at` of the incident a person last
   // dismissed — so a later `at` for the same provider is a NEW incident,
   // not a re-show of one already acknowledged.
-  const [dismissedAt, setDismissedAt] = useState<
-    Readonly<Record<string, string>>
-  >({});
-  const [pendingConnectProvider, setPendingConnectProvider] = useState<
-    string | null
-  >(null);
+  const [dismissedAt, setDismissedAt] = useState<Readonly<Record<string, string>>>({});
+  const [pendingConnectProvider, setPendingConnectProvider] = useState<string | null>(null);
 
   const tenantIdRef = useRef(selectedTenantId);
   tenantIdRef.current = selectedTenantId;
@@ -235,11 +223,7 @@ export function ProviderHealthProvider({
 
   const banner =
     status === "ready"
-      ? deriveProviderHealthBanner(
-          providers,
-          dismissedAt,
-          connectedProviderCount,
-        )
+      ? deriveProviderHealthBanner(providers, dismissedAt, connectedProviderCount)
       : null;
 
   return (
@@ -261,9 +245,7 @@ export function ProviderHealthProvider({
 function useProviderHealthContext(): ProviderHealthContextValue {
   const value = useContext(ProviderHealthContext);
   if (value === null) {
-    throw new Error(
-      "provider health hooks used outside ProviderHealthProvider",
-    );
+    throw new Error("provider health hooks used outside ProviderHealthProvider");
   }
   return value;
 }

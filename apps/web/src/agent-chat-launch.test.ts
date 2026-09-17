@@ -14,8 +14,7 @@ describe("launchAgentChat", () => {
   function stubFetch(respond: (path: string) => Response): RecordedCall[] {
     const calls: RecordedCall[] = [];
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-      const path =
-        typeof input === "string" ? input : new URL(String(input)).pathname;
+      const path = typeof input === "string" ? input : new URL(String(input)).pathname;
       calls.push(init === undefined ? { path } : { path, init });
       return Promise.resolve(respond(path));
     }) as typeof fetch;

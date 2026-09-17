@@ -30,9 +30,7 @@ test("carries the since parameter and bearer auth header", async () => {
   const fetchImpl = (async (input: URL | string, init?: RequestInit) => {
     captured.url = String(input);
     captured.auth =
-      (init?.headers as Record<string, string> | undefined)?.[
-        "authorization"
-      ] ?? null;
+      (init?.headers as Record<string, string> | undefined)?.["authorization"] ?? null;
     return new Response(JSON.stringify({ notes: [] }), { status: 200 });
   }) as unknown as typeof fetch;
 
@@ -40,19 +38,14 @@ test("carries the since parameter and bearer auth header", async () => {
     { apiKey: "secret", fetchImpl },
     { since: "2026-08-01T00:00:00.000Z" },
   );
-  expect(captured.url).toBe(
-    "https://api.granola.ai/v1/notes?since=2026-08-01T00%3A00%3A00.000Z",
-  );
+  expect(captured.url).toBe("https://api.granola.ai/v1/notes?since=2026-08-01T00%3A00%3A00.000Z");
   expect(captured.auth).toBe("Bearer secret");
 });
 
 test("throws on a non-ok HTTP response", async () => {
-  const fetchImpl = (async () =>
-    new Response("nope", { status: 401 })) as unknown as typeof fetch;
+  const fetchImpl = (async () => new Response("nope", { status: 401 })) as unknown as typeof fetch;
 
-  await expect(
-    listRecentGranolaNotes({ apiKey: "bad", fetchImpl }),
-  ).rejects.toThrow(/401/);
+  await expect(listRecentGranolaNotes({ apiKey: "bad", fetchImpl })).rejects.toThrow(/401/);
 });
 
 test("throws when the response body does not match the expected shape", async () => {
@@ -61,9 +54,9 @@ test("throws when the response body does not match the expected shape", async ()
       status: 200,
     })) as unknown as typeof fetch;
 
-  await expect(
-    listRecentGranolaNotes({ apiKey: "test-key", fetchImpl }),
-  ).rejects.toThrow(/did not match the expected shape/);
+  await expect(listRecentGranolaNotes({ apiKey: "test-key", fetchImpl })).rejects.toThrow(
+    /did not match the expected shape/,
+  );
 });
 
 test("getGranolaNote fetches one note by id with its transcript", async () => {
@@ -81,19 +74,12 @@ test("getGranolaNote fetches one note by id with its transcript", async () => {
   const fetchImpl = (async (input: URL | string, init?: RequestInit) => {
     captured.url = String(input);
     captured.auth =
-      (init?.headers as Record<string, string> | undefined)?.[
-        "authorization"
-      ] ?? null;
+      (init?.headers as Record<string, string> | undefined)?.["authorization"] ?? null;
     return new Response(JSON.stringify(noteWithTranscript), { status: 200 });
   }) as unknown as typeof fetch;
 
-  const note = await getGranolaNote(
-    { apiKey: "test-key", fetchImpl },
-    { noteId: "note_1" },
-  );
-  expect(captured.url).toBe(
-    "https://api.granola.ai/v1/notes/note_1?include=transcript",
-  );
+  const note = await getGranolaNote({ apiKey: "test-key", fetchImpl }, { noteId: "note_1" });
+  expect(captured.url).toBe("https://api.granola.ai/v1/notes/note_1?include=transcript");
   expect(captured.auth).toBe("Bearer test-key");
   expect(note).toEqual(noteWithTranscript);
 });

@@ -11,19 +11,13 @@
 // exist, and the failure only showed up as broken layout in production.
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 const APP_CSS = "apps/web/src/app.css";
 const TAILWIND_CSS = "apps/web/src/tailwind.css";
 
 const IMPORT_PATTERN = /@import\s+"@corbits\/([a-z0-9-]+)\/styles\.css";/g;
-const SOURCE_PATTERN =
-  /@source\s+"\.\.\/\.\.\/\.\.\/packages\/([a-z0-9-]+)\/src";/g;
+const SOURCE_PATTERN = /@source\s+"\.\.\/\.\.\/\.\.\/packages\/([a-z0-9-]+)\/src";/g;
 
 /** Package names behind every `@corbits/<name>/styles.css` import. */
 export function importedStylesheetPackages(css: string): string[] {

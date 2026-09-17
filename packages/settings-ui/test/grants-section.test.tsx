@@ -23,11 +23,7 @@ const timestamps = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-function principal(
-  kind: "user" | "agent" | "workflow",
-  id: string,
-  name: string,
-) {
+function principal(kind: "user" | "agent" | "workflow", id: string, name: string) {
   return {
     id,
     tenantId: "tnt_1",
@@ -40,9 +36,10 @@ function principal(
   };
 }
 
-function mountDialog(
-  principals: Parameters<typeof CreateGrantDialog>[0]["principals"] = [],
-): { container: HTMLDivElement; root: Root } {
+function mountDialog(principals: Parameters<typeof CreateGrantDialog>[0]["principals"] = []): {
+  container: HTMLDivElement;
+  root: Root;
+} {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -65,9 +62,9 @@ describe("CreateGrantDialog", () => {
   test("renames the principal target-type option to name every kind it covers", () => {
     const { container, root } = mountDialog();
     try {
-      const cardTitles = [
-        ...document.body.querySelectorAll(".settings-kind-card-title"),
-      ].map((node) => node.textContent);
+      const cardTitles = [...document.body.querySelectorAll(".settings-kind-card-title")].map(
+        (node) => node.textContent,
+      );
       expect(cardTitles).not.toContain("A person");
       expect(cardTitles).toContain("A person, agent, or workflow");
     } finally {
@@ -80,19 +77,13 @@ describe("CreateGrantDialog", () => {
     const { container, root } = mountDialog();
     try {
       // KindCards renders a role="group" of pressable buttons, not <select>.
-      expect(
-        document.body.querySelector('[role=group][aria-label="Applies to"]'),
-      ).not.toBeNull();
-      expect(
-        document.body.querySelector('[role=group][aria-label="Resource"]'),
-      ).not.toBeNull();
+      expect(document.body.querySelector('[role=group][aria-label="Applies to"]')).not.toBeNull();
+      expect(document.body.querySelector('[role=group][aria-label="Resource"]')).not.toBeNull();
       // The plain-language resource label is the card's visible title; the
       // raw slug, if shown at all, is secondary card detail — never the
       // preview sentence's wording.
       expect(document.body.textContent).toContain("agent workflows");
-      const preview = document.body.querySelector(
-        '[data-testid="grant-preview"]',
-      );
+      const preview = document.body.querySelector('[data-testid="grant-preview"]');
       expect(preview?.textContent).not.toContain("workflow-definition");
     } finally {
       act(() => root.unmount());
@@ -122,10 +113,8 @@ describe("CreateGrantDialog", () => {
         );
       });
 
-      const principalCard = [
-        ...document.body.querySelectorAll("[role=group] button"),
-      ].find((button) =>
-        button.textContent?.includes("A person, agent, or workflow"),
+      const principalCard = [...document.body.querySelectorAll("[role=group] button")].find(
+        (button) => button.textContent?.includes("A person, agent, or workflow"),
       );
       expect(principalCard).not.toBeUndefined();
       act(() => (principalCard as HTMLButtonElement).click());
@@ -134,9 +123,7 @@ describe("CreateGrantDialog", () => {
       expect(optgroups.map((group) => group.label)).toEqual(
         PRINCIPAL_KIND_ORDER.map((kind) => PRINCIPAL_KIND_LABEL[kind]),
       );
-      expect(optgroups.map((group) => group.label)).not.toEqual([
-        ...PRINCIPAL_KIND_ORDER,
-      ]);
+      expect(optgroups.map((group) => group.label)).not.toEqual([...PRINCIPAL_KIND_ORDER]);
     } finally {
       act(() => root.unmount());
       container.remove();

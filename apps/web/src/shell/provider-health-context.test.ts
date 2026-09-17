@@ -33,22 +33,15 @@ describe("deriveProviderHealthBanner", () => {
     const providers = {
       anthropic: { ...RECORD, at: "2026-08-15T00:00:00.000Z" },
     };
-    expect(
-      deriveProviderHealthBanner(providers, {}, 0)?.zeroWorkingProviders,
-    ).toBe(true);
-    expect(
-      deriveProviderHealthBanner(providers, {}, 1)?.zeroWorkingProviders,
-    ).toBe(false);
+    expect(deriveProviderHealthBanner(providers, {}, 0)?.zeroWorkingProviders).toBe(true);
+    expect(deriveProviderHealthBanner(providers, {}, 1)?.zeroWorkingProviders).toBe(false);
   });
 
   test("an unknown connected count never claims zero working providers", () => {
     const providers = {
       anthropic: { ...RECORD, at: "2026-08-15T00:00:00.000Z" },
     };
-    expect(
-      deriveProviderHealthBanner(providers, {}, undefined)
-        ?.zeroWorkingProviders,
-    ).toBe(false);
+    expect(deriveProviderHealthBanner(providers, {}, undefined)?.zeroWorkingProviders).toBe(false);
   });
 
   test("a dismissed incident (same `at`) is hidden", () => {
@@ -76,9 +69,7 @@ describe("deriveProviderHealthBanner", () => {
       },
       openai: { ...RECORD, at: "2026-08-15T01:00:00.000Z" },
     };
-    expect(deriveProviderHealthBanner(providers, {}, 2)?.provider).toBe(
-      "openai",
-    );
+    expect(deriveProviderHealthBanner(providers, {}, 2)?.provider).toBe("openai");
   });
 });
 

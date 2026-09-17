@@ -1,28 +1,21 @@
 {
   "name": "@corbits/linear-tools",
+  "version": "0.0.5",
   "description": "Linear integration: a minimal client and an @intx/agent tool bundle for listing a user's recently updated issues",
-  "version": "0.0.4",
   "license": "LGPL-2.1-or-later",
-  "type": "module",
-  "interchange": {
-    "credentials": [
-      {
-        "handle": "linear"
-      }
-    ]
-  },
-  "exports": {
-    ".": "./src/index.ts"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "packages/linear-tools"
   },
   "files": [
     "src",
     "LICENSE",
     "README.md"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "packages/linear-tools"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -34,10 +27,6 @@
   "dependencies": {
     "arktype": "catalog:"
   },
-  "peerDependencies": {
-    "@intx/agent": "0.3.0",
-    "@intx/types": "0.3.0"
-  },
   "devDependencies": {
     "@corbits/credential-providers": "workspace:*",
     "@intx/authz": "0.3.0",
@@ -46,5 +35,16 @@
     "@intx/harness": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0"
+  },
+  "interchange": {
+    "credentials": [
+      {
+        "handle": "linear"
+      }
+    ]
   }
 }

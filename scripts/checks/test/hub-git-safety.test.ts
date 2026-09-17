@@ -63,10 +63,7 @@ test("committing .data/hub paths is a violation", () => {
 });
 
 test("a large commit with no source-tree file is a violation", () => {
-  const files = Array.from(
-    { length: LARGE_COMMIT_FILE_THRESHOLD + 1 },
-    (_, i) => `object-${i}`,
-  );
+  const files = Array.from({ length: LARGE_COMMIT_FILE_THRESHOLD + 1 }, (_, i) => `object-${i}`);
   const report = auditHubJunkCommits([commit({ files })]);
   expect(report.violations).toHaveLength(1);
   expect(report.violations[0]).toContain("no corresponding source-tree change");
@@ -75,10 +72,7 @@ test("a large commit with no source-tree file is a violation", () => {
 test("a large commit that also changes source passes the size heuristic", () => {
   const files = [
     "apps/hub/src/index.ts",
-    ...Array.from(
-      { length: LARGE_COMMIT_FILE_THRESHOLD },
-      (_, i) => `extra-${i}`,
-    ),
+    ...Array.from({ length: LARGE_COMMIT_FILE_THRESHOLD }, (_, i) => `extra-${i}`),
   ];
   expect(auditHubJunkCommits([commit({ files })]).violations).toEqual([]);
 });

@@ -11,13 +11,10 @@ import {
 import type { CodeReviewGitHub } from "./review-run";
 
 /** The GitHub reach a review run needs, under a resolved credential. */
-export function createGitHubReviewClient(
-  config: GitHubClientConfig,
-): CodeReviewGitHub {
+export function createGitHubReviewClient(config: GitHubClientConfig): CodeReviewGitHub {
   return {
     fetchDiff: (ref) => fetchPullRequestDiff(config, ref),
-    postReview: (ref, headSha, review) =>
-      postPullRequestReview(config, ref, headSha, review),
+    postReview: (ref, headSha, review) => postPullRequestReview(config, ref, headSha, review),
     listPostedComments: (ref) => fetchPullRequestReviewComments(config, ref),
   };
 }

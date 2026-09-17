@@ -10,8 +10,7 @@ afterEach(() => {
 
 describe("fetchGranolaPluginConnected", () => {
   test("false on 404 — Granola not connected", async () => {
-    globalThis.fetch = (async () =>
-      new Response(null, { status: 404 })) as unknown as typeof fetch;
+    globalThis.fetch = (async () => new Response(null, { status: 404 })) as unknown as typeof fetch;
     expect(await fetchGranolaPluginConnected("tnt_1")).toBe(false);
   });
 

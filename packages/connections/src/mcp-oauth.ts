@@ -15,10 +15,7 @@
 // `./pkce.ts`'s `createConnectStateStore` already uses for the fixed-
 // registry OAuth connectors, so a state minted moments before a hub
 // restart survives it exactly like `./oauth-routes.ts`'s flows do.
-import {
-  auth,
-  type OAuthClientProvider,
-} from "@modelcontextprotocol/sdk/client/auth.js";
+import { auth, type OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
   OAuthClientInformationMixed,
   OAuthClientMetadata,
@@ -97,9 +94,7 @@ export function createMcpOAuthProvider(args: {
     },
     codeVerifier(): string {
       if (session.codeVerifier === undefined) {
-        throw new Error(
-          "No PKCE code verifier saved for this MCP OAuth session",
-        );
+        throw new Error("No PKCE code verifier saved for this MCP OAuth session");
       }
       return session.codeVerifier;
     },
@@ -136,9 +131,7 @@ export async function refreshMcpOAuthTokens(args: {
 }): Promise<McpOAuthRefreshResult> {
   const session: McpOAuthSession = {
     tokens: args.tokens,
-    ...(args.clientInformation !== undefined
-      ? { clientInformation: args.clientInformation }
-      : {}),
+    ...(args.clientInformation !== undefined ? { clientInformation: args.clientInformation } : {}),
   };
   const provider = createMcpOAuthProvider({
     callbackUrl: args.callbackUrl,

@@ -83,15 +83,13 @@ function stubFetch(opts: {
     if (url.endsWith("/participants/messages")) {
       opts.posted?.push(JSON.parse(String(init?.body)));
       if (opts.postStatus !== undefined && opts.postStatus !== 201) {
-        return new Response(
-          JSON.stringify({ error: { message: "no channel" } }),
-          { status: opts.postStatus },
-        );
+        return new Response(JSON.stringify({ error: { message: "no channel" } }), {
+          status: opts.postStatus,
+        });
       }
-      return new Response(
-        JSON.stringify({ id: "msg_1", createdAt: "2026-08-20T00:00:00Z" }),
-        { status: 201 },
-      );
+      return new Response(JSON.stringify({ id: "msg_1", createdAt: "2026-08-20T00:00:00Z" }), {
+        status: 201,
+      });
     }
     if (url.includes("/providers")) {
       return Response.json({

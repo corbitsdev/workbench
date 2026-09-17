@@ -100,9 +100,7 @@ export function createAgentDefinitionDraftRoutes(
           503,
         );
       }
-      const body = CreateAgentDefinitionDraftBody(
-        await c.req.json().catch(() => undefined),
-      );
+      const body = CreateAgentDefinitionDraftBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
           makeErrorEnvelope({

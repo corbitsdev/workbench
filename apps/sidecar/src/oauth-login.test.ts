@@ -3,10 +3,7 @@
 // `OAuthCallbackPortInUseError`, and never opens a browser sidecar-side.
 import { afterAll, describe, expect, test } from "bun:test";
 import { createServer, type Server } from "node:http";
-import {
-  CODEX_AUTHORIZE_URL,
-  CODEX_REDIRECT_URI,
-} from "@corbits/codex-provider/constants";
+import { CODEX_AUTHORIZE_URL, CODEX_REDIRECT_URI } from "@corbits/codex-provider/constants";
 import { XAI_REDIRECT_URI } from "@corbits/xai-provider";
 import { OAuthCallbackPortInUseError } from "@corbits/oauth-core";
 import { createOAuthLoopbackLoginService } from "./oauth-login";

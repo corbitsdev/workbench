@@ -67,12 +67,7 @@ import { spawnSync } from "node:child_process";
 import { Glob } from "bun";
 import path from "node:path";
 import ts from "typescript";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 import { resolveBaseRef } from "./tool-package-freshness";
 
 const SCAN_DIRS = ["apps", "packages", "workflows"];
@@ -121,10 +116,7 @@ function isExcludedPath(relPath: string): boolean {
   return false;
 }
 
-export async function scanFiles(
-  root: string,
-  dirs: readonly string[],
-): Promise<string[]> {
+export async function scanFiles(root: string, dirs: readonly string[]): Promise<string[]> {
   const files: string[] = [];
   for (const dir of dirs) {
     const glob = new Glob(`${dir}/**/*.{ts,tsx}`);
@@ -152,9 +144,7 @@ export interface ReportErrorBindings {
  * that happens to share the name doesn't pass, and an aliased import
  * still does.
  */
-export function findReportErrorBindings(
-  sourceFile: ts.SourceFile,
-): ReportErrorBindings {
+export function findReportErrorBindings(sourceFile: ts.SourceFile): ReportErrorBindings {
   const localNames = new Set<string>();
   const namespaceNames = new Set<string>();
   for (const statement of sourceFile.statements) {
@@ -175,10 +165,7 @@ export function findReportErrorBindings(
   return { localNames, namespaceNames };
 }
 
-function callsReportError(
-  node: ts.Node,
-  bindings: ReportErrorBindings,
-): boolean {
+function callsReportError(node: ts.Node, bindings: ReportErrorBindings): boolean {
   let found = false;
   const visit = (n: ts.Node): void => {
     if (found) return;
@@ -219,11 +206,7 @@ function containsThrow(node: ts.Node): boolean {
       found = true;
       return;
     }
-    if (
-      ts.isFunctionLike(n) ||
-      ts.isClassDeclaration(n) ||
-      ts.isClassExpression(n)
-    ) {
+    if (ts.isFunctionLike(n) || ts.isClassDeclaration(n) || ts.isClassExpression(n)) {
       return;
     }
     ts.forEachChild(n, visit);
@@ -238,10 +221,7 @@ function containsThrow(node: ts.Node): boolean {
  * is the line above it, which sits inside the try block's trailing
  * trivia rather than the catch clause's own text.
  */
-function findIgnoreReason(
-  sourceFile: ts.SourceFile,
-  clause: ts.CatchClause,
-): string | undefined {
+function findIgnoreReason(sourceFile: ts.SourceFile, clause: ts.CatchClause): string | undefined {
   const scope = ts.isTryStatement(clause.parent) ? clause.parent : clause;
   const fullText = scope.getFullText(sourceFile);
   const match = IGNORE_MARKER_PATTERN.exec(fullText);
@@ -257,9 +237,7 @@ function firstNonEmptyLine(text: string): string {
 }
 
 function lineOf(sourceFile: ts.SourceFile, node: ts.Node): number {
-  return (
-    sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
-  );
+  return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
 }
 
 export interface Finding {
@@ -304,13 +282,8 @@ export function scanForFindings(files: readonly ScannedFile[]): ScanResult {
 
         if (ignoreReason !== undefined) {
           optedOutCount += 1;
-          optedOutNotes.push(
-            `${relPath}:${line}: catch opted out (${ignoreReason})`,
-          );
-        } else if (
-          callsReportError(node.block, bindings) ||
-          containsThrow(node.block)
-        ) {
+          optedOutNotes.push(`${relPath}:${line}: catch opted out (${ignoreReason})`);
+        } else if (callsReportError(node.block, bindings) || containsThrow(node.block)) {
           compliantCount += 1;
         } else {
           findings.push({
@@ -344,11 +317,7 @@ function violationMessage(finding: Finding): string {
   );
 }
 
-export function baselineKey(
-  relPath: string,
-  occurrence: number,
-  evidence: string,
-): string {
+export function baselineKey(relPath: string, occurrence: number, evidence: string): string {
   return `${relPath}\t${occurrence}\t${evidence}`;
 }
 
@@ -358,19 +327,14 @@ export function baselineKey(
  * identity a baseline entry keys on, since raw line numbers drift as a
  * file is edited elsewhere.
  */
-export function keyFindings(
-  findings: readonly Finding[],
-): Map<string, Finding> {
+export function keyFindings(findings: readonly Finding[]): Map<string, Finding> {
   const seen = new Map<string, number>();
   const keyed = new Map<string, Finding>();
   for (const finding of findings) {
     const seenKey = `${finding.relPath} ${finding.evidence}`;
     const occurrence = (seen.get(seenKey) ?? 0) + 1;
     seen.set(seenKey, occurrence);
-    keyed.set(
-      baselineKey(finding.relPath, occurrence, finding.evidence),
-      finding,
-    );
+    keyed.set(baselineKey(finding.relPath, occurrence, finding.evidence), finding);
   }
   return keyed;
 }
@@ -486,9 +450,7 @@ const DIFF_HUNK_PATTERN = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
  * tree. A hunk that only deletes lines (`+c,0`) touches nothing in the
  * new file and is skipped.
  */
-export function parseChangedRanges(
-  diffText: string,
-): Map<string, ChangedRange[]> {
+export function parseChangedRanges(diffText: string): Map<string, ChangedRange[]> {
   const ranges = new Map<string, ChangedRange[]>();
   let currentFile: string | undefined;
   for (const line of diffText.split("\n")) {
@@ -523,13 +485,8 @@ async function writeBaseline(root: string): Promise<void> {
   const files = await readFiles(root);
   const scan = scanForFindings(files);
   const keyed = keyFindings(scan.findings);
-  await Bun.write(
-    path.join(root, BASELINE_PATH),
-    serializeBaseline(keyed.keys()),
-  );
-  console.log(
-    `check:report-error: wrote ${keyed.size} entrie(s) to ${BASELINE_PATH}`,
-  );
+  await Bun.write(path.join(root, BASELINE_PATH), serializeBaseline(keyed.keys()));
+  console.log(`check:report-error: wrote ${keyed.size} entrie(s) to ${BASELINE_PATH}`);
 }
 
 async function main(): Promise<void> {
@@ -552,9 +509,7 @@ async function main(): Promise<void> {
   const changedLines =
     baseRef === undefined
       ? undefined
-      : parseChangedRanges(
-          git(root, ["diff", "--unified=0", `${baseRef}...HEAD`]) ?? "",
-        );
+      : parseChangedRanges(git(root, ["diff", "--unified=0", `${baseRef}...HEAD`]) ?? "");
 
   const report = auditReportError(files, {
     baseline,
@@ -567,9 +522,7 @@ async function main(): Promise<void> {
         "authoritative run. New-vs-baseline enforcement still applies.",
     );
   }
-  report.notes.push(
-    `scanned ${files.length} file(s) under ${SCAN_DIRS.join(", ")}`,
-  );
+  report.notes.push(`scanned ${files.length} file(s) under ${SCAN_DIRS.join(", ")}`);
   reportAndExit("check:report-error", report);
 }
 

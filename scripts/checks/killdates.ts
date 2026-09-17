@@ -7,12 +7,7 @@
 // bridges register here in the same change that introduces them.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 import { hashDirectory } from "./lib/tree-hash";
 
 export const REGISTRY_PATH = "scripts/checks/kill-dates.txt";
@@ -52,15 +47,11 @@ export function parseKillDates(text: string): ParsedKillDates {
       owner.length === 0 ||
       killDate === undefined
     ) {
-      parsed.problems.push(
-        `malformed row "${line}" — expected "path | owner | YYYY-MM-DD".`,
-      );
+      parsed.problems.push(`malformed row "${line}" — expected "path | owner | YYYY-MM-DD".`);
       continue;
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(killDate)) {
-      parsed.problems.push(
-        `row "${line}" has kill date "${killDate}" — expected YYYY-MM-DD.`,
-      );
+      parsed.problems.push(`row "${line}" has kill date "${killDate}" — expected YYYY-MM-DD.`);
       continue;
     }
     const entry: KillDateEntry = { path: entryPath, owner, killDate };
@@ -121,10 +112,7 @@ export function auditVendorCoverage(
 }
 
 /** Every existing vendored row's recorded hash must match its tree. */
-export function auditVendorDrift(
-  entries: readonly KillDateEntry[],
-  root: string,
-): CheckReport {
+export function auditVendorDrift(entries: readonly KillDateEntry[], root: string): CheckReport {
   const report = emptyReport();
   for (const entry of entries) {
     if (!entry.path.startsWith("vendor/")) continue;
@@ -174,8 +162,7 @@ export function auditKillDates(
       continue;
     }
     report.notes.push(
-      `${entry.path} is temporary until ${entry.killDate} ` +
-        `(owner: ${entry.owner}).`,
+      `${entry.path} is temporary until ${entry.killDate} ` + `(owner: ${entry.owner}).`,
     );
   }
   return report;
@@ -191,9 +178,7 @@ function main(): void {
   const report = auditKillDates(parsed.entries, today, (repoRelativePath) =>
     existsSync(path.join(root, repoRelativePath)),
   );
-  report.violations.unshift(
-    ...parsed.problems.map((problem) => `${REGISTRY_PATH}: ${problem}`),
-  );
+  report.violations.unshift(...parsed.problems.map((problem) => `${REGISTRY_PATH}: ${problem}`));
   const coverage = auditVendorCoverage(listVendoredPaths(root), parsed.entries);
   report.violations.push(...coverage.violations);
   report.violations.push(...auditVendorDrift(parsed.entries, root).violations);

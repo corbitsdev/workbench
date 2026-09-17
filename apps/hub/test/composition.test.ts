@@ -90,19 +90,14 @@ describeIfDb("shutdown", () => {
     // index.ts schedules its reconciliation loop with setTimeout(fn,
     // 1000) — the one 1000ms setTimeout call site in the module — so
     // this is the pending timer close() must cancel.
-    const reconciliationCallIndex = setTimeoutSpy.mock.calls.findIndex(
-      (call) => call[1] === 1000,
-    );
+    const reconciliationCallIndex = setTimeoutSpy.mock.calls.findIndex((call) => call[1] === 1000);
     expect(reconciliationCallIndex).toBeGreaterThanOrEqual(0);
-    const reconciliationTimerId = setTimeoutSpy.mock.results[
-      reconciliationCallIndex
-    ]?.value as ReturnType<typeof setTimeout>;
+    const reconciliationTimerId = setTimeoutSpy.mock.results[reconciliationCallIndex]
+      ?.value as ReturnType<typeof setTimeout>;
 
     await hub.close();
 
-    expect(clearTimeoutSpy.mock.calls.map((call) => call[0])).toContain(
-      reconciliationTimerId,
-    );
+    expect(clearTimeoutSpy.mock.calls.map((call) => call[0])).toContain(reconciliationTimerId);
 
     setTimeoutSpy.mockRestore();
     clearTimeoutSpy.mockRestore();
@@ -115,9 +110,7 @@ describeIfDb("extension mounting", () => {
 
     // Anonymous request to an extension route: the platform's tenant
     // middleware answers 401 before the extension's handler runs.
-    const gated = await hub.app.request(
-      "/api/tenants/some-tenant/chat/workbenches",
-    );
+    const gated = await hub.app.request("/api/tenants/some-tenant/chat/workbenches");
     expect(gated.status).toBe(401);
     expect(await gated.json()).toEqual({
       error: { code: "unauthorized", message: "Authentication required" },
@@ -176,11 +169,7 @@ describeIfDb(
       // Same targeted account, a distinct forged source IP every attempt.
       await signInAttempt(hub, "victim@example.com", "203.0.113.10");
       await signInAttempt(hub, "victim@example.com", "203.0.113.20");
-      const throttled = await signInAttempt(
-        hub,
-        "victim@example.com",
-        "203.0.113.30",
-      );
+      const throttled = await signInAttempt(hub, "victim@example.com", "203.0.113.30");
 
       expect(throttled.status).toBe(429);
     });
@@ -194,19 +183,11 @@ describeIfDb(
 
       // Exhausts alice's budget (max: 1), from the same source IP.
       await signInAttempt(hub, "alice@example.com", "203.0.113.40");
-      const throttledAlice = await signInAttempt(
-        hub,
-        "alice@example.com",
-        "203.0.113.40",
-      );
+      const throttledAlice = await signInAttempt(hub, "alice@example.com", "203.0.113.40");
       expect(throttledAlice.status).toBe(429);
 
       // bob's very first attempt is untouched by alice's exhausted budget.
-      const freshBob = await signInAttempt(
-        hub,
-        "bob@example.com",
-        "203.0.113.40",
-      );
+      const freshBob = await signInAttempt(hub, "bob@example.com", "203.0.113.40");
       expect(freshBob.status).not.toBe(429);
     });
 
@@ -218,11 +199,7 @@ describeIfDb(
       closers.push(hub.close);
 
       await signInAttempt(hub, "throttle-me@example.com", "203.0.113.50");
-      const throttled = await signInAttempt(
-        hub,
-        "throttle-me@example.com",
-        "203.0.113.60",
-      );
+      const throttled = await signInAttempt(hub, "throttle-me@example.com", "203.0.113.60");
 
       expect(throttled.status).toBe(429);
       expect(throttled.headers.get("retry-after")).not.toBeNull();
@@ -251,22 +228,13 @@ describeIfDb(
       // The account owner's correct password still succeeds: only
       // failures ever consume budget, so a correct attempt is never
       // gated on how many wrong guesses came before it.
-      const genuineSignIn = await signInAttempt(
-        hub,
-        email,
-        "203.0.113.73",
-        password,
-      );
+      const genuineSignIn = await signInAttempt(hub, email, "203.0.113.73", password);
       expect(genuineSignIn.status).toBe(200);
 
       // That success cleared the bucket: the very next wrong guess is a
       // fresh first failure, not an immediate 429 carried over from the
       // attacker's earlier attempts.
-      const freshFailureAfterSuccess = await signInAttempt(
-        hub,
-        email,
-        "203.0.113.74",
-      );
+      const freshFailureAfterSuccess = await signInAttempt(hub, email, "203.0.113.74");
       expect(freshFailureAfterSuccess.status).not.toBe(429);
     });
 
@@ -290,11 +258,7 @@ describeIfDb(
 
       // A real account's first attempt is untouched by the malformed
       // traffic above.
-      const fresh = await signInAttempt(
-        hub,
-        "never-touched@example.com",
-        "203.0.113.90",
-      );
+      const fresh = await signInAttempt(hub, "never-touched@example.com", "203.0.113.90");
       expect(fresh.status).not.toBe(429);
     });
   },

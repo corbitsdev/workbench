@@ -57,10 +57,7 @@ export type CreateWorkflowRunAuthenticatorDeps = {
 };
 
 export type ConcreteWorkflowRunAuthenticator = {
-  resolve(
-    token: string,
-    runAddress: string,
-  ): Promise<ResolvedWorkflowRunScope | null>;
+  resolve(token: string, runAddress: string): Promise<ResolvedWorkflowRunScope | null>;
 };
 
 export function createWorkflowRunAuthenticator(

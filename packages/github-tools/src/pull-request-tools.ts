@@ -14,11 +14,7 @@ import type { CredentialCapability } from "@intx/types";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 import { type } from "arktype";
 
-import {
-  fetchPullRequestDiff,
-  parsePullRequestUrl,
-  postPullRequestReview,
-} from "./pull-requests";
+import { fetchPullRequestDiff, parsePullRequestUrl, postPullRequestReview } from "./pull-requests";
 
 export const GITHUB_PULL_REQUEST_DIFF_TOOL = "github_pull_request_diff";
 export const GITHUB_POST_PULL_REQUEST_REVIEW_TOOL = "github_post_pr_review";
@@ -43,11 +39,7 @@ const ReviewArguments = type({
   }).array(),
 });
 
-function errorResult(
-  callId: string,
-  message: string,
-  detail?: unknown,
-): ToolResult {
+function errorResult(callId: string, message: string, detail?: unknown): ToolResult {
   return {
     callId,
     content: message,
@@ -91,24 +83,14 @@ const NOT_CONNECTED =
   "GitHub is not connected for this run, so the pull request cannot be " +
   "read or reviewed. Say so plainly instead of guessing at the change.";
 
-async function runDiff(
-  env: GitHubPullRequestEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runDiff(env: GitHubPullRequestEnv, call: ToolCall): Promise<ToolResult> {
   const args = DiffArguments(call.arguments);
   if (args instanceof type.errors) {
-    return errorResult(
-      call.id,
-      `${GITHUB_PULL_REQUEST_DIFF_TOOL}: ${args.summary}`,
-    );
+    return errorResult(call.id, `${GITHUB_PULL_REQUEST_DIFF_TOOL}: ${args.summary}`);
   }
   const config = await resolveConfig(env);
   if (config === null) {
-    return errorResult(
-      call.id,
-      NOT_CONNECTED,
-      missingCredentialDetail(GITHUB_CREDENTIAL_HANDLE),
-    );
+    return errorResult(call.id, NOT_CONNECTED, missingCredentialDetail(GITHUB_CREDENTIAL_HANDLE));
   }
   try {
     const ref = parsePullRequestUrl(args.pullRequestUrl);
@@ -119,24 +101,14 @@ async function runDiff(
   }
 }
 
-async function runPostReview(
-  env: GitHubPullRequestEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runPostReview(env: GitHubPullRequestEnv, call: ToolCall): Promise<ToolResult> {
   const args = ReviewArguments(call.arguments);
   if (args instanceof type.errors) {
-    return errorResult(
-      call.id,
-      `${GITHUB_POST_PULL_REQUEST_REVIEW_TOOL}: ${args.summary}`,
-    );
+    return errorResult(call.id, `${GITHUB_POST_PULL_REQUEST_REVIEW_TOOL}: ${args.summary}`);
   }
   const config = await resolveConfig(env);
   if (config === null) {
-    return errorResult(
-      call.id,
-      NOT_CONNECTED,
-      missingCredentialDetail(GITHUB_CREDENTIAL_HANDLE),
-    );
+    return errorResult(call.id, NOT_CONNECTED, missingCredentialDetail(GITHUB_CREDENTIAL_HANDLE));
   }
   try {
     const ref = parsePullRequestUrl(args.pullRequestUrl);
@@ -176,8 +148,7 @@ export const githubPullRequestTools = defineTool<GitHubPullRequestEnv>({
             pullRequestUrl: {
               type: "string",
               description:
-                "The pull request's URL, e.g. " +
-                "https://github.com/owner/repo/pull/123.",
+                "The pull request's URL, e.g. " + "https://github.com/owner/repo/pull/123.",
             },
           },
           required: ["pullRequestUrl"],
@@ -201,8 +172,7 @@ export const githubPullRequestTools = defineTool<GitHubPullRequestEnv>({
             headSha: {
               type: "string",
               description:
-                "The head commit sha the diff reported, which the review " +
-                "is anchored to.",
+                "The head commit sha the diff reported, which the review " + "is anchored to.",
             },
             body: {
               type: "string",
@@ -227,8 +197,6 @@ export const githubPullRequestTools = defineTool<GitHubPullRequestEnv>({
       },
     ],
     run: (call, _signal) =>
-      call.name === GITHUB_PULL_REQUEST_DIFF_TOOL
-        ? runDiff(env, call)
-        : runPostReview(env, call),
+      call.name === GITHUB_PULL_REQUEST_DIFF_TOOL ? runDiff(env, call) : runPostReview(env, call),
   }),
 });

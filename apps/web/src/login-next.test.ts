@@ -27,9 +27,7 @@ describe("validatedNextPath", () => {
   });
 
   test("an absolute URL is rejected", () => {
-    expect(validatedNextPath("?next=https%3A%2F%2Fevil.example%2Fphish")).toBe(
-      "/",
-    );
+    expect(validatedNextPath("?next=https%3A%2F%2Fevil.example%2Fphish")).toBe("/");
   });
 
   test("a protocol-relative path is rejected", () => {

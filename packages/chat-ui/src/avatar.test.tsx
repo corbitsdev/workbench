@@ -15,20 +15,11 @@ import {
 
 describe("avatarColorForPrincipal", () => {
   test("is deterministic for the same principal", () => {
-    expect(avatarColorForPrincipal("prn_alice")).toBe(
-      avatarColorForPrincipal("prn_alice"),
-    );
+    expect(avatarColorForPrincipal("prn_alice")).toBe(avatarColorForPrincipal("prn_alice"));
   });
 
   test("always returns a color from the approved pastel palette", () => {
-    const principals = [
-      "prn_alice",
-      "prn_bob",
-      "prn_carla",
-      "prn_dana",
-      "prn_eve",
-      "prn_frank",
-    ];
+    const principals = ["prn_alice", "prn_bob", "prn_carla", "prn_dana", "prn_eve", "prn_frank"];
     for (const p of principals) {
       expect(AVATAR_COLORS).toContain(avatarColorForPrincipal(p));
     }
@@ -36,9 +27,7 @@ describe("avatarColorForPrincipal", () => {
 
   test("distributes distinct principals across palette colors", () => {
     const colors = new Set(
-      ["prn_alice", "prn_bob", "prn_carla", "prn_dana"].map(
-        avatarColorForPrincipal,
-      ),
+      ["prn_alice", "prn_bob", "prn_carla", "prn_dana"].map(avatarColorForPrincipal),
     );
     expect(colors.size).toBeGreaterThan(1);
   });
@@ -46,15 +35,13 @@ describe("avatarColorForPrincipal", () => {
 
 describe("avatarClassForPrincipal", () => {
   test("is deterministic for the same principal", () => {
-    expect(avatarClassForPrincipal("prn_alice")).toBe(
-      avatarClassForPrincipal("prn_alice"),
-    );
+    expect(avatarClassForPrincipal("prn_alice")).toBe(avatarClassForPrincipal("prn_alice"));
   });
 
   test("never displays the seed itself", () => {
-    expect(
-      avatarClassForPrincipal("prn_super_secret_internal_id"),
-    ).not.toContain("prn_super_secret_internal_id");
+    expect(avatarClassForPrincipal("prn_super_secret_internal_id")).not.toContain(
+      "prn_super_secret_internal_id",
+    );
   });
 });
 
@@ -115,9 +102,7 @@ describe("CorbitAvatar", () => {
     expect(html).toContain("fill:var(--avatar-3)");
   });
   test("renders an SVG with an accessible name and no visible label", () => {
-    const html = renderToStaticMarkup(
-      <CorbitAvatar ariaLabel="Myra" size="md" />,
-    );
+    const html = renderToStaticMarkup(<CorbitAvatar ariaLabel="Myra" size="md" />);
     expect(html).toContain('role="img"');
     expect(html).toContain('aria-label="Myra"');
     expect(html).toContain('data-corbit="true"');

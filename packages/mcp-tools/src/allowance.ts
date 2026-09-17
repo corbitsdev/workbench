@@ -39,10 +39,7 @@ export type McpCallClassification =
  */
 export function createMcpCallClassifier(
   loadServerTools: McpServerToolsLoader,
-): (
-  tenantId: string,
-  toolArguments: Record<string, unknown>,
-) => Promise<McpCallClassification> {
+): (tenantId: string, toolArguments: Record<string, unknown>) => Promise<McpCallClassification> {
   return async (tenantId, toolArguments) => {
     const server = toolArguments["server"];
     const tool = toolArguments["tool"];

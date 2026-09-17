@@ -78,14 +78,11 @@ function mount(
   return { container, root };
 }
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 function primaryButton(): HTMLButtonElement {
   const button = [...document.body.querySelectorAll("button")].find(
-    (candidate) =>
-      candidate.textContent === "Connect" ||
-      candidate.textContent === "Connecting…",
+    (candidate) => candidate.textContent === "Connect" || candidate.textContent === "Connecting…",
   );
   expect(button).not.toBeUndefined();
   return button as HTMLButtonElement;
@@ -114,10 +111,10 @@ describe("ConnectorCredentialDialog", () => {
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const path = String(input);
       calls.push(path);
-      return new Response(
-        JSON.stringify({ credentialId: "cred_1", status: "active" }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ credentialId: "cred_1", status: "active" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     }) as unknown as typeof fetch;
 
     let connected = false;
@@ -183,8 +180,7 @@ describe("ConnectorCredentialDialog", () => {
       expect(body).not.toContain("A bad key never gets saved");
       expect(document.body.querySelector("input[type=password]")).toBeNull();
       expect(
-        (document.body.querySelector("input[type=text]") as HTMLInputElement)
-          .placeholder,
+        (document.body.querySelector("input[type=text]") as HTMLInputElement).placeholder,
       ).toBe("http://localhost:11434");
     } finally {
       act(() => root.unmount());
@@ -199,12 +195,8 @@ describe("ConnectorCredentialDialog", () => {
       expect(body).toContain(SETTINGS_STRINGS.connectionsDialogDescription);
       expect(body).toContain(SETTINGS_STRINGS.connectionsKeyLabel);
       expect(body).toContain("Sealed on save");
-      expect(body).not.toContain(
-        SETTINGS_STRINGS.connectionsDialogUrlDescription,
-      );
-      expect(
-        document.body.querySelector("input[type=password]"),
-      ).not.toBeNull();
+      expect(body).not.toContain(SETTINGS_STRINGS.connectionsDialogUrlDescription);
+      expect(document.body.querySelector("input[type=password]")).not.toBeNull();
     } finally {
       act(() => root.unmount());
       container.remove();

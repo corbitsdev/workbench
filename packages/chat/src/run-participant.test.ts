@@ -9,9 +9,7 @@ function fakeStore(existing: Record<string, unknown>) {
     store: {
       mutateWorkbenchParticipants: async (input: {
         updatedBy: string;
-        mutate: (
-          participants: readonly ParticipantRecord[],
-        ) => ParticipantRecord[];
+        mutate: (participants: readonly ParticipantRecord[]) => ParticipantRecord[];
       }) => {
         const nextParticipants = input.mutate(
           (existing["chat/participants"] as ParticipantRecord[]) ?? [],

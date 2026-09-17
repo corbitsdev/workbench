@@ -29,10 +29,7 @@ import {
   readAgentDefinitionWorkflowJson,
   RetiredWorkflowEnvelopeError,
 } from "../src/definition-asset";
-import {
-  createAgentDefinitionRoutes,
-  SkillIndexResolutionError,
-} from "../src/routes";
+import { createAgentDefinitionRoutes, SkillIndexResolutionError } from "../src/routes";
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import {
   createWorkflowSkillPinRoutes,
@@ -40,19 +37,13 @@ import {
 } from "../src/workflow-skill-pin-routes";
 import type { DefinitionAssetHistory } from "../src/definition-history";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
-import {
-  definitionFrom,
-  SOURCE_TREE_PATHS,
-  storedDefinitionBytesWithSkills,
-} from "./source-tree";
+import { definitionFrom, SOURCE_TREE_PATHS, storedDefinitionBytesWithSkills } from "./source-tree";
 
 /** A `readAssetBlob` that always answers the definition's entry module
  * with `workflowBytes` — pins live in the asset's own stanza, so a test
  * that needs a definition's skills stubs the bytes with
  * `storedDefinitionBytesWithSkills` instead of seeding side state. */
-function readAssetBlobFor(
-  workflowBytes: Uint8Array,
-): AssetService["readAssetBlob"] {
+function readAssetBlobFor(workflowBytes: Uint8Array): AssetService["readAssetBlob"] {
   return () => Promise.resolve(workflowBytes);
 }
 
@@ -65,9 +56,7 @@ const fakeCapabilityInventory: CapabilityInventoryProvider = {
     }),
 };
 
-function fakeHistory(
-  overrides: Partial<DefinitionAssetHistory> = {},
-): DefinitionAssetHistory {
+function fakeHistory(overrides: Partial<DefinitionAssetHistory> = {}): DefinitionAssetHistory {
   return {
     history: () => Promise.resolve([]),
     readBlobAtCommit: () => Promise.resolve(null),
@@ -79,9 +68,7 @@ function fakeHistory(
  * can assert on the stanza without standing up the registry. */
 const fakeSkillIndex: PinnedSkillIndexResolver = {
   resolve: (_tenantId, _principalId, names) =>
-    Promise.resolve(
-      names.map((name) => ({ name, description: `What ${name} does.` })),
-    ),
+    Promise.resolve(names.map((name) => ({ name, description: `What ${name} does.` }))),
 };
 
 const TENANT = {
@@ -175,18 +162,13 @@ function liveDefinitionAsset(initial: Uint8Array): AssetService {
     // fixed version — enough for `resolvePinnedVersion` to resolve
     // without each concurrent-write test needing its own tarball list.
     listAssetBlobs: () =>
-      Promise.resolve([
-        "corbits-github-tools-3.1.0.tgz",
-        "corbits-memory-tools-1.4.0.tgz",
-      ]),
+      Promise.resolve(["corbits-github-tools-3.1.0.tgz", "corbits-memory-tools-1.4.0.tgz"]),
   });
 }
 
 /** The entry module a stored definition's asset carries, so the PUT
  * path has something real to re-index. */
-function storedDefinitionBytes(
-  systemPrompt = "You are a careful research assistant.",
-): Uint8Array {
+function storedDefinitionBytes(systemPrompt = "You are a careful research assistant."): Uint8Array {
   const tree = agentDefinitionSourceTree({
     handle: "research-buddy",
     workflowJson: serializeAgentDefinitionWorkflow(
@@ -223,10 +205,7 @@ function storedDefinitionBytesWithModel(model: string): Uint8Array {
  * pins none. */
 function modelFrom(workflowJson: string): string | undefined {
   const parsed = JSON.parse(workflowJson) as {
-    steps: Record<
-      string,
-      { agent: { inference?: { sources: { model?: string }[] } } }
-    >;
+    steps: Record<string, { agent: { inference?: { sources: { model?: string }[] } } }>;
   };
   const step = Object.values(parsed.steps)[0];
   if (step === undefined) throw new Error("definition carries no steps");
@@ -236,10 +215,7 @@ function modelFrom(workflowJson: string): string | undefined {
 /** The one step agent's tool-package pins inside a serialized definition. */
 function pinsFrom(workflowJson: string): { name: string; version: string }[] {
   const parsed = JSON.parse(workflowJson) as {
-    steps: Record<
-      string,
-      { agent: { toolPackagePins?: { name: string; version: string }[] } }
-    >;
+    steps: Record<string, { agent: { toolPackagePins?: { name: string; version: string }[] } }>;
   };
   const step = Object.values(parsed.steps)[0];
   if (step === undefined) throw new Error("definition carries no steps");
@@ -321,8 +297,7 @@ function fakeDb(opts: FakeDbOptions = {}): DB["db"] {
         const chain: Record<string, unknown> = {
           onConflictDoNothing: () => chain,
           returning: () => Promise.resolve([{ id: "def_new" }]),
-          then: (onFulfilled: unknown) =>
-            Promise.resolve([]).then(onFulfilled as never),
+          then: (onFulfilled: unknown) => Promise.resolve([]).then(onFulfilled as never),
         };
         return chain;
       },
@@ -404,11 +379,7 @@ async function post(app: Hono<TenantEnv>, body: unknown): Promise<Response> {
   });
 }
 
-async function postTo(
-  app: Hono<TenantEnv>,
-  path: string,
-  body: unknown,
-): Promise<Response> {
+async function postTo(app: Hono<TenantEnv>, path: string, body: unknown): Promise<Response> {
   return app.request(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -416,11 +387,7 @@ async function postTo(
   });
 }
 
-async function put(
-  app: Hono<TenantEnv>,
-  path: string,
-  body: unknown,
-): Promise<Response> {
+async function put(app: Hono<TenantEnv>, path: string, body: unknown): Promise<Response> {
   return app.request(path, {
     method: "PUT",
     headers: { "content-type": "application/json" },
@@ -540,8 +507,7 @@ function fakeCreateDb(): DB["db"] {
         const chain: Record<string, unknown> = {
           onConflictDoNothing: () => chain,
           returning: () => Promise.resolve([{ id: "def_new" }]),
-          then: (onFulfilled: unknown) =>
-            Promise.resolve([]).then(onFulfilled as never),
+          then: (onFulfilled: unknown) => Promise.resolve([]).then(onFulfilled as never),
         };
         return chain;
       },
@@ -656,10 +622,7 @@ test("a create request with toolPackagePins pins each named package at its highe
         return Promise.resolve({ commitSha: "deadbeef" });
       },
       listAssetBlobs: () =>
-        Promise.resolve([
-          "corbits-memory-tools-1.4.0.tgz",
-          "corbits-web-search-tools-2.1.0.tgz",
-        ]),
+        Promise.resolve(["corbits-memory-tools-1.4.0.tgz", "corbits-web-search-tools-2.1.0.tgz"]),
     }),
     withToolPackageRegistryQueries(fakeCreateDb()),
   );
@@ -688,9 +651,7 @@ test("a create request rejects a toolPackagePins entry outside the @corbits scop
   expect(response.status).toBe(400);
 });
 
-function fakeSkillsDb(
-  row: { id: string; assetId: string | null } | undefined,
-): DB["db"] {
+function fakeSkillsDb(row: { id: string; assetId: string | null } | undefined): DB["db"] {
   return {
     query: {
       workflowDefinition: {
@@ -726,9 +687,7 @@ test("GET /skills returns an empty list for a definition with no pinned skills",
 test("GET /skills returns the stanza's pinned skills", async () => {
   const app = buildApp(
     fakeAssetService({
-      readAssetBlob: readAssetBlobFor(
-        storedDefinitionBytesWithSkills("web-research"),
-      ),
+      readAssetBlob: readAssetBlobFor(storedDefinitionBytesWithSkills("web-research")),
     }),
     fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
   );
@@ -812,9 +771,7 @@ test("PUT /:definitionId/skills replaces the skill set, writing the definition s
   expect(response.status).toBe(200);
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   // The written tree's stanza is the pins — no side table to consult.
-  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual([
-    "long-form-write",
-  ]);
+  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual(["long-form-write"]);
   const body = (await response.json()) as { skills: readonly string[] };
   expect(body.skills).toEqual(["long-form-write"]);
 });
@@ -870,17 +827,12 @@ test("PUT /:definitionId/skills with no pins strips the index from the prompt", 
   );
   await put(app, "/def_1/skills", { skills: [] });
   const workflowJson = definitionFrom(writtenFiles);
-  expect(promptFrom(workflowJson)).toBe(
-    "You are a careful research assistant.",
-  );
+  expect(promptFrom(workflowJson)).toBe("You are a careful research assistant.");
   expect(pinsFrom(workflowJson)).toEqual([]);
 });
 
 test("PUT /:definitionId/skills rejects a duplicate skill name with a 400", async () => {
-  const app = buildApp(
-    fakeAssetService(),
-    fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
-  );
+  const app = buildApp(fakeAssetService(), fakeSkillsDb({ id: "def_1", assetId: "ast_1" }));
   const response = await put(app, "/def_1/skills", {
     skills: ["Web research", "Web research"],
   });
@@ -888,10 +840,7 @@ test("PUT /:definitionId/skills rejects a duplicate skill name with a 400", asyn
 });
 
 test("PUT /:definitionId/skills rejects a blank skill name with a 400", async () => {
-  const app = buildApp(
-    fakeAssetService(),
-    fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
-  );
+  const app = buildApp(fakeAssetService(), fakeSkillsDb({ id: "def_1", assetId: "ast_1" }));
   const response = await put(app, "/def_1/skills", { skills: ["   "] });
   expect(response.status).toBe(400);
 });
@@ -989,9 +938,7 @@ test("GET /:definitionId returns the agent's display name and system prompt", as
 /** A `readAssetBlob` for an asset written before the source-form
  * cutover: it carries a bare `workflow.json`, so the entry module the
  * routes read is simply absent. */
-function retiredEnvelopeAssetService(
-  overrides: Partial<AssetService> = {},
-): AssetService {
+function retiredEnvelopeAssetService(overrides: Partial<AssetService> = {}): AssetService {
   return fakeAssetService({
     readAssetBlob: (params) =>
       Promise.reject(
@@ -1062,9 +1009,7 @@ test("PUT /:definitionId writes the new system prompt in a single source-tree co
   const app = buildApp(
     fakeAssetService({
       readAssetBlob: () =>
-        Promise.resolve(
-          storedDefinitionBytes("You are a careful research assistant."),
-        ),
+        Promise.resolve(storedDefinitionBytes("You are a careful research assistant.")),
       populateAsset: (params) => {
         writtenFiles = params.tree.files;
         return Promise.resolve({ commitSha: "deadbeef" });
@@ -1163,11 +1108,9 @@ test("PUT instructions after a newer tarball lands keeps the stored pin version"
   });
   expect(response.status).toBe(200);
   expect(listCalls).toBe(0);
-  expect(
-    pinsFrom(
-      definitionFrom({ [AGENT_DEFINITION_ENTRY_PATH]: writtenEntry ?? "" }),
-    ),
-  ).toEqual([{ name: "@corbits/memory-tools", version: "1.4.0" }]);
+  expect(pinsFrom(definitionFrom({ [AGENT_DEFINITION_ENTRY_PATH]: writtenEntry ?? "" }))).toEqual([
+    { name: "@corbits/memory-tools", version: "1.4.0" },
+  ]);
 });
 
 test("PUT /:definitionId 404s for an unknown definition", async () => {
@@ -1248,10 +1191,7 @@ test("GET /:definitionId scopes its grant check to this definition, not the tena
   await app.request("/def_1");
   expect(requireGrant.calls).toEqual([
     {
-      resource: idResource(
-        "workflow-definition",
-        "definitionId",
-      )({ param: () => "def_1" }),
+      resource: idResource("workflow-definition", "definitionId")({ param: () => "def_1" }),
       action: "read",
     },
   ]);
@@ -1375,9 +1315,7 @@ test("clearing a model rewrites the definition with no inference source", async 
   let writtenMessage: string | undefined;
   const app = buildApp(
     fakeAssetService({
-      readAssetBlob: readAssetBlobFor(
-        storedDefinitionBytesWithModel("anthropic/claude-sonnet"),
-      ),
+      readAssetBlob: readAssetBlobFor(storedDefinitionBytesWithModel("anthropic/claude-sonnet")),
       populateAsset: (params) => {
         writtenFiles = params.tree.files;
         writtenMessage = params.tree.message;
@@ -1424,9 +1362,7 @@ test("clearing a model 404s for an unknown definition and scopes its grant per i
     requireGrant,
   );
   await app.request("/def_1/capabilities/model", { method: "DELETE" });
-  expect(requireGrant.calls).toEqual([
-    { resource: "workflow-definition:def_1", action: "update" },
-  ]);
+  expect(requireGrant.calls).toEqual([{ resource: "workflow-definition:def_1", action: "update" }]);
 });
 
 // --- PUT /:definitionId/status (archive and restore) ---
@@ -1450,9 +1386,7 @@ test("archiving a definition writes the stopped status and touches nothing else"
   const response = await put(app, "/def_1/status", { status: "stopped" });
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({ id: "def_1", status: "stopped" });
-  expect(db.directUpdateCalls).toEqual([
-    { status: "stopped", updatedAt: expect.any(Date) },
-  ]);
+  expect(db.directUpdateCalls).toEqual([{ status: "stopped", updatedAt: expect.any(Date) }]);
   // Archiving is a row-status change: the definition's asset and its git
   // history are never rewritten, which is what makes a restore possible.
   expect(populateCalled).toBe(false);
@@ -1467,9 +1401,7 @@ test("restoring a definition writes the deployed status back", async () => {
   const app = buildApp(fakeAssetService(), db);
   const response = await put(app, "/def_1/status", { status: "deployed" });
   expect(response.status).toBe(200);
-  expect(db.directUpdateCalls).toEqual([
-    { status: "deployed", updatedAt: expect.any(Date) },
-  ]);
+  expect(db.directUpdateCalls).toEqual([{ status: "deployed", updatedAt: expect.any(Date) }]);
 });
 
 test("a status outside the schema's two lifecycle states is a 400, never written", async () => {
@@ -1486,9 +1418,7 @@ test("a status outside the schema's two lifecycle states is a 400, never written
 
 test("status 404s for an unknown definition and for a workbench host", async () => {
   const unknown = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
-  expect(
-    (await put(unknown, "/def_missing/status", { status: "stopped" })).status,
-  ).toBe(404);
+  expect((await put(unknown, "/def_missing/status", { status: "stopped" })).status).toBe(404);
 
   const host = buildApp(
     fakeAssetService(),
@@ -1498,9 +1428,7 @@ test("status 404s for an unknown definition and for a workbench host", async () 
       name: `run-${"a".repeat(32)}`,
     }),
   );
-  expect(
-    (await put(host, "/def_host/status", { status: "stopped" })).status,
-  ).toBe(404);
+  expect((await put(host, "/def_host/status", { status: "stopped" })).status).toBe(404);
 });
 
 test("status scopes its grant check per definition id and requires update", async () => {
@@ -1515,9 +1443,7 @@ test("status scopes its grant check per definition id and requires update", asyn
     requireGrant,
   );
   await put(app, "/def_1/status", { status: "stopped" });
-  expect(requireGrant.calls).toEqual([
-    { resource: "workflow-definition:def_1", action: "update" },
-  ]);
+  expect(requireGrant.calls).toEqual([{ resource: "workflow-definition:def_1", action: "update" }]);
 });
 
 test("a create request indexes its pinned skills into the stored system prompt", async () => {
@@ -1555,9 +1481,7 @@ test("a create request indexes its pinned skills into the stored system prompt",
   expect(prompt).toContain("skills_load");
   // The prompt tells the model to call `skills_load`, so the bundle that
   // provides it must be pinned on the same push.
-  expect(pinsFrom(workflowJson)).toEqual([
-    { name: "@corbits/tools-skills", version: "0.0.3" },
-  ]);
+  expect(pinsFrom(workflowJson)).toEqual([{ name: "@corbits/tools-skills", version: "0.0.3" }]);
 });
 
 test("pinning a skill the registry cannot resolve is a 400, not a 500", async () => {
@@ -1565,10 +1489,7 @@ test("pinning a skill the registry cannot resolve is a 400, not a 500", async ()
     db: fakeCreateDb(),
     assetService: fakeAssetService(),
     skillIndex: {
-      resolve: () =>
-        Promise.reject(
-          new SkillIndexResolutionError('cannot pin skill "ghost"'),
-        ),
+      resolve: () => Promise.reject(new SkillIndexResolutionError('cannot pin skill "ghost"')),
     },
     history: fakeHistory(),
     capabilityInventory: fakeCapabilityInventory,
@@ -1623,9 +1544,7 @@ test("a create request with no pinned skills stores the author's prompt verbatim
     systemPrompt: "You are a careful research assistant.",
   });
   const workflowJson = definitionFrom(writtenFiles);
-  expect(promptFrom(workflowJson)).toBe(
-    "You are a careful research assistant.",
-  );
+  expect(promptFrom(workflowJson)).toBe("You are a careful research assistant.");
   expect(pinsFrom(workflowJson)).toEqual([]);
 });
 
@@ -1687,9 +1606,7 @@ test("GET /:definitionId/versions scopes its grant check per definition id", asy
     requireGrant,
   );
   await app.request("/def_1/versions");
-  expect(requireGrant.calls).toEqual([
-    { resource: "workflow-definition:def_1", action: "read" },
-  ]);
+  expect(requireGrant.calls).toEqual([{ resource: "workflow-definition:def_1", action: "read" }]);
 });
 
 // --- POST /:definitionId/restore ---
@@ -1775,9 +1692,7 @@ test("restore scopes its grant check per definition id and requires update", asy
     }),
   );
   await postTo(app, "/def_1/restore", { commitSha: "sha1" });
-  expect(requireGrant.calls).toEqual([
-    { resource: "workflow-definition:def_1", action: "update" },
-  ]);
+  expect(requireGrant.calls).toEqual([{ resource: "workflow-definition:def_1", action: "update" }]);
 });
 
 // --- POST /:definitionId/capabilities ---
@@ -1816,9 +1731,7 @@ test("adding a tool package pin merges it into the definition in one commit, nam
   const body = (await response.json()) as {
     toolPackagePins: { name: string; version: string }[];
   };
-  expect(body.toolPackagePins).toEqual([
-    { name: "@corbits/github-tools", version: "3.1.0" },
-  ]);
+  expect(body.toolPackagePins).toEqual([{ name: "@corbits/github-tools", version: "3.1.0" }]);
 });
 
 test("re-adding an already-pinned tool package keeps its stored version after a newer tarball lands", async () => {
@@ -1852,10 +1765,7 @@ test("re-adding an already-pinned tool package keeps its stored version after a 
       // A newer tarball has landed since the pin was first added — this
       // re-add must not bump onto it.
       listAssetBlobs: () =>
-        Promise.resolve([
-          "corbits-memory-tools-1.4.0.tgz",
-          "corbits-memory-tools-1.5.0.tgz",
-        ]),
+        Promise.resolve(["corbits-memory-tools-1.4.0.tgz", "corbits-memory-tools-1.5.0.tgz"]),
     }),
     withToolPackageRegistryQueries(
       fakeInstructionsDb({
@@ -1887,9 +1797,7 @@ test("re-adding an already-pinned tool package keeps its stored version after a 
   const body = (await response.json()) as {
     toolPackagePins: { name: string; version: string }[];
   };
-  expect(body.toolPackagePins).toEqual([
-    { name: "@corbits/memory-tools", version: "1.4.0" },
-  ]);
+  expect(body.toolPackagePins).toEqual([{ name: "@corbits/memory-tools", version: "1.4.0" }]);
 });
 
 test("adding a tool package pin the tenant's inventory doesn't offer is a 400, never written", async () => {
@@ -1969,9 +1877,7 @@ test("adding a skill merges it additively into the definition stanza and re-inde
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   // Pins live in the definition's own workflow stanza now — no store to
   // consult, the written source tree is the assertion.
-  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual([
-    "research",
-  ]);
+  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual(["research"]);
   expect(definitionFrom(writtenFiles).includes("research")).toBe(true);
   const body = (await response.json()) as { skills: string[] };
   expect(body.skills).toEqual(["research"]);
@@ -2022,9 +1928,7 @@ test("setting a model in the tenant's catalog writes a single named commit", asy
     canonicalName: "anthropic/claude-sonnet",
   });
   expect(response.status).toBe(200);
-  expect(writtenMessage).toBe(
-    "Set research-buddy's model to anthropic/claude-sonnet",
-  );
+  expect(writtenMessage).toBe("Set research-buddy's model to anthropic/claude-sonnet");
   const body = (await response.json()) as { model?: string };
   expect(body.model).toBe("anthropic/claude-sonnet");
 });
@@ -2046,9 +1950,7 @@ test("capabilities route scopes its grant check per definition id and requires u
     kind: "model",
     canonicalName: "anthropic/claude-sonnet",
   });
-  expect(requireGrant.calls).toEqual([
-    { resource: "workflow-definition:def_1", action: "update" },
-  ]);
+  expect(requireGrant.calls).toEqual([{ resource: "workflow-definition:def_1", action: "update" }]);
 });
 
 test("capabilities route 404s for an unknown definition", async () => {
@@ -2064,10 +1966,7 @@ test("two concurrent capability-adds on the same definition both land", async ()
   const inventory: CapabilityInventoryProvider = {
     resolve: () =>
       Promise.resolve({
-        toolPackages: [
-          { name: "@corbits/github-tools" },
-          { name: "@corbits/memory-tools" },
-        ],
+        toolPackages: [{ name: "@corbits/github-tools" }, { name: "@corbits/memory-tools" }],
         skills: [{ name: "research" }],
         models: [{ canonicalName: "anthropic/claude-sonnet" }],
       }),
@@ -2100,10 +1999,7 @@ test("two concurrent capability-adds on the same definition both land", async ()
   expect(first.status).toBe(200);
   expect(second.status).toBe(200);
 
-  const workflowJson = await readAgentDefinitionWorkflowJson(
-    assetService,
-    "ast_1",
-  );
+  const workflowJson = await readAgentDefinitionWorkflowJson(assetService, "ast_1");
   const names = pinsFrom(workflowJson)
     .map((pin) => pin.name)
     .toSorted();
@@ -2133,10 +2029,7 @@ test("concurrent PUT instructions and DELETE model both land", async () => {
   expect(putRes.status).toBe(200);
   expect(delRes.status).toBe(200);
 
-  const workflowJson = await readAgentDefinitionWorkflowJson(
-    assetService,
-    "ast_1",
-  );
+  const workflowJson = await readAgentDefinitionWorkflowJson(assetService, "ast_1");
   expect(promptFrom(workflowJson)).toBe("You are now a blunt researcher.");
   expect(modelFrom(workflowJson)).toBeUndefined();
 });
@@ -2164,14 +2057,9 @@ test("concurrent PUT skills and DELETE model both land", async () => {
   expect(skillsRes.status).toBe(200);
   expect(delRes.status).toBe(200);
 
-  const workflowJson = await readAgentDefinitionWorkflowJson(
-    assetService,
-    "ast_1",
-  );
+  const workflowJson = await readAgentDefinitionWorkflowJson(assetService, "ast_1");
   expect(readPinnedSkillNames(workflowJson)).toEqual(["long-form-write"]);
-  expect(promptFrom(workflowJson)).toContain(
-    "- long-form-write: What long-form-write does.",
-  );
+  expect(promptFrom(workflowJson)).toContain("- long-form-write: What long-form-write does.");
   expect(modelFrom(workflowJson)).toBeUndefined();
 });
 
@@ -2200,14 +2088,9 @@ test("concurrent DELETE model and a capability-add both land", async () => {
   expect(delRes.status).toBe(200);
   expect(capRes.status).toBe(200);
 
-  const workflowJson = await readAgentDefinitionWorkflowJson(
-    assetService,
-    "ast_1",
-  );
+  const workflowJson = await readAgentDefinitionWorkflowJson(assetService, "ast_1");
   expect(modelFrom(workflowJson)).toBeUndefined();
-  expect(pinsFrom(workflowJson).map((pin) => pin.name)).toContain(
-    "@corbits/github-tools",
-  );
+  expect(pinsFrom(workflowJson).map((pin) => pin.name)).toContain("@corbits/github-tools");
 });
 
 test("concurrent pin_skill and DELETE model both land", async () => {
@@ -2264,10 +2147,7 @@ test("concurrent pin_skill and DELETE model both land", async () => {
   expect(pinRes.status).toBe(200);
   expect(delRes.status).toBe(200);
 
-  const workflowJson = await readAgentDefinitionWorkflowJson(
-    assetService,
-    "ast_1",
-  );
+  const workflowJson = await readAgentDefinitionWorkflowJson(assetService, "ast_1");
   expect(readPinnedSkillNames(workflowJson)).toEqual(["research"]);
   expect(promptFrom(workflowJson)).toContain("- research: What research does.");
   expect(modelFrom(workflowJson)).toBeUndefined();

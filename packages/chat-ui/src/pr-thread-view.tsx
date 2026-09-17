@@ -115,8 +115,7 @@ export type PrThreadViewProps = {
 function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   const first = parts[0]?.[0] ?? "";
-  const second =
-    parts.length > 1 ? (parts[1]?.[0] ?? "") : (parts[0]?.[1] ?? "");
+  const second = parts.length > 1 ? (parts[1]?.[0] ?? "") : (parts[0]?.[1] ?? "");
   return `${first}${second}`.toUpperCase();
 }
 
@@ -158,21 +157,14 @@ function RoleBadge({ role }: { readonly role: PrThreadRole }) {
   if (role === "human") return null;
   return (
     <span className="chat-pr-role-badge" data-role={role}>
-      {role === "host"
-        ? CHAT_STRINGS.prThreadHostBadge
-        : CHAT_STRINGS.prThreadReviewerBadge}
+      {role === "host" ? CHAT_STRINGS.prThreadHostBadge : CHAT_STRINGS.prThreadReviewerBadge}
     </span>
   );
 }
 
 function TraceButton({ trace }: { readonly trace: PrThreadTrace }) {
   return (
-    <Button
-      type="button"
-      variant="link"
-      className="chat-pr-trace"
-      onClick={trace.onViewWork}
-    >
+    <Button type="button" variant="link" className="chat-pr-trace" onClick={trace.onViewWork}>
       {CHAT_STRINGS.prThreadViewWork(trace.stepCount, trace.seconds)}
     </Button>
   );
@@ -188,11 +180,7 @@ function SuggestedFixBlock({ fix }: { readonly fix: PrThreadSuggestedFix }) {
       <div className="chat-pr-fix-code">
         <pre>
           {fix.lines.map((line, index) => (
-            <span
-              key={`${fix.file}-${index}`}
-              className="chat-pr-fix-line"
-              data-kind={line.kind}
-            >
+            <span key={`${fix.file}-${index}`} className="chat-pr-fix-line" data-kind={line.kind}>
               {line.text}
               {"\n"}
             </span>
@@ -200,20 +188,10 @@ function SuggestedFixBlock({ fix }: { readonly fix: PrThreadSuggestedFix }) {
         </pre>
       </div>
       <div className="chat-pr-fix-actions">
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={fix.onCopy}
-        >
+        <Button type="button" variant="secondary" size="sm" onClick={fix.onCopy}>
           {CHAT_STRINGS.prThreadCopyAction}
         </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={fix.onOpenOnGithub}
-        >
+        <Button type="button" variant="secondary" size="sm" onClick={fix.onOpenOnGithub}>
           {CHAT_STRINGS.prThreadOpenOnGithubAction}
         </Button>
       </div>
@@ -238,11 +216,7 @@ function ReplyRow({ reply }: { readonly reply: PrThreadReply }) {
           className={avatarClassForPrincipal(reply.sender)}
         />
       ) : (
-        <CorbitAvatar
-          ariaLabel={reply.sender}
-          size="lg"
-          className="sender-avatar"
-        />
+        <CorbitAvatar ariaLabel={reply.sender} size="lg" className="sender-avatar" />
       )}
       <div className="chat-pr-reply-body">
         <div className="chat-pr-reply-head">
@@ -253,38 +227,25 @@ function ReplyRow({ reply }: { readonly reply: PrThreadReply }) {
         <div className="chat-pr-reply-text">
           <Markdown text={reply.text} />
         </div>
-        {reply.suggestedFix !== undefined && (
-          <SuggestedFixBlock fix={reply.suggestedFix} />
-        )}
+        {reply.suggestedFix !== undefined && <SuggestedFixBlock fix={reply.suggestedFix} />}
         {reply.trace !== undefined && <TraceButton trace={reply.trace} />}
       </div>
     </div>
   );
 }
 
-export function PrFailedTurnStrip({
-  failedTurn,
-}: {
-  readonly failedTurn: PrThreadFailedTurn;
-}) {
+export function PrFailedTurnStrip({ failedTurn }: { readonly failedTurn: PrThreadFailedTurn }) {
   return (
     <div className="chat-pr-failed" role="status">
       <span className="chat-pr-failed-text">
         <strong>
-          {failedTurn.titleText ??
-            CHAT_STRINGS.prThreadFailedTitle(failedTurn.sender)}
+          {failedTurn.titleText ?? CHAT_STRINGS.prThreadFailedTitle(failedTurn.sender)}
         </strong>
         <span className="chat-pr-failed-sub">
-          {failedTurn.subText ??
-            CHAT_STRINGS.prThreadFailedSub(failedTurn.repo)}
+          {failedTurn.subText ?? CHAT_STRINGS.prThreadFailedSub(failedTurn.repo)}
         </span>
       </span>
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        onClick={failedTurn.onRetry}
-      >
+      <Button type="button" variant="secondary" size="sm" onClick={failedTurn.onRetry}>
         {CHAT_STRINGS.prThreadRetryAction}
       </Button>
       <Button
@@ -321,11 +282,7 @@ function ThreadFooter({ footer }: { readonly footer: PrThreadFooter }) {
     <footer className="chat-pr-foot">
       <span className="chat-pr-wait-avatars" aria-hidden="true">
         {footer.nextReviewers.map((reviewer) => (
-          <CorbitAvatar
-            key={reviewer.label}
-            ariaLabel={reviewer.label}
-            size="sm"
-          />
+          <CorbitAvatar key={reviewer.label} ariaLabel={reviewer.label} size="sm" />
         ))}
       </span>
       <span className="chat-pr-foot-text">
@@ -365,10 +322,9 @@ export function PrThreadView({
         {replies.map((reply) => (
           <Fragment key={reply.id}>
             <ReplyRow reply={reply} />
-            {failedTurn !== undefined &&
-              failedTurn.afterReplyId === reply.id && (
-                <PrFailedTurnStrip failedTurn={failedTurn} />
-              )}
+            {failedTurn !== undefined && failedTurn.afterReplyId === reply.id && (
+              <PrFailedTurnStrip failedTurn={failedTurn} />
+            )}
           </Fragment>
         ))}
       </div>

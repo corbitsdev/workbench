@@ -1,8 +1,8 @@
 {
   "name": "@corbits/migration-runner",
+  "version": "0.0.1",
   "private": true,
   "description": "Shared runner for package-owned Postgres migrations: schema/ledger bootstrap, per-migration transactional apply, and a session-level advisory lock around the whole run so concurrent hub replicas race-check the ledger safely instead of crashing on a duplicate insert.",
-  "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {

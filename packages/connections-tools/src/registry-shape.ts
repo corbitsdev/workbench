@@ -29,7 +29,6 @@ export function mcpPresetByName(
 ): McpPreset | undefined {
   const needle = name.trim().toLowerCase();
   return presets.find(
-    (preset) =>
-      preset.slug === needle || preset.displayName.toLowerCase() === needle,
+    (preset) => preset.slug === needle || preset.displayName.toLowerCase() === needle,
   );
 }

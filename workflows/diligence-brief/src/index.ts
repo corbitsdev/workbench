@@ -94,10 +94,7 @@ export const DILIGENCE_BRIEF_SECTIONS = [
   "Risks & Open Questions",
 ] as const;
 
-export const DILIGENCE_BRIEF_WIRED_SOURCES = [
-  "Web search",
-  "Firm memory",
-] as const;
+export const DILIGENCE_BRIEF_WIRED_SOURCES = ["Web search", "Firm memory"] as const;
 
 /**
  * Tool packages this definition pins (CL-5999 shape, matching
@@ -108,7 +105,7 @@ export const DILIGENCE_BRIEF_WIRED_SOURCES = [
  * resolved the same way through its own `interchange.tools` surface.
  */
 export const DILIGENCE_BRIEF_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/web-search-tools", version: "0.0.3" },
+  { name: "@corbits/web-search-tools", version: "0.0.4" },
   { name: "@corbits/memory", version: "0.1.2" },
 ];
 
@@ -119,15 +116,14 @@ export const DILIGENCE_BRIEF_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
  * are populated for every workflow step directly, the same as
  * `@corbits/artifact-tools`' trio.
  */
-export const DILIGENCE_BRIEF_CREDENTIAL_BINDINGS: readonly CredentialBinding[] =
-  [
-    {
-      package: "@corbits/web-search-tools",
-      handle: "exa",
-      provider: "exa",
-      locator: "tenant",
-    },
-  ];
+export const DILIGENCE_BRIEF_CREDENTIAL_BINDINGS: readonly CredentialBinding[] = [
+  {
+    package: "@corbits/web-search-tools",
+    handle: "exa",
+    provider: "exa",
+    locator: "tenant",
+  },
+];
 
 const SECTION_LINES = DILIGENCE_BRIEF_SECTIONS.map(
   (heading, index) => `${String(index + 1)}. ${heading}`,
@@ -213,14 +209,10 @@ export function buildDiligenceBriefWorkflow(
   input: DiligenceBriefWorkflowInput,
 ): WorkflowDefinition {
   if (input.triggerAddress === "") {
-    throw new Error(
-      "buildDiligenceBriefWorkflow requires a non-empty triggerAddress",
-    );
+    throw new Error("buildDiligenceBriefWorkflow requires a non-empty triggerAddress");
   }
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
-    throw new Error(
-      "buildDiligenceBriefWorkflow requires turnTimeoutMs to be a positive integer",
-    );
+    throw new Error("buildDiligenceBriefWorkflow requires turnTimeoutMs to be a positive integer");
   }
   return defineWorkflow({
     id: DILIGENCE_BRIEF_WORKFLOW_ID,
@@ -252,9 +244,7 @@ export function buildDiligenceBriefWorkflow(
  * symbols, bigints, non-finite numbers, class instances — is a loud
  * error naming the offending path instead of a corrupted asset.
  */
-export function serializeDiligenceBriefWorkflow(
-  definition: WorkflowDefinition,
-): string {
+export function serializeDiligenceBriefWorkflow(definition: WorkflowDefinition): string {
   assertJsonPortable(definition, "definition");
   return JSON.stringify(definition);
 }
@@ -274,8 +264,7 @@ function assertJsonPortable(value: unknown, path: string): void {
       break;
     default:
       throw new Error(
-        `${path} is a ${typeof value}, which does not survive JSON ` +
-          "serialization",
+        `${path} is a ${typeof value}, which does not survive JSON ` + "serialization",
       );
   }
   if (Array.isArray(value)) {
@@ -286,9 +275,7 @@ function assertJsonPortable(value: unknown, path: string): void {
   }
   const proto: unknown = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) {
-    throw new Error(
-      `${path} is a non-plain object; JSON would flatten it lossily`,
-    );
+    throw new Error(`${path} is a non-plain object; JSON would flatten it lossily`);
   }
   for (const [key, entry] of Object.entries(value)) {
     assertJsonPortable(entry, `${path}.${key}`);

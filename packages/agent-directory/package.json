@@ -1,8 +1,8 @@
 {
   "name": "@corbits/agent-directory",
+  "version": "0.0.1",
   "private": true,
   "description": "Creates agent definitions as workflow assets the tenant can browse, invite, and launch",
-  "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
@@ -23,8 +23,8 @@
     "@corbits/workflows": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/db": "workspace:*",
-    "@intx/hub-common": "0.3.0",
     "@intx/hub-api": "workspace:*",
+    "@intx/hub-common": "0.3.0",
     "@intx/hub-sessions": "workspace:*",
     "@intx/log": "0.3.0",
     "@intx/types": "workspace:*",

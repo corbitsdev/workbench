@@ -76,16 +76,10 @@ export type WorkbenchTurnQueue = {
    * `dispatch`'s own failure is `dispatch`'s to report (see
    * `dispatchTurn`'s per-recipient handling in `workbench-service.ts`).
    */
-  run(
-    workbenchId: string,
-    turn: QueuedTurn,
-    dispatch: DispatchTurnBatch,
-  ): Promise<void>;
+  run(workbenchId: string, turn: QueuedTurn, dispatch: DispatchTurnBatch): Promise<void>;
 };
 
-export function createWorkbenchTurnQueue(
-  deps: WorkbenchTurnQueueDeps,
-): WorkbenchTurnQueue {
+export function createWorkbenchTurnQueue(deps: WorkbenchTurnQueueDeps): WorkbenchTurnQueue {
   // Process-local, paired one-to-one with `deps.claims`: a multi-replica
   // hub would need every workbench's turns routed to the same replica,
   // or replica B enqueues here into a `Map` replica A never reads and a

@@ -14,13 +14,7 @@
 // `CredentialCipher` seam — see `./store.ts` for the encrypt/decrypt
 // wiring and `./signature.ts` for the security-model note on what that
 // does and does not close.
-import {
-  boolean,
-  pgSchema,
-  text,
-  timestamp,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { boolean, pgSchema, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const webhookTriggersSchema = pgSchema("webhook_triggers");
 
@@ -46,9 +40,7 @@ export const webhookTrigger = webhookTriggersSchema.table("webhook_trigger", {
   secret: text("secret").notNull(),
   enabled: boolean("enabled").notNull().default(true),
   createdBy: text("created_by").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
 });
 
@@ -72,13 +64,9 @@ export const repoReviewLease = webhookTriggersSchema.table(
     id: text("id").primaryKey(),
     tenantId: text("tenant_id").notNull(),
     repo: text("repo").notNull(),
-    leasedAt: timestamp("leased_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    leasedAt: timestamp("leased_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex("repo_review_lease_tenant_repo_unique").on(t.tenantId, t.repo),
-  ],
+  (t) => [uniqueIndex("repo_review_lease_tenant_repo_unique").on(t.tenantId, t.repo)],
 );
 
 export type RepoReviewLeaseRow = typeof repoReviewLease.$inferSelect;

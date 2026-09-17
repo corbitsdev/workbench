@@ -15,10 +15,7 @@
 // Plugins page) publishes `chat.settings`; ChatWorkspace parses that
 // event and calls `notifySettingsChanged` so a mounted card flips
 // without remounting (CL-6476).
-import type {
-  ConnectServiceActions,
-  ConnectServiceQuery,
-} from "@corbits/chat-ui";
+import type { ConnectServiceActions, ConnectServiceQuery } from "@corbits/chat-ui";
 import {
   completeConnectorCredential,
   ConnectionsApiError,
@@ -26,18 +23,12 @@ import {
   listProviders,
   oauthStartHref,
 } from "@corbits/settings-ui";
-import {
-  connectMcpPreset,
-  listMcpPresets,
-  McpServersApiError,
-} from "@corbits/plugins-ui";
+import { connectMcpPreset, listMcpPresets, McpServersApiError } from "@corbits/plugins-ui";
 import { mcpPresetBySlug, MCP_PRESETS } from "@corbits/connections/mcp-presets";
 import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 
 function bareConnectorId(connectorId: string): string {
-  return connectorId.startsWith("mcp:")
-    ? connectorId.slice("mcp:".length)
-    : connectorId;
+  return connectorId.startsWith("mcp:") ? connectorId.slice("mcp:".length) : connectorId;
 }
 
 export function createChatConnectServiceActions(

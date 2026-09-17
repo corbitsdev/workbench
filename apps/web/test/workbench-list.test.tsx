@@ -55,12 +55,9 @@ function stubFetch(
 ): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
-    if (path.includes("/api/me/principals"))
-      return Promise.resolve(json(membership));
+    if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
     if (path.includes("/approvals"))
-      return Promise.resolve(
-        json({ data: data.pendingApprovals ?? [], nextCursor: null }),
-      );
+      return Promise.resolve(json({ data: data.pendingApprovals ?? [], nextCursor: null }));
     if (path.includes("/agent-definitions/visible"))
       return Promise.resolve(json({ definitions: [] }));
     if (path.includes("/chat/workbenches?kind=workbench"))
@@ -231,16 +228,10 @@ describe("WorkbenchList avatar activity", () => {
       const corbit = avatar?.querySelector('[data-corbit="true"]');
       expect(corbit).not.toBeNull();
       expect(corbit?.parentElement?.getAttribute("aria-hidden")).toBe("true");
-      expect(el.querySelector(".shell-ch-preview")?.textContent).toBe(
-        "Here is the revised draft.",
-      );
+      expect(el.querySelector(".shell-ch-preview")?.textContent).toBe("Here is the revised draft.");
       expect(el.querySelector(".shell-ch-live")).toBeNull();
       expect(avatar?.querySelector('[aria-live="polite"]')?.textContent).toBe(
-        activity === "working"
-          ? "Agent working"
-          : activity === "reply-ready"
-            ? "Reply ready"
-            : "",
+        activity === "working" ? "Agent working" : activity === "reply-ready" ? "Reply ready" : "",
       );
       if (activity === "working") {
         expect(avatar?.querySelector(".shell-ch-orbit")).not.toBeNull();

@@ -19,8 +19,7 @@ const json = (body: unknown) =>
     headers: { "content-type": "application/json" },
   });
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 function mockFetch() {
   globalThis.fetch = (async (url: string) => {
@@ -65,9 +64,7 @@ describe("AI provider scope", () => {
       await settle();
 
       const cards = [...container.querySelectorAll(".settings-connection-row")];
-      const githubCard = cards.find((card) =>
-        card.textContent?.includes("GitHub"),
-      );
+      const githubCard = cards.find((card) => card.textContent?.includes("GitHub"));
       expect(githubCard).toBeUndefined();
     } finally {
       act(() => root.unmount());

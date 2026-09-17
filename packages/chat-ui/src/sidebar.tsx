@@ -25,10 +25,7 @@ export function rowMenuLabels(
  * title) — the caller's cue to treat the rename as a no-op cancel rather
  * than an empty-name PATCH.
  */
-export function renamePayload(
-  input: string,
-  currentTitle: string,
-): string | undefined {
+export function renamePayload(input: string, currentTitle: string): string | undefined {
   const trimmed = input.trim();
   if (trimmed.length === 0 || trimmed === currentTitle) return undefined;
   return trimmed;

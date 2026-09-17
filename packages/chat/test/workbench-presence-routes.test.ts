@@ -22,14 +22,8 @@ async function openStream(app: ReturnType<typeof mountAs>, url: string) {
     reader,
     async readChunk(timeoutMs = 2_000): Promise<string | undefined> {
       return Promise.race([
-        reader
-          .read()
-          .then((result) =>
-            result.done ? undefined : decoder.decode(result.value),
-          ),
-        new Promise<undefined>((resolve) =>
-          setTimeout(() => resolve(undefined), timeoutMs),
-        ),
+        reader.read().then((result) => (result.done ? undefined : decoder.decode(result.value))),
+        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), timeoutMs)),
       ]);
     },
   };
@@ -44,10 +38,7 @@ describe("presence", () => {
       kind: "workbench",
     });
 
-    const { reader, readChunk } = await openStream(
-      app,
-      `/workbenches/${workbench.id}/stream`,
-    );
+    const { reader, readChunk } = await openStream(app, `/workbenches/${workbench.id}/stream`);
 
     const first = await readChunk();
     expect(first).toContain("chat.presence.snapshot");
@@ -57,9 +48,9 @@ describe("presence", () => {
     expect(second).toContain("chat.presence");
     expect(second).toContain('"state":"online"');
 
-    expect(
-      presence.snapshot(workbench.id).map((member) => member.principalId),
-    ).toEqual(["prn_alice"]);
+    expect(presence.snapshot(workbench.id).map((member) => member.principalId)).toEqual([
+      "prn_alice",
+    ]);
 
     await reader.cancel().catch(() => undefined);
   });
@@ -76,10 +67,7 @@ describe("presence", () => {
       kind: "workbench",
     });
 
-    const { reader, readChunk } = await openStream(
-      app,
-      `/workbenches/${workbench.id}/stream`,
-    );
+    const { reader, readChunk } = await openStream(app, `/workbenches/${workbench.id}/stream`);
     // Drain the connect-time snapshot and online delta.
     await readChunk();
     await readChunk();
@@ -117,20 +105,14 @@ describe("presence", () => {
       kind: "workbench",
     });
 
-    const { reader, readChunk } = await openStream(
-      app,
-      `/workbenches/${workbench.id}/stream`,
-    );
+    const { reader, readChunk } = await openStream(app, `/workbenches/${workbench.id}/stream`);
     await readChunk();
     await readChunk();
     await app.request(`/workbenches/${workbench.id}/presence`, {
       method: "POST",
     });
 
-    const settingsRow = await deps.store.getWorkbenchSettings(
-      "tnt_1",
-      workbench.id,
-    );
+    const settingsRow = await deps.store.getWorkbenchSettings("tnt_1", workbench.id);
     expect(settingsRow?.settings).not.toHaveProperty("chat/presence");
     const listed = await deps.roomMessages.listMessages({
       tenantId: "tnt_1",

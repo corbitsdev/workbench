@@ -66,10 +66,7 @@ describe("pickLaunchableDefinition", () => {
       createdAt: new Date("2026-08-20T00:00:00Z"),
       wireProjection: null,
     });
-    const picked = pickLaunchableDefinition(
-      [unfrozenNewer, frozen, partiallyFrozenNewer],
-      TENANT,
-    );
+    const picked = pickLaunchableDefinition([unfrozenNewer, frozen, partiallyFrozenNewer], TENANT);
     expect(picked).toEqual({
       ok: true,
       definitionId: "wfd_v1",
@@ -100,10 +97,7 @@ describe("pickLaunchableDefinition", () => {
       reason: "not_found",
     });
     expect(
-      pickLaunchableDefinition(
-        [candidate({ id: "wfd_theirs", tenantId: "tnt_other" })],
-        TENANT,
-      ),
+      pickLaunchableDefinition([candidate({ id: "wfd_theirs", tenantId: "tnt_other" })], TENANT),
     ).toEqual({ ok: false, reason: "cross_tenant" });
     expect(
       pickLaunchableDefinition(
@@ -128,9 +122,7 @@ describe("pickLaunchableDefinition", () => {
 
 describe("routineTargetRejection", () => {
   test("a cross-tenant asset is reported exactly like a missing one", () => {
-    expect(routineTargetRejection("cross_tenant")).toEqual(
-      routineTargetRejection("not_found"),
-    );
+    expect(routineTargetRejection("cross_tenant")).toEqual(routineTargetRejection("not_found"));
     expect(routineTargetRejection("not_found").status).toBe(404);
   });
 

@@ -14,11 +14,7 @@ import type { ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import type {
-  PrThreadFailedTurn,
-  PrThreadReply,
-  PrThreadViewProps,
-} from "../src/pr-thread-view";
+import type { PrThreadFailedTurn, PrThreadReply, PrThreadViewProps } from "../src/pr-thread-view";
 import { PrQueuedStrip, PrThreadView } from "../src/pr-thread-view";
 
 let container: HTMLDivElement | null = null;
@@ -87,9 +83,7 @@ describe("PrThreadView — settled thread", () => {
     expect(el.textContent).toContain("Reviewed");
     expect(el.textContent).toContain("Greybeard");
     expect(el.textContent).toContain("CTO");
-    expect(el.textContent).toContain(
-      "All three posted to acme/checkout · 9:48 AM",
-    );
+    expect(el.textContent).toContain("All three posted to acme/checkout · 9:48 AM");
 
     const link = [...el.querySelectorAll("button")].find(
       (button) => button.textContent === "View on GitHub",
@@ -167,8 +161,8 @@ describe("PrThreadView — settled thread", () => {
       },
     });
 
-    const traceButtons = [...document.querySelectorAll("button")].filter(
-      (button) => button.textContent?.startsWith("view the work"),
+    const traceButtons = [...document.querySelectorAll("button")].filter((button) =>
+      button.textContent?.startsWith("view the work"),
     ) as HTMLButtonElement[];
     expect(traceButtons).toHaveLength(2);
     expect(traceButtons[0]?.textContent).toBe("view the work · 6 steps, 41s");
@@ -262,14 +256,10 @@ describe("PrThreadView — the suggested-fix block", () => {
     expect(el.textContent).toContain("Suggested fix");
     expect(el.textContent).toContain("src/charge.ts");
     expect(el.textContent).toContain("const key = idempotencyKeyFor(order);");
-    expect(el.textContent).toContain(
-      "return gateway.charge({ amount, card });",
-    );
+    expect(el.textContent).toContain("return gateway.charge({ amount, card });");
 
     const removedLine = el.querySelector('[data-kind="removed"]');
-    expect(removedLine?.textContent).toContain(
-      "return gateway.charge({ amount, card });",
-    );
+    expect(removedLine?.textContent).toContain("return gateway.charge({ amount, card });");
     const addedLine = el.querySelector('[data-kind="added"]');
     expect(addedLine?.textContent).toContain("idempotencyKey: key");
 
@@ -324,13 +314,9 @@ describe("PrThreadView — live thread", () => {
     });
 
     expect(el.textContent).toContain("Reading now");
-    expect(el.textContent).toContain(
-      "CTO and Critique are next, once Greybeard finishes.",
-    );
+    expect(el.textContent).toContain("CTO and Critique are next, once Greybeard finishes.");
 
-    const waitAvatars = el.querySelectorAll(
-      ".chat-pr-wait-avatars [aria-label]",
-    );
+    const waitAvatars = el.querySelectorAll(".chat-pr-wait-avatars [aria-label]");
     expect(waitAvatars.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -369,9 +355,7 @@ describe("PrThreadView — status chip tones", () => {
       },
     };
 
-    const reviewed = await mountElement(
-      <PrThreadView {...base} status={{ kind: "reviewed" }} />,
-    );
+    const reviewed = await mountElement(<PrThreadView {...base} status={{ kind: "reviewed" }} />);
     expect(reviewed.textContent).toContain("Reviewed");
     await act(async () => root?.unmount());
     container?.remove();
@@ -390,9 +374,7 @@ describe("PrThreadView — status chip tones", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
-      root?.render(
-        <PrThreadView {...base} status={{ kind: "waiting-on-you" }} />,
-      );
+      root?.render(<PrThreadView {...base} status={{ kind: "waiting-on-you" }} />);
     });
     expect(container.textContent).toContain("Waiting on you");
   });
@@ -439,9 +421,7 @@ describe("PrThreadView — failed turn (screen 4)", () => {
     });
 
     expect(el.textContent).toContain("Greybeard's review didn't finish");
-    expect(el.textContent).toContain(
-      "We retried once. Nothing was posted to acme/checkout.",
-    );
+    expect(el.textContent).toContain("We retried once. Nothing was posted to acme/checkout.");
     // The room stays visibly alive around the failed turn.
     expect(el.textContent).toContain("CTO");
     expect(el.textContent).toContain("Unaffected by Greybeard's drop");
@@ -510,9 +490,7 @@ describe("PrThreadView — failed turn (screen 4)", () => {
 
 describe("PrQueuedStrip", () => {
   test("renders the queued line verbatim with the static queue-bars glyph", async () => {
-    const el = await mountElement(
-      <PrQueuedStrip prNumber={77} repo="acme/web" />,
-    );
+    const el = await mountElement(<PrQueuedStrip prNumber={77} repo="acme/web" />);
     expect(el.textContent).toContain(
       "#77 in acme/web is queued — waiting for the current review to finish.",
     );

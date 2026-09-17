@@ -7,10 +7,7 @@
 // The package stays free of TanStack Query: this only injects the
 // package's probe into the app's cache, the package never imports Query.
 
-import {
-  coalesceSectionAccess,
-  probeSectionAccess,
-} from "@corbits/settings-ui";
+import { coalesceSectionAccess, probeSectionAccess } from "@corbits/settings-ui";
 import type { TenancyAccess } from "@corbits/settings-ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 

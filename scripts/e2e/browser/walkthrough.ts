@@ -82,9 +82,7 @@ function candidateChromePaths(): string[] {
 function findChrome(): string {
   const env = process.env["CHROME_PATH"];
   if (env !== undefined && env !== "" && existsSync(env)) return env;
-  const found = candidateChromePaths().find((candidate) =>
-    existsSync(candidate),
-  );
+  const found = candidateChromePaths().find((candidate) => existsSync(candidate));
   if (found !== undefined) return found;
   throw new Error(
     "No system Chrome/Chromium found (checked CHROME_PATH and the usual " +
@@ -125,13 +123,9 @@ async function screenshot(getPage: GetPage, name: string): Promise<string> {
   // own short, separate timeout rather than inheriting the step's.
   await Promise.race([
     getPage().screenshot({ path: dest }),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("screenshot timed out")), 8_000),
-    ),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("screenshot timed out")), 8_000)),
   ]).catch((error) => {
-    console.error(
-      `  (screenshot failed: ${error instanceof Error ? error.message : error})`,
-    );
+    console.error(`  (screenshot failed: ${error instanceof Error ? error.message : error})`);
   });
   return file;
 }
@@ -183,26 +177,20 @@ async function startWebDevServer(options: {
 }): Promise<WebDevServer> {
   const vite = path.join(WEB_DIR, "node_modules", ".bin", "vite");
   if (!existsSync(vite)) {
-    throw new Error(
-      `apps/web has no installed vite binary at ${vite}; run \`bun install\` first.`,
-    );
+    throw new Error(`apps/web has no installed vite binary at ${vite}; run \`bun install\` first.`);
   }
   const baseUrl = `http://localhost:${options.port}`;
-  const proc = Bun.spawn(
-    [vite, "--port", String(options.port), "--strictPort"],
-    {
-      cwd: WEB_DIR,
-      env: { ...process.env, BASE_URL: options.hubBaseUrl },
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
+  const proc = Bun.spawn([vite, "--port", String(options.port), "--strictPort"], {
+    cwd: WEB_DIR,
+    env: { ...process.env, BASE_URL: options.hubBaseUrl },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   let captured = "";
   let done = false;
   const capture = async (stream: ReadableStream<Uint8Array>) => {
     const decoder = new TextDecoder();
-    for await (const chunk of stream)
-      captured += decoder.decode(chunk, { stream: true });
+    for await (const chunk of stream) captured += decoder.decode(chunk, { stream: true });
   };
   void capture(proc.stdout);
   void capture(proc.stderr);
@@ -228,9 +216,7 @@ async function startWebDevServer(options: {
   const deadline = Date.now() + 20_000;
   for (;;) {
     if (app.exited()) {
-      throw new Error(
-        `web dev server exited during boot; output:\n${app.output()}`,
-      );
+      throw new Error(`web dev server exited during boot; output:\n${app.output()}`);
     }
     try {
       const res = await fetch(baseUrl);
@@ -240,9 +226,7 @@ async function startWebDevServer(options: {
     }
     if (Date.now() > deadline) {
       await app.stop();
-      throw new Error(
-        `web dev server did not answer within 20s; output:\n${app.output()}`,
-      );
+      throw new Error(`web dev server did not answer within 20s; output:\n${app.output()}`);
     }
     await Bun.sleep(250);
   }
@@ -278,10 +262,7 @@ async function clickStable(page: Page, selector: string): Promise<void> {
 }
 
 async function countMatching(page: Page, selector: string): Promise<number> {
-  return page.evaluate(
-    (sel: string) => document.querySelectorAll(sel).length,
-    selector,
-  );
+  return page.evaluate((sel: string) => document.querySelectorAll(sel).length, selector);
 }
 
 async function createAgentDrawerLayout(
@@ -320,14 +301,10 @@ async function createAgentDrawerLayout(
     }
 
     const minimumLeftClearance = Math.min(
-      ...controls.map(
-        (control) => control.getBoundingClientRect().left - bodyContentLeft,
-      ),
+      ...controls.map((control) => control.getBoundingClientRect().left - bodyContentLeft),
     );
     const maximumRightOverflow = Math.max(
-      ...controls.map(
-        (control) => control.getBoundingClientRect().right - bodyContentRight,
-      ),
+      ...controls.map((control) => control.getBoundingClientRect().right - bodyContentRight),
     );
 
     return {
@@ -338,32 +315,22 @@ async function createAgentDrawerLayout(
       panelScrollWidth: panel.scrollWidth,
       minimumLeftClearance,
       maximumRightOverflow,
-      activeControl:
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement.id
-          : "",
+      activeControl: document.activeElement instanceof HTMLElement ? document.activeElement.id : "",
     };
   }, viewportName);
 }
 
-async function openCreateAgentDrawer(
-  page: Page,
-  webBaseUrl: string,
-): Promise<boolean> {
+async function openCreateAgentDrawer(page: Page, webBaseUrl: string): Promise<boolean> {
   await page.goto(`${webBaseUrl}/agents`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector('button[aria-label="Create an agent"]', {
     timeout: 15_000,
   });
   await clickStable(page, 'button[aria-label="Create an agent"]');
-  await page.waitForSelector(
-    '[data-slot="dialog-content"].create-agent-panel',
-    { timeout: 15_000 },
-  );
+  await page.waitForSelector('[data-slot="dialog-content"].create-agent-panel', {
+    timeout: 15_000,
+  });
   await page.waitForSelector("#create-agent-name");
-  await page.type(
-    "#create-agent-name",
-    "Research Buddy with a deliberately long name",
-  );
+  await page.type("#create-agent-name", "Research Buddy with a deliberately long name");
   await page.type(
     "#create-agent-purpose",
     "A deliberately long description that wraps across multiple lines so the drawer has to contain the full form without clipping its focus ring or letting the scrollbar cover the field.",
@@ -374,9 +341,7 @@ async function openCreateAgentDrawer(
   await page
     .waitForFunction(
       () => {
-        const model = document.querySelector<HTMLSelectElement>(
-          "#create-agent-advanced-model",
-        );
+        const model = document.querySelector<HTMLSelectElement>("#create-agent-advanced-model");
         return (
           (model !== null && model.options.length > 0) ||
           document.querySelector('[role="status"]') !== null
@@ -385,12 +350,8 @@ async function openCreateAgentDrawer(
       { timeout: 5_000 },
     )
     .catch(() => undefined);
-  const modelValues = await page.$$eval(
-    "#create-agent-advanced-model option",
-    (options) =>
-      options
-        .map((option) => option.value)
-        .filter((value) => value.trim() !== ""),
+  const modelValues = await page.$$eval("#create-agent-advanced-model option", (options) =>
+    options.map((option) => option.value).filter((value) => value.trim() !== ""),
   );
   const modelSelectorAvailable = modelValues.length > 0;
   if (modelSelectorAvailable) {
@@ -404,16 +365,12 @@ async function openCreateAgentDrawer(
     await page.focus("#create-agent-advanced-handle");
   }
   await page.evaluate(() => {
-    const body = document.querySelector<HTMLElement>(
-      '[data-slot="dialog-body"]',
-    );
+    const body = document.querySelector<HTMLElement>('[data-slot="dialog-body"]');
     if (body === null) throw new Error("New Agent drawer body was not found");
     body.scrollTop = body.scrollHeight;
   });
   await page.waitForFunction(
-    () =>
-      document.querySelector<HTMLElement>('[data-slot="dialog-body"]')
-        ?.scrollTop !== 0,
+    () => document.querySelector<HTMLElement>('[data-slot="dialog-body"]')?.scrollTop !== 0,
     { timeout: 5_000 },
   );
   return modelSelectorAvailable;
@@ -430,10 +387,10 @@ async function closeCreateAgentDrawer(page: Page): Promise<void> {
     if (cancel === undefined) throw new Error("Cancel button was not found");
     cancel.click();
   });
-  await page.waitForSelector(
-    '[data-slot="dialog-content"].create-agent-panel',
-    { hidden: true, timeout: 5_000 },
-  );
+  await page.waitForSelector('[data-slot="dialog-content"].create-agent-panel', {
+    hidden: true,
+    timeout: 5_000,
+  });
 }
 
 // --- the walkthrough -----------------------------------------------------
@@ -468,9 +425,7 @@ async function createMyraChat(page: Page): Promise<void> {
       .catch(() => false);
   }
   if (!landed) {
-    throw new Error(
-      "the picker never minted a fresh workbench after 3 attempts",
-    );
+    throw new Error("the picker never minted a fresh workbench after 3 attempts");
   }
 }
 
@@ -506,9 +461,7 @@ async function run(): Promise<void> {
     const sidecarToken = crypto.randomUUID();
     await provisionSidecar(databaseUrl, sidecarId, sidecarToken);
 
-    const sessionSecret = Buffer.from(
-      crypto.getRandomValues(new Uint8Array(32)),
-    ).toString("hex");
+    const sessionSecret = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex");
     // The hub keeps this exact port, and the web dev server keeps this
     // exact origin as the hub's trusted BASE_URL, across the restart in
     // step 10 — the dev server's own `/api` proxy target and better-
@@ -541,9 +494,7 @@ async function run(): Promise<void> {
     });
     cleanups.push(() => sidecar.stop());
 
-    console.log(
-      "Starting apps/web dev server (proxying /api to the real hub)...",
-    );
+    console.log("Starting apps/web dev server (proxying /api to the real hub)...");
     const web = await startWebDevServer({
       hubBaseUrl: hub.baseUrl,
       port: webPort,
@@ -560,13 +511,10 @@ async function run(): Promise<void> {
 
     function wireDiagnostics(target: Page): void {
       target.on("pageerror", (error) =>
-        console.error(
-          `  [page error] ${error instanceof Error ? error.message : String(error)}`,
-        ),
+        console.error(`  [page error] ${error instanceof Error ? error.message : String(error)}`),
       );
       target.on("console", (msg) => {
-        if (msg.type() === "error")
-          console.error(`  [console.error] ${msg.text()}`);
+        if (msg.type() === "error") console.error(`  [console.error] ${msg.text()}`);
       });
     }
 
@@ -588,11 +536,8 @@ async function run(): Promise<void> {
     // required — Ollama has none.
     const liveApiKey = process.env["E2E_PROVIDER_API_KEY"];
     const ollamaBaseUrl = process.env["OLLAMA_BASE_URL"];
-    const useOllama =
-      process.env["E2E_PROVIDER"] === "ollama" && ollamaBaseUrl !== undefined;
-    const connectProvider = useOllama
-      ? ("ollama" as const)
-      : ("anthropic" as const);
+    const useOllama = process.env["E2E_PROVIDER"] === "ollama" && ollamaBaseUrl !== undefined;
+    const connectProvider = useOllama ? ("ollama" as const) : ("anthropic" as const);
     const stubApiKey = useOllama
       ? OLLAMA_PLACEHOLDER_SECRET
       : (liveApiKey ?? "sk-e2e-stub-not-real");
@@ -610,10 +555,9 @@ async function run(): Promise<void> {
         await page.type('input[name="email"]', email);
         await page.type('input[name="password"]', password);
         await page.click('button[type="submit"]');
-        await page.waitForFunction(
-          () => window.location.pathname === "/onboarding",
-          { timeout: 15_000 },
-        );
+        await page.waitForFunction(() => window.location.pathname === "/onboarding", {
+          timeout: 15_000,
+        });
         return {
           status: "pass",
           detail: `signed up as ${email}, reached onboarding`,
@@ -662,22 +606,12 @@ async function run(): Promise<void> {
         // stored as an unproven model source, exactly as onboarding's
         // own key path would store it, so the later chat message is the
         // first time it is ever dialed for real.
-        const cookies = (await page.cookies()).map(
-          (c) => `${c.name}=${c.value}`,
-        );
+        const cookies = (await page.cookies()).map((c) => `${c.name}=${c.value}`);
         const hubApi = createHubAPI(hub.baseUrl);
-        const session = await hubApi(
-          "GET",
-          "/api/auth/get-session",
-          undefined,
-          cookies,
-        );
-        const userId = (session.data as { user?: { id?: string } } | null)?.user
-          ?.id;
+        const session = await hubApi("GET", "/api/auth/get-session", undefined, cookies);
+        const userId = (session.data as { user?: { id?: string } } | null)?.user?.id;
         if (userId === undefined || userId === "") {
-          throw new Error(
-            `no authenticated session found: ${JSON.stringify(session.data)}`,
-          );
+          throw new Error(`no authenticated session found: ${JSON.stringify(session.data)}`);
         }
         const pushWorkflow = createGitWorkflowPusher();
         const connectArgs = {
@@ -755,13 +689,10 @@ async function run(): Promise<void> {
         // must land in Myra's DM rather than stranding the account on a
         // spinner or bouncing to `/new`.
         await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
-        await page.waitForFunction(
-          () => window.location.pathname.startsWith("/w/"),
-          { timeout: 45_000 },
-        );
-        firstWorkbenchPath = await page.evaluate(
-          () => window.location.pathname,
-        );
+        await page.waitForFunction(() => window.location.pathname.startsWith("/w/"), {
+          timeout: 45_000,
+        });
+        firstWorkbenchPath = await page.evaluate(() => window.location.pathname);
         await page.waitForSelector("textarea.chat-composer-input", {
           timeout: 15_000,
         });
@@ -784,23 +715,15 @@ async function run(): Promise<void> {
           { name: "desktop", width: 1280, height: 720 },
           { name: "short", width: 1280, height: 480 },
         ] as const;
-        const measurements: Awaited<
-          ReturnType<typeof createAgentDrawerLayout>
-        >[] = [];
+        const measurements: Awaited<ReturnType<typeof createAgentDrawerLayout>>[] = [];
         let modelSelectorSeen = false;
 
         try {
           for (const viewport of cases) {
             await page.setViewport(viewport);
-            const modelSelectorAvailable = await openCreateAgentDrawer(
-              page,
-              webBaseUrl,
-            );
+            const modelSelectorAvailable = await openCreateAgentDrawer(page, webBaseUrl);
             modelSelectorSeen ||= modelSelectorAvailable;
-            const measurement = await createAgentDrawerLayout(
-              page,
-              viewport.name,
-            );
+            const measurement = await createAgentDrawerLayout(page, viewport.name);
             measurements.push(measurement);
             if (
               measurement.bodyScrollWidth !== measurement.bodyClientWidth ||
@@ -860,10 +783,7 @@ async function run(): Promise<void> {
             detail: `expected a mixed conversation list with a Myra row, found ${myraRows}`,
           };
         }
-        const createButtons = await countMatching(
-          page,
-          'button[aria-label="New workbench"]',
-        );
+        const createButtons = await countMatching(page, 'button[aria-label="New workbench"]');
         if (createButtons !== 1) {
           return {
             status: "fail",
@@ -872,8 +792,7 @@ async function run(): Promise<void> {
         }
         return {
           status: "pass",
-          detail:
-            'mixed conversation list includes Myra; one "+ New workbench" affordance',
+          detail: 'mixed conversation list includes Myra; one "+ New workbench" affordance',
         };
       },
     );
@@ -944,8 +863,7 @@ async function run(): Promise<void> {
         }
         return {
           status: "pass",
-          detail:
-            'sidebar lists Myra plus 1 "New Workbench" row from the picker mint',
+          detail: 'sidebar lists Myra plus 1 "New Workbench" row from the picker mint',
         };
       },
     );
@@ -1010,9 +928,7 @@ async function run(): Promise<void> {
             .then(() => true)
             .catch(() => false);
           if (!greeted) {
-            console.error(
-              `  --- hub output (tail) ---\n${hub.output().slice(-1500)}`,
-            );
+            console.error(`  --- hub output (tail) ---\n${hub.output().slice(-1500)}`);
             return {
               status: "fail",
               detail:
@@ -1030,17 +946,13 @@ async function run(): Promise<void> {
             // The greeting bubble is already there; wait for the answer —
             // a second agent bubble. A local 27B model can take a while.
             await page.waitForFunction(
-              () =>
-                document.querySelectorAll(
-                  'div.chat-bubble-row[data-own="false"]',
-                ).length >= 2,
+              () => document.querySelectorAll('div.chat-bubble-row[data-own="false"]').length >= 2,
               { timeout: 180_000 },
             );
           } else {
-            await page.waitForSelector(
-              'div.chat-bubble-row[data-own="false"]',
-              { timeout: 45_000 },
-            );
+            await page.waitForSelector('div.chat-bubble-row[data-own="false"]', {
+              timeout: 45_000,
+            });
           }
         } catch {
           const hubTail = hub.output().slice(-1500);
@@ -1063,9 +975,7 @@ async function run(): Promise<void> {
         if (live) {
           const bubbles = await page.evaluate(() =>
             Array.from(
-              document.querySelectorAll(
-                'div.chat-bubble-row[data-own="false"] p.chat-bubble-text',
-              ),
+              document.querySelectorAll('div.chat-bubble-row[data-own="false"] p.chat-bubble-text'),
             ).map((el) => el.textContent ?? ""),
           );
           const broken = bubbles.filter((text) =>
@@ -1117,8 +1027,7 @@ async function run(): Promise<void> {
         }
         return {
           status: "pass",
-          detail:
-            "Ctrl+T opens nothing — the removed New task dialog stayed removed",
+          detail: "Ctrl+T opens nothing — the removed New task dialog stayed removed",
         };
       },
     );
@@ -1158,12 +1067,9 @@ async function run(): Promise<void> {
         // Reopen the picker-minted "New Workbench" channel, not Myra's DM
         // (first land is titled Myra).
         const rowAppeared = await page
-          .waitForSelector(
-            '.shell-ch-row-wrap[data-ctx-workbench-title="New Workbench"]',
-            {
-              timeout: 15_000,
-            },
-          )
+          .waitForSelector('.shell-ch-row-wrap[data-ctx-workbench-title="New Workbench"]', {
+            timeout: 15_000,
+          })
           .then(() => true)
           .catch(() => false);
         if (!rowAppeared) {
@@ -1179,12 +1085,9 @@ async function run(): Promise<void> {
           '.shell-ch-row-wrap[data-ctx-workbench-title="New Workbench"] button.shell-ch-row',
         );
         const couldNotLoad = await page
-          .waitForFunction(
-            () => document.body.textContent?.includes("Couldn't load"),
-            {
-              timeout: 10_000,
-            },
-          )
+          .waitForFunction(() => document.body.textContent?.includes("Couldn't load"), {
+            timeout: 10_000,
+          })
           .then(() => true)
           .catch(() => false);
         if (couldNotLoad) {
@@ -1202,14 +1105,12 @@ async function run(): Promise<void> {
         if (composerReady) {
           return {
             status: "pass",
-            detail:
-              "existing chat reopened cleanly after a same-DB hub restart",
+            detail: "existing chat reopened cleanly after a same-DB hub restart",
           };
         }
         return {
           status: "fail",
-          detail:
-            "chat neither loaded normally nor showed the documented error state",
+          detail: "chat neither loaded normally nor showed the documented error state",
         };
       },
     );
@@ -1227,8 +1128,8 @@ async function run(): Promise<void> {
           timeout: 20_000,
         });
         await page.evaluate(() => {
-          const button = Array.from(document.querySelectorAll("button")).find(
-            (b) => (b.textContent ?? "").includes("New routine"),
+          const button = Array.from(document.querySelectorAll("button")).find((b) =>
+            (b.textContent ?? "").includes("New routine"),
           );
           (button as HTMLButtonElement | undefined)?.click();
         });
@@ -1270,12 +1171,8 @@ async function run(): Promise<void> {
           .catch(() => false);
 
         await page.evaluate(() => {
-          const select = document.querySelector<HTMLSelectElement>(
-            "#routine-panel-target",
-          );
-          const option = select?.querySelector<HTMLOptionElement>(
-            "option[value]:not([value=''])",
-          );
+          const select = document.querySelector<HTMLSelectElement>("#routine-panel-target");
+          const option = select?.querySelector<HTMLOptionElement>("option[value]:not([value=''])");
           if (select && option) {
             select.value = option.value;
             select.dispatchEvent(new Event("change", { bubbles: true }));
@@ -1339,28 +1236,18 @@ async function run(): Promise<void> {
         });
 
         const desktop = await page.evaluate(() => {
-          const grid = document.querySelector<HTMLElement>(
-            '[aria-label="Plugin catalog"]',
-          );
-          const filterGroup = document.querySelector(
-            '[aria-label="Plugin catalog filters"]',
-          );
+          const grid = document.querySelector<HTMLElement>('[aria-label="Plugin catalog"]');
+          const filterGroup = document.querySelector('[aria-label="Plugin catalog filters"]');
           if (grid === null || filterGroup === null) return null;
-          const cards = Array.from(
-            grid.querySelectorAll<HTMLElement>("[data-plugin-card]"),
-          );
+          const cards = Array.from(grid.querySelectorAll<HTMLElement>("[data-plugin-card]"));
           const lastCard = cards.at(-1);
           return {
             tablists: document.querySelectorAll('[role="tablist"]').length,
             filterTabs: filterGroup.querySelectorAll('[role="tab"]').length,
-            searchControls: document.querySelectorAll(
-              '[aria-label="Filter plugins"]',
-            ).length,
+            searchControls: document.querySelectorAll('[aria-label="Filter plugins"]').length,
             columns: getComputedStyle(grid).gridTemplateColumns,
             lastBorder:
-              lastCard === undefined
-                ? null
-                : getComputedStyle(lastCard).borderBottomWidth,
+              lastCard === undefined ? null : getComputedStyle(lastCard).borderBottomWidth,
           };
         });
         if (
@@ -1371,9 +1258,7 @@ async function run(): Promise<void> {
           desktop.columns.split(" ").length !== 2 ||
           desktop.lastBorder !== "0px"
         ) {
-          throw new Error(
-            `desktop catalog contract failed: ${JSON.stringify(desktop)}`,
-          );
+          throw new Error(`desktop catalog contract failed: ${JSON.stringify(desktop)}`);
         }
 
         const engineeringClicked = await page.evaluate(() => {
@@ -1388,25 +1273,18 @@ async function run(): Promise<void> {
           engineering?.click();
           return engineering !== undefined;
         });
-        if (!engineeringClicked)
-          throw new Error("Engineering chip was not found");
+        if (!engineeringClicked) throw new Error("Engineering chip was not found");
         await page.waitForFunction(
           () =>
-            document.querySelectorAll(
-              '[aria-label="Plugin catalog"] [data-plugin-card]',
-            ).length === 6,
+            document.querySelectorAll('[aria-label="Plugin catalog"] [data-plugin-card]').length ===
+            6,
         );
         const evenFinalRowBorders = await page.$$eval(
           '[aria-label="Plugin catalog"] [data-plugin-card]',
-          (cards) =>
-            cards
-              .slice(-2)
-              .map((card) => getComputedStyle(card).borderBottomWidth),
+          (cards) => cards.slice(-2).map((card) => getComputedStyle(card).borderBottomWidth),
         );
         if (evenFinalRowBorders.some((border) => border !== "0px")) {
-          throw new Error(
-            `even final row borders failed: ${JSON.stringify(evenFinalRowBorders)}`,
-          );
+          throw new Error(`even final row borders failed: ${JSON.stringify(evenFinalRowBorders)}`);
         }
 
         const researchClicked = await page.evaluate(() => {
@@ -1423,42 +1301,31 @@ async function run(): Promise<void> {
         });
         if (!researchClicked) throw new Error("Research chip was not found");
         await page.waitForFunction(() => {
-          const cards = Array.from(
-            document.querySelectorAll<HTMLElement>("[data-plugin-name]"),
-          );
+          const cards = Array.from(document.querySelectorAll<HTMLElement>("[data-plugin-name]"));
           return (
             cards.length === 3 &&
             cards.every((card) =>
-              ["Exa", "Sumble", "ScrapeCreators"].includes(
-                card.dataset.pluginName ?? "",
-              ),
+              ["Exa", "Sumble", "ScrapeCreators"].includes(card.dataset.pluginName ?? ""),
             )
           );
         });
         const oddFinalRowBorders = await page.$$eval(
           '[aria-label="Plugin catalog"] [data-plugin-card]',
-          (cards) =>
-            cards
-              .slice(-2)
-              .map((card) => getComputedStyle(card).borderBottomWidth),
+          (cards) => cards.slice(-2).map((card) => getComputedStyle(card).borderBottomWidth),
         );
         if (
           oddFinalRowBorders.length !== 2 ||
           oddFinalRowBorders[0] === "0px" ||
           oddFinalRowBorders[1] !== "0px"
         ) {
-          throw new Error(
-            `odd final row borders failed: ${JSON.stringify(oddFinalRowBorders)}`,
-          );
+          throw new Error(`odd final row borders failed: ${JSON.stringify(oddFinalRowBorders)}`);
         }
 
         await page.click('button[aria-label="Filter plugins"]');
         await page.waitForSelector('input[aria-label="Filter plugins"]');
         await page.type('input[aria-label="Filter plugins"]', "live web");
         await page.waitForFunction(() => {
-          const cards = Array.from(
-            document.querySelectorAll<HTMLElement>("[data-plugin-name]"),
-          );
+          const cards = Array.from(document.querySelectorAll<HTMLElement>("[data-plugin-name]"));
           return cards.length === 1 && cards[0]?.dataset.pluginName === "Exa";
         });
 
@@ -1468,9 +1335,7 @@ async function run(): Promise<void> {
           (grid) => getComputedStyle(grid).gridTemplateColumns,
         );
         if (narrowColumns.split(" ").length !== 1) {
-          throw new Error(
-            `narrow catalog rendered ${narrowColumns} instead of one column`,
-          );
+          throw new Error(`narrow catalog rendered ${narrowColumns} instead of one column`);
         }
 
         return {
@@ -1483,9 +1348,7 @@ async function run(): Promise<void> {
   } finally {
     for (const cleanup of cleanups.splice(0).reverse()) {
       await cleanup().catch((error) => {
-        console.error(
-          `cleanup failed: ${error instanceof Error ? error.message : error}`,
-        );
+        console.error(`cleanup failed: ${error instanceof Error ? error.message : error}`);
       });
     }
     await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
@@ -1517,9 +1380,7 @@ async function main(): Promise<void> {
   }
   const failed = results.filter((r) => r.status === "fail");
   if (failed.length > 0) {
-    console.error(
-      `\n${failed.length} step(s) failed outright (not just repro-confirmed).`,
-    );
+    console.error(`\n${failed.length} step(s) failed outright (not just repro-confirmed).`);
     process.exit(1);
   }
 }

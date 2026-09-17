@@ -7,9 +7,7 @@ import { loadOrMintSidecarKeypair } from "../src/signing-keypair";
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(
-    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
 async function makeSigningDir(): Promise<string> {
@@ -38,13 +36,8 @@ test("loads the same identity on a second boot", async () => {
 test("halts when the public anchor does not match the seed", async () => {
   const signingDir = await makeSigningDir();
   await loadOrMintSidecarKeypair(signingDir);
-  await writeFile(
-    path.join(signingDir, "ed25519.public"),
-    new Uint8Array(32).fill(7),
-  );
-  await expect(loadOrMintSidecarKeypair(signingDir)).rejects.toThrow(
-    /does not match/,
-  );
+  await writeFile(path.join(signingDir, "ed25519.public"), new Uint8Array(32).fill(7));
+  await expect(loadOrMintSidecarKeypair(signingDir)).rejects.toThrow(/does not match/);
 });
 
 test("halts on a partial keypair directory", async () => {

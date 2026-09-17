@@ -45,9 +45,9 @@ export const ARTIFACT_KIND_GUIDANCE: Record<AttioTaskArtifactKind, string> = {
 };
 
 function kindGuidanceBlock(): string {
-  return ATTIO_TASK_ARTIFACT_KINDS.map(
-    (kind) => `- ${kind}: ${ARTIFACT_KIND_GUIDANCE[kind]}`,
-  ).join("\n");
+  return ATTIO_TASK_ARTIFACT_KINDS.map((kind) => `- ${kind}: ${ARTIFACT_KIND_GUIDANCE[kind]}`).join(
+    "\n",
+  );
 }
 
 /**

@@ -38,9 +38,7 @@ const RECAP_LABEL = "system";
 
 function formatRecapDate(iso: string): string {
   const parsed = new Date(iso);
-  return Number.isNaN(parsed.getTime())
-    ? iso
-    : parsed.toISOString().slice(0, 10);
+  return Number.isNaN(parsed.getTime()) ? iso : parsed.toISOString().slice(0, 10);
 }
 
 export interface DroppedRecapInput {
@@ -68,9 +66,7 @@ export interface DroppedRecapInput {
  * Never exceeds its own cap regardless of how much history it is
  * standing in for.
  */
-export function buildDroppedRecap(
-  input: DroppedRecapInput,
-): WorkbenchContextItem {
+export function buildDroppedRecap(input: DroppedRecapInput): WorkbenchContextItem {
   const countLabel = `${input.droppedCount}${input.moreBeyondFold ? "+" : ""}`;
   const dateRange =
     input.firstDate !== undefined && input.lastDate !== undefined
@@ -93,8 +89,7 @@ export function buildDroppedRecap(
       : input.moreBeyondFold
         ? " … and possibly more"
         : "";
-  const body =
-    leads.length > 0 ? leads.join("; ") : "(no human messages in this span)";
+  const body = leads.length > 0 ? leads.join("; ") : "(no human messages in this span)";
 
   return {
     label: RECAP_LABEL,
@@ -116,9 +111,7 @@ export interface WorkbenchContextItem {
 }
 
 function truncate(text: string): string {
-  return text.length > MAX_MESSAGE_LENGTH
-    ? `${text.slice(0, MAX_MESSAGE_LENGTH)}…`
-    : text;
+  return text.length > MAX_MESSAGE_LENGTH ? `${text.slice(0, MAX_MESSAGE_LENGTH)}…` : text;
 }
 
 /**
@@ -140,13 +133,8 @@ export function renderWorkbenchContext(input: {
    */
   readonly recap?: WorkbenchContextItem;
 }): string {
-  const lines = input.items.map(
-    (item) => `${item.label}: ${truncate(item.text)}`,
-  );
-  const recapLine =
-    input.recap !== undefined
-      ? [`${input.recap.label}: ${input.recap.text}`]
-      : [];
+  const lines = input.items.map((item) => `${item.label}: ${truncate(item.text)}`);
+  const recapLine = input.recap !== undefined ? [`${input.recap.label}: ${input.recap.text}`] : [];
   return [CONTEXT_HEADER, ...recapLine, ...lines].join("\n");
 }
 

@@ -18,11 +18,7 @@
 // for the first connect attempt, and only then does the link dial out.
 
 import path from "node:path";
-import {
-  createEd25519Crypto,
-  generateKeyPair,
-  verifySSHSignature,
-} from "@intx/crypto";
+import { createEd25519Crypto, generateKeyPair, verifySSHSignature } from "@intx/crypto";
 import { createSidecarOrchestrator, type HubLink } from "@intx/hub-agent";
 import { createAgentRepoStore } from "@intx/hub-sessions";
 import { loadAdapterRegistry } from "@intx/inference/providers";
@@ -33,10 +29,7 @@ import { hexEncode } from "@intx/types";
 
 import { reportError } from "@corbits/error-sink";
 import { readSidecarConfig } from "./config";
-import {
-  DEFAULT_TOOL_REGISTRIES_JSON,
-  parseToolRegistries,
-} from "./tool-materialization";
+import { DEFAULT_TOOL_REGISTRIES_JSON, parseToolRegistries } from "./tool-materialization";
 import { createWorkflowProbeExecutor } from "./workflow-probe-handler";
 import { createWorkflowClosureMaterializer } from "./workflow-closure-materialization";
 import { MAX_INLINE_ASSET_PAYLOAD_BYTES } from "./source-asset-delivery";
@@ -45,10 +38,7 @@ import { createHubLinkWatchdog } from "./hub-link-watchdog";
 import { createOAuthLoopbackLoginService } from "./oauth-login";
 import { attachShutdownRejectionHandler, runSidecarShutdown } from "./shutdown";
 import { loadOrMintSidecarKeypair } from "./signing-keypair";
-import {
-  createSidecarDeployRouter,
-  type SidecarDeployRouter,
-} from "./workflow-host-wiring";
+import { createSidecarDeployRouter, type SidecarDeployRouter } from "./workflow-host-wiring";
 import {
   createDeploymentAddressRegistry,
   createMultistepCredentialsRouter,
@@ -97,11 +87,8 @@ await createTarballCache({
 // commit with it, and each workflow-process child re-derives it from
 // its spawn-time env. The public key is logged so an operator can pin
 // which identity a given process advertises.
-const signingKey = await loadOrMintSidecarKeypair(
-  path.join(config.dataDir, ".sidecar-signing"),
-);
-getLogger(["sidecar", "boot"])
-  .info`Sidecar identity ${hexEncode(signingKey.publicKey)}`;
+const signingKey = await loadOrMintSidecarKeypair(path.join(config.dataDir, ".sidecar-signing"));
+getLogger(["sidecar", "boot"]).info`Sidecar identity ${hexEncode(signingKey.publicKey)}`;
 
 // The substrate-backed RepoStore the supervisors read and write through.
 // Wrapped below with the pack-pushing facade so a successful
@@ -182,8 +169,7 @@ const multistepSubstrateEnv: Record<string, string> = {
   // operator pinned none, so the child's per-step tool materialization
   // resolves the exact registries this boot edge resolved — a child
   // never falls back to a default of its own.
-  SIDECAR_TOOL_REGISTRIES:
-    config.toolRegistries ?? DEFAULT_TOOL_REGISTRIES_JSON,
+  SIDECAR_TOOL_REGISTRIES: config.toolRegistries ?? DEFAULT_TOOL_REGISTRIES_JSON,
 };
 if (config.home !== undefined) {
   multistepSubstrateEnv["HOME"] = config.home;
@@ -210,9 +196,7 @@ const workflowProbeExecutor = createWorkflowProbeExecutor({
     cacheMaxBytes: CACHE_MAX_BYTES,
     registryMaxTarballBytes: REGISTRY_MAX_TARBALL_BYTES,
     maxAssetPayloadBytes: MAX_INLINE_ASSET_PAYLOAD_BYTES,
-    registries: parseToolRegistries(
-      config.toolRegistries ?? DEFAULT_TOOL_REGISTRIES_JSON,
-    ),
+    registries: parseToolRegistries(config.toolRegistries ?? DEFAULT_TOOL_REGISTRIES_JSON),
     scratchRoot: path.join(config.dataDir, "workflow-probe", "closures"),
   }),
 });
@@ -285,14 +269,8 @@ const orchestrator = createSidecarOrchestrator({
       wrappedRepoStore.markAddressUnroutable(address);
     }
   },
-  createDeployRouter: ({
-    sessions,
-    keyStore,
-    publishWorkflowInferenceEvent,
-  }) => {
-    const deployRouterConfigBase: Parameters<
-      typeof createSidecarDeployRouter
-    >[0] = {
+  createDeployRouter: ({ sessions, keyStore, publishWorkflowInferenceEvent }) => {
+    const deployRouterConfigBase: Parameters<typeof createSidecarDeployRouter>[0] = {
       sessions,
       keyStore,
       transport,
@@ -353,9 +331,7 @@ const orchestrator = createSidecarOrchestrator({
             idleHibernateMs: config.idleHibernateMs,
           }
         : deployRouterConfigWithReadyTimeoutMs;
-    const router = createSidecarDeployRouter(
-      deployRouterConfigWithIdleHibernateMs,
-    );
+    const router = createSidecarDeployRouter(deployRouterConfigWithIdleHibernateMs);
     capturedRouter = router;
     return router;
   },
@@ -364,9 +340,7 @@ const orchestrator = createSidecarOrchestrator({
 resolvedHubLink = orchestrator.hubLink;
 
 if (capturedRouter === undefined) {
-  throw new Error(
-    "sidecar boot: deploy router was not constructed before deployment restore",
-  );
+  throw new Error("sidecar boot: deploy router was not constructed before deployment restore");
 }
 const deployRouter: SidecarDeployRouter = capturedRouter;
 

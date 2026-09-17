@@ -16,13 +16,10 @@
 // - Day-of-week accepts both 0 and 7 as Sunday.
 // - Matching can be evaluated in an IANA timezone; `nextFireAt` is still
 //   stored as a UTC instant.
-export type CronField =
-  "minute" | "hour" | "dayOfMonth" | "month" | "dayOfWeek";
+export type CronField = "minute" | "hour" | "dayOfMonth" | "month" | "dayOfWeek";
 
 /** Field order in a 5-field cron expression, paired with its valid range. */
-export const CRON_FIELD_RANGES: Readonly<
-  Record<CronField, readonly [number, number]>
-> = {
+export const CRON_FIELD_RANGES: Readonly<Record<CronField, readonly [number, number]>> = {
   minute: [0, 59],
   hour: [0, 23],
   dayOfMonth: [1, 31],
@@ -58,12 +55,8 @@ function parseCronClause(raw: string): CronClause | undefined {
   const [, base, rangeEnd, step] = match;
   const clauseBase: CronClause = { base: base === "*" ? "*" : Number(base) };
   const withRangeEnd =
-    rangeEnd !== undefined
-      ? { ...clauseBase, rangeEnd: Number(rangeEnd) }
-      : clauseBase;
-  return step !== undefined
-    ? { ...withRangeEnd, step: Number(step) }
-    : withRangeEnd;
+    rangeEnd !== undefined ? { ...clauseBase, rangeEnd: Number(rangeEnd) } : clauseBase;
+  return step !== undefined ? { ...withRangeEnd, step: Number(step) } : withRangeEnd;
 }
 
 /**
@@ -73,10 +66,7 @@ function parseCronClause(raw: string): CronClause | undefined {
  * rather than accepted as an expression that is syntactically fine and
  * unconditionally never true.
  */
-function clauseInRange(
-  clause: CronClause,
-  [min, max]: readonly [number, number],
-): boolean {
+function clauseInRange(clause: CronClause, [min, max]: readonly [number, number]): boolean {
   if (clause.step !== undefined && clause.step <= 0) return false;
   if (clause.base === "*") return true;
   if (clause.base < min || clause.base > max) return false;
@@ -90,11 +80,7 @@ function clauseInRange(
  * Star-with-step (asterisk-slash-N) steps from `min`, not from zero — so on a
  * 1-based day-of-month, that pattern yields 1,3,5… rather than 2,4,6….
  */
-function clauseMatches(
-  clause: CronClause,
-  value: number,
-  min: number,
-): boolean {
+function clauseMatches(clause: CronClause, value: number, min: number): boolean {
   if (clause.base === "*") {
     return clause.step === undefined ? true : (value - min) % clause.step === 0;
   }
@@ -107,19 +93,13 @@ function clauseMatches(
   return (value - clause.base) % clause.step === 0;
 }
 
-function everyClause(
-  field: string,
-  test: (clause: CronClause) => boolean,
-): boolean {
+function everyClause(field: string, test: (clause: CronClause) => boolean): boolean {
   const clauses = field.split(",").map(parseCronClause);
   if (clauses.length === 0) return false;
   return clauses.every((clause) => clause !== undefined && test(clause));
 }
 
-function someClause(
-  field: string,
-  test: (clause: CronClause) => boolean,
-): boolean {
+function someClause(field: string, test: (clause: CronClause) => boolean): boolean {
   return field.split(",").some((raw) => {
     const clause = parseCronClause(raw);
     return clause !== undefined && test(clause);
@@ -142,9 +122,7 @@ export function isValidCronExpression(expression: string): boolean {
   return fields.every((field, index) => {
     const cronField = CRON_FIELD_ORDER[index];
     if (cronField === undefined) return false;
-    return everyClause(field, (clause) =>
-      clauseInRange(clause, CRON_FIELD_RANGES[cronField]),
-    );
+    return everyClause(field, (clause) => clauseInRange(clause, CRON_FIELD_RANGES[cronField]));
   });
 }
 
@@ -241,9 +219,7 @@ export function zonedParts(at: Date, timeZone: string = "UTC"): ZonedParts {
   };
   const dayOfWeek = dowMap[weekday];
   if (dayOfWeek === undefined) {
-    throw new Error(
-      `zonedParts: could not resolve weekday "${weekday}" in ${timeZone}`,
-    );
+    throw new Error(`zonedParts: could not resolve weekday "${weekday}" in ${timeZone}`);
   }
   return { year, month, day, hour, minute, dayOfWeek };
 }
@@ -266,11 +242,7 @@ export function isValidTimeZone(timeZone: string): boolean {
  * in `timeZone` (default UTC). DOM and DOW OR when both are restricted
  * (Vixie/POSIX); otherwise AND.
  */
-export function cronMatchesMinute(
-  expression: string,
-  at: Date,
-  timeZone: string = "UTC",
-): boolean {
+export function cronMatchesMinute(expression: string, at: Date, timeZone: string = "UTC"): boolean {
   const fields = expression.trim().split(/\s+/);
   const [minute, hour, dayOfMonth, month, dayOfWeek] = fields;
   if (
@@ -290,11 +262,7 @@ export function cronMatchesMinute(
     fieldMatches(month, parts.month, CRON_FIELD_RANGES.month[0]);
   if (!timeAndMonth) return false;
 
-  const domOk = fieldMatches(
-    dayOfMonth,
-    parts.day,
-    CRON_FIELD_RANGES.dayOfMonth[0],
-  );
+  const domOk = fieldMatches(dayOfMonth, parts.day, CRON_FIELD_RANGES.dayOfMonth[0]);
   const dowOk = dayOfWeekMatches(dayOfWeek, parts.dayOfWeek);
 
   if (isDayFieldRestricted(dayOfMonth) && isDayFieldRestricted(dayOfWeek)) {
@@ -326,11 +294,7 @@ export const MAX_LOOKAHEAD_MINUTES = 366 * 24 * 60;
  * fire it. `nextFireAt` is always a UTC instant even when matching is
  * zoned.
  */
-export function nextCronFireAfter(
-  expression: string,
-  after: Date,
-  timeZone: string = "UTC",
-): Date {
+export function nextCronFireAfter(expression: string, after: Date, timeZone: string = "UTC"): Date {
   const start = minuteKey(after) + 1;
   for (let minute = start; minute - start <= MAX_LOOKAHEAD_MINUTES; minute++) {
     const candidate = new Date(minute * 60_000);

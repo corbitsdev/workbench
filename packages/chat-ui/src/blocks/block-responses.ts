@@ -35,7 +35,9 @@ export type QuestionResponsePayload = {
 };
 
 export type BlockResponsePayload =
-  PollResponsePayload | FormResponsePayload | QuestionResponsePayload;
+  | PollResponsePayload
+  | FormResponsePayload
+  | QuestionResponsePayload;
 
 /**
  * The live read behind a poll/form card. `own` is this signed-in
@@ -64,10 +66,7 @@ export type BlockResponseActions = {
    * the message it lives in plus its own `pollId`/`formId` -- the same
    * (messageId, blockId) scope the server keys responses by, so a vote can
    * never be read back against the wrong message's block. */
-  readonly getResponses: (
-    messageId: string,
-    blockId: string,
-  ) => Promise<BlockResponseQuery>;
+  readonly getResponses: (messageId: string, blockId: string) => Promise<BlockResponseQuery>;
   /** Casts (or changes) this principal's vote. */
   readonly submitPoll: (
     messageId: string,

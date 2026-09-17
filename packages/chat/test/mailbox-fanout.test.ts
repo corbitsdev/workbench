@@ -60,10 +60,7 @@ function inMemoryWriter(): {
 
 function knownPrincipals(ids: readonly string[]) {
   const known = new Set(ids);
-  return async (
-    _tenantId: string,
-    candidateIds: readonly string[],
-  ): Promise<ReadonlySet<string>> =>
+  return async (_tenantId: string, candidateIds: readonly string[]): Promise<ReadonlySet<string>> =>
     new Set(candidateIds.filter((id) => known.has(id)));
 }
 
@@ -335,10 +332,7 @@ describe("writeChatMailboxFanout (CL-7450)", () => {
     );
 
     for (const row of rows) {
-      expect(row.references).toEqual([
-        "<msg_5@acme.example>",
-        "<msg_6@acme.example>",
-      ]);
+      expect(row.references).toEqual(["<msg_5@acme.example>", "<msg_6@acme.example>"]);
     }
   });
 
@@ -387,11 +381,7 @@ describe("sendWorkbenchMessage's mailbox fan-out wiring (CL-7450)", () => {
       workbenchId: WORKBENCH_ID,
       updatedBy: SENDER,
       settings: {
-        "chat/participants": participantsOf(
-          SENDER,
-          OTHER_HUMANS,
-          AGENT_ADDRESS,
-        ),
+        "chat/participants": participantsOf(SENDER, OTHER_HUMANS, AGENT_ADDRESS),
       },
     });
 
@@ -460,11 +450,7 @@ describe("sendWorkbenchMessage's mailbox fan-out wiring (CL-7450)", () => {
       workbenchId: WORKBENCH_ID,
       updatedBy: SENDER,
       settings: {
-        "chat/participants": participantsOf(
-          SENDER,
-          OTHER_HUMANS,
-          AGENT_ADDRESS,
-        ),
+        "chat/participants": participantsOf(SENDER, OTHER_HUMANS, AGENT_ADDRESS),
       },
     });
 
@@ -496,10 +482,7 @@ describe("sendWorkbenchMessage's mailbox fan-out wiring (CL-7450)", () => {
           turnCancellation,
           mailbox: {
             writer: failingWriter,
-            resolveKnownPrincipalIds: knownPrincipals([
-              SENDER,
-              ...OTHER_HUMANS,
-            ]),
+            resolveKnownPrincipalIds: knownPrincipals([SENDER, ...OTHER_HUMANS]),
             resolveTenantDomain: domainOf(DOMAIN),
           },
         },

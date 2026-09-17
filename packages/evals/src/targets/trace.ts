@@ -46,9 +46,7 @@ function isToolPartMetadata(value: unknown): value is ToolPartMetadata {
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null
-    ? (value as Record<string, unknown>)
-    : {};
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 }
 
 /**
@@ -71,18 +69,13 @@ export async function readAllToolCalls(
     [runId, tenantId],
   );
 
-  const calls = new Map<
-    string,
-    { name: string; arguments: Record<string, unknown> }
-  >();
+  const calls = new Map<string, { name: string; arguments: Record<string, unknown> }>();
   const results = new Map<string, { content: unknown; isError: boolean }>();
   const order: string[] = [];
 
   for (const row of rows) {
     const metadata: unknown =
-      typeof row["metadata"] === "string"
-        ? JSON.parse(row["metadata"] as string)
-        : row["metadata"];
+      typeof row["metadata"] === "string" ? JSON.parse(row["metadata"] as string) : row["metadata"];
     if (!isToolPartMetadata(metadata)) continue;
     if (metadata.kind === "call") {
       calls.set(metadata.callId, {

@@ -21,10 +21,7 @@ test("createTask posts to /v2/task.create and parses the ok envelope", async () 
   };
   const fetchImpl = (async (input: URL | string, init?: RequestInit) => {
     captured.url = String(input);
-    captured.headers =
-      init?.headers instanceof Headers
-        ? init.headers
-        : new Headers(init?.headers);
+    captured.headers = init?.headers instanceof Headers ? init.headers : new Headers(init?.headers);
     captured.body = typeof init?.body === "string" ? init.body : "";
     return new Response(
       JSON.stringify({
@@ -142,9 +139,7 @@ test("listTaskMessages GETs /v2/task.listMessages without an auth header", async
   }) as unknown as typeof fetch;
 
   const listed = await listTaskMessages({ fetchImpl }, { task_id: "task_1" });
-  expect(captured.url).toBe(
-    "https://api.manus.ai/v2/task.listMessages?task_id=task_1",
-  );
+  expect(captured.url).toBe("https://api.manus.ai/v2/task.listMessages?task_id=task_1");
   expect(captured.headers?.get("x-manus-api-key") ?? null).toBeNull();
   expect(listed.messages?.[0]?.status_update?.agent_status).toBe("stopped");
 });
@@ -252,9 +247,7 @@ test("createSlideDeck treats mixed [stopped, running] desc as terminal", async (
   const fetchImpl = (async (input: URL | string, init?: RequestInit) => {
     const url = String(input);
     if (url.includes("/v2/task.create")) {
-      expect(
-        JSON.parse(typeof init?.body === "string" ? init.body : ""),
-      ).toEqual({
+      expect(JSON.parse(typeof init?.body === "string" ? init.body : "")).toEqual({
         message: {
           content: [
             {
@@ -327,10 +320,7 @@ test("createSlideDeck throws when the agent is still running after the poll budg
   }) as unknown as typeof fetch;
 
   await expect(
-    createSlideDeck(
-      { fetchImpl },
-      { content: "Onboarding", pollIntervalMs: 0, maxPolls: 2 },
-    ),
+    createSlideDeck({ fetchImpl }, { content: "Onboarding", pollIntervalMs: 0, maxPolls: 2 }),
   ).rejects.toThrow(/did not stop in time \(agent_status: running\)/);
 });
 
@@ -358,10 +348,7 @@ test("createSlideDeck throws when the agent is waiting", async () => {
   }) as unknown as typeof fetch;
 
   await expect(
-    createSlideDeck(
-      { fetchImpl },
-      { content: "Onboarding", pollIntervalMs: 0, maxPolls: 5 },
-    ),
+    createSlideDeck({ fetchImpl }, { content: "Onboarding", pollIntervalMs: 0, maxPolls: 5 }),
   ).rejects.toThrow(/waiting for confirmation/);
 });
 
@@ -389,10 +376,7 @@ test("createSlideDeck throws when the agent_status is error", async () => {
   }) as unknown as typeof fetch;
 
   await expect(
-    createSlideDeck(
-      { fetchImpl },
-      { content: "Onboarding", pollIntervalMs: 0, maxPolls: 5 },
-    ),
+    createSlideDeck({ fetchImpl }, { content: "Onboarding", pollIntervalMs: 0, maxPolls: 5 }),
   ).rejects.toThrow(/agent_status error/);
 });
 
@@ -434,12 +418,8 @@ test("createSlideDeck aborts polling instead of waiting out the timeout", async 
 });
 
 test("default slide-deck wait is several minutes", () => {
-  expect(
-    DEFAULT_SLIDE_MAX_POLLS * DEFAULT_SLIDE_POLL_INTERVAL_MS,
-  ).toBeGreaterThan(60_000);
-  expect(DEFAULT_SLIDE_MAX_POLLS * DEFAULT_SLIDE_POLL_INTERVAL_MS).toBe(
-    5 * 60 * 1000,
-  );
+  expect(DEFAULT_SLIDE_MAX_POLLS * DEFAULT_SLIDE_POLL_INTERVAL_MS).toBeGreaterThan(60_000);
+  expect(DEFAULT_SLIDE_MAX_POLLS * DEFAULT_SLIDE_POLL_INTERVAL_MS).toBe(5 * 60 * 1000);
 });
 
 test("createSlideDeck forwards optional skill fields on create", async () => {
@@ -514,10 +494,7 @@ test("createTask keeps a caller-supplied agent_profile", async () => {
     });
   }) as unknown as typeof fetch;
 
-  await createTask(
-    { fetchImpl },
-    { content: "Hello", agent_profile: "manus-1.6-max" },
-  );
+  await createTask({ fetchImpl }, { content: "Hello", agent_profile: "manus-1.6-max" });
   expect(JSON.parse(captured.body)).toEqual({
     message: { content: [{ type: "text", text: "Hello" }] },
     agent_profile: "manus-1.6-max",
@@ -674,10 +651,7 @@ test("createSlideDeck still throws unrelated listMessages errors", async () => {
   }) as unknown as typeof fetch;
 
   await expect(
-    createSlideDeck(
-      { fetchImpl },
-      { content: "Onboarding", pollIntervalMs: 0, maxPolls: 3 },
-    ),
+    createSlideDeck({ fetchImpl }, { content: "Onboarding", pollIntervalMs: 0, maxPolls: 3 }),
   ).rejects.toThrow(/permission_denied: bad key/);
   expect(listCalls).toBe(1);
 });
@@ -705,10 +679,7 @@ test("createSlideDeck throws when listMessages stays not_found through the poll 
   }) as unknown as typeof fetch;
 
   await expect(
-    createSlideDeck(
-      { fetchImpl },
-      { content: "Onboarding", pollIntervalMs: 0, maxPolls: 2 },
-    ),
+    createSlideDeck({ fetchImpl }, { content: "Onboarding", pollIntervalMs: 0, maxPolls: 2 }),
   ).rejects.toThrow(/did not stop in time|not_found: Task not found/);
   expect(listCalls).toBe(2);
 });

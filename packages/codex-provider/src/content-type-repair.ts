@@ -1,10 +1,7 @@
 import { CODEX_RESPONSES_PATH } from "./constants";
 
 /** The `fetch` shape {@link withCodexContentTypeRepair} wraps. */
-export type FetchLike = (
-  input: string | URL | Request,
-  init?: RequestInit,
-) => Promise<Response>;
+export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 function requestURL(input: string | URL | Request): string {
   if (typeof input === "string") return input;
@@ -33,10 +30,8 @@ function acceptedContentType(
   const supported = new Set<string>();
   for (const entry of accept.toLowerCase().split(",")) {
     const media = entry.trim();
-    if (media.startsWith("text/event-stream"))
-      supported.add("text/event-stream");
-    else if (media.startsWith("application/json"))
-      supported.add("application/json");
+    if (media.startsWith("text/event-stream")) supported.add("text/event-stream");
+    else if (media.startsWith("application/json")) supported.add("application/json");
   }
   if (supported.size !== 1) return null;
   return [...supported][0] ?? null;

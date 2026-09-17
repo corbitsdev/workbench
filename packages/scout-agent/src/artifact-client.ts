@@ -48,9 +48,7 @@ const ScoutArtifactListResponse = type({
   }).array(),
 });
 
-function authHeaders(
-  config: ScoutArtifactClientConfig,
-): Record<string, string> {
+function authHeaders(config: ScoutArtifactClientConfig): Record<string, string> {
   return {
     authorization: `Bearer ${config.sidecarToken}`,
     "x-workflow-run-address": config.runAddress,
@@ -63,18 +61,13 @@ export async function createScoutArtifact(
   input: CreateScoutArtifactInput,
 ): Promise<CreatedScoutArtifact> {
   const doFetch = config.fetchImpl ?? fetch;
-  const response = await doFetch(
-    `${config.hubArtifactsUrl}/api/workflow-artifacts/artifacts`,
-    {
-      method: "POST",
-      headers: { ...authHeaders(config), "content-type": "application/json" },
-      body: JSON.stringify(input),
-    },
-  );
+  const response = await doFetch(`${config.hubArtifactsUrl}/api/workflow-artifacts/artifacts`, {
+    method: "POST",
+    headers: { ...authHeaders(config), "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
   if (!response.ok) {
-    throw new Error(
-      `Scout artifact create failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Scout artifact create failed: ${response.status} ${response.statusText}`);
   }
   const body: unknown = await response.json();
   const parsed = CreatedScoutArtifactResponse(body);
@@ -92,16 +85,13 @@ export async function listRecentScoutArtifacts(
   params: { readonly limit?: number } = {},
 ): Promise<readonly ScoutArtifactListItem[]> {
   const doFetch = config.fetchImpl ?? fetch;
-  const query =
-    params.limit !== undefined ? `?limit=${String(params.limit)}` : "";
+  const query = params.limit !== undefined ? `?limit=${String(params.limit)}` : "";
   const response = await doFetch(
     `${config.hubArtifactsUrl}/api/workflow-artifacts/artifacts/recent${query}`,
     { headers: authHeaders(config) },
   );
   if (!response.ok) {
-    throw new Error(
-      `Scout artifact list failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Scout artifact list failed: ${response.status} ${response.statusText}`);
   }
   const body: unknown = await response.json();
   const parsed = ScoutArtifactListResponse(body);

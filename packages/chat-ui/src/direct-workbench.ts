@@ -10,8 +10,6 @@ export function findDirectWorkbenchWith(
   subjectAddress: string,
 ): Workbench | undefined {
   return workbenches.find((workbench) =>
-    workbench.participants.some(
-      (participant) => participant.address === subjectAddress,
-    ),
+    workbench.participants.some((participant) => participant.address === subjectAddress),
   );
 }

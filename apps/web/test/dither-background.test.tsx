@@ -26,9 +26,7 @@ describe("DitherBackground", () => {
   });
 
   test("passes the caller's class through to the canvas", () => {
-    const markup = renderToStaticMarkup(
-      <DitherBackground className="auth-panel-dither" />,
-    );
+    const markup = renderToStaticMarkup(<DitherBackground className="auth-panel-dither" />);
     expect(markup).toContain('class="auth-panel-dither"');
   });
 });

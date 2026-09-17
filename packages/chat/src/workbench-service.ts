@@ -20,16 +20,10 @@ import { deriveDisplayName } from "./display-name";
 import { assertNoLeakedInternalId } from "./id-leak-guard";
 import { isAgentAddress, mentionedParticipants } from "./mentions";
 import { mergeContextIntoParts } from "./workbench-context";
-import {
-  assembleTurnContext,
-  type TurnContextThreadScope,
-} from "./turn-context";
+import { assembleTurnContext, type TurnContextThreadScope } from "./turn-context";
 import type { AgentTurnStore } from "@corbits/agent-runtime";
 import type { ThreadStore } from "./threads";
-import {
-  TurnCancelledError,
-  type TurnCancelRegistry,
-} from "./turn-cancellation";
+import { TurnCancelledError, type TurnCancelRegistry } from "./turn-cancellation";
 import {
   addParticipant,
   handleFromName,
@@ -130,24 +124,18 @@ export type LaunchAndJoinAgentResult = {
  * equality when either side's asset is unresolvable.
  */
 export async function findResidentAgentForDefinition(
-  platform: Pick<
-    WorkbenchLauncher,
-    "resolveDefinitionIdByAddress" | "resolveDefinitionAssetId"
-  >,
+  platform: Pick<WorkbenchLauncher, "resolveDefinitionIdByAddress" | "resolveDefinitionAssetId">,
   participants: readonly ParticipantRecord[],
   definitionId: string,
 ): Promise<ParticipantRecord | undefined> {
   const assetId = await platform.resolveDefinitionAssetId(definitionId);
   for (const participant of participants) {
     if (!isAgentAddress(participant.address)) continue;
-    const launchedFrom = await platform.resolveDefinitionIdByAddress(
-      participant.address,
-    );
+    const launchedFrom = await platform.resolveDefinitionIdByAddress(participant.address);
     if (launchedFrom === undefined) continue;
     if (launchedFrom === definitionId) return participant;
     if (assetId === undefined) continue;
-    const launchedFromAssetId =
-      await platform.resolveDefinitionAssetId(launchedFrom);
+    const launchedFromAssetId = await platform.resolveDefinitionAssetId(launchedFrom);
     if (launchedFromAssetId === assetId) return participant;
   }
   return undefined;
@@ -168,12 +156,9 @@ export async function resolveInvitedDisplayName(
   invitable: readonly InvitableDefinition[],
   definitionId: string,
 ): Promise<string> {
-  const invitedDefinition = invitable.find(
-    (definition) => definition.id === definitionId,
-  );
+  const invitedDefinition = invitable.find((definition) => definition.id === definitionId);
   const nameSource =
-    invitedDefinition ??
-    (await platform.resolveDefinitionNameSource(definitionId));
+    invitedDefinition ?? (await platform.resolveDefinitionNameSource(definitionId));
   if (nameSource === undefined) {
     throw new Error(
       `cannot resolve a display name for definition "${definitionId}": ` +
@@ -181,10 +166,7 @@ export async function resolveInvitedDisplayName(
     );
   }
   const displayName = deriveDisplayName(nameSource);
-  assertNoLeakedInternalId(
-    displayName,
-    `definition "${definitionId}"'s display name`,
-  );
+  assertNoLeakedInternalId(displayName, `definition "${definitionId}"'s display name`);
   return displayName;
 }
 
@@ -248,9 +230,7 @@ export async function launchAndJoinAgent(
 
   if (kindOf(input.existingSettings) === AGENT_DM_KIND) {
     const boundDefinitionId = definitionIdOfSettings(input.existingSettings);
-    const alreadyHasAgent = participants.some((participant) =>
-      isAgentAddress(participant.address),
-    );
+    const alreadyHasAgent = participants.some((participant) => isAgentAddress(participant.address));
     const isThisChatMint =
       typeof boundDefinitionId === "string" &&
       boundDefinitionId === input.definitionId &&
@@ -414,11 +394,8 @@ export function cannedGreeting(input: CannedGreetingInput): string {
   // through `agentName` alone.
   assertNoLeakedInternalId(input.agentName, "a greeting's agent name");
   const who =
-    input.senderName !== undefined && input.senderName !== ""
-      ? ` ${input.senderName}`
-      : "";
-  const variation =
-    GREETING_VARIATIONS[greetingVariationIndex(input.workbenchId)];
+    input.senderName !== undefined && input.senderName !== "" ? ` ${input.senderName}` : "";
+  const variation = GREETING_VARIATIONS[greetingVariationIndex(input.workbenchId)];
   if (variation === undefined) throw new Error("no greeting variations");
   return variation(who, input.agentName, nextStepsOfferClause());
 }
@@ -578,8 +555,7 @@ export type RemoveWorkbenchParticipantDeps = {
    * mid-removal), but that gap is logged at error level so it is never
    * silent.
    */
-  readonly releaseAgentInstance?:
-    ((address: string, reason: string) => Promise<void>) | undefined;
+  readonly releaseAgentInstance?: ((address: string, reason: string) => Promise<void>) | undefined;
 };
 
 export type RemoveWorkbenchParticipantInput = {
@@ -616,8 +592,7 @@ export async function removeWorkbenchParticipant(
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
     updatedBy: input.principalId,
-    mutate: (participants) =>
-      removeParticipant(participants, input.participant.address),
+    mutate: (participants) => removeParticipant(participants, input.participant.address),
   });
 
   const isAgent = isAgentAddress(input.participant.address);
@@ -649,10 +624,7 @@ export async function removeWorkbenchParticipant(
   if (isAgent) {
     if (deps.releaseAgentInstance !== undefined) {
       try {
-        await deps.releaseAgentInstance(
-          input.participant.address,
-          "participant-removed",
-        );
+        await deps.releaseAgentInstance(input.participant.address, "participant-removed");
       } catch (err) {
         removeLog.error(
           "Releasing {address}'s launched instance failed after it was " +
@@ -685,10 +657,7 @@ export async function removeWorkbenchParticipant(
 }
 
 export type StartWorkflowCommandDeps = {
-  readonly store: Pick<
-    ChatStore,
-    "getWorkbenchSettings" | "mutateWorkbenchParticipants"
-  >;
+  readonly store: Pick<ChatStore, "getWorkbenchSettings" | "mutateWorkbenchParticipants">;
   readonly platform: WorkbenchLauncher & Pick<WorkbenchMail, "sendMail">;
   readonly roomMessages: RoomMessageStore;
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
@@ -729,14 +698,9 @@ export async function startWorkflowCommand(
   deps: StartWorkflowCommandDeps,
   input: StartWorkflowCommandInput,
 ): Promise<StartWorkflowCommandResult> {
-  const existing = await deps.store.getWorkbenchSettings(
-    input.tenantId,
-    input.workbenchId,
-  );
+  const existing = await deps.store.getWorkbenchSettings(input.tenantId, input.workbenchId);
   if (existing === undefined) {
-    throw new Error(
-      `No workbench "${input.workbenchId}" to start a workflow in`,
-    );
+    throw new Error(`No workbench "${input.workbenchId}" to start a workflow in`);
   }
 
   const resident = await findResidentAgentForDefinition(
@@ -773,8 +737,7 @@ export async function startWorkflowCommand(
     },
   );
 
-  const openingText =
-    input.args.trim() !== "" ? input.args.trim() : "Continue.";
+  const openingText = input.args.trim() !== "" ? input.args.trim() : "Continue.";
   await deps.platform.sendMail({
     tenantId: input.tenantId,
     workbenchId: localPartOf(joined.address),
@@ -912,16 +875,11 @@ export const DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS = CHAT_TURN_TIMEOUT_MS + 30_000;
  * so it is unreachable in any well-behaved case.
  */
 export const DEFAULT_TURN_CLAIM_TTL_MS =
-  DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS +
-  DEFAULT_TURN_DISPATCH_TIMEOUT_MS +
-  30_000;
+  DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS + DEFAULT_TURN_DISPATCH_TIMEOUT_MS + 30_000;
 
 /** `waitUntilFree`'s own timeout message: names the agent address the
  * wait was blocked on and the budget it exceeded. */
-export function waitUntilFreeTimeoutMessage(
-  agentAddress: string,
-  timeoutMs: number,
-): string {
+export function waitUntilFreeTimeoutMessage(agentAddress: string, timeoutMs: number): string {
   return `waiting for "${agentAddress}"'s prior turn to close did not settle within ${String(timeoutMs)}ms`;
 }
 
@@ -929,10 +887,7 @@ export function waitUntilFreeTimeoutMessage(
  * run address (the recipient every dispatch failure is already reported
  * and notified against) and the budget it exceeded, so a person reading
  * the `reportError` refId's logged cause sees exactly what expired. */
-export function turnDispatchTimeoutMessage(
-  agentAddress: string,
-  timeoutMs: number,
-): string {
+export function turnDispatchTimeoutMessage(agentAddress: string, timeoutMs: number): string {
   return `turn for "${agentAddress}" did not settle within ${String(timeoutMs)}ms`;
 }
 
@@ -1137,12 +1092,8 @@ async function mailboxFanOutForSend(
     mailMessageId,
   });
 
-  const settingsRow = await deps.store.getWorkbenchSettings(
-    input.tenantId,
-    input.workbenchId,
-  );
-  const participants =
-    settingsRow !== undefined ? participantsOf(settingsRow.settings) : [];
+  const settingsRow = await deps.store.getWorkbenchSettings(input.tenantId, input.workbenchId);
+  const participants = settingsRow !== undefined ? participantsOf(settingsRow.settings) : [];
 
   const ancestors =
     deps.threads !== undefined
@@ -1157,9 +1108,7 @@ async function mailboxFanOutForSend(
     ancestors.length > 0
       ? mailMessageIdFor(ancestors[ancestors.length - 1] as string, domain)
       : undefined;
-  const references = ancestors.map((ancestor) =>
-    mailMessageIdFor(ancestor, domain),
-  );
+  const references = ancestors.map((ancestor) => mailMessageIdFor(ancestor, domain));
 
   const body = mailboxBodyOf(input.messageParts);
   await writeChatMailboxFanout(mailboxDeps, {
@@ -1230,10 +1179,7 @@ async function turnThreadScope(
   messageId: string,
 ): Promise<{ thread?: TurnContextThreadScope }> {
   if (deps.threads === undefined) return {};
-  const assignments = await deps.threads.listThreadAssignments(
-    input.tenantId,
-    input.workbenchId,
-  );
+  const assignments = await deps.threads.listThreadAssignments(input.tenantId, input.workbenchId);
   const threadId = assignments.get(messageId);
   if (threadId === undefined) return {};
   return {
@@ -1249,16 +1195,10 @@ async function routeToRecipients(
   input: SendWorkbenchMessageInput,
   messageId: string,
 ): Promise<void> {
-  const settingsRow = await deps.store.getWorkbenchSettings(
-    input.tenantId,
-    input.workbenchId,
-  );
-  const participants =
-    settingsRow !== undefined ? participantsOf(settingsRow.settings) : [];
+  const settingsRow = await deps.store.getWorkbenchSettings(input.tenantId, input.workbenchId);
+  const participants = settingsRow !== undefined ? participantsOf(settingsRow.settings) : [];
 
-  const recipientSet = new Set(
-    mentionedParticipants(input.messageParts, participants),
-  );
+  const recipientSet = new Set(mentionedParticipants(input.messageParts, participants));
   if (input.forcedRecipientAddress !== undefined) {
     recipientSet.add(input.forcedRecipientAddress);
   }
@@ -1277,9 +1217,7 @@ async function routeToRecipients(
   // shared across rooms is not asked with another room's rows.
   const isDefaultRouting = recipientSet.size === 0;
   if (isDefaultRouting) {
-    const host = participants.find((participant) =>
-      isAgentAddress(participant.address),
-    );
+    const host = participants.find((participant) => isAgentAddress(participant.address));
     if (host !== undefined) recipientSet.add(host.address);
   }
   const recipients = [...recipientSet];
@@ -1314,8 +1252,7 @@ async function routeToRecipients(
           contextWindow: resolveContextWindow(
             settingsRow?.settings ?? {},
             benchContextWindowOf(
-              (await deps.store.getBenchSettings(input.tenantId))?.settings ??
-                {},
+              (await deps.store.getBenchSettings(input.tenantId))?.settings ?? {},
             ),
           ).value,
           ...(await turnThreadScope(deps, input, messageId)),
@@ -1334,8 +1271,7 @@ async function routeToRecipients(
       recipients,
       parts: turnParts,
     },
-    (batch) =>
-      dispatchTurnBatch(deps, input.tenantId, input.workbenchId, batch),
+    (batch) => dispatchTurnBatch(deps, input.tenantId, input.workbenchId, batch),
   );
 }
 
@@ -1368,10 +1304,8 @@ async function dispatchTurnBatch(
   workbenchId: string,
   batch: readonly QueuedTurn[],
 ): Promise<void> {
-  const turnDispatchTimeoutMs =
-    deps.turnDispatchTimeoutMs ?? DEFAULT_TURN_DISPATCH_TIMEOUT_MS;
-  const waitUntilFreeTimeoutMs =
-    deps.waitUntilFreeTimeoutMs ?? DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS;
+  const turnDispatchTimeoutMs = deps.turnDispatchTimeoutMs ?? DEFAULT_TURN_DISPATCH_TIMEOUT_MS;
+  const waitUntilFreeTimeoutMs = deps.waitUntilFreeTimeoutMs ?? DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS;
   const recipientSet = new Set<string>();
   for (const turn of batch) {
     for (const agentAddress of turn.recipients) recipientSet.add(agentAddress);
@@ -1433,11 +1367,7 @@ async function dispatchTurnBatch(
         const agentTurns = deps.agentTurns;
         if (agentTurns !== undefined) {
           await withTimeout(
-            (signal) =>
-              agentTurns.waitUntilFree(
-                { tenantId, workbenchId, agentAddress },
-                signal,
-              ),
+            (signal) => agentTurns.waitUntilFree({ tenantId, workbenchId, agentAddress }, signal),
             waitUntilFreeTimeoutMs,
             waitUntilFreeTimeoutMessage(agentAddress, waitUntilFreeTimeoutMs),
             cancelController.signal,
@@ -1604,10 +1534,7 @@ export async function dispatchTurn(
         tenantId: input.tenantId,
         turnId: turn.id,
         status: cancelled ? "cancelled" : "failed",
-        error:
-          signal?.reason instanceof Error
-            ? signal.reason.message
-            : "turn dispatch timed out",
+        error: signal?.reason instanceof Error ? signal.reason.message : "turn dispatch timed out",
       })
       .then((finished) => {
         if (finished === undefined || !cancelled) return;
@@ -1647,15 +1574,12 @@ export async function dispatchTurn(
     // that row — and names the row's own parent chain in
     // `In-Reply-To`/`References`. Degrades to unthreaded (as before) when
     // this composition has no mailbox domain to derive it from.
-    const sourceMessageId =
-      input.requestMessageIds[input.requestMessageIds.length - 1];
+    const sourceMessageId = input.requestMessageIds[input.requestMessageIds.length - 1];
     const mailboxDeps = deps.mailbox;
     const threadHeaders =
       mailboxDeps !== undefined && sourceMessageId !== undefined
         ? await (async () => {
-            const domain = await mailboxDeps.resolveTenantDomain(
-              input.tenantId,
-            );
+            const domain = await mailboxDeps.resolveTenantDomain(input.tenantId);
             const threadId =
               deps.threads !== undefined
                 ? ((await deps.threads.threadIdForMessage(
@@ -1666,12 +1590,7 @@ export async function dispatchTurn(
                 : null;
             const ancestors =
               deps.threads !== undefined
-                ? await mailAncestryOf(
-                    deps.threads,
-                    input.tenantId,
-                    input.workbenchId,
-                    threadId,
-                  )
+                ? await mailAncestryOf(deps.threads, input.tenantId, input.workbenchId, threadId)
                 : [];
             return mailThreadHeaders({
               rowId: sourceMessageId,
@@ -1698,10 +1617,7 @@ export async function dispatchTurn(
     // the conversation is where its newest message is. A record that
     // fails is reported, never thrown: the turn was dispatched, and
     // threading degrades to unthreaded rather than failing it.
-    if (
-      sourceMessageId !== undefined &&
-      deps.turnMailCorrelation !== undefined
-    ) {
+    if (sourceMessageId !== undefined && deps.turnMailCorrelation !== undefined) {
       try {
         await deps.turnMailCorrelation.recordTurnMail({
           tenantId: input.tenantId,
@@ -1737,8 +1653,7 @@ export async function dispatchTurn(
 const CREDENTIAL_UNDELIVERED_NOTICE =
   "I can't reach a model right now — add or check your model key in " +
   "Settings, then I'll pick this up.";
-const RETRYABLE_UNDELIVERED_NOTICE =
-  "I didn't get that one — send it again and I'll pick it up.";
+const RETRYABLE_UNDELIVERED_NOTICE = "I didn't get that one — send it again and I'll pick it up.";
 const MODEL_UNAVAILABLE_UNDELIVERED_NOTICE = MODEL_UNAVAILABLE_CONSUMER_MESSAGE;
 
 /**
@@ -1764,8 +1679,7 @@ function isCredentialDispatchFailure(cause: unknown): boolean {
     const code = (cause as { code?: unknown; category?: unknown }).code;
     const category = (cause as { category?: unknown }).category;
     if (status === 401 || statusCode === 401) return true;
-    if (code === "credential_failure" || category === "credential_failure")
-      return true;
+    if (code === "credential_failure" || category === "credential_failure") return true;
   }
   return false;
 }
@@ -1812,9 +1726,7 @@ async function postUndeliveredNotice(
           kind: "text",
           text: `${notice} (ref ${input.refId})`,
           turnFailed: true,
-          ...(modelUnavailable
-            ? { turnFailedReason: "model_unavailable" as const }
-            : {}),
+          ...(modelUnavailable ? { turnFailedReason: "model_unavailable" as const } : {}),
         },
       ],
     });
@@ -1963,12 +1875,9 @@ export async function cancelWorkbenchTurn(
   );
 
   const settled = await Promise.all(
-    running.map((turn) =>
-      agentTurns.getTurn({ tenantId: input.tenantId, turnId: turn.id }),
-    ),
+    running.map((turn) => agentTurns.getTurn({ tenantId: input.tenantId, turnId: turn.id })),
   );
   return {
-    cancelledCount: settled.filter((turn) => turn?.status === "cancelled")
-      .length,
+    cancelledCount: settled.filter((turn) => turn?.status === "cancelled").length,
   };
 }

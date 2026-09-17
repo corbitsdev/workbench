@@ -33,16 +33,8 @@ import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 import { type } from "arktype";
 
-import {
-  listConnectedProviders,
-  NoOwnRoomError,
-  postConnectServiceBlock,
-} from "./client";
-import {
-  mcpPresetByName,
-  type ConnectorRegistry,
-  type McpPreset,
-} from "./registry-shape";
+import { listConnectedProviders, NoOwnRoomError, postConnectServiceBlock } from "./client";
+import { mcpPresetByName, type ConnectorRegistry, type McpPreset } from "./registry-shape";
 
 export const LIST_CONNECTIONS_TOOL = "list_connections";
 export const REQUEST_CONNECTION_TOOL = "request_connection";
@@ -127,10 +119,7 @@ function presetFrontedIds(mcpPresets: readonly McpPreset[]): Set<string> {
   return new Set(mcpPresets.map((preset) => preset.slug));
 }
 
-async function runListConnections(
-  env: WorkflowConnectionEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runListConnections(env: WorkflowConnectionEnv, call: ToolCall): Promise<ToolResult> {
   try {
     const live = await listConnectedProviders(clientConfig(env));
     const presetFronted = presetFrontedIds(env.mcpPresets);
@@ -142,12 +131,8 @@ async function runListConnections(
       }));
     const connected = registryEntries.filter((entry) => entry.connected);
     const notConnected = registryEntries.filter((entry) => !entry.connected);
-    const presetConnected = env.mcpPresets.filter((preset) =>
-      live.has(preset.slug),
-    );
-    const presetNotConnected = env.mcpPresets.filter(
-      (preset) => !live.has(preset.slug),
-    );
+    const presetConnected = env.mcpPresets.filter((preset) => live.has(preset.slug));
+    const presetNotConnected = env.mcpPresets.filter((preset) => !live.has(preset.slug));
 
     if (registryEntries.length === 0 && env.mcpPresets.length === 0) {
       return {
@@ -165,9 +150,7 @@ async function runListConnections(
       ...presetNotConnected.map((preset) => preset.displayName),
     ];
     const lines = [
-      connectedNames.length > 0
-        ? `Connected: ${connectedNames.join(", ")}.`
-        : "Connected: none.",
+      connectedNames.length > 0 ? `Connected: ${connectedNames.join(", ")}.` : "Connected: none.",
       notConnectedNames.length > 0
         ? `Not connected: ${notConnectedNames.join(", ")}.`
         : "Not connected: none.",
@@ -244,9 +227,7 @@ async function runRequestConnection(
       {
         connectorId: preset.slug,
         displayName: preset.displayName,
-        reason:
-          parsed.reason ??
-          `Connect ${preset.displayName} — ${preset.description}.`,
+        reason: parsed.reason ?? `Connect ${preset.displayName} — ${preset.description}.`,
       },
       presetDeepLink(preset.slug),
     );
@@ -255,9 +236,7 @@ async function runRequestConnection(
   const descriptor = env.connectorRegistry[parsed.connector];
   if (descriptor !== undefined) {
     try {
-      if (
-        (await listConnectedProviders(clientConfig(env))).has(descriptor.id)
-      ) {
+      if ((await listConnectedProviders(clientConfig(env))).has(descriptor.id)) {
         return {
           callId: call.id,
           isError: false,
@@ -273,9 +252,7 @@ async function runRequestConnection(
       {
         connectorId: descriptor.id,
         displayName: descriptor.displayName,
-        reason:
-          parsed.reason ??
-          `Connect ${descriptor.displayName} so I can pick this up for you.`,
+        reason: parsed.reason ?? `Connect ${descriptor.displayName} so I can pick this up for you.`,
       },
       connectDeepLink(descriptor.id),
     );
@@ -302,10 +279,7 @@ async function runRequestConnection(
 export const connectionsTools = defineTool<WorkflowConnectionEnv>({
   id: "@corbits/connections-tools/conn",
   requires: ["hubConnectionsUrl", "tenantId", "sidecarToken", "address"],
-  definitions: [
-    { name: LIST_CONNECTIONS_TOOL },
-    { name: REQUEST_CONNECTION_TOOL },
-  ],
+  definitions: [{ name: LIST_CONNECTIONS_TOOL }, { name: REQUEST_CONNECTION_TOOL }],
   factory: (env) => ({
     definitions: [
       {
@@ -360,9 +334,7 @@ export const connectionsTools = defineTool<WorkflowConnectionEnv>({
             return Promise.resolve(
               errorResult(
                 call.id,
-                new Error(
-                  `request_connection received invalid input: ${parsed.summary}`,
-                ),
+                new Error(`request_connection received invalid input: ${parsed.summary}`),
               ),
             );
           }
@@ -372,9 +344,7 @@ export const connectionsTools = defineTool<WorkflowConnectionEnv>({
           return Promise.resolve(
             errorResult(
               call.id,
-              new Error(
-                `@corbits/connections-tools: unknown tool "${call.name}"`,
-              ),
+              new Error(`@corbits/connections-tools: unknown tool "${call.name}"`),
             ),
           );
       }

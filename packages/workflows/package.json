@@ -1,8 +1,8 @@
 {
   "name": "@corbits/workflows",
+  "version": "0.0.1",
   "private": true,
   "description": "The workflow domain package: the two-file source codebase every authoring path renders/reads (`./source`), the definition detail read a workflow's own page uses (`./detail`), and letting an agent author/republish/deploy a workflow through Interchange's native source pipeline (`./authoring`)",
-  "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
@@ -30,8 +30,8 @@
     "hono": "catalog:"
   },
   "devDependencies": {
-    "@types/bun": "catalog:",
     "@corbits/connections": "workspace:*",
+    "@types/bun": "catalog:",
     "typescript": "catalog:"
   }
 }

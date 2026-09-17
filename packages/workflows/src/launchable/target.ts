@@ -20,10 +20,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { workflowDefinition, workflowDefinitionVersion } from "@intx/db/schema";
 
 import { pickLaunchableDefinition } from "./target-rule";
-import type {
-  LaunchableDefinitionCandidate,
-  LaunchableDefinitionResolution,
-} from "./target-rule";
+import type { LaunchableDefinitionCandidate, LaunchableDefinitionResolution } from "./target-rule";
 
 export * from "./target-rule";
 
@@ -78,10 +75,7 @@ async function fetchLaunchableRows(
       workflowDefinitionVersion,
       and(
         eq(workflowDefinitionVersion.definitionId, workflowDefinition.id),
-        eq(
-          workflowDefinitionVersion.version,
-          workflowDefinition.currentVersion,
-        ),
+        eq(workflowDefinitionVersion.version, workflowDefinition.currentVersion),
       ),
     )
     .where(and(eq(workflowDefinition.origin, "authored"), extraWhere))
@@ -122,10 +116,7 @@ export async function listLaunchableDefinitions(
   db: LaunchableDb,
   tenantId: string,
 ): Promise<readonly LaunchableDefinition[]> {
-  const rows = await fetchLaunchableRows(
-    db,
-    eq(workflowDefinition.tenantId, tenantId),
-  );
+  const rows = await fetchLaunchableRows(db, eq(workflowDefinition.tenantId, tenantId));
   const byAsset = new Map<string, LaunchableRow[]>();
   for (const row of rows) {
     if (row.definitionAssetId === null) continue;

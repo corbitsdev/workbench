@@ -21,8 +21,7 @@ test("sends the raw secret in authorization, with no Bearer prefix", async () =>
   const captured: { auth: string | null } = { auth: null };
   const provider = createHttpRawAuthorizationCredentialProvider({
     fetch: async (_input, init) => {
-      captured.auth =
-        (init?.headers as Headers | undefined)?.get("authorization") ?? null;
+      captured.auth = (init?.headers as Headers | undefined)?.get("authorization") ?? null;
       return new Response("{}", { status: 200 });
     },
   });
@@ -42,9 +41,7 @@ test("re-reads the material source per call, reflecting a rotation", async () =>
   const material = materialSource("original-key");
   const provider = createHttpRawAuthorizationCredentialProvider({
     fetch: async (_input, init) => {
-      auths.push(
-        (init?.headers as Headers | undefined)?.get("authorization") ?? "",
-      );
+      auths.push((init?.headers as Headers | undefined)?.get("authorization") ?? "");
       return new Response("{}", { status: 200 });
     },
   });
@@ -69,9 +66,9 @@ test("refuses a cross-origin request rather than leaking the secret off the pinn
     readCurrentMaterial: () => ({ secret: "lin_api_key_real" }),
   });
 
-  await expect(
-    mediated.fetch("https://evil.example.com/graphql"),
-  ).rejects.toThrow(/refusing cross-origin request/);
+  await expect(mediated.fetch("https://evil.example.com/graphql")).rejects.toThrow(
+    /refusing cross-origin request/,
+  );
 });
 
 test("forces redirect: manual so a same-origin 3xx never auto-follows off the handle", async () => {

@@ -13,12 +13,7 @@
 // helper (error-sink).
 import { Glob } from "bun";
 import path from "node:path";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 const SCAN_DIRS = ["apps", "packages", "workflows"];
 
@@ -40,10 +35,7 @@ const ARROW_FACTORY =
 const FUNCTION_FACTORY =
   /(?:export\s+)?function\s+(ErrorEnvelope|errorEnvelope)\s*\(\s*code(?:\s*:\s*string)?\s*,\s*message(?:\s*:\s*string)?\s*\)\s*\{\s*return\s*\{\s*error:\s*\{\s*code\s*,\s*message\s*\}\s*,?\s*\}\s*;?\s*\}/s;
 
-export async function scanFiles(
-  root: string,
-  dirs: readonly string[],
-): Promise<string[]> {
+export async function scanFiles(root: string, dirs: readonly string[]): Promise<string[]> {
   const files: string[] = [];
   for (const dir of dirs) {
     const glob = new Glob(`${dir}/**/*.{ts,tsx}`);
@@ -63,9 +55,7 @@ export function auditLocalErrorEnvelopeFactories(
   const report = emptyReport();
   for (const { relPath, contents } of files) {
     if (ALLOWLIST.has(relPath)) {
-      report.notes.push(
-        `${relPath}: allowlisted (canonical makeErrorEnvelope helper)`,
-      );
+      report.notes.push(`${relPath}: allowlisted (canonical makeErrorEnvelope helper)`);
       continue;
     }
     const arrow = ARROW_FACTORY.test(contents);
@@ -91,9 +81,7 @@ async function main(): Promise<void> {
     })),
   );
   const report = auditLocalErrorEnvelopeFactories(files);
-  report.notes.push(
-    `scanned ${files.length} file(s) under ${SCAN_DIRS.join(", ")}`,
-  );
+  report.notes.push(`scanned ${files.length} file(s) under ${SCAN_DIRS.join(", ")}`);
   reportAndExit("check:error-envelope", report);
 }
 

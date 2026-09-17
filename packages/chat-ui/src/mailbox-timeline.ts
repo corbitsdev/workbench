@@ -80,9 +80,7 @@ async function mailboxRequest<T>(
   try {
     response = await fetch(path);
   } catch (cause) {
-    throw new MailboxThreadFetchError(
-      cause instanceof Error ? cause.message : String(cause),
-    );
+    throw new MailboxThreadFetchError(cause instanceof Error ? cause.message : String(cause));
   }
   if (!response.ok) {
     throw new MailboxThreadFetchError(
@@ -130,13 +128,9 @@ export function threadMessagesToTimeline(
 
   return messages.map((message) => {
     const parentId =
-      message.inReplyTo !== undefined
-        ? idByMessageId.get(message.inReplyTo)
-        : undefined;
+      message.inReplyTo !== undefined ? idByMessageId.get(message.inReplyTo) : undefined;
     const text =
-      message.subject !== undefined &&
-      message.subject !== null &&
-      message.subject.length > 0
+      message.subject !== undefined && message.subject !== null && message.subject.length > 0
         ? `${message.subject}\n${message.body}`
         : message.body;
     return {

@@ -24,9 +24,7 @@ function codexResponsesQuirks(): ResponsesQuirks {
         "openai-beta": "responses=experimental",
         originator: CODEX_ORIGINATOR,
       },
-      fromOption: [
-        { optionKey: CODEX_ACCOUNT_ID_OPTION, header: "chatgpt-account-id" },
-      ],
+      fromOption: [{ optionKey: CODEX_ACCOUNT_ID_OPTION, header: "chatgpt-account-id" }],
     },
     sessionIdOption: CODEX_SESSION_ID_OPTION,
     sessionIdHeader: "session_id",
@@ -46,8 +44,7 @@ function codexResponsesQuirks(): ResponsesQuirks {
 // default reasoning summary is "none", so no `summary` field is sent at all.
 function codexResponsesHooks(quirks: CodexQuirks): ResponsesHooks {
   return {
-    wrapSystemPrompt: (systemPrompt: string) =>
-      wrapCodexBridgeMessage(systemPrompt, quirks),
+    wrapSystemPrompt: (systemPrompt: string) => wrapCodexBridgeMessage(systemPrompt, quirks),
     includeReasoningEffort: (effort: string) => effort !== "none",
   };
 }
@@ -63,8 +60,5 @@ function codexResponsesHooks(quirks: CodexQuirks): ResponsesHooks {
  */
 export const createCodexResponsesAdapter: AdapterFactory = (source, quirks) => {
   const parsed = parseCodexQuirks(quirks);
-  return responsesAdapterFactory(
-    codexResponsesQuirks(),
-    codexResponsesHooks(parsed),
-  )(source);
+  return responsesAdapterFactory(codexResponsesQuirks(), codexResponsesHooks(parsed))(source);
 };

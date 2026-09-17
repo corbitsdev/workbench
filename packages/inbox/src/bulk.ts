@@ -10,17 +10,11 @@ import type { InboxItem } from "./project";
  * Mentions and deliveries that are still open — never action items.
  * Action rows require an explicit decision and must not be bulk-cleared.
  */
-export function itemsEligibleForMarkAllRead(
-  items: readonly InboxItem[],
-): InboxItem[] {
-  return items.filter(
-    (item) => item.group !== "action" && item.status === "open",
-  );
+export function itemsEligibleForMarkAllRead(items: readonly InboxItem[]): InboxItem[] {
+  return items.filter((item) => item.group !== "action" && item.status === "open");
 }
 
 /** Rows whose status is `done` — open rows stay. */
-export function itemsEligibleForClearDone(
-  items: readonly InboxItem[],
-): InboxItem[] {
+export function itemsEligibleForClearDone(items: readonly InboxItem[]): InboxItem[] {
   return items.filter((item) => item.status === "done");
 }

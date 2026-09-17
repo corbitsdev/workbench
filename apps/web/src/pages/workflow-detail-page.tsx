@@ -12,10 +12,7 @@ import type { BadgeTone } from "@corbits/react-ui";
 import { Clock, FlowArrow } from "@corbits/icons";
 
 import { useBench } from "../bench-context";
-import {
-  WORKFLOWS_PATH_PREFIX,
-  workflowDefinitionAssetIdFromPath,
-} from "../path-ids";
+import { WORKFLOWS_PATH_PREFIX, workflowDefinitionAssetIdFromPath } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { tenantKeys } from "../query-client";
 import { useTenantQuery } from "../routines-api";
@@ -25,40 +22,28 @@ import {
   type WorkflowDefinitionDetailT,
 } from "../workflow-detail-api";
 
-const STATUS_LABEL: Readonly<
-  Record<WorkflowDefinitionDetailT["status"], string>
-> = {
+const STATUS_LABEL: Readonly<Record<WorkflowDefinitionDetailT["status"], string>> = {
   deployed: "Deployed",
   stopped: "Stopped",
 };
 
-const STATUS_TONE: Readonly<
-  Record<WorkflowDefinitionDetailT["status"], BadgeTone>
-> = {
+const STATUS_TONE: Readonly<Record<WorkflowDefinitionDetailT["status"], BadgeTone>> = {
   deployed: "success",
   stopped: "neutral",
 };
 
 /** The header row: display name, status badge, and current version. */
-function WorkflowDetailHeader({
-  detail,
-}: {
-  readonly detail: WorkflowDefinitionDetailT;
-}) {
+function WorkflowDetailHeader({ detail }: { readonly detail: WorkflowDefinitionDetailT }) {
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <Badge tone={STATUS_TONE[detail.status]}>
-          {STATUS_LABEL[detail.status]}
-        </Badge>
+        <Badge tone={STATUS_TONE[detail.status]}>{STATUS_LABEL[detail.status]}</Badge>
         <span className="font-mono text-xs text-[var(--ui-fg-muted)]">
           v{detail.currentVersion}
         </span>
       </div>
       {detail.description !== undefined && detail.description !== null ? (
-        <p className="m-0 text-sm text-[var(--ui-fg-muted)]">
-          {detail.description}
-        </p>
+        <p className="m-0 text-sm text-[var(--ui-fg-muted)]">{detail.description}</p>
       ) : null}
     </section>
   );
@@ -82,18 +67,11 @@ export function NotLaunchableStrip({
 
 /** The whole page body, given a resolved detail — pure, so the layout is
  * testable without a fetch or a router. */
-export function WorkflowDetailPage({
-  detail,
-}: {
-  readonly detail: WorkflowDefinitionDetailT;
-}) {
+export function WorkflowDetailPage({ detail }: { readonly detail: WorkflowDefinitionDetailT }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        crumbs={[
-          { label: "Workflows", href: WORKFLOWS_PATH_PREFIX },
-          { label: detail.name },
-        ]}
+        crumbs={[{ label: "Workflows", href: WORKFLOWS_PATH_PREFIX }, { label: detail.name }]}
       />
       <PageShell width="full" className="page-fill">
         <div className="flex flex-col gap-6">
@@ -117,11 +95,7 @@ function WorkflowNotice({
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar crumbs={[{ label: title }]} />
       <PageShell width="full" className="page-fill">
-        <EmptyState
-          icon={<FlowArrow />}
-          title={title}
-          description={description}
-        />
+        <EmptyState icon={<FlowArrow />} title={title} description={description} />
       </PageShell>
     </div>
   );
@@ -148,15 +122,10 @@ export function WorkflowDetailRoute({ path }: { readonly path: string }) {
     );
   }
 
-  if (
-    detailQuery.kind === "loading" ||
-    detailQuery.kind === "unauthenticated"
-  ) {
+  if (detailQuery.kind === "loading" || detailQuery.kind === "unauthenticated") {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar
-          crumbs={[{ label: "Workflows", href: WORKFLOWS_PATH_PREFIX }]}
-        />
+        <StageTopBar crumbs={[{ label: "Workflows", href: WORKFLOWS_PATH_PREFIX }]} />
         <PageShell width="full" className="page-fill">
           <EmptyState icon={<Clock />} title="Loading workflow…" />
         </PageShell>
@@ -165,9 +134,7 @@ export function WorkflowDetailRoute({ path }: { readonly path: string }) {
   }
 
   if (detailQuery.kind === "error") {
-    return (
-      <WorkflowNotice title="Workflow" description={detailQuery.message} />
-    );
+    return <WorkflowNotice title="Workflow" description={detailQuery.message} />;
   }
 
   return <WorkflowDetailPage detail={detailQuery.data} />;

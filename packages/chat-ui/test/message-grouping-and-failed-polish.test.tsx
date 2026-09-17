@@ -82,9 +82,7 @@ describe("consecutive same-author grouping", () => {
     const groups = el.querySelectorAll(".chat-message-group");
     expect(groups[1]?.getAttribute("data-grouped")).toBe("false");
     expect(
-      el
-        .querySelectorAll(".chat-bubble-row")[1]
-        ?.querySelector(".chat-bubble-head"),
+      el.querySelectorAll(".chat-bubble-row")[1]?.querySelector(".chat-bubble-head"),
     ).not.toBeNull();
   });
 
@@ -119,9 +117,7 @@ describe("consecutive same-author grouping", () => {
       {
         id: "m2",
         createdAt: "2026-01-01T00:00:10.000Z",
-        parts: [
-          { kind: "event", event: "workbench.settings-changed", data: {} },
-        ],
+        parts: [{ kind: "event", event: "workbench.settings-changed", data: {} }],
         sender: { name: "Researcher", address: "researcher@agents.example" },
       },
       {
@@ -178,9 +174,7 @@ describe("failed pending message's inline recovery affordance", () => {
     expect(retry?.className).not.toContain("underline");
     expect(discard?.className).not.toContain("underline");
 
-    expect(
-      container.querySelector(".chat-pending-failed-label")?.textContent,
-    ).toBe("Not sent");
+    expect(container.querySelector(".chat-pending-failed-label")?.textContent).toBe("Not sent");
   });
 });
 
@@ -231,9 +225,9 @@ describe("the reply-timed-out notice gets the same ref+Retry treatment as the se
         ?.querySelector(".chat-turn-failed-disclosure")
         ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(
-      container.querySelector(".chat-turn-failed-detail")?.textContent,
-    ).toContain("(ref mt4ewrje-zvbmti)");
+    expect(container.querySelector(".chat-turn-failed-detail")?.textContent).toContain(
+      "(ref mt4ewrje-zvbmti)",
+    );
 
     // Never the old, action-less plain event line for this failure.
     expect(container.querySelector(".chat-event-line")).toBeNull();
@@ -256,18 +250,12 @@ describe("own-message avatar initials never fabricate 'YO'", () => {
     ];
   }
 
-  async function mountOwn(currentUser: {
-    principalId: string;
-    name?: string;
-    handle?: string;
-  }) {
+  async function mountOwn(currentUser: { principalId: string; name?: string; handle?: string }) {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
-      root?.render(
-        <WorkbenchTimeline items={ownItem()} currentUser={currentUser} />,
-      );
+      root?.render(<WorkbenchTimeline items={ownItem()} currentUser={currentUser} />);
     });
     return container;
   }
@@ -278,9 +266,7 @@ describe("own-message avatar initials never fabricate 'YO'", () => {
       name: "Sawyer Cutler",
     });
     expect(el.querySelector(".sender-avatar")?.textContent).toBe("SC");
-    expect(el.querySelector(".chat-bubble-sender")?.textContent).toBe(
-      "Sawyer Cutler",
-    );
+    expect(el.querySelector(".chat-bubble-sender")?.textContent).toBe("Sawyer Cutler");
   });
 
   test("no name but a handle falls back to that handle's first letter", async () => {

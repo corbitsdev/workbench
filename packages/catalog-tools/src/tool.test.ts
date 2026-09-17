@@ -88,10 +88,7 @@ function stubbing(models: unknown, config?: Record<string, unknown>): void {
     if (url.endsWith("/models")) {
       return new Response(JSON.stringify(models), { status: 200 });
     }
-    return new Response(
-      JSON.stringify({ id: "bench_1", config: config ?? null }),
-      { status: 200 },
-    );
+    return new Response(JSON.stringify({ id: "bench_1", config: config ?? null }), { status: 200 });
   }) as unknown as typeof fetch;
 }
 

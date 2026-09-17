@@ -170,9 +170,7 @@ export function DitherBackground({ className }: { className?: string }) {
           const di = (y * w + x) * 4;
           const thr = ((BAYER[rowBayer + (x & 7)] ?? 0) + 0.5) / BAYER_DIVISOR;
           for (let c = 0; c < 3; c++) {
-            const q = Math.floor(
-              ((srcPx[si + c] ?? 0) / 255) * (LEVELS - 1) + thr,
-            );
+            const q = Math.floor(((srcPx[si + c] ?? 0) / 255) * (LEVELS - 1) + thr);
             d[di + c] = (q / (LEVELS - 1)) * 255;
           }
           d[di + 3] = 255;

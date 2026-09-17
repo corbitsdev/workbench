@@ -22,11 +22,7 @@ export type {
 export { parseAtCommand, parseSlashCommand } from "./grammar";
 export type { ParsedCommand } from "./grammar";
 
-export {
-  dispatchAtCommand,
-  dispatchSlashCommand,
-  resolveAtCommand,
-} from "./dispatch";
+export { dispatchAtCommand, dispatchSlashCommand, resolveAtCommand } from "./dispatch";
 
 export { createWorkflowCommandPlugin } from "./workflow-commands";
 export type {

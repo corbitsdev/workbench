@@ -8,10 +8,7 @@ import type { SidecarProvisioner } from "@intx/hub-sessions";
 
 import type { ProcessProvisionerConfig } from "./config";
 import { createProcessBackend } from "./process-backend";
-import {
-  createBunSidecarProcessRunner,
-  type SidecarProcessRunner,
-} from "./process-runner";
+import { createBunSidecarProcessRunner, type SidecarProcessRunner } from "./process-runner";
 
 const PROVISIONER_API_VERSION = 1 as const;
 

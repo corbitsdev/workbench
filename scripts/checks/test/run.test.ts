@@ -56,13 +56,7 @@ function fakeReadFile(file: string): string {
 const identityRealPath = (file: string): string => file;
 
 function discover(runnerRealPath: string): string[] {
-  return discoverCheckFiles(
-    "/checks",
-    fakeReaddir,
-    fakeReadFile,
-    runnerRealPath,
-    identityRealPath,
-  );
+  return discoverCheckFiles("/checks", fakeReaddir, fakeReadFile, runnerRealPath, identityRealPath);
 }
 
 test("discovers only .ts files with an import.meta.main entry point", () => {
@@ -109,20 +103,14 @@ test("excludes a symlink pointing at the runner", () => {
     "/checks/run.ts",
     // A symlink resolves to the runner's real path regardless of its
     // own name.
-    (file) =>
-      file.endsWith("run-link.ts") || file.endsWith("run.ts")
-        ? "/checks/run.ts"
-        : file,
+    (file) => (file.endsWith("run-link.ts") || file.endsWith("run.ts") ? "/checks/run.ts" : file),
   );
   expect(found).not.toContain("run-link.ts");
   expect(found).toEqual(["deletion.ts"]);
 });
 
 test("buildChecks always includes tsconfig-references alongside discovered checks", () => {
-  const checks = buildChecks(
-    REAL_CHECKS_DIR,
-    path.resolve(REAL_CHECKS_DIR, "..", ".."),
-  );
+  const checks = buildChecks(REAL_CHECKS_DIR, path.resolve(REAL_CHECKS_DIR, "..", ".."));
   const names = checks.map((check) => check.name);
   expect(names).toContain("tsconfig-references");
   expect(names).toContain("licenses");
@@ -131,35 +119,23 @@ test("buildChecks always includes tsconfig-references alongside discovered check
 });
 
 test("buildChecks names are sorted", () => {
-  const checks = buildChecks(
-    REAL_CHECKS_DIR,
-    path.resolve(REAL_CHECKS_DIR, "..", ".."),
-  );
+  const checks = buildChecks(REAL_CHECKS_DIR, path.resolve(REAL_CHECKS_DIR, "..", ".."));
   const names = checks.map((check) => check.name);
   expect(names).toEqual([...names].sort());
 });
 
 test("never discovers itself (run.ts) as a check — that would recurse without bound", () => {
-  const checks = buildChecks(
-    REAL_CHECKS_DIR,
-    path.resolve(REAL_CHECKS_DIR, "..", ".."),
-  );
+  const checks = buildChecks(REAL_CHECKS_DIR, path.resolve(REAL_CHECKS_DIR, "..", ".."));
   expect(checks.map((check) => check.name)).not.toContain("run");
 });
 
 test("buildChecks still surfaces packages as a runnable, individually-named check", () => {
-  const checks = buildChecks(
-    REAL_CHECKS_DIR,
-    path.resolve(REAL_CHECKS_DIR, "..", ".."),
-  );
+  const checks = buildChecks(REAL_CHECKS_DIR, path.resolve(REAL_CHECKS_DIR, "..", ".."));
   expect(checks.map((check) => check.name)).toContain("packages");
 });
 
 test("buildChecks' discovered set matches the explicit expected roster exactly", () => {
-  const checks = buildChecks(
-    REAL_CHECKS_DIR,
-    path.resolve(REAL_CHECKS_DIR, "..", ".."),
-  );
+  const checks = buildChecks(REAL_CHECKS_DIR, path.resolve(REAL_CHECKS_DIR, "..", ".."));
   const names = checks.map((check) => check.name).sort();
   expect(names).toEqual(EXPECTED_CHECK_NAMES);
 });

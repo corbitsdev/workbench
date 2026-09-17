@@ -33,9 +33,8 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
 import { repoReviewLease } from "./schema";
 
-export type RepoReviewLeaseDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> = PostgresJsDatabase<TSchema>;
+export type RepoReviewLeaseDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+  PostgresJsDatabase<TSchema>;
 
 /** Comfortably longer than a single repo's synchronous mint-and-create
  * work should ever take, so a live lease is never mistaken for stale;
@@ -59,9 +58,9 @@ export interface RepoReviewLeaseStore {
   release(tenantId: string, repo: string): Promise<void>;
 }
 
-export function createDrizzleRepoReviewLeaseStore<
-  TSchema extends Record<string, unknown>,
->(db: RepoReviewLeaseDb<TSchema>): RepoReviewLeaseStore {
+export function createDrizzleRepoReviewLeaseStore<TSchema extends Record<string, unknown>>(
+  db: RepoReviewLeaseDb<TSchema>,
+): RepoReviewLeaseStore {
   return {
     async acquire(tenantId, repo) {
       const now = new Date();
@@ -93,12 +92,7 @@ export function createDrizzleRepoReviewLeaseStore<
     async release(tenantId, repo) {
       await db
         .delete(repoReviewLease)
-        .where(
-          and(
-            eq(repoReviewLease.tenantId, tenantId),
-            eq(repoReviewLease.repo, repo),
-          ),
-        );
+        .where(and(eq(repoReviewLease.tenantId, tenantId), eq(repoReviewLease.repo, repo)));
     },
   };
 }

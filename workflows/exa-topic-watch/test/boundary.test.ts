@@ -41,9 +41,7 @@ test("shipped sources import only published platform packages", async () => {
     const content = await readFile(file, "utf8");
     for (const match of content.matchAll(importPattern)) {
       const specifier = match[1] ?? "";
-      const allowed = ALLOWED_IMPORT_PREFIXES.some((prefix) =>
-        specifier.startsWith(prefix),
-      );
+      const allowed = ALLOWED_IMPORT_PREFIXES.some((prefix) => specifier.startsWith(prefix));
       if (!allowed) {
         violations.push(`${path.basename(file)}: ${specifier}`);
       }

@@ -48,13 +48,9 @@ function jsonResponse(body: unknown): Response {
 function routeFetch(input: RequestInfo | URL): Promise<Response> {
   const url = String(input);
   if (url.includes("/api/me/principals")) {
-    return Promise.resolve(
-      jsonResponse({ data: [membership], nextCursor: null }),
-    );
+    return Promise.resolve(jsonResponse({ data: [membership], nextCursor: null }));
   }
-  return Promise.reject(
-    new Error(`unrouted fetch in canvas-column test: ${url}`),
-  );
+  return Promise.reject(new Error(`unrouted fetch in canvas-column test: ${url}`));
 }
 
 const profile = {
@@ -137,10 +133,7 @@ describe("canvas profile card Message action", () => {
   }
 
   test("stays open and shows a pending label while the DM is being resolved, then closes and navigates once it's ready", async () => {
-    let resolveDm: (value: {
-      kind: "ready";
-      workbenchId: string;
-    }) => void = () => undefined;
+    let resolveDm: (value: { kind: "ready"; workbenchId: string }) => void = () => undefined;
     ensureProfileDmResult = new Promise((resolve) => {
       resolveDm = resolve;
     });
@@ -183,9 +176,7 @@ describe("canvas profile card Message action", () => {
 
   test("with no bench resolved yet, Message toasts honestly instead of silently closing", async () => {
     globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
-      Promise.reject(
-        new Error("no bench resolves in this test"),
-      )) as typeof fetch;
+      Promise.reject(new Error("no bench resolves in this test"))) as typeof fetch;
     await renderPanel();
 
     await act(async () => {

@@ -44,10 +44,10 @@ const emptyMemberships = () =>
 // A pending provisioning status is exactly the shape that used to flip the
 // note visible once the legacy session flag was set.
 const pendingProvisioningStatus = () =>
-  new Response(
-    JSON.stringify({ kind: "provisioning", setupAgentReady: true }),
-    { status: 200, headers: { "content-type": "application/json" } },
-  );
+  new Response(JSON.stringify({ kind: "provisioning", setupAgentReady: true }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
 
 describe("app shell no longer shows the background setup note", () => {
   let container: HTMLDivElement;
@@ -59,9 +59,7 @@ describe("app shell no longer shows the background setup note", () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : String(input);
       return Promise.resolve(
-        url.includes("provisioning-status")
-          ? pendingProvisioningStatus()
-          : emptyMemberships(),
+        url.includes("provisioning-status") ? pendingProvisioningStatus() : emptyMemberships(),
       );
     }) as typeof fetch;
     container = document.createElement("div");

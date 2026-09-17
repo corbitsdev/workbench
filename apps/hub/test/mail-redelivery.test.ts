@@ -12,9 +12,7 @@ function createFakeSidecarRouter(opts: {
   emit(event: { rawMessage: string; recipients: string[] }): void;
   routeMailCalls: { agentAddress: string; rawMessage: string }[];
 } {
-  const listeners = new Set<
-    (event: { rawMessage: string; recipients: string[] }) => void
-  >();
+  const listeners = new Set<(event: { rawMessage: string; recipients: string[] }) => void>();
   const routeMailCalls: { agentAddress: string; rawMessage: string }[] = [];
   return {
     routeMailCalls,
@@ -125,8 +123,9 @@ describe("wireMailRedelivery", () => {
     await flush();
 
     expect(chatPlatform.ensureAwakeCalls).toEqual(["ins_asleep@ten1.test"]);
-    expect(
-      sidecarRouter.routeMailCalls.map((c) => c.agentAddress).sort(),
-    ).toEqual(["ins_asleep@ten1.test", "ins_routable@ten1.test"]);
+    expect(sidecarRouter.routeMailCalls.map((c) => c.agentAddress).sort()).toEqual([
+      "ins_asleep@ten1.test",
+      "ins_routable@ten1.test",
+    ]);
   });
 });

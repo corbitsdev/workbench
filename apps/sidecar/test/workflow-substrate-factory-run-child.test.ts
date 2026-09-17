@@ -23,10 +23,7 @@ import {
   WORKFLOW_RUN_GITIGNORE_PATH,
 } from "@intx/hub-sessions";
 import type { AuthorizeFn } from "@intx/hub-sessions";
-import type {
-  RepoId,
-  WorkflowRunWorkflowProcessPrincipal,
-} from "@intx/hub-sessions/substrate";
+import type { RepoId, WorkflowRunWorkflowProcessPrincipal } from "@intx/hub-sessions/substrate";
 import {
   createInMemoryRepoStore,
   createInMemoryScheduler,
@@ -66,9 +63,7 @@ afterAll(async () => {
   }
 });
 
-async function makeSubstrate(
-  prefix: string,
-): Promise<ReturnType<typeof createRepoStore>> {
+async function makeSubstrate(prefix: string): Promise<ReturnType<typeof createRepoStore>> {
   const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), prefix));
   tempDirs.push(dataDir);
   const substrate = createRepoStore({
@@ -121,10 +116,7 @@ const completeImmediately: StepInvoker = async () => ({
   output: { done: true },
 });
 
-async function makeRunChild(
-  prefix: string,
-  invokeStep: StepInvoker,
-): Promise<RunChildWorkflow> {
+async function makeRunChild(prefix: string, invokeStep: StepInvoker): Promise<RunChildWorkflow> {
   const substrate = await makeSubstrate(prefix);
   return createSidecarRunChild({
     substrate,
@@ -139,10 +131,7 @@ async function makeRunChild(
   });
 }
 
-function childInput(
-  id: string,
-  signal: AbortSignal,
-): Parameters<RunChildWorkflow>[0] {
+function childInput(id: string, signal: AbortSignal): Parameters<RunChildWorkflow>[0] {
   return {
     definition: childDefinition(`child-wf-${id}`),
     definitionRef: REF,
@@ -158,10 +147,7 @@ function childInput(
 
 describe("createSidecarRunChild", () => {
   test("an unaborted child runs to a completed terminal", async () => {
-    const runChild = await makeRunChild(
-      "run-child-complete-",
-      completeImmediately,
-    );
+    const runChild = await makeRunChild("run-child-complete-", completeImmediately);
     const result = await runChild(
       childInput("complete", new AbortController().signal),
       () => undefined,
@@ -181,10 +167,7 @@ describe("createSidecarRunChild", () => {
 
     const runChild = await makeRunChild("run-child-abort-", parkAndAnnounce);
     const abort = new AbortController();
-    const pending = runChild(
-      childInput("abort", abort.signal),
-      () => undefined,
-    );
+    const pending = runChild(childInput("abort", abort.signal), () => undefined);
 
     // Wait on the step actually being entered, not on a fixed delay: the
     // cancel has to interrupt a run in flight, and a machine slow enough
@@ -203,10 +186,7 @@ describe("createSidecarRunChild", () => {
     const runChild = await makeRunChild("run-child-preabort-", parkForever);
     const abort = new AbortController();
     abort.abort();
-    const result = await runChild(
-      childInput("preabort", abort.signal),
-      () => undefined,
-    );
+    const result = await runChild(childInput("preabort", abort.signal), () => undefined);
     expect(result.terminalStatus).toBe("cancelled");
   });
 });

@@ -25,11 +25,7 @@ export class SettingsApiError extends Error {
 
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
-async function request<T>(
-  path: string,
-  schema: Validator<T>,
-  init?: RequestInit,
-): Promise<T> {
+async function request<T>(path: string, schema: Validator<T>, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, {
@@ -37,25 +33,18 @@ async function request<T>(
       headers: { "content-type": "application/json", ...init?.headers },
     });
   } catch (cause) {
-    throw new SettingsApiError(
-      cause instanceof Error ? cause.message : String(cause),
-    );
+    throw new SettingsApiError(cause instanceof Error ? cause.message : String(cause));
   }
   if (response.status === 401) {
     throw new UnauthenticatedError();
   }
   if (!response.ok) {
-    throw new SettingsApiError(
-      `The hub answered ${response.status} for ${path}.`,
-      response.status,
-    );
+    throw new SettingsApiError(`The hub answered ${response.status} for ${path}.`, response.status);
   }
   const body: unknown = await response.json().catch(() => undefined);
   const parsed = schema(body);
   if (parsed instanceof type.errors) {
-    throw new SettingsApiError(
-      `Unexpected response shape from ${path}: ${parsed.summary}`,
-    );
+    throw new SettingsApiError(`Unexpected response shape from ${path}: ${parsed.summary}`);
   }
   return parsed;
 }

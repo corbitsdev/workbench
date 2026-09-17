@@ -167,9 +167,7 @@ const ConnectGithubConnectedData = type({
   "steps?": OnboardingStepLabel.array(),
 }).onDeepUndeclaredKey("delete");
 
-export const ConnectGithubBlockData = ConnectGithubDisconnectedData.or(
-  ConnectGithubConnectedData,
-);
+export const ConnectGithubBlockData = ConnectGithubDisconnectedData.or(ConnectGithubConnectedData);
 export type ConnectGithubBlockData = typeof ConnectGithubBlockData.infer;
 
 // An agent-authored "connect this service" card (CL-6393), the

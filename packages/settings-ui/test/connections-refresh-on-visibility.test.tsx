@@ -21,8 +21,7 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 function renderSection(tenantId: string | null) {
   const container = document.createElement("div");
@@ -40,13 +39,10 @@ function stubFetch(onCredentialsFetch: () => void): typeof fetch {
       onCredentialsFetch();
       return json({ data: [], nextCursor: null });
     }
-    if (url === "/api/tenants/ten_1/providers")
-      return json({ data: [], nextCursor: null });
-    if (url === "/api/tenants/ten_1/connections/oauth-configured")
-      return json({});
+    if (url === "/api/tenants/ten_1/providers") return json({ data: [], nextCursor: null });
+    if (url === "/api/tenants/ten_1/connections/oauth-configured") return json({});
     if (url === "/api/tenants/ten_1/models") return json([]);
-    if (url === "/api/tenants/ten_1/catalog/offerings")
-      return json({ data: [], nextCursor: null });
+    if (url === "/api/tenants/ten_1/catalog/offerings") return json({ data: [], nextCursor: null });
     throw new Error(`unexpected fetch: ${url}`);
   }) as unknown as typeof fetch;
 }
@@ -92,10 +88,7 @@ describe("ConnectionsSection refresh-on-visibility effect", () => {
 
       act(() => root.unmount());
 
-      expect(documentRemoveSpy).toHaveBeenCalledWith(
-        "visibilitychange",
-        visibilityHandler,
-      );
+      expect(documentRemoveSpy).toHaveBeenCalledWith("visibilitychange", visibilityHandler);
       expect(windowRemoveSpy).toHaveBeenCalledWith("focus", focusHandler);
     } finally {
       container.remove();
@@ -116,14 +109,8 @@ describe("ConnectionsSection refresh-on-visibility effect", () => {
     try {
       await settle();
 
-      expect(
-        documentAddSpy.mock.calls.some(
-          (call) => call[0] === "visibilitychange",
-        ),
-      ).toBe(false);
-      expect(windowAddSpy.mock.calls.some((call) => call[0] === "focus")).toBe(
-        false,
-      );
+      expect(documentAddSpy.mock.calls.some((call) => call[0] === "visibilitychange")).toBe(false);
+      expect(windowAddSpy.mock.calls.some((call) => call[0] === "focus")).toBe(false);
     } finally {
       act(() => root.unmount());
       container.remove();

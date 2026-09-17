@@ -53,16 +53,11 @@ if (!databaseUrl) {
       const remainingBudget = ISOLATION_SIGNUP_RATE_LIMIT_MAX - 1;
       const statuses: number[] = [];
       for (let attempt = 0; attempt < remainingBudget + 1; attempt += 1) {
-        const response = await signUpAttempt(
-          app,
-          `rate-limit-${nonce}-${attempt}@isolation.test`,
-        );
+        const response = await signUpAttempt(app, `rate-limit-${nonce}-${attempt}@isolation.test`);
         statuses.push(response.status);
       }
 
-      expect(statuses.slice(0, remainingBudget)).toEqual(
-        new Array(remainingBudget).fill(200),
-      );
+      expect(statuses.slice(0, remainingBudget)).toEqual(new Array(remainingBudget).fill(200));
       expect(statuses[remainingBudget]).toBe(429);
     });
   });

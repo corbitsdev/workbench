@@ -3,11 +3,7 @@
 // per-step mail address and agent-state repo id, and the pre-spawn
 // write of every step's grants into its agent-state repo.
 
-import {
-  parseAgentId,
-  type Principal,
-  type RepoStore,
-} from "@intx/hub-sessions";
+import { parseAgentId, type Principal, type RepoStore } from "@intx/hub-sessions";
 import {
   STEP_GRANTS_PATH,
   STEP_GRANTS_REF,
@@ -169,14 +165,9 @@ export async function writeStepGrants(args: {
       runId: args.deploymentId,
       stepId,
     });
-    await args.repoStore.writeTree(
-      GRANTS_WRITE_PRINCIPAL,
-      repoId,
-      STEP_GRANTS_REF,
-      {
-        files: { [STEP_GRANTS_PATH]: serialized },
-        message: `Write step grants for ${stepId}`,
-      },
-    );
+    await args.repoStore.writeTree(GRANTS_WRITE_PRINCIPAL, repoId, STEP_GRANTS_REF, {
+      files: { [STEP_GRANTS_PATH]: serialized },
+      message: `Write step grants for ${stepId}`,
+    });
   }
 }

@@ -1,31 +1,21 @@
 {
   "name": "@corbits/last-30-days-research-workflow",
-  "description": "Single-step, mail-triggered workflow that researches a topic across a handful of source platforms and writes a long-form, cited report",
   "version": "0.0.1",
+  "description": "Single-step, mail-triggered workflow that researches a topic across a handful of source platforms and writes a long-form, cited report",
   "license": "LGPL-2.1-or-later",
-  "type": "module",
-  "corbits": {
-    "workflow": {
-      "assetName": "last-30-days-research",
-      "displayName": "Last 30 days research report",
-      "automatable": false
-    }
-  },
-  "interchange": {
-    "workflow": "./src/index.ts"
-  },
-  "exports": {
-    ".": "./src/index.ts"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "workflows/last-30-days-research"
   },
   "files": [
     "src",
     "LICENSE",
     "README.md"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "workflows/last-30-days-research"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -37,12 +27,22 @@
   "dependencies": {
     "arktype": "catalog:"
   },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
   "peerDependencies": {
     "@intx/agent": "0.3.0",
     "@intx/workflow": "0.3.0"
   },
-  "devDependencies": {
-    "@types/bun": "catalog:",
-    "typescript": "catalog:"
+  "corbits": {
+    "workflow": {
+      "assetName": "last-30-days-research",
+      "displayName": "Last 30 days research report",
+      "automatable": false
+    }
+  },
+  "interchange": {
+    "workflow": "./src/index.ts"
   }
 }

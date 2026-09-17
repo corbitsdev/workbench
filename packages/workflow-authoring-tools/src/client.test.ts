@@ -59,9 +59,7 @@ test("authorWorkflow posts the tree to /author with the run's bearer token and a
     commitSha: "sha_1",
   });
   const [request] = seen;
-  expect(request?.url).toBe(
-    "https://hub.example.com/api/workflow-workflow-authoring/author",
-  );
+  expect(request?.url).toBe("https://hub.example.com/api/workflow-workflow-authoring/author");
   const headers = request?.init?.headers as Record<string, string>;
   expect(headers["authorization"]).toBe("Bearer sc-token");
   expect(headers["x-workflow-run-address"]).toBe("run_1@workflow");
@@ -93,9 +91,7 @@ test("republishWorkflow forwards expectedHeadSha and surfaces a 409 with the cur
   }).catch((e: unknown) => e);
   expect(err).toBeInstanceOf(WorkflowAuthoringRequestError);
   expect((err as WorkflowAuthoringRequestError).code).toBe("conflict");
-  expect((err as WorkflowAuthoringRequestError).currentHeadSha).toBe(
-    "sha_current",
-  );
+  expect((err as WorkflowAuthoringRequestError).currentHeadSha).toBe("sha_current");
   expect(JSON.parse(String(seen[0]?.init?.body))).toMatchObject({
     expectedHeadSha: "sha_stale",
   });
@@ -147,19 +143,15 @@ test("a hub rejection with an error envelope becomes a WorkflowAuthoringRequestE
 });
 
 test("a non-envelope failure is an honest error naming the status, never a fabricated result", async () => {
-  const { config } = capture(
-    () => new Response("", { status: 502, statusText: "Bad Gateway" }),
-  );
+  const { config } = capture(() => new Response("", { status: 502, statusText: "Bad Gateway" }));
   await expect(readWorkflowSource(config, "asset_1")).rejects.toThrow(/502/);
 });
 
 test("a success body of the wrong shape is rejected", async () => {
-  const { config } = capture(
-    () => new Response(JSON.stringify({ nonsense: true })),
+  const { config } = capture(() => new Response(JSON.stringify({ nonsense: true })));
+  await expect(authorWorkflow(config, { name: "x", files: FILES })).rejects.toThrow(
+    /expected shape/,
   );
-  await expect(
-    authorWorkflow(config, { name: "x", files: FILES }),
-  ).rejects.toThrow(/expected shape/);
 });
 
 // The deleted `/api/workflow-workflow-authoring/:assetId/deploy` mirror
@@ -223,12 +215,8 @@ test("deployWorkflow reads the stock catalog, then posts an asset/source deploy 
     definitionAssetId: "asset_1",
     status: "pending",
   });
-  expect(seen[0]?.url).toBe(
-    "https://hub.example.com/api/tenants/tenant_1/models",
-  );
-  expect(seen[1]?.url).toBe(
-    "https://hub.example.com/api/tenants/tenant_1/workflows/deployments",
-  );
+  expect(seen[0]?.url).toBe("https://hub.example.com/api/tenants/tenant_1/models");
+  expect(seen[1]?.url).toBe("https://hub.example.com/api/tenants/tenant_1/workflows/deployments");
   expect(JSON.parse(String(seen[1]?.init?.body))).toEqual({
     source: {
       kind: "asset",
@@ -247,11 +235,7 @@ test("deployWorkflow reads the stock catalog, then posts an asset/source deploy 
 test("deployWorkflow surfaces the stock error envelope's message", async () => {
   const fetchImpl = (async (url: string | URL) =>
     String(url).endsWith("/models")
-      ? new Response(
-          JSON.stringify([
-            { offerings: [{ offeringId: "off_1", priority: 1 }] },
-          ]),
-        )
+      ? new Response(JSON.stringify([{ offerings: [{ offeringId: "off_1", priority: 1 }] }]))
       : new Response(
           JSON.stringify({
             error: { code: "invalid_workflow", message: "entry not found" },

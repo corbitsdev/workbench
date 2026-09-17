@@ -64,9 +64,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
       root?.render(
         <WorkbenchTimeline
           items={failedTurnItem()}
-          participants={[
-            { address: "ins_echo1@agents.example", handle: "echo" },
-          ]}
+          participants={[{ address: "ins_echo1@agents.example", handle: "echo" }]}
         />,
       );
     });
@@ -82,11 +80,9 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
 
     // The notice never renders as an ordinary bubble alongside the strip.
     const bubbles = container.querySelectorAll(".chat-bubble");
-    expect(
-      [...bubbles].some((bubble) =>
-        bubble.textContent?.includes("send it again"),
-      ),
-    ).toBe(false);
+    expect([...bubbles].some((bubble) => bubble.textContent?.includes("send it again"))).toBe(
+      false,
+    );
   });
 
   test("Retry and what-happened invoke the host's own actions with the failed item", async () => {
@@ -99,9 +95,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
       root?.render(
         <WorkbenchTimeline
           items={failedTurnItem()}
-          participants={[
-            { address: "ins_echo1@agents.example", handle: "echo" },
-          ]}
+          participants={[{ address: "ins_echo1@agents.example", handle: "echo" }]}
           onRetryFailedTurn={(item) => {
             retried.push(item.id);
           }}
@@ -174,9 +168,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
       root?.render(
         <WorkbenchTimeline
           items={items}
-          participants={[
-            { address: "ins_echo1@agents.example", handle: "echo" },
-          ]}
+          participants={[{ address: "ins_echo1@agents.example", handle: "echo" }]}
         />,
       );
     });
@@ -192,9 +184,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
       "I can't reach a model right now — add or check your model key in Settings, then I'll pick this up.",
     );
     // Never the fixed guess this strip used to always show, regardless of cause.
-    expect(detail?.textContent).not.toBe(
-      "No reply arrived — the agent may be unavailable.",
-    );
+    expect(detail?.textContent).not.toBe("No reply arrived — the agent may be unavailable.");
   });
 
   test("the expanded detail never shows HTTP status or a raw provider dump", async () => {
@@ -225,9 +215,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
       root?.render(
         <WorkbenchTimeline
           items={items}
-          participants={[
-            { address: "ins_echo1@agents.example", handle: "echo" },
-          ]}
+          participants={[{ address: "ins_echo1@agents.example", handle: "echo" }]}
         />,
       );
     });
@@ -257,9 +245,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
       root?.render(
         <WorkbenchTimeline
           items={failedTurnItem()}
-          participants={[
-            { address: "ins_echo1@agents.example", handle: "echo" },
-          ]}
+          participants={[{ address: "ins_echo1@agents.example", handle: "echo" }]}
           onRetryFailedTurn={(_item, retryText) => {
             retried.push(retryText);
           }}
@@ -268,9 +254,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
     });
 
     act(() => {
-      (
-        container?.querySelector(".chat-turn-failed-retry") as HTMLButtonElement
-      ).click();
+      (container?.querySelector(".chat-turn-failed-retry") as HTMLButtonElement).click();
     });
 
     // The strip hands the recovered text straight to the host's resend
@@ -289,9 +273,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
       root?.render(
         <WorkbenchTimeline
           items={failedTurnItem()}
-          participants={[
-            { address: "ins_echo1@agents.example", handle: "echo" },
-          ]}
+          participants={[{ address: "ins_echo1@agents.example", handle: "echo" }]}
           onRetryFailedTurn={(_item, retryText) => {
             calls.push(retryText);
             return new Promise<void>((resolve) => {
@@ -356,9 +338,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
               sender: { name: "Jimmy", address: "ins_echo1@agents.example" },
             },
           ]}
-          participants={[
-            { address: "ins_echo1@agents.example", handle: "echo" },
-          ]}
+          participants={[{ address: "ins_echo1@agents.example", handle: "echo" }]}
           failedTurnRecovery={{
             models: [
               { canonicalName: "anthropic/claude-sonnet", label: "Sonnet" },
@@ -389,9 +369,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
     expect(strip?.textContent).not.toContain("wfd_echo");
     expect(container.querySelector(".chat-turn-failed-retry")).toBeNull();
 
-    const select = container.querySelector(
-      ".chat-turn-failed-models",
-    ) as HTMLSelectElement;
+    const select = container.querySelector(".chat-turn-failed-models") as HTMLSelectElement;
     expect(select).not.toBeNull();
     expect([...select.options].map((option) => option.textContent)).toEqual([
       "Pick a model",
@@ -408,11 +386,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
     expect(retried).toEqual(["hi @echo"]);
 
     act(() => {
-      (
-        container?.querySelector(
-          ".chat-turn-failed-settings",
-        ) as HTMLButtonElement
-      ).click();
+      (container?.querySelector(".chat-turn-failed-settings") as HTMLButtonElement).click();
     });
     expect(opened).toEqual(["wfd_echo"]);
   });
@@ -448,9 +422,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
               sender: { name: "Jimmy", address: "ins_echo1@agents.example" },
             },
           ]}
-          participants={[
-            { address: "ins_echo1@agents.example", handle: "echo" },
-          ]}
+          participants={[{ address: "ins_echo1@agents.example", handle: "echo" }]}
           failedTurnRecovery={{
             models: [
               { canonicalName: "openai/gpt-4.1", label: "GPT-4.1" },
@@ -486,18 +458,14 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
     expect(strip?.textContent).not.toContain("wfd_echo");
     expect(container.querySelector(".chat-turn-failed-retry")).toBeNull();
 
-    const select = container.querySelector(
-      ".chat-turn-failed-models",
-    ) as HTMLSelectElement;
+    const select = container.querySelector(".chat-turn-failed-models") as HTMLSelectElement;
     expect(select).not.toBeNull();
     expect([...select.options].map((option) => option.textContent)).toEqual([
       "Pick a model",
       "Sonnet",
       "GPT-4.1",
     ]);
-    expect(
-      [...select.options].map((option) => option.textContent),
-    ).not.toContain("Flash");
+    expect([...select.options].map((option) => option.textContent)).not.toContain("Flash");
 
     await act(async () => {
       select.value = "anthropic/claude-sonnet";
@@ -506,9 +474,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
     expect(applied).toEqual(["anthropic/claude-sonnet"]);
     expect(retried).toEqual(["hi @echo"]);
 
-    const settings = container.querySelector(
-      ".chat-turn-failed-settings",
-    ) as HTMLButtonElement;
+    const settings = container.querySelector(".chat-turn-failed-settings") as HTMLButtonElement;
     expect(settings.textContent).toBe("More in Settings");
     act(() => {
       settings.click();

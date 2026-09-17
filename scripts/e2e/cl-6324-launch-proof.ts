@@ -31,14 +31,8 @@ import { join as pathJoin } from "node:path";
 import { headlineFor } from "../../packages/approvals/src/headline.ts";
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import { createGitWorkflowPusher } from "../../packages/connections/src/workflow-push.ts";
-import {
-  DEFAULT_WORKFLOWS,
-  seedTenant,
-} from "../../packages/onboarding/src/tenant-seed.ts";
-import {
-  createHubAPI,
-  type ApiCall,
-} from "../../packages/hub-api-client/src/index.ts";
+import { DEFAULT_WORKFLOWS, seedTenant } from "../../packages/onboarding/src/tenant-seed.ts";
+import { createHubAPI, type ApiCall } from "../../packages/hub-api-client/src/index.ts";
 import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflows/src/source.ts";
 import {
   agentRuntimeTurnRunId,
@@ -138,9 +132,7 @@ function stringField(data: unknown, field: string, what: string): string {
     const value = (data as Record<string, unknown>)[field];
     if (typeof value === "string" && value !== "") return value;
   }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing string field "${field}": ${JSON.stringify(data)}`);
 }
 
 function arrayField(data: unknown, field: string, what: string): unknown[] {
@@ -148,9 +140,7 @@ function arrayField(data: unknown, field: string, what: string): unknown[] {
     const value = (data as Record<string, unknown>)[field];
     if (Array.isArray(value)) return value;
   }
-  throw new Error(
-    `${what}: missing array field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing array field "${field}": ${JSON.stringify(data)}`);
 }
 
 async function signUp(
@@ -205,9 +195,7 @@ async function main(): Promise<void> {
     startHub({
       databaseUrl: url,
       port: freePort(),
-      sessionSecret: Buffer.from(
-        crypto.getRandomValues(new Uint8Array(32)),
-      ).toString("hex"),
+      sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
       dataDir: await tempDir("cl6324-hub-data-"),
     }),
   );
@@ -264,39 +252,28 @@ async function main(): Promise<void> {
     return { cookies: res.cookies, userId };
   });
 
-  const user = await hop("sign up", async () =>
-    signUp(hub.baseUrl, "CL-6324 Proof"),
-  );
+  const user = await hop("sign up", async () => signUp(hub.baseUrl, "CL-6324 Proof"));
 
-  const provisioned = await hop(
-    "a membership probe joins the genesis root",
-    async () => {
-      const res = await api(
-        hub.baseUrl,
-        "POST",
-        "/api/onboarding/provision",
-        undefined,
-        user.cookies,
-      );
-      expectStatus("provision probe", res, 200);
-      const data = res.data as { kind: string; tenantSlug: string };
-      expect(data.kind).toBe("existing-member");
-      return data;
-    },
-  );
+  const provisioned = await hop("a membership probe joins the genesis root", async () => {
+    const res = await api(
+      hub.baseUrl,
+      "POST",
+      "/api/onboarding/provision",
+      undefined,
+      user.cookies,
+    );
+    expectStatus("provision probe", res, 200);
+    const data = res.data as { kind: string; tenantSlug: string };
+    expect(data.kind).toBe("existing-member");
+    return data;
+  });
 
   // A joined member is read-only by design, so every owner-level leg
   // below runs as alice, the genesis owner.
   const tenant = await hop("joined root resolves", async () => {
-    const found = await findPersonalTenant(
-      hubApi,
-      admin.cookies,
-      provisioned.tenantSlug,
-    );
+    const found = await findPersonalTenant(hubApi, admin.cookies, provisioned.tenantSlug);
     if (found === undefined) {
-      throw new Error(
-        `findPersonalTenant found nothing for slug ${provisioned.tenantSlug}`,
-      );
+      throw new Error(`findPersonalTenant found nothing for slug ${provisioned.tenantSlug}`);
     }
     return found;
   });
@@ -315,9 +292,7 @@ async function main(): Promise<void> {
       log: () => undefined,
     });
     if (result.kind !== "connected") {
-      throw new Error(
-        `expected the key-path connect to succeed, got: ${JSON.stringify(result)}`,
-      );
+      throw new Error(`expected the key-path connect to succeed, got: ${JSON.stringify(result)}`);
     }
     return result;
   });
@@ -351,9 +326,7 @@ async function main(): Promise<void> {
       const deadline = Date.now() + 180_000;
       for (;;) {
         if (sidecar.exited()) {
-          throw new Error(
-            `sidecar exited before the seed finished; output:\n${sidecar.output()}`,
-          );
+          throw new Error(`sidecar exited before the seed finished; output:\n${sidecar.output()}`);
         }
         try {
           await seedTenant({
@@ -410,77 +383,72 @@ async function main(): Promise<void> {
   // on purpose, so it narrows the bench's own catalog to that model
   // through the catalog API rather than leaving the turn's model to a
   // coin flip the proof is not about.
-  const pinnedOfferingId = await hop(
-    "narrow the bench catalog to the pinned model",
-    async () => {
-      await plantGrant("model-offering:*", "read");
-      await plantGrant("model-offering:*", "manage");
-      await plantGrant("model:*", "read");
+  const pinnedOfferingId = await hop("narrow the bench catalog to the pinned model", async () => {
+    await plantGrant("model-offering:*", "read");
+    await plantGrant("model-offering:*", "manage");
+    await plantGrant("model:*", "read");
 
-      const models = await api(
+    const models = await api(
+      hub.baseUrl,
+      "GET",
+      `/api/tenants/${tenant.tenantId}/catalog/models?limit=200`,
+      undefined,
+      admin.cookies,
+    );
+    expectStatus("list the bench catalog models", models, 200);
+    const modelRows = arrayField(models.data, "data", "catalog models") as {
+      id: string;
+      canonicalName: string;
+    }[];
+    const pinned = modelRows.find((row) => row.canonicalName === proofModelSource.model);
+    if (pinned === undefined) {
+      throw new Error(
+        `the bench catalog carries no model named ${proofModelSource.model}; ` +
+          `it has ${JSON.stringify(modelRows.map((m) => m.canonicalName))}`,
+      );
+    }
+
+    const offerings = await api(
+      hub.baseUrl,
+      "GET",
+      `/api/tenants/${tenant.tenantId}/catalog/offerings?limit=200`,
+      undefined,
+      admin.cookies,
+    );
+    expectStatus("list the bench model offerings", offerings, 200);
+    const offeringRows = arrayField(offerings.data, "data", "model offerings") as {
+      id: string;
+      modelId: string;
+      disabled: boolean;
+    }[];
+    let pinnedOffering: { id: string; modelId: string } | undefined;
+    for (const offering of offeringRows) {
+      if (offering.modelId === pinned.id) {
+        pinnedOffering = offering;
+        continue;
+      }
+      if (offering.disabled) continue;
+      const patched = await api(
         hub.baseUrl,
-        "GET",
-        `/api/tenants/${tenant.tenantId}/catalog/models?limit=200`,
-        undefined,
+        "PATCH",
+        `/api/tenants/${tenant.tenantId}/catalog/offerings/${offering.id}`,
+        { disabled: true },
         admin.cookies,
       );
-      expectStatus("list the bench catalog models", models, 200);
-      const modelRows = arrayField(models.data, "data", "catalog models") as {
-        id: string;
-        canonicalName: string;
-      }[];
-      const pinned = modelRows.find(
-        (row) => row.canonicalName === proofModelSource.model,
+      expectStatus(`disable offering ${offering.id}`, patched, 200);
+    }
+    if (pinnedOffering === undefined) {
+      throw new Error(
+        `no catalog offering resolves the pinned model ${proofModelSource.model} ` +
+          `(id ${pinned.id})`,
       );
-      if (pinned === undefined) {
-        throw new Error(
-          `the bench catalog carries no model named ${proofModelSource.model}; ` +
-            `it has ${JSON.stringify(modelRows.map((m) => m.canonicalName))}`,
-        );
-      }
-
-      const offerings = await api(
-        hub.baseUrl,
-        "GET",
-        `/api/tenants/${tenant.tenantId}/catalog/offerings?limit=200`,
-        undefined,
-        admin.cookies,
-      );
-      expectStatus("list the bench model offerings", offerings, 200);
-      const offeringRows = arrayField(
-        offerings.data,
-        "data",
-        "model offerings",
-      ) as { id: string; modelId: string; disabled: boolean }[];
-      let pinnedOffering: { id: string; modelId: string } | undefined;
-      for (const offering of offeringRows) {
-        if (offering.modelId === pinned.id) {
-          pinnedOffering = offering;
-          continue;
-        }
-        if (offering.disabled) continue;
-        const patched = await api(
-          hub.baseUrl,
-          "PATCH",
-          `/api/tenants/${tenant.tenantId}/catalog/offerings/${offering.id}`,
-          { disabled: true },
-          admin.cookies,
-        );
-        expectStatus(`disable offering ${offering.id}`, patched, 200);
-      }
-      if (pinnedOffering === undefined) {
-        throw new Error(
-          `no catalog offering resolves the pinned model ${proofModelSource.model} ` +
-            `(id ${pinned.id})`,
-        );
-      }
-      console.log(
-        `  TRANSCRIPT — bench catalog narrowed to ${proofModelSource.model} ` +
-          `(${String(offeringRows.length - 1)} other offerings disabled)`,
-      );
-      return pinnedOffering.id;
-    },
-  );
+    }
+    console.log(
+      `  TRANSCRIPT — bench catalog narrowed to ${proofModelSource.model} ` +
+        `(${String(offeringRows.length - 1)} other offerings disabled)`,
+    );
+    return pinnedOffering.id;
+  });
 
   const assistantDefinitionId = await hop(
     "PROOF 1 — 'assistant' is invitable tenant-wide",
@@ -503,9 +471,7 @@ async function main(): Promise<void> {
           if (assistant !== undefined) return assistant.id;
         }
         if (Date.now() > deadline) {
-          throw new Error(
-            `"assistant" never became invitable: ${JSON.stringify(res.data)}`,
-          );
+          throw new Error(`"assistant" never became invitable: ${JSON.stringify(res.data)}`);
         }
         await Bun.sleep(1000);
       }
@@ -516,55 +482,45 @@ async function main(): Promise<void> {
   const { chatId, agentAddress, agentRunId } = await timed(
     "proof 2: mint → probe → closure materialization",
     () =>
-      hop(
-        "PROOF 2 — POST /workbenches mints a chat with its agent joined",
-        async () => {
-          const deadline = Date.now() + 120_000;
-          let res: ApiResult;
-          for (;;) {
-            if (sidecar.exited()) {
-              throw new Error(
-                `sidecar exited before chat creation; output:\n${sidecar.output()}`,
-              );
-            }
-            res = await api(
-              hub.baseUrl,
-              "POST",
-              `/api/tenants/${tenant.tenantId}/chat/workbenches`,
-              { kind: "chat", definitionId: assistantDefinitionId },
-              admin.cookies,
-            );
-            if (res.status !== 500) break;
-            if (Date.now() > deadline) {
-              throw new Error(
-                `chat never became mintable: ${JSON.stringify(res.data)}\n` +
-                  `sidecar output:\n${sidecar.output()}`,
-              );
-            }
-            await Bun.sleep(1000);
+      hop("PROOF 2 — POST /workbenches mints a chat with its agent joined", async () => {
+        const deadline = Date.now() + 120_000;
+        let res: ApiResult;
+        for (;;) {
+          if (sidecar.exited()) {
+            throw new Error(`sidecar exited before chat creation; output:\n${sidecar.output()}`);
           }
-          expectStatus("create chat", res, 201);
-          const id = stringField(res.data, "id", "create chat");
-          const participants = arrayField(
-            res.data,
-            "participants",
-            "create chat",
-          ) as { address: string; handle: string }[];
-          const agent = participants.find((p) => p.handle === "myra");
-          if (agent === undefined) {
+          res = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${tenant.tenantId}/chat/workbenches`,
+            { kind: "chat", definitionId: assistantDefinitionId },
+            admin.cookies,
+          );
+          if (res.status !== 500) break;
+          if (Date.now() > deadline) {
             throw new Error(
-              `chat has no "myra" participant: ${JSON.stringify(participants)}`,
+              `chat never became mintable: ${JSON.stringify(res.data)}\n` +
+                `sidecar output:\n${sidecar.output()}`,
             );
           }
-          const [runId] = agent.address.split("@");
-          if (runId === undefined) {
-            throw new Error(
-              `agent address is not a run address: ${agent.address}`,
-            );
-          }
-          return { chatId: id, agentAddress: agent.address, agentRunId: runId };
-        },
-      ),
+          await Bun.sleep(1000);
+        }
+        expectStatus("create chat", res, 201);
+        const id = stringField(res.data, "id", "create chat");
+        const participants = arrayField(res.data, "participants", "create chat") as {
+          address: string;
+          handle: string;
+        }[];
+        const agent = participants.find((p) => p.handle === "myra");
+        if (agent === undefined) {
+          throw new Error(`chat has no "myra" participant: ${JSON.stringify(participants)}`);
+        }
+        const [runId] = agent.address.split("@");
+        if (runId === undefined) {
+          throw new Error(`agent address is not a run address: ${agent.address}`);
+        }
+        return { chatId: id, agentAddress: agent.address, agentRunId: runId };
+      }),
   );
 
   /**
@@ -632,11 +588,7 @@ async function main(): Promise<void> {
       parts: { kind: string; text?: string }[];
     }[];
     return items
-      .filter(
-        (i) =>
-          i.sender.address === agentAddress &&
-          i.parts.some((p) => p.kind === "text"),
-      )
+      .filter((i) => i.sender.address === agentAddress && i.parts.some((p) => p.kind === "text"))
       .map((i) => ({
         id: i.id,
         text: i.parts.map((p) => p.text ?? "").join(""),
@@ -650,28 +602,24 @@ async function main(): Promise<void> {
   // turn — so it times the room and the participant join, and nothing
   // about inference. The deploy path's first real token is proof 3's.
   await timed("proof 2: canned join greeting lands (room + participant)", () =>
-    hop(
-      "PROOF 2 — the minted chat carries its agent and its canned greeting",
-      async () => {
-        const deadline = Date.now() + TURN_TIMEOUT_MS;
-        for (;;) {
-          const messages = await listAgentMessages();
-          const greeting = messages.find((m) => m.text.trim().length > 0);
-          if (greeting !== undefined) {
-            for (const m of messages) seenIds.add(m.id);
-            console.log(`  TRANSCRIPT — greeting: ${greeting.text}`);
-            return;
-          }
-          if (Date.now() > deadline) {
-            throw new Error(
-              `no agent greeting landed in chat ${chatId}\n` +
-                `sidecar output:\n${sidecar.output()}`,
-            );
-          }
-          await Bun.sleep(1000);
+    hop("PROOF 2 — the minted chat carries its agent and its canned greeting", async () => {
+      const deadline = Date.now() + TURN_TIMEOUT_MS;
+      for (;;) {
+        const messages = await listAgentMessages();
+        const greeting = messages.find((m) => m.text.trim().length > 0);
+        if (greeting !== undefined) {
+          for (const m of messages) seenIds.add(m.id);
+          console.log(`  TRANSCRIPT — greeting: ${greeting.text}`);
+          return;
         }
-      },
-    ),
+        if (Date.now() > deadline) {
+          throw new Error(
+            `no agent greeting landed in chat ${chatId}\n` + `sidecar output:\n${sidecar.output()}`,
+          );
+        }
+        await Bun.sleep(1000);
+      }
+    }),
   );
 
   // A folded `step`-mode run is ONE unbounded step servicing every
@@ -699,8 +647,7 @@ async function main(): Promise<void> {
           JSON.stringify(events.map((e) => `${String(e.seq)}:${e.type}`)),
       );
       console.log(
-        `  TRANSCRIPT — step-mode run ${agentRunId} child run ids: ` +
-          JSON.stringify(childRunIds),
+        `  TRANSCRIPT — step-mode run ${agentRunId} child run ids: ` + JSON.stringify(childRunIds),
       );
       const perOccurrence = childRunIds.filter((id) => /__\d+$/.test(id));
       if (perOccurrence.length > 0) {
@@ -730,98 +677,80 @@ async function main(): Promise<void> {
   const sectionDeploymentId = await timed(
     "proof 2b: section-mode deploy (push + probe + freeze + deploy)",
     () =>
-      hop(
-        "PROOF 2b — a section-mode agent deploys from its own rendered source",
-        async () => {
-          const created = await api(
-            hub.baseUrl,
-            "POST",
-            `/api/tenants/${tenant.tenantId}/assets`,
-            {
-              kind: "workflow",
-              name: SECTION_ASSET_NAME,
-              displayName: "CL-6324 section-mode proof",
+      hop("PROOF 2b — a section-mode agent deploys from its own rendered source", async () => {
+        const created = await api(
+          hub.baseUrl,
+          "POST",
+          `/api/tenants/${tenant.tenantId}/assets`,
+          {
+            kind: "workflow",
+            name: SECTION_ASSET_NAME,
+            displayName: "CL-6324 section-mode proof",
+          },
+          admin.cookies,
+        );
+        expectStatus("create the section-mode workflow asset", created, 201);
+        const assetId = stringField(created.data, "id", "section-mode asset response");
+
+        const minted = await api(
+          hub.baseUrl,
+          "POST",
+          `/api/tenants/${tenant.tenantId}/git-tokens`,
+          {
+            name: `cl6324-section-push-${crypto.randomUUID().slice(0, 8)}`,
+            resource: "asset:*",
+            refPattern: "**",
+            actions: ["can_read", "can_push"],
+            expiresAt: new Date(Date.now() + 600_000).toISOString(),
+          },
+          admin.cookies,
+        );
+        expectStatus("mint the section-mode push token", minted, 201);
+        const tokenSecret = stringField(minted.data, "secret", "git token response");
+
+        const model = proofModelSource;
+        // The same config object every folded launch renders, with the
+        // one field that selects the shape flipped to `section`. No
+        // tool pins and no credential bindings: this proof is about the
+        // occurrence shape, and an empty pin set keeps the deploy off
+        // the tool-manifest and MCP-handle surfaces entirely.
+        const definition = buildAgentRuntimeWorkflow({
+          workflowId: "wf_cl6324_section",
+          agentId: "cl6324-section-agent",
+          triggerAddress: sectionAddress,
+          systemPrompt: "You are a terse assistant. Answer in one short sentence.",
+          inferencePreferences: [{ provider: model.provider, model: model.model }],
+          toolPackagePins: [],
+          credentialBindings: [],
+          mode: { kind: "section", turnTimeoutMs: SECTION_TURN_TIMEOUT_MS },
+        });
+
+        const pushed = await pushWorkflow({
+          remoteUrl: `${hub.baseUrl}/api/tenants/${tenant.tenantId}/assets/workflow/${SECTION_ASSET_NAME}.git`,
+          tokenSecret,
+          workflowJson: JSON.stringify(definition, null, 2),
+          packageName: SECTION_ASSET_NAME,
+        });
+
+        const deployed = await api(
+          hub.baseUrl,
+          "POST",
+          `/api/tenants/${tenant.tenantId}/workflows/deployments`,
+          {
+            source: {
+              kind: "asset",
+              assetId,
+              package: { format: "source", commitSha: pushed.commitSha },
             },
-            admin.cookies,
-          );
-          expectStatus("create the section-mode workflow asset", created, 201);
-          const assetId = stringField(
-            created.data,
-            "id",
-            "section-mode asset response",
-          );
-
-          const minted = await api(
-            hub.baseUrl,
-            "POST",
-            `/api/tenants/${tenant.tenantId}/git-tokens`,
-            {
-              name: `cl6324-section-push-${crypto.randomUUID().slice(0, 8)}`,
-              resource: "asset:*",
-              refPattern: "**",
-              actions: ["can_read", "can_push"],
-              expiresAt: new Date(Date.now() + 600_000).toISOString(),
-            },
-            admin.cookies,
-          );
-          expectStatus("mint the section-mode push token", minted, 201);
-          const tokenSecret = stringField(
-            minted.data,
-            "secret",
-            "git token response",
-          );
-
-          const model = proofModelSource;
-          // The same config object every folded launch renders, with the
-          // one field that selects the shape flipped to `section`. No
-          // tool pins and no credential bindings: this proof is about the
-          // occurrence shape, and an empty pin set keeps the deploy off
-          // the tool-manifest and MCP-handle surfaces entirely.
-          const definition = buildAgentRuntimeWorkflow({
-            workflowId: "wf_cl6324_section",
-            agentId: "cl6324-section-agent",
-            triggerAddress: sectionAddress,
-            systemPrompt:
-              "You are a terse assistant. Answer in one short sentence.",
-            inferencePreferences: [
-              { provider: model.provider, model: model.model },
-            ],
-            toolPackagePins: [],
-            credentialBindings: [],
-            mode: { kind: "section", turnTimeoutMs: SECTION_TURN_TIMEOUT_MS },
-          });
-
-          const pushed = await pushWorkflow({
-            remoteUrl: `${hub.baseUrl}/api/tenants/${tenant.tenantId}/assets/workflow/${SECTION_ASSET_NAME}.git`,
-            tokenSecret,
-            workflowJson: JSON.stringify(definition, null, 2),
-            packageName: SECTION_ASSET_NAME,
-          });
-
-          const deployed = await api(
-            hub.baseUrl,
-            "POST",
-            `/api/tenants/${tenant.tenantId}/workflows/deployments`,
-            {
-              source: {
-                kind: "asset",
-                assetId,
-                package: { format: "source", commitSha: pushed.commitSha },
-              },
-              entry: WORKFLOW_SOURCE_ENTRY,
-              sourceOfferingIds: [pinnedOfferingId],
-              defaultSourceOfferingId: pinnedOfferingId,
-            },
-            admin.cookies,
-          );
-          expectStatus("deploy the section-mode workflow", deployed, 201);
-          return stringField(
-            deployed.data,
-            "id",
-            "section-mode deployment response",
-          );
-        },
-      ),
+            entry: WORKFLOW_SOURCE_ENTRY,
+            sourceOfferingIds: [pinnedOfferingId],
+            defaultSourceOfferingId: pinnedOfferingId,
+          },
+          admin.cookies,
+        );
+        expectStatus("deploy the section-mode workflow", deployed, 201);
+        return stringField(deployed.data, "id", "section-mode deployment response");
+      }),
   );
 
   /** Occurrence run ids the section has already produced. */
@@ -837,10 +766,7 @@ async function main(): Promise<void> {
    * than assumed so a turn that died in the sidecar kill cannot shift
    * every later index and turn a real pass into a false failure.
    */
-  async function driveSectionOccurrence(
-    text: string,
-    label: string,
-  ): Promise<string> {
+  async function driveSectionOccurrence(text: string, label: string): Promise<string> {
     const t0 = Date.now();
     // A 409 here means the deployment's address is not routable yet — the
     // state a restart leaves behind while the sidecar's reclaim settles.
@@ -880,11 +806,10 @@ async function main(): Promise<void> {
           admin.cookies,
         );
         if (res.status !== 200) continue;
-        const events = arrayField(
-          res.data,
-          "events",
-          `${label}: section occurrence events`,
-        ) as { seq: number; type: string }[];
+        const events = arrayField(res.data, "events", `${label}: section occurrence events`) as {
+          seq: number;
+          type: string;
+        }[];
         if (!events.some((e) => e.type === "RunStarted")) continue;
         seenOccurrences.add(turnRunId);
         timings.push({ label: `${label}: RunStarted`, ms: Date.now() - t0 });
@@ -906,17 +831,10 @@ async function main(): Promise<void> {
     }
   }
 
-  const firstOccurrence = await timed(
-    "proof 2b: first section occurrence to RunStarted",
-    () =>
-      hop(
-        "PROOF 2b — every message is an onTrigger occurrence with its own child run",
-        () =>
-          driveSectionOccurrence(
-            "In one short sentence, what can you help me with?",
-            "proof 2b",
-          ),
-      ),
+  const firstOccurrence = await timed("proof 2b: first section occurrence to RunStarted", () =>
+    hop("PROOF 2b — every message is an onTrigger occurrence with its own child run", () =>
+      driveSectionOccurrence("In one short sentence, what can you help me with?", "proof 2b"),
+    ),
   );
 
   await hop(
@@ -937,20 +855,16 @@ async function main(): Promise<void> {
         admin.cookies,
       );
       expectStatus("read the section's parent run log", parentEvents, 200);
-      const events = arrayField(
-        parentEvents.data,
-        "events",
-        "section parent events",
-      ) as { seq: number; type: string; body?: { childRunId?: unknown } }[];
+      const events = arrayField(parentEvents.data, "events", "section parent events") as {
+        seq: number;
+        type: string;
+        body?: { childRunId?: unknown };
+      }[];
       console.log(
         `  TRANSCRIPT — section parent run events: ` +
           JSON.stringify(events.map((e) => `${String(e.seq)}:${e.type}`)),
       );
-      if (
-        !events.some(
-          (e) => e.type === "ChildSpawned" && e.body?.childRunId === expected,
-        )
-      ) {
+      if (!events.some((e) => e.type === "ChildSpawned" && e.body?.childRunId === expected)) {
         throw new Error(
           `the section's parent run log records no ChildSpawned for ` +
             `${expected}: ${JSON.stringify(events)}`,
@@ -985,9 +899,7 @@ async function main(): Promise<void> {
       }
       const page = TenantApprovalsSchema(res.data);
       if (page instanceof type.errors) {
-        throw new Error(
-          `auto-approve: malformed pending approvals list: ${page.summary}`,
-        );
+        throw new Error(`auto-approve: malformed pending approvals list: ${page.summary}`);
       }
       for (const item of page.data) {
         const approved = await api(
@@ -1001,9 +913,7 @@ async function main(): Promise<void> {
         if (approved.status === 200) {
           console.log(`  [auto-approved] ${headline}`);
         } else {
-          console.log(
-            `  [auto-approve FAILED ${String(approved.status)}] ${headline}`,
-          );
+          console.log(`  [auto-approve FAILED ${String(approved.status)}] ${headline}`);
         }
       }
       if (page.nextCursor === null) break;
@@ -1023,11 +933,7 @@ async function main(): Promise<void> {
    * notice there is the failure it looks like. The credential notice is
    * never retried: resending can never fix it.
    */
-  async function sendAndAwaitReply(
-    text: string,
-    label: string,
-    resendsAllowed = 0,
-  ): Promise<void> {
+  async function sendAndAwaitReply(text: string, label: string, resendsAllowed = 0): Promise<void> {
     const t0 = Date.now();
     let resendsLeft = resendsAllowed;
     for (;;) {
@@ -1053,11 +959,7 @@ async function main(): Promise<void> {
       // Both undelivered notices are agent-authored room messages from
       // the agent's own address, so they look exactly like a reply to
       // the reader above. Neither is a turn.
-      if (
-        /^\s*$/.test(reply) ||
-        retryable ||
-        /can't reach a model right now/i.test(reply)
-      ) {
+      if (/^\s*$/.test(reply) || retryable || /can't reach a model right now/i.test(reply)) {
         throw new Error(
           `${label}: the agent answered with the undelivered notice, not a ` +
             `real turn: ${JSON.stringify(reply)}\n` +
@@ -1075,9 +977,7 @@ async function main(): Promise<void> {
     const deadline = Date.now() + TURN_TIMEOUT_MS;
     for (;;) {
       await autoApproveAll();
-      const fresh = (await listAgentMessages()).filter(
-        (m) => !seenIds.has(m.id),
-      );
+      const fresh = (await listAgentMessages()).filter((m) => !seenIds.has(m.id));
       if (fresh.length > 0) {
         for (const m of fresh) seenIds.add(m.id);
         return fresh.map((m) => m.text).join(" ");
@@ -1093,10 +993,7 @@ async function main(): Promise<void> {
   }
 
   await hop("PROOF 3 — a real message gets a real model reply", () =>
-    sendAndAwaitReply(
-      "In one short sentence, what can you help me with?",
-      "proof 3",
-    ),
+    sendAndAwaitReply("In one short sentence, what can you help me with?", "proof 3"),
   );
 
   // ---- proof 4: kill the sidecar mid-turn, restart, keep talking ----
@@ -1134,9 +1031,7 @@ async function main(): Promise<void> {
     // answered in the kill window on any model, so an answer already
     // sitting in the room would mean the kill landed BETWEEN turns and
     // the proof would be testing the easy case.
-    const answeredEarly = (await listAgentMessages()).filter(
-      (m) => !seenIds.has(m.id),
-    );
+    const answeredEarly = (await listAgentMessages()).filter((m) => !seenIds.has(m.id));
     if (answeredEarly.length > 0) {
       throw new Error(
         `the mid-turn kill was not mid-turn: the agent already answered ` +
@@ -1148,56 +1043,51 @@ async function main(): Promise<void> {
   });
 
   await timed("proof 4: sidecar restart + boot restore", () =>
-    hop(
-      "PROOF 4 — the sidecar restarts and boot restore replays the pin",
-      async () => {
-        sidecar = startSidecar({
-          hubPort,
-          sidecarId,
-          token: sidecarToken,
-          dataDir: sidecarDataDir,
-        });
-        track(sidecar);
-        const deadline = Date.now() + 120_000;
-        for (;;) {
-          if (sidecar.exited()) {
-            throw new Error(
-              `the restarted sidecar exited; output:\n${sidecar.output()}`,
-            );
-          }
-          const res = await api(
-            hub.baseUrl,
-            "GET",
-            `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
-            undefined,
-            admin.cookies,
-          );
-          // The room surviving is a hub-only read and says nothing about
-          // the execution plane. The run's own health does: `liveness`
-          // is "ok" exactly when the sidecar has re-announced the
-          // address, which is what boot restore replaying the pin
-          // produces. Sending before that is sending into a window the
-          // product itself answers with "send it again".
-          const health = await api(
-            hub.baseUrl,
-            "GET",
-            `/api/tenants/${tenant.tenantId}/workflows/runs/${agentRunId}/health`,
-            undefined,
-            admin.cookies,
-          );
-          const liveness = (health.data as { liveness?: unknown }).liveness;
-          if (res.status === 200 && liveness === "ok") return;
-          if (Date.now() > deadline) {
-            throw new Error(
-              `the room or its run did not come back after the restart ` +
-                `(messages ${String(res.status)}, liveness ${JSON.stringify(liveness)})\n` +
-                `sidecar output:\n${sidecar.output()}`,
-            );
-          }
-          await Bun.sleep(1000);
+    hop("PROOF 4 — the sidecar restarts and boot restore replays the pin", async () => {
+      sidecar = startSidecar({
+        hubPort,
+        sidecarId,
+        token: sidecarToken,
+        dataDir: sidecarDataDir,
+      });
+      track(sidecar);
+      const deadline = Date.now() + 120_000;
+      for (;;) {
+        if (sidecar.exited()) {
+          throw new Error(`the restarted sidecar exited; output:\n${sidecar.output()}`);
         }
-      },
-    ),
+        const res = await api(
+          hub.baseUrl,
+          "GET",
+          `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
+          undefined,
+          admin.cookies,
+        );
+        // The room surviving is a hub-only read and says nothing about
+        // the execution plane. The run's own health does: `liveness`
+        // is "ok" exactly when the sidecar has re-announced the
+        // address, which is what boot restore replaying the pin
+        // produces. Sending before that is sending into a window the
+        // product itself answers with "send it again".
+        const health = await api(
+          hub.baseUrl,
+          "GET",
+          `/api/tenants/${tenant.tenantId}/workflows/runs/${agentRunId}/health`,
+          undefined,
+          admin.cookies,
+        );
+        const liveness = (health.data as { liveness?: unknown }).liveness;
+        if (res.status === 200 && liveness === "ok") return;
+        if (Date.now() > deadline) {
+          throw new Error(
+            `the room or its run did not come back after the restart ` +
+              `(messages ${String(res.status)}, liveness ${JSON.stringify(liveness)})\n` +
+              `sidecar output:\n${sidecar.output()}`,
+          );
+        }
+        await Bun.sleep(1000);
+      }
+    }),
   );
 
   // Same rule for the section: the occurrence that died in the kill may
@@ -1218,18 +1108,13 @@ async function main(): Promise<void> {
   // answer this question differently, and the section's answer must be
   // on the record whatever the step shape does.
   await timed("proof 4: section occurrence after the restart", () =>
-    hop(
-      "PROOF 4 — the section survives the restart and runs its next occurrence",
-      async () => {
-        const occurrence = await driveSectionOccurrence(
-          "Are you still there? One sentence.",
-          "proof 4 (section)",
-        );
-        console.log(
-          `  TRANSCRIPT — post-restart section occurrence: ${occurrence}`,
-        );
-      },
-    ),
+    hop("PROOF 4 — the section survives the restart and runs its next occurrence", async () => {
+      const occurrence = await driveSectionOccurrence(
+        "Are you still there? One sentence.",
+        "proof 4 (section)",
+      );
+      console.log(`  TRANSCRIPT — post-restart section occurrence: ${occurrence}`);
+    }),
   );
 
   // Whatever the killed turn produced is not the proof that the agent
@@ -1238,33 +1123,28 @@ async function main(): Promise<void> {
   // the reader as a partial answer or as the product's own visible
   // notice ("I didn't get that one — send it again"), never as a
   // message that was accepted and then silently swallowed.
-  await hop(
-    "PROOF 4 — the turn the kill interrupted surfaces visibly",
-    async () => {
-      const deadline = Date.now() + 120_000;
-      for (;;) {
-        const fresh = (await listAgentMessages()).filter(
-          (m) => !seenIds.has(m.id),
+  await hop("PROOF 4 — the turn the kill interrupted surfaces visibly", async () => {
+    const deadline = Date.now() + 120_000;
+    for (;;) {
+      const fresh = (await listAgentMessages()).filter((m) => !seenIds.has(m.id));
+      if (fresh.length > 0) {
+        console.log(
+          `  TRANSCRIPT — the interrupted turn surfaced as: ` +
+            JSON.stringify(fresh.map((m) => m.text)),
         );
-        if (fresh.length > 0) {
-          console.log(
-            `  TRANSCRIPT — the interrupted turn surfaced as: ` +
-              JSON.stringify(fresh.map((m) => m.text)),
-          );
-          for (const m of fresh) seenIds.add(m.id);
-          return;
-        }
-        if (Date.now() > deadline) {
-          throw new Error(
-            "the turn the sidecar kill interrupted left NOTHING in the " +
-              "room: no partial answer and no undelivered notice, so the " +
-              "reader's message was accepted and silently dropped",
-          );
-        }
-        await Bun.sleep(2000);
+        for (const m of fresh) seenIds.add(m.id);
+        return;
       }
-    },
-  );
+      if (Date.now() > deadline) {
+        throw new Error(
+          "the turn the sidecar kill interrupted left NOTHING in the " +
+            "room: no partial answer and no undelivered notice, so the " +
+            "reader's message was accepted and silently dropped",
+        );
+      }
+      await Bun.sleep(2000);
+    }
+  });
   await hop("PROOF 4 — the next message is answered after the restart", () =>
     sendAndAwaitReply("Are you still there? One sentence.", "proof 4", 2),
   );

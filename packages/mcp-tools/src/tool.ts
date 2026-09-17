@@ -52,12 +52,7 @@ import type { CredentialCapability, MediatedCredential } from "@intx/types";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 import { type } from "arktype";
 
-import {
-  callMcpTool,
-  listMcpTools,
-  withMcpConnection,
-  type McpToolInfo,
-} from "./mcp-client";
+import { callMcpTool, listMcpTools, withMcpConnection, type McpToolInfo } from "./mcp-client";
 import { listMcpServers, type McpServerListing } from "./registry-client";
 
 export const MCP_LIST_SERVERS_TOOL = "mcp_list_servers";
@@ -101,10 +96,7 @@ function registryConfig(env: McpToolsEnv) {
   };
 }
 
-async function findServer(
-  env: McpToolsEnv,
-  slug: string,
-): Promise<McpServerListing | null> {
+async function findServer(env: McpToolsEnv, slug: string): Promise<McpServerListing | null> {
   const servers = await listMcpServers(registryConfig(env));
   return servers.find((server) => server.slug === slug) ?? null;
 }
@@ -121,9 +113,7 @@ async function resolveMcpFetch(
     return { fetch: null, reason: "the run has no credential capability" };
   }
   try {
-    const mediated: MediatedCredential = await env.credentials.resolve(
-      mcpCredentialHandle(slug),
-    );
+    const mediated: MediatedCredential = await env.credentials.resolve(mcpCredentialHandle(slug));
     if (mediated.kind !== "http") {
       return {
         fetch: null,
@@ -139,10 +129,7 @@ async function resolveMcpFetch(
   }
 }
 
-async function runListServers(
-  env: McpToolsEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runListServers(env: McpToolsEnv, call: ToolCall): Promise<ToolResult> {
   try {
     const servers = await listMcpServers(registryConfig(env));
     if (servers.length === 0) {
@@ -215,15 +202,12 @@ function toolSummary(tool: McpToolInfo) {
 async function loadServerTools(
   env: McpToolsEnv,
   server: McpServerListing,
-): Promise<
-  { tools: readonly McpToolInfo[] } | { tools: null; reason: string }
-> {
+): Promise<{ tools: readonly McpToolInfo[] } | { tools: null; reason: string }> {
   const resolved = await resolveMcpFetch(env, server.slug);
   if (resolved.fetch === null) return { tools: null, reason: resolved.reason };
   const fetchImpl = resolved.fetch;
-  const tools = await withMcpConnection(
-    { url: server.url, fetchImpl },
-    (client) => listMcpTools(client),
+  const tools = await withMcpConnection({ url: server.url, fetchImpl }, (client) =>
+    listMcpTools(client),
   );
   return { tools };
 }
@@ -248,9 +232,7 @@ async function runListToolsForServer(
   if (loaded.tools === null) {
     return errorResult(
       call.id,
-      new Error(
-        `MCP server "${slug}" is not reachable from this run: ${loaded.reason}`,
-      ),
+      new Error(`MCP server "${slug}" is not reachable from this run: ${loaded.reason}`),
     );
   }
   return {
@@ -284,9 +266,7 @@ async function runListToolsForTool(
   if (loaded.tools === null) {
     return errorResult(
       call.id,
-      new Error(
-        `MCP server "${slug}" is not reachable from this run: ${loaded.reason}`,
-      ),
+      new Error(`MCP server "${slug}" is not reachable from this run: ${loaded.reason}`),
     );
   }
   const tool = loaded.tools.find((candidate) => candidate.name === toolName);
@@ -317,10 +297,7 @@ async function runListToolsForPattern(
   try {
     regex = new RegExp(pattern, "i");
   } catch (err) {
-    return errorResult(
-      call.id,
-      new Error(`"${pattern}" is not a valid regex: ${String(err)}`),
-    );
+    return errorResult(call.id, new Error(`"${pattern}" is not a valid regex: ${String(err)}`));
   }
   const servers = await listMcpServers(registryConfig(env));
   const matches: {
@@ -345,19 +322,14 @@ async function runListToolsForPattern(
     callId: call.id,
     isError: false,
     content: JSON.stringify(
-      unreachable.length > 0
-        ? { pattern, matches, unreachable }
-        : { pattern, matches },
+      unreachable.length > 0 ? { pattern, matches, unreachable } : { pattern, matches },
     ),
   };
 }
 
 /** No args -- a catalog of every connected server with tool names and
  * truncated descriptions, cheap enough to skim before drilling in. */
-async function runListToolsCatalog(
-  env: McpToolsEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runListToolsCatalog(env: McpToolsEnv, call: ToolCall): Promise<ToolResult> {
   const servers = await listMcpServers(registryConfig(env));
   const catalog = [];
   for (const server of servers) {
@@ -383,17 +355,12 @@ async function runListToolsCatalog(
   };
 }
 
-async function runListTools(
-  env: McpToolsEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runListTools(env: McpToolsEnv, call: ToolCall): Promise<ToolResult> {
   const parsed = ListToolsInput(call.arguments);
   if (parsed instanceof type.errors) {
     return errorResult(
       call.id,
-      new Error(
-        `${MCP_LIST_TOOLS_TOOL} received invalid input: ${parsed.summary}`,
-      ),
+      new Error(`${MCP_LIST_TOOLS_TOOL} received invalid input: ${parsed.summary}`),
     );
   }
   if (parsed.toolName !== undefined && parsed.server === undefined) {
@@ -490,9 +457,7 @@ async function runRead(env: McpToolsEnv, call: ToolCall): Promise<ToolResult> {
       callId: call.id,
       isError: result.isError,
       content: boundReadContent(
-        typeof result.content === "string"
-          ? result.content
-          : JSON.stringify(result.content),
+        typeof result.content === "string" ? result.content : JSON.stringify(result.content),
       ),
     };
   } catch (err) {
@@ -688,10 +653,7 @@ export const mcpTools = defineTool<McpToolsEnv>({
           return runCall(env, call);
         default:
           return Promise.resolve(
-            errorResult(
-              call.id,
-              new Error(`@corbits/mcp-tools: unknown tool "${call.name}"`),
-            ),
+            errorResult(call.id, new Error(`@corbits/mcp-tools: unknown tool "${call.name}"`)),
           );
       }
     },

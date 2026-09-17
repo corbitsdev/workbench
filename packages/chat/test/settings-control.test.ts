@@ -20,23 +20,17 @@ const STATE_ABC: WorkbenchParticipantState = {
 };
 
 function controlMail(data: unknown): Part[] {
-  return [
-    { kind: "block", block: { type: WORKBENCH_CONTROL_NAMESPACE, data } },
-  ];
+  return [{ kind: "block", block: { type: WORKBENCH_CONTROL_NAMESPACE, data } }];
 }
 
 test("a control mail is structurally distinguished from an ordinary message", () => {
-  expect(
-    isControlMessage(controlMail({ namespace: WORKBENCH_CONTROL_NAMESPACE })),
-  ).toBe(true);
+  expect(isControlMessage(controlMail({ namespace: WORKBENCH_CONTROL_NAMESPACE }))).toBe(true);
   expect(isControlMessage([{ kind: "text", text: "hello" }])).toBe(false);
 });
 
 test("a block part in a different namespace is not a control message", () => {
   expect(
-    isControlMessage([
-      { kind: "block", block: { type: "some/other-namespace", data: {} } },
-    ]),
+    isControlMessage([{ kind: "block", block: { type: "some/other-namespace", data: {} } }]),
   ).toBe(false);
 });
 
@@ -137,13 +131,9 @@ test("malformed control payloads are rejected loudly", () => {
       }),
     ),
   ).toThrow();
-  expect(() =>
-    parseControlPayload(controlMail({ namespace: "wrong-namespace" })),
-  ).toThrow();
+  expect(() => parseControlPayload(controlMail({ namespace: "wrong-namespace" }))).toThrow();
 });
 
 test("parseControlPayload refuses a message that is not structurally control mail", () => {
-  expect(() => parseControlPayload([{ kind: "text", text: "hi" }])).toThrow(
-    /isControlMessage/,
-  );
+  expect(() => parseControlPayload([{ kind: "text", text: "hi" }])).toThrow(/isControlMessage/);
 });

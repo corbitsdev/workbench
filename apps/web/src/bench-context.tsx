@@ -69,10 +69,7 @@ export function resolveSelection(
   memberships: readonly Principal[],
   stored: string | null,
 ): Principal | undefined {
-  const storedMatch =
-    stored !== null
-      ? memberships.find((m) => m.tenantId === stored)
-      : undefined;
+  const storedMatch = stored !== null ? memberships.find((m) => m.tenantId === stored) : undefined;
   if (storedMatch !== undefined && isBenchMembership(storedMatch)) {
     return storedMatch;
   }
@@ -82,14 +79,10 @@ export function resolveSelection(
 export function BenchProvider({ children }: { readonly children: ReactNode }) {
   const queryClient = useQueryClient();
   const memberships = useAPIQuery("/api/me/principals", PrincipalsSchema);
-  const [stored, setStored] = useState<string | null>(() =>
-    readStoredTenantId(),
-  );
+  const [stored, setStored] = useState<string | null>(() => readStoredTenantId());
 
   const resolved =
-    memberships.kind === "ready"
-      ? resolveSelection(memberships.data.data, stored)
-      : undefined;
+    memberships.kind === "ready" ? resolveSelection(memberships.data.data, stored) : undefined;
 
   useEffect(() => {
     if (resolved !== undefined && resolved.tenantId !== stored) {
@@ -122,9 +115,7 @@ export function BenchProvider({ children }: { readonly children: ReactNode }) {
     [memberships, resolved, stored, queryClient],
   );
 
-  return (
-    <BenchContext.Provider value={value}>{children}</BenchContext.Provider>
-  );
+  return <BenchContext.Provider value={value}>{children}</BenchContext.Provider>;
 }
 
 export function useBench(): BenchState {

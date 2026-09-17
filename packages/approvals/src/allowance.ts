@@ -90,15 +90,11 @@ export async function evaluateToolAllowance(args: {
   grants: GrantRule[];
 }): Promise<AllowanceDecision> {
   const allowance = args.registry.get(args.toolName);
-  if (allowance === undefined)
-    return { outcome: "park", reason: "unclassified" };
+  if (allowance === undefined) return { outcome: "park", reason: "unclassified" };
 
   let classification: AllowanceClassification;
   try {
-    classification = await allowance.classify(
-      args.tenantId,
-      args.toolArguments,
-    );
+    classification = await allowance.classify(args.tenantId, args.toolArguments);
   } catch {
     return { outcome: "park", reason: "classification_failed" };
   }
@@ -133,9 +129,7 @@ export type RegisteredApprovalRef = {
 export type GrantAllowanceGateDeps = {
   registry: ToolAllowanceRegistry;
   /** The pending approval the registration just co-wrote, by correlation. */
-  findRegisteredApproval(
-    correlationId: string,
-  ): Promise<RegisteredApprovalRef | null>;
+  findRegisteredApproval(correlationId: string): Promise<RegisteredApprovalRef | null>;
   /** The tenant's live grant rows — role- and principal-scoped alike. */
   listTenantGrants(tenantId: string): Promise<GrantRule[]>;
   /**
@@ -185,9 +179,7 @@ export function withGrantAllowance<Args extends RegisterApprovalArgs>(
         grants: await deps.listTenantGrants(registered.tenantId),
       });
       if (decision.outcome !== "ride") {
-        deps.log(
-          `grant-allowance: ${args.approvalSnapshot.name} parked (${decision.reason})`,
-        );
+        deps.log(`grant-allowance: ${args.approvalSnapshot.name} parked (${decision.reason})`);
         return;
       }
       const resolved = await deps.autoApprove({

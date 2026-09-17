@@ -24,10 +24,7 @@ class StubEventSource {
     StubEventSource.instances.push(this);
   }
 
-  addEventListener(
-    eventType: string,
-    listener: (message: MessageEvent) => void,
-  ) {
+  addEventListener(eventType: string, listener: (message: MessageEvent) => void) {
     this.listeners.set(eventType, listener);
   }
 
@@ -84,16 +81,13 @@ function stubFetch(workbenchWire: {
         ],
       });
     }
-    if (/\/chat\/workbenches\?kind=chat$/.test(path))
-      return json({ items: [] });
+    if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
     if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
       return json({ rootThreadId: "", items: [] });
     }
-    if (/\/chat\/workbenches\/[^/]+\/messages/.test(path))
-      return json({ items: [] });
+    if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) return json({ items: [] });
     if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
-    if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path))
-      return json({ items: [] });
+    if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) return json({ items: [] });
     if (/\/mailbox\/me\/threads/.test(path)) {
       return json({ threads: [] });
     }
@@ -161,9 +155,7 @@ describe("workbench header member avatar stack", () => {
     await harness.settle();
     act(() => {
       firstStream().emit("chat.presence.snapshot", {
-        members: [
-          { principalId: "prn_alice", lastActiveAt: "2026-01-01T00:00:00Z" },
-        ],
+        members: [{ principalId: "prn_alice", lastActiveAt: "2026-01-01T00:00:00Z" }],
       });
     });
     await harness.settle();
@@ -171,28 +163,20 @@ describe("workbench header member avatar stack", () => {
     const memberStack = harness.container.querySelector(".chat-member-stack");
     expect(memberStack).not.toBeNull();
     expect(harness.container.querySelector(".chat-team-stack")).toBeNull();
-    const agentAvatars = harness.container.querySelectorAll(
-      '.member-avatar[data-agent="true"]',
-    );
+    const agentAvatars = harness.container.querySelectorAll('.member-avatar[data-agent="true"]');
     expect(agentAvatars).toHaveLength(1);
     const agentAvatar = agentAvatars[0] as HTMLElement;
     expect(agentAvatar.title).toBe("Myra");
-    const memberHumans = harness.container.querySelectorAll(
-      ".member-avatar:not([data-agent])",
-    );
+    const memberHumans = harness.container.querySelectorAll(".member-avatar:not([data-agent])");
     expect(agentAvatar.querySelector('[data-corbit="true"]')).not.toBeNull();
     expect(memberHumans).toHaveLength(1);
     expect((memberHumans[0] as HTMLElement).title).toBe("Alice");
     const liveStack = harness.container.querySelector(".chat-presence-stack");
     expect(liveStack).not.toBeNull();
-    const liveAvatars = harness.container.querySelectorAll(
-      ".chat-presence-avatar",
-    );
+    const liveAvatars = harness.container.querySelectorAll(".chat-presence-avatar");
     expect(liveAvatars).toHaveLength(1);
     expect((liveAvatars[0] as HTMLElement).title).toBe("Alice");
-    expect(
-      harness.container.querySelector(".chat-member-stack-overflow"),
-    ).toBeNull();
+    expect(harness.container.querySelector(".chat-member-stack-overflow")).toBeNull();
     harness.unmount();
   });
 
@@ -213,14 +197,9 @@ describe("workbench header member avatar stack", () => {
       harness.container.querySelectorAll('.member-avatar[data-agent="true"]'),
     ) as HTMLElement[];
     expect(agentAvatars).toHaveLength(2);
-    expect(agentAvatars.map((avatar) => avatar.title)).toEqual([
-      "Myra",
-      "Scout",
-    ]);
+    expect(agentAvatars.map((avatar) => avatar.title)).toEqual(["Myra", "Scout"]);
     expect(
-      agentAvatars.every(
-        (avatar) => avatar.querySelector('[data-corbit="true"]') !== null,
-      ),
+      agentAvatars.every((avatar) => avatar.querySelector('[data-corbit="true"]') !== null),
     ).toBe(true);
     harness.unmount();
   });
@@ -242,9 +221,7 @@ describe("workbench header member avatar stack", () => {
     });
     await harness.settle();
 
-    const agentAvatars = harness.container.querySelectorAll(
-      '.member-avatar[data-agent="true"]',
-    );
+    const agentAvatars = harness.container.querySelectorAll('.member-avatar[data-agent="true"]');
     expect(agentAvatars).toHaveLength(1);
     expect((agentAvatars[0] as HTMLElement).title).toBe("Myra the Helper");
     harness.unmount();
@@ -256,10 +233,7 @@ describe("workbench header member avatar stack", () => {
       humanParticipant(`prn_${index}`, name),
     );
     stubFetch({
-      participants: [
-        { address: "myra@agents.example", handle: "Myra" },
-        ...humanParticipants,
-      ],
+      participants: [{ address: "myra@agents.example", handle: "Myra" }, ...humanParticipants],
     });
     const harness = mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
@@ -277,9 +251,7 @@ describe("workbench header member avatar stack", () => {
     await harness.settle();
 
     // 1 agent + 6 humans = 7 total, limit is 6, so one overflows.
-    const overflow = harness.container.querySelector(
-      ".chat-member-stack-overflow",
-    );
+    const overflow = harness.container.querySelector(".chat-member-stack-overflow");
     expect(overflow).not.toBeNull();
     expect(overflow?.textContent).toBe("+1");
     harness.unmount();
@@ -300,16 +272,12 @@ describe("workbench header member avatar stack", () => {
     await harness.settle();
     act(() => {
       firstStream().emit("chat.presence.snapshot", {
-        members: [
-          { principalId: "prn_self", lastActiveAt: "2026-01-01T00:00:00Z" },
-        ],
+        members: [{ principalId: "prn_self", lastActiveAt: "2026-01-01T00:00:00Z" }],
       });
     });
     await harness.settle();
 
-    const presenceAvatars = harness.container.querySelectorAll(
-      ".chat-presence-avatar",
-    );
+    const presenceAvatars = harness.container.querySelectorAll(".chat-presence-avatar");
     expect(presenceAvatars).toHaveLength(1);
     expect((presenceAvatars[0] as HTMLElement).title).toBe("sawyer");
     expect((presenceAvatars[0] as HTMLElement).title).not.toBe("Member");
@@ -331,9 +299,7 @@ describe("workbench header member avatar stack", () => {
     });
     await harness.settle();
 
-    const memberHumans = harness.container.querySelectorAll(
-      ".member-avatar:not([data-agent])",
-    );
+    const memberHumans = harness.container.querySelectorAll(".member-avatar:not([data-agent])");
     expect(memberHumans).toHaveLength(1);
     expect((memberHumans[0] as HTMLElement).title).toBe("sawyer");
     expect((memberHumans[0] as HTMLElement).title).not.toBe("ada-handle");

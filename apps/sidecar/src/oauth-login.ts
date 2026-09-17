@@ -20,16 +20,8 @@ import {
   type FetchLike,
   type OAuthClientConfig,
 } from "@corbits/oauth-core";
-import {
-  codexOAuthConfig,
-  exchangeCodexCode,
-  CODEX_REDIRECT_URI,
-} from "@corbits/codex-provider";
-import {
-  exchangeXaiCode,
-  xaiOAuthConfig,
-  XAI_REDIRECT_URI,
-} from "@corbits/xai-provider";
+import { codexOAuthConfig, exchangeCodexCode, CODEX_REDIRECT_URI } from "@corbits/codex-provider";
+import { exchangeXaiCode, xaiOAuthConfig, XAI_REDIRECT_URI } from "@corbits/xai-provider";
 
 /** The sidecar-hosted login outcome: the shape `@intx/types`'s
  * `OAuthLoginTokens` wire arm carries. */
@@ -62,10 +54,7 @@ function isLoopbackHost(host: string): boolean {
  * URI, asserting the loopback + pinned-port contract up front: a bind
  * failure later is genuinely "port already in use", never "we drifted onto
  * some other port". */
-function callbackConfig(
-  redirectUri: string,
-  pinnedPort: number,
-): CallbackServerConfig {
+function callbackConfig(redirectUri: string, pinnedPort: number): CallbackServerConfig {
   const url = new URL(redirectUri);
   if (url.protocol !== "http:" || !isLoopbackHost(url.hostname)) {
     throw new Error(
@@ -124,12 +113,9 @@ export function createOAuthLoopbackLoginService(deps?: {
       const handle = await startOAuthLogin(
         { profile: connectorId, signal: new AbortController().signal, now },
         {
-          startCallbackServer: (state) =>
-            startCallbackServer(state, connector.callback),
-          buildAuthorizeUrl: (pkce, state) =>
-            buildAuthorizeUrl(connector.oauthConfig, pkce, state),
-          exchangeCode: (code, verifier, at) =>
-            connector.exchange(code, verifier, at),
+          startCallbackServer: (state) => startCallbackServer(state, connector.callback),
+          buildAuthorizeUrl: (pkce, state) => buildAuthorizeUrl(connector.oauthConfig, pkce, state),
+          exchangeCode: (code, verifier, at) => connector.exchange(code, verifier, at),
           // Persistence is the hub's job: the connect pipeline stores the
           // credential row, so the staged `commit` here is a no-op that
           // exists only to satisfy the oauth-core login contract.

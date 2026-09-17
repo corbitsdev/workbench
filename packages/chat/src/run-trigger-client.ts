@@ -64,10 +64,7 @@ export type RunTriggerClientDeps = {
    * path a real inbound request to the hub takes.
    */
   app: {
-    request: (
-      input: string,
-      init?: RequestInit,
-    ) => Response | Promise<Response>;
+    request: (input: string, init?: RequestInit) => Response | Promise<Response>;
   };
   /**
    * The shared secret `./run-trigger-internal-auth.ts` signs the
@@ -110,9 +107,7 @@ export type TriggeredWorkflowRunMail = {
 };
 
 export type RunTriggerClient = {
-  triggerMail(
-    input: TriggerWorkflowRunMailInput,
-  ): Promise<TriggeredWorkflowRunMail>;
+  triggerMail(input: TriggerWorkflowRunMailInput): Promise<TriggeredWorkflowRunMail>;
 };
 
 async function readJson(response: Response): Promise<unknown> {
@@ -128,9 +123,7 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-export function createRunTriggerClient(
-  deps: RunTriggerClientDeps,
-): RunTriggerClient {
+export function createRunTriggerClient(deps: RunTriggerClientDeps): RunTriggerClient {
   return {
     async triggerMail(input): Promise<TriggeredWorkflowRunMail> {
       const signToken = deps.signToken ?? signInternalRunTriggerToken;
@@ -167,9 +160,7 @@ export function createRunTriggerClient(
 
       const parsed = TriggerResponse(json);
       if (parsed instanceof type.errors) {
-        throw new Error(
-          `malformed workflow-run trigger response: ${parsed.summary}`,
-        );
+        throw new Error(`malformed workflow-run trigger response: ${parsed.summary}`);
       }
       return parsed;
     },

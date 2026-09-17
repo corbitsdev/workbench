@@ -12,11 +12,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import {
-  createAgentKeyStore,
-  createAgentRepoStore,
-  agentDir,
-} from "@intx/hub-agent";
+import { createAgentKeyStore, createAgentRepoStore, agentDir } from "@intx/hub-agent";
 import { generateKeyPair, verifySSHSignature } from "@intx/crypto";
 import { hexEncode } from "@intx/types";
 
@@ -45,9 +41,7 @@ async function makeFrameWithRealHubKey(agentAddress: string) {
 
 describe("hibernate/wake preserves the real deployed agent's identity", () => {
   test("hibernate teardown, then redeploy: the same keypair comes back (isNew: false)", async () => {
-    const dataDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), "sidecar-suspend-identity-"),
-    );
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "sidecar-suspend-identity-"));
     const keyStore = createAgentKeyStore({ dataDir, ...cryptoOps });
     // The real, unmodified package's own repo store -- its `remove` is
     // exactly the destructive call `@intx/hub-agent`'s `ws/hub-link.js`
@@ -71,9 +65,7 @@ describe("hibernate/wake preserves the real deployed agent's identity", () => {
     await router.teardownDeployment(address, { reclaimDirs: false });
     // Models the published package's own post-hook delete.
     await realRepoStore.remove(address);
-    expect(await fs.readdir(dataDir)).not.toContain(
-      path.basename(agentDir(dataDir, address)),
-    );
+    expect(await fs.readdir(dataDir)).not.toContain(path.basename(agentDir(dataDir, address)));
 
     const frame2 = await makeFrameWithRealHubKey(address);
     const deploy2 = router.deploy(frame2);
@@ -89,9 +81,7 @@ describe("hibernate/wake preserves the real deployed agent's identity", () => {
   });
 
   test("reclaiming (non-hibernate) teardown, then redeploy: a fresh keypair comes back", async () => {
-    const dataDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), "sidecar-suspend-identity-"),
-    );
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "sidecar-suspend-identity-"));
     const keyStore = createAgentKeyStore({ dataDir, ...cryptoOps });
     const realRepoStore = createAgentRepoStore({ dataDir });
 

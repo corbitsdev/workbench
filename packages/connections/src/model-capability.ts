@@ -59,10 +59,7 @@ function isEmbeddingModelName(canonicalName: string): boolean {
  * (CL-6744). */
 export function isGgufOrHuggingFacePath(canonicalName: string): boolean {
   const lower = canonicalName.toLowerCase();
-  return (
-    lower.includes(".gguf") ||
-    HUGGING_FACE_OR_GGUF_NAME_PATTERN.test(canonicalName)
-  );
+  return lower.includes(".gguf") || HUGGING_FACE_OR_GGUF_NAME_PATTERN.test(canonicalName);
 }
 
 /**
@@ -72,16 +69,10 @@ export function isGgufOrHuggingFacePath(canonicalName: string): boolean {
  * when real capability lists are available.
  */
 export function isChatPickerModelName(canonicalName: string): boolean {
-  return (
-    !isGgufOrHuggingFacePath(canonicalName) &&
-    !isEmbeddingModelName(canonicalName)
-  );
+  return !isGgufOrHuggingFacePath(canonicalName) && !isEmbeddingModelName(canonicalName);
 }
 
-function isCompletionCapable(
-  capabilities: readonly string[],
-  canonicalName: string,
-): boolean {
+function isCompletionCapable(capabilities: readonly string[], canonicalName: string): boolean {
   if (isGgufOrHuggingFacePath(canonicalName)) return false;
   return capabilities.length > 0
     ? capabilities.includes("plain-text")

@@ -35,8 +35,6 @@ export class SidecarUnavailableError extends HubApiError {
   }
 }
 
-export function isSidecarUnavailableError(
-  value: unknown,
-): value is SidecarUnavailableError {
+export function isSidecarUnavailableError(value: unknown): value is SidecarUnavailableError {
   return value instanceof SidecarUnavailableError;
 }

@@ -79,8 +79,8 @@ export const MORNING_BRIEF_PENDING_SOURCES = ["Attio", "Vercel"] as const;
  * pipeline.
  */
 export const MORNING_BRIEF_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/granola-tools", version: "0.0.4" },
-  { name: "@corbits/linear-tools", version: "0.0.4" },
+  { name: "@corbits/granola-tools", version: "0.0.5" },
+  { name: "@corbits/linear-tools", version: "0.0.5" },
 ];
 
 /**
@@ -178,18 +178,12 @@ export interface MorningBriefWorkflowInput {
  * as packages on the deploy (`@corbits/granola-tools`,
  * `@corbits/linear-tools`), keeping the definition pure data.
  */
-export function buildMorningBriefWorkflow(
-  input: MorningBriefWorkflowInput,
-): WorkflowDefinition {
+export function buildMorningBriefWorkflow(input: MorningBriefWorkflowInput): WorkflowDefinition {
   if (input.triggerAddress === "") {
-    throw new Error(
-      "buildMorningBriefWorkflow requires a non-empty triggerAddress",
-    );
+    throw new Error("buildMorningBriefWorkflow requires a non-empty triggerAddress");
   }
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
-    throw new Error(
-      "buildMorningBriefWorkflow requires turnTimeoutMs to be a positive integer",
-    );
+    throw new Error("buildMorningBriefWorkflow requires turnTimeoutMs to be a positive integer");
   }
   return defineWorkflow({
     id: MORNING_BRIEF_WORKFLOW_ID,
@@ -221,9 +215,7 @@ export function buildMorningBriefWorkflow(
  * symbols, bigints, non-finite numbers, class instances — is a loud
  * error naming the offending path instead of a corrupted asset.
  */
-export function serializeMorningBriefWorkflow(
-  definition: WorkflowDefinition,
-): string {
+export function serializeMorningBriefWorkflow(definition: WorkflowDefinition): string {
   assertJsonPortable(definition, "definition");
   return JSON.stringify(definition);
 }
@@ -243,8 +235,7 @@ function assertJsonPortable(value: unknown, path: string): void {
       break;
     default:
       throw new Error(
-        `${path} is a ${typeof value}, which does not survive JSON ` +
-          "serialization",
+        `${path} is a ${typeof value}, which does not survive JSON ` + "serialization",
       );
   }
   if (Array.isArray(value)) {
@@ -255,9 +246,7 @@ function assertJsonPortable(value: unknown, path: string): void {
   }
   const proto: unknown = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) {
-    throw new Error(
-      `${path} is a non-plain object; JSON would flatten it lossily`,
-    );
+    throw new Error(`${path} is a non-plain object; JSON would flatten it lossily`);
   }
   for (const [key, entry] of Object.entries(value)) {
     assertJsonPortable(entry, `${path}.${key}`);

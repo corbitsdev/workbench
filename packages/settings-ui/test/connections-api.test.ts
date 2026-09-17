@@ -21,8 +21,7 @@ type RecordedCall = { readonly path: string; readonly init?: RequestInit };
 function stubFetch(respond: (path: string) => Response): RecordedCall[] {
   const calls: RecordedCall[] = [];
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const path =
-      typeof input === "string" ? input : new URL(String(input)).pathname;
+    const path = typeof input === "string" ? input : new URL(String(input)).pathname;
     calls.push(init === undefined ? { path } : { path, init });
     return Promise.resolve(respond(path));
   }) as typeof fetch;
@@ -37,34 +36,24 @@ const json = (body: unknown, status = 200) =>
 
 describe("fetchOAuthConfigured", () => {
   test("requests the tenant-scoped oauth-configured route and parses the map", async () => {
-    const calls = stubFetch(() =>
-      json({ openrouter: true, huggingface: false }),
-    );
+    const calls = stubFetch(() => json({ openrouter: true, huggingface: false }));
 
     const result = await fetchOAuthConfigured("tnt_1");
 
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tnt_1/connections/oauth-configured",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tnt_1/connections/oauth-configured");
     expect(result).toEqual({ openrouter: true, huggingface: false });
   });
 
   test("throws ConnectionsApiError on a malformed response", async () => {
     stubFetch(() => json({ openrouter: "not-a-boolean" }));
 
-    await expect(fetchOAuthConfigured("tnt_1")).rejects.toBeInstanceOf(
-      ConnectionsApiError,
-    );
+    await expect(fetchOAuthConfigured("tnt_1")).rejects.toBeInstanceOf(ConnectionsApiError);
   });
 
   test("throws ConnectionsApiError with the envelope message on a non-2xx", async () => {
-    stubFetch(() =>
-      json({ error: { code: "forbidden", message: "nope" } }, 403),
-    );
+    stubFetch(() => json({ error: { code: "forbidden", message: "nope" } }, 403));
 
-    await expect(fetchOAuthConfigured("tnt_1")).rejects.toBeInstanceOf(
-      ConnectionsApiError,
-    );
+    await expect(fetchOAuthConfigured("tnt_1")).rejects.toBeInstanceOf(ConnectionsApiError);
   });
 
   test("falls back to a path-free message when the body has no envelope", async () => {
@@ -84,22 +73,16 @@ describe("fetchOAuthConfigured", () => {
 
 describe("completeConnectorCredential", () => {
   test("posts the api key and returns the stored credential id", async () => {
-    const calls = stubFetch(() =>
-      json({ credentialId: "cred_1", status: "active" }, 200),
-    );
+    const calls = stubFetch(() => json({ credentialId: "cred_1", status: "active" }, 200));
     const result = await completeConnectorCredential("tnt_1", "granola", "key");
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tnt_1/connections/granola/complete",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tnt_1/connections/granola/complete");
     expect(result).toEqual({ credentialId: "cred_1", status: "active" });
   });
 
   // CL-6682: a key copied from a provider console often carries a
   // trailing newline; sent verbatim it 401s a perfectly valid key.
   test("strips leading/trailing whitespace from the pasted key", async () => {
-    const calls = stubFetch(() =>
-      json({ credentialId: "cred_1", status: "active" }, 200),
-    );
+    const calls = stubFetch(() => json({ credentialId: "cred_1", status: "active" }, 200));
     await completeConnectorCredential("tnt_1", "granola", " sk-good\n");
     const body = JSON.parse(String(calls[0]?.init?.body));
     expect(body).toEqual({ apiKey: "sk-good" });
@@ -120,9 +103,7 @@ describe("completeConnectorCredential", () => {
         422,
       ),
     );
-    await expect(
-      completeConnectorCredential("tnt_1", "granola", "key"),
-    ).rejects.toThrow("bad key");
+    await expect(completeConnectorCredential("tnt_1", "granola", "key")).rejects.toThrow("bad key");
   });
 });
 
@@ -130,9 +111,7 @@ describe("disconnectConnector", () => {
   test("DELETEs the connector's disconnect route", async () => {
     const calls = stubFetch(() => json(undefined, 204));
     await disconnectConnector("tnt_1", "granola");
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tnt_1/connections/granola/disconnect",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tnt_1/connections/granola/disconnect");
     expect(calls[0]?.init?.method).toBe("DELETE");
   });
 
@@ -149,8 +128,6 @@ describe("disconnectConnector", () => {
         500,
       ),
     );
-    await expect(disconnectConnector("tnt_1", "granola")).rejects.toThrow(
-      "try again",
-    );
+    await expect(disconnectConnector("tnt_1", "granola")).rejects.toThrow("try again");
   });
 });

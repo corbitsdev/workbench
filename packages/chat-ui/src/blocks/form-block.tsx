@@ -13,10 +13,7 @@ import type { FormBlockData } from "../wire/blocks";
 
 import { CHAT_STRINGS } from "../strings";
 import { BlockCard } from "./block-card";
-import type {
-  BlockResponseActions,
-  BlockResponseQuery,
-} from "./block-responses";
+import type { BlockResponseActions, BlockResponseQuery } from "./block-responses";
 
 type FieldValues = Readonly<Record<string, string>>;
 
@@ -33,17 +30,11 @@ function ownValues(query: BlockResponseQuery): FieldValues | null {
   return query.own.kind === "form" ? query.own.values : null;
 }
 
-function isBlank(
-  field: FormBlockData["fields"][number],
-  value: string,
-): boolean {
+function isBlank(field: FormBlockData["fields"][number], value: string): boolean {
   return field.input === "checkbox" ? value !== "true" : value.trim() === "";
 }
 
-function validate(
-  data: FormBlockData,
-  values: FieldValues,
-): Readonly<Record<string, string>> {
+function validate(data: FormBlockData, values: FieldValues): Readonly<Record<string, string>> {
   const errors: Record<string, string> = {};
   for (const field of data.fields) {
     if (field.required === true && isBlank(field, values[field.id] ?? "")) {
@@ -126,9 +117,7 @@ export function FormBlockView({
 }) {
   const [query, setQuery] = useState<BlockResponseQuery>({ kind: "loading" });
   const [values, setValues] = useState<FieldValues>(() => defaultValues(data));
-  const [fieldErrors, setFieldErrors] = useState<
-    Readonly<Record<string, string>>
-  >({});
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -193,9 +182,7 @@ export function FormBlockView({
     setValues((prev) => ({ ...prev, [fieldId]: value }));
     if (fieldErrors[fieldId] !== undefined) {
       setFieldErrors(
-        Object.fromEntries(
-          Object.entries(fieldErrors).filter(([id]) => id !== fieldId),
-        ),
+        Object.fromEntries(Object.entries(fieldErrors).filter(([id]) => id !== fieldId)),
       );
     }
   }
@@ -249,10 +236,7 @@ export function FormBlockView({
                 onChange={(value) => handleChange(field.id, value)}
               />
               {fieldErrors[field.id] !== undefined && (
-                <p
-                  className="chat-block-text chat-block-field-error"
-                  role="alert"
-                >
+                <p className="chat-block-text chat-block-field-error" role="alert">
                   {fieldErrors[field.id]}
                 </p>
               )}
@@ -267,17 +251,10 @@ export function FormBlockView({
         <div className="chat-block-actions">
           {locked ? (
             <>
-              <span
-                className="chat-block-form-submitted"
-                data-status="submitted"
-              >
+              <span className="chat-block-form-submitted" data-status="submitted">
                 {CHAT_STRINGS.blockFormSubmitted}
               </span>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setEditing(true)}
-              >
+              <Button type="button" variant="outline" onClick={() => setEditing(true)}>
                 {CHAT_STRINGS.blockFormEdit}
               </Button>
             </>

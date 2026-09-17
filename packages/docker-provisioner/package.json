@@ -1,8 +1,8 @@
 {
   "name": "@corbits/docker-provisioner",
+  "version": "0.0.1",
   "private": true,
   "description": "SidecarProvisioner plugin that runs sidecar containers with the local Docker CLI",
-  "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {

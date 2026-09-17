@@ -60,25 +60,13 @@ const NO_MESSAGES: readonly MessageItem[] = [];
 
 /** The three reads that make up one workbench's feed. They share a
  * prefix so a single `invalidateQueries` refreshes all of them. */
-export function chatFeedQueryKeyPrefix(
-  tenantId: string,
-  workbenchId: string | null,
-) {
+export function chatFeedQueryKeyPrefix(tenantId: string, workbenchId: string | null) {
   return ["chat", "feed", tenantId, workbenchId] as const;
 }
-export function chatMessagesQueryKey(
-  tenantId: string,
-  workbenchId: string | null,
-) {
-  return [
-    ...chatFeedQueryKeyPrefix(tenantId, workbenchId),
-    "messages",
-  ] as const;
+export function chatMessagesQueryKey(tenantId: string, workbenchId: string | null) {
+  return [...chatFeedQueryKeyPrefix(tenantId, workbenchId), "messages"] as const;
 }
-export function chatThreadsQueryKey(
-  tenantId: string,
-  workbenchId: string | null,
-) {
+export function chatThreadsQueryKey(tenantId: string, workbenchId: string | null) {
   return [...chatFeedQueryKeyPrefix(tenantId, workbenchId), "threads"] as const;
 }
 
@@ -224,11 +212,9 @@ export function useWorkbenchFeed(args: {
   // transient failure a retry could fix.
   const messagesError = messagesQuery.error;
   const isUnauthorized =
-    messagesError instanceof MailboxThreadFetchError &&
-    messagesError.status === 401;
+    messagesError instanceof MailboxThreadFetchError && messagesError.status === 401;
   const workbenchNotFound =
-    messagesError instanceof MailboxThreadFetchError &&
-    messagesError.status === 404;
+    messagesError instanceof MailboxThreadFetchError && messagesError.status === 404;
 
   // React Query keeps the last successful data through a failed refetch,
   // so a background failure leaves the timeline exactly as it was and
@@ -250,13 +236,7 @@ export function useWorkbenchFeed(args: {
       };
     }
     return { kind: "loading" };
-  }, [
-    activeWorkbenchId,
-    messagesQuery.data,
-    messagesError,
-    workbenchNotFound,
-    isUnauthorized,
-  ]);
+  }, [activeWorkbenchId, messagesQuery.data, messagesError, workbenchNotFound, isUnauthorized]);
 
   useEffect(() => {
     if (workbenchNotFound && activeWorkbenchId !== null) {
@@ -278,10 +258,7 @@ export function useWorkbenchFeed(args: {
     // window is the difference between ~40 requests per turn and ~2.
     const pending = refreshTimerRef.current;
     if (pending !== undefined) {
-      if (
-        pending.tenantId === tenantId &&
-        pending.workbenchId === activeWorkbenchId
-      ) {
+      if (pending.tenantId === tenantId && pending.workbenchId === activeWorkbenchId) {
         return;
       }
       // A timer scheduled for a workbench the reader has since left —

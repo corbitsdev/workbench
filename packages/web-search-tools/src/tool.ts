@@ -48,10 +48,7 @@ async function resolveWebSearchCredential(
   }
 }
 
-async function runWebSearch(
-  env: WebSearchEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runWebSearch(env: WebSearchEnv, call: ToolCall): Promise<ToolResult> {
   const credential = await resolveWebSearchCredential(env);
   if (credential === null) {
     return notConnectedResult(call.id);
@@ -66,12 +63,8 @@ async function runWebSearch(
   }
   const numResults = call.arguments["numResults"];
   try {
-    const params =
-      typeof numResults === "number" ? { query, numResults } : { query };
-    const results = await searchWeb(
-      { fetchImpl: credential.fetchImpl },
-      params,
-    );
+    const params = typeof numResults === "number" ? { query, numResults } : { query };
+    const results = await searchWeb({ fetchImpl: credential.fetchImpl }, params);
     return { callId: call.id, content: JSON.stringify({ results }) };
   } catch (err) {
     return {

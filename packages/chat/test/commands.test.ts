@@ -5,10 +5,7 @@
 // participant's handle, so an ordinary agent mention is untouched.
 import { describe, expect, test } from "bun:test";
 import { createChatRoutes } from "../src/routes";
-import {
-  createCommandRegistry,
-  createWorkflowCommandPlugin,
-} from "@corbits/commands";
+import { createCommandRegistry, createWorkflowCommandPlugin } from "@corbits/commands";
 import { createInMemoryAgentTurnStore } from "@corbits/agent-runtime";
 import { startWorkflowCommand } from "../src/workbench-service";
 import {
@@ -27,9 +24,9 @@ import {
  * commands are the tenant's invitable definitions, dispatching through
  * `startWorkflowCommand` against the same store/platform the routes use.
  */
-function buildWorkflowCommandDeps(
-  platform: ReturnType<typeof fakePlatform>,
-): ReturnType<typeof buildDeps> & {
+function buildWorkflowCommandDeps(platform: ReturnType<typeof fakePlatform>): ReturnType<
+  typeof buildDeps
+> & {
   agentTurns: ReturnType<typeof createInMemoryAgentTurnStore>;
 } {
   const registry = createCommandRegistry();
@@ -37,8 +34,7 @@ function buildWorkflowCommandDeps(
   const deps = buildDeps({ commands: registry, platform, agentTurns });
   registry.registerCommandPlugin(
     createWorkflowCommandPlugin({
-      listInvitableDefinitions: (tenantId) =>
-        platform.listInvitableDefinitions(tenantId),
+      listInvitableDefinitions: (tenantId) => platform.listInvitableDefinitions(tenantId),
       startWorkflow: (input) =>
         startWorkflowCommand(
           {
@@ -83,16 +79,13 @@ describe("workbench command dispatch", () => {
     };
     expect(body.command).toEqual({
       type: "message",
-      text:
-        "Unknown command: /nope. No agent commands are available in this " +
-        "workbench yet.",
+      text: "Unknown command: /nope. No agent commands are available in this " + "workbench yet.",
     });
 
     // Only the result reaches the timeline; the raw "/nope some args"
     // never does.
     expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual([
-      "Unknown command: /nope. No agent commands are available in this " +
-        "workbench yet.",
+      "Unknown command: /nope. No agent commands are available in this " + "workbench yet.",
     ]);
   });
 
@@ -108,9 +101,7 @@ describe("workbench command dispatch", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as Record<string, unknown>;
     expect(body["command"]).toBeUndefined();
-    expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual([
-      "/usr/local/bin",
-    ]);
+    expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual(["/usr/local/bin"]);
   });
 
   test("/<agent> invokes that agent directly with the rest of the line as its message — CL-6499", async () => {
@@ -123,11 +114,7 @@ describe("workbench command dispatch", () => {
       kind: "workbench",
     });
 
-    const response = await sendText(
-      app,
-      workbench.id,
-      "/jimmy throw me a gif for shipping code",
-    );
+    const response = await sendText(app, workbench.id, "/jimmy throw me a gif for shipping code");
     expect(response.status).toBe(201);
     const body = (await response.json()) as {
       command: { type: string; handle: string };
@@ -136,12 +123,8 @@ describe("workbench command dispatch", () => {
     expect(body.command.handle).toBe("jimmy");
     expect(platform.launchInviteCalls).toHaveLength(1);
 
-    const delivered = platform.sentMail.find(
-      (mail) => mail.workbenchId === "ins_invited1",
-    );
-    expect(delivered?.content.content).toContain(
-      "throw me a gif for shipping code",
-    );
+    const delivered = platform.sentMail.find((mail) => mail.workbenchId === "ins_invited1");
+    expect(delivered?.content.content).toContain("throw me a gif for shipping code");
   });
 
   test("a registered slash command runs its handler with the parsed args", async () => {
@@ -164,9 +147,7 @@ describe("workbench command dispatch", () => {
     const response = await sendText(app, workbench.id, "/greet world");
     expect(response.status).toBe(201);
     expect(seenArgs).toBe("world");
-    expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual([
-      "hi world",
-    ]);
+    expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual(["hi world"]);
   });
 
   test("an @mention of an existing agent participant keeps its ordinary fan-out, never the command path", async () => {
@@ -193,9 +174,7 @@ describe("workbench command dispatch", () => {
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     // The ordinary mention fan-out sent a copy to the participant.
-    expect(
-      platform.sentMail.some((mail) => mail.workbenchId === "ins_echo1"),
-    ).toBe(true);
+    expect(platform.sentMail.some((mail) => mail.workbenchId === "ins_echo1")).toBe(true);
   });
 
   test("an @name that resolves to a command (not a participant) dispatches instead of fanning out", async () => {
@@ -211,11 +190,7 @@ describe("workbench command dispatch", () => {
       kind: "workbench",
     });
 
-    const response = await sendText(
-      app,
-      workbench.id,
-      "@assistant do the thing",
-    );
+    const response = await sendText(app, workbench.id, "@assistant do the thing");
     expect(response.status).toBe(201);
     const body = (await response.json()) as {
       command: { type: string; text: string };
@@ -234,9 +209,7 @@ describe("workbench command dispatch", () => {
   // for the same participant.
   test("an @name naming an already-resident definition routes to the existing run, never a second one", async () => {
     const platform = fakePlatform({
-      invitable: [
-        { id: "wfd_assistant", name: "assistant", description: "Myra" },
-      ],
+      invitable: [{ id: "wfd_assistant", name: "assistant", description: "Myra" }],
       resolveDefinitionIdByAddress: async (address) =>
         address === "ins_invited1@acme.example" ? "wfd_assistant" : undefined,
     });
@@ -254,11 +227,7 @@ describe("workbench command dispatch", () => {
     expect(invite.status).toBe(201);
     expect(platform.launchInviteCalls).toHaveLength(1);
 
-    const response = await sendText(
-      app,
-      workbench.id,
-      "@assistant set up a sales workbench",
-    );
+    const response = await sendText(app, workbench.id, "@assistant set up a sales workbench");
     expect(response.status).toBe(201);
     const body = (await response.json()) as Record<string, unknown>;
     // Not a command dispatch: the message posts as an ordinary message.
@@ -267,9 +236,7 @@ describe("workbench command dispatch", () => {
     expect(platform.launchInviteCalls).toHaveLength(1);
 
     // The message reached the EXISTING participant's run...
-    const delivered = platform.sentMail.filter(
-      (mail) => mail.workbenchId === "ins_invited1",
-    );
+    const delivered = platform.sentMail.filter((mail) => mail.workbenchId === "ins_invited1");
     expect(delivered).toHaveLength(1);
     expect(delivered[0]?.content.content).toContain("set up a sales workbench");
     // ...through the ordinary turn pipeline: one turn row, on the same
@@ -330,9 +297,7 @@ describe("workbench command dispatch", () => {
 
   test("an @name for a definition NOT in the room still starts it as a command", async () => {
     const platform = fakePlatform({
-      invitable: [
-        { id: "wfd_assistant", name: "assistant", description: "Myra" },
-      ],
+      invitable: [{ id: "wfd_assistant", name: "assistant", description: "Myra" }],
     });
     const deps = buildWorkflowCommandDeps(platform);
     const app = mountAs(createChatRoutes(deps), "prn_alice");

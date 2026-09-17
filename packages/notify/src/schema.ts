@@ -21,15 +21,9 @@ export const notifyDispatch = notifySchema.table(
     }).notNull(),
     attempts: integer("attempts").notNull().default(0),
     lastError: text("last_error"),
-    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("notify_dispatch_due_idx").on(t.status, t.nextAttemptAt)],
 );

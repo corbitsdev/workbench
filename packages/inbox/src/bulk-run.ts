@@ -47,9 +47,7 @@ export async function runBulkOperation<T>(
       const extra = options?.extraFor?.(item) ?? options?.extra;
       reportError(error, {
         operation: options?.operation ?? "inbox.bulk",
-        ...(options?.tenantId !== undefined
-          ? { tenantId: options.tenantId }
-          : {}),
+        ...(options?.tenantId !== undefined ? { tenantId: options.tenantId } : {}),
         ...(extra !== undefined ? { extra } : {}),
       });
       options?.onError?.(item, error);

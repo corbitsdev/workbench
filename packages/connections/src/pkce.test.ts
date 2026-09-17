@@ -9,11 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
-import {
-  createConnectStateStore,
-  generatePKCEPair,
-  s256Challenge,
-} from "./pkce";
+import { createConnectStateStore, generatePKCEPair, s256Challenge } from "./pkce";
 
 // A stable 32-byte test key, standing in for `CREDENTIAL_ENCRYPTION_KEY`.
 // Two ciphers built from the same key bytes behave like one cipher
@@ -37,9 +33,9 @@ describe("generatePKCEPair", () => {
   });
 
   test("s256Challenge matches the RFC 7636 appendix vector", async () => {
-    expect(
-      await s256Challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
-    ).toBe("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+    expect(await s256Challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")).toBe(
+      "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+    );
   });
 
   test("every pair is fresh", async () => {
@@ -131,9 +127,7 @@ describe("createConnectStateStore", () => {
 
   test("an unknown state yields nothing", async () => {
     const store = verifierStore();
-    expect(
-      await store.consume({ state: "never-issued", userId: "user_1" }),
-    ).toBeUndefined();
+    expect(await store.consume({ state: "never-issued", userId: "user_1" })).toBeUndefined();
   });
 
   test("an expired state yields nothing", async () => {
@@ -165,9 +159,7 @@ describe("createConnectStateStore", () => {
       payload: { codeVerifier: "v1" },
     });
 
-    expect(
-      await huggingfaceStore.consume({ state, userId: "user_1" }),
-    ).toBeUndefined();
+    expect(await huggingfaceStore.consume({ state, userId: "user_1" })).toBeUndefined();
     // The rightful provider can still redeem it — the cross-provider
     // attempt didn't burn it (it never decrypted under that provider's
     // AAD in the first place).

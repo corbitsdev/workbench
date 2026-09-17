@@ -48,9 +48,7 @@ export function validateWorkflowProjection(projection: {
 }): void {
   const def = projection.definition;
   if (typeof def.id !== "string" || def.id.length === 0) {
-    throw new Error(
-      "sidecar deploy router: workflow.definition.id must be a non-empty string",
-    );
+    throw new Error("sidecar deploy router: workflow.definition.id must be a non-empty string");
   }
   if (!Array.isArray(def.stepOrder) || def.stepOrder.length === 0) {
     throw new Error(
@@ -58,14 +56,10 @@ export function validateWorkflowProjection(projection: {
     );
   }
   if (typeof def.steps !== "object" || def.steps === null) {
-    throw new Error(
-      "sidecar deploy router: workflow.definition.steps must be an object",
-    );
+    throw new Error("sidecar deploy router: workflow.definition.steps must be an object");
   }
   if (typeof projection.sources !== "object" || projection.sources === null) {
-    throw new Error(
-      "sidecar deploy router: workflow.sources must be an object",
-    );
+    throw new Error("sidecar deploy router: workflow.sources must be an object");
   }
   const steps = def.steps;
   const sources = projection.sources;
@@ -118,9 +112,7 @@ function canonicalJsonStringify(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map(canonicalJsonStringify).join(",")}]`;
   }
-  const entries = Object.entries(value).sort(([a], [b]) =>
-    a < b ? -1 : a > b ? 1 : 0,
-  );
+  const entries = Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return `{${entries
     .map(([k, v]) => `${JSON.stringify(k)}:${canonicalJsonStringify(v)}`)
     .join(",")}}`;
@@ -137,13 +129,8 @@ function canonicalJsonStringify(value: unknown): string {
  * round-trip the hub for a hash the orchestrator's hand-off task will
  * also derive deterministically from the same canonical form.
  */
-export async function computeWireDefinitionHash(
-  definition: unknown,
-): Promise<string> {
+export async function computeWireDefinitionHash(definition: unknown): Promise<string> {
   const canonical = canonicalJsonStringify(definition);
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(canonical),
-  );
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
   return hexEncode(new Uint8Array(digest));
 }

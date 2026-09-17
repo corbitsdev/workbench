@@ -39,9 +39,7 @@ describe("consumerTurnError", () => {
     expect(consumerTurnError(new ModelUnavailableError(cause))).toBe(
       MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
     );
-    expect(consumerTurnError(new Error("sidecar unavailable"))).toBe(
-      "sidecar unavailable",
-    );
+    expect(consumerTurnError(new Error("sidecar unavailable"))).toBe("sidecar unavailable");
   });
 });
 
@@ -49,11 +47,7 @@ describe("isModelUnavailableCause", () => {
   test("recognizes the wrapped and unwrapped resolution failures", () => {
     const cause = new InferenceResolutionError("launch", "no catalog source");
     expect(isModelUnavailableCause(cause)).toBe(true);
-    expect(isModelUnavailableCause(new ModelUnavailableError(cause))).toBe(
-      true,
-    );
-    expect(isModelUnavailableCause(new Error("sidecar unavailable"))).toBe(
-      false,
-    );
+    expect(isModelUnavailableCause(new ModelUnavailableError(cause))).toBe(true);
+    expect(isModelUnavailableCause(new Error("sidecar unavailable"))).toBe(false);
   });
 });

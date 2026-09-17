@@ -9,14 +9,10 @@
 import { type } from "arktype";
 import { reportError } from "@corbits/error-sink";
 
-import {
-  postExchangeRequest,
-  type OAuthExchangeFetch,
-} from "./oauth-exchange-fetch";
+import { postExchangeRequest, type OAuthExchangeFetch } from "./oauth-exchange-fetch";
 
 export const OPENROUTER_AUTH_URL = "https://openrouter.ai/auth";
-export const OPENROUTER_KEY_EXCHANGE_URL =
-  "https://openrouter.ai/api/v1/auth/keys";
+export const OPENROUTER_KEY_EXCHANGE_URL = "https://openrouter.ai/api/v1/auth/keys";
 
 /** OpenRouter authorization codes expire in 10 minutes; a pending
  * connect is worthless after that, so its state is too. */
@@ -42,9 +38,7 @@ export type ExchangeCodeForKeyArgs = {
  * the key — there is no path on which key material reaches a log line
  * or an error string.
  */
-export async function exchangeCodeForKey(
-  args: ExchangeCodeForKeyArgs,
-): Promise<ExchangeResult> {
+export async function exchangeCodeForKey(args: ExchangeCodeForKeyArgs): Promise<ExchangeResult> {
   const doFetch = args.fetchImpl ?? fetch;
   let response: Response;
   try {

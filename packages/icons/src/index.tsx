@@ -98,9 +98,5 @@ export const boldIconContextValue = { size: "1em", weight: "bold" } as const;
  * without repeating `weight="bold"` at each call site. Mounted once at each
  * app's root (see `apps/web/src/app.tsx`). */
 export function BoldIconProvider({ children }: { children: ReactNode }) {
-  return (
-    <IconContext.Provider value={boldIconContextValue}>
-      {children}
-    </IconContext.Provider>
-  );
+  return <IconContext.Provider value={boldIconContextValue}>{children}</IconContext.Provider>;
 }

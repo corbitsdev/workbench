@@ -1,32 +1,22 @@
 {
   "name": "@corbits/assistant-workflow",
-  "description": "Mail-triggered conversational workflow with a general-purpose assistant agent",
   "version": "0.0.2",
+  "description": "Mail-triggered conversational workflow with a general-purpose assistant agent",
   "license": "LGPL-2.1-or-later",
-  "type": "module",
-  "corbits": {
-    "workflow": {
-      "assetName": "assistant",
-      "displayName": "Myra",
-      "automatable": false
-    }
-  },
-  "interchange": {
-    "workflow": "./src/index.ts"
-  },
-  "exports": {
-    ".": "./src/index.ts",
-    "./prompt": "./src/prompt.ts"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "workflows/assistant"
   },
   "files": [
     "src",
     "LICENSE",
     "README.md"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "workflows/assistant"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./prompt": "./src/prompt.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -36,13 +26,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/catalog-tools": "0.1.0",
+    "@corbits/catalog-tools": "0.1.1",
     "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3"
-  },
-  "peerDependencies": {
-    "@intx/agent": "0.3.0",
-    "@intx/types": "0.3.0",
-    "@intx/workflow": "0.3.0"
   },
   "devDependencies": {
     "@corbits/agent-directory-tools": "workspace:*",
@@ -51,5 +36,20 @@
     "@corbits/interaction-tools": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0",
+    "@intx/workflow": "0.3.0"
+  },
+  "corbits": {
+    "workflow": {
+      "assetName": "assistant",
+      "displayName": "Myra",
+      "automatable": false
+    }
+  },
+  "interchange": {
+    "workflow": "./src/index.ts"
   }
 }

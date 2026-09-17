@@ -91,11 +91,9 @@ describe("isClassifiedInferenceFailureText", () => {
         "This agent could not complete your request due to an unrecoverable inference error [HTTP 402]: payment required",
       ),
     ).toBe(false);
-    expect(
-      isClassifiedInferenceFailureText(
-        "This agent's inference request was aborted",
-      ),
-    ).toBe(false);
+    expect(isClassifiedInferenceFailureText("This agent's inference request was aborted")).toBe(
+      false,
+    );
   });
 
   test("does not match an ordinary agent reply, even one that mentions credentials mid-sentence", () => {
@@ -104,8 +102,6 @@ describe("isClassifiedInferenceFailureText", () => {
         "I'd due to a credential error need your API key to continue.",
       ),
     ).toBe(false);
-    expect(
-      isClassifiedInferenceFailureText("Here are the results you asked for."),
-    ).toBe(false);
+    expect(isClassifiedInferenceFailureText("Here are the results you asked for.")).toBe(false);
   });
 });

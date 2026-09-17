@@ -68,13 +68,9 @@ test("buildNoResultsArtifactPayload honestly reports the attempt, missing connec
   });
   expect(payload.kind).toBe("status-note");
   expect(payload.title).toContain("https://example.com");
-  expect(payload.content).toContain(
-    'keyword "onboarding tool" in r/startups: unreachable',
-  );
+  expect(payload.content).toContain('keyword "onboarding tool" in r/startups: unreachable');
   expect(payload.content).toContain("scrapecreators");
-  expect(payload.content).toContain(
-    "Connect the ScrapeCreators connector, then re-run this scan.",
-  );
+  expect(payload.content).toContain("Connect the ScrapeCreators connector, then re-run this scan.");
 });
 
 test("buildNoResultsArtifactPayload is honest when no search was ever reachable", () => {
@@ -100,10 +96,9 @@ test("finalize persists every selected opportunity as a recognized batch result"
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => {
     call += 1;
-    return new Response(
-      JSON.stringify({ data: { id: `art_${call}`, version: 1 } }),
-      { status: 201 },
-    );
+    return new Response(JSON.stringify({ data: { id: `art_${call}`, version: 1 } }), {
+      status: 201,
+    });
   }) as unknown as typeof fetch;
 
   try {
@@ -156,10 +151,7 @@ test("finalize reports a partial failure honestly, naming how many opportunities
   globalThis.fetch = (async () => {
     call += 1;
     if (call === 1) {
-      return new Response(
-        JSON.stringify({ data: { id: "art_1", version: 1 } }),
-        { status: 201 },
-      );
+      return new Response(JSON.stringify({ data: { id: "art_1", version: 1 } }), { status: 201 });
     }
     return new Response("nope", { status: 500 });
   }) as unknown as typeof fetch;
@@ -269,12 +261,9 @@ test("the no-results report persists one honest teaching artifact on real invoca
         name: REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME,
         arguments: {
           targetUrl: "https://example.com",
-          attemptedSearches: [
-            'keyword "onboarding tool" in r/startups: unreachable',
-          ],
+          attemptedSearches: ['keyword "onboarding tool" in r/startups: unreachable'],
           missingConnectors: ["scrapecreators"],
-          nextSteps:
-            "Connect the ScrapeCreators connector, then re-run this scan.",
+          nextSteps: "Connect the ScrapeCreators connector, then re-run this scan.",
         },
       },
       new AbortController().signal,
@@ -297,8 +286,7 @@ test("the no-results report persists one honest teaching artifact on real invoca
 
 test("the no-results report surfaces a failed persist honestly", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
 
   try {
     const bundle = REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL(testEnv());

@@ -19,16 +19,13 @@ function diffed(before: string, after: string, limits = DEFAULT_DIFF_LIMITS) {
 function render(before: string, after: string): string[] {
   return diffed(before, after).lines.map((line: DiffLine) => {
     if (line.kind === "skipped") return `~${line.text}`;
-    const marker =
-      line.kind === "added" ? "+" : line.kind === "removed" ? "-" : " ";
+    const marker = line.kind === "added" ? "+" : line.kind === "removed" ? "-" : " ";
     return `${marker}${line.text}`;
   });
 }
 
 function lines(count: number, prefix = "line"): string {
-  return Array.from({ length: count }, (_, i) => `${prefix} ${String(i)}`).join(
-    "\n",
-  );
+  return Array.from({ length: count }, (_, i) => `${prefix} ${String(i)}`).join("\n");
 }
 
 describe("diffText", () => {
@@ -47,11 +44,7 @@ describe("diffText", () => {
   });
 
   test("an inserted line is the only change", () => {
-    expect(render("one\nthree", "one\ntwo\nthree")).toEqual([
-      " one",
-      "+two",
-      " three",
-    ]);
+    expect(render("one\nthree", "one\ntwo\nthree")).toEqual([" one", "+two", " three"]);
     expect(diffed("one\nthree", "one\ntwo\nthree").totals).toEqual({
       added: 1,
       removed: 0,
@@ -59,11 +52,7 @@ describe("diffText", () => {
   });
 
   test("a removed line is the only change", () => {
-    expect(render("one\ntwo\nthree", "one\nthree")).toEqual([
-      " one",
-      "-two",
-      " three",
-    ]);
+    expect(render("one\ntwo\nthree", "one\nthree")).toEqual([" one", "-two", " three"]);
   });
 
   test("line numbers point at each side's own revision", () => {
@@ -91,23 +80,14 @@ describe("diffText", () => {
   });
 
   test("a rewritten block reads as its removals then its additions", () => {
-    expect(render("a\nb\nc\nd", "a\nx\ny\nd")).toEqual([
-      " a",
-      "-b",
-      "-c",
-      "+x",
-      "+y",
-      " d",
-    ]);
+    expect(render("a\nb\nc\nd", "a\nx\ny\nd")).toEqual([" a", "-b", "-c", "+x", "+y", " d"]);
   });
 
   test("a moved line is not reported as unchanged in both places", () => {
     const diff = diffed("header\nbody", "body\nheader");
     expect(diff.totals.added).toBeGreaterThan(0);
     expect(diff.totals.removed).toBeGreaterThan(0);
-    expect(diff.lines.filter((line) => line.kind === "context")).toHaveLength(
-      1,
-    );
+    expect(diff.lines.filter((line) => line.kind === "context")).toHaveLength(1);
   });
 });
 

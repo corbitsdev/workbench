@@ -18,8 +18,7 @@ afterEach(() => {
   mountedRoots = [];
 });
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 function mountSection() {
   const container = document.createElement("div");
@@ -50,9 +49,7 @@ describe("McpServersSection", () => {
     const container = mountSection();
     await settle();
 
-    const disconnect = container.querySelector(
-      '[aria-label="Disconnect My Custom MCP"]',
-    );
+    const disconnect = container.querySelector('[aria-label="Disconnect My Custom MCP"]');
     expect(disconnect).not.toBeNull();
     expect(disconnect?.textContent?.trim()).toBe("Disconnect");
   });

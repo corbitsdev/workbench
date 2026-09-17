@@ -7,26 +7,14 @@
 // must import by package name from a staging directory where only its
 // declared dependencies are present. "Works in the repo" has to mean
 // "works when published".
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  renameSync,
-  rmSync,
-  symlinkSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Glob } from "bun";
 import { readFileSync } from "node:fs";
 import { collectExportTargets, declaredDependencyNames } from "./lib/exports";
 import { listVendoredPaths } from "./killdates";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 /** The tarball filename `bun pm pack` produces for a package. */
 export function tarballNameFor(name: string, version: string): string {
@@ -47,26 +35,19 @@ interface WorkspacePackage {
   packageJson: PackageJson;
 }
 
-async function listWorkspacePackages(
-  root: string,
-): Promise<WorkspacePackage[]> {
+async function listWorkspacePackages(root: string): Promise<WorkspacePackage[]> {
   const glob = new Glob("{apps,packages,tools,workflows}/*/package.json");
   const packages: WorkspacePackage[] = [];
   for await (const manifestPath of glob.scan(root)) {
     packages.push({
       dir: path.dirname(manifestPath),
-      packageJson: (await Bun.file(
-        path.join(root, manifestPath),
-      ).json()) as PackageJson,
+      packageJson: (await Bun.file(path.join(root, manifestPath)).json()) as PackageJson,
     });
   }
   return packages.sort((a, b) => a.dir.localeCompare(b.dir));
 }
 
-function run(
-  command: readonly string[],
-  cwd: string,
-): { ok: boolean; output: string } {
+function run(command: readonly string[], cwd: string): { ok: boolean; output: string } {
   const result = Bun.spawnSync([...command], { cwd, stderr: "pipe" });
   return {
     ok: result.exitCode === 0,
@@ -74,12 +55,7 @@ function run(
   };
 }
 
-function runScript(
-  pkg: WorkspacePackage,
-  script: string,
-  root: string,
-  report: CheckReport,
-): void {
+function runScript(pkg: WorkspacePackage, script: string, root: string, report: CheckReport): void {
   if (pkg.packageJson.scripts?.[script] === undefined) {
     report.notes.push(`${pkg.dir}: no ${script} script.`);
     return;
@@ -106,9 +82,7 @@ function linkDependency(
     path.join(root, "node_modules", dependency),
     workspaceDirs.get(dependency) ?? "",
   ];
-  const source = candidates.find(
-    (candidate) => candidate.length > 0 && existsSync(candidate),
-  );
+  const source = candidates.find((candidate) => candidate.length > 0 && existsSync(candidate));
   if (source === undefined) {
     return (
       `${pkg.dir}: declared dependency "${dependency}" is not ` +
@@ -138,22 +112,16 @@ function checkPackedConsumption(
   }
   const stage = mkdtempSync(path.join(tmpdir(), "check-packages-"));
   try {
-    const packResult = run(
-      ["bun", "pm", "pack", "--destination", stage],
-      path.join(root, pkg.dir),
-    );
+    const packResult = run(["bun", "pm", "pack", "--destination", stage], path.join(root, pkg.dir));
     if (!packResult.ok) {
-      report.violations.push(
-        `${pkg.dir}: bun pm pack failed.\n${packResult.output}`,
-      );
+      report.violations.push(`${pkg.dir}: bun pm pack failed.\n${packResult.output}`);
       return;
     }
     const tarball = path.join(stage, tarballNameFor(name, version));
     const extractResult = run(["tar", "-xzf", tarball, "-C", stage], stage);
     if (!extractResult.ok) {
       report.violations.push(
-        `${pkg.dir}: packed tarball could not be extracted.\n` +
-          extractResult.output,
+        `${pkg.dir}: packed tarball could not be extracted.\n` + extractResult.output,
       );
       return;
     }
@@ -186,10 +154,7 @@ function checkPackedConsumption(
     }
     if (broken) return;
 
-    const importResult = run(
-      ["bun", "-e", `await import(${JSON.stringify(name)});`],
-      stage,
-    );
+    const importResult = run(["bun", "-e", `await import(${JSON.stringify(name)});`], stage);
     if (!importResult.ok) {
       report.violations.push(
         `${pkg.dir}: the packed artifact does not import by name from ` +
@@ -260,9 +225,7 @@ async function main(): Promise<void> {
     runScript(pkg, "build", root, report);
     runScript(pkg, "test", root, report);
     if (pkg.packageJson.exports === undefined) {
-      report.notes.push(
-        `${pkg.dir}: no exports field; skipping packed-consumption check.`,
-      );
+      report.notes.push(`${pkg.dir}: no exports field; skipping packed-consumption check.`);
       continue;
     }
     checkPackedConsumption(pkg, root, workspaceDirs, report);
@@ -274,10 +237,8 @@ async function main(): Promise<void> {
   const ledgerPaths = existsSync(ledgerFile)
     ? vendoredLedgerPaths(readFileSync(ledgerFile, "utf8"))
     : [];
-  const ledgerReport = auditVendoredLedger(
-    listVendoredPaths(root),
-    ledgerPaths,
-    (ledgerPath) => existsSync(path.join(root, ledgerPath)),
+  const ledgerReport = auditVendoredLedger(listVendoredPaths(root), ledgerPaths, (ledgerPath) =>
+    existsSync(path.join(root, ledgerPath)),
   );
   report.violations.push(...ledgerReport.violations);
   reportAndExit("check:packages", report);

@@ -35,18 +35,14 @@ export type ActiveCredentialProbe =
  * so the caller treats it as the weaker check it is: only a confirmed
  * miss means "no key", never a probe failure (CL-6868).
  */
-export async function hasActiveCredential(
-  tenantId: string,
-): Promise<ActiveCredentialProbe> {
+export async function hasActiveCredential(tenantId: string): Promise<ActiveCredentialProbe> {
   try {
     const response = await fetch(`/api/tenants/${tenantId}/credentials`);
     if (!response.ok) return { kind: "error" };
     const body: unknown = await response.json().catch(() => null);
     const parsed = CredentialsPage(body);
     if (parsed instanceof type.errors) return { kind: "error" };
-    return parsed.data.some((c) => c.status === "active")
-      ? { kind: "active" }
-      : { kind: "none" };
+    return parsed.data.some((c) => c.status === "active") ? { kind: "active" } : { kind: "none" };
   } catch {
     return { kind: "error" };
   }
@@ -81,9 +77,7 @@ export type ProvisionOutcome =
 export async function triggerFirstLoginProvisioning(): Promise<ProvisionOutcome> {
   try {
     const owned = await findOwnedTenants(createFetchStockHub());
-    return owned.length === 0
-      ? { kind: "needs-onboarding" }
-      : { kind: "existing-member" };
+    return owned.length === 0 ? { kind: "needs-onboarding" } : { kind: "existing-member" };
   } catch (cause) {
     const refId = reportError(cause, { operation: "first_login_provisioning" });
     return { kind: "error", message: FALLBACK_ERROR_MESSAGE, refId };
@@ -137,9 +131,7 @@ export type AgentReadiness =
  * absence stays an explicit, testable outcome — a 404/410 answers
  * `route-gone`, never the generic agent error below.
  */
-export async function fetchAgentReadiness(
-  tenantId: string,
-): Promise<AgentReadiness> {
+export async function fetchAgentReadiness(tenantId: string): Promise<AgentReadiness> {
   try {
     const response = await fetch(
       `/api/onboarding/provisioning-status?${new URLSearchParams({ tenantId })}`,
@@ -159,12 +151,9 @@ export async function fetchAgentReadiness(
       throw new Error(`Agent readiness request failed (${response.status})`);
     }
     const parsed = ProvisioningStatus(body);
-    if (parsed instanceof type.errors)
-      throw new Error("Invalid agent readiness response");
+    if (parsed instanceof type.errors) throw new Error("Invalid agent readiness response");
     if (parsed.kind === "ready") return { kind: "ready" };
-    return parsed.setupAgentReady
-      ? { kind: "chat-ready" }
-      : { kind: "preparing" };
+    return parsed.setupAgentReady ? { kind: "chat-ready" } : { kind: "preparing" };
   } catch (cause) {
     const refId = reportError(cause, {
       operation: "agent_readiness",

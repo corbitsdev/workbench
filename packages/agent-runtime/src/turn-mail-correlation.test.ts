@@ -14,9 +14,7 @@ import {
 describe("mailIdFromBracketMessageId", () => {
   test("strips the MIME framing the reactor reports the bracket in", () => {
     expect(
-      mailIdFromBracketMessageId(
-        "<0f1e2d3c-4b5a-6789-abcd-ef0123456789@ten1.workbench.test>",
-      ),
+      mailIdFromBracketMessageId("<0f1e2d3c-4b5a-6789-abcd-ef0123456789@ten1.workbench.test>"),
     ).toBe("0f1e2d3c-4b5a-6789-abcd-ef0123456789");
   });
 
@@ -41,9 +39,7 @@ describe("createInMemoryTurnMailCorrelationStore", () => {
       sourceMessageId: "msg_1",
     });
 
-    expect(
-      await store.findTurnMailSource({ tenantId: "ten_1", mailId: "mail_1" }),
-    ).toEqual({
+    expect(await store.findTurnMailSource({ tenantId: "ten_1", mailId: "mail_1" })).toEqual({
       tenantId: "ten_1",
       workbenchId: "ins_workbench1",
       sourceMessageId: "msg_1",
@@ -52,9 +48,7 @@ describe("createInMemoryTurnMailCorrelationStore", () => {
 
   test("an unrecorded mail resolves to undefined, never a guess", async () => {
     const store = createInMemoryTurnMailCorrelationStore();
-    expect(
-      await store.findTurnMailSource({ tenantId: "ten_1", mailId: "mail_x" }),
-    ).toBeUndefined();
+    expect(await store.findTurnMailSource({ tenantId: "ten_1", mailId: "mail_x" })).toBeUndefined();
   });
 
   test("the same mail id under another tenant is a different correlation", async () => {
@@ -66,9 +60,7 @@ describe("createInMemoryTurnMailCorrelationStore", () => {
       sourceMessageId: "msg_1",
     });
 
-    expect(
-      await store.findTurnMailSource({ tenantId: "ten_2", mailId: "mail_1" }),
-    ).toBeUndefined();
+    expect(await store.findTurnMailSource({ tenantId: "ten_2", mailId: "mail_1" })).toBeUndefined();
   });
 
   test("a second record for the same mail keeps the first source", async () => {
@@ -86,8 +78,8 @@ describe("createInMemoryTurnMailCorrelationStore", () => {
       sourceMessageId: "msg_2",
     });
 
-    expect(
-      await store.findTurnMailSource({ tenantId: "ten_1", mailId: "mail_1" }),
-    ).toMatchObject({ sourceMessageId: "msg_1" });
+    expect(await store.findTurnMailSource({ tenantId: "ten_1", mailId: "mail_1" })).toMatchObject({
+      sourceMessageId: "msg_1",
+    });
   });
 });

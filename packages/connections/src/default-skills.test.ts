@@ -4,9 +4,7 @@ import { DEFAULT_SKILLS } from "./default-skills";
 
 describe("DEFAULT_SKILLS", () => {
   test("keeps the writing-system-prompts slug as the registry id", () => {
-    expect(DEFAULT_SKILLS.map((skill) => skill.name)).toContain(
-      "writing-system-prompts",
-    );
+    expect(DEFAULT_SKILLS.map((skill) => skill.name)).toContain("writing-system-prompts");
   });
 
   test("descriptions are person-facing — no lab or intern captions", () => {

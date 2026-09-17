@@ -31,9 +31,7 @@ export function resolveConcurrency(
   }
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error(
-      `${CONCURRENCY_ENV} must be a positive integer, got "${raw}"`,
-    );
+    throw new Error(`${CONCURRENCY_ENV} must be a positive integer, got "${raw}"`);
   }
   return parsed;
 }
@@ -70,30 +68,6 @@ async function discover(script: string): Promise<Job[]> {
   return jobs.toSorted((a, b) => a.name.localeCompare(b.name));
 }
 
-export type ShardSpec = { readonly index: number; readonly count: number };
-
-/** Parses a `--shard i/n` argument (1-based index, e.g. "1/3" is the
- * first of three shards). Throws with the raw value on anything else. */
-export function parseShardArg(raw: string): ShardSpec {
-  const match = /^(\d+)\/(\d+)$/.exec(raw);
-  if (match === null) {
-    throw new Error(`--shard must look like "i/n", got "${raw}"`);
-  }
-  const index = Number.parseInt(match[1] ?? "", 10);
-  const count = Number.parseInt(match[2] ?? "", 10);
-  if (count < 1 || index < 1 || index > count) {
-    throw new Error(`--shard "i/n" needs 1 <= i <= n, got "${raw}"`);
-  }
-  return { index: index - 1, count };
-}
-
-/** Round-robins the (stably ordered) job list across shards rather than
- * slicing it into contiguous runs, so a cluster of heavy packages next
- * to each other alphabetically doesn't all land in the same shard. */
-export function selectShard(jobs: readonly Job[], shard: ShardSpec): Job[] {
-  return jobs.filter((_job, i) => i % shard.count === shard.index);
-}
-
 // Output is captured and flushed as one block per package. Streaming it would
 // interleave the lines of every concurrent job, leaving a failure with no
 // reliable way to tell which package produced it.
@@ -112,37 +86,17 @@ async function runJob(job: Job, script: string): Promise<number> {
 
   const body = `${stdout}${stderr}`;
   const trailingNewline = body.endsWith("\n") || body.length === 0 ? "" : "\n";
-  process.stdout.write(
-    `--- ${job.name}: ${script} ---\n${body}${trailingNewline}`,
-  );
+  process.stdout.write(`--- ${job.name}: ${script} ---\n${body}${trailingNewline}`);
   return code;
 }
 
 if (import.meta.main) {
   const scriptArg = process.argv[2];
   if (!scriptArg) {
-    console.error(
-      "usage: bun run scripts/run-all.ts <script-name> [--shard i/n]",
-    );
+    console.error("usage: bun run scripts/run-all.ts <script-name>");
     process.exit(1);
   }
   const script: string = scriptArg;
-
-  const shardFlagIndex = process.argv.indexOf("--shard");
-  let shard: ShardSpec | undefined;
-  if (shardFlagIndex >= 0) {
-    const raw = process.argv[shardFlagIndex + 1];
-    if (raw === undefined) {
-      console.error('--shard requires an "i/n" argument');
-      process.exit(1);
-    }
-    try {
-      shard = parseShardArg(raw);
-    } catch (cause) {
-      console.error(cause instanceof Error ? cause.message : String(cause));
-      process.exit(1);
-    }
-  }
 
   let concurrency: number;
   try {
@@ -152,8 +106,7 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  const allJobs = await discover(script);
-  const jobs = shard === undefined ? allJobs : selectShard(allJobs, shard);
+  const jobs = await discover(script);
   if (jobs.length === 0) {
     console.log(`${script}: no workspace packages define it yet`);
     process.exit(0);
@@ -179,14 +132,10 @@ if (import.meta.main) {
     }
   }
 
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, jobs.length) }, () => worker()),
-  );
+  await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, () => worker()));
 
   if (failures.length > 0) {
-    console.error(
-      `${script} failed in ${failures.length} package(s): ${failures.join(", ")}`,
-    );
+    console.error(`${script} failed in ${failures.length} package(s): ${failures.join(", ")}`);
     process.exit(1);
   }
 }

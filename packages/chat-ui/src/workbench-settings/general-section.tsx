@@ -37,10 +37,7 @@ export function GeneralSection({
     <div className="workbench-settings-pane">
       <label className="chat-settings-field">
         <span>{CHAT_STRINGS.workbenchSettingsNameLabel}</span>
-        <Input
-          value={name}
-          onChange={(event) => onNameChange(event.target.value)}
-        />
+        <Input value={name} onChange={(event) => onNameChange(event.target.value)} />
       </label>
       <label className="chat-settings-field">
         <span>{CHAT_STRINGS.workbenchSettingsPurposeLabel}</span>
@@ -60,9 +57,7 @@ export function GeneralSection({
           label={CHAT_STRINGS.workbenchSettingsPinnedLabel}
         />
       </label>
-      <p className="chat-settings-field-hint">
-        {CHAT_STRINGS.workbenchSettingsPinnedDescription}
-      </p>
+      <p className="chat-settings-field-hint">{CHAT_STRINGS.workbenchSettingsPinnedDescription}</p>
       <div className="chat-settings-field">
         <span>{CHAT_STRINGS.workbenchSettingsContextWindowLabel}</span>
         <div

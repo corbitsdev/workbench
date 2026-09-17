@@ -14,10 +14,7 @@ import { WorkflowDefinitionDetail } from "@corbits/workflows/client";
 import type { WorkflowDefinitionDetail as WorkflowDefinitionDetailT } from "@corbits/workflows/client";
 
 export type { WorkflowDefinitionDetail as WorkflowDefinitionDetailT } from "@corbits/workflows/client";
-export {
-  workflowDetailPath,
-  workflowNotLaunchableReason,
-} from "@corbits/workflows/client";
+export { workflowDetailPath, workflowNotLaunchableReason } from "@corbits/workflows/client";
 
 const StockWorkflowDefinition = type({
   id: "string",
@@ -69,11 +66,7 @@ async function request<T>(path: string, schema: Validator<T>): Promise<T> {
   const body: unknown = await response.json().catch(() => undefined);
   const parsed = schema(body);
   if (parsed instanceof type.errors) {
-    throw new ApiQueryError(
-      `Unexpected response shape: ${parsed.summary}`,
-      undefined,
-      path,
-    );
+    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
   }
   return parsed;
 }

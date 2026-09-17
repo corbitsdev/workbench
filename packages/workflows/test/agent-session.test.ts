@@ -23,10 +23,7 @@ import { generateId } from "@intx/hub-common";
 import { resolveRunSessionId } from "@intx/hub-sessions";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 
-import {
-  ensureRunSession,
-  recordAgentSessionAtProvision,
-} from "../src/launch/agent-session";
+import { ensureRunSession, recordAgentSessionAtProvision } from "../src/launch/agent-session";
 
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
@@ -167,39 +164,23 @@ describeIfDb("recordAgentSessionAtProvision / ensureRunSession", () => {
 
   afterAll(async () => {
     if (databaseUrl === undefined) return;
-    await db.db
-      .delete(schema.agentSession)
-      .where(eq(schema.agentSession.id, sessionId));
+    await db.db.delete(schema.agentSession).where(eq(schema.agentSession.id, sessionId));
     await db.db
       .delete(schema.workflowRunLaunchSpec)
       .where(eq(schema.workflowRunLaunchSpec.anchorRunId, provisionedRunId));
-    await db.db
-      .delete(schema.workflowRun)
-      .where(eq(schema.workflowRun.id, provisionedRunId));
-    await db.db
-      .delete(schema.workflowRun)
-      .where(eq(schema.workflowRun.id, noLaunchSpecRunId));
-    await db.db
-      .delete(schema.agentSession)
-      .where(eq(schema.agentSession.id, apiDeployedSessionId));
+    await db.db.delete(schema.workflowRun).where(eq(schema.workflowRun.id, provisionedRunId));
+    await db.db.delete(schema.workflowRun).where(eq(schema.workflowRun.id, noLaunchSpecRunId));
+    await db.db.delete(schema.agentSession).where(eq(schema.agentSession.id, apiDeployedSessionId));
     await db.db
       .delete(schema.workflowRunLaunchSpec)
       .where(eq(schema.workflowRunLaunchSpec.anchorRunId, apiDeployedRunId));
-    await db.db
-      .delete(schema.workflowRun)
-      .where(eq(schema.workflowRun.id, apiDeployedRunId));
+    await db.db.delete(schema.workflowRun).where(eq(schema.workflowRun.id, apiDeployedRunId));
     await db.db
       .delete(schema.workflowDefinition)
       .where(eq(schema.workflowDefinition.id, definitionId));
-    await db.db
-      .delete(schema.principal)
-      .where(eq(schema.principal.id, runPrincipalId));
-    await db.db
-      .delete(schema.principal)
-      .where(eq(schema.principal.id, apiDeployedPrincipalId));
-    await db.db
-      .delete(schema.principal)
-      .where(eq(schema.principal.id, deployingPrincipalId));
+    await db.db.delete(schema.principal).where(eq(schema.principal.id, runPrincipalId));
+    await db.db.delete(schema.principal).where(eq(schema.principal.id, apiDeployedPrincipalId));
+    await db.db.delete(schema.principal).where(eq(schema.principal.id, deployingPrincipalId));
     await db.db.delete(schema.tenant).where(eq(schema.tenant.id, tenantId));
   });
 
@@ -285,12 +266,7 @@ describeIfDb("recordAgentSessionAtProvision / ensureRunSession", () => {
 
     expect(resolved).toBe(apiDeployedSessionId);
     expect(createCalls).toEqual([
-      [
-        `${apiDeployedRunId}@${domain}`,
-        tenantId,
-        apiDeployedSessionId,
-        apiDeployedRunId,
-      ],
+      [`${apiDeployedRunId}@${domain}`, tenantId, apiDeployedSessionId, apiDeployedRunId],
     ]);
 
     const sessionRow = await db.db.query.agentSession.findFirst({

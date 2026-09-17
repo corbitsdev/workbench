@@ -2,11 +2,7 @@ import { expect, test } from "bun:test";
 import type { ToolCall } from "@intx/types/runtime";
 import type { CredentialCapability, MediatedCredential } from "@intx/types";
 
-import {
-  REDDIT_SEARCH_TOOL,
-  REDDIT_SUBREDDIT_SEARCH_TOOL,
-  redditTools,
-} from "./tool";
+import { REDDIT_SEARCH_TOOL, REDDIT_SUBREDDIT_SEARCH_TOOL, redditTools } from "./tool";
 import type { RedditEnv } from "./tool";
 
 const SEARCH_CALL: ToolCall = {
@@ -32,9 +28,7 @@ function fakeCredentials(secret: string | undefined): CredentialCapability {
   return {
     resolve(handle: string): Promise<MediatedCredential> {
       if (secret === undefined) {
-        return Promise.reject(
-          new Error(`no credential is bound to handle "${handle}"`),
-        );
+        return Promise.reject(new Error(`no credential is bound to handle "${handle}"`));
       }
       return Promise.resolve({
         kind: "http",
@@ -70,10 +64,7 @@ test("degrades to a non-throwing 'not connected' error when no credential is bou
 
 test("degrades the same way when the step carries no credentials capability at all", async () => {
   const bundle = redditTools(fakeEnv(undefined));
-  const result = await bundle.run(
-    SUBREDDIT_SEARCH_CALL,
-    new AbortController().signal,
-  );
+  const result = await bundle.run(SUBREDDIT_SEARCH_CALL, new AbortController().signal);
   expect(result.isError).toBe(true);
   expect(result.content).toMatch(/not connected/i);
 });
@@ -105,9 +96,7 @@ test("rejects a subreddit search call with no subreddit, without throwing", asyn
 test("returns posts as JSON content on a successful search call", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
-    expect((init?.headers as Headers | undefined)?.get("x-api-key")).toBe(
-      "key",
-    );
+    expect((init?.headers as Headers | undefined)?.get("x-api-key")).toBe("key");
     return new Response(
       JSON.stringify({
         posts: [
@@ -149,14 +138,10 @@ test("returns posts as JSON content on a successful search call", async () => {
 
 test("degrades to an error result (never throws) when the underlying call fails", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
   try {
     const bundle = redditTools(fakeEnv(fakeCredentials("key")));
-    const result = await bundle.run(
-      SUBREDDIT_SEARCH_CALL,
-      new AbortController().signal,
-    );
+    const result = await bundle.run(SUBREDDIT_SEARCH_CALL, new AbortController().signal);
     expect(result.isError).toBe(true);
   } finally {
     globalThis.fetch = originalFetch;

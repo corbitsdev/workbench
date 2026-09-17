@@ -13,9 +13,7 @@ export function resolveConcurrency(): number {
   }
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error(
-      `${CONCURRENCY_ENV} must be a positive integer, got "${raw}"`,
-    );
+    throw new Error(`${CONCURRENCY_ENV} must be a positive integer, got "${raw}"`);
   }
   return parsed;
 }

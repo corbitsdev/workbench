@@ -2,11 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { ClientLogger } from "@corbits/client-log";
 
-import {
-  bootstrapClientSession,
-  logBootstrapResult,
-  logBootstrapThrown,
-} from "./client-bootstrap";
+import { bootstrapClientSession, logBootstrapResult, logBootstrapThrown } from "./client-bootstrap";
 import type { ClientBootstrapResult } from "./client-bootstrap";
 import type { StockHub } from "./needs-converge";
 
@@ -76,8 +72,7 @@ test("session bootstrap drives the portable client manifest", async () => {
     deployWorkflow: () => Promise.reject(new Error("unexpected deploy")),
     sendRunMail: () => Promise.reject(new Error("unexpected send")),
     listRunMail: () => Promise.resolve([]),
-    searchAgentMailbox: () =>
-      Promise.reject(new Error("unexpected mailbox search")),
+    searchAgentMailbox: () => Promise.reject(new Error("unexpected mailbox search")),
     readMailThread: () => Promise.reject(new Error("unexpected thread read")),
   };
 

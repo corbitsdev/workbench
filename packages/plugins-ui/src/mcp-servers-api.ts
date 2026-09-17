@@ -95,16 +95,11 @@ async function readError(
   };
 }
 
-async function readErrorMessage(
-  response: Response,
-  verb: string,
-): Promise<string> {
+async function readErrorMessage(response: Response, verb: string): Promise<string> {
   return (await readError(response, verb)).message;
 }
 
-export async function listMcpServers(
-  tenantId: string,
-): Promise<readonly McpServer[]> {
+export async function listMcpServers(tenantId: string): Promise<readonly McpServer[]> {
   const response = await fetch(mcpServersPath(tenantId));
   if (!response.ok) {
     throw new McpServersApiError(
@@ -151,9 +146,7 @@ export async function connectMcpServer(
   return parsed;
 }
 
-export async function listMcpPresets(
-  tenantId: string,
-): Promise<readonly McpPreset[]> {
+export async function listMcpPresets(tenantId: string): Promise<readonly McpPreset[]> {
   const response = await fetch(`${mcpServersPath(tenantId)}/presets`);
   if (!response.ok) {
     throw new McpServersApiError(
@@ -182,10 +175,7 @@ export async function connectMcpPreset(
     body: JSON.stringify({ presetSlug, token }),
   });
   if (!response.ok) {
-    const { message, code } = await readError(
-      response,
-      "connecting that MCP server",
-    );
+    const { message, code } = await readError(response, "connecting that MCP server");
     throw new McpServersApiError(message, response.status, code);
   }
   const body: unknown = await response.json().catch(() => undefined);
@@ -198,10 +188,7 @@ export async function connectMcpPreset(
   return parsed;
 }
 
-export async function disconnectMcpServer(
-  tenantId: string,
-  slug: string,
-): Promise<void> {
+export async function disconnectMcpServer(tenantId: string, slug: string): Promise<void> {
   const response = await fetch(`${mcpServersPath(tenantId)}/${slug}`, {
     method: "DELETE",
   });

@@ -24,15 +24,10 @@ export const CORBITS_TOOLS_REGISTRY = "corbits-tools";
  * registry itself, not one of the workspace `packages/*-tools` this
  * publisher packs.
  */
-export const REQUIRED_SEED_TOOL_PACKAGES = [
-  "@corbits/capability-tools",
-] as const;
+export const REQUIRED_SEED_TOOL_PACKAGES = ["@corbits/capability-tools"] as const;
 
 /** True when `filename` is an npm-style tarball for `packageName` (any version). */
-export function tarballCoversPackage(
-  filename: string,
-  packageName: string,
-): boolean {
+export function tarballCoversPackage(filename: string, packageName: string): boolean {
   const prefix = `${packageName.replace(/^@/, "").replace("/", "-")}-`;
   return filename.startsWith(prefix) && filename.endsWith(".tgz");
 }
@@ -43,9 +38,7 @@ export function tarballCoversPackage(
  * is the dangling-asset case (`GET tarballs` → `[]` after git init with
  * no commit).
  */
-export function tarballsCoverRequiredSeedPackages(
-  filenames: Iterable<string>,
-): boolean {
+export function tarballsCoverRequiredSeedPackages(filenames: Iterable<string>): boolean {
   const list = [...filenames];
   if (list.length === 0) return false;
   return REQUIRED_SEED_TOOL_PACKAGES.every((name) =>

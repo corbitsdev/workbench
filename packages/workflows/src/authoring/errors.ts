@@ -1,5 +1,9 @@
 export type WorkflowAuthorErrorReason =
-  "forbidden" | "not_found" | "conflict" | "invalid" | "unavailable";
+  | "forbidden"
+  | "not_found"
+  | "conflict"
+  | "invalid"
+  | "unavailable";
 
 export class WorkflowAuthorError extends Error {
   readonly reason: WorkflowAuthorErrorReason;

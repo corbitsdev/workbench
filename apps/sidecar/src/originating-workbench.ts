@@ -20,9 +20,7 @@ export const UNSCOPED_ORIGINATING_WORKBENCH_ID = "_unscoped";
  * Local-part of a From header value. Chat encodes the originating workbench
  * id there; anything else (empty, unparseable) is undefined.
  */
-export function extractOriginatingWorkbenchId(
-  from: string,
-): string | undefined {
+export function extractOriginatingWorkbenchId(from: string): string | undefined {
   if (from.trim() === "") return undefined;
   try {
     const spec = extractAddrSpec(from);
@@ -34,9 +32,7 @@ export function extractOriginatingWorkbenchId(
   }
 }
 
-export function resolveOriginatingWorkbenchId(
-  fromWorkbenchId: string | undefined,
-): string {
+export function resolveOriginatingWorkbenchId(fromWorkbenchId: string | undefined): string {
   return fromWorkbenchId !== undefined && fromWorkbenchId.length > 0
     ? fromWorkbenchId
     : UNSCOPED_ORIGINATING_WORKBENCH_ID;
@@ -52,7 +48,5 @@ export function originatingWorkbenchIdFromRequest(
 ): string | undefined {
   const delivered = req.resume === undefined ? req.input : req.resume.decision;
   if (!isMail(delivered)) return undefined;
-  return resolveOriginatingWorkbenchId(
-    extractOriginatingWorkbenchId(delivered.headers.from),
-  );
+  return resolveOriginatingWorkbenchId(extractOriginatingWorkbenchId(delivered.headers.from));
 }

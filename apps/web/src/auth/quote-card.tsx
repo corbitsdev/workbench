@@ -71,9 +71,7 @@ export function QuoteCard() {
   return (
     <div className="auth-quote-overlay">
       <div className="auth-quote-card">
-        <blockquote className="auth-quote-text">
-          &ldquo;{current.quote}&rdquo;
-        </blockquote>
+        <blockquote className="auth-quote-text">&ldquo;{current.quote}&rdquo;</blockquote>
         {current.author !== undefined && (
           <div className="auth-quote-attr">
             <div className="auth-quote-attr-rule" />

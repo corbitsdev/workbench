@@ -61,8 +61,7 @@ function mount(initialWorkbenchId: string) {
   const root = createRoot(container);
   const openThreadCalls: string[] = [];
   let setWorkbenchId: (id: string) => void = () => undefined;
-  let handleSend: (payload: ComposerSendPayload) => Promise<boolean> = () =>
-    Promise.resolve(false);
+  let handleSend: (payload: ComposerSendPayload) => Promise<boolean> = () => Promise.resolve(false);
 
   function Host() {
     const [workbenchId, updateWorkbenchId] = useState(initialWorkbenchId);
@@ -85,13 +84,7 @@ function mount(initialWorkbenchId: string) {
   }
 
   act(() => {
-    root.render(
-      createElement(
-        QueryClientProvider,
-        { client: queryClient },
-        createElement(Host),
-      ),
-    );
+    root.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Host)));
   });
 
   return {

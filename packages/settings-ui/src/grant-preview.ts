@@ -42,9 +42,7 @@ export function expiryIsoFromPreset(
   return new Date(now.getTime() + ms).toISOString();
 }
 
-export function expiryLabelFromPreset(
-  preset: "never" | "24h" | "7d" | "30d",
-): string | null {
+export function expiryLabelFromPreset(preset: "never" | "24h" | "7d" | "30d"): string | null {
   if (preset === "never") return null;
   if (preset === "24h") return "in 24 hours";
   if (preset === "7d") return "in 7 days";

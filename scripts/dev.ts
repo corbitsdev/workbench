@@ -81,9 +81,7 @@ function probePostgres(host: string, port: number): Promise<ProbeResult> {
       });
     });
     socket.once("error", () => settle("unreachable"));
-    socket.once("timeout", () =>
-      settle(connected ? "not-postgres" : "unreachable"),
-    );
+    socket.once("timeout", () => settle(connected ? "not-postgres" : "unreachable"));
   });
 }
 
@@ -95,9 +93,7 @@ async function requireDatabaseReachable(config: HubConfig): Promise<void> {
   // one family while an unrelated process holds the other — so every
   // reachable listener must answer as Postgres, not just one of them.
   const addresses = host === "localhost" ? ["127.0.0.1", "::1"] : [host];
-  const results = await Promise.all(
-    addresses.map((address) => probePostgres(address, port)),
-  );
+  const results = await Promise.all(addresses.map((address) => probePostgres(address, port)));
   const occupied = results.includes("not-postgres");
   const reachable = results.includes("postgres");
   if (reachable && !occupied) return;
@@ -168,11 +164,9 @@ const webApp: App = {
 };
 
 function requireApps(): void {
-  const missing = [
-    ...apps,
-    webApp,
-    { dir: join(repoRoot, "apps", "sidecar") },
-  ].filter((app) => !existsSync(join(app.dir, "package.json")));
+  const missing = [...apps, webApp, { dir: join(repoRoot, "apps", "sidecar") }].filter(
+    (app) => !existsSync(join(app.dir, "package.json")),
+  );
   if (missing.length === 0) return;
   fail(
     [
@@ -222,10 +216,7 @@ function webDistMtimeMs(staticDir: string): number | null {
 // Pure decision, unit-tested on its own: a dist bundle newer than every
 // file the build reads is already correct, so paying for another full
 // vite build before the hub can serve it would be pure waste.
-export function isWebBuildFresh(
-  latestSourceMtimeMs: number,
-  distMtimeMs: number | null,
-): boolean {
+export function isWebBuildFresh(latestSourceMtimeMs: number, distMtimeMs: number | null): boolean {
   return distMtimeMs !== null && distMtimeMs > latestSourceMtimeMs;
 }
 
@@ -268,11 +259,7 @@ interface RunningApp {
 // Apps can start at different times now (web may be deferred), so exits
 // are watched per-process as they're spawned rather than raced over a
 // fixed list gathered up front.
-function spawnApp(
-  app: App,
-  running: RunningApp[],
-  onExit: (app: App, code: number) => void,
-): void {
+function spawnApp(app: App, running: RunningApp[], onExit: (app: App, code: number) => void): void {
   const proc = Bun.spawn(app.command ?? ["bun", "run", "dev"], {
     cwd: app.dir,
     env: { ...process.env, ...app.env },
@@ -301,25 +288,21 @@ async function startApps(webFresh: boolean): Promise<never> {
 
   // Promise.resolve is idempotent, so the first process to exit — eager
   // or deferred — is the only one that determines the outcome here.
-  const firstExit = await new Promise<{ app: App; code: number }>(
-    (resolveExit) => {
-      const onExit = (app: App, code: number) => resolveExit({ app, code });
-      for (const app of apps) spawnApp(app, running, onExit);
-      if (webFresh) {
-        console.log(
-          "[dev] the web bundle is newer than every file the build reads; " +
-            "deferring the rebuild watcher until a source file changes",
-        );
-        watchOnce(webWatchedPaths, () => spawnApp(webApp, running, onExit));
-      } else {
-        spawnApp(webApp, running, onExit);
-      }
-    },
-  );
+  const firstExit = await new Promise<{ app: App; code: number }>((resolveExit) => {
+    const onExit = (app: App, code: number) => resolveExit({ app, code });
+    for (const app of apps) spawnApp(app, running, onExit);
+    if (webFresh) {
+      console.log(
+        "[dev] the web bundle is newer than every file the build reads; " +
+          "deferring the rebuild watcher until a source file changes",
+      );
+      watchOnce(webWatchedPaths, () => spawnApp(webApp, running, onExit));
+    } else {
+      spawnApp(webApp, running, onExit);
+    }
+  });
   stopAll();
-  fail(
-    `${firstExit.app.label} exited with code ${firstExit.code}; stopping the other apps.`,
-  );
+  fail(`${firstExit.app.label} exited with code ${firstExit.code}; stopping the other apps.`);
 }
 
 // Bring the database's schema current before the apps boot: creates
@@ -337,9 +320,7 @@ async function requireDatabaseSetUp(config: HubConfig): Promise<void> {
           `${JSON.stringify(report.database)}`,
       );
     } else {
-      console.log(
-        `[dev] database ${JSON.stringify(report.database)} schema is current`,
-      );
+      console.log(`[dev] database ${JSON.stringify(report.database)} schema is current`);
     }
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
@@ -434,9 +415,7 @@ async function seedDevAccount(config: HubConfig): Promise<void> {
 // up front instead.
 async function requireHubPortFree(config: HubConfig): Promise<void> {
   const base = new URL(config.baseUrl);
-  const port = Number(
-    base.port === "" ? (base.protocol === "https:" ? "443" : "80") : base.port,
-  );
+  const port = Number(base.port === "" ? (base.protocol === "https:" ? "443" : "80") : base.port);
   const occupied = await new Promise<boolean>((resolvePort) => {
     const socket = createConnection({
       host: base.hostname,
@@ -475,14 +454,8 @@ if (import.meta.main) {
   await requireDatabaseReachable(config);
   await requireDatabaseSetUp(config);
   requireApps();
-  const hubStaticDir = resolve(
-    join(repoRoot, "apps", "hub"),
-    config.hubStaticDir,
-  );
-  const webFresh = isWebBuildFresh(
-    await latestWebSourceMtimeMs(),
-    webDistMtimeMs(hubStaticDir),
-  );
+  const hubStaticDir = resolve(join(repoRoot, "apps", "hub"), config.hubStaticDir);
+  const webFresh = isWebBuildFresh(await latestWebSourceMtimeMs(), webDistMtimeMs(hubStaticDir));
   void seedDevAccount(config);
   await startApps(webFresh);
 }

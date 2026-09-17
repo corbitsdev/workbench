@@ -14,9 +14,7 @@ const ResolvedCredential = type({
 
 /** True when Granola is connected (or needs attention) for `tenantId`. A
  * missing, revoked, or unreadable credential is not offerable. */
-export async function fetchGranolaPluginConnected(
-  tenantId: string,
-): Promise<boolean> {
+export async function fetchGranolaPluginConnected(tenantId: string): Promise<boolean> {
   const response = await fetch(
     `/api/tenants/${tenantId}/credentials/resolve/${encodeURIComponent("Granola")}`,
     { headers: { accept: "application/json" } },
@@ -28,11 +26,7 @@ export async function fetchGranolaPluginConnected(
   if (parsed instanceof type.errors) return false;
   // Revoked reads as not connected — same rule as
   // `@corbits/connections/plugins`' resolveOne.
-  return (
-    parsed.status === "active" ||
-    parsed.status === "expired" ||
-    parsed.status === "error"
-  );
+  return parsed.status === "active" || parsed.status === "expired" || parsed.status === "error";
 }
 
 /** Absent (still fetching) never claims Granola is connected — the trigger

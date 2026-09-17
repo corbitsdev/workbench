@@ -3,10 +3,7 @@
 // `createDefaultAgentWorkbench`; this file's job is to name Myra as the
 // configured agent and wire it to this app's agent-definitions fetch.
 
-import {
-  createDefaultAgentWorkbench,
-  findDefinitionByAssetName,
-} from "@corbits/chat-ui";
+import { createDefaultAgentWorkbench, findDefinitionByAssetName } from "@corbits/chat-ui";
 import { WORKFLOW_CATALOG } from "@corbits/workflows/catalog";
 
 import { listAgentDefinitions, type AgentDefinition } from "./agents-api";

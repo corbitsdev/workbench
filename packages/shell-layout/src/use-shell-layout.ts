@@ -25,8 +25,7 @@ export function useShellLayoutMode(): ShellLayoutMode {
   useEffect(() => {
     const narrow = window.matchMedia(NARROW_QUERY);
     const compact = window.matchMedia(COMPACT_QUERY);
-    const sync = () =>
-      setMode(shellLayoutModeFromMatches(narrow.matches, compact.matches));
+    const sync = () => setMode(shellLayoutModeFromMatches(narrow.matches, compact.matches));
     sync();
     narrow.addEventListener("change", sync);
     compact.addEventListener("change", sync);

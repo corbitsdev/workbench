@@ -21,12 +21,7 @@
 // missed. List-only was never an option: the surviving call site is a get,
 // and the check treats each variant on its own terms.
 import { readFileSync } from "node:fs";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 export type SourceFile = {
   readonly relPath: string;
@@ -40,12 +35,9 @@ export type SourceFile = {
 const COMMAND_GUARD_MARKER = "workbenchBelongsToTenant";
 
 /** The brief's done-when rg, per line, case-insensitive. */
-const DONE_WHEN_PATTERN =
-  /workbench-settings|\/workbenches.*github|github.*workbench/i;
+const DONE_WHEN_PATTERN = /workbench-settings|\/workbenches.*github|github.*workbench/i;
 
-export function auditHubWorkbenchRoutes(
-  files: readonly SourceFile[],
-): CheckReport {
+export function auditHubWorkbenchRoutes(files: readonly SourceFile[]): CheckReport {
   const report = emptyReport();
   for (const file of files) {
     if (file.relPath !== "apps/hub/src/index.ts") continue;
@@ -70,8 +62,7 @@ export function auditHubWorkbenchRoutes(
       offset += line.length + 1;
       if (DONE_WHEN_PATTERN.test(line)) {
         report.violations.push(
-          `${file.relPath}:${lineNumber}: ` +
-            `matches the hub-zero done-when rg: ${line.trim()}`,
+          `${file.relPath}:${lineNumber}: ` + `matches the hub-zero done-when rg: ${line.trim()}`,
         );
       }
     }

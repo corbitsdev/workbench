@@ -38,10 +38,7 @@ import {
 } from "../shell/provider-health-context";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { createSkill, listSkills, type SkillSummary } from "../skills-api";
-import {
-  CreateSkillDialog,
-  type SkillCreateInput,
-} from "./create-skill-dialog";
+import { CreateSkillDialog, type SkillCreateInput } from "./create-skill-dialog";
 
 type PluginsState =
   | { readonly status: "loading" }
@@ -87,9 +84,7 @@ export function PluginsRoute({
   // A preset deep link's slug (CL-7141), passed to the MCP presets
   // section so it can focus that preset's own card once its catalog
   // has loaded — cleared as soon as the section has acted on it.
-  const [autoConnectPresetSlug, setAutoConnectPresetSlug] = useState<
-    string | null
-  >(null);
+  const [autoConnectPresetSlug, setAutoConnectPresetSlug] = useState<string | null>(null);
   const pendingConnectProvider = usePendingConnectProvider();
   const clearPendingConnectProvider = useClearPendingConnectProvider();
   const requestPluginsConnect = useRequestPluginsConnect();
@@ -131,8 +126,7 @@ export function PluginsRoute({
         if (!cancelled) setPluginsState({ status: "ready", plugins });
       })
       .catch((cause: unknown) => {
-        if (!cancelled)
-          setPluginsState({ status: "error", message: messageOf(cause) });
+        if (!cancelled) setPluginsState({ status: "error", message: messageOf(cause) });
       });
     return () => {
       cancelled = true;
@@ -181,8 +175,7 @@ export function PluginsRoute({
         if (!cancelled) setSkillsState({ status: "ready", skills });
       })
       .catch((cause: unknown) => {
-        if (!cancelled)
-          setSkillsState({ status: "error", message: messageOf(cause) });
+        if (!cancelled) setSkillsState({ status: "error", message: messageOf(cause) });
       });
     return () => {
       cancelled = true;
@@ -205,12 +198,7 @@ export function PluginsRoute({
       setConnectDeepLinkNotFound(true);
     }
     clearPendingConnectProvider();
-  }, [
-    pluginsState,
-    pendingConnectProvider,
-    clearPendingConnectProvider,
-    openPluginPanel,
-  ]);
+  }, [pluginsState, pendingConnectProvider, clearPendingConnectProvider, openPluginPanel]);
 
   // `request_connection`'s fallback link (CL-7141): `/plugins?connect=<id>`
   // hands the connector id off through the same `requestPluginsConnect`
@@ -232,9 +220,7 @@ export function PluginsRoute({
     window.history.replaceState(
       null,
       "",
-      rest === ""
-        ? window.location.pathname
-        : `${window.location.pathname}?${rest}`,
+      rest === "" ? window.location.pathname : `${window.location.pathname}?${rest}`,
     );
     if (connectId.startsWith("mcp:")) {
       const slug = connectId.slice("mcp:".length);

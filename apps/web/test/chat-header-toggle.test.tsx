@@ -103,9 +103,7 @@ describe("ChatWorkspace headerLeading", () => {
     });
     const header = container.querySelector(".chat-workbench-header");
     if (header === null) throw new Error("bare header not rendered");
-    expect(
-      header.querySelector('button[aria-label="Toggle sidebar"]'),
-    ).not.toBeNull();
+    expect(header.querySelector('button[aria-label="Toggle sidebar"]')).not.toBeNull();
   });
 
   test("an active workbench renders the toggle first in the workbench header", async () => {

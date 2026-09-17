@@ -10,10 +10,7 @@ import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import {
-  chatFeedQueryKeyPrefix,
-  useWorkbenchFeed,
-} from "../src/use-workbench-feed";
+import { chatFeedQueryKeyPrefix, useWorkbenchFeed } from "../src/use-workbench-feed";
 
 const realFetch = globalThis.fetch;
 
@@ -67,13 +64,7 @@ function mount(tenantId: string, initialWorkbenchId: string) {
   }
 
   act(() => {
-    root.render(
-      createElement(
-        QueryClientProvider,
-        { client: queryClient },
-        createElement(Host),
-      ),
-    );
+    root.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Host)));
   });
 
   return {
@@ -103,9 +94,7 @@ describe("useWorkbenchFeed — refresh timer scoping across a workbench switch (
 
     await harness.settle(400);
 
-    expect(harness.invalidateCalls()).toEqual([
-      chatFeedQueryKeyPrefix("ten_1", "ch_b"),
-    ]);
+    expect(harness.invalidateCalls()).toEqual([chatFeedQueryKeyPrefix("ten_1", "ch_b")]);
     harness.unmount();
   });
 
@@ -120,9 +109,7 @@ describe("useWorkbenchFeed — refresh timer scoping across a workbench switch (
 
     await harness.settle(400);
 
-    expect(harness.invalidateCalls()).toEqual([
-      chatFeedQueryKeyPrefix("ten_1", "ch_a"),
-    ]);
+    expect(harness.invalidateCalls()).toEqual([chatFeedQueryKeyPrefix("ten_1", "ch_a")]);
     harness.unmount();
   });
 });

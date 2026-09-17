@@ -29,9 +29,7 @@ const INPUT = {
 function morningBriefStep(definition: WorkflowDefinition): StepPrimitive {
   const primitive = definition.steps[MORNING_BRIEF_STEP_ID];
   if (primitive === undefined || primitive.kind !== "step") {
-    throw new Error(
-      `definition has no step primitive named ${MORNING_BRIEF_STEP_ID}`,
-    );
+    throw new Error(`definition has no step primitive named ${MORNING_BRIEF_STEP_ID}`);
   }
   return primitive;
 }
@@ -50,9 +48,7 @@ test("the step carries an explicit per-turn timeout", () => {
 test("the workflow is triggered by mail to the given deployment address", () => {
   const definition = buildMorningBriefWorkflow(INPUT);
   expect(definition.id).toBe(MORNING_BRIEF_WORKFLOW_ID);
-  expect(definition.triggers).toEqual([
-    { type: "mail", to: INPUT.triggerAddress },
-  ]);
+  expect(definition.triggers).toEqual([{ type: "mail", to: INPUT.triggerAddress }]);
 });
 
 test("the agent carries the fixed prompt, the preferences, and inlines no tools", () => {
@@ -68,8 +64,8 @@ test("the agent pins the wired sources' tool packages by name and version", () =
   const agent = morningBriefStep(buildMorningBriefWorkflow(INPUT)).agent;
   expect(agent.toolPackagePins).toEqual([...MORNING_BRIEF_TOOL_PACKAGE_PINS]);
   expect(MORNING_BRIEF_TOOL_PACKAGE_PINS).toEqual([
-    { name: "@corbits/granola-tools", version: "0.0.4" },
-    { name: "@corbits/linear-tools", version: "0.0.4" },
+    { name: "@corbits/granola-tools", version: "0.0.5" },
+    { name: "@corbits/linear-tools", version: "0.0.5" },
   ]);
 });
 
@@ -99,38 +95,28 @@ test("the prompt instructs honest degradation for every wired and pending source
 });
 
 test("the prompt requires an honest failure state when nothing is connected", () => {
-  expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(
-    /no connected sources to report from today/,
-  );
+  expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(/no connected sources to report from today/);
 });
 
 test("the prompt names the exact approval-gated finalize tool", () => {
-  expect(MORNING_BRIEF_SYSTEM_PROMPT).toContain(
-    MORNING_BRIEF_FINALIZE_TOOL_NAME,
-  );
+  expect(MORNING_BRIEF_SYSTEM_PROMPT).toContain(MORNING_BRIEF_FINALIZE_TOOL_NAME);
 });
 
 test("the prompt commits to always finalizing, even with a teaching payload on the no-data path", () => {
   expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(/teaching/i);
-  expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(
-    /never end a run without finalizing/i,
-  );
+  expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(/never end a run without finalizing/i);
   expect(MORNING_BRIEF_SYSTEM_PROMPT).toContain("granola");
   expect(MORNING_BRIEF_SYSTEM_PROMPT).toContain("linear");
 });
 
 test("the prompt commits to a calm terminal reply on denial, not an error", () => {
   expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(/not approved/i);
-  expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(
-    /never present a denial as an error/i,
-  );
+  expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(/never present a denial as an error/i);
 });
 
 test("the definition binds @corbits/granola-tools' and @corbits/linear-tools' declared handles to their tenant-owned credentials", () => {
   const definition = buildMorningBriefWorkflow(INPUT);
-  expect(definition.credentialBindings).toEqual([
-    ...MORNING_BRIEF_CREDENTIAL_BINDINGS,
-  ]);
+  expect(definition.credentialBindings).toEqual([...MORNING_BRIEF_CREDENTIAL_BINDINGS]);
   expect(MORNING_BRIEF_CREDENTIAL_BINDINGS).toEqual([
     {
       package: "@corbits/granola-tools",
@@ -149,9 +135,7 @@ test("the definition binds @corbits/granola-tools' and @corbits/linear-tools' de
 
 test("the definition survives the workflow-asset JSON round-trip", () => {
   const definition = buildMorningBriefWorkflow(INPUT);
-  const revived: unknown = JSON.parse(
-    serializeMorningBriefWorkflow(definition),
-  );
+  const revived: unknown = JSON.parse(serializeMorningBriefWorkflow(definition));
   expect(revived).toEqual(definition);
 });
 
@@ -181,16 +165,14 @@ test("serialization fails loud on a function-valued field, naming its path", () 
 });
 
 test("an empty trigger address is rejected", () => {
-  expect(() =>
-    buildMorningBriefWorkflow({ ...INPUT, triggerAddress: "" }),
-  ).toThrow(/triggerAddress/);
+  expect(() => buildMorningBriefWorkflow({ ...INPUT, triggerAddress: "" })).toThrow(
+    /triggerAddress/,
+  );
 });
 
 test("a non-positive or fractional turn timeout is rejected", () => {
-  expect(() =>
-    buildMorningBriefWorkflow({ ...INPUT, turnTimeoutMs: 0 }),
-  ).toThrow(/turnTimeoutMs/);
-  expect(() =>
-    buildMorningBriefWorkflow({ ...INPUT, turnTimeoutMs: 0.5 }),
-  ).toThrow(/turnTimeoutMs/);
+  expect(() => buildMorningBriefWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(/turnTimeoutMs/);
+  expect(() => buildMorningBriefWorkflow({ ...INPUT, turnTimeoutMs: 0.5 })).toThrow(
+    /turnTimeoutMs/,
+  );
 });

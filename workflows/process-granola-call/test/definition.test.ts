@@ -26,9 +26,7 @@ const INPUT = {
 function processStep(definition: WorkflowDefinition): StepPrimitive {
   const primitive = definition.steps[PROCESS_GRANOLA_CALL_STEP_ID];
   if (primitive === undefined || primitive.kind !== "step") {
-    throw new Error(
-      `definition has no step primitive named ${PROCESS_GRANOLA_CALL_STEP_ID}`,
-    );
+    throw new Error(`definition has no step primitive named ${PROCESS_GRANOLA_CALL_STEP_ID}`);
   }
   return primitive;
 }
@@ -47,9 +45,7 @@ test("the step carries an explicit per-turn timeout", () => {
 test("the workflow is triggered by mail to the given deployment address", () => {
   const definition = buildProcessGranolaCallWorkflow(INPUT);
   expect(definition.id).toBe(PROCESS_GRANOLA_CALL_WORKFLOW_ID);
-  expect(definition.triggers).toEqual([
-    { type: "mail", to: INPUT.triggerAddress },
-  ]);
+  expect(definition.triggers).toEqual([{ type: "mail", to: INPUT.triggerAddress }]);
 });
 
 test("the agent instructs the five-section extraction, carries the preferences, and inlines no tools", () => {
@@ -57,24 +53,16 @@ test("the agent instructs the five-section extraction, carries the preferences, 
   expect(agent.systemPrompt).toBe(PROCESS_GRANOLA_CALL_SYSTEM_PROMPT);
   expect(agent.inference.sources).toEqual([...INPUT.inferencePreferences]);
   expect(agent.toolFactories).toEqual([]);
-  for (const section of [
-    "Participants",
-    "Summary",
-    "Pain points",
-    "Decisions",
-    "Action items",
-  ]) {
+  for (const section of ["Participants", "Summary", "Pain points", "Decisions", "Action items"]) {
     expect(PROCESS_GRANOLA_CALL_SYSTEM_PROMPT).toContain(section);
   }
 });
 
 test("the agent pins @corbits/granola-tools by name and version", () => {
   const agent = processStep(buildProcessGranolaCallWorkflow(INPUT)).agent;
-  expect(agent.toolPackagePins).toEqual([
-    ...PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS,
-  ]);
+  expect(agent.toolPackagePins).toEqual([...PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS]);
   expect(PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS).toEqual([
-    { name: "@corbits/granola-tools", version: "0.0.4" },
+    { name: "@corbits/granola-tools", version: "0.0.5" },
   ]);
 });
 
@@ -85,9 +73,7 @@ test("the system prompt commits to an honest failure instead of a fabricated doc
 });
 
 test("the system prompt names the finalize tool for both the notes and no-data cases", () => {
-  expect(PROCESS_GRANOLA_CALL_SYSTEM_PROMPT).toContain(
-    PROCESS_GRANOLA_CALL_FINALIZE_TOOL_NAME,
-  );
+  expect(PROCESS_GRANOLA_CALL_SYSTEM_PROMPT).toContain(PROCESS_GRANOLA_CALL_FINALIZE_TOOL_NAME);
   expect(PROCESS_GRANOLA_CALL_SYSTEM_PROMPT).toContain('status: "notes"');
   expect(PROCESS_GRANOLA_CALL_SYSTEM_PROMPT).toContain('status: "no-data"');
 });
@@ -100,9 +86,7 @@ test("the no-data path still teaches the human what to check next, not a bare fa
 
 test("the definition binds @corbits/granola-tools' declared handle to a tenant-owned granola credential", () => {
   const definition = buildProcessGranolaCallWorkflow(INPUT);
-  expect(definition.credentialBindings).toEqual([
-    ...PROCESS_GRANOLA_CALL_CREDENTIAL_BINDINGS,
-  ]);
+  expect(definition.credentialBindings).toEqual([...PROCESS_GRANOLA_CALL_CREDENTIAL_BINDINGS]);
   expect(PROCESS_GRANOLA_CALL_CREDENTIAL_BINDINGS).toEqual([
     {
       package: "@corbits/granola-tools",
@@ -115,9 +99,7 @@ test("the definition binds @corbits/granola-tools' declared handle to a tenant-o
 
 test("the definition survives the workflow-asset JSON round-trip", () => {
   const definition = buildProcessGranolaCallWorkflow(INPUT);
-  const revived: unknown = JSON.parse(
-    serializeProcessGranolaCallWorkflow(definition),
-  );
+  const revived: unknown = JSON.parse(serializeProcessGranolaCallWorkflow(definition));
   expect(revived).toEqual(definition);
 });
 
@@ -147,16 +129,16 @@ test("serialization fails loud on a function-valued field, naming its path", () 
 });
 
 test("an empty trigger address is rejected", () => {
-  expect(() =>
-    buildProcessGranolaCallWorkflow({ ...INPUT, triggerAddress: "" }),
-  ).toThrow(/triggerAddress/);
+  expect(() => buildProcessGranolaCallWorkflow({ ...INPUT, triggerAddress: "" })).toThrow(
+    /triggerAddress/,
+  );
 });
 
 test("a non-positive or fractional turn timeout is rejected", () => {
-  expect(() =>
-    buildProcessGranolaCallWorkflow({ ...INPUT, turnTimeoutMs: 0 }),
-  ).toThrow(/turnTimeoutMs/);
-  expect(() =>
-    buildProcessGranolaCallWorkflow({ ...INPUT, turnTimeoutMs: 0.5 }),
-  ).toThrow(/turnTimeoutMs/);
+  expect(() => buildProcessGranolaCallWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(
+    /turnTimeoutMs/,
+  );
+  expect(() => buildProcessGranolaCallWorkflow({ ...INPUT, turnTimeoutMs: 0.5 })).toThrow(
+    /turnTimeoutMs/,
+  );
 });

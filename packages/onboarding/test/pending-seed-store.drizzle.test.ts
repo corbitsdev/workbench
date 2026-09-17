@@ -18,18 +18,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import {
-  createEnvKeyCredentialCipher,
-  createNoopCredentialCipher,
-} from "@intx/crypto";
+import { createEnvKeyCredentialCipher, createNoopCredentialCipher } from "@intx/crypto";
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { applyOnboardingMigrations } from "../src/migrations";
 import { dbGate } from "../../../scripts/e2e/db-gate";
-import {
-  createDrizzlePendingSeedStore,
-  type PendingSeed,
-} from "../src/pending-seed";
+import { createDrizzlePendingSeedStore, type PendingSeed } from "../src/pending-seed";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -53,9 +47,7 @@ const SEED: PendingSeed = {
 };
 
 describeIfDb("createDrizzlePendingSeedStore", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchDatabase = new URL(scratchUrl).pathname.replace(/^\//, "");
 
   beforeAll(async () => {
@@ -116,10 +108,7 @@ describeIfDb("createDrizzlePendingSeedStore", () => {
     const sql = postgres(scratchUrl, { max: 1 });
     try {
       const db = drizzle(sql);
-      const store = createDrizzlePendingSeedStore(
-        db,
-        createNoopCredentialCipher(),
-      );
+      const store = createDrizzlePendingSeedStore(db, createNoopCredentialCipher());
       const seed: PendingSeed = { ...SEED, userId: "user_noop" };
 
       await store.put(seed);
@@ -175,10 +164,7 @@ describeIfDb("createDrizzlePendingSeedStore", () => {
 
     const writeSql = postgres(scratchUrl, { max: 1 });
     try {
-      const writeStore = createDrizzlePendingSeedStore(
-        drizzle(writeSql),
-        cipher,
-      );
+      const writeStore = createDrizzlePendingSeedStore(drizzle(writeSql), cipher);
       await writeStore.put(seed);
     } finally {
       await writeSql.end();

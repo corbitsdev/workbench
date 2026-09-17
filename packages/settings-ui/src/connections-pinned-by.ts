@@ -7,9 +7,7 @@
 // (connectionsPinnedByApproximationNote) rather than baking it into the
 // label itself, until CL-6028's item 9 (tool-package credential-binding
 // adoption) makes it exact.
-export const CONNECTOR_PINNED_WORKFLOWS: Readonly<
-  Record<string, readonly string[]>
-> = {
+export const CONNECTOR_PINNED_WORKFLOWS: Readonly<Record<string, readonly string[]>> = {
   granola: [
     "granola-call",
     "process-granola-call",

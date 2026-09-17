@@ -63,11 +63,7 @@ import type { AvatarColor } from "@corbits/chat-ui";
 import { ApiQueryError } from "@corbits/api-query";
 
 import type { AgentDefinition, CatalogModel } from "../agents-api";
-import {
-  createAgentDefinition,
-  draftAgentDefinition,
-  listCatalogModels,
-} from "../agents-api";
+import { createAgentDefinition, draftAgentDefinition, listCatalogModels } from "../agents-api";
 import { isValidSlug, slugify } from "@corbits/slug";
 
 import { AgentSkillsPicker } from "./agent-skills-picker";
@@ -190,8 +186,7 @@ const SUGGESTIONS: readonly Suggestion[] = [
   {
     name: "Research Assistant",
     cardDescription: "Digs into questions you drop in its workbench",
-    purpose:
-      "Digs into questions dropped in its workbench and comes back with a grounded answer.",
+    purpose: "Digs into questions dropped in its workbench and comes back with a grounded answer.",
   },
   {
     name: "Daily Digest",
@@ -205,10 +200,7 @@ const SUGGESTIONS: readonly Suggestion[] = [
  * on a button that cannot be used. `null` once nothing blocks
  * submission. Purpose is never a gate — a name alone is a supported
  * happy path. */
-function blockedReason(
-  values: FormValues,
-  draftFailed: boolean,
-): string | null {
+function blockedReason(values: FormValues, draftFailed: boolean): string | null {
   if (values.name.trim() === "") return "Add a name to continue.";
   if (!isValidSlug(values.handle.trim())) {
     return "Fix the handle below — lowercase letters, digits, and hyphens only.";
@@ -237,8 +229,7 @@ export function CreateAgentPanel({
   readonly onCreated: (definition: AgentDefinition) => void;
 }) {
   const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
-  const [avatarColor, setAvatarColor] =
-    useState<AvatarColor>(CORBIT_DEFAULT_COLOR);
+  const [avatarColor, setAvatarColor] = useState<AvatarColor>(CORBIT_DEFAULT_COLOR);
   const [handleTouched, setHandleTouched] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [draftFailed, setDraftFailed] = useState(false);
@@ -300,8 +291,7 @@ export function CreateAgentPanel({
   }
 
   function handleAdvancedChange(next: Record<string, unknown>) {
-    const handle =
-      typeof next.handle === "string" ? next.handle : values.handle;
+    const handle = typeof next.handle === "string" ? next.handle : values.handle;
     const model = typeof next.model === "string" ? next.model : values.model;
     const manualSystemPrompt =
       typeof next.manualSystemPrompt === "string"
@@ -318,10 +308,7 @@ export function CreateAgentPanel({
   const models = modelsState.kind === "ready" ? modelsState.models : [];
   const blocked = blockedReason(values, draftFailed);
 
-  async function handleSubmit(effective?: {
-    readonly name: string;
-    readonly purpose: string;
-  }) {
+  async function handleSubmit(effective?: { readonly name: string; readonly purpose: string }) {
     const name = effective?.name ?? values.name;
     const purpose = effective?.purpose ?? values.purpose;
     const handle = handleTouched ? values.handle : slugify(name);
@@ -361,10 +348,7 @@ export function CreateAgentPanel({
       } catch (cause) {
         setDraftFailed(true);
         setSubmitError(
-          submitErrorFromCause(
-            cause,
-            "Myra couldn't draft a starting prompt for this agent.",
-          ),
+          submitErrorFromCause(cause, "Myra couldn't draft a starting prompt for this agent."),
         );
         setSubmitting(false);
         return;
@@ -384,9 +368,7 @@ export function CreateAgentPanel({
       onOpenChange(false);
       onCreated(created);
     } catch (cause) {
-      setSubmitError(
-        submitErrorFromCause(cause, "Could not create the agent."),
-      );
+      setSubmitError(submitErrorFromCause(cause, "Could not create the agent."));
     } finally {
       setSubmitting(false);
     }
@@ -402,8 +384,8 @@ export function CreateAgentPanel({
         <DialogHeader>
           <DialogTitle>New agent</DialogTitle>
           <DialogDescription>
-            A name is enough to start — Myra drafts the starting instructions,
-            and you teach it the rest in conversation.
+            A name is enough to start — Myra drafts the starting instructions, and you teach it the
+            rest in conversation.
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -413,17 +395,14 @@ export function CreateAgentPanel({
               {submitError.refId !== undefined ? (
                 <>
                   <br />
-                  <span className="text-xs">
-                    Reference: {submitError.refId}
-                  </span>
+                  <span className="text-xs">Reference: {submitError.refId}</span>
                 </>
               ) : null}
             </p>
           )}
           {modelsState.kind === "error" && (
             <p className="mb-3 text-sm text-muted-foreground" role="status">
-              Model catalog unavailable — the agent will use the workbench
-              default.
+              Model catalog unavailable — the agent will use the workbench default.
             </p>
           )}
 
@@ -491,12 +470,8 @@ export function CreateAgentPanel({
                   disabled={submitting}
                   onClick={() => applySuggestion(suggestion)}
                 >
-                  <span className="create-agent-suggestion-title">
-                    {suggestion.name}
-                  </span>
-                  <span className="create-agent-suggestion-desc">
-                    {suggestion.cardDescription}
-                  </span>
+                  <span className="create-agent-suggestion-title">{suggestion.name}</span>
+                  <span className="create-agent-suggestion-desc">{suggestion.cardDescription}</span>
                 </button>
               ))}
             </div>

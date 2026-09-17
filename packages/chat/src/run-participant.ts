@@ -34,7 +34,6 @@ export async function joinRunParticipant(
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
     updatedBy: input.principalId,
-    mutate: (participants) =>
-      addParticipant(participants, input.address, input.handle),
+    mutate: (participants) => addParticipant(participants, input.address, input.handle),
   });
 }

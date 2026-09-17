@@ -121,9 +121,7 @@ export function createSignInAttemptLimiter(
       if (bucket.count >= max) {
         return {
           allowed: false,
-          retryAfterSeconds: Math.ceil(
-            (bucket.windowStart + windowMs - now) / 1000,
-          ),
+          retryAfterSeconds: Math.ceil((bucket.windowStart + windowMs - now) / 1000),
         };
       }
       bucket.count += 1;

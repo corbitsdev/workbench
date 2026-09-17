@@ -87,14 +87,10 @@ async function listAllOpen(
       priorities: WORKBENCH_INBOX_PRIORITIES,
     };
     const listOptsWithCursor =
-      page.cursor !== undefined
-        ? { ...listOpts, cursor: page.cursor }
-        : listOpts;
+      page.cursor !== undefined ? { ...listOpts, cursor: page.cursor } : listOpts;
     return listUserMailbox(
       db,
-      filter !== undefined
-        ? { ...listOptsWithCursor, filter }
-        : listOptsWithCursor,
+      filter !== undefined ? { ...listOptsWithCursor, filter } : listOptsWithCursor,
     );
   });
 }
@@ -104,9 +100,7 @@ async function listAllOpen(
  * `/api/tenants/:tenantId/inbox` inside the hub's tenant middleware so
  * `c.get("principal")` and `c.get("tenant")` are already resolved.
  */
-export function createInboxRoutes(
-  deps: CreateInboxRoutesDeps,
-): Hono<TenantEnv> {
+export function createInboxRoutes(deps: CreateInboxRoutesDeps): Hono<TenantEnv> {
   const { db, bus } = deps;
   const app = new Hono<TenantEnv>();
 
@@ -157,12 +151,7 @@ export function createInboxRoutes(
     const tenant = c.get("tenant");
     const principal = c.get("principal");
     const scope = { tenantId: tenant.id, principalId: principal.id };
-    const items = await listAllOpenOrReport(
-      c,
-      tenant.id,
-      "inbox_mark_all_read_walk",
-      scope,
-    );
+    const items = await listAllOpenOrReport(c, tenant.id, "inbox_mark_all_read_walk", scope);
     if (items instanceof Response) return items;
     const { succeeded: marked, failed } = await runBulkOperation(
       itemsEligibleForMarkAllRead(items),
@@ -170,11 +159,7 @@ export function createInboxRoutes(
         // Atomic: a throw between the status flip and the read flip must
         // never leave a row done-but-unread (CL-7207).
         await db.transaction(async (tx) => {
-          await enrichMailboxMessage(
-            tx,
-            { ...scope, id: item.id },
-            { status: "done" },
-          );
+          await enrichMailboxMessage(tx, { ...scope, id: item.id }, { status: "done" });
           await markMailboxMessageRead(tx, { ...scope, id: item.id });
         });
         publish(bus, scope, item.id, "mark_read");
@@ -188,22 +173,14 @@ export function createInboxRoutes(
     // A 200 must mean "every eligible item was marked" — a partial result
     // is reported as 207 so a caller that only checks the status code (not
     // the body) can't mistake "half the inbox" for "success" (CL-7207).
-    return c.json(
-      { marked, failed, complete: failed === 0 },
-      failed === 0 ? 200 : 207,
-    );
+    return c.json({ marked, failed, complete: failed === 0 }, failed === 0 ? 200 : 207);
   });
 
   app.post("/clear-done", async (c) => {
     const tenant = c.get("tenant");
     const principal = c.get("principal");
     const scope = { tenantId: tenant.id, principalId: principal.id };
-    const items = await listAllOpenOrReport(
-      c,
-      tenant.id,
-      "inbox_clear_done_walk",
-      scope,
-    );
+    const items = await listAllOpenOrReport(c, tenant.id, "inbox_clear_done_walk", scope);
     if (items instanceof Response) return items;
     const { succeeded: cleared, failed } = await runBulkOperation(
       itemsEligibleForClearDone(items),
@@ -220,10 +197,7 @@ export function createInboxRoutes(
     );
     // Same partial-vs-complete signal as mark-all-read: 207 whenever any
     // item failed, so a status-code-only caller can't read it as success.
-    return c.json(
-      { cleared, failed, complete: failed === 0 },
-      failed === 0 ? 200 : 207,
-    );
+    return c.json({ cleared, failed, complete: failed === 0 }, failed === 0 ? 200 : 207);
   });
 
   app.get("/", async (c) => {
@@ -274,10 +248,7 @@ export function createInboxRoutes(
         filter,
       });
       if (mismatch !== null) {
-        return c.json(
-          { error: `cursor does not match inbox ${mismatch}` },
-          400,
-        );
+        return c.json({ error: `cursor does not match inbox ${mismatch}` }, 400);
       }
       cursor = decoded;
     }
@@ -328,12 +299,7 @@ export function createInboxRoutes(
       id,
     });
     if (!ok) return c.json({ error: "not found" }, 404);
-    publish(
-      bus,
-      { tenantId: tenant.id, principalId: principal.id },
-      id,
-      "mark_read",
-    );
+    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id, "mark_read");
     return c.json({ ok: true });
   });
 
@@ -347,12 +313,7 @@ export function createInboxRoutes(
       id,
     });
     if (!ok) return c.json({ error: "not found" }, 404);
-    publish(
-      bus,
-      { tenantId: tenant.id, principalId: principal.id },
-      id,
-      "mark_unread",
-    );
+    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id, "mark_unread");
     return c.json({ ok: true });
   });
 
@@ -368,12 +329,7 @@ export function createInboxRoutes(
     const ok = await enrichMailboxMessage(db, scope, { status: "done" });
     if (!ok) return c.json({ error: "not found" }, 404);
     await markMailboxMessageRead(db, scope);
-    publish(
-      bus,
-      { tenantId: tenant.id, principalId: principal.id },
-      id,
-      "enrich",
-    );
+    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id, "enrich");
     return c.json({ ok: true });
   });
 
@@ -387,12 +343,7 @@ export function createInboxRoutes(
       { status: "open" },
     );
     if (!ok) return c.json({ error: "not found" }, 404);
-    publish(
-      bus,
-      { tenantId: tenant.id, principalId: principal.id },
-      id,
-      "enrich",
-    );
+    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id, "enrich");
     return c.json({ ok: true });
   });
 

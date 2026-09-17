@@ -43,10 +43,7 @@ describe("buildSidebarRows", () => {
     const rows = mix([channel], [dm]);
 
     expect(idsOf(rows)).toEqual(["ch_dm", "ch_room"]);
-    expect(rows.map((row) => row.workbench.kind)).toEqual([
-      "chat",
-      "workbench",
-    ]);
+    expect(rows.map((row) => row.workbench.kind)).toEqual(["chat", "workbench"]);
     expect(rows.every((row) => row.kind === "workbench")).toBe(true);
   });
 

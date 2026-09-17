@@ -32,22 +32,12 @@ import {
   WEBHOOK_TIMESTAMP_HEADER,
 } from "@corbits/webhook-triggers";
 
-import type {
-  FakeReceipt,
-  RunConfig,
-  Target,
-  Turn,
-  WorldSnapshot,
-} from "../types.ts";
+import type { FakeReceipt, RunConfig, Target, Turn, WorldSnapshot } from "../types.ts";
 import type { McpFakeRecording } from "../fakes/recording.ts";
 import { startMcpFake } from "../fakes/mcp-fake-server.ts";
 import { startGithubRestFake } from "../fakes/github-rest-fake.ts";
 import { arrayField, stringField } from "./json-fields.ts";
-import {
-  newToolCallsSince,
-  readAllToolCalls,
-  type SqlClientLike,
-} from "./trace.ts";
+import { newToolCallsSince, readAllToolCalls, type SqlClientLike } from "./trace.ts";
 
 /** One recorded MCP fake (packages/evals/src/fakes) to stand up and
  * connect into the tenant before the target is handed back — connected
@@ -85,11 +75,7 @@ export interface MyraTargetInfra {
   e2eDatabaseUrl(): string | undefined;
   resetSchema(databaseUrl: string): Promise<void>;
   setupDatabase(databaseUrl: string): Promise<{ action: string }>;
-  provisionSidecar(
-    databaseUrl: string,
-    sidecarId: string,
-    token: string,
-  ): Promise<void>;
+  provisionSidecar(databaseUrl: string, sidecarId: string, token: string): Promise<void>;
   startHub(options: {
     databaseUrl: string;
     port: number;
@@ -114,9 +100,7 @@ export interface MyraTargetInfra {
     cookies?: string[],
   ): Promise<EvalApiResult>;
   expectStatus(what: string, result: EvalApiResult, expected: number): void;
-  connectE2eDb(
-    databaseUrl: string,
-  ): Promise<SqlClientLike & { end(): Promise<void> }>;
+  connectE2eDb(databaseUrl: string): Promise<SqlClientLike & { end(): Promise<void> }>;
   freePort(): number;
   /** Optional world-snapshot capability (targets/world-snapshot.ts):
    * when the caller supplies this, the returned `Target` gains
@@ -169,9 +153,7 @@ export function findNewAgentReply(
     (item) =>
       !seenIds.has(item.id) &&
       item.sender.address === agentAddress &&
-      item.parts.some(
-        (part) => part.kind === "text" && (part.text ?? "") !== "",
-      ),
+      item.parts.some((part) => part.kind === "text" && (part.text ?? "") !== ""),
   );
 }
 
@@ -222,10 +204,7 @@ export async function bootMyraTarget(
     startHub,
     startSidecar,
   } = infra;
-  if (
-    config.systemPromptOverride !== undefined ||
-    config.toolPins !== undefined
-  ) {
+  if (config.systemPromptOverride !== undefined || config.toolPins !== undefined) {
     // [Gap worth flagging: the live target has no wiring today to push a
     // matrix entry's systemPromptOverride/toolPins into the deployed
     // "assistant" workflow before minting a chat — `ensureSeeded`
@@ -283,18 +262,14 @@ export async function bootMyraTarget(
     const hub: EvalHubHandle = await startHub({
       databaseUrl,
       port: freePort(),
-      sessionSecret: Buffer.from(
-        crypto.getRandomValues(new Uint8Array(32)),
-      ).toString("hex"),
+      sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
       dataDir: hubDataDir,
       extraEnv: { GITHUB_API_BASE_URL: githubRest.url },
     });
     cleanups.push(() => hub.stop());
     cleanups.push(() => rm(hubDataDir, { recursive: true, force: true }));
 
-    const sidecarDataDir = await mkdtemp(
-      path.join(tmpdir(), "evals-sidecar-data-"),
-    );
+    const sidecarDataDir = await mkdtemp(path.join(tmpdir(), "evals-sidecar-data-"));
     const sidecar: EvalSpawnedApp = startSidecar({
       hubPort: Number(new URL(hub.baseUrl).port || "80"),
       sidecarId,
@@ -309,16 +284,11 @@ export async function bootMyraTarget(
 
     const email = `evals-${config.name}-${crypto.randomUUID()}@example.invalid`;
     const password = `pw-${crypto.randomUUID()}`;
-    const signUpRes = await api(
-      hub.baseUrl,
-      "POST",
-      "/api/auth/sign-up/email",
-      {
-        name: `Evals ${config.name}`,
-        email,
-        password,
-      },
-    );
+    const signUpRes = await api(hub.baseUrl, "POST", "/api/auth/sign-up/email", {
+      name: `Evals ${config.name}`,
+      email,
+      password,
+    });
     expectStatus(`sign-up for ${config.name}`, signUpRes, 200);
     if (signUpRes.cookies.length === 0) {
       throw new Error(`sign-up for ${config.name} returned no session cookie`);
@@ -337,15 +307,9 @@ export async function bootMyraTarget(
       { name: `Evals ${config.name}'s Bench` },
       cookies,
     );
-    expectStatus(
-      `provision personal bench for ${config.name}`,
-      provisionRes,
-      200,
-    );
+    expectStatus(`provision personal bench for ${config.name}`, provisionRes, 200);
 
-    const startedFakes = mcpFakes.map(({ recording }) =>
-      startMcpFake(recording, freePort()),
-    );
+    const startedFakes = mcpFakes.map(({ recording }) => startMcpFake(recording, freePort()));
     for (const fake of startedFakes) {
       cleanups.push(() => {
         fake.stop();
@@ -356,8 +320,7 @@ export async function bootMyraTarget(
     // EVAL_PROVIDER=ollama + OLLAMA_BASE_URL runs against a local Ollama
     // (no key: the fixed placeholder secret); otherwise an Anthropic key.
     const ollamaBaseUrl = process.env["OLLAMA_BASE_URL"];
-    const useOllama =
-      process.env["EVAL_PROVIDER"] === "ollama" && ollamaBaseUrl !== undefined;
+    const useOllama = process.env["EVAL_PROVIDER"] === "ollama" && ollamaBaseUrl !== undefined;
     const provider = useOllama ? ("ollama" as const) : ("anthropic" as const);
     const apiKey = useOllama
       ? OLLAMA_PLACEHOLDER_SECRET
@@ -378,22 +341,17 @@ export async function bootMyraTarget(
             apiKey,
             pushWorkflow,
             log: () => undefined,
-            ...(useOllama && ollamaBaseUrl !== undefined
-              ? { baseURLOverride: ollamaBaseUrl }
-              : {}),
+            ...(useOllama && ollamaBaseUrl !== undefined ? { baseURLOverride: ollamaBaseUrl } : {}),
           });
           if (outcome.kind !== "seeded") {
-            throw new Error(
-              `expected "seeded", got: ${JSON.stringify(outcome)}`,
-            );
+            throw new Error(`expected "seeded", got: ${JSON.stringify(outcome)}`);
           }
           return outcome;
         } catch (cause) {
           if (sidecar.exited()) {
-            throw new Error(
-              `sidecar exited while seeding; output:\n${sidecar.output()}`,
-              { cause },
-            );
+            throw new Error(`sidecar exited while seeding; output:\n${sidecar.output()}`, {
+              cause,
+            });
           }
           if (process.env["EVALS_DEBUG"] === "1") {
             log.error`seeding attempt failed, retrying: ${cause instanceof Error ? cause.message : String(cause)}`;
@@ -413,11 +371,7 @@ export async function bootMyraTarget(
         { name: mcpFakes[index]?.server, url: fake.url },
         cookies,
       );
-      expectStatus(
-        `connect MCP fake "${mcpFakes[index]?.server ?? "?"}"`,
-        connectRes,
-        200,
-      );
+      expectStatus(`connect MCP fake "${mcpFakes[index]?.server ?? "?"}"`, connectRes, 200);
     }
 
     // The Plugins-PAT half of a GitHub connect (CL-6403's seam, closed
@@ -433,11 +387,7 @@ export async function bootMyraTarget(
       { apiKey: GITHUB_REST_FAKE_PAT },
       cookies,
     );
-    expectStatus(
-      "connect the GitHub PAT against the REST fake",
-      completeRes,
-      200,
-    );
+    expectStatus("connect the GitHub PAT against the REST fake", completeRes, 200);
 
     const assistantDefinitionId = await pollUntil(
       '"assistant" becoming invitable',
@@ -451,11 +401,7 @@ export async function bootMyraTarget(
           cookies,
         );
         if (res.status !== 200) return undefined;
-        const items = arrayField(
-          res.data,
-          "items",
-          "list invitable definitions",
-        ) as {
+        const items = arrayField(res.data, "items", "list invitable definitions") as {
           id: string;
           name: string;
         }[];
@@ -468,9 +414,7 @@ export async function bootMyraTarget(
       60_000,
       async () => {
         if (sidecar.exited()) {
-          throw new Error(
-            `sidecar exited before chat creation; output:\n${sidecar.output()}`,
-          );
+          throw new Error(`sidecar exited before chat creation; output:\n${sidecar.output()}`);
         }
         const res: EvalApiResult = await api(
           hub.baseUrl,
@@ -482,21 +426,13 @@ export async function bootMyraTarget(
         if (res.status === 500) return undefined;
         expectStatus("create chat", res, 201);
         const id = stringField(res.data, "id", "create chat");
-        const participants = arrayField(
-          res.data,
-          "participants",
-          "create chat",
-        ) as {
+        const participants = arrayField(res.data, "participants", "create chat") as {
           address: string;
           handle: string;
         }[];
-        const agent = participants.find(
-          (participant) => participant.handle === "myra",
-        );
+        const agent = participants.find((participant) => participant.handle === "myra");
         if (agent === undefined) {
-          throw new Error(
-            `chat has no "myra" agent participant: ${JSON.stringify(participants)}`,
-          );
+          throw new Error(`chat has no "myra" agent participant: ${JSON.stringify(participants)}`);
         }
         return { chatId: id, agentAddress: agent.address };
       },
@@ -533,9 +469,7 @@ export async function bootMyraTarget(
       300_000,
       async () => {
         if (sidecar.exited()) {
-          throw new Error(
-            `sidecar exited waiting for the greeting; ${bootFailureOutput()}`,
-          );
+          throw new Error(`sidecar exited waiting for the greeting; ${bootFailureOutput()}`);
         }
         const res = await api(
           hub.baseUrl,
@@ -553,25 +487,15 @@ export async function bootMyraTarget(
         return findNewAgentReply(items, agentAddress, seenMessageIds);
       },
     ).catch((cause) => {
-      throw new Error(
-        `no unprompted greeting within 300s; ${bootFailureOutput()}`,
-        { cause },
-      );
+      throw new Error(`no unprompted greeting within 300s; ${bootFailureOutput()}`, { cause });
     });
     seenMessageIds.add(greeting.id);
     // See the settle-window comment in `sendTurn` below — the greeting's
     // own record-mail into the channel host needs the same room to land
     // before the first scripted turn posts.
     await Bun.sleep(3_000);
-    const greetingToolCalls = await readAllToolCalls(
-      sqlClient,
-      seeded.tenantId,
-      chatId,
-    );
-    toolCallsConsumed = newToolCallsSince(
-      greetingToolCalls,
-      toolCallsConsumed,
-    ).consumed;
+    const greetingToolCalls = await readAllToolCalls(sqlClient, seeded.tenantId, chatId);
+    toolCallsConsumed = newToolCallsSince(greetingToolCalls, toolCallsConsumed).consumed;
 
     async function sendTurn(human: string): Promise<Turn> {
       const postRes = await api(
@@ -604,32 +528,22 @@ export async function bootMyraTarget(
       // genuine hang (the sidecar-exited check above still fails fast
       // on that).
       let lastItems: ChatMessage[] = [];
-      const reply = await pollUntil(
-        `Myra's reply to "${human}"`,
-        300_000,
-        async () => {
-          if (sidecar.exited()) {
-            throw new Error(
-              `sidecar exited waiting for a reply; ${bootFailureOutput()}`,
-            );
-          }
-          const res = await api(
-            hub.baseUrl,
-            "GET",
-            `/api/tenants/${seeded.tenantId}/chat/workbenches/${chatId}/messages`,
-            undefined,
-            cookies,
-          );
-          expectStatus("list messages", res, 200);
-          const items = arrayField(
-            res.data,
-            "items",
-            "list messages",
-          ) as ChatMessage[];
-          lastItems = items;
-          return findNewAgentReply(items, agentAddress, seenMessageIds);
-        },
-      ).catch((cause) => {
+      const reply = await pollUntil(`Myra's reply to "${human}"`, 300_000, async () => {
+        if (sidecar.exited()) {
+          throw new Error(`sidecar exited waiting for a reply; ${bootFailureOutput()}`);
+        }
+        const res = await api(
+          hub.baseUrl,
+          "GET",
+          `/api/tenants/${seeded.tenantId}/chat/workbenches/${chatId}/messages`,
+          undefined,
+          cookies,
+        );
+        expectStatus("list messages", res, 200);
+        const items = arrayField(res.data, "items", "list messages") as ChatMessage[];
+        lastItems = items;
+        return findNewAgentReply(items, agentAddress, seenMessageIds);
+      }).catch((cause) => {
         throw new Error(
           `no reply within 300s; last-seen messages: ${JSON.stringify(lastItems)}\n` +
             bootFailureOutput(),
@@ -648,25 +562,15 @@ export async function bootMyraTarget(
       // `greeting-delivery.test.ts` reaches for via `E2E_TURN2_DELAY_MS`.
       await Bun.sleep(3_000);
 
-      const allToolCalls = await readAllToolCalls(
-        sqlClient,
-        seeded.tenantId,
-        chatId,
-      );
-      const { newCalls, consumed } = newToolCallsSince(
-        allToolCalls,
-        toolCallsConsumed,
-      );
+      const allToolCalls = await readAllToolCalls(sqlClient, seeded.tenantId, chatId);
+      const { newCalls, consumed } = newToolCallsSince(allToolCalls, toolCallsConsumed);
       toolCallsConsumed = consumed;
 
       return { human, replyText: replyTextOf(reply), toolCalls: newCalls };
     }
 
     function fakeReceipts(): readonly FakeReceipt[] {
-      return [
-        ...startedFakes.flatMap((fake) => fake.receipts()),
-        ...githubRest.receipts(),
-      ];
+      return [...startedFakes.flatMap((fake) => fake.receipts()), ...githubRest.receipts()];
     }
 
     // Fires a trigger through the REAL ingress route
@@ -675,10 +579,7 @@ export async function bootMyraTarget(
     // platform's own table (the trace.ts convention) — the eval hub
     // boots with ALLOW_PLAINTEXT_SECRETS, so the scratch row carries it
     // readable; the route itself still verifies the signature for real.
-    async function fireWebhook(
-      triggerId: string,
-      payload: unknown,
-    ): Promise<Turn> {
+    async function fireWebhook(triggerId: string, payload: unknown): Promise<Turn> {
       const rows = await sqlClient.unsafe(
         "select secret from webhook_triggers.webhook_trigger where id = $1",
         [triggerId],
@@ -691,18 +592,15 @@ export async function bootMyraTarget(
       }
       const rawBody = JSON.stringify(payload);
       const timestamp = String(Math.floor(Date.now() / 1000));
-      const response = await fetch(
-        new URL(`/api/webhooks/${triggerId}`, hub.baseUrl),
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            [WEBHOOK_TIMESTAMP_HEADER]: timestamp,
-            [WEBHOOK_SIGNATURE_HEADER]: signPayload(secret, timestamp, rawBody),
-          },
-          body: rawBody,
+      const response = await fetch(new URL(`/api/webhooks/${triggerId}`, hub.baseUrl), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [WEBHOOK_TIMESTAMP_HEADER]: timestamp,
+          [WEBHOOK_SIGNATURE_HEADER]: signPayload(secret, timestamp, rawBody),
         },
-      );
+        body: rawBody,
+      });
       // Read as text first: a failed launch surfaces as the hub's own
       // non-JSON 500 body, which must land in the recorded turn rather
       // than die as a JSON parse crash that hides the status. A non-202

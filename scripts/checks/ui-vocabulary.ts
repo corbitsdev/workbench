@@ -33,12 +33,7 @@
 // the allowlist exists for the rare case both are true at once.
 import { Glob } from "bun";
 import path from "node:path";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 const SCAN_DIRS = ["apps/web/src", "packages/chat-ui/src"];
 
@@ -114,10 +109,7 @@ export function stripNonUserFacing(source: string): string {
     /(^|[^:])(\/\/.*)$/gm,
     (_match, prefix: string, comment: string) => prefix + blank(comment),
   );
-  stripped = stripped.replace(
-    /\b(?:console|log|logger)\.\w+\([\s\S]*?\);/g,
-    blank,
-  );
+  stripped = stripped.replace(/\b(?:console|log|logger)\.\w+\([\s\S]*?\);/g, blank);
   return stripped;
 }
 
@@ -126,8 +118,7 @@ export function stripNonUserFacing(source: string): string {
 // (e.g. "routine's") from being misread as an opening quote that then
 // runs on and swallows everything up to some unrelated quote far below.
 // Only a backtick template literal is allowed to span lines.
-const STRING_LITERAL_PATTERN =
-  /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
+const STRING_LITERAL_PATTERN = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
 
 // Allows a trailing decimal (Tailwind's fractional spacing utilities, e.g.
 // "space-y-1.5", "gap-x-2.5") and an arbitrary-value suffix in brackets
@@ -171,11 +162,8 @@ function isProseLiteral(literal: string): boolean {
   // as prose. A single token only counts as a class when it is hyphenated:
   // a bare lowercase word like "workbench" is exactly the copy this check
   // exists to catch.
-  const everyTokenIsClassLike = tokens.every((token) =>
-    KEBAB_TOKEN.test(token),
-  );
-  const looksLikeClassList =
-    tokens.length > 1 || (tokens[0] ?? "").includes("-");
+  const everyTokenIsClassLike = tokens.every((token) => KEBAB_TOKEN.test(token));
+  const looksLikeClassList = tokens.length > 1 || (tokens[0] ?? "").includes("-");
   if (everyTokenIsClassLike && looksLikeClassList) {
     return false;
   }
@@ -203,16 +191,10 @@ export function findViolations(files: readonly ScannedFile[]): Violation[] {
       const literal = match[0];
       if (!isProseLiteral(literal)) continue;
       const inner = literal.slice(1, -1);
-      const testable = literal.startsWith("`")
-        ? stripInterpolations(inner)
-        : inner;
+      const testable = literal.startsWith("`") ? stripInterpolations(inner) : inner;
       const hit = BANNED_TERMS.find(({ pattern }) => pattern.test(testable));
       if (hit === undefined) continue;
-      if (
-        ALLOWLIST.some(
-          (entry) => entry.relPath === relPath && entry.text === inner,
-        )
-      ) {
+      if (ALLOWLIST.some((entry) => entry.relPath === relPath && entry.text === inner)) {
         continue;
       }
       const upToMatch = scanned.slice(0, match.index);
@@ -249,10 +231,7 @@ export function auditUiVocabulary(files: readonly ScannedFile[]): CheckReport {
   return report;
 }
 
-async function scanFiles(
-  root: string,
-  dirs: readonly string[],
-): Promise<ScannedFile[]> {
+async function scanFiles(root: string, dirs: readonly string[]): Promise<ScannedFile[]> {
   const files: ScannedFile[] = [];
   for (const dir of dirs) {
     const glob = new Glob("**/*.{ts,tsx}");
@@ -273,9 +252,7 @@ async function main(): Promise<void> {
   const root = rootFromArgs(Bun.argv.slice(2));
   const files = await scanFiles(root, SCAN_DIRS);
   const report = auditUiVocabulary(files);
-  report.notes.push(
-    `scanned ${files.length} file(s) under ${SCAN_DIRS.join(", ")}`,
-  );
+  report.notes.push(`scanned ${files.length} file(s) under ${SCAN_DIRS.join(", ")}`);
   reportAndExit("check:ui-vocabulary", report);
 }
 

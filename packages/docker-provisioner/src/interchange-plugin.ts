@@ -7,10 +7,7 @@ import {
 import type { SidecarProvisioner } from "@intx/hub-sessions";
 
 import { createBunCommandRunner, type CommandRunner } from "./command-runner";
-import {
-  readDockerProvisionerConfig,
-  type DockerProvisionerConfig,
-} from "./config";
+import { readDockerProvisionerConfig, type DockerProvisionerConfig } from "./config";
 import { createDockerBackend } from "./docker-backend";
 
 const PROVISIONER_API_VERSION = 1 as const;
@@ -25,8 +22,7 @@ export type CreateDockerSidecarProvisionerOpts = {
 export function createDockerSidecarProvisioner(
   opts: CreateDockerSidecarProvisionerOpts = {},
 ): SidecarProvisioner {
-  const config =
-    opts.config ?? readDockerProvisionerConfig(opts.env ?? process.env);
+  const config = opts.config ?? readDockerProvisionerConfig(opts.env ?? process.env);
   const commands = opts.commands ?? createBunCommandRunner();
   const store = opts.store ?? createAllocationStateStore(config.stateFilePath);
 

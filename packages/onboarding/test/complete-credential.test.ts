@@ -2,11 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { WorkflowPusher } from "@corbits/connections/workflow-push";
 import { CATALOG_SEEDS } from "@corbits/connections/catalog-seed-data";
 import { SETUP_AGENT_ASSET_NAME } from "../src/tenant-seed";
-import {
-  type ApiCall,
-  type ApiResult,
-  SidecarUnavailableError,
-} from "@corbits/hub-api-client";
+import { type ApiCall, type ApiResult, SidecarUnavailableError } from "@corbits/hub-api-client";
 import {
   completeCredentialSetup,
   ensureSeeded,
@@ -20,9 +16,7 @@ import {
 // confirmDeployments: false so a valid, credit-less account is not
 // turned into a false "setup failed" by a workflow trigger it never
 // asked for.
-function expectNoConfirmation(
-  seedTenantCalls: { confirmDeployments?: boolean }[],
-) {
+function expectNoConfirmation(seedTenantCalls: { confirmDeployments?: boolean }[]) {
   expect(seedTenantCalls).toHaveLength(1);
   expect(seedTenantCalls[0]?.confirmDeployments).toBe(false);
 }
@@ -41,16 +35,10 @@ const noopPush: WorkflowPusher = async () => ({
 // test that fakes the catalog side never dials the real credential
 // endpoints either.
 const stubPersistFns = {
-  ensureProviderFn: async (
-    _api: unknown,
-    _cookies: string[],
-    args: { name: string },
-  ) => `prv_${args.name}`,
-  ensureCredentialFn: async (
-    _api: unknown,
-    _cookies: string[],
-    args: { providerId: string },
-  ) => `cred_${args.providerId}`,
+  ensureProviderFn: async (_api: unknown, _cookies: string[], args: { name: string }) =>
+    `prv_${args.name}`,
+  ensureCredentialFn: async (_api: unknown, _cookies: string[], args: { providerId: string }) =>
+    `cred_${args.providerId}`,
 };
 
 function collector() {
@@ -235,9 +223,7 @@ describe("modelSourceFor", () => {
     const api: ApiCall = (async () => {
       throw new Error("must not be called for a fixed curated provider");
     }) as ApiCall;
-    expect(
-      await modelSourceFor(api, ["session=abc"], TENANT_ID, "anthropic"),
-    ).toEqual({
+    expect(await modelSourceFor(api, ["session=abc"], TENANT_ID, "anthropic")).toEqual({
       provider: "anthropic",
       model: "claude-sonnet-5",
     });
@@ -260,9 +246,7 @@ describe("modelSourceFor", () => {
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
-    expect(
-      await modelSourceFor(api, ["session=abc"], TENANT_ID, "ollama"),
-    ).toEqual({
+    expect(await modelSourceFor(api, ["session=abc"], TENANT_ID, "ollama")).toEqual({
       provider: "openai-compatible",
       model: "llama3.2",
     });
@@ -290,12 +274,7 @@ describe("modelSourceFor", () => {
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
-    const result = await modelSourceFor(
-      api,
-      ["session=abc"],
-      TENANT_ID,
-      "ollama",
-    );
+    const result = await modelSourceFor(api, ["session=abc"], TENANT_ID, "ollama");
     expect(result.model).toBe("llama3.2");
   });
 
@@ -315,21 +294,13 @@ describe("modelSourceFor", () => {
           },
         ]);
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/models`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/catalog/models`) {
         return ownedCatalogModelsResponse(["llama3.2", "gpt-oss:20b"]);
       }
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
-    const result = await modelSourceFor(
-      api,
-      ["session=abc"],
-      TENANT_ID,
-      "ollama",
-    );
+    const result = await modelSourceFor(api, ["session=abc"], TENANT_ID, "ollama");
     expect(result.model).toBe("gpt-oss:20b");
   });
 
@@ -352,21 +323,13 @@ describe("modelSourceFor", () => {
           },
         ]);
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/models`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/catalog/models`) {
         return ownedCatalogModelsResponse(["llama3.2"]);
       }
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
-    const result = await modelSourceFor(
-      api,
-      ["session=abc"],
-      TENANT_ID,
-      "ollama",
-    );
+    const result = await modelSourceFor(api, ["session=abc"], TENANT_ID, "ollama");
     expect(result.model).toBe("llama3.2");
   });
 
@@ -388,21 +351,13 @@ describe("modelSourceFor", () => {
           },
         ]);
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/models`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/catalog/models`) {
         return ownedCatalogModelsResponse([]);
       }
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
-    const result = await modelSourceFor(
-      api,
-      ["session=abc"],
-      TENANT_ID,
-      "ollama",
-    );
+    const result = await modelSourceFor(api, ["session=abc"], TENANT_ID, "ollama");
     expect(result.model).toBe("gpt-oss:20b");
   });
 });
@@ -523,8 +478,7 @@ describe("completeCredentialSetup", () => {
 
   test("a valid OpenAI key seeds its own catalog and routines", async () => {
     const seedCatalogCalls: unknown[] = [];
-    const seedTenantCalls: { model: { provider: string; model: string } }[] =
-      [];
+    const seedTenantCalls: { model: { provider: string; model: string } }[] = [];
     const api: ApiCall = async (method, path) => {
       if (method === "GET" && path === "/api/me/principals") {
         return principalsResponse();
@@ -568,8 +522,7 @@ describe("completeCredentialSetup", () => {
 
   test("a valid Groq key seeds the shared OpenAI-compatible catalog and routines", async () => {
     const seedCatalogCalls: { provider?: string }[] = [];
-    const seedTenantCalls: { model: { provider: string; model: string } }[] =
-      [];
+    const seedTenantCalls: { model: { provider: string; model: string } }[] = [];
     const api: ApiCall = async (method, path) => {
       if (method === "GET" && path === "/api/me/principals") {
         return principalsResponse();
@@ -766,26 +719,17 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/credentials`
-      ) {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`) {
         return { status: 409, data: { error: "name taken" }, cookies: [] };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/credentials`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/credentials`) {
         return {
           status: 200,
           data: { data: [staleCredentialRow()], nextCursor: null },
           cookies: [],
         };
       }
-      if (
-        method === "PATCH" &&
-        path === `/api/tenants/${TENANT_ID}/credentials/cre_old`
-      ) {
+      if (method === "PATCH" && path === `/api/tenants/${TENANT_ID}/credentials/cre_old`) {
         patchCalls += 1;
         patchBody = body;
         return {
@@ -798,10 +742,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/models`
-      ) {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/catalog/models`) {
         return {
           status: 201,
           data: {
@@ -815,10 +756,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/providers`
-      ) {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/catalog/providers`) {
         return {
           status: 201,
           data: {
@@ -835,10 +773,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
-      ) {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/catalog/offerings`) {
         return {
           status: 201,
           data: {
@@ -915,10 +850,7 @@ describe("completeCredentialSetup", () => {
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
         return fixedDiscoveredModelsResponse();
       }
-      if (
-        method === "GET" &&
-        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
-      ) {
+      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)) {
         return {
           status: 200,
           data: { data: [], nextCursor: null },
@@ -949,8 +881,7 @@ describe("completeCredentialSetup", () => {
       }
       if (
         method === "GET" &&
-        path ===
-          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return {
           status: 200,
@@ -968,20 +899,14 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/git-tokens`
-      ) {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/git-tokens`) {
         return {
           status: 201,
           data: { id: "tok_1", secret: "s3cret" },
           cookies: [],
         };
       }
-      if (
-        method === "GET" &&
-        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
-      ) {
+      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
         return { status: 404, data: {}, cookies: [] };
       }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
@@ -989,10 +914,7 @@ describe("completeCredentialSetup", () => {
       }
       const handshake = seedHandshake(method, path);
       if (handshake) return handshake;
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/workflows/deployments`) {
         return {
           status: 200,
           data: deployments.map((d) => ({
@@ -1005,12 +927,8 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-      ) {
-        const assetId = (body as { source: { assetId: string } }).source
-          .assetId;
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/workflows/deployments`) {
+        const assetId = (body as { source: { assetId: string } }).source.assetId;
         const id = `dep_${assetId}`;
         deployments.push({ definitionAssetId: assetId, id });
         return {
@@ -1025,20 +943,12 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "GET" &&
-        path.includes("/workflows/") &&
-        path.endsWith("/runs")
-      ) {
+      if (method === "GET" && path.includes("/workflows/") && path.endsWith("/runs")) {
         throw new Error(
           `unexpected run-listing call for an unproven, never-triggered key: ${method} ${path}`,
         );
       }
-      if (
-        method === "POST" &&
-        path.includes("/workflows/") &&
-        path.endsWith("/mail")
-      ) {
+      if (method === "POST" && path.includes("/workflows/") && path.endsWith("/mail")) {
         throw new Error(
           `unexpected workflow trigger call for an unproven, never-triggered key: ${method} ${path}`,
         );
@@ -1104,10 +1014,7 @@ describe("completeCredentialSetup", () => {
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
         return tenantResponse();
       }
-      if (
-        method === "GET" &&
-        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
-      ) {
+      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)) {
         return {
           status: 200,
           data: {
@@ -1156,8 +1063,7 @@ describe("completeCredentialSetup", () => {
       }
       if (
         method === "GET" &&
-        path ===
-          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return {
           status: 200,
@@ -1175,20 +1081,14 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/git-tokens`
-      ) {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/git-tokens`) {
         return {
           status: 201,
           data: { id: "tok_1", secret: "s3cret" },
           cookies: [],
         };
       }
-      if (
-        method === "GET" &&
-        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
-      ) {
+      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
         return { status: 404, data: {}, cookies: [] };
       }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
@@ -1196,10 +1096,7 @@ describe("completeCredentialSetup", () => {
       }
       const handshake = seedHandshake(method, path);
       if (handshake) return handshake;
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/workflows/deployments`) {
         return {
           status: 200,
           data: deployments.map((d) => ({
@@ -1212,13 +1109,9 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-      ) {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/workflows/deployments`) {
         deploymentCreatePosts += 1;
-        const assetId = (body as { source: { assetId: string } }).source
-          .assetId;
+        const assetId = (body as { source: { assetId: string } }).source.assetId;
         const id = `dep_${assetId}`;
         deployments.push({ definitionAssetId: assetId, id });
         return {
@@ -1267,13 +1160,9 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "PATCH" &&
-        path === `/api/tenants/${TENANT_ID}/providers/prv_anthropic`
-      ) {
+      if (method === "PATCH" && path === `/api/tenants/${TENANT_ID}/providers/prv_anthropic`) {
         const provider = providers.find((p) => p.id === "prv_anthropic");
-        if (provider === undefined)
-          throw new Error("provider must exist before updating it");
+        if (provider === undefined) throw new Error("provider must exist before updating it");
         provider.apiBaseUrl = (body as { apiBaseUrl: string }).apiBaseUrl;
         return {
           status: 200,
@@ -1289,10 +1178,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/providers?inherited=false`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/providers?inherited=false`) {
         return {
           status: 200,
           data: {
@@ -1310,10 +1196,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/credentials`
-      ) {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`) {
         const name = (body as { name: string }).name;
         const existing = credentials.find((c) => c.name === name);
         if (existing) return { status: 409, data: {}, cookies: [] };
@@ -1336,10 +1219,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/credentials`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/credentials`) {
         return {
           status: 200,
           data: {
@@ -1359,10 +1239,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "PATCH" &&
-        path.startsWith(`/api/tenants/${TENANT_ID}/credentials/`)
-      ) {
+      if (method === "PATCH" && path.startsWith(`/api/tenants/${TENANT_ID}/credentials/`)) {
         // The second `completeCredentialSetup` call is itself an
         // explicit user submission (`testAndPersistCredential` always
         // sets `credentialVerified: true`, no probe required — CL-6123),
@@ -1388,10 +1265,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/models`
-      ) {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/catalog/models`) {
         const canonicalName = (body as { canonicalName: string }).canonicalName;
         const existing = catalogModels.find((m) => m.name === canonicalName);
         if (existing) return { status: 409, data: {}, cookies: [] };
@@ -1411,10 +1285,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/models`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/catalog/models`) {
         return {
           status: 200,
           data: {
@@ -1431,10 +1302,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/providers`
-      ) {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/catalog/providers`) {
         const name = (body as { name: string }).name;
         const existing = catalogProviders.find((p) => p.name === name);
         if (existing) return { status: 409, data: {}, cookies: [] };
@@ -1457,10 +1325,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/providers`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/catalog/providers`) {
         return {
           status: 200,
           data: {
@@ -1480,10 +1345,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
-      ) {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/catalog/offerings`) {
         const b = body as {
           modelId: string;
           providerId: string;
@@ -1519,10 +1381,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/catalog/offerings`) {
         return {
           status: 200,
           data: {
@@ -1639,9 +1498,7 @@ describe("completeCredentialSetup", () => {
       seedTenantFn: async () => {},
     });
 
-    expect(seedCatalogCalls).toEqual([
-      expect.objectContaining({ credentialType: "api_key" }),
-    ]);
+    expect(seedCatalogCalls).toEqual([expect.objectContaining({ credentialType: "api_key" })]);
   });
 
   // CL-6264: the credential-persist half already succeeded (the tenant,
@@ -1659,15 +1516,11 @@ describe("completeCredentialSetup", () => {
       }
       if (
         method === "GET" &&
-        path ===
-          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return { status: 200, data: [], cookies: [] };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/workflows/deployments`) {
         return { status: 200, data: [], cookies: [] };
       }
       throw new Error(`unexpected call: ${method} ${path}`);
@@ -1881,9 +1734,7 @@ describe("ensureSeeded (the slow half)", () => {
 
     const result = await ensureSeeded({
       api: (async () => {
-        throw new Error(
-          "the real api must not be called — seedTenantFn is stubbed",
-        );
+        throw new Error("the real api must not be called — seedTenantFn is stubbed");
       }) as ApiCall,
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",
@@ -1917,9 +1768,7 @@ describe("ensureSeeded (the slow half)", () => {
 
     await ensureSeeded({
       api: (async () => {
-        throw new Error(
-          "the real api must not be called — seedTenantFn is stubbed",
-        );
+        throw new Error("the real api must not be called — seedTenantFn is stubbed");
       }) as ApiCall,
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",
@@ -1951,10 +1800,7 @@ describe("ensureSeeded (the slow half)", () => {
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
         return fixedDiscoveredModelsResponse();
       }
-      if (
-        method === "GET" &&
-        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
-      ) {
+      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)) {
         return {
           status: 200,
           data: {
@@ -2003,8 +1849,7 @@ describe("ensureSeeded (the slow half)", () => {
       }
       if (
         method === "GET" &&
-        path ===
-          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return {
           status: 200,
@@ -2022,20 +1867,14 @@ describe("ensureSeeded (the slow half)", () => {
           cookies: [],
         };
       }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/git-tokens`
-      ) {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/git-tokens`) {
         return {
           status: 201,
           data: { id: "tok_1", secret: "s3cret" },
           cookies: [],
         };
       }
-      if (
-        method === "GET" &&
-        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
-      ) {
+      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
         return { status: 404, data: {}, cookies: [] };
       }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
@@ -2043,10 +1882,7 @@ describe("ensureSeeded (the slow half)", () => {
       }
       const handshake = seedHandshake(method, path);
       if (handshake) return handshake;
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/workflows/deployments`) {
         return {
           status: 200,
           data: deployments.map((d) => ({
@@ -2070,13 +1906,9 @@ describe("ensureSeeded (the slow half)", () => {
           cookies: [],
         };
       }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-      ) {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/workflows/deployments`) {
         deploymentCreatePosts += 1;
-        const assetId = (body as { source: { assetId: string } }).source
-          .assetId;
+        const assetId = (body as { source: { assetId: string } }).source.assetId;
         const id = `dep_${assetId}`;
         deployments.push({ definitionAssetId: assetId, id });
         return {
@@ -2109,10 +1941,7 @@ describe("ensureSeeded (the slow half)", () => {
     // Two overlapping calls, exactly like two concurrent
     // `/complete-setup` requests reading the same still-valid pending
     // token, running back to back against the same stateful fake hub.
-    const [first, second] = await Promise.all([
-      runEnsureSeeded(),
-      runEnsureSeeded(),
-    ]);
+    const [first, second] = await Promise.all([runEnsureSeeded(), runEnsureSeeded()]);
 
     expect(first.kind).toBe("seeded");
     expect(second.kind).toBe("seeded");
@@ -2144,8 +1973,7 @@ describe("ensureSeeded (the slow half)", () => {
     const api: ApiCall = async (method, path) => {
       if (
         method === "GET" &&
-        path ===
-          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return {
           status: 200,
@@ -2153,10 +1981,7 @@ describe("ensureSeeded (the slow half)", () => {
           cookies: [],
         };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/workflows/deployments`) {
         return {
           status: 200,
           data: [
@@ -2309,9 +2134,7 @@ describe("findPersonalTenant", () => {
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
-    expect(
-      await findPersonalTenant(api, ["session=abc"], "alice-user1"),
-    ).toBeUndefined();
+    expect(await findPersonalTenant(api, ["session=abc"], "alice-user1")).toBeUndefined();
     expect(
       await findPersonalTenant(api, ["session=abc"], "alice-user1", {
         fallbackToFirstPrincipal: true,
@@ -2341,14 +2164,12 @@ describe("findPersonalTenant", () => {
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
-    expect(await findPersonalTenant(api, ["session=abc"], TENANT_SLUG)).toEqual(
-      {
-        tenantId: TENANT_ID,
-        tenantSlug: TENANT_SLUG,
-        principalId: PRINCIPAL_ID,
-        tenantDomain: "alice-user1.bench.local",
-      },
-    );
+    expect(await findPersonalTenant(api, ["session=abc"], TENANT_SLUG)).toEqual({
+      tenantId: TENANT_ID,
+      tenantSlug: TENANT_SLUG,
+      principalId: PRINCIPAL_ID,
+      tenantDomain: "alice-user1.bench.local",
+    });
   });
 
   test("the fallback pick is the first principal in page order", async () => {

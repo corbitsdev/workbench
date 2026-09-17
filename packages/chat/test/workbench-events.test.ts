@@ -31,9 +31,7 @@ function fakeStream(
   writeSSE: (message: unknown) => Promise<void>,
   close: () => Promise<void> = () => Promise.resolve(),
 ) {
-  return { writeSSE, close } as unknown as Parameters<
-    typeof bridgeWorkbenchStream
-  >[0]["stream"];
+  return { writeSSE, close } as unknown as Parameters<typeof bridgeWorkbenchStream>[0]["stream"];
 }
 
 function noopPlatformEvents(): WorkbenchEvents {
@@ -57,17 +55,13 @@ describe("createWorkbenchSubscriberRegistry", () => {
 
   test("a workbench with no subscribers is a no-op publish", () => {
     const registry = createWorkbenchSubscriberRegistry();
-    expect(() =>
-      registry.publish("chan_none", { type: "chat.typing", data: {} }),
-    ).not.toThrow();
+    expect(() => registry.publish("chan_none", { type: "chat.typing", data: {} })).not.toThrow();
   });
 
   test("unsubscribing stops delivery", () => {
     const registry = createWorkbenchSubscriberRegistry();
     const received: ChatWorkbenchEvent[] = [];
-    const unsubscribe = registry.subscribe("chan_1", (event) =>
-      received.push(event),
-    );
+    const unsubscribe = registry.subscribe("chan_1", (event) => received.push(event));
     unsubscribe();
 
     registry.publish("chan_1", { type: "chat.typing", data: {} });
@@ -161,9 +155,7 @@ describe("bridgeWorkbenchStream", () => {
   afterEach(() => {
     // Some tests below stub `@corbits/error-sink`'s `reportError`; always
     // restore it so a mock from one test can't leak into the next.
-    (
-      errorSink.reportError as unknown as { mockRestore?: () => void }
-    ).mockRestore?.();
+    (errorSink.reportError as unknown as { mockRestore?: () => void }).mockRestore?.();
   });
 
   test("forwards a registry publish onto the stream as an SSE write", async () => {
@@ -354,9 +346,7 @@ describe("bridgeWorkbenchStream", () => {
 
     await Promise.race([
       closed,
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("hung on close()")), 200),
-      ),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("hung on close()")), 200)),
     ]);
 
     expect(abortCount).toBe(1);
@@ -600,10 +590,7 @@ describe("bridgeWorkbenchStream", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    expect(writes.map((data) => JSON.parse(data) as string)).toEqual([
-      "A",
-      "B",
-    ]);
+    expect(writes.map((data) => JSON.parse(data) as string)).toEqual(["A", "B"]);
   });
 
   test("the presence snapshot is written before any event racing the setup window", async () => {
@@ -681,9 +668,7 @@ describe("bridgeWorkbenchStream", () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 30));
-    const keepalivesBeforeTeardown = events.filter(
-      (event) => event === "keepalive",
-    ).length;
+    const keepalivesBeforeTeardown = events.filter((event) => event === "keepalive").length;
     expect(keepalivesBeforeTeardown).toBeGreaterThan(0);
 
     teardown();
@@ -714,22 +699,19 @@ describe("bridgeWorkbenchStream", () => {
       });
       await flush();
 
-      const snapshotWrite = writes.find(
-        (write) => write.event === "chat.presence.snapshot",
-      );
+      const snapshotWrite = writes.find((write) => write.event === "chat.presence.snapshot");
       expect(snapshotWrite).toBeDefined();
       const snapshot = JSON.parse(snapshotWrite?.data ?? "{}") as {
         members: { principalId: string }[];
       };
       // The connecting principal is already in the roster this stream
       // is handed — `connect` happens before the snapshot is read.
-      expect(
-        snapshot.members.map((member) => member.principalId).sort(),
-      ).toEqual(["prn_ada", "prn_bob"]);
+      expect(snapshot.members.map((member) => member.principalId).sort()).toEqual([
+        "prn_ada",
+        "prn_bob",
+      ]);
 
-      const onlineWrite = writes.find(
-        (write) => write.event === "chat.presence",
-      );
+      const onlineWrite = writes.find((write) => write.event === "chat.presence");
       expect(onlineWrite).toBeDefined();
       expect(JSON.parse(onlineWrite?.data ?? "{}")).toMatchObject({
         principalId: "prn_ada",
@@ -762,9 +744,7 @@ describe("bridgeWorkbenchStream", () => {
       await flush();
 
       expect(presenceRegistry.snapshot("chan_1")).toEqual([]);
-      const offlineEvent = observed.find(
-        (event) => event.type === "chat.presence",
-      );
+      const offlineEvent = observed.find((event) => event.type === "chat.presence");
       expect(offlineEvent).toBeDefined();
       expect(offlineEvent?.data).toMatchObject({
         principalId: "prn_ada",
@@ -809,12 +789,10 @@ describe("bridgeWorkbenchStream", () => {
       await flush();
 
       // Still connected via the second stream — no offline delta.
-      expect(
-        presenceRegistry.snapshot("chan_1").map((member) => member.principalId),
-      ).toEqual(["prn_ada"]);
-      expect(writesB.some((write) => write.event === "chat.presence")).toBe(
-        false,
-      );
+      expect(presenceRegistry.snapshot("chan_1").map((member) => member.principalId)).toEqual([
+        "prn_ada",
+      ]);
+      expect(writesB.some((write) => write.event === "chat.presence")).toBe(false);
     });
 
     test("no presence option: the original no-presence behavior is unchanged", async () => {

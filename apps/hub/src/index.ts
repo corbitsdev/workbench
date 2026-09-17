@@ -17,16 +17,9 @@ import {
   createWorkflowRunDispatchStore,
   listAssetsForTenant,
 } from "@intx/db";
-import {
-  tenant as tenantTable,
-  user as userTable,
-  workflowDefinition,
-} from "@intx/db/schema";
+import { tenant as tenantTable, user as userTable, workflowDefinition } from "@intx/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
-import {
-  createEnvKeyCredentialCipher,
-  createNoopCredentialCipher,
-} from "@intx/crypto";
+import { createEnvKeyCredentialCipher, createNoopCredentialCipher } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
 import {
   createApp,
@@ -78,18 +71,12 @@ import {
   createInMemoryTurnClaimStore,
   createWorkbenchTurnQueue,
 } from "@corbits/agent-runtime";
-import {
-  createDrizzleMailboxWriter,
-  type MailboxFanoutDeps,
-} from "@corbits/chat/mailbox-fanout";
+import { createDrizzleMailboxWriter, type MailboxFanoutDeps } from "@corbits/chat/mailbox-fanout";
 import type { RelaunchNoticePort } from "@corbits/chat";
 import { reportError } from "@corbits/error-sink";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
-import {
-  createInboxRoutes,
-  WORKBENCH_MAILBOX_VOCABULARY,
-} from "@corbits/inbox";
+import { createInboxRoutes, WORKBENCH_MAILBOX_VOCABULARY } from "@corbits/inbox";
 import {
   createInMemoryMailboxEventBus,
   createMailboxDb,
@@ -113,10 +100,7 @@ import {
   createWebhookTriggerRoutes,
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
-import {
-  ensureRunSession,
-  isConversationalWorkflowName,
-} from "@corbits/workflows";
+import { ensureRunSession, isConversationalWorkflowName } from "@corbits/workflows";
 import {
   createSidecarProvisioner as createE2BSidecarProvisioner,
   readProvisionerConfig as readE2BProvisionerConfig,
@@ -143,15 +127,8 @@ import { grantConditionRegistry } from "./grant-conditions";
 import { wireMailRedelivery } from "./mail-redelivery";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
-import {
-  createToolAllowanceRegistry,
-  withGrantAllowance,
-} from "@corbits/approvals";
-import {
-  createMcpCallClassifier,
-  MCP_CALL_TOOL,
-  mcpTools,
-} from "@corbits/mcp-tools";
+import { createToolAllowanceRegistry, withGrantAllowance } from "@corbits/approvals";
+import { createMcpCallClassifier, MCP_CALL_TOOL, mcpTools } from "@corbits/mcp-tools";
 import {
   createAllowanceAutoApprover,
   createMcpServerToolsAllowanceLoader,
@@ -211,11 +188,7 @@ import { type Context, Hono, type Next } from "hono";
 
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
-import {
-  readHubConfig,
-  type HubConfig,
-  type SidecarProvisionerConfig,
-} from "./config";
+import { readHubConfig, type HubConfig, type SidecarProvisionerConfig } from "./config";
 import type { SidecarProvisioner } from "@intx/hub-sessions";
 import { withTurnPartWriteDefaults } from "./turn-part-content-default";
 import { createDrizzleTurnTextSnapshotReader } from "./turn-text-snapshot";
@@ -224,10 +197,7 @@ import { triggerNativeWorkflowRoutineRun } from "./native-workflow-routine-launc
 import { createCronEmitter } from "@corbits/workflow-schedule/emitter";
 import { createToolGrantsForPins } from "./tool-grants";
 import { drainHubServer, shutdownHub } from "./shutdown";
-import {
-  createInFlightRequestTracker,
-  withInFlightRequestTracking,
-} from "./in-flight-requests";
+import { createInFlightRequestTracker, withInFlightRequestTracking } from "./in-flight-requests";
 import {
   createWorkflowRunAuthenticator,
   withWorkflowRunTenantAuth,
@@ -339,9 +309,7 @@ export function credentialCipherFrom(
     log.warn`No CREDENTIAL_ENCRYPTION_KEY configured; secrets (e.g. webhook-trigger signing secrets) will NOT be encrypted at rest. ALLOW_PLAINTEXT_SECRETS is set — expected in dev/test only, never for a real deployment.`;
     return createNoopCredentialCipher();
   }
-  return createEnvKeyCredentialCipher(
-    Buffer.from(config.credentialEncryptionKeyHex, "hex"),
-  );
+  return createEnvKeyCredentialCipher(Buffer.from(config.credentialEncryptionKeyHex, "hex"));
 }
 
 /**
@@ -384,9 +352,7 @@ export function principalKeyStoreFrom(
   }
   return createPrincipalKeyStore({
     db,
-    cipher: createEnvKeyCredentialCipher(
-      Buffer.from(config.principalKeyEncryptionKeyHex, "hex"),
-    ),
+    cipher: createEnvKeyCredentialCipher(Buffer.from(config.principalKeyEncryptionKeyHex, "hex")),
   });
 }
 
@@ -436,9 +402,7 @@ function buildSidecarProvisioner(
           },
           dataDir: path.resolve(
             hubDataDir,
-            role === "probe"
-              ? "process-provisioner-probe"
-              : "process-provisioner",
+            role === "probe" ? "process-provisioner-probe" : "process-provisioner",
           ),
           hubWebSocketUrl,
         }),
@@ -447,11 +411,7 @@ function buildSidecarProvisioner(
       return createDockerSidecarProvisioner({
         config: {
           image: config.image,
-          stateFilePath: path.resolve(
-            hubDataDir,
-            "docker-provisioner",
-            "state.json",
-          ),
+          stateFilePath: path.resolve(hubDataDir, "docker-provisioner", "state.json"),
         },
       });
     case "e2b":
@@ -476,9 +436,7 @@ function buildSidecarProvisioner(
 
 export async function createHub(config: HubConfig) {
   const { db, close } = createDB(dbConfigFromUrl(config.databaseUrl));
-  const { db: mailboxDb, close: closeMailbox } = createMailboxDb(
-    config.databaseUrl,
-  );
+  const { db: mailboxDb, close: closeMailbox } = createMailboxDb(config.databaseUrl);
   const mailboxBus = createInMemoryMailboxEventBus();
   const log = getLogger(["hub", "auth"]);
   // Built once, tagged, and shared by every secret-at-rest seam in this
@@ -540,14 +498,11 @@ export async function createHub(config: HubConfig) {
     config.signInRateLimit.windowSeconds,
     config.signInRateLimit.max,
   );
-  const { signingKey, agentRepoStore, assetService } =
-    await createBootAssetWiring({
-      db,
-      dataDir: config.hubDataDir,
-      ...(config.allowGitInsideWorkTree === true
-        ? { allowGitInsideWorkTree: true }
-        : {}),
-    });
+  const { signingKey, agentRepoStore, assetService } = await createBootAssetWiring({
+    db,
+    dataDir: config.hubDataDir,
+    ...(config.allowGitInsideWorkTree === true ? { allowGitInsideWorkTree: true } : {}),
+  });
   const baseLookups = createHubSessionLookups({ db, agentRepoStore });
   // A chat agent is a native provisioned deployment. Reconnect
   // ownership is Interchange's live run. Completed means dead; wake is a
@@ -561,9 +516,7 @@ export async function createHub(config: HubConfig) {
   // assigned once they do; until then every registration takes the plain
   // parked path.
   const grantAllowanceGateRef: {
-    current?: (
-      args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
-    ) => Promise<void>;
+    current?: (args: Parameters<typeof baseLookups.registerSignalCorrelation>[0]) => Promise<void>;
   } = {};
   // Forward reference: `eventCollectors` (the wrapped
   // `EventCollectorRegistry`) isn't constructed until later in this
@@ -648,8 +601,7 @@ export async function createHub(config: HubConfig) {
     oauthLogin: {
       isLocalSidecar: async (identity) => {
         const allocation = await db.query.sidecarAllocation.findFirst({
-          where: (allocation, { eq: equals }) =>
-            equals(allocation.id, identity.allocationId),
+          where: (allocation, { eq: equals }) => equals(allocation.id, identity.allocationId),
           columns: { provisionerId: true },
         });
         return allocation?.provisionerId === "process";
@@ -800,8 +752,7 @@ export async function createHub(config: HubConfig) {
     },
   });
   const hubWebSocketUrl =
-    config.sidecarWebSocketUrl ??
-    `${config.baseUrl.replace(/^http/, "ws")}/api/sidecars/ws`;
+    config.sidecarWebSocketUrl ?? `${config.baseUrl.replace(/^http/, "ws")}/api/sidecars/ws`;
   // Provisioner plugins are injected at the application composition
   // boundary, mirroring @intx/hub-sessions's own reference wiring. An
   // install that configures nothing registers the `process` backend
@@ -822,12 +773,7 @@ export async function createHub(config: HubConfig) {
   const buildSidecarPlugins = (role: ProcessProvisionerRole) =>
     createSidecarPluginRegistry({
       provisioners: config.sidecarProvisioners.map((provisionerConfig) =>
-        buildSidecarProvisioner(
-          provisionerConfig,
-          config.hubDataDir,
-          hubWebSocketUrl,
-          role,
-        ),
+        buildSidecarProvisioner(provisionerConfig, config.hubDataDir, hubWebSocketUrl, role),
       ),
       ...(config.defaultSidecarProvisionerId !== undefined
         ? { defaultProvisionerId: config.defaultSidecarProvisionerId }
@@ -863,9 +809,7 @@ export async function createHub(config: HubConfig) {
     hubWebSocketUrl,
     onReady: async (allocation) => {
       await workflowAllocationService.deployReadyAllocation(allocation);
-      await workflowDispatchService.requeueForReadyAllocation(
-        allocation.anchorRunId,
-      );
+      await workflowDispatchService.requeueForReadyAllocation(allocation.anchorRunId);
     },
   });
   await workflowAllocationService.initialize?.();
@@ -877,21 +821,16 @@ export async function createHub(config: HubConfig) {
   sidecarRouter.events.on("sidecar.allocated.connected", (allocated) =>
     sidecarAllocationReconciler.handleConnected(allocated),
   );
-  sidecarRouter.events.on(
-    "mail.inbound.acknowledged",
-    ({ messageId, allocated }) => {
-      if (allocated === undefined) return;
-      return workflowDispatchService.acknowledge({ ...allocated, messageId });
-    },
-  );
+  sidecarRouter.events.on("mail.inbound.acknowledged", ({ messageId, allocated }) => {
+    if (allocated === undefined) return;
+    return workflowDispatchService.acknowledge({ ...allocated, messageId });
+  });
   const sidecarAllocationLog = getLogger(["hub", "sidecar-allocation"]);
   const ALLOCATION_RECONCILIATION_INTERVAL_MS = 1_000;
   const ALLOCATION_CONNECTION_REPAIR_INTERVAL_MS = 30_000;
-  let nextAllocationConnectionRepairAt =
-    Date.now() + ALLOCATION_CONNECTION_REPAIR_INTERVAL_MS;
+  let nextAllocationConnectionRepairAt = Date.now() + ALLOCATION_CONNECTION_REPAIR_INTERVAL_MS;
   let sidecarAllocationReconciliationStopped = false;
-  let sidecarAllocationReconciliationTimer:
-    ReturnType<typeof setTimeout> | undefined;
+  let sidecarAllocationReconciliationTimer: ReturnType<typeof setTimeout> | undefined;
   function scheduleAllocationReconciliation(delayMs: number): void {
     if (sidecarAllocationReconciliationStopped) return;
     const timer = setTimeout(() => {
@@ -905,8 +844,7 @@ export async function createHub(config: HubConfig) {
       await sidecarAllocationReconciler.reconcileUntilIdle();
       await workflowDispatchService.reconcileUntilIdle();
       if (Date.now() >= nextAllocationConnectionRepairAt) {
-        nextAllocationConnectionRepairAt =
-          Date.now() + ALLOCATION_CONNECTION_REPAIR_INTERVAL_MS;
+        nextAllocationConnectionRepairAt = Date.now() + ALLOCATION_CONNECTION_REPAIR_INTERVAL_MS;
         await sidecarAllocationReconciler.repairUnscheduledConnections();
       }
     } catch (error) {
@@ -936,14 +874,9 @@ export async function createHub(config: HubConfig) {
     // session, the same posture `workflow-run-deploy-auth` documents for
     // its own bearer mirror in `vendor/intx/hub-api`.
     getSession: async (headers) => {
-      const internalRunTriggerToken = headers.get(
-        "x-corbits-internal-run-trigger",
-      );
+      const internalRunTriggerToken = headers.get("x-corbits-internal-run-trigger");
       if (internalRunTriggerToken !== null) {
-        const userId = verifyInternalRunTriggerToken(
-          config.sessionSecret,
-          internalRunTriggerToken,
-        );
+        const userId = verifyInternalRunTriggerToken(config.sessionSecret, internalRunTriggerToken);
         if (userId === null) return null;
         const userRow = await db.query.user.findFirst({
           where: eq(userTable.id, userId),
@@ -1024,8 +957,7 @@ export async function createHub(config: HubConfig) {
           sidecarRouter.handleOpen(handle);
         },
         onMessage(evt, _ws) {
-          if (typeof evt.data === "string")
-            sidecarRouter.handleMessage(handle, evt.data);
+          if (typeof evt.data === "string") sidecarRouter.handleMessage(handle, evt.data);
         },
         onClose: () => sidecarRouter.handleClose(handle),
       };
@@ -1077,11 +1009,7 @@ export async function createHub(config: HubConfig) {
             db,
             sidecarRouter,
             workflowDispatchService,
-            readRunLifecycles: async (
-              agentAddress,
-              topLevelRunId,
-              targetRunId,
-            ) => {
+            readRunLifecycles: async (agentAddress, topLevelRunId, targetRunId) => {
               const lifecycles = await readDurableWorkflowRunLifecycles(
                 agentRepoStore.repoStore,
                 agentAddress,
@@ -1118,10 +1046,9 @@ export async function createHub(config: HubConfig) {
   const turnMailCorrelation = createDrizzleTurnMailCorrelationStore(db);
   // The chat platform's invite-launch fallback: a definition with no
   // model requirements of its own resolves the tenant-catalog default.
-  const chatHostInferencePreferencesResolver =
-    createWorkbenchHostInferencePreferencesResolver((tenantId) =>
-      listDefaultInferencePreferences(db, tenantId),
-    );
+  const chatHostInferencePreferencesResolver = createWorkbenchHostInferencePreferencesResolver(
+    (tenantId) => listDefaultInferencePreferences(db, tenantId),
+  );
   // Where a relaunch announces itself in the room (see `@corbits/chat`'s
   // `relaunch-notice.ts`). Armed further down, once the room-message
   // store the poster writes through exists — the platform that fires
@@ -1162,11 +1089,7 @@ export async function createHub(config: HubConfig) {
     // refreshed frames, so the run dials on a live token or fails over
     // past a credential that just went re-auth-required.
     refreshServingCredentials: createTenantServingRefresh({
-      store: createDrizzleServingRefreshStore(
-        db,
-        credentialCipher,
-        sidecarRouter,
-      ),
+      store: createDrizzleServingRefreshStore(db, credentialCipher, sidecarRouter),
       hubUrl: config.baseUrl,
     }),
     // A hand-authored definition with no model requirements of its own
@@ -1299,9 +1222,7 @@ export async function createHub(config: HubConfig) {
   });
   // Now that `chatStore`/`chatPlatform` exist, arm the finalized-turn
   // artifact-delivery ref declared beside `eventCollectors` above.
-  const artifactDeliveryHandlerDeps: Parameters<
-    typeof createArtifactDeliveryHandler
-  >[0] = {
+  const artifactDeliveryHandlerDeps: Parameters<typeof createArtifactDeliveryHandler>[0] = {
     db,
     store: chatStore,
     roomMessages,
@@ -1316,9 +1237,7 @@ export async function createHub(config: HubConfig) {
     providerHealth: createProviderHealthPort(providerHealthStore),
     listConnectedProviders: (tenantId) => listConnectedProviders(db, tenantId),
   };
-  artifactDeliveryHandlerRef.current = createArtifactDeliveryHandler(
-    artifactDeliveryHandlerDeps,
-  );
+  artifactDeliveryHandlerRef.current = createArtifactDeliveryHandler(artifactDeliveryHandlerDeps);
   // The "/name args" and "@name args" command registry: every tenant's
   // invitable workflow definitions, exposed as commands by
   // `createWorkflowCommandPlugin`, resolved fresh on every list/lookup
@@ -1331,8 +1250,7 @@ export async function createHub(config: HubConfig) {
   const commandRegistry = createCommandRegistry();
   commandRegistry.registerCommandPlugin(
     createWorkflowCommandPlugin({
-      listInvitableDefinitions: (tenantId) =>
-        chatPlatform.listInvitableDefinitions(tenantId),
+      listInvitableDefinitions: (tenantId) => chatPlatform.listInvitableDefinitions(tenantId),
       startWorkflow: (input) =>
         startWorkflowCommand(
           {
@@ -1369,8 +1287,7 @@ export async function createHub(config: HubConfig) {
   // keeps around. Wired into the picker surface: chat's invite/new-chat
   // dialogs (`chatDeps.isInvitableDefinition` below).
   const isPickerListableDefinition = (definition: { name: string }) =>
-    isConversationalAgentDefinition(definition) &&
-    !isPlannerCreatedDefinitionName(definition.name);
+    isConversationalAgentDefinition(definition) && !isPlannerCreatedDefinitionName(definition.name);
 
   const chatDeps: Parameters<typeof createChatRoutes>[0] = {
     store: chatStore,
@@ -1380,8 +1297,7 @@ export async function createHub(config: HubConfig) {
     threads: threadStore,
     turnMailCorrelation,
     agentTurns,
-    turnTextSnapshot: (input) =>
-      createDrizzleTurnTextSnapshotReader(db).read(input),
+    turnTextSnapshot: (input) => createDrizzleTurnTextSnapshotReader(db).read(input),
     blockResponses: blockResponseStore,
     reactions: reactionStore,
     pins: pinStore,
@@ -1414,8 +1330,7 @@ export async function createHub(config: HubConfig) {
     // instance down when it is removed from a chat's participants,
     // rather than leaving it deployed with nothing routing messages to
     // it.
-    releaseAgentInstance: (address, reason) =>
-      sidecarRouter.sendAgentUndeploy(address, reason),
+    releaseAgentInstance: (address, reason) => sidecarRouter.sendAgentUndeploy(address, reason),
     // CL-7450: fans a sent human message into every human participant's
     // `@corbits/mailbox` inbox, on the same `mailboxDb`/`mailboxBus` every
     // other mailbox consumer in this file shares. `resolveKnownPrincipalIds`
@@ -1476,10 +1391,7 @@ export async function createHub(config: HubConfig) {
   // (mentions + deliveries only), clear-done. The raw package surface
   // (including SSE events) mounts under `/mailbox` for hosts and tools
   // that need the universal API.
-  app.route(
-    `${TENANT_PREFIX}/inbox`,
-    createInboxRoutes({ db: mailboxDb, bus: mailboxBus }),
-  );
+  app.route(`${TENANT_PREFIX}/inbox`, createInboxRoutes({ db: mailboxDb, bus: mailboxBus }));
   // Library/artifacts plane (CL-8188): `@corbits/artifacts` mounted directly
   // rather than through the retired `@corbits/artifacts-hub` wrapper — the
   // library now owns counts, preview, and every other Library HTTP surface
@@ -1500,8 +1412,7 @@ export async function createHub(config: HubConfig) {
       countSegments: Object.fromEntries(
         LIBRARY_KIND_SEGMENTS.map((segment) => [
           segment,
-          (row: { kind: string; title: string }) =>
-            artifactMatchesLibraryKindSegment(row, segment),
+          (row: { kind: string; title: string }) => artifactMatchesLibraryKindSegment(row, segment),
         ]),
       ),
     });
@@ -1522,8 +1433,7 @@ export async function createHub(config: HubConfig) {
     mountWorkflowArtifacts(workflowArtifactsApi, {
       db,
       contentStore: artifactContentStore,
-      resolveRunScope: (token, runAddress) =>
-        workflowRunAuthenticator.resolve(token, runAddress),
+      resolveRunScope: (token, runAddress) => workflowRunAuthenticator.resolve(token, runAddress),
     });
     app.route("/api/workflow-artifacts", workflowArtifactsApi);
   }
@@ -1602,8 +1512,8 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: grantConditionRegistry,
       }),
       workbenchBelongsToTenant: async (tenantId, chatId) =>
-        (await chatStore.getWorkbenchSettings(tenantId, chatId)) !==
-          undefined || (await chatStore.hasLaunchedInstance(tenantId, chatId)),
+        (await chatStore.getWorkbenchSettings(tenantId, chatId)) !== undefined ||
+        (await chatStore.hasLaunchedInstance(tenantId, chatId)),
     }),
   );
 
@@ -1618,10 +1528,7 @@ export async function createHub(config: HubConfig) {
   // comes from the trigger row the id resolves to, and the only trust
   // it is granted comes from the HMAC signature check in
   // `createWebhookIngressRoutes` itself.
-  const webhookTriggerStore = createDrizzleWebhookTriggerStore(
-    db,
-    credentialCipher,
-  );
+  const webhookTriggerStore = createDrizzleWebhookTriggerStore(db, credentialCipher);
   app.route(
     `${TENANT_PREFIX}/webhook-triggers`,
     createWebhookTriggerRoutes({
@@ -1736,17 +1643,14 @@ export async function createHub(config: HubConfig) {
         gmailClientSecret: config.gmailClientSecret,
       },
       providerHealth: providerHealthStore,
-      listConnectedProviders: (tenantId) =>
-        listConnectedProviders(db, tenantId),
+      listConnectedProviders: (tenantId) => listConnectedProviders(db, tenantId),
       // CL-6403: an operator-set GITHUB_API_BASE_URL lets a fake server
       // stand in for api.github.com for the `github` connector's PAT
       // probe and stored provider origin; unset in every real deployment,
       // so `probeBaseUrls` is empty and every connector probes its own
       // fixed production origin.
       probeBaseUrls:
-        config.githubApiBaseUrl !== undefined
-          ? { github: config.githubApiBaseUrl }
-          : {},
+        config.githubApiBaseUrl !== undefined ? { github: config.githubApiBaseUrl } : {},
       onConnected: settleServiceConnection,
     }),
   );
@@ -1784,11 +1688,7 @@ export async function createHub(config: HubConfig) {
       defaultReturnPath: "/settings/connections",
       // `/w/` is the chat room prefix: the in-room connect card
       // (CL-6393) starts OAuth from a room and must land back in it.
-      returnPathAllowlist: [
-        ...DEFAULT_RETURN_PATH_ALLOWLIST,
-        "/plugins",
-        "/w/",
-      ],
+      returnPathAllowlist: [...DEFAULT_RETURN_PATH_ALLOWLIST, "/plugins", "/w/"],
     }),
   );
   // Loopback OAuth connect (CL-7508): codex/xai-oauth connect through a
@@ -1840,11 +1740,7 @@ export async function createHub(config: HubConfig) {
       presets: MCP_PRESETS,
       onConnected: settleServiceConnection,
       // `/w/` for the same reason as the connections/oauth mount above.
-      returnPathAllowlist: [
-        ...DEFAULT_RETURN_PATH_ALLOWLIST,
-        "/plugins",
-        "/w/",
-      ],
+      returnPathAllowlist: [...DEFAULT_RETURN_PATH_ALLOWLIST, "/plugins", "/w/"],
     }),
   );
   // Myra's own connections-visibility surface
@@ -1947,10 +1843,7 @@ export async function createHub(config: HubConfig) {
       // died with the process must never stall shutdown, so bound it.
       // (CL-7584: a fire-and-forget reconcile's request can be cut
       // mid-query by this very teardown.)
-      await Promise.race([
-        close(),
-        new Promise((resolve) => setTimeout(resolve, 5_000)),
-      ]);
+      await Promise.race([close(), new Promise((resolve) => setTimeout(resolve, 5_000))]);
     },
   };
 }
@@ -1963,11 +1856,7 @@ if (import.meta.main) {
   const url = new URL(config.baseUrl);
   const port =
     config.listenPort ??
-    (url.port === ""
-      ? url.protocol === "https:"
-        ? 443
-        : 80
-      : Number(url.port));
+    (url.port === "" ? (url.protocol === "https:" ? 443 : 80) : Number(url.port));
   const server = Bun.serve({
     fetch: hub.app.fetch,
     websocket,

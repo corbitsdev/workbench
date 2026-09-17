@@ -109,16 +109,12 @@ export async function addCapability(
     throw new CapabilityOutOfInventoryError(message);
   }
   if (!response.ok) {
-    throw new Error(
-      `Requesting a capability failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Requesting a capability failed: ${response.status} ${response.statusText}`);
   }
   const body: unknown = await response.json();
   const parsed = AddedCapabilitiesResponse(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `Capability response did not match the expected shape: ${parsed.summary}`,
-    );
+    throw new Error(`Capability response did not match the expected shape: ${parsed.summary}`);
   }
   return parsed;
 }

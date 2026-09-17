@@ -23,9 +23,7 @@ const INPUT = {
 function digestStep(definition: WorkflowDefinition): StepPrimitive {
   const primitive = definition.steps[WORKBENCH_DIGEST_STEP_ID];
   if (primitive === undefined || primitive.kind !== "step") {
-    throw new Error(
-      `definition has no step primitive named ${WORKBENCH_DIGEST_STEP_ID}`,
-    );
+    throw new Error(`definition has no step primitive named ${WORKBENCH_DIGEST_STEP_ID}`);
   }
   return primitive;
 }
@@ -44,9 +42,7 @@ test("the step carries an explicit per-turn timeout", () => {
 test("the workflow is triggered on the daily 09:00 UTC schedule", () => {
   const definition = buildWorkbenchDigestWorkflow(INPUT);
   expect(definition.id).toBe(WORKBENCH_DIGEST_WORKFLOW_ID);
-  expect(definition.triggers).toEqual([
-    { type: "schedule", cron: "0 9 * * *" },
-  ]);
+  expect(definition.triggers).toEqual([{ type: "schedule", cron: "0 9 * * *" }]);
   expect(WORKBENCH_DIGEST_SCHEDULE_CRON).toBe("0 9 * * *");
 });
 
@@ -61,9 +57,7 @@ test("the agent instructs relaying the exact summary line, carries the preferenc
 
 test("the definition survives the workflow-asset JSON round-trip", () => {
   const definition = buildWorkbenchDigestWorkflow(INPUT);
-  const revived: unknown = JSON.parse(
-    serializeWorkbenchDigestWorkflow(definition),
-  );
+  const revived: unknown = JSON.parse(serializeWorkbenchDigestWorkflow(definition));
   expect(revived).toEqual(definition);
 });
 
@@ -93,10 +87,10 @@ test("serialization fails loud on a function-valued field, naming its path", () 
 });
 
 test("a non-positive or fractional turn timeout is rejected", () => {
-  expect(() =>
-    buildWorkbenchDigestWorkflow({ ...INPUT, turnTimeoutMs: 0 }),
-  ).toThrow(/turnTimeoutMs/);
-  expect(() =>
-    buildWorkbenchDigestWorkflow({ ...INPUT, turnTimeoutMs: 0.5 }),
-  ).toThrow(/turnTimeoutMs/);
+  expect(() => buildWorkbenchDigestWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(
+    /turnTimeoutMs/,
+  );
+  expect(() => buildWorkbenchDigestWorkflow({ ...INPUT, turnTimeoutMs: 0.5 })).toThrow(
+    /turnTimeoutMs/,
+  );
 });

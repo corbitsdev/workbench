@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  persistedArtifactsForFinalizedTurn,
-  persistedArtifactsForToolCall,
-} from "./index";
+import { persistedArtifactsForFinalizedTurn, persistedArtifactsForToolCall } from "./index";
 
 describe("persistedArtifactsForToolCall", () => {
   test("parses a single persisted-artifact result", () => {
@@ -34,10 +31,7 @@ describe("persistedArtifactsForToolCall", () => {
         ],
       }),
     });
-    expect(artifacts.map((artifact) => artifact.id)).toEqual([
-      "art_1",
-      "art_2",
-    ]);
+    expect(artifacts.map((artifact) => artifact.id)).toEqual(["art_1", "art_2"]);
   });
 
   test("an errored call yields nothing", () => {
@@ -55,9 +49,7 @@ describe("persistedArtifactsForToolCall", () => {
   });
 
   test("unparseable JSON yields nothing", () => {
-    expect(
-      persistedArtifactsForToolCall({ isError: false, result: "not json" }),
-    ).toEqual([]);
+    expect(persistedArtifactsForToolCall({ isError: false, result: "not json" })).toEqual([]);
   });
 
   test("an unrecognized shape yields nothing — never a guess", () => {
@@ -86,15 +78,10 @@ describe("persistedArtifactsForFinalizedTurn", () => {
       {
         isError: false,
         result: JSON.stringify({
-          artifacts: [
-            { id: "art_2", title: "Two", kind: "text", persisted: true },
-          ],
+          artifacts: [{ id: "art_2", title: "Two", kind: "text", persisted: true }],
         }),
       },
     ]);
-    expect(artifacts.map((artifact) => artifact.id)).toEqual([
-      "art_1",
-      "art_2",
-    ]);
+    expect(artifacts.map((artifact) => artifact.id)).toEqual(["art_1", "art_2"]);
   });
 });

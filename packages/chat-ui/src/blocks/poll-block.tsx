@@ -9,10 +9,7 @@ import type { PollBlockData } from "../wire/blocks";
 
 import { CHAT_STRINGS } from "../strings";
 import { BlockCard } from "./block-card";
-import type {
-  BlockResponseActions,
-  BlockResponseQuery,
-} from "./block-responses";
+import type { BlockResponseActions, BlockResponseQuery } from "./block-responses";
 
 function ownChoiceIds(query: BlockResponseQuery): readonly string[] {
   if (query.kind !== "ready" || query.own === null) return [];
@@ -34,12 +31,7 @@ function StaticChoices({ data }: { readonly data: PollBlockData }) {
   return (
     <div className="chat-block-choices">
       {data.choices.map((choice) => (
-        <button
-          key={choice.id}
-          type="button"
-          className="chat-block-choice"
-          disabled
-        >
+        <button key={choice.id} type="button" className="chat-block-choice" disabled>
           {choice.label}
         </button>
       ))}
@@ -80,16 +72,11 @@ export function PollBlockView({
     );
   }
 
-  const closed =
-    data.closesAt !== undefined && Date.parse(data.closesAt) <= Date.now();
+  const closed = data.closesAt !== undefined && Date.parse(data.closesAt) <= Date.now();
 
   function castVote(choiceId: string) {
     if (actions === undefined || messageId === undefined || closed) return;
-    const nextChoiceIds = toggledChoiceIds(
-      ownChoiceIds(query),
-      choiceId,
-      data.multi === true,
-    );
+    const nextChoiceIds = toggledChoiceIds(ownChoiceIds(query), choiceId, data.multi === true);
     if (nextChoiceIds.length === 0) return;
     setVoting(choiceId);
     setError(null);
@@ -134,10 +121,7 @@ export function PollBlockView({
                 )}
               </span>
               <span className="chat-block-bar" aria-hidden="true">
-                <span
-                  className="chat-block-bar-fill"
-                  style={{ width: `${percent}%` }}
-                />
+                <span className="chat-block-bar-fill" style={{ width: `${percent}%` }} />
               </span>
               <span className="chat-block-poll-choice-count">
                 {CHAT_STRINGS.blockPollVoteCount(count)}

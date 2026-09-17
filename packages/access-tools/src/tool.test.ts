@@ -1,12 +1,7 @@
 import { expect, test } from "bun:test";
 import type { ToolCall } from "@intx/types/runtime";
 
-import {
-  accessTools,
-  GRANT_ACCESS_TOOL,
-  LIST_GRANTS_TOOL,
-  type WorkflowAccessEnv,
-} from "./tool";
+import { accessTools, GRANT_ACCESS_TOOL, LIST_GRANTS_TOOL, type WorkflowAccessEnv } from "./tool";
 
 function testEnv(): WorkflowAccessEnv {
   return {
@@ -47,8 +42,7 @@ test("a 403 from the stock grant route surfaces as a clear tool error", async ()
       JSON.stringify({
         error: {
           code: "forbidden",
-          message:
-            "Myra can only grant room:read — she herself holds no room:write here",
+          message: "Myra can only grant room:read — she herself holds no room:write here",
         },
       }),
       { status: 403 },
@@ -97,10 +91,9 @@ test("a successful grant_access round-trips into list_grants", async () => {
       posted.push(body);
       // Native `POST /grants` creates exactly one single-action grant and
       // returns the single `GrantResponse` object.
-      return new Response(
-        JSON.stringify(nativeRow(`grant_${posted.length}`, body.action)),
-        { status: 201 },
-      );
+      return new Response(JSON.stringify(nativeRow(`grant_${posted.length}`, body.action)), {
+        status: 201,
+      });
     }
     if (path.endsWith("/grants")) {
       // The caller's own ceiling read: wide enough to delegate anything.
@@ -119,10 +112,7 @@ test("a successful grant_access round-trips into list_grants", async () => {
             posted.length === 0
               ? []
               : posted.map((body, index) =>
-                  nativeRow(
-                    `grant_${index + 1}`,
-                    (body as { action: string }).action,
-                  ),
+                  nativeRow(`grant_${index + 1}`, (body as { action: string }).action),
                 ),
           nextCursor: null,
         }),

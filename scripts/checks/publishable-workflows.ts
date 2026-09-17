@@ -15,12 +15,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Glob } from "bun";
 import { type } from "arktype";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 const PackageJson = type({
   name: "string",
@@ -33,10 +28,7 @@ const PackageJson = type({
 });
 type PackageJson = typeof PackageJson.infer;
 
-const PUBLISHABLE_GLOBS = [
-  "workflows/*/package.json",
-  "packages/*/package.json",
-];
+const PUBLISHABLE_GLOBS = ["workflows/*/package.json", "packages/*/package.json"];
 
 function isInScope(dir: string): boolean {
   if (dir.startsWith("workflows/")) return true;
@@ -56,14 +48,10 @@ async function listWorkspaces(root: string): Promise<Workspace[]> {
     for await (const manifestPath of glob.scan(root)) {
       const dir = path.dirname(manifestPath);
       if (!isInScope(dir)) continue;
-      const raw = JSON.parse(
-        readFileSync(path.join(root, manifestPath), "utf8"),
-      );
+      const raw = JSON.parse(readFileSync(path.join(root, manifestPath), "utf8"));
       const parsed = PackageJson(raw);
       if (parsed instanceof type.errors) {
-        throw new Error(
-          `${manifestPath}: invalid package.json — ${parsed.summary}`,
-        );
+        throw new Error(`${manifestPath}: invalid package.json — ${parsed.summary}`);
       }
       workspaces.push({ dir, packageJson: parsed });
     }
@@ -71,14 +59,10 @@ async function listWorkspaces(root: string): Promise<Workspace[]> {
   return workspaces.sort((a, b) => a.dir.localeCompare(b.dir));
 }
 
-export function auditPublishableWorkflows(
-  workspaces: readonly Workspace[],
-): CheckReport {
+export function auditPublishableWorkflows(workspaces: readonly Workspace[]): CheckReport {
   const report = emptyReport();
   const privateNames = new Set(
-    workspaces
-      .filter((w) => w.packageJson.private === true)
-      .map((w) => w.packageJson.name),
+    workspaces.filter((w) => w.packageJson.private === true).map((w) => w.packageJson.name),
   );
 
   for (const { dir, packageJson } of workspaces) {

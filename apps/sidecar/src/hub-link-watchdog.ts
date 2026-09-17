@@ -30,9 +30,7 @@ export type CreateHubLinkWatchdogOpts = {
   onStall: () => void;
 };
 
-export function createHubLinkWatchdog(
-  opts: CreateHubLinkWatchdogOpts,
-): HubLinkWatchdog {
+export function createHubLinkWatchdog(opts: CreateHubLinkWatchdogOpts): HubLinkWatchdog {
   let deadline: ReturnType<typeof setTimeout> | undefined;
 
   function arm(): void {

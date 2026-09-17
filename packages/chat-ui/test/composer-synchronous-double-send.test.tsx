@@ -27,8 +27,7 @@ afterEach(() => {
   }
 });
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
 function mount(onSend: (payload: ComposerSendPayload) => Promise<boolean>) {
   container = document.createElement("div");
@@ -70,9 +69,7 @@ function typeInto(element: HTMLTextAreaElement, text: string) {
 }
 
 function sendButton(): HTMLButtonElement {
-  const button = container?.querySelector<HTMLButtonElement>(
-    '[aria-label^="Send"]',
-  );
+  const button = container?.querySelector<HTMLButtonElement>('[aria-label^="Send"]');
   if (button === null || button === undefined) {
     throw new Error("send button not found");
   }

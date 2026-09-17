@@ -46,11 +46,7 @@ import { type } from "arktype";
 import { PackageJSON } from "@intx/types/package-json";
 
 import { WorkflowAuthorError } from "./errors";
-import {
-  normalizeEntryPath,
-  PACKAGE_JSON_PATH,
-  validateWorkflowSourceTree,
-} from "./source-tree";
+import { normalizeEntryPath, PACKAGE_JSON_PATH, validateWorkflowSourceTree } from "./source-tree";
 
 const WORKFLOW_ASSET_KIND = "workflow";
 const HUB_PRINCIPAL = { kind: "hub" } as const;
@@ -140,19 +136,13 @@ export type WorkflowDeployPreviewResult = {
 };
 
 export type WorkflowAuthorRegistry = {
-  author(
-    caller: WorkflowAuthorCaller,
-    input: AuthorWorkflowInput,
-  ): Promise<WorkflowAssetSummary>;
+  author(caller: WorkflowAuthorCaller, input: AuthorWorkflowInput): Promise<WorkflowAssetSummary>;
   republish(
     caller: WorkflowAuthorCaller,
     assetId: string,
     input: RepublishWorkflowInput,
   ): Promise<WorkflowAssetSummary>;
-  readSource(
-    caller: WorkflowAuthorCaller,
-    assetId: string,
-  ): Promise<WorkflowSourceSnapshot>;
+  readSource(caller: WorkflowAuthorCaller, assetId: string): Promise<WorkflowSourceSnapshot>;
   previewDeploy(
     caller: WorkflowAuthorCaller,
     assetId: string,
@@ -174,10 +164,7 @@ export type CreateWorkflowAuthorRegistryDeps = {
 };
 
 async function requireAuthorized(
-  deps: Pick<
-    CreateWorkflowAuthorRegistryDeps,
-    "grantStore" | "conditionRegistry"
-  >,
+  deps: Pick<CreateWorkflowAuthorRegistryDeps, "grantStore" | "conditionRegistry">,
   caller: WorkflowAuthorCaller,
   resource: string,
   action: "create" | "write" | "read",
@@ -275,10 +262,7 @@ function tryReadInertDefaultExport(source: string): unknown {
   const trimmed = source.trim();
   const match = /^export\s+default\s+([\s\S]*?);?\s*$/.exec(trimmed);
   if (match === null || match[1] === undefined) return undefined;
-  const quotedKeys = match[1].replace(
-    /([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)(\s*:)/g,
-    '$1"$2"$3',
-  );
+  const quotedKeys = match[1].replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)(\s*:)/g, '$1"$2"$3');
   try {
     return JSON.parse(quotedKeys);
   } catch {
@@ -292,11 +276,7 @@ function tryReadInertDefaultExport(source: string): unknown {
 function extractToolPackagePins(
   literal: unknown,
 ): readonly { readonly name: string; readonly version: string }[] {
-  if (
-    literal === undefined ||
-    literal === null ||
-    typeof literal !== "object"
-  ) {
+  if (literal === undefined || literal === null || typeof literal !== "object") {
     return [];
   }
   const pins = (literal as Record<string, unknown>).toolPackagePins;
@@ -338,10 +318,7 @@ export function createWorkflowAuthorRegistry(
       ),
     });
     if (row === undefined) {
-      throw new WorkflowAuthorError(
-        "not_found",
-        `no workflow asset ${assetId} in this tenant`,
-      );
+      throw new WorkflowAuthorError("not_found", `no workflow asset ${assetId} in this tenant`);
     }
     return { id: row.id, name: row.name };
   }

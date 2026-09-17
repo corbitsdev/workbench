@@ -24,10 +24,7 @@ describe("myra-workbench helpers", () => {
   });
 });
 
-function definition(partial: {
-  readonly id: string;
-  readonly name: string;
-}): AgentDefinition {
+function definition(partial: { readonly id: string; readonly name: string }): AgentDefinition {
   return {
     id: partial.id,
     tenantId: "tnt_1",
@@ -49,9 +46,7 @@ describe("findMyraDefinition", () => {
   });
 
   test("returns undefined when no assistant definition is deployed", () => {
-    expect(
-      findMyraDefinition([definition({ id: "def-echo", name: "echo" })]),
-    ).toBeUndefined();
+    expect(findMyraDefinition([definition({ id: "def-echo", name: "echo" })])).toBeUndefined();
   });
 });
 
@@ -68,8 +63,7 @@ describe("ensureMyraWorkbench", () => {
   function stubFetch(respond: (path: string) => Response): RecordedCall[] {
     const calls: RecordedCall[] = [];
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-      const path =
-        typeof input === "string" ? input : new URL(String(input)).pathname;
+      const path = typeof input === "string" ? input : new URL(String(input)).pathname;
       calls.push(init === undefined ? { path } : { path, init });
       return Promise.resolve(respond(path));
     }) as typeof fetch;
@@ -105,13 +99,9 @@ describe("ensureMyraWorkbench", () => {
     const result = await ensureMyraWorkbench("tnt_1");
 
     expect(result).toEqual({ kind: "ready", workbenchId: "chat-1" });
-    expect(calls.some((call) => call.path.includes("kind=workbench"))).toBe(
-      false,
-    );
+    expect(calls.some((call) => call.path.includes("kind=workbench"))).toBe(false);
     expect(calls.some((call) => call.path.includes("kind=chat"))).toBe(false);
-    const createCall = calls.find((call) =>
-      call.path.endsWith("/chat/workbenches"),
-    );
+    const createCall = calls.find((call) => call.path.endsWith("/chat/workbenches"));
     expect(createCall?.init?.method).toBe("POST");
     expect(JSON.parse(String(createCall?.init?.body))).toEqual({
       kind: "chat",

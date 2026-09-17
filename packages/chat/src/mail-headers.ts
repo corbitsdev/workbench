@@ -50,9 +50,7 @@ export function mailThreadHeaders(input: {
   readonly references?: readonly string[];
 } {
   const messageId = mailMessageIdFor(input.rowId, input.domain);
-  const references = input.ancestors.map((ancestor) =>
-    mailMessageIdFor(ancestor, input.domain),
-  );
+  const references = input.ancestors.map((ancestor) => mailMessageIdFor(ancestor, input.domain));
   const inReplyTo = references[references.length - 1];
   return {
     messageId,
@@ -129,11 +127,10 @@ export async function resolveWorkbenchIdForAgentFrame(
     if (row !== undefined) return row.workbenchId;
   }
 
-  const workbenchIds =
-    await store.chatStore.findWorkbenchIdsByParticipantAddress(
-      tenantId,
-      args.senderAddress,
-    );
+  const workbenchIds = await store.chatStore.findWorkbenchIdsByParticipantAddress(
+    tenantId,
+    args.senderAddress,
+  );
   if (workbenchIds.length === 1) return workbenchIds[0];
 
   reportError(

@@ -18,11 +18,7 @@
 // failure into a log line instead of an exception — one bad or
 // rate-limited key must never stop every other provider from planting.
 
-import {
-  CredentialResponse,
-  paginatedSchema,
-  ProviderResponse,
-} from "@intx/types";
+import { CredentialResponse, paginatedSchema, ProviderResponse } from "@intx/types";
 import { reportError } from "@corbits/error-sink";
 import {
   OLLAMA_PLACEHOLDER_SECRET,
@@ -47,9 +43,7 @@ import { parseAs, type ApiCall } from "@corbits/hub-api-client";
  * falling back to `GOOGLE_API_KEY` — rather than picking one and
  * silently ignoring whichever an operator happens to already have set.
  */
-export const PROVIDER_ENV_VARS: Readonly<
-  Record<SupportedCredentialProvider, readonly string[]>
-> = {
+export const PROVIDER_ENV_VARS: Readonly<Record<SupportedCredentialProvider, readonly string[]>> = {
   anthropic: ["ANTHROPIC_API_KEY"],
   openai: ["OPENAI_API_KEY"],
   "google-genai": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
@@ -95,8 +89,7 @@ export function envProviderKeysFrom(
     for (const name of names) {
       const value = env[name];
       if (value !== undefined && value.length > 0) {
-        keys[provider] =
-          provider === "ollama" ? OLLAMA_PLACEHOLDER_SECRET : value;
+        keys[provider] = provider === "ollama" ? OLLAMA_PLACEHOLDER_SECRET : value;
         break;
       }
     }
@@ -137,10 +130,7 @@ export type PlantEnvProviderCredentialsOutcome = {
  * log line.
  */
 function sanitizeProviderMessage(message: string): string {
-  return message.replace(
-    /\b(sk|pk|xai|gsk|hf|or)[-_][A-Za-z0-9_-]{6,}\b/g,
-    "[redacted]",
-  );
+  return message.replace(/\b(sk|pk|xai|gsk|hf|or)[-_][A-Za-z0-9_-]{6,}\b/g, "[redacted]");
 }
 
 export type PlantEnvProviderCredentialsArgs = {
@@ -157,9 +147,7 @@ export type PlantEnvProviderCredentialsArgs = {
   /** One line per provider: name, outcome, and (on failure) a probe
    * error summary — never the key. */
   log: (line: string) => void;
-  testCredential?: (
-    args: TestProviderCredentialArgs,
-  ) => ReturnType<typeof testProviderCredential>;
+  testCredential?: (args: TestProviderCredentialArgs) => ReturnType<typeof testProviderCredential>;
   seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
 };
 
@@ -189,11 +177,7 @@ async function findProviderId(
         ? `/api/tenants/${tenantId}/providers?inherited=false`
         : `/api/tenants/${tenantId}/providers?inherited=false&cursor=${encodeURIComponent(cursor)}`;
     const listed = await api("GET", path, undefined, cookies);
-    const page = parseAs(
-      paginatedSchema(ProviderResponse),
-      listed.data,
-      "providers response",
-    );
+    const page = parseAs(paginatedSchema(ProviderResponse), listed.data, "providers response");
     const match = page.data.find((p) => p.name === provider);
     if (match !== undefined) return match.id;
     cursor = page.nextCursor ?? undefined;
@@ -228,11 +212,7 @@ async function findActiveCredential(
         ? `/api/tenants/${tenantId}/credentials`
         : `/api/tenants/${tenantId}/credentials?cursor=${encodeURIComponent(cursor)}`;
     const listed = await api("GET", path, undefined, cookies);
-    const page = parseAs(
-      paginatedSchema(CredentialResponse),
-      listed.data,
-      "credentials response",
-    );
+    const page = parseAs(paginatedSchema(CredentialResponse), listed.data, "credentials response");
     const match = page.data.find(
       (c) =>
         c.providerId === providerId &&
@@ -288,8 +268,7 @@ export async function plantEnvProviderCredentials(
 
   function catalogSeedArgs(
     provider: SupportedCredentialProvider,
-    extra:
-      { readonly apiKey: string } | { readonly existingCredentialId: string },
+    extra: { readonly apiKey: string } | { readonly existingCredentialId: string },
   ): SeedCatalogArgs {
     const baseURL = args.envProviderBaseUrls?.[provider];
     return {
@@ -307,20 +286,10 @@ export async function plantEnvProviderCredentials(
     SupportedCredentialProvider,
     string,
   ][]) {
-    const providerId = await findProviderId(
-      args.api,
-      args.cookies,
-      args.tenantId,
-      provider,
-    );
+    const providerId = await findProviderId(args.api, args.cookies, args.tenantId, provider);
     const alreadyActive =
       providerId !== undefined
-        ? await findActiveCredential(
-            args.api,
-            args.cookies,
-            args.tenantId,
-            providerId,
-          )
+        ? await findActiveCredential(args.api, args.cookies, args.tenantId, providerId)
         : undefined;
     if (alreadyActive) {
       const name = alreadyActive.name;
@@ -342,9 +311,7 @@ export async function plantEnvProviderCredentials(
         const message = sanitizeProviderMessage(
           cause instanceof Error ? cause.message : String(cause),
         );
-        args.log(
-          `env credential plant: ${provider} failed to backfill catalog: ${message}`,
-        );
+        args.log(`env credential plant: ${provider} failed to backfill catalog: ${message}`);
         outcomes.push({ provider, status: "failed", message });
         continue;
       }
@@ -357,9 +324,7 @@ export async function plantEnvProviderCredentials(
 
     const baseURL = args.envProviderBaseUrls?.[provider];
     const probe = await testCredential(
-      baseURL !== undefined
-        ? { provider, apiKey, baseURL }
-        : { provider, apiKey },
+      baseURL !== undefined ? { provider, apiKey, baseURL } : { provider, apiKey },
     );
     if (!probe.ok) {
       const sanitized = sanitizeProviderMessage(probe.message);
@@ -395,20 +360,10 @@ export async function plantEnvProviderCredentials(
     // tell "planted" apart from "409-skipped against a dead row". The
     // provider row is guaranteed to exist by now — `seedCatalog` just
     // `ensureProvider`d it while planting.
-    const nowProviderId = await findProviderId(
-      args.api,
-      args.cookies,
-      args.tenantId,
-      provider,
-    );
+    const nowProviderId = await findProviderId(args.api, args.cookies, args.tenantId, provider);
     const nowActive =
       nowProviderId !== undefined
-        ? await findActiveCredential(
-            args.api,
-            args.cookies,
-            args.tenantId,
-            nowProviderId,
-          )
+        ? await findActiveCredential(args.api, args.cookies, args.tenantId, nowProviderId)
         : undefined;
     if (!nowActive) {
       const name = inferenceCredentialName(provider);

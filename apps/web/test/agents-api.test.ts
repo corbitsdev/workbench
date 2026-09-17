@@ -136,9 +136,7 @@ describe("listCatalogModels", () => {
       ]),
     );
 
-    await expect(listCatalogModels("tnt_1")).rejects.toThrow(
-      /Unexpected response shape/,
-    );
+    await expect(listCatalogModels("tnt_1")).rejects.toThrow(/Unexpected response shape/);
   });
 });
 
@@ -289,9 +287,7 @@ describe("getAgentDefinitionBySlug", () => {
   // the listing's first (and only) page — it asks the server by name.
   test("resolves one definition by name, never through the paginated listing", async () => {
     const calls = stubFetch((path) => {
-      expect(path).toBe(
-        "/api/tenants/tnt_1/agent-definitions/by-name/triage-bot",
-      );
+      expect(path).toBe("/api/tenants/tnt_1/agent-definitions/by-name/triage-bot");
       return json({
         id: "wfd_1",
         tenantId: "tnt_1",
@@ -313,9 +309,7 @@ describe("getAgentDefinitionBySlug", () => {
 describe("clearAgentModel", () => {
   test("DELETEs the model capability rather than posting an empty name", async () => {
     const calls = stubFetch((path) => {
-      expect(path).toBe(
-        "/api/tenants/tnt_1/agent-definitions/wfd_1/capabilities/model",
-      );
+      expect(path).toBe("/api/tenants/tnt_1/agent-definitions/wfd_1/capabilities/model");
       return json({ skills: [] });
     });
 
@@ -386,8 +380,7 @@ describe("draftAgentDefinition errors", () => {
         {
           error: {
             code: "drafting_failed",
-            message:
-              "MyraAgentDefinitionDraftingUnavailableError: no myra\n    at draft",
+            message: "MyraAgentDefinitionDraftingUnavailableError: no myra\n    at draft",
           },
         },
         422,

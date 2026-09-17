@@ -21,12 +21,7 @@ function RoutineNotice({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <StageTopBar
-        crumbs={[
-          { label: "Routines", href: ROUTINES_PATH_PREFIX },
-          { label: title },
-        ]}
-      />
+      <StageTopBar crumbs={[{ label: "Routines", href: ROUTINES_PATH_PREFIX }, { label: title }]} />
       <PageShell>
         <p className="m-0 text-sm text-[var(--ui-fg-muted)]">{description}</p>
         {children ?? (
@@ -53,10 +48,7 @@ export function RoutineDetailPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        crumbs={[
-          { label: "Routines", href: ROUTINES_PATH_PREFIX },
-          { label: row.definition.name },
-        ]}
+        crumbs={[{ label: "Routines", href: ROUTINES_PATH_PREFIX }, { label: row.definition.name }]}
         subtitle={sentence}
         actions={
           <div className="flex items-center gap-2">
@@ -74,9 +66,7 @@ export function RoutineDetailPage({
       />
       <PageShell>
         <h1 className="m-0 text-xl font-semibold">{row.definition.name}</h1>
-        <p className="mt-2 text-sm text-[var(--ui-fg-muted)]">
-          {row.tenantName}
-        </p>
+        <p className="mt-2 text-sm text-[var(--ui-fg-muted)]">{row.tenantName}</p>
         <p className="mt-4 text-lg">{sentence}</p>
       </PageShell>
     </div>
@@ -95,24 +85,17 @@ export function RoutineDetailRoute({ segment }: { readonly segment: string }) {
   const actions = useRoutineActions();
   const rows = routinesQuery.kind === "ready" ? routinesQuery.data : [];
   const resolved =
-    routinesQuery.kind === "ready"
-      ? resolveRoutineSegment(rows, segment)
-      : undefined;
+    routinesQuery.kind === "ready" ? resolveRoutineSegment(rows, segment) : undefined;
 
   if (routinesQuery.kind === "loading") {
     return <RoutineNotice title="Routine" description="Loading…" />;
   }
   if (routinesQuery.kind === "error") {
-    return (
-      <RoutineNotice title={segment} description={routinesQuery.message} />
-    );
+    return <RoutineNotice title={segment} description={routinesQuery.message} />;
   }
   if (resolved === undefined) {
     return (
-      <RoutineNotice
-        title={segment}
-        description="No scheduled workflow matches this address."
-      />
+      <RoutineNotice title={segment} description="No scheduled workflow matches this address." />
     );
   }
 

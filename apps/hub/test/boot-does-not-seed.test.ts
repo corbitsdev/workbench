@@ -7,13 +7,7 @@
 // DB-gated: boots against its own scratch database so a reachable
 // DATABASE_URL is required and the suite skips without one.
 import { afterAll, expect, test } from "bun:test";
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import postgres from "postgres";
@@ -78,9 +72,7 @@ async function withScratchDatabase(
       onnotice: () => undefined,
     });
     try {
-      await cleanup.unsafe(
-        `DROP DATABASE IF EXISTS "${scratchDatabase}" WITH (FORCE)`,
-      );
+      await cleanup.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}" WITH (FORCE)`);
     } finally {
       await cleanup.end();
     }
@@ -95,9 +87,7 @@ async function countTenants(url: string): Promise<number> {
     `;
     const count = rows[0]?.count;
     if (typeof count !== "number") {
-      throw new Error(
-        `tenant count: expected a number, got ${JSON.stringify(rows)}`,
-      );
+      throw new Error(`tenant count: expected a number, got ${JSON.stringify(rows)}`);
     }
     return count;
   } finally {
@@ -106,10 +96,7 @@ async function countTenants(url: string): Promise<number> {
 }
 
 test("process boot source does not mention the deleted boot seeder", () => {
-  const indexSource = readFileSync(
-    path.join(import.meta.dir, "../src/index.ts"),
-    "utf8",
-  );
+  const indexSource = readFileSync(path.join(import.meta.dir, "../src/index.ts"), "utf8");
   expect(indexSource).not.toContain("runSystem" + "Seed");
   expect(indexSource).not.toContain("system" + "-seed");
   expect(indexSource).not.toContain("ensureDefault" + "Tenant");
@@ -125,9 +112,7 @@ describeIfDb("hub process boot does not mint a root tenant", () => {
         startHub({
           databaseUrl: url,
           port: freePort(),
-          sessionSecret: Buffer.from(
-            crypto.getRandomValues(new Uint8Array(32)),
-          ).toString("hex"),
+          sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
           dataDir,
         }),
       );
@@ -142,13 +127,11 @@ describeIfDb("hub process boot does not mint a root tenant", () => {
 
       expect(await countTenants(url)).toBe(0);
 
-      const signIn = await hop(
-        "sign-in as the former boot admin is not 200",
-        async () =>
-          api(hub.baseUrl, "POST", "/api/auth/sign-in/email", {
-            email: ALICE.email,
-            password: ALICE.password,
-          }),
+      const signIn = await hop("sign-in as the former boot admin is not 200", async () =>
+        api(hub.baseUrl, "POST", "/api/auth/sign-in/email", {
+          email: ALICE.email,
+          password: ALICE.password,
+        }),
       );
       expect(signIn.status).not.toBe(200);
     });
@@ -287,9 +270,7 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
         startHub({
           databaseUrl: url,
           port: freePort(),
-          sessionSecret: Buffer.from(
-            crypto.getRandomValues(new Uint8Array(32)),
-          ).toString("hex"),
+          sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
           dataDir: await tempDir("hub-boot-env-plant-genesis-"),
         }),
       );
@@ -300,18 +281,14 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
       // Ollama whose probe would have succeeded.
       const ollama = fakeOllama();
       try {
-        const hub = await hop(
-          "hub process boot with OLLAMA_BASE_URL",
-          async () =>
-            startHub({
-              databaseUrl: url,
-              port: freePort(),
-              sessionSecret: Buffer.from(
-                crypto.getRandomValues(new Uint8Array(32)),
-              ).toString("hex"),
-              dataDir: await tempDir("hub-boot-env-plant-"),
-              extraEnv: { OLLAMA_BASE_URL: ollama.url },
-            }),
+        const hub = await hop("hub process boot with OLLAMA_BASE_URL", async () =>
+          startHub({
+            databaseUrl: url,
+            port: freePort(),
+            sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
+            dataDir: await tempDir("hub-boot-env-plant-"),
+            extraEnv: { OLLAMA_BASE_URL: ollama.url },
+          }),
         );
         track(hub);
         await expectZeroRowsFor(url, 15_000);

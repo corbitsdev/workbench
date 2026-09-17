@@ -25,20 +25,13 @@ describe("ResumeFailedBanner (CL-6833)", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
-      root?.render(
-        <ResumeFailedBanner
-          refId="mt4ewrje-zvbmti"
-          onRetry={() => retries.push(1)}
-        />,
-      );
+      root?.render(<ResumeFailedBanner refId="mt4ewrje-zvbmti" onRetry={() => retries.push(1)} />);
     });
 
     const banner = container.querySelector(".chat-resume-failed-banner");
     expect(banner).not.toBeNull();
     expect(banner?.getAttribute("role")).toBe("alert");
-    expect(container.textContent).toContain(
-      "Couldn't resume the running reply",
-    );
+    expect(container.textContent).toContain("Couldn't resume the running reply");
     expect(container.textContent).toContain("ref mt4ewrje-zvbmti");
 
     act(() => {

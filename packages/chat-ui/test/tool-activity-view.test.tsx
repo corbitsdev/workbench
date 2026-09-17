@@ -126,16 +126,12 @@ describe("ToolActivityGroup", () => {
   });
 
   test("a call still running speaks in the present tense and offers no disclosure", () => {
-    const el = mount([
-      trace({ name: "web_search", input: { query: "x" }, status: "running" }),
-    ]);
+    const el = mount([trace({ name: "web_search", input: { query: "x" }, status: "running" })]);
     expect(el.textContent).toContain('Searching the web for "x"');
     expect(el.querySelector(".chat-tool-activity-trigger")).toBeNull();
-    expect(
-      el
-        .querySelector(".chat-tool-activity-marker")
-        ?.getAttribute("data-status"),
-    ).toBe("running");
+    expect(el.querySelector(".chat-tool-activity-marker")?.getAttribute("data-status")).toBe(
+      "running",
+    );
   });
 
   test("consecutive calls stack as individual chips, never a count", () => {
@@ -192,11 +188,9 @@ describe("ToolActivityGroup", () => {
     expect(name).toMatch(/fail|couldn't/i);
     expect(name).toContain("Retrieved an issue in GitHub");
     expect(el.querySelector('[data-status="failed"]')).not.toBeNull();
-    expect(
-      el
-        .querySelector(".chat-tool-activity-marker")
-        ?.getAttribute("aria-hidden"),
-    ).toBe("true");
+    expect(el.querySelector(".chat-tool-activity-marker")?.getAttribute("aria-hidden")).toBe(
+      "true",
+    );
   });
 
   test("a disclosure chip has an accessible name", () => {
@@ -213,12 +207,8 @@ describe("ToolActivityGroup", () => {
   });
 
   test("a known-provider chip uses brand initials, not a dash", () => {
-    const el = mount([
-      trace({ name: "slack__post_message", input: { channel: "general" } }),
-    ]);
-    expect(el.querySelector(".chat-tool-activity-tile")?.textContent).toBe(
-      "Sl",
-    );
+    const el = mount([trace({ name: "slack__post_message", input: { channel: "general" } })]);
+    expect(el.querySelector(".chat-tool-activity-tile")?.textContent).toBe("Sl");
   });
 
   test("a qualified memory search chip is a layman sentence, not a package path", () => {
@@ -257,9 +247,7 @@ describe("ToolActivityGroup", () => {
     ]);
     expect(el.textContent).toContain("Listed recent issues in Linear");
     expect(el.textContent).not.toContain("Linear list recent issues");
-    expect(el.querySelector(".chat-tool-activity-tile")?.textContent).toBe(
-      "Li",
-    );
+    expect(el.querySelector(".chat-tool-activity-tile")?.textContent).toBe("Li");
   });
 });
 
@@ -301,9 +289,7 @@ const css = readFileSync(
 
 function ruleBody(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]+)\\}`).exec(
-    css,
-  );
+  const match = new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]+)\\}`).exec(css);
   return match?.[1] ?? "";
 }
 

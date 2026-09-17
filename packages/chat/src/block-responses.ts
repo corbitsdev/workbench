@@ -73,9 +73,7 @@ export interface UpsertBlockResponseInput extends BlockResponseKey {
 }
 
 export interface BlockResponseStore {
-  upsertBlockResponse(
-    input: UpsertBlockResponseInput,
-  ): Promise<BlockResponseRow>;
+  upsertBlockResponse(input: UpsertBlockResponseInput): Promise<BlockResponseRow>;
   /**
    * Atomically claims the right to send a question's answer into the
    * workbench and dispatch the asking agent's turn: flips `notifiedAt`
@@ -85,9 +83,7 @@ export interface BlockResponseStore {
    * a second dispatch. The token must be presented back to
    * `releaseBlockResponseNotification` to release this exact claim.
    */
-  claimBlockResponseNotification(
-    key: BlockResponseKey,
-  ): Promise<string | false>;
+  claimBlockResponseNotification(key: BlockResponseKey): Promise<string | false>;
   /**
    * Releases a claim this call took but failed to act on (the send
    * threw), resetting `notifiedAt` to null so a retried submission can
@@ -95,10 +91,7 @@ export interface BlockResponseStore {
    * a caller can never release a claim it does not hold. Never called
    * after a successful send.
    */
-  releaseBlockResponseNotification(
-    key: BlockResponseKey,
-    token: string,
-  ): Promise<void>;
+  releaseBlockResponseNotification(key: BlockResponseKey, token: string): Promise<void>;
   /**
    * Every response on file for one block instance — including every other
    * principal's raw payload. Only ever called from inside a route handler
@@ -175,12 +168,7 @@ export function createInMemoryBlockResponseStore(): BlockResponseStore {
         notifiedAt: existing?.notifiedAt ?? null,
       };
       rows.set(key, row);
-      const blk = blockKey(
-        input.tenantId,
-        input.workbenchId,
-        input.messageId,
-        input.blockId,
-      );
+      const blk = blockKey(input.tenantId, input.workbenchId, input.messageId, input.blockId);
       const keys = byBlock.get(blk) ?? new Set<string>();
       keys.add(key);
       byBlock.set(blk, keys);
@@ -207,9 +195,7 @@ export function createInMemoryBlockResponseStore(): BlockResponseStore {
     },
 
     async listBlockResponses(tenantId, workbenchId, messageId, blockId) {
-      const keys = byBlock.get(
-        blockKey(tenantId, workbenchId, messageId, blockId),
-      );
+      const keys = byBlock.get(blockKey(tenantId, workbenchId, messageId, blockId));
       if (keys === undefined) return [];
       return [...keys].flatMap((key) => {
         const row = rows.get(key);
@@ -219,9 +205,8 @@ export function createInMemoryBlockResponseStore(): BlockResponseStore {
   };
 }
 
-export type BlockResponseDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> = PostgresJsDatabase<TSchema>;
+export type BlockResponseDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+  PostgresJsDatabase<TSchema>;
 
 function mapRow(row: typeof blockResponses.$inferSelect): BlockResponseRow {
   return {
@@ -247,9 +232,9 @@ function keyClause(key: BlockResponseKey) {
   );
 }
 
-export function createDrizzleBlockResponseStore<
-  TSchema extends Record<string, unknown>,
->(db: BlockResponseDb<TSchema>): BlockResponseStore {
+export function createDrizzleBlockResponseStore<TSchema extends Record<string, unknown>>(
+  db: BlockResponseDb<TSchema>,
+): BlockResponseStore {
   return {
     async upsertBlockResponse(input) {
       const now = new Date();
@@ -296,9 +281,7 @@ export function createDrizzleBlockResponseStore<
       await db
         .update(blockResponses)
         .set({ notifiedAt: null, notificationClaimToken: null })
-        .where(
-          and(keyClause(key), eq(blockResponses.notificationClaimToken, token)),
-        );
+        .where(and(keyClause(key), eq(blockResponses.notificationClaimToken, token)));
     },
 
     async listBlockResponses(tenantId, workbenchId, messageId, blockId) {

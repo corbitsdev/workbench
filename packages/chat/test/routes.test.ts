@@ -117,8 +117,7 @@ describe("POST /workbenches", () => {
 
   test("a denied grant is rejected before any workbench is created", async () => {
     const deps = buildDeps({
-      requireGrant: () => async (c) =>
-        c.json({ error: { code: "forbidden", message: "no" } }, 403),
+      requireGrant: () => async (c) => c.json({ error: { code: "forbidden", message: "no" } }, 403),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
@@ -149,9 +148,7 @@ describe("POST /workbenches", () => {
     const deliveries: (() => Promise<void>)[] = [];
     const deps = buildDeps({
       platform: fakePlatform({
-        invitable: [
-          { id: "wfd_assist", name: "assistant", description: "Myra" },
-        ],
+        invitable: [{ id: "wfd_assist", name: "assistant", description: "Myra" }],
       }),
       runPostMintDelivery: (work) => {
         deliveries.push(work);
@@ -168,9 +165,7 @@ describe("POST /workbenches", () => {
     // are durable while timeline delivery and pre-warming remain queued.
     expect(response.status).toBe(201);
     expect(body.title).toBe("Myra");
-    expect(body.participants).toEqual([
-      { address: "ins_invited1@acme.example", handle: "myra" },
-    ]);
+    expect(body.participants).toEqual([{ address: "ins_invited1@acme.example", handle: "myra" }]);
     expect(deliveries).toHaveLength(1);
     await deliveries[0]?.();
 
@@ -197,9 +192,7 @@ describe("POST /workbenches", () => {
 
     expect(response.status).toBe(201);
     expect(body.kind).toBe("chat");
-    expect(body.participants).toEqual([
-      { address: "ins_invited1@acme.example", handle: "echo" },
-    ]);
+    expect(body.participants).toEqual([{ address: "ins_invited1@acme.example", handle: "echo" }]);
     await deliveries[0]?.();
 
     const settled = await deps.store.getWorkbenchSettings(TENANT.id, body.id);
@@ -227,9 +220,7 @@ describe("POST /workbenches", () => {
     // is posted straight onto the chat's own timeline under the agent's
     // run, so the room opens with a hello without waiting on an
     // inference turn.
-    const greeting = timeline.find((message) =>
-      message.parts.some((part) => part.kind === "text"),
-    );
+    const greeting = timeline.find((message) => message.parts.some((part) => part.kind === "text"));
     expect(greeting?.workbenchId).toBe(body.id);
     expect(greeting?.runId).toBe("ins_invited1");
     expect(greeting?.sender.address).toBe("ins_invited1@acme.example");
@@ -252,9 +243,7 @@ describe("POST /workbenches", () => {
       platform: fakePlatform({
         invitable: [], // the stale/pre-fetched snapshot misses it
         resolveDefinitionNameSource: async (definitionId) =>
-          definitionId === "wfd_echo"
-            ? { name: "echo", description: "Myra" }
-            : undefined,
+          definitionId === "wfd_echo" ? { name: "echo", description: "Myra" } : undefined,
       }),
       runPostMintDelivery: (work) => {
         deliveries.push(work);
@@ -312,9 +301,7 @@ describe("POST /workbenches", () => {
     // The 201 carries a joined agent, but nothing has been deployed for
     // it yet: host and invite are mints, and the pre-warm is deferred.
     expect(response.status).toBe(201);
-    expect(body.participants).toEqual([
-      { address: "ins_invited1@acme.example", handle: "echo" },
-    ]);
+    expect(body.participants).toEqual([{ address: "ins_invited1@acme.example", handle: "echo" }]);
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     expect(platform.ensureAwakeCalls).toEqual([]);
 
@@ -363,12 +350,8 @@ describe("POST /workbenches", () => {
       error: { code: string; userMessage: string };
     };
     expect(errorBody.error.code).toBe("not_launchable");
-    expect(errorBody.error.userMessage).toBe(
-      "This agent's model isn't available here.",
-    );
-    expect(errorBody.error.userMessage).not.toMatch(
-      /cannot resolve an inference/,
-    );
+    expect(errorBody.error.userMessage).toBe("This agent's model isn't available here.");
+    expect(errorBody.error.userMessage).not.toMatch(/cannot resolve an inference/);
     expect(errorBody.error.userMessage).not.toMatch(/HTTP/);
 
     // No server compensation: the tenant is client-minted through
@@ -416,8 +399,7 @@ describe("POST /workbenches", () => {
     const deps = buildDeps({
       platform: fakePlatform({
         invitable: [{ id: "wfd_echo", name: "Echo" }],
-        launchInvite: () =>
-          Promise.reject(new Error("blocked: too many @mentions; max 5")),
+        launchInvite: () => Promise.reject(new Error("blocked: too many @mentions; max 5")),
       }),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
@@ -579,9 +561,7 @@ describe("POST /workbenches — chat with a person (DM)", () => {
 
     expect(response.status).toBe(201);
     expect(body.title).toBe("prn_bob");
-    expect(body.participants).toEqual([
-      { address: "prn_bob", handle: "prn_bob" },
-    ]);
+    expect(body.participants).toEqual([{ address: "prn_bob", handle: "prn_bob" }]);
   });
 
   test("rejects a chat with both a definitionId and a principalId", async () => {
@@ -768,12 +748,8 @@ describe("POST /workbenches/:id/invite", () => {
       error: { code: string; userMessage: string };
     };
     expect(errorBody.error.code).toBe("not_launchable");
-    expect(errorBody.error.userMessage).toBe(
-      "This agent's model isn't available here.",
-    );
-    expect(errorBody.error.userMessage).not.toMatch(
-      /No launchable inference source/,
-    );
+    expect(errorBody.error.userMessage).toBe("This agent's model isn't available here.");
+    expect(errorBody.error.userMessage).not.toMatch(/No launchable inference source/);
   });
 
   test("a definition with no stored launch body returns 409, not 500", async () => {
@@ -930,15 +906,12 @@ describe("DELETE /workbenches/:id/participants/:address", () => {
       participants: ["prn_bob"],
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/participants/prn_bob`,
-      { method: "DELETE" },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/participants/prn_bob`, {
+      method: "DELETE",
+    });
 
     expect(response.status).toBe(200);
-    const settingsResponse = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-    );
+    const settingsResponse = await app.request(`/workbenches/${workbench.id}/settings`);
     const settingsBody = (await settingsResponse.json()) as {
       participants: { address: string }[];
     };
@@ -975,9 +948,7 @@ describe("DELETE /workbenches/:id/participants/:address", () => {
     expect(released).toEqual([
       { address: "ins_invited1@acme.example", reason: "participant-removed" },
     ]);
-    const settingsResponse = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-    );
+    const settingsResponse = await app.request(`/workbenches/${workbench.id}/settings`);
     const settingsBody = (await settingsResponse.json()) as {
       participants: { address: string }[];
     };
@@ -1011,10 +982,9 @@ describe("DELETE /workbenches/:id/participants/:address", () => {
 
   test("404s for an unknown workbench", async () => {
     const app = mountAs(createChatRoutes(buildDeps()), "prn_alice");
-    const response = await app.request(
-      "/workbenches/ins_missing/participants/prn_bob",
-      { method: "DELETE" },
-    );
+    const response = await app.request("/workbenches/ins_missing/participants/prn_bob", {
+      method: "DELETE",
+    });
     expect(response.status).toBe(404);
   });
 
@@ -1025,10 +995,9 @@ describe("DELETE /workbenches/:id/participants/:address", () => {
       name: "Test Workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/participants/%E0%A4%A`,
-      { method: "DELETE" },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/participants/%E0%A4%A`, {
+      method: "DELETE",
+    });
     expect(response.status).toBe(400);
   });
 
@@ -1039,10 +1008,9 @@ describe("DELETE /workbenches/:id/participants/:address", () => {
       name: "Test Workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/participants/prn_ghost`,
-      { method: "DELETE" },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/participants/prn_ghost`, {
+      method: "DELETE",
+    });
     expect(response.status).toBe(404);
   });
 
@@ -1057,9 +1025,7 @@ describe("DELETE /workbenches/:id/participants/:address", () => {
     });
 
     const response = await app.request(
-      `/workbenches/${chat.id}/participants/${encodeURIComponent(
-        "ins_invited1@acme.example",
-      )}`,
+      `/workbenches/${chat.id}/participants/${encodeURIComponent("ins_invited1@acme.example")}`,
       { method: "DELETE" },
     );
 
@@ -1082,25 +1048,22 @@ describe("DELETE /workbenches/:id/participants/:address", () => {
       principalId: "prn_bob",
     });
 
-    const response = await app.request(
-      `/workbenches/${chat.id}/participants/prn_bob`,
-      { method: "DELETE" },
-    );
+    const response = await app.request(`/workbenches/${chat.id}/participants/prn_bob`, {
+      method: "DELETE",
+    });
 
     expect(response.status).toBe(409);
   });
 
   test("a denied grant is rejected before any participant is removed", async () => {
     const deps = buildDeps({
-      requireGrant: () => async (c) =>
-        c.json({ error: { code: "forbidden", message: "no" } }, 403),
+      requireGrant: () => async (c) => c.json({ error: { code: "forbidden", message: "no" } }, 403),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
-    const response = await app.request(
-      "/workbenches/ins_whatever/participants/prn_bob",
-      { method: "DELETE" },
-    );
+    const response = await app.request("/workbenches/ins_whatever/participants/prn_bob", {
+      method: "DELETE",
+    });
     expect(response.status).toBe(403);
   });
 });
@@ -1145,9 +1108,7 @@ describe("GET /workbenches/:id/agents", () => {
   test("prefers the definition's display name over its slug (CL-6424)", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
-        invitable: [
-          { id: "wfd_review", name: "code-review", description: "Reviewer" },
-        ],
+        invitable: [{ id: "wfd_review", name: "code-review", description: "Reviewer" }],
         resolveDefinitionIdByAddress: async (address) =>
           address === "ins_invited1@acme.example" ? "wfd_review" : undefined,
         resolveDefinitionAssetId: async (definitionId) => `ast_${definitionId}`,
@@ -1178,9 +1139,7 @@ describe("GET /workbenches/:id/agents", () => {
       platform: fakePlatform({
         invitable: [],
         resolveDefinitionNameSource: async (definitionId) =>
-          definitionId === "wfd_echo"
-            ? { name: "echo", description: "Myra" }
-            : undefined,
+          definitionId === "wfd_echo" ? { name: "echo", description: "Myra" } : undefined,
         resolveDefinitionIdByAddress: async (address) =>
           address === "ins_invited1@acme.example" ? "wfd_echo" : undefined,
         resolveDefinitionAssetId: async (definitionId) => `ast_${definitionId}`,
@@ -1275,10 +1234,7 @@ describe("GET /workbenches/:id/agents", () => {
     const body = (await response.json()) as {
       items: { address: string; definitionId: string }[];
     };
-    expect(body.items.map((item) => item.definitionId).sort()).toEqual([
-      "wfd_echo",
-      "wfd_other",
-    ]);
+    expect(body.items.map((item) => item.definitionId).sort()).toEqual(["wfd_echo", "wfd_other"]);
   });
 
   test("lists no agents (empty items) for a workbench with none", async () => {
@@ -1338,14 +1294,11 @@ describe("POST /workbenches/:id/agents/refresh", () => {
       body: JSON.stringify({ definitionId: "wfd_echo" }),
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/agents/refresh`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ address: "ins_invited1@acme.example" }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/agents/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ address: "ins_invited1@acme.example" }),
+    });
 
     expect(response.status).toBe(200);
     expect(platform.refreshCalls).toEqual([
@@ -1364,14 +1317,11 @@ describe("POST /workbenches/:id/agents/refresh", () => {
       name: "Test Workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/agents/refresh`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({}),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/agents/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
     expect(response.status).toBe(400);
   });
 });
@@ -1426,9 +1376,7 @@ describe("GET /workbenches", () => {
     await sendText(appAlice, workbench.id, "hello");
     await sendText(appAlice, workbench.id, "world");
 
-    const bobList = (await (
-      await appBob.request("/workbenches?kind=workbench")
-    ).json()) as {
+    const bobList = (await (await appBob.request("/workbenches?kind=workbench")).json()) as {
       items: {
         id: string;
         unreadCount?: number;
@@ -1454,9 +1402,9 @@ describe("GET /workbenches", () => {
 
     await sendText(appAlice, workbench.id, "See you at the standup");
 
-    const bobList = (await (
-      await appBob.request("/workbenches?kind=workbench")
-    ).json()) as { items: { id: string; preview?: string }[] };
+    const bobList = (await (await appBob.request("/workbenches?kind=workbench")).json()) as {
+      items: { id: string; preview?: string }[];
+    };
     const bobRow = bobList.items.find((item) => item.id === workbench.id);
     expect(bobRow?.preview).toBe("See you at the standup");
   });
@@ -1487,9 +1435,9 @@ describe("GET /workbenches", () => {
       }),
     });
 
-    const bobList = (await (
-      await appBob.request("/workbenches?kind=workbench")
-    ).json()) as { items: { id: string; unreadCount?: number }[] };
+    const bobList = (await (await appBob.request("/workbenches?kind=workbench")).json()) as {
+      items: { id: string; unreadCount?: number }[];
+    };
     const bobRow = bobList.items.find((item) => item.id === workbench.id);
     expect(bobRow?.unreadCount).toBe(0);
   });
@@ -1504,14 +1452,11 @@ describe("messages", () => {
     });
 
     const parts: Part[] = [{ kind: "text", text: "hello" }];
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts }),
+    });
 
     expect(response.status).toBe(201);
     const timeline = await timelineOf(deps, workbench.id);
@@ -1531,14 +1476,11 @@ describe("messages", () => {
       kind: "workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts: [{ kind: "not-a-real-part" }] }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "not-a-real-part" }] }),
+    });
 
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: { code: string } };
@@ -1586,17 +1528,14 @@ describe("POST /workbenches/:id/messages — invite pre-step (CL-5879 mention-pu
       name: "Test Workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "@echo welcome!" }],
-          invite: [{ kind: "agent", definitionId: "wfd_echo" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "@echo welcome!" }],
+        invite: [{ kind: "agent", definitionId: "wfd_echo" }],
+      }),
+    });
 
     expect(response.status).toBe(201);
 
@@ -1609,9 +1548,7 @@ describe("POST /workbenches/:id/messages — invite pre-step (CL-5879 mention-pu
       },
     ]);
 
-    const settingsResponse = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-    );
+    const settingsResponse = await app.request(`/workbenches/${workbench.id}/settings`);
     const settingsBody = (await settingsResponse.json()) as {
       participants: { address: string; handle: string }[];
     };
@@ -1620,17 +1557,13 @@ describe("POST /workbenches/:id/messages — invite pre-step (CL-5879 mention-pu
     ]);
 
     // The message itself lands on the workbench's own timeline...
-    const messagesResponse = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-    );
+    const messagesResponse = await app.request(`/workbenches/${workbench.id}/messages`);
     const messagesBody = (await messagesResponse.json()) as {
       items: { parts: Part[] }[];
     };
     expect(
       messagesBody.items.some((item) =>
-        item.parts.some(
-          (part) => part.kind === "text" && part.text === "@echo welcome!",
-        ),
+        item.parts.some((part) => part.kind === "text" && part.text === "@echo welcome!"),
       ),
     ).toBe(true);
 
@@ -1638,9 +1571,7 @@ describe("POST /workbenches/:id/messages — invite pre-step (CL-5879 mention-pu
     // mention names its own freshly-assigned handle.
     expect(
       platform.sentMail.some(
-        (mail) =>
-          mail.workbenchId === "ins_invited1" &&
-          mail.fromWorkbenchId === workbench.id,
+        (mail) => mail.workbenchId === "ins_invited1" && mail.fromWorkbenchId === workbench.id,
       ),
     ).toBe(true);
   });
@@ -1659,41 +1590,30 @@ describe("POST /workbenches/:id/messages — invite pre-step (CL-5879 mention-pu
       name: "Test Workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "@bob welcome!" }],
-          invite: [{ kind: "person", principalId: "prn_bob", name: "Bob" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "@bob welcome!" }],
+        invite: [{ kind: "person", principalId: "prn_bob", name: "Bob" }],
+      }),
+    });
 
     expect(response.status).toBe(201);
 
-    const settingsResponse = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-    );
+    const settingsResponse = await app.request(`/workbenches/${workbench.id}/settings`);
     const settingsBody = (await settingsResponse.json()) as {
       participants: { address: string; handle: string }[];
     };
-    expect(settingsBody.participants).toEqual([
-      { address: "prn_bob", handle: "bob" },
-    ]);
+    expect(settingsBody.participants).toEqual([{ address: "prn_bob", handle: "bob" }]);
 
-    const messagesResponse = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-    );
+    const messagesResponse = await app.request(`/workbenches/${workbench.id}/messages`);
     const messagesBody = (await messagesResponse.json()) as {
       items: { parts: Part[] }[];
     };
     expect(
       messagesBody.items.some((item) =>
-        item.parts.some(
-          (part) => part.kind === "text" && part.text === "@bob welcome!",
-        ),
+        item.parts.some((part) => part.kind === "text" && part.text === "@bob welcome!"),
       ),
     ).toBe(true);
   });
@@ -1706,17 +1626,14 @@ describe("POST /workbenches/:id/messages — invite pre-step (CL-5879 mention-pu
       name: "Test Workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "@ghost welcome!" }],
-          invite: [{ kind: "person", principalId: "prn_ghost" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "@ghost welcome!" }],
+        invite: [{ kind: "person", principalId: "prn_ghost" }],
+      }),
+    });
 
     expect(response.status).toBe(400);
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
@@ -1742,31 +1659,24 @@ describe("POST /workbenches/:id/messages — invite pre-step (CL-5879 mention-pu
       name: "Test Workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "@echo welcome!" }],
-          invite: [{ kind: "agent", definitionId: "wfd_echo" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "@echo welcome!" }],
+        invite: [{ kind: "agent", definitionId: "wfd_echo" }],
+      }),
+    });
 
     expect(response.status).toBe(403);
     const body = (await response.json()) as {
       error: { code: string; userMessage: string };
     };
-    expect(body.error.userMessage).toBe(
-      "You can't add people to this workbench",
-    );
+    expect(body.error.userMessage).toBe("You can't add people to this workbench");
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     expect(platform.sentMail).toHaveLength(0);
-    const settingsResponse = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-    );
+    const settingsResponse = await app.request(`/workbenches/${workbench.id}/settings`);
     const settingsBody = (await settingsResponse.json()) as {
       participants: unknown[];
     };
@@ -1782,28 +1692,21 @@ describe("POST /workbenches/:id/messages — invite pre-step (CL-5879 mention-pu
       participants: ["prn_bob"],
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "@bob still here" }],
-          invite: [{ kind: "person", principalId: "prn_bob", name: "Bob" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "@bob still here" }],
+        invite: [{ kind: "person", principalId: "prn_bob", name: "Bob" }],
+      }),
+    });
 
     expect(response.status).toBe(201);
-    const settingsResponse = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-    );
+    const settingsResponse = await app.request(`/workbenches/${workbench.id}/settings`);
     const settingsBody = (await settingsResponse.json()) as {
       participants: { address: string }[];
     };
-    expect(settingsBody.participants.map((p) => p.address)).toEqual([
-      "prn_bob",
-    ]);
+    expect(settingsBody.participants.map((p) => p.address)).toEqual(["prn_bob"]);
   });
 
   // CL-7194: joinHumanParticipant no longer takes a caller-supplied
@@ -1831,25 +1734,20 @@ describe("POST /workbenches/:id/messages — invite pre-step (CL-5879 mention-pu
       name: "Test Workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "welcome both!" }],
-          invite: [
-            { kind: "person", principalId: "prn_bob", name: "Bob" },
-            { kind: "person", principalId: "prn_carol", name: "Carol" },
-          ],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "welcome both!" }],
+        invite: [
+          { kind: "person", principalId: "prn_bob", name: "Bob" },
+          { kind: "person", principalId: "prn_carol", name: "Carol" },
+        ],
+      }),
+    });
 
     expect(response.status).toBe(201);
-    const settingsResponse = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-    );
+    const settingsResponse = await app.request(`/workbenches/${workbench.id}/settings`);
     const settingsBody = (await settingsResponse.json()) as {
       participants: { address: string }[];
     };
@@ -1872,24 +1770,18 @@ describe("GET /workbenches/:id/blobs/:blobId", () => {
       kind: "workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/blobs/blob_mail1_1`,
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/blobs/blob_mail1_1`);
 
     expect(response.status).toBe(200);
     const body = (await response.json()) as { contentBase64: string };
-    expect(Buffer.from(body.contentBase64, "base64").toString("utf-8")).toBe(
-      "hello attachment",
-    );
+    expect(Buffer.from(body.contentBase64, "base64").toString("utf-8")).toBe("hello attachment");
   });
 
   test("404s for a workbench outside the tenant", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
-    const response = await app.request(
-      "/workbenches/no-such-workbench/blobs/x",
-    );
+    const response = await app.request("/workbenches/no-such-workbench/blobs/x");
 
     expect(response.status).toBe(404);
   });
@@ -1907,9 +1799,7 @@ describe("GET /workbenches/:id/blobs/:blobId", () => {
       kind: "workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/blobs/blob_missing_1`,
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/blobs/blob_missing_1`);
 
     expect(response.status).toBe(404);
   });
@@ -1923,40 +1813,31 @@ describe("POST /workbenches/:id/threads/fork — two-level cap (CL-5908, CL-5948
       kind: "workbench",
     });
 
-    const rootPost = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts: [{ kind: "text", text: "root note" }] }),
-      },
-    );
+    const rootPost = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "root note" }] }),
+    });
     const rootSent = (await rootPost.json()) as { id: string };
 
-    const replyPost = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "in the thread" }],
-          inReplyToMessageId: rootSent.id,
-        }),
-      },
-    );
+    const replyPost = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "in the thread" }],
+        inReplyToMessageId: rootSent.id,
+      }),
+    });
     const replySent = (await replyPost.json()) as {
       id: string;
       threadId: string;
     };
 
-    const forkRes = await app.request(
-      `/workbenches/${workbench.id}/threads/fork`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parentMessageId: replySent.id }),
-      },
-    );
+    const forkRes = await app.request(`/workbenches/${workbench.id}/threads/fork`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parentMessageId: replySent.id }),
+    });
     expect(forkRes.status).toBe(201);
     const forked = (await forkRes.json()) as {
       id: string;
@@ -2015,14 +1896,11 @@ describe("POST /workbenches/:id/threads/fork — two-level cap (CL-5908, CL-5948
       })
     ).json()) as { id: string };
 
-    const siblingRes = await app.request(
-      `/workbenches/${workbench.id}/threads/fork`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parentMessageId: subMessageSent.id }),
-      },
-    );
+    const siblingRes = await app.request(`/workbenches/${workbench.id}/threads/fork`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parentMessageId: subMessageSent.id }),
+    });
     expect(siblingRes.status).toBe(201);
     const sibling = (await siblingRes.json()) as {
       id: string;
@@ -2080,17 +1958,14 @@ describe("POST /workbenches/:id/threads/fork — two-level cap (CL-5908, CL-5948
       })
     ).json()) as { id: string };
 
-    const blockedRes = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "trying a third level" }],
-          inReplyToMessageId: subMessageSent.id,
-        }),
-      },
-    );
+    const blockedRes = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "trying a third level" }],
+        inReplyToMessageId: subMessageSent.id,
+      }),
+    });
     expect(blockedRes.status).toBe(409);
     const blockedBody = (await blockedRes.json()) as {
       error: { code: string };
@@ -2165,9 +2040,7 @@ describe("GET /workbenches/:id/invitable", () => {
       kind: "workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/invitable`,
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/invitable`);
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       items: { id: string; name: string }[];
@@ -2198,22 +2071,17 @@ describe("GET /workbenches/:id/invitable", () => {
       body: JSON.stringify({ definitionId: "wfd_echo" }),
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/invitable`,
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/invitable`);
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       items: { id: string; name: string; description?: string }[];
     };
-    expect(body.items).toEqual([
-      { id: "wfd_myra", name: "assistant", description: "Myra" },
-    ]);
+    expect(body.items).toEqual([{ id: "wfd_myra", name: "assistant", description: "Myra" }]);
   });
 
   test("a denied grant is rejected", async () => {
     const deps = buildDeps({
-      requireGrant: () => async (c) =>
-        c.json({ error: { code: "forbidden", message: "no" } }, 403),
+      requireGrant: () => async (c) => c.json({ error: { code: "forbidden", message: "no" } }, 403),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
@@ -2259,8 +2127,7 @@ describe("GET /invitable-definitions", () => {
           { id: "wfd_digest", name: "workbench-digest" },
         ],
       }),
-      isInvitableDefinition: (definition) =>
-        definition.name !== "workbench-digest",
+      isInvitableDefinition: (definition) => definition.name !== "workbench-digest",
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
@@ -2269,15 +2136,12 @@ describe("GET /invitable-definitions", () => {
     const body = (await response.json()) as {
       items: { id: string; name: string; description?: string }[];
     };
-    expect(body.items).toEqual([
-      { id: "wfd_assistant", name: "assistant", description: "Myra" },
-    ]);
+    expect(body.items).toEqual([{ id: "wfd_assistant", name: "assistant", description: "Myra" }]);
   });
 
   test("a denied grant is rejected", async () => {
     const deps = buildDeps({
-      requireGrant: () => async (c) =>
-        c.json({ error: { code: "forbidden", message: "no" } }, 403),
+      requireGrant: () => async (c) => c.json({ error: { code: "forbidden", message: "no" } }, 403),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
@@ -2299,10 +2163,7 @@ describe("typing", () => {
     });
 
     expect(response.status).toBe(202);
-    const settingsRow = await deps.store.getWorkbenchSettings(
-      TENANT.id,
-      workbench.id,
-    );
+    const settingsRow = await deps.store.getWorkbenchSettings(TENANT.id, workbench.id);
     expect(settingsRow?.settings).not.toHaveProperty("chat/typing");
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     expect(platform.sentMail).toHaveLength(0);
@@ -2412,9 +2273,7 @@ describe("chat hard cutover — no server tenancy", () => {
       items: { id: string; title: string }[];
     };
     expect(listA.items.map((item) => item.title)).toEqual(["Bench A Only"]);
-    expect(listA.items.map((item) => item.id)).not.toContain(
-      benchBWorkbench.id,
-    );
+    expect(listA.items.map((item) => item.id)).not.toContain(benchBWorkbench.id);
 
     const listB = (await (await appBenchB.request("/workbenches")).json()) as {
       items: { id: string; title: string }[];
@@ -2442,9 +2301,7 @@ describe("cross-tenant workbench isolation", () => {
       }),
     });
     expect(postB.status).toBe(404);
-    expect(
-      (deps.platform as ReturnType<typeof fakePlatform>).sentMail,
-    ).toHaveLength(0);
+    expect((deps.platform as ReturnType<typeof fakePlatform>).sentMail).toHaveLength(0);
 
     const getB = await appB.request(`/workbenches/${workbench.id}/messages`);
     expect(getB.status).toBe(404);
@@ -2479,27 +2336,20 @@ describe("cross-tenant workbench isolation", () => {
       kind: "workbench",
     });
 
-    const readGet = await appB.request(
-      `/workbenches/${workbench.id}/read-state`,
-    );
+    const readGet = await appB.request(`/workbenches/${workbench.id}/read-state`);
     expect(readGet.status).toBe(404);
 
-    const readPut = await appB.request(
-      `/workbenches/${workbench.id}/read-state`,
-      {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          lastSeenCreatedAt: "2026-01-01T00:00:00.000Z",
-          lastSeenId: "mail_x",
-        }),
-      },
-    );
+    const readPut = await appB.request(`/workbenches/${workbench.id}/read-state`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        lastSeenCreatedAt: "2026-01-01T00:00:00.000Z",
+        lastSeenId: "mail_x",
+      }),
+    });
     expect(readPut.status).toBe(404);
 
-    const invitable = await appB.request(
-      `/workbenches/${workbench.id}/invitable`,
-    );
+    const invitable = await appB.request(`/workbenches/${workbench.id}/invitable`);
     expect(invitable.status).toBe(404);
   });
 
@@ -2525,9 +2375,7 @@ describe("cross-tenant workbench isolation", () => {
 
     // Foreign tenant still 404s even with the same instance id shape.
     const other = mountAs(routes, "prn_bob", OTHER_TENANT);
-    const denied = await other.request(
-      `/workbenches/ins_agent_mailbox/messages`,
-    );
+    const denied = await other.request(`/workbenches/ins_agent_mailbox/messages`);
     expect(denied.status).toBe(404);
   });
 });
@@ -2546,30 +2394,24 @@ describe("GET /workbenches/:id/messages — thread membership on every item (CL-
       kind: "workbench",
     });
 
-    const rootPost = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts: [{ kind: "text", text: "root note" }] }),
-      },
-    );
+    const rootPost = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "root note" }] }),
+    });
     const rootSent = (await rootPost.json()) as {
       id: string;
       threadId: string;
     };
 
-    const replyPost = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "reply note" }],
-          inReplyToMessageId: rootSent.id,
-        }),
-      },
-    );
+    const replyPost = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "reply note" }],
+        inReplyToMessageId: rootSent.id,
+      }),
+    });
     const replySent = (await replyPost.json()) as {
       id: string;
       threadId: string;
@@ -2631,45 +2473,36 @@ describe("GET /workbenches/:id/threads — reply activity on each row (CL-6313)"
       kind: "workbench",
     });
 
-    const rootPost = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts: [{ kind: "text", text: "parent" }] }),
-      },
-    );
+    const rootPost = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "parent" }] }),
+    });
     const rootSent = (await rootPost.json()) as {
       id: string;
       threadId: string;
     };
 
-    const firstReply = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "one" }],
-          inReplyToMessageId: rootSent.id,
-        }),
-      },
-    );
+    const firstReply = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "one" }],
+        inReplyToMessageId: rootSent.id,
+      }),
+    });
     const replySent = (await firstReply.json()) as {
       id: string;
       threadId: string;
     };
-    const secondReply = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "two" }],
-          threadId: replySent.threadId,
-        }),
-      },
-    );
+    const secondReply = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "two" }],
+        threadId: replySent.threadId,
+      }),
+    });
     const lastSent = (await secondReply.json()) as { createdAt: string };
 
     const res = await app.request(`/workbenches/${workbench.id}/threads`);
@@ -2693,24 +2526,18 @@ describe("GET /workbenches/:id/threads — reply activity on each row (CL-6313)"
     const { body: workbench } = await createWorkbench(app, {
       kind: "workbench",
     });
-    const rootPost = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts: [{ kind: "text", text: "parent" }] }),
-      },
-    );
+    const rootPost = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "parent" }] }),
+    });
     const rootSent = (await rootPost.json()) as { id: string };
 
-    const forked = await app.request(
-      `/workbenches/${workbench.id}/threads/fork`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parentMessageId: rootSent.id }),
-      },
-    );
+    const forked = await app.request(`/workbenches/${workbench.id}/threads/fork`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parentMessageId: rootSent.id }),
+    });
     const thread = (await forked.json()) as { id: string };
 
     const res = await app.request(`/workbenches/${workbench.id}/threads`);

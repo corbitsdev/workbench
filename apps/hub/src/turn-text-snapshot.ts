@@ -18,10 +18,7 @@ export interface TurnTextSnapshotReader {
    * client reattaching mid-turn replays before the live tail resumes.
    * `null` for a run with no turns yet (nothing to reconstruct), never for
    * one that simply hasn't produced text yet (that reads as `""`). */
-  read(input: {
-    readonly tenantId: string;
-    readonly runId: string;
-  }): Promise<string | null>;
+  read(input: { readonly tenantId: string; readonly runId: string }): Promise<string | null>;
 }
 
 /** Pure so the reconstruction rule is testable without a database: text
@@ -57,16 +54,11 @@ export function snapshotTextFromParts(
   return text;
 }
 
-export function createDrizzleTurnTextSnapshotReader(
-  db: DB["db"],
-): TurnTextSnapshotReader {
+export function createDrizzleTurnTextSnapshotReader(db: DB["db"]): TurnTextSnapshotReader {
   return {
     async read({ tenantId, runId }) {
       const turns = await db.query.inferenceTurn.findMany({
-        where: and(
-          eq(inferenceTurn.runId, runId),
-          eq(inferenceTurn.tenantId, tenantId),
-        ),
+        where: and(eq(inferenceTurn.runId, runId), eq(inferenceTurn.tenantId, tenantId)),
         orderBy: asc(inferenceTurn.startedAt),
       });
       if (turns.length === 0) return null;

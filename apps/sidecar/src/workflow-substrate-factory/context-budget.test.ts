@@ -33,25 +33,14 @@ test("readNumCtxHint: a top-level numCtx pin is visible without the Ollama bag s
 });
 
 test("resolveContextBudgetChars: a bigger numCtx yields a bigger budget", () => {
-  const small = resolveContextBudgetChars(
-    { default: { numCtx: 32_000 } },
-    "qwen3",
-  );
-  const large = resolveContextBudgetChars(
-    { default: { numCtx: 128_000 } },
-    "gpt-oss:20b",
-  );
+  const small = resolveContextBudgetChars({ default: { numCtx: 32_000 } }, "qwen3");
+  const large = resolveContextBudgetChars({ default: { numCtx: 128_000 } }, "gpt-oss:20b");
 
   expect(large).toBeGreaterThan(small);
 });
 
 test("resolveContextWindowTokens: quirks pin wins over the advertised catalog window", () => {
-  expect(
-    resolveContextWindowTokens(
-      { default: { numCtx: 8_192 } },
-      "claude-sonnet-5",
-    ),
-  ).toBe(8_192);
+  expect(resolveContextWindowTokens({ default: { numCtx: 8_192 } }, "claude-sonnet-5")).toBe(8_192);
 });
 
 test("resolveContextWindowTokens: a frontier catalog model gets its advertised window, not a 32k-char cap", () => {
@@ -67,15 +56,13 @@ test("resolveContextWindowTokens: a frontier catalog model gets its advertised w
 test("resolveContextWindowTokens: an Ollama catalog model gets its native window without quirks", () => {
   expect(resolveContextWindowTokens(undefined, "gpt-oss:20b")).toBe(131_072);
   expect(resolveContextWindowTokens(undefined, "qwen3.8:27b")).toBe(32_768);
-  expect(
-    resolveHardContextLimitChars(undefined, "gpt-oss:20b"),
-  ).toBeGreaterThan(resolveHardContextLimitChars(undefined, "qwen3.8:27b"));
+  expect(resolveHardContextLimitChars(undefined, "gpt-oss:20b")).toBeGreaterThan(
+    resolveHardContextLimitChars(undefined, "qwen3.8:27b"),
+  );
 });
 
 test("advertisedContextWindowTokens: a relay-prefixed name still matches the catalog model", () => {
-  expect(advertisedContextWindowTokens("anthropic/claude-sonnet-5")).toBe(
-    200_000,
-  );
+  expect(advertisedContextWindowTokens("anthropic/claude-sonnet-5")).toBe(200_000);
   expect(advertisedContextWindowTokens("openai/gpt-4.1")).toBe(1_047_576);
 });
 

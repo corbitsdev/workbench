@@ -14,9 +14,7 @@ test("the tool's definition marks itself approval-gated", () => {
 });
 
 test("the tool is namespaced under this workflow package, not a shared one", () => {
-  expect(EXA_TOPIC_WATCH_FINALIZE_TOOL.id).toBe(
-    "@corbits/workflow-exa-topic-watch/finalize",
-  );
+  expect(EXA_TOPIC_WATCH_FINALIZE_TOOL.id).toBe("@corbits/workflow-exa-topic-watch/finalize");
 });
 
 test("requires the sanctioned workflow-artifacts env keys", () => {
@@ -119,9 +117,7 @@ test("run persists a quiet-run note with a status-note kind, distinct from a rea
         arguments: {
           outcome: "status-note",
           title: "Web topic watch: agentic coding tools — quiet week",
-          content:
-            "Searched the web for this topic and found nothing new " +
-            "since the last run.",
+          content: "Searched the web for this topic and found nothing new " + "since the last run.",
         },
       },
       new AbortController().signal,
@@ -141,8 +137,7 @@ test("run persists a quiet-run note with a status-note kind, distinct from a rea
 
 test("run returns an honest error result when persistence fails, never fabricating persisted: true", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
 
   try {
     const bundle = EXA_TOPIC_WATCH_FINALIZE_TOOL(testEnv());

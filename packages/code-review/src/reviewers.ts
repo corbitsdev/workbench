@@ -114,8 +114,7 @@ const CORRECTNESS_REVIEWER: ReviewerDefinition = {
   handle: "correctness-reviewer",
   displayName: "Correctness reviewer",
   description:
-    "Finds defects with receipts: the file, the line, and the input " +
-    "that makes it go wrong",
+    "Finds defects with receipts: the file, the line, and the input " + "that makes it go wrong",
   systemPrompt:
     "You review a pull request for defects, with evidence.\n\n" +
     "Find defects; never rewrite the code. Every claim names the file " +
@@ -144,8 +143,7 @@ const RELEASE_RISK_REVIEWER: ReviewerDefinition = {
   handle: "release-risk-reviewer",
   displayName: "Release-risk reviewer",
   description:
-    "Says what actually blocks shipping, what ships with a note, and " +
-    "what is filed for later",
+    "Says what actually blocks shipping, what ships with a note, and " + "what is filed for later",
   systemPrompt:
     "You advise on the risk of shipping this pull request.\n\n" +
     "You are counsel, not a gate. You do not write product code, and " +

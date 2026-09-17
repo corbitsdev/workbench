@@ -20,9 +20,7 @@ import {
   timelineOf,
 } from "./test-support";
 
-async function roomWithAgent(
-  overrides: Parameters<typeof buildDeps>[0] = {},
-): Promise<{
+async function roomWithAgent(overrides: Parameters<typeof buildDeps>[0] = {}): Promise<{
   app: ReturnType<typeof createChatRoutes>;
   deps: ReturnType<typeof buildDeps>;
   workbenchId: string;
@@ -83,9 +81,9 @@ describe("dispatchTurn's turn projection", () => {
     });
 
     await sendText(app, workbenchId, "two");
-    const [secondTurn] = (
-      await agentTurns.listTurns({ tenantId: TENANT.id, workbenchId })
-    ).filter((turn) => turn.id !== firstTurn?.id);
+    const [secondTurn] = (await agentTurns.listTurns({ tenantId: TENANT.id, workbenchId })).filter(
+      (turn) => turn.id !== firstTurn?.id,
+    );
     await agentTurns.finishTurn({
       tenantId: TENANT.id,
       turnId: secondTurn?.id ?? "",
@@ -100,11 +98,7 @@ describe("dispatchTurn's turn projection", () => {
     });
     const occurrences = turns.map((turn) => turn.occurrence).sort();
     expect(occurrences).toEqual([0, 1, 2]);
-    expect(turns.map((turn) => turn.childRunId).sort()).toEqual([
-      "turn__0",
-      "turn__1",
-      "turn__2",
-    ]);
+    expect(turns.map((turn) => turn.childRunId).sort()).toEqual(["turn__0", "turn__1", "turn__2"]);
   });
 
   test("an unreachable agent closes its turn failed rather than leaving it open", async () => {
@@ -216,9 +210,7 @@ describe("overlapping turns across agents and messages (CL-6670)", () => {
       agentAddress: "ins_b1@acme.example",
     });
     expect(bTurn?.childRunId).toBe("turn__0");
-    expect(
-      platform.sentMail.some((mail) => mail.workbenchId === "ins_b1"),
-    ).toBe(true);
+    expect(platform.sentMail.some((mail) => mail.workbenchId === "ins_b1")).toBe(true);
 
     // A's own turn was never touched by B's arrival — still open,
     // waiting for A's real reply, exactly as it was before B's message.
@@ -258,9 +250,7 @@ describe("overlapping turns across agents and messages (CL-6670)", () => {
       workbenchId,
     });
     expect(stillOnlyOne).toHaveLength(1);
-    expect(
-      (deps.platform as ReturnType<typeof fakePlatform>).sentMail,
-    ).toHaveLength(1);
+    expect((deps.platform as ReturnType<typeof fakePlatform>).sentMail).toHaveLength(1);
 
     // The agent's real reply lands — the first turn closes...
     await agentTurns.finishTurn({
@@ -278,13 +268,8 @@ describe("overlapping turns across agents and messages (CL-6670)", () => {
       tenantId: TENANT.id,
       workbenchId,
     });
-    expect(turns.map((turn) => turn.childRunId).sort()).toEqual([
-      "turn__0",
-      "turn__1",
-    ]);
-    expect(
-      (deps.platform as ReturnType<typeof fakePlatform>).sentMail,
-    ).toHaveLength(2);
+    expect(turns.map((turn) => turn.childRunId).sort()).toEqual(["turn__0", "turn__1"]);
+    expect((deps.platform as ReturnType<typeof fakePlatform>).sentMail).toHaveLength(2);
   });
 
   // CL-7129: the wait this queues behind has to tolerate a prior turn
@@ -325,9 +310,7 @@ describe("overlapping turns across agents and messages (CL-6670)", () => {
 
     const timeline = await timelineOf(deps, workbenchId);
     const undelivered = timeline.find((message) =>
-      message.parts.some(
-        (part) => part.kind === "text" && part.turnFailed === true,
-      ),
+      message.parts.some((part) => part.kind === "text" && part.turnFailed === true),
     );
     expect(undelivered).toBeUndefined();
 
@@ -335,10 +318,7 @@ describe("overlapping turns across agents and messages (CL-6670)", () => {
       tenantId: TENANT.id,
       workbenchId,
     });
-    expect(turns.map((turn) => turn.childRunId).sort()).toEqual([
-      "turn__0",
-      "turn__1",
-    ]);
+    expect(turns.map((turn) => turn.childRunId).sort()).toEqual(["turn__0", "turn__1"]);
   });
 });
 
@@ -358,15 +338,11 @@ describe("the turns routes", () => {
       tenantId: TENANT.id,
       workbenchId,
     });
-    const one = await app.request(
-      `/workbenches/${workbenchId}/turns/${only?.id ?? ""}`,
-    );
+    const one = await app.request(`/workbenches/${workbenchId}/turns/${only?.id ?? ""}`);
     expect(one.status).toBe(200);
     expect(await one.json()).toMatchObject({ childRunId: "turn__0" });
 
-    const missing = await app.request(
-      `/workbenches/${workbenchId}/turns/turn_nope`,
-    );
+    const missing = await app.request(`/workbenches/${workbenchId}/turns/turn_nope`);
     expect(missing.status).toBe(404);
   });
 });

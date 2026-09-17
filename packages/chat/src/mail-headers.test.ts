@@ -13,15 +13,11 @@ import {
 
 describe("mailMessageIdFor", () => {
   test("frames the row id against the mail domain", () => {
-    expect(mailMessageIdFor("msg_1", "ten1.workbench.test")).toBe(
-      "<msg_1@ten1.workbench.test>",
-    );
+    expect(mailMessageIdFor("msg_1", "ten1.workbench.test")).toBe("<msg_1@ten1.workbench.test>");
   });
 
   test("round-trips back to the row it names", () => {
-    expect(
-      rowIdFromMailMessageId(mailMessageIdFor("msg_1", "ten1.workbench.test")),
-    ).toBe("msg_1");
+    expect(rowIdFromMailMessageId(mailMessageIdFor("msg_1", "ten1.workbench.test"))).toBe("msg_1");
   });
 
   test("an id from another transport misses the row instead of crashing", () => {
@@ -33,9 +29,9 @@ describe("mailMessageIdFor", () => {
 
 describe("mailThreadHeaders", () => {
   test("a root-feed row threads under nothing", () => {
-    expect(
-      mailThreadHeaders({ rowId: "msg_1", domain: "d.test", ancestors: [] }),
-    ).toEqual({ messageId: "<msg_1@d.test>" });
+    expect(mailThreadHeaders({ rowId: "msg_1", domain: "d.test", ancestors: [] })).toEqual({
+      messageId: "<msg_1@d.test>",
+    });
   });
 
   test("a depth-1 reply names its anchor in both headers", () => {
@@ -69,9 +65,7 @@ describe("mailThreadHeaders", () => {
 
 describe("parentMailMessageId", () => {
   test("In-Reply-To names the parent", () => {
-    expect(parentMailMessageId({ inReplyTo: "<msg_1@d.test>" })).toBe(
-      "<msg_1@d.test>",
-    );
+    expect(parentMailMessageId({ inReplyTo: "<msg_1@d.test>" })).toBe("<msg_1@d.test>");
   });
 
   test("References' tail names the parent when In-Reply-To is absent", () => {
@@ -84,9 +78,7 @@ describe("parentMailMessageId", () => {
 
   test("a reply threading under nothing resolves to no parent", () => {
     expect(parentMailMessageId({})).toBeUndefined();
-    expect(
-      parentMailMessageId({ inReplyTo: "", references: [] }),
-    ).toBeUndefined();
+    expect(parentMailMessageId({ inReplyTo: "", references: [] })).toBeUndefined();
   });
 });
 

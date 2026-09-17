@@ -1,8 +1,8 @@
 {
   "name": "@corbits/sandbox-sidecar",
+  "version": "0.0.1",
   "private": true,
   "description": "Backend-agnostic sidecar allocation lifecycle: state store and ensure/destroy convergence for a SidecarProvisioner",
-  "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {

@@ -34,12 +34,7 @@
 // does, so what's new here is steps 1-3: a REAL seeded credential
 // reaching the tool through the REAL substrate composition.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import {
-  buildCredentialDelivery,
-  createDB,
-  runMigrations,
-  dropSchema,
-} from "@intx/db";
+import { buildCredentialDelivery, createDB, runMigrations, dropSchema } from "@intx/db";
 import { schema } from "@intx/db";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import { credentialAad } from "@intx/types";
@@ -76,10 +71,7 @@ const GRANOLA_BINDING: CredentialBinding = {
 };
 
 /** A delivered binding descriptor, reshaped into the launch-time `GrantRule`. */
-function toGrantRule(descriptor: {
-  credentialId: string;
-  consumer: string;
-}): GrantRule {
+function toGrantRule(descriptor: { credentialId: string; consumer: string }): GrantRule {
   return {
     id: "grant_launch_1",
     resource: `credential:${descriptor.credentialId}`,
@@ -93,128 +85,121 @@ function toGrantRule(descriptor: {
   };
 }
 
-describeIfDb(
-  "credential wiring end to end: seed -> delivery -> capability -> tool",
-  () => {
-    const target = dbTargetFromUrl(
-      databaseUrl ?? "postgres://localhost:5432/unused",
-    );
+describeIfDb("credential wiring end to end: seed -> delivery -> capability -> tool", () => {
+  const target = dbTargetFromUrl(databaseUrl ?? "postgres://localhost:5432/unused");
 
-    beforeAll(async () => {
-      await runMigrations(target, { schema: SCHEMA });
-    });
+  beforeAll(async () => {
+    await runMigrations(target, { schema: SCHEMA });
+  });
 
-    afterAll(async () => {
-      await dropSchema(target, { schema: SCHEMA });
-    });
+  afterAll(async () => {
+    await dropSchema(target, { schema: SCHEMA });
+  });
 
-    test("a tenant-seeded credential reaches granolaTools's tool call as a bearer secret", async () => {
-      const { db, close } = createDB({ ...target, schema: SCHEMA });
-      try {
-        await db.insert(schema.tenant).values({
-          id: "tnt_credential_wiring_e2e",
-          name: "Credential Wiring E2E Tenant",
-          slug: "credential-wiring-e2e-tenant",
-          domain: "credential-wiring-e2e.workbench.test",
-        });
-        // Seeded with `plugin: "http"`: the ONLY credential provider the
-        // sidecar's `createSidecarSubstrateFactory` registers
-        // (`createCredentialProviderRegistry(builtinCredentialProviders())`,
-        // `@intx/harness`'s single built-in origin-pinned bearer plugin).
-        await db.insert(schema.provider).values({
-          id: "prov_granola_e2e",
-          tenantId: "tnt_credential_wiring_e2e",
-          name: "granola",
-          plugin: "http",
-          apiBaseUrl: "https://api.granola.ai",
-        });
-        const credentialId = "cred_granola_e2e";
-        await db.insert(schema.credential).values({
-          id: credentialId,
-          tenantId: "tnt_credential_wiring_e2e",
-          providerId: "prov_granola_e2e",
-          name: "granola-key",
-          type: "api_key",
-          secret: await CIPHER.encrypt(
-            "seeded-granola-secret",
-            credentialAad(credentialId, "secret"),
-          ),
-          status: "active",
-        });
+  test("a tenant-seeded credential reaches granolaTools's tool call as a bearer secret", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      await db.insert(schema.tenant).values({
+        id: "tnt_credential_wiring_e2e",
+        name: "Credential Wiring E2E Tenant",
+        slug: "credential-wiring-e2e-tenant",
+        domain: "credential-wiring-e2e.workbench.test",
+      });
+      // Seeded with `plugin: "http"`: the ONLY credential provider the
+      // sidecar's `createSidecarSubstrateFactory` registers
+      // (`createCredentialProviderRegistry(builtinCredentialProviders())`,
+      // `@intx/harness`'s single built-in origin-pinned bearer plugin).
+      await db.insert(schema.provider).values({
+        id: "prov_granola_e2e",
+        tenantId: "tnt_credential_wiring_e2e",
+        name: "granola",
+        plugin: "http",
+        apiBaseUrl: "https://api.granola.ai",
+      });
+      const credentialId = "cred_granola_e2e";
+      await db.insert(schema.credential).values({
+        id: credentialId,
+        tenantId: "tnt_credential_wiring_e2e",
+        providerId: "prov_granola_e2e",
+        name: "granola-key",
+        type: "api_key",
+        secret: await CIPHER.encrypt(
+          "seeded-granola-secret",
+          credentialAad(credentialId, "secret"),
+        ),
+        status: "active",
+      });
 
-        // Step 2: launch-time resolution, unmodified platform function.
-        const result = await buildCredentialDelivery({
-          db,
-          tenantId: "tnt_credential_wiring_e2e",
-          bindings: [GRANOLA_BINDING],
-          creatorPrincipalId: null,
-          invokerPrincipalId: null,
-          credentialCipher: CIPHER,
-        });
-        expect(result.ok).toBe(true);
-        if (!result.ok) throw new Error("expected delivery to resolve");
-        const delivery = result.delivery;
-        if (delivery === undefined) throw new Error("expected a delivery");
+      // Step 2: launch-time resolution, unmodified platform function.
+      const result = await buildCredentialDelivery({
+        db,
+        tenantId: "tnt_credential_wiring_e2e",
+        bindings: [GRANOLA_BINDING],
+        creatorPrincipalId: null,
+        invokerPrincipalId: null,
+        credentialCipher: CIPHER,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("expected delivery to resolve");
+      const delivery = result.delivery;
+      if (delivery === undefined) throw new Error("expected a delivery");
 
-        // Step 3: the exact composition
-        // `createToolBearingAgentFactory`'s `credentialCapabilityFor`
-        // performs at a real step build.
-        const captured: { auth: string | null } = { auth: null };
-        const providers = createCredentialProviderRegistry([
-          createHttpCredentialProvider({
-            fetch: async (_input, init) => {
-              captured.auth =
-                (init?.headers as Headers | undefined)?.get("authorization") ??
-                null;
-              return new Response(
-                JSON.stringify({
-                  notes: [
-                    {
-                      id: "note_1",
-                      title: "Weekly sync",
-                      createdAt: "2026-08-12T09:00:00.000Z",
-                    },
-                  ],
-                }),
-                { status: 200 },
-              );
-            },
-          }),
-        ]);
-        const capability = createCredentialCapability({
-          consumer: CONSUMER,
-          bindings: deriveResolvedBindings(delivery, CONSUMER),
-          providers,
-          grants: delivery.bindings.map(toGrantRule),
-        });
+      // Step 3: the exact composition
+      // `createToolBearingAgentFactory`'s `credentialCapabilityFor`
+      // performs at a real step build.
+      const captured: { auth: string | null } = { auth: null };
+      const providers = createCredentialProviderRegistry([
+        createHttpCredentialProvider({
+          fetch: async (_input, init) => {
+            captured.auth = (init?.headers as Headers | undefined)?.get("authorization") ?? null;
+            return new Response(
+              JSON.stringify({
+                notes: [
+                  {
+                    id: "note_1",
+                    title: "Weekly sync",
+                    createdAt: "2026-08-12T09:00:00.000Z",
+                  },
+                ],
+              }),
+              { status: 200 },
+            );
+          },
+        }),
+      ]);
+      const capability = createCredentialCapability({
+        consumer: CONSUMER,
+        bindings: deriveResolvedBindings(delivery, CONSUMER),
+        providers,
+        grants: delivery.bindings.map(toGrantRule),
+      });
 
-        // Step 4: the real tool bundle, driven exactly as
-        // `../src/tool.test.ts` drives it, sees the seeded secret.
-        const env = { credentials: capability } as unknown as GranolaEnv;
-        const bundle = granolaTools(env);
-        const call: ToolCall = {
-          id: "call_1",
-          name: GRANOLA_LIST_RECENT_NOTES_TOOL,
-          arguments: {},
-        };
-        const callResult = await bundle.run(call, new AbortController().signal);
+      // Step 4: the real tool bundle, driven exactly as
+      // `../src/tool.test.ts` drives it, sees the seeded secret.
+      const env = { credentials: capability } as unknown as GranolaEnv;
+      const bundle = granolaTools(env);
+      const call: ToolCall = {
+        id: "call_1",
+        name: GRANOLA_LIST_RECENT_NOTES_TOOL,
+        arguments: {},
+      };
+      const callResult = await bundle.run(call, new AbortController().signal);
 
-        expect(callResult.isError).toBeUndefined();
-        expect(captured.auth).toBe("Bearer seeded-granola-secret");
-        expect(JSON.parse(callResult.content as string)).toEqual({
-          notes: [
-            {
-              id: "note_1",
-              title: "Weekly sync",
-              createdAt: "2026-08-12T09:00:00.000Z",
-            },
-          ],
-        });
+      expect(callResult.isError).toBeUndefined();
+      expect(captured.auth).toBe("Bearer seeded-granola-secret");
+      expect(JSON.parse(callResult.content as string)).toEqual({
+        notes: [
+          {
+            id: "note_1",
+            title: "Weekly sync",
+            createdAt: "2026-08-12T09:00:00.000Z",
+          },
+        ],
+      });
 
-        await capability.dispose();
-      } finally {
-        await close();
-      }
-    });
-  },
-);
+      await capability.dispose();
+    } finally {
+      await close();
+    }
+  });
+});

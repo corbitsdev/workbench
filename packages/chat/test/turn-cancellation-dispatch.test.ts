@@ -90,16 +90,12 @@ describe("cancelWorkbenchTurn (CL-7201)", () => {
 
     const timeline = await timelineOf(deps, workbench.id);
     const cancelledNotices = timeline.filter((message) =>
-      message.parts.some(
-        (part) => part.kind === "text" && part.turnCancelled === true,
-      ),
+      message.parts.some((part) => part.kind === "text" && part.turnCancelled === true),
     );
     expect(cancelledNotices).toHaveLength(1);
 
     const undeliveredNotices = timeline.filter((message) =>
-      message.parts.some(
-        (part) => part.kind === "text" && part.turnFailed === true,
-      ),
+      message.parts.some((part) => part.kind === "text" && part.turnFailed === true),
     );
     expect(undeliveredNotices).toHaveLength(0);
   });
@@ -154,9 +150,7 @@ describe("cancelWorkbenchTurn (CL-7201)", () => {
 
     const timeline = await timelineOf(deps, workbench.id);
     const cancelledNotices = timeline.filter((message) =>
-      message.parts.some(
-        (part) => part.kind === "text" && part.turnCancelled === true,
-      ),
+      message.parts.some((part) => part.kind === "text" && part.turnCancelled === true),
     );
     expect(cancelledNotices).toHaveLength(1);
   });
@@ -293,16 +287,12 @@ describe("cancelWorkbenchTurn (CL-7201)", () => {
     const timeline = await timelineOf(deps, workbench.id);
     const notices = timeline.filter((message) =>
       message.parts.some(
-        (part) =>
-          part.kind === "text" &&
-          (part.turnCancelled === true || part.turnFailed === true),
+        (part) => part.kind === "text" && (part.turnCancelled === true || part.turnFailed === true),
       ),
     );
     expect(notices).toHaveLength(1);
     expect(
-      notices[0]?.parts.some(
-        (part) => part.kind === "text" && part.turnCancelled === true,
-      ),
+      notices[0]?.parts.some((part) => part.kind === "text" && part.turnCancelled === true),
     ).toBe(true);
   });
 });

@@ -14,9 +14,7 @@ test("the tool's definition marks itself approval-gated", () => {
 });
 
 test("the tool is namespaced under this workflow package, not a shared one", () => {
-  expect(DILIGENCE_BRIEF_FINALIZE_TOOL.id).toBe(
-    "@corbits/workflow-diligence-brief/finalize",
-  );
+  expect(DILIGENCE_BRIEF_FINALIZE_TOOL.id).toBe("@corbits/workflow-diligence-brief/finalize");
 });
 
 test("requires the sanctioned workflow-artifacts env keys", () => {
@@ -142,8 +140,7 @@ test("run persists a teaching payload on the no-data path with a status-note kin
 
 test("run returns an honest error result when persistence fails, never fabricating persisted: true", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
 
   try {
     const bundle = DILIGENCE_BRIEF_FINALIZE_TOOL(testEnv());

@@ -4,10 +4,7 @@ import { Lightning } from "@corbits/icons";
 import { EmptyState, FilterChip, Tabs } from "@corbits/react-ui";
 import type { ConnectorDescriptor } from "@corbits/connections/registry";
 import type { ResolvedPlugin } from "@corbits/connections/plugins";
-import {
-  MCP_PRESETS,
-  MCP_PRESET_CONNECTOR_IDS,
-} from "@corbits/connections/mcp-presets";
+import { MCP_PRESETS, MCP_PRESET_CONNECTOR_IDS } from "@corbits/connections/mcp-presets";
 
 import { McpServersSection } from "./mcp-servers-section";
 import { McpPresetCard, useMcpPresetCatalog } from "./mcp-preset-cards";
@@ -56,13 +53,8 @@ const MCP_PRESET_CATALOG_IDS = new Set([
   ...MCP_PRESET_CONNECTOR_IDS,
 ]);
 
-export function isNativePluginCatalogDescriptor(
-  descriptor: ConnectorDescriptor,
-): boolean {
-  return (
-    descriptor.feedsTools.length > 0 &&
-    !MCP_PRESET_CATALOG_IDS.has(descriptor.id)
-  );
+export function isNativePluginCatalogDescriptor(descriptor: ConnectorDescriptor): boolean {
+  return descriptor.feedsTools.length > 0 && !MCP_PRESET_CATALOG_IDS.has(descriptor.id);
 }
 
 function matchesQuery(haystacks: readonly string[], query: string): boolean {
@@ -71,10 +63,7 @@ function matchesQuery(haystacks: readonly string[], query: string): boolean {
   return haystacks.some((value) => value.toLowerCase().includes(needle));
 }
 
-function matchesFilter(
-  entry: PluginCatalogEntry,
-  filter: PluginCatalogFilter,
-): boolean {
+function matchesFilter(entry: PluginCatalogEntry, filter: PluginCatalogFilter): boolean {
   if (filter === "All") return true;
   if (filter === "Connected") return entry.connected;
   return entry.category === filter;
@@ -90,11 +79,7 @@ function PluginFilterBar({
   readonly onChange: (filter: PluginCatalogFilter) => void;
 }) {
   return (
-    <div
-      className="flex flex-wrap gap-2"
-      role="group"
-      aria-label="Plugin catalog filters"
-    >
+    <div className="flex flex-wrap gap-2" role="group" aria-label="Plugin catalog filters">
       {PLUGIN_FILTERS.map((filter) => (
         <FilterChip
           key={filter}
@@ -126,10 +111,7 @@ function PluginCatalogPanel({
   readonly activeFilter: PluginCatalogFilter;
   readonly onFilterChange: (filter: PluginCatalogFilter) => void;
   readonly toolCounts: ReadonlyMap<string, number>;
-  readonly onPresetChanged: (
-    slug: string,
-    toolCount: number | undefined,
-  ) => void;
+  readonly onPresetChanged: (slug: string, toolCount: number | undefined) => void;
   readonly onOpenPreset: (
     preset: McpPreset,
     toolCount: number | undefined,
@@ -139,25 +121,15 @@ function PluginCatalogPanel({
 }) {
   const queryMatches = entries.filter((entry) =>
     matchesQuery(
-      [
-        entry.name,
-        entry.outcome,
-        ...(entry.category === undefined ? [] : [entry.category]),
-      ],
+      [entry.name, entry.outcome, ...(entry.category === undefined ? [] : [entry.category])],
       query,
     ),
   );
-  const visibleEntries = queryMatches.filter((entry) =>
-    matchesFilter(entry, activeFilter),
-  );
+  const visibleEntries = queryMatches.filter((entry) => matchesFilter(entry, activeFilter));
 
   return (
     <div className="flex flex-col gap-4">
-      <PluginFilterBar
-        entries={queryMatches}
-        active={activeFilter}
-        onChange={onFilterChange}
-      />
+      <PluginFilterBar entries={queryMatches} active={activeFilter} onChange={onFilterChange} />
       {visibleEntries.length === 0 ? (
         <EmptyState
           icon={<Lightning />}
@@ -182,9 +154,7 @@ function PluginCatalogPanel({
                 preset={entry.preset}
                 toolCount={toolCounts.get(entry.id)}
                 onChanged={(toolCount) => onPresetChanged(entry.id, toolCount)}
-                onOpen={(trigger) =>
-                  onOpenPreset(entry.preset, toolCounts.get(entry.id), trigger)
-                }
+                onOpen={(trigger) => onOpenPreset(entry.preset, toolCounts.get(entry.id), trigger)}
               />
             ) : (
               <PluginCard
@@ -210,9 +180,7 @@ function SkillsTabPanel({
   readonly query: string;
   readonly onOpen: (skill: SkillCardData) => void;
 }) {
-  const filtered = skills.filter((skill) =>
-    matchesQuery([skill.name, skill.description], query),
-  );
+  const filtered = skills.filter((skill) => matchesQuery([skill.name, skill.description], query));
 
   if (skills.length === 0) {
     return (
@@ -239,11 +207,7 @@ function SkillsTabPanel({
   return (
     <div className="border border-border [&>*:last-child]:border-b-0">
       {filtered.map((skill) => (
-        <SkillCard
-          key={skill.assetId}
-          skill={skill}
-          onOpen={() => onOpen(skill)}
-        />
+        <SkillCard key={skill.assetId} skill={skill} onOpen={() => onOpen(skill)} />
       ))}
     </div>
   );
@@ -303,10 +267,7 @@ export function PluginsGallery({
           kind: "native",
           id: plugin.descriptor.id,
           name: plugin.descriptor.displayName,
-          outcome: pluginOutcome(
-            plugin.descriptor.id,
-            plugin.descriptor.displayName,
-          ),
+          outcome: pluginOutcome(plugin.descriptor.id, plugin.descriptor.displayName),
           category: pluginCategory(plugin.descriptor.id),
           connected: plugin.status !== "not_connected",
           plugin,
@@ -331,9 +292,9 @@ export function PluginsGallery({
 
   useEffect(() => {
     if (!presetCatalog.loaded || autoConnectPresetSlug === null) return;
-    const row = Array.from(
-      document.querySelectorAll<HTMLElement>("[data-plugin-slug]"),
-    ).find((element) => element.dataset.pluginSlug === autoConnectPresetSlug);
+    const row = Array.from(document.querySelectorAll<HTMLElement>("[data-plugin-slug]")).find(
+      (element) => element.dataset.pluginSlug === autoConnectPresetSlug,
+    );
     row?.querySelector<HTMLButtonElement>("button")?.focus();
     onAutoConnectPresetHandled?.();
   }, [
@@ -350,28 +311,16 @@ export function PluginsGallery({
         label: "Plugins",
         count:
           nativeEntries.length +
-          (presetCatalog.loaded
-            ? presetCatalog.presets.length
-            : MCP_PRESETS.length),
+          (presetCatalog.loaded ? presetCatalog.presets.length : MCP_PRESETS.length),
       },
       { id: "skills" as const, label: "Skills", count: skills.length },
     ],
-    [
-      nativeEntries.length,
-      presetCatalog.loaded,
-      presetCatalog.presets.length,
-      skills.length,
-    ],
+    [nativeEntries.length, presetCatalog.loaded, presetCatalog.presets.length, skills.length],
   );
 
   return (
     <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-4">
-      <Tabs
-        tabs={tabs}
-        active={activeTab}
-        onChange={onTabChange}
-        label="Plugins gallery sections"
-      >
+      <Tabs tabs={tabs} active={activeTab} onChange={onTabChange} label="Plugins gallery sections">
         {(active) => (
           <div className="flex flex-col gap-4 pt-3">
             {active === "plugins" ? (
@@ -403,11 +352,7 @@ export function PluginsGallery({
                 <McpServersSection tenantId={tenantId} />
               </>
             ) : (
-              <SkillsTabPanel
-                skills={skills}
-                query={query}
-                onOpen={onOpenSkill}
-              />
+              <SkillsTabPanel skills={skills} query={query} onOpen={onOpenSkill} />
             )}
           </div>
         )}

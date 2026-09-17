@@ -144,17 +144,11 @@ test("UpdateAgentSkillsInput rejects a duplicate skill name", () => {
 });
 
 test("UpdateDefinitionStatusInput accepts the two lifecycle states", () => {
-  expect(
-    UpdateDefinitionStatusInput({ status: "stopped" }) instanceof type.errors,
-  ).toBe(false);
-  expect(
-    UpdateDefinitionStatusInput({ status: "deployed" }) instanceof type.errors,
-  ).toBe(false);
+  expect(UpdateDefinitionStatusInput({ status: "stopped" }) instanceof type.errors).toBe(false);
+  expect(UpdateDefinitionStatusInput({ status: "deployed" }) instanceof type.errors).toBe(false);
 });
 
 test("UpdateDefinitionStatusInput rejects any other status, deletion included", () => {
-  expect(
-    UpdateDefinitionStatusInput({ status: "deleted" }) instanceof type.errors,
-  ).toBe(true);
+  expect(UpdateDefinitionStatusInput({ status: "deleted" }) instanceof type.errors).toBe(true);
   expect(UpdateDefinitionStatusInput({}) instanceof type.errors).toBe(true);
 });

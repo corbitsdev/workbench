@@ -115,10 +115,7 @@ export type CreateHubChatPlatformDeps = {
    * relaunch call `prepareProvisionedDeployment` on this; chat never
    * mints the run row itself.
    */
-  workflowAllocationService: Pick<
-    WorkflowAllocationService,
-    "prepareProvisionedDeployment"
-  >;
+  workflowAllocationService: Pick<WorkflowAllocationService, "prepareProvisionedDeployment">;
   sidecarRouter: SidecarRouter;
   toolGrantsForPins: ToolGrantsForPins;
   /**
@@ -178,9 +175,7 @@ export type CreateHubChatPlatformDeps = {
    * connected provider, that 409 is exactly what still happens — the
    * honest answer when there is truly nothing to launch against.
    */
-  workbenchHostInferencePreferences?: (
-    tenantId: string,
-  ) => Promise<readonly InferencePreference[]>;
+  workbenchHostInferencePreferences?: (tenantId: string) => Promise<readonly InferencePreference[]>;
   /**
    * Where a relaunch announces itself in the room — see
    * `./relaunch-notice.ts` for why this is a ref the host arms later
@@ -234,9 +229,7 @@ export type HubChatPlatform = ChatPlatform & {
    * its next message. Best-effort per participant: one failed relaunch
    * is logged and the pass moves on.
    */
-  reconcileInferenceSources(
-    tenantId: string,
-  ): Promise<{ scanned: number; relaunched: number }>;
+  reconcileInferenceSources(tenantId: string): Promise<{ scanned: number; relaunched: number }>;
   /**
    * Relaunches live participants in `tenantId` whose launch pins include
    * any of `packageNames` — a tool-package connector's `feedsTools` the
@@ -259,9 +252,7 @@ export type HubChatPlatform = ChatPlatform & {
  * id — the host owns the cache so every mail sender in the process
  * shares it.
  */
-export function createHubChatPlatform(
-  deps: CreateHubChatPlatformDeps,
-): HubChatPlatform {
+export function createHubChatPlatform(deps: CreateHubChatPlatformDeps): HubChatPlatform {
   void tagCredentialCipher(deps.credentialCipher);
   const runMailDeps = {
     db: deps.db,
@@ -308,9 +299,7 @@ export function createHubChatPlatform(
       return refIdForUserPrincipal(input.principalId);
     }
     if (input.definitionId === null) {
-      throw new Error(
-        "run has no definitionId to resolve a run-trigger authority from",
-      );
+      throw new Error("run has no definitionId to resolve a run-trigger authority from");
     }
     const rows = await deps.db
       .select({ assetId: workflowDefinition.assetId })
@@ -319,9 +308,7 @@ export function createHubChatPlatform(
       .limit(1);
     const assetId = rows[0]?.assetId;
     if (assetId === null || assetId === undefined) {
-      throw new Error(
-        `workflow definition "${input.definitionId}" has no asset`,
-      );
+      throw new Error(`workflow definition "${input.definitionId}" has no asset`);
     }
     const creatorPrincipalId = await sourceAuthorityForAsset(assetId);
     return refIdForUserPrincipal(creatorPrincipalId);
@@ -383,33 +370,30 @@ export function createHubChatPlatform(
       DEFAULT_ASSET_REF,
     );
     if (commitSha === null) {
-      throw new Error(
-        `definition asset "${input.definitionAssetId}" has no HEAD`,
-      );
+      throw new Error(`definition asset "${input.definitionAssetId}" has no HEAD`);
     }
     const anchorRunId = generateId("workflowRun");
     const sessionId = generateId("session");
-    const prepared =
-      await deps.workflowAllocationService.prepareProvisionedDeployment({
-        tenantId: input.tenantId,
-        anchorRunId,
-        deploymentDomain: input.deploymentDomain,
-        source: {
-          kind: "asset",
-          assetId: input.definitionAssetId,
-          package: { format: "source", commitSha },
-        },
-        entry: WORKFLOW_SOURCE_ENTRY,
-        definitionAssetId: input.definitionAssetId,
-        sessionId,
-        sourceAuthorityPrincipalId: input.sourceAuthorityPrincipalId,
-        sourceOfferingIds: offerings.sourceOfferingIds,
-        defaultSourceOfferingId: offerings.defaultSourceOfferingId,
-        deployContent: { systemPrompt: "" },
-        ...(input.foldedBody.toolPackagePins.length > 0
-          ? { toolPackagePins: input.foldedBody.toolPackagePins }
-          : {}),
-      });
+    const prepared = await deps.workflowAllocationService.prepareProvisionedDeployment({
+      tenantId: input.tenantId,
+      anchorRunId,
+      deploymentDomain: input.deploymentDomain,
+      source: {
+        kind: "asset",
+        assetId: input.definitionAssetId,
+        package: { format: "source", commitSha },
+      },
+      entry: WORKFLOW_SOURCE_ENTRY,
+      definitionAssetId: input.definitionAssetId,
+      sessionId,
+      sourceAuthorityPrincipalId: input.sourceAuthorityPrincipalId,
+      sourceOfferingIds: offerings.sourceOfferingIds,
+      defaultSourceOfferingId: offerings.defaultSourceOfferingId,
+      deployContent: { systemPrompt: "" },
+      ...(input.foldedBody.toolPackagePins.length > 0
+        ? { toolPackagePins: input.foldedBody.toolPackagePins }
+        : {}),
+    });
     await recordAgentSessionAtProvision({
       db: deps.db,
       eventCollectors: deps.eventCollectors,
@@ -449,8 +433,7 @@ export function createHubChatPlatform(
   // the wake itself, so that hang becomes a rejection
   // `dispatchTurnBatch`'s catch can report and notify on, instead of a
   // promise nothing ever settles.
-  const MAIL_DELIVERY_TIMEOUT_MS =
-    deps.mailDeliveryTimeoutMs ?? DEFAULT_WAKE_TIMEOUT_MS;
+  const MAIL_DELIVERY_TIMEOUT_MS = deps.mailDeliveryTimeoutMs ?? DEFAULT_WAKE_TIMEOUT_MS;
 
   function isRoutable(address: string): boolean {
     return deps.sidecarRouter.getRoutableAddresses().includes(address);
@@ -488,20 +471,14 @@ export function createHubChatPlatform(
     const prepared = await provisionOnAsset({
       tenantId: binding.tenantId,
       deploymentDomain: domainOf(binding.roomAddress),
-      sourceAuthorityPrincipalId:
-        await sourceAuthorityForAsset(definitionAssetId),
+      sourceAuthorityPrincipalId: await sourceAuthorityForAsset(definitionAssetId),
       definitionAssetId,
       foldedBody: binding.foldedBody,
     });
 
     await endAgentSessionForRun(deps.db, run.id, deps.eventCollectors);
 
-    await repointBinding(
-      deps.db,
-      binding,
-      prepared.runId,
-      prepared.sourcesDigest,
-    );
+    await repointBinding(deps.db, binding, prepared.runId, prepared.sourcesDigest);
 
     deps.relaunchNotice?.current?.({
       tenantId: binding.tenantId,
@@ -628,15 +605,11 @@ export function createHubChatPlatform(
     if (definitionRow === undefined || definitionRow.assetId === null) {
       return undefined;
     }
-    const { row: authoredRow, projection } =
-      await resolveAuthoredProjectedDefinition(tenantId, {
-        assetId: definitionRow.assetId,
-        name: definitionRow.name,
-      });
-    const freshFoldedBody = readFoldedBody(
-      projection,
-      authoredRow.grantRequirements,
-    );
+    const { row: authoredRow, projection } = await resolveAuthoredProjectedDefinition(tenantId, {
+      assetId: definitionRow.assetId,
+      name: definitionRow.name,
+    });
+    const freshFoldedBody = readFoldedBody(projection, authoredRow.grantRequirements);
     if (foldedBodyContentEquals(freshFoldedBody, currentFoldedBody)) {
       return undefined;
     }
@@ -669,10 +642,7 @@ export function createHubChatPlatform(
   async function hasDriftedSources(binding: AgentBinding): Promise<boolean> {
     const checkedAt = sourcesCheckedAt.get(binding.stableId);
     const now = Date.now();
-    if (
-      checkedAt !== undefined &&
-      now - checkedAt < SOURCES_CHECK_INTERVAL_MS
-    ) {
+    if (checkedAt !== undefined && now - checkedAt < SOURCES_CHECK_INTERVAL_MS) {
       return false;
     }
     let offerings: Awaited<ReturnType<typeof catalogOfferings>>;
@@ -795,10 +765,7 @@ export function createHubChatPlatform(
    * caller's timeout never shortens another's wait on the same
    * coalesced wake.
    */
-  function boundToWakeTimeout(
-    pending: Promise<void>,
-    address: string,
-  ): Promise<void> {
+  function boundToWakeTimeout(pending: Promise<void>, address: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(
@@ -899,11 +866,7 @@ export function createHubChatPlatform(
   async function reconcileInferenceSources(
     tenantId: string,
   ): Promise<{ scanned: number; relaunched: number }> {
-    const participants = await listLaunchesForTenant(
-      deps.db,
-      tenantId,
-      RECONCILE_SOURCES_LIMIT,
-    );
+    const participants = await listLaunchesForTenant(deps.db, tenantId, RECONCILE_SOURCES_LIMIT);
     let relaunched = 0;
     for (const { binding, run } of participants) {
       // A recent send may have stamped `sourcesCheckedAt` so
@@ -927,11 +890,7 @@ export function createHubChatPlatform(
     packageNames: readonly string[],
   ): Promise<{ scanned: number; relaunched: number }> {
     const wanted = new Set(packageNames);
-    const participants = await listLaunchesForTenant(
-      deps.db,
-      tenantId,
-      RECONCILE_SOURCES_LIMIT,
-    );
+    const participants = await listLaunchesForTenant(deps.db, tenantId, RECONCILE_SOURCES_LIMIT);
     let relaunched = 0;
     for (const live of participants) {
       const pinsWanted = live.binding.foldedBody.toolPackagePins.some((pin) =>
@@ -961,10 +920,7 @@ export function createHubChatPlatform(
    * participant id — not the room's own address, once anything has been
    * relaunched.
    */
-  async function requireLive(
-    stableId: string,
-    expectedTenantId?: string,
-  ): Promise<LiveAgent> {
+  async function requireLive(stableId: string, expectedTenantId?: string): Promise<LiveAgent> {
     const live =
       expectedTenantId === undefined
         ? await resolveLiveByStableIdAnyTenant(deps.db, stableId)
@@ -1112,13 +1068,8 @@ export function createHubChatPlatform(
     if (candidates.length === 0) {
       throw new DefinitionProjectionMissingError(definitionAsset.name);
     }
-    const resolved = await resolveNewestProjectedDefinition(
-      deps.db,
-      candidates,
-    );
-    const row = candidates.find(
-      (candidate) => candidate.id === resolved.definitionId,
-    );
+    const resolved = await resolveNewestProjectedDefinition(deps.db, candidates);
+    const row = candidates.find((candidate) => candidate.id === resolved.definitionId);
     if (row === undefined) {
       throw new Error(
         `resolved definition "${resolved.definitionId}" is not among the ` +
@@ -1128,9 +1079,7 @@ export function createHubChatPlatform(
     return { row, projection: resolved.projection };
   }
 
-  async function resolveDefinitionAssetId(
-    definitionId: string,
-  ): Promise<string | undefined> {
+  async function resolveDefinitionAssetId(definitionId: string): Promise<string | undefined> {
     const row = await deps.db.query.workflowDefinition.findFirst({
       where: eq(workflowDefinition.id, definitionId),
     });
@@ -1146,9 +1095,7 @@ export function createHubChatPlatform(
         ),
       });
       if (definitionRow === undefined) {
-        throw new Error(
-          `No definition "${input.definitionId}" for this tenant`,
-        );
+        throw new Error(`No definition "${input.definitionId}" for this tenant`);
       }
       if (definitionRow.status !== "deployed") {
         throw new Error(
@@ -1157,9 +1104,7 @@ export function createHubChatPlatform(
         );
       }
       if (definitionRow.assetId === null) {
-        throw new Error(
-          `Definition "${input.definitionId}" has not been materialized`,
-        );
+        throw new Error(`Definition "${input.definitionId}" has not been materialized`);
       }
       const definitionAssetId = definitionRow.assetId;
 
@@ -1179,16 +1124,15 @@ export function createHubChatPlatform(
         return { instanceId: standing.stableId, address: standing.roomAddress };
       }
 
-      const { row: resolvedDefinitionRow, projection } =
-        await resolveAuthoredProjectedDefinition(input.tenantId, {
+      const { row: resolvedDefinitionRow, projection } = await resolveAuthoredProjectedDefinition(
+        input.tenantId,
+        {
           assetId: definitionAssetId,
           name: definitionRow.name,
-        });
-
-      const foldedBody = readFoldedBody(
-        projection,
-        resolvedDefinitionRow.grantRequirements,
+        },
       );
+
+      const foldedBody = readFoldedBody(projection, resolvedDefinitionRow.grantRequirements);
       if (foldedBody.systemPrompt === "") {
         throw new Error(
           `Definition "${input.definitionId}" cannot be launched without ` +
@@ -1221,9 +1165,7 @@ export function createHubChatPlatform(
       return { instanceId: prepared.runId, address: prepared.address };
     },
 
-    async listInvitableDefinitions(
-      tenantId,
-    ): Promise<readonly InvitableDefinition[]> {
+    async listInvitableDefinitions(tenantId): Promise<readonly InvitableDefinition[]> {
       // A definition deployed in a parent tenant is invitable from a child
       // workbench like a plugin, so this reads the whole ancestor chain --
       // the same walk credential and catalog resolution already perform --
@@ -1294,11 +1236,7 @@ export function createHubChatPlatform(
         : { name: row.name };
     },
 
-    async refreshAgentInstanceFromDefinition(
-      tenantId,
-      _workbenchId,
-      address,
-    ): Promise<void> {
+    async refreshAgentInstanceFromDefinition(tenantId, _workbenchId, address): Promise<void> {
       const binding = await readBindingByAddress(deps.db, address, tenantId);
       if (binding === undefined) return;
       const live = await resolveLiveAgent(deps.db, binding);
@@ -1319,15 +1257,11 @@ export function createHubChatPlatform(
       // repointed it to; the refresh recomputes from the hub-authored
       // sibling so the saved edit — not the clone's frozen snapshot —
       // is what the next wake replays.
-      const { row: authoredRow, projection } =
-        await resolveAuthoredProjectedDefinition(tenantId, {
-          assetId: definitionRow.assetId,
-          name: definitionRow.name,
-        });
-      const foldedBody = readFoldedBody(
-        projection,
-        authoredRow.grantRequirements,
-      );
+      const { row: authoredRow, projection } = await resolveAuthoredProjectedDefinition(tenantId, {
+        assetId: definitionRow.assetId,
+        name: definitionRow.name,
+      });
+      const foldedBody = readFoldedBody(projection, authoredRow.grantRequirements);
 
       await deps.db
         .update(workbenchLaunch)
@@ -1440,9 +1374,7 @@ export function createHubChatPlatform(
       } else if (input.principalId !== undefined) {
         from = `${input.principalId}@${domain}`;
       } else {
-        throw new Error(
-          "sendMail requires either principalId or fromWorkbenchId",
-        );
+        throw new Error("sendMail requires either principalId or fromWorkbenchId");
       }
       // Keyed by workbench id (`generateId("workflowRun")` / older
       // `generateId("instance")`), not the invited agent's instance id.
@@ -1450,13 +1382,11 @@ export function createHubChatPlatform(
       // process would mint a different signing key for the same string.
       const cryptoProvider = await cryptoProviders.get(input.workbenchId);
 
-      const attachments = input.content.attachments?.map(
-        (attachment, index) => ({
-          name: attachment.name ?? `attachment-${index}`,
-          contentType: attachment.mimeType,
-          data: new Uint8Array(Buffer.from(attachment.data, "base64")),
-        }),
-      );
+      const attachments = input.content.attachments?.map((attachment, index) => ({
+        name: attachment.name ?? `attachment-${index}`,
+        contentType: attachment.mimeType,
+        data: new Uint8Array(Buffer.from(attachment.data, "base64")),
+      }));
 
       const authAsUserId = await resolveTriggerAuthUserId({
         principalId: input.principalId,
@@ -1475,9 +1405,7 @@ export function createHubChatPlatform(
         authAsUserId,
       };
       const withAttachments =
-        attachments !== undefined
-          ? { ...sendMailBase, attachments }
-          : sendMailBase;
+        attachments !== undefined ? { ...sendMailBase, attachments } : sendMailBase;
       const withReplyTo =
         input.content.replyTo !== undefined
           ? { ...withAttachments, replyTo: input.content.replyTo }
@@ -1489,41 +1417,32 @@ export function createHubChatPlatform(
       // the event — both can be present on the same mail.
       const withThreading = {
         ...withReplyTo,
-        ...(input.content.messageId !== undefined
-          ? { messageId: input.content.messageId }
-          : {}),
-        ...(input.content.inReplyTo !== undefined
-          ? { inReplyTo: input.content.inReplyTo }
-          : {}),
-        ...(input.content.references !== undefined
-          ? { references: input.content.references }
-          : {}),
+        ...(input.content.messageId !== undefined ? { messageId: input.content.messageId } : {}),
+        ...(input.content.inReplyTo !== undefined ? { inReplyTo: input.content.inReplyTo } : {}),
+        ...(input.content.references !== undefined ? { references: input.content.references } : {}),
       };
-      const sent = await sendRunMailWithReclaimRetry(
-        withThreading,
-        async () => {
-          const relive = await requireLive(input.workbenchId, input.tenantId);
-          try {
-            await ensureRunSession({
-              db: deps.db,
-              eventCollectors: deps.eventCollectors,
-              runId: relive.run.id,
-            });
-          } catch (err) {
-            reportError(err, {
-              operation: "chat.sendMail.ensureRunSession",
-              tenantId: input.tenantId,
-              agentId: relive.binding.liveAddress,
-              extra: { runId: relive.run.id },
-            });
-          }
-          return {
-            agentAddress: relive.binding.liveAddress,
-            anchorRunId: relive.run.id,
-            sessionId: await resolveRunSessionIdOrThrow(deps.db, relive.run),
-          };
-        },
-      );
+      const sent = await sendRunMailWithReclaimRetry(withThreading, async () => {
+        const relive = await requireLive(input.workbenchId, input.tenantId);
+        try {
+          await ensureRunSession({
+            db: deps.db,
+            eventCollectors: deps.eventCollectors,
+            runId: relive.run.id,
+          });
+        } catch (err) {
+          reportError(err, {
+            operation: "chat.sendMail.ensureRunSession",
+            tenantId: input.tenantId,
+            agentId: relive.binding.liveAddress,
+            extra: { runId: relive.run.id },
+          });
+        }
+        return {
+          agentAddress: relive.binding.liveAddress,
+          anchorRunId: relive.run.id,
+          sessionId: await resolveRunSessionIdOrThrow(deps.db, relive.run),
+        };
+      });
 
       return sent;
     },
@@ -1554,10 +1473,7 @@ export function createHubChatPlatform(
       const priorSessionIds = await retiredSessionIds(binding);
       for (const sessionId of [liveSessionId, ...priorSessionIds]) {
         const mailRow = await deps.db.query.sessionMail.findFirst({
-          where: and(
-            eq(sessionMail.id, mailId),
-            eq(sessionMail.sessionId, sessionId),
-          ),
+          where: and(eq(sessionMail.id, mailId), eq(sessionMail.sessionId, sessionId)),
         });
         if (mailRow !== undefined) {
           return extractPartByPath(mailRow.raw, partPath);

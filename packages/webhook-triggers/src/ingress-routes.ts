@@ -44,10 +44,7 @@ export type CreateWebhookIngressRoutesDeps = {
    * route's own parsing/signature/lookup logic is testable without a
    * database or the launch machinery.
    */
-  launch: (
-    trigger: WebhookTriggerRow,
-    payload: unknown,
-  ) => Promise<LaunchedWebhookTrigger>;
+  launch: (trigger: WebhookTriggerRow, payload: unknown) => Promise<LaunchedWebhookTrigger>;
 };
 
 /**
@@ -56,9 +53,7 @@ export type CreateWebhookIngressRoutesDeps = {
  * route resolves its own tenant scope by looking the trigger up by
  * id, since the caller carries no session and no tenant path segment.
  */
-export function createWebhookIngressRoutes(
-  deps: CreateWebhookIngressRoutesDeps,
-): Hono<Env> {
+export function createWebhookIngressRoutes(deps: CreateWebhookIngressRoutesDeps): Hono<Env> {
   const app = new Hono<Env>();
 
   app.post("/:triggerId", async (c) => {
@@ -81,14 +76,7 @@ export function createWebhookIngressRoutes(
     const rawBody = await c.req.text();
     const signatureHeader = c.req.header(WEBHOOK_SIGNATURE_HEADER);
     const timestampHeader = c.req.header(WEBHOOK_TIMESTAMP_HEADER);
-    if (
-      !verifySignature(
-        trigger.secret,
-        timestampHeader,
-        rawBody,
-        signatureHeader,
-      )
-    ) {
+    if (!verifySignature(trigger.secret, timestampHeader, rawBody, signatureHeader)) {
       const reason = isFreshTimestamp(timestampHeader)
         ? "bad signature"
         : "missing or stale timestamp";
@@ -115,10 +103,7 @@ export function createWebhookIngressRoutes(
     const launched = await deps.launch(trigger, payload);
     await deps.store.recordFired(trigger.id, new Date());
 
-    return c.json(
-      { instanceId: launched.instanceId, address: launched.triggerAddress },
-      202,
-    );
+    return c.json({ instanceId: launched.instanceId, address: launched.triggerAddress }, 202);
   });
 
   return app;

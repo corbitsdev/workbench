@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import {
-  isBlockingOverlayOpen,
-  isInsideInteractiveInput,
-} from "../src/dialog-guard";
+import { isBlockingOverlayOpen, isInsideInteractiveInput } from "../src/dialog-guard";
 
 afterEach(() => {
   document.body.innerHTML = "";

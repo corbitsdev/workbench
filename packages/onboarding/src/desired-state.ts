@@ -40,11 +40,7 @@ import {
 } from "@corbits/tool-registry-publish";
 import type { WorkflowPusher } from "@corbits/connections/workflow-push";
 import { reportError } from "@corbits/error-sink";
-import {
-  isSidecarUnavailableError,
-  parseAs,
-  type ApiCall,
-} from "@corbits/hub-api-client";
+import { isSidecarUnavailableError, parseAs, type ApiCall } from "@corbits/hub-api-client";
 
 export type WorkflowPin = {
   readonly assetName: string;
@@ -133,11 +129,7 @@ export async function seededWorkflowNames(
     undefined,
     cookies,
   );
-  const assets = parseAs(
-    AssetWithOriginResponse.array(),
-    assetsResponse.data,
-    "assets response",
-  );
+  const assets = parseAs(AssetWithOriginResponse.array(), assetsResponse.data, "assets response");
 
   const deploymentsResponse = await api(
     "GET",
@@ -157,10 +149,7 @@ export async function seededWorkflowNames(
     const asset = assets.find((a) => a.name === pin.assetName);
     const isDeployed =
       asset !== undefined &&
-      deployments.some(
-        (d) =>
-          d.definitionAssetId === asset.id && isLiveDeploymentStatus(d.status),
-      );
+      deployments.some((d) => d.definitionAssetId === asset.id && isLiveDeploymentStatus(d.status));
     (isDeployed ? deployed : pending).push(pin.assetName);
   }
   return { deployed, pending };
@@ -172,9 +161,7 @@ async function readToolsState(
   tenantId: string,
 ): Promise<PinState> {
   try {
-    return (await isCorbitsToolsRegistrySeeded(api, cookies, tenantId))
-      ? "present"
-      : "pending";
+    return (await isCorbitsToolsRegistrySeeded(api, cookies, tenantId)) ? "present" : "pending";
   } catch (cause) {
     if (isSidecarUnavailableError(cause)) return "blocked";
     throw cause;
@@ -195,14 +182,8 @@ async function readSkillState(
       cookies,
     );
     if (response.status >= 500) return "blocked";
-    const assets = parseAs(
-      AssetWithOriginResponse.array(),
-      response.data,
-      "assets response",
-    );
-    return assets.some((asset) => asset.name === skill.name)
-      ? "present"
-      : "pending";
+    const assets = parseAs(AssetWithOriginResponse.array(), response.data, "assets response");
+    return assets.some((asset) => asset.name === skill.name) ? "present" : "pending";
   } catch (cause) {
     if (isSidecarUnavailableError(cause)) return "blocked";
     throw cause;
@@ -226,9 +207,7 @@ export async function readTenantDesiredStateStatus(
   );
   const workflows: Record<string, PinState> = {};
   for (const pin of TENANT_DESIRED_STATE.workflows) {
-    workflows[pin.assetName] = deployed.includes(pin.assetName)
-      ? "present"
-      : "pending";
+    workflows[pin.assetName] = deployed.includes(pin.assetName) ? "present" : "pending";
   }
   const tools = await readToolsState(api, cookies, tenantId);
   const skills: Record<string, PinState> = {};
@@ -264,9 +243,7 @@ export type DesiredStateStep = {
 /** Labeled, doc-ordered step list for a waiting surface (the
  * onboarding page's finishing-setup view), derived from a status read
  * plus the doc's own labels. */
-export function desiredStateSteps(
-  status: DesiredStateStatus,
-): readonly DesiredStateStep[] {
+export function desiredStateSteps(status: DesiredStateStatus): readonly DesiredStateStep[] {
   return [
     ...TENANT_DESIRED_STATE.workflows.map((pin) => ({
       name: pin.assetName,
@@ -290,8 +267,7 @@ export function desiredStateSteps(
 // Reconcile
 // ---------------------------------------------------------------------------
 
-export type ReconcilePinStatus =
-  "present" | "installed" | "reinstalled" | "blocked" | "failed";
+export type ReconcilePinStatus = "present" | "installed" | "reinstalled" | "blocked" | "failed";
 
 export type ReconcilePin = {
   readonly name: string;
@@ -338,17 +314,8 @@ export async function resolveTenantModelSource(
   cookies: string[],
   tenantId: string,
 ): Promise<ModelSource | undefined> {
-  const response = await api(
-    "GET",
-    `/api/tenants/${tenantId}/models`,
-    undefined,
-    cookies,
-  );
-  const models = parseAs(
-    ModelInfo.array(),
-    response.data,
-    "resolved catalog response",
-  );
+  const response = await api("GET", `/api/tenants/${tenantId}/models`, undefined, cookies);
+  const models = parseAs(ModelInfo.array(), response.data, "resolved catalog response");
   let best: { provider: string; model: string; priority: number } | undefined;
   for (const model of models) {
     for (const offering of model.offerings) {
@@ -361,9 +328,7 @@ export async function resolveTenantModelSource(
       }
     }
   }
-  return best === undefined
-    ? undefined
-    : { provider: best.provider, model: best.model };
+  return best === undefined ? undefined : { provider: best.provider, model: best.model };
 }
 
 export type TenantDeployer = {
@@ -390,28 +355,14 @@ export async function resolveTenantDeployer(
   tenantId: string,
 ): Promise<TenantDeployer | undefined> {
   const response = await api("GET", "/api/me/principals", undefined, cookies);
-  const summary = parseAs(
-    paginatedSchema(PrincipalSummary),
-    response.data,
-    "principals response",
-  );
+  const summary = parseAs(paginatedSchema(PrincipalSummary), response.data, "principals response");
   const own = summary.data.find(
-    (p) =>
-      p.tenantId === tenantId && p.kind === "user" && p.status === "active",
+    (p) => p.tenantId === tenantId && p.kind === "user" && p.status === "active",
   );
   if (!own) return undefined;
 
-  const tenantResponse = await api(
-    "GET",
-    `/api/tenants/${tenantId}`,
-    undefined,
-    cookies,
-  );
-  const tenant = parseAs(
-    TenantResponse,
-    tenantResponse.data,
-    "tenant response",
-  );
+  const tenantResponse = await api("GET", `/api/tenants/${tenantId}`, undefined, cookies);
+  const tenant = parseAs(TenantResponse, tenantResponse.data, "tenant response");
   return {
     tenantId,
     principalId: own.principalId,
@@ -437,9 +388,7 @@ export async function resolveTenantDeployer(
  * 404-tolerant plant writes nothing) reports `blocked`, never
  * `installed`.
  */
-export async function reconcileTenantDesiredState(
-  args: ReconcileArgs,
-): Promise<ReconcileReport> {
+export async function reconcileTenantDesiredState(args: ReconcileArgs): Promise<ReconcileReport> {
   const { api, cookies, tenantId } = {
     ...args,
     tenantId: args.tenant.tenantId,
@@ -537,12 +486,8 @@ export async function reconcileTenantDesiredState(
   // Skills + grants + workflows together, via the one seeder. Entered
   // only when at least one workflow OR skill pin is pending; with all
   // present this whole function stays read-only.
-  const workflowPending = Object.values(status.workflows).some(
-    (s) => s !== "present",
-  );
-  const skillPending = Object.values(status.skills).some(
-    (s) => s !== "present",
-  );
+  const workflowPending = Object.values(status.workflows).some((s) => s !== "present");
+  const skillPending = Object.values(status.skills).some((s) => s !== "present");
 
   if (!workflowPending && !skillPending) {
     for (const pin of TENANT_DESIRED_STATE.workflows) {
@@ -554,15 +499,11 @@ export async function reconcileTenantDesiredState(
   } else {
     const model = args.model;
     const seedWorkflows = DEFAULT_WORKFLOWS.filter((workflow) =>
-      TENANT_DESIRED_STATE.workflows.some(
-        (pin) => pin.assetName === workflow.assetName,
-      ),
+      TENANT_DESIRED_STATE.workflows.some((pin) => pin.assetName === workflow.assetName),
     );
     try {
       if (model === undefined) {
-        throw new Error(
-          `tenant ${tenantId} has no catalog offerings to deploy against`,
-        );
+        throw new Error(`tenant ${tenantId} has no catalog offerings to deploy against`);
       }
       await (args.seedTenantFn ?? seedTenant)({
         api,
@@ -650,8 +591,7 @@ export async function reconcileTenantDesiredState(
           pins.push({
             name: pin.name,
             kind: "skill",
-            status:
-              status.skills[pin.name] === "present" ? "present" : "failed",
+            status: status.skills[pin.name] === "present" ? "present" : "failed",
           });
         }
         log(

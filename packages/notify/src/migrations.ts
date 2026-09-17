@@ -67,9 +67,7 @@ export async function applyNotifyMigrations(
       `CREATE TABLE IF NOT EXISTS ${quoteQualified(SCHEMA, LEDGER_TABLE)} (` +
         `name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
     );
-    const rows = await sql.unsafe(
-      `SELECT name FROM ${quoteQualified(SCHEMA, LEDGER_TABLE)}`,
-    );
+    const rows = await sql.unsafe(`SELECT name FROM ${quoteQualified(SCHEMA, LEDGER_TABLE)}`);
     const alreadyApplied = new Set(rows.map((row) => String(row["name"])));
     const applied: string[] = [];
     for (const migration of notifyMigrations) {

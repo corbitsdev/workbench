@@ -76,9 +76,7 @@ export interface MintedAgentDm {
   readonly handle: string;
 }
 
-function authHeaders(
-  config: AgentDirectoryToolClientConfig,
-): Record<string, string> {
+function authHeaders(config: AgentDirectoryToolClientConfig): Record<string, string> {
   return {
     authorization: `Bearer ${config.sidecarToken}`,
     "x-workflow-run-address": config.address,
@@ -93,21 +91,14 @@ function errorMessageFrom(body: unknown): string | undefined {
     return undefined;
   }
   const error = (body as { error: unknown }).error;
-  if (
-    error === null ||
-    typeof error !== "object" ||
-    !("userMessage" in error)
-  ) {
+  if (error === null || typeof error !== "object" || !("userMessage" in error)) {
     return undefined;
   }
   const userMessage = (error as { userMessage: unknown }).userMessage;
   return typeof userMessage === "string" ? userMessage : undefined;
 }
 
-async function readErrorMessage(
-  response: Response,
-  fallback: string,
-): Promise<string> {
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
   const body: unknown = await response.json().catch(() => undefined);
   return errorMessageFrom(body) ?? fallback;
 }
@@ -143,23 +134,16 @@ export async function createAgentDefinition(
   );
   if (response.status === 400 || response.status === 409) {
     throw new CreateAgentDefinitionError(
-      await readErrorMessage(
-        response,
-        `Creating the agent failed: ${response.status}`,
-      ),
+      await readErrorMessage(response, `Creating the agent failed: ${response.status}`),
     );
   }
   if (!response.ok) {
-    throw new Error(
-      `Creating the agent failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Creating the agent failed: ${response.status} ${response.statusText}`);
   }
   const body: unknown = await response.json();
   const parsed = CreatedAgentDefinitionResponse(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `Create-agent response did not match the expected shape: ${parsed.summary}`,
-    );
+    throw new Error(`Create-agent response did not match the expected shape: ${parsed.summary}`);
   }
   return parsed;
 }
@@ -181,16 +165,12 @@ export async function listAgentDefinitions(
     { headers: authHeaders(config) },
   );
   if (!response.ok) {
-    throw new Error(
-      `Listing agents failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Listing agents failed: ${response.status} ${response.statusText}`);
   }
   const body: unknown = await response.json();
   const parsed = ListedAgentDefinitionsResponse(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `List-agents response did not match the expected shape: ${parsed.summary}`,
-    );
+    throw new Error(`List-agents response did not match the expected shape: ${parsed.summary}`);
   }
   return parsed.definitions;
 }
@@ -213,33 +193,23 @@ export async function inviteParticipant(
   definitionId: string,
 ): Promise<InvitedParticipant> {
   const doFetch = config.fetchImpl ?? fetch;
-  const response = await doFetch(
-    `${config.hubChatUrl}/api/workflow-chat/participants/invite`,
-    {
-      method: "POST",
-      headers: { ...authHeaders(config), "content-type": "application/json" },
-      body: JSON.stringify({ definitionId }),
-    },
-  );
+  const response = await doFetch(`${config.hubChatUrl}/api/workflow-chat/participants/invite`, {
+    method: "POST",
+    headers: { ...authHeaders(config), "content-type": "application/json" },
+    body: JSON.stringify({ definitionId }),
+  });
   if (response.status === 404) {
     throw new NoOwnChannelError(
-      await readErrorMessage(
-        response,
-        "The caller has no channel of its own to invite into",
-      ),
+      await readErrorMessage(response, "The caller has no channel of its own to invite into"),
     );
   }
   if (!response.ok) {
-    throw new Error(
-      `Inviting the agent failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Inviting the agent failed: ${response.status} ${response.statusText}`);
   }
   const body: unknown = await response.json();
   const parsed = InvitedParticipantResponse(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `Invite response did not match the expected shape: ${parsed.summary}`,
-    );
+    throw new Error(`Invite response did not match the expected shape: ${parsed.summary}`);
   }
   return parsed;
 }
@@ -263,33 +233,23 @@ export async function mintAgentDm(
   definitionId: string,
 ): Promise<MintedAgentDm> {
   const doFetch = config.fetchImpl ?? fetch;
-  const response = await doFetch(
-    `${config.hubChatUrl}/api/workflow-chat/participants/mint-dm`,
-    {
-      method: "POST",
-      headers: { ...authHeaders(config), "content-type": "application/json" },
-      body: JSON.stringify({ definitionId }),
-    },
-  );
+  const response = await doFetch(`${config.hubChatUrl}/api/workflow-chat/participants/mint-dm`, {
+    method: "POST",
+    headers: { ...authHeaders(config), "content-type": "application/json" },
+    body: JSON.stringify({ definitionId }),
+  });
   if (response.status === 404) {
     throw new NoOwnWorkbenchError(
-      await readErrorMessage(
-        response,
-        "The caller has no own workbench to mint a DM against",
-      ),
+      await readErrorMessage(response, "The caller has no own workbench to mint a DM against"),
     );
   }
   if (!response.ok) {
-    throw new Error(
-      `Minting the agent DM failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Minting the agent DM failed: ${response.status} ${response.statusText}`);
   }
   const body: unknown = await response.json();
   const parsed = MintedAgentDmResponse(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `Mint-DM response did not match the expected shape: ${parsed.summary}`,
-    );
+    throw new Error(`Mint-DM response did not match the expected shape: ${parsed.summary}`);
   }
   return parsed;
 }

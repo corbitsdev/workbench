@@ -75,9 +75,7 @@ function ndjsonWriterFromFileSink(sink: Bun.FileSink): NdjsonWriter {
  * receiver's iterator finalises only on EOF, which mirrors the
  * `defaultControlReader` shape the child wires for `process.stdin`.
  */
-function ndjsonReaderFromReadableStream(
-  stream: ReadableStream<Uint8Array>,
-): NdjsonReader {
+function ndjsonReaderFromReadableStream(stream: ReadableStream<Uint8Array>): NdjsonReader {
   return {
     read(): AsyncIterableIterator<string> {
       return (async function* () {

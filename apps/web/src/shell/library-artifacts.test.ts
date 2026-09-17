@@ -21,15 +21,11 @@ describe("copy-link labels", () => {
 
 describe("artifactUploadToast", () => {
   test("a single file is confirmed by name", () => {
-    expect(artifactUploadToast(["q3-report.pdf"])).toBe(
-      "Uploaded · q3-report.pdf",
-    );
+    expect(artifactUploadToast(["q3-report.pdf"])).toBe("Uploaded · q3-report.pdf");
   });
 
   test("several files are confirmed by count", () => {
-    expect(artifactUploadToast(["a.png", "b.png", "c.png", "d.png"])).toBe(
-      "Uploaded 4 files",
-    );
+    expect(artifactUploadToast(["a.png", "b.png", "c.png", "d.png"])).toBe("Uploaded 4 files");
   });
 });
 

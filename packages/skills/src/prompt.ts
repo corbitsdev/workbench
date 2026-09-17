@@ -22,9 +22,7 @@ export type PinnedSkillIndexEntry = {
  * so a definition with no skills carries no stanza at all rather than an
  * empty one the model has to reason about.
  */
-export function buildAvailableSkillsStanza(
-  entries: readonly PinnedSkillIndexEntry[],
-): string {
+export function buildAvailableSkillsStanza(entries: readonly PinnedSkillIndexEntry[]): string {
   if (entries.length === 0) return "";
   const lines = entries.map((entry) => `- ${entry.name}: ${entry.description}`);
   return [

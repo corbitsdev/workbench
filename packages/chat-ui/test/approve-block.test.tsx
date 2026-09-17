@@ -55,10 +55,8 @@ function messageWithApproveBlock(approvalId: string): MessageItem[] {
 function fakeActions(overrides: Partial<ApprovalActions>): ApprovalActions {
   return {
     getStatus: async () => ({ kind: "loading" }) as ApprovalStatusQuery,
-    approve: async () =>
-      ({ kind: "resolved", status: "approved" }) as ApprovalDecisionResult,
-    reject: async () =>
-      ({ kind: "resolved", status: "rejected" }) as ApprovalDecisionResult,
+    approve: async () => ({ kind: "resolved", status: "approved" }) as ApprovalDecisionResult,
+    reject: async () => ({ kind: "resolved", status: "rejected" }) as ApprovalDecisionResult,
     ...overrides,
   };
 }
@@ -109,10 +107,7 @@ async function mount(actions: ApprovalActions, approvalId = "apv_1") {
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      <WorkbenchTimeline
-        items={messageWithApproveBlock(approvalId)}
-        approvalActions={actions}
-      />,
+      <WorkbenchTimeline items={messageWithApproveBlock(approvalId)} approvalActions={actions} />,
     );
   });
   return container;
@@ -145,9 +140,7 @@ describe("approve card round-trip", () => {
 
     expect(statusIds).toEqual([approvalId]);
 
-    const approveButton = el.querySelector(
-      ".chat-block-actions button",
-    ) as HTMLButtonElement;
+    const approveButton = el.querySelector(".chat-block-actions button") as HTMLButtonElement;
     await act(async () => {
       approveButton.click();
     });
@@ -193,9 +186,7 @@ describe("approve card round-trip", () => {
     // the page, but the platform detail must appear first in document
     // order — never the agent's framing standing in ahead of it.
     const platformIndex = el.innerHTML.indexOf("Wire $50,000 to acct_9182");
-    const agentIndex = el.innerHTML.indexOf(
-      "Just a routine refresh, nothing to worry about!",
-    );
+    const agentIndex = el.innerHTML.indexOf("Just a routine refresh, nothing to worry about!");
     expect(platformIndex).toBeGreaterThan(-1);
     expect(agentIndex).toBeGreaterThan(-1);
     expect(platformIndex).toBeLessThan(agentIndex);
@@ -216,16 +207,12 @@ describe("approve card round-trip", () => {
     // The agent's own body text — the exact confused-deputy risk (an
     // innocuous "Refresh cache" framing over a real wire transfer) — must
     // never render as the description sitting next to live buttons.
-    expect(el.textContent).not.toContain(
-      "Just a routine refresh, nothing to worry about!",
-    );
+    expect(el.textContent).not.toContain("Just a routine refresh, nothing to worry about!");
 
     await act(async () => {
       (buttons[0] as HTMLButtonElement).click();
     });
-    expect(el.textContent).toContain(
-      "You do not have permission to act on this.",
-    );
+    expect(el.textContent).toContain("You do not have permission to act on this.");
   });
 
   test("approve success re-renders resolved state from a re-read and invalidates", async () => {
@@ -241,9 +228,7 @@ describe("approve card round-trip", () => {
     };
     const el = await mount(actions);
 
-    const approveButton = el.querySelector(
-      ".chat-block-actions button",
-    ) as HTMLButtonElement;
+    const approveButton = el.querySelector(".chat-block-actions button") as HTMLButtonElement;
     await act(async () => {
       approveButton.click();
     });
@@ -266,9 +251,7 @@ describe("approve card round-trip", () => {
       }),
     );
 
-    const approveButton = el.querySelector(
-      ".chat-block-actions button",
-    ) as HTMLButtonElement;
+    const approveButton = el.querySelector(".chat-block-actions button") as HTMLButtonElement;
     await act(async () => {
       approveButton.click();
     });
@@ -306,9 +289,7 @@ describe("approve card round-trip", () => {
     };
     const el = await mount(actions);
 
-    const approveButton = el.querySelector(
-      ".chat-block-actions button",
-    ) as HTMLButtonElement;
+    const approveButton = el.querySelector(".chat-block-actions button") as HTMLButtonElement;
     await act(async () => {
       approveButton.click();
     });
@@ -316,9 +297,7 @@ describe("approve card round-trip", () => {
     expect(reads).toBe(2);
     expect(el.querySelectorAll(".chat-block-actions button")).toHaveLength(0);
     expect(el.textContent).toContain("Approved");
-    expect(el.textContent).toContain(
-      "Someone else already resolved this while you were deciding.",
-    );
+    expect(el.textContent).toContain("Someone else already resolved this while you were deciding.");
   });
 
   test("an already-resolved approval renders calmly with no buttons", async () => {
@@ -352,8 +331,7 @@ describe("approve card round-trip", () => {
     const el = await mount(
       fakeBackend("pending", true, {
         ...PLATFORM_DETAIL,
-        consequence:
-          "Merging goes further than posting a review — it puts the change live.",
+        consequence: "Merging goes further than posting a review — it puts the change live.",
       }).actions,
     );
 

@@ -32,9 +32,7 @@ const logger = getLogger(["hub", "mailbox-persist"]);
  * type from the one place it is public rather than re-declaring its shape
  * by hand and drifting from the package's own definition.
  */
-type ResolveMailboxRefs = NonNullable<
-  CreateMailboxPersistOpts<unknown>["resolveRefs"]
->;
+type ResolveMailboxRefs = NonNullable<CreateMailboxPersistOpts<unknown>["resolveRefs"]>;
 
 /**
  * Resolve a `mail.outbound` frame's sender run address to the mailbox
@@ -78,9 +76,7 @@ type ResolveMailboxRefs = NonNullable<
  * constructed until after `lookups` is, so this only reads `.current`
  * inside the returned closure, never at wiring time.
  */
-export function createHubPersistMailWithSessionEnsure<
-  R extends readonly unknown[],
->(
+export function createHubPersistMailWithSessionEnsure<R extends readonly unknown[]>(
   db: DB["db"],
   eventCollectorsRef: { current?: Pick<EventCollectorPort, "create" | "has"> },
   upstream: (args: MailboxPersistArgs) => Promise<R>,
@@ -107,10 +103,10 @@ export function createHubPersistMailWithSessionEnsure<
     // record for this frame; skip the vendored delegate rather than let it
     // throw "no session for address" past the caller.
     if (sender !== undefined && sender.sessionId === null) {
-      logger.debug(
-        "skipping vendored persistMail for run {runId}: no session yet",
-        { runId: sender.id, senderAddress: args.senderAddress },
-      );
+      logger.debug("skipping vendored persistMail for run {runId}: no session yet", {
+        runId: sender.id,
+        senderAddress: args.senderAddress,
+      });
       // No `session_mail` rows were written for this frame: an empty
       // result, not a thrown error, so a caller iterating this like
       // `handleMailPersist` does simply emits no `mail.persisted` events.
@@ -120,9 +116,7 @@ export function createHubPersistMailWithSessionEnsure<
   };
 }
 
-export function createHubMailboxAuthorizeSender(
-  db: DB["db"],
-): AuthorizeMailboxSender {
+export function createHubMailboxAuthorizeSender(db: DB["db"]): AuthorizeMailboxSender {
   return async (senderAddress) => {
     const sender = await resolveRoutableAddress(db, senderAddress);
     if (sender === undefined) return null;
@@ -146,9 +140,7 @@ export function createHubMailboxAuthorizeSender(
  * under. There is no second id to chase and no header or participant scan
  * to disambiguate: an agent run is launched in the workbench it serves.
  */
-export const hubMailboxResolveRefs: ResolveMailboxRefs = ({
-  senderAuthorization,
-}) => {
+export const hubMailboxResolveRefs: ResolveMailboxRefs = ({ senderAuthorization }) => {
   const ref: MailboxRef = {
     kind: "workbench",
     id: senderAuthorization.tenantId,

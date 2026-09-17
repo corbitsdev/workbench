@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  fetchCatalog,
-  fetchModelPolicy,
-  type CatalogToolClientConfig,
-} from "./client";
+import { fetchCatalog, fetchModelPolicy, type CatalogToolClientConfig } from "./client";
 
 const MODELS_BODY = [
   {
@@ -51,9 +47,7 @@ describe("catalog tool client", () => {
 
     await fetchCatalog(config(fetchImpl));
 
-    expect(seen?.url).toBe(
-      "https://hub.example.com/api/tenants/bench_1/models",
-    );
+    expect(seen?.url).toBe("https://hub.example.com/api/tenants/bench_1/models");
     expect(seen?.headers.get("authorization")).toBe("Bearer sc-token");
     expect(seen?.headers.get("x-workflow-run-address")).toBe("run_1@workflow");
   });
@@ -71,9 +65,7 @@ describe("catalog tool client", () => {
         { status: 400 },
       )) as unknown as typeof fetch;
 
-    await expect(fetchCatalog(config(fetchImpl))).rejects.toThrow(
-      "the bench is not reachable",
-    );
+    await expect(fetchCatalog(config(fetchImpl))).rejects.toThrow("the bench is not reachable");
   });
 
   test("a body in an unexpected shape is an error, not a half-parsed answer", async () => {
@@ -82,9 +74,7 @@ describe("catalog tool client", () => {
         status: 200,
       })) as unknown as typeof fetch;
 
-    await expect(fetchCatalog(config(fetchImpl))).rejects.toThrow(
-      "unexpected shape",
-    );
+    await expect(fetchCatalog(config(fetchImpl))).rejects.toThrow("unexpected shape");
   });
 
   test("an unreachable hub is an error, never an empty list", async () => {
@@ -92,9 +82,7 @@ describe("catalog tool client", () => {
       throw new Error("connection refused");
     }) as unknown as typeof fetch;
 
-    await expect(fetchCatalog(config(fetchImpl))).rejects.toThrow(
-      "connection refused",
-    );
+    await expect(fetchCatalog(config(fetchImpl))).rejects.toThrow("connection refused");
   });
 
   test("reads the model policy out of the tenant's own config blob", async () => {

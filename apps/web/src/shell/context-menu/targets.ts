@@ -41,68 +41,67 @@ function attr(element: Element, name: string): string | null {
 // matches anywhere in the ancestor chain, not the nearest match overall — so
 // a target nested inside another (the profile face inside a workbench row)
 // must be listed before its container.
-export const SHELL_CONTEXT_MENU_TARGETS: readonly TargetDefinition<ShellContextMenuTarget>[] =
-  [
-    {
-      selector: "[data-ctx-account]",
-      resolve: () => ({ type: "account" }),
+export const SHELL_CONTEXT_MENU_TARGETS: readonly TargetDefinition<ShellContextMenuTarget>[] = [
+  {
+    selector: "[data-ctx-account]",
+    resolve: () => ({ type: "account" }),
+  },
+  {
+    selector: "[data-ctx-profile-address]",
+    resolve: (element) => {
+      const address = attr(element, "data-ctx-profile-address");
+      const handle = attr(element, "data-ctx-profile-handle");
+      if (address === null || handle === null) return null;
+      return { type: "profile", address, handle };
     },
-    {
-      selector: "[data-ctx-profile-address]",
-      resolve: (element) => {
-        const address = attr(element, "data-ctx-profile-address");
-        const handle = attr(element, "data-ctx-profile-handle");
-        if (address === null || handle === null) return null;
-        return { type: "profile", address, handle };
-      },
+  },
+  {
+    selector: "[data-ctx-workbench]",
+    resolve: (element) => {
+      const id = attr(element, "data-ctx-workbench");
+      if (id === null) return null;
+      return {
+        type: "workbench",
+        id,
+        title: attr(element, "data-ctx-workbench-title") ?? id,
+        pinned: attr(element, "data-ctx-workbench-pinned") === "true",
+      };
     },
-    {
-      selector: "[data-ctx-workbench]",
-      resolve: (element) => {
-        const id = attr(element, "data-ctx-workbench");
-        if (id === null) return null;
-        return {
-          type: "workbench",
-          id,
-          title: attr(element, "data-ctx-workbench-title") ?? id,
-          pinned: attr(element, "data-ctx-workbench-pinned") === "true",
-        };
-      },
+  },
+  {
+    selector: "[data-ctx-routine]",
+    resolve: (element) => {
+      const id = attr(element, "data-ctx-routine");
+      if (id === null) return null;
+      return {
+        type: "routine",
+        id,
+        name: attr(element, "data-ctx-routine-name") ?? id,
+      };
     },
-    {
-      selector: "[data-ctx-routine]",
-      resolve: (element) => {
-        const id = attr(element, "data-ctx-routine");
-        if (id === null) return null;
-        return {
-          type: "routine",
-          id,
-          name: attr(element, "data-ctx-routine-name") ?? id,
-        };
-      },
+  },
+  {
+    selector: "[data-ctx-insights-run]",
+    resolve: (element) => {
+      const id = attr(element, "data-ctx-insights-run");
+      if (id === null) return null;
+      return { type: "insights-run", id };
     },
-    {
-      selector: "[data-ctx-insights-run]",
-      resolve: (element) => {
-        const id = attr(element, "data-ctx-insights-run");
-        if (id === null) return null;
-        return { type: "insights-run", id };
-      },
+  },
+  {
+    selector: "[data-ctx-artifact]",
+    resolve: (element) => {
+      const id = attr(element, "data-ctx-artifact");
+      if (id === null) return null;
+      const selectedIds = attr(element, "data-ctx-artifact-selected-ids");
+      const ids =
+        selectedIds === null
+          ? [id]
+          : selectedIds.split(",").filter((candidate) => candidate !== "");
+      return { type: "artifact", id, ids: ids.length > 0 ? ids : [id] };
     },
-    {
-      selector: "[data-ctx-artifact]",
-      resolve: (element) => {
-        const id = attr(element, "data-ctx-artifact");
-        if (id === null) return null;
-        const selectedIds = attr(element, "data-ctx-artifact-selected-ids");
-        const ids =
-          selectedIds === null
-            ? [id]
-            : selectedIds.split(",").filter((candidate) => candidate !== "");
-        return { type: "artifact", id, ids: ids.length > 0 ? ids : [id] };
-      },
-    },
-  ];
+  },
+];
 
 export const SHELL_CONTEXT_MENU_FALLBACK: ShellContextMenuTarget = {
   type: "shell",

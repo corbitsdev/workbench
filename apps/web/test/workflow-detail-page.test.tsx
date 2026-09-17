@@ -22,9 +22,7 @@ const baseDetail: WorkflowDefinitionDetailT = {
 
 describe("WorkflowDetailPage", () => {
   test("a deployed workflow shows no not-launchable strip", () => {
-    const html = renderToStaticMarkup(
-      <WorkflowDetailPage detail={baseDetail} />,
-    );
+    const html = renderToStaticMarkup(<WorkflowDetailPage detail={baseDetail} />);
     expect(html).toContain("Deployed");
     expect(html).toContain("v3");
     expect(html).toContain("Sends outreach messages");

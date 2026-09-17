@@ -58,11 +58,7 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
         title: SETTINGS_STRINGS.accountSectionTitle,
         icon: User,
         render: (ctx) => (
-          <AccountSection
-            {...(ctx.onSignOut !== undefined
-              ? { onSignOut: ctx.onSignOut }
-              : {})}
-          />
+          <AccountSection {...(ctx.onSignOut !== undefined ? { onSignOut: ctx.onSignOut } : {})} />
         ),
       },
     ],
@@ -133,17 +129,13 @@ export function resolveSettingsSectionGroups(
 ): readonly SettingsSectionGroup[] {
   return SETTINGS_SECTION_GROUPS.map((group) => {
     const accessProbeFailed = group.sections.some(
-      (section) =>
-        section.gate !== undefined && access[section.gate] === "error",
+      (section) => section.gate !== undefined && access[section.gate] === "error",
     );
     return {
       id: group.id,
       label: group.label,
       sections: group.sections
-        .filter(
-          (section) =>
-            section.gate === undefined || access[section.gate] === "allowed",
-        )
+        .filter((section) => section.gate === undefined || access[section.gate] === "allowed")
         .map(({ gate: _gate, ...section }) => section),
       ...(accessProbeFailed ? { accessProbeFailed: true as const } : {}),
     };

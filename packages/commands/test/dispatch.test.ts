@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createCommandRegistry } from "../src/registry";
-import {
-  dispatchAtCommand,
-  dispatchSlashCommand,
-  resolveAtCommand,
-} from "../src/dispatch";
+import { dispatchAtCommand, dispatchSlashCommand, resolveAtCommand } from "../src/dispatch";
 
 const CTX = { tenantId: "t1", principalId: "p1", workbenchId: "c1" };
 
@@ -18,9 +14,7 @@ describe("dispatchSlashCommand", () => {
     const registry = createCommandRegistry();
     expect(await dispatchSlashCommand(registry, "/nope", CTX)).toEqual({
       type: "message",
-      text:
-        "Unknown command: /nope. No agent commands are available in this " +
-        "workbench yet.",
+      text: "Unknown command: /nope. No agent commands are available in this " + "workbench yet.",
     });
   });
 
@@ -49,9 +43,7 @@ describe("dispatchSlashCommand", () => {
       description: "Starts Jimmy",
       handler: () => ({ type: "noop" }),
     });
-    expect(
-      await dispatchSlashCommand(registry, "/usr/local/bin", CTX),
-    ).toBeUndefined();
+    expect(await dispatchSlashCommand(registry, "/usr/local/bin", CTX)).toBeUndefined();
   });
 
   test("runs the resolved command's handler with the parsed args and context", async () => {
@@ -78,9 +70,7 @@ describe("dispatchSlashCommand", () => {
 describe("resolveAtCommand / dispatchAtCommand", () => {
   test("resolveAtCommand is undefined when the name is not a registered command", async () => {
     const registry = createCommandRegistry();
-    expect(
-      await resolveAtCommand(registry, "@someone hi", "t1"),
-    ).toBeUndefined();
+    expect(await resolveAtCommand(registry, "@someone hi", "t1")).toBeUndefined();
   });
 
   test("resolveAtCommand finds a registered command's name and args", async () => {
@@ -108,11 +98,7 @@ describe("resolveAtCommand / dispatchAtCommand", () => {
         handle: "assistant",
       }),
     });
-    const result = await dispatchAtCommand(
-      registry,
-      "@assistant summarize this",
-      CTX,
-    );
+    const result = await dispatchAtCommand(registry, "@assistant summarize this", CTX);
     expect(result).toEqual({
       type: "workflow-started",
       definitionId: "def-1",

@@ -34,11 +34,7 @@ describe("runWithConcurrency", () => {
   });
 
   test("an empty list resolves immediately with no failures", async () => {
-    const failures = await runWithConcurrency(
-      [] as number[],
-      4,
-      async () => {},
-    );
+    const failures = await runWithConcurrency([] as number[], 4, async () => {});
     expect(failures).toEqual([]);
   });
 

@@ -46,10 +46,7 @@ function vaultRoot(dataDir: string): string {
 }
 
 function vaultEntryDir(dataDir: string, agentAddress: string): string {
-  return path.join(
-    vaultRoot(dataDir),
-    path.basename(agentDir(dataDir, agentAddress)),
-  );
+  return path.join(vaultRoot(dataDir), path.basename(agentDir(dataDir, agentAddress)));
 }
 
 async function pathExists(target: string): Promise<boolean> {
@@ -127,13 +124,9 @@ export async function snapshotAgentIdentity(
   await fsp.cp(source, dest, { recursive: true });
   await hardenPermissionsRecursive(dest);
   await fsp.chmod(dest, 0o700);
-  await fsp.writeFile(
-    path.join(dest, MARKER_FILENAME),
-    new Date().toISOString(),
-    {
-      mode: 0o600,
-    },
-  );
+  await fsp.writeFile(path.join(dest, MARKER_FILENAME), new Date().toISOString(), {
+    mode: 0o600,
+  });
   return { snapshotted: true };
 }
 
@@ -209,11 +202,8 @@ export async function reapExpiredHibernationSnapshots(
       if (!isErrnoNotFound(cause)) throw cause;
     }
 
-    const snapshottedAtMs =
-      snapshottedAtIso === undefined ? NaN : Date.parse(snapshottedAtIso);
-    const expired = Number.isNaN(snapshottedAtMs)
-      ? true
-      : nowMs - snapshottedAtMs >= retentionMs;
+    const snapshottedAtMs = snapshottedAtIso === undefined ? NaN : Date.parse(snapshottedAtIso);
+    const expired = Number.isNaN(snapshottedAtMs) ? true : nowMs - snapshottedAtMs >= retentionMs;
 
     if (expired) {
       await fsp.rm(entryPath, { recursive: true, force: true });

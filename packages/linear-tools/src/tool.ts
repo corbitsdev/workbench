@@ -64,10 +64,7 @@ async function resolveLinearCredential(
   }
 }
 
-async function runLinearListRecentIssues(
-  env: LinearEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runLinearListRecentIssues(env: LinearEnv, call: ToolCall): Promise<ToolResult> {
   const credential = await resolveLinearCredential(env);
   if (credential === null) {
     return notConnectedResult(call.id);
@@ -113,8 +110,7 @@ export const linearTools = defineTool<LinearEnv>({
           properties: {
             since: {
               type: "string",
-              description:
-                "ISO 8601 timestamp; only issues updated after this are returned",
+              description: "ISO 8601 timestamp; only issues updated after this are returned",
             },
           },
         },

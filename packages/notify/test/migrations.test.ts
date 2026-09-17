@@ -20,9 +20,7 @@ const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 describeIfDb("applyNotifyMigrations", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchDatabase = new URL(scratchUrl).pathname.replace(/^\//, "");
 
   beforeAll(async () => {

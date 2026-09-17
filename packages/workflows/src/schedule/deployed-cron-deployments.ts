@@ -43,18 +43,12 @@ export async function listDeployedCronDefinitions(
       workflowDefinitionVersion,
       and(
         eq(workflowDefinitionVersion.definitionId, workflowDefinition.id),
-        eq(
-          workflowDefinitionVersion.version,
-          workflowDefinition.currentVersion,
-        ),
+        eq(workflowDefinitionVersion.version, workflowDefinition.currentVersion),
       ),
     )
     .innerJoin(tenantTable, eq(tenantTable.id, workflowDefinition.tenantId))
     .where(
-      and(
-        eq(workflowDefinition.origin, "authored"),
-        eq(workflowDefinition.status, "deployed"),
-      ),
+      and(eq(workflowDefinition.origin, "authored"), eq(workflowDefinition.status, "deployed")),
     );
 
   const deployed: DeployedCronDefinition[] = [];

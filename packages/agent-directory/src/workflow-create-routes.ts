@@ -89,12 +89,9 @@ const CreateWorkflowAgentDefinitionInput = type({
  * automatable catalog workflow, and not a workbench host's own silent
  * anchor definition.
  */
-function isConversationalAgentDefinition(definition: {
-  readonly name: string;
-}): boolean {
+function isConversationalAgentDefinition(definition: { readonly name: string }): boolean {
   return (
-    !isAutomatableWorkflowName(definition.name) &&
-    !isWorkbenchHostDefinitionName(definition.name)
+    !isAutomatableWorkflowName(definition.name) && !isWorkbenchHostDefinitionName(definition.name)
   );
 }
 
@@ -115,33 +112,24 @@ export function createWorkflowAgentCreateRoutes(
 
   app.onError((err, c) => {
     if (err instanceof CapabilityOutOfInventoryError) {
-      return c.json(
-        makeErrorEnvelope({ code: "bad_request", userMessage: err.message }),
-        400,
-      );
+      return c.json(makeErrorEnvelope({ code: "bad_request", userMessage: err.message }), 400);
     }
     if (err instanceof DuplicateAgentHandleError) {
-      return c.json(
-        makeErrorEnvelope({ code: "conflict", userMessage: err.message }),
-        409,
-      );
+      return c.json(makeErrorEnvelope({ code: "conflict", userMessage: err.message }), 409);
     }
     throw err;
   });
 
   app.use("*", async (c, next) => {
     const authHeader = c.req.header("authorization") ?? "";
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length)
-      : "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
     const address = c.req.header("x-workflow-run-address") ?? "";
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
       return c.json(
         makeErrorEnvelope({
           code: "unauthorized",
-          userMessage:
-            "Missing or unrecognized sidecar bearer token / run address",
+          userMessage: "Missing or unrecognized sidecar bearer token / run address",
         }),
         401,
       );
@@ -152,9 +140,7 @@ export function createWorkflowAgentCreateRoutes(
 
   app.post("/definitions", async (c) => {
     const scope = c.get("workflowCapabilityScope");
-    const body = CreateWorkflowAgentDefinitionInput(
-      await c.req.json().catch(() => undefined),
-    );
+    const body = CreateWorkflowAgentDefinitionInput(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
         makeErrorEnvelope({
@@ -195,9 +181,7 @@ export function createWorkflowAgentCreateRoutes(
     // `./routes.ts`'s `POST /` caller builds its own core input this
     // way: an absent `model`/`toolPackagePins` must be an absent key.
     const coreInput: {
-      -readonly [
-        K in keyof CreateAgentDefinitionCoreInput
-      ]: CreateAgentDefinitionCoreInput[K];
+      -readonly [K in keyof CreateAgentDefinitionCoreInput]: CreateAgentDefinitionCoreInput[K];
     } = {
       tenantId: scope.tenantId,
       principalId: scope.principalId,
@@ -217,9 +201,7 @@ export function createWorkflowAgentCreateRoutes(
     // asked, no fallback consulted.
     let modelNote: string | null = null;
     if (body.model !== undefined) {
-      const knownModel = inventory.models.some(
-        (entry) => entry.canonicalName === body.model,
-      );
+      const knownModel = inventory.models.some((entry) => entry.canonicalName === body.model);
       if (knownModel) {
         coreInput.model = body.model;
       } else {

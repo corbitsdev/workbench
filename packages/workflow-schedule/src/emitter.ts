@@ -88,9 +88,7 @@ export function createCronEmitter<D extends CronDeployment = CronDeployment>(
         cron: deployment.cron,
         now,
         ...(firedAt !== undefined ? { firedAt } : {}),
-        ...(deployment.timeZone !== undefined
-          ? { timeZone: deployment.timeZone }
-          : {}),
+        ...(deployment.timeZone !== undefined ? { timeZone: deployment.timeZone } : {}),
         newTimerId: (fireAt) => timerIdForTick(deployment.deploymentId, fireAt),
       });
     } catch (error) {

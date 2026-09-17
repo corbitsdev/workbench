@@ -1,9 +1,37 @@
 {
   "name": "@corbits/echo-workflow",
-  "description": "Minimal mail-triggered conversational workflow that echoes each inbound message back verbatim",
   "version": "0.0.1",
+  "description": "Minimal mail-triggered conversational workflow that echoes each inbound message back verbatim",
   "license": "LGPL-2.1-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "workflows/echo"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/workflow": "0.3.0"
+  },
   "corbits": {
     "workflow": {
       "assetName": "echo",
@@ -13,33 +41,5 @@
   },
   "interchange": {
     "workflow": "./src/index.ts"
-  },
-  "exports": {
-    ".": "./src/index.ts"
-  },
-  "files": [
-    "src",
-    "LICENSE",
-    "README.md"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "workflows/echo"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "bun test"
-  },
-  "peerDependencies": {
-    "@intx/agent": "0.3.0",
-    "@intx/workflow": "0.3.0"
-  },
-  "devDependencies": {
-    "@types/bun": "catalog:",
-    "typescript": "catalog:"
   }
 }

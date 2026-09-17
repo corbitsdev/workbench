@@ -8,9 +8,7 @@ describe("error envelope", () => {
       userMessage: "We're on it. Try again in a moment.",
     });
     expect(envelope.error.code).toBe("provisioning_failed");
-    expect(envelope.error.userMessage).toBe(
-      "We're on it. Try again in a moment.",
-    );
+    expect(envelope.error.userMessage).toBe("We're on it. Try again in a moment.");
     expect(typeof envelope.error.refId).toBe("string");
     expect(envelope.error.refId.length).toBeGreaterThan(0);
   });

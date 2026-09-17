@@ -2,10 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { AgentRuntimeConfig } from "./config";
 import { buildAgentRuntimeWorkflow } from "./definition";
-import {
-  AGENT_RUNTIME_ENTRY_PATH,
-  renderAgentRuntimeSourceTree,
-} from "./source-tree";
+import { AGENT_RUNTIME_ENTRY_PATH, renderAgentRuntimeSourceTree } from "./source-tree";
 
 const config: AgentRuntimeConfig = {
   workflowId: "wf_run_a",
@@ -60,10 +57,7 @@ describe("renderAgentRuntimeSourceTree", () => {
 
   test("the rendered entry parses back to the definition the builder produced", () => {
     const entry = render()["workflow.js"] ?? "";
-    const literal = entry.slice(
-      "export default ".length,
-      entry.lastIndexOf(";"),
-    );
+    const literal = entry.slice("export default ".length, entry.lastIndexOf(";"));
 
     expect(JSON.parse(literal)).toEqual(
       JSON.parse(JSON.stringify(buildAgentRuntimeWorkflow(config))),
@@ -71,18 +65,13 @@ describe("renderAgentRuntimeSourceTree", () => {
   });
 
   test("renders the section mode's turn timeout into the bytes too", () => {
-    const entry =
-      render({ mode: { kind: "section", turnTimeoutMs: 45_000 } })[
-        "workflow.js"
-      ] ?? "";
+    const entry = render({ mode: { kind: "section", turnTimeoutMs: 45_000 } })["workflow.js"] ?? "";
 
     expect(entry).toContain('"kind": "onTrigger"');
     expect(entry).toContain("45000");
   });
 
   test("refuses to render a config the run child would reject", () => {
-    expect(() => render({ inferencePreferences: [] })).toThrow(
-      /invalid agent-runtime config/,
-    );
+    expect(() => render({ inferencePreferences: [] })).toThrow(/invalid agent-runtime config/);
   });
 });

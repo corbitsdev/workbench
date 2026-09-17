@@ -20,18 +20,13 @@ function filePart(overrides: Partial<Part & { kind: "file" }>): Part & {
 
 describe("ArtifactChip", () => {
   test("is disabled with no blobId, data, or artifactId", () => {
-    const markup = renderToStaticMarkup(
-      <ArtifactChip part={filePart({ data: "aGVsbG8=" })} />,
-    );
+    const markup = renderToStaticMarkup(<ArtifactChip part={filePart({ data: "aGVsbG8=" })} />);
     expect(markup).toContain('disabled=""');
   });
 
   test("is openable when artifactId is set and onOpen is supplied", () => {
     const markup = renderToStaticMarkup(
-      <ArtifactChip
-        part={filePart({ artifactId: "art_1" })}
-        onOpen={() => {}}
-      />,
+      <ArtifactChip part={filePart({ artifactId: "art_1" })} onOpen={() => {}} />,
     );
     expect(markup).not.toContain('disabled=""');
   });
@@ -44,26 +39,19 @@ describe("ArtifactChip", () => {
   });
 
   test("stays disabled when artifactId is set but no onOpen is supplied", () => {
-    const markup = renderToStaticMarkup(
-      <ArtifactChip part={filePart({ artifactId: "art_1" })} />,
-    );
+    const markup = renderToStaticMarkup(<ArtifactChip part={filePart({ artifactId: "art_1" })} />);
     expect(markup).toContain('disabled=""');
   });
 
   test("renders the file name and media type", () => {
-    const markup = renderToStaticMarkup(
-      <ArtifactChip part={filePart({ artifactId: "art_1" })} />,
-    );
+    const markup = renderToStaticMarkup(<ArtifactChip part={filePart({ artifactId: "art_1" })} />);
     expect(markup).toContain("Notes");
     expect(markup).toContain("text/plain");
   });
 
   test("offers Open in Files when artifactId and onOpenInLibrary are both set", () => {
     const markup = renderToStaticMarkup(
-      <ArtifactChip
-        part={filePart({ artifactId: "art_1" })}
-        onOpenInLibrary={() => {}}
-      />,
+      <ArtifactChip part={filePart({ artifactId: "art_1" })} onOpenInLibrary={() => {}} />,
     );
     expect(markup).toContain('aria-label="Open in Files"');
   });
@@ -81,10 +69,7 @@ describe("ArtifactChip", () => {
 
   test("has no Library affordance when onOpenInLibrary is not supplied", () => {
     const markup = renderToStaticMarkup(
-      <ArtifactChip
-        part={filePart({ artifactId: "art_1" })}
-        onOpen={() => {}}
-      />,
+      <ArtifactChip part={filePart({ artifactId: "art_1" })} onOpen={() => {}} />,
     );
     expect(markup).not.toContain("Open in Files");
   });

@@ -12,18 +12,11 @@ import { evaluateGrants } from "@intx/authz";
 import type { GrantRule } from "@intx/authz";
 import { defineWorkflow, step } from "@intx/workflow";
 
-import {
-  collectDeclaredResources,
-  filterGrantsToDeclaredResources,
-} from "./child-grant-filter";
+import { collectDeclaredResources, filterGrantsToDeclaredResources } from "./child-grant-filter";
 
 // A grant rule in the shape the per-run grants file carries. `effect` and
 // `action` vary per case; the rest is boilerplate the filter never inspects.
-function rule(
-  resource: string,
-  effect: GrantRule["effect"],
-  action = "invoke",
-): GrantRule {
+function rule(resource: string, effect: GrantRule["effect"], action = "invoke"): GrantRule {
   return {
     id: `grant-${effect}-${resource}-${action}`,
     resource,
@@ -39,12 +32,7 @@ function rule(
 
 function resources(grants: readonly unknown[]): string[] {
   return grants.map((g) => {
-    if (
-      typeof g === "object" &&
-      g !== null &&
-      "resource" in g &&
-      typeof g.resource === "string"
-    ) {
+    if (typeof g === "object" && g !== null && "resource" in g && typeof g.resource === "string") {
       return g.resource;
     }
     throw new Error(`test grant has no string resource: ${JSON.stringify(g)}`);
@@ -54,10 +42,7 @@ function resources(grants: readonly unknown[]): string[] {
 describe("filterGrantsToDeclaredResources", () => {
   test("keeps an allow whose exact resource is declared", () => {
     const declared = new Set(["tool:foo"]);
-    const filtered = filterGrantsToDeclaredResources(
-      [rule("tool:foo", "allow")],
-      declared,
-    );
+    const filtered = filterGrantsToDeclaredResources([rule("tool:foo", "allow")], declared);
     expect(resources(filtered)).toEqual(["tool:foo"]);
   });
 
@@ -65,10 +50,7 @@ describe("filterGrantsToDeclaredResources", () => {
     // The single grant that authorizes the most must survive: string equality
     // would drop `tool:*`, but `matchPattern("tool:*", "tool:foo")` is true.
     const declared = new Set(["tool:foo"]);
-    const filtered = filterGrantsToDeclaredResources(
-      [rule("tool:*", "allow")],
-      declared,
-    );
+    const filtered = filterGrantsToDeclaredResources([rule("tool:*", "allow")], declared);
     expect(resources(filtered)).toEqual(["tool:*"]);
   });
 
@@ -93,11 +75,7 @@ describe("filterGrantsToDeclaredResources", () => {
     // undeclared -- dropping one would weaken safety.
     const declared = new Set(["tool:foo"]);
     const filtered = filterGrantsToDeclaredResources(
-      [
-        rule("tool:bar", "deny"),
-        rule("effect:whatever", "ask"),
-        rule("tool:bar", "allow"),
-      ],
+      [rule("tool:bar", "deny"), rule("effect:whatever", "ask"), rule("tool:bar", "allow")],
       declared,
     );
     expect(resources(filtered)).toEqual(["tool:bar", "effect:whatever"]);
@@ -114,7 +92,6 @@ describe("filterGrantsToDeclaredResources", () => {
       declared,
     );
     const decision = await evaluateGrants(
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the filter returns unknown[]; the seeded rows are GrantRule by construction here
       [...(filtered as readonly GrantRule[])],
       "tool:foo",
       "invoke",
@@ -178,11 +155,7 @@ describe("collectDeclaredResources", () => {
         }),
       },
     });
-    const declared = collectDeclaredResources(
-      workflow,
-      createDefaultDirectorRegistry(),
-      new Map(),
-    );
+    const declared = collectDeclaredResources(workflow, createDefaultDirectorRegistry(), new Map());
     expect(declared.has("inference.source:anthropic:m1")).toBe(true);
     expect(declared.has("inference.source:anthropic:m2")).toBe(true);
   });

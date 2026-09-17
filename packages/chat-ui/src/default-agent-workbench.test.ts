@@ -20,8 +20,7 @@ describe("createDefaultAgentWorkbench", () => {
   function stubFetch(respond: (path: string) => Response): RecordedCall[] {
     const calls: RecordedCall[] = [];
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-      const path =
-        typeof input === "string" ? input : new URL(String(input)).pathname;
+      const path = typeof input === "string" ? input : new URL(String(input)).pathname;
       calls.push(init === undefined ? { path } : { path, init });
       return Promise.resolve(respond(path));
     }) as typeof fetch;
@@ -85,9 +84,7 @@ describe("createDefaultAgentWorkbench", () => {
       assetName: "assistant",
     });
 
-    const result = await agent.ensure("tnt_1", async () => [
-      definition("def-echo", "echo"),
-    ]);
+    const result = await agent.ensure("tnt_1", async () => [definition("def-echo", "echo")]);
 
     expect(result.kind).toBe("error");
   });
@@ -98,9 +95,7 @@ describe("createDefaultAgentWorkbench", () => {
       assetName: undefined,
     });
 
-    const result = await agent.ensure("tnt_1", async () => [
-      definition("def-echo", "echo"),
-    ]);
+    const result = await agent.ensure("tnt_1", async () => [definition("def-echo", "echo")]);
 
     expect(result.kind).toBe("error");
   });
@@ -123,9 +118,7 @@ describe("createDefaultAgentWorkbench", () => {
       throw new Error(`unexpected fetch: ${path}`);
     });
 
-    await agent.ensure("tnt_1", async () => [
-      definition("def-assistant", "assistant"),
-    ]);
+    await agent.ensure("tnt_1", async () => [definition("def-assistant", "assistant")]);
     expect(agent.isCachedWorkbenchId("chat-1")).toBe(true);
     agent.resetCache();
     expect(agent.isCachedWorkbenchId("chat-1")).toBe(false);

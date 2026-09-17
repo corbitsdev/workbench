@@ -101,10 +101,7 @@ export function toAPIQuery<T>(result: {
     if (result.error instanceof UnauthenticatedError) {
       return { kind: "unauthenticated" };
     }
-    if (
-      result.error instanceof ApiQueryError &&
-      result.error.status !== undefined
-    ) {
+    if (result.error instanceof ApiQueryError && result.error.status !== undefined) {
       return {
         kind: "error",
         message: describeQueryError(result.error),

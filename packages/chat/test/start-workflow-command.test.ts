@@ -3,10 +3,7 @@
 // workflow-command registrar: invite-then-send, sharing the same
 // `launchAndJoinAgent` core as `POST .../invite`.
 import { describe, expect, test } from "bun:test";
-import {
-  KindIsChatError,
-  startWorkflowCommand,
-} from "../src/workbench-service";
+import { KindIsChatError, startWorkflowCommand } from "../src/workbench-service";
 import { createInMemoryChatStore } from "../src/store";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import { fakePlatform, TENANT } from "./test-support";
@@ -44,9 +41,7 @@ describe("startWorkflowCommand", () => {
       handle: "echo",
       address: "ins_invited1@acme.example",
     });
-    const opening = platform.sentMail.find(
-      (mail) => mail.workbenchId === "ins_invited1",
-    );
+    const opening = platform.sentMail.find((mail) => mail.workbenchId === "ins_invited1");
     expect(opening?.content.content).toBe("summarize this thread");
     expect(opening?.fromWorkbenchId).toBe("chan_1");
   });
@@ -79,9 +74,7 @@ describe("startWorkflowCommand", () => {
       },
     );
 
-    const opening = platform.sentMail.find(
-      (mail) => mail.workbenchId === "ins_invited1",
-    );
+    const opening = platform.sentMail.find((mail) => mail.workbenchId === "ins_invited1");
     expect(opening?.content.content).toBe("Continue.");
   });
 
@@ -125,9 +118,7 @@ describe("startWorkflowCommand", () => {
       workbenchId: "chan_3",
       settings: {
         "chat/kind": "workbench",
-        "chat/participants": [
-          { address: "ins_existing@acme.example", handle: "myra" },
-        ],
+        "chat/participants": [{ address: "ins_existing@acme.example", handle: "myra" }],
       },
       updatedBy: "prn_alice",
     });
@@ -153,9 +144,7 @@ describe("startWorkflowCommand", () => {
       handle: "myra",
       address: "ins_existing@acme.example",
     });
-    const opening = platform.sentMail.find(
-      (mail) => mail.workbenchId === "ins_existing",
-    );
+    const opening = platform.sentMail.find((mail) => mail.workbenchId === "ins_existing");
     expect(opening?.content.content).toBe("again please");
   });
 
@@ -166,18 +155,14 @@ describe("startWorkflowCommand", () => {
       resolveDefinitionIdByAddress: async (address) =>
         address === "ins_existing@acme.example" ? "wfd_echo_v1" : undefined,
       resolveDefinitionAssetId: async (definitionId) =>
-        definitionId === "wfd_echo_v1" || definitionId === "wfd_echo_v2"
-          ? "ast_echo"
-          : undefined,
+        definitionId === "wfd_echo_v1" || definitionId === "wfd_echo_v2" ? "ast_echo" : undefined,
     });
     await store.createWorkbenchSettings({
       tenantId: TENANT.id,
       workbenchId: "chan_4",
       settings: {
         "chat/kind": "workbench",
-        "chat/participants": [
-          { address: "ins_existing@acme.example", handle: "echo" },
-        ],
+        "chat/participants": [{ address: "ins_existing@acme.example", handle: "echo" }],
       },
       updatedBy: "prn_alice",
     });
@@ -213,9 +198,7 @@ describe("startWorkflowCommand", () => {
       settings: {
         "chat/kind": "chat",
         "chat/definitionId": "wfd_assistant",
-        "chat/participants": [
-          { address: "ins_myra@acme.example", handle: "myra" },
-        ],
+        "chat/participants": [{ address: "ins_myra@acme.example", handle: "myra" }],
       },
       updatedBy: "prn_alice",
     });

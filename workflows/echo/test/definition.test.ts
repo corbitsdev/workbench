@@ -45,9 +45,7 @@ test("the step carries an explicit per-turn timeout", () => {
 test("the workflow is triggered by mail to the given deployment address", () => {
   const definition = buildEchoWorkflow(INPUT);
   expect(definition.id).toBe(ECHO_WORKFLOW_ID);
-  expect(definition.triggers).toEqual([
-    { type: "mail", to: INPUT.triggerAddress },
-  ]);
+  expect(definition.triggers).toEqual([{ type: "mail", to: INPUT.triggerAddress }]);
 });
 
 test("the agent instructs echoing, carries the preferences, and inlines no tools", () => {
@@ -85,22 +83,14 @@ test("serialization fails loud on a function-valued field, naming its path", () 
       },
     },
   } as unknown as WorkflowDefinition;
-  expect(() => serializeEchoWorkflow(poisoned)).toThrow(
-    /steps\.echo\.agent\.toolFactories\[0\]/,
-  );
+  expect(() => serializeEchoWorkflow(poisoned)).toThrow(/steps\.echo\.agent\.toolFactories\[0\]/);
 });
 
 test("an empty trigger address is rejected", () => {
-  expect(() => buildEchoWorkflow({ ...INPUT, triggerAddress: "" })).toThrow(
-    /triggerAddress/,
-  );
+  expect(() => buildEchoWorkflow({ ...INPUT, triggerAddress: "" })).toThrow(/triggerAddress/);
 });
 
 test("a non-positive or fractional turn timeout is rejected", () => {
-  expect(() => buildEchoWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(
-    /turnTimeoutMs/,
-  );
-  expect(() => buildEchoWorkflow({ ...INPUT, turnTimeoutMs: 0.5 })).toThrow(
-    /turnTimeoutMs/,
-  );
+  expect(() => buildEchoWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(/turnTimeoutMs/);
+  expect(() => buildEchoWorkflow({ ...INPUT, turnTimeoutMs: 0.5 })).toThrow(/turnTimeoutMs/);
 });

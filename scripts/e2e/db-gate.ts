@@ -10,35 +10,23 @@ import { afterAll, describe } from "bun:test";
 
 export const TEST_COMPOSE_FILE = "compose.test.yml";
 export const TEST_COMPOSE_UP = `docker compose -f ${TEST_COMPOSE_FILE} up -d`;
-export const TEST_DATABASE_URL =
-  "postgres://postgres:postgres@localhost:5432/workbench";
+export const TEST_DATABASE_URL = "postgres://postgres:postgres@localhost:5432/workbench";
 
 export const MISSING_DATABASE_HINT =
   `Start Postgres with \`${TEST_COMPOSE_UP}\`, then ` +
   `DATABASE_URL=${TEST_DATABASE_URL} bun test ...`;
 
-// GitHub Actions sets CI=true on every job. The unit/structural jobs
-// never provision Postgres; DB-gated suites skip there (loudly) and
-// run in e2e / isolation / db-suites, which do. Any other CI context
-// — including `CI=true bun test` locally — treats a missing
-// DATABASE_URL as a hard failure so a miswired pipeline cannot skip
-// green.
-const CI_JOBS_WITHOUT_POSTGRES = new Set([
-  "lint",
-  "typecheck",
-  // "build-test" itself is now a no-op summary job (see ci.yml); the
-  // actual GITHUB_JOB name a sharded build-test matrix run carries is
-  // "build-test-shard". Both stay listed: the summary job sets no env
-  // and never runs a suite, but naming it costs nothing and keeps this
-  // set matching ci.yml by inspection rather than by memory.
-  "build-test",
-  "build-test-shard",
-  "structural",
-]);
+// GitHub Actions sets CI=true on every job. None of ci.yml's jobs
+// provision Postgres (CL-8150 dropped the db-backed e2e/isolation/
+// db-suites jobs), so every DB-gated suite skips there (loudly) —
+// listed here so `bun run check:structural`'s own fetch-depth: 0
+// checkout doesn't accidentally start hard-failing a suite it never
+// meant to run. Any other CI context — including `CI=true bun test`
+// locally — treats a missing DATABASE_URL as a hard failure so a
+// miswired pipeline cannot skip green.
+const CI_JOBS_WITHOUT_POSTGRES = new Set(["setup", "lint", "typecheck", "structural", "unit"]);
 
-export function databaseIsRequired(
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
+export function databaseIsRequired(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env["CI"] !== "true") return false;
   const job = env["GITHUB_JOB"];
   if (job !== undefined && job !== "" && CI_JOBS_WITHOUT_POSTGRES.has(job)) {
@@ -48,19 +36,14 @@ export function databaseIsRequired(
 }
 
 export function missingDatabaseError(label: string): Error {
-  return new Error(
-    `DATABASE_URL is not set; "${label}" cannot run. ${MISSING_DATABASE_HINT}`,
-  );
+  return new Error(`DATABASE_URL is not set; "${label}" cannot run. ${MISSING_DATABASE_HINT}`);
 }
 
 export function skippedDatabaseWarning(label: string): string {
   return `${label}: DATABASE_URL is not set; suite skipped. ${MISSING_DATABASE_HINT}`;
 }
 
-export function assertDatabaseConfigured(
-  databaseUrl: string | undefined,
-  label: string,
-): void {
+export function assertDatabaseConfigured(databaseUrl: string | undefined, label: string): void {
   if (databaseUrl !== undefined && databaseUrl !== "") return;
   if (databaseIsRequired()) throw missingDatabaseError(label);
 }
@@ -94,10 +77,7 @@ function printSummary(): void {
  * databaseUrl: the resolved DATABASE_URL (or "" / undefined when absent).
  * label: identifies the skipped suite in the summary — pass import.meta.path.
  */
-export function dbGate(
-  databaseUrl: string | undefined,
-  label: string,
-): typeof describe {
+export function dbGate(databaseUrl: string | undefined, label: string): typeof describe {
   if (databaseUrl !== undefined && databaseUrl !== "") return describe;
   if (databaseIsRequired()) throw missingDatabaseError(label);
   skipped.push(label);

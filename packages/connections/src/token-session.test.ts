@@ -70,9 +70,7 @@ function deps(
 describe("createCredentialTokenSession", () => {
   test("serves an api_key credential's secret untouched and never refreshes", async () => {
     const d = deps();
-    d.setCurrent(
-      row({ type: "api_key", refreshSecret: null, expiresAt: null }),
-    );
+    d.setCurrent(row({ type: "api_key", refreshSecret: null, expiresAt: null }));
     const result = await d.session.getValidToken("cred_1");
     expect(result).toEqual({ ok: true, secret: "access-1", refreshed: false });
     expect(d.grantCalls).toHaveLength(0);
@@ -91,9 +89,7 @@ describe("createCredentialTokenSession", () => {
     const result = await d.session.getValidToken("cred_1");
     expect(result).toEqual({ ok: true, secret: "access-2", refreshed: true });
     expect(d.grantCalls).toHaveLength(1);
-    expect(d.updates).toEqual([
-      { secret: "access-2", expiresAt: new Date(REFRESHED_EXPIRES_AT) },
-    ]);
+    expect(d.updates).toEqual([{ secret: "access-2", expiresAt: new Date(REFRESHED_EXPIRES_AT) }]);
   });
 
   test("coalesces concurrent refreshes into exactly one refresh grant", async () => {

@@ -26,9 +26,7 @@ async function configIn(dataDir: string): Promise<ProcessProvisionerConfig> {
   };
 }
 
-async function harness(
-  opts: Parameters<typeof createFakeSidecarProcessRunner>[0] = {},
-): Promise<{
+async function harness(opts: Parameters<typeof createFakeSidecarProcessRunner>[0] = {}): Promise<{
   provisioner: ReturnType<typeof createProcessSidecarProvisioner>;
   runner: FakeSidecarProcessRunner;
   config: ProcessProvisionerConfig;
@@ -47,9 +45,7 @@ async function harness(
   };
 }
 
-function ensureRequest(
-  overrides: Partial<EnsureSidecarRequest> = {},
-): EnsureSidecarRequest {
+function ensureRequest(overrides: Partial<EnsureSidecarRequest> = {}): EnsureSidecarRequest {
   return {
     allocationId: "alloc-1",
     generation: 1,
@@ -193,9 +189,7 @@ describe("createProcessSidecarProvisioner", () => {
   test("an allocation id that is not a safe directory name is rejected outright", async () => {
     const { provisioner, runner } = await harness();
 
-    const result = await provisioner.ensure(
-      ensureRequest({ allocationId: "../escape" }),
-    );
+    const result = await provisioner.ensure(ensureRequest({ allocationId: "../escape" }));
 
     expect(result).toMatchObject({
       kind: "rejected",

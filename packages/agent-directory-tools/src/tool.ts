@@ -63,9 +63,7 @@ function errorResult(callId: string, err: unknown): ToolResult {
   };
 }
 
-function clientConfig(
-  env: WorkflowAgentDirectoryEnv,
-): AgentDirectoryToolClientConfig {
+function clientConfig(env: WorkflowAgentDirectoryEnv): AgentDirectoryToolClientConfig {
   return {
     hubAgentDirectoryUrl: env.hubAgentDirectoryUrl,
     hubChatUrl: env.hubChatUrl,
@@ -90,9 +88,7 @@ function handleFromAgentName(name: string): string {
   return slug.length > 0 ? slug : "agent";
 }
 
-function toCreateAgentDefinitionRequest(
-  input: CreateAgentInput,
-): CreateAgentDefinitionRequest {
+function toCreateAgentDefinitionRequest(input: CreateAgentInput): CreateAgentDefinitionRequest {
   const request: {
     name: string;
     handle: string;
@@ -105,8 +101,7 @@ function toCreateAgentDefinitionRequest(
     handle: handleFromAgentName(input.name),
     systemPrompt: input.systemPrompt,
   };
-  if (input.modelPreference !== undefined)
-    request.model = input.modelPreference;
+  if (input.modelPreference !== undefined) request.model = input.modelPreference;
   if (input.skills !== undefined) request.skills = input.skills;
   if (input.toolPackagePins !== undefined) {
     request.toolPackagePins = input.toolPackagePins;
@@ -114,10 +109,7 @@ function toCreateAgentDefinitionRequest(
   return request;
 }
 
-async function runListAgents(
-  env: WorkflowAgentDirectoryEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runListAgents(env: WorkflowAgentDirectoryEnv, call: ToolCall): Promise<ToolResult> {
   try {
     const definitions = await listAgentDefinitions(clientConfig(env));
     const content =
@@ -136,10 +128,7 @@ async function runListAgents(
   }
 }
 
-async function runCreateAgent(
-  env: WorkflowAgentDirectoryEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runCreateAgent(env: WorkflowAgentDirectoryEnv, call: ToolCall): Promise<ToolResult> {
   const parsed = CreateAgentInput(call.arguments);
   if (parsed instanceof type.errors) {
     return errorResult(
@@ -240,8 +229,7 @@ export const agentDirectoryTools = defineTool<WorkflowAgentDirectoryEnv>({
           properties: {
             name: {
               type: "string",
-              description:
-                'The new agent\'s display name, e.g. "Release Notes Writer".',
+              description: 'The new agent\'s display name, e.g. "Release Notes Writer".',
             },
             systemPrompt: {
               type: "string",
@@ -295,9 +283,7 @@ export const agentDirectoryTools = defineTool<WorkflowAgentDirectoryEnv>({
           return Promise.resolve(
             errorResult(
               call.id,
-              new Error(
-                `@corbits/agent-directory-tools: unknown tool "${call.name}"`,
-              ),
+              new Error(`@corbits/agent-directory-tools: unknown tool "${call.name}"`),
             ),
           );
       }

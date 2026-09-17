@@ -621,9 +621,7 @@ export interface ApplyChatMigrationsReport {
  * both surfaced, since a partial apply here would otherwise fail
  * silently at the next `workbench setup`.
  */
-export async function applyChatMigrations(
-  databaseUrl: string,
-): Promise<ApplyChatMigrationsReport> {
+export async function applyChatMigrations(databaseUrl: string): Promise<ApplyChatMigrationsReport> {
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
     await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(SCHEMA)}`);
@@ -632,9 +630,7 @@ export async function applyChatMigrations(
       `CREATE TABLE IF NOT EXISTS ${quoteQualified(SCHEMA, LEDGER_TABLE)} (` +
         `name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
     );
-    const rows = await sql.unsafe(
-      `SELECT name FROM ${quoteQualified(SCHEMA, LEDGER_TABLE)}`,
-    );
+    const rows = await sql.unsafe(`SELECT name FROM ${quoteQualified(SCHEMA, LEDGER_TABLE)}`);
     const alreadyApplied = new Set(rows.map((row) => String(row["name"])));
     const applied: string[] = [];
     for (const migration of chatMigrations) {

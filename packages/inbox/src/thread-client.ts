@@ -27,8 +27,7 @@ export class MailboxThreadFetchError extends Error {
   }
 }
 
-export type MailboxThreadListResult =
-  typeof MailboxThreadListResponseSchema.infer;
+export type MailboxThreadListResult = typeof MailboxThreadListResponseSchema.infer;
 
 export type MailboxThreadResult = typeof MailboxThreadResponseSchema.infer;
 
@@ -92,11 +91,7 @@ export function listMailboxThreadsClient(
   if (args.limit !== undefined) params.set("limit", String(args.limit));
   const query = params.toString();
   const path = `${mailboxBasePath}/me/threads${query === "" ? "" : `?${query}`}`;
-  return requestMailboxThreadJSON(
-    path,
-    MailboxThreadListResponseSchema,
-    fetchImpl,
-  );
+  return requestMailboxThreadJSON(path, MailboxThreadListResponseSchema, fetchImpl);
 }
 
 /**

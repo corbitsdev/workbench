@@ -23,10 +23,7 @@ class StubEventSource {
     StubEventSource.instances.push(this);
   }
 
-  addEventListener(
-    eventType: string,
-    listener: (message: MessageEvent) => void,
-  ) {
+  addEventListener(eventType: string, listener: (message: MessageEvent) => void) {
     this.listeners.set(eventType, listener);
   }
 
@@ -98,10 +95,7 @@ function stubFetch() {
     if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
       return json({ items: [] });
     }
-    if (
-      /\/chat\/workbenches\/[^/]+\/presence$/.test(path) &&
-      init?.method === "POST"
-    ) {
+    if (/\/chat\/workbenches\/[^/]+\/presence$/.test(path) && init?.method === "POST") {
       return json({});
     }
     if (/\/mailbox\/me\/threads/.test(path)) {
@@ -164,9 +158,7 @@ describe("dropped chat.message is not silent until poll (CL-6837)", () => {
     });
     await harness.settle(300);
 
-    expect(toast).toHaveBeenCalledWith(
-      "Couldn't apply that message live — refreshing.",
-    );
+    expect(toast).toHaveBeenCalledWith("Couldn't apply that message live — refreshing.");
     expect(feedRefetchCount).toBeGreaterThan(feedRefetchCountAfterHydration);
     toast.mockRestore();
     harness.unmount();
@@ -187,9 +179,7 @@ describe("dropped chat.message is not silent until poll (CL-6837)", () => {
     });
     await harness.settle(300);
 
-    expect(toast).toHaveBeenCalledWith(
-      "Couldn't apply that message live — refreshing.",
-    );
+    expect(toast).toHaveBeenCalledWith("Couldn't apply that message live — refreshing.");
     expect(feedRefetchCount).toBeGreaterThan(feedRefetchCountAfterHydration);
     expect(harness.container.textContent).not.toContain("not-json");
     toast.mockRestore();

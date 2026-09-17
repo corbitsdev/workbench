@@ -22,10 +22,7 @@
 // with `source.kind: "asset"`, `package.format: "source"`, `commitSha` —
 // the only source variant whose pin is cheap enough to mint per run
 // (the registry and tarball variants would each need a publish).
-import {
-  renderWorkflowSourceTree,
-  WORKFLOW_SOURCE_ENTRY,
-} from "@corbits/workflows";
+import { renderWorkflowSourceTree, WORKFLOW_SOURCE_ENTRY } from "@corbits/workflows";
 import { parseAgentRuntimeConfig, type AgentRuntimeConfig } from "./config";
 import { buildAgentRuntimeWorkflow } from "./definition";
 
@@ -84,9 +81,7 @@ function assertJsonPortable(value: unknown, path: string): void {
     case "object":
       break;
     default:
-      throw new Error(
-        `${path} is a ${typeof value}, which does not survive JSON serialization`,
-      );
+      throw new Error(`${path} is a ${typeof value}, which does not survive JSON serialization`);
   }
   if (Array.isArray(value)) {
     value.forEach((element, index) => {
@@ -96,9 +91,7 @@ function assertJsonPortable(value: unknown, path: string): void {
   }
   const proto: unknown = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) {
-    throw new Error(
-      `${path} is a non-plain object; JSON would flatten it lossily`,
-    );
+    throw new Error(`${path} is a non-plain object; JSON would flatten it lossily`);
   }
   for (const [key, entry] of Object.entries(value)) {
     assertJsonPortable(entry, `${path}.${key}`);

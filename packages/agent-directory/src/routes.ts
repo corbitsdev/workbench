@@ -132,11 +132,7 @@ function definitionNotFound(definitionId: string) {
 function hostGuardedRow(
   row: { readonly name: string; readonly assetId: string | null } | undefined,
 ): row is { readonly name: string; readonly assetId: string } {
-  return (
-    row !== undefined &&
-    row.assetId !== null &&
-    !isWorkbenchHostDefinitionName(row.name)
-  );
+  return row !== undefined && row.assetId !== null && !isWorkbenchHostDefinitionName(row.name);
 }
 
 export function createAgentDefinitionRoutes({
@@ -157,22 +153,13 @@ export function createAgentDefinitionRoutes({
   // one rather than letting it read as a 500.
   app.onError((err, c) => {
     if (err instanceof SkillIndexResolutionError) {
-      return c.json(
-        makeErrorEnvelope({ code: "bad_request", userMessage: err.message }),
-        400,
-      );
+      return c.json(makeErrorEnvelope({ code: "bad_request", userMessage: err.message }), 400);
     }
     if (err instanceof CapabilityOutOfInventoryError) {
-      return c.json(
-        makeErrorEnvelope({ code: "bad_request", userMessage: err.message }),
-        400,
-      );
+      return c.json(makeErrorEnvelope({ code: "bad_request", userMessage: err.message }), 400);
     }
     if (err instanceof RetiredWorkflowEnvelopeError) {
-      return c.json(
-        makeErrorEnvelope({ code: "conflict", userMessage: err.message }),
-        409,
-      );
+      return c.json(makeErrorEnvelope({ code: "conflict", userMessage: err.message }), 409);
     }
     if (err instanceof WorkflowAuthorError) {
       return c.json(
@@ -184,9 +171,7 @@ export function createAgentDefinitionRoutes({
   });
 
   app.post("/", requireGrant("workflow-definition:*", "create"), async (c) => {
-    const body = CreateAgentDefinitionInput(
-      await c.req.json().catch(() => undefined),
-    );
+    const body = CreateAgentDefinitionInput(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
         makeErrorEnvelope({
@@ -207,9 +192,7 @@ export function createAgentDefinitionRoutes({
     // built up mutably rather than as one literal, mirroring
     // `apps/hub`'s own `deployAgentDefinition` caller of this same core.
     const coreInput: {
-      -readonly [
-        K in keyof CreateAgentDefinitionCoreInput
-      ]: CreateAgentDefinitionCoreInput[K];
+      -readonly [K in keyof CreateAgentDefinitionCoreInput]: CreateAgentDefinitionCoreInput[K];
     } = {
       tenantId: tenant.id,
       principalId: principal.id,
@@ -219,8 +202,7 @@ export function createAgentDefinitionRoutes({
       systemPrompt: body.systemPrompt,
       skills,
     };
-    if (body.description !== undefined)
-      coreInput.description = body.description;
+    if (body.description !== undefined) coreInput.description = body.description;
     if (body.model !== undefined) coreInput.model = body.model;
     if (body.toolPackagePins !== undefined && body.toolPackagePins.length > 0) {
       coreInput.toolPackagePins = body.toolPackagePins;
@@ -240,10 +222,7 @@ export function createAgentDefinitionRoutes({
       ));
     } catch (cause) {
       if (cause instanceof DuplicateAgentHandleError) {
-        return c.json(
-          makeErrorEnvelope({ code: "conflict", userMessage: cause.message }),
-          409,
-        );
+        return c.json(makeErrorEnvelope({ code: "conflict", userMessage: cause.message }), 409);
       }
       throw cause;
     }
@@ -264,94 +243,79 @@ export function createAgentDefinitionRoutes({
     );
   });
 
-  app.get(
-    "/skills",
-    requireGrant("workflow-definition:*", "read"),
-    async (c) => {
-      const tenant = c.get("tenant");
-      const idsParam = c.req.query("ids") ?? "";
-      const ids = [
-        ...new Set(
-          idsParam
-            .split(",")
-            .map((id) => id.trim())
-            .filter((id) => id !== ""),
-        ),
-      ];
+  app.get("/skills", requireGrant("workflow-definition:*", "read"), async (c) => {
+    const tenant = c.get("tenant");
+    const idsParam = c.req.query("ids") ?? "";
+    const ids = [
+      ...new Set(
+        idsParam
+          .split(",")
+          .map((id) => id.trim())
+          .filter((id) => id !== ""),
+      ),
+    ];
 
-      const entries = await Promise.all(
-        ids.map(async (definitionId) => {
-          try {
-            const row = await db.query.workflowDefinition.findFirst({
-              where: and(
-                eq(workflowDefinition.id, definitionId),
-                eq(workflowDefinition.tenantId, tenant.id),
-              ),
-            });
-            if (row === undefined || row.assetId === null) return null;
-            // Pins read out of the asset's own stanza: the bulk read
-            // survives the side table's deletion by going to the same
-            // source `GET /:definitionId` reads. One unreadable asset
-            // (a pre-cutover retired envelope, a missing blob) must not
-            // fail the whole batch — skip that id, report it, serve the
-            // healthy ones.
-            const workflowJson = await readAgentDefinitionWorkflowJson(
-              assetService,
-              row.assetId,
-            );
-            const skills = readPinnedSkillNames(workflowJson);
-            return [definitionId, skills] as const;
-          } catch (err) {
-            reportError(err, {
-              operation: "agentDirectory.bulkSkills",
-              tenantId: tenant.id,
-              extra: { definitionId },
-            });
-            return null;
-          }
-        }),
-      );
+    const entries = await Promise.all(
+      ids.map(async (definitionId) => {
+        try {
+          const row = await db.query.workflowDefinition.findFirst({
+            where: and(
+              eq(workflowDefinition.id, definitionId),
+              eq(workflowDefinition.tenantId, tenant.id),
+            ),
+          });
+          if (row === undefined || row.assetId === null) return null;
+          // Pins read out of the asset's own stanza: the bulk read
+          // survives the side table's deletion by going to the same
+          // source `GET /:definitionId` reads. One unreadable asset
+          // (a pre-cutover retired envelope, a missing blob) must not
+          // fail the whole batch — skip that id, report it, serve the
+          // healthy ones.
+          const workflowJson = await readAgentDefinitionWorkflowJson(assetService, row.assetId);
+          const skills = readPinnedSkillNames(workflowJson);
+          return [definitionId, skills] as const;
+        } catch (err) {
+          reportError(err, {
+            operation: "agentDirectory.bulkSkills",
+            tenantId: tenant.id,
+            extra: { definitionId },
+          });
+          return null;
+        }
+      }),
+    );
 
-      const skills: Record<string, readonly string[]> = {};
-      for (const entry of entries) {
-        if (entry !== null) skills[entry[0]] = entry[1];
-      }
-      return c.json({ skills });
-    },
-  );
+    const skills: Record<string, readonly string[]> = {};
+    for (const entry of entries) {
+      if (entry !== null) skills[entry[0]] = entry[1];
+    }
+    return c.json({ skills });
+  });
 
   // Feeds the settings surface's guided capability-add picker with only
   // what this tenant actually has — the same source `POST
   // /:definitionId/capabilities` re-checks fail-closed on the add itself,
   // so a name this call doesn't list can never be added either.
-  app.get(
-    "/capabilities/inventory",
-    requireGrant("workflow-definition:*", "read"),
-    async (c) => {
-      const tenant = c.get("tenant");
-      const principal = c.get("principal");
-      const inventory = await capabilityInventory.resolve({
-        tenantId: tenant.id,
-        principalId: principal.id,
-      });
-      return c.json(inventory);
-    },
-  );
+  app.get("/capabilities/inventory", requireGrant("workflow-definition:*", "read"), async (c) => {
+    const tenant = c.get("tenant");
+    const principal = c.get("principal");
+    const inventory = await capabilityInventory.resolve({
+      tenantId: tenant.id,
+      principalId: principal.id,
+    });
+    return c.json(inventory);
+  });
 
   // Every agent this tenant can open a direct chat with — its own agent
   // definitions plus every ancestor's (CL-6253): the sidebar's unified
   // recency-sorted stream reads this list, keyed by `tenantId` per row
   // so a click can mint the DM in the agent's actual owning tenant, not
   // the caller's.
-  app.get(
-    "/visible",
-    requireGrant("workflow-definition:*", "read"),
-    async (c) => {
-      const tenant = c.get("tenant");
-      const definitions = await listVisibleAgentDefinitions(db, tenant.id);
-      return c.json({ definitions });
-    },
-  );
+  app.get("/visible", requireGrant("workflow-definition:*", "read"), async (c) => {
+    const tenant = c.get("tenant");
+    const definitions = await listVisibleAgentDefinitions(db, tenant.id);
+    return c.json({ definitions });
+  });
 
   // A definition's kebab `name` is its immutable, URL-facing slug
   // (CL-6413), so a slug-addressed detail screen resolves through this
@@ -359,34 +323,27 @@ export function createAgentDefinitionRoutes({
   // agent past the listing's pagination ceiling still answers on its own
   // URL. Grant-checked tenant-wide because there is no definition id to
   // scope to until the lookup itself has run.
-  app.get(
-    "/by-name/:name",
-    requireGrant("workflow-definition:*", "read"),
-    async (c) => {
-      const tenant = c.get("tenant");
-      const name = c.req.param("name");
-      const row = await db.query.workflowDefinition.findFirst({
-        where: and(
-          eq(workflowDefinition.name, name),
-          eq(workflowDefinition.tenantId, tenant.id),
-        ),
-      });
-      if (!hostGuardedRow(row)) {
-        return c.json(definitionNotFound(name), 404);
-      }
+  app.get("/by-name/:name", requireGrant("workflow-definition:*", "read"), async (c) => {
+    const tenant = c.get("tenant");
+    const name = c.req.param("name");
+    const row = await db.query.workflowDefinition.findFirst({
+      where: and(eq(workflowDefinition.name, name), eq(workflowDefinition.tenantId, tenant.id)),
+    });
+    if (!hostGuardedRow(row)) {
+      return c.json(definitionNotFound(name), 404);
+    }
 
-      return c.json({
-        id: row.id,
-        tenantId: row.tenantId,
-        name: row.name,
-        description: row.description ?? null,
-        currentVersion: row.currentVersion,
-        status: row.status,
-        createdAt: row.createdAt.toISOString(),
-        updatedAt: row.updatedAt.toISOString(),
-      });
-    },
-  );
+    return c.json({
+      id: row.id,
+      tenantId: row.tenantId,
+      name: row.name,
+      description: row.description ?? null,
+      currentVersion: row.currentVersion,
+      status: row.status,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    });
+  });
 
   app.get(
     "/:definitionId",
@@ -404,10 +361,7 @@ export function createAgentDefinitionRoutes({
         return c.json(definitionNotFound(definitionId), 404);
       }
 
-      const workflowJson = await readAgentDefinitionWorkflowJson(
-        assetService,
-        row.assetId,
-      );
+      const workflowJson = await readAgentDefinitionWorkflowJson(assetService, row.assetId);
       const capabilities = readAgentCapabilities(workflowJson);
       // Pins read out of the asset's own stanza: deleting the side
       // table leaves this surface's only skills source the snapshot
@@ -454,9 +408,7 @@ export function createAgentDefinitionRoutes({
     "/:definitionId/restore",
     requireGrant(idResource("workflow-definition", "definitionId"), "update"),
     async (c) => {
-      const body = RestoreDefinitionInput(
-        await c.req.json().catch(() => undefined),
-      );
+      const body = RestoreDefinitionInput(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
           makeErrorEnvelope({
@@ -494,10 +446,7 @@ export function createAgentDefinitionRoutes({
           404,
         );
       }
-      const restoredWorkflowJson = parseAgentDefinitionEntry(
-        entryBytes,
-        row.assetId,
-      );
+      const restoredWorkflowJson = parseAgentDefinitionEntry(entryBytes, row.assetId);
 
       // Pins live in the asset's own stanza (reindexed on every write),
       // so restoring a prior commit restores that revision's pins with
@@ -531,9 +480,7 @@ export function createAgentDefinitionRoutes({
     "/:definitionId/capabilities",
     requireGrant(idResource("workflow-definition", "definitionId"), "update"),
     async (c) => {
-      const body = AddCapabilityInput(
-        await c.req.json().catch(() => undefined),
-      );
+      const body = AddCapabilityInput(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
           makeErrorEnvelope({
@@ -585,9 +532,7 @@ export function createAgentDefinitionRoutes({
     "/:definitionId",
     requireGrant(idResource("workflow-definition", "definitionId"), "update"),
     async (c) => {
-      const body = UpdateAgentInstructionsInput(
-        await c.req.json().catch(() => undefined),
-      );
+      const body = UpdateAgentInstructionsInput(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
           makeErrorEnvelope({
@@ -772,9 +717,7 @@ export function createAgentDefinitionRoutes({
     "/:definitionId/status",
     requireGrant(idResource("workflow-definition", "definitionId"), "update"),
     async (c) => {
-      const body = UpdateDefinitionStatusInput(
-        await c.req.json().catch(() => undefined),
-      );
+      const body = UpdateDefinitionStatusInput(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
           makeErrorEnvelope({
@@ -801,10 +744,7 @@ export function createAgentDefinitionRoutes({
         .update(workflowDefinition)
         .set({ status: body.status, updatedAt: new Date() })
         .where(
-          and(
-            eq(workflowDefinition.id, definitionId),
-            eq(workflowDefinition.tenantId, tenant.id),
-          ),
+          and(eq(workflowDefinition.id, definitionId), eq(workflowDefinition.tenantId, tenant.id)),
         );
 
       return c.json({ id: definitionId, status: body.status });
@@ -815,9 +755,7 @@ export function createAgentDefinitionRoutes({
     "/:definitionId/skills",
     requireGrant(idResource("workflow-definition", "definitionId"), "update"),
     async (c) => {
-      const body = UpdateAgentSkillsInput(
-        await c.req.json().catch(() => undefined),
-      );
+      const body = UpdateAgentSkillsInput(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
           makeErrorEnvelope({

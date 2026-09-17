@@ -77,8 +77,7 @@ function stubFetch(
     if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
       return json({ items: [workbench] });
     }
-    if (/\/chat\/workbenches\?kind=chat$/.test(path))
-      return json({ items: [] });
+    if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
     if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
       return json({ rootThreadId: "", items: [] });
     }
@@ -200,9 +199,7 @@ describe("ChatWorkspace settings surface", () => {
     });
     await harness.settle();
 
-    expect(
-      harness.container.querySelector(".workbench-settings-stage"),
-    ).not.toBeNull();
+    expect(harness.container.querySelector(".workbench-settings-stage")).not.toBeNull();
     expect(harness.container.textContent).toContain("Launch Planning");
     harness.unmount();
   });
@@ -222,8 +219,7 @@ describe("ChatWorkspace settings surface", () => {
       if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
         return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/workbenches\?kind=chat$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
@@ -234,8 +230,7 @@ describe("ChatWorkspace settings surface", () => {
       if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
         return json({ items: [] });
       }
-      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
         return json({
           ...WORKBENCH_WIRE,
@@ -267,20 +262,12 @@ describe("ChatWorkspace settings surface", () => {
     });
     await harness.settle();
 
-    expect(
-      harness.container.querySelector(".workbench-settings-stage"),
-    ).toBeNull();
+    expect(harness.container.querySelector(".workbench-settings-stage")).toBeNull();
     expect(settingsOpenChanges).toEqual([false]);
-    expect(harness.container.textContent).toContain(
-      "This workbench isn't here anymore",
-    );
-    expect(
-      harness.container.querySelector(".chat-workbench-header"),
-    ).toBeNull();
+    expect(harness.container.textContent).toContain("This workbench isn't here anymore");
+    expect(harness.container.querySelector(".chat-workbench-header")).toBeNull();
     expect(harness.container.textContent).not.toContain("Invite agent");
-    expect(harness.container.textContent).not.toContain(
-      "Untitled conversation",
-    );
+    expect(harness.container.textContent).not.toContain("Untitled conversation");
     harness.unmount();
   });
 
@@ -309,16 +296,14 @@ describe("ChatWorkspace settings surface", () => {
       workbenchId: "ch_1",
       settingsOpen: true,
       settingsSection: "general",
-      onSettingsSectionChange: (section: string) =>
-        sectionChanges.push(section),
+      onSettingsSectionChange: (section: string) => sectionChanges.push(section),
     });
     await harness.settle();
 
-    const items = Array.from(
-      harness.container.querySelectorAll(".workbench-settings-nav-item"),
-    );
+    const items = Array.from(harness.container.querySelectorAll(".workbench-settings-nav-item"));
     const membersItem = items.find((el) => el.textContent === "Members") as
-      HTMLButtonElement | undefined;
+      | HTMLButtonElement
+      | undefined;
     expect(membersItem).not.toBeUndefined();
     act(() => membersItem?.click());
     await harness.settle();
@@ -334,8 +319,7 @@ describe("ChatWorkspace settings surface", () => {
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "ch_1",
       settingsOpen: false,
-      onSettingsOpenChange: (_open: boolean, section?: string) =>
-        opens.push(section),
+      onSettingsOpenChange: (_open: boolean, section?: string) => opens.push(section),
     });
     await harness.settle();
 
@@ -362,9 +346,7 @@ describe("connection state is never rendered as chrome", () => {
     firstStream().fail();
     await harness.settle();
 
-    expect(
-      harness.container.querySelector(".chat-stream-indicator"),
-    ).toBeNull();
+    expect(harness.container.querySelector(".chat-stream-indicator")).toBeNull();
     expect(harness.container.textContent).not.toContain("Reconnecting");
     harness.unmount();
   });
@@ -382,9 +364,7 @@ describe("connection state is never rendered as chrome", () => {
     firstStream().fail();
     await harness.settle();
 
-    const textarea = harness.container.querySelector(
-      ".chat-composer-input",
-    ) as HTMLTextAreaElement;
+    const textarea = harness.container.querySelector(".chat-composer-input") as HTMLTextAreaElement;
     act(() => {
       textareaValueSetter.call(textarea, "hello while down");
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
@@ -433,8 +413,7 @@ function stubThreadedFetch({
     if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
       return json({ items: [WORKBENCH_WIRE] });
     }
-    if (/\/chat\/workbenches\?kind=chat$/.test(path))
-      return json({ items: [] });
+    if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
     if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
       return json({ rootThreadId: "", items: [] });
     }
@@ -516,21 +495,15 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
     });
     await harness.settle();
 
-    const openButton = harness.container.querySelector(
-      ".chat-thread-open",
-    ) as HTMLButtonElement;
+    const openButton = harness.container.querySelector(".chat-thread-open") as HTMLButtonElement;
     await act(async () => {
       openButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await sleep(30);
     });
 
-    const breadcrumb = harness.container.querySelector(
-      ".chat-thread-breadcrumb",
-    );
+    const breadcrumb = harness.container.querySelector(".chat-thread-breadcrumb");
     expect(breadcrumb).not.toBeNull();
-    expect(
-      breadcrumb?.querySelectorAll(".chat-thread-breadcrumb-link"),
-    ).toHaveLength(1);
+    expect(breadcrumb?.querySelectorAll(".chat-thread-breadcrumb-link")).toHaveLength(1);
     expect(breadcrumb?.textContent).toContain("Launch Planning");
     harness.unmount();
   });
@@ -543,9 +516,7 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
     });
     await harness.settle();
 
-    const openButton = harness.container.querySelector(
-      ".chat-thread-open",
-    ) as HTMLButtonElement;
+    const openButton = harness.container.querySelector(".chat-thread-open") as HTMLButtonElement;
     await act(async () => {
       openButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await sleep(30);
@@ -572,9 +543,7 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
     });
     await harness.settle();
 
-    const openButton = harness.container.querySelector(
-      ".chat-thread-open",
-    ) as HTMLButtonElement;
+    const openButton = harness.container.querySelector(".chat-thread-open") as HTMLButtonElement;
     await act(async () => {
       openButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await sleep(30);
@@ -582,9 +551,7 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
 
     const originalRow = harness.container.querySelector("#chat-message-msg_2");
     expect(originalRow?.textContent).toContain("inside the thread");
-    const editButton = originalRow?.querySelector(
-      ".chat-hover-edit",
-    ) as HTMLButtonElement;
+    const editButton = originalRow?.querySelector(".chat-hover-edit") as HTMLButtonElement;
     expect(editButton).not.toBeNull();
     await act(async () => {
       editButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -606,9 +573,9 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
       threadId: "msg_1",
       parts: [{ kind: "text", text: editedPrompt }],
     });
-    expect(
-      harness.container.querySelector("#chat-message-msg_2")?.textContent,
-    ).toContain("inside the thread");
+    expect(harness.container.querySelector("#chat-message-msg_2")?.textContent).toContain(
+      "inside the thread",
+    );
     harness.unmount();
   });
 
@@ -626,15 +593,9 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
 describe("hover Edit copies an own prompt into the composer", () => {
   const OWN_PROMPT = "rewrite this prompt";
 
-  function stubFetchWithOwnPrompt(
-    sentMessages: unknown[],
-    forkCalls: string[],
-  ) {
+  function stubFetchWithOwnPrompt(sentMessages: unknown[], forkCalls: string[]) {
     globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = typeof input === "string" ? input : String(input);
       const json = (body: unknown) =>
         new Response(JSON.stringify(body), {
@@ -644,8 +605,7 @@ describe("hover Edit copies an own prompt into the composer", () => {
       if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
         return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/workbenches\?kind=chat$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/threads\/fork$/.test(path)) {
         forkCalls.push(path);
         return json({ id: "thr_should_not_fork" });
@@ -753,25 +713,19 @@ describe("hover Edit copies an own prompt into the composer", () => {
     await harness.settle();
 
     const ownGroup = harness.container.querySelector("#chat-message-msg_own");
-    const agentGroup = harness.container.querySelector(
-      "#chat-message-msg_agent",
-    );
+    const agentGroup = harness.container.querySelector("#chat-message-msg_agent");
     expect(ownGroup?.getAttribute("data-own")).toBe("true");
     expect(agentGroup?.querySelector(".chat-hover-edit")).toBeNull();
 
     typeInComposer(harness.container, "unsent draft");
-    const edit = ownGroup?.querySelector(
-      ".chat-hover-edit",
-    ) as HTMLButtonElement;
+    const edit = ownGroup?.querySelector(".chat-hover-edit") as HTMLButtonElement;
     expect(edit).not.toBeNull();
     await act(async () => {
       edit.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await sleep(30);
     });
 
-    const composer = harness.container.querySelector(
-      ".chat-composer-input",
-    ) as HTMLTextAreaElement;
+    const composer = harness.container.querySelector(".chat-composer-input") as HTMLTextAreaElement;
     expect(composer.value).toBe(OWN_PROMPT);
     expect(ownGroup?.textContent).toContain(OWN_PROMPT);
 
@@ -788,35 +742,27 @@ describe("hover Edit copies an own prompt into the composer", () => {
     expect(sentMessages[0]).toMatchObject({
       parts: [{ kind: "text", text: OWN_PROMPT }],
     });
-    expect(
-      harness.container.querySelector("#chat-message-msg_own"),
-    ).not.toBeNull();
-    expect(
-      harness.container.querySelector("#chat-message-msg_own")?.textContent,
-    ).toContain(OWN_PROMPT);
+    expect(harness.container.querySelector("#chat-message-msg_own")).not.toBeNull();
+    expect(harness.container.querySelector("#chat-message-msg_own")?.textContent).toContain(
+      OWN_PROMPT,
+    );
     harness.unmount();
   });
 });
 
 const WORKBENCH_WITH_AGENT_WIRE = {
   ...WORKBENCH_WIRE,
-  participants: [
-    { address: "researcher@agents.example", handle: "researcher" },
-  ],
+  participants: [{ address: "researcher@agents.example", handle: "researcher" }],
 };
 
 function pressEnter(textarea: HTMLTextAreaElement) {
   act(() => {
-    textarea.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-    );
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   });
 }
 
 function typeInComposer(container: HTMLElement, text: string) {
-  const textarea = container.querySelector(
-    ".chat-composer-input",
-  ) as HTMLTextAreaElement;
+  const textarea = container.querySelector(".chat-composer-input") as HTMLTextAreaElement;
   act(() => {
     setTextareaValue.call(textarea, text);
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
@@ -893,10 +839,7 @@ describe("composer slash commands — each wired command's real action", () => {
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "ch_1",
-      onCreateRoutineInSpace: (
-        workbenchId: string,
-        preselectedAssetId?: string,
-      ) => {
+      onCreateRoutineInSpace: (workbenchId: string, preselectedAssetId?: string) => {
         opened.push(workbenchId, preselectedAssetId);
       },
     });
@@ -933,10 +876,7 @@ describe("composer slash commands — each wired command's real action", () => {
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "ch_1",
-      onCreateRoutineInSpace: (
-        workbenchId: string,
-        preselectedAssetId?: string,
-      ) => {
+      onCreateRoutineInSpace: (workbenchId: string, preselectedAssetId?: string) => {
         opened.push(workbenchId, preselectedAssetId);
       },
     });
@@ -966,10 +906,7 @@ describe("composer slash commands — each wired command's real action", () => {
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "ch_1",
-      onCreateRoutineInSpace: (
-        workbenchId: string,
-        preselectedAssetId?: string,
-      ) => {
+      onCreateRoutineInSpace: (workbenchId: string, preselectedAssetId?: string) => {
         opened.push(workbenchId, preselectedAssetId);
       },
     });
@@ -1113,9 +1050,7 @@ describe("composer slash commands — each wired command's real action", () => {
     typeInComposer(harness.container, "/");
     await harness.settle();
 
-    const popoverText = harness.container.querySelector(
-      ".chat-mention-popover",
-    )?.textContent;
+    const popoverText = harness.container.querySelector(".chat-mention-popover")?.textContent;
     expect(popoverText).not.toBeUndefined();
     expect(popoverText).not.toContain("/thread");
     expect(popoverText).not.toContain("/status");
@@ -1167,8 +1102,7 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
       if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
         return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/workbenches\?kind=chat$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
@@ -1179,8 +1113,7 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
       if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
         return json({ items: [] });
       }
-      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
         return json({
           ...WORKBENCH_WIRE,
@@ -1211,8 +1144,7 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "ch_1",
-      onWorkbenchNotFound: (workbenchId: string) =>
-        notFoundIds.push(workbenchId),
+      onWorkbenchNotFound: (workbenchId: string) => notFoundIds.push(workbenchId),
       onGoToMissionControl: () => {
         missionControlClicks += 1;
       },
@@ -1228,40 +1160,30 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
     expect(notFoundIds.length).toBeGreaterThan(0);
     expect(new Set(notFoundIds)).toEqual(new Set(["ch_1"]));
     expect(harness.container.textContent).not.toContain("Try again");
-    expect(harness.container.textContent).toContain(
-      "This workbench isn't here anymore",
-    );
+    expect(harness.container.textContent).toContain("This workbench isn't here anymore");
     expect(harness.container.textContent).toContain("Mission Control");
     expect(harness.container.textContent).toContain("New workbench");
     // CL-6796: not-found is the whole stage — never room chrome underneath.
-    expect(
-      harness.container.querySelector(".chat-workbench-header"),
-    ).toBeNull();
+    expect(harness.container.querySelector(".chat-workbench-header")).toBeNull();
     expect(harness.container.textContent).not.toContain("Invite agent");
-    expect(harness.container.textContent).not.toContain(
-      "Untitled conversation",
-    );
+    expect(harness.container.textContent).not.toContain("Untitled conversation");
     expect(harness.container.querySelector("textarea")).toBeNull();
 
-    const missionControlButton = Array.from(
-      harness.container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.includes("Mission Control"));
+    const missionControlButton = Array.from(harness.container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Mission Control"),
+    );
     expect(missionControlButton).toBeDefined();
     act(() => {
-      missionControlButton?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      missionControlButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(missionControlClicks).toBe(1);
 
-    const newWorkbenchButton = Array.from(
-      harness.container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.includes("New workbench"));
+    const newWorkbenchButton = Array.from(harness.container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("New workbench"),
+    );
     expect(newWorkbenchButton).toBeDefined();
     act(() => {
-      newWorkbenchButton?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      newWorkbenchButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(newWorkbenchClicks).toBe(1);
 
@@ -1277,24 +1199,17 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "tnt_not_a_workbench",
-      onWorkbenchNotFound: (workbenchId: string) =>
-        notFoundIds.push(workbenchId),
+      onWorkbenchNotFound: (workbenchId: string) => notFoundIds.push(workbenchId),
       onGoToMissionControl: () => undefined,
       onNewWorkbench: () => undefined,
     });
     await harness.settle();
 
     expect(notFoundIds).toContain("tnt_not_a_workbench");
-    expect(harness.container.textContent).toContain(
-      "This workbench isn't here anymore",
-    );
-    expect(
-      harness.container.querySelector(".chat-workbench-header"),
-    ).toBeNull();
+    expect(harness.container.textContent).toContain("This workbench isn't here anymore");
+    expect(harness.container.querySelector(".chat-workbench-header")).toBeNull();
     expect(harness.container.textContent).not.toContain("Invite agent");
-    expect(harness.container.textContent).not.toContain(
-      "Untitled conversation",
-    );
+    expect(harness.container.textContent).not.toContain("Untitled conversation");
     expect(harness.container.querySelector("textarea")).toBeNull();
     expect(harness.container.textContent).toContain("Mission Control");
     expect(harness.container.textContent).toContain("New workbench");
@@ -1323,8 +1238,7 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
         // Stale ready cache: existing workbench only — not the routed id.
         return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/workbenches\?kind=chat$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
@@ -1335,8 +1249,7 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
       if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
         return json({ items: [] });
       }
-      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
         return json({
           id: "ch_fresh",
@@ -1364,16 +1277,13 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "ch_fresh",
-      onWorkbenchNotFound: (workbenchId: string) =>
-        notFoundIds.push(workbenchId),
+      onWorkbenchNotFound: (workbenchId: string) => notFoundIds.push(workbenchId),
       onGoToMissionControl: () => undefined,
       onNewWorkbench: () => undefined,
     });
     await harness.settle();
 
-    expect(harness.container.textContent).not.toContain(
-      "This workbench isn't here anymore",
-    );
+    expect(harness.container.textContent).not.toContain("This workbench isn't here anymore");
     expect(notFoundIds).toEqual([]);
     expect(harness.container.textContent).not.toContain("Invite agent");
     expect(harness.container.querySelector("textarea")).toBeNull();
@@ -1388,9 +1298,7 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
       await sleep(30);
     });
 
-    expect(harness.container.textContent).not.toContain(
-      "This workbench isn't here anymore",
-    );
+    expect(harness.container.textContent).not.toContain("This workbench isn't here anymore");
     expect(notFoundIds).toEqual([]);
 
     harness.unmount();
@@ -1410,8 +1318,7 @@ describe("a 401 on the messages load offers Sign in instead of a dead-end retry"
       if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
         return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/workbenches\?kind=chat$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
@@ -1422,8 +1329,7 @@ describe("a 401 on the messages load offers Sign in instead of a dead-end retry"
       if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
         return json({ items: [] });
       }
-      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
         return json({
           ...WORKBENCH_WIRE,
@@ -1461,9 +1367,9 @@ describe("a 401 on the messages load offers Sign in instead of a dead-end retry"
     expect(harness.container.textContent).not.toContain("Try again");
     expect(harness.container.textContent).toContain("Sign in");
 
-    const signInButton = Array.from(
-      harness.container.querySelectorAll("button"),
-    ).find((button) => button.textContent === "Sign in");
+    const signInButton = Array.from(harness.container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Sign in",
+    );
     expect(signInButton).toBeDefined();
     act(() => {
       signInButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1487,8 +1393,7 @@ describe("chat error copy never leaks a raw API path", () => {
       if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
         return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/workbenches\?kind=chat$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
@@ -1544,10 +1449,7 @@ describe("chat error copy never leaks a raw API path", () => {
 describe("optimistic send (CL-6103)", () => {
   function stubFetchWithSendOutcome(shouldFail: () => boolean) {
     globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = typeof input === "string" ? input : String(input);
       const json = (body: unknown, status = 200) =>
         new Response(JSON.stringify(body), {
@@ -1557,8 +1459,7 @@ describe("optimistic send (CL-6103)", () => {
       if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
         return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/workbenches\?kind=chat$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
@@ -1593,9 +1494,7 @@ describe("optimistic send (CL-6103)", () => {
   }
 
   function clickSend(container: HTMLElement) {
-    const button = container.querySelector<HTMLButtonElement>(
-      '[aria-label^="Send"]',
-    );
+    const button = container.querySelector<HTMLButtonElement>('[aria-label^="Send"]');
     if (button === null) throw new Error("send button not found");
     act(() => button.click());
   }
@@ -1610,9 +1509,7 @@ describe("optimistic send (CL-6103)", () => {
     await harness.settle();
 
     const sendButton = () =>
-      harness.container.querySelector<HTMLButtonElement>(
-        '[aria-label^="Send"]',
-      );
+      harness.container.querySelector<HTMLButtonElement>('[aria-label^="Send"]');
     expect(sendButton()?.getAttribute("data-send-state")).toBe("empty");
     expect(sendButton()?.hasAttribute("disabled")).toBe(true);
 
@@ -1644,17 +1541,13 @@ describe("optimistic send (CL-6103)", () => {
     });
 
     expect(textarea.value).toBe("");
-    const pendingBubble = harness.container.querySelector(
-      '.chat-bubble[data-pending="sending"]',
-    );
+    const pendingBubble = harness.container.querySelector('.chat-bubble[data-pending="sending"]');
     expect(pendingBubble).not.toBeNull();
     expect(pendingBubble?.textContent).toContain("hi");
 
     await harness.settle();
 
-    expect(
-      harness.container.querySelector(".chat-bubble[data-pending]"),
-    ).toBeNull();
+    expect(harness.container.querySelector(".chat-bubble[data-pending]")).toBeNull();
     harness.unmount();
   });
 
@@ -1676,9 +1569,7 @@ describe("optimistic send (CL-6103)", () => {
 
     // Never a detached corner line — the failure lives on the bubble.
     expect(harness.container.textContent).not.toContain("Couldn't send");
-    const failedBubble = harness.container.querySelector(
-      '.chat-bubble[data-pending="failed"]',
-    );
+    const failedBubble = harness.container.querySelector('.chat-bubble[data-pending="failed"]');
     expect(failedBubble).not.toBeNull();
     expect(failedBubble?.textContent).toContain("Not sent");
 
@@ -1691,9 +1582,7 @@ describe("optimistic send (CL-6103)", () => {
     act(() => retryButton?.click());
     await harness.settle();
 
-    expect(
-      harness.container.querySelector(".chat-bubble[data-pending]"),
-    ).toBeNull();
+    expect(harness.container.querySelector(".chat-bubble[data-pending]")).toBeNull();
     expect(textarea.value).toBe("");
     harness.unmount();
   });
@@ -1713,20 +1602,16 @@ describe("optimistic send (CL-6103)", () => {
     });
     await harness.settle();
 
-    expect(
-      harness.container.querySelector('.chat-bubble[data-pending="failed"]'),
-    ).not.toBeNull();
+    expect(harness.container.querySelector('.chat-bubble[data-pending="failed"]')).not.toBeNull();
 
-    const discardButton = [
-      ...harness.container.querySelectorAll("button"),
-    ].find((button) => button.textContent === "Discard");
+    const discardButton = [...harness.container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Discard",
+    );
     expect(discardButton).not.toBeUndefined();
     act(() => discardButton?.click());
     await harness.settle();
 
-    expect(
-      harness.container.querySelector(".chat-bubble[data-pending]"),
-    ).toBeNull();
+    expect(harness.container.querySelector(".chat-bubble[data-pending]")).toBeNull();
     expect(textarea.value).toBe("hi there");
     harness.unmount();
   });
@@ -1748,10 +1633,7 @@ describe("refresh ordering around a send (CL-6251, CL-6313)", () => {
     // triggered — every GET before this index is an incidental load the
     // race doesn't care about (see the mock below).
     let raceStartIndex = Number.POSITIVE_INFINITY;
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = typeof input === "string" ? input : String(input);
       const json = (body: unknown) =>
         new Response(JSON.stringify(body), {
@@ -1761,8 +1643,7 @@ describe("refresh ordering around a send (CL-6251, CL-6313)", () => {
       if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
         return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/workbenches\?kind=chat$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
@@ -1847,9 +1728,7 @@ describe("refresh ordering around a send (CL-6251, CL-6313)", () => {
     act(() => firstStream().fail());
     await act(() => sleep(300));
 
-    const sendButton = harness.container.querySelector<HTMLButtonElement>(
-      '[aria-label^="Send"]',
-    );
+    const sendButton = harness.container.querySelector<HTMLButtonElement>('[aria-label^="Send"]');
     if (sendButton === null) throw new Error("send button not found");
     typeInComposer(harness.container, "second");
     act(() => sendButton.click());
@@ -1858,9 +1737,7 @@ describe("refresh ordering around a send (CL-6251, CL-6313)", () => {
     // the send's own refresh to land behind it.
     await act(() => sleep(700));
 
-    expect(
-      harness.container.querySelector("#chat-message-msg_new_2"),
-    ).not.toBeNull();
+    expect(harness.container.querySelector("#chat-message-msg_new_2")).not.toBeNull();
     expect(harness.container.textContent).toContain("second");
     harness.unmount();
   });
@@ -1892,9 +1769,7 @@ describe("Workbench header polish (CL-6106)", () => {
     // second settle beyond mount's own.
     await harness.settle();
 
-    const trigger = harness.container.querySelector(
-      ".chat-threads-menu-trigger",
-    );
+    const trigger = harness.container.querySelector(".chat-threads-menu-trigger");
     expect(trigger).not.toBeNull();
     expect(trigger?.textContent).toContain("1 thread");
     harness.unmount();
@@ -1908,9 +1783,7 @@ describe("Workbench header polish (CL-6106)", () => {
     });
     await harness.settle();
 
-    const chip = harness.container.querySelector(
-      '.member-avatar[data-agent="true"]',
-    );
+    const chip = harness.container.querySelector('.member-avatar[data-agent="true"]');
     expect(chip).not.toBeNull();
     expect((chip as HTMLElement).title).toBe("Researcher");
     expect(chip?.querySelector('[data-corbit="true"]')).not.toBeNull();
@@ -1952,17 +1825,11 @@ describe("Workbench header polish (CL-6106)", () => {
     });
     await harness.settle();
 
-    expect(
-      harness.container.querySelector(".chat-workbench-header"),
-    ).toBeNull();
-    const hostBar = harness.container.querySelector(
-      '[data-testid="host-stage-bar"]',
-    );
+    expect(harness.container.querySelector(".chat-workbench-header")).toBeNull();
+    const hostBar = harness.container.querySelector('[data-testid="host-stage-bar"]');
     expect(hostBar).not.toBeNull();
     expect(hostBar?.textContent).toContain("Launch Planning");
-    expect(
-      harness.container.querySelector('button[aria-label="Settings"]'),
-    ).not.toBeNull();
+    expect(harness.container.querySelector('button[aria-label="Settings"]')).not.toBeNull();
     harness.unmount();
   });
 
@@ -1975,34 +1842,22 @@ describe("Workbench header polish (CL-6106)", () => {
         createElement(
           "div",
           { "data-testid": "host-stage-bar" },
-          createElement(
-            "span",
-            { "aria-current": "page" },
-            chrome.crumbs.at(-1)?.label,
-          ),
+          createElement("span", { "aria-current": "page" }, chrome.crumbs.at(-1)?.label),
           chrome.subtitle !== undefined
-            ? createElement(
-                "div",
-                { className: "stage-top-bar-sub" },
-                chrome.subtitle,
-              )
+            ? createElement("div", { className: "stage-top-bar-sub" }, chrome.subtitle)
             : null,
           chrome.actions,
         ),
     });
     await harness.settle();
 
-    const openButton = harness.container.querySelector(
-      ".chat-thread-open",
-    ) as HTMLButtonElement;
+    const openButton = harness.container.querySelector(".chat-thread-open") as HTMLButtonElement;
     await act(async () => {
       openButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await sleep(30);
     });
 
-    expect(
-      harness.container.querySelectorAll('[aria-current="page"]'),
-    ).toHaveLength(1);
+    expect(harness.container.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
     expect(
       harness.container
         .querySelector(".chat-thread-breadcrumb-current")
@@ -2017,9 +1872,7 @@ describe("Workbench header polish (CL-6106)", () => {
       closeThread.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await sleep(30);
     });
-    expect(
-      harness.container.querySelector(".chat-thread-breadcrumb"),
-    ).toBeNull();
+    expect(harness.container.querySelector(".chat-thread-breadcrumb")).toBeNull();
     harness.unmount();
   });
 
@@ -2027,18 +1880,13 @@ describe("Workbench header polish (CL-6106)", () => {
     const harness = await mount({
       tenant: { kind: "loading" },
       headerSlot: (chrome) =>
-        createElement(
-          "div",
-          { "data-testid": "host-stage-bar" },
-          chrome.crumbs[0]?.label,
-        ),
+        createElement("div", { "data-testid": "host-stage-bar" }, chrome.crumbs[0]?.label),
     });
     await harness.settle();
 
-    expect(
-      harness.container.querySelector('[data-testid="host-stage-bar"]')
-        ?.textContent,
-    ).toBe("Workbenches");
+    expect(harness.container.querySelector('[data-testid="host-stage-bar"]')?.textContent).toBe(
+      "Workbenches",
+    );
     harness.unmount();
   });
 });
@@ -2053,14 +1901,10 @@ describe("CL-6833: running-turn resume failure is visible, never silent idle", (
     await harness.settle();
     await harness.settle();
 
-    const banner = harness.container.querySelector(
-      ".chat-resume-failed-banner",
-    );
+    const banner = harness.container.querySelector(".chat-resume-failed-banner");
     expect(banner).not.toBeNull();
     expect(banner?.getAttribute("role")).toBe("alert");
-    expect(harness.container.textContent).toContain(
-      "Couldn't resume the running reply",
-    );
+    expect(harness.container.textContent).toContain("Couldn't resume the running reply");
     expect(
       [...harness.container.querySelectorAll("button")].some(
         (button) => button.textContent?.trim() === "Retry",
@@ -2078,9 +1922,7 @@ describe("CL-6833: running-turn resume failure is visible, never silent idle", (
     await harness.settle();
     await harness.settle();
 
-    expect(
-      harness.container.querySelector(".chat-resume-failed-banner"),
-    ).toBeNull();
+    expect(harness.container.querySelector(".chat-resume-failed-banner")).toBeNull();
     harness.unmount();
   });
 
@@ -2088,10 +1930,7 @@ describe("CL-6833: running-turn resume failure is visible, never silent idle", (
     let turnsCalls = 0;
     stubFetch(undefined, WORKBENCH_WITH_AGENT_WIRE, { turnsFail: true });
     const failingFetch = globalThis.fetch;
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = typeof input === "string" ? input : String(input);
       if (/\/chat\/workbenches\/[^/]+\/turns(?:\/|$|\?)/.test(path)) {
         turnsCalls += 1;
@@ -2112,9 +1951,7 @@ describe("CL-6833: running-turn resume failure is visible, never silent idle", (
     await harness.settle();
     await harness.settle();
 
-    expect(
-      harness.container.querySelector(".chat-resume-failed-banner"),
-    ).not.toBeNull();
+    expect(harness.container.querySelector(".chat-resume-failed-banner")).not.toBeNull();
 
     const retry = [...harness.container.querySelectorAll("button")].find(
       (button) => button.textContent?.trim() === "Retry",
@@ -2126,9 +1963,7 @@ describe("CL-6833: running-turn resume failure is visible, never silent idle", (
     await harness.settle();
 
     expect(turnsCalls).toBeGreaterThanOrEqual(2);
-    expect(
-      harness.container.querySelector(".chat-resume-failed-banner"),
-    ).toBeNull();
+    expect(harness.container.querySelector(".chat-resume-failed-banner")).toBeNull();
     harness.unmount();
   });
 });
@@ -2149,10 +1984,7 @@ describe("Invite control visibility (CL-6781)", () => {
 
   test("shows Invite agent once at least one definition is invitable", async () => {
     globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = typeof input === "string" ? input : String(input);
       const json = (body: unknown) =>
         new Response(JSON.stringify(body), {
@@ -2162,8 +1994,7 @@ describe("Invite control visibility (CL-6781)", () => {
       if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
         return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/workbenches\?kind=chat$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
@@ -2179,8 +2010,7 @@ describe("Invite control visibility (CL-6781)", () => {
           items: [{ id: "wfd_echo", name: "echo", description: "Echo" }],
         });
       }
-      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
         return json({
           ...WORKBENCH_WIRE,
@@ -2236,8 +2066,7 @@ describe("switching workbenches never carries a stale root-thread id across", ()
       if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
         return json({ items: [WORKBENCH_A, WORKBENCH_B] });
       }
-      if (/\/chat\/workbenches\?kind=chat$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
@@ -2248,8 +2077,7 @@ describe("switching workbenches never carries a stale root-thread id across", ()
       if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
         return json({ items: [] });
       }
-      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
-        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path)) return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
         return json({
           ...WORKBENCH_A,

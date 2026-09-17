@@ -12,9 +12,7 @@ import {
 
 describe("avatar composition and identity resolution", () => {
   test("agent Corbit avatar is distinct from human initials avatar", () => {
-    const corbitHtml = renderToStaticMarkup(
-      <CorbitAvatar ariaLabel="Echo Agent" size="md" />,
-    );
+    const corbitHtml = renderToStaticMarkup(<CorbitAvatar ariaLabel="Echo Agent" size="md" />);
     expect(corbitHtml).toContain('data-corbit="true"');
     expect(corbitHtml).toContain('aria-label="Echo Agent"');
     expect(corbitHtml).toContain("<svg");
@@ -35,10 +33,7 @@ describe("avatar composition and identity resolution", () => {
   });
 
   test("human explicit image takes precedence over pastel initials fallback", () => {
-    const withImage = resolveAvatarFill(
-      "usr_alice",
-      "https://example.com/avatar.jpg",
-    );
+    const withImage = resolveAvatarFill("usr_alice", "https://example.com/avatar.jpg");
     expect(withImage.kind).toBe("image");
     if (withImage.kind === "image") {
       expect(withImage.url).toBe("https://example.com/avatar.jpg");
@@ -61,15 +56,10 @@ describe("avatar composition and identity resolution", () => {
 
     const rendered = participants.map((p) => {
       if (p.isAgent) {
-        return renderToStaticMarkup(
-          <CorbitAvatar ariaLabel={p.name} size="sm" />,
-        );
+        return renderToStaticMarkup(<CorbitAvatar ariaLabel={p.name} size="sm" />);
       }
       return renderToStaticMarkup(
-        <span
-          className={avatarClassForPrincipal(p.id)}
-          data-testid="human-avatar"
-        >
+        <span className={avatarClassForPrincipal(p.id)} data-testid="human-avatar">
           {p.name.slice(0, 1)}
         </span>,
       );

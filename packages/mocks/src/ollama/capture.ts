@@ -19,9 +19,7 @@ function toCapturedMessage(
   return {
     role: message.role,
     content: message.content ?? "",
-    ...(message.tool_call_id !== undefined
-      ? { toolCallId: message.tool_call_id }
-      : {}),
+    ...(message.tool_call_id !== undefined ? { toolCallId: message.tool_call_id } : {}),
     ...(message.tool_calls !== undefined
       ? {
           toolCalls: message.tool_calls.map((call) => ({
@@ -51,12 +49,8 @@ export class CapturedChatRequest {
     this.stream = body.stream ?? false;
     this.tools = (body.tools ?? []).map((t) => ({
       name: t.function.name,
-      ...(t.function.description !== undefined
-        ? { description: t.function.description }
-        : {}),
-      ...(t.function.parameters !== undefined
-        ? { parameters: t.function.parameters }
-        : {}),
+      ...(t.function.description !== undefined ? { description: t.function.description } : {}),
+      ...(t.function.parameters !== undefined ? { parameters: t.function.parameters } : {}),
     }));
     this.messages = body.messages.map(toCapturedMessage);
   }
@@ -73,9 +67,7 @@ export class CapturedChatRequest {
    * a request silently falling back to whatever the adapter defaults to. */
   expectModel(model: string): void {
     if (this.model !== model) {
-      throw new Error(
-        `expected request to be pinned to model "${model}", got "${this.model}"`,
-      );
+      throw new Error(`expected request to be pinned to model "${model}", got "${this.model}"`);
     }
   }
 
@@ -110,9 +102,7 @@ export class CapturedChatRequest {
    * (CL-6448's other half). */
   expectMessageRoles(roles: readonly CapturedMessageRole[]): void {
     const actual = this.roles();
-    const matches =
-      actual.length === roles.length &&
-      actual.every((role, i) => role === roles[i]);
+    const matches = actual.length === roles.length && actual.every((role, i) => role === roles[i]);
     if (!matches) {
       throw new Error(
         `expected message roles ${JSON.stringify(roles)}, got ${JSON.stringify(actual)}`,
@@ -135,10 +125,7 @@ export class CapturedChatRequest {
       const foundAt = this.messages.findIndex((message, i) => {
         if (i < cursor) return false;
         if (message.role !== want.role) return false;
-        if (
-          want.content !== undefined &&
-          !message.content.includes(want.content)
-        ) {
+        if (want.content !== undefined && !message.content.includes(want.content)) {
           return false;
         }
         return true;

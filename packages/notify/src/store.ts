@@ -7,9 +7,8 @@ import { generateId } from "@intx/hub-common";
 
 import { notifyDispatch } from "./schema";
 
-export type NotifyDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> = PostgresJsDatabase<TSchema>;
+export type NotifyDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+  PostgresJsDatabase<TSchema>;
 
 export type NotifyDispatchStatus = "pending" | "delivered" | "failed" | "dead";
 
@@ -51,9 +50,7 @@ export interface NotifyDispatchStore {
 
 const ACTIVE_STATUSES: NotifyDispatchStatus[] = ["pending", "failed"];
 
-export function createDrizzleNotifyDispatchStore(
-  db: NotifyDb,
-): NotifyDispatchStore {
+export function createDrizzleNotifyDispatchStore(db: NotifyDb): NotifyDispatchStore {
   return {
     async enqueue(inputs) {
       if (inputs.length === 0) return;
@@ -126,8 +123,7 @@ function toRow(row: typeof notifyDispatch.$inferSelect): NotifyDispatchRow {
 
 export function createInMemoryNotifyDispatchStore(): NotifyDispatchStore {
   const rows = new Map<string, NotifyDispatchRow>();
-  const keyOf = (mailboxRowId: string, sinkName: string) =>
-    `${mailboxRowId}\u0000${sinkName}`;
+  const keyOf = (mailboxRowId: string, sinkName: string) => `${mailboxRowId}\u0000${sinkName}`;
   return {
     async enqueue(inputs) {
       for (const input of inputs) {
@@ -148,10 +144,7 @@ export function createInMemoryNotifyDispatchStore(): NotifyDispatchStore {
     },
     async findDue(now, limit) {
       return [...rows.values()]
-        .filter(
-          (row) =>
-            ACTIVE_STATUSES.includes(row.status) && row.nextAttemptAt <= now,
-        )
+        .filter((row) => ACTIVE_STATUSES.includes(row.status) && row.nextAttemptAt <= now)
         .sort((a, b) => a.nextAttemptAt.getTime() - b.nextAttemptAt.getTime())
         .slice(0, limit);
     },
@@ -172,9 +165,7 @@ export function createInMemoryNotifyDispatchStore(): NotifyDispatchStore {
       }
     },
     async listFor(mailboxRowId) {
-      return [...rows.values()].filter(
-        (row) => row.mailboxRowId === mailboxRowId,
-      );
+      return [...rows.values()].filter((row) => row.mailboxRowId === mailboxRowId);
     },
   };
 }

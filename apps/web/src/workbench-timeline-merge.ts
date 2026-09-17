@@ -36,8 +36,7 @@ export type TimelineApprovalEvent = {
   readonly headline: string;
 };
 
-export type TimelineEvent =
-  TimelineMessageEvent | TimelineThreadForkEvent | TimelineApprovalEvent;
+export type TimelineEvent = TimelineMessageEvent | TimelineThreadForkEvent | TimelineApprovalEvent;
 
 const EXCERPT_LIMIT = 120;
 
@@ -48,9 +47,7 @@ function messageExcerpt(item: MessageItem): string {
     .join(" ")
     .trim();
   if (text === "") return "(no text)";
-  return text.length > EXCERPT_LIMIT
-    ? `${text.slice(0, EXCERPT_LIMIT)}…`
-    : text;
+  return text.length > EXCERPT_LIMIT ? `${text.slice(0, EXCERPT_LIMIT)}…` : text;
 }
 
 /** Never the raw address (a per-workbench local id shape) — falls back to
@@ -59,9 +56,7 @@ function senderDisplayName(sender: MessageItem["sender"]): string {
   return sender.name ?? localPartOf(sender.address);
 }
 
-export function toMessageEvents(
-  items: readonly MessageItem[],
-): readonly TimelineMessageEvent[] {
+export function toMessageEvents(items: readonly MessageItem[]): readonly TimelineMessageEvent[] {
   return items.map((item) => ({
     kind: "message",
     id: item.id,
@@ -114,14 +109,8 @@ export type TimelineEventGroups = {
 
 /** One wall-clock spine, oldest first. An event with an unparseable
  * timestamp is dropped rather than sorted arbitrarily. */
-export function mergeTimelineEvents(
-  groups: TimelineEventGroups,
-): readonly TimelineEvent[] {
-  const all: TimelineEvent[] = [
-    ...groups.messages,
-    ...groups.threadForks,
-    ...groups.approvals,
-  ];
+export function mergeTimelineEvents(groups: TimelineEventGroups): readonly TimelineEvent[] {
+  const all: TimelineEvent[] = [...groups.messages, ...groups.threadForks, ...groups.approvals];
   return all
     .filter((event) => !Number.isNaN(Date.parse(event.at)))
     .sort((a, b) => {
@@ -156,9 +145,7 @@ function dayLabel(key: string): string {
 
 /** Buckets an already-sorted (oldest first) spine by UTC calendar day,
  * preserving that order across day boundaries. */
-export function groupTimelineByDay(
-  events: readonly TimelineEvent[],
-): readonly TimelineDayGroup[] {
+export function groupTimelineByDay(events: readonly TimelineEvent[]): readonly TimelineDayGroup[] {
   const order: string[] = [];
   const buckets = new Map<string, TimelineEvent[]>();
   for (const event of events) {
@@ -228,9 +215,7 @@ export function filterTimelineEvents(
     case "all":
       return events;
     case "messages":
-      return events.filter(
-        (event) => event.kind === "message" || event.kind === "thread-fork",
-      );
+      return events.filter((event) => event.kind === "message" || event.kind === "thread-fork");
     case "approvals":
       return events.filter((event) => event.kind === "approval");
   }

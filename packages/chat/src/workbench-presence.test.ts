@@ -61,11 +61,7 @@ describe("createWorkbenchPresenceRegistry", () => {
     const registry = createWorkbenchPresenceRegistry();
     registry.connect("wb_1", "prn_ada");
     registry.connect("wb_2", "prn_bob");
-    expect(registry.snapshot("wb_1").map((m) => m.principalId)).toEqual([
-      "prn_ada",
-    ]);
-    expect(registry.snapshot("wb_2").map((m) => m.principalId)).toEqual([
-      "prn_bob",
-    ]);
+    expect(registry.snapshot("wb_1").map((m) => m.principalId)).toEqual(["prn_ada"]);
+    expect(registry.snapshot("wb_2").map((m) => m.principalId)).toEqual(["prn_bob"]);
   });
 });

@@ -56,9 +56,7 @@ const DeployPreviewBody = type({
   entry: "string",
 });
 
-function statusFor(
-  reason: WorkflowAuthorError["reason"],
-): 400 | 403 | 404 | 409 | 502 {
+function statusFor(reason: WorkflowAuthorError["reason"]): 400 | 403 | 404 | 409 | 502 {
   switch (reason) {
     case "not_found":
       return 404;
@@ -101,17 +99,14 @@ export function createWorkflowAuthorRoutes(
 
   app.use("*", async (c, next) => {
     const authHeader = c.req.header("authorization") ?? "";
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length)
-      : "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
     const address = c.req.header("x-workflow-run-address") ?? "";
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
       return c.json(
         makeErrorEnvelope({
           code: "unauthorized",
-          userMessage:
-            "Missing or unrecognized sidecar bearer token / run address",
+          userMessage: "Missing or unrecognized sidecar bearer token / run address",
         }),
         401,
       );
@@ -154,10 +149,7 @@ export function createWorkflowAuthorRoutes(
 
   app.get("/:assetId/source", async (c) => {
     const scope = c.get("workflowRunScope");
-    const snapshot = await deps.registry.readSource(
-      scope,
-      c.req.param("assetId"),
-    );
+    const snapshot = await deps.registry.readSource(scope, c.req.param("assetId"));
     return c.json({ data: snapshot });
   });
 
@@ -178,11 +170,7 @@ export function createWorkflowAuthorRoutes(
       );
     }
     const scope = c.get("workflowRunScope");
-    const result = await deps.registry.previewDeploy(
-      scope,
-      c.req.param("assetId"),
-      body,
-    );
+    const result = await deps.registry.previewDeploy(scope, c.req.param("assetId"), body);
     return c.json({ data: result });
   });
 

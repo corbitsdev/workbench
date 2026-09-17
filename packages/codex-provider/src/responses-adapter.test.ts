@@ -85,9 +85,7 @@ describe("Codex responses adapter — request shape", () => {
     expect(body.instructions).toBeUndefined();
     expect(body.input?.[0]?.role).toBe("developer");
     const bridgeText = body.input?.[0]?.content?.[0]?.text ?? "";
-    expect(bridgeText).toContain(
-      "Acme Code is the harness, not the Codex CLI.",
-    );
+    expect(bridgeText).toContain("Acme Code is the harness, not the Codex CLI.");
     expect(bridgeText).toContain("operate carefully");
   });
 

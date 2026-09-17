@@ -46,11 +46,7 @@
 // created rather than treated as a bug.
 import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
-import {
-  agentSession,
-  workflowRun,
-  workflowRunLaunchSpec,
-} from "@intx/db/schema";
+import { agentSession, workflowRun, workflowRunLaunchSpec } from "@intx/db/schema";
 import type { EventCollectorRegistry } from "@intx/hub-sessions";
 
 /**
@@ -63,10 +59,7 @@ import type { EventCollectorRegistry } from "@intx/hub-sessions";
  * ends; `has` lets a caller check whether a collector already exists
  * before creating a second one.
  */
-export type EventCollectorPort = Pick<
-  EventCollectorRegistry,
-  "create" | "abandon" | "has"
->;
+export type EventCollectorPort = Pick<EventCollectorRegistry, "create" | "abandon" | "has">;
 
 /**
  * The one shared write every native launcher calls right after its own
@@ -90,8 +83,7 @@ export async function recordAgentSessionAtProvision(params: {
   readonly sessionId: string;
   readonly sourceAuthorityPrincipalId: string;
 }): Promise<void> {
-  const { db, eventCollectors, runId, sessionId, sourceAuthorityPrincipalId } =
-    params;
+  const { db, eventCollectors, runId, sessionId, sourceAuthorityPrincipalId } = params;
   const runRow = await db.query.workflowRun.findFirst({
     where: eq(workflowRun.id, runId),
   });
@@ -116,12 +108,7 @@ export async function recordAgentSessionAtProvision(params: {
     .onConflictDoNothing({ target: agentSession.id });
 
   if (runRow.address !== null && !eventCollectors.has(runRow.address)) {
-    eventCollectors.create(
-      runRow.address,
-      runRow.tenantId,
-      sessionId,
-      runRow.id,
-    );
+    eventCollectors.create(runRow.address, runRow.tenantId, sessionId, runRow.id);
   }
 }
 
@@ -195,12 +182,7 @@ export async function ensureRunSession(params: {
   }
 
   if (runRow.address !== null && !eventCollectors.has(runRow.address)) {
-    eventCollectors.create(
-      runRow.address,
-      runRow.tenantId,
-      sessionId,
-      runRow.id,
-    );
+    eventCollectors.create(runRow.address, runRow.tenantId, sessionId, runRow.id);
   }
   return sessionId;
 }

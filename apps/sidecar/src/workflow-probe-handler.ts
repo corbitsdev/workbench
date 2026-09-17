@@ -35,10 +35,7 @@ import type { WorkflowProbeRequestFrame } from "@intx/types/sidecar";
 import { WorkflowProjectionDefinition } from "@intx/types/sidecar";
 import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
 import { collectDeclaredPluginNames, projectLiveToInert } from "@intx/workflow";
-import {
-  walkCapabilities,
-  type CapabilityWalkResult,
-} from "@intx/workflow-deploy";
+import { walkCapabilities, type CapabilityWalkResult } from "@intx/workflow-deploy";
 import {
   DEFAULT_KILL_TIMEOUT_MS,
   MacedEnvelope,
@@ -214,7 +211,6 @@ export const defaultProbeChildSpawner: ProbeChildSpawner = ({
         proc.kill(signal);
         return;
       }
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the probe reaper passes "SIGTERM"/"SIGKILL"; Bun's runtime accepts the same "SIG*" strings, narrowed back at the boundary.
       proc.kill(signal as NodeJS.Signals);
     },
     exited: proc.exited,
@@ -257,12 +253,9 @@ export function createWorkflowProbeExecutor(opts: WorkflowProbeExecutorOpts): {
   const spawnProbeChild = opts.spawnProbeChild ?? defaultProbeChildSpawner;
   const binaryPath = opts.binaryPath ?? DEFAULT_PROBE_CHILD_BINARY;
   const childTimeoutMs = opts.childTimeoutMs ?? DEFAULT_PROBE_CHILD_TIMEOUT_MS;
-  const killTimeoutMs =
-    opts.killTimeoutMs ?? DEFAULT_PROBE_CHILD_KILL_TIMEOUT_MS;
+  const killTimeoutMs = opts.killTimeoutMs ?? DEFAULT_PROBE_CHILD_KILL_TIMEOUT_MS;
 
-  async function probe(
-    frame: WorkflowProbeRequestFrame,
-  ): Promise<WorkflowProbeResult> {
+  async function probe(frame: WorkflowProbeRequestFrame): Promise<WorkflowProbeResult> {
     const materialized = await opts.materialize(frame);
     try {
       return await runOneShotProbeChild({
@@ -295,9 +288,7 @@ interface RunOneShotProbeChildArgs {
  * exits without a frame (malformed code / crash), or the self-owned
  * deadline fires first.
  */
-async function runOneShotProbeChild(
-  args: RunOneShotProbeChildArgs,
-): Promise<WorkflowProbeResult> {
+async function runOneShotProbeChild(args: RunOneShotProbeChildArgs): Promise<WorkflowProbeResult> {
   const channelId = generateChannelId();
   const hmacKey = generateHmacKey();
   const env = buildProbeChildEnv({
@@ -317,12 +308,12 @@ async function runOneShotProbeChild(
   // Attach a catch so a post-reap stdout read error (the kill closes the
   // pipe mid-read) resolves to null instead of surfacing as an unhandled
   // rejection on the losing race branch.
-  const linePromise: Promise<string | null> = readResultLine(
-    handle.stdout,
-  ).catch((err: unknown) => {
-    logger.debug`probe child ${String(handle.pid)} stdout read errored: ${errorMessage(err)}`;
-    return null;
-  });
+  const linePromise: Promise<string | null> = readResultLine(handle.stdout).catch(
+    (err: unknown) => {
+      logger.debug`probe child ${String(handle.pid)} stdout read errored: ${errorMessage(err)}`;
+      return null;
+    },
+  );
 
   const deadline = createDeadline(args.childTimeoutMs);
   try {
@@ -386,10 +377,7 @@ function buildProbeChildEnv(args: {
  * guaranteed to settle -- a child that traps or ignores SIGTERM cannot
  * wedge this call. A kill against an already-exited child is a no-op.
  */
-async function reapChild(
-  handle: ProbeChildHandle,
-  killTimeoutMs: number,
-): Promise<void> {
+async function reapChild(handle: ProbeChildHandle, killTimeoutMs: number): Promise<void> {
   try {
     handle.kill("SIGTERM");
   } catch (err) {
@@ -434,9 +422,7 @@ async function parseProbeResult(
   }
   const maced = MacedEnvelope(raw);
   if (maced instanceof type.errors) {
-    throw new Error(
-      `workflow probe child result envelope failed validation: ${maced.summary}`,
-    );
+    throw new Error(`workflow probe child result envelope failed validation: ${maced.summary}`);
   }
   const envelopeBytes = encodeEnvelope(maced.envelope);
   const macBytes = hexDecode(maced.mac);
@@ -453,18 +439,14 @@ async function parseProbeResult(
   }
   const payload = ProbeResultPayload(maced.envelope.payload);
   if (payload instanceof type.errors) {
-    throw new Error(
-      `workflow probe child result payload failed validation: ${payload.summary}`,
-    );
+    throw new Error(`workflow probe child result payload failed validation: ${payload.summary}`);
   }
   if (!payload.ok) {
     throw new Error(`workflow probe evaluation failed: ${payload.error}`);
   }
   const projection = WorkflowProjectionDefinition(payload.projection);
   if (projection instanceof type.errors) {
-    throw new Error(
-      `workflow probe child projection failed validation: ${projection.summary}`,
-    );
+    throw new Error(`workflow probe child projection failed validation: ${projection.summary}`);
   }
   return {
     projection,
@@ -525,9 +507,7 @@ export async function runWorkflowProbeChildFromProcessEnv(
   await writeLine(`${JSON.stringify({ envelope, mac })}\n`);
 }
 
-async function computeProbePayload(
-  packageDir: string,
-): Promise<ProbeResultPayload> {
+async function computeProbePayload(packageDir: string): Promise<ProbeResultPayload> {
   const definition = await loadWorkflowDefinitionFromClosure({ packageDir });
   const projection = projectLiveToInert(definition);
   const wireHash = await computeWireDefinitionHash(projection);
@@ -546,11 +526,10 @@ async function computeProbePayload(
   // an un-approved `tool:<name>`. Loading here (over the frozen closure the
   // run-child also materializes from) keeps the approved snapshot and the
   // runtime plugin in lockstep.
-  const pluginToolDefinitions =
-    await loadWorkflowPluginToolDefinitionsFromClosure({
-      packageDir,
-      plugins: collectDeclaredPluginNames(definition),
-    });
+  const pluginToolDefinitions = await loadWorkflowPluginToolDefinitionsFromClosure({
+    packageDir,
+    plugins: collectDeclaredPluginNames(definition),
+  });
   const walk = walkCapabilities(definition, directors, pluginToolDefinitions);
   // Fail closed on an unresolved director: the runtime does not re-gate
   // `director:<id>` against the approved grant set, so this advertisement is
@@ -566,10 +545,7 @@ async function computeProbePayload(
     ok: true,
     projection,
     grants: collectDeploymentGrants(walk),
-    grantWalkSnapshot: buildGrantWalkSnapshot(
-      walk,
-      definition.grantRequirements,
-    ),
+    grantWalkSnapshot: buildGrantWalkSnapshot(walk, definition.grantRequirements),
     wireHash,
   };
 }
@@ -621,9 +597,7 @@ interface ProbeChildEnv {
 
 const NonEmptyString = type("string > 0");
 
-function parseProbeChildEnv(
-  rawEnv: Readonly<Record<string, string | undefined>>,
-): ProbeChildEnv {
+function parseProbeChildEnv(rawEnv: Readonly<Record<string, string | undefined>>): ProbeChildEnv {
   const channelId = requireEnv(rawEnv, PROBE_CHANNEL_ID_ENV);
   const packageDir = requireEnv(rawEnv, PROBE_PACKAGE_DIR_ENV);
   const hmacKeyHex = requireEnv(rawEnv, PROBE_HMAC_KEY_ENV);
@@ -636,15 +610,10 @@ function parseProbeChildEnv(
   return { channelId, hmacKey, packageDir };
 }
 
-function requireEnv(
-  rawEnv: Readonly<Record<string, string | undefined>>,
-  key: string,
-): string {
+function requireEnv(rawEnv: Readonly<Record<string, string | undefined>>, key: string): string {
   const value = NonEmptyString(rawEnv[key]);
   if (value instanceof type.errors) {
-    throw new Error(
-      `workflow probe child env: required key ${key} is unset or empty`,
-    );
+    throw new Error(`workflow probe child env: required key ${key} is unset or empty`);
   }
   return value;
 }
@@ -667,9 +636,7 @@ function defaultStdoutWriteLine(line: string): Promise<void> {
  * complete line, or `null` when the stream closes without one (the child
  * exited before writing). Releases the reader lock on every exit.
  */
-async function readResultLine(
-  stream: ReadableStream<Uint8Array>,
-): Promise<string | null> {
+async function readResultLine(stream: ReadableStream<Uint8Array>): Promise<string | null> {
   const reader = stream.getReader();
   const decoder = new TextDecoder("utf-8");
   let pending = "";

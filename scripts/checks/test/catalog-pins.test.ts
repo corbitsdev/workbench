@@ -1,9 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  WORKSPACE_GLOBS,
-  auditCatalogPins,
-  resolveCatalogs,
-} from "../catalog-pins";
+import { WORKSPACE_GLOBS, auditCatalogPins, resolveCatalogs } from "../catalog-pins";
 
 test("a literal range for a catalogued dependency is a violation", () => {
   const report = auditCatalogPins({ hono: "^4.11.9" }, [
@@ -109,7 +105,5 @@ test("resolveCatalogs defaults to empty when neither location is present", () =>
 });
 
 test("vendored manifests are excluded from workspace discovery", () => {
-  expect(WORKSPACE_GLOBS.some((glob) => glob.startsWith("vendor/"))).toBe(
-    false,
-  );
+  expect(WORKSPACE_GLOBS.some((glob) => glob.startsWith("vendor/"))).toBe(false);
 });

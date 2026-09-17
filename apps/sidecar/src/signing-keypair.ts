@@ -43,16 +43,11 @@ async function exists(filePath: string): Promise<boolean> {
  * which of the two files rotted, so we halt and let an operator decide
  * (restore the seed, or remove the directory to mint a fresh identity).
  */
-export async function loadOrMintSidecarKeypair(
-  signingDir: string,
-): Promise<KeyPair> {
+export async function loadOrMintSidecarKeypair(signingDir: string): Promise<KeyPair> {
   const privateKeyPath = path.join(signingDir, PRIVATE_KEY_FILENAME);
   const publicKeyPath = path.join(signingDir, PUBLIC_KEY_FILENAME);
 
-  const [havePriv, havePub] = await Promise.all([
-    exists(privateKeyPath),
-    exists(publicKeyPath),
-  ]);
+  const [havePriv, havePub] = await Promise.all([exists(privateKeyPath), exists(publicKeyPath)]);
   if (havePriv !== havePub) {
     throw new Error(
       `sidecar signing keypair under ${signingDir} is partial: privateKey=${String(havePriv)} publicKey=${String(havePub)}; remove the directory to reset`,

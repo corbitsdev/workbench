@@ -39,17 +39,9 @@ export const SIDECAR_FULL_SOURCE_DIRS = [
   "vendor/intx/workflow-host",
 ] as const;
 
-const FULL_SOURCE_COPY_EXCLUDES = new Set([
-  "node_modules",
-  "dist",
-  "coverage",
-  ".turbo",
-]);
+const FULL_SOURCE_COPY_EXCLUDES = new Set(["node_modules", "dist", "coverage", ".turbo"]);
 
-function listWorkspaceMemberDirs(
-  repositoryRoot: string,
-  globRoot: string,
-): string[] {
+function listWorkspaceMemberDirs(repositoryRoot: string, globRoot: string): string[] {
   const absoluteGlobRoot = join(repositoryRoot, ...globRoot.split("/"));
   if (!existsSync(absoluteGlobRoot)) {
     return [];
@@ -57,10 +49,7 @@ function listWorkspaceMemberDirs(
   return readdirSync(absoluteGlobRoot)
     .filter((entry) => {
       const entryPath = join(absoluteGlobRoot, entry);
-      return (
-        statSync(entryPath).isDirectory() &&
-        existsSync(join(entryPath, "package.json"))
-      );
+      return statSync(entryPath).isDirectory() && existsSync(join(entryPath, "package.json"));
     })
     .map((entry) => posix.join(globRoot, entry));
 }
@@ -71,11 +60,7 @@ export function listWorkspaceMembers(repositoryRoot: string): string[] {
   );
 }
 
-function copyFullSource(
-  repositoryRoot: string,
-  relativeDir: string,
-  destinationRoot: string,
-) {
+function copyFullSource(repositoryRoot: string, relativeDir: string, destinationRoot: string) {
   const src = join(repositoryRoot, ...relativeDir.split("/"));
   const dest = join(destinationRoot, ...relativeDir.split("/"));
   cpSync(src, dest, {
@@ -87,16 +72,8 @@ function copyFullSource(
   });
 }
 
-function copyManifestStub(
-  repositoryRoot: string,
-  relativeDir: string,
-  destinationRoot: string,
-) {
-  const srcManifest = join(
-    repositoryRoot,
-    ...relativeDir.split("/"),
-    "package.json",
-  );
+function copyManifestStub(repositoryRoot: string, relativeDir: string, destinationRoot: string) {
+  const srcManifest = join(repositoryRoot, ...relativeDir.split("/"), "package.json");
   const destDir = join(destinationRoot, ...relativeDir.split("/"));
   mkdirSync(destDir, { recursive: true });
   copyFileSync(srcManifest, join(destDir, "package.json"));
@@ -105,19 +82,10 @@ function copyManifestStub(
 // Stages the exact tree the image needs at `destinationDir`. Only ever
 // reads: repositoryRoot/package.json, repositoryRoot/bun.lock, and the
 // workspace glob roots above.
-export function stageBuildContext(
-  repositoryRoot: string,
-  destinationDir: string,
-) {
+export function stageBuildContext(repositoryRoot: string, destinationDir: string) {
   mkdirSync(destinationDir, { recursive: true });
-  copyFileSync(
-    join(repositoryRoot, "package.json"),
-    join(destinationDir, "package.json"),
-  );
-  copyFileSync(
-    join(repositoryRoot, "bun.lock"),
-    join(destinationDir, "bun.lock"),
-  );
+  copyFileSync(join(repositoryRoot, "package.json"), join(destinationDir, "package.json"));
+  copyFileSync(join(repositoryRoot, "bun.lock"), join(destinationDir, "bun.lock"));
 
   const fullSourceDirs = new Set<string>(SIDECAR_FULL_SOURCE_DIRS);
   for (const member of listWorkspaceMembers(repositoryRoot)) {

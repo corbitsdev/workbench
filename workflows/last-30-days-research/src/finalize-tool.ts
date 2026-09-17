@@ -34,8 +34,7 @@ import { type } from "arktype";
 import { defineTool, type BaseEnv } from "@intx/agent";
 import { createWorkflowArtifact } from "./artifact-client";
 
-export const LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME =
-  "last_30_days_research_finalize";
+export const LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME = "last_30_days_research_finalize";
 
 export const LAST_30_DAYS_RESEARCH_FINALIZE_DESCRIPTION =
   "Finalizes the research report, pending human approval, and persists it as a Library artifact.";
@@ -94,71 +93,70 @@ export interface WorkflowArtifactEnv extends BaseEnv {
  * `defineTool`'s env-DI factory shape. Needs the sanctioned
  * workflow-artifacts credential trio beyond `BaseEnv`.
  */
-export const LAST_30_DAYS_RESEARCH_FINALIZE_TOOL =
-  defineTool<WorkflowArtifactEnv>({
-    id: "@corbits/workflow-last-30-days-research/finalize",
-    requires: ["hubArtifactsUrl", "sidecarToken", "address"],
+export const LAST_30_DAYS_RESEARCH_FINALIZE_TOOL = defineTool<WorkflowArtifactEnv>({
+  id: "@corbits/workflow-last-30-days-research/finalize",
+  requires: ["hubArtifactsUrl", "sidecarToken", "address"],
+  definitions: [
+    {
+      name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
+      approval: "ask",
+    },
+  ],
+  factory: (env) => ({
     definitions: [
       {
         name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
-        approval: "ask",
+        description: LAST_30_DAYS_RESEARCH_FINALIZE_DESCRIPTION,
+        inputSchema: {
+          type: "object",
+          properties: {
+            outcome: { type: "string", enum: ["report", "status-note"] },
+            title: { type: "string" },
+            content: { type: "string" },
+          },
+          required: ["outcome", "title", "content"],
+        },
       },
     ],
-    factory: (env) => ({
-      definitions: [
-        {
-          name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
-          description: LAST_30_DAYS_RESEARCH_FINALIZE_DESCRIPTION,
-          inputSchema: {
-            type: "object",
-            properties: {
-              outcome: { type: "string", enum: ["report", "status-note"] },
-              title: { type: "string" },
-              content: { type: "string" },
-            },
-            required: ["outcome", "title", "content"],
+    run: async (call) => {
+      const parsed = FinalizeArgs(call.arguments);
+      if (parsed instanceof type.errors) {
+        return {
+          callId: call.id,
+          isError: true,
+          content: `Invalid arguments for ${LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME}: ${parsed.summary}`,
+        };
+      }
+      const artifact = buildArtifactPayload(parsed);
+      try {
+        const created = await createWorkflowArtifact(
+          {
+            hubArtifactsUrl: env.hubArtifactsUrl,
+            sidecarToken: env.sidecarToken,
+            runAddress: env.address,
           },
-        },
-      ],
-      run: async (call) => {
-        const parsed = FinalizeArgs(call.arguments);
-        if (parsed instanceof type.errors) {
-          return {
-            callId: call.id,
-            isError: true,
-            content: `Invalid arguments for ${LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME}: ${parsed.summary}`,
-          };
-        }
-        const artifact = buildArtifactPayload(parsed);
-        try {
-          const created = await createWorkflowArtifact(
-            {
-              hubArtifactsUrl: env.hubArtifactsUrl,
-              sidecarToken: env.sidecarToken,
-              runAddress: env.address,
-            },
-            artifact,
-          );
-          return {
-            callId: call.id,
-            isError: false,
-            content: JSON.stringify({
-              id: created.id,
-              version: created.version,
-              title: artifact.title,
-              kind: artifact.kind,
-              persisted: true,
-            }),
-          };
-        } catch (err) {
-          return {
-            callId: call.id,
-            isError: true,
-            content: `Failed to persist "${artifact.title}" as a Library artifact: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          };
-        }
-      },
-    }),
-  });
+          artifact,
+        );
+        return {
+          callId: call.id,
+          isError: false,
+          content: JSON.stringify({
+            id: created.id,
+            version: created.version,
+            title: artifact.title,
+            kind: artifact.kind,
+            persisted: true,
+          }),
+        };
+      } catch (err) {
+        return {
+          callId: call.id,
+          isError: true,
+          content: `Failed to persist "${artifact.title}" as a Library artifact: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        };
+      }
+    },
+  }),
+});

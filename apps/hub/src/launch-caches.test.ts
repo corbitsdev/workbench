@@ -181,12 +181,8 @@ describe("createLaunchCaches: assetService reads", () => {
       repoStore,
     });
 
-    expect(caches.assetService.createAsset).toBe(
-      inner.assetService.createAsset,
-    );
-    expect(caches.assetService.populateAsset).toBe(
-      inner.assetService.populateAsset,
-    );
+    expect(caches.assetService.createAsset).toBe(inner.assetService.createAsset);
+    expect(caches.assetService.populateAsset).toBe(inner.assetService.populateAsset);
   });
 });
 
@@ -202,16 +198,8 @@ describe("createLaunchCaches: repoStore packs", () => {
       repoStore,
     });
 
-    const first = await caches.repoStore.createPack(
-      principal,
-      repoId,
-      HEAD_REF,
-    );
-    const second = await caches.repoStore.createPack(
-      principal,
-      repoId,
-      HEAD_REF,
-    );
+    const first = await caches.repoStore.createPack(principal, repoId, HEAD_REF);
+    const second = await caches.repoStore.createPack(principal, repoId, HEAD_REF);
 
     expect(createPackCalls.length).toBe(1);
     expect(second).toEqual(first);
@@ -242,9 +230,7 @@ describe("createLaunchCaches: repoStore packs", () => {
 
     expect(caches.repoStore.initRepo).toBe(repoStore.initRepo);
     expect(caches.repoStore.writeTree).toBe(repoStore.writeTree);
-    expect(caches.repoStore.writeTreePreservingPrefix).toBe(
-      repoStore.writeTreePreservingPrefix,
-    );
+    expect(caches.repoStore.writeTreePreservingPrefix).toBe(repoStore.writeTreePreservingPrefix);
     expect(caches.repoStore.writeTreeDelta).toBe(repoStore.writeTreeDelta);
     expect(caches.repoStore.receivePack).toBe(repoStore.receivePack);
     expect(caches.repoStore.commitPackedTip).toBe(repoStore.commitPackedTip);
@@ -252,12 +238,8 @@ describe("createLaunchCaches: repoStore packs", () => {
     expect(caches.repoStore.listRefs).toBe(repoStore.listRefs);
     expect(caches.repoStore.resolveHead).toBe(repoStore.resolveHead);
     expect(caches.repoStore.getRepoDir).toBe(repoStore.getRepoDir);
-    expect(caches.repoStore.openCommittedReads).toBe(
-      repoStore.openCommittedReads,
-    );
-    expect(caches.repoStore.openCommittedReadsAtCommit).toBe(
-      repoStore.openCommittedReadsAtCommit,
-    );
+    expect(caches.repoStore.openCommittedReads).toBe(repoStore.openCommittedReads);
+    expect(caches.repoStore.openCommittedReadsAtCommit).toBe(repoStore.openCommittedReadsAtCommit);
     expect(caches.repoStore.subscribe).toBe(repoStore.subscribe);
   });
 });

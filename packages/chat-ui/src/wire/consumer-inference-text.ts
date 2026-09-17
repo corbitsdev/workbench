@@ -64,9 +64,7 @@ export function consumerFacingInferenceText(raw: string): string {
 
 /** True when `text` is (or starts with) a classified inference-failure preamble. */
 export function isClassifiedInferenceFailureText(text: string): boolean {
-  return CLASSIFIED_INFERENCE_FAILURE_PREAMBLES.some((preamble) =>
-    text.startsWith(preamble),
-  );
+  return CLASSIFIED_INFERENCE_FAILURE_PREAMBLES.some((preamble) => text.startsWith(preamble));
 }
 
 /**

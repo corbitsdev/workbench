@@ -27,11 +27,7 @@ import {
 import { useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
-import {
-  QueryView,
-  UnauthenticatedError,
-  describeQueryError,
-} from "@corbits/api-query";
+import { QueryView, UnauthenticatedError, describeQueryError } from "@corbits/api-query";
 import { principalLabel } from "./identity";
 import { SETTINGS_STRINGS } from "./strings";
 import {
@@ -51,11 +47,7 @@ type RolesData = {
   readonly principals: readonly Principal[];
 };
 
-export function RolesSection({
-  tenantId,
-}: {
-  readonly tenantId: string | null;
-}) {
+export function RolesSection({ tenantId }: { readonly tenantId: string | null }) {
   const [query, setQuery] = useState<APIQuery<RolesData>>({ kind: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
@@ -73,8 +65,7 @@ export function RolesSection({
     setQuery({ kind: "loading" });
     Promise.all([listRoles(tenantId), listPrincipals(tenantId)])
       .then(([roles, principals]) => {
-        if (!cancelled)
-          setQuery({ kind: "ready", data: { roles, principals } });
+        if (!cancelled) setQuery({ kind: "ready", data: { roles, principals } });
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -91,7 +82,6 @@ export function RolesSection({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, reloadKey]);
 
   if (tenantId === null) {
@@ -107,10 +97,7 @@ export function RolesSection({
     if (tenantId === null) return;
     setCreating(true);
     setCreateError(null);
-    createRole(
-      tenantId,
-      description.length > 0 ? { name, description } : { name },
-    )
+    createRole(tenantId, description.length > 0 ? { name, description } : { name })
       .then(() => {
         setCreateOpen(false);
         reload();
@@ -168,11 +155,7 @@ export function RolesSection({
               {rowError}
             </p>
           )}
-          <RolesTable
-            roles={roles}
-            onDelete={handleDelete}
-            onRename={handleRename}
-          />
+          <RolesTable roles={roles} onDelete={handleDelete} onRename={handleRename} />
           <RoleAssignments
             roles={roles}
             principals={principals}
@@ -235,9 +218,7 @@ export function RolesTable({
                 <>
                   {role.name}{" "}
                   {role.isSystem && (
-                    <Badge tone="neutral">
-                      {SETTINGS_STRINGS.rolesSystemBadge}
-                    </Badge>
+                    <Badge tone="neutral">{SETTINGS_STRINGS.rolesSystemBadge}</Badge>
                   )}
                 </>
               )}
@@ -261,11 +242,7 @@ export function RolesTable({
                   >
                     {SETTINGS_STRINGS.rolesRenameSave}
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEditingId(null)}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => setEditingId(null)}>
                     {SETTINGS_STRINGS.rolesRenameCancel}
                   </Button>
                 </div>
@@ -367,9 +344,7 @@ export function RoleAssignments({
       </div>
       <h4>{SETTINGS_STRINGS.rolesAssignmentsTitle}</h4>
       {assignments.length === 0 ? (
-        <p className="settings-field-hint">
-          {SETTINGS_STRINGS.rolesAssignmentsEmpty}
-        </p>
+        <p className="settings-field-hint">{SETTINGS_STRINGS.rolesAssignmentsEmpty}</p>
       ) : (
         <Table>
           <TableHeader>
@@ -382,9 +357,7 @@ export function RoleAssignments({
           <TableBody>
             {assignments.map(({ principal, role }) => (
               <TableRow key={`${principal.id}-${role.id}`}>
-                <TableCell>
-                  {principalLabel(principal.displayName).label}
-                </TableCell>
+                <TableCell>{principalLabel(principal.displayName).label}</TableCell>
                 <TableCell>{role.name}</TableCell>
                 <TableCell>
                   <Button
@@ -437,9 +410,7 @@ export function CreateRoleDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{SETTINGS_STRINGS.rolesCreateDialogTitle}</DialogTitle>
-          <DialogDescription>
-            {SETTINGS_STRINGS.rolesCreateDialogDescription}
-          </DialogDescription>
+          <DialogDescription>{SETTINGS_STRINGS.rolesCreateDialogDescription}</DialogDescription>
         </DialogHeader>
         <DialogBody>
           <form
@@ -461,10 +432,7 @@ export function CreateRoleDialog({
             </label>
             <label className="settings-form-field">
               <span>{SETTINGS_STRINGS.rolesDescriptionLabel}</span>
-              <Input
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-              />
+              <Input value={description} onChange={(event) => setDescription(event.target.value)} />
             </label>
             {error !== null && (
               <p className="settings-inline-error" role="alert">

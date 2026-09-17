@@ -24,14 +24,8 @@ import {
   principalMail,
   type MailboxDb,
 } from "@corbits/mailbox";
-import {
-  createHubSessionLookups,
-  type AgentRepoStore,
-} from "@intx/hub-sessions";
-import {
-  createHubMailboxAuthorizeSender,
-  hubMailboxResolveRefs,
-} from "../src/mailbox-persist";
+import { createHubSessionLookups, type AgentRepoStore } from "@intx/hub-sessions";
+import { createHubMailboxAuthorizeSender, hubMailboxResolveRefs } from "../src/mailbox-persist";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 
 const databaseUrl = process.env["DATABASE_URL"] ?? "";
@@ -73,9 +67,10 @@ async function setup(opts: { withSession?: boolean } = {}) {
 
   const { db, close: closeDb } = createDB(dbConfigFromUrl(databaseUrl));
   closers.push(closeDb);
-  const { db: mailboxDb, close: closeMailbox } = createMailboxDb(
-    databaseUrl,
-  ) as { db: MailboxDb; close: () => Promise<void> };
+  const { db: mailboxDb, close: closeMailbox } = createMailboxDb(databaseUrl) as {
+    db: MailboxDb;
+    close: () => Promise<void>;
+  };
   closers.push(closeMailbox);
 
   const domain = `${uid("mailbox-persist-wrap")}.test`;
@@ -189,10 +184,7 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
         .select({ refs: principalMail.refs })
         .from(principalMail)
         .where(
-          and(
-            eq(principalMail.tenantId, tenantId),
-            eq(principalMail.principalId, principalId),
-          ),
+          and(eq(principalMail.tenantId, tenantId), eq(principalMail.principalId, principalId)),
         );
       seenRefsByPrincipalId.set(principalId, row?.refs);
     }
@@ -222,11 +214,7 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
 
     const upstreamResult = await persistMail({
       senderAddress,
-      recipients: [
-        `usr_${human1Id}@${domain}`,
-        `usr_${human2Id}@${domain}`,
-        agentRecipientAddress,
-      ],
+      recipients: [`usr_${human1Id}@${domain}`, `usr_${human2Id}@${domain}`, agentRecipientAddress],
       raw,
     });
     // The bus fires synchronously inside `persistMail`, but each listener's
@@ -237,9 +225,7 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
     // The upstream `session_mail` write still ran, and is durable -- not
     // just present in the return value.
     expect(
-      upstreamResult.some(
-        (r) => r.direction === "outbound" && r.address === senderAddress,
-      ),
+      upstreamResult.some((r) => r.direction === "outbound" && r.address === senderAddress),
     ).toBe(true);
     const sessionMailRows = await db
       .select()
@@ -254,9 +240,7 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
       .from(principalMail)
       .where(eq(principalMail.tenantId, tenantId));
     expect(rows).toHaveLength(2);
-    expect(rows.map((r) => r.principalId).sort()).toEqual(
-      [human1Id, human2Id].sort(),
-    );
+    expect(rows.map((r) => r.principalId).sort()).toEqual([human1Id, human2Id].sort());
     for (const row of rows) {
       expect(row.refs).toEqual([{ kind: "workbench", id: tenantId }]);
     }
@@ -269,15 +253,9 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
   });
 
   test("dual-write independence: a sender run with no live session makes upstream throw, the mailbox rows still get written, and zero session_mail rows land", async () => {
-    const {
-      db,
-      mailboxDb,
-      baseLookups,
-      domain,
-      tenantId,
-      senderAddress,
-      human1Id,
-    } = await setup({ withSession: false });
+    const { db, mailboxDb, baseLookups, domain, tenantId, senderAddress, human1Id } = await setup({
+      withSession: false,
+    });
 
     const persistMail = createMailboxPersist(mailboxDb, {
       upstream: baseLookups.persistMail,
@@ -318,15 +296,7 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
   });
 
   test("redelivery of the same frame is deduped: a retried persist for the same message and recipient writes no second mailbox row", async () => {
-    const {
-      db,
-      mailboxDb,
-      baseLookups,
-      domain,
-      tenantId,
-      senderAddress,
-      human1Id,
-    } = await setup();
+    const { db, mailboxDb, baseLookups, domain, tenantId, senderAddress, human1Id } = await setup();
 
     const persistMail = createMailboxPersist(mailboxDb, {
       upstream: baseLookups.persistMail,

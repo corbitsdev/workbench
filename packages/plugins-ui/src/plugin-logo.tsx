@@ -21,11 +21,7 @@ export function PluginLogo({
       className="flex size-9 shrink-0 items-center justify-center border border-border bg-background text-muted-foreground"
     >
       {icon !== undefined ? (
-        <svg
-          className="size-5"
-          viewBox={icon.viewBox ?? "0 0 24 24"}
-          fill={`#${icon.hex}`}
-        >
+        <svg className="size-5" viewBox={icon.viewBox ?? "0 0 24 24"} fill={`#${icon.hex}`}>
           <path d={icon.path} />
         </svg>
       ) : FallbackIcon !== undefined ? (

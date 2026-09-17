@@ -14,10 +14,7 @@ const allowAll: RequireGrant = () => async (_c, next) => {
 function buildApp(overrides: { requireGrant?: RequireGrant } = {}) {
   const store = createInMemoryWebhookTriggerStore();
   const requireGrant = overrides.requireGrant ?? allowAll;
-  const app = mountAs(
-    createWebhookTriggerRoutes({ store, requireGrant }),
-    "prn_alice",
-  );
+  const app = mountAs(createWebhookTriggerRoutes({ store, requireGrant }), "prn_alice");
   return { app, store };
 }
 
@@ -174,8 +171,7 @@ describe("POST /:id/enabled and DELETE /:id", () => {
 
   test("a denied grant is rejected before any store mutation", async () => {
     const { app, store } = buildApp({
-      requireGrant: () => async (c) =>
-        c.json({ error: { code: "forbidden", message: "no" } }, 403),
+      requireGrant: () => async (c) => c.json({ error: { code: "forbidden", message: "no" } }, 403),
     });
 
     const response = await app.request("/", {

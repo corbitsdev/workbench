@@ -98,10 +98,9 @@ export async function applyAgentDirectoryMigrations(
         applied.push(migration.name);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        throw new Error(
-          `agent-directory migration ${migration.name} failed: ${message}`,
-          { cause: err },
-        );
+        throw new Error(`agent-directory migration ${migration.name} failed: ${message}`, {
+          cause: err,
+        });
       }
     }
 

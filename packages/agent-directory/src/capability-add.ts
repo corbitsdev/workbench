@@ -19,10 +19,7 @@ import {
 } from "./agent-workflow";
 import { commitLatestAgentAssetSnapshot } from "./asset-write";
 import type { AddCapabilityInput } from "./capability-inventory";
-import {
-  writeAndDeployAgentDefinition,
-  type AgentDefinitionDeployer,
-} from "./definition-asset";
+import { writeAndDeployAgentDefinition, type AgentDefinitionDeployer } from "./definition-asset";
 import { resolvePinnedVersion } from "./tool-package-version";
 
 export type CommitAgentCapabilityAddArgs = {
@@ -113,9 +110,9 @@ async function prepareCapabilityAdd(
       // no existing pin resolves fresh against the registry. An explicit
       // bump is a distinct, explicit input this does not add (CL-7389).
       const packageName = args.body.name;
-      const existingPin = readAgentCapabilities(
-        workflowJson,
-      ).toolPackagePins.find((pin) => pin.name === packageName);
+      const existingPin = readAgentCapabilities(workflowJson).toolPackagePins.find(
+        (pin) => pin.name === packageName,
+      );
       const pin =
         existingPin ??
         (await resolvePinnedVersion(
@@ -131,16 +128,10 @@ async function prepareCapabilityAdd(
       break;
     }
     case "skill": {
-      const nextSkills = skills.includes(args.body.name)
-        ? skills
-        : [...skills, args.body.name];
+      const nextSkills = skills.includes(args.body.name) ? skills : [...skills, args.body.name];
       nextWorkflowJson = reindexPinnedSkills(
         workflowJson,
-        await args.skillIndex.resolve(
-          args.tenantId,
-          args.principalId,
-          nextSkills,
-        ),
+        await args.skillIndex.resolve(args.tenantId, args.principalId, nextSkills),
       );
       skills = nextSkills;
       message = `Add ${args.body.name} skill to ${args.handle}`;
@@ -160,9 +151,7 @@ async function prepareCapabilityAdd(
     result: {
       toolPackagePins: capabilities.toolPackagePins,
       skills,
-      ...(capabilities.model !== undefined
-        ? { model: capabilities.model }
-        : {}),
+      ...(capabilities.model !== undefined ? { model: capabilities.model } : {}),
     },
   };
 }

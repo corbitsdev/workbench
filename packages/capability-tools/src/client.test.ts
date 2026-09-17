@@ -38,9 +38,7 @@ test("addCapability posts to the definition's workflow-run capabilities endpoint
     name: "@corbits/github-tools",
   });
 
-  expect(seenUrl).toBe(
-    "https://hub.example.com/api/workflow-capabilities/def_1/capabilities",
-  );
+  expect(seenUrl).toBe("https://hub.example.com/api/workflow-capabilities/def_1/capabilities");
   expect(seenHeaders?.["authorization"]).toBe("Bearer sc-token");
   expect(seenHeaders?.["x-workflow-run-address"]).toBe("run_1@workflow");
   expect(seenBody).toEqual({
@@ -89,9 +87,7 @@ test("addCapability throws an honest error on a non-400 HTTP failure, never fabr
 
 test("addCapability throws on a response that doesn't match the expected shape", async () => {
   const fetchImpl = (async () =>
-    new Response(
-      JSON.stringify({ nonsense: true }),
-    )) as unknown as typeof fetch;
+    new Response(JSON.stringify({ nonsense: true }))) as unknown as typeof fetch;
 
   await expect(
     addCapability(testConfig(fetchImpl), {
@@ -103,9 +99,7 @@ test("addCapability throws on a response that doesn't match the expected shape",
 
 test("fetchCapabilityInventory flattens the inventory to plain name arrays", async () => {
   const fetchImpl = (async (url: string | URL) => {
-    expect(String(url)).toBe(
-      "https://hub.example.com/api/workflow-capabilities/inventory",
-    );
+    expect(String(url)).toBe("https://hub.example.com/api/workflow-capabilities/inventory");
     return new Response(
       JSON.stringify({
         toolPackages: [{ name: "@corbits/memory-tools" }],

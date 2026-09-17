@@ -16,10 +16,7 @@ import {
   routineCreated,
   routineCreatedOnlyAfterOk,
 } from "../scorers/scorers.ts";
-import {
-  CREATE_AGENT_TOOL,
-  ROUTINE_CREATE_TOOL,
-} from "../scorers/tool-names.ts";
+import { CREATE_AGENT_TOOL, ROUTINE_CREATE_TOOL } from "../scorers/tool-names.ts";
 
 export const exaTopicDigestEval = defineEval({
   name: "exa-topic-digest",
@@ -29,9 +26,7 @@ export const exaTopicDigestEval = defineEval({
     "watches Exa -> routine posting the digest here",
   steps: [
     {
-      human:
-        "we need someone to watch our Exa topics and post a digest to " +
-        "this bench",
+      human: "we need someone to watch our Exa topics and post a digest to " + "this bench",
       expect: [
         asksQuestions({ max: 4 }),
         noToolCalls(["create_agent", "routine_create", "routine_run_now"]),

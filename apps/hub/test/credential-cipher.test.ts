@@ -27,9 +27,7 @@ const baseConfig: HubConfig = {
 
 describe("credentialCipherFrom", () => {
   test("no key and no dev opt-in hard-fails boot, naming the variable, what it protects, and how to generate a key", () => {
-    expect(() => credentialCipherFrom(baseConfig, log)).toThrow(
-      /CREDENTIAL_ENCRYPTION_KEY/,
-    );
+    expect(() => credentialCipherFrom(baseConfig, log)).toThrow(/CREDENTIAL_ENCRYPTION_KEY/);
     try {
       credentialCipherFrom(baseConfig, log);
       throw new Error("expected credentialCipherFrom to throw");
@@ -43,10 +41,7 @@ describe("credentialCipherFrom", () => {
   });
 
   test("no key with ALLOW_PLAINTEXT_SECRETS set warns and falls back to the noop cipher", async () => {
-    const cipher = credentialCipherFrom(
-      { ...baseConfig, allowPlaintextSecrets: true },
-      log,
-    );
+    const cipher = credentialCipherFrom({ ...baseConfig, allowPlaintextSecrets: true }, log);
     const encrypted = await cipher.encrypt("secret-value", "aad");
     expect(encrypted).toBe("secret-value");
   });
@@ -79,18 +74,13 @@ describe("hubCredentialCipher", () => {
   });
 
   test("boot tags the noop cipher when ALLOW_PLAINTEXT_SECRETS is set", async () => {
-    const cipher = hubCredentialCipher(
-      { ...baseConfig, allowPlaintextSecrets: true },
-      log,
-    );
+    const cipher = hubCredentialCipher({ ...baseConfig, allowPlaintextSecrets: true }, log);
     expect(cipher).toBe(tagCredentialCipher(cipher));
     const encrypted = await cipher.encrypt("secret-value", "aad");
     expect(encrypted).toBe("secret-value");
   });
 
   test("boot still hard-fails when the key is missing and plaintext is not opted in", () => {
-    expect(() => hubCredentialCipher(baseConfig, log)).toThrow(
-      /CREDENTIAL_ENCRYPTION_KEY/,
-    );
+    expect(() => hubCredentialCipher(baseConfig, log)).toThrow(/CREDENTIAL_ENCRYPTION_KEY/);
   });
 });

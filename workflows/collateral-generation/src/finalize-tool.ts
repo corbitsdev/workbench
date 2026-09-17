@@ -39,8 +39,7 @@ import { type } from "arktype";
 import { defineTool, type BaseEnv } from "@intx/agent";
 import { createWorkflowArtifact } from "./artifact-client";
 
-export const COLLATERAL_GENERATION_FINALIZE_TOOL_NAME =
-  "collateral_generation_finalize";
+export const COLLATERAL_GENERATION_FINALIZE_TOOL_NAME = "collateral_generation_finalize";
 
 export const COLLATERAL_GENERATION_FINALIZE_DESCRIPTION =
   "Finalizes the full set of human-approved collateral pieces from one run, pending a single human approval, and persists each as a Library artifact.";
@@ -73,9 +72,7 @@ export type ArtifactPayload = {
  * matching the OG's convention of using the content type as the
  * artifact's kind.
  */
-export function buildArtifactPayloads(
-  args: FinalizeArgs,
-): readonly ArtifactPayload[] {
+export function buildArtifactPayloads(args: FinalizeArgs): readonly ArtifactPayload[] {
   return args.pieces.map((piece) => ({
     title: piece.title,
     kind: piece.contentType,
@@ -99,97 +96,96 @@ export interface WorkflowArtifactEnv extends BaseEnv {
  * `defineTool`'s env-DI factory shape. Needs the sanctioned
  * workflow-artifacts credential trio beyond `BaseEnv`.
  */
-export const COLLATERAL_GENERATION_FINALIZE_TOOL =
-  defineTool<WorkflowArtifactEnv>({
-    id: "@corbits/workflow-collateral-generation/finalize",
-    requires: ["hubArtifactsUrl", "sidecarToken", "address"],
+export const COLLATERAL_GENERATION_FINALIZE_TOOL = defineTool<WorkflowArtifactEnv>({
+  id: "@corbits/workflow-collateral-generation/finalize",
+  requires: ["hubArtifactsUrl", "sidecarToken", "address"],
+  definitions: [
+    {
+      name: COLLATERAL_GENERATION_FINALIZE_TOOL_NAME,
+      approval: "ask",
+    },
+  ],
+  factory: (env) => ({
     definitions: [
       {
         name: COLLATERAL_GENERATION_FINALIZE_TOOL_NAME,
-        approval: "ask",
-      },
-    ],
-    factory: (env) => ({
-      definitions: [
-        {
-          name: COLLATERAL_GENERATION_FINALIZE_TOOL_NAME,
-          description: COLLATERAL_GENERATION_FINALIZE_DESCRIPTION,
-          inputSchema: {
-            type: "object",
-            properties: {
-              pieces: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    title: { type: "string" },
-                    contentType: { type: "string" },
-                    content: { type: "string" },
-                  },
-                  required: ["title", "contentType", "content"],
+        description: COLLATERAL_GENERATION_FINALIZE_DESCRIPTION,
+        inputSchema: {
+          type: "object",
+          properties: {
+            pieces: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  title: { type: "string" },
+                  contentType: { type: "string" },
+                  content: { type: "string" },
                 },
+                required: ["title", "contentType", "content"],
               },
             },
-            required: ["pieces"],
           },
+          required: ["pieces"],
         },
-      ],
-      run: async (call) => {
-        const parsed = FinalizeArgs(call.arguments);
-        if (parsed instanceof type.errors) {
-          return {
-            callId: call.id,
-            isError: true,
-            content: `Invalid arguments for ${COLLATERAL_GENERATION_FINALIZE_TOOL_NAME}: ${parsed.summary}`,
-          };
-        }
-        if (parsed.pieces.length === 0) {
-          return {
-            callId: call.id,
-            isError: true,
-            content: `${COLLATERAL_GENERATION_FINALIZE_TOOL_NAME} requires at least one approved piece`,
-          };
-        }
-        const artifacts = buildArtifactPayloads(parsed);
-        const persisted: {
-          id: string;
-          version: number;
-          title: string;
-          kind: string;
-          persisted: true;
-        }[] = [];
-        for (const artifact of artifacts) {
-          try {
-            const created = await createWorkflowArtifact(
-              {
-                hubArtifactsUrl: env.hubArtifactsUrl,
-                sidecarToken: env.sidecarToken,
-                runAddress: env.address,
-              },
-              artifact,
-            );
-            persisted.push({
-              id: created.id,
-              version: created.version,
-              title: artifact.title,
-              kind: artifact.kind,
-              persisted: true,
-            });
-          } catch (err) {
-            return {
-              callId: call.id,
-              isError: true,
-              content: `Failed to persist "${artifact.title}" as a Library artifact after persisting ${persisted.length} of ${artifacts.length} piece(s): ${
-                err instanceof Error ? err.message : String(err)
-              }`,
-            };
-          }
-        }
+      },
+    ],
+    run: async (call) => {
+      const parsed = FinalizeArgs(call.arguments);
+      if (parsed instanceof type.errors) {
         return {
           callId: call.id,
-          isError: false,
-          content: JSON.stringify({ artifacts: persisted }),
+          isError: true,
+          content: `Invalid arguments for ${COLLATERAL_GENERATION_FINALIZE_TOOL_NAME}: ${parsed.summary}`,
         };
-      },
-    }),
-  });
+      }
+      if (parsed.pieces.length === 0) {
+        return {
+          callId: call.id,
+          isError: true,
+          content: `${COLLATERAL_GENERATION_FINALIZE_TOOL_NAME} requires at least one approved piece`,
+        };
+      }
+      const artifacts = buildArtifactPayloads(parsed);
+      const persisted: {
+        id: string;
+        version: number;
+        title: string;
+        kind: string;
+        persisted: true;
+      }[] = [];
+      for (const artifact of artifacts) {
+        try {
+          const created = await createWorkflowArtifact(
+            {
+              hubArtifactsUrl: env.hubArtifactsUrl,
+              sidecarToken: env.sidecarToken,
+              runAddress: env.address,
+            },
+            artifact,
+          );
+          persisted.push({
+            id: created.id,
+            version: created.version,
+            title: artifact.title,
+            kind: artifact.kind,
+            persisted: true,
+          });
+        } catch (err) {
+          return {
+            callId: call.id,
+            isError: true,
+            content: `Failed to persist "${artifact.title}" as a Library artifact after persisting ${persisted.length} of ${artifacts.length} piece(s): ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          };
+        }
+      }
+      return {
+        callId: call.id,
+        isError: false,
+        content: JSON.stringify({ artifacts: persisted }),
+      };
+    },
+  }),
+});

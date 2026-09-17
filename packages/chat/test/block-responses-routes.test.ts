@@ -28,9 +28,7 @@ import {
  * (the answer, never the `block.response` event) throws once, then
  * delegates normally — used to simulate a notify failure a retry
  * recovers from. */
-function roomMessagesFailingNextAnswer(
-  base: RoomMessageStore,
-): RoomMessageStore {
+function roomMessagesFailingNextAnswer(base: RoomMessageStore): RoomMessageStore {
   let shouldFail = true;
   return {
     ...base,
@@ -114,8 +112,7 @@ describe("block response routes — gating", () => {
     const store = createInMemoryBlockResponseStore();
     const deps = buildDeps({
       blockResponses: store,
-      requireGrant: () => async (c) =>
-        c.json({ error: { code: "forbidden", message: "no" } }, 403),
+      requireGrant: () => async (c) => c.json({ error: { code: "forbidden", message: "no" } }, 403),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const workbenchId = await newWorkbench(deps.store);
@@ -123,12 +120,7 @@ describe("block response routes — gating", () => {
     const post = await vote(app, workbenchId, "m1", "blk_poll1", ["a"]);
     expect(post.status).toBe(403);
 
-    const rows = await store.listBlockResponses(
-      TENANT.id,
-      workbenchId,
-      "m1",
-      "blk_poll1",
-    );
+    const rows = await store.listBlockResponses(TENANT.id, workbenchId, "m1", "blk_poll1");
     expect(rows).toHaveLength(0);
   });
 
@@ -248,9 +240,10 @@ describe("block response routes — form privacy", () => {
       feedback: "Alice's private notes",
     });
 
-    const asBob = (await (
-      await getResponses(appBob, workbenchId, "m1", "blk_form1")
-    ).json()) as { own: unknown; tally: Record<string, number> };
+    const asBob = (await (await getResponses(appBob, workbenchId, "m1", "blk_form1")).json()) as {
+      own: unknown;
+      tally: Record<string, number>;
+    };
     expect(asBob.own).toBeNull();
     expect(asBob.tally).toEqual({});
 
@@ -275,12 +268,12 @@ describe("block response routes — anti-hijack scope", () => {
     await vote(app, workbenchId, "m1", "blk_shared", ["a"]);
     await vote(app, workbenchId, "m2", "blk_shared", ["b"]);
 
-    const m1 = (await (
-      await getResponses(app, workbenchId, "m1", "blk_shared")
-    ).json()) as { tally: Record<string, number> };
-    const m2 = (await (
-      await getResponses(app, workbenchId, "m2", "blk_shared")
-    ).json()) as { tally: Record<string, number> };
+    const m1 = (await (await getResponses(app, workbenchId, "m1", "blk_shared")).json()) as {
+      tally: Record<string, number>;
+    };
+    const m2 = (await (await getResponses(app, workbenchId, "m2", "blk_shared")).json()) as {
+      tally: Record<string, number>;
+    };
     expect(m1.tally).toEqual({ a: 1 });
     expect(m2.tally).toEqual({ b: 1 });
   });
@@ -296,18 +289,15 @@ describe("block response routes — question answers", () => {
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const workbenchId = await newWorkbench(deps.store);
 
-    const post = await app.request(
-      responsesUrl(workbenchId, "m1", "blk_question1"),
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: "question",
-          answer: "Production",
-          optionIndex: 1,
-        }),
-      },
-    );
+    const post = await app.request(responsesUrl(workbenchId, "m1", "blk_question1"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "question",
+        answer: "Production",
+        optionIndex: 1,
+      }),
+    });
     expect(post.status).toBe(200);
 
     // Two messages land on the timeline: the answer-as-message, and the
@@ -315,9 +305,7 @@ describe("block response routes — question answers", () => {
     // and neither mailed anywhere.
     const timeline = await timelineOf(deps, workbenchId);
     expect(timeline).toHaveLength(2);
-    expect(
-      timeline.every((message) => message.senderPrincipalId === "prn_alice"),
-    ).toBe(true);
+    expect(timeline.every((message) => message.senderPrincipalId === "prn_alice")).toBe(true);
     expect(timelineTexts(timeline)).toEqual(["Production"]);
     expect(timelineEvents(timeline, "block.response")).toHaveLength(1);
     expect(platform.sentMail).toHaveLength(0);
@@ -329,9 +317,7 @@ describe("block response routes — question answers", () => {
       answer: "Production",
       optionIndex: 1,
     });
-    expect((body.own as { notifiedAt: unknown }).notifiedAt).toEqual(
-      expect.any(String),
-    );
+    expect((body.own as { notifiedAt: unknown }).notifiedAt).toEqual(expect.any(String));
   });
 
   test("a question answer is dispatched as a reply to the card's own Message-ID, and never to another question's (CL-7104)", async () => {
@@ -364,14 +350,11 @@ describe("block response routes — question answers", () => {
       parts: [{ kind: "text", text: "Which region?" }],
     });
 
-    const answerTwo = await app.request(
-      responsesUrl(workbench.id, cardTwo.id, "q_two"),
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind: "question", answer: "eu-west-1" }),
-      },
-    );
+    const answerTwo = await app.request(responsesUrl(workbench.id, cardTwo.id, "q_two"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "question", answer: "eu-west-1" }),
+    });
     expect(answerTwo.status).toBe(200);
     await settleFanout();
 
@@ -380,14 +363,10 @@ describe("block response routes — question answers", () => {
     // no correlation field anywhere on the wire.
     const dispatched = platform.sentMail[platform.sentMail.length - 1];
     expect(dispatched?.content.inReplyTo).toBe(`<${cardTwo.id}@acme.example>`);
-    expect(dispatched?.content.references).toEqual([
-      `<${cardTwo.id}@acme.example>`,
-    ]);
+    expect(dispatched?.content.references).toEqual([`<${cardTwo.id}@acme.example>`]);
     // An answer to the second question never names the first, so a gate
     // parked on the first card is left parked.
-    expect(dispatched?.content.inReplyTo).not.toBe(
-      `<${cardOne.id}@acme.example>`,
-    );
+    expect(dispatched?.content.inReplyTo).not.toBe(`<${cardOne.id}@acme.example>`);
   });
 
   test("changing an answer updates the stored response but never dispatches a second turn", async () => {
@@ -399,24 +378,18 @@ describe("block response routes — question answers", () => {
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const workbenchId = await newWorkbench(deps.store);
 
-    const first = await app.request(
-      responsesUrl(workbenchId, "m1", "blk_question1"),
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind: "question", answer: "Staging" }),
-      },
-    );
+    const first = await app.request(responsesUrl(workbenchId, "m1", "blk_question1"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "question", answer: "Staging" }),
+    });
     expect(first.status).toBe(200);
 
-    const second = await app.request(
-      responsesUrl(workbenchId, "m1", "blk_question1"),
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind: "question", answer: "Production" }),
-      },
-    );
+    const second = await app.request(responsesUrl(workbenchId, "m1", "blk_question1"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "question", answer: "Production" }),
+    });
     expect(second.status).toBe(200);
 
     // Only the first answer ever became a message the agent was asked to
@@ -432,9 +405,7 @@ describe("block response routes — question answers", () => {
       kind: "question",
       answer: "Production",
     });
-    expect((body.own as { notifiedAt: unknown }).notifiedAt).toEqual(
-      expect.any(String),
-    );
+    expect((body.own as { notifiedAt: unknown }).notifiedAt).toEqual(expect.any(String));
   });
 
   test("a double-click resubmitting the identical answer never dispatches a second turn", async () => {
@@ -463,9 +434,7 @@ describe("block response routes — question answers", () => {
 
   test("a failed notification releases the claim so a retried answer still reaches the agent", async () => {
     const platform = fakePlatform();
-    const roomMessages = roomMessagesFailingNextAnswer(
-      createInMemoryRoomMessageStore(),
-    );
+    const roomMessages = roomMessagesFailingNextAnswer(createInMemoryRoomMessageStore());
     const deps = buildDeps({
       platform,
       roomMessages,
@@ -490,12 +459,7 @@ describe("block response routes — question answers", () => {
     expect(failedBody.error.userMessage).toMatch(/ref /);
 
     // The answer itself was already durable even though the notify failed.
-    const afterFailure = await getResponses(
-      app,
-      workbenchId,
-      "m1",
-      "blk_question1",
-    );
+    const afterFailure = await getResponses(app, workbenchId, "m1", "blk_question1");
     const afterFailureBody = (await afterFailure.json()) as { own: unknown };
     expect(afterFailureBody.own).toEqual({
       kind: "question",
@@ -519,14 +483,11 @@ describe("block response routes — question answers", () => {
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const workbenchId = await newWorkbench(deps.store);
 
-    const post = await app.request(
-      responsesUrl(workbenchId, "m1", "blk_question1"),
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind: "question", answer: "" }),
-      },
-    );
+    const post = await app.request(responsesUrl(workbenchId, "m1", "blk_question1"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "question", answer: "" }),
+    });
     expect(post.status).toBe(400);
   });
 });

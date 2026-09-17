@@ -23,9 +23,7 @@ const INPUT = {
 function heartbeatStep(definition: WorkflowDefinition): StepPrimitive {
   const primitive = definition.steps[HEARTBEAT_STEP_ID];
   if (primitive === undefined || primitive.kind !== "step") {
-    throw new Error(
-      `definition has no step primitive named ${HEARTBEAT_STEP_ID}`,
-    );
+    throw new Error(`definition has no step primitive named ${HEARTBEAT_STEP_ID}`);
   }
   return primitive;
 }
@@ -44,9 +42,7 @@ test("the step carries an explicit per-turn timeout", () => {
 test("the workflow is triggered by mail to the given deployment address", () => {
   const definition = buildHeartbeatWorkflow(INPUT);
   expect(definition.id).toBe(HEARTBEAT_WORKFLOW_ID);
-  expect(definition.triggers).toEqual([
-    { type: "mail", to: INPUT.triggerAddress },
-  ]);
+  expect(definition.triggers).toEqual([{ type: "mail", to: INPUT.triggerAddress }]);
 });
 
 test("the agent carries the fixed prompt, the preferences, and inlines no tools", () => {
@@ -90,16 +86,10 @@ test("serialization fails loud on a function-valued field, naming its path", () 
 });
 
 test("an empty trigger address is rejected", () => {
-  expect(() =>
-    buildHeartbeatWorkflow({ ...INPUT, triggerAddress: "" }),
-  ).toThrow(/triggerAddress/);
+  expect(() => buildHeartbeatWorkflow({ ...INPUT, triggerAddress: "" })).toThrow(/triggerAddress/);
 });
 
 test("a non-positive or fractional turn timeout is rejected", () => {
-  expect(() => buildHeartbeatWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(
-    /turnTimeoutMs/,
-  );
-  expect(() =>
-    buildHeartbeatWorkflow({ ...INPUT, turnTimeoutMs: 0.5 }),
-  ).toThrow(/turnTimeoutMs/);
+  expect(() => buildHeartbeatWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(/turnTimeoutMs/);
+  expect(() => buildHeartbeatWorkflow({ ...INPUT, turnTimeoutMs: 0.5 })).toThrow(/turnTimeoutMs/);
 });

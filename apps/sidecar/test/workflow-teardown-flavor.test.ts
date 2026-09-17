@@ -11,10 +11,7 @@ import { describe, test, expect } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import {
-  deriveDeploymentId,
-  IDLE_HIBERNATE_UNDEPLOY_REASON,
-} from "../src/workflow-host-wiring";
+import { deriveDeploymentId, IDLE_HIBERNATE_UNDEPLOY_REASON } from "../src/workflow-host-wiring";
 import { readWorkflowDeploymentRecord } from "../src/workflow-deployment-record";
 import {
   answerReadyHandshake,
@@ -31,17 +28,8 @@ describe("teardownDeployment reclaimDirs flavors", () => {
     await deployPromise;
 
     const deploymentId = deriveDeploymentId(frame.agentAddress);
-    const recordFile = path.join(
-      dataDir,
-      "workflow-runs",
-      deploymentId,
-      "deployment.json",
-    );
-    const stepStateDir = path.join(
-      dataDir,
-      "workflow-step-state",
-      deploymentId,
-    );
+    const recordFile = path.join(dataDir, "workflow-runs", deploymentId, "deployment.json");
+    const stepStateDir = path.join(dataDir, "workflow-step-state", deploymentId);
     await fs.mkdir(stepStateDir, { recursive: true });
     await fs.writeFile(path.join(stepStateDir, "marker.txt"), "x");
 
@@ -63,17 +51,8 @@ describe("teardownDeployment reclaimDirs flavors", () => {
     await deployPromise;
 
     const deploymentId = deriveDeploymentId(frame.agentAddress);
-    const recordFile = path.join(
-      dataDir,
-      "workflow-runs",
-      deploymentId,
-      "deployment.json",
-    );
-    const stepStateDir = path.join(
-      dataDir,
-      "workflow-step-state",
-      deploymentId,
-    );
+    const recordFile = path.join(dataDir, "workflow-runs", deploymentId, "deployment.json");
+    const stepStateDir = path.join(dataDir, "workflow-step-state", deploymentId);
     await fs.mkdir(stepStateDir, { recursive: true });
     await fs.writeFile(path.join(stepStateDir, "marker.txt"), "x");
 
@@ -86,9 +65,7 @@ describe("teardownDeployment reclaimDirs flavors", () => {
     // ...but every piece of durable state a relaunch resumes from survives.
     await expect(fs.stat(recordFile)).resolves.toBeDefined();
     await expect(fs.stat(stepStateDir)).resolves.toBeDefined();
-    expect(
-      await fs.readFile(path.join(stepStateDir, "marker.txt"), "utf8"),
-    ).toBe("x");
+    expect(await fs.readFile(path.join(stepStateDir, "marker.txt"), "utf8")).toBe("x");
     // The address is no longer live/routable: a relaunch re-establishes it
     // through the ordinary deploy path, not a resumed registration.
     expect(router.activeAddresses()).toEqual([]);
@@ -112,9 +89,7 @@ describe("teardownDeployment reclaimDirs flavors", () => {
       reclaimDirs: true,
     });
 
-    await expect(
-      readWorkflowDeploymentRecord(dataDir, deploymentId),
-    ).resolves.toBeUndefined();
+    await expect(readWorkflowDeploymentRecord(dataDir, deploymentId)).resolves.toBeUndefined();
   });
 
   test("both flavors unregister the transport, routers, and deployment-address mapping", async () => {
@@ -132,10 +107,7 @@ describe("teardownDeployment reclaimDirs flavors", () => {
     // No live mail/credentials handler remains registered for the address:
     // routing a frame against it fails to find a handler.
     expect(
-      multistepMailRouter.tryRoute(
-        frame.agentAddress,
-        new TextEncoder().encode("post-hibernate"),
-      ),
+      multistepMailRouter.tryRoute(frame.agentAddress, new TextEncoder().encode("post-hibernate")),
     ).toBeNull();
     expect(
       await multistepCredentialsRouter.tryRoute({
@@ -148,15 +120,11 @@ describe("teardownDeployment reclaimDirs flavors", () => {
 
   test("undeploy(frame) picks the flavor from frame.reason", async () => {
     const hibernating = await makeLifecycleFixture();
-    const hibernateFrame = makeWorkflowFrame(
-      "run_undeploy-reason-hibernate@example.com",
-    );
+    const hibernateFrame = makeWorkflowFrame("run_undeploy-reason-hibernate@example.com");
     const hibernateDeploy = hibernating.router.deploy(hibernateFrame);
     await answerReadyHandshake(hibernating.spawns, 0);
     await hibernateDeploy;
-    const hibernateDeploymentId = deriveDeploymentId(
-      hibernateFrame.agentAddress,
-    );
+    const hibernateDeploymentId = deriveDeploymentId(hibernateFrame.agentAddress);
     const hibernateStepStateDir = path.join(
       hibernating.dataDir,
       "workflow-step-state",
@@ -174,9 +142,7 @@ describe("teardownDeployment reclaimDirs flavors", () => {
     await expect(fs.stat(hibernateStepStateDir)).resolves.toBeDefined();
 
     const reclaiming = await makeLifecycleFixture();
-    const reclaimFrame = makeWorkflowFrame(
-      "run_undeploy-reason-reclaim@example.com",
-    );
+    const reclaimFrame = makeWorkflowFrame("run_undeploy-reason-reclaim@example.com");
     const reclaimDeploy = reclaiming.router.deploy(reclaimFrame);
     await answerReadyHandshake(reclaiming.spawns, 0);
     await reclaimDeploy;
@@ -221,10 +187,7 @@ describe("teardownDeployment reclaimDirs flavors", () => {
     });
 
     const deploymentId = deriveDeploymentId(frame.agentAddress);
-    const parkedBeforeRedeploy = await readWorkflowDeploymentRecord(
-      dataDir,
-      deploymentId,
-    );
+    const parkedBeforeRedeploy = await readWorkflowDeploymentRecord(dataDir, deploymentId);
     expect(parkedBeforeRedeploy?.parkedAt).toBeDefined();
 
     const secondDeploy = router.deploy(frame);
@@ -232,10 +195,7 @@ describe("teardownDeployment reclaimDirs flavors", () => {
     await expect(secondDeploy).resolves.toBeDefined();
 
     expect(router.activeAddresses()).toEqual([frame.agentAddress]);
-    const redeployedRecord = await readWorkflowDeploymentRecord(
-      dataDir,
-      deploymentId,
-    );
+    const redeployedRecord = await readWorkflowDeploymentRecord(dataDir, deploymentId);
     expect(redeployedRecord?.parkedAt).toBeUndefined();
   });
 });

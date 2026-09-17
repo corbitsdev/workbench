@@ -18,9 +18,7 @@ export type AgentDisplayNames = ReadonlyMap<string, string>;
 export function agentDisplayNamesFromAgents(
   agents: readonly { readonly address: string; readonly displayName: string }[],
 ): AgentDisplayNames {
-  return new Map(
-    agents.map((agent) => [agent.address, agent.displayName] as const),
-  );
+  return new Map(agents.map((agent) => [agent.address, agent.displayName] as const));
 }
 
 /**

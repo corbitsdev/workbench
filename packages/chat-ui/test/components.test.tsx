@@ -82,9 +82,7 @@ describe("WorkbenchTimeline", () => {
         sender: { name: null, address: "prn_fixture1@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(
-      <WorkbenchTimeline items={reasoning} />,
-    );
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={reasoning} />);
     expect(markup).toContain("weighing the options");
     expect(markup).toContain('data-slot="reasoning-part"');
   });
@@ -120,9 +118,7 @@ describe("WorkbenchTimeline", () => {
         sender: { name: "Researcher", address: "researcher@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(
-      <WorkbenchTimeline items={withSender} />,
-    );
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={withSender} />);
     expect(markup).toContain("Researcher");
   });
 
@@ -141,9 +137,7 @@ describe("WorkbenchTimeline", () => {
         },
       },
     ];
-    const markup = renderToStaticMarkup(
-      <WorkbenchTimeline items={withSender} />,
-    );
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={withSender} />);
     expect(markup).toContain("chat-sender-tenant-badge");
     expect(markup).toContain("BC");
   });
@@ -157,9 +151,7 @@ describe("WorkbenchTimeline", () => {
         sender: { name: "Researcher", address: "researcher@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(
-      <WorkbenchTimeline items={withSender} />,
-    );
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={withSender} />);
     expect(markup).not.toContain("chat-sender-tenant-badge");
   });
 
@@ -172,9 +164,7 @@ describe("WorkbenchTimeline", () => {
         sender: { name: null, address: "prn_a1b2c3@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(
-      <WorkbenchTimeline items={withSender} />,
-    );
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={withSender} />);
     expect(markup).toContain("Member");
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
@@ -188,9 +178,7 @@ describe("WorkbenchTimeline", () => {
         sender: { name: null, address: "ins_unknown1@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(
-      <WorkbenchTimeline items={withSender} />,
-    );
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={withSender} />);
     expect(markup).toContain("Member");
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
@@ -207,9 +195,7 @@ describe("WorkbenchTimeline", () => {
     const markup = renderToStaticMarkup(
       <WorkbenchTimeline
         items={withSender}
-        participants={[
-          { address: "ins_cd03d8e3@agents.example", handle: "echo" },
-        ]}
+        participants={[{ address: "ins_cd03d8e3@agents.example", handle: "echo" }]}
       />,
     );
     expect(markup).toContain("@echo");
@@ -248,10 +234,7 @@ describe("WorkbenchTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(
-      <WorkbenchTimeline
-        items={withSender}
-        currentUser={{ principalId: "prn_self1" }}
-      />,
+      <WorkbenchTimeline items={withSender} currentUser={{ principalId: "prn_self1" }} />,
     );
     expect(markup).toContain("You");
     expect(markup).toContain('data-own="true"');
@@ -318,9 +301,7 @@ describe("WorkbenchTimeline", () => {
     const markup = renderToStaticMarkup(
       <WorkbenchTimeline items={withFile} onOpenArtifact={() => {}} />,
     );
-    expect(markup).toMatch(
-      /<button[^>]*class="chat-artifact-chip-open"[^>]*disabled/,
-    );
+    expect(markup).toMatch(/<button[^>]*class="chat-artifact-chip-open"[^>]*disabled/);
   });
 
   test("a blobId-backed file part renders its artifact chip clickable when onOpenArtifact is wired", () => {
@@ -343,9 +324,7 @@ describe("WorkbenchTimeline", () => {
       <WorkbenchTimeline items={withFile} onOpenArtifact={() => {}} />,
     );
     expect(markup).toContain("matrix.csv");
-    expect(markup).not.toMatch(
-      /<button[^>]*class="chat-artifact-chip-open"[^>]*disabled/,
-    );
+    expect(markup).not.toMatch(/<button[^>]*class="chat-artifact-chip-open"[^>]*disabled/);
   });
 
   test("a blobId-backed file part stays inert with no onOpenArtifact wired", () => {
@@ -365,9 +344,7 @@ describe("WorkbenchTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(<WorkbenchTimeline items={withFile} />);
-    expect(markup).toMatch(
-      /<button[^>]*class="chat-artifact-chip-open"[^>]*disabled/,
-    );
+    expect(markup).toMatch(/<button[^>]*class="chat-artifact-chip-open"[^>]*disabled/);
   });
 
   test("renders the signed-in user's own bubble right-aligned, others left-aligned", () => {
@@ -386,10 +363,7 @@ describe("WorkbenchTimeline", () => {
       },
     ];
     const markup = renderToStaticMarkup(
-      <WorkbenchTimeline
-        items={bothSenders}
-        currentUser={{ principalId: "prn_self1" }}
-      />,
+      <WorkbenchTimeline items={bothSenders} currentUser={{ principalId: "prn_self1" }} />,
     );
     expect(markup).toContain('data-own="true"');
     expect(markup).toContain('data-own="false"');
@@ -410,9 +384,7 @@ describe("WorkbenchTimeline", () => {
         sender: { name: null, address: "prn_fixture1@agents.example" },
       },
     ];
-    const markup = renderToStaticMarkup(
-      <WorkbenchTimeline items={acrossDays} />,
-    );
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={acrossDays} />);
     expect(markup).toContain("chat-day-divider");
   });
 
@@ -438,9 +410,7 @@ describe("WorkbenchTimeline", () => {
     const markup = renderToStaticMarkup(
       <WorkbenchTimeline
         items={joinItems}
-        participants={[
-          { address: "ins_newagent1@agents.example", handle: "echo" },
-        ]}
+        participants={[{ address: "ins_newagent1@agents.example", handle: "echo" }]}
       />,
     );
     expect(markup).toContain("Echo joined");
@@ -490,20 +460,14 @@ describe("WorkbenchTimeline", () => {
 
   test("offers Fix this connection on a classified failure reply when a handler is wired", () => {
     const markup = renderToStaticMarkup(
-      <WorkbenchTimeline
-        items={classifiedFailureItems}
-        onFixConnection={() => {}}
-      />,
+      <WorkbenchTimeline items={classifiedFailureItems} onFixConnection={() => {}} />,
     );
     expect(markup).toContain("Fix this connection");
   });
 
   test("never renders HTTP status or the raw provider message on a classified failure reply", () => {
     const markup = renderToStaticMarkup(
-      <WorkbenchTimeline
-        items={classifiedFailureItems}
-        onFixConnection={() => {}}
-      />,
+      <WorkbenchTimeline items={classifiedFailureItems} onFixConnection={() => {}} />,
     );
     expect(markup).not.toMatch(/\[HTTP/);
     expect(markup).not.toContain("401");
@@ -517,23 +481,16 @@ describe("WorkbenchTimeline", () => {
 
   test("renders Fix this connection as a react-ui outline button, not a bare link", () => {
     const markup = renderToStaticMarkup(
-      <WorkbenchTimeline
-        items={classifiedFailureItems}
-        onFixConnection={() => {}}
-      />,
+      <WorkbenchTimeline items={classifiedFailureItems} onFixConnection={() => {}} />,
     );
-    const fixConnectionButton = markup.match(
-      /<button[^>]*chat-bubble-fix-connection[^>]*>/,
-    )?.[0];
+    const fixConnectionButton = markup.match(/<button[^>]*chat-bubble-fix-connection[^>]*>/)?.[0];
     expect(fixConnectionButton).toBeDefined();
     expect(fixConnectionButton).toContain('data-slot="button"');
     expect(fixConnectionButton).toMatch(/\bborder\b/);
   });
 
   test("offers nothing when no onFixConnection handler is wired, even on a classified reply", () => {
-    const markup = renderToStaticMarkup(
-      <WorkbenchTimeline items={classifiedFailureItems} />,
-    );
+    const markup = renderToStaticMarkup(<WorkbenchTimeline items={classifiedFailureItems} />);
     expect(markup).not.toContain("Fix this connection");
   });
 
@@ -548,11 +505,7 @@ describe("WorkbenchTimeline", () => {
 describe("Composer", () => {
   test("disables send while the draft is empty", () => {
     const markup = renderToStaticMarkup(
-      <Composer
-        agents={[]}
-        onSend={() => Promise.resolve(true)}
-        {...composerSlashHandlers}
-      />,
+      <Composer agents={[]} onSend={() => Promise.resolve(true)} {...composerSlashHandlers} />,
     );
     expect(markup).toMatch(/<button[^>]*disabled[^>]*>/);
   });
@@ -576,11 +529,7 @@ describe("Composer", () => {
 
   test("exposes an attach control, file input, and polite preparing live region", () => {
     const markup = renderToStaticMarkup(
-      <Composer
-        agents={[]}
-        onSend={() => Promise.resolve(true)}
-        {...composerSlashHandlers}
-      />,
+      <Composer agents={[]} onSend={() => Promise.resolve(true)} {...composerSlashHandlers} />,
     );
     expect(markup).toContain('aria-label="Attach files"');
     expect(markup).toContain('type="file"');
@@ -658,19 +607,11 @@ describe("no raw identifiers on screen", () => {
 
 describe("rowMenuLabels", () => {
   test("offers Unpin for a pinned workbench", () => {
-    expect(rowMenuLabels({ pinned: true })).toEqual([
-      "Rename",
-      "Unpin",
-      "Settings",
-    ]);
+    expect(rowMenuLabels({ pinned: true })).toEqual(["Rename", "Unpin", "Settings"]);
   });
 
   test("offers Pin for an unpinned workbench", () => {
-    expect(rowMenuLabels({ pinned: false })).toEqual([
-      "Rename",
-      "Pin",
-      "Settings",
-    ]);
+    expect(rowMenuLabels({ pinned: false })).toEqual(["Rename", "Pin", "Settings"]);
   });
 });
 
@@ -801,21 +742,11 @@ describe("nextTypingState", () => {
 
 describe("isTypingStateExpired", () => {
   test("is false before the expiry", () => {
-    expect(
-      isTypingStateExpired(
-        { principalId: "prn_other1", expiresAt: 5000 },
-        4000,
-      ),
-    ).toBe(false);
+    expect(isTypingStateExpired({ principalId: "prn_other1", expiresAt: 5000 }, 4000)).toBe(false);
   });
 
   test("is true once past the expiry", () => {
-    expect(
-      isTypingStateExpired(
-        { principalId: "prn_other1", expiresAt: 5000 },
-        5000,
-      ),
-    ).toBe(true);
+    expect(isTypingStateExpired({ principalId: "prn_other1", expiresAt: 5000 }, 5000)).toBe(true);
   });
 
   test("is false with no active state", () => {

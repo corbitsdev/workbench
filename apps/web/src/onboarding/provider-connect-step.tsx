@@ -8,10 +8,7 @@
 // an earlier run of this same step) skips this UI entirely: see
 // `resolveExistingOffering` in `onboarding-page.tsx`.
 import { Button, Input, RadioGroup, RadioOption } from "@corbits/react-ui";
-import {
-  getResolvedCatalog,
-  shadowOffering,
-} from "@corbits/inference-settings";
+import { getResolvedCatalog, shadowOffering } from "@corbits/inference-settings";
 import { reportError } from "@corbits/error-sink";
 import { useState } from "react";
 import type { FormEvent } from "react";
@@ -76,9 +73,7 @@ export type ExistingOffering = {
  * all: every visible offering becomes `sourceOfferingIds`, and the
  * lowest-priority one is the default — the same rule
  * `resolveRealSourceOfferingIds` in `packages/onboarding` applies. */
-export async function resolveExistingOffering(
-  tenantId: string,
-): Promise<ExistingOffering | null> {
+export async function resolveExistingOffering(tenantId: string): Promise<ExistingOffering | null> {
   const models = await getResolvedCatalog(tenantId);
   const offerings = models
     .flatMap((model) => model.offerings)
@@ -107,8 +102,7 @@ export function ProviderConnectStep({
   const [submitting, setSubmitting] = useState(false);
 
   const option =
-    PROVIDER_OPTIONS.find((candidate) => candidate.plugin === selected) ??
-    PROVIDER_OPTIONS[0];
+    PROVIDER_OPTIONS.find((candidate) => candidate.plugin === selected) ?? PROVIDER_OPTIONS[0];
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -135,19 +129,14 @@ export function ProviderConnectStep({
         operation: "onboarding.connect-provider",
         tenantId,
       });
-      onError(
-        `${cause instanceof Error ? cause.message : String(cause)} (ref ${refId})`,
-      );
+      onError(`${cause instanceof Error ? cause.message : String(cause)} (ref ${refId})`);
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <form
-      className="onboarding-credential-form"
-      onSubmit={(event) => void handleSubmit(event)}
-    >
+    <form className="onboarding-credential-form" onSubmit={(event) => void handleSubmit(event)}>
       <RadioGroup
         name="provider"
         label="Inference provider"

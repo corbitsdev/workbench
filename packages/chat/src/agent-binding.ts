@@ -174,8 +174,7 @@ async function readBindingRowByAddress(
   const domain = requireDomain(address);
   const localPart = localPartOf(address);
   const byStableId = await readLaunchRow(db, "instanceId", localPart);
-  const row =
-    byStableId ?? (await readLaunchRow(db, "currentRunId", localPart));
+  const row = byStableId ?? (await readLaunchRow(db, "currentRunId", localPart));
   return row === undefined ? undefined : { row, domain };
 }
 
@@ -185,18 +184,12 @@ async function readBindingRowByAddress(
  * package owns — an echo instance on the shared event stream is not
  * this mapping's business.
  */
-export async function resolveRoomAddress(
-  db: DB["db"],
-  liveAddress: string,
-): Promise<string> {
+export async function resolveRoomAddress(db: DB["db"], liveAddress: string): Promise<string> {
   const binding = await readBindingByAddressAnyTenant(db, liveAddress);
   return binding?.roomAddress ?? liveAddress;
 }
 
-async function readRun(
-  db: DB["db"],
-  runId: string,
-): Promise<LiveAgent["run"] | undefined> {
+async function readRun(db: DB["db"], runId: string): Promise<LiveAgent["run"] | undefined> {
   return db.query.workflowRun.findFirst({ where: eq(workflowRun.id, runId) });
 }
 
@@ -244,10 +237,7 @@ export async function resolveLiveByStableIdAnyTenant(
   return row === undefined ? undefined : resolveLiveRunForRow(db, row);
 }
 
-async function resolveLiveRunForRow(
-  db: DB["db"],
-  row: LaunchRow,
-): Promise<LiveAgent | undefined> {
+async function resolveLiveRunForRow(db: DB["db"], row: LaunchRow): Promise<LiveAgent | undefined> {
   const run = await readRun(db, row.currentRunId);
   if (run === undefined || run.address === null) return undefined;
   return { binding: bindingFrom(row, requireDomain(run.address)), run };
@@ -265,9 +255,7 @@ export async function findStandingLaunchByDefinition(
   input: {
     readonly tenantId: string;
     readonly definitionId: string;
-    readonly resolveDefinitionAssetId: (
-      definitionId: string,
-    ) => Promise<string | undefined>;
+    readonly resolveDefinitionAssetId: (definitionId: string) => Promise<string | undefined>;
   },
 ): Promise<AgentBinding | undefined> {
   const rows = await db
@@ -275,9 +263,7 @@ export async function findStandingLaunchByDefinition(
     .from(workbenchLaunch)
     .where(eq(workbenchLaunch.tenantId, input.tenantId))
     .orderBy(asc(workbenchLaunch.createdAt));
-  const invitedAssetId = await input.resolveDefinitionAssetId(
-    input.definitionId,
-  );
+  const invitedAssetId = await input.resolveDefinitionAssetId(input.definitionId);
   for (const row of rows) {
     const run = await readRun(db, row.currentRunId);
     if (run === undefined || run.address === null) continue;
@@ -369,9 +355,7 @@ export async function repointBinding(
   newRunId: string,
   sourcesDigest: string,
 ): Promise<void> {
-  const history = [...binding.priorRunIds, binding.currentRunId].slice(
-    -PRIOR_RUN_HISTORY_LIMIT,
-  );
+  const history = [...binding.priorRunIds, binding.currentRunId].slice(-PRIOR_RUN_HISTORY_LIMIT);
   await db
     .update(workbenchLaunch)
     .set({ currentRunId: newRunId, priorRunIds: history, sourcesDigest })
@@ -430,10 +414,7 @@ export async function listLaunchesForTenant(
  * a migration, and an unbounded one on a large tenant would turn every
  * boot into a deploy storm.
  */
-export async function listLaunchesBeyondWake(
-  db: DB["db"],
-  limit: number,
-): Promise<LiveAgent[]> {
+export async function listLaunchesBeyondWake(db: DB["db"], limit: number): Promise<LiveAgent[]> {
   const rows = await db.select().from(workbenchLaunch).limit(limit);
   const dead: LiveAgent[] = [];
   for (const row of rows) {

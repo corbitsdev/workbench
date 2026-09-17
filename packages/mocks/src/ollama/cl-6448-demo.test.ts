@@ -79,10 +79,7 @@ describe("CL-6448 regression shape", () => {
     expect(() =>
       ollama.requests
         .last()
-        .expectHistoryContains([
-          { role: "system" },
-          { role: "user", content: "turn 1" },
-        ]),
+        .expectHistoryContains([{ role: "system" }, { role: "user", content: "turn 1" }]),
     ).toThrow(/expected history to contain/);
   });
 
@@ -93,9 +90,7 @@ describe("CL-6448 regression shape", () => {
     await assembleAndSendCorrectTurn(ollama.fetch, "http://mock-ollama");
 
     const request = ollama.requests.last();
-    expect(() =>
-      request.expectToolsDeclared(["create_agent", "send_message"]),
-    ).not.toThrow();
+    expect(() => request.expectToolsDeclared(["create_agent", "send_message"])).not.toThrow();
     expect(() =>
       request.expectHistoryContains([
         { role: "system" },

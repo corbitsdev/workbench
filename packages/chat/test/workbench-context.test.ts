@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  buildDroppedRecap,
-  renderWorkbenchContext,
-} from "../src/workbench-context";
+import { buildDroppedRecap, renderWorkbenchContext } from "../src/workbench-context";
 
 describe("renderWorkbenchContext", () => {
   test("renders a header followed by one line per item, oldest first", () => {
@@ -20,11 +17,7 @@ describe("renderWorkbenchContext", () => {
         "first. The actual message addressed to you follows after this " +
         "block.]",
     );
-    expect(lines.slice(1)).toEqual([
-      "@echo: hello",
-      "user: hi there",
-      "@assistant: on it",
-    ]);
+    expect(lines.slice(1)).toEqual(["@echo: hello", "user: hi there", "@assistant: on it"]);
   });
 
   test("truncates a message beyond ~500 chars with an ellipsis", () => {
@@ -136,9 +129,7 @@ describe("buildDroppedRecap", () => {
   });
 
   test("caps the total fold at ~1200 chars, tailing an honest count of what was left out", () => {
-    const humanTexts = Array.from({ length: 20 }, (_, i) =>
-      `msg-${i}-`.repeat(20),
-    );
+    const humanTexts = Array.from({ length: 20 }, (_, i) => `msg-${i}-`.repeat(20));
     const recap = buildDroppedRecap({
       droppedCount: 20,
       moreBeyondFold: false,
@@ -152,9 +143,7 @@ describe("buildDroppedRecap", () => {
   });
 
   test("never exceeds its cap regardless of how many messages are handed in", () => {
-    const humanTexts = Array.from({ length: 500 }, (_, i) =>
-      `fact number ${i} `.repeat(10),
-    );
+    const humanTexts = Array.from({ length: 500 }, (_, i) => `fact number ${i} `.repeat(10));
     const recap = buildDroppedRecap({
       droppedCount: 500,
       moreBeyondFold: false,

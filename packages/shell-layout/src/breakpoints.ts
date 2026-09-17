@@ -9,18 +9,12 @@ export const COMPACT_MAX_WIDTH = 1100;
 export const NARROW_MAX_WIDTH = 700;
 
 export function shellLayoutModeForWidth(width: number): ShellLayoutMode {
-  return shellLayoutModeFromMatches(
-    width < NARROW_MAX_WIDTH,
-    width < COMPACT_MAX_WIDTH,
-  );
+  return shellLayoutModeFromMatches(width < NARROW_MAX_WIDTH, width < COMPACT_MAX_WIDTH);
 }
 
 /** The same rule expressed over media-query results, which is what the shell
  * actually subscribes to at runtime. */
-export function shellLayoutModeFromMatches(
-  narrow: boolean,
-  compact: boolean,
-): ShellLayoutMode {
+export function shellLayoutModeFromMatches(narrow: boolean, compact: boolean): ShellLayoutMode {
   if (narrow) return "narrow";
   if (compact) return "compact";
   return "expanded";

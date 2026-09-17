@@ -21,11 +21,7 @@ const ErrorEnvelope = type({
  * `userMessage` when the body carries one, otherwise a generic, path-free
  * sentence naming the status and what the caller was doing.
  */
-export function readErrorEnvelope(
-  status: number,
-  body: unknown,
-  verb: string,
-): string {
+export function readErrorEnvelope(status: number, body: unknown, verb: string): string {
   const envelope = ErrorEnvelope(body);
   return envelope instanceof type.errors
     ? `The server answered ${status} while ${verb}.`
@@ -54,18 +50,13 @@ export async function apiRequest<T>(
   }
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => undefined);
-    throw new ErrorCtor(
-      readErrorEnvelope(response.status, body, verb),
-      response.status,
-    );
+    throw new ErrorCtor(readErrorEnvelope(response.status, body, verb), response.status);
   }
   if (response.status === 204) return undefined as T;
   const body: unknown = await response.json().catch(() => undefined);
   const parsed = schema(body);
   if (parsed instanceof type.errors) {
-    throw new ErrorCtor(
-      `Unexpected response shape while ${verb}: ${parsed.summary}`,
-    );
+    throw new ErrorCtor(`Unexpected response shape while ${verb}: ${parsed.summary}`);
   }
   return parsed;
 }

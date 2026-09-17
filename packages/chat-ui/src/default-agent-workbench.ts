@@ -41,9 +41,7 @@ export function findDefinitionByAssetName<D extends { readonly name: string }>(
  * default agent's workbench?" synchronously from an id alone, with no
  * workbench-title fetch of its own.
  */
-export function createDefaultAgentWorkbench(
-  config: DefaultAgentWorkbenchConfig,
-) {
+export function createDefaultAgentWorkbench(config: DefaultAgentWorkbenchConfig) {
   let cachedWorkbenchId: string | null = null;
 
   function isCachedWorkbenchId(workbenchId: string | null): boolean {
@@ -54,18 +52,13 @@ export function createDefaultAgentWorkbench(
     cachedWorkbenchId = null;
   }
 
-  async function ensure<
-    D extends { readonly id: string; readonly name: string },
-  >(
+  async function ensure<D extends { readonly id: string; readonly name: string }>(
     tenantId: string,
     listDefinitions: (tenantId: string) => Promise<readonly D[]>,
   ): Promise<EnsureDefaultAgentWorkbenchResult> {
     try {
       const definitions = await listDefinitions(tenantId);
-      const definition = findDefinitionByAssetName(
-        definitions,
-        config.assetName,
-      );
+      const definition = findDefinitionByAssetName(definitions, config.assetName);
       if (definition === undefined) {
         return {
           kind: "error",
@@ -95,6 +88,4 @@ export function createDefaultAgentWorkbench(
   };
 }
 
-export type DefaultAgentWorkbench = ReturnType<
-  typeof createDefaultAgentWorkbench
->;
+export type DefaultAgentWorkbench = ReturnType<typeof createDefaultAgentWorkbench>;

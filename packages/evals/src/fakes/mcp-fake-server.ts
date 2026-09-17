@@ -8,10 +8,7 @@
 // serves the wire protocol, it never fakes the connect mechanism.
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 import type { FakeReceipt } from "../types.ts";
 import type { McpFakeRecording, RecordedCall } from "./recording.ts";
@@ -28,8 +25,8 @@ export interface McpFakeHandle {
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   if (typeof value === "object" && value !== null) {
-    const entries = Object.entries(value as Record<string, unknown>).sort(
-      ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a < b ? -1 : a > b ? 1 : 0,
     );
     return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(",")}}`;
   }
@@ -42,15 +39,10 @@ function findRecordedCall(
   args: Record<string, unknown>,
 ): RecordedCall | undefined {
   const wanted = canonical(args);
-  return recording.calls.find(
-    (call) => call.tool === tool && canonical(call.arguments) === wanted,
-  );
+  return recording.calls.find((call) => call.tool === tool && canonical(call.arguments) === wanted);
 }
 
-function buildServer(
-  recording: McpFakeRecording,
-  receipts: FakeReceipt[],
-): Server {
+function buildServer(recording: McpFakeRecording, receipts: FakeReceipt[]): Server {
   const server = new Server(
     { name: `${recording.server}-fake`, version: "0.0.1" },
     { capabilities: { tools: {} } },
@@ -59,9 +51,7 @@ function buildServer(
   server.setRequestHandler(ListToolsRequestSchema, () => ({
     tools: recording.tools.map((tool) => ({
       name: tool.name,
-      ...(tool.description !== undefined
-        ? { description: tool.description }
-        : {}),
+      ...(tool.description !== undefined ? { description: tool.description } : {}),
       inputSchema: tool.inputSchema,
     })),
   }));
@@ -92,10 +82,7 @@ function buildServer(
  * per-session-map pattern `stub-mcp-server.ts` establishes, needed
  * because this SDK's `Server` cannot outlive one `initialize` handshake.
  */
-export function startMcpFake(
-  recording: McpFakeRecording,
-  port = 0,
-): McpFakeHandle {
+export function startMcpFake(recording: McpFakeRecording, port = 0): McpFakeHandle {
   const receipts: FakeReceipt[] = [];
   const sessions = new Map<string, WebStandardStreamableHTTPServerTransport>();
 

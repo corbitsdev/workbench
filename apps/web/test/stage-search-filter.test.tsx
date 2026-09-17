@@ -11,10 +11,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { useState } from "react";
 
-import {
-  setCommandPaletteOpen,
-  useCommandPaletteOpen,
-} from "../src/command-palette-open-store";
+import { setCommandPaletteOpen, useCommandPaletteOpen } from "../src/command-palette-open-store";
 import { StageTopBar } from "../src/shell/stage-top-bar";
 
 const appCss = readFileSync(new URL("../src/app.css", import.meta.url), "utf8");
@@ -48,17 +45,13 @@ function render(node: React.ReactElement): void {
 }
 
 function magnifier(): HTMLButtonElement {
-  const button = container.querySelector<HTMLButtonElement>(
-    '[data-testid="stage-search"] button',
-  );
+  const button = container.querySelector<HTMLButtonElement>('[data-testid="stage-search"] button');
   if (button === null) throw new Error("no magnifier rendered");
   return button;
 }
 
 function filterInput(): HTMLInputElement | null {
-  return container.querySelector<HTMLInputElement>(
-    '[data-testid="stage-search"] input',
-  );
+  return container.querySelector<HTMLInputElement>('[data-testid="stage-search"] input');
 }
 
 function Harness({ filterable = true }: { readonly filterable?: boolean }) {
@@ -116,9 +109,7 @@ describe("the stage top bar's per-page filter", () => {
     });
 
     expect(filterInput()?.value).toBe("invoice");
-    expect(
-      container.querySelector('[data-testid="global-open"]')?.textContent,
-    ).toBe("false");
+    expect(container.querySelector('[data-testid="global-open"]')?.textContent).toBe("false");
   });
 
   test("Escape clears the query first, then collapses back to the magnifier", () => {
@@ -130,8 +121,7 @@ describe("the stage top bar's per-page filter", () => {
       "value",
     )?.set;
     const input = filterInput();
-    if (input === null || setValue === undefined)
-      throw new Error("setup failed");
+    if (input === null || setValue === undefined) throw new Error("setup failed");
     act(() => {
       setValue.call(input, "invoice");
       input.dispatchEvent(new Event("input", { bubbles: true }));

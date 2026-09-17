@@ -8,11 +8,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "bun:test";
-import {
-  createEd25519Crypto,
-  generateKeyPair,
-  verifySSHSignature,
-} from "@intx/crypto";
+import { createEd25519Crypto, generateKeyPair, verifySSHSignature } from "@intx/crypto";
 import {
   createAgentKeyStore,
   createAgentRepoStore as createSidecarSideRepoStore,
@@ -36,9 +32,7 @@ import { assembleRunCredentialsSnapshot } from "../src/workflow-host-wiring/supe
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(
-    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
 async function makeDataDir(): Promise<string> {
@@ -99,9 +93,7 @@ async function makeRouter(dataDir: string): Promise<RouterFixture> {
     materializeDeploymentClosure: ({ deploymentId }) => {
       const definition = closureDefinitions.get(deploymentId);
       if (definition === undefined) {
-        throw new Error(
-          `test closure materializer: no definition registered for ${deploymentId}`,
-        );
+        throw new Error(`test closure materializer: no definition registered for ${deploymentId}`);
       }
       return Promise.resolve({
         definition,
@@ -144,10 +136,7 @@ const SOURCE_REF: NonNullable<AgentDeployFrame["workflow"]>["sourceRef"] = {
  * Register the definition the pinned closure evaluates to for `agentAddress`
  * and return the live shape the router's projection gate runs against.
  */
-function stageClosureDefinition(
-  agentAddress: string,
-  stepOrder: string[],
-): void {
+function stageClosureDefinition(agentAddress: string, stepOrder: string[]): void {
   const steps: Record<string, ReturnType<typeof step>> = {};
   for (const stepId of stepOrder) {
     steps[stepId] = step({
@@ -213,15 +202,12 @@ test("a frame with neither provisionStep nor workflow is refused", async () => {
     hubPublicKey: hexEncode(hubKey.publicKey),
   };
 
-  await expect(router.deploy(frame)).rejects.toThrow(
-    /provisionStep or a workflow definition/,
-  );
+  await expect(router.deploy(frame)).rejects.toThrow(/provisionStep or a workflow definition/);
 });
 
 test("an unbuildable inference provider rejects the deploy before any spawn", async () => {
   const dataDir = await makeDataDir();
-  const { router, spawnedBinaries, rejectedSources } =
-    await makeRouter(dataDir);
+  const { router, spawnedBinaries, rejectedSources } = await makeRouter(dataDir);
   const hubKey = await generateKeyPair();
   const frame: AgentDeployFrame = {
     type: "agent.deploy",
@@ -309,9 +295,7 @@ test("a single-step deploy writes the self-anchored run's grants before spawning
 
   stageClosureDefinition(agentAddress, ["step-1"]);
 
-  await expect(router.deploy(frame)).rejects.toThrow(
-    /refuses to launch a real child/,
-  );
+  await expect(router.deploy(frame)).rejects.toThrow(/refuses to launch a real child/);
 
   const substrate = createAgentRepoStore({
     dataDir,

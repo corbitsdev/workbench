@@ -54,9 +54,13 @@ describe("workbenchSettingsSections", () => {
   });
 
   test("isDm is ignored for a workbench — Agents stays regardless", () => {
-    expect(
-      workbenchSettingsSections("workbench", true).map((s) => s.id),
-    ).toEqual(["general", "members", "agents", "notifications", "danger"]);
+    expect(workbenchSettingsSections("workbench", true).map((s) => s.id)).toEqual([
+      "general",
+      "members",
+      "agents",
+      "notifications",
+      "danger",
+    ]);
   });
 
   test("Myra/Keys & plugins/Inference are gone as distinct nav ids", () => {
@@ -67,21 +71,13 @@ describe("workbenchSettingsSections", () => {
   });
 
   test("Plugins is global-only now — no workbench-scoped nav id", () => {
-    expect(
-      workbenchSettingsSections("workbench").map((s) => s.id),
-    ).not.toContain("plugins");
-    expect(
-      workbenchSettingsSections("chat", true).map((s) => s.id),
-    ).not.toContain("plugins");
+    expect(workbenchSettingsSections("workbench").map((s) => s.id)).not.toContain("plugins");
+    expect(workbenchSettingsSections("chat", true).map((s) => s.id)).not.toContain("plugins");
   });
 
   test("Capacity is gone — sidecar placement is Interchange's own concern now", () => {
-    expect(workbenchSettingsSections("chat").map((s) => s.id)).not.toContain(
-      "capacity",
-    );
-    expect(
-      workbenchSettingsSections("workbench").map((s) => s.id),
-    ).not.toContain("capacity");
+    expect(workbenchSettingsSections("chat").map((s) => s.id)).not.toContain("capacity");
+    expect(workbenchSettingsSections("workbench").map((s) => s.id)).not.toContain("capacity");
     expect(WORKBENCH_SETTINGS_SECTION_IDS).not.toContain(
       "capacity" as (typeof WORKBENCH_SETTINGS_SECTION_IDS)[number],
     );
@@ -89,12 +85,6 @@ describe("workbenchSettingsSections", () => {
 
   test("groups sections Shared / Personal / Danger for the nav", () => {
     const groups = workbenchSettingsSections("workbench").map((s) => s.group);
-    expect(groups).toEqual([
-      "shared",
-      "shared",
-      "shared",
-      "personal",
-      "danger",
-    ]);
+    expect(groups).toEqual(["shared", "shared", "shared", "personal", "danger"]);
   });
 });

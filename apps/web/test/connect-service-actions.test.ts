@@ -27,9 +27,7 @@ function stubFetch(respond: (path: string, method: string) => Response) {
     calls.push({
       path,
       method,
-      ...(typeof init?.body === "string"
-        ? { body: JSON.parse(init.body) as unknown }
-        : {}),
+      ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) as unknown } : {}),
     });
     return respond(path, method);
   }) as unknown as typeof fetch;

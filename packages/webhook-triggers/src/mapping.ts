@@ -27,10 +27,7 @@ function stringify(value: unknown): string {
  * Applies `template`'s `{{path.to.field}}` placeholders against
  * `payload`, producing the message content sent to the launched run.
  */
-export function renderInputTemplate(
-  template: string,
-  payload: unknown,
-): string {
+export function renderInputTemplate(template: string, payload: unknown): string {
   return template.replace(PLACEHOLDER, (_match, dottedPath: string) =>
     stringify(readPath(payload, dottedPath)),
   );

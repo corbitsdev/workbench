@@ -10,7 +10,10 @@ banned outright.
   wrapper that defaults every icon under it to `weight="bold"`. Mounted
   once at each app's root (`apps/web/src/app.tsx`).
 - Nothing else imports `@phosphor-icons/react` or `lucide-react` directly —
-  enforced by the `no-restricted-imports` ESLint rule in `eslint.config.ts`.
+  enforced by the `no-restricted-imports` oxlint rule in `.oxlintrc.json`.
+  The Sparkle/Sparkles glyph ban (previously an ESLint `no-restricted-syntax`
+  selector, which oxlint has no equivalent for) is unenforced by tooling for
+  now — reviewers should still reject it by eye.
 
 Extraction-ready: this package is deliberately just re-exports plus one
 context provider, no app-specific logic, so it can move into

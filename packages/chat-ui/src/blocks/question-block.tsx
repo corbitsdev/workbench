@@ -17,10 +17,7 @@ import { Check } from "@corbits/icons";
 
 import { CHAT_STRINGS } from "../strings";
 import { BlockCard } from "./block-card";
-import type {
-  BlockResponseActions,
-  BlockResponseQuery,
-} from "./block-responses";
+import type { BlockResponseActions, BlockResponseQuery } from "./block-responses";
 
 function ownAnswer(query: BlockResponseQuery): {
   readonly answer: string;
@@ -31,12 +28,8 @@ function ownAnswer(query: BlockResponseQuery): {
   if (query.own.kind !== "question") return null;
   return {
     answer: query.own.answer,
-    ...(query.own.optionIndex !== undefined
-      ? { optionIndex: query.own.optionIndex }
-      : {}),
-    ...(query.own.notifiedAt !== undefined
-      ? { notifiedAt: query.own.notifiedAt }
-      : {}),
+    ...(query.own.optionIndex !== undefined ? { optionIndex: query.own.optionIndex } : {}),
+    ...(query.own.notifiedAt !== undefined ? { notifiedAt: query.own.notifiedAt } : {}),
   };
 }
 
@@ -44,9 +37,7 @@ function notifyNeverLanded(answered: ReturnType<typeof ownAnswer>): boolean {
   return answered !== null && answered.notifiedAt === null;
 }
 
-function answeredValue(
-  answered: NonNullable<ReturnType<typeof ownAnswer>>,
-): string {
+function answeredValue(answered: NonNullable<ReturnType<typeof ownAnswer>>): string {
   return answered.optionIndex !== undefined
     ? `${CHAT_STRINGS.optionLetter(answered.optionIndex)}. ${answered.answer}`
     : answered.answer;
@@ -70,9 +61,7 @@ function AnsweredSummary({
         <p className="chat-block-question-answered-label">
           {CHAT_STRINGS.blockQuestionAnsweredLabel}
         </p>
-        <p className="chat-block-question-answered-value">
-          {answeredValue(answered)}
-        </p>
+        <p className="chat-block-question-answered-value">{answeredValue(answered)}</p>
       </div>
     </div>
   );
@@ -130,9 +119,7 @@ export function QuestionBlockView({
     return (
       <BlockCard title={data.question}>
         {data.subtitle !== undefined && (
-          <p className="chat-block-text chat-block-question-subtitle">
-            {data.subtitle}
-          </p>
+          <p className="chat-block-text chat-block-question-subtitle">{data.subtitle}</p>
         )}
         <StaticOptions data={data} />
       </BlockCard>
@@ -212,15 +199,9 @@ export function QuestionBlockView({
   return (
     <BlockCard title={data.question}>
       {data.subtitle !== undefined && (
-        <p className="chat-block-text chat-block-question-subtitle">
-          {data.subtitle}
-        </p>
+        <p className="chat-block-text chat-block-question-subtitle">{data.subtitle}</p>
       )}
-      <div
-        className="chat-block-choices"
-        role="group"
-        aria-label={data.question}
-      >
+      <div className="chat-block-choices" role="group" aria-label={data.question}>
         {data.options.map((option, index) => (
           <button
             key={option}
@@ -237,10 +218,7 @@ export function QuestionBlockView({
         ))}
       </div>
       {data.allowFreeText === true && (
-        <form
-          className="chat-block-question-freetext"
-          onSubmit={onFreeTextSubmit}
-        >
+        <form className="chat-block-question-freetext" onSubmit={onFreeTextSubmit}>
           <label htmlFor={`question-freetext-${data.questionId}`}>
             {CHAT_STRINGS.blockQuestionFreeTextLabel}
           </label>
@@ -257,9 +235,7 @@ export function QuestionBlockView({
             className="chat-block-question-freetext-submit"
             disabled={loading || submitting || freeText.trim().length === 0}
           >
-            {submitting
-              ? CHAT_STRINGS.blockQuestionSubmitting
-              : CHAT_STRINGS.blockQuestionSubmit}
+            {submitting ? CHAT_STRINGS.blockQuestionSubmitting : CHAT_STRINGS.blockQuestionSubmit}
           </button>
         </form>
       )}

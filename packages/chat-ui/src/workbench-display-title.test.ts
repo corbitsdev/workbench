@@ -11,16 +11,12 @@ describe("displayWorkbenchTitle", () => {
 
   test("a title matching the run-id shape reads as New workbench even for a different id", () => {
     const runId = "run_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d";
-    expect(displayWorkbenchTitle(runId, "some-other-id")).toBe(
-      CHAT_STRINGS.newWorkbenchTitle,
-    );
+    expect(displayWorkbenchTitle(runId, "some-other-id")).toBe(CHAT_STRINGS.newWorkbenchTitle);
   });
 
   test("a legacy instance-id-shaped title reads as New workbench", () => {
     const insId = "ins_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d";
-    expect(displayWorkbenchTitle(insId, "some-other-id")).toBe(
-      CHAT_STRINGS.newWorkbenchTitle,
-    );
+    expect(displayWorkbenchTitle(insId, "some-other-id")).toBe(CHAT_STRINGS.newWorkbenchTitle);
   });
 
   test("a real title renders unchanged", () => {

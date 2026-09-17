@@ -20,9 +20,7 @@ describe("rate-limited auth responses", () => {
             status: 429,
             headers: {
               "content-type": "application/json",
-              ...(retryAfterSeconds === null
-                ? {}
-                : { "X-Retry-After": retryAfterSeconds }),
+              ...(retryAfterSeconds === null ? {} : { "X-Retry-After": retryAfterSeconds }),
             },
           },
         ),

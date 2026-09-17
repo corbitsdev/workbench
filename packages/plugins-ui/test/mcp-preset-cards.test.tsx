@@ -22,8 +22,7 @@ afterEach(() => {
   mountedRoots = [];
 });
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 function mountSection(onOpen: (preset: McpPreset) => void = () => {}) {
   const container = document.createElement("div");
@@ -36,11 +35,7 @@ function mountSection(onOpen: (preset: McpPreset) => void = () => {}) {
   return container;
 }
 
-function PresetCatalogHarness({
-  onOpen,
-}: {
-  readonly onOpen: (preset: McpPreset) => void;
-}) {
+function PresetCatalogHarness({ onOpen }: { readonly onOpen: (preset: McpPreset) => void }) {
   const catalog = useMcpPresetCatalog("tenant_test");
   if (!catalog.loaded) return null;
   if (catalog.loadError !== null) {
@@ -54,9 +49,7 @@ function PresetCatalogHarness({
           tenantId="tenant_test"
           preset={preset}
           toolCount={catalog.toolCounts.get(preset.slug)}
-          onChanged={(toolCount) =>
-            catalog.handleChanged(preset.slug, toolCount)
-          }
+          onChanged={(toolCount) => catalog.handleChanged(preset.slug, toolCount)}
           onOpen={() => onOpen(preset)}
         />
       ))}
@@ -102,25 +95,19 @@ const PRESETS = [
 describe("MCP preset catalog", () => {
   test("renders one compact row per preset with its outcome sentence", async () => {
     globalThis.fetch = (async () =>
-      new Response(
-        JSON.stringify({ data: PRESETS }),
-      )) as unknown as typeof fetch;
+      new Response(JSON.stringify({ data: PRESETS }))) as unknown as typeof fetch;
 
     const container = mountSection();
     await settle();
 
     expect(container.textContent).toContain("Granola");
     expect(container.textContent).toContain("Exa");
-    expect(container.textContent).toContain(
-      "Search the web (Exa) — no key needed.",
-    );
+    expect(container.textContent).toContain("Search the web (Exa) — no key needed.");
     expect(container.textContent).toContain("Not connected");
     expect(container.querySelectorAll("[data-plugin-slug]")).toHaveLength(3);
-    expect(
-      container
-        .querySelector('[data-plugin-slug="exa"] svg')
-        ?.getAttribute("viewBox"),
-    ).toBe("0 0 151 182");
+    expect(container.querySelector('[data-plugin-slug="exa"] svg')?.getAttribute("viewBox")).toBe(
+      "0 0 151 182",
+    );
   });
 
   // CL-6794: Connect's accessible name must name the preset so a gallery of
@@ -128,9 +115,7 @@ describe("MCP preset catalog", () => {
   // visible label stays the single verb.
   test("Connect's accessible name includes the preset display name (CL-6794)", async () => {
     globalThis.fetch = (async () =>
-      new Response(
-        JSON.stringify({ data: PRESETS }),
-      )) as unknown as typeof fetch;
+      new Response(JSON.stringify({ data: PRESETS }))) as unknown as typeof fetch;
 
     const container = mountSection();
     await settle();
@@ -139,9 +124,7 @@ describe("MCP preset catalog", () => {
     expect(connectExa).not.toBeNull();
     expect(connectExa?.textContent?.trim()).toBe("Connect");
 
-    const connectGranola = container.querySelector(
-      '[aria-label="Connect Granola"]',
-    );
+    const connectGranola = container.querySelector('[aria-label="Connect Granola"]');
     expect(connectGranola).not.toBeNull();
     expect(connectGranola?.textContent?.trim()).toBe("Connect");
   });
@@ -154,17 +137,11 @@ describe("MCP preset catalog", () => {
     }) as unknown as typeof fetch;
 
     const assigned: string[] = [];
-    const hrefDescriptor = Object.getOwnPropertyDescriptor(
-      window.location,
-      "href",
-    );
+    const hrefDescriptor = Object.getOwnPropertyDescriptor(window.location, "href");
     Object.defineProperty(window.location, "href", {
       configurable: true,
       get() {
-        return (
-          hrefDescriptor?.get?.call(window.location) ??
-          "https://workbench.test/"
-        );
+        return hrefDescriptor?.get?.call(window.location) ?? "https://workbench.test/";
       },
       set(value: string) {
         assigned.push(value);
@@ -175,11 +152,9 @@ describe("MCP preset catalog", () => {
       const container = mountSection();
       await settle();
 
-      const granolaCard = container.querySelector(
-        '[data-plugin-slug="granola"]',
-      ) as HTMLElement;
-      const connectButton = [...granolaCard.querySelectorAll("button")].find(
-        (button) => button.textContent?.includes("Connect"),
+      const granolaCard = container.querySelector('[data-plugin-slug="granola"]') as HTMLElement;
+      const connectButton = [...granolaCard.querySelectorAll("button")].find((button) =>
+        button.textContent?.includes("Connect"),
       ) as HTMLButtonElement;
 
       await act(async () => {
@@ -187,9 +162,7 @@ describe("MCP preset catalog", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      expect(assigned).toEqual([
-        "/api/tenants/tenant_test/mcp-servers/oauth/granola/start",
-      ]);
+      expect(assigned).toEqual(["/api/tenants/tenant_test/mcp-servers/oauth/granola/start"]);
       expect(calls.some((url) => url.includes("/start"))).toBe(false);
     } finally {
       if (hrefDescriptor !== undefined) {
@@ -201,43 +174,27 @@ describe("MCP preset catalog", () => {
   });
 
   test("an OAuth error return surfaces a sentence on that preset row and leaves Connect as retry", async () => {
-    window.history.replaceState(
-      null,
-      "",
-      "/?mcpOauth=granola&outcome=error&code=discovery_failed",
-    );
+    window.history.replaceState(null, "", "/?mcpOauth=granola&outcome=error&code=discovery_failed");
     globalThis.fetch = (async () =>
-      new Response(
-        JSON.stringify({ data: PRESETS }),
-      )) as unknown as typeof fetch;
+      new Response(JSON.stringify({ data: PRESETS }))) as unknown as typeof fetch;
 
     const container = mountSection();
     await settle();
 
-    const granolaCard = container.querySelector(
-      '[data-plugin-slug="granola"]',
-    ) as HTMLElement;
+    const granolaCard = container.querySelector('[data-plugin-slug="granola"]') as HTMLElement;
     expect(granolaCard.textContent).toContain(
       "Couldn't reach that app's sign-in. Try connecting again.",
     );
-    expect(
-      granolaCard.querySelector('[aria-label="Connect Granola"]'),
-    ).not.toBeNull();
+    expect(granolaCard.querySelector('[aria-label="Connect Granola"]')).not.toBeNull();
 
-    const exaCard = container.querySelector(
-      '[data-plugin-slug="exa"]',
-    ) as HTMLElement;
+    const exaCard = container.querySelector('[data-plugin-slug="exa"]') as HTMLElement;
     expect(exaCard.textContent).not.toContain(
       "Couldn't reach that app's sign-in. Try connecting again.",
     );
   });
 
   test("a client_rejected OAuth return names the registration failure, not unreachable sign-in", async () => {
-    window.history.replaceState(
-      null,
-      "",
-      "/?mcpOauth=canva&outcome=error&code=client_rejected",
-    );
+    window.history.replaceState(null, "", "/?mcpOauth=canva&outcome=error&code=client_rejected");
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
@@ -259,33 +216,23 @@ describe("MCP preset catalog", () => {
     const container = mountSection();
     await settle();
 
-    const canvaCard = container.querySelector(
-      '[data-plugin-slug="canva"]',
-    ) as HTMLElement;
+    const canvaCard = container.querySelector('[data-plugin-slug="canva"]') as HTMLElement;
     expect(canvaCard.textContent).toContain(
       "That app didn't accept Workbench as a client (redirect URL or registration). Try connecting again.",
     );
     expect(canvaCard.textContent).not.toContain(
       "Couldn't reach that app's sign-in. Try connecting again.",
     );
-    expect(
-      canvaCard.querySelector('[aria-label="Connect Canva"]'),
-    ).not.toBeNull();
+    expect(canvaCard.querySelector('[aria-label="Connect Canva"]')).not.toBeNull();
 
-    const granolaCard = container.querySelector(
-      '[data-plugin-slug="granola"]',
-    ) as HTMLElement;
+    const granolaCard = container.querySelector('[data-plugin-slug="granola"]') as HTMLElement;
     expect(granolaCard.textContent).not.toContain(
       "That app didn't accept Workbench as a client (redirect URL or registration). Try connecting again.",
     );
   });
 
   test("an OAuth connected return shows the probe tool count on that preset row", async () => {
-    window.history.replaceState(
-      null,
-      "",
-      "/?mcpOauth=canva&outcome=connected&toolCount=40",
-    );
+    window.history.replaceState(null, "", "/?mcpOauth=canva&outcome=connected&toolCount=40");
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
@@ -307,25 +254,17 @@ describe("MCP preset catalog", () => {
     const container = mountSection();
     await settle();
 
-    const canvaCard = container.querySelector(
-      '[data-plugin-slug="canva"]',
-    ) as HTMLElement;
+    const canvaCard = container.querySelector('[data-plugin-slug="canva"]') as HTMLElement;
     expect(canvaCard.textContent).toContain("40 tools");
     expect(canvaCard.textContent).not.toContain("Not connected");
     expect(canvaCard.textContent).toContain("Manage");
 
-    const granolaCard = container.querySelector(
-      '[data-plugin-slug="granola"]',
-    ) as HTMLElement;
+    const granolaCard = container.querySelector('[data-plugin-slug="granola"]') as HTMLElement;
     expect(granolaCard.textContent).not.toContain("40 tools");
   });
 
   test("an OAuth connected return with a non-integer toolCount stays a bare Connected", async () => {
-    window.history.replaceState(
-      null,
-      "",
-      "/?mcpOauth=canva&outcome=connected&toolCount=abc",
-    );
+    window.history.replaceState(null, "", "/?mcpOauth=canva&outcome=connected&toolCount=abc");
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
@@ -347,9 +286,7 @@ describe("MCP preset catalog", () => {
     const container = mountSection();
     await settle();
 
-    const canvaCard = container.querySelector(
-      '[data-plugin-slug="canva"]',
-    ) as HTMLElement;
+    const canvaCard = container.querySelector('[data-plugin-slug="canva"]') as HTMLElement;
     expect(canvaCard.textContent).toContain("Connected");
     expect(canvaCard.textContent).not.toContain("abc");
     expect(canvaCard.textContent).not.toContain("NaN");
@@ -360,9 +297,7 @@ describe("MCP preset catalog", () => {
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
-          data: PRESETS.map((p) =>
-            p.slug === "exa" ? { ...p, connected: true } : p,
-          ),
+          data: PRESETS.map((p) => (p.slug === "exa" ? { ...p, connected: true } : p)),
         }),
       )) as unknown as typeof fetch;
 
@@ -370,9 +305,7 @@ describe("MCP preset catalog", () => {
     const container = mountSection((preset) => opened.push(preset.slug));
     await settle();
 
-    const exaCard = container.querySelector(
-      '[data-plugin-slug="exa"]',
-    ) as HTMLElement;
+    const exaCard = container.querySelector('[data-plugin-slug="exa"]') as HTMLElement;
     const manageExa = [...exaCard.querySelectorAll("button")].find(
       (button) => button.textContent?.includes("Manage") === true,
     );
@@ -404,9 +337,7 @@ describe("MCP preset catalog", () => {
       }
       return new Response(
         JSON.stringify({
-          data: PRESETS.map((p) =>
-            p.slug === "exa" ? { ...p, connected } : p,
-          ),
+          data: PRESETS.map((p) => (p.slug === "exa" ? { ...p, connected } : p)),
         }),
       );
     }) as unknown as typeof fetch;
@@ -414,11 +345,9 @@ describe("MCP preset catalog", () => {
     const container = mountSection();
     await settle();
 
-    const exaCard = container.querySelector(
-      '[data-plugin-slug="exa"]',
-    ) as HTMLElement;
-    const connectButton = [...exaCard.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Connect"),
+    const exaCard = container.querySelector('[data-plugin-slug="exa"]') as HTMLElement;
+    const connectButton = [...exaCard.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Connect"),
     ) as HTMLButtonElement;
 
     await act(async () => {
@@ -450,9 +379,7 @@ describe("MCP preset catalog", () => {
     const container = mountSection((preset) => opened.push(preset.slug));
     await settle();
 
-    const card = container.querySelector(
-      '[data-plugin-slug="github-mcp"]',
-    ) as HTMLElement;
+    const card = container.querySelector('[data-plugin-slug="github-mcp"]') as HTMLElement;
     const connectButton = [...card.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Connect"),
     ) as HTMLButtonElement;
@@ -483,9 +410,7 @@ describe("MCP preset catalog", () => {
             connectionMode: preset.connectionMode,
             docsUrl: preset.docsUrl,
             ...(preset.icon === undefined ? {} : { icon: preset.icon }),
-            ...(preset.tokenSteps === undefined
-              ? {}
-              : { tokenSteps: preset.tokenSteps }),
+            ...(preset.tokenSteps === undefined ? {} : { tokenSteps: preset.tokenSteps }),
             connected: false,
           })),
         }),
@@ -494,9 +419,7 @@ describe("MCP preset catalog", () => {
     const container = mountSection();
     await settle();
 
-    expect(container.querySelectorAll("[data-plugin-slug]")).toHaveLength(
-      MCP_PRESETS.length,
-    );
+    expect(container.querySelectorAll("[data-plugin-slug]")).toHaveLength(MCP_PRESETS.length);
     for (const preset of MCP_PRESETS) {
       expect(container.textContent).toContain(preset.displayName);
     }

@@ -60,11 +60,5 @@ export const GRANT_RESOURCE_LABEL: Record<GrantResource, string> = {
   observability: "observability data",
 };
 
-export const GRANT_ACTIONS = [
-  "read",
-  "create",
-  "manage",
-  "write",
-  "use",
-] as const;
+export const GRANT_ACTIONS = ["read", "create", "manage", "write", "use"] as const;
 export type GrantAction = (typeof GRANT_ACTIONS)[number];

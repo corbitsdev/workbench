@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 import { Stack } from "@corbits/icons";
-import {
-  connectorDescriptors,
-  CONNECTOR_REGISTRY,
-} from "@corbits/connections/registry";
+import { connectorDescriptors, CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 import { MCP_PRESETS } from "@corbits/connections/mcp-presets";
 
 import { pluginCategory, pluginIcon, pluginOutcome } from "../src/plugin-meta";

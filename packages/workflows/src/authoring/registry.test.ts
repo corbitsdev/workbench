@@ -1,9 +1,5 @@
 import { expect, test } from "bun:test";
-import type {
-  ConditionRegistry,
-  GrantStore,
-  GrantRule,
-} from "@intx/types/authz";
+import type { ConditionRegistry, GrantStore, GrantRule } from "@intx/types/authz";
 import { AssetServiceError, type AssetService } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
 
@@ -23,15 +19,11 @@ const MANIFEST = JSON.stringify({
 
 const ENTRY = "export default {};\n";
 
-function sourceTree(
-  extra: Record<string, string> = {},
-): Record<string, string> {
+function sourceTree(extra: Record<string, string> = {}): Record<string, string> {
   return { "package.json": MANIFEST, "workflow.ts": ENTRY, ...extra };
 }
 
-function fakeRepoStore(
-  overrides: Partial<WorkflowAuthorRepoReads> = {},
-): WorkflowAuthorRepoReads {
+function fakeRepoStore(overrides: Partial<WorkflowAuthorRepoReads> = {}): WorkflowAuthorRepoReads {
   return {
     resolveRef: async () => "sha_head",
     openCommittedReads: async () => null,
@@ -114,11 +106,7 @@ function deps(
     db: fakeDb(undefined),
     assetService: fakeAssetService(),
     repoStore: fakeRepoStore(),
-    grantStore: fakeGrantStore([
-      allowGrant("create"),
-      allowGrant("write"),
-      allowGrant("read"),
-    ]),
+    grantStore: fakeGrantStore([allowGrant("create"), allowGrant("write"), allowGrant("read")]),
     conditionRegistry,
     ...overrides,
   };
@@ -265,9 +253,7 @@ test("republish refuses an asset id that does not resolve in the caller's own te
   });
   // No row resolves — the same outcome the real tenant-scoped query
   // produces for another tenant's asset id, or an id that never existed.
-  const registry = createWorkflowAuthorRegistry(
-    deps({ assetService, db: fakeDb(undefined) }),
-  );
+  const registry = createWorkflowAuthorRegistry(deps({ assetService, db: fakeDb(undefined) }));
 
   const err = await registry
     .republish(caller, "asset_from_another_tenant", { files: sourceTree() })
@@ -291,9 +277,7 @@ test("republish writes a new commit once the asset resolves in-tenant and the gr
       return { commitSha: "sha_new" };
     },
   });
-  const registry = createWorkflowAuthorRegistry(
-    deps({ assetService, db: fakeDb(row) }),
-  );
+  const registry = createWorkflowAuthorRegistry(deps({ assetService, db: fakeDb(row) }));
 
   const summary = await registry.republish(caller, "asset_1", {
     files: sourceTree(),
@@ -431,8 +415,7 @@ test("readSource walks the whole committed tree, including subdirectories, and r
               : dir === "lib"
                 ? [{ name: "helper.ts", oid: "oid_helper", type: "blob" }]
                 : [],
-          readBlobByOid: async (oid) =>
-            new TextEncoder().encode(blobs[oid] ?? ""),
+          readBlobByOid: async (oid) => new TextEncoder().encode(blobs[oid] ?? ""),
           treeOid: async () => null,
         }),
       }),
@@ -459,9 +442,7 @@ test("readSource refuses without an asset read grant", async () => {
       grantStore: fakeGrantStore([allowGrant("write")]),
     }),
   );
-  const err = await registry
-    .readSource(caller, "asset_1")
-    .catch((e: unknown) => e);
+  const err = await registry.readSource(caller, "asset_1").catch((e: unknown) => e);
   expect((err as WorkflowAuthorError).reason).toBe("forbidden");
 });
 
@@ -487,8 +468,7 @@ test("previewDeploy is a static read of the committed source at commitSha: file 
                         { name: "workflow.ts", oid: "oid_entry", type: "blob" },
                       ]
                     : [],
-                readBlobByOid: async (oid) =>
-                  new TextEncoder().encode(blobs[oid] ?? ""),
+                readBlobByOid: async (oid) => new TextEncoder().encode(blobs[oid] ?? ""),
                 treeOid: async () => null,
               }
             : null,
@@ -525,8 +505,7 @@ test("previewDeploy lists files only, with no tool pins, when the entry is not a
                   { name: "workflow.ts", oid: "oid_entry", type: "blob" },
                 ]
               : [],
-          readBlobByOid: async (oid) =>
-            new TextEncoder().encode(blobs[oid] ?? ""),
+          readBlobByOid: async (oid) => new TextEncoder().encode(blobs[oid] ?? ""),
           treeOid: async () => null,
         }),
       }),

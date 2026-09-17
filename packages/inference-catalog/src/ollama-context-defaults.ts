@@ -23,14 +23,9 @@
 // convention to enforce. A model absent from this table gets no override at
 // all -- Ollama's own model-specific default stands, rather than this
 // module guessing at a ceiling it cannot back up.
-import type {
-  OllamaAdapterConfig,
-  OllamaAdapterOverride,
-} from "@corbits/ollama-adapter";
+import type { OllamaAdapterConfig, OllamaAdapterOverride } from "@corbits/ollama-adapter";
 
-export type OllamaModelDefaults = Readonly<
-  Record<string, OllamaAdapterOverride>
->;
+export type OllamaModelDefaults = Readonly<Record<string, OllamaAdapterOverride>>;
 
 export const OLLAMA_MODEL_DEFAULTS: OllamaModelDefaults = {
   // OpenAI gpt-oss: 128K native context window.
@@ -74,8 +69,7 @@ export function quirksForDeployment(
 ): OllamaAdapterConfig | undefined {
   if (deployment.providerName !== "ollama") return undefined;
   const resolved =
-    overrides[deployment.canonicalName] ??
-    OLLAMA_MODEL_DEFAULTS[deployment.canonicalName];
+    overrides[deployment.canonicalName] ?? OLLAMA_MODEL_DEFAULTS[deployment.canonicalName];
   if (resolved === undefined) return undefined;
   return { default: resolved };
 }

@@ -39,10 +39,7 @@ test("rejects stale source already on main and accepts a version bump", () => {
   const check = () =>
     spawnSync(
       process.execPath,
-      [
-        path.resolve(import.meta.dir, "../tool-package-freshness.ts"),
-        `--root=${root}`,
-      ],
+      [path.resolve(import.meta.dir, "../tool-package-freshness.ts"), `--root=${root}`],
       {
         cwd: root,
         env: { ...env, GITHUB_EVENT_PATH: "" },
@@ -61,10 +58,7 @@ test("rejects stale source already on main and accepts a version bump", () => {
       'const CORBITS_TOOL_PACKAGE_DIRS = ["../../github-tools"];',
     );
     const manifest = path.join(root, "packages/github-tools/package.json");
-    writeFileSync(
-      manifest,
-      JSON.stringify({ name: "@corbits/github-tools", version: "1.0.0" }),
-    );
+    writeFileSync(manifest, JSON.stringify({ name: "@corbits/github-tools", version: "1.0.0" }));
     const source = path.join(root, "packages/github-tools/src/index.ts");
     writeFileSync(source, "export const value = 1;");
     git("init");
@@ -79,10 +73,7 @@ test("rejects stale source already on main and accepts a version bump", () => {
     expect(stale.stderr).toContain("@corbits/github-tools@1.0.0");
     git("update-ref", "-d", "refs/remotes/origin/main");
     expect(check().status).toBe(1);
-    writeFileSync(
-      manifest,
-      JSON.stringify({ name: "@corbits/github-tools", version: "1.0.1" }),
-    );
+    writeFileSync(manifest, JSON.stringify({ name: "@corbits/github-tools", version: "1.0.1" }));
     const fresh = check();
     expect(fresh.status).toBe(0);
   } finally {
@@ -93,20 +84,14 @@ test("rejects stale source already on main and accepts a version bump", () => {
 describe("packagesWithChangedSource", () => {
   test("names a package whose src/ moved", () => {
     expect(
-      packagesWithChangedSource(
-        ["packages/github-tools/src/client.ts"],
-        TOOL_PACKAGES,
-      ),
+      packagesWithChangedSource(["packages/github-tools/src/client.ts"], TOOL_PACKAGES),
     ).toEqual(["github-tools"]);
   });
 
   test("ignores tests — they ship no source an agent resolves", () => {
     expect(
       packagesWithChangedSource(
-        [
-          "packages/github-tools/src/client.test.ts",
-          "packages/chat-ui/src/timeline.test.tsx",
-        ],
+        ["packages/github-tools/src/client.test.ts", "packages/chat-ui/src/timeline.test.tsx"],
         TOOL_PACKAGES,
       ),
     ).toEqual([]);
@@ -162,10 +147,7 @@ describe("auditFreshness", () => {
 describe("scope", () => {
   test("ignores a workspace package the registry does not publish", () => {
     expect(
-      packagesWithChangedSource(
-        ["packages/workflow-catalog/src/templates.ts"],
-        TOOL_PACKAGES,
-      ),
+      packagesWithChangedSource(["packages/workflow-catalog/src/templates.ts"], TOOL_PACKAGES),
     ).toEqual([]);
   });
 
@@ -184,13 +166,8 @@ describe("pullRequestBaseSha", () => {
   test("reads pull_request.base.sha from GITHUB_EVENT_PATH", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "base-ref-"));
     const eventPath = path.join(dir, "event.json");
-    writeFileSync(
-      eventPath,
-      JSON.stringify({ pull_request: { base: { sha: "abc123def" } } }),
-    );
-    expect(pullRequestBaseSha({ GITHUB_EVENT_PATH: eventPath })).toBe(
-      "abc123def",
-    );
+    writeFileSync(eventPath, JSON.stringify({ pull_request: { base: { sha: "abc123def" } } }));
+    expect(pullRequestBaseSha({ GITHUB_EVENT_PATH: eventPath })).toBe("abc123def");
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -202,9 +179,7 @@ describe("pullRequestBaseSha", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "base-ref-"));
     const eventPath = path.join(dir, "event.json");
     writeFileSync(eventPath, JSON.stringify({ ref: "refs/heads/main" }));
-    expect(
-      pullRequestBaseSha({ GITHUB_EVENT_PATH: eventPath }),
-    ).toBeUndefined();
+    expect(pullRequestBaseSha({ GITHUB_EVENT_PATH: eventPath })).toBeUndefined();
     rmSync(dir, { recursive: true, force: true });
   });
 });

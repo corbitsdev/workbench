@@ -136,9 +136,7 @@ describe("hub shutdown drain against a real server", () => {
       }),
     );
     const server = start();
-    const response = await fetch(
-      `http://localhost:${String(server.port)}/stream`,
-    );
+    const response = await fetch(`http://localhost:${String(server.port)}/stream`);
     expect(response.ok).toBe(true);
     expect(tracker.pending).toBe(0);
 

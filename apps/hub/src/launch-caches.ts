@@ -99,9 +99,7 @@ class BoundedCache<V> {
   }
 
   #isOverBudget(): boolean {
-    return (
-      this.#entries.size > this.#maxEntries || this.#bytes > this.#maxBytes
-    );
+    return this.#entries.size > this.#maxEntries || this.#bytes > this.#maxBytes;
   }
 }
 
@@ -141,9 +139,7 @@ export function createLaunchCaches(deps: {
     return repoStore.resolveRef(LAUNCH_CACHE_PRINCIPAL, repoId, effectiveRef);
   }
 
-  async function readAssetBlob(
-    params: ReadAssetBlobParams,
-  ): Promise<Uint8Array> {
+  async function readAssetBlob(params: ReadAssetBlobParams): Promise<Uint8Array> {
     const sha = await resolvePackageRegistryHeadSha(params.assetId, params.ref);
     if (sha === null) return assetService.readAssetBlob(params);
     const key = `${params.assetId}:${sha}:${params.path}`;
@@ -154,9 +150,7 @@ export function createLaunchCaches(deps: {
     return blob;
   }
 
-  async function listAssetBlobs(
-    params: ListAssetBlobsParams,
-  ): Promise<string[]> {
+  async function listAssetBlobs(params: ListAssetBlobsParams): Promise<string[]> {
     const sha = await resolvePackageRegistryHeadSha(params.assetId, params.ref);
     // No resolvable `main` means no tarballs yet. Match the tarball REST
     // list, which returns [] on this same not_found rather than failing

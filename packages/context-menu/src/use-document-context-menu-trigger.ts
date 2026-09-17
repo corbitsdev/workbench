@@ -1,9 +1,6 @@
 import { useEffect } from "react";
 
-import {
-  isBlockingOverlayOpen,
-  isInsideInteractiveInput,
-} from "./dialog-guard";
+import { isBlockingOverlayOpen, isInsideInteractiveInput } from "./dialog-guard";
 import { isContextMenuEmpty } from "./menu";
 import type { ContextMenu } from "./menu";
 
@@ -13,12 +10,7 @@ export type ContextMenuTriggerOptions = {
   readonly resolve: (target: EventTarget | null) => ContextMenu | null;
   /** `origin` is the element the pointer event actually landed on — the
    * caller's cue for where to restore focus once the menu closes. */
-  readonly onOpen: (
-    x: number,
-    y: number,
-    menu: ContextMenu,
-    origin: Element | null,
-  ) => void;
+  readonly onOpen: (x: number, y: number, menu: ContextMenu, origin: Element | null) => void;
 };
 
 /**
@@ -33,9 +25,7 @@ export type ContextMenuTriggerOptions = {
  * click its native meaning (open in a new tab), so layering a second,
  * conflicting meaning onto it here would cost more than it gives back.
  */
-export function useDocumentContextMenuTrigger(
-  options: ContextMenuTriggerOptions,
-): void {
+export function useDocumentContextMenuTrigger(options: ContextMenuTriggerOptions): void {
   const { resolve, onOpen } = options;
   useEffect(() => {
     function handleContextMenu(event: MouseEvent): void {

@@ -19,10 +19,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // the suite around two seconds even so.
 const TEST_TIMEOUT_MS = 500;
 
-function mount(
-  selfPrincipalId: string | undefined,
-  initialWorkbenchId: string | null,
-) {
+function mount(selfPrincipalId: string | undefined, initialWorkbenchId: string | null) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);

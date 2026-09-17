@@ -44,20 +44,13 @@ const DEFAULT_NUM_RESULTS = 5;
 const MAX_NUM_RESULTS = 25;
 
 function clampNumResults(requested: number | undefined): number {
-  if (
-    requested === undefined ||
-    !Number.isInteger(requested) ||
-    requested <= 0
-  ) {
+  if (requested === undefined || !Number.isInteger(requested) || requested <= 0) {
     return DEFAULT_NUM_RESULTS;
   }
   return Math.min(requested, MAX_NUM_RESULTS);
 }
 
-function normalizeResult(
-  result: ExaSearchResult,
-  retrievedAt: string,
-): WebSearchResult | null {
+function normalizeResult(result: ExaSearchResult, retrievedAt: string): WebSearchResult | null {
   const url = result.url ?? "";
   if (url.length === 0) return null;
   const base = {
@@ -66,8 +59,7 @@ function normalizeResult(
     publishedAt: result.publishedDate ?? retrievedAt,
     source: "web" as const,
   };
-  const withAuthor =
-    result.author !== undefined ? { ...base, author: result.author } : base;
+  const withAuthor = result.author !== undefined ? { ...base, author: result.author } : base;
   const item: WebSearchResult =
     result.publishedDate === undefined
       ? { ...withAuthor, provenance: "degraded" as const }
@@ -88,9 +80,7 @@ export async function searchWeb(
   const url = new URL("/search", config.baseUrl ?? DEFAULT_BASE_URL);
   const baseHeaders = { "content-type": "application/json" };
   const headers =
-    config.apiKey !== undefined
-      ? { ...baseHeaders, "x-api-key": config.apiKey }
-      : baseHeaders;
+    config.apiKey !== undefined ? { ...baseHeaders, "x-api-key": config.apiKey } : baseHeaders;
   const response = await doFetch(url, {
     method: "POST",
     headers,
@@ -100,16 +90,12 @@ export async function searchWeb(
     }),
   });
   if (!response.ok) {
-    throw new Error(
-      `Exa search request failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Exa search request failed: ${response.status} ${response.statusText}`);
   }
   const body: unknown = await response.json();
   const parsed = ExaSearchResponse(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `Exa search response did not match the expected shape: ${parsed.summary}`,
-    );
+    throw new Error(`Exa search response did not match the expected shape: ${parsed.summary}`);
   }
   const retrievedAt = new Date().toISOString();
   return parsed.results

@@ -43,7 +43,7 @@ export const CODE_REVIEW_STEP_ID = "code-review";
 
 /** The tool packages this definition pins: GitHub reach, nothing else. */
 export const CODE_REVIEW_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/github-tools", version: "0.0.10" },
+  { name: "@corbits/github-tools", version: "0.0.11" },
 ];
 
 /** Binds the pinned package's "github" handle to the tenant's connection. */
@@ -65,8 +65,7 @@ export const CODE_REVIEW_WEBHOOK_INPUT_TEMPLATE =
 
 const REVIEWER_PASSES = CODE_REVIEW_REVIEWERS.map(
   (reviewer, index) =>
-    `### Pass ${String(index + 1)}: ${reviewer.displayName}\n` +
-    reviewer.systemPrompt,
+    `### Pass ${String(index + 1)}: ${reviewer.displayName}\n` + reviewer.systemPrompt,
 ).join("\n\n");
 
 export const CODE_REVIEW_SYSTEM_PROMPT =
@@ -121,18 +120,12 @@ export interface CodeReviewWorkflowInput {
  * one agent's context so the combined review is written from all three
  * rather than stitched from summaries.
  */
-export function buildCodeReviewWorkflow(
-  input: CodeReviewWorkflowInput,
-): WorkflowDefinition {
+export function buildCodeReviewWorkflow(input: CodeReviewWorkflowInput): WorkflowDefinition {
   if (input.triggerAddress === "") {
-    throw new Error(
-      "buildCodeReviewWorkflow requires a non-empty triggerAddress",
-    );
+    throw new Error("buildCodeReviewWorkflow requires a non-empty triggerAddress");
   }
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
-    throw new Error(
-      "buildCodeReviewWorkflow requires turnTimeoutMs to be a positive integer",
-    );
+    throw new Error("buildCodeReviewWorkflow requires turnTimeoutMs to be a positive integer");
   }
   return defineWorkflow({
     id: CODE_REVIEW_WORKFLOW_ID,
@@ -142,8 +135,7 @@ export function buildCodeReviewWorkflow(
         agent: {
           id: CODE_REVIEW_STEP_ID,
           description:
-            "Reviews a pull request under three lenses and posts one " +
-            "review back on it",
+            "Reviews a pull request under three lenses and posts one " + "review back on it",
           systemPrompt: CODE_REVIEW_SYSTEM_PROMPT,
           toolFactories: [],
           capabilities: [],
@@ -162,9 +154,7 @@ export function buildCodeReviewWorkflow(
  * value JSON would drop or mangle is a loud error naming its path
  * instead of a corrupted asset.
  */
-export function serializeCodeReviewWorkflow(
-  definition: WorkflowDefinition,
-): string {
+export function serializeCodeReviewWorkflow(definition: WorkflowDefinition): string {
   assertJsonPortable(definition, "definition");
   return JSON.stringify(definition);
 }
@@ -184,8 +174,7 @@ function assertJsonPortable(value: unknown, path: string): void {
       break;
     default:
       throw new Error(
-        `${path} is a ${typeof value}, which does not survive JSON ` +
-          "serialization",
+        `${path} is a ${typeof value}, which does not survive JSON ` + "serialization",
       );
   }
   if (Array.isArray(value)) {
@@ -196,9 +185,7 @@ function assertJsonPortable(value: unknown, path: string): void {
   }
   const proto: unknown = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) {
-    throw new Error(
-      `${path} is a non-plain object; JSON would flatten it lossily`,
-    );
+    throw new Error(`${path} is a non-plain object; JSON would flatten it lossily`);
   }
   for (const [key, entry] of Object.entries(value)) {
     assertJsonPortable(entry, `${path}.${key}`);

@@ -40,13 +40,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
       const label = token.slice(1, closeBracket);
       const href = token.slice(closeBracket + 2, -1);
       nodes.push(
-        <a
-          key={key}
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="chat-md-link"
-        >
+        <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="chat-md-link">
           {label}
         </a>,
       );
@@ -81,10 +75,7 @@ function parseBlocks(source: string): Block[] {
     if (line.trim().startsWith("```")) {
       const codeLines: string[] = [];
       index++;
-      while (
-        index < lines.length &&
-        !(lines[index] ?? "").trim().startsWith("```")
-      ) {
+      while (index < lines.length && !(lines[index] ?? "").trim().startsWith("```")) {
         codeLines.push(lines[index] ?? "");
         index++;
       }
@@ -174,9 +165,7 @@ export function Markdown({ text }: { readonly text: string }) {
           return (
             <ListTag key={key} className="chat-md-list">
               {block.items.map((item, itemIndex) => (
-                <li key={`${key}-${itemIndex}`}>
-                  {renderInline(item, `${key}-${itemIndex}`)}
-                </li>
+                <li key={`${key}-${itemIndex}`}>{renderInline(item, `${key}-${itemIndex}`)}</li>
               ))}
             </ListTag>
           );

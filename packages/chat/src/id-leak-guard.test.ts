@@ -5,14 +5,9 @@ import { assertNoLeakedInternalId } from "./id-leak-guard";
 
 describe("assertNoLeakedInternalId", () => {
   test("passes real, human-authored text through untouched", () => {
+    expect(() => assertNoLeakedInternalId("Architecture reviewer", "a display name")).not.toThrow();
     expect(() =>
-      assertNoLeakedInternalId("Architecture reviewer", "a display name"),
-    ).not.toThrow();
-    expect(() =>
-      assertNoLeakedInternalId(
-        "Hi Alice, I'm Myra — your teammate here.",
-        "a greeting",
-      ),
+      assertNoLeakedInternalId("Hi Alice, I'm Myra — your teammate here.", "a greeting"),
     ).not.toThrow();
   });
 
@@ -26,19 +21,14 @@ describe("assertNoLeakedInternalId", () => {
       "gtk_737a058d48006e2bde12559576f422e0",
     ];
     for (const id of ids) {
-      expect(() => assertNoLeakedInternalId(id, "a name")).toThrow(
-        /internal identifier/,
-      );
+      expect(() => assertNoLeakedInternalId(id, "a name")).toThrow(/internal identifier/);
     }
   });
 
   test("catches the humanized (Title Cased) form the same id renders as once split", () => {
     // `humanizeSlug`'s exact transform: "run_737a058d..." -> "Run 737a058d..."
     expect(() =>
-      assertNoLeakedInternalId(
-        "Run 737a058d48006e2bde12559576f422e0",
-        "a participant name",
-      ),
+      assertNoLeakedInternalId("Run 737a058d48006e2bde12559576f422e0", "a participant name"),
     ).toThrow(/internal identifier/);
   });
 
@@ -53,8 +43,6 @@ describe("assertNoLeakedInternalId", () => {
 
   test("never flags a short, coincidental substring match", () => {
     // "runner" starts with "run" but not the "run_" id prefix + hex tail.
-    expect(() =>
-      assertNoLeakedInternalId("Runner McRunface", "a display name"),
-    ).not.toThrow();
+    expect(() => assertNoLeakedInternalId("Runner McRunface", "a display name")).not.toThrow();
   });
 });

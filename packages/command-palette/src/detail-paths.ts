@@ -19,10 +19,7 @@ export type DetailAddressable = {
   readonly id: string;
 };
 
-export function detailPath(
-  rosterPath: string,
-  entity: DetailAddressable,
-): string {
+export function detailPath(rosterPath: string, entity: DetailAddressable): string {
   if (isValidSlug(entity.slug)) return `${rosterPath}/${entity.slug}`;
   return `${rosterPath}/${encodeURIComponent(entity.id)}`;
 }

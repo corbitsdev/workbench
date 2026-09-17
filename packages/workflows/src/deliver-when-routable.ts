@@ -38,9 +38,7 @@ function defaultSleep(ms: number): Promise<void> {
  * failure that never resolves before the deadline, is rethrown as-is —
  * this never swallows the original error or retries indefinitely.
  */
-export async function deliverWhenRoutable<T>(
-  opts: DeliverWhenRoutableOptions<T>,
-): Promise<T> {
+export async function deliverWhenRoutable<T>(opts: DeliverWhenRoutableOptions<T>): Promise<T> {
   const isUnreachable = opts.isUnreachable ?? isAgentUnreachableError;
   try {
     return await opts.send();
@@ -48,8 +46,7 @@ export async function deliverWhenRoutable<T>(
     if (!isUnreachable(err)) {
       throw err;
     }
-    const deadline =
-      Date.now() + (opts.deadlineMs ?? DEFAULT_ROUTABLE_DEADLINE_MS);
+    const deadline = Date.now() + (opts.deadlineMs ?? DEFAULT_ROUTABLE_DEADLINE_MS);
     const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     const sleep = opts.sleep ?? defaultSleep;
     while (!opts.isRoutable()) {

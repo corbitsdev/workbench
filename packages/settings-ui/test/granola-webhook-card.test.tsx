@@ -23,8 +23,7 @@ const json = (status: number, body: unknown) =>
     headers: { "content-type": "application/json" },
   });
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 const descriptor: ConnectorDescriptor = {
   id: "granola-webhook",
@@ -35,9 +34,7 @@ const descriptor: ConnectorDescriptor = {
   feedsTools: [],
 };
 
-function definitionsResponse(
-  definitions: readonly { id: string; name: string }[],
-) {
+function definitionsResponse(definitions: readonly { id: string; name: string }[]) {
   return json(200, {
     data: definitions.map((d) => ({ ...d, status: "active" })),
     nextCursor: null,
@@ -49,9 +46,7 @@ function mount(): { container: HTMLDivElement; root: Root } {
   document.body.appendChild(container);
   const root = createRoot(container);
   act(() => {
-    root.render(
-      <GranolaWebhookCard tenantId="ten_1" descriptor={descriptor} />,
-    );
+    root.render(<GranolaWebhookCard tenantId="ten_1" descriptor={descriptor} />);
   });
   return { container, root };
 }
@@ -122,10 +117,7 @@ describe("GranolaWebhookCard", () => {
       if (url.startsWith("/api/tenants/ten_1/workflows/definitions")) {
         return definitionsResponse([{ id: "def_1", name: "granola-call" }]);
       }
-      if (
-        url === "/api/tenants/ten_1/webhook-triggers" &&
-        init?.method === "POST"
-      ) {
+      if (url === "/api/tenants/ten_1/webhook-triggers" && init?.method === "POST") {
         createBody = JSON.parse(String(init.body));
         return json(201, {
           id: "wht_new",
@@ -222,9 +214,7 @@ describe("GranolaWebhookCard", () => {
 
       // The invalidation warning must be visible before the destructive
       // click, not only after — this is the regression the review flagged.
-      expect(document.body.textContent?.toLowerCase()).toContain(
-        "stops verifying immediately",
-      );
+      expect(document.body.textContent?.toLowerCase()).toContain("stops verifying immediately");
 
       // The bound-and-hidden state reuses the same react-ui-backed field
       // row the rest of the dialog uses (see webhook-secret-panel.tsx),

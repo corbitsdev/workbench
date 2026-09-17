@@ -180,10 +180,7 @@ async function mount(actions: ConnectGithubActions) {
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      <WorkbenchTimeline
-        items={messageWithConnectGithubBlock()}
-        connectGithubActions={actions}
-      />,
+      <WorkbenchTimeline items={messageWithConnectGithubBlock()} connectGithubActions={actions} />,
     );
   });
   return container;
@@ -208,9 +205,7 @@ describe("connect-github round trip (CL-6345)", () => {
       connectButton.click();
     });
 
-    const tokenField = el.querySelector(
-      "#connect-github-token",
-    ) as HTMLInputElement;
+    const tokenField = el.querySelector("#connect-github-token") as HTMLInputElement;
     await act(async () => {
       typeInto(tokenField, "ghp_test123");
     });
@@ -225,13 +220,9 @@ describe("connect-github round trip (CL-6345)", () => {
     });
 
     expect(el.textContent).toContain("Connected to GitHub as octocat");
-    expect(el.querySelectorAll(".chat-block-connect-repo-row")).toHaveLength(
-      REPOS.length,
-    );
+    expect(el.querySelectorAll(".chat-block-connect-repo-row")).toHaveLength(REPOS.length);
 
-    const checkboxes = [
-      ...el.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
-    ];
+    const checkboxes = [...el.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
     await act(async () => {
       checkboxes[0]?.click();
       checkboxes[1]?.click();
@@ -239,8 +230,7 @@ describe("connect-github round trip (CL-6345)", () => {
     });
     expect(el.textContent).toContain("4 repos your token can reach · 3 picked");
 
-    const getConnectStateCallCountBeforeStart =
-      harness.getConnectStateCallCount();
+    const getConnectStateCallCountBeforeStart = harness.getConnectStateCallCount();
 
     const startButton = [...el.querySelectorAll("button")].find((button) =>
       button.textContent?.startsWith("Start reviewing"),
@@ -250,23 +240,13 @@ describe("connect-github round trip (CL-6345)", () => {
       startButton.click();
     });
 
-    expect(harness.grantedRepos).toEqual([
-      "acme/checkout",
-      "acme/billing-api",
-      "acme/web",
-    ]);
-    expect(harness.createdTriggerRepos).toEqual([
-      "acme/checkout",
-      "acme/billing-api",
-      "acme/web",
-    ]);
+    expect(harness.grantedRepos).toEqual(["acme/checkout", "acme/billing-api", "acme/web"]);
+    expect(harness.createdTriggerRepos).toEqual(["acme/checkout", "acme/billing-api", "acme/web"]);
     expect(harness.persistedRepoIds()).toEqual(["1", "2", "3"]);
 
     // Settled purely from the folded stream event — no extra
     // `getConnectState` fetch beyond the initial mount + connect reads.
-    expect(harness.getConnectStateCallCount()).toBe(
-      getConnectStateCallCountBeforeStart,
-    );
+    expect(harness.getConnectStateCallCount()).toBe(getConnectStateCallCountBeforeStart);
     // Reviewing, not "pick your repos" again and never "Connect": the
     // server recorded the selection, so the same card now names what is
     // under review.

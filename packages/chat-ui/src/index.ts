@@ -28,12 +28,7 @@ export {
   avatarClassForPrincipal,
   resolveAvatarFill,
 } from "./avatar";
-export type {
-  AvatarFill,
-  AvatarColor,
-  CorbitAvatarProps,
-  CorbitAvatarSize,
-} from "./avatar";
+export type { AvatarFill, AvatarColor, CorbitAvatarProps, CorbitAvatarSize } from "./avatar";
 
 export { threadMessagesToTimeline, roomRefFor } from "./mailbox-timeline";
 export type { TimelineItem } from "./mailbox-timeline";
@@ -80,10 +75,7 @@ export {
   mentionOptionsFromWorkbench,
   resolveBringInLists,
 } from "./mentions";
-export {
-  agentDisplayNamesFromAgents,
-  displayNameForAddress,
-} from "./agent-display-names";
+export { agentDisplayNamesFromAgents, displayNameForAddress } from "./agent-display-names";
 export type { AgentDisplayNames } from "./agent-display-names";
 export type {
   BringInAgentDefinition,
@@ -96,16 +88,8 @@ export type {
   MentionSection,
 } from "./mentions";
 
-export {
-  SLASH_COMMANDS,
-  activeSlashQuery,
-  filterSlashCommands,
-} from "./slash-commands";
-export type {
-  SlashCommandId,
-  SlashCommandSpec,
-  SlashQuery,
-} from "./slash-commands";
+export { SLASH_COMMANDS, activeSlashQuery, filterSlashCommands } from "./slash-commands";
+export type { SlashCommandId, SlashCommandSpec, SlashQuery } from "./slash-commands";
 
 export { CHAT_STRINGS } from "./strings";
 export { displayWorkbenchTitle } from "./workbench-display-title";
@@ -137,10 +121,7 @@ export type {
   FormResponsePayload,
   QuestionResponsePayload,
 } from "./blocks/block-responses";
-export type {
-  ConnectGithubActions,
-  ConnectGithubQuery,
-} from "./blocks/connect-github-actions";
+export type { ConnectGithubActions, ConnectGithubQuery } from "./blocks/connect-github-actions";
 export type {
   ConnectServiceActions,
   ConnectServiceQuery,
@@ -236,10 +217,7 @@ export { sharedWorkbenchesWith } from "./shared-workbenches";
 export type { SharedWorkbenchSummary } from "./shared-workbenches";
 export { findDirectWorkbenchWith } from "./direct-workbench";
 
-export {
-  createDefaultAgentWorkbench,
-  findDefinitionByAssetName,
-} from "./default-agent-workbench";
+export { createDefaultAgentWorkbench, findDefinitionByAssetName } from "./default-agent-workbench";
 export type {
   DefaultAgentWorkbench,
   DefaultAgentWorkbenchConfig,
@@ -248,11 +226,7 @@ export type {
 
 export { ArtifactChip } from "./artifact-chip";
 
-export {
-  PrThreadView,
-  PrQueuedStrip,
-  PrFailedTurnStrip,
-} from "./pr-thread-view";
+export { PrThreadView, PrQueuedStrip, PrFailedTurnStrip } from "./pr-thread-view";
 export type {
   PrThreadRole,
   PrThreadStatus,

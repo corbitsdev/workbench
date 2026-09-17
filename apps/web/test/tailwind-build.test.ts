@@ -10,21 +10,15 @@ const DIST_ASSETS = path.join(WEB_ROOT, "dist/assets");
 
 function builtCss(): string {
   if (!existsSync(DIST_ASSETS)) {
-    throw new Error(
-      "apps/web/dist/assets missing — run `bun run build` in apps/web first",
-    );
+    throw new Error("apps/web/dist/assets missing — run `bun run build` in apps/web first");
   }
   // Code splitting emits one CSS file per chunk; a utility may land in
   // any of them, so assert against all of them together.
-  const files = readdirSync(DIST_ASSETS).filter((name) =>
-    name.endsWith(".css"),
-  );
+  const files = readdirSync(DIST_ASSETS).filter((name) => name.endsWith(".css"));
   if (files.length === 0) {
     throw new Error("no CSS asset under apps/web/dist/assets");
   }
-  return files
-    .map((file) => readFileSync(path.join(DIST_ASSETS, file), "utf8"))
-    .join("\n");
+  return files.map((file) => readFileSync(path.join(DIST_ASSETS, file), "utf8")).join("\n");
 }
 
 describe("Tailwind production CSS", () => {

@@ -41,9 +41,7 @@ export function NavigationProvider({
   return (
     <NavigateContext.Provider value={navigate}>
       <SignOutContext.Provider value={onSignOut}>
-        <SessionUserContext.Provider value={user}>
-          {children}
-        </SessionUserContext.Provider>
+        <SessionUserContext.Provider value={user}>{children}</SessionUserContext.Provider>
       </SignOutContext.Provider>
     </NavigateContext.Provider>
   );
@@ -82,11 +80,7 @@ export function handleLinkClick(
   navigate(to);
 }
 
-export function Link({
-  to,
-  onClick,
-  ...props
-}: ComponentProps<"a"> & { readonly to: string }) {
+export function Link({ to, onClick, ...props }: ComponentProps<"a"> & { readonly to: string }) {
   const navigate = useNavigate();
   return (
     <a

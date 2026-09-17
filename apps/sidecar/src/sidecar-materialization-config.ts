@@ -54,9 +54,7 @@ export function readRegistries(): ReadonlyMap<string, RegistryConfig> {
   }
   const validated = RegistryConfigEnvArray(parsed);
   if (validated instanceof type.errors) {
-    throw new Error(
-      `SIDECAR_TOOL_REGISTRIES failed validation: ${validated.summary}`,
-    );
+    throw new Error(`SIDECAR_TOOL_REGISTRIES failed validation: ${validated.summary}`);
   }
   const out = new Map<string, RegistryConfig>();
   for (const entry of validated) {

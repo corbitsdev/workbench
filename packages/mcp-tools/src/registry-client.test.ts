@@ -11,9 +11,7 @@ test("lists connected MCP servers, sending the workflow-run auth headers", async
     };
     return new Response(
       JSON.stringify({
-        data: [
-          { slug: "notion", name: "Notion", url: "https://notion.example/mcp" },
-        ],
+        data: [{ slug: "notion", name: "Notion", url: "https://notion.example/mcp" }],
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
@@ -26,21 +24,15 @@ test("lists connected MCP servers, sending the workflow-run auth headers", async
     fetchImpl,
   });
 
-  expect(servers).toEqual([
-    { slug: "notion", name: "Notion", url: "https://notion.example/mcp" },
-  ]);
-  expect(received?.url).toBe(
-    "https://hub.internal/api/workflow-connections/mcp-servers",
-  );
+  expect(servers).toEqual([{ slug: "notion", name: "Notion", url: "https://notion.example/mcp" }]);
+  expect(received?.url).toBe("https://hub.internal/api/workflow-connections/mcp-servers");
   expect(received?.headers["authorization"]).toBe("Bearer tok");
   expect(received?.headers["x-workflow-run-address"]).toBe("run-1@workbench");
 });
 
 test("throws on a non-ok response", async () => {
   const fetchImpl = (() =>
-    Promise.resolve(
-      new Response("nope", { status: 500 }),
-    )) as unknown as typeof fetch;
+    Promise.resolve(new Response("nope", { status: 500 }))) as unknown as typeof fetch;
   await expect(
     listMcpServers({
       hubConnectionsUrl: "https://hub.internal",

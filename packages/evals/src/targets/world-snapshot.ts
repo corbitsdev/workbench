@@ -22,15 +22,9 @@ import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { resolveCredentialByName, schema } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
-import {
-  readAgentCapabilities,
-  readAgentDefinitionWorkflowJson,
-} from "@corbits/agent-directory";
+import { readAgentCapabilities, readAgentDefinitionWorkflowJson } from "@corbits/agent-directory";
 import { webhookTrigger as webhookTriggerTable } from "@corbits/webhook-triggers";
-import {
-  connectorDescriptors,
-  listMcpServerConnections,
-} from "@corbits/connections";
+import { connectorDescriptors, listMcpServerConnections } from "@corbits/connections";
 import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 
 import type { FakeReceipt, WorldSnapshot } from "../types.ts";
@@ -51,11 +45,7 @@ export interface WorldSnapshotInfra {
   readonly resolveCredentialByNameFn?: typeof resolveCredentialByName;
 }
 
-async function readAgentDefinitions(
-  db: DB["db"],
-  assetService: AssetService,
-  tenantId: string,
-) {
+async function readAgentDefinitions(db: DB["db"], assetService: AssetService, tenantId: string) {
   const rows = await db.query.workflowDefinition.findMany({
     where: and(
       eq(schema.workflowDefinition.tenantId, tenantId),
@@ -68,10 +58,7 @@ async function readAgentDefinitions(
   );
   return Promise.all(
     deployable.map(async (row) => {
-      const workflowJson = await readAgentDefinitionWorkflowJson(
-        assetService,
-        row.assetId,
-      );
+      const workflowJson = await readAgentDefinitionWorkflowJson(assetService, row.assetId);
       const capabilities = readAgentCapabilities(workflowJson);
       return {
         id: row.id,
@@ -144,11 +131,7 @@ export async function captureWorldSnapshot(
 ): Promise<WorldSnapshot> {
   const [agentDefinitions, connections, webhookTriggers] = await Promise.all([
     readAgentDefinitions(infra.db, infra.assetService, tenantId),
-    readConnections(
-      infra.db,
-      tenantId,
-      infra.resolveCredentialByNameFn ?? resolveCredentialByName,
-    ),
+    readConnections(infra.db, tenantId, infra.resolveCredentialByNameFn ?? resolveCredentialByName),
     readWebhookTriggers(infra.db, tenantId),
   ]);
   return {

@@ -37,9 +37,7 @@ const describeIfDb = dbGate(databaseUrl, import.meta.path);
 const TENANT = "tnt_1";
 
 describeIfDb("createDrizzleChatStore: mutateWorkbenchParticipants", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchTarget = new URL(scratchUrl);
   const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
 
@@ -93,15 +91,13 @@ describeIfDb("createDrizzleChatStore: mutateWorkbenchParticipants", () => {
           tenantId: TENANT,
           workbenchId,
           updatedBy: "prn_alice",
-          mutate: (participants) =>
-            addParticipant(participants, "prn_bob", "bob"),
+          mutate: (participants) => addParticipant(participants, "prn_bob", "bob"),
         }),
         store.mutateWorkbenchParticipants({
           tenantId: TENANT,
           workbenchId,
           updatedBy: "prn_carol",
-          mutate: (participants) =>
-            addParticipant(participants, "prn_dave", "dave"),
+          mutate: (participants) => addParticipant(participants, "prn_dave", "dave"),
         }),
       ]);
 
@@ -140,16 +136,13 @@ describeIfDb("createDrizzleChatStore: mutateWorkbenchParticipants", () => {
           workbenchId,
           updatedBy: "prn_alice",
           mutate: (participants) =>
-            participants.filter(
-              (participant) => participant.address !== "prn_bob",
-            ),
+            participants.filter((participant) => participant.address !== "prn_bob"),
         }),
         store.mutateWorkbenchParticipants({
           tenantId: TENANT,
           workbenchId,
           updatedBy: "prn_carol",
-          mutate: (participants) =>
-            addParticipant(participants, "prn_dave", "dave"),
+          mutate: (participants) => addParticipant(participants, "prn_dave", "dave"),
         }),
       ]);
 

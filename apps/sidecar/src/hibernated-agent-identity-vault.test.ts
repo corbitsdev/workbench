@@ -8,11 +8,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import {
-  createAgentKeyStore,
-  createAgentRepoStore,
-  agentDir,
-} from "@intx/hub-agent";
+import { createAgentKeyStore, createAgentRepoStore, agentDir } from "@intx/hub-agent";
 import { generateKeyPair, signEd25519, verifySSHSignature } from "@intx/crypto";
 
 import {
@@ -51,15 +47,12 @@ describe("hibernated-agent-identity-vault", () => {
     // The real, unmodified destructive call `hub-link.js` makes on every
     // undeploy -- exercised here exactly as the PR #291 spike exercised it.
     await repoStore.remove(address);
-    expect(await fs.readdir(dataDir)).not.toContain(
-      path.basename(agentDir(dataDir, address)),
-    );
+    expect(await fs.readdir(dataDir)).not.toContain(path.basename(agentDir(dataDir, address)));
 
     const restore = await restoreAgentIdentity(dataDir, address);
     expect(restore.restored).toBe(true);
 
-    const { keyPair: restored, isNew } =
-      await keyStore.loadOrGenerateKey(address);
+    const { keyPair: restored, isNew } = await keyStore.loadOrGenerateKey(address);
     expect(isNew).toBe(false);
     expect(restored.privateKey).toEqual(original.privateKey);
     expect(restored.publicKey).toEqual(original.publicKey);
@@ -80,8 +73,7 @@ describe("hibernated-agent-identity-vault", () => {
     const restore = await restoreAgentIdentity(dataDir, address);
     expect(restore.restored).toBe(false);
 
-    const { keyPair: regenerated, isNew } =
-      await keyStore.loadOrGenerateKey(address);
+    const { keyPair: regenerated, isNew } = await keyStore.loadOrGenerateKey(address);
     expect(isNew).toBe(true);
     expect(regenerated.privateKey).not.toEqual(original.privateKey);
   });
@@ -110,9 +102,7 @@ describe("hibernated-agent-identity-vault", () => {
     const dataDir = await makeTmpDataDir();
     const address = "run_already-gone@example.com";
 
-    const reportErrorMock = mock(
-      (_error: unknown, _context: unknown) => "ref-test",
-    );
+    const reportErrorMock = mock((_error: unknown, _context: unknown) => "ref-test");
     mock.module("@corbits/error-sink", () => ({
       reportError: reportErrorMock,
     }));
@@ -162,9 +152,7 @@ describe("hibernated-agent-identity-vault", () => {
       retentionMs,
     });
 
-    expect(result.reapedEntries).toEqual([
-      path.basename(agentDir(dataDir, oldAddress)),
-    ]);
+    expect(result.reapedEntries).toEqual([path.basename(agentDir(dataDir, oldAddress))]);
     await expect(fs.stat(oldVaultEntry)).rejects.toThrow();
     const freshVaultEntry = path.join(
       dataDir,

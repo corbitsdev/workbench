@@ -24,14 +24,7 @@ import {
 } from "@corbits/chat-ui";
 import type { Workbench } from "@corbits/chat-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  ChatCircle,
-  Check,
-  DotsThree,
-  Hash,
-  MagnifyingGlass,
-  PushPin,
-} from "@corbits/icons";
+import { ChatCircle, Check, DotsThree, Hash, MagnifyingGlass, PushPin } from "@corbits/icons";
 import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
 
@@ -85,10 +78,7 @@ export function rowMenuLabels(
  * title) — the caller's cue to treat the rename as a no-op cancel rather
  * than firing an empty-name PATCH.
  */
-export function renamePayload(
-  input: string,
-  currentTitle: string,
-): string | undefined {
+export function renamePayload(input: string, currentTitle: string): string | undefined {
   const trimmed = input.trim();
   if (trimmed.length === 0 || trimmed === currentTitle) return undefined;
   return trimmed;
@@ -116,30 +106,20 @@ export type WorkbenchRowSignals = {
  * refetch on navigation, so the open row's count is forced to 0 locally.
  */
 export function workbenchRowSignals(
-  workbench: Pick<
-    Workbench,
-    "unreadCount" | "lastActivityAt" | "live" | "sharedLabel"
-  >,
+  workbench: Pick<Workbench, "unreadCount" | "lastActivityAt" | "live" | "sharedLabel">,
   isOpen: boolean,
 ): WorkbenchRowSignals {
   return {
-    ...(workbench.sharedLabel !== undefined
-      ? { sharedLabel: workbench.sharedLabel }
-      : {}),
+    ...(workbench.sharedLabel !== undefined ? { sharedLabel: workbench.sharedLabel } : {}),
     ...(workbench.live !== undefined
       ? {
-          live:
-            isOpen && workbench.live === "reply-ready"
-              ? "idle"
-              : workbench.live,
+          live: isOpen && workbench.live === "reply-ready" ? "idle" : workbench.live,
         }
       : {}),
     ...(workbench.lastActivityAt !== undefined
       ? { time: formatRelativeTime(workbench.lastActivityAt) }
       : {}),
-    ...(workbench.unreadCount !== undefined
-      ? { unread: isOpen ? 0 : workbench.unreadCount }
-      : {}),
+    ...(workbench.unreadCount !== undefined ? { unread: isOpen ? 0 : workbench.unreadCount } : {}),
   };
 }
 
@@ -149,9 +129,7 @@ export function workbenchRowSignals(
  * relative order (stable sort). Kind is kept on each workbench for
  * icons/create; this helper never groups by it.
  */
-export function orderWorkbenchRows(
-  workbenches: readonly Workbench[],
-): readonly Workbench[] {
+export function orderWorkbenchRows(workbenches: readonly Workbench[]): readonly Workbench[] {
   const byRecency = (a: Workbench, b: Workbench) => {
     const at = a.lastActivityAt ? Date.parse(a.lastActivityAt) : 0;
     const bt = b.lastActivityAt ? Date.parse(b.lastActivityAt) : 0;
@@ -177,8 +155,7 @@ export function filterSidebarRows(
   if (needle === "") return rows;
   return rows.filter((row) => {
     const title =
-      displayWorkbenchTitle(row.workbench.title, row.workbench.id) ||
-      CHAT_STRINGS.unnamedWorkbench;
+      displayWorkbenchTitle(row.workbench.title, row.workbench.id) || CHAT_STRINGS.unnamedWorkbench;
     if (title.toLowerCase().includes(needle)) return true;
     const preview = row.workbench.preview ?? "";
     return preview.toLowerCase().includes(needle);
@@ -233,11 +210,7 @@ function WorkbenchRow({
       if (isWorkbenchRenameRequestFor(event, workbench.id)) startRename();
     }
     window.addEventListener(REQUEST_WORKBENCH_RENAME_EVENT, onRenameRequest);
-    return () =>
-      window.removeEventListener(
-        REQUEST_WORKBENCH_RENAME_EVENT,
-        onRenameRequest,
-      );
+    return () => window.removeEventListener(REQUEST_WORKBENCH_RENAME_EVENT, onRenameRequest);
   }, [workbench.id]);
 
   async function commitRename() {
@@ -294,25 +267,18 @@ function WorkbenchRow({
         autoFocus
         value={renameValue}
         aria-label={CHAT_STRINGS.rowMenuRename}
-        onChange={(event) =>
-          setRenameValue((event.target as HTMLInputElement).value)
-        }
+        onChange={(event) => setRenameValue((event.target as HTMLInputElement).value)}
         onKeyDown={handleRenameKeyDown}
         onBlur={() => void commitRename()}
       />
     );
   }
 
-  const displayTitle =
-    displayWorkbenchTitle(title, workbench.id) || CHAT_STRINGS.unnamedWorkbench;
+  const displayTitle = displayWorkbenchTitle(title, workbench.id) || CHAT_STRINGS.unnamedWorkbench;
   const { sharedLabel, live, time, unread } = signals;
   const hasUnread = typeof unread === "number" && unread > 0;
   const liveLabel =
-    live === "working"
-      ? "Agent working"
-      : live === "reply-ready"
-        ? "Reply ready"
-        : "";
+    live === "working" ? "Agent working" : live === "reply-ready" ? "Reply ready" : "";
 
   return (
     <div
@@ -340,17 +306,9 @@ function WorkbenchRow({
             </span>
           )}
           {live === "working" ? (
-            <span
-              className="shell-ch-orbit"
-              aria-hidden="true"
-              title="Agent working"
-            />
+            <span className="shell-ch-orbit" aria-hidden="true" title="Agent working" />
           ) : live === "reply-ready" ? (
-            <span
-              className="shell-ch-completion"
-              aria-hidden="true"
-              title="Reply ready"
-            >
+            <span className="shell-ch-completion" aria-hidden="true" title="Reply ready">
               <Check aria-hidden="true" />
             </span>
           ) : null}
@@ -362,10 +320,7 @@ function WorkbenchRow({
           <span className="shell-ch-name-row">
             <span className="shell-ch-name">{displayTitle}</span>
             {pinned ? (
-              <PushPin
-                className="shell-ch-pin"
-                aria-label={CHAT_STRINGS.rowMenuPin}
-              />
+              <PushPin className="shell-ch-pin" aria-label={CHAT_STRINGS.rowMenuPin} />
             ) : null}
             {sharedLabel !== undefined && sharedLabel !== "" ? (
               <Badge tone="shared" title={sharedLabel}>
@@ -378,9 +333,7 @@ function WorkbenchRow({
           ) : null}
         </span>
         <span className="shell-ch-right">
-          {time !== undefined && time !== "" ? (
-            <span className="shell-ch-time">{time}</span>
-          ) : null}
+          {time !== undefined && time !== "" ? <span className="shell-ch-time">{time}</span> : null}
           {hasUnread && live !== "reply-ready" ? (
             <Badge tone="accent" className="shell-ch-unread-badge">
               {unread}
@@ -401,9 +354,7 @@ function WorkbenchRow({
           </MenuTrigger>
           <MenuContent align="start">
             <MenuItem onSelect={startRename}>{renameLabel}</MenuItem>
-            <MenuItem onSelect={() => void togglePinned()}>
-              {pinToggleLabel}
-            </MenuItem>
+            <MenuItem onSelect={() => void togglePinned()}>{pinToggleLabel}</MenuItem>
           </MenuContent>
         </Menu>
       </div>
@@ -495,10 +446,7 @@ export function WorkbenchList({
               active={row.workbench.id === activeId}
               tenantId={tenantId}
               onSelect={() => onNavigate(workbenchPath(row.workbench.id))}
-              signals={workbenchRowSignals(
-                row.workbench,
-                row.workbench.id === activeId,
-              )}
+              signals={workbenchRowSignals(row.workbench, row.workbench.id === activeId)}
             />
           ))}
         </div>

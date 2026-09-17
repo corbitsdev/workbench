@@ -20,9 +20,7 @@ describe("CL-7129's timeout constants", () => {
     // (the section body's own per-occurrence timeout). A wait bound at
     // or below that would time out a message queued behind such a
     // turn and drop it as undelivered instead of waiting it out.
-    expect(DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS).toBeGreaterThan(
-      CHAT_TURN_TIMEOUT_MS,
-    );
+    expect(DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS).toBeGreaterThan(CHAT_TURN_TIMEOUT_MS);
   });
 
   test("the claim TTL exceeds the wait bound plus the dispatch deadline, so it never fires on a well-behaved dispatch", () => {

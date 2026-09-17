@@ -11,14 +11,7 @@
 // and this component only reads it through the same hooks page code
 // already uses.
 
-import {
-  lazy,
-  Suspense,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import type { ArtifactSaveState } from "@corbits/artifact-ui";
 
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
@@ -53,16 +46,12 @@ const CanvasColumn = lazy(async () => ({
  * (see `AppRoute.hasStageTopBar`'s doc) — everything else titles its own
  * stage, so this stays false for the rest. */
 function routeHasNoStageTopBar(path: string): boolean {
-  const route = APP_ROUTES.find((candidate) =>
-    matchesRoute(candidate.path, path),
-  );
+  const route = APP_ROUTES.find((candidate) => matchesRoute(candidate.path, path));
   return route?.hasStageTopBar === false;
 }
 
 function routeLabel(path: string): string {
-  const route = APP_ROUTES.find((candidate) =>
-    matchesRoute(candidate.path, path),
-  );
+  const route = APP_ROUTES.find((candidate) => matchesRoute(candidate.path, path));
   return route?.label ?? "Workbench";
 }
 
@@ -90,9 +79,9 @@ export function AppShell({
   // co-edit presence). Resets to a fresh state the moment the open
   // artifact changes so a stale "Saved · v3" from a previous artifact can
   // never leak into a newly opened one.
-  const [artifactSaveState, setArtifactSaveState] = useState<ArtifactSaveState>(
-    { kind: "read-only" },
-  );
+  const [artifactSaveState, setArtifactSaveState] = useState<ArtifactSaveState>({
+    kind: "read-only",
+  });
   const artifactSaveStateForId = useRef<string | null>(null);
   useEffect(() => {
     if (canvasArtifact === null || canvasArtifact.rendererKind !== "doc") {
@@ -103,9 +92,7 @@ export function AppShell({
     if (artifactSaveStateForId.current === canvasArtifact.id) return;
     artifactSaveStateForId.current = canvasArtifact.id;
     setArtifactSaveState(
-      canvasArtifact.canEdit === true
-        ? { kind: "unsaved" }
-        : { kind: "read-only" },
+      canvasArtifact.canEdit === true ? { kind: "unsaved" } : { kind: "read-only" },
     );
   }, [canvasArtifact]);
 
@@ -146,12 +133,7 @@ export function AppShell({
 
   return (
     <div className="shell-frame">
-      <Sidebar
-        path={path}
-        user={user}
-        onNavigate={navigate}
-        onSignOut={onSignOut}
-      />
+      <Sidebar path={path} user={user} onNavigate={navigate} onSignOut={onSignOut} />
       <div className="shell-main" ref={mainRef}>
         <div className="shell-main-content">
           <ProviderHealthBanner path={path} />

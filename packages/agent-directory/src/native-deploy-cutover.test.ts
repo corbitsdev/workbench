@@ -16,9 +16,7 @@ function tsFilesUnder(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) return tsFilesUnder(full);
-    return entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")
-      ? [full]
-      : [];
+    return entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts") ? [full] : [];
   });
 }
 
@@ -42,9 +40,7 @@ describe("workflow-freeze cutover", () => {
     const packageJson = JSON.parse(
       readFileSync(path.join(import.meta.dir, "../package.json"), "utf8"),
     ) as { dependencies?: Record<string, string> };
-    expect(Object.keys(packageJson.dependencies ?? {})).not.toContain(
-      "@corbits/workflow-freeze",
-    );
+    expect(Object.keys(packageJson.dependencies ?? {})).not.toContain("@corbits/workflow-freeze");
   });
 
   test("no source file in apps/hub imports @corbits/workflow-freeze", () => {

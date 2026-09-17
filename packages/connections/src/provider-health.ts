@@ -40,8 +40,7 @@ import { type } from "arktype";
  * connection problem or not durable enough to guide someone to Plugins
  * over — those turns already show their own error bubble in chat and
  * need no health signal. */
-export type ClassifiedInferenceFailureCategory =
-  "credential_failure" | "quota_exhausted";
+export type ClassifiedInferenceFailureCategory = "credential_failure" | "quota_exhausted";
 
 const CLASSIFIED_CATEGORIES: ReadonlySet<string> = new Set([
   "credential_failure",
@@ -63,11 +62,7 @@ export type ProviderHealthRecord = {
 export type ProviderHealthStore = {
   /** Marks `provider` unhealthy for `tenantId`, overwriting any prior
    * record (a newer failure's category/time always wins). */
-  report(
-    tenantId: string,
-    provider: string,
-    category: ClassifiedInferenceFailureCategory,
-  ): void;
+  report(tenantId: string, provider: string, category: ClassifiedInferenceFailureCategory): void;
   /** Clears a provider's unhealthy record — call only after a passing
    * credential test, never from a reply's prose. A no-op when the
    * provider was not marked unhealthy. */
@@ -75,14 +70,10 @@ export type ProviderHealthStore = {
   get(tenantId: string, provider: string): ProviderHealthRecord | undefined;
   /** Every provider currently marked unhealthy for `tenantId`, keyed by
    * provider id. */
-  listForTenant(
-    tenantId: string,
-  ): Readonly<Record<string, ProviderHealthRecord>>;
+  listForTenant(tenantId: string): Readonly<Record<string, ProviderHealthRecord>>;
 };
 
-export function createProviderHealthStore(
-  now: () => Date = () => new Date(),
-): ProviderHealthStore {
+export function createProviderHealthStore(now: () => Date = () => new Date()): ProviderHealthStore {
   const byTenant = new Map<string, Map<string, ProviderHealthRecord>>();
 
   function tenantMap(tenantId: string): Map<string, ProviderHealthRecord> {
@@ -129,9 +120,7 @@ export type ProviderHealthPort = {
   }): void;
 };
 
-export function createProviderHealthPort(
-  store: ProviderHealthStore,
-): ProviderHealthPort {
+export function createProviderHealthPort(store: ProviderHealthStore): ProviderHealthPort {
   return {
     reportInferenceFailure({ tenantId, provider, category }) {
       store.report(tenantId, provider, category);
@@ -168,30 +157,23 @@ const ProviderHealthSnapshotEnvelope = type({
  * `report`/`ProviderHealthPort` write through, so a response that ever
  * carried a provider's raw prose (or anything else the enum doesn't
  * name) throws here instead of silently reaching the banner. */
-export async function fetchProviderHealth(
-  tenantId: string,
-): Promise<ProviderHealthSnapshot> {
-  const response = await fetch(
-    `/api/tenants/${tenantId}/connections/provider-health`,
-    { headers: { accept: "application/json" } },
-  );
+export async function fetchProviderHealth(tenantId: string): Promise<ProviderHealthSnapshot> {
+  const response = await fetch(`/api/tenants/${tenantId}/connections/provider-health`, {
+    headers: { accept: "application/json" },
+  });
   if (!response.ok) {
     throw new Error(`Failed to load provider health (${response.status})`);
   }
   const json: unknown = await response.json();
   const envelope = ProviderHealthSnapshotEnvelope(json);
   if (envelope instanceof type.errors) {
-    throw new Error(
-      `Unexpected provider-health response shape: ${envelope.summary}`,
-    );
+    throw new Error(`Unexpected provider-health response shape: ${envelope.summary}`);
   }
   const providers: Record<string, ProviderHealthRecord> = {};
   for (const [provider, value] of Object.entries(envelope.providers)) {
     const record = ProviderHealthRecordSchema(value);
     if (record instanceof type.errors) {
-      throw new Error(
-        `Unexpected provider-health record shape for ${provider}: ${record.summary}`,
-      );
+      throw new Error(`Unexpected provider-health record shape for ${provider}: ${record.summary}`);
     }
     providers[provider] = record;
   }

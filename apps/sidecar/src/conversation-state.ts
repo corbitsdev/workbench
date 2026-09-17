@@ -134,15 +134,8 @@ import { getLogger } from "@intx/log";
 import { reportError } from "@corbits/error-sink";
 import { createConnectorRouter } from "@intx/harness";
 import type { ConnectorReplyParts, RouteDecision } from "@intx/harness";
-import {
-  createIsogitStorage,
-  createNodeIsogitRuntime,
-} from "@intx/storage-isogit/node";
-import type {
-  Principal,
-  RepoId,
-  RepoStore,
-} from "@intx/hub-sessions/substrate";
+import { createIsogitStorage, createNodeIsogitRuntime } from "@intx/storage-isogit/node";
+import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions/substrate";
 import { WORKFLOW_RUN_AGENT_STATE_PREFIX } from "@intx/hub-sessions/substrate";
 import { SignalKind } from "@intx/types";
 
@@ -405,10 +398,7 @@ export async function createDurableConversationStore(
   opts: DurableConversationStoreOpts,
 ): Promise<DurableConversationStore> {
   await fs.promises.mkdir(opts.localStoreDir, { recursive: true });
-  const baseStorage = await isogitStorage.createIsogitStore(
-    opts.localStoreDir,
-    opts.signer,
-  );
+  const baseStorage = await isogitStorage.createIsogitStore(opts.localStoreDir, opts.signer);
 
   // Reuse the connector router + the harness storage-override seam. The
   // router's `onStateChanged` is the change-driven commit hook the design
@@ -441,10 +431,7 @@ export async function createDurableConversationStore(
   }
 
   function agentStatePrefix(): string {
-    return durableConversationAgentStatePrefix(
-      opts.agentKey,
-      requireBoundWorkbenchId(),
-    );
+    return durableConversationAgentStatePrefix(opts.agentKey, requireBoundWorkbenchId());
   }
   // The number of mirror boundaries already durably committed (the
   // checkpoint's folded boundaries plus every appended WAL entry). It is
@@ -740,11 +727,7 @@ export async function createDurableConversationStore(
     // with the freshest metadata and truncate the WAL. Amortizes the
     // unavoidable O(N) full rewrite to O(N/K) per boundary.
     if (mirroredBoundaryCount - checkpointBoundarySeq >= CHECKPOINT_INTERVAL) {
-      await writeCheckpoint(
-        mirroredBoundaryCount,
-        turns.slice(0, mirroredTurnCount),
-        metadata,
-      );
+      await writeCheckpoint(mirroredBoundaryCount, turns.slice(0, mirroredTurnCount), metadata);
       checkpointBoundarySeq = mirroredBoundaryCount;
     }
   }
@@ -1034,10 +1017,7 @@ const PendingOperationKindEnvelope = type({ kind: "unknown" });
  * question is simply lost here -- their eventual reply just becomes the
  * next ordinary turn (docs/CHAT.md).
  */
-function dropUnclassifiedPendingOperations(
-  items: unknown[],
-  agentKey: string,
-): unknown[] {
+function dropUnclassifiedPendingOperations(items: unknown[], agentKey: string): unknown[] {
   return items.filter((item) => {
     const envelope = PendingOperationKindEnvelope(item);
     const kind = envelope instanceof type.errors ? undefined : envelope.kind;
@@ -1080,11 +1060,7 @@ export async function reconstructDurableConversation(
 ): Promise<ReconstructedConversation | null> {
   const checkpoint = await readCheckpointFromDir(agentStateDir, agentKey);
   const baseBoundarySeq = checkpoint?.checkpointSeq ?? 0;
-  const wal = await readWalTailFromDir(
-    agentStateDir,
-    agentKey,
-    baseBoundarySeq,
-  );
+  const wal = await readWalTailFromDir(agentStateDir, agentKey, baseBoundarySeq);
   if (checkpoint === null && wal.length === 0) return null;
 
   const turns: unknown[] = [...(checkpoint?.turns ?? [])];
@@ -1138,10 +1114,7 @@ async function readCheckpointFromDir(
 } | null> {
   let metaRaw: string;
   try {
-    metaRaw = await fs.promises.readFile(
-      path.join(agentStateDir, CHECKPOINT_META_FILE),
-      "utf8",
-    );
+    metaRaw = await fs.promises.readFile(path.join(agentStateDir, CHECKPOINT_META_FILE), "utf8");
   } catch (cause) {
     if (isErrnoNotFound(cause)) return null;
     throw cause;
@@ -1153,14 +1126,8 @@ async function readCheckpointFromDir(
       `sidecar conversation-state: ${CHECKPOINT_META_FILE} for ${agentKey} failed validation: ${validatedMeta.summary}; refusing to start the warm agent fresh on a corrupt checkpoint`,
     );
   }
-  const snapshotRaw = await fs.promises.readFile(
-    path.join(agentStateDir, CHECKPOINT_FILE),
-    "utf8",
-  );
-  const snapshot = parseJsonOrThrow(
-    snapshotRaw,
-    `${agentKey} ${CHECKPOINT_FILE}`,
-  );
+  const snapshotRaw = await fs.promises.readFile(path.join(agentStateDir, CHECKPOINT_FILE), "utf8");
+  const snapshot = parseJsonOrThrow(snapshotRaw, `${agentKey} ${CHECKPOINT_FILE}`);
   const validatedSnapshot = CheckpointSnapshot(snapshot);
   if (validatedSnapshot instanceof type.errors) {
     throw new Error(
@@ -1195,9 +1162,7 @@ async function readWalTailFromDir(
   agentStateDir: string,
   agentKey: string,
   fromSeq: number,
-): Promise<
-  { seq: number; turns: unknown[]; metadata: SnapshotMetadataValue }[]
-> {
+): Promise<{ seq: number; turns: unknown[]; metadata: SnapshotMetadataValue }[]> {
   const walDir = path.join(agentStateDir, WAL_DIR);
   let buckets: string[];
   try {
@@ -1220,14 +1185,8 @@ async function readWalTailFromDir(
           `sidecar conversation-state: unexpected non-JSON WAL entry ${WAL_DIR}/${bucket}/${file} for ${agentKey}`,
         );
       }
-      const raw = await fs.promises.readFile(
-        path.join(bucketDir, file),
-        "utf8",
-      );
-      const parsed = parseJsonOrThrow(
-        raw,
-        `${agentKey} ${WAL_DIR}/${bucket}/${file}`,
-      );
+      const raw = await fs.promises.readFile(path.join(bucketDir, file), "utf8");
+      const parsed = parseJsonOrThrow(raw, `${agentKey} ${WAL_DIR}/${bucket}/${file}`);
       const validated = WalEntry(parsed);
       if (validated instanceof type.errors) {
         throw new Error(
@@ -1271,10 +1230,5 @@ function parseJsonOrThrow(raw: string, label: string): unknown {
 }
 
 export function isErrnoNotFound(cause: unknown): boolean {
-  return (
-    typeof cause === "object" &&
-    cause !== null &&
-    "code" in cause &&
-    cause.code === "ENOENT"
-  );
+  return typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT";
 }

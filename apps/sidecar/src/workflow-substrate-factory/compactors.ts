@@ -89,9 +89,7 @@ function mediaSourceChars(source: {
 function toolResultItemChars(
   item: Extract<ContentBlock, { type: "tool_result" }>["content"][number],
 ): number {
-  return item.type === "text"
-    ? item.text.length
-    : mediaSourceChars(item.source);
+  return item.type === "text" ? item.text.length : mediaSourceChars(item.source);
 }
 
 /**
@@ -156,10 +154,7 @@ export function estimateTurnsChars(turns: ConversationTurn[]): number {
  * recent exchange is never folded away even when it alone exceeds
  * budget (the honest-overflow case a director checks separately).
  */
-function countTurnsWithinBudget(
-  turns: ConversationTurn[],
-  budgetChars: number,
-): number {
+function countTurnsWithinBudget(turns: ConversationTurn[], budgetChars: number): number {
   let runningChars = 0;
   let kept = 0;
   for (let i = turns.length - 1; i >= 0; i--) {
@@ -176,11 +171,7 @@ function countTurnsWithinBudget(
 }
 
 function roleLabel(role: ConversationTurn["role"]): string {
-  return role === "user"
-    ? "User"
-    : role === "assistant"
-      ? "Assistant"
-      : "System";
+  return role === "user" ? "User" : role === "assistant" ? "Assistant" : "System";
 }
 
 /**

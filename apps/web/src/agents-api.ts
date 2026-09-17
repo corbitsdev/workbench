@@ -18,11 +18,7 @@ import type { ArkErrors } from "arktype";
 import { useQuery } from "@tanstack/react-query";
 
 import type { APIQuery } from "@corbits/api-query";
-import {
-  ApiQueryError,
-  UnauthenticatedError,
-  toAPIQuery,
-} from "@corbits/api-query";
+import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@corbits/api-query";
 import { isChatPickerModelName } from "@corbits/connections/model-capability";
 import { parseErrorEnvelope } from "@corbits/error-sink";
 import { tenantKeys } from "./query-client";
@@ -58,19 +54,11 @@ async function getJSON<T>(path: string, schema: Validator<T>): Promise<T> {
     throw new ApiQueryError("Not signed in.", 401, path);
   }
   if (!response.ok) {
-    throw new ApiQueryError(
-      `The server answered ${response.status}.`,
-      response.status,
-      path,
-    );
+    throw new ApiQueryError(`The server answered ${response.status}.`, response.status, path);
   }
   const parsed = schema(await response.json().catch(() => undefined));
   if (parsed instanceof type.errors) {
-    throw new ApiQueryError(
-      `Unexpected response shape: ${parsed.summary}`,
-      undefined,
-      path,
-    );
+    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
   }
   return parsed;
 }
@@ -107,31 +95,22 @@ async function postJSON<T>(
   }
   const parsed = schema(json);
   if (parsed instanceof type.errors) {
-    throw new ApiQueryError(
-      `Unexpected response shape: ${parsed.summary}`,
-      undefined,
-      path,
-    );
+    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
   }
   return parsed;
 }
 
-export function listAgentDefinitions(
-  tenantId: string,
-): Promise<readonly AgentDefinition[]> {
+export function listAgentDefinitions(tenantId: string): Promise<readonly AgentDefinition[]> {
   return getJSON(
     `/api/tenants/${tenantId}/workflows/definitions?limit=${PAGE_LIMIT}`,
     DefinitionsPage,
   ).then((page) => page.data);
 }
 
-export function listAgentInstances(
-  tenantId: string,
-): Promise<readonly AgentInstance[]> {
-  return getJSON(
-    `/api/tenants/${tenantId}/workflows/runs?limit=${PAGE_LIMIT}`,
-    InstancesPage,
-  ).then((page) => page.data);
+export function listAgentInstances(tenantId: string): Promise<readonly AgentInstance[]> {
+  return getJSON(`/api/tenants/${tenantId}/workflows/runs?limit=${PAGE_LIMIT}`, InstancesPage).then(
+    (page) => page.data,
+  );
 }
 
 /**
@@ -145,13 +124,10 @@ export function listAgentInstances(
  * `getDescendantTenants`; the native listing filters one tenant, so a
  * workspace parent sees only its own runs, not its child workbenches'.
  */
-export function listTopLevelRuns(
-  tenantId: string,
-): Promise<readonly AgentInstance[]> {
-  return getJSON(
-    `/api/tenants/${tenantId}/workflows/runs?limit=${PAGE_LIMIT}`,
-    InstancesPage,
-  ).then((page) => page.data);
+export function listTopLevelRuns(tenantId: string): Promise<readonly AgentInstance[]> {
+  return getJSON(`/api/tenants/${tenantId}/workflows/runs?limit=${PAGE_LIMIT}`, InstancesPage).then(
+    (page) => page.data,
+  );
 }
 
 /** The tenant's visible, enabled catalog models for the create-agent form's
@@ -162,16 +138,10 @@ export function listTopLevelRuns(
  * and bare `.gguf` names are also omitted (CL-6744) — this endpoint carries
  * no offering capability lists, so the name-only
  * {@link isChatPickerModelName} gate is the available signal. */
-export function listCatalogModels(
-  tenantId: string,
-): Promise<readonly CatalogModel[]> {
-  return getJSON(
-    `/api/tenants/${tenantId}/catalog/models?limit=${PAGE_LIMIT}`,
-    ModelsPage,
-  ).then((page) =>
-    page.data.filter(
-      (model) => !model.disabled && isChatPickerModelName(model.canonicalName),
-    ),
+export function listCatalogModels(tenantId: string): Promise<readonly CatalogModel[]> {
+  return getJSON(`/api/tenants/${tenantId}/catalog/models?limit=${PAGE_LIMIT}`, ModelsPage).then(
+    (page) =>
+      page.data.filter((model) => !model.disabled && isChatPickerModelName(model.canonicalName)),
   );
 }
 
@@ -184,8 +154,7 @@ const AgentDefinitionDraftResponse = type({
     "skills?": "string[]",
   },
 });
-export type AgentDefinitionDraft =
-  typeof AgentDefinitionDraftResponse.infer.draft;
+export type AgentDefinitionDraft = typeof AgentDefinitionDraftResponse.infer.draft;
 
 /**
  * Asks Myra to draft a starting system prompt (and optionally a
@@ -232,11 +201,7 @@ export function createAgentDefinition(
   tenantId: string,
   input: CreateAgentDefinitionInput,
 ): Promise<AgentDefinition & { readonly skills: readonly string[] }> {
-  return postJSON(
-    `/api/tenants/${tenantId}/agent-definitions`,
-    CreatedAgentDefinition,
-    input,
-  );
+  return postJSON(`/api/tenants/${tenantId}/agent-definitions`, CreatedAgentDefinition, input);
 }
 
 const AgentCapabilitiesResponse = type({
@@ -264,10 +229,7 @@ export function getAgentCapabilities(
  * immutable slug, server-side. A slug-addressed page reads this instead of
  * scanning the paginated definitions listing, so an agent past that
  * listing's ceiling still answers on its own URL. */
-export function getAgentDefinitionBySlug(
-  tenantId: string,
-  slug: string,
-): Promise<AgentDefinition> {
+export function getAgentDefinitionBySlug(tenantId: string, slug: string): Promise<AgentDefinition> {
   return getJSON(
     `/api/tenants/${tenantId}/agent-definitions/by-name/${encodeURIComponent(slug)}`,
     WorkflowDefinitionResponse,
@@ -434,9 +396,7 @@ type SkillsOutcome =
  * native `GET /workflows/runs` listing's own predicate — so this page
  * never has to derive that exclusion itself from a tenant's workbenches.
  */
-export async function loadAgentDirectory(
-  tenantId: string,
-): Promise<AgentDirectoryData> {
+export async function loadAgentDirectory(tenantId: string): Promise<AgentDirectoryData> {
   const [definitions, instances, modelsOutcome] = await Promise.all([
     listAgentDefinitions(tenantId),
     listTopLevelRuns(tenantId),
@@ -478,9 +438,7 @@ export async function loadAgentDirectory(
  * page keeps a single loading/error envelope. Pass no reloadKey —
  * invalidate `tenantKeys.agentDirectory(tenantId)` after create.
  */
-export function useAgentDirectory(
-  tenantId: string | undefined,
-): APIQuery<AgentDirectoryData> {
+export function useAgentDirectory(tenantId: string | undefined): APIQuery<AgentDirectoryData> {
   const result = useQuery({
     queryKey:
       tenantId === undefined

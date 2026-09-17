@@ -58,9 +58,7 @@ describe("dispatchTurnBatch's turn-level deadline (CL-6644)", () => {
     const notice = timeline.find(
       (message) =>
         message.sender.address === "ins_invited1@acme.example" &&
-        message.parts.some(
-          (part) => part.kind === "text" && part.turnFailed === true,
-        ),
+        message.parts.some((part) => part.kind === "text" && part.turnFailed === true),
     );
     const noticePart = notice?.parts.find((part) => part.kind === "text");
     expect(noticePart).toMatchObject({ kind: "text", turnFailed: true });
@@ -96,14 +94,11 @@ describe("dispatchTurnBatch's turn-level deadline (CL-6644)", () => {
     // dispatch immediately rather than queue behind a claim the TTL
     // (60s) hasn't released yet -- proving the deadline's rejection
     // released the claim itself, not just posted a notice.
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts: [{ kind: "text", text: "second" }] }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "second" }] }),
+    });
     await settleFanout();
     expect(response.status).toBe(201);
 
@@ -111,9 +106,7 @@ describe("dispatchTurnBatch's turn-level deadline (CL-6644)", () => {
     const notices = timeline.filter(
       (message) =>
         message.sender.address === "ins_invited1@acme.example" &&
-        message.parts.some(
-          (part) => part.kind === "text" && part.turnFailed === true,
-        ),
+        message.parts.some((part) => part.kind === "text" && part.turnFailed === true),
     );
     // Both messages hit the same never-settling `sendMail`, so both
     // should have failed loud on their own -- neither queued silently
@@ -145,14 +138,11 @@ describe("dispatchTurnBatch's turn-level deadline (CL-6644)", () => {
       definitionId: "wfd_echo",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts: [{ kind: "text", text: "hello" }] }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "hello" }] }),
+    });
     await settleFanout();
     expect(response.status).toBe(201);
 
@@ -160,14 +150,10 @@ describe("dispatchTurnBatch's turn-level deadline (CL-6644)", () => {
     const notice = timeline.find(
       (message) =>
         message.sender.address === "ins_invited1@acme.example" &&
-        message.parts.some(
-          (part) => part.kind === "text" && part.turnFailed === true,
-        ),
+        message.parts.some((part) => part.kind === "text" && part.turnFailed === true),
     );
     expect(notice).toBeUndefined();
-    expect((platform as ReturnType<typeof fakePlatform>).sentMail).toHaveLength(
-      1,
-    );
+    expect((platform as ReturnType<typeof fakePlatform>).sentMail).toHaveLength(1);
   });
 
   // CL-7193: the timed-out `dispatchTurn` call used to be abandoned along
@@ -206,8 +192,7 @@ describe("dispatchTurnBatch's turn-level deadline (CL-6644)", () => {
   });
 
   test("the timeout message names the turn's run address and its elapsed budget", async () => {
-    const { turnDispatchTimeoutMessage } =
-      await import("../src/workbench-service");
+    const { turnDispatchTimeoutMessage } = await import("../src/workbench-service");
     expect(turnDispatchTimeoutMessage("ins_echo1@acme.example", 30_000)).toBe(
       'turn for "ins_echo1@acme.example" did not settle within 30000ms',
     );

@@ -128,9 +128,7 @@ export type StepInferenceSourceTable = typeof StepInferenceSourceTable.infer;
  * a structured error rather than being deferred to a deep-stack
  * `buildEnv` failure.
  */
-export function parseStepInferenceSources(
-  raw: string,
-): StepInferenceSourceTable {
+export function parseStepInferenceSources(raw: string): StepInferenceSourceTable {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);

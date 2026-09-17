@@ -79,10 +79,9 @@ export async function applyOnboardingMigrations(
         applied.push(migration.name);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        throw new Error(
-          `onboarding migration ${migration.name} failed: ${message}`,
-          { cause: err },
-        );
+        throw new Error(`onboarding migration ${migration.name} failed: ${message}`, {
+          cause: err,
+        });
       }
     }
 

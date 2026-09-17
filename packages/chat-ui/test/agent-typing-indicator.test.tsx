@@ -17,8 +17,7 @@ function render(names: readonly string[]) {
   });
   return {
     container,
-    label: () =>
-      container.querySelector(".chat-typing-indicator-label")?.textContent,
+    label: () => container.querySelector(".chat-typing-indicator-label")?.textContent,
     unmount: () => root.unmount(),
   };
 }
@@ -33,15 +32,9 @@ describe("AgentTypingIndicator", () => {
   test("one agent reads as a single typist", () => {
     const { container, label, unmount } = render(["Myra"]);
     expect(label()).toBe("Myra is typing…");
-    expect(
-      container.querySelector(".chat-typing-indicator-dots"),
-    ).not.toBeNull();
-    expect(
-      container.querySelectorAll(".chat-agent-typing-avatar"),
-    ).toHaveLength(0);
-    expect(
-      container.querySelector(".chat-typing-row")?.getAttribute("data-own"),
-    ).toBe("false");
+    expect(container.querySelector(".chat-typing-indicator-dots")).not.toBeNull();
+    expect(container.querySelectorAll(".chat-agent-typing-avatar")).toHaveLength(0);
+    expect(container.querySelector(".chat-typing-row")?.getAttribute("data-own")).toBe("false");
     unmount();
   });
 

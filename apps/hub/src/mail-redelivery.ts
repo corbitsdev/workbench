@@ -43,26 +43,23 @@ export type WireMailRedeliveryDeps = {
 export function wireMailRedelivery(deps: WireMailRedeliveryDeps): () => void {
   const log = getLogger(["hub", "mail-redelivery"]);
 
-  return deps.sidecarRouter.events.on(
-    "mail.outbound.undelivered",
-    ({ rawMessage, recipients }) => {
-      for (const recipient of recipients) {
-        void (async () => {
-          if (!deps.sidecarRouter.getRoutableAddresses().includes(recipient)) {
-            try {
-              await deps.chatPlatform.ensureAwake(recipient);
-            } catch (cause) {
-              log.warn`could not wake ${recipient} ahead of redelivery: ${
-                cause instanceof Error ? cause.message : String(cause)
-              }`;
-            }
+  return deps.sidecarRouter.events.on("mail.outbound.undelivered", ({ rawMessage, recipients }) => {
+    for (const recipient of recipients) {
+      void (async () => {
+        if (!deps.sidecarRouter.getRoutableAddresses().includes(recipient)) {
+          try {
+            await deps.chatPlatform.ensureAwake(recipient);
+          } catch (cause) {
+            log.warn`could not wake ${recipient} ahead of redelivery: ${
+              cause instanceof Error ? cause.message : String(cause)
+            }`;
           }
-          const delivered = deps.sidecarRouter.routeMail(recipient, rawMessage);
-          if (!delivered) {
-            log.warn`redelivery to ${recipient} failed: still unroutable after wake`;
-          }
-        })();
-      }
-    },
-  );
+        }
+        const delivered = deps.sidecarRouter.routeMail(recipient, rawMessage);
+        if (!delivered) {
+          log.warn`redelivery to ${recipient} failed: still unroutable after wake`;
+        }
+      })();
+    }
+  });
 }

@@ -31,8 +31,7 @@ import { useNavigate } from "../navigation";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { workbenchPath } from "../workbench-path";
 
-const GENERIC_CREATE_FAILURE =
-  "Something went wrong creating this workbench. Try again.";
+const GENERIC_CREATE_FAILURE = "Something went wrong creating this workbench. Try again.";
 
 /**
  * Allow-lists what's safe to show verbatim, rather than denylisting
@@ -43,10 +42,7 @@ const GENERIC_CREATE_FAILURE =
  * both embed raw request paths and schema summaries in `.message` and
  * must go through their own describer, never shown directly.
  */
-export function describeWorkbenchCreateFailure(
-  cause: unknown,
-  refId?: string,
-): string {
+export function describeWorkbenchCreateFailure(cause: unknown, refId?: string): string {
   if (cause instanceof WorkbenchPostCreateError) {
     const message =
       cause.stage === "opening-message"
@@ -74,9 +70,7 @@ function agentDisplayName({
   readonly name: string;
   readonly description?: string;
 }): string {
-  return description === undefined || description === ""
-    ? humanizeSlug(name)
-    : description;
+  return description === undefined || description === "" ? humanizeSlug(name) : description;
 }
 
 export function NewWorkbenchPickerRoute() {
@@ -91,9 +85,9 @@ export function NewWorkbenchPickerRoute() {
     };
   }, [selectedTenantId]);
   const [prompt, setPrompt] = useState("");
-  const [selectedAgentDefinitionIds, setSelectedAgentDefinitionIds] = useState<
-    readonly string[]
-  >([]);
+  const [selectedAgentDefinitionIds, setSelectedAgentDefinitionIds] = useState<readonly string[]>(
+    [],
+  );
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [createAgentOpen, setCreateAgentOpen] = useState(false);
   const [agentQuery, setAgentQuery] = useState("");
@@ -151,9 +145,7 @@ export function NewWorkbenchPickerRoute() {
 
   useEffect(() => {
     if (invitableAgents.data === undefined) return;
-    const availableDefinitionIds = new Set(
-      invitableAgents.data.map((agent) => agent.id),
-    );
+    const availableDefinitionIds = new Set(invitableAgents.data.map((agent) => agent.id));
     setSelectedAgentDefinitionIds((current) => {
       const next = current.filter((id) => availableDefinitionIds.has(id));
       return next.length === current.length ? current : next;
@@ -172,22 +164,13 @@ export function NewWorkbenchPickerRoute() {
     selectedAgentDefinitionIds.includes(agent.id),
   );
 
-  async function handleCreate(
-    firstMessage?: string,
-    selectedIds: readonly string[] = [],
-  ) {
+  async function handleCreate(firstMessage?: string, selectedIds: readonly string[] = []) {
     if (selectedTenantId === null || creating) return;
     lastAttemptRef.current = { firstMessage, selectedIds };
     setCreating(true);
     setStillSettingUp(false);
     try {
-      await createWorkbench(
-        selectedTenantId,
-        navigate,
-        queryClient,
-        firstMessage,
-        selectedIds,
-      );
+      await createWorkbench(selectedTenantId, navigate, queryClient, firstMessage, selectedIds);
     } catch (cause) {
       if (cause instanceof WorkbenchPostCreateError) {
         const refId = reportError(cause, {
@@ -201,10 +184,7 @@ export function NewWorkbenchPickerRoute() {
         toast(describeWorkbenchCreateFailure(cause, refId));
         return;
       }
-      if (
-        cause instanceof WorkbenchPreconditionError &&
-        cause.kind === "setup-agent-missing"
-      ) {
+      if (cause instanceof WorkbenchPreconditionError && cause.kind === "setup-agent-missing") {
         setCreating(false);
         setStillSettingUp(true);
         return;
@@ -257,12 +237,7 @@ export function NewWorkbenchPickerRoute() {
       <StageTopBar
         crumbs={[{ label: CHAT_STRINGS.newWorkbenchAction }]}
         actions={
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate("/")}
-          >
+          <Button type="button" variant="ghost" size="sm" onClick={() => navigate("/")}>
             Cancel
           </Button>
         }
@@ -272,8 +247,8 @@ export function NewWorkbenchPickerRoute() {
           <div className="new-workbench-picker-not-ready">
             <h3>Still setting up your workbench</h3>
             <p className="new-workbench-picker-sub">
-              Your account&apos;s agents are finishing setup in the background.
-              This usually takes under a minute — try again in a moment.
+              Your account&apos;s agents are finishing setup in the background. This usually takes
+              under a minute — try again in a moment.
             </p>
             <Button type="button" variant="outline" onClick={retryLastAttempt}>
               Try again
@@ -285,10 +260,7 @@ export function NewWorkbenchPickerRoute() {
           // briefly in case it resolves fast" delay only bought a blank
           // pane here (CL-6623 finding #3) — show the loader outright
           // instead of leaving a gap before it mounts.
-          <WorkbenchLoadingState
-            delayMs={0}
-            title="Setting up your workbench…"
-          />
+          <WorkbenchLoadingState delayMs={0} title="Setting up your workbench…" />
         ) : (
           <>
             <h3>What do you want your Workbench to do?</h3>
@@ -318,10 +290,7 @@ export function NewWorkbenchPickerRoute() {
                     }
                   }}
                 />
-                <div
-                  className="new-workbench-prompt-examples"
-                  aria-label="Try an example"
-                >
+                <div className="new-workbench-prompt-examples" aria-label="Try an example">
                   <span>Try</span>
                   {[
                     "Review every PR on faremeter/interchange",
@@ -356,30 +325,20 @@ export function NewWorkbenchPickerRoute() {
                     </span>
                   ))}
                   {invitableAgents.isLoading ? (
-                    <span className="new-workbench-agent-status">
-                      Loading agents…
-                    </span>
+                    <span className="new-workbench-agent-status">Loading agents…</span>
                   ) : invitableAgents.isError ? (
                     <span className="new-workbench-agent-status" role="status">
-                      Couldn&apos;t load agents. You can still start without
-                      one.
+                      Couldn&apos;t load agents. You can still start without one.
                     </span>
                   ) : (
-                    <div
-                      ref={agentPickerRootRef}
-                      className="new-workbench-agent-picker"
-                    >
+                    <div ref={agentPickerRootRef} className="new-workbench-agent-picker">
                       <button
                         ref={agentPickerTriggerRef}
                         type="button"
                         className="new-workbench-add-agent"
                         aria-controls={AGENT_LISTBOX_ID}
                         aria-expanded={agentPickerOpen}
-                        onClick={() =>
-                          agentPickerOpen
-                            ? closeAgentPicker()
-                            : openAgentPicker()
-                        }
+                        onClick={() => (agentPickerOpen ? closeAgentPicker() : openAgentPicker())}
                       >
                         + Add agent
                       </button>
@@ -408,25 +367,19 @@ export function NewWorkbenchPickerRoute() {
                               if (event.key === "ArrowDown") {
                                 event.preventDefault();
                                 setActiveAgentIndex((current) =>
-                                  Math.min(
-                                    current + 1,
-                                    filteredAgents.length - 1,
-                                  ),
+                                  Math.min(current + 1, filteredAgents.length - 1),
                                 );
                               }
                               if (event.key === "ArrowUp") {
                                 event.preventDefault();
-                                setActiveAgentIndex((current) =>
-                                  Math.max(current - 1, 0),
-                                );
+                                setActiveAgentIndex((current) => Math.max(current - 1, 0));
                               }
                               if (event.key === "Enter") {
                                 // Implicit form submission would otherwise
                                 // fire on a miss, creating a workbench the
                                 // operator did not ask for.
                                 event.preventDefault();
-                                const activeAgent =
-                                  filteredAgents[activeAgentIndex];
+                                const activeAgent = filteredAgents[activeAgentIndex];
                                 if (activeAgent !== undefined) {
                                   toggleAgent(activeAgent.id);
                                 }
@@ -444,14 +397,9 @@ export function NewWorkbenchPickerRoute() {
                                 : "No agents match that search."}
                             </p>
                           ) : (
-                            <div
-                              id={AGENT_LISTBOX_ID}
-                              role="listbox"
-                              aria-label="Available agents"
-                            >
+                            <div id={AGENT_LISTBOX_ID} role="listbox" aria-label="Available agents">
                               {filteredAgents.map((agent, index) => {
-                                const selected =
-                                  selectedAgentDefinitionIds.includes(agent.id);
+                                const selected = selectedAgentDefinitionIds.includes(agent.id);
                                 return (
                                   <button
                                     key={agent.id}
@@ -464,9 +412,7 @@ export function NewWorkbenchPickerRoute() {
                                         ? "new-workbench-agent-option is-active"
                                         : "new-workbench-agent-option"
                                     }
-                                    onMouseMove={() =>
-                                      setActiveAgentIndex(index)
-                                    }
+                                    onMouseMove={() => setActiveAgentIndex(index)}
                                     onClick={() => toggleAgent(agent.id)}
                                   >
                                     <span className="new-workbench-agent-option-name">
@@ -475,9 +421,7 @@ export function NewWorkbenchPickerRoute() {
                                     <span className="new-workbench-agent-option-handle">
                                       {agent.name}
                                     </span>
-                                    {selected ? (
-                                      <span aria-hidden="true">✓</span>
-                                    ) : null}
+                                    {selected ? <span aria-hidden="true">✓</span> : null}
                                   </button>
                                 );
                               })}
@@ -516,8 +460,8 @@ export function NewWorkbenchPickerRoute() {
               disabled={creating || selectedTenantId === null}
               onClick={() => void handleCreate()}
             >
-              Or <span>just open an empty channel</span> — nobody is in it yet,
-              add people and agents as you go.
+              Or <span>just open an empty channel</span> — nobody is in it yet, add people and
+              agents as you go.
             </button>
           </>
         )}
@@ -530,28 +474,20 @@ export function NewWorkbenchPickerRoute() {
           tenantId={selectedTenantId}
           onCreated={(definition) => {
             if (currentTenantIdRef.current !== selectedTenantId) return;
-            queryClient.setQueryData<
-              Awaited<ReturnType<typeof listTenantInvitableDefinitions>>
-            >(
+            queryClient.setQueryData<Awaited<ReturnType<typeof listTenantInvitableDefinitions>>>(
               ["tenant", selectedTenantId, "invitable-definitions"],
               (current) => [
-                ...(current ?? []).filter(
-                  (agent) => agent.id !== definition.id,
-                ),
+                ...(current ?? []).filter((agent) => agent.id !== definition.id),
                 {
                   id: definition.id,
                   name: definition.name,
-                  ...(definition.description !== null &&
-                  definition.description !== ""
+                  ...(definition.description !== null && definition.description !== ""
                     ? { description: definition.description }
                     : {}),
                 },
               ],
             );
-            setSelectedAgentDefinitionIds((current) => [
-              ...current,
-              definition.id,
-            ]);
+            setSelectedAgentDefinitionIds((current) => [...current, definition.id]);
             promptRef.current?.focus();
           }}
         />

@@ -4,16 +4,8 @@
 // workbench message pipeline (`@corbits/chat`'s intercept of a leading
 // "/" or "@name") and the direct execute route in `./routes`, so the
 // two can never answer an unknown command differently.
-import {
-  parseAtCommand,
-  parseSlashCommand,
-  type ParsedCommand,
-} from "./grammar";
-import type {
-  CommandContext,
-  CommandRegistry,
-  CommandResult,
-} from "./registry";
+import { parseAtCommand, parseSlashCommand, type ParsedCommand } from "./grammar";
+import type { CommandContext, CommandRegistry, CommandResult } from "./registry";
 
 /**
  * Names what IS available rather than answering a miss with a bare
@@ -32,9 +24,7 @@ async function unknownCommandResult(
   const suffix =
     available.length === 0
       ? "No agent commands are available in this workbench yet."
-      : `Available: ${available
-          .map((command) => `${prefix}${command.name}`)
-          .join(", ")}.`;
+      : `Available: ${available.map((command) => `${prefix}${command.name}`).join(", ")}.`;
   return {
     type: "message",
     text: `Unknown command: ${prefix}${name}. ${suffix}`,

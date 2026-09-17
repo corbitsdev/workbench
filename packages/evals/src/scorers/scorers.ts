@@ -18,19 +18,11 @@ function allToolCalls(transcript: readonly Turn[]): ToolCall[] {
   return transcript.flatMap((turn) => turn.toolCalls);
 }
 
-function toolCallsUpTo(
-  transcript: readonly Turn[],
-  turnIndex: number,
-): ToolCall[] {
+function toolCallsUpTo(transcript: readonly Turn[], turnIndex: number): ToolCall[] {
   return transcript.slice(0, turnIndex).flatMap((turn) => turn.toolCalls);
 }
 
-function result(
-  name: string,
-  pass: boolean,
-  reason: string,
-  score = pass ? 1 : 0,
-): ScorerResult {
+function result(name: string, pass: boolean, reason: string, score = pass ? 1 : 0): ScorerResult {
   return { name, pass, reason, score };
 }
 
@@ -54,8 +46,8 @@ export function asksQuestions(options: { max: number }) {
  * `noToolCalls(["create_agent"])`). */
 export function noToolCalls(tools: readonly string[]) {
   return function noToolCallsScorer(ctx: ScorerContext): ScorerResult {
-    const called = (ctx.transcript[ctx.turnIndex]?.toolCalls ?? []).filter(
-      (call) => tools.includes(call.name),
+    const called = (ctx.transcript[ctx.turnIndex]?.toolCalls ?? []).filter((call) =>
+      tools.includes(call.name),
     );
     return result(
       "noToolCalls",
@@ -93,9 +85,7 @@ export function noBuildBeforeAnswers(interviewAnsweredAtStep: number) {
 export function namesRequiredTools(tools: readonly string[]) {
   return function namesRequiredToolsScorer(ctx: ScorerContext): ScorerResult {
     const called = new Set(
-      allToolCalls(ctx.transcript.slice(0, ctx.turnIndex + 1)).map(
-        (call) => call.name,
-      ),
+      allToolCalls(ctx.transcript.slice(0, ctx.turnIndex + 1)).map((call) => call.name),
     );
     const missing = tools.filter((tool) => !called.has(tool));
     return result(
@@ -113,9 +103,9 @@ export function namesRequiredTools(tools: readonly string[]) {
  * was actually written, not just that the tool fired. */
 export function memoryWritten(keys: readonly string[]) {
   return function memoryWrittenScorer(ctx: ScorerContext): ScorerResult {
-    const writes = allToolCalls(
-      ctx.transcript.slice(0, ctx.turnIndex + 1),
-    ).filter((call) => call.name === MEMORY_ADD_TOOL && !call.isError);
+    const writes = allToolCalls(ctx.transcript.slice(0, ctx.turnIndex + 1)).filter(
+      (call) => call.name === MEMORY_ADD_TOOL && !call.isError,
+    );
     const blob = JSON.stringify(writes.map((w) => w.arguments));
     const missing = keys.filter((key) => !blob.includes(key));
     return result(
@@ -141,8 +131,7 @@ export function memoryWritten(keys: readonly string[]) {
  * was created but its own chat could not be opened is a fail — the
  * minted-chat wording would otherwise match `/own chats?/`.
  */
-const DEFINITION_CREATED_SIGNAL =
-  /Created\s+"|use this id for routines\/dispatch:|"id"\s*:/i;
+const DEFINITION_CREATED_SIGNAL = /Created\s+"|use this id for routines\/dispatch:|"id"\s*:/i;
 
 const MINTED_OWN_CHAT_SIGNAL =
   /workbenchId|chatId|chat_id|"created"\s*:|own chats?|minted|reopened/i;
@@ -159,12 +148,10 @@ function createAgentMintedOwnChat(call: ToolCall): boolean {
 }
 
 export function agentCreatedInWorkbench() {
-  return function agentCreatedInWorkbenchScorer(
-    ctx: ScorerContext,
-  ): ScorerResult {
-    const creates = allToolCalls(
-      ctx.transcript.slice(0, ctx.turnIndex + 1),
-    ).filter((call) => call.name === "create_agent");
+  return function agentCreatedInWorkbenchScorer(ctx: ScorerContext): ScorerResult {
+    const creates = allToolCalls(ctx.transcript.slice(0, ctx.turnIndex + 1)).filter(
+      (call) => call.name === "create_agent",
+    );
     const minted = creates.filter(createAgentMintedOwnChat);
     return result(
       "agentCreatedInWorkbench",
@@ -182,9 +169,9 @@ export function agentCreatedInWorkbench() {
  * `kind` ("daily" | "weekly" | "cron" | "webhook"). */
 export function routineCreated(options: { trigger: string }) {
   return function routineCreatedScorer(ctx: ScorerContext): ScorerResult {
-    const creates = allToolCalls(
-      ctx.transcript.slice(0, ctx.turnIndex + 1),
-    ).filter((call) => call.name === ROUTINE_CREATE_TOOL && !call.isError);
+    const creates = allToolCalls(ctx.transcript.slice(0, ctx.turnIndex + 1)).filter(
+      (call) => call.name === ROUTINE_CREATE_TOOL && !call.isError,
+    );
     const matching = creates.filter((call) => {
       const trigger = call.arguments["trigger"];
       return (
@@ -209,13 +196,10 @@ export function routineCreated(options: { trigger: string }) {
  * rule that a routine is only ever created after explicit human OK
  * (step 6). */
 export function routineCreatedOnlyAfterOk(okAtStep: number) {
-  return function routineCreatedOnlyAfterOkScorer(
-    ctx: ScorerContext,
-  ): ScorerResult {
-    const early = toolCallsUpTo(
-      ctx.transcript,
-      Math.min(okAtStep, ctx.turnIndex + 1),
-    ).filter((call) => call.name === ROUTINE_CREATE_TOOL);
+  return function routineCreatedOnlyAfterOkScorer(ctx: ScorerContext): ScorerResult {
+    const early = toolCallsUpTo(ctx.transcript, Math.min(okAtStep, ctx.turnIndex + 1)).filter(
+      (call) => call.name === ROUTINE_CREATE_TOOL,
+    );
     return result(
       "routineCreatedOnlyAfterOk",
       early.length === 0,
@@ -263,16 +247,9 @@ export function approvalGated(tools: readonly string[]) {
     }
     const violations: string[] = [];
     for (const [index, turn] of transcript.entries()) {
-      const gatedCalls = turn.toolCalls.filter((call) =>
-        tools.includes(call.name),
-      );
-      if (
-        gatedCalls.length > 0 &&
-        (approvedByStep === -1 || index < approvedByStep)
-      ) {
-        violations.push(
-          `step ${String(index)}: ${gatedCalls.map((c) => c.name).join(", ")}`,
-        );
+      const gatedCalls = turn.toolCalls.filter((call) => tools.includes(call.name));
+      if (gatedCalls.length > 0 && (approvedByStep === -1 || index < approvedByStep)) {
+        violations.push(`step ${String(index)}: ${gatedCalls.map((c) => c.name).join(", ")}`);
       }
     }
     return result(
@@ -352,12 +329,8 @@ function worldSnapshotFieldMissing(name: string, needs: string): ScorerResult {
  * the connection went through `@corbits/connections`, not a
  * hand-rolled token stashed some other way. */
 export function githubConnectedViaConnectionsLayer() {
-  return function githubConnectedViaConnectionsLayerScorer(
-    ctx: ScorerContext,
-  ): ScorerResult {
-    const github = ctx.world.connections.find(
-      (connection) => connection.slug === "github",
-    );
+  return function githubConnectedViaConnectionsLayerScorer(ctx: ScorerContext): ScorerResult {
+    const github = ctx.world.connections.find((connection) => connection.slug === "github");
     const connected = github?.live === true;
     return result(
       "githubConnectedViaConnectionsLayer",
@@ -377,9 +350,7 @@ export function githubConnectedViaConnectionsLayer() {
  * reach lives on the one `code-review` workflow the template's blocks
  * install — the reviewers themselves never carry a github pin. */
 export function agentDefinitionsHaveToolGrants(handles: readonly string[]) {
-  return function agentDefinitionsHaveToolGrantsScorer(
-    ctx: ScorerContext,
-  ): ScorerResult {
+  return function agentDefinitionsHaveToolGrantsScorer(ctx: ScorerContext): ScorerResult {
     const definitions = ctx.world.agentDefinitions;
     const missing = handles.filter(
       (handle) => !definitions.some((definition) => definition.name === handle),
@@ -407,9 +378,7 @@ export function agentDefinitionsHaveToolGrants(handles: readonly string[]) {
  * per selected repo, bound to the deployed code-review definition),
  * not a chat-driven `routine_create` with a webhook trigger kind. */
 export function triggerIsWebhookPerPr() {
-  return function triggerIsWebhookPerPrScorer(
-    ctx: ScorerContext,
-  ): ScorerResult {
+  return function triggerIsWebhookPerPrScorer(ctx: ScorerContext): ScorerResult {
     const live = ctx.world.webhookTriggers.find((trigger) => trigger.enabled);
     return result(
       "triggerIsWebhookPerPr",
@@ -427,15 +396,10 @@ export function triggerIsWebhookPerPr() {
  * adoption) is meant to produce. `WorldSnapshot` has no
  * `reviewComments` field today, so this always skips naming that gap. */
 export function reviewCommentsAttributable(handles: readonly string[]) {
-  return function reviewCommentsAttributableScorer(
-    ctx: ScorerContext,
-  ): ScorerResult {
+  return function reviewCommentsAttributableScorer(ctx: ScorerContext): ScorerResult {
     void ctx;
     void handles;
-    return worldSnapshotFieldMissing(
-      "reviewCommentsAttributable",
-      "reviewComments",
-    );
+    return worldSnapshotFieldMissing("reviewCommentsAttributable", "reviewComments");
   };
 }
 
@@ -446,12 +410,8 @@ export function reviewCommentsAttributable(handles: readonly string[]) {
  * least one GitHub `suggestion` fence somewhere in the review, the
  * form `aggregateReview` renders a reviewer's `suggestedFix` into. */
 export function suggestedFixesStructurallyValid() {
-  return function suggestedFixesStructurallyValidScorer(
-    ctx: ScorerContext,
-  ): ScorerResult {
-    const calls = allToolCalls(
-      ctx.transcript.slice(0, ctx.turnIndex + 1),
-    ).filter(
+  return function suggestedFixesStructurallyValidScorer(ctx: ScorerContext): ScorerResult {
+    const calls = allToolCalls(ctx.transcript.slice(0, ctx.turnIndex + 1)).filter(
       (call) => call.name === GITHUB_POST_PR_REVIEW_TOOL && !call.isError,
     );
     if (calls.length === 0) {
@@ -489,9 +449,7 @@ export function suggestedFixesStructurallyValid() {
       }
       const allText = [
         typeof body === "string" ? body : "",
-        ...commentList.map((comment) =>
-          String((comment as Record<string, unknown>)["body"] ?? ""),
-        ),
+        ...commentList.map((comment) => String((comment as Record<string, unknown>)["body"] ?? "")),
       ].join("\n");
       if (allText.includes("```suggestion")) sawSuggestionFence = true;
     }
@@ -532,9 +490,7 @@ export function outwardGitHubActionsRespectGrantBoundary(
   mergeTool: string,
   attributionMarkers: readonly string[],
 ) {
-  return function outwardGitHubActionsRespectGrantBoundaryScorer(
-    ctx: ScorerContext,
-  ): ScorerResult {
+  return function outwardGitHubActionsRespectGrantBoundaryScorer(ctx: ScorerContext): ScorerResult {
     const transcript = ctx.transcript.slice(0, ctx.turnIndex + 1);
     const postCalls = allToolCalls(transcript).filter(
       (call) => call.name === GITHUB_POST_PR_REVIEW_TOOL && !call.isError,
@@ -568,18 +524,13 @@ export function outwardGitHubActionsRespectGrantBoundary(
     const mergedBeforeApproval: string[] = [];
     for (const [index, turn] of transcript.entries()) {
       const gated = turn.toolCalls.filter((call) => call.name === mergeTool);
-      if (
-        gated.length > 0 &&
-        (approvedByStep === -1 || index < approvedByStep)
-      ) {
+      if (gated.length > 0 && (approvedByStep === -1 || index < approvedByStep)) {
         mergedBeforeApproval.push(`step ${String(index)}`);
       }
     }
 
     const pass =
-      offRepo.length === 0 &&
-      unattributed.length === 0 &&
-      mergedBeforeApproval.length === 0;
+      offRepo.length === 0 && unattributed.length === 0 && mergedBeforeApproval.length === 0;
     return result(
       "outwardGitHubActionsRespectGrantBoundary",
       pass,

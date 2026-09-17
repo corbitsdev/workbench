@@ -40,9 +40,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 function uploadFile(container: HTMLDivElement, file: File): void {
   // The picker is unlabeled on purpose (CL-6750) — the visible Upload
   // button is the only named control; this helper drives the ghost input.
-  const input = container.querySelector(
-    'input[type="file"]',
-  ) as HTMLInputElement | null;
+  const input = container.querySelector('input[type="file"]') as HTMLInputElement | null;
   if (input === null) throw new Error("no upload input");
   Object.defineProperty(input, "files", {
     configurable: true,
@@ -98,9 +96,7 @@ describe("Files upload confirmation", () => {
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/me/principals")) {
-        return Promise.resolve(
-          jsonResponse({ data: [membership], nextCursor: null }),
-        );
+        return Promise.resolve(jsonResponse({ data: [membership], nextCursor: null }));
       }
       if (url.includes("/artifacts/upload") && init?.method === "POST") {
         return Promise.resolve(
@@ -126,9 +122,7 @@ describe("Files upload confirmation", () => {
         );
       }
       if (url.includes("/artifacts")) {
-        return Promise.resolve(
-          jsonResponse({ artifacts: [], nextCursor: null }),
-        );
+        return Promise.resolve(jsonResponse({ artifacts: [], nextCursor: null }));
       }
       return Promise.reject(new Error(`unrouted fetch: ${url}`));
     }) as typeof fetch;
@@ -147,17 +141,13 @@ describe("Files upload confirmation", () => {
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/me/principals")) {
-        return Promise.resolve(
-          jsonResponse({ data: [membership], nextCursor: null }),
-        );
+        return Promise.resolve(jsonResponse({ data: [membership], nextCursor: null }));
       }
       if (url.includes("/artifacts/upload") && init?.method === "POST") {
         return Promise.resolve(jsonResponse({ error: "boom" }, 500));
       }
       if (url.includes("/artifacts")) {
-        return Promise.resolve(
-          jsonResponse({ artifacts: [], nextCursor: null }),
-        );
+        return Promise.resolve(jsonResponse({ artifacts: [], nextCursor: null }));
       }
       return Promise.reject(new Error(`unrouted fetch: ${url}`));
     }) as typeof fetch;

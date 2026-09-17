@@ -123,13 +123,7 @@ export function useTypingIndicator(
 
   function handleStreamEvent(eventType: string, data: unknown) {
     const now = Date.now();
-    const next = nextTypingState(
-      typingState,
-      { eventType, data },
-      selfPrincipalId,
-      now,
-      timeoutMs,
-    );
+    const next = nextTypingState(typingState, { eventType, data }, selfPrincipalId, now, timeoutMs);
     if (next === typingState) return;
 
     setTypingState(next);
@@ -137,9 +131,7 @@ export function useTypingIndicator(
     if (next !== null) {
       const expiresAt = next.expiresAt;
       timerRef.current = setTimeout(() => {
-        setTypingState((current) =>
-          isTypingStateExpired(current, Date.now()) ? null : current,
-        );
+        setTypingState((current) => (isTypingStateExpired(current, Date.now()) ? null : current));
       }, expiresAt - now);
     }
   }
@@ -176,11 +168,7 @@ export function TypingIndicator({ label }: { readonly label: string }) {
  * kicks in at three. Renders nothing for an empty list so callers can
  * pass it unconditionally.
  */
-export function AgentTypingIndicator({
-  names,
-}: {
-  readonly names: readonly string[];
-}) {
+export function AgentTypingIndicator({ names }: { readonly names: readonly string[] }) {
   if (names.length === 0) return null;
   return <TypingDotsBubble status={CHAT_STRINGS.agentsTyping(names)} />;
 }

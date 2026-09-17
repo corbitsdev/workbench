@@ -45,9 +45,7 @@ export const AGENT_RUNTIME_TURN_STEP_ID = "reply";
  */
 export function agentRuntimeTurnRunId(occurrence: number): string {
   if (!Number.isInteger(occurrence) || occurrence < 0) {
-    throw new Error(
-      "agentRuntimeTurnRunId requires a non-negative integer occurrence",
-    );
+    throw new Error("agentRuntimeTurnRunId requires a non-negative integer occurrence");
   }
   return `${AGENT_RUNTIME_SECTION_ID}__${String(occurrence)}`;
 }
@@ -128,15 +126,9 @@ function buildSectionWorkflow(
  * `mode` selects the shape; every other field is the same per-run data
  * either shape needs.
  */
-export function buildAgentRuntimeWorkflow(
-  config: AgentRuntimeConfig,
-): WorkflowDefinition {
+export function buildAgentRuntimeWorkflow(config: AgentRuntimeConfig): WorkflowDefinition {
   if (config.mode.kind === "section") {
     return buildSectionWorkflow(config, config.mode.turnTimeoutMs);
   }
-  return buildFoldedStepWorkflow(
-    config,
-    config.mode.literalInput,
-    "literalInput" in config.mode,
-  );
+  return buildFoldedStepWorkflow(config, config.mode.literalInput, "literalInput" in config.mode);
 }

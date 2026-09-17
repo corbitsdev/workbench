@@ -3,10 +3,7 @@
 // same adapter the inbox read-back repairs. Kept here instead of inline in
 // `index.ts` so the composed path is a single construction site the
 // crash-window suite can exercise directly.
-import {
-  createResolveExistingMailIds,
-  createWorkbenchMailboxDelivery,
-} from "@corbits/inbox";
+import { createResolveExistingMailIds, createWorkbenchMailboxDelivery } from "@corbits/inbox";
 import type { MailboxDb, MailboxEventBus } from "@corbits/mailbox";
 import {
   createInMemoryNotifyDispatchStore,

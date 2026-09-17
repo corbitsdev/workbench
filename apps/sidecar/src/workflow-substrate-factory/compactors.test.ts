@@ -81,19 +81,14 @@ test("caps each folded turn's contribution so the summary stays bounded regardle
     maxSummaryChars: 500,
   });
   const turns = Array.from({ length: 200 }, (_, i) =>
-    textTurn(
-      "user",
-      `a very long message repeated many times `.repeat(20) + String(i),
-      i,
-    ),
+    textTurn("user", `a very long message repeated many times `.repeat(20) + String(i), i),
   );
 
   const result = await compactor.apply(turns, makeCtx());
   const summary = result.output[0];
 
   expect(summary?.content[0]?.type).toBe("text");
-  const text =
-    summary?.content[0]?.type === "text" ? summary.content[0].text : "";
+  const text = summary?.content[0]?.type === "text" ? summary.content[0].text : "";
   expect(text.length).toBeLessThanOrEqual(500);
 });
 
@@ -111,8 +106,7 @@ test("non-text content blocks fold to a short placeholder rather than being drop
 
   const result = await compactor.apply(turns, makeCtx());
   const summary = result.output[0];
-  const text =
-    summary?.content[0]?.type === "text" ? summary.content[0].text : "";
+  const text = summary?.content[0]?.type === "text" ? summary.content[0].text : "";
   expect(text).toContain("tool_call");
 });
 
@@ -126,9 +120,7 @@ test("createBudgetedContextCompactor: a short conversation under budget is untou
   const turns = Array.from({ length: 6 }, (_, i) =>
     textTurn(i % 2 === 0 ? "user" : "assistant", `turn ${i}`, i),
   );
-  const compactor = createBudgetedContextCompactor(
-    estimateTurnsChars(turns) + 1_000,
-  );
+  const compactor = createBudgetedContextCompactor(estimateTurnsChars(turns) + 1_000);
 
   const result = await compactor.apply(turns, makeCtx());
 
@@ -177,9 +169,7 @@ test("estimateTurnsChars measures a tool_call's real argument size, not a placeh
   const turn: ConversationTurn = {
     role: "assistant",
     timestamp: 0,
-    content: [
-      { type: "tool_call", id: "c1", name: "search", arguments: largeArgs },
-    ],
+    content: [{ type: "tool_call", id: "c1", name: "search", arguments: largeArgs }],
   };
 
   expect(estimateTurnsChars([turn])).toBeGreaterThanOrEqual(15_000);
@@ -213,11 +203,7 @@ test("createBudgetedContextCompactor: folded output never exceeds the budget it 
   // than `maxSummaryChars` (4000) but not by much, the exact regime
   // where an uncounted summary previously pushed the total over.
   const turns = Array.from({ length: 40 }, (_, i) =>
-    textTurn(
-      i % 2 === 0 ? "user" : "assistant",
-      `message number ${i} `.repeat(25),
-      i,
-    ),
+    textTurn(i % 2 === 0 ? "user" : "assistant", `message number ${i} `.repeat(25), i),
   );
   const budgetChars = 6_000;
   const compactor = createBudgetedContextCompactor(budgetChars);

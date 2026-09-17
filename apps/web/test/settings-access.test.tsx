@@ -8,10 +8,7 @@ import { createRoot, type Root } from "react-dom/client";
 import type { TenancyAccess } from "@corbits/settings-ui";
 
 import { useSettingsAccess } from "../src/settings-access";
-import {
-  createTestQueryClient,
-  TestQueryProvider,
-} from "./test-query-provider";
+import { createTestQueryClient, TestQueryProvider } from "./test-query-provider";
 
 const realFetch = globalThis.fetch;
 
@@ -36,11 +33,7 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 
-function AccessProbe({
-  onAccess,
-}: {
-  readonly onAccess: (access: TenancyAccess) => void;
-}) {
+function AccessProbe({ onAccess }: { readonly onAccess: (access: TenancyAccess) => void }) {
   const access = useSettingsAccess("tnt_1", "prn_1");
   onAccess(access);
   return null;
@@ -93,9 +86,7 @@ describe("useSettingsAccess", () => {
 
   test("a network failure is error, not denied", async () => {
     globalThis.fetch = (() =>
-      Promise.reject(
-        new TypeError("Failed to fetch"),
-      )) as unknown as typeof fetch;
+      Promise.reject(new TypeError("Failed to fetch"))) as unknown as typeof fetch;
     const seen = await mountProbe();
     const last = seen[seen.length - 1];
     expect(last).toEqual({

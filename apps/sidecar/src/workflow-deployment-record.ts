@@ -92,9 +92,7 @@ export const WorkflowDeploymentRecord = type({
 });
 export type WorkflowDeploymentRecord = typeof WorkflowDeploymentRecord.infer;
 
-export type RestoreFailureKind = NonNullable<
-  WorkflowDeploymentRecord["restoreFailure"]
->["kind"];
+export type RestoreFailureKind = NonNullable<WorkflowDeploymentRecord["restoreFailure"]>["kind"];
 
 /**
  * Thrown from inside the restore path to mark WHY a specific attempt
@@ -259,9 +257,7 @@ export async function recordWorkflowDeploymentRestoreFailure(
   if (existing === undefined) return undefined;
   const previous = existing.restoreFailure;
   const attempts =
-    previous !== undefined && previous.kind === failure.kind
-      ? previous.attempts + 1
-      : 1;
+    previous !== undefined && previous.kind === failure.kind ? previous.attempts + 1 : 1;
   const updated: WorkflowDeploymentRecord = {
     ...existing,
     restoreFailure: {
@@ -286,7 +282,7 @@ export async function clearWorkflowDeploymentRestoreFailure(
   record: WorkflowDeploymentRecord,
 ): Promise<void> {
   if (record.restoreFailure === undefined) return;
-  const { restoreFailure, ...rest } = record;
+  const { restoreFailure: _restoreFailure, ...rest } = record;
   await writeWorkflowDeploymentRecord(dataDir, deploymentId, rest);
 }
 
@@ -297,9 +293,7 @@ export async function clearWorkflowDeploymentRestoreFailure(
  * streak never quarantines, however high its own counter climbs -- see
  * `WorkflowRestoreFailure`.
  */
-export function isWorkflowDeploymentRestoreQuarantined(
-  record: WorkflowDeploymentRecord,
-): boolean {
+export function isWorkflowDeploymentRestoreQuarantined(record: WorkflowDeploymentRecord): boolean {
   return (
     record.restoreFailure?.kind === "permanent" &&
     record.restoreFailure.attempts >= RESTORE_QUARANTINE_THRESHOLD
@@ -332,9 +326,7 @@ export interface ScannedWorkflowDeployment {
  * deliberately hibernated resumes on the next message or routine fire
  * that addresses it, not by being pre-spawned at boot.
  */
-export function partitionScannedDeployments(
-  scanned: readonly ScannedWorkflowDeployment[],
-): {
+export function partitionScannedDeployments(scanned: readonly ScannedWorkflowDeployment[]): {
   live: ScannedWorkflowDeployment[];
   parked: ScannedWorkflowDeployment[];
 } {

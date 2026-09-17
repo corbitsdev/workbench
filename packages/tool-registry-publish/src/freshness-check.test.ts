@@ -6,14 +6,7 @@
 // written with plumbing (`commit-tree`) under a test-owned git config
 // so a developer `core.hooksPath` cannot fail the suite.
 import { afterAll, describe, expect, test } from "bun:test";
-import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  realpath,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { CORBITS_TOOL_PACKAGE_DIRS } from "./registry";
@@ -30,9 +23,7 @@ let fixtureGitConfig: string | undefined;
 let repositoryRoot: string | undefined;
 
 afterAll(async () => {
-  await Promise.all(
-    scratchDirs.map((dir) => rm(dir, { recursive: true, force: true })),
-  );
+  await Promise.all(scratchDirs.map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
 async function findRepositoryRoot(): Promise<string> {
@@ -185,19 +176,11 @@ async function commitAll(
   const sha =
     parent === undefined
       ? await git(root, ["commit-tree", tree, "-m", message], env)
-      : await git(
-          root,
-          ["commit-tree", tree, "-p", parent, "-m", message],
-          env,
-        );
+      : await git(root, ["commit-tree", tree, "-p", parent, "-m", message], env);
   await git(root, ["update-ref", "HEAD", sha], env);
 }
 
-async function writePkg(
-  pkg: string,
-  version: string,
-  src: string,
-): Promise<void> {
+async function writePkg(pkg: string, version: string, src: string): Promise<void> {
   await mkdir(path.join(pkg, "src"), { recursive: true });
   await writeFile(
     path.join(pkg, "package.json"),
@@ -317,9 +300,7 @@ describe("assertToolPackagesFresh", () => {
       },
     ] as const;
 
-    expect(() => assertToolPackagesFresh(snapshots)).toThrow(
-      StaleToolPackageError,
-    );
+    expect(() => assertToolPackagesFresh(snapshots)).toThrow(StaleToolPackageError);
 
     try {
       assertToolPackagesFresh(snapshots);
@@ -358,14 +339,11 @@ describe("checkToolPackageFreshness", () => {
 
   test("a new untracked src file without a bump is loud", async () => {
     const { pkg } = await committedPackage("export const n = 1;\n");
-    await writeFile(
-      path.join(pkg, "src", "extra.ts"),
-      "export const extra = 1;\n",
-    );
+    await writeFile(path.join(pkg, "src", "extra.ts"), "export const extra = 1;\n");
 
-    await expect(
-      checkToolPackageFreshness({ packageDirs: [pkg] }),
-    ).rejects.toBeInstanceOf(StaleToolPackageError);
+    await expect(checkToolPackageFreshness({ packageDirs: [pkg] })).rejects.toBeInstanceOf(
+      StaleToolPackageError,
+    );
   });
 
   test("src changed together with a version bump is fresh", async () => {
@@ -385,43 +363,40 @@ describe("checkToolPackageFreshness", () => {
     ["GIT_WORK_TREE", "."],
     ["GIT_COMMON_DIR", ".git"],
     ["GIT_OBJECT_DIRECTORY", ".git/objects"],
-  ])(
-    "ignores a foreign %s while detecting real source changes",
-    async (key, suffix) => {
-      const foreign = await committedPackage("export const n = 99;\n");
-      const { pkg } = await committedPackage("export const n = 1;\n");
-      const inherited = process.env;
-      process.env = { ...inherited, [key]: path.join(foreign.root, suffix) };
-      try {
-        const snapshots = await snapshotToolPackages([pkg]);
-        expect(snapshots).toEqual([
-          {
-            name: "@corbits/fake-tools",
-            dir: pkg,
-            currentVersion: "0.0.1",
-            publishedVersion: "0.0.1",
-            srcChangedSincePublished: false,
-          },
-        ]);
-        await checkToolPackageFreshness({ packageDirs: [pkg] });
-        await writePkg(pkg, "0.0.1", "export const n = 2;\n");
-        await expect(
-          checkToolPackageFreshness({ packageDirs: [pkg] }),
-        ).rejects.toBeInstanceOf(StaleToolPackageError);
-      } finally {
-        process.env = inherited;
-      }
-    },
-  );
+  ])("ignores a foreign %s while detecting real source changes", async (key, suffix) => {
+    const foreign = await committedPackage("export const n = 99;\n");
+    const { pkg } = await committedPackage("export const n = 1;\n");
+    const inherited = process.env;
+    process.env = { ...inherited, [key]: path.join(foreign.root, suffix) };
+    try {
+      const snapshots = await snapshotToolPackages([pkg]);
+      expect(snapshots).toEqual([
+        {
+          name: "@corbits/fake-tools",
+          dir: pkg,
+          currentVersion: "0.0.1",
+          publishedVersion: "0.0.1",
+          srcChangedSincePublished: false,
+        },
+      ]);
+      await checkToolPackageFreshness({ packageDirs: [pkg] });
+      await writePkg(pkg, "0.0.1", "export const n = 2;\n");
+      await expect(checkToolPackageFreshness({ packageDirs: [pkg] })).rejects.toBeInstanceOf(
+        StaleToolPackageError,
+      );
+    } finally {
+      process.env = inherited;
+    }
+  });
 
   test("committed src change after the version-introducing commit is loud", async () => {
     const { root, pkg } = await committedPackage("export const n = 1;\n");
     await writePkg(pkg, "0.0.1", "export const n = 2;\n");
     await commitAll(root, "src change, forgot the bump");
 
-    await expect(
-      checkToolPackageFreshness({ packageDirs: [pkg] }),
-    ).rejects.toBeInstanceOf(StaleToolPackageError);
+    await expect(checkToolPackageFreshness({ packageDirs: [pkg] })).rejects.toBeInstanceOf(
+      StaleToolPackageError,
+    );
   });
 
   test("fixture history is written even when a global author hook would reject git commit", async () => {
@@ -439,15 +414,7 @@ describe("checkToolPackageFreshness", () => {
     const victim = await scratchDir("corbits-tools-freshness-victim-");
     await rawGit(
       victim,
-      [
-        "-c",
-        "user.email=freshness@test",
-        "-c",
-        "user.name=Freshness",
-        "init",
-        "-b",
-        "main",
-      ],
+      ["-c", "user.email=freshness@test", "-c", "user.name=Freshness", "init", "-b", "main"],
       hostileEnv,
     );
     await writeFile(path.join(victim, "README"), "victim\n");
@@ -481,9 +448,7 @@ describe("checkToolPackageFreshness", () => {
 describe("snapshotToolPackages", () => {
   test("defaults to the publish map", async () => {
     const snapshots = await snapshotToolPackages();
-    expect(snapshots.map((snapshot) => snapshot.dir)).toEqual([
-      ...CORBITS_TOOL_PACKAGE_DIRS,
-    ]);
+    expect(snapshots.map((snapshot) => snapshot.dir)).toEqual([...CORBITS_TOOL_PACKAGE_DIRS]);
     expect(snapshots.length).toBe(CORBITS_TOOL_PACKAGE_DIRS.length);
     for (const snapshot of snapshots) {
       expect(snapshot.name.startsWith("@corbits/")).toBe(true);

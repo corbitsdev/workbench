@@ -36,10 +36,7 @@ import {
   type InferenceSource,
   type KeyPair,
 } from "@intx/types/runtime";
-import {
-  WorkflowProjectionDefinition,
-  type AgentDeployFrame,
-} from "@intx/types/sidecar";
+import { WorkflowProjectionDefinition, type AgentDeployFrame } from "@intx/types/sidecar";
 import { projectLiveToInert } from "@intx/workflow";
 
 import type {
@@ -70,28 +67,15 @@ import {
   snapshotAgentIdentity,
 } from "../hibernated-agent-identity-vault";
 import { isErrnoNotFound } from "../conversation-state";
-import {
-  computeWireDefinitionHash,
-  validateWorkflowProjection,
-} from "./wire-validation";
+import { computeWireDefinitionHash, validateWorkflowProjection } from "./wire-validation";
 import { defaultSubprocessSpawner } from "./transport";
 
 export { defaultSubprocessSpawner };
-import {
-  createSidecarWorkflowSupervisor,
-  type SidecarWorkflowSupervisor,
-} from "./supervisor";
+import { createSidecarWorkflowSupervisor, type SidecarWorkflowSupervisor } from "./supervisor";
 
-export {
-  deriveSidecarMailAuditRef,
-  type CreateSidecarWorkflowSupervisorOpts,
-} from "./supervisor";
+export { deriveSidecarMailAuditRef, type CreateSidecarWorkflowSupervisorOpts } from "./supervisor";
 export { createSidecarWorkflowSupervisor, type SidecarWorkflowSupervisor };
-import {
-  createStepStrategy,
-  deriveDeploymentId,
-  writeStepGrants,
-} from "./step-strategy";
+import { createStepStrategy, deriveDeploymentId, writeStepGrants } from "./step-strategy";
 
 export { deriveDeploymentId };
 import { materializeWorkflowSources } from "./asset-materialization";
@@ -229,10 +213,7 @@ function withRestoreTimeout<T>(
  * whose caller has already timed out stops advancing instead of spending
  * that work on an attempt nobody is waiting on anymore.
  */
-function throwIfRestoreAborted(
-  signal: AbortSignal,
-  deploymentId: string,
-): void {
+function throwIfRestoreAborted(signal: AbortSignal, deploymentId: string): void {
   if (signal.aborted) {
     throw new Error(
       `restore of ${deploymentId} was cancelled after its boot-restore attempt timed out`,
@@ -246,9 +227,7 @@ function throwIfRestoreAborted(
  * `CHILD_KILL_ESCALATION_MS` -- still awaiting `shutdown()` to completion
  * either way, never abandoning it.
  */
-async function shutdownSupervisorWithEscalation(
-  wired: SidecarWorkflowSupervisor,
-): Promise<void> {
+async function shutdownSupervisorWithEscalation(wired: SidecarWorkflowSupervisor): Promise<void> {
   const timer = setTimeout(() => {
     wired.hardKillChild();
   }, CHILD_KILL_ESCALATION_MS);
@@ -266,9 +245,7 @@ async function shutdownSupervisorWithEscalation(
  * with this key; the multi-step branch surfaces it to the link so the
  * hub records the verifying key for the deployment's signed events.
  */
-async function derivePrincipalPublicKeyHex(
-  signingKeySeed: Uint8Array,
-): Promise<string> {
+async function derivePrincipalPublicKeyHex(signingKeySeed: Uint8Array): Promise<string> {
   return hexEncode(await derivePublicKeyBytes(signingKeySeed));
 }
 
@@ -341,10 +318,7 @@ export interface SidecarDeployRouter extends DeployRouter {
    * internal `teardownDeployment` for the exact split between the two
    * flavors.
    */
-  teardownDeployment(
-    agentAddress: string,
-    opts: { reclaimDirs: boolean },
-  ): Promise<void>;
+  teardownDeployment(agentAddress: string, opts: { reclaimDirs: boolean }): Promise<void>;
 }
 
 export function createSidecarDeployRouter(deps: {
@@ -390,10 +364,7 @@ export function createSidecarDeployRouter(deps: {
    * the child triggers sees the mapping. Tests that do not exercise
    * the pack push path may pass a no-op.
    */
-  registerDeployment: (entry: {
-    deploymentId: string;
-    agentAddress: string;
-  }) => void;
+  registerDeployment: (entry: { deploymentId: string; agentAddress: string }) => void;
   /**
    * Symmetric removal hook for `registerDeployment`. Fires from the
    * link's `agent.undeploy` path so the boot edge's
@@ -404,10 +375,7 @@ export function createSidecarDeployRouter(deps: {
    * silently resolving to the prior address. Tests that do not
    * exercise the pack push path may pass a no-op.
    */
-  unregisterDeployment: (entry: {
-    deploymentId: string;
-    agentAddress: string;
-  }) => void;
+  unregisterDeployment: (entry: { deploymentId: string; agentAddress: string }) => void;
   /**
    * Control-plane suspension sink threaded verbatim to every deployment's
    * supervisor as `onSuspensionRegister`. Production wires this to the
@@ -666,15 +634,11 @@ export function createSidecarDeployRouter(deps: {
   const stepStateDataDir = multistepSubstrateEnv.SIDECAR_DATA_DIR;
   const persistDeploymentRecord =
     deps.writeWorkflowDeploymentRecord ?? writeWorkflowDeploymentRecord;
-  const applyClosure =
-    deps.materializeDeploymentClosure ?? materializeDeploymentClosure;
-  const restoreAttemptTimeoutMs =
-    deps.restoreAttemptTimeoutMs ?? RESTORE_ATTEMPT_TIMEOUT_MS;
-  const multistepSpawner =
-    deps.multistepSubprocessSpawner ?? defaultSubprocessSpawner;
+  const applyClosure = deps.materializeDeploymentClosure ?? materializeDeploymentClosure;
+  const restoreAttemptTimeoutMs = deps.restoreAttemptTimeoutMs ?? RESTORE_ATTEMPT_TIMEOUT_MS;
+  const multistepSpawner = deps.multistepSubprocessSpawner ?? defaultSubprocessSpawner;
   const multistepDeriveStepAddress: DeriveStepAddress =
-    deps.multistepDeriveStepAddress ??
-    (({ runId, stepId }) => `${runId}-${stepId}`);
+    deps.multistepDeriveStepAddress ?? (({ runId, stepId }) => `${runId}-${stepId}`);
 
   // Per-deployment supervisor tracking. The multi-step branch
   // constructs one `SidecarWorkflowSupervisor` per `agent.deploy`
@@ -744,10 +708,7 @@ export function createSidecarDeployRouter(deps: {
   // `activeSupervisors` (see below) while holding the lock, the final
   // on-disk state is correct regardless of ordering.
   const deploymentRecordLocks = new Map<string, Promise<unknown>>();
-  function withDeploymentRecordLock<T>(
-    deploymentId: string,
-    fn: () => Promise<T>,
-  ): Promise<T> {
+  function withDeploymentRecordLock<T>(deploymentId: string, fn: () => Promise<T>): Promise<T> {
     const prior = deploymentRecordLocks.get(deploymentId) ?? Promise.resolve();
     const settled = prior.then(fn, fn);
     deploymentRecordLocks.set(
@@ -922,9 +883,7 @@ export function createSidecarDeployRouter(deps: {
       principalId: spec.principalId,
       sources,
       ...(spec.sessionId !== undefined ? { sessionId: spec.sessionId } : {}),
-      ...(spec.hubPublicKey !== undefined
-        ? { hubPublicKey: spec.hubPublicKey }
-        : {}),
+      ...(spec.hubPublicKey !== undefined ? { hubPublicKey: spec.hubPublicKey } : {}),
       approvedWireHash: spec.approvedWireHash,
       sourceRef: spec.sourceRef,
     };
@@ -942,9 +901,7 @@ export function createSidecarDeployRouter(deps: {
    * deploy-only durable state (the source closure, step grants) before
    * calling.
    */
-  async function spawnWorkflowDeployment(
-    spec: WorkflowDeploySpec,
-  ): Promise<DeployRouterResult> {
+  async function spawnWorkflowDeployment(spec: WorkflowDeploySpec): Promise<DeployRouterResult> {
     // Fail loud if this address already has a live supervisor. Both single-
     // and multi-step now register on the transport, so both carry the
     // `transport.register` duplicate-throw backstop; this `has()` check is the
@@ -1062,24 +1019,16 @@ export function createSidecarDeployRouter(deps: {
             deploymentId,
             agentAddress: spec.agentAddress,
           }),
-        ...(spec.credentials !== undefined
-          ? { credentialDelivery: spec.credentials }
-          : {}),
-        ...(deps.multistepBinaryPath !== undefined
-          ? { binaryPath: deps.multistepBinaryPath }
-          : {}),
-        ...(deps.onDispatchTiming !== undefined
-          ? { onDispatchTiming: deps.onDispatchTiming }
-          : {}),
+        ...(spec.credentials !== undefined ? { credentialDelivery: spec.credentials } : {}),
+        ...(deps.multistepBinaryPath !== undefined ? { binaryPath: deps.multistepBinaryPath } : {}),
+        ...(deps.onDispatchTiming !== undefined ? { onDispatchTiming: deps.onDispatchTiming } : {}),
         ...(deps.repackEveryMessages !== undefined
           ? { repackEveryMessages: deps.repackEveryMessages }
           : {}),
         ...(deps.consumedRetentionMs !== undefined
           ? { consumedRetentionMs: deps.consumedRetentionMs }
           : {}),
-        ...(deps.readyTimeoutMs !== undefined
-          ? { readyTimeoutMs: deps.readyTimeoutMs }
-          : {}),
+        ...(deps.readyTimeoutMs !== undefined ? { readyTimeoutMs: deps.readyTimeoutMs } : {}),
       };
       const wired = createSidecarWorkflowSupervisor(wiredBaseConfig);
 
@@ -1101,8 +1050,7 @@ export function createSidecarDeployRouter(deps: {
       // `getTransportFor(senderAddress).send` throws "not registered".
       // Registration happens before `spawn()` so the address is live the
       // instant the first reply routes outbound.
-      const { keyPair, isNew: keyIsNew } =
-        await deps.keyStore.loadOrGenerateKey(spec.agentAddress);
+      const { keyPair, isNew: keyIsNew } = await deps.keyStore.loadOrGenerateKey(spec.agentAddress);
       // A restored vault entry that did not yield an existing on-disk key
       // means the restore itself is broken (a corrupt or partial
       // snapshot) -- the exact "wake silently rotates identity" failure
@@ -1120,10 +1068,7 @@ export function createSidecarDeployRouter(deps: {
           },
         );
       }
-      deps.transport.register(
-        spec.agentAddress,
-        deps.createAgentCrypto(keyPair),
-      );
+      deps.transport.register(spec.agentAddress, deps.createAgentCrypto(keyPair));
       agentTransportRegistered = true;
 
       // The public key the deploy ack surfaces to the hub is the deployment
@@ -1177,12 +1122,7 @@ export function createSidecarDeployRouter(deps: {
             logger.warn`dropping workflow inference event for ${spec.agentAddress}: ${validated.summary}`;
             return;
           }
-          publishInferenceEvent(
-            spec.agentAddress,
-            validated,
-            spec.sessionId,
-            childRunId,
-          );
+          publishInferenceEvent(spec.agentAddress, validated, spec.sessionId, childRunId);
         },
       };
 
@@ -1272,70 +1212,65 @@ export function createSidecarDeployRouter(deps: {
         // stepId-agnostic.
         const rotationStepId = spec.definition.stepOrder[0];
         if (rotationStepId === undefined) {
-          throw new Error(
-            "single-step deploy has no step id for sources rotation",
-          );
+          throw new Error("single-step deploy has no step id for sources rotation");
         }
-        deps.multistepSourcesRouter?.register(
-          spec.agentAddress,
-          async (args) => {
-            const rotated = { [rotationStepId]: args.sources };
-            // Swap `currentSources` synchronously BEFORE the durable persist.
-            // `currentSources` is the process-local respawn hint the
-            // supervisor reads synchronously through `dynamicSpawnEnv`, so a
-            // recycle that interleaves the persist `await` must respawn the
-            // child on the SAME sources being persisted, not the stale prior
-            // table. The obvious inverse -- persist first, then swap -- is
-            // rejected: it leaves the child on the OLD sources during the
-            // persist window while the record has already moved to NEW, so a
-            // recycle there respawns stale and a restart would "correct" it,
-            // i.e. the running child contradicts durable intent. Swapping
-            // first makes the only residual disagreement child-ahead-of-
-            // durable on a failed persist, which the next recycle heals down
-            // to the rolled-back durable truth -- the benign direction. The
-            // wire boundary guarantees `args.sources[0]` is the default,
-            // which the recycle env form pins as the active source.
-            const prevSources = currentSources;
-            currentSources = rotated;
-            // The durable write still precedes the LIVE swap
-            // (`deliverSources`), preserving persist-before-externally-visible
-            // for state that outlives the process; only the process-local
-            // respawn hint moves ahead. On a failed persist, roll the hint
-            // back so `currentSources` and the record stay in agreement in the
-            // common (no interleaved recycle) failure case -- the invariant
-            // restart consistency depends on. Persistence lets the rotation
-            // survive a full sidecar restart, not just a recycle: the boot
-            // scan reseeds spec.sources from record.sources. Overwrites the
-            // deploy-time record in place. Skipped when no data dir was wired
-            // (a test router that never persists), matching the restore guard.
-            if (stepStateDataDir !== undefined) {
-              try {
-                await persistDeploymentRecord(
-                  stepStateDataDir,
-                  deploymentId,
-                  buildDeploymentRecord(spec, rotated),
-                );
-              } catch (cause) {
-                // Restoring unconditionally is safe because rotations for one
-                // deployment are serialized by the sidecar's per-connection
-                // inbound-frame queue: each hub frame, sources.update
-                // included, runs its handler to completion on that queue
-                // before the next frame's handler starts, so no second
-                // rotation is in flight whose committed table this rollback
-                // could clobber. This does NOT rely on the hub pacing its
-                // sends -- the hub dispatches sources.update fire-and-forget;
-                // the sidecar frame queue is the sole serializer. Parallelizing
-                // inbound-frame dispatch would break this rollback.
-                currentSources = prevSources;
-                throw cause;
-              }
+        deps.multistepSourcesRouter?.register(spec.agentAddress, async (args) => {
+          const rotated = { [rotationStepId]: args.sources };
+          // Swap `currentSources` synchronously BEFORE the durable persist.
+          // `currentSources` is the process-local respawn hint the
+          // supervisor reads synchronously through `dynamicSpawnEnv`, so a
+          // recycle that interleaves the persist `await` must respawn the
+          // child on the SAME sources being persisted, not the stale prior
+          // table. The obvious inverse -- persist first, then swap -- is
+          // rejected: it leaves the child on the OLD sources during the
+          // persist window while the record has already moved to NEW, so a
+          // recycle there respawns stale and a restart would "correct" it,
+          // i.e. the running child contradicts durable intent. Swapping
+          // first makes the only residual disagreement child-ahead-of-
+          // durable on a failed persist, which the next recycle heals down
+          // to the rolled-back durable truth -- the benign direction. The
+          // wire boundary guarantees `args.sources[0]` is the default,
+          // which the recycle env form pins as the active source.
+          const prevSources = currentSources;
+          currentSources = rotated;
+          // The durable write still precedes the LIVE swap
+          // (`deliverSources`), preserving persist-before-externally-visible
+          // for state that outlives the process; only the process-local
+          // respawn hint moves ahead. On a failed persist, roll the hint
+          // back so `currentSources` and the record stay in agreement in the
+          // common (no interleaved recycle) failure case -- the invariant
+          // restart consistency depends on. Persistence lets the rotation
+          // survive a full sidecar restart, not just a recycle: the boot
+          // scan reseeds spec.sources from record.sources. Overwrites the
+          // deploy-time record in place. Skipped when no data dir was wired
+          // (a test router that never persists), matching the restore guard.
+          if (stepStateDataDir !== undefined) {
+            try {
+              await persistDeploymentRecord(
+                stepStateDataDir,
+                deploymentId,
+                buildDeploymentRecord(spec, rotated),
+              );
+            } catch (cause) {
+              // Restoring unconditionally is safe because rotations for one
+              // deployment are serialized by the sidecar's per-connection
+              // inbound-frame queue: each hub frame, sources.update
+              // included, runs its handler to completion on that queue
+              // before the next frame's handler starts, so no second
+              // rotation is in flight whose committed table this rollback
+              // could clobber. This does NOT rely on the hub pacing its
+              // sends -- the hub dispatches sources.update fire-and-forget;
+              // the sidecar frame queue is the sole serializer. Parallelizing
+              // inbound-frame dispatch would break this rollback.
+              currentSources = prevSources;
+              throw cause;
             }
-            await wired.supervisor.deliverSources({
-              sources: args.sources,
-              defaultSource: args.defaultSource,
-            });
-          },
-        );
+          }
+          await wired.supervisor.deliverSources({
+            sources: args.sources,
+            defaultSource: args.defaultSource,
+          });
+        });
       }
 
       // Register the credential-delivery handler for EVERY deployment (not
@@ -1345,14 +1280,11 @@ export function createSidecarDeployRouter(deps: {
       // `credentials-updated` control frame to the child where the material
       // cell is swapped. No durable persist -- credential material never
       // touches disk.
-      deps.multistepCredentialsRouter?.register(
-        spec.agentAddress,
-        async (args) => {
-          await wired.supervisor.deliverCredentials({
-            delivery: args.delivery,
-          });
-        },
-      );
+      deps.multistepCredentialsRouter?.register(spec.agentAddress, async (args) => {
+        await wired.supervisor.deliverCredentials({
+          delivery: args.delivery,
+        });
+      });
       routersRegistered = true;
 
       succeeded = true;
@@ -1378,8 +1310,7 @@ export function createSidecarDeployRouter(deps: {
         }
         if (wiredForUnwind !== undefined) {
           await wiredForUnwind.supervisor.shutdown().catch((cause) => {
-            const message =
-              cause instanceof Error ? cause.message : String(cause);
+            const message = cause instanceof Error ? cause.message : String(cause);
             logger.warn`multi-step deploy unwind: supervisor.shutdown failed: ${message}`;
           });
         }
@@ -1435,9 +1366,7 @@ export function createSidecarDeployRouter(deps: {
    * per-step address is workflow-derived and records no `agent_instance`
    * key, so the hub discards this value.
    */
-  async function provisionStep(
-    frame: AgentDeployFrame,
-  ): Promise<DeployRouterResult> {
+  async function provisionStep(frame: AgentDeployFrame): Promise<DeployRouterResult> {
     await deps.sessions.initRepo(frame.agentAddress);
     deps.keyStore.recordHubKey(frame.agentAddress, frame.hubPublicKey);
     return {
@@ -1459,9 +1388,7 @@ export function createSidecarDeployRouter(deps: {
     // every later wake would re-trip this same guard, a permanent
     // wake/reject loop against a run the sidecar never stopped.
     if (activeSupervisors.has(frame.agentAddress)) {
-      const { keyPair } = await deps.keyStore.loadOrGenerateKey(
-        frame.agentAddress,
-      );
+      const { keyPair } = await deps.keyStore.loadOrGenerateKey(frame.agentAddress);
       return { publicKey: hexEncode(keyPair.publicKey) };
     }
     // A deploy still in flight for the address stays a hard reject: two
@@ -1599,8 +1526,7 @@ export function createSidecarDeployRouter(deps: {
         sessionId: frame.config.sessionId,
         tenantId: frame.config.tenantId,
         principalId: frame.config.principalId,
-        hubPublicKey:
-          definition.stepOrder.length === 1 ? frame.hubPublicKey : undefined,
+        hubPublicKey: definition.stepOrder.length === 1 ? frame.hubPublicKey : undefined,
         approvedWireHash: projection.approvedWireHash,
         closurePackageDir: applied.packageDir,
         sourceRef: projection.sourceRef,
@@ -1621,11 +1547,7 @@ export function createSidecarDeployRouter(deps: {
       // disk (not through env) because the body child is in-process and loses
       // its env across a restart.
       for (const referenced of projection.referencedDefinitions ?? []) {
-        await materializeWorkflowSources(
-          dataDir,
-          referenced.definition.id,
-          referenced.sources,
-        );
+        await materializeWorkflowSources(dataDir, referenced.definition.id, referenced.sources);
       }
 
       // Grants bridge: the spawned child does not see the frame; it reads
@@ -1656,10 +1578,7 @@ export function createSidecarDeployRouter(deps: {
       // `writeTree` without a `clearPrefix` is purely additive, so it
       // never disturbs the run's events. Guarded on `isRunAddress`: only
       // a run address names a self-anchored run id.
-      if (
-        definition.stepOrder.length === 1 &&
-        isRunAddress(frame.agentAddress)
-      ) {
+      if (definition.stepOrder.length === 1 && isRunAddress(frame.agentAddress)) {
         await writeStepGrants({
           repoStore: deps.repoStore,
           deploymentId,
@@ -1682,10 +1601,7 @@ export function createSidecarDeployRouter(deps: {
       try {
         await deleteWorkflowDeploymentRecord(dataDir, deploymentId);
       } catch (cleanupError) {
-        const message =
-          cleanupError instanceof Error
-            ? cleanupError.message
-            : String(cleanupError);
+        const message = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
         logger.error`deploy cleanup: deleteWorkflowDeploymentRecord failed for ${deploymentId}: ${message}`;
       }
       releaseSlug(deploymentId, frame.agentAddress);
@@ -1715,9 +1631,7 @@ export function createSidecarDeployRouter(deps: {
   function isMissingClosureStagingFailure(cause: unknown): boolean {
     if (!(cause instanceof Error)) return false;
     if (isErrnoNotFound(cause)) return true;
-    return (
-      "cause" in cause && isErrnoNotFound((cause as { cause?: unknown }).cause)
-    );
+    return "cause" in cause && isErrnoNotFound((cause as { cause?: unknown }).cause);
   }
 
   /**
@@ -1884,8 +1798,7 @@ export function createSidecarDeployRouter(deps: {
           try {
             deps.assertSourceBuildable(source);
           } catch (cause) {
-            const reason =
-              cause instanceof Error ? cause.message : String(cause);
+            const reason = cause instanceof Error ? cause.message : String(cause);
             throw new WorkflowRestoreFailure("transient", reason);
           }
         }
@@ -1930,8 +1843,7 @@ export function createSidecarDeployRouter(deps: {
     // no-op for an already-held (deploymentId, address) pair, so the
     // pre-claim check distinguishes the two. A PARKED deployment keeps
     // its slug claimed, so a wake respawn lands in this already-held arm.
-    const slugNewlyClaimed =
-      slugClaims.get(deploymentId) !== record.agentAddress;
+    const slugNewlyClaimed = slugClaims.get(deploymentId) !== record.agentAddress;
     claimSlug(deploymentId, record.agentAddress);
     try {
       // CL-7215: checked INSIDE this try, after the slug is claimed, so a
@@ -1970,33 +1882,22 @@ export function createSidecarDeployRouter(deps: {
         //   successful (if late) restore.
         let reclaimedDuringSpawn = false;
         try {
-          const corrected = await withDeploymentRecordLock(
-            deploymentId,
-            async () => {
-              const onDisk = await readWorkflowDeploymentRecord(
-                dataDir,
-                deploymentId,
-              );
-              if (onDisk === undefined) {
-                reclaimedDuringSpawn = true;
-                return false;
-              }
-              if (onDisk.restoreFailure === undefined) return false;
-              await clearWorkflowDeploymentRestoreFailure(
-                dataDir,
-                deploymentId,
-                onDisk,
-              );
-              return true;
-            },
-          );
+          const corrected = await withDeploymentRecordLock(deploymentId, async () => {
+            const onDisk = await readWorkflowDeploymentRecord(dataDir, deploymentId);
+            if (onDisk === undefined) {
+              reclaimedDuringSpawn = true;
+              return false;
+            }
+            if (onDisk.restoreFailure === undefined) return false;
+            await clearWorkflowDeploymentRestoreFailure(dataDir, deploymentId, onDisk);
+            return true;
+          });
           if (corrected) {
             logger.warn`Workflow deployment ${record.agentAddress} finished restoring after its boot-restore attempt had already timed out; corrected its record so it no longer claims the deployment failed to restore`;
           }
         } catch (correctionError) {
           reportError(correctionError, {
-            operation:
-              "workflow-host-wiring.restoreDeploymentFromRecord.lateRestoreCorrection",
+            operation: "workflow-host-wiring.restoreDeploymentFromRecord.lateRestoreCorrection",
             agentId: record.agentAddress,
           });
         }
@@ -2100,10 +2001,10 @@ export function createSidecarDeployRouter(deps: {
       // and is deliberately NOT touched here either way -- a re-deploy on
       // the same address must restore the prior conversation from it.
       if (opts.reclaimDirs && stepStateDataDir !== undefined) {
-        await rm(
-          pathJoin(stepStateDataDir, "workflow-step-state", deploymentId),
-          { recursive: true, force: true },
-        );
+        await rm(pathJoin(stepStateDataDir, "workflow-step-state", deploymentId), {
+          recursive: true,
+          force: true,
+        });
       }
     }
     // Drop the deployment record so a boot-time restore does not re-spawn a
@@ -2211,87 +2112,68 @@ export function createSidecarDeployRouter(deps: {
       // `try`/`catch` gave.
       let skippedQuarantinedCount = 0;
       let deferredToWakeCount = 0;
-      await runWithConcurrency(
-        live,
-        RESTORE_CONCURRENCY,
-        async ({ deploymentId, record }) => {
-          // Skip WITHOUT attempting: a permanently unrestorable record that
-          // has already crossed RESTORE_QUARANTINE_THRESHOLD gets neither a
-          // spawn attempt nor a per-record warning this boot -- both are
-          // pointless for a deterministic failure that has already been
-          // reported that many times. It still counts toward the one
-          // summary line below, and the record itself is untouched (an
-          // operator reclaims it by undeploying the address).
-          if (isWorkflowDeploymentRestoreQuarantined(record)) {
-            skippedQuarantinedCount += 1;
+      await runWithConcurrency(live, RESTORE_CONCURRENCY, async ({ deploymentId, record }) => {
+        // Skip WITHOUT attempting: a permanently unrestorable record that
+        // has already crossed RESTORE_QUARANTINE_THRESHOLD gets neither a
+        // spawn attempt nor a per-record warning this boot -- both are
+        // pointless for a deterministic failure that has already been
+        // reported that many times. It still counts toward the one
+        // summary line below, and the record itself is untouched (an
+        // operator reclaims it by undeploying the address).
+        if (isWorkflowDeploymentRestoreQuarantined(record)) {
+          skippedQuarantinedCount += 1;
+          return;
+        }
+        try {
+          const outcome = await withRestoreTimeout(
+            (signal) => restoreDeploymentFromRecord(dataDir, deploymentId, record, signal),
+            deploymentId,
+            restoreAttemptTimeoutMs,
+          );
+          if (outcome === "deferred-to-wake") {
+            deferredToWakeCount += 1;
             return;
           }
-          try {
-            const outcome = await withRestoreTimeout(
-              (signal) =>
-                restoreDeploymentFromRecord(
-                  dataDir,
-                  deploymentId,
-                  record,
-                  signal,
-                ),
-              deploymentId,
-              restoreAttemptTimeoutMs,
-            );
-            if (outcome === "deferred-to-wake") {
-              deferredToWakeCount += 1;
+          if (record.restoreFailure !== undefined) {
+            await clearWorkflowDeploymentRestoreFailure(dataDir, deploymentId, record);
+          }
+        } catch (cause) {
+          const reason = cause instanceof Error ? cause.message : String(cause);
+          const kind = cause instanceof WorkflowRestoreFailure ? cause.kind : "transient";
+          // CL-7215: serialized against `restoreDeploymentFromRecord`'s
+          // own late-settle correction AND `teardownDeployment`'s record
+          // writes via the same lock, and gated on `activeSupervisors` --
+          // in-memory, always set synchronously the instant
+          // `spawnWorkflowDeployment` actually succeeds, unlike a disk
+          // snapshot -- so a restore that timed out here but has ALREADY
+          // gone live by the time this runs never gets a boot failure
+          // recorded against it in the first place. See the lock's own
+          // doc comment for why every writer must go through it.
+          await withDeploymentRecordLock(deploymentId, async () => {
+            if (activeSupervisors.has(record.agentAddress)) {
+              logger.warn`Workflow deployment ${deploymentId} timed out during boot restore but finished spawning before its failure could be recorded; leaving its record as a live, successful restore`;
               return;
             }
-            if (record.restoreFailure !== undefined) {
-              await clearWorkflowDeploymentRestoreFailure(
-                dataDir,
-                deploymentId,
-                record,
-              );
-            }
-          } catch (cause) {
-            const reason =
-              cause instanceof Error ? cause.message : String(cause);
-            const kind =
-              cause instanceof WorkflowRestoreFailure
-                ? cause.kind
-                : "transient";
-            // CL-7215: serialized against `restoreDeploymentFromRecord`'s
-            // own late-settle correction AND `teardownDeployment`'s record
-            // writes via the same lock, and gated on `activeSupervisors` --
-            // in-memory, always set synchronously the instant
-            // `spawnWorkflowDeployment` actually succeeds, unlike a disk
-            // snapshot -- so a restore that timed out here but has ALREADY
-            // gone live by the time this runs never gets a boot failure
-            // recorded against it in the first place. See the lock's own
-            // doc comment for why every writer must go through it.
-            await withDeploymentRecordLock(deploymentId, async () => {
-              if (activeSupervisors.has(record.agentAddress)) {
-                logger.warn`Workflow deployment ${deploymentId} timed out during boot restore but finished spawning before its failure could be recorded; leaving its record as a live, successful restore`;
-                return;
-              }
-              const updated = await recordWorkflowDeploymentRestoreFailure(
-                dataDir,
-                deploymentId,
-                { kind, reason },
-              );
-              if (updated === undefined) {
-                // The record is gone -- a concurrent reclaiming teardown
-                // won the lock first and deleted it. Nothing to mark: the
-                // deployment was torn down on purpose, not left claiming a
-                // false restore failure.
-                return;
-              }
-              if (isWorkflowDeploymentRestoreQuarantined(updated)) {
-                const attempts = updated.restoreFailure?.attempts ?? 0;
-                logger.warn`Workflow deployment ${deploymentId} failed to restore ${attempts} consecutive times and is now quarantined -- it will not be retried again until the address is undeployed. Last failure: ${reason}`;
-              } else {
-                logger.warn`Failed to restore workflow deployment ${deploymentId}: ${reason}`;
-              }
+            const updated = await recordWorkflowDeploymentRestoreFailure(dataDir, deploymentId, {
+              kind,
+              reason,
             });
-          }
-        },
-      );
+            if (updated === undefined) {
+              // The record is gone -- a concurrent reclaiming teardown
+              // won the lock first and deleted it. Nothing to mark: the
+              // deployment was torn down on purpose, not left claiming a
+              // false restore failure.
+              return;
+            }
+            if (isWorkflowDeploymentRestoreQuarantined(updated)) {
+              const attempts = updated.restoreFailure?.attempts ?? 0;
+              logger.warn`Workflow deployment ${deploymentId} failed to restore ${attempts} consecutive times and is now quarantined -- it will not be retried again until the address is undeployed. Last failure: ${reason}`;
+            } else {
+              logger.warn`Failed to restore workflow deployment ${deploymentId}: ${reason}`;
+            }
+          });
+        }
+      });
       if (skippedQuarantinedCount > 0) {
         logger.warn`Skipped ${skippedQuarantinedCount} quarantined workflow deployment record(s) (permanent restore failures, already reported); undeploy an address to clear its record`;
       }
@@ -2329,8 +2211,7 @@ export function createSidecarDeployRouter(deps: {
           try {
             await shutdownSupervisorWithEscalation(wired);
           } catch (cause) {
-            const reason =
-              cause instanceof Error ? cause.message : String(cause);
+            const reason = cause instanceof Error ? cause.message : String(cause);
             logger.warn`Drain: supervisor shutdown for ${address} failed: ${reason}`;
           }
         }),

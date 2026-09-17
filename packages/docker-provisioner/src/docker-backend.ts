@@ -65,9 +65,7 @@ export function createDockerBackend(
       }
     },
 
-    async findUnitsByAllocation(
-      allocationId: string,
-    ): Promise<readonly string[]> {
+    async findUnitsByAllocation(allocationId: string): Promise<readonly string[]> {
       const result = await commands.run([
         "ps",
         "-aq",

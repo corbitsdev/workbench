@@ -18,8 +18,7 @@ type RecordedCall = { readonly path: string; readonly init?: RequestInit };
 function stubFetch(respond: (path: string) => Response): RecordedCall[] {
   const calls: RecordedCall[] = [];
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const path =
-      typeof input === "string" ? input : new URL(String(input)).pathname;
+    const path = typeof input === "string" ? input : new URL(String(input)).pathname;
     calls.push(init === undefined ? { path } : { path, init });
     return Promise.resolve(respond(path));
   }) as typeof fetch;
@@ -78,8 +77,6 @@ describe("renameBench", () => {
 
   test("throws a SettingsApiError on a malformed response", async () => {
     stubFetch(() => json({ id: "tnt_1" }));
-    await expect(renameBench("tnt_1", "New name")).rejects.toBeInstanceOf(
-      SettingsApiError,
-    );
+    await expect(renameBench("tnt_1", "New name")).rejects.toBeInstanceOf(SettingsApiError);
   });
 });

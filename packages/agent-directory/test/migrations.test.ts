@@ -19,15 +19,10 @@ function scratchUrlFor(e2eUrl: string): string {
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
-const migrationNames = [
-  "0001_definition_skills",
-  "0002_drop_definition_skills",
-];
+const migrationNames = ["0001_definition_skills", "0002_drop_definition_skills"];
 
 describeIfDb("applyAgentDirectoryMigrations", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchDatabase = new URL(scratchUrl).pathname.replace(/^\//, "");
 
   beforeAll(async () => {

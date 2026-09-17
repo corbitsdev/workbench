@@ -18,15 +18,11 @@ export interface DefaultHarnessBuilderConfig {
   readonly adapters: AdapterRegistry;
 }
 
-export function createDefaultHarnessBuilder(
-  config: DefaultHarnessBuilderConfig,
-): HarnessBuilder {
+export function createDefaultHarnessBuilder(config: DefaultHarnessBuilderConfig): HarnessBuilder {
   return {
     canBuildSource(source: InferenceSource): void {
       if (!config.adapters.has(source.provider)) {
-        throw new Error(
-          `Source provider "${source.provider}" is not registered`,
-        );
+        throw new Error(`Source provider "${source.provider}" is not registered`);
       }
     },
   };

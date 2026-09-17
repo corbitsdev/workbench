@@ -42,8 +42,7 @@ function stubFetch(routes: {
   createJimmy?: () => { id: string };
 }) {
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const path =
-      typeof input === "string" ? input : new URL(String(input)).pathname;
+    const path = typeof input === "string" ? input : new URL(String(input)).pathname;
     if (path.endsWith("/invitable")) {
       return Promise.resolve(jsonResponse({ items: routes.invitable() }));
     }
@@ -167,9 +166,7 @@ describe("InviteAgentDialog definition rows (CL-6424)", () => {
       onOpenChange: () => undefined,
     });
     const names = Array.from(
-      el.querySelectorAll(
-        '[data-testid="invitable-definition"] .chat-invitable-item-name',
-      ),
+      el.querySelectorAll('[data-testid="invitable-definition"] .chat-invitable-item-name'),
     ).map((name) => name.textContent);
     expect(names).toEqual(["Myra", "Code Review", "Jimmy"]);
   });

@@ -131,9 +131,7 @@ describe("usePendingApprovals", () => {
       root?.render(
         <TestQueryProvider>
           <NavigationProvider navigate={() => undefined}>
-            <BenchContext.Provider value={benchState}>
-              {children}
-            </BenchContext.Provider>
+            <BenchContext.Provider value={benchState}>{children}</BenchContext.Provider>
           </NavigationProvider>
         </TestQueryProvider>,
       );
@@ -176,9 +174,7 @@ describe("usePendingApprovals", () => {
       'Research Analyst in Growth Team Bench: Sends an email on the tenant\'s behalf: "Welcome Acme"',
       'Research Analyst in Growth Team Bench: Sends an email on the tenant\'s behalf: "Welcome Acme"',
     ]);
-    expect(
-      requested.filter((path) => path.includes("/runs/run_1")),
-    ).toHaveLength(1);
+    expect(requested.filter((path) => path.includes("/runs/run_1"))).toHaveLength(1);
   });
 
   test("a refused list read reads as a failure, never as an empty queue", async () => {

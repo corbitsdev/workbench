@@ -77,10 +77,7 @@ async function flushLazyImports(): Promise<void> {
   }
 }
 
-async function renderApp(
-  path: string,
-  session: SessionState = signedIn,
-): Promise<string> {
+async function renderApp(path: string, session: SessionState = signedIn): Promise<string> {
   stubEmptyFetch();
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -124,10 +121,9 @@ function stagePageTitle(markup: string): string | undefined {
  * stage title carries it. Returns the active row's label so tests confirm
  * the *right* footer affordance lights, and nothing else does. */
 function activeFooterLabel(markup: string): string | undefined {
-  const lit =
-    /shell-sidebar-footer-row"[^>]*aria-current="page"[^>]*>([\s\S]*?)<\/button>/.exec(
-      markup,
-    );
+  const lit = /shell-sidebar-footer-row"[^>]*aria-current="page"[^>]*>([\s\S]*?)<\/button>/.exec(
+    markup,
+  );
   if (lit === null) return undefined;
   return /<span>([^<]+)<\/span>/.exec(lit[1] ?? "")?.[1];
 }
@@ -197,18 +193,10 @@ describe("route table", () => {
   });
 
   test("legacy /settings/agents and /settings/skills stay routable (redirect-only, off the palette pages)", () => {
-    expect(matchesRoute("/settings/agents", "/settings/agents/wfd_1")).toBe(
-      true,
-    );
-    expect(matchesRoute("/settings/skills", "/settings/skills/skill_1")).toBe(
-      true,
-    );
-    expect(NAV_ROUTES.map((route) => route.path)).not.toContain(
-      "/settings/agents",
-    );
-    expect(NAV_ROUTES.map((route) => route.path)).not.toContain(
-      "/settings/skills",
-    );
+    expect(matchesRoute("/settings/agents", "/settings/agents/wfd_1")).toBe(true);
+    expect(matchesRoute("/settings/skills", "/settings/skills/skill_1")).toBe(true);
+    expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/settings/agents");
+    expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/settings/skills");
   });
 
   test("legacy /library stays routable (redirect-only) but is off the palette pages", () => {
@@ -219,18 +207,14 @@ describe("route table", () => {
   test("a slug segment resolves to the entity's own detail route (CL-6412)", () => {
     expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/triage-bot")).toBe(true);
     expect(matchesRoute(SKILL_DETAIL_PATH, "/skills/pr-review")).toBe(true);
-    expect(matchesRoute(ROUTINE_DETAIL_PATH, "/routines/weekly-digest")).toBe(
-      true,
-    );
+    expect(matchesRoute(ROUTINE_DETAIL_PATH, "/routines/weekly-digest")).toBe(true);
   });
 
   test("detail routes match only a single, slug-shaped segment", () => {
     expect(matchesRoute(AGENT_DETAIL_PATH, "/agents")).toBe(false);
     expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/wfd_1")).toBe(false);
     expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/Triage-Bot")).toBe(false);
-    expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/triage-bot/runs")).toBe(
-      false,
-    );
+    expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/triage-bot/runs")).toBe(false);
     expect(matchesRoute(AGENT_DETAIL_PATH, "/skills/triage-bot")).toBe(false);
   });
 
@@ -267,23 +251,17 @@ describe("route table", () => {
     expect(routeFor("/routines/%E0%A4%A")).toBe("/routines");
     expect(matchesRoute("/plugins", "/plugins/%")).toBe(false);
     expect(matchesRoute(ROUTINE_DETAIL_PATH, "/routines/%E0%A4%A")).toBe(false);
-    expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/%2Ftriage-bot")).toBe(
-      false,
-    );
+    expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/%2Ftriage-bot")).toBe(false);
     // A workflow detail path reuses workflowDefinitionAssetIdFromPath
     // (CL-7371 review): a malformed percent-escape segment must never
     // match the route at all, not match and then fail to resolve an id.
-    expect(matchesRoute(WORKFLOW_DETAIL_PATH, "/workflows/%E0%A4%A")).toBe(
-      false,
-    );
+    expect(matchesRoute(WORKFLOW_DETAIL_PATH, "/workflows/%E0%A4%A")).toBe(false);
   });
 
   test("workflow detail path matches a single opaque segment only", () => {
     expect(matchesRoute(WORKFLOW_DETAIL_PATH, "/workflows/wfd_1")).toBe(true);
     expect(matchesRoute(WORKFLOW_DETAIL_PATH, "/workflows")).toBe(false);
-    expect(matchesRoute(WORKFLOW_DETAIL_PATH, "/workflows/wfd_1/runs")).toBe(
-      false,
-    );
+    expect(matchesRoute(WORKFLOW_DETAIL_PATH, "/workflows/wfd_1/runs")).toBe(false);
   });
 
   test("a detail path keeps its roster's sidebar row lit", () => {
@@ -414,9 +392,7 @@ describe("routes render", () => {
 
   test("a malformed percent-escape renders a screen instead of crashing", async () => {
     expect(await renderApp("/plugins/%")).toContain("Page not found");
-    expect(await renderApp("/routines/%E0%A4%A")).toContain(
-      'data-testid="shell-sidebar"',
-    );
+    expect(await renderApp("/routines/%E0%A4%A")).toContain('data-testid="shell-sidebar"');
   });
 
   test("an unknown path renders the not-found screen", async () => {

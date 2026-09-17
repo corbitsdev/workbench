@@ -22,9 +22,7 @@ export const evalRun = evalsSchema.table("run", {
   finishedAt: timestamp("finished_at", { withTimezone: true }).notNull(),
   /** The run's `EvalStepRecord[]` — see ../types.ts — verbatim. */
   steps: jsonb("steps").notNull(),
-  recordedAt: timestamp("recorded_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export type EvalRunRow = typeof evalRun.$inferSelect;

@@ -77,8 +77,7 @@ function stubFetch(runsBody: { data: readonly unknown[] }): RecordedCall[] {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
     calls.push({ path });
-    if (path.includes("/api/me/principals"))
-      return Promise.resolve(json(membership));
+    if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
     if (path.includes("/me/workflows/runs"))
       return Promise.resolve(
         new Response(JSON.stringify({ error: { message: "dead endpoint" } }), {
@@ -107,12 +106,9 @@ function stubFetch(runsBody: { data: readonly unknown[] }): RecordedCall[] {
           byModel: [],
         }),
       );
-    if (path.includes("/insights/activity"))
-      return Promise.resolve(json({ days: [] }));
-    if (path.includes("/insights/tools"))
-      return Promise.resolve(json({ tools: [] }));
-    if (path.includes("/routines"))
-      return Promise.resolve(json({ data: [], nextCursor: null }));
+    if (path.includes("/insights/activity")) return Promise.resolve(json({ days: [] }));
+    if (path.includes("/insights/tools")) return Promise.resolve(json({ tools: [] }));
+    if (path.includes("/routines")) return Promise.resolve(json({ data: [], nextCursor: null }));
     return Promise.resolve(json({ data: [], nextCursor: null }));
   }) as typeof fetch;
   return calls;
@@ -147,9 +143,7 @@ describe("InsightsRoute run feed", () => {
     const el = await mount();
     expect(el.textContent).toContain("Morning brief");
     expect(calls.some((c) => c.path.includes("/workflows/runs"))).toBe(true);
-    expect(calls.some((c) => c.path.includes("/me/workflows/runs"))).toBe(
-      false,
-    );
+    expect(calls.some((c) => c.path.includes("/me/workflows/runs"))).toBe(false);
   });
 
   test("an empty tenant shows an honest zero, not an error", async () => {
@@ -164,9 +158,7 @@ describe("InsightsRoute run feed", () => {
     const el = await mount("/insights/runs");
     expect(el.textContent).toContain("Morning brief");
     expect(calls.some((c) => c.path.includes("/workflows/runs"))).toBe(true);
-    expect(calls.some((c) => c.path.includes("/me/workflows/runs"))).toBe(
-      false,
-    );
+    expect(calls.some((c) => c.path.includes("/me/workflows/runs"))).toBe(false);
   });
 
   // CL-8087: the native listing carries no routine attribution at all, so

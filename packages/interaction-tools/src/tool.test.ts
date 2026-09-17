@@ -11,10 +11,7 @@ function testEnv(): AskUserEnv {
   } as unknown as AskUserEnv;
 }
 
-async function withFetch<T>(
-  fetchImpl: typeof fetch,
-  run: () => Promise<T>,
-): Promise<T> {
+async function withFetch<T>(fetchImpl: typeof fetch, run: () => Promise<T>): Promise<T> {
   const original = globalThis.fetch;
   globalThis.fetch = fetchImpl;
   try {
@@ -29,11 +26,7 @@ test("declares exactly ask_user, with no approval gate", () => {
 });
 
 test("requires the sanctioned env keys", () => {
-  expect(interactionTools.requires).toEqual([
-    "hubChatUrl",
-    "sidecarToken",
-    "address",
-  ]);
+  expect(interactionTools.requires).toEqual(["hubChatUrl", "sidecarToken", "address"]);
 });
 
 test("interactionTools contributes no beforeToolExtension: ask_user never suspends", () => {
@@ -64,9 +57,7 @@ test("ask_user posts a question block and ends the turn with the answer arriving
       options: ["Staging", "Production"],
     },
   };
-  const result = await withFetch(fetchImpl, () =>
-    bundle.run(call, new AbortController().signal),
-  );
+  const result = await withFetch(fetchImpl, () => bundle.run(call, new AbortController().signal));
 
   expect(posted).toBe(true);
   expect(result.isError).toBeFalsy();
@@ -77,10 +68,9 @@ test("ask_user posts a question block and ends the turn with the answer arriving
 
 test("ask_user's result text tells the model to stop, not to wait for a reply here", async () => {
   const fetchImpl = (async () =>
-    new Response(
-      JSON.stringify({ id: "msg_1", createdAt: "2026-08-17T00:00:00.000Z" }),
-      { status: 201 },
-    )) as unknown as typeof fetch;
+    new Response(JSON.stringify({ id: "msg_1", createdAt: "2026-08-17T00:00:00.000Z" }), {
+      status: 201,
+    })) as unknown as typeof fetch;
 
   const bundle = interactionTools(testEnv());
   const result = await withFetch(fetchImpl, () =>
@@ -131,12 +121,8 @@ test("retrying ask_user for the same call reuses the questionId so a crash betwe
     },
   };
 
-  await withFetch(fetchImpl, () =>
-    bundle.run(call, new AbortController().signal),
-  );
-  await withFetch(fetchImpl, () =>
-    bundle.run(call, new AbortController().signal),
-  );
+  await withFetch(fetchImpl, () => bundle.run(call, new AbortController().signal));
+  await withFetch(fetchImpl, () => bundle.run(call, new AbortController().signal));
 
   expect(postedQuestionIds).toHaveLength(2);
   const reusedId = postedQuestionIds[0];

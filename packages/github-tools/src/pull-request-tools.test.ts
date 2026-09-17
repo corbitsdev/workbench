@@ -30,10 +30,7 @@ function respond(url: string): Response {
     );
   }
   if (url.includes("/reviews")) {
-    return new Response(
-      JSON.stringify({ id: 5, html_url: `${PULL_URL}#review` }),
-      { status: 200 },
-    );
+    return new Response(JSON.stringify({ id: 5, html_url: `${PULL_URL}#review` }), { status: 200 });
   }
   return new Response(
     JSON.stringify({
@@ -52,9 +49,7 @@ function fakeCredentials(bound: boolean): CredentialCapability {
   return {
     resolve(handle: string): Promise<MediatedCredential> {
       if (!bound) {
-        return Promise.reject(
-          new Error(`no credential is bound to handle "${handle}"`),
-        );
+        return Promise.reject(new Error(`no credential is bound to handle "${handle}"`));
       }
       return Promise.resolve({
         kind: "http",

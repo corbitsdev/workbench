@@ -76,7 +76,7 @@ export const GRANOLA_CALL_SYSTEM_PROMPT =
 
 /** Tool packages this definition pins (CL-5999); see the header comment. */
 export const GRANOLA_CALL_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/granola-tools", version: "0.0.4" },
+  { name: "@corbits/granola-tools", version: "0.0.5" },
 ];
 
 /**
@@ -122,18 +122,12 @@ export interface GranolaCallWorkflowInput {
  * shorthand sets none, and a wedged inference call would then hang a run
  * forever.
  */
-export function buildGranolaCallWorkflow(
-  input: GranolaCallWorkflowInput,
-): WorkflowDefinition {
+export function buildGranolaCallWorkflow(input: GranolaCallWorkflowInput): WorkflowDefinition {
   if (input.triggerAddress === "") {
-    throw new Error(
-      "buildGranolaCallWorkflow requires a non-empty triggerAddress",
-    );
+    throw new Error("buildGranolaCallWorkflow requires a non-empty triggerAddress");
   }
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
-    throw new Error(
-      "buildGranolaCallWorkflow requires turnTimeoutMs to be a positive integer",
-    );
+    throw new Error("buildGranolaCallWorkflow requires turnTimeoutMs to be a positive integer");
   }
   return defineWorkflow({
     id: GRANOLA_CALL_WORKFLOW_ID,
@@ -165,9 +159,7 @@ export function buildGranolaCallWorkflow(
  * symbols, bigints, non-finite numbers, class instances — is a loud
  * error naming the offending path instead of a corrupted asset.
  */
-export function serializeGranolaCallWorkflow(
-  definition: WorkflowDefinition,
-): string {
+export function serializeGranolaCallWorkflow(definition: WorkflowDefinition): string {
   assertJsonPortable(definition, "definition");
   return JSON.stringify(definition);
 }
@@ -187,8 +179,7 @@ function assertJsonPortable(value: unknown, path: string): void {
       break;
     default:
       throw new Error(
-        `${path} is a ${typeof value}, which does not survive JSON ` +
-          "serialization",
+        `${path} is a ${typeof value}, which does not survive JSON ` + "serialization",
       );
   }
   if (Array.isArray(value)) {
@@ -199,9 +190,7 @@ function assertJsonPortable(value: unknown, path: string): void {
   }
   const proto: unknown = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) {
-    throw new Error(
-      `${path} is a non-plain object; JSON would flatten it lossily`,
-    );
+    throw new Error(`${path} is a non-plain object; JSON would flatten it lossily`);
   }
   for (const [key, entry] of Object.entries(value)) {
     assertJsonPortable(entry, `${path}.${key}`);

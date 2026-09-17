@@ -52,8 +52,7 @@ export async function fetchSession(): Promise<SessionState> {
   } catch {
     return {
       kind: "error",
-      message:
-        "You're offline, or Workbench isn't reachable. We'll keep trying.",
+      message: "You're offline, or Workbench isn't reachable. We'll keep trying.",
     };
   }
 }
@@ -82,10 +81,7 @@ function rateLimitedResult(response: Response): AuthResult {
   };
 }
 
-async function postAuth(
-  path: string,
-  body: Record<string, string>,
-): Promise<AuthResult> {
+async function postAuth(path: string, body: Record<string, string>): Promise<AuthResult> {
   try {
     const response = await fetch(path, {
       method: "POST",
@@ -145,10 +141,7 @@ export type SocialProviderId = typeof SocialProviderId.infer;
  * better-auth only wires the credential pairs it was given, so an
  * unconfigured click surfaces better-auth's own error on the form.
  */
-export const SOCIAL_SIGN_IN_PROVIDERS: readonly SocialProviderId[] = [
-  "google",
-  "github",
-];
+export const SOCIAL_SIGN_IN_PROVIDERS: readonly SocialProviderId[] = ["google", "github"];
 
 const SocialSignInResponse = type({ url: "string" });
 
@@ -163,9 +156,7 @@ const SocialSignInResponse = type({ url: "string" });
  * `fetchSession` probe on mount already finds a signed-in session with
  * no dedicated callback route needed on this side.
  */
-export async function signInSocial(
-  provider: SocialProviderId,
-): Promise<AuthResult | null> {
+export async function signInSocial(provider: SocialProviderId): Promise<AuthResult | null> {
   try {
     const response = await fetch("/api/auth/sign-in/social", {
       method: "POST",

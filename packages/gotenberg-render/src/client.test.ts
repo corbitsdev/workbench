@@ -8,10 +8,7 @@ describe("renderMarkdownToPdf", () => {
     const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
     let capturedUrl: string | undefined;
     let capturedForm: FormData | undefined;
-    const fetchStub = (async (
-      url: string | URL | Request,
-      init?: RequestInit,
-    ) => {
+    const fetchStub = (async (url: string | URL | Request, init?: RequestInit) => {
       capturedUrl = String(url);
       capturedForm = init?.body as FormData;
       return new Response(pdfBytes, { status: 200 });
@@ -24,9 +21,7 @@ describe("renderMarkdownToPdf", () => {
     );
 
     expect(result).toEqual(pdfBytes);
-    expect(capturedUrl).toBe(
-      "http://gotenberg.internal:3000/forms/chromium/convert/markdown",
-    );
+    expect(capturedUrl).toBe("http://gotenberg.internal:3000/forms/chromium/convert/markdown");
     const files = capturedForm?.getAll("files") ?? [];
     expect(files).toHaveLength(2);
   });

@@ -70,10 +70,7 @@ function buildApp(
   return app;
 }
 
-async function postDraft(
-  app: Hono<TenantEnv>,
-  body: unknown,
-): Promise<Response> {
+async function postDraft(app: Hono<TenantEnv>, body: unknown): Promise<Response> {
   return app.request("/agent-definitions/draft", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -105,9 +102,7 @@ afterEach(() => resetSync());
 describe("agent-definition draft route envelope", () => {
   test("a drafting failure answers 422 makeErrorEnvelope and reports the same refId", async () => {
     const app = buildApp(() =>
-      Promise.reject(
-        new MyraAgentDefinitionDraftingUnavailableError("tnt_1", "no myra"),
-      ),
+      Promise.reject(new MyraAgentDefinitionDraftingUnavailableError("tnt_1", "no myra")),
     );
 
     const res = await postDraft(app, { name: "Research Buddy" });
@@ -122,23 +117,17 @@ describe("agent-definition draft route envelope", () => {
     expect(envelope?.error.refId.length).toBeGreaterThan(0);
     expect(JSON.stringify(body)).not.toContain("no myra");
     expect(JSON.stringify(body)).not.toContain("stack");
-    expect(
-      (body as { error: { message?: unknown } }).error.message,
-    ).toBeUndefined();
+    expect((body as { error: { message?: unknown } }).error.message).toBeUndefined();
 
     expect(records).toHaveLength(1);
     expect(records[0]?.properties.refId).toBe(envelope?.error.refId);
-    expect(records[0]?.properties.operation).toBe(
-      "agentDirectory.draftAgentDefinition",
-    );
+    expect(records[0]?.properties.operation).toBe("agentDirectory.draftAgentDefinition");
     expect(records[0]?.properties.tenantId).toBe("tnt_1");
   });
 
   test("an OneShotRunUnreachableError maps to the 422 drafting_failed envelope", async () => {
     const app = buildApp(() =>
-      Promise.reject(
-        new OneShotRunUnreachableError(new Error("agent is unreachable")),
-      ),
+      Promise.reject(new OneShotRunUnreachableError(new Error("agent is unreachable"))),
     );
 
     const res = await postDraft(app, { name: "Research Buddy" });
@@ -166,9 +155,7 @@ describe("agent-definition draft route envelope", () => {
     expect(envelope).toBeDefined();
     expect(envelope?.error.code).toBe("bad_request");
     expect(envelope?.error.userMessage.length).toBeGreaterThan(0);
-    expect(
-      (body as { error: { message?: unknown } }).error.message,
-    ).toBeUndefined();
+    expect((body as { error: { message?: unknown } }).error.message).toBeUndefined();
   });
 
   test("an unexpected throw is not mapped to drafting_failed", async () => {

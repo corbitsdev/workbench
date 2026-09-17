@@ -15,8 +15,7 @@ import { hubErrorHandler } from "./hub-error-handler";
  * stands in for the real `InferenceResolutionError` (`@corbits/chat`'s
  * `model-unavailable.ts`) without importing it.
  */
-const MODEL_UNAVAILABLE_CONSUMER_MESSAGE =
-  "This agent's model isn't available here.";
+const MODEL_UNAVAILABLE_CONSUMER_MESSAGE = "This agent's model isn't available here.";
 
 class FakeInferenceResolutionError extends Error {
   readonly guidance: string;
@@ -67,9 +66,7 @@ describe("hubErrorHandler", () => {
       error: { code: string; userMessage: string; refId: string };
     };
     expect(body.error.code).toBe("internal_error");
-    expect(body.error.userMessage).toBe(
-      "Something went wrong. Please try again.",
-    );
+    expect(body.error.userMessage).toBe("Something went wrong. Please try again.");
     expect(typeof body.error.refId).toBe("string");
     expect(body.error.refId.length).toBeGreaterThan(0);
 
@@ -101,9 +98,7 @@ describe("hubErrorHandler", () => {
       error: { code: string; userMessage: string; refId: string };
     };
     expect(body.error.code).toBe("MultiStepFoldUnsupportedError");
-    expect(body.error.userMessage).toBe(
-      "definition wfd_research is not single-step (2 steps)",
-    );
+    expect(body.error.userMessage).toBe("definition wfd_research is not single-step (2 steps)");
     expect(typeof body.error.refId).toBe("string");
     expect(body.error.refId.length).toBeGreaterThan(0);
     expect(records).toHaveLength(1);
@@ -127,9 +122,7 @@ describe("hubErrorHandler", () => {
       error: { code: string; userMessage: string; refId: string };
     };
     expect(body.error.code).toBe("InferenceResolutionError");
-    expect(body.error.userMessage).toBe(
-      "This agent's model isn't available here.",
-    );
+    expect(body.error.userMessage).toBe("This agent's model isn't available here.");
     expect(body.error.userMessage).not.toContain("claude-sonnet-5");
     expect(body.error.userMessage).not.toMatch(/cannot resolve an inference/);
     expect(typeof body.error.refId).toBe("string");

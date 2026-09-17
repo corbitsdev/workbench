@@ -61,10 +61,7 @@ function harness(state: Stub) {
         cookies: [],
       };
     }
-    if (
-      method === "GET" &&
-      path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-    ) {
+    if (method === "GET" && path === `/api/tenants/${TENANT_ID}/workflows/deployments`) {
       return {
         status: 200,
         data:
@@ -76,10 +73,8 @@ function harness(state: Stub) {
     }
     if (
       method === "GET" &&
-      (path ===
-        `/api/tenants/${TENANT_ID}/assets?kind=package-registry&inherited=true` ||
-        path ===
-          `/api/tenants/${TENANT_ID}/assets?kind=package-registry&inherited=false`)
+      (path === `/api/tenants/${TENANT_ID}/assets?kind=package-registry&inherited=true` ||
+        path === `/api/tenants/${TENANT_ID}/assets?kind=package-registry&inherited=false`)
     ) {
       return {
         status: 200,
@@ -267,9 +262,7 @@ describe("reconcileTenantDesiredState", () => {
     const report = await reconcileTenantDesiredState(h.args);
     expect(report.ready).toBe(false);
     expect(
-      report.pins
-        .filter((p) => p.kind === "workflow")
-        .every((p) => p.status === "blocked"),
+      report.pins.filter((p) => p.kind === "workflow").every((p) => p.status === "blocked"),
     ).toBe(true);
   });
 
@@ -287,9 +280,7 @@ describe("reconcileTenantDesiredState", () => {
     const report = await reconcileTenantDesiredState(h.args);
     expect(report.ready).toBe(false);
     expect(
-      report.pins
-        .filter((p) => p.kind === "workflow")
-        .every((p) => p.status === "blocked"),
+      report.pins.filter((p) => p.kind === "workflow").every((p) => p.status === "blocked"),
     ).toBe(true);
     expect(h.seedTenantCalls()).toBe(0);
   });
@@ -453,9 +444,7 @@ describe("resolveTenantDeployer", () => {
       throw new Error(`unexpected call: ${method} ${path}`);
     }) as unknown as ApiCall;
 
-    await expect(
-      resolveTenantDeployer(api, ["session=abc"], "ten_child"),
-    ).resolves.toEqual({
+    await expect(resolveTenantDeployer(api, ["session=abc"], "ten_child")).resolves.toEqual({
       tenantId: "ten_child",
       principalId: "prn_child",
       tenantDomain: "second.localhost",
@@ -478,9 +467,7 @@ describe("resolveTenantDeployer", () => {
       throw new Error(`unexpected call: ${method} ${path}`);
     }) as unknown as ApiCall;
 
-    await expect(
-      resolveTenantDeployer(api, ["session=abc"], "ten_child"),
-    ).resolves.toBeUndefined();
+    await expect(resolveTenantDeployer(api, ["session=abc"], "ten_child")).resolves.toBeUndefined();
   });
 
   test("zero principals resolves to nothing without reading the tenant", async () => {
@@ -491,8 +478,6 @@ describe("resolveTenantDeployer", () => {
       throw new Error(`unexpected call: ${method} ${path}`);
     }) as unknown as ApiCall;
 
-    await expect(
-      resolveTenantDeployer(api, ["session=abc"], "ten_child"),
-    ).resolves.toBeUndefined();
+    await expect(resolveTenantDeployer(api, ["session=abc"], "ten_child")).resolves.toBeUndefined();
   });
 });

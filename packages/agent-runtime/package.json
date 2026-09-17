@@ -1,8 +1,8 @@
 {
   "name": "@corbits/agent-runtime",
+  "version": "0.0.1",
   "private": true,
   "description": "The versioned definition builder every workbench agent run deploys, plus the renderer that pins it into a per-run code-sourced workflow package",
-  "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {

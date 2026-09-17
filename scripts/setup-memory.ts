@@ -152,10 +152,7 @@ export function dotenvHasActiveKey(text: string, key: string): boolean {
 }
 
 /** Active `KEY=value` in dotenv text; blank and whitespace-only count as unset. */
-export function dotenvNonemptyValue(
-  text: string,
-  key: string,
-): string | undefined {
+export function dotenvNonemptyValue(text: string, key: string): string | undefined {
   const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = new RegExp(`^${escaped}=(.*)$`, "m").exec(text);
   if (match === null) return undefined;
@@ -238,27 +235,17 @@ function printPlan(title: string, plan: SetupPlan): void {
 async function main(): Promise<void> {
   const probe = await probeCapabilities();
   console.log("Memory plane setup recommendation for this machine:");
-  console.log(
-    `  native Ollama: ${probe.hasNativeOllama ? "found" : "not found"}`,
-  );
+  console.log(`  native Ollama: ${probe.hasNativeOllama ? "found" : "not found"}`);
   console.log(`  Docker: ${probe.hasDocker ? "available" : "not available"}`);
 
   const embedPlan = planEmbedding(probe);
-  printPlan(
-    "Embedding (required for memory search to find anything)",
-    embedPlan,
-  );
-  printPlan(
-    "Reranking (optional — improves result ordering)",
-    planRerank(probe),
-  );
+  printPlan("Embedding (required for memory search to find anything)", embedPlan);
+  printPlan("Reranking (optional — improves result ordering)", planRerank(probe));
 
   const envPath = join(resolve(import.meta.dir, ".."), ".env");
   if (Object.keys(embedPlan.env).length > 0) {
     if (!existsSync(envPath)) {
-      console.log(
-        "\nNo .env yet — cp .env.example .env, then re-run to write the embedding keys.",
-      );
+      console.log("\nNo .env yet — cp .env.example .env, then re-run to write the embedding keys.");
     } else {
       const current = readFileSync(envPath, "utf8");
       const { next, added } = applyEnvKeysToDotenvContents(

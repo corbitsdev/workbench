@@ -16,9 +16,8 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { workbenchShare, workbenchShareMember } from "./schema";
 import type { FederationTrustStore } from "./federation-trust";
 
-export type WorkbenchShareDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> = PostgresJsDatabase<TSchema>;
+export type WorkbenchShareDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+  PostgresJsDatabase<TSchema>;
 
 export interface WorkbenchShareRow {
   readonly owningTenantId: string;
@@ -75,14 +74,9 @@ export interface WorkbenchShareStore {
     workbenchId: string,
   ): Promise<readonly WorkbenchShareRow[]>;
 
-  listSharesProjectedInto(
-    projectedTenantId: string,
-  ): Promise<readonly WorkbenchShareRow[]>;
+  listSharesProjectedInto(projectedTenantId: string): Promise<readonly WorkbenchShareRow[]>;
 
-  getShare(
-    workbenchId: string,
-    projectedTenantId: string,
-  ): Promise<WorkbenchShareRow | undefined>;
+  getShare(workbenchId: string, projectedTenantId: string): Promise<WorkbenchShareRow | undefined>;
 
   /** `"no_share"` — never seeded — when no `workbench_share` row exists
    * for `(workbenchId, projectedTenantId)`. */
@@ -94,10 +88,7 @@ export interface WorkbenchShareStore {
     principalId: string,
   ): Promise<boolean>;
 
-  listShareMembers(
-    projectedTenantId: string,
-    workbenchId: string,
-  ): Promise<readonly string[]>;
+  listShareMembers(projectedTenantId: string, workbenchId: string): Promise<readonly string[]>;
 
   isShareMember(
     projectedTenantId: string,
@@ -110,20 +101,13 @@ export interface WorkbenchShareStore {
  * The production `WorkbenchShareStore`, operating on this package's own
  * `workbench_share`/`workbench_share_member` tables (see `./schema.ts`).
  */
-export function createDrizzleWorkbenchShareStore<
-  TSchema extends Record<string, unknown>,
->(
+export function createDrizzleWorkbenchShareStore<TSchema extends Record<string, unknown>>(
   db: WorkbenchShareDb<TSchema>,
   deps: WorkbenchShareStoreDeps,
 ): WorkbenchShareStore {
   return {
     async createShare(input) {
-      if (
-        !(await deps.trust.hasBilateralTrust(
-          input.owningTenantId,
-          input.projectedTenantId,
-        ))
-      ) {
+      if (!(await deps.trust.hasBilateralTrust(input.owningTenantId, input.projectedTenantId))) {
         return { kind: "trust_missing" };
       }
 
@@ -295,12 +279,7 @@ export function createInMemoryWorkbenchShareStore(
 
   return {
     async createShare(input) {
-      if (
-        !(await deps.trust.hasBilateralTrust(
-          input.owningTenantId,
-          input.projectedTenantId,
-        ))
-      ) {
+      if (!(await deps.trust.hasBilateralTrust(input.owningTenantId, input.projectedTenantId))) {
         return { kind: "trust_missing" };
       }
       const key = shareKey(input.workbenchId, input.projectedTenantId);
@@ -321,10 +300,7 @@ export function createInMemoryWorkbenchShareStore(
     async revokeShare(owningTenantId, workbenchId, projectedTenantId) {
       const key = shareKey(workbenchId, projectedTenantId);
       const existing = sharesByKey.get(key);
-      if (
-        existing === undefined ||
-        existing.owningTenantId !== owningTenantId
-      ) {
+      if (existing === undefined || existing.owningTenantId !== owningTenantId) {
         return false;
       }
       sharesByKey.delete(key);
@@ -334,16 +310,12 @@ export function createInMemoryWorkbenchShareStore(
 
     async listSharesForWorkbench(owningTenantId, workbenchId) {
       return [...sharesByKey.values()].filter(
-        (row) =>
-          row.owningTenantId === owningTenantId &&
-          row.workbenchId === workbenchId,
+        (row) => row.owningTenantId === owningTenantId && row.workbenchId === workbenchId,
       );
     },
 
     async listSharesProjectedInto(projectedTenantId) {
-      return [...sharesByKey.values()].filter(
-        (row) => row.projectedTenantId === projectedTenantId,
-      );
+      return [...sharesByKey.values()].filter((row) => row.projectedTenantId === projectedTenantId);
     },
 
     async getShare(workbenchId, projectedTenantId) {
@@ -363,25 +335,19 @@ export function createInMemoryWorkbenchShareStore(
     },
 
     async removeShareMember(projectedTenantId, workbenchId, principalId) {
-      const members = membersByShare.get(
-        shareKey(workbenchId, projectedTenantId),
-      );
+      const members = membersByShare.get(shareKey(workbenchId, projectedTenantId));
       if (members === undefined) return false;
       return members.delete(principalId);
     },
 
     async listShareMembers(projectedTenantId, workbenchId) {
-      const members = membersByShare.get(
-        shareKey(workbenchId, projectedTenantId),
-      );
+      const members = membersByShare.get(shareKey(workbenchId, projectedTenantId));
       return members === undefined ? [] : [...members];
     },
 
     async isShareMember(projectedTenantId, workbenchId, principalId) {
       return (
-        membersByShare
-          .get(shareKey(workbenchId, projectedTenantId))
-          ?.has(principalId) ?? false
+        membersByShare.get(shareKey(workbenchId, projectedTenantId))?.has(principalId) ?? false
       );
     },
   };

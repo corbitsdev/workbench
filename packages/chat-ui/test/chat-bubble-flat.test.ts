@@ -12,11 +12,9 @@ const css = readFileSync(
 
 function ruleBodies(selector: string): string[] {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return [
-    ...css.matchAll(
-      new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]+)\\}`, "g"),
-    ),
-  ].map((match) => match[1] ?? "");
+  return [...css.matchAll(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]+)\\}`, "g"))].map(
+    (match) => match[1] ?? "",
+  );
 }
 
 describe("chat-bubble is visually flat", () => {

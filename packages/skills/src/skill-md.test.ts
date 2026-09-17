@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  buildSkillMd,
-  parseSkillMd,
-  SkillContentError,
-  decodeSkillMd,
-} from "./skill-md";
+import { buildSkillMd, parseSkillMd, SkillContentError, decodeSkillMd } from "./skill-md";
 
 describe("buildSkillMd", () => {
   test("round-trips name, description, scope, and body", () => {
@@ -17,13 +12,9 @@ describe("buildSkillMd", () => {
     });
     const parsed = parseSkillMd(md);
     expect(parsed.name).toBe("summarize-transcript");
-    expect(parsed.description).toBe(
-      "Condenses a meeting transcript into decisions and owners.",
-    );
+    expect(parsed.description).toBe("Condenses a meeting transcript into decisions and owners.");
     expect(parsed.scope).toBe("tenant");
-    expect(parsed.body).toBe(
-      "1. Read the transcript.\n2. List every decision.",
-    );
+    expect(parsed.body).toBe("1. Read the transcript.\n2. List every decision.");
   });
 
   test("a private scope survives the round trip", () => {
@@ -54,9 +45,7 @@ describe("buildSkillMd", () => {
       body: "Sort them.",
       scope: "private",
     });
-    expect(parseSkillMd(md).description).toBe(
-      "Sorts issues: bug, question, or feature.",
-    );
+    expect(parseSkillMd(md).description).toBe("Sorts issues: bug, question, or feature.");
   });
 
   test("preserves an apostrophe through the single-quoted scalar", () => {
@@ -66,9 +55,7 @@ describe("buildSkillMd", () => {
       body: "Sort them.",
       scope: "private",
     });
-    expect(parseSkillMd(md).description).toBe(
-      "Reads the reporter's own words first.",
-    );
+    expect(parseSkillMd(md).description).toBe("Reads the reporter's own words first.");
   });
 
   test("rejects a name the hub's skill kind handler would reject", () => {
@@ -122,21 +109,15 @@ describe("parseSkillMd", () => {
   });
 
   test("rejects frontmatter with no closing delimiter", () => {
-    expect(() => parseSkillMd("---\nname: triage\n")).toThrow(
-      SkillContentError,
-    );
+    expect(() => parseSkillMd("---\nname: triage\n")).toThrow(SkillContentError);
   });
 
   test("rejects frontmatter missing a description", () => {
-    expect(() => parseSkillMd("---\nname: triage\n---\nBody")).toThrow(
-      SkillContentError,
-    );
+    expect(() => parseSkillMd("---\nname: triage\n---\nBody")).toThrow(SkillContentError);
   });
 
   test("a SKILL.md written before scope moved into frontmatter reads as private", () => {
-    const parsed = parseSkillMd(
-      "---\nname: triage\ndescription: Sorts issues.\n---\nBody",
-    );
+    const parsed = parseSkillMd("---\nname: triage\ndescription: Sorts issues.\n---\nBody");
     expect(parsed.scope).toBe("private");
   });
 

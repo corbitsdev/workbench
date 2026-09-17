@@ -100,8 +100,7 @@ export const COLLATERAL_CONTENT_TYPES = [
     id: "twitter-article",
     label: "Twitter/X article",
     guidance:
-      "A strong title line followed by a scannable multi-section body. " +
-      "Around 400-800 words.",
+      "A strong title line followed by a scannable multi-section body. " + "Around 400-800 words.",
   },
   {
     id: "blog-short",
@@ -132,24 +131,18 @@ export const COLLATERAL_CONTENT_TYPES = [
  * deployed definition — `@corbits/artifact-tools` is pinnable the moment
  * CL-5999's tool-pin gap closes — so it is named honestly as "not
  * connected" here rather than silently omitted. */
-export const COLLATERAL_GENERATION_WIRED_SOURCES = [
-  "Granola call notes",
-  "Linear issues",
-] as const;
-export const COLLATERAL_GENERATION_PENDING_SOURCES = [
-  "workbench artifacts",
-] as const;
+export const COLLATERAL_GENERATION_WIRED_SOURCES = ["Granola call notes", "Linear issues"] as const;
+export const COLLATERAL_GENERATION_PENDING_SOURCES = ["workbench artifacts"] as const;
 
 /**
  * Tool packages this definition pins (CL-5999), one per wired source in
  * `COLLATERAL_GENERATION_WIRED_SOURCES`; see the header comment for why
  * `@corbits/artifact-tools` stays unpinned.
  */
-export const COLLATERAL_GENERATION_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] =
-  [
-    { name: "@corbits/granola-tools", version: "0.0.4" },
-    { name: "@corbits/linear-tools", version: "0.0.4" },
-  ];
+export const COLLATERAL_GENERATION_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
+  { name: "@corbits/granola-tools", version: "0.0.5" },
+  { name: "@corbits/linear-tools", version: "0.0.5" },
+];
 
 /**
  * Binds `@corbits/granola-tools`' and `@corbits/linear-tools`' declared
@@ -157,21 +150,20 @@ export const COLLATERAL_GENERATION_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] 
  * `workflows/granola-call/src/index.ts`'s sibling constant for the full
  * rationale.
  */
-export const COLLATERAL_GENERATION_CREDENTIAL_BINDINGS: readonly CredentialBinding[] =
-  [
-    {
-      package: "@corbits/granola-tools",
-      handle: "granola",
-      provider: "granola",
-      locator: "tenant",
-    },
-    {
-      package: "@corbits/linear-tools",
-      handle: "linear",
-      provider: "linear",
-      locator: "tenant",
-    },
-  ];
+export const COLLATERAL_GENERATION_CREDENTIAL_BINDINGS: readonly CredentialBinding[] = [
+  {
+    package: "@corbits/granola-tools",
+    handle: "granola",
+    provider: "granola",
+    locator: "tenant",
+  },
+  {
+    package: "@corbits/linear-tools",
+    handle: "linear",
+    provider: "linear",
+    locator: "tenant",
+  },
+];
 
 const CONTENT_TYPE_LINES = COLLATERAL_CONTENT_TYPES.map(
   (type) => `- "${type.id}" (${type.label}): ${type.guidance}`,
@@ -274,9 +266,7 @@ export function buildCollateralGenerationWorkflow(
   input: CollateralGenerationWorkflowInput,
 ): WorkflowDefinition {
   if (input.triggerAddress === "") {
-    throw new Error(
-      "buildCollateralGenerationWorkflow requires a non-empty triggerAddress",
-    );
+    throw new Error("buildCollateralGenerationWorkflow requires a non-empty triggerAddress");
   }
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
     throw new Error(
@@ -314,9 +304,7 @@ export function buildCollateralGenerationWorkflow(
  * symbols, bigints, non-finite numbers, class instances — is a loud
  * error naming the offending path instead of a corrupted asset.
  */
-export function serializeCollateralGenerationWorkflow(
-  definition: WorkflowDefinition,
-): string {
+export function serializeCollateralGenerationWorkflow(definition: WorkflowDefinition): string {
   assertJsonPortable(definition, "definition");
   return JSON.stringify(definition);
 }
@@ -336,8 +324,7 @@ function assertJsonPortable(value: unknown, path: string): void {
       break;
     default:
       throw new Error(
-        `${path} is a ${typeof value}, which does not survive JSON ` +
-          "serialization",
+        `${path} is a ${typeof value}, which does not survive JSON ` + "serialization",
       );
   }
   if (Array.isArray(value)) {
@@ -348,9 +335,7 @@ function assertJsonPortable(value: unknown, path: string): void {
   }
   const proto: unknown = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) {
-    throw new Error(
-      `${path} is a non-plain object; JSON would flatten it lossily`,
-    );
+    throw new Error(`${path} is a non-plain object; JSON would flatten it lossily`);
   }
   for (const [key, entry] of Object.entries(value)) {
     assertJsonPortable(entry, `${path}.${key}`);
@@ -363,8 +348,4 @@ export {
   COLLATERAL_GENERATION_FINALIZE_DESCRIPTION,
   buildArtifactPayloads,
 } from "./finalize-tool";
-export type {
-  ArtifactPayload,
-  CollateralPiece,
-  FinalizeArgs,
-} from "./finalize-tool";
+export type { ArtifactPayload, CollateralPiece, FinalizeArgs } from "./finalize-tool";

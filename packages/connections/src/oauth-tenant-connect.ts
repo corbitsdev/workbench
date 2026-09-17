@@ -28,17 +28,16 @@ import {
   type PersistConnectorCredentialFns,
 } from "./persist-credential";
 
-export type CreateTenantConnectCredentialDeps =
-  PersistConnectorCredentialFns & {
-    readonly hubUrl: string;
-    readonly log: (line: string) => void;
-    /** The connector set this build ships — this package carries none
-     * of its own (CL-7384), so a caller always supplies one. */
-    readonly registry: Readonly<Record<string, ConnectorDescriptor>>;
-    /** Cleared on a successful connect, same store `createConnectionRoutes`'
-     * `/complete` and `GET /provider-health` share (CL-6092). */
-    readonly providerHealth?: ProviderHealthStore;
-  };
+export type CreateTenantConnectCredentialDeps = PersistConnectorCredentialFns & {
+  readonly hubUrl: string;
+  readonly log: (line: string) => void;
+  /** The connector set this build ships — this package carries none
+   * of its own (CL-7384), so a caller always supplies one. */
+  readonly registry: Readonly<Record<string, ConnectorDescriptor>>;
+  /** Cleared on a successful connect, same store `createConnectionRoutes`'
+   * `/complete` and `GET /provider-health` share (CL-6092). */
+  readonly providerHealth?: ProviderHealthStore;
+};
 
 /**
  * Builds the `connectCredential` dep a `TenantEnv`-typed
@@ -74,18 +73,12 @@ export function createTenantConnectCredential(
           ? { credentialMetadata: args.credentialMetadata }
           : {}),
         ...(args.expiresAt !== undefined ? { expiresAt: args.expiresAt } : {}),
-        ...(args.refreshToken !== undefined
-          ? { refreshSecret: args.refreshToken }
-          : {}),
-        ...(deps.ensureProviderFn !== undefined
-          ? { ensureProviderFn: deps.ensureProviderFn }
-          : {}),
+        ...(args.refreshToken !== undefined ? { refreshSecret: args.refreshToken } : {}),
+        ...(deps.ensureProviderFn !== undefined ? { ensureProviderFn: deps.ensureProviderFn } : {}),
         ...(deps.ensureCredentialFn !== undefined
           ? { ensureCredentialFn: deps.ensureCredentialFn }
           : {}),
-        ...(deps.seedCatalogFn !== undefined
-          ? { seedCatalogFn: deps.seedCatalogFn }
-          : {}),
+        ...(deps.seedCatalogFn !== undefined ? { seedCatalogFn: deps.seedCatalogFn } : {}),
       };
       await persistConnectorCredential(persistArgs);
       deps.providerHealth?.clear(tenant.id, descriptor.id);

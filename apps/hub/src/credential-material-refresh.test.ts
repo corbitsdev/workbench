@@ -37,9 +37,7 @@ function store(initial: NonNullable<Row>) {
           ...row,
           secret: `enc:${tokens.secret}`,
           refreshSecret:
-            tokens.refreshSecret === undefined
-              ? row.refreshSecret
-              : `enc:${tokens.refreshSecret}`,
+            tokens.refreshSecret === undefined ? row.refreshSecret : `enc:${tokens.refreshSecret}`,
           expiresAt: tokens.expiresAt,
           status: "active",
         };
@@ -95,9 +93,7 @@ function harness(
 
 describe("createServingRefresh", () => {
   test("an api_key credential passes through untouched — never refreshed, never pushed", async () => {
-    const h = harness(
-      row({ type: "api_key", refreshSecret: null, expiresAt: null }),
-    );
+    const h = harness(row({ type: "api_key", refreshSecret: null, expiresAt: null }));
     const result = await h.refresh(servingOf(h));
     expect(result).toEqual({ ok: true });
     expect(h.calls.grantArgs).toHaveLength(0);
@@ -114,20 +110,15 @@ describe("createServingRefresh", () => {
   });
 
   test("an expiring oauth_token refreshes, persists, and pushes the updated frame", async () => {
-    const h = harness(
-      row({ expiresAt: new Date(NOW + 1000) }),
-      async (args) => ({
-        accessToken: `fresh:${args.refreshToken}`,
-        refreshToken: "rotated-refresh",
-        expiresIn: 3600,
-      }),
-    );
+    const h = harness(row({ expiresAt: new Date(NOW + 1000) }), async (args) => ({
+      accessToken: `fresh:${args.refreshToken}`,
+      refreshToken: "rotated-refresh",
+      expiresIn: 3600,
+    }));
     const result = await h.refresh(servingOf(h));
     expect(result).toEqual({ ok: true });
     expect(h.calls.refreshedTokens).toHaveLength(1);
-    expect(h.calls.refreshedTokens[0]?.secret).toBe(
-      "fresh:plain:enc:refresh-1",
-    );
+    expect(h.calls.refreshedTokens[0]?.secret).toBe("fresh:plain:enc:refresh-1");
     expect(h.calls.refreshedTokens[0]?.refreshSecret).toBe("rotated-refresh");
     expect(h.calls.pushes).toEqual(["ten_1"]);
   });
@@ -149,14 +140,11 @@ describe("createServingRefresh", () => {
   });
 
   test("a grant that states no expires_in persists a NULL expiry — the row never re-enters the due set", async () => {
-    const h = harness(
-      row({ expiresAt: new Date(NOW + 1000) }),
-      async (args) => ({
-        accessToken: `fresh:${args.refreshToken}`,
-        refreshToken: "rotated-refresh",
-        // no expiresIn: provider stated no lifetime
-      }),
-    );
+    const h = harness(row({ expiresAt: new Date(NOW + 1000) }), async (args) => ({
+      accessToken: `fresh:${args.refreshToken}`,
+      refreshToken: "rotated-refresh",
+      // no expiresIn: provider stated no lifetime
+    }));
     const result = await h.refresh(servingOf(h));
     expect(result).toEqual({ ok: true });
     expect(h.row()?.expiresAt).toBeNull();
@@ -189,9 +177,7 @@ describe("createServingRefresh", () => {
 
 function servingOf(
   h: {
-    row: () => NonNullable<
-      Awaited<ReturnType<ServingRefreshStore["loadRow"]>>
-    > | null;
+    row: () => NonNullable<Awaited<ReturnType<ServingRefreshStore["loadRow"]>>> | null;
   },
   status: string = "active",
 ): Parameters<ReturnType<typeof createServingRefresh>>[0] {

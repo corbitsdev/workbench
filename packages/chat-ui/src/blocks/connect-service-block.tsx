@@ -12,10 +12,7 @@ import { Button, Input } from "@corbits/react-ui";
 import { Check } from "@corbits/icons";
 
 import { CHAT_STRINGS } from "../strings";
-import type {
-  ConnectAffordance,
-  ConnectServiceResult,
-} from "./connect-service-actions";
+import type { ConnectAffordance, ConnectServiceResult } from "./connect-service-actions";
 import { BlockCard } from "./block-card";
 
 export type ConnectServiceCardProps =
@@ -114,9 +111,7 @@ function KeyPasteBody({
         </p>
       ) : null}
       {error !== undefined ? (
-        <p className="chat-block-text chat-block-connect-token-error">
-          {error}
-        </p>
+        <p className="chat-block-text chat-block-connect-token-error">{error}</p>
       ) : null}
       <div className="chat-block-actions">
         <Button
@@ -176,9 +171,7 @@ function OneClickBody({
 export function ConnectServiceBlockView(props: ConnectServiceCardProps) {
   if (props.kind === "connected") {
     return (
-      <BlockCard
-        title={CHAT_STRINGS.blockConnectServiceHeadline(props.displayName)}
-      >
+      <BlockCard title={CHAT_STRINGS.blockConnectServiceHeadline(props.displayName)}>
         <p className="chat-block-connect-line">
           <span className="chat-block-connect-tick" aria-hidden="true">
             <Check />
@@ -189,9 +182,7 @@ export function ConnectServiceBlockView(props: ConnectServiceCardProps) {
     );
   }
   return (
-    <BlockCard
-      title={CHAT_STRINGS.blockConnectServiceHeadline(props.displayName)}
-    >
+    <BlockCard title={CHAT_STRINGS.blockConnectServiceHeadline(props.displayName)}>
       {props.affordance === "api-key" ? (
         <KeyPasteBody
           displayName={props.displayName}

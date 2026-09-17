@@ -58,16 +58,12 @@ export async function listMcpServers(
     { headers: authHeaders(config) },
   );
   if (!response.ok) {
-    throw new Error(
-      `Fetching MCP servers failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Fetching MCP servers failed: ${response.status} ${response.statusText}`);
   }
   const body: unknown = await response.json();
   const parsed = McpServersResponse(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `MCP servers response did not match the expected shape: ${parsed.summary}`,
-    );
+    throw new Error(`MCP servers response did not match the expected shape: ${parsed.summary}`);
   }
   return parsed.data;
 }

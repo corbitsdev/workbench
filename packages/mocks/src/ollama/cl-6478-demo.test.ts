@@ -62,10 +62,7 @@ describe("CL-6478 regression shape", () => {
   test("a turn assembler that persists the malformed name unchanged carries it into every following turn's history", async () => {
     const ollama = createOllamaMock();
     ollama.onChat(
-      sequence([
-        ollama.reply.malformedToolName(),
-        ollama.reply.text("turn 2, room still alive"),
-      ]),
+      sequence([ollama.reply.malformedToolName(), ollama.reply.text("turn 2, room still alive")]),
     );
 
     const turn1Response = await chat(ollama.fetch, {
@@ -115,10 +112,7 @@ describe("CL-6478 regression shape", () => {
   test("with the room's history sanitized (CL-6478's fix applied), the next turn survives with a normal reply", async () => {
     const ollama = createOllamaMock();
     ollama.onChat(
-      sequence([
-        ollama.reply.malformedToolName(),
-        ollama.reply.text("turn 2, room still alive"),
-      ]),
+      sequence([ollama.reply.malformedToolName(), ollama.reply.text("turn 2, room still alive")]),
     );
 
     await chat(ollama.fetch, {
@@ -153,16 +147,12 @@ describe("CL-6478 regression shape", () => {
     );
     const turn2Body = (await turn2Response.json()) as ChatCompletionBody;
 
-    expect(turn2Body.choices[0]?.message.content).toBe(
-      "turn 2, room still alive",
-    );
+    expect(turn2Body.choices[0]?.message.content).toBe("turn 2, room still alive");
     expect(
       ollama.requests
         .last()
         .messages.some((message) =>
-          message.toolCalls?.some((call) =>
-            call.name.includes("\n</parameter"),
-          ),
+          message.toolCalls?.some((call) => call.name.includes("\n</parameter")),
         ),
     ).toBe(false);
   });

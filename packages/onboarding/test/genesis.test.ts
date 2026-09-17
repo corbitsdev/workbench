@@ -152,9 +152,7 @@ describe("genesisOrJoinHubSignup", () => {
       tenantSlug: TENANT_SLUG,
       principalId: MEMBER_PRINCIPAL_ID,
     });
-    expect(joins).toEqual([
-      { tenantId: TENANT_ID, userId: "user_1", roleName: "member" },
-    ]);
+    expect(joins).toEqual([{ tenantId: TENANT_ID, userId: "user_1", roleName: "member" }]);
   });
 
   test("countUsers > 1 with zero tenants still lets the caller genesis", async () => {

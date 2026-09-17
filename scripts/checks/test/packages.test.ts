@@ -1,15 +1,9 @@
 import { expect, test } from "bun:test";
 import { collectExportTargets, declaredDependencyNames } from "../lib/exports";
-import {
-  auditVendoredLedger,
-  tarballNameFor,
-  vendoredLedgerPaths,
-} from "../packages";
+import { auditVendoredLedger, tarballNameFor, vendoredLedgerPaths } from "../packages";
 
 test("tarballNameFor flattens a scoped name the way bun pm pack does", () => {
-  expect(tarballNameFor("@corbits/connections", "0.0.1")).toBe(
-    "corbits-connections-0.0.1.tgz",
-  );
+  expect(tarballNameFor("@corbits/connections", "0.0.1")).toBe("corbits-connections-0.0.1.tgz");
   expect(tarballNameFor("plain", "1.2.3")).toBe("plain-1.2.3.tgz");
 });
 

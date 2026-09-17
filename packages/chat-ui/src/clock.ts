@@ -12,6 +12,5 @@ export type Clock = {
 export const REAL_CLOCK: Clock = {
   now: () => Date.now(),
   setTimeout: (callback, ms) => setTimeout(callback, ms),
-  clearTimeout: (handle) =>
-    clearTimeout(handle as ReturnType<typeof setTimeout>),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };

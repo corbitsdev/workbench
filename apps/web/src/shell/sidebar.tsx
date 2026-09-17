@@ -51,12 +51,7 @@ import webPackage from "../../package.json";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { TopLevelRunsSchema, insightsTopLevelRunsPath } from "../insights-api";
-import {
-  matchesRoute,
-  MISSION_CONTROL_PATH,
-  NEW_WORKBENCH_PATH,
-  SETTINGS_PATH,
-} from "../routes";
+import { matchesRoute, MISSION_CONTROL_PATH, NEW_WORKBENCH_PATH, SETTINGS_PATH } from "../routes";
 import type { SessionUser } from "../session";
 import { SidebarBrandMark } from "./brand-mark";
 import { initialsOf } from "./docks";
@@ -82,8 +77,7 @@ export function Sidebar({
     selectedTenantId === null ? "" : insightsTopLevelRunsPath(selectedTenantId),
     TopLevelRunsSchema,
   );
-  const showInsights =
-    runsQuery.kind === "ready" && runsQuery.data.data.length > 0;
+  const showInsights = runsQuery.kind === "ready" && runsQuery.data.data.length > 0;
 
   return (
     <SidebarPanel
@@ -120,12 +114,8 @@ export function Sidebar({
         <button
           type="button"
           className="shell-sidebar-mission-control-row"
-          data-active={
-            matchesRoute(MISSION_CONTROL_PATH, path) ? "true" : undefined
-          }
-          aria-current={
-            matchesRoute(MISSION_CONTROL_PATH, path) ? "page" : undefined
-          }
+          data-active={matchesRoute(MISSION_CONTROL_PATH, path) ? "true" : undefined}
+          aria-current={matchesRoute(MISSION_CONTROL_PATH, path) ? "page" : undefined}
           onClick={() => onNavigate(MISSION_CONTROL_PATH)}
         >
           <SquaresFour />

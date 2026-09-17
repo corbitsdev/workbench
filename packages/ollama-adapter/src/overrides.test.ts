@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  OllamaAdapterConfig,
-  parseOllamaAdapterConfig,
-  resolveOverride,
-} from "./overrides";
+import { OllamaAdapterConfig, parseOllamaAdapterConfig, resolveOverride } from "./overrides";
 
 describe("parseOllamaAdapterConfig", () => {
   test("undefined quirks resolve to an empty config", () => {
@@ -15,15 +11,11 @@ describe("parseOllamaAdapterConfig", () => {
   });
 
   test("rejects a non-positive numCtx", () => {
-    expect(() =>
-      parseOllamaAdapterConfig({ default: { numCtx: 0 } }),
-    ).toThrow();
+    expect(() => parseOllamaAdapterConfig({ default: { numCtx: 0 } })).toThrow();
   });
 
   test("rejects a reasoningEffort outside the closed set", () => {
-    expect(() =>
-      parseOllamaAdapterConfig({ default: { reasoningEffort: "extreme" } }),
-    ).toThrow();
+    expect(() => parseOllamaAdapterConfig({ default: { reasoningEffort: "extreme" } })).toThrow();
   });
 
   test("accepts a well-formed default and perModel config", () => {

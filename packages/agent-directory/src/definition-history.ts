@@ -5,11 +5,7 @@
 import fs from "node:fs";
 import git from "isomorphic-git";
 
-import {
-  DEFAULT_ASSET_REF,
-  type RepoId,
-  type RepoStore,
-} from "@intx/hub-sessions";
+import { DEFAULT_ASSET_REF, type RepoId, type RepoStore } from "@intx/hub-sessions";
 
 const AGENT_DEFINITION_ASSET_KIND = "workflow";
 
@@ -48,9 +44,7 @@ async function readAssetCommitHistory(input: {
       commitSha: entry.oid,
       message,
       author: entry.commit.author.name,
-      committedAtIso: new Date(
-        entry.commit.author.timestamp * 1000,
-      ).toISOString(),
+      committedAtIso: new Date(entry.commit.author.timestamp * 1000).toISOString(),
     });
   }
   return commits;

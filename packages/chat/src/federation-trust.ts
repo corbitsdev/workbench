@@ -13,9 +13,8 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { generateId } from "@intx/hub-common";
 import { federationTrust, tenant } from "@intx/db/schema";
 
-export type FederationTrustDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> = PostgresJsDatabase<TSchema>;
+export type FederationTrustDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+  PostgresJsDatabase<TSchema>;
 
 export interface FederationTrustStore {
   /** Upserts both directions of trust between the two tenants as
@@ -49,13 +48,10 @@ export interface FederationTrustStore {
  * The production `FederationTrustStore`, operating on `@intx/db`'s native
  * `federation_trust`/`tenant` tables.
  */
-export function createDrizzleFederationTrustStore<
-  TSchema extends Record<string, unknown>,
->(db: FederationTrustDb<TSchema>): FederationTrustStore {
-  async function upsertDirection(
-    fromTenantId: string,
-    toTenantId: string,
-  ): Promise<void> {
+export function createDrizzleFederationTrustStore<TSchema extends Record<string, unknown>>(
+  db: FederationTrustDb<TSchema>,
+): FederationTrustStore {
+  async function upsertDirection(fromTenantId: string, toTenantId: string): Promise<void> {
     const [existing] = await db
       .select({ id: federationTrust.id })
       .from(federationTrust)
@@ -120,18 +116,12 @@ export function createDrizzleFederationTrustStore<
       await db
         .delete(federationTrust)
         .where(
-          and(
-            eq(federationTrust.tenantId, tenantA),
-            eq(federationTrust.targetTenantId, tenantB),
-          ),
+          and(eq(federationTrust.tenantId, tenantA), eq(federationTrust.targetTenantId, tenantB)),
         );
       await db
         .delete(federationTrust)
         .where(
-          and(
-            eq(federationTrust.tenantId, tenantB),
-            eq(federationTrust.targetTenantId, tenantA),
-          ),
+          and(eq(federationTrust.tenantId, tenantB), eq(federationTrust.targetTenantId, tenantA)),
         );
     },
 
@@ -220,11 +210,7 @@ export function createInMemoryFederationTrustStore(): FederationTrustStore & {
     async resolveSharedViaParent(tenantA, tenantB) {
       const a = tenants.get(tenantA);
       const b = tenants.get(tenantB);
-      if (
-        a?.parentId === undefined ||
-        b?.parentId === undefined ||
-        a.parentId !== b.parentId
-      ) {
+      if (a?.parentId === undefined || b?.parentId === undefined || a.parentId !== b.parentId) {
         return undefined;
       }
       const parent = tenants.get(a.parentId);

@@ -31,12 +31,7 @@ export async function runPersonaStep(
     if (!stillAsking(turn.replyText)) {
       break;
     }
-    const reply = await personaAnswer(
-      step.persona,
-      turn.replyText,
-      history,
-      call,
-    );
+    const reply = await personaAnswer(step.persona, turn.replyText, history, call);
     if (reply.kind === "done") {
       break;
     }

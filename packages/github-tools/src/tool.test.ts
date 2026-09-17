@@ -22,9 +22,7 @@ function fakeCredentials(secret: string | undefined): CredentialCapability {
   return {
     resolve(handle: string): Promise<MediatedCredential> {
       if (secret === undefined) {
-        return Promise.reject(
-          new Error(`no credential is bound to handle "${handle}"`),
-        );
+        return Promise.reject(new Error(`no credential is bound to handle "${handle}"`));
       }
       return Promise.resolve({
         kind: "http",
@@ -133,8 +131,7 @@ test("uses the mediated fetch (authenticated) when a credential resolves", async
 
 test("degrades to an error result (never throws) when the underlying call fails", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 403 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 403 })) as unknown as typeof fetch;
   try {
     const bundle = githubTools(fakeEnv(undefined));
     const result = await bundle.run(CALL, new AbortController().signal);
@@ -146,8 +143,7 @@ test("degrades to an error result (never throws) when the underlying call fails"
 
 test("degrades to an error result the same way with a credential resolving", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
   try {
     const bundle = githubTools(fakeEnv(fakeCredentials("ghp_test")));
     const result = await bundle.run(CALL, new AbortController().signal);

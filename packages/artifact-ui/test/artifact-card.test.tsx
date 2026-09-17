@@ -8,9 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ArtifactCard } from "../src/artifact-card";
 import type { ArtifactSummary } from "../src/types";
 
-function artifact(
-  overrides: Partial<ArtifactSummary> & { readonly id: string },
-): ArtifactSummary {
+function artifact(overrides: Partial<ArtifactSummary> & { readonly id: string }): ArtifactSummary {
   return {
     title: "Untitled",
     kind: "document",

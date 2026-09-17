@@ -52,10 +52,7 @@ import {
   defineDirector,
   type DirectorRegistry,
 } from "@intx/agent";
-import {
-  createDefaultDirector,
-  type DefaultDirectorPolicy,
-} from "@intx/inference";
+import { createDefaultDirector, type DefaultDirectorPolicy } from "@intx/inference";
 import {
   formatSafetyRatingText,
   type AssistantTurn,
@@ -149,12 +146,7 @@ export class WorkbenchDirector implements ReactorDirector {
 
     const actions = await this.inner.decide(event, state, capabilities);
 
-    const budgeted = this.applyContextBudget(
-      event,
-      state,
-      capabilities,
-      actions,
-    );
+    const budgeted = this.applyContextBudget(event, state, capabilities, actions);
     if (budgeted !== undefined) {
       return budgeted;
     }
@@ -163,10 +155,7 @@ export class WorkbenchDirector implements ReactorDirector {
       return actions;
     }
 
-    if (
-      !this.isEmptyConversationalTurn(event.turn) ||
-      !actionsIncludeWait(actions)
-    ) {
+    if (!this.isEmptyConversationalTurn(event.turn) || !actionsIncludeWait(actions)) {
       this.emptyTurnRetried = false;
       return actions;
     }
@@ -183,20 +172,14 @@ export class WorkbenchDirector implements ReactorDirector {
     }
 
     this.emptyTurnRetried = false;
-    return [
-      capabilities.checkpoint("empty-turn-reply"),
-      capabilities.reply(EMPTY_TURN_REPLY),
-    ];
+    return [capabilities.checkpoint("empty-turn-reply"), capabilities.reply(EMPTY_TURN_REPLY)];
   }
 
   private isEmptyConversationalTurn(turn: AssistantTurn): boolean {
     if (!this.conversational) {
       return false;
     }
-    return (
-      extractToolCalls(turn).length === 0 &&
-      extractTextContent(turn).length === 0
-    );
+    return extractToolCalls(turn).length === 0 && extractTextContent(turn).length === 0;
   }
 
   /**
@@ -219,10 +202,7 @@ export class WorkbenchDirector implements ReactorDirector {
     const chars = estimateTurnsChars(state.turns);
 
     if (chars > this.contextBudget.hardLimitChars) {
-      if (
-        list.some((action) => action.type === "infer") ||
-        event.type === "message.received"
-      ) {
+      if (list.some((action) => action.type === "infer") || event.type === "message.received") {
         return [
           capabilities.checkpoint("context-overflow"),
           capabilities.reply(CONTEXT_OVERFLOW_MESSAGE),
@@ -234,17 +214,10 @@ export class WorkbenchDirector implements ReactorDirector {
       return undefined;
     }
 
-    if (
-      event.type === "tool.done" &&
-      list.length === 0 &&
-      chars > this.contextBudget.budgetChars
-    ) {
+    if (event.type === "tool.done" && list.length === 0 && chars > this.contextBudget.budgetChars) {
       return [
         capabilities.checkpoint("context-budget-compact"),
-        capabilities.compact(
-          this.contextBudget.compactorName,
-          "context-budget",
-        ),
+        capabilities.compact(this.contextBudget.compactorName, "context-budget"),
       ];
     }
 
@@ -258,12 +231,7 @@ export function createWorkbenchDirector(
   policy: DefaultDirectorPolicy = {},
   contextBudget?: ContextBudgetOptions,
 ): ReactorDirector {
-  return new WorkbenchDirector(
-    systemPrompt,
-    toolDefinitions,
-    policy,
-    contextBudget,
-  );
+  return new WorkbenchDirector(systemPrompt, toolDefinitions, policy, contextBudget);
 }
 
 const WorkbenchDirectorConfigSchema = type({
@@ -274,9 +242,7 @@ export type WorkbenchDirectorConfig = {
   mode?: "conversational" | "reactive";
 };
 
-function buildWorkbenchFactory(
-  contextBudget: ContextBudgetOptions | undefined,
-) {
+function buildWorkbenchFactory(contextBudget: ContextBudgetOptions | undefined) {
   return defineDirector<WorkbenchDirectorConfig>({
     id: WORKBENCH_DIRECTOR_ID,
     configSchema: WorkbenchDirectorConfigSchema,

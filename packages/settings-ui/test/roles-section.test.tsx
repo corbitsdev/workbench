@@ -18,11 +18,7 @@ const timestamps = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-function principal(
-  kind: "user" | "agent" | "workflow",
-  id: string,
-  name: string,
-) {
+function principal(kind: "user" | "agent" | "workflow", id: string, name: string) {
   return {
     id,
     tenantId: "tnt_1",
@@ -158,10 +154,7 @@ describe("RolesTable Actions column", () => {
 
     expect(actionsCellOpenTag(markup)).toContain("settings-actions-cell");
 
-    const css = readFileSync(
-      new URL("../src/styles.css", import.meta.url),
-      "utf8",
-    );
+    const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
     const cell = ruleFor(css, "settings-actions-cell");
     expect(cell).toContain("overflow: visible");
     expect(cell).toContain("min-width");

@@ -20,15 +20,11 @@ describe("chat.message — payload completeness", () => {
     });
 
     const received: ChatWorkbenchEvent[] = [];
-    workbenchSubscribers.subscribe(workbench.id, (event) =>
-      received.push(event),
-    );
+    workbenchSubscribers.subscribe(workbench.id, (event) => received.push(event));
 
     await sendText(app, workbench.id, "morning");
 
-    const messageEvents = received.filter(
-      (event) => event.type === "chat.message",
-    );
+    const messageEvents = received.filter((event) => event.type === "chat.message");
     expect(messageEvents).toHaveLength(1);
     const data = messageEvents[0]?.data as {
       id: string;
@@ -61,23 +57,16 @@ describe("chat.settings — payload completeness", () => {
     });
 
     const received: ChatWorkbenchEvent[] = [];
-    workbenchSubscribers.subscribe(workbench.id, (event) =>
-      received.push(event),
-    );
+    workbenchSubscribers.subscribe(workbench.id, (event) => received.push(event));
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ "chat/name": "Renamed" }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/name": "Renamed" }),
+    });
     expect(response.status).toBe(200);
 
-    const settingsEvents = received.filter(
-      (event) => event.type === "chat.settings",
-    );
+    const settingsEvents = received.filter((event) => event.type === "chat.settings");
     expect(settingsEvents).toHaveLength(1);
     const data = settingsEvents[0]?.data as {
       updatedBy: string;

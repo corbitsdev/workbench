@@ -21,8 +21,7 @@ type RecordedCall = { readonly path: string; readonly init?: RequestInit };
 function stubFetch(respond: (path: string) => Response): RecordedCall[] {
   const calls: RecordedCall[] = [];
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const path =
-      typeof input === "string" ? input : new URL(String(input)).pathname;
+    const path = typeof input === "string" ? input : new URL(String(input)).pathname;
     calls.push(init === undefined ? { path } : { path, init });
     return Promise.resolve(respond(path));
   }) as typeof fetch;
@@ -60,9 +59,7 @@ const providerRow = {
 
 describe("listCredentials", () => {
   test("fetches the tenant's credentials page", async () => {
-    const calls = stubFetch(() =>
-      json({ data: [credentialRow], nextCursor: null }),
-    );
+    const calls = stubFetch(() => json({ data: [credentialRow], nextCursor: null }));
     const rows = await listCredentials("tnt_1");
     expect(calls[0]?.path).toBe("/api/tenants/tnt_1/credentials");
     expect(rows).toHaveLength(1);
@@ -71,9 +68,7 @@ describe("listCredentials", () => {
 
   test("throws CredentialsApiError on 403", async () => {
     stubFetch(() => json({ error: "nope" }, 403));
-    await expect(listCredentials("tnt_1")).rejects.toBeInstanceOf(
-      CredentialsApiError,
-    );
+    await expect(listCredentials("tnt_1")).rejects.toBeInstanceOf(CredentialsApiError);
   });
 
   test("a fallback error message never leaks the raw route", async () => {
@@ -84,18 +79,14 @@ describe("listCredentials", () => {
     } catch (cause) {
       expect(cause).toBeInstanceOf(CredentialsApiError);
       expect((cause as Error).message).not.toContain("/api/");
-      expect((cause as Error).message).toBe(
-        "The server answered 401 while loading credentials.",
-      );
+      expect((cause as Error).message).toBe("The server answered 401 while loading credentials.");
     }
   });
 });
 
 describe("listProviders", () => {
   test("fetches the tenant's providers page", async () => {
-    const calls = stubFetch(() =>
-      json({ data: [providerRow], nextCursor: null }),
-    );
+    const calls = stubFetch(() => json({ data: [providerRow], nextCursor: null }));
     const rows = await listProviders("tnt_1");
     expect(calls[0]?.path).toBe("/api/tenants/tnt_1/providers");
     expect(rows[0]?.plugin).toBe("openai");

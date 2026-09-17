@@ -18,9 +18,7 @@ describe("addParticipant", () => {
 
 describe("handleFromName / dedupeHandle", () => {
   test("slugs a display name and falls back to the address local part", () => {
-    expect(handleFromName("Content Researcher", "run_1@x")).toBe(
-      "content-researcher",
-    );
+    expect(handleFromName("Content Researcher", "run_1@x")).toBe("content-researcher");
     expect(handleFromName("!!!", "run_scout@x")).toBe("run_scout");
   });
 

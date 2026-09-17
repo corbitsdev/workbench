@@ -13,13 +13,9 @@
 import { type } from "arktype";
 import { reportError } from "@corbits/error-sink";
 
-import {
-  postExchangeRequest,
-  type OAuthExchangeFetch,
-} from "./oauth-exchange-fetch";
+import { postExchangeRequest, type OAuthExchangeFetch } from "./oauth-exchange-fetch";
 
-export const GOOGLE_AUTHORIZE_URL =
-  "https://accounts.google.com/o/oauth2/v2/auth";
+export const GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 export const GOOGLE_TOKEN_EXCHANGE_URL = "https://oauth2.googleapis.com/token";
 
 /** Read, draft, and send — `gmail.modify` covers all three without
@@ -101,10 +97,7 @@ export async function exchangeCodeForGoogleToken(
   }
   if (parsed.access_token === undefined) {
     const error = parsed.error ?? `HTTP ${response.status}`;
-    const detail =
-      parsed.error_description !== undefined
-        ? `: ${parsed.error_description}`
-        : "";
+    const detail = parsed.error_description !== undefined ? `: ${parsed.error_description}` : "";
     return {
       ok: false,
       message: `Google token exchange failed (${error}${detail})`,
@@ -115,13 +108,9 @@ export async function exchangeCodeForGoogleToken(
     apiKey: parsed.access_token,
     ...(parsed.expires_in !== undefined
       ? {
-          expiresAt: new Date(
-            Date.now() + parsed.expires_in * 1000,
-          ).toISOString(),
+          expiresAt: new Date(Date.now() + parsed.expires_in * 1000).toISOString(),
         }
       : {}),
-    ...(parsed.refresh_token !== undefined
-      ? { refreshToken: parsed.refresh_token }
-      : {}),
+    ...(parsed.refresh_token !== undefined ? { refreshToken: parsed.refresh_token } : {}),
   };
 }

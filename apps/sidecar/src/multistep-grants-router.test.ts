@@ -33,12 +33,10 @@ test("tryRoute dispatches the frame's runId and stepGrants to the handler", asyn
 
 test("a handler rejection propagates to the caller", async () => {
   const router = createMultistepGrantsRouter();
-  router.register("ins_dep_1@example.com", () =>
-    Promise.reject(new Error("durable write failed")),
+  router.register("ins_dep_1@example.com", () => Promise.reject(new Error("durable write failed")));
+  await expect(router.tryRoute(makeFrame("ins_dep_1@example.com"))).rejects.toThrow(
+    /durable write failed/,
   );
-  await expect(
-    router.tryRoute(makeFrame("ins_dep_1@example.com")),
-  ).rejects.toThrow(/durable write failed/);
 });
 
 test("unregister stops routing for the address", async () => {

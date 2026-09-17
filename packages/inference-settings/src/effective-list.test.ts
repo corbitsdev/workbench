@@ -26,9 +26,7 @@ describe("providerDisplayName", () => {
   });
 
   test("falls back to the raw slug for an unrecognized provider", () => {
-    expect(providerDisplayName("some-custom-provider")).toBe(
-      "some-custom-provider",
-    );
+    expect(providerDisplayName("some-custom-provider")).toBe("some-custom-provider");
   });
 });
 
@@ -370,18 +368,13 @@ describe("chatCapableModels", () => {
         ],
       }),
     ];
-    expect(
-      chatCapableModels(models).map((entry) => entry.canonicalName),
-    ).toEqual(["qwen3:8b"]);
+    expect(chatCapableModels(models).map((entry) => entry.canonicalName)).toEqual(["qwen3:8b"]);
   });
 });
 
 describe("buildEffectiveInferenceRows", () => {
   test("marks an owned offering id set-here and everything else inherited", () => {
-    const rows = buildEffectiveInferenceRows(
-      [model()],
-      new Set(["offering-b"]),
-    );
+    const rows = buildEffectiveInferenceRows([model()], new Set(["offering-b"]));
     expect(rows).toHaveLength(2);
     expect(rows[0]?.offeringId).toBe("offering-a");
     expect(rows[0]?.provenance).toBe("inherited");
@@ -413,11 +406,7 @@ describe("buildEffectiveInferenceRows", () => {
       ],
       new Set(),
     );
-    expect(rows.map((row) => row.offeringId)).toEqual([
-      "offering-a",
-      "offering-b",
-      "offering-c",
-    ]);
+    expect(rows.map((row) => row.offeringId)).toEqual(["offering-a", "offering-b", "offering-c"]);
   });
 
   test("an empty catalog yields no rows", () => {
@@ -506,17 +495,15 @@ describe("global inference route", () => {
       { ...row("xai", 1), canonicalName: "grok-4.6" },
     ];
 
-    expect(
-      orderedGlobalInferenceRows(rows).map((entry) => entry.offeringId),
-    ).toEqual(["anthropic", "xai", "openai"]);
+    expect(orderedGlobalInferenceRows(rows).map((entry) => entry.offeringId)).toEqual([
+      "anthropic",
+      "xai",
+      "openai",
+    ]);
   });
 
   test("moving a fallback to primary normalizes the entire route", () => {
-    const rows: EffectiveInferenceRow[] = [
-      row("anthropic", 0),
-      row("xai", 1),
-      row("openai", 2),
-    ];
+    const rows: EffectiveInferenceRow[] = [row("anthropic", 0), row("xai", 1), row("openai", 2)];
 
     expect(computeGlobalRoutePatches(rows, "openai", "first")).toEqual([
       { offeringId: "openai", priority: 0 },
@@ -526,10 +513,7 @@ describe("global inference route", () => {
   });
 
   test("does not pretend an inherited route can be rewritten here", () => {
-    const rows: EffectiveInferenceRow[] = [
-      row("anthropic", 0, "inherited"),
-      row("openai", 1),
-    ];
+    const rows: EffectiveInferenceRow[] = [row("anthropic", 0, "inherited"), row("openai", 1)];
 
     expect(computeGlobalRoutePatches(rows, "openai", "up")).toBeNull();
   });
@@ -552,13 +536,8 @@ function expectPatches(
 
 describe("computeReorderPatches", () => {
   test("swaps two distinctly-prioritized adjacent rows", () => {
-    const rows = buildEffectiveInferenceRows(
-      [model()],
-      new Set(["offering-a", "offering-b"]),
-    );
-    const [earlier, later] = expectPatches(
-      computeReorderPatches(rows, 1, "up"),
-    );
+    const rows = buildEffectiveInferenceRows([model()], new Set(["offering-a", "offering-b"]));
+    const [earlier, later] = expectPatches(computeReorderPatches(rows, 1, "up"));
     expect(earlier.offeringId).toBe("offering-b");
     expect(later.offeringId).toBe("offering-a");
     expect(earlier.priority).toBeLessThan(later.priority);
@@ -570,9 +549,7 @@ describe("computeReorderPatches", () => {
   // pair — a plain value-swap (0, 0) would leave both unchanged.
   test("swapping two equal-priority rows still produces distinct, correctly ordered priorities", () => {
     const rows: EffectiveInferenceRow[] = [row("a", 0), row("b", 0)];
-    const [earlier, later] = expectPatches(
-      computeReorderPatches(rows, 1, "up"),
-    );
+    const [earlier, later] = expectPatches(computeReorderPatches(rows, 1, "up"));
     expect(earlier.offeringId).toBe("b");
     expect(later.offeringId).toBe("a");
     expect(earlier.priority).not.toBe(later.priority);
@@ -586,27 +563,19 @@ describe("computeReorderPatches", () => {
       row("b", 0),
       row("fixed-high", 1, "inherited"),
     ];
-    const [earlier, later] = expectPatches(
-      computeReorderPatches(rows, 2, "up"),
-    );
+    const [earlier, later] = expectPatches(computeReorderPatches(rows, 2, "up"));
     expect(earlier.priority).toBeGreaterThanOrEqual(0);
     expect(later.priority).toBeLessThanOrEqual(1);
     expect(earlier.priority).toBeLessThan(later.priority);
   });
 
   test("returns null when the move would run off the edge of the list", () => {
-    const rows = buildEffectiveInferenceRows(
-      [model()],
-      new Set(["offering-a", "offering-b"]),
-    );
+    const rows = buildEffectiveInferenceRows([model()], new Set(["offering-a", "offering-b"]));
     expect(computeReorderPatches(rows, 0, "up")).toBeNull();
   });
 
   test("returns null when the neighbor is inherited (not shadowed yet)", () => {
-    const rows = buildEffectiveInferenceRows(
-      [model()],
-      new Set(["offering-b"]),
-    );
+    const rows = buildEffectiveInferenceRows([model()], new Set(["offering-b"]));
     expect(computeReorderPatches(rows, 1, "up")).toBeNull();
   });
 });
@@ -625,24 +594,14 @@ describe("computeReorderPatches", () => {
 // tiebreak never engages.
 describe("resolution-order truth", () => {
   test("with distinct priorities, row order matches priority-ascending regardless of tiebreak", () => {
-    const rows: EffectiveInferenceRow[] = [
-      row("c", 5),
-      row("a", 1),
-      row("b", 3),
-    ];
+    const rows: EffectiveInferenceRow[] = [row("c", 5), row("a", 1), row("b", 3)];
     const byPriorityIdTiebreak = [...rows].sort(
-      (x, y) =>
-        x.priority - y.priority || (x.offeringId < y.offeringId ? -1 : 1),
+      (x, y) => x.priority - y.priority || (x.offeringId < y.offeringId ? -1 : 1),
     );
     const byPriorityNameTiebreak = [...rows].sort(
-      (x, y) =>
-        x.priority - y.priority || x.providerName.localeCompare(y.providerName),
+      (x, y) => x.priority - y.priority || x.providerName.localeCompare(y.providerName),
     );
-    expect(byPriorityIdTiebreak.map((r) => r.offeringId)).toEqual([
-      "a",
-      "b",
-      "c",
-    ]);
+    expect(byPriorityIdTiebreak.map((r) => r.offeringId)).toEqual(["a", "b", "c"]);
     expect(byPriorityNameTiebreak.map((r) => r.offeringId)).toEqual(
       byPriorityIdTiebreak.map((r) => r.offeringId),
     );
@@ -685,9 +644,7 @@ describe("restrictedOfferings", () => {
 describe("computeMakeDefaultPatches", () => {
   test("lowers the target strictly below the current lowest other priority", () => {
     const rows = [row("a", 5), row("b", 2), row("c", 8)];
-    expect(computeMakeDefaultPatches(rows, "c")).toEqual([
-      { offeringId: "c", priority: 1 },
-    ]);
+    expect(computeMakeDefaultPatches(rows, "c")).toEqual([{ offeringId: "c", priority: 1 }]);
   });
 
   // Regression for the tie case: `defaultModelForProvider` breaks ties by
@@ -695,9 +652,7 @@ describe("computeMakeDefaultPatches", () => {
   // the target must land strictly below it.
   test("breaks a tie with the current minimum by going strictly below it", () => {
     const rows = [row("a", 0), row("b", 0)];
-    expect(computeMakeDefaultPatches(rows, "b")).toEqual([
-      { offeringId: "b", priority: -1 },
-    ]);
+    expect(computeMakeDefaultPatches(rows, "b")).toEqual([{ offeringId: "b", priority: -1 }]);
   });
 
   test("is a no-op when the target is already strictly ahead of every other offering", () => {

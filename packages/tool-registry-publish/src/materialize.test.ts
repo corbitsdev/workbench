@@ -62,9 +62,7 @@ describe("materializePackages", () => {
 
   test("skips a package whose content hash already matches the on-disk materialize", async () => {
     const encoder = new TextEncoder();
-    const onDisk = new Map([
-      ["unchanged", sha512Integrity(encoder.encode("same-bytes"))],
-    ]);
+    const onDisk = new Map([["unchanged", sha512Integrity(encoder.encode("same-bytes"))]]);
     const current = new Map([
       ["unchanged", sha512Integrity(encoder.encode("same-bytes"))],
       ["changed", sha512Integrity(encoder.encode("new-bytes"))],
@@ -80,9 +78,7 @@ describe("materializePackages", () => {
       shouldSkip: (packageDir) => {
         const existing = onDisk.get(packageDir);
         const next = current.get(packageDir);
-        return (
-          existing !== undefined && next !== undefined && existing === next
-        );
+        return existing !== undefined && next !== undefined && existing === next;
       },
     });
 
@@ -105,9 +101,7 @@ describe("materializePackages", () => {
       shouldSkip: () => existing === next,
     });
 
-    expect(results).toEqual([
-      { packageDir: "pkg", status: "ok", value: "rematerialized" },
-    ]);
+    expect(results).toEqual([{ packageDir: "pkg", status: "ok", value: "rematerialized" }]);
   });
 
   test("rejects when one materialize fails and does not swallow siblings", async () => {

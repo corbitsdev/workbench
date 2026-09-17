@@ -44,15 +44,12 @@ describe("resolveDatabaseUrl", () => {
     unset("ISOLATION_DATABASE_URL");
     process.env["CI"] = "true";
     unset("GITHUB_JOB");
-    expect(() => resolveDatabaseUrl()).toThrow(
-      /docker compose -f compose\.test\.yml up -d/,
-    );
+    expect(() => resolveDatabaseUrl()).toThrow(/docker compose -f compose\.test\.yml up -d/);
   });
 
   test("ISOLATION_DATABASE_URL wins over DATABASE_URL", () => {
     process.env["DATABASE_URL"] = "postgres://localhost:5432/other";
-    process.env["ISOLATION_DATABASE_URL"] =
-      "postgres://localhost:5432/isolation";
+    process.env["ISOLATION_DATABASE_URL"] = "postgres://localhost:5432/isolation";
     unset("CI");
     expect(resolveDatabaseUrl()).toBe("postgres://localhost:5432/isolation");
   });

@@ -1,12 +1,7 @@
 import { expect, test } from "bun:test";
 import type { ToolCall } from "@intx/types/runtime";
 
-import {
-  SKILLS_LIST_TOOL,
-  SKILLS_LOAD_TOOL,
-  SKILLS_SEARCH_TOOL,
-  skillsTools,
-} from "./tool";
+import { SKILLS_LIST_TOOL, SKILLS_LOAD_TOOL, SKILLS_SEARCH_TOOL, skillsTools } from "./tool";
 import type { WorkflowSkillsToolEnv } from "./tool";
 
 function testEnv(): WorkflowSkillsToolEnv {
@@ -31,11 +26,7 @@ test("declares skills_list, skills_search, and skills_load", () => {
 });
 
 test("requires the sanctioned workflow-skills env keys, not a per-user credential", () => {
-  expect(skillsTools.requires).toEqual([
-    "hubSkillsUrl",
-    "sidecarToken",
-    "address",
-  ]);
+  expect(skillsTools.requires).toEqual(["hubSkillsUrl", "sidecarToken", "address"]);
 });
 
 test("no tool's input schema accepts a tenant or principal argument", () => {

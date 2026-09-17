@@ -60,9 +60,7 @@ const TENANT_ID = "tnt_race";
 const DEFINITION_ID = "def_code_review";
 
 describeIfDb("startReviewingRepos under real concurrency (CL-7242)", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchTarget = new URL(scratchUrl);
   const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
 
@@ -114,10 +112,7 @@ describeIfDb("startReviewingRepos under real concurrency (CL-7242)", () => {
     });
     try {
       const db = drizzle(client, { schema: intxSchema });
-      const webhookStore = createDrizzleWebhookTriggerStore(
-        db,
-        createNoopCredentialCipher(),
-      );
+      const webhookStore = createDrizzleWebhookTriggerStore(db, createNoopCredentialCipher());
       const leaseStore = createDrizzleRepoReviewLeaseStore(db);
 
       const roleId = "role_race_member";
@@ -130,10 +125,8 @@ describeIfDb("startReviewingRepos under real concurrency (CL-7242)", () => {
       // ours on their table. Only the lease serializes the two racing
       // calls below.
       const buildPorts = (): ConnectGithubSetupPorts => ({
-        acquireRepoReviewLease: (repo) =>
-          leaseStore.acquire(TENANT_ID, repo.name),
-        releaseRepoReviewLease: (repo) =>
-          leaseStore.release(TENANT_ID, repo.name),
+        acquireRepoReviewLease: (repo) => leaseStore.acquire(TENANT_ID, repo.name),
+        releaseRepoReviewLease: (repo) => leaseStore.release(TENANT_ID, repo.name),
         hasRepoGrant: async (repo) => {
           const existing = await db.query.grant.findFirst({
             where: and(
@@ -147,10 +140,7 @@ describeIfDb("startReviewingRepos under real concurrency (CL-7242)", () => {
         },
         mintRepoGrant: async (repo) => {
           const memberRole = await db.query.role.findFirst({
-            where: and(
-              eq(roleTable.tenantId, TENANT_ID),
-              eq(roleTable.name, "member"),
-            ),
+            where: and(eq(roleTable.tenantId, TENANT_ID), eq(roleTable.name, "member")),
             columns: { id: true },
           });
           if (memberRole === undefined) throw new Error("no member role");
@@ -167,9 +157,7 @@ describeIfDb("startReviewingRepos under real concurrency (CL-7242)", () => {
         hasWebhookTrigger: async (repo) => {
           const triggers = await webhookStore.list(TENANT_ID);
           const name = webhookTriggerName(repo);
-          return triggers.some(
-            (t) => t.workflowDefinitionId === DEFINITION_ID && t.name === name,
-          );
+          return triggers.some((t) => t.workflowDefinitionId === DEFINITION_ID && t.name === name);
         },
         createWebhookTrigger: async (repo) => {
           const row = await webhookStore.ensure({
@@ -177,8 +165,7 @@ describeIfDb("startReviewingRepos under real concurrency (CL-7242)", () => {
             tenantId: TENANT_ID,
             name: webhookTriggerName(repo),
             workflowDefinitionId: DEFINITION_ID,
-            inputTemplate:
-              "Review the pull request at {{pull_request.html_url}}",
+            inputTemplate: "Review the pull request at {{pull_request.html_url}}",
             secret: crypto.randomUUID(),
             createdBy: "user_1",
           });
@@ -198,8 +185,7 @@ describeIfDb("startReviewingRepos under real concurrency (CL-7242)", () => {
       // round trips -- both are correct outcomes. The property this
       // test actually cares about is that at most one trigger is ever
       // created, and the database never ends up with a duplicate.
-      const totalCreated =
-        first.createdTriggerIds.length + second.createdTriggerIds.length;
+      const totalCreated = first.createdTriggerIds.length + second.createdTriggerIds.length;
       expect(totalCreated).toBe(1);
 
       const grantRows = await client`

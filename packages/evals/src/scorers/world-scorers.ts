@@ -5,12 +5,7 @@
 // hand-built `WorldSnapshot` (see world-scorers.test.ts).
 import type { FakeReceipt, ScorerContext, ScorerResult } from "../types.ts";
 
-function result(
-  name: string,
-  pass: boolean,
-  reason: string,
-  score = pass ? 1 : 0,
-): ScorerResult {
+function result(name: string, pass: boolean, reason: string, score = pass ? 1 : 0): ScorerResult {
   return { name, pass, reason, score };
 }
 
@@ -18,19 +13,11 @@ function result(
  * every one of `tools` among its pinned tool packages. */
 export function agentHasTools(agentName: string, tools: readonly string[]) {
   return function agentHasToolsScorer(ctx: ScorerContext): ScorerResult {
-    const agent = ctx.world.agentDefinitions.find(
-      (definition) => definition.name === agentName,
-    );
+    const agent = ctx.world.agentDefinitions.find((definition) => definition.name === agentName);
     if (agent === undefined) {
-      return result(
-        "agentHasTools",
-        false,
-        `no agent definition named "${agentName}" exists yet`,
-      );
+      return result("agentHasTools", false, `no agent definition named "${agentName}" exists yet`);
     }
-    const missing = tools.filter(
-      (tool) => !agent.toolPackagePins.includes(tool),
-    );
+    const missing = tools.filter((tool) => !agent.toolPackagePins.includes(tool));
     return result(
       "agentHasTools",
       missing.length === 0,
@@ -52,9 +39,7 @@ export function connectionIsLive(slug: string) {
     return result(
       "connectionIsLive",
       connection.live,
-      connection.live
-        ? `"${slug}" is live`
-        : `"${slug}" is connected but not live`,
+      connection.live ? `"${slug}" is live` : `"${slug}" is connected but not live`,
     );
   };
 }

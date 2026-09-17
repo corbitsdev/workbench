@@ -14,10 +14,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
-import {
-  resetPendingDialogRequests,
-  runActionCommand,
-} from "../src/command-palette-actions";
+import { resetPendingDialogRequests, runActionCommand } from "../src/command-palette-actions";
 import { SkillsPage } from "../src/pages/skills-page";
 import { TestQueryProvider } from "./test-query-provider";
 

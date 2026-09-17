@@ -46,11 +46,7 @@ async function resolveTenantId(
   tenant: string | undefined,
 ): Promise<string> {
   const response = await api("GET", "/api/me/principals", undefined, cookies);
-  const summary = parseAs(
-    paginatedSchema(PrincipalSummary),
-    response.data,
-    "principals response",
-  );
+  const summary = parseAs(paginatedSchema(PrincipalSummary), response.data, "principals response");
   if (tenant !== undefined) {
     const named = summary.data.find(
       (principal) =>
@@ -97,13 +93,9 @@ export async function runPublishTools(
     hubUrl: args.hubUrl,
     tenantId,
     log,
-    ...(args.checkFreshness !== undefined
-      ? { checkFreshness: args.checkFreshness }
-      : {}),
+    ...(args.checkFreshness !== undefined ? { checkFreshness: args.checkFreshness } : {}),
     ...(args.fetchImpl !== undefined ? { fetchImpl: args.fetchImpl } : {}),
-    ...(args.packageDirs !== undefined
-      ? { packageDirs: args.packageDirs }
-      : {}),
+    ...(args.packageDirs !== undefined ? { packageDirs: args.packageDirs } : {}),
     ...(args.pack !== undefined ? { pack: args.pack } : {}),
   });
 }
@@ -115,12 +107,7 @@ const Args = type({
 async function main(): Promise<void> {
   const email = process.env["HUB_ADMIN_EMAIL"];
   const password = process.env["HUB_ADMIN_PASSWORD"];
-  if (
-    email === undefined ||
-    email === "" ||
-    password === undefined ||
-    password === ""
-  ) {
+  if (email === undefined || email === "" || password === undefined || password === "") {
     console.error(
       "publish-tools: set HUB_ADMIN_EMAIL and HUB_ADMIN_PASSWORD to an existing admin account, and start the stack with `bun run dev` first.",
     );
@@ -128,8 +115,7 @@ async function main(): Promise<void> {
   }
   const raw = process.argv.slice(2);
   const tenantIndex = raw.indexOf("--tenant");
-  const tenant =
-    tenantIndex >= 0 ? (raw[tenantIndex + 1] ?? undefined) : undefined;
+  const tenant = tenantIndex >= 0 ? (raw[tenantIndex + 1] ?? undefined) : undefined;
   const parsed = Args({ tenant });
   if (parsed instanceof type.errors) {
     console.error(`publish-tools: ${parsed.summary}`);
@@ -143,9 +129,7 @@ async function main(): Promise<void> {
     ...(parsed.tenant !== undefined ? { tenant: parsed.tenant } : {}),
     log: (line) => console.log(`[publish-tools] ${line}`),
   });
-  console.log(
-    `[publish-tools] done: ${result.summaries.length} tarball(s) uploaded`,
-  );
+  console.log(`[publish-tools] done: ${result.summaries.length} tarball(s) uploaded`);
 }
 
 if (import.meta.main) {

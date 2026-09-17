@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  SLASH_COMMANDS,
-  activeSlashQuery,
-  filterSlashCommands,
-} from "./slash-commands";
+import { SLASH_COMMANDS, activeSlashQuery, filterSlashCommands } from "./slash-commands";
 
 describe("activeSlashQuery", () => {
   test("detects an open command right after the /", () => {

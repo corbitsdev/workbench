@@ -63,9 +63,7 @@ describeIfDb("relaunch sweep teardown", () => {
       console.error = originalError;
     }
 
-    const leaked = errors.filter((line) =>
-      line.includes("relaunch sweep pass failed"),
-    );
+    const leaked = errors.filter((line) => line.includes("relaunch sweep pass failed"));
     expect(leaked).toEqual([]);
   }, 10_000);
 });

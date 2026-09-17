@@ -33,7 +33,4 @@ export { CodexQuirks, CodexQuirksError, parseCodexQuirks } from "./quirks";
 
 export { createCodexResponsesAdapter } from "./responses-adapter";
 
-export {
-  withCodexContentTypeRepair,
-  type FetchLike,
-} from "./content-type-repair";
+export { withCodexContentTypeRepair, type FetchLike } from "./content-type-repair";

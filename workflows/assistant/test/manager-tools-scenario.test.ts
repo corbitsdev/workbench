@@ -53,11 +53,7 @@ import {
 
 const HUB = "https://hub.example.com";
 
-function call(
-  id: string,
-  name: string,
-  args: Record<string, unknown>,
-): ToolCall {
+function call(id: string, name: string, args: Record<string, unknown>): ToolCall {
   return { id, name, arguments: args };
 }
 
@@ -89,10 +85,7 @@ function createFakeHub() {
     { id: "linear", displayName: "Linear", docsUrl: "https://linear.app/docs" },
   ];
 
-  const fetchImpl = (async (
-    input: string | Request | URL,
-    init?: RequestInit,
-  ) => {
+  const fetchImpl = (async (input: string | Request | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
     const body =
@@ -121,11 +114,7 @@ function createFakeHub() {
       });
     }
 
-    if (
-      url.pathname === "/api/workflow-agent-directory/definitions" &&
-      method === "POST" &&
-      body
-    ) {
+    if (url.pathname === "/api/workflow-agent-directory/definitions" && method === "POST" && body) {
       const id = `def_${String(createdDefinitions.length + 1)}`;
       createdDefinitions.push({ id, name: body["name"] as string });
       return Response.json(
@@ -142,11 +131,7 @@ function createFakeHub() {
       );
     }
 
-    if (
-      url.pathname === "/api/workflow-chat/participants/messages" &&
-      method === "POST" &&
-      body
-    ) {
+    if (url.pathname === "/api/workflow-chat/participants/messages" && method === "POST" && body) {
       // The connect-service card post `request_connection` (CL-6393)
       // makes into the caller's own room. Recorded so the scenario can
       // assert the card itself, not just the tool's advice text.
@@ -172,11 +157,7 @@ function createFakeHub() {
       );
     }
 
-    if (
-      url.pathname === "/api/workflow-chat/participants/mint-dm" &&
-      method === "POST" &&
-      body
-    ) {
+    if (url.pathname === "/api/workflow-chat/participants/mint-dm" && method === "POST" && body) {
       const definitionId = body["definitionId"] as string;
       mintedDefinitionIds.push(definitionId);
       return Response.json(
@@ -190,11 +171,7 @@ function createFakeHub() {
       );
     }
 
-    if (
-      url.pathname === "/api/workflow-chat/participants/invite" &&
-      method === "POST" &&
-      body
-    ) {
+    if (url.pathname === "/api/workflow-chat/participants/invite" && method === "POST" && body) {
       const definitionId = body["definitionId"] as string;
       invitedDefinitionIds.push(definitionId);
       return Response.json(
@@ -238,9 +215,7 @@ test("GTM scenario: connect three services, then create two specialist agents", 
   }
 });
 
-async function runScenario(
-  hub: ReturnType<typeof createFakeHub>,
-): Promise<void> {
+async function runScenario(hub: ReturnType<typeof createFakeHub>): Promise<void> {
   const connectionsEnv: WorkflowConnectionEnv = {
     hubConnectionsUrl: HUB,
     tenantId: "ten_1",
@@ -291,16 +266,8 @@ async function runScenario(
     expect(String(result.content)).toMatch(/card/i);
     expect(String(result.content)).toMatch(/keep helping/i);
   }
-  expect(hub.postedCards.map((card) => card.connectorId)).toEqual([
-    "exa",
-    "granola",
-    "linear",
-  ]);
-  expect(hub.postedCards.map((card) => card.displayName)).toEqual([
-    "Exa",
-    "Granola",
-    "Linear",
-  ]);
+  expect(hub.postedCards.map((card) => card.connectorId)).toEqual(["exa", "granola", "linear"]);
+  expect(hub.postedCards.map((card) => card.displayName)).toEqual(["Exa", "Granola", "Linear"]);
   for (const card of hub.postedCards) {
     expect(card.reason.length).toBeGreaterThan(0);
   }
@@ -317,9 +284,7 @@ async function runScenario(
   expect(String(afterConnect.content)).toContain(
     "GitHub MCP, Notion, Sentry, Attio, Railway, PostHog, Sumble, Canva.",
   );
-  expect(String(afterConnect.content)).toContain(
-    "Connected: Granola, Exa, Linear.",
-  );
+  expect(String(afterConnect.content)).toContain("Connected: Granola, Exa, Linear.");
 
   // Step 3: Myra creates the two specialist agents she needs, minting
   // each its own 1:1 chat (the tool's default).
@@ -338,8 +303,7 @@ async function runScenario(
     call("a2", CREATE_AGENT_TOOL, {
       name: "Weekly Analytics",
       systemPrompt:
-        "Produce a weekly analytical rollup of sales-motion activity " +
-        "for the team.",
+        "Produce a weekly analytical rollup of sales-motion activity " + "for the team.",
     }),
     new AbortController().signal,
   );
@@ -350,8 +314,6 @@ async function runScenario(
     "Weekly Analytics",
   ]);
   // Both got their own chat (the default), never invited into Myra's.
-  expect(hub.mintedDefinitionIds).toEqual(
-    hub.createdDefinitions.map((d) => d.id),
-  );
+  expect(hub.mintedDefinitionIds).toEqual(hub.createdDefinitions.map((d) => d.id));
   expect(hub.invitedDefinitionIds).toEqual([]);
 }

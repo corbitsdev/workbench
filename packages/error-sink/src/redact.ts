@@ -52,8 +52,7 @@ export function redactText(text: string): string {
   }
   redacted = redacted.replace(
     SENSITIVE_ASSIGNMENT_PATTERN,
-    (_match, name: string, separator: string) =>
-      `${name}${separator}[redacted]`,
+    (_match, name: string, separator: string) => `${name}${separator}[redacted]`,
   );
   redacted = redacted.replace(
     QUERY_PARAM_SENSITIVE_ASSIGNMENT_PATTERN,
@@ -75,9 +74,7 @@ function redactValue(key: string, value: unknown): unknown {
   return value;
 }
 
-function redactRecord(
-  record: Record<string, unknown>,
-): Record<string, unknown> {
+function redactRecord(record: Record<string, unknown>): Record<string, unknown> {
   const redacted: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
     redacted[key] = redactValue(key, value);

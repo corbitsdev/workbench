@@ -130,12 +130,7 @@ export function useWorkbenchStream(
         if (cancelled) return;
         startPolling();
         attempts += 1;
-        const delay = backoffDelayMs(
-          attempts,
-          Math.random,
-          baseDelayMs,
-          maxDelayMs,
-        );
+        const delay = backoffDelayMs(attempts, Math.random, baseDelayMs, maxDelayMs);
         reconnectTimer = setTimeout(connect, delay);
       };
 

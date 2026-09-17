@@ -7,10 +7,7 @@ import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import type { DB } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
-import {
-  CORBITS_TOOL_PACKAGE_DIRS,
-  packToolPackageTarball,
-} from "@corbits/tool-registry-publish";
+import { CORBITS_TOOL_PACKAGE_DIRS, packToolPackageTarball } from "@corbits/tool-registry-publish";
 import {
   buildAgentDefinitionWorkflow,
   createAgentDefinitionCore,
@@ -26,8 +23,7 @@ describe("SKILLS_TOOL_PACKAGE_PIN", () => {
     // Assert against what the registry actually carries: the packed
     // tarball for the pinned package, not a source-tree import.
     const dir = CORBITS_TOOL_PACKAGE_DIRS.find(
-      (candidate) =>
-        path.basename(candidate) === SKILLS_TOOL_PACKAGE_PIN.name.split("/")[1],
+      (candidate) => path.basename(candidate) === SKILLS_TOOL_PACKAGE_PIN.name.split("/")[1],
     );
     expect(dir).toBeDefined();
     const tarball = await packToolPackageTarball(dir as string);
@@ -79,10 +75,7 @@ describe("withAgentToolPackagePin", () => {
       version: "1.2.3",
     });
     const definition = JSON.parse(nextWorkflowJson) as {
-      steps: Record<
-        string,
-        { agent: { toolPackagePins?: { name: string; version: string }[] } }
-      >;
+      steps: Record<string, { agent: { toolPackagePins?: { name: string; version: string }[] } }>;
     };
     const [step] = Object.values(definition.steps);
     expect(step?.agent.toolPackagePins).toContainEqual({
@@ -117,10 +110,7 @@ describe("readPinnedSkillNames", () => {
       { name: "web-research", description: "Researches the web." },
       { name: "long-form-write", description: "Writes long documents." },
     ]);
-    expect(readPinnedSkillNames(workflowJson)).toEqual([
-      "web-research",
-      "long-form-write",
-    ]);
+    expect(readPinnedSkillNames(workflowJson)).toEqual(["web-research", "long-form-write"]);
   });
 
   test("unpinning everything reads back no names", () => {

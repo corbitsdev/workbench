@@ -42,10 +42,7 @@ export function sharedWorkbenchesWith(
     .slice(0, limit)
     .map((workbench) => ({
       id: workbench.id,
-      title:
-        workbench.title.trim().length > 0
-          ? workbench.title
-          : "Untitled conversation",
+      title: workbench.title.trim().length > 0 ? workbench.title : "Untitled conversation",
       memberCount: workbench.participants.length,
     }));
 }

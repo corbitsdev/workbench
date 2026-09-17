@@ -14,14 +14,10 @@
 import { type } from "arktype";
 import { reportError } from "@corbits/error-sink";
 
-import {
-  postExchangeRequest,
-  type OAuthExchangeFetch,
-} from "./oauth-exchange-fetch";
+import { postExchangeRequest, type OAuthExchangeFetch } from "./oauth-exchange-fetch";
 
 export const GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
-export const GITHUB_TOKEN_EXCHANGE_URL =
-  "https://github.com/login/oauth/access_token";
+export const GITHUB_TOKEN_EXCHANGE_URL = "https://github.com/login/oauth/access_token";
 
 const TokenExchangeResponse = type({
   "access_token?": "string > 0",

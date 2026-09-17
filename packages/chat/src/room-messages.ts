@@ -92,9 +92,7 @@ export interface ListRoomActivityInput {
 }
 
 export interface RoomMessageStore {
-  insertMessage(
-    input: PostRoomMessageInput & { readonly id: string },
-  ): Promise<RoomMessage>;
+  insertMessage(input: PostRoomMessageInput & { readonly id: string }): Promise<RoomMessage>;
   listMessages(input: ListRoomMessagesInput): Promise<ListedRoomMessages>;
   getMessages(input: {
     readonly tenantId: string;
@@ -125,9 +123,7 @@ export interface RoomMessageStore {
     readonly tenantId: string;
     readonly mailMessageId: string;
   }): Promise<RoomMessage | undefined>;
-  listActivity(
-    input: ListRoomActivityInput,
-  ): Promise<Record<string, RoomActivitySummary>>;
+  listActivity(input: ListRoomActivityInput): Promise<Record<string, RoomActivitySummary>>;
   /**
    * Removes a just-inserted row that never reached a client (CL-7450):
    * the mailbox fan-out step runs AFTER the row is stored but BEFORE it
@@ -228,9 +224,7 @@ function isFailurePreviewParts(parts: readonly Part[]): boolean {
  * are walked past so a join notice never blanks a prior readable preview
  * (CL-6795). Ordinary user/agent replies are never skipped.
  */
-function activityPreviewFromNewestFirst(
-  newestFirst: readonly RoomMessage[],
-): string {
+function activityPreviewFromNewestFirst(newestFirst: readonly RoomMessage[]): string {
   for (const message of newestFirst) {
     if (isFailurePreviewParts(message.parts)) continue;
     const preview = previewOf(message.parts);
@@ -358,9 +352,7 @@ function encodeCursor(message: RoomMessage): string {
   return `${message.createdAt}|${message.id}`;
 }
 
-function decodeCursor(
-  cursor: string,
-): { createdAt: Date; id: string } | undefined {
+function decodeCursor(cursor: string): { createdAt: Date; id: string } | undefined {
   const separator = cursor.lastIndexOf("|");
   if (separator === -1) return undefined;
   const createdAt = new Date(cursor.slice(0, separator));
@@ -423,9 +415,7 @@ export function createDrizzleRoomMessageStore(
         })
         .returning();
       if (row === undefined) {
-        throw new Error(
-          `failed to post a message into workbench "${input.workbenchId}"`,
-        );
+        throw new Error(`failed to post a message into workbench "${input.workbenchId}"`);
       }
       return toRoomMessage(row as MessageRow);
     },
@@ -435,8 +425,7 @@ export function createDrizzleRoomMessageStore(
         eq(workbenchMessages.tenantId, input.tenantId),
         eq(workbenchMessages.workbenchId, input.workbenchId),
       );
-      const cursor =
-        input.cursor === undefined ? undefined : decodeCursor(input.cursor);
+      const cursor = input.cursor === undefined ? undefined : decodeCursor(input.cursor);
       // Keyset, never offset: `(created_at, id)` strictly before the
       // cursor, so a message posted mid-page never shifts a later page.
       const where =
@@ -531,9 +520,7 @@ export function createDrizzleRoomMessageStore(
 
     async listActivity(input) {
       if (input.workbenches.length === 0) return {};
-      const workbenchIds = input.workbenches.map(
-        (workbench) => workbench.workbenchId,
-      );
+      const workbenchIds = input.workbenches.map((workbench) => workbench.workbenchId);
       const inTenant = eq(workbenchMessages.tenantId, input.tenantId);
 
       // Two bulk queries, never a read of every message the listed
@@ -544,9 +531,7 @@ export function createDrizzleRoomMessageStore(
       const newestRows = await db
         .selectDistinctOn([workbenchMessages.workbenchId])
         .from(workbenchMessages)
-        .where(
-          and(inTenant, inArray(workbenchMessages.workbenchId, workbenchIds)),
-        )
+        .where(and(inTenant, inArray(workbenchMessages.workbenchId, workbenchIds)))
         .orderBy(
           asc(workbenchMessages.workbenchId),
           desc(workbenchMessages.createdAt),
@@ -559,9 +544,7 @@ export function createDrizzleRoomMessageStore(
       // list. No cursor means everything in that workbench is unread.
       const unreadConditions = input.workbenches.map((workbench) => {
         const cursor =
-          workbench.sinceCreatedAt === undefined
-            ? new Date(0)
-            : new Date(workbench.sinceCreatedAt);
+          workbench.sinceCreatedAt === undefined ? new Date(0) : new Date(workbench.sinceCreatedAt);
         return and(
           eq(workbenchMessages.workbenchId, workbench.workbenchId),
           gt(workbenchMessages.createdAt, cursor),
@@ -575,9 +558,7 @@ export function createDrizzleRoomMessageStore(
         .from(workbenchMessages)
         .where(and(inTenant, or(...unreadConditions)))
         .groupBy(workbenchMessages.workbenchId);
-      const unreadByWorkbenchId = new Map(
-        unread.map((row) => [row.workbenchId, row.unreadCount]),
-      );
+      const unreadByWorkbenchId = new Map(unread.map((row) => [row.workbenchId, row.unreadCount]));
 
       const result: Record<string, RoomActivitySummary> = {};
       for (const row of newestRows) {
@@ -588,26 +569,12 @@ export function createDrizzleRoomMessageStore(
           const recentRows = await db
             .select()
             .from(workbenchMessages)
-            .where(
-              and(
-                inTenant,
-                eq(workbenchMessages.workbenchId, newest.workbenchId),
-              ),
-            )
-            .orderBy(
-              desc(workbenchMessages.createdAt),
-              desc(workbenchMessages.id),
-            )
+            .where(and(inTenant, eq(workbenchMessages.workbenchId, newest.workbenchId)))
+            .orderBy(desc(workbenchMessages.createdAt), desc(workbenchMessages.id))
             .limit(PREVIEW_LOOKBACK);
-          newestFirstForPreview = recentRows.map((recent) =>
-            toRoomMessage(recent as MessageRow),
-          );
+          newestFirstForPreview = recentRows.map((recent) => toRoomMessage(recent as MessageRow));
         }
-        result[newest.workbenchId] = summaryOf(
-          newest,
-          unreadCount,
-          newestFirstForPreview,
-        );
+        result[newest.workbenchId] = summaryOf(newest, unreadCount, newestFirstForPreview);
       }
       return result;
     },
@@ -619,8 +586,7 @@ export function createDrizzleRoomMessageStore(
  * workbench tables. */
 export function createInMemoryRoomMessageStore(): RoomMessageStore {
   const byWorkbench = new Map<string, RoomMessage[]>();
-  const keyOf = (tenantId: string, workbenchId: string) =>
-    `${tenantId}:${workbenchId}`;
+  const keyOf = (tenantId: string, workbenchId: string) => `${tenantId}:${workbenchId}`;
 
   return {
     async insertMessage(input) {
@@ -657,9 +623,7 @@ export function createInMemoryRoomMessageStore(): RoomMessageStore {
     async findByMailMessageId(input) {
       for (const [key, messages] of byWorkbench) {
         if (!key.startsWith(`${input.tenantId}:`)) continue;
-        const match = messages.find(
-          (message) => message.mailMessageId === input.mailMessageId,
-        );
+        const match = messages.find((message) => message.mailMessageId === input.mailMessageId);
         if (match !== undefined) return match;
       }
       return undefined;
@@ -676,8 +640,7 @@ export function createInMemoryRoomMessageStore(): RoomMessageStore {
     },
 
     async listMessages(input) {
-      const messages =
-        byWorkbench.get(keyOf(input.tenantId, input.workbenchId)) ?? [];
+      const messages = byWorkbench.get(keyOf(input.tenantId, input.workbenchId)) ?? [];
       // The same `(created_at, id)` total order the drizzle store pages
       // by, so a cursor means the same thing against either.
       const newestFirst = [...messages].sort((left, right) =>
@@ -685,8 +648,7 @@ export function createInMemoryRoomMessageStore(): RoomMessageStore {
           ? right.id.localeCompare(left.id)
           : right.createdAt.localeCompare(left.createdAt),
       );
-      const cursor =
-        input.cursor === undefined ? undefined : decodeCursor(input.cursor);
+      const cursor = input.cursor === undefined ? undefined : decodeCursor(input.cursor);
       if (cursor === undefined) return pageOf(newestFirst);
       const cursorCreatedAt = cursor.createdAt.toISOString();
       return pageOf(
@@ -708,23 +670,19 @@ export function createInMemoryRoomMessageStore(): RoomMessageStore {
     },
 
     async getMessage(input) {
-      const messages =
-        byWorkbench.get(keyOf(input.tenantId, input.workbenchId)) ?? [];
+      const messages = byWorkbench.get(keyOf(input.tenantId, input.workbenchId)) ?? [];
       return messages.find((message) => message.id === input.messageId);
     },
 
     async listActivity(input) {
       const result: Record<string, RoomActivitySummary> = {};
       for (const workbench of input.workbenches) {
-        const messages = byWorkbench.get(
-          keyOf(input.tenantId, workbench.workbenchId),
-        );
+        const messages = byWorkbench.get(keyOf(input.tenantId, workbench.workbenchId));
         const newest = messages?.[messages.length - 1];
         if (messages === undefined || newest === undefined) continue;
         const unreadCount = messages.filter(
           (message) =>
-            workbench.sinceCreatedAt === undefined ||
-            message.createdAt > workbench.sinceCreatedAt,
+            workbench.sinceCreatedAt === undefined || message.createdAt > workbench.sinceCreatedAt,
         ).length;
         const newestFirst = [...messages]
           .sort((left, right) =>
@@ -733,11 +691,7 @@ export function createInMemoryRoomMessageStore(): RoomMessageStore {
               : right.createdAt.localeCompare(left.createdAt),
           )
           .slice(0, PREVIEW_LOOKBACK);
-        result[workbench.workbenchId] = summaryOf(
-          newest,
-          unreadCount,
-          newestFirst,
-        );
+        result[workbench.workbenchId] = summaryOf(newest, unreadCount, newestFirst);
       }
       return result;
     },

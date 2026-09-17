@@ -67,13 +67,10 @@ const OUTCOME_BY_ID: Readonly<Record<string, string>> = {
   groq: "Powers your agents' fast Groq-hosted inference.",
   deepseek: "Powers your agents' DeepSeek-based inference.",
   mistral: "Powers your agents' Mistral-based inference.",
-  openrouter:
-    "Routes your agents' inference through OpenRouter's model catalog.",
-  huggingface:
-    "Routes your agents' inference through Hugging Face-hosted models.",
+  openrouter: "Routes your agents' inference through OpenRouter's model catalog.",
+  huggingface: "Routes your agents' inference through Hugging Face-hosted models.",
   granola: "Lets agents read your Granola call notes and post-call summaries.",
-  manus:
-    "Lets agents run Manus tasks and retrieve files — including slide decks.",
+  manus: "Lets agents run Manus tasks and retrieve files — including slide decks.",
   exa: "Lets agents run live web search and research lookups.",
   scrapecreators: "Lets agents pull Reddit threads and creator content.",
   linear: "Lets agents read and update your Linear issues.",
@@ -96,13 +93,8 @@ export function pluginCategory(catalogId: string): PluginCategory | undefined {
   return CATEGORY_BY_ID[catalogId];
 }
 
-export function pluginOutcome(
-  connectorId: string,
-  displayName: string,
-): string {
-  return (
-    OUTCOME_BY_ID[connectorId] ?? `Connects ${displayName} to your agents.`
-  );
+export function pluginOutcome(connectorId: string, displayName: string): string {
+  return OUTCOME_BY_ID[connectorId] ?? `Connects ${displayName} to your agents.`;
 }
 
 /** Every connector renders an icon glyph — the eight inference providers

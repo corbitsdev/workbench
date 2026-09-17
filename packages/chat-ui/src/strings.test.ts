@@ -4,30 +4,20 @@ import { CHAT_STRINGS } from "./strings";
 
 describe("toast confirmation copy", () => {
   test("workbench create carries the new workbench's title", () => {
-    expect(CHAT_STRINGS.workbenchCreatedToast("Launch planning")).toBe(
-      "Created · Launch planning",
-    );
+    expect(CHAT_STRINGS.workbenchCreatedToast("Launch planning")).toBe("Created · Launch planning");
   });
 
   test("rename confirms the title the workbench now has", () => {
-    expect(CHAT_STRINGS.workbenchRenamedToast("Growth")).toBe(
-      "Renamed to Growth",
-    );
+    expect(CHAT_STRINGS.workbenchRenamedToast("Growth")).toBe("Renamed to Growth");
   });
 
   test("rename failure tells the person to try again", () => {
-    expect(CHAT_STRINGS.workbenchRenameError).toBe(
-      "Couldn't rename that workbench — try again.",
-    );
+    expect(CHAT_STRINGS.workbenchRenameError).toBe("Couldn't rename that workbench — try again.");
   });
 
   test("pin copy follows the state the workbench just entered", () => {
-    expect(CHAT_STRINGS.workbenchPinnedToast(true, "Deploy notes")).toBe(
-      "Pinned Deploy notes",
-    );
-    expect(CHAT_STRINGS.workbenchPinnedToast(false, "Deploy notes")).toBe(
-      "Unpinned Deploy notes",
-    );
+    expect(CHAT_STRINGS.workbenchPinnedToast(true, "Deploy notes")).toBe("Pinned Deploy notes");
+    expect(CHAT_STRINGS.workbenchPinnedToast(false, "Deploy notes")).toBe("Unpinned Deploy notes");
   });
 });
 
@@ -37,9 +27,7 @@ describe("agentsTyping copy", () => {
   });
 
   test("two names are joined with 'and'", () => {
-    expect(CHAT_STRINGS.agentsTyping(["Myra", "Scribe"])).toBe(
-      "Myra and Scribe are typing…",
-    );
+    expect(CHAT_STRINGS.agentsTyping(["Myra", "Scribe"])).toBe("Myra and Scribe are typing…");
   });
 
   test("three or more collapse the rest into 'and N others'", () => {
@@ -58,18 +46,12 @@ describe("agentsTyping copy", () => {
 
 describe("approve vs deny vs form action copy", () => {
   test("deny forbidden and error are distinct from approve copy", () => {
-    expect(CHAT_STRINGS.blockDenyActionForbidden).toBe(
-      "You do not have permission to deny this.",
-    );
-    expect(CHAT_STRINGS.blockDenyActionError).toBe(
-      "Couldn't deny this request.",
-    );
+    expect(CHAT_STRINGS.blockDenyActionForbidden).toBe("You do not have permission to deny this.");
+    expect(CHAT_STRINGS.blockDenyActionError).toBe("Couldn't deny this request.");
     expect(CHAT_STRINGS.blockDenyActionForbidden).not.toBe(
       CHAT_STRINGS.blockApproveActionForbidden,
     );
-    expect(CHAT_STRINGS.blockDenyActionError).not.toBe(
-      CHAT_STRINGS.blockApproveActionError,
-    );
+    expect(CHAT_STRINGS.blockDenyActionError).not.toBe(CHAT_STRINGS.blockApproveActionError);
   });
 
   test("form submit forbidden is respond copy, not approve copy", () => {

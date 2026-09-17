@@ -135,9 +135,7 @@ export function reclassifyThinkingEvents(
         data: {
           token: textToken,
           partial,
-          ...(event.data.index !== undefined
-            ? { index: event.data.index }
-            : {}),
+          ...(event.data.index !== undefined ? { index: event.data.index } : {}),
         },
       });
     }

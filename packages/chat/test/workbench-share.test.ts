@@ -65,9 +65,7 @@ test("createShare reports already_shared on a repeat and does not duplicate the 
   });
 
   expect(outcome).toEqual({ kind: "already_shared" });
-  expect(
-    (await shares.listSharesForWorkbench("tnt_a", "ins_general")).length,
-  ).toBe(1);
+  expect((await shares.listSharesForWorkbench("tnt_a", "ins_general")).length).toBe(1);
 });
 
 test("revoking trust after a share exists does not retroactively delete the share", async () => {
@@ -111,9 +109,7 @@ test("addShareMember fails closed with no_share when no share row exists", async
   });
 
   expect(outcome).toBe("no_share");
-  expect(await shares.isShareMember("tnt_b", "ins_general", "prn_carol")).toBe(
-    false,
-  );
+  expect(await shares.isShareMember("tnt_b", "ins_general", "prn_carol")).toBe(false);
 });
 
 test("addShareMember succeeds once a share exists", async () => {
@@ -134,12 +130,8 @@ test("addShareMember succeeds once a share exists", async () => {
   });
 
   expect(outcome).toBe("added");
-  expect(await shares.isShareMember("tnt_b", "ins_general", "prn_carol")).toBe(
-    true,
-  );
-  expect(await shares.listShareMembers("tnt_b", "ins_general")).toEqual([
-    "prn_carol",
-  ]);
+  expect(await shares.isShareMember("tnt_b", "ins_general", "prn_carol")).toBe(true);
+  expect(await shares.listShareMembers("tnt_b", "ins_general")).toEqual(["prn_carol"]);
 });
 
 test("per-tenant membership isolation: two projected tenants sharing the same workbench keep independent members", async () => {
@@ -171,21 +163,13 @@ test("per-tenant membership isolation: two projected tenants sharing the same wo
     addedBy: "prn_carol",
   });
 
-  expect(await shares.isShareMember("tnt_b", "ins_general", "prn_carol")).toBe(
-    true,
-  );
-  expect(await shares.isShareMember("tnt_c", "ins_general", "prn_carol")).toBe(
-    false,
-  );
+  expect(await shares.isShareMember("tnt_b", "ins_general", "prn_carol")).toBe(true);
+  expect(await shares.isShareMember("tnt_c", "ins_general", "prn_carol")).toBe(false);
 
   // Removing tenant B's member does not affect tenant C's.
   await shares.removeShareMember("tnt_b", "ins_general", "prn_carol");
-  expect(await shares.isShareMember("tnt_b", "ins_general", "prn_carol")).toBe(
-    false,
-  );
-  expect(await shares.isShareMember("tnt_c", "ins_general", "prn_dave")).toBe(
-    true,
-  );
+  expect(await shares.isShareMember("tnt_b", "ins_general", "prn_carol")).toBe(false);
+  expect(await shares.isShareMember("tnt_c", "ins_general", "prn_dave")).toBe(true);
 });
 
 test("listSharesProjectedInto returns every share made into that tenant", async () => {

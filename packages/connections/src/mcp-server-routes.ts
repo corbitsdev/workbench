@@ -15,18 +15,9 @@
 import { Hono, type Context } from "hono";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
-import {
-  CredentialResponse,
-  ProviderResponse,
-  paginatedSchema,
-} from "@intx/types";
+import { CredentialResponse, ProviderResponse, paginatedSchema } from "@intx/types";
 import { ensureCredential, ensureProvider } from "./seed-catalog";
-import {
-  cookiesFromHeader,
-  createHubAPI,
-  parseAs,
-  type ApiCall,
-} from "@corbits/hub-api-client";
+import { cookiesFromHeader, createHubAPI, parseAs, type ApiCall } from "@corbits/hub-api-client";
 import {
   MCP_NO_TOKEN_SENTINEL,
   MCP_STREAMABLE_HTTP_PROVIDER_KEY,
@@ -136,23 +127,11 @@ export async function listMcpCredentials(
   cookies: string[],
   tenantId: string,
 ): Promise<readonly CredentialRow[]> {
-  const listed = await api(
-    "GET",
-    `/api/tenants/${tenantId}/credentials`,
-    undefined,
-    cookies,
-  );
-  return parseAs(
-    paginatedSchema(CredentialResponse),
-    listed.data,
-    "credentials response",
-  ).data;
+  const listed = await api("GET", `/api/tenants/${tenantId}/credentials`, undefined, cookies);
+  return parseAs(paginatedSchema(CredentialResponse), listed.data, "credentials response").data;
 }
 
-export function uniqueSlug(
-  desired: string,
-  taken: ReadonlySet<string>,
-): string {
+export function uniqueSlug(desired: string, taken: ReadonlySet<string>): string {
   if (!taken.has(desired)) return desired;
   for (let suffix = 2; suffix < 1000; suffix += 1) {
     const candidate = `${desired}-${suffix}`;
@@ -161,9 +140,7 @@ export function uniqueSlug(
   throw new Error(`could not derive a unique slug from "${desired}"`);
 }
 
-export function createMcpServerRoutes(
-  deps: CreateMcpServerRoutesDeps,
-): Hono<TenantEnv> {
+export function createMcpServerRoutes(deps: CreateMcpServerRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
   const api = deps.apiCall ?? createHubAPI(deps.hubUrl);
   const probe = deps.probe ?? probeMcpServer;
@@ -175,9 +152,7 @@ export function createMcpServerRoutes(
       listMcpProviders(api, cookies, tenant.id),
       listMcpCredentials(api, cookies, tenant.id),
     ]);
-    const credentialByProviderId = new Map(
-      credentials.map((cred) => [cred.providerId, cred]),
-    );
+    const credentialByProviderId = new Map(credentials.map((cred) => [cred.providerId, cred]));
     const servers: McpServerSummary[] = providers.map((provider) => ({
       slug: slugOf(provider.name),
       name: credentialByProviderId.get(provider.id)?.name ?? provider.name,
@@ -193,18 +168,12 @@ export function createMcpServerRoutes(
       listMcpProviders(api, cookies, tenant.id),
       listMcpCredentials(api, cookies, tenant.id),
     ]);
-    const credentialByProviderId = new Map(
-      credentials.map((cred) => [cred.providerId, cred]),
-    );
-    const providerBySlug = new Map(
-      providers.map((provider) => [slugOf(provider.name), provider]),
-    );
+    const credentialByProviderId = new Map(credentials.map((cred) => [cred.providerId, cred]));
+    const providerBySlug = new Map(providers.map((provider) => [slugOf(provider.name), provider]));
     const presets = deps.presets.map((preset) => {
       const provider = providerBySlug.get(preset.slug);
       const credential =
-        provider === undefined
-          ? undefined
-          : credentialByProviderId.get(provider.id);
+        provider === undefined ? undefined : credentialByProviderId.get(provider.id);
       return {
         slug: preset.slug,
         displayName: preset.displayName,
@@ -213,9 +182,7 @@ export function createMcpServerRoutes(
         connectionMode: preset.connectionMode,
         docsUrl: preset.docsUrl,
         ...(preset.icon === undefined ? {} : { icon: preset.icon }),
-        ...(preset.tokenSteps === undefined
-          ? {}
-          : { tokenSteps: preset.tokenSteps }),
+        ...(preset.tokenSteps === undefined ? {} : { tokenSteps: preset.tokenSteps }),
         connected: credential !== undefined,
       };
     });
@@ -223,9 +190,7 @@ export function createMcpServerRoutes(
   });
 
   app.post("/", deps.requireGrant("credential:*", "create"), async (c) => {
-    const body: unknown = await (c as Context<TenantEnv>).req
-      .json()
-      .catch(() => null);
+    const body: unknown = await (c as Context<TenantEnv>).req.json().catch(() => null);
     const parsed = SubmitMcpServer(body);
     if (parsed instanceof type.errors) {
       return c.json(
@@ -268,8 +233,7 @@ export function createMcpServerRoutes(
       return c.json(
         makeErrorEnvelope({
           code: "bad_request",
-          userMessage:
-            "Invalid MCP server: provide either presetSlug, or both name and url.",
+          userMessage: "Invalid MCP server: provide either presetSlug, or both name and url.",
         }),
         400,
       );
@@ -324,10 +288,7 @@ export function createMcpServerRoutes(
           tenantId: tenant.id,
           providerId,
           name,
-          secret:
-            parsed.token && parsed.token.length > 0
-              ? parsed.token
-              : NO_TOKEN_SENTINEL,
+          secret: parsed.token && parsed.token.length > 0 ? parsed.token : NO_TOKEN_SENTINEL,
           type: "api_key",
           metadata: { url, name },
           verified: true,
@@ -349,9 +310,7 @@ export function createMcpServerRoutes(
       return c.json(connected, 200);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      deps.log(
-        `mcp server connect failed for tenant ${tenant.id}, slug ${slug}: ${message}`,
-      );
+      deps.log(`mcp server connect failed for tenant ${tenant.id}, slug ${slug}: ${message}`);
       // Never widen extra beyond identifiers safe to print — `cause` here
       // can carry the pasted bearer token in scope above.
       const refId = reportError(cause, {
@@ -371,76 +330,60 @@ export function createMcpServerRoutes(
     }
   });
 
-  app.delete(
-    "/:slug",
-    deps.requireGrant("credential:*", "create"),
-    async (c) => {
-      const slug = c.req.param("slug");
-      const tenant = c.get("tenant");
-      const cookies = cookiesFromHeader(c.req.header("cookie"));
-      const providers = await listMcpProviders(api, cookies, tenant.id);
-      const provider = providers.find((p) => p.name === providerName(slug));
-      if (provider === undefined) {
-        // The tenant's own list (own-tenant only, matching `GET /`) has
-        // no such slug — but CL-6191's inheritance means an ancestor's
-        // connection can still resolve for this tenant's tools, so a
-        // second, inherited-inclusive lookup distinguishes "no such
-        // server anywhere in the chain" from "it exists, but only at an
-        // ancestor" — the latter is refused with a specific, actionable
-        // error rather than a generic not-found, mirroring
-        // `@corbits/skills`' `requireOwnTenant`. Either way nothing is
-        // mutated: disconnecting an inherited connection is a hard cut,
-        // never a shadow-delete row.
-        const inheritedProviders = await listMcpProviders(
-          api,
-          cookies,
-          tenant.id,
-          { inherited: true },
-        );
-        const inheritedProvider = inheritedProviders.find(
-          (p) => p.name === providerName(slug),
-        );
-        if (inheritedProvider !== undefined) {
-          return c.json(
-            makeErrorEnvelope({
-              code: "forbidden",
-              userMessage: `"${slug}" is inherited from a parent workbench — disconnect it from the workbench that owns it, not from a child.`,
-            }),
-            403,
-          );
-        }
+  app.delete("/:slug", deps.requireGrant("credential:*", "create"), async (c) => {
+    const slug = c.req.param("slug");
+    const tenant = c.get("tenant");
+    const cookies = cookiesFromHeader(c.req.header("cookie"));
+    const providers = await listMcpProviders(api, cookies, tenant.id);
+    const provider = providers.find((p) => p.name === providerName(slug));
+    if (provider === undefined) {
+      // The tenant's own list (own-tenant only, matching `GET /`) has
+      // no such slug — but CL-6191's inheritance means an ancestor's
+      // connection can still resolve for this tenant's tools, so a
+      // second, inherited-inclusive lookup distinguishes "no such
+      // server anywhere in the chain" from "it exists, but only at an
+      // ancestor" — the latter is refused with a specific, actionable
+      // error rather than a generic not-found, mirroring
+      // `@corbits/skills`' `requireOwnTenant`. Either way nothing is
+      // mutated: disconnecting an inherited connection is a hard cut,
+      // never a shadow-delete row.
+      const inheritedProviders = await listMcpProviders(api, cookies, tenant.id, {
+        inherited: true,
+      });
+      const inheritedProvider = inheritedProviders.find((p) => p.name === providerName(slug));
+      if (inheritedProvider !== undefined) {
         return c.json(
           makeErrorEnvelope({
-            code: "not_found",
-            userMessage: `No MCP server connected at "${slug}"`,
+            code: "forbidden",
+            userMessage: `"${slug}" is inherited from a parent workbench — disconnect it from the workbench that owns it, not from a child.`,
           }),
-          404,
+          403,
         );
       }
-      const credentials = await listMcpCredentials(api, cookies, tenant.id);
-      const credential = credentials.find(
-        (cred) => cred.providerId === provider.id,
+      return c.json(
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: `No MCP server connected at "${slug}"`,
+        }),
+        404,
       );
-      if (credential !== undefined) {
-        await api(
-          "DELETE",
-          `/api/tenants/${tenant.id}/credentials/${credential.id}`,
-          undefined,
-          cookies,
-        );
-      }
-      // The provider row is the connection as far as the listing is
-      // concerned — deleting only the credential left a ghost entry
-      // that re-listed forever.
+    }
+    const credentials = await listMcpCredentials(api, cookies, tenant.id);
+    const credential = credentials.find((cred) => cred.providerId === provider.id);
+    if (credential !== undefined) {
       await api(
         "DELETE",
-        `/api/tenants/${tenant.id}/providers/${provider.id}`,
+        `/api/tenants/${tenant.id}/credentials/${credential.id}`,
         undefined,
         cookies,
       );
-      return c.body(null, 204);
-    },
-  );
+    }
+    // The provider row is the connection as far as the listing is
+    // concerned — deleting only the credential left a ghost entry
+    // that re-listed forever.
+    await api("DELETE", `/api/tenants/${tenant.id}/providers/${provider.id}`, undefined, cookies);
+    return c.body(null, 204);
+  });
 
   return app;
 }

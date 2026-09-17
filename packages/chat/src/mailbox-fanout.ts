@@ -112,18 +112,13 @@ export interface MailboxWriter {
    * idempotency) is a no-op for that item, not a rollback trigger.
    * Returns one result per item, in item order.
    */
-  writeBatch(
-    items: readonly MailboxBatchItem[],
-  ): Promise<readonly MailboxBatchResult[]>;
+  writeBatch(items: readonly MailboxBatchItem[]): Promise<readonly MailboxBatchResult[]>;
 }
 
 /** The production `MailboxWriter`: a thin pass-through onto
  * `@corbits/mailbox`'s own `writeMailboxMessages` batch call — no
  * hand-rolled inserts against the package's schema. */
-export function createDrizzleMailboxWriter(
-  db: MailboxDb,
-  bus?: MailboxEventBus,
-): MailboxWriter {
+export function createDrizzleMailboxWriter(db: MailboxDb, bus?: MailboxEventBus): MailboxWriter {
   return {
     async writeBatch(items) {
       const batch: WriteMailboxMessagesItem[] = items.map((item) => ({
@@ -135,9 +130,7 @@ export function createDrizzleMailboxWriter(
           body: item.body,
           messageId: item.messageId,
           direction: item.direction,
-          ...(item.inReplyTo !== undefined
-            ? { inReplyTo: item.inReplyTo }
-            : {}),
+          ...(item.inReplyTo !== undefined ? { inReplyTo: item.inReplyTo } : {}),
           ...(item.references !== undefined && item.references.length > 0
             ? { references: [...item.references] }
             : {}),
@@ -194,9 +187,7 @@ export type WriteChatMailboxFanoutInput = {
 /** The human participants of a workbench, by their bare principal id —
  * a human's own participant address is never suffixed with a domain
  * (see `workbench-service.ts`'s member-add path), unlike an agent's. */
-function humanPrincipalIds(
-  participants: readonly ParticipantRecord[],
-): readonly string[] {
+function humanPrincipalIds(participants: readonly ParticipantRecord[]): readonly string[] {
   return participants
     .filter((participant) => !isAgentAddress(participant.address))
     .map((participant) => participant.address);
@@ -228,10 +219,7 @@ export async function writeChatMailboxFanout(
   candidateIds.add(input.senderPrincipalId);
   const candidateList = [...candidateIds];
 
-  const known = await deps.resolveKnownPrincipalIds(
-    input.tenantId,
-    candidateList,
-  );
+  const known = await deps.resolveKnownPrincipalIds(input.tenantId, candidateList);
 
   const refs: MailboxRef[] = [{ kind: "workbench", id: input.workbenchId }];
   const batch: MailboxBatchItem[] = [];
@@ -265,8 +253,7 @@ export async function writeChatMailboxFanout(
       subject: input.subject,
       body: input.body,
       messageId: input.messageId,
-      direction:
-        principalId === input.senderPrincipalId ? "outbound" : "inbound",
+      direction: principalId === input.senderPrincipalId ? "outbound" : "inbound",
       refs,
       ...(input.inReplyTo !== undefined ? { inReplyTo: input.inReplyTo } : {}),
       ...(input.references !== undefined && input.references.length > 0

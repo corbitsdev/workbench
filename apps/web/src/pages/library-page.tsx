@@ -21,11 +21,7 @@ import {
   toast,
   useListSelection,
 } from "@corbits/react-ui";
-import type {
-  SelectionCheckboxState,
-  UseListSelectionResult,
-  ViewMode,
-} from "@corbits/react-ui";
+import type { SelectionCheckboxState, UseListSelectionResult, ViewMode } from "@corbits/react-ui";
 import {
   ArtifactCard,
   ArtifactRenderer,
@@ -40,21 +36,10 @@ import {
 } from "@corbits/artifact-ui";
 import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowsDownUp,
-  ArrowSquareOut,
-  LinkSimple as LinkIcon,
-  Stack,
-  X,
-} from "@corbits/icons";
+import { ArrowsDownUp, ArrowSquareOut, LinkSimple as LinkIcon, Stack, X } from "@corbits/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
-import {
-  describeApiError,
-  ListSkeleton,
-  QueryView,
-  SignedOutNotice,
-} from "@corbits/api-query";
+import { describeApiError, ListSkeleton, QueryView, SignedOutNotice } from "@corbits/api-query";
 
 import {
   artifactPreviewPath,
@@ -66,10 +51,7 @@ import {
 import { isAdditiveSelectClick, isRowActivationKey } from "../activatable-row";
 import { useBench } from "../bench-context";
 import { readLastWorkbenchId } from "../last-workbench";
-import {
-  consumePendingLibraryUpload,
-  LIBRARY_UPLOAD_EVENT,
-} from "../library-upload";
+import { consumePendingLibraryUpload, LIBRARY_UPLOAD_EVENT } from "../library-upload";
 import { resolveLibraryWorkbenchScope } from "../library-workbench-scope";
 import { Link } from "../navigation";
 import { FILES_PATH_PREFIX } from "../path-ids";
@@ -106,14 +88,9 @@ function ArtifactRows({
   readonly onSelect: (id: string) => void;
   readonly selection: UseListSelectionResult<string>;
 }) {
-  const allSelected =
-    artifacts.length > 0 && selection.selectedCount === artifacts.length;
+  const allSelected = artifacts.length > 0 && selection.selectedCount === artifacts.length;
   const headerChecked: SelectionCheckboxState =
-    selection.selectedCount === 0
-      ? false
-      : allSelected
-        ? true
-        : "indeterminate";
+    selection.selectedCount === 0 ? false : allSelected ? true : "indeterminate";
   // `useListSelection` hands back ids in toggle/insertion order, not row
   // order — a bottom-up shift-select would otherwise join/copy links out of
   // visible order. Sort against this row order before handing ids to any
@@ -130,9 +107,7 @@ function ArtifactRows({
           <TableHead className="w-10">
             <SelectionCheckbox
               checked={headerChecked}
-              onToggle={() =>
-                allSelected ? selection.clear() : selection.selectAll()
-              }
+              onToggle={() => (allSelected ? selection.clear() : selection.selectAll())}
               rowLabel="all files"
               ariaLabel="Select all files"
               className="opacity-100"
@@ -150,8 +125,7 @@ function ArtifactRows({
           const selectionIds =
             isSelected && selection.selectedCount > 1
               ? [...selection.selectedIds].sort(
-                  (a, b) =>
-                    (visibleOrder.get(a) ?? 0) - (visibleOrder.get(b) ?? 0),
+                  (a, b) => (visibleOrder.get(a) ?? 0) - (visibleOrder.get(b) ?? 0),
                 )
               : [artifact.id];
           return (
@@ -179,9 +153,7 @@ function ArtifactRows({
               <TableCell onClick={(event) => event.stopPropagation()}>
                 <SelectionCheckbox
                   checked={isSelected}
-                  onToggle={(modifiers) =>
-                    selection.toggle(artifact.id, modifiers)
-                  }
+                  onToggle={(modifiers) => selection.toggle(artifact.id, modifiers)}
                   rowLabel={artifact.title}
                 />
               </TableCell>
@@ -189,14 +161,9 @@ function ArtifactRows({
               <TableCell className="text-muted-foreground">
                 {artifactKindLabel(artifact.kind)}
               </TableCell>
+              <TableCell className="text-muted-foreground">{artifact.ownerName ?? "—"}</TableCell>
               <TableCell className="text-muted-foreground">
-                {artifact.ownerName ?? "—"}
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {formatRelativeTime(
-                  artifact.updatedAt ?? artifact.createdAt,
-                  now,
-                )}
+                {formatRelativeTime(artifact.updatedAt ?? artifact.createdAt, now)}
               </TableCell>
             </TableRow>
           );
@@ -213,11 +180,7 @@ function ArtifactRows({
  * (manual, agent, imported, unknown) renders nothing here rather than
  * guessing.
  */
-function ProvenanceLine({
-  source,
-}: {
-  readonly source: Record<string, unknown>;
-}) {
+function ProvenanceLine({ source }: { readonly source: Record<string, unknown> }) {
   const runId = workflowRunIdFromSource(source);
   if (runId === null) return null;
   return (
@@ -245,8 +208,7 @@ function PreviewPane({
   readonly error: string | null;
   readonly onClose: () => void;
 }) {
-  const rendererKind =
-    detail !== null ? resolveArtifactRendererKind(detail) : null;
+  const rendererKind = detail !== null ? resolveArtifactRendererKind(detail) : null;
   const previewSrc =
     detail !== null && rendererKind === "html" && tenantId !== null
       ? artifactPreviewPath(tenantId, detail.id)
@@ -257,8 +219,7 @@ function PreviewPane({
   // aren't text-decodable (an image, a real PDF, a legacy `.docx`/`.xlsx`).
   // `source.upload.mimeType` disambiguates — present only when this
   // artifact really does have stored bytes behind it.
-  const uploadMimeType =
-    detail !== null ? uploadMimeTypeFromSource(detail.source) : null;
+  const uploadMimeType = detail !== null ? uploadMimeTypeFromSource(detail.source) : null;
   const contentUnavailable =
     detail !== null &&
     detail.content === "" &&
@@ -268,9 +229,7 @@ function PreviewPane({
     <aside className="flex h-full min-h-0 min-w-0 flex-col border-l border-border bg-card">
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">
-            {detail?.title ?? "Preview"}
-          </p>
+          <p className="truncate text-sm font-semibold">{detail?.title ?? "Preview"}</p>
           {detail !== null ? (
             <p className="truncate text-xs text-muted-foreground">
               {artifactKindLabel(detail.kind)}
@@ -307,10 +266,7 @@ function PreviewPane({
             {error}
           </p>
         ) : null}
-        {!loading &&
-        error === null &&
-        detail !== null &&
-        rendererKind !== null ? (
+        {!loading && error === null && detail !== null && rendererKind !== null ? (
           <ArtifactRenderer
             rendererKind={rendererKind}
             title={detail.title}
@@ -394,18 +350,13 @@ export function LibraryPage({
   const visible = useMemo(
     () =>
       sortArtifacts(
-        onQueryChange === undefined
-          ? filterArtifacts(artifacts, activeQuery)
-          : artifacts,
+        onQueryChange === undefined ? filterArtifacts(artifacts, activeQuery) : artifacts,
         sort,
       ),
     [artifacts, activeQuery, sort, onQueryChange],
   );
 
-  const visibleIds = useMemo(
-    () => visible.map((artifact) => artifact.id),
-    [visible],
-  );
+  const visibleIds = useMemo(() => visible.map((artifact) => artifact.id), [visible]);
   // A row filtered out of `visibleIds` drops out of `selection.selectedIds`
   // immediately (the hook reconciles against `ids` on every read) but
   // `useListSelection` keeps it in its own internal state, so the row comes
@@ -446,10 +397,7 @@ export function LibraryPage({
         crumbs={
           selectedSummary === null
             ? [{ label: "Files" }]
-            : [
-                { label: "Files", href: FILES_PATH_PREFIX },
-                { label: selectedSummary.title },
-              ]
+            : [{ label: "Files", href: FILES_PATH_PREFIX }, { label: selectedSummary.title }]
         }
         subtitle={
           selectedSummary === null
@@ -512,24 +460,15 @@ export function LibraryPage({
                 <div className="lg:hidden">
                   <Menu>
                     <MenuTrigger asChild>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        aria-label="Files scope"
-                      >
-                        {scope === "all"
-                          ? "All workbenches"
-                          : workbenchScope.title}
+                      <Button type="button" size="sm" variant="ghost" aria-label="Files scope">
+                        {scope === "all" ? "All workbenches" : workbenchScope.title}
                       </Button>
                     </MenuTrigger>
                     <MenuContent align="end">
                       <MenuItem onSelect={() => onScopeChange("workbench")}>
                         {workbenchScope.title}
                       </MenuItem>
-                      <MenuItem onSelect={() => onScopeChange("all")}>
-                        All workbenches
-                      </MenuItem>
+                      <MenuItem onSelect={() => onScopeChange("all")}>All workbenches</MenuItem>
                     </MenuContent>
                   </Menu>
                 </div>
@@ -557,11 +496,7 @@ export function LibraryPage({
             </Menu>
             <ViewToggle mode={viewMode} onChange={setViewMode} />
             {onUpload !== undefined ? (
-              <Button
-                size="sm"
-                disabled={uploading === true}
-                onClick={openPicker}
-              >
+              <Button size="sm" disabled={uploading === true} onClick={openPicker}>
                 {uploading === true ? "Uploading…" : "Upload"}
               </Button>
             ) : null}
@@ -681,46 +616,32 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   // the same way kind-nav selection already worked before this route
   // existed.
   const deepLinkedArtifactId = libraryArtifactIdFromPath(path);
-  const [selectedId, setSelectedId] = useState<string | null>(
-    deepLinkedArtifactId,
-  );
+  const [selectedId, setSelectedId] = useState<string | null>(deepLinkedArtifactId);
   useEffect(() => {
     if (deepLinkedArtifactId !== null) setSelectedId(deepLinkedArtifactId);
   }, [deepLinkedArtifactId]);
-  const kindSegment =
-    deepLinkedArtifactId === null ? libraryKindSegmentFromPath(path) : "";
+  const kindSegment = deepLinkedArtifactId === null ? libraryKindSegmentFromPath(path) : "";
 
   // Files' workbench-first lens (CL-6353): the workbench the person just
   // came from, if `last-workbench.ts` recorded one for this bench, resolved
   // to its own tenant via the same sidebar-backed activity listing every
   // other bench-scoped surface already fetches.
   const activity = useBenchActivity(selectedTenantId);
-  const lastWorkbenchId =
-    selectedTenantId === null ? null : readLastWorkbenchId(selectedTenantId);
+  const lastWorkbenchId = selectedTenantId === null ? null : readLastWorkbenchId(selectedTenantId);
   const workbenchScope =
     activity.kind === "ready"
-      ? resolveLibraryWorkbenchScope(
-          [...activity.workbenches, ...activity.chats],
-          lastWorkbenchId,
-        )
+      ? resolveLibraryWorkbenchScope([...activity.workbenches, ...activity.chats], lastWorkbenchId)
       : null;
-  const [scopeOverride, setScopeOverride] = useState<
-    "workbench" | "all" | null
-  >(null);
-  const scope =
-    scopeOverride ?? (workbenchScope !== null ? "workbench" : "all");
+  const [scopeOverride, setScopeOverride] = useState<"workbench" | "all" | null>(null);
+  const scope = scopeOverride ?? (workbenchScope !== null ? "workbench" : "all");
   const scopeTenantId =
-    scope === "workbench" && workbenchScope !== null
-      ? workbenchScope.tenantId
-      : selectedTenantId;
+    scope === "workbench" && workbenchScope !== null ? workbenchScope.tenantId : selectedTenantId;
 
   const listPath =
     scopeTenantId === null
       ? ""
       : `/api/tenants/${scopeTenantId}/artifacts${
-          searchQuery.trim() === ""
-            ? ""
-            : `?q=${encodeURIComponent(searchQuery.trim())}`
+          searchQuery.trim() === "" ? "" : `?q=${encodeURIComponent(searchQuery.trim())}`
         }`;
   const page = useAPIQuery(listPath, ArtifactListPageSchema);
 
@@ -782,10 +703,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
             <RichEmptyState
               icon={<Stack />}
               title="Couldn't load your files"
-              description={describeApiError(
-                { status: page.status },
-                "loading your files",
-              )}
+              description={describeApiError({ status: page.status }, "loading your files")}
             />
           )}
         </PageShell>
@@ -796,8 +714,8 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   return (
     <QueryView query={page} label="your files" skeleton="rows">
       {(rows) => {
-        const artifacts = mapArtifactListToSummaries(rows.artifacts).filter(
-          (row) => artifactMatchesLibraryKindSegment(row, kindSegment),
+        const artifacts = mapArtifactListToSummaries(rows.artifacts).filter((row) =>
+          artifactMatchesLibraryKindSegment(row, kindSegment),
         );
         return (
           <LibraryPage
@@ -816,10 +734,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
             previewLoading={detail.kind === "loading" && selectedId !== null}
             previewError={
               detail.kind === "error" && selectedId !== null
-                ? describeApiError(
-                    { status: detail.status },
-                    "loading this file",
-                  )
+                ? describeApiError({ status: detail.status }, "loading this file")
                 : null
             }
             onUpload={(files) => {
@@ -827,10 +742,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
                 setUploading(true);
                 setUploadError(null);
                 try {
-                  const uploaded = await uploadArtifactFiles(
-                    selectedTenantId,
-                    files,
-                  );
+                  const uploaded = await uploadArtifactFiles(selectedTenantId, files);
                   await queryClient.invalidateQueries({
                     queryKey: tenantKeys.artifacts(selectedTenantId),
                   });
@@ -839,15 +751,9 @@ export function LibraryRoute({ path }: { readonly path: string }) {
                   // two can differ (e.g. a collision rename), and a sibling
                   // fix for empty content read-back means this toast must
                   // only ever repeat the upload response, not assume it.
-                  toast(
-                    artifactUploadToast(
-                      uploaded.map((artifact) => artifact.title),
-                    ),
-                  );
+                  toast(artifactUploadToast(uploaded.map((artifact) => artifact.title)));
                 } catch (err) {
-                  setUploadError(
-                    describeApiError(err, "uploading those files"),
-                  );
+                  setUploadError(describeApiError(err, "uploading those files"));
                 } finally {
                   setUploading(false);
                 }

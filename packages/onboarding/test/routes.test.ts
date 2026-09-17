@@ -19,9 +19,7 @@ import { HubApiError } from "@corbits/hub-api-client";
 // wiring for `createOnboardingRoutes`, and its dedicated coverage lives
 // in `./complete-setup-routes.test.ts`, `./connect-deploys-nothing.test.ts`
 // and `../src/pending-seed.test.ts`.
-const pendingSeedStore = createInMemoryPendingSeedStore(
-  createNoopCredentialCipher(),
-);
+const pendingSeedStore = createInMemoryPendingSeedStore(createNoopCredentialCipher());
 
 // These tests never exercise the genesis-or-join join path — the stub
 // satisfies the required tenancy wiring without standing up a DB.
@@ -89,9 +87,7 @@ describe("POST /provision", () => {
     // Body must include a name so provision enters the create path; without
     // a name the route returns needs-onboarding and never hits the hub.
     const hub = new Hono();
-    hub.get("/api/me/principals", (c) =>
-      c.json({ data: [], nextCursor: null }),
-    );
+    hub.get("/api/me/principals", (c) => c.json({ data: [], nextCursor: null }));
     hub.post("/api/tenants", (c) =>
       c.json({ error: { code: "conflict", message: "Slug taken" } }, 409),
     );
@@ -130,9 +126,7 @@ describe("POST /provision", () => {
   test("a nameless membership probe returns needs-onboarding without creating", async () => {
     const creates: unknown[] = [];
     const hub = new Hono();
-    hub.get("/api/me/principals", (c) =>
-      c.json({ data: [], nextCursor: null }),
-    );
+    hub.get("/api/me/principals", (c) => c.json({ data: [], nextCursor: null }));
     hub.post("/api/tenants", async (c) => {
       creates.push(await c.req.json());
       return c.json({ id: "tnt_x" }, 201);
@@ -203,9 +197,7 @@ describe("POST /provision", () => {
     // Two-step first-login: shell probe (no name) then naming submit (with name).
     // The probe must not consume the create rate-limit slot.
     const hub = new Hono();
-    hub.get("/api/me/principals", (c) =>
-      c.json({ data: [], nextCursor: null }),
-    );
+    hub.get("/api/me/principals", (c) => c.json({ data: [], nextCursor: null }));
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
@@ -223,9 +215,7 @@ describe("POST /provision", () => {
 
       const probe = await app.request("/provision", { method: "POST" });
       expect(probe.status).toBe(200);
-      expect(((await probe.json()) as { kind: string }).kind).toBe(
-        "needs-onboarding",
-      );
+      expect(((await probe.json()) as { kind: string }).kind).toBe("needs-onboarding");
 
       // Named create reaches the hub (503/500 from incomplete mock is fine);
       // the only failure mode this test forbids is 429 from the probe.
@@ -244,9 +234,7 @@ describe("POST /provision", () => {
   test("malformed JSON on /provision is 400, not a silent membership probe", async () => {
     const creates: unknown[] = [];
     const hub = new Hono();
-    hub.get("/api/me/principals", (c) =>
-      c.json({ data: [], nextCursor: null }),
-    );
+    hub.get("/api/me/principals", (c) => c.json({ data: [], nextCursor: null }));
     hub.post("/api/tenants", async (c) => {
       creates.push(await c.req.json());
       return c.json({ id: "tnt_x" }, 201);
@@ -285,9 +273,7 @@ describe("POST /provision", () => {
 
   test("schema-invalid provision body is 400, not a silent membership probe", async () => {
     const hub = new Hono();
-    hub.get("/api/me/principals", (c) =>
-      c.json({ data: [], nextCursor: null }),
-    );
+    hub.get("/api/me/principals", (c) => c.json({ data: [], nextCursor: null }));
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
@@ -478,9 +464,7 @@ describe("POST /complete", () => {
     });
 
     expect(response.status).toBe(422);
-    expect(providerHealth.get("tnt_own", "anthropic")?.status).toBe(
-      "needs_attention",
-    );
+    expect(providerHealth.get("tnt_own", "anthropic")?.status).toBe("needs_attention");
   });
 
   // CL-6457 moved partial-deploy convergence off this route entirely:
@@ -572,9 +556,7 @@ describe("POST /complete", () => {
       lines.some(
         (line) =>
           line.includes(body.error.refId) &&
-          line.includes(
-            "/Users/alice/abklabs/workbench/packages/capability-tools",
-          ),
+          line.includes("/Users/alice/abklabs/workbench/packages/capability-tools"),
       ),
     ).toBe(true);
   });
@@ -633,8 +615,7 @@ describe("POST /complete — seeded-admin fallback", () => {
         testAndPersistCredentialFn: (args) =>
           testAndPersistCredential({
             ...args,
-            ensureProviderFn: async (_api, _cookies, seedArgs) =>
-              `prv_${seedArgs.name}`,
+            ensureProviderFn: async (_api, _cookies, seedArgs) => `prv_${seedArgs.name}`,
             ensureCredentialFn: async (_api, _cookies, persistArgs) =>
               `cred_${persistArgs.providerId}`,
             seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
@@ -730,18 +711,12 @@ describe("CL-7584 desired-state kicks and steps", () => {
         return c.json(state.seeded ? [assetRow("assistant", "workflow")] : []);
       }
       if (c.req.query("kind") === "package-registry") {
-        return c.json(
-          state.seeded ? [assetRow("corbits-tools", "package-registry")] : [],
-        );
+        return c.json(state.seeded ? [assetRow("corbits-tools", "package-registry")] : []);
       }
       return c.json([]);
     });
     hub.get("/api/tenants/ten_root/workflows/deployments", (c) =>
-      c.json(
-        state.seeded
-          ? [{ definitionAssetId: "ast_assistant", status: "deployed" }]
-          : [],
-      ),
+      c.json(state.seeded ? [{ definitionAssetId: "ast_assistant", status: "deployed" }] : []),
     );
     hub.get("/api/tenants/ten_root/assets/ast_corbits-tools/tarballs", (c) =>
       c.json(
@@ -757,9 +732,7 @@ describe("CL-7584 desired-state kicks and steps", () => {
       ),
     );
     hub.get("/api/tenants/ten_root/skills/:name", (c) =>
-      state.seeded
-        ? c.json({ name: c.req.param("name") })
-        : c.json({ error: "none" }, 404),
+      state.seeded ? c.json({ name: c.req.param("name") }) : c.json({ error: "none" }, 404),
     );
     return hub;
   }
@@ -870,9 +843,7 @@ describe("CL-7584 desired-state kicks and steps", () => {
     const hub = mountHub({ seeded: false });
     const { server, app } = routesWithKick(hub, []);
     try {
-      const response = await app.request(
-        "/provisioning-status?tenantId=ten_root",
-      );
+      const response = await app.request("/provisioning-status?tenantId=ten_root");
       expect(response.status).toBe(200);
       const body = (await response.json()) as {
         kind: string;

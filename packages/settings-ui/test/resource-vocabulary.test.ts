@@ -5,10 +5,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import {
-  GRANT_RESOURCES,
-  GRANT_RESOURCE_LABEL,
-} from "../src/resource-vocabulary";
+import { GRANT_RESOURCES, GRANT_RESOURCE_LABEL } from "../src/resource-vocabulary";
 
 describe("GRANT_RESOURCE_LABEL", () => {
   test("covers every resource in GRANT_RESOURCES with a distinct, plain-language label", () => {
@@ -16,9 +13,7 @@ describe("GRANT_RESOURCE_LABEL", () => {
       expect(GRANT_RESOURCE_LABEL[resource]).toBeDefined();
       expect(GRANT_RESOURCE_LABEL[resource].length).toBeGreaterThan(0);
     }
-    const labels = GRANT_RESOURCES.map(
-      (resource) => GRANT_RESOURCE_LABEL[resource],
-    );
+    const labels = GRANT_RESOURCES.map((resource) => GRANT_RESOURCE_LABEL[resource]);
     expect(new Set(labels).size).toBe(labels.length);
   });
 

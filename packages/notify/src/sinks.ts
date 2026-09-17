@@ -55,8 +55,7 @@ export function createSinkRegistry(): SinkRegistry {
   const plugins = new Map<string, NotificationSinkPlugin>();
   return {
     register(plugin) {
-      if (plugins.has(plugin.name))
-        throw new DuplicateSinkNameError(plugin.name);
+      if (plugins.has(plugin.name)) throw new DuplicateSinkNameError(plugin.name);
       plugins.set(plugin.name, plugin);
     },
     get(name) {

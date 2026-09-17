@@ -42,10 +42,7 @@ describe("dmCreateInputFor", () => {
   });
 
   test("an agent subject with no matching running instance has no create input", () => {
-    const input = dmCreateInputFor(
-      subject({ kind: "agent", address: "ins_42@bench.dev" }),
-      null,
-    );
+    const input = dmCreateInputFor(subject({ kind: "agent", address: "ins_42@bench.dev" }), null);
     expect(input).toBeNull();
   });
 });

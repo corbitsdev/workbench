@@ -6,13 +6,7 @@
 
 import { titleExtension } from "./title-extension";
 
-export const ARTIFACT_RENDERER_KINDS = [
-  "doc",
-  "sheet",
-  "pdf",
-  "html",
-  "unsupported",
-] as const;
+export const ARTIFACT_RENDERER_KINDS = ["doc", "sheet", "pdf", "html", "unsupported"] as const;
 
 export type ArtifactRendererKind = (typeof ARTIFACT_RENDERER_KINDS)[number];
 
@@ -44,11 +38,7 @@ export function resolveArtifactRendererKind(artifact: {
   return "unsupported";
 }
 
-const DOC_MEDIA_TYPES = new Set([
-  "text/plain",
-  "text/markdown",
-  "application/json",
-]);
+const DOC_MEDIA_TYPES = new Set(["text/plain", "text/markdown", "application/json"]);
 const SHEET_MEDIA_TYPES = new Set([
   "text/csv",
   "application/vnd.ms-excel",
@@ -86,12 +76,8 @@ export function resolveRendererKindFromMediaType(
 export function isTextDecodableMediaType(mediaType: string): boolean {
   const mime = mediaType.trim().toLowerCase();
   if (mime === "application/vnd.ms-excel") return false;
-  if (
-    mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  ) {
+  if (mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
     return false;
   }
-  return (
-    DOC_MEDIA_TYPES.has(mime) || mime === "text/csv" || mime.startsWith("text/")
-  );
+  return DOC_MEDIA_TYPES.has(mime) || mime === "text/csv" || mime.startsWith("text/");
 }

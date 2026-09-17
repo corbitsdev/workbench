@@ -56,9 +56,7 @@ test("marks a failing scorer distinctly from a passing one", () => {
         {
           stepIndex: 0,
           turn: { human: "h", replyText: "r", toolCalls: [] },
-          scorerReports: [
-            { name: "g", pass: false, score: 0, reason: "nope", stepIndex: 0 },
-          ],
+          scorerReports: [{ name: "g", pass: false, score: 0, reason: "nope", stepIndex: 0 }],
         },
       ],
     },

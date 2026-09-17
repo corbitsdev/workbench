@@ -47,9 +47,9 @@ test("a handler rejection propagates to the caller", async () => {
   router.register("ins_dep_1@example.com", () =>
     Promise.reject(new Error("child rejected credentials-updated")),
   );
-  await expect(
-    router.tryRoute(makeFrame("ins_dep_1@example.com")),
-  ).rejects.toThrow(/child rejected credentials-updated/);
+  await expect(router.tryRoute(makeFrame("ins_dep_1@example.com"))).rejects.toThrow(
+    /child rejected credentials-updated/,
+  );
 });
 
 test("unregister stops routing for the address", async () => {

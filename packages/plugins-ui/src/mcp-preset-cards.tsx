@@ -24,15 +24,12 @@ const MCP_OAUTH_ERROR_COPY: Readonly<Record<string, string>> = {
   discovery_failed: "Couldn't reach that app's sign-in. Try connecting again.",
   client_rejected:
     "That app didn't accept Workbench as a client (redirect URL or registration). Try connecting again.",
-  no_authorization_needed:
-    "That app didn't start a sign-in. Try connecting again.",
-  state_expired:
-    "The connection took too long or was already used. Try connecting again.",
+  no_authorization_needed: "That app didn't start a sign-in. Try connecting again.",
+  state_expired: "The connection took too long or was already used. Try connecting again.",
   state_mismatch: "The connection was interrupted. Try connecting again.",
   exchange_failed: "That app didn't hand back a token. Try connecting again.",
   connect_failed: "Couldn't finish connecting. Try connecting again.",
-  setup_failed:
-    "The sign-in worked, but storing the connection failed. Try connecting again.",
+  setup_failed: "The sign-in worked, but storing the connection failed. Try connecting again.",
   not_found: "That app isn't in this catalog.",
   bad_request: "This app doesn't connect with a sign-in here.",
 };
@@ -49,7 +46,8 @@ function mcpOauthReturnError(slug: string): string | null {
 }
 
 function mcpOauthConnectedReturn():
-  { readonly slug: string; readonly toolCount: number } | undefined {
+  | { readonly slug: string; readonly toolCount: number }
+  | undefined {
   const params = new URLSearchParams(window.location.search);
   if (params.get("outcome") !== "connected") return undefined;
   const slug = params.get("mcpOauth");
@@ -76,9 +74,7 @@ export function McpPresetCard({
   readonly onOpen: (trigger: HTMLButtonElement) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(() =>
-    mcpOauthReturnError(preset.slug),
-  );
+  const [error, setError] = useState<string | null>(() => mcpOauthReturnError(preset.slug));
   function submitConnect() {
     setBusy(true);
     setError(null);
@@ -105,9 +101,7 @@ export function McpPresetCard({
     submitConnect();
   }
 
-  const presetDefinition = MCP_PRESETS.find(
-    (definition) => definition.slug === preset.slug,
-  );
+  const presetDefinition = MCP_PRESETS.find((definition) => definition.slug === preset.slug);
   const connector =
     presetDefinition?.nativeConnectorId === undefined
       ? undefined
@@ -126,17 +120,10 @@ export function McpPresetCard({
       data-plugin-slug={preset.slug}
     >
       <div className="flex min-h-11 min-w-0 items-center gap-3">
-        <PluginLogo
-          name={preset.displayName}
-          icon={preset.icon ?? connector?.icon}
-        />
+        <PluginLogo name={preset.displayName} icon={preset.icon ?? connector?.icon} />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-sm font-medium">
-            {preset.displayName}
-          </span>
-          <span className="truncate text-xs text-muted-foreground">
-            {preset.description}
-          </span>
+          <span className="truncate text-sm font-medium">{preset.displayName}</span>
+          <span className="truncate text-xs text-muted-foreground">{preset.description}</span>
           {error !== null ? (
             <span className="truncate text-xs text-destructive" role="alert">
               {error}
@@ -176,14 +163,10 @@ export function McpPresetCard({
 
 export function useMcpPresetCatalog(tenantId: string) {
   const [presets, setPresets] = useState<readonly McpPreset[]>([]);
-  const [toolCounts, setToolCounts] = useState<ReadonlyMap<string, number>>(
-    () => {
-      const returned = mcpOauthConnectedReturn();
-      return returned === undefined
-        ? new Map()
-        : new Map([[returned.slug, returned.toolCount]]);
-    },
-  );
+  const [toolCounts, setToolCounts] = useState<ReadonlyMap<string, number>>(() => {
+    const returned = mcpOauthConnectedReturn();
+    return returned === undefined ? new Map() : new Map([[returned.slug, returned.toolCount]]);
+  });
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);

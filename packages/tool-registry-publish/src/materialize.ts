@@ -27,9 +27,7 @@ export async function materializePackages<T>(
   if (args.packageDirs.length === 0) return [];
   const concurrency = args.concurrency ?? args.packageDirs.length;
   if (concurrency < 1) {
-    throw new Error(
-      `materializePackages: concurrency must be >= 1, got ${String(concurrency)}`,
-    );
+    throw new Error(`materializePackages: concurrency must be >= 1, got ${String(concurrency)}`);
   }
   return mapPool(args.packageDirs, concurrency, async (packageDir) => {
     if (args.shouldSkip !== undefined && (await args.shouldSkip(packageDir))) {

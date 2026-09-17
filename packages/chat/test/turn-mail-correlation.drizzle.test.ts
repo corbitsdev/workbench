@@ -29,122 +29,113 @@ function scratchUrlFor(e2eUrl: string): string {
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
-describeIfDb(
-  "createDrizzleTurnMailCorrelationStore: concurrent recordTurnMail",
-  () => {
-    const scratchUrl = scratchUrlFor(
-      databaseUrl ?? "postgres://localhost:5432/unused",
-    );
-    const scratchTarget = new URL(scratchUrl);
-    const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
+describeIfDb("createDrizzleTurnMailCorrelationStore: concurrent recordTurnMail", () => {
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
+  const scratchTarget = new URL(scratchUrl);
+  const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
 
-    beforeAll(async () => {
-      const maintenanceUrl = new URL(scratchUrl);
-      maintenanceUrl.pathname = "/postgres";
-      const maintenance = postgres(maintenanceUrl.toString(), {
-        max: 1,
-        onnotice: () => undefined,
-      });
-      try {
-        await maintenance.unsafe(
-          `DROP DATABASE IF EXISTS "${scratchDatabase}"`,
-        );
-        await maintenance.unsafe(`CREATE DATABASE "${scratchDatabase}"`);
-      } finally {
-        await maintenance.end();
-      }
-      await applyChatMigrations(scratchUrl);
+  beforeAll(async () => {
+    const maintenanceUrl = new URL(scratchUrl);
+    maintenanceUrl.pathname = "/postgres";
+    const maintenance = postgres(maintenanceUrl.toString(), {
+      max: 1,
+      onnotice: () => undefined,
     });
+    try {
+      await maintenance.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
+      await maintenance.unsafe(`CREATE DATABASE "${scratchDatabase}"`);
+    } finally {
+      await maintenance.end();
+    }
+    await applyChatMigrations(scratchUrl);
+  });
 
-    afterAll(async () => {
-      const maintenanceUrl = new URL(scratchUrl);
-      maintenanceUrl.pathname = "/postgres";
-      const maintenance = postgres(maintenanceUrl.toString(), {
-        max: 1,
-        onnotice: () => undefined,
-      });
-      try {
-        await maintenance.unsafe(
-          `DROP DATABASE IF EXISTS "${scratchDatabase}"`,
-        );
-      } finally {
-        await maintenance.end();
-      }
+  afterAll(async () => {
+    const maintenanceUrl = new URL(scratchUrl);
+    maintenanceUrl.pathname = "/postgres";
+    const maintenance = postgres(maintenanceUrl.toString(), {
+      max: 1,
+      onnotice: () => undefined,
     });
+    try {
+      await maintenance.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
+    } finally {
+      await maintenance.end();
+    }
+  });
 
-    test("two concurrent records for the same mail never throw, and the first source wins", async () => {
-      // `max: 5` — a real connection pool, so the two records below issue
-      // genuinely overlapping queries rather than being serialized onto
-      // one connection before either can race the other.
-      const sql = postgres(scratchUrl, { max: 5, onnotice: () => undefined });
-      try {
-        const store = createDrizzleTurnMailCorrelationStore(drizzle(sql));
+  test("two concurrent records for the same mail never throw, and the first source wins", async () => {
+    // `max: 5` — a real connection pool, so the two records below issue
+    // genuinely overlapping queries rather than being serialized onto
+    // one connection before either can race the other.
+    const sql = postgres(scratchUrl, { max: 5, onnotice: () => undefined });
+    try {
+      const store = createDrizzleTurnMailCorrelationStore(drizzle(sql));
 
-        await Promise.all([
-          store.recordTurnMail({
-            tenantId: "ten_1",
-            mailId: "mail_race_1",
-            workbenchId: "ins_workbench1",
-            sourceMessageId: "msg_first",
-          }),
-          store.recordTurnMail({
-            tenantId: "ten_1",
-            mailId: "mail_race_1",
-            workbenchId: "ins_workbench1",
-            sourceMessageId: "msg_second",
-          }),
-        ]);
-
-        const rows = await sql.unsafe(
-          `SELECT * FROM "chat"."turn_mail_correlation" WHERE "tenant_id" = 'ten_1' AND "mail_id" = 'mail_race_1'`,
-        );
-        expect(rows).toHaveLength(1);
-
-        // Either racer may win the insert — what matters is exactly one
-        // row survives, never two and never a thrown PK-violation.
-        const source = await store.findTurnMailSource({
+      await Promise.all([
+        store.recordTurnMail({
           tenantId: "ten_1",
           mailId: "mail_race_1",
-        });
-        if (source?.sourceMessageId === undefined) {
-          throw new Error("expected the raced mail to resolve to one source");
-        }
-        expect(["msg_first", "msg_second"]).toContain(source.sourceMessageId);
-      } finally {
-        await sql.end();
-      }
-    });
+          workbenchId: "ins_workbench1",
+          sourceMessageId: "msg_first",
+        }),
+        store.recordTurnMail({
+          tenantId: "ten_1",
+          mailId: "mail_race_1",
+          workbenchId: "ins_workbench1",
+          sourceMessageId: "msg_second",
+        }),
+      ]);
 
-    test("record then find round-trips the source", async () => {
-      const sql = postgres(scratchUrl, { max: 5, onnotice: () => undefined });
-      try {
-        const store = createDrizzleTurnMailCorrelationStore(drizzle(sql));
-        await store.recordTurnMail({
+      const rows = await sql.unsafe(
+        `SELECT * FROM "chat"."turn_mail_correlation" WHERE "tenant_id" = 'ten_1' AND "mail_id" = 'mail_race_1'`,
+      );
+      expect(rows).toHaveLength(1);
+
+      // Either racer may win the insert — what matters is exactly one
+      // row survives, never two and never a thrown PK-violation.
+      const source = await store.findTurnMailSource({
+        tenantId: "ten_1",
+        mailId: "mail_race_1",
+      });
+      if (source?.sourceMessageId === undefined) {
+        throw new Error("expected the raced mail to resolve to one source");
+      }
+      expect(["msg_first", "msg_second"]).toContain(source.sourceMessageId);
+    } finally {
+      await sql.end();
+    }
+  });
+
+  test("record then find round-trips the source", async () => {
+    const sql = postgres(scratchUrl, { max: 5, onnotice: () => undefined });
+    try {
+      const store = createDrizzleTurnMailCorrelationStore(drizzle(sql));
+      await store.recordTurnMail({
+        tenantId: "ten_1",
+        mailId: "mail_roundtrip_1",
+        workbenchId: "ins_workbench1",
+        sourceMessageId: "msg_1",
+      });
+
+      expect(
+        await store.findTurnMailSource({
           tenantId: "ten_1",
           mailId: "mail_roundtrip_1",
-          workbenchId: "ins_workbench1",
-          sourceMessageId: "msg_1",
-        });
-
-        expect(
-          await store.findTurnMailSource({
-            tenantId: "ten_1",
-            mailId: "mail_roundtrip_1",
-          }),
-        ).toEqual({
+        }),
+      ).toEqual({
+        tenantId: "ten_1",
+        workbenchId: "ins_workbench1",
+        sourceMessageId: "msg_1",
+      });
+      expect(
+        await store.findTurnMailSource({
           tenantId: "ten_1",
-          workbenchId: "ins_workbench1",
-          sourceMessageId: "msg_1",
-        });
-        expect(
-          await store.findTurnMailSource({
-            tenantId: "ten_1",
-            mailId: "mail_missing",
-          }),
-        ).toBeUndefined();
-      } finally {
-        await sql.end();
-      }
-    });
-  },
-);
+          mailId: "mail_missing",
+        }),
+      ).toBeUndefined();
+    } finally {
+      await sql.end();
+    }
+  });
+});

@@ -8,16 +8,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-const HUB_INDEX = path.join(
-  import.meta.dir,
-  "..",
-  "..",
-  "..",
-  "apps",
-  "hub",
-  "src",
-  "index.ts",
-);
+const HUB_INDEX = path.join(import.meta.dir, "..", "..", "..", "apps", "hub", "src", "index.ts");
 
 const WB = "work" + "benches";
 const GH = "git" + "hub";
@@ -37,9 +28,7 @@ describe("hub-zero T3: the workbench-scoped connect mount is gone", () => {
 
   test("index.ts passes no settings-row port to the deleted mount's options", () => {
     const source = readFileSync(HUB_INDEX, "utf8");
-    const optionsPattern = new RegExp(
-      `${MOUNT_PORT_A}|${MOUNT_PORT_B}|${MOUNT_PORT_C}`,
-    );
+    const optionsPattern = new RegExp(`${MOUNT_PORT_A}|${MOUNT_PORT_B}|${MOUNT_PORT_C}`);
     expect(
       optionsPattern.test(source),
       "index.ts still passes a settings-row port to the deleted mount's options",

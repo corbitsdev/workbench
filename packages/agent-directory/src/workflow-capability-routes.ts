@@ -80,10 +80,7 @@ export type WorkflowCapabilityRunScope = {
 };
 
 export type WorkflowRunAuthenticator = {
-  resolve(
-    token: string,
-    runAddress: string,
-  ): Promise<WorkflowCapabilityRunScope | null>;
+  resolve(token: string, runAddress: string): Promise<WorkflowCapabilityRunScope | null>;
 };
 
 export type WorkflowCapabilitiesEnv = {
@@ -102,11 +99,7 @@ function definitionNotFound(definitionId: string) {
 function hostGuardedRow(
   row: { readonly name: string; readonly assetId: string | null } | undefined,
 ): row is { readonly name: string; readonly assetId: string } {
-  return (
-    row !== undefined &&
-    row.assetId !== null &&
-    !isWorkbenchHostDefinitionName(row.name)
-  );
+  return row !== undefined && row.assetId !== null && !isWorkbenchHostDefinitionName(row.name);
 }
 
 export type CreateWorkflowCapabilityRoutesDeps = {
@@ -129,16 +122,10 @@ export function createWorkflowCapabilityRoutes(
 
   app.onError((err, c) => {
     if (err instanceof CapabilityOutOfInventoryError) {
-      return c.json(
-        makeErrorEnvelope({ code: "bad_request", userMessage: err.message }),
-        400,
-      );
+      return c.json(makeErrorEnvelope({ code: "bad_request", userMessage: err.message }), 400);
     }
     if (err instanceof RetiredWorkflowEnvelopeError) {
-      return c.json(
-        makeErrorEnvelope({ code: "conflict", userMessage: err.message }),
-        409,
-      );
+      return c.json(makeErrorEnvelope({ code: "conflict", userMessage: err.message }), 409);
     }
     if (err instanceof WorkflowAuthorError) {
       return c.json(
@@ -151,17 +138,14 @@ export function createWorkflowCapabilityRoutes(
 
   app.use("*", async (c, next) => {
     const authHeader = c.req.header("authorization") ?? "";
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length)
-      : "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
     const address = c.req.header("x-workflow-run-address") ?? "";
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
       return c.json(
         makeErrorEnvelope({
           code: "unauthorized",
-          userMessage:
-            "Missing or unrecognized sidecar bearer token / run address",
+          userMessage: "Missing or unrecognized sidecar bearer token / run address",
         }),
         401,
       );
@@ -195,8 +179,7 @@ export function createWorkflowCapabilityRoutes(
       return c.json(
         makeErrorEnvelope({
           code: "forbidden",
-          userMessage:
-            "A workflow run may only request capabilities for its own agent definition",
+          userMessage: "A workflow run may only request capabilities for its own agent definition",
         }),
         403,
       );

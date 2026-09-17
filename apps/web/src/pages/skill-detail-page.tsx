@@ -13,12 +13,7 @@
 // vendoring a replacement surface. This page is scoped down to what the
 // stock routes actually carry until one exists — see the CL-8086 PR body
 // for the gap.
-import {
-  PageShell,
-  RichEmptyState,
-  Section,
-  formatRelativeTime,
-} from "@corbits/react-ui";
+import { PageShell, RichEmptyState, Section, formatRelativeTime } from "@corbits/react-ui";
 import { Lightning } from "@corbits/icons";
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { ApiQueryError, describeApiError } from "@corbits/api-query";
@@ -76,10 +71,7 @@ export function SkillDetailPage({
     void read();
   }, [read]);
 
-  const crumbs = [
-    { label: "Skills", href: SKILLS_PATH_PREFIX },
-    { label: name },
-  ];
+  const crumbs = [{ label: "Skills", href: SKILLS_PATH_PREFIX }, { label: name }];
 
   function frame(body: ReactNode) {
     return (
@@ -96,9 +88,7 @@ export function SkillDetailPage({
 
   if (tenantId === null) {
     return frame(
-      <p className="text-sm text-muted-foreground">
-        Pick a workbench to see this skill.
-      </p>,
+      <p className="text-sm text-muted-foreground">Pick a workbench to see this skill.</p>,
     );
   }
 
@@ -133,9 +123,7 @@ export function SkillDetailPage({
   return frame(
     <div className="flex flex-col gap-6">
       <header className="min-w-0">
-        <h1 className="truncate text-lg font-semibold tracking-tight">
-          {skillDisplayName(skill)}
-        </h1>
+        <h1 className="truncate text-lg font-semibold tracking-tight">{skillDisplayName(skill)}</h1>
         <p className="mt-1 text-xs text-muted-foreground">
           Updated {formatRelativeTime(skill.updatedAtIso, now)}
         </p>
@@ -146,10 +134,9 @@ export function SkillDetailPage({
         description="Not readable here yet: there is no stock Interchange route for a skill's SKILL.md content (CL-8086)."
       >
         <p className="text-sm text-muted-foreground">
-          This skill's description, instructions, version history, and pinned-by
-          list lived in the workbench-specific skill registry removed by
-          CL-8086. They will return once a stock route for reading and writing
-          skill content exists.
+          This skill's description, instructions, version history, and pinned-by list lived in the
+          workbench-specific skill registry removed by CL-8086. They will return once a stock route
+          for reading and writing skill content exists.
         </p>
       </Section>
     </div>,

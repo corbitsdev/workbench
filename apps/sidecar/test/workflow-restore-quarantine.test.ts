@@ -13,11 +13,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "bun:test";
-import {
-  createEd25519Crypto,
-  generateKeyPair,
-  verifySSHSignature,
-} from "@intx/crypto";
+import { createEd25519Crypto, generateKeyPair, verifySSHSignature } from "@intx/crypto";
 import {
   createAgentKeyStore,
   createAgentRepoStore as createSidecarSideRepoStore,
@@ -44,9 +40,7 @@ import {
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(
-    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
 async function makeDataDir(): Promise<string> {
@@ -101,9 +95,7 @@ async function makeRouter(
       }
       const definition = closureDefinitions.get(deploymentId);
       if (definition === undefined) {
-        throw new Error(
-          `test closure materializer: no definition registered for ${deploymentId}`,
-        );
+        throw new Error(`test closure materializer: no definition registered for ${deploymentId}`);
       }
       return Promise.resolve({
         definition,
@@ -191,32 +183,19 @@ test("a permanently unrestorable record is quarantined after RESTORE_QUARANTINE_
 
   for (let boot = 1; boot <= RESTORE_QUARANTINE_THRESHOLD; boot++) {
     await router.restoreWorkflowDeployments();
-    const onDisk = await readWorkflowDeploymentRecord(
-      dataDir,
-      mismatchedDeploymentId,
-    );
+    const onDisk = await readWorkflowDeploymentRecord(dataDir, mismatchedDeploymentId);
     expect(onDisk?.restoreFailure?.kind).toBe("permanent");
     expect(onDisk?.restoreFailure?.attempts).toBe(boot);
   }
 
-  const quarantined = await readWorkflowDeploymentRecord(
-    dataDir,
-    mismatchedDeploymentId,
-  );
-  expect(quarantined?.restoreFailure?.attempts).toBe(
-    RESTORE_QUARANTINE_THRESHOLD,
-  );
+  const quarantined = await readWorkflowDeploymentRecord(dataDir, mismatchedDeploymentId);
+  expect(quarantined?.restoreFailure?.attempts).toBe(RESTORE_QUARANTINE_THRESHOLD);
 
   // One more boot: quarantine means the attempt count does NOT move --
   // the record is skipped entirely rather than attempted and re-failed.
   await router.restoreWorkflowDeployments();
-  const afterQuarantineBoot = await readWorkflowDeploymentRecord(
-    dataDir,
-    mismatchedDeploymentId,
-  );
-  expect(afterQuarantineBoot?.restoreFailure?.attempts).toBe(
-    RESTORE_QUARANTINE_THRESHOLD,
-  );
+  const afterQuarantineBoot = await readWorkflowDeploymentRecord(dataDir, mismatchedDeploymentId);
+  expect(afterQuarantineBoot?.restoreFailure?.attempts).toBe(RESTORE_QUARANTINE_THRESHOLD);
 
   // The record itself is never deleted -- an operator can still undeploy
   // the address to reclaim it.
@@ -230,9 +209,7 @@ test("a transiently unbuildable provider is retried every boot and never quarant
     assertSourceBuildable: (source) => {
       assertCalls += 1;
       if (source.provider === "unbuildable") {
-        throw new Error(
-          `Source provider "${source.provider}" is not registered`,
-        );
+        throw new Error(`Source provider "${source.provider}" is not registered`);
       }
     },
   });
@@ -310,11 +287,7 @@ test("a missing/incomplete closure staging directory quarantines as a permanent 
     approvedWireHash: "d".repeat(64),
     sourceRef: SOURCE_REF,
   };
-  await writeWorkflowDeploymentRecord(
-    dataDir,
-    brokenDeploymentId,
-    brokenRecord,
-  );
+  await writeWorkflowDeploymentRecord(dataDir, brokenDeploymentId, brokenRecord);
 
   const healthyRecord: WorkflowDeploymentRecord = {
     version: 2,
@@ -335,29 +308,19 @@ test("a missing/incomplete closure staging directory quarantines as a permanent 
     approvedWireHash: "d".repeat(64),
     sourceRef: SOURCE_REF,
   };
-  await writeWorkflowDeploymentRecord(
-    dataDir,
-    healthyDeploymentId,
-    healthyRecord,
-  );
+  await writeWorkflowDeploymentRecord(dataDir, healthyDeploymentId, healthyRecord);
 
   for (let boot = 1; boot <= RESTORE_QUARANTINE_THRESHOLD; boot++) {
     // Boot completes without throwing -- the ENOENT never escapes the
     // restore loop, however it is classified.
     await expect(router.restoreWorkflowDeployments()).resolves.toBeUndefined();
-    const broken = await readWorkflowDeploymentRecord(
-      dataDir,
-      brokenDeploymentId,
-    );
+    const broken = await readWorkflowDeploymentRecord(dataDir, brokenDeploymentId);
     expect(broken?.restoreFailure?.kind).toBe("permanent");
     expect(broken?.restoreFailure?.attempts).toBe(boot);
 
     // The sibling deployment's own restore was attempted on every boot,
     // unaffected by the broken record ahead of (or behind) it in the scan.
-    const healthy = await readWorkflowDeploymentRecord(
-      dataDir,
-      healthyDeploymentId,
-    );
+    const healthy = await readWorkflowDeploymentRecord(dataDir, healthyDeploymentId);
     expect(healthy?.restoreFailure?.kind).toBe("transient");
     expect(healthy?.restoreFailure?.attempts).toBe(boot);
   }
@@ -365,11 +328,6 @@ test("a missing/incomplete closure staging directory quarantines as a permanent 
   // One more boot: quarantined now, so the attempt count stops moving --
   // the record is skipped rather than re-attempted and re-failed.
   await router.restoreWorkflowDeployments();
-  const afterQuarantine = await readWorkflowDeploymentRecord(
-    dataDir,
-    brokenDeploymentId,
-  );
-  expect(afterQuarantine?.restoreFailure?.attempts).toBe(
-    RESTORE_QUARANTINE_THRESHOLD,
-  );
+  const afterQuarantine = await readWorkflowDeploymentRecord(dataDir, brokenDeploymentId);
+  expect(afterQuarantine?.restoreFailure?.attempts).toBe(RESTORE_QUARANTINE_THRESHOLD);
 });

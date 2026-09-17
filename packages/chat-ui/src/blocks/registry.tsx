@@ -36,9 +36,7 @@ function renderKnownBlock(
       return (
         <ApproveBlockView
           data={block.data}
-          {...(approvalActions !== undefined
-            ? { actions: approvalActions }
-            : {})}
+          {...(approvalActions !== undefined ? { actions: approvalActions } : {})}
         />
       );
     case "steps":
@@ -76,18 +74,14 @@ function renderKnownBlock(
         <ConnectGithubBlockContainer
           data={block.data}
           messageId={messageId}
-          {...(connectGithubActions !== undefined
-            ? { actions: connectGithubActions }
-            : {})}
+          {...(connectGithubActions !== undefined ? { actions: connectGithubActions } : {})}
         />
       );
     case "connect-service":
       return (
         <ConnectServiceBlockContainer
           data={block.data}
-          {...(connectServiceActions !== undefined
-            ? { actions: connectServiceActions }
-            : {})}
+          {...(connectServiceActions !== undefined ? { actions: connectServiceActions } : {})}
         />
       );
   }
@@ -96,12 +90,8 @@ function renderKnownBlock(
 function UnsupportedBlock({ type }: { readonly type: string }) {
   return (
     <div className="chat-fallback-block">
-      <span className="chat-fallback-label">
-        {CHAT_STRINGS.blockUnsupportedTitle}
-      </span>
-      <span className="chat-fallback-body">
-        {CHAT_STRINGS.blockUnsupportedBody(type)}
-      </span>
+      <span className="chat-fallback-label">{CHAT_STRINGS.blockUnsupportedTitle}</span>
+      <span className="chat-fallback-body">{CHAT_STRINGS.blockUnsupportedBody(type)}</span>
     </div>
   );
 }

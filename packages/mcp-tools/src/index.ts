@@ -6,17 +6,10 @@ export {
   MCP_CLIENT_VERSION,
   MCP_REQUEST_TIMEOUT_MS,
 } from "./mcp-client";
-export type {
-  McpCallResult,
-  McpToolAnnotations,
-  McpToolInfo,
-} from "./mcp-client";
+export type { McpCallResult, McpToolAnnotations, McpToolInfo } from "./mcp-client";
 
 export { listMcpServers } from "./registry-client";
-export type {
-  McpRegistryClientConfig,
-  McpServerListing,
-} from "./registry-client";
+export type { McpRegistryClientConfig, McpServerListing } from "./registry-client";
 
 export { createMcpCallClassifier, mcpServerResource } from "./allowance";
 export type { McpCallClassification, McpServerToolsLoader } from "./allowance";

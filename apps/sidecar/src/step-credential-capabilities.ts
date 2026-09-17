@@ -98,11 +98,7 @@ export function buildCredentialCapabilities(
     // Fail the launch closed if the package declares a handle no binding
     // resolves for it -- the tool needs a credential the definition never
     // bound. Checked against THIS consumer's bound set only (invariant 2).
-    reconcileDeclaredCredentials(
-      consumer,
-      stf.declaredCredentials,
-      new Set(bindings.keys()),
-    );
+    reconcileDeclaredCredentials(consumer, stf.declaredCredentials, new Set(bindings.keys()));
 
     if (stf.declaredCredentials.length === 0 && bindings.size === 0) {
       continue;
@@ -192,9 +188,7 @@ function makeReadCurrentMaterial(args: {
         `credential material for ${credentialId} (consumer ${consumer}) is not available: the delivery cell is empty`,
       );
     }
-    const material = delivery.materials.find(
-      (entry) => entry.credentialId === credentialId,
-    );
+    const material = delivery.materials.find((entry) => entry.credentialId === credentialId);
     if (material === undefined) {
       throw new Error(
         `credential material for ${credentialId} (consumer ${consumer}) is no longer delivered: a re-push dropped it (rotated away or revoked)`,

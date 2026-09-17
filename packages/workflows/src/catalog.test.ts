@@ -33,37 +33,27 @@ describe("workflow catalog", () => {
 
   test("prefers the catalog display name for the granola-call workflows", () => {
     expect(workflowDisplayName("granola-call")).toBe("Granola call notes");
-    expect(workflowDisplayName("process-granola-call")).toBe(
-      "Process Granola call",
-    );
+    expect(workflowDisplayName("process-granola-call")).toBe("Process Granola call");
   });
 
   test("does not mark pain-point-collateral automatable — its approval gate is a poor fit for unattended scheduling", () => {
     expect(isAutomatableWorkflowName("pain-point-collateral")).toBe(false);
-    expect(workflowDisplayName("pain-point-collateral")).toBe(
-      "Pain-point collateral",
-    );
+    expect(workflowDisplayName("pain-point-collateral")).toBe("Pain-point collateral");
   });
 
   test("does not mark collateral-generation automatable — on-demand only, gated behind its final approval", () => {
     expect(isAutomatableWorkflowName("collateral-generation")).toBe(false);
-    expect(workflowDisplayName("collateral-generation")).toBe(
-      "Collateral generation",
-    );
+    expect(workflowDisplayName("collateral-generation")).toBe("Collateral generation");
   });
 
   test("marks reddit-opportunity-scanner on-demand — its approval gates make it a poor unattended fit", () => {
     expect(isAutomatableWorkflowName("reddit-opportunity-scanner")).toBe(false);
-    expect(workflowDisplayName("reddit-opportunity-scanner")).toBe(
-      "Reddit opportunity scanner",
-    );
+    expect(workflowDisplayName("reddit-opportunity-scanner")).toBe("Reddit opportunity scanner");
   });
 
   test("does not mark last-30-days-research automatable — on-demand only, gated behind a human-supplied topic per run", () => {
     expect(isAutomatableWorkflowName("last-30-days-research")).toBe(false);
-    expect(workflowDisplayName("last-30-days-research")).toBe(
-      "Last 30 days research report",
-    );
+    expect(workflowDisplayName("last-30-days-research")).toBe("Last 30 days research report");
   });
 
   test("rejects agent handles and workbench-host names as automatable", () => {
@@ -91,9 +81,7 @@ describe("workflow catalog", () => {
   });
 
   test("falls back to description, then humanized name — never blank", () => {
-    expect(workflowDisplayName("unknown-flow", "  Weekly brief  ")).toBe(
-      "Weekly brief",
-    );
+    expect(workflowDisplayName("unknown-flow", "  Weekly brief  ")).toBe("Weekly brief");
     expect(workflowDisplayName("last-30-days")).toBe("Last 30 Days");
   });
 
@@ -149,24 +137,18 @@ describe("workflow catalog", () => {
     });
 
     test("no catalog entry currently delivers to inbox", () => {
-      const inboxEntries = WORKFLOW_CATALOG.filter(
-        (entry) => entry.deliveryMode === "inbox",
-      );
+      const inboxEntries = WORKFLOW_CATALOG.filter((entry) => entry.deliveryMode === "inbox");
       expect(inboxEntries).toEqual([]);
     });
 
     test("deliveryWorkbenchRequiredForWorkflowName is true for every known catalog entry", () => {
       for (const entry of WORKFLOW_CATALOG) {
-        expect(deliveryWorkbenchRequiredForWorkflowName(entry.assetName)).toBe(
-          true,
-        );
+        expect(deliveryWorkbenchRequiredForWorkflowName(entry.assetName)).toBe(true);
       }
     });
 
     test("an unknown workflow name defaults to workbench-required", () => {
-      expect(deliveryWorkbenchRequiredForWorkflowName("unknown-workflow")).toBe(
-        true,
-      );
+      expect(deliveryWorkbenchRequiredForWorkflowName("unknown-workflow")).toBe(true);
     });
   });
 
@@ -184,9 +166,7 @@ describe("workflow catalog", () => {
     for (const entry of WORKFLOW_CATALOG) {
       expect(entry.exampleOutput).not.toContain("\n");
       expect(entry.exampleOutput.endsWith(".")).toBe(false);
-      expect(entry.exampleOutput[0]).toBe(
-        entry.exampleOutput[0]?.toUpperCase(),
-      );
+      expect(entry.exampleOutput[0]).toBe(entry.exampleOutput[0]?.toUpperCase());
     }
   });
 
@@ -206,43 +186,27 @@ describe("workflow catalog", () => {
   });
 
   test("pins the GTM ports to the connectors their tool packages actually need", () => {
-    const byAssetName = new Map(
-      WORKFLOW_CATALOG.map((entry) => [entry.assetName, entry]),
-    );
-    expect(byAssetName.get("granola-call")?.requiredConnections).toEqual([
-      "granola",
-    ]);
-    expect(
-      byAssetName.get("process-granola-call")?.requiredConnections,
-    ).toEqual(["granola"]);
-    expect(byAssetName.get("morning-brief")?.requiredConnections).toEqual([
+    const byAssetName = new Map(WORKFLOW_CATALOG.map((entry) => [entry.assetName, entry]));
+    expect(byAssetName.get("granola-call")?.requiredConnections).toEqual(["granola"]);
+    expect(byAssetName.get("process-granola-call")?.requiredConnections).toEqual(["granola"]);
+    expect(byAssetName.get("morning-brief")?.requiredConnections).toEqual(["granola", "linear"]);
+    expect(byAssetName.get("pain-point-collateral")?.requiredConnections).toEqual(["granola"]);
+    expect(byAssetName.get("collateral-generation")?.requiredConnections).toEqual([
       "granola",
       "linear",
     ]);
-    expect(
-      byAssetName.get("pain-point-collateral")?.requiredConnections,
-    ).toEqual(["granola"]);
-    expect(
-      byAssetName.get("collateral-generation")?.requiredConnections,
-    ).toEqual(["granola", "linear"]);
-    expect(
-      byAssetName.get("reddit-opportunity-scanner")?.requiredConnections,
-    ).toEqual(["scrapecreators"]);
-    expect(
-      byAssetName.get("last-30-days-research")?.requiredConnections,
-    ).toEqual(["exa"]);
+    expect(byAssetName.get("reddit-opportunity-scanner")?.requiredConnections).toEqual([
+      "scrapecreators",
+    ]);
+    expect(byAssetName.get("last-30-days-research")?.requiredConnections).toEqual(["exa"]);
   });
 
   test("workflows with no external connector requirement declare an empty list", () => {
-    const byAssetName = new Map(
-      WORKFLOW_CATALOG.map((entry) => [entry.assetName, entry]),
-    );
+    const byAssetName = new Map(WORKFLOW_CATALOG.map((entry) => [entry.assetName, entry]));
     expect(byAssetName.get("echo")?.requiredConnections).toEqual([]);
     expect(byAssetName.get("assistant")?.requiredConnections).toEqual([]);
     expect(byAssetName.get("heartbeat")?.requiredConnections).toEqual([]);
-    expect(byAssetName.get("workbench-digest")?.requiredConnections).toEqual(
-      [],
-    );
+    expect(byAssetName.get("workbench-digest")?.requiredConnections).toEqual([]);
   });
 
   describe("triggerFields", () => {
@@ -292,10 +256,7 @@ describe("workflow catalog", () => {
       // accepts either one (or neither, and teaches what to send next); see
       // workflows/pain-point-collateral/src/intake-tool.ts's IntakeArgs.
       const entry = workflowCatalogEntry("pain-point-collateral");
-      expect(entry?.triggerFields?.map((f) => f.key)).toEqual([
-        "transcript",
-        "noteId",
-      ]);
+      expect(entry?.triggerFields?.map((f) => f.key)).toEqual(["transcript", "noteId"]);
       for (const field of entry?.triggerFields ?? []) {
         expect(field.required).toBe(false);
       }
@@ -307,9 +268,7 @@ describe("workflow catalog", () => {
       // workbench-digest's content is computed server-side by the scheduler,
       // not typed in by a person.
       expect(workflowCatalogEntry("heartbeat")?.triggerFields).toBeUndefined();
-      expect(
-        workflowCatalogEntry("workbench-digest")?.triggerFields,
-      ).toBeUndefined();
+      expect(workflowCatalogEntry("workbench-digest")?.triggerFields).toBeUndefined();
     });
   });
 
@@ -332,9 +291,7 @@ describe("workflow catalog", () => {
     const fields = AGENT_AND_PROMPT_FIELDS;
 
     test("a required field left entirely unbound passes at create time", () => {
-      expect(
-        validateTriggerFieldsAtCreate(fields, { prompt: "Do it" }),
-      ).toEqual({ ok: true });
+      expect(validateTriggerFieldsAtCreate(fields, { prompt: "Do it" })).toEqual({ ok: true });
     });
 
     test("last-30-days-research seeds with Topic unbound", () => {

@@ -30,10 +30,7 @@ import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
 import { DEFAULT_WORKFLOWS } from "../src/tenant-seed";
 import { createOnboardingRoutes } from "../src/routes";
-import {
-  createInMemoryPendingSeedStore,
-  type PendingSeedStore,
-} from "../src/pending-seed";
+import { createInMemoryPendingSeedStore, type PendingSeedStore } from "../src/pending-seed";
 
 const TEST_KEY = Buffer.alloc(32, 21);
 function testCipher(): CredentialCipher {
@@ -145,9 +142,7 @@ describe("POST /complete-setup", () => {
 
   test("no personal bench yet reports 409, not a fabricated seed", async () => {
     const hub = new Hono();
-    hub.get("/api/me/principals", (c) =>
-      c.json({ data: [], nextCursor: null }),
-    );
+    hub.get("/api/me/principals", (c) => c.json({ data: [], nextCursor: null }));
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const app = mountAuthenticated(
@@ -301,9 +296,7 @@ describe("POST /complete-setup", () => {
       };
       expect(body.kind).toBe("ready");
       expect(body.tenantSlug).toBe(TENANT_SLUG);
-      expect(body.deployed.sort()).toEqual(
-        DEFAULT_WORKFLOWS.map((w) => w.assetName).sort(),
-      );
+      expect(body.deployed.sort()).toEqual(DEFAULT_WORKFLOWS.map((w) => w.assetName).sort());
       expect(body.pending).toEqual([]);
       expect(ensureSeededCalls).toBe(0);
     } finally {
@@ -315,9 +308,7 @@ describe("POST /complete-setup", () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
-    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
-      c.json([]),
-    );
+    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) => c.json([]));
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const app = mountAuthenticated(
@@ -350,9 +341,7 @@ describe("POST /complete-setup", () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
-    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
-      c.json([]),
-    );
+    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) => c.json([]));
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
@@ -419,9 +408,7 @@ describe("POST /complete-setup", () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
-    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
-      c.json([]),
-    );
+    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) => c.json([]));
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
@@ -534,9 +521,7 @@ describe("POST /complete-setup", () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
-    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
-      c.json([]),
-    );
+    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) => c.json([]));
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
@@ -576,9 +561,7 @@ describe("POST /complete-setup", () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
-    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
-      c.json([]),
-    );
+    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) => c.json([]));
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
@@ -667,9 +650,7 @@ describe("POST /complete-setup", () => {
       }),
     );
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
-    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
-      c.json([]),
-    );
+    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) => c.json([]));
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
@@ -756,9 +737,7 @@ describe("POST /complete-setup", () => {
       ),
     );
     // The asset exists, but no deployment has gone live yet.
-    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
-      c.json([]),
-    );
+    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) => c.json([]));
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {

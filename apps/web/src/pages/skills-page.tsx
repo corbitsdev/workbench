@@ -34,10 +34,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { rowActivationProps } from "../activatable-row";
 import { consumePendingNewSkill } from "../command-palette-actions";
 import { createSkill, listSkills, type SkillSummary } from "../skills-api";
-import {
-  CreateSkillDialog,
-  type SkillCreateInput,
-} from "./create-skill-dialog";
+import { CreateSkillDialog, type SkillCreateInput } from "./create-skill-dialog";
 import { useBench } from "../bench-context";
 import { SKILLS_PATH_PREFIX } from "../path-ids";
 import { skillDisplayName } from "../skill-display-name";
@@ -96,8 +93,7 @@ export function SkillsPage({
   useEffect(() => {
     const onCreate = () => setCreateOpen(true);
     window.addEventListener("workbench:skills:create", onCreate);
-    return () =>
-      window.removeEventListener("workbench:skills:create", onCreate);
+    return () => window.removeEventListener("workbench:skills:create", onCreate);
   }, []);
 
   function open(name: string) {
@@ -116,11 +112,7 @@ export function SkillsPage({
   }
 
   const createDialog = (
-    <CreateSkillDialog
-      open={createOpen}
-      onOpenChange={setCreateOpen}
-      onSubmit={handleCreate}
-    />
+    <CreateSkillDialog open={createOpen} onOpenChange={setCreateOpen} onSubmit={handleCreate} />
   );
 
   const crumbs = [{ label: "Skills" }];
@@ -137,9 +129,7 @@ export function SkillsPage({
       <div className="flex h-full min-h-0 flex-col">
         <StageTopBar
           crumbs={crumbs}
-          {...(filter === undefined
-            ? {}
-            : { filter: { label: "Filter skills", ...filter } })}
+          {...(filter === undefined ? {} : { filter: { label: "Filter skills", ...filter } })}
           actions={actions}
         />
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -160,9 +150,7 @@ export function SkillsPage({
   if (tenantId === null) {
     return stage(
       null,
-      <p className="text-sm text-muted-foreground">
-        Pick a workbench to see its skills.
-      </p>,
+      <p className="text-sm text-muted-foreground">Pick a workbench to see its skills.</p>,
     );
   }
 
@@ -233,9 +221,7 @@ export function SkillsPage({
                   className="cursor-pointer"
                   {...rowActivationProps(() => open(skill.name))}
                 >
-                  <TableCell className="w-48 font-medium">
-                    {skillDisplayName(skill)}
-                  </TableCell>
+                  <TableCell className="w-48 font-medium">{skillDisplayName(skill)}</TableCell>
                   <TableCell className="max-w-sm truncate text-muted-foreground">
                     {skill.description}
                   </TableCell>
@@ -257,11 +243,7 @@ export function SkillsPage({
  * action slot) belongs to `SkillsPage`; a single skill has its own route
  * (`/skills/<name>`, `skill-detail-page.tsx`).
  */
-export function SkillsRoute({
-  navigate,
-}: {
-  readonly navigate: (to: string) => void;
-}) {
+export function SkillsRoute({ navigate }: { readonly navigate: (to: string) => void }) {
   const { selectedTenantId } = useBench();
 
   return <SkillsPage tenantId={selectedTenantId} navigate={navigate} />;

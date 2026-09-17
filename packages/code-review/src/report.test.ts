@@ -13,17 +13,13 @@ test("parses a bare JSON report", () => {
 });
 
 test("parses a report inside a JSON code fence", () => {
-  const parsed = parseReviewerReport(
-    '```json\n{"summary":"fine","findings":[]}\n```',
-  );
+  const parsed = parseReviewerReport('```json\n{"summary":"fine","findings":[]}\n```');
   if (!parsed.ok) throw new Error(parsed.reason);
   expect(parsed.report.findings).toEqual([]);
 });
 
 test("an empty findings list is a real report, not a failure", () => {
-  const parsed = parseReviewerReport(
-    '{"summary":"genuinely fine","findings":[]}',
-  );
+  const parsed = parseReviewerReport('{"summary":"genuinely fine","findings":[]}');
   expect(parsed.ok).toBe(true);
 });
 
@@ -41,8 +37,7 @@ test("an empty reply comes back as a named failure", () => {
 
 test("a wrong severity is rejected rather than coerced", () => {
   const parsed = parseReviewerReport(
-    '{"summary":"x","findings":[{"severity":"nit","file":"a.ts",' +
-      '"summary":"style"}]}',
+    '{"summary":"x","findings":[{"severity":"nit","file":"a.ts",' + '"summary":"style"}]}',
   );
   expect(parsed.ok).toBe(false);
 });
@@ -54,10 +49,6 @@ test("existingCode and suggestedFix parse as a before/after code pair", () => {
       'i <= n; i++) {","suggestedFix":"for (let i = 0; i < n; i++) {"}]}',
   );
   if (!parsed.ok) throw new Error(parsed.reason);
-  expect(parsed.report.findings[0]?.existingCode).toBe(
-    "for (let i = 0; i <= n; i++) {",
-  );
-  expect(parsed.report.findings[0]?.suggestedFix).toBe(
-    "for (let i = 0; i < n; i++) {",
-  );
+  expect(parsed.report.findings[0]?.existingCode).toBe("for (let i = 0; i <= n; i++) {");
+  expect(parsed.report.findings[0]?.suggestedFix).toBe("for (let i = 0; i < n; i++) {");
 });

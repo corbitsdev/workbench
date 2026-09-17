@@ -103,10 +103,7 @@ describe("CL-6772: join / system notices stay on the left edge", () => {
   });
 
   test("event-line CSS anchors left under the message gutter, not centered", () => {
-    const cssPath = join(
-      dirname(fileURLToPath(import.meta.url)),
-      "../src/styles.css",
-    );
+    const cssPath = join(dirname(fileURLToPath(import.meta.url)), "../src/styles.css");
     const css = readFileSync(cssPath, "utf8");
     const block = css.match(/\.chat-event-line\s*\{[^}]+\}/);
     expect(block).not.toBeNull();

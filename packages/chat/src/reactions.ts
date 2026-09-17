@@ -116,13 +116,9 @@ function reactionKey(input: {
   emoji: string;
   principalId: string;
 }): string {
-  return [
-    input.tenantId,
-    input.workbenchId,
-    input.messageId,
-    input.emoji,
-    input.principalId,
-  ].join("::");
+  return [input.tenantId, input.workbenchId, input.messageId, input.emoji, input.principalId].join(
+    "::",
+  );
 }
 
 export function createInMemoryReactionStore(): ReactionStore {
@@ -144,21 +140,18 @@ export function createInMemoryReactionStore(): ReactionStore {
       const wanted = new Set(messageIds);
       return [...rows.values()].filter(
         (row) =>
-          row.tenantId === tenantId &&
-          row.workbenchId === workbenchId &&
-          wanted.has(row.messageId),
+          row.tenantId === tenantId && row.workbenchId === workbenchId && wanted.has(row.messageId),
       );
     },
   };
 }
 
-export type ReactionDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> = PostgresJsDatabase<TSchema>;
+export type ReactionDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+  PostgresJsDatabase<TSchema>;
 
-export function createDrizzleReactionStore<
-  TSchema extends Record<string, unknown>,
->(db: ReactionDb<TSchema>): ReactionStore {
+export function createDrizzleReactionStore<TSchema extends Record<string, unknown>>(
+  db: ReactionDb<TSchema>,
+): ReactionStore {
   return {
     // A single atomic `INSERT ... ON CONFLICT DO NOTHING`, never a
     // select-then-branch: two concurrent toggles for the same

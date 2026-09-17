@@ -9,16 +9,9 @@ import path from "node:path";
 
 import type { RepoId } from "@intx/hub-sessions/substrate";
 import { createDependencies, type AdapterRegistry } from "@intx/inference";
-import {
-  createIsogitStorage,
-  createNodeIsogitRuntime,
-} from "@intx/storage-isogit/node";
+import { createIsogitStorage, createNodeIsogitRuntime } from "@intx/storage-isogit/node";
 import type { RegistryConfig } from "@intx/tool-packaging";
-import type {
-  AuditStore,
-  ContextStore,
-  MessageTransport,
-} from "@intx/types/runtime";
+import type { AuditStore, ContextStore, MessageTransport } from "@intx/types/runtime";
 import type { StepInvokeRequest } from "@intx/workflow";
 import {
   createSupervisorBackedTransport,
@@ -45,10 +38,7 @@ import {
   createSummarizeOlderTurnsCompactor,
 } from "./compactors";
 import { createStepInferenceSourceResolver } from "./config";
-import {
-  resolveContextBudgetChars,
-  resolveHardContextLimitChars,
-} from "./context-budget";
+import { resolveContextBudgetChars, resolveHardContextLimitChars } from "./context-budget";
 import { stepStorageRoot, warmStepStorageRoot } from "./storage-paths";
 import { createWorkbenchDirectorRegistry } from "./workbench-director";
 
@@ -221,9 +211,7 @@ export function createSidecarStepBuildEnv(
     // agent this build constructs. A warm agent that is already built does
     // not pass through here again, so a rotation does not reach it through
     // this path -- this ref covers only a build that has not happened yet.
-    const resolveStepInferenceSource = createStepInferenceSourceResolver(
-      sourcesRef.current,
-    );
+    const resolveStepInferenceSource = createStepInferenceSourceResolver(sourcesRef.current);
     const { stepId, runId, attempt } = req.authzContext;
     if (stepId === undefined) {
       throw new Error(
@@ -256,10 +244,7 @@ export function createSidecarStepBuildEnv(
     // model and a 32K model compact at different points rather than
     // sharing one constant. Built per invocation (not module scope)
     // because the budget depends on the step's own resolved source.
-    const contextBudgetChars = resolveContextBudgetChars(
-      activeSource.quirks,
-      activeSource.model,
-    );
+    const contextBudgetChars = resolveContextBudgetChars(activeSource.quirks, activeSource.model);
     const contextHardLimitChars = resolveHardContextLimitChars(
       activeSource.quirks,
       activeSource.model,
@@ -271,8 +256,7 @@ export function createSidecarStepBuildEnv(
     });
     const compactors = {
       ...stepCompactors,
-      [SUMMARIZE_BUDGETED_TURNS_NAME]:
-        createBudgetedContextCompactor(contextBudgetChars),
+      [SUMMARIZE_BUDGETED_TURNS_NAME]: createBudgetedContextCompactor(contextBudgetChars),
     };
 
     // Root the per-step scratch (workspace + tool tarball-cache +
@@ -331,17 +315,15 @@ export function createSidecarStepBuildEnv(
     // exactly the body agent's pins the folded launch staged -- and a
     // deployment that staged no tree for the body's stepId reads ENOENT
     // into the legitimate empty-tools case.
-    const materialization: StepToolMaterialization = await materializeStepTools(
-      {
-        dataDir: deps.dataDir,
-        mailboxAddress: deps.mailboxAddress,
-        stepId,
-        stepCount: deps.stepCount,
-        storeDir,
-        cache: deps.cache,
-        registries: deps.registries,
-      },
-    );
+    const materialization: StepToolMaterialization = await materializeStepTools({
+      dataDir: deps.dataDir,
+      mailboxAddress: deps.mailboxAddress,
+      stepId,
+      stepCount: deps.stepCount,
+      storeDir,
+      cache: deps.cache,
+      registries: deps.registries,
+    });
 
     // Supervisor-backed transport for the step agent's mail tools (both
     // halves of mailbox ownership). Outbound (`send`) routes over the

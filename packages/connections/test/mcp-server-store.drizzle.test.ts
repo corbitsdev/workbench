@@ -64,154 +64,140 @@ async function seedMcpServer(
   });
 }
 
-describeIfDb(
-  "listMcpServerConnections: tenant ancestor-chain inheritance",
-  () => {
-    const target = dbTargetFromUrl(
-      databaseUrl ?? "postgres://localhost:5432/unused",
-    );
+describeIfDb("listMcpServerConnections: tenant ancestor-chain inheritance", () => {
+  const target = dbTargetFromUrl(databaseUrl ?? "postgres://localhost:5432/unused");
 
-    beforeAll(async () => {
-      await runMigrations(target, { schema: SCHEMA });
-    });
+  beforeAll(async () => {
+    await runMigrations(target, { schema: SCHEMA });
+  });
 
-    afterAll(async () => {
-      await dropSchema(target, { schema: SCHEMA });
-    });
+  afterAll(async () => {
+    await dropSchema(target, { schema: SCHEMA });
+  });
 
-    test("a child tenant sees a parent tenant's MCP server connection", async () => {
-      const { db, close } = createDB({ ...target, schema: SCHEMA });
-      try {
-        await seedTenant(db, { id: "tnt_sees_parent" });
-        await seedTenant(db, {
-          id: "tnt_sees_parent_child",
-          parentId: "tnt_sees_parent",
-        });
-        await seedMcpServer(db, {
-          tenantId: "tnt_sees_parent",
+  test("a child tenant sees a parent tenant's MCP server connection", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      await seedTenant(db, { id: "tnt_sees_parent" });
+      await seedTenant(db, {
+        id: "tnt_sees_parent_child",
+        parentId: "tnt_sees_parent",
+      });
+      await seedMcpServer(db, {
+        tenantId: "tnt_sees_parent",
+        slug: "granola",
+        providerId: "prov_sees_parent",
+        credentialId: "cred_sees_parent",
+        name: "Granola",
+        url: "https://mcp.granola.ai/mcp",
+      });
+
+      const connections = await listMcpServerConnections(db, "tnt_sees_parent_child");
+
+      expect(connections).toEqual([
+        {
           slug: "granola",
-          providerId: "prov_sees_parent",
-          credentialId: "cred_sees_parent",
           name: "Granola",
           url: "https://mcp.granola.ai/mcp",
-        });
+        },
+      ]);
+    } finally {
+      await close();
+    }
+  });
 
-        const connections = await listMcpServerConnections(
-          db,
-          "tnt_sees_parent_child",
-        );
+  test("a child's own connection shadows a parent's same-slug connection", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      await seedTenant(db, { id: "tnt_shadow_parent" });
+      await seedTenant(db, {
+        id: "tnt_shadow_child",
+        parentId: "tnt_shadow_parent",
+      });
+      await seedMcpServer(db, {
+        tenantId: "tnt_shadow_parent",
+        slug: "exa",
+        providerId: "prov_shadow_parent",
+        credentialId: "cred_shadow_parent",
+        name: "Exa (parent)",
+        url: "https://mcp.exa.ai/parent",
+      });
+      await seedMcpServer(db, {
+        tenantId: "tnt_shadow_child",
+        slug: "exa",
+        providerId: "prov_shadow_child",
+        credentialId: "cred_shadow_child",
+        name: "Exa (child)",
+        url: "https://mcp.exa.ai/child",
+      });
 
-        expect(connections).toEqual([
-          {
-            slug: "granola",
-            name: "Granola",
-            url: "https://mcp.granola.ai/mcp",
-          },
-        ]);
-      } finally {
-        await close();
-      }
-    });
+      const connections = await listMcpServerConnections(db, "tnt_shadow_child");
 
-    test("a child's own connection shadows a parent's same-slug connection", async () => {
-      const { db, close } = createDB({ ...target, schema: SCHEMA });
-      try {
-        await seedTenant(db, { id: "tnt_shadow_parent" });
-        await seedTenant(db, {
-          id: "tnt_shadow_child",
-          parentId: "tnt_shadow_parent",
-        });
-        await seedMcpServer(db, {
-          tenantId: "tnt_shadow_parent",
-          slug: "exa",
-          providerId: "prov_shadow_parent",
-          credentialId: "cred_shadow_parent",
-          name: "Exa (parent)",
-          url: "https://mcp.exa.ai/parent",
-        });
-        await seedMcpServer(db, {
-          tenantId: "tnt_shadow_child",
-          slug: "exa",
-          providerId: "prov_shadow_child",
-          credentialId: "cred_shadow_child",
-          name: "Exa (child)",
-          url: "https://mcp.exa.ai/child",
-        });
+      expect(connections).toEqual([
+        { slug: "exa", name: "Exa (child)", url: "https://mcp.exa.ai/child" },
+      ]);
+    } finally {
+      await close();
+    }
+  });
 
-        const connections = await listMcpServerConnections(
-          db,
-          "tnt_shadow_child",
-        );
+  test("a grandchild tenant walks two levels to see a grandparent's connection", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      await seedTenant(db, { id: "tnt_grandparent" });
+      await seedTenant(db, {
+        id: "tnt_parent_of_grandchild",
+        parentId: "tnt_grandparent",
+      });
+      await seedTenant(db, {
+        id: "tnt_grandchild",
+        parentId: "tnt_parent_of_grandchild",
+      });
+      await seedMcpServer(db, {
+        tenantId: "tnt_grandparent",
+        slug: "linear",
+        providerId: "prov_grandparent",
+        credentialId: "cred_grandparent",
+        name: "Linear",
+        url: "https://mcp.linear.app/mcp",
+      });
 
-        expect(connections).toEqual([
-          { slug: "exa", name: "Exa (child)", url: "https://mcp.exa.ai/child" },
-        ]);
-      } finally {
-        await close();
-      }
-    });
+      const connections = await listMcpServerConnections(db, "tnt_grandchild");
 
-    test("a grandchild tenant walks two levels to see a grandparent's connection", async () => {
-      const { db, close } = createDB({ ...target, schema: SCHEMA });
-      try {
-        await seedTenant(db, { id: "tnt_grandparent" });
-        await seedTenant(db, {
-          id: "tnt_parent_of_grandchild",
-          parentId: "tnt_grandparent",
-        });
-        await seedTenant(db, {
-          id: "tnt_grandchild",
-          parentId: "tnt_parent_of_grandchild",
-        });
-        await seedMcpServer(db, {
-          tenantId: "tnt_grandparent",
-          slug: "linear",
-          providerId: "prov_grandparent",
-          credentialId: "cred_grandparent",
-          name: "Linear",
-          url: "https://mcp.linear.app/mcp",
-        });
+      expect(connections).toEqual([
+        { slug: "linear", name: "Linear", url: "https://mcp.linear.app/mcp" },
+      ]);
+    } finally {
+      await close();
+    }
+  });
 
-        const connections = await listMcpServerConnections(
-          db,
-          "tnt_grandchild",
-        );
+  test("a sibling tenant never sees another sibling's connection", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      await seedTenant(db, { id: "tnt_siblings_parent" });
+      await seedTenant(db, {
+        id: "tnt_sibling_a",
+        parentId: "tnt_siblings_parent",
+      });
+      await seedTenant(db, {
+        id: "tnt_sibling_b",
+        parentId: "tnt_siblings_parent",
+      });
+      await seedMcpServer(db, {
+        tenantId: "tnt_sibling_a",
+        slug: "notion",
+        providerId: "prov_sibling_a",
+        credentialId: "cred_sibling_a",
+        name: "Notion",
+        url: "https://mcp.notion.example/mcp",
+      });
 
-        expect(connections).toEqual([
-          { slug: "linear", name: "Linear", url: "https://mcp.linear.app/mcp" },
-        ]);
-      } finally {
-        await close();
-      }
-    });
+      const connections = await listMcpServerConnections(db, "tnt_sibling_b");
 
-    test("a sibling tenant never sees another sibling's connection", async () => {
-      const { db, close } = createDB({ ...target, schema: SCHEMA });
-      try {
-        await seedTenant(db, { id: "tnt_siblings_parent" });
-        await seedTenant(db, {
-          id: "tnt_sibling_a",
-          parentId: "tnt_siblings_parent",
-        });
-        await seedTenant(db, {
-          id: "tnt_sibling_b",
-          parentId: "tnt_siblings_parent",
-        });
-        await seedMcpServer(db, {
-          tenantId: "tnt_sibling_a",
-          slug: "notion",
-          providerId: "prov_sibling_a",
-          credentialId: "cred_sibling_a",
-          name: "Notion",
-          url: "https://mcp.notion.example/mcp",
-        });
-
-        const connections = await listMcpServerConnections(db, "tnt_sibling_b");
-
-        expect(connections).toEqual([]);
-      } finally {
-        await close();
-      }
-    });
-  },
-);
+      expect(connections).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+});

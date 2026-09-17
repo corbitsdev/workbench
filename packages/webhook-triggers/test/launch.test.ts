@@ -39,9 +39,7 @@ const DEFAULT_VISIBLE_OFFERINGS = [
   },
 ];
 
-let visibleOfferings: typeof DEFAULT_VISIBLE_OFFERINGS = [
-  ...DEFAULT_VISIBLE_OFFERINGS,
-];
+let visibleOfferings: typeof DEFAULT_VISIBLE_OFFERINGS = [...DEFAULT_VISIBLE_OFFERINGS];
 let frozenProjection: unknown = INERT_PROJECTION;
 
 mock.module("@intx/db", () => ({
@@ -149,8 +147,7 @@ type PrepareArgs = {
 let resolveRefCalls: unknown[] = [];
 let prepareCalls: PrepareArgs[] = [];
 let sendUserMessageCalls: unknown[] = [];
-let sendUserMessageImpl: () => Promise<Uint8Array> = async () =>
-  new Uint8Array([1]);
+let sendUserMessageImpl: () => Promise<Uint8Array> = async () => new Uint8Array([1]);
 let cryptoGetKeys: string[] = [];
 let isRoutableForTest = true;
 
@@ -332,11 +329,7 @@ describe("launchWebhookTrigger", () => {
     await launchWebhookTrigger(baseDeps(), TRIGGER, { status: "ok" });
 
     expect(resolveRefCalls).toEqual([
-      [
-        { kind: "hub" },
-        { kind: "workflow", id: DEFINITION_ROW.assetId },
-        DEFAULT_ASSET_REF,
-      ],
+      [{ kind: "hub" }, { kind: "workflow", id: DEFINITION_ROW.assetId }, DEFAULT_ASSET_REF],
     ]);
 
     expect(prepareCalls).toHaveLength(1);

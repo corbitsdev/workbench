@@ -14,10 +14,9 @@ test("exchanges the code and verifier for an access token and expiry", async () 
   const requests: { url: string; body: string }[] = [];
   const fetchImpl: ExchangeFetch = async (url, init) => {
     requests.push({ url, body: init.body });
-    return new Response(
-      JSON.stringify({ access_token: "hf_minted_token", expires_in: 3600 }),
-      { status: 200 },
-    );
+    return new Response(JSON.stringify({ access_token: "hf_minted_token", expires_in: 3600 }), {
+      status: 200,
+    });
   };
 
   const result = await exchangeCodeForToken({

@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  auditRoutineTargetInference,
-  auditWorkflowJsonLiteral,
-} from "../routine-target-inference";
+import { auditRoutineTargetInference, auditWorkflowJsonLiteral } from "../routine-target-inference";
 
 test("clean files pass with no violations", () => {
   const report = auditRoutineTargetInference([
@@ -22,9 +19,7 @@ test("agents[0]?.definitionId is a violation naming the file", () => {
     },
   ]);
   expect(report.violations).toHaveLength(1);
-  expect(report.violations[0]).toContain(
-    "apps/web/src/shell/routine-panel.tsx",
-  );
+  expect(report.violations[0]).toContain("apps/web/src/shell/routine-panel.tsx");
 });
 
 test("agents[0].definitionId (no optional chain) is also a violation", () => {

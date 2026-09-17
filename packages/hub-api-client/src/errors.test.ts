@@ -30,9 +30,7 @@ describe("SidecarUnavailableError", () => {
   });
 
   test("isSidecarUnavailableError rejects a generic HubApiError", () => {
-    expect(
-      isSidecarUnavailableError(new SidecarUnavailableError("x", "y")),
-    ).toBe(true);
+    expect(isSidecarUnavailableError(new SidecarUnavailableError("x", "y"))).toBe(true);
     expect(isSidecarUnavailableError(new HubApiError("x", "y"))).toBe(false);
   });
 });

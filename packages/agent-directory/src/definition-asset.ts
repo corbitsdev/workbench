@@ -53,14 +53,8 @@ export function readAgentDefinitionWorkflowJson(
 }
 
 /** The serialized workflow inside entry-module bytes read at a past commit. */
-export function parseAgentDefinitionEntry(
-  entryModule: Uint8Array,
-  assetId: string,
-): string {
-  return parseWorkflowSourceEntry(
-    new TextDecoder().decode(entryModule),
-    assetId,
-  );
+export function parseAgentDefinitionEntry(entryModule: Uint8Array, assetId: string): string {
+  return parseWorkflowSourceEntry(new TextDecoder().decode(entryModule), assetId);
 }
 
 /** The `WorkflowDeployer` seam this package needs — never the whole

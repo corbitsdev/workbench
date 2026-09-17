@@ -45,9 +45,8 @@ export type WriteClaimStore = {
   release(claim: WriteClaim): Promise<void>;
 };
 
-export type WriteClaimDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> = PostgresJsDatabase<TSchema>;
+export type WriteClaimDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+  PostgresJsDatabase<TSchema>;
 
 /**
  * Production store over `finalizedTurnWriteClaim`. A single atomic
@@ -58,9 +57,9 @@ export type WriteClaimDb<
  * `createDrizzleReactionStore` (`./reactions.ts`) uses for
  * `toggleReaction`.
  */
-export function createDrizzleWriteClaimStore<
-  TSchema extends Record<string, unknown>,
->(db: WriteClaimDb<TSchema>): WriteClaimStore {
+export function createDrizzleWriteClaimStore<TSchema extends Record<string, unknown>>(
+  db: WriteClaimDb<TSchema>,
+): WriteClaimStore {
   return {
     async tryClaim(claim) {
       const inserted = await db
@@ -108,8 +107,7 @@ export function createDrizzleWriteClaimStore<
  */
 export function createInMemoryWriteClaimStore(): WriteClaimStore {
   const claimed = new Set<string>();
-  const keyOf = (claim: WriteClaim) =>
-    `${claim.tenantId}:${claim.surface}:${claim.claimKey}`;
+  const keyOf = (claim: WriteClaim) => `${claim.tenantId}:${claim.surface}:${claim.claimKey}`;
   return {
     async tryClaim(claim) {
       const key = keyOf(claim);

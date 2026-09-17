@@ -31,9 +31,7 @@ test("the definition round-trips through the entry module", () => {
     workflowJson: WORKFLOW_JSON,
   });
 
-  expect(parseWorkflowSourceEntry(tree["workflow.js"] as string, "ast_1")).toBe(
-    WORKFLOW_JSON,
-  );
+  expect(parseWorkflowSourceEntry(tree["workflow.js"] as string, "ast_1")).toBe(WORKFLOW_JSON);
 });
 
 test("a bare workflow.json envelope parses as the named retirement error", () => {
@@ -45,9 +43,7 @@ test("a bare workflow.json envelope parses as the named retirement error", () =>
 test("an asset with no entry module reads as the named retirement error", async () => {
   const reader = {
     readAssetBlob: (params: { assetId: string; path: string }) =>
-      Promise.reject(
-        new Error(`asset ${params.assetId} has no blob at ${params.path}`),
-      ),
+      Promise.reject(new Error(`asset ${params.assetId} has no blob at ${params.path}`)),
   };
 
   await expect(readWorkflowSourceDefinition(reader, "ast_1")).rejects.toThrow(
@@ -65,7 +61,5 @@ test("reading a source-form asset answers its serialized definition", async () =
       Promise.resolve(new TextEncoder().encode(tree[params.path] as string)),
   };
 
-  expect(await readWorkflowSourceDefinition(reader, "ast_1")).toBe(
-    WORKFLOW_JSON,
-  );
+  expect(await readWorkflowSourceDefinition(reader, "ast_1")).toBe(WORKFLOW_JSON);
 });

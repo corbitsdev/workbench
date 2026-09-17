@@ -10,9 +10,7 @@ import {
   type TenantParentLookup,
 } from "./tenancy-contracts";
 
-function memoryLookup(
-  parents: Record<string, string | null>,
-): TenantParentLookup {
+function memoryLookup(parents: Record<string, string | null>): TenantParentLookup {
   return {
     async getParentId(id) {
       if (!Object.prototype.hasOwnProperty.call(parents, id)) return null;
@@ -109,8 +107,6 @@ describe("canShareWorkbenchWithinParent", () => {
 
   test("child and parent can share", async () => {
     const lookup = memoryLookup({ root: null, child: "root" });
-    expect(await canShareWorkbenchWithinParent("child", "root", lookup)).toBe(
-      true,
-    );
+    expect(await canShareWorkbenchWithinParent("child", "root", lookup)).toBe(true);
   });
 });

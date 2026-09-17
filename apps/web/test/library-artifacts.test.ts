@@ -60,8 +60,8 @@ describe("library-artifacts", () => {
   test("uploadArtifactFiles throws an UnauthenticatedError on 401", async () => {
     globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
       Promise.resolve(new Response(null, { status: 401 }))) as typeof fetch;
-    await expect(
-      uploadArtifactFiles("tnt_1", [new File(["x"], "x.txt")]),
-    ).rejects.toBeInstanceOf(UnauthenticatedError);
+    await expect(uploadArtifactFiles("tnt_1", [new File(["x"], "x.txt")])).rejects.toBeInstanceOf(
+      UnauthenticatedError,
+    );
   });
 });

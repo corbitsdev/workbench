@@ -25,7 +25,13 @@ import type { Part, ToolTracePart } from "./wire/parts";
 export type ToolActivityStatus = "pending" | "running" | "success" | "failed";
 
 export type ToolActivityGlyph =
-  "search" | "list" | "ask" | "memory" | "agents" | "write" | "generic";
+  | "search"
+  | "list"
+  | "ask"
+  | "memory"
+  | "agents"
+  | "write"
+  | "generic";
 
 /** One tool call, ready to render: no identifiers, no JSON, no tense
  * mismatch with its own status. */
@@ -128,13 +134,7 @@ const PROVIDER_TILES: Record<string, ProviderTile> = {
 };
 
 /** Path segments that look like a namespace but are not a brand provider. */
-const NOT_PROVIDERS = new Set([
-  "memory",
-  "ad",
-  "ask-user",
-  "corbits",
-  "@corbits",
-]);
+const NOT_PROVIDERS = new Set(["memory", "ad", "ask-user", "corbits", "@corbits"]);
 
 /** Brand mark for a known provider. Unknown leftovers are not brands —
  * the chip uses an action glyph instead of inventing initials. */
@@ -149,10 +149,7 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>;
 }
 
-function readString(
-  bag: Record<string, unknown> | undefined,
-  key: string,
-): string | undefined {
+function readString(bag: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = bag?.[key];
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -197,18 +194,13 @@ function packageStem(segment: string): string {
 function knownBrandId(candidate: string): string | undefined {
   const stemmed = packageStem(candidate);
   if (stemmed === "" || NOT_PROVIDERS.has(stemmed)) return undefined;
-  if (
-    PROVIDER_NAMES[stemmed] !== undefined ||
-    PROVIDER_TILES[stemmed] !== undefined
-  ) {
+  if (PROVIDER_NAMES[stemmed] !== undefined || PROVIDER_TILES[stemmed] !== undefined) {
     return stemmed;
   }
   return undefined;
 }
 
-function providerFromLeftover(
-  leftover: string | undefined,
-): string | undefined {
+function providerFromLeftover(leftover: string | undefined): string | undefined {
   if (leftover === undefined || leftover === "") return undefined;
   const interchange = leftover.includes("/") || leftover.startsWith("@");
   if (interchange) {
@@ -267,10 +259,7 @@ function splitQualifiedName(name: string): {
  * segment or `-tools` stem is a known brand; `memory`, `ad`, and
  * `ask-user` never are.
  */
-export function resolveToolIdentity(
-  name: string,
-  input: unknown,
-): ToolIdentity {
+export function resolveToolIdentity(name: string, input: unknown): ToolIdentity {
   const args = asRecord(input);
   if (name === "mcp_read" || name === "mcp_call") {
     const server = readString(args, "server");
@@ -292,8 +281,7 @@ export function resolveToolIdentity(
 }
 
 export function toolActivityGlyph(words: readonly string[]): ToolActivityGlyph {
-  const has = (candidates: readonly string[]) =>
-    words.some((word) => candidates.includes(word));
+  const has = (candidates: readonly string[]) => words.some((word) => candidates.includes(word));
   if (has(["search", "find", "query", "grep", "glob"])) return "search";
   if (has(["list"])) return "list";
   if (has(["ask"])) return "ask";
@@ -397,10 +385,7 @@ function pluralize(word: string): string {
   return `${word}s`;
 }
 
-function objectPhrase(
-  words: readonly string[],
-  verb: string | undefined,
-): string | undefined {
+function objectPhrase(words: readonly string[], verb: string | undefined): string | undefined {
   if (words.length === 0) return undefined;
   const lastWord = words[words.length - 1] ?? "";
   const rendered =
@@ -414,10 +399,7 @@ function objectPhrase(
   return `${startsWithVowel ? "an" : "a"} ${joined}`;
 }
 
-function buildClauseSuffix(
-  clause: string | undefined,
-  hasProvider: boolean,
-): string {
+function buildClauseSuffix(clause: string | undefined, hasProvider: boolean): string {
   if (clause === undefined) return "";
   if (hasProvider && clause.startsWith("in ")) {
     return ` ${clause.slice("in ".length)}`;
@@ -425,11 +407,7 @@ function buildClauseSuffix(
   return ` ${clause}`;
 }
 
-function domainHead(
-  words: readonly string[],
-  verb: string,
-  tense: Tense,
-): string | undefined {
+function domainHead(words: readonly string[], verb: string, tense: Tense): string | undefined {
   const has = (word: string) => words.includes(word);
   const conjugation = VERBS[verb];
   if (conjugation === undefined) return undefined;
@@ -456,11 +434,7 @@ function domainHead(
  * for. Never contains the tool's identifier, its argument JSON, or an
  * internal id.
  */
-export function describeToolCall(
-  name: string,
-  input: unknown,
-  tense: Tense,
-): string {
+export function describeToolCall(name: string, input: unknown, tense: Tense): string {
   const identity = resolveToolIdentity(name, input);
   const clause = argumentClause(input);
   const picked = pickVerb(identity.words);
@@ -469,9 +443,7 @@ export function describeToolCall(
       ? picked.objectWords
       : picked.objectWords.filter((word) => word !== identity.provider);
   const providerSuffix =
-    identity.provider === undefined
-      ? ""
-      : ` in ${providerDisplayName(identity.provider)}`;
+    identity.provider === undefined ? "" : ` in ${providerDisplayName(identity.provider)}`;
 
   if (picked.verb !== undefined) {
     const domain = domainHead(identity.words, picked.verb, tense);
@@ -481,10 +453,7 @@ export function describeToolCall(
     const conjugation = VERBS[picked.verb];
     if (conjugation !== undefined) {
       const object = objectPhrase(objectWords, picked.verb);
-      const head =
-        object === undefined
-          ? conjugation[tense]
-          : `${conjugation[tense]} ${object}`;
+      const head = object === undefined ? conjugation[tense] : `${conjugation[tense]} ${object}`;
       const clauseSuffix = buildClauseSuffix(clause, providerSuffix !== "");
       return `${head}${providerSuffix}${clauseSuffix}`;
     }
@@ -537,17 +506,10 @@ export function plainTextOfOutput(output: unknown): string | undefined {
     const fromContent = plainTextOfOutput(nested);
     if (fromContent !== undefined) return fromContent;
   }
-  return (
-    readString(record, "text") ??
-    readString(record, "message") ??
-    readString(record, "error")
-  );
+  return readString(record, "text") ?? readString(record, "message") ?? readString(record, "error");
 }
 
-function shortField(
-  record: Record<string, unknown>,
-  key: string,
-): string | undefined {
+function shortField(record: Record<string, unknown>, key: string): string | undefined {
   const value = readString(record, key);
   if (value === undefined) return undefined;
   if (value.length > MAX_SHORT_FIELD) return truncate(value, MAX_SHORT_FIELD);
@@ -618,9 +580,7 @@ export function summarizeToolOutput(
   }
   const nestedRecord = asRecord(nested);
   if (nestedRecord !== undefined) {
-    return (
-      shortField(nestedRecord, "text") ?? shortField(nestedRecord, "message")
-    );
+    return shortField(nestedRecord, "text") ?? shortField(nestedRecord, "message");
   }
   return undefined;
 }
@@ -631,13 +591,9 @@ function rowStatus(part: ToolTracePart): ToolActivityStatus {
   return part.status;
 }
 
-export function toToolActivityRow(
-  part: ToolTracePart,
-  key: string,
-): ToolActivityRow {
+export function toToolActivityRow(part: ToolTracePart, key: string): ToolActivityRow {
   const status = rowStatus(part);
-  const tense: Tense =
-    status === "running" || status === "pending" ? "present" : "past";
+  const tense: Tense = status === "running" || status === "pending" ? "present" : "past";
   const identity = resolveToolIdentity(part.name, part.input);
   return {
     key,

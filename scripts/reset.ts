@@ -51,10 +51,7 @@ export function requireLocalDatabase(databaseUrl: string): void {
  * state in: the hub's `HUB_DATA_DIR` (resolved the same way the hub
  * itself resolves it — against `apps/hub`'s working directory).
  */
-export function resolveLocalStateDirs(
-  root: string,
-  hubDataDir: string,
-): { hubDataDir: string } {
+export function resolveLocalStateDirs(root: string, hubDataDir: string): { hubDataDir: string } {
   return {
     hubDataDir: path.resolve(path.join(root, "apps", "hub"), hubDataDir),
   };

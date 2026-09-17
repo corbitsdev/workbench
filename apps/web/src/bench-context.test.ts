@@ -3,9 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { resolveSelection } from "./bench-context";
 import type { Principal } from "./api";
 
-function membership(
-  overrides: Partial<Principal> & { tenantId: string },
-): Principal {
+function membership(overrides: Partial<Principal> & { tenantId: string }): Principal {
   return {
     principalId: `prn_${overrides.tenantId}`,
     tenantName: overrides.tenantId,
@@ -69,9 +67,7 @@ describe("resolveSelection", () => {
   });
 
   test("a stored selection for a tenant no longer in memberships falls through", () => {
-    const memberships = [
-      membership({ tenantId: "tnt_bench", tenantName: "Launch Team" }),
-    ];
+    const memberships = [membership({ tenantId: "tnt_bench", tenantName: "Launch Team" })];
 
     const resolved = resolveSelection(memberships, "tnt_gone");
 
@@ -79,9 +75,7 @@ describe("resolveSelection", () => {
   });
 
   test("undefined when every membership is a raw-id tenant", () => {
-    const memberships = [
-      membership({ tenantId: "tnt_raw", tenantName: "tnt_raw" }),
-    ];
+    const memberships = [membership({ tenantId: "tnt_raw", tenantName: "tnt_raw" })];
 
     const resolved = resolveSelection(memberships, null);
 

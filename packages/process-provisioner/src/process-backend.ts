@@ -1,11 +1,4 @@
-import {
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  rmdir,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, rmdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import { reportError } from "@corbits/error-sink";
@@ -64,10 +57,7 @@ export function createProcessBackend(
   }
 
   function unitDirOf(allocationId: string, generation: number): string {
-    return resolve(
-      allocationDirOf(allocationId),
-      `${UNIT_DIR_PREFIX}${String(generation)}`,
-    );
+    return resolve(allocationDirOf(allocationId), `${UNIT_DIR_PREFIX}${String(generation)}`);
   }
 
   return {
@@ -143,9 +133,7 @@ export function createProcessBackend(
         // The allocation's own directory goes once its last unit does;
         // a still-running newer generation keeps it, which is why this
         // is an rmdir and not a recursive remove.
-        await rmdir(allocationDirOf(unit.allocationId)).catch(
-          ignoreNonEmptyOrMissing,
-        );
+        await rmdir(allocationDirOf(unit.allocationId)).catch(ignoreNonEmptyOrMissing);
       } catch (error) {
         throw operationalFailure(
           error,
@@ -156,9 +144,7 @@ export function createProcessBackend(
       }
     },
 
-    async findUnitsByAllocation(
-      allocationId: string,
-    ): Promise<readonly string[]> {
+    async findUnitsByAllocation(allocationId: string): Promise<readonly string[]> {
       const allocationDir = allocationDirOf(allocationId);
       let entries: string[];
       try {
@@ -177,10 +163,7 @@ export function createProcessBackend(
       for (const entry of entries) {
         const generation = generationOf(entry);
         if (generation === null) continue;
-        const pid = await readPidFile(
-          resolve(allocationDir, entry),
-          allocationId,
-        );
+        const pid = await readPidFile(resolve(allocationDir, entry), allocationId);
         if (pid === null || !runner.isAlive(pid)) continue;
         refs.push(externalRefOf(allocationId, generation, pid));
       }
@@ -196,10 +179,7 @@ export function createProcessBackend(
  * Nothing else of the hub's environment is inherited: a sidecar learns
  * everything else over the wire.
  */
-function sidecarEnvFor(
-  args: StartUnitArgs,
-  sidecarDataDir: string,
-): Record<string, string> {
+function sidecarEnvFor(args: StartUnitArgs, sidecarDataDir: string): Record<string, string> {
   const path = process.env["PATH"];
   if (path === undefined || path === "") {
     const error = new Error(
@@ -229,10 +209,7 @@ function sidecarEnvFor(
  * its own state, escalating to SIGKILL only if it is still alive. A pid
  * that is already gone is success — destroy has to stay idempotent.
  */
-async function terminate(
-  runner: SidecarProcessRunner,
-  pid: number,
-): Promise<void> {
+async function terminate(runner: SidecarProcessRunner, pid: number): Promise<void> {
   if (!runner.isAlive(pid)) return;
   runner.signal(pid, "SIGTERM");
   const deadline = Date.now() + TERMINATION_GRACE_MS;
@@ -246,10 +223,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((done) => setTimeout(done, ms));
 }
 
-async function readPidFile(
-  unitDir: string,
-  allocationId: string,
-): Promise<number | null> {
+async function readPidFile(unitDir: string, allocationId: string): Promise<number | null> {
   let raw: string;
   try {
     raw = await readFile(resolve(unitDir, PID_FILE_NAME), "utf8");
@@ -266,11 +240,7 @@ async function readPidFile(
   return Number.isInteger(pid) && pid > 0 ? pid : null;
 }
 
-function externalRefOf(
-  allocationId: string,
-  generation: number,
-  pid: number,
-): string {
+function externalRefOf(allocationId: string, generation: number, pid: number): string {
   return `${allocationId}:${String(generation)}:${String(pid)}`;
 }
 
@@ -324,11 +294,7 @@ function operationalFailure(
     extra: { allocationId },
   });
   const detail = error instanceof Error ? error.message : String(error);
-  return new BackendOperationError(
-    code,
-    `${message}: ${detail} (${refId})`,
-    true,
-  );
+  return new BackendOperationError(code, `${message}: ${detail} (${refId})`, true);
 }
 
 function isErrnoCode(error: unknown, code: string): boolean {

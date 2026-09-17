@@ -49,9 +49,7 @@ describe("WorkbenchLoadingState", () => {
   });
 
   test("accepts a title override for a non-workbench surface", () => {
-    const el = mount(
-      <WorkbenchLoadingState delayMs={0} title="Loading routines…" />,
-    );
+    const el = mount(<WorkbenchLoadingState delayMs={0} title="Loading routines…" />);
 
     expect(el.textContent).toContain("Loading routines…");
   });

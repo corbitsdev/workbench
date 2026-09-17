@@ -12,9 +12,7 @@ function materialSource(secret: string): { current: string } {
 }
 
 test("key is http-x-api-key", () => {
-  expect(createHttpXApiKeyCredentialProvider().key).toBe(
-    HTTP_X_API_KEY_PROVIDER_KEY,
-  );
+  expect(createHttpXApiKeyCredentialProvider().key).toBe(HTTP_X_API_KEY_PROVIDER_KEY);
 });
 
 test("sends the secret in x-api-key, not authorization", async () => {
@@ -46,9 +44,7 @@ test("re-reads the material source per call, reflecting a rotation", async () =>
   const material = materialSource("original-key");
   const provider = createHttpXApiKeyCredentialProvider({
     fetch: async (_input, init) => {
-      apiKeys.push(
-        (init?.headers as Headers | undefined)?.get("x-api-key") ?? "",
-      );
+      apiKeys.push((init?.headers as Headers | undefined)?.get("x-api-key") ?? "");
       return new Response("{}", { status: 200 });
     },
   });
@@ -73,9 +69,9 @@ test("refuses a cross-origin request rather than leaking the secret off the pinn
     readCurrentMaterial: () => ({ secret: "exa_real_key" }),
   });
 
-  await expect(
-    mediated.fetch("https://evil.example.com/search"),
-  ).rejects.toThrow(/refusing cross-origin request/);
+  await expect(mediated.fetch("https://evil.example.com/search")).rejects.toThrow(
+    /refusing cross-origin request/,
+  );
 });
 
 test("forces redirect: manual so a same-origin 3xx never auto-follows off the handle", async () => {

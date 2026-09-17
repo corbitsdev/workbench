@@ -195,14 +195,7 @@ export function createGitWorkflowPusher(): WorkflowPusher {
           // otherwise fail the entire setup on a re-run rather than
           // repointing the ref it owns.
           label: "push",
-          args: [
-            "-c",
-            "credential.helper=",
-            "push",
-            "--force",
-            authRemote,
-            "HEAD:main",
-          ],
+          args: ["-c", "credential.helper=", "push", "--force", authRemote, "HEAD:main"],
         },
       ];
       for (const step of steps) {

@@ -146,10 +146,11 @@ documented separately in [docs/CHAT.md](docs/CHAT.md).
 
 ## Development
 
-- `bun run check` — the full gate: typecheck, lint, test
+- `bun run check` — the full gate: typecheck, lint (oxlint + `oxfmt
+  --check`), structural checks, test
 - `bun run test` — workspace tests
 - `bun run test:e2e` — end-to-end smoke tests (see below)
-- `bun run format` — prettier write
+- `bun run fmt` — oxfmt write
 
 Conventions and agent guidance: [AGENTS.md](AGENTS.md). Contributions:
 [CONTRIBUTING.md](CONTRIBUTING.md).

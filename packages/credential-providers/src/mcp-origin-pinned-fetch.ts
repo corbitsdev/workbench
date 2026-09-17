@@ -32,10 +32,7 @@ export interface McpOriginPinnedFetchArgs {
  * the pinned origin, an absolute string or URL keeps its own origin, and
  * a `Request` already carries an absolute URL.
  */
-export function resolveMcpTargetUrl(
-  input: string | URL | Request,
-  pinnedOrigin: string,
-): URL {
+export function resolveMcpTargetUrl(input: string | URL | Request, pinnedOrigin: string): URL {
   if (typeof input === "string") {
     return new URL(input, pinnedOrigin);
   }
@@ -72,15 +69,10 @@ function applyAuthorization(headers: Headers, token: string | undefined): void {
  * present, and forces `redirect: "manual"` so a 3xx never sends a token
  * (or a keyless handshake) to a foreign host.
  */
-export function mcpOriginPinnedFetch(
-  args: McpOriginPinnedFetchArgs,
-): FetchLike {
+export function mcpOriginPinnedFetch(args: McpOriginPinnedFetchArgs): FetchLike {
   const fetchImpl: FetchLike = args.fetch ?? globalThis.fetch;
 
-  return async (
-    input: string | URL | Request,
-    init?: RequestInit,
-  ): Promise<Response> => {
+  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const target = resolveMcpTargetUrl(input, args.pinnedOrigin);
     assertMcpPinnedTarget(target, args.pinnedOrigin);
     const token = args.readToken();

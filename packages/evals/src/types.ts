@@ -107,9 +107,7 @@ export interface ScorerResult {
   readonly skipped?: boolean;
 }
 
-export type Scorer = (
-  ctx: ScorerContext,
-) => ScorerResult | Promise<ScorerResult>;
+export type Scorer = (ctx: ScorerContext) => ScorerResult | Promise<ScorerResult>;
 
 /** A step whose human message is fixed in advance. `kind` defaults to
  * `"scripted"` — `defineEval` fills it in, so every existing case file

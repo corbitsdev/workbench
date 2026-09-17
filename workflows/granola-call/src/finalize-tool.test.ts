@@ -14,9 +14,7 @@ test("the tool carries no approval mark: a status report has nothing for a human
 });
 
 test("the tool is namespaced under this workflow package, not a shared one", () => {
-  expect(GRANOLA_CALL_REPORT_STATUS_TOOL.id).toBe(
-    "@corbits/workflow-granola-call/report-status",
-  );
+  expect(GRANOLA_CALL_REPORT_STATUS_TOOL.id).toBe("@corbits/workflow-granola-call/report-status");
 });
 
 test("requires the sanctioned workflow-artifacts env keys", () => {
@@ -31,13 +29,10 @@ test("buildStatusArtifactPayload names the reason, examined count, and next step
   const payload = buildStatusArtifactPayload({
     reason: "No Granola connection is configured for this workspace.",
     callsExamined: 0,
-    nextSteps:
-      "Connect Granola in Settings > Connections, then re-run this Routine.",
+    nextSteps: "Connect Granola in Settings > Connections, then re-run this Routine.",
   });
   expect(payload.kind).toBe("status-note");
-  expect(payload.content).toContain(
-    "No Granola connection is configured for this workspace.",
-  );
+  expect(payload.content).toContain("No Granola connection is configured for this workspace.");
   expect(payload.content).toContain("0");
   expect(payload.content).toContain(
     "Connect Granola in Settings > Connections, then re-run this Routine.",
@@ -92,8 +87,7 @@ test("run persists the status artifact and reports it persisted", async () => {
 
 test("run returns an honest error result when persistence fails, never fabricating persisted: true", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
 
   try {
     const bundle = GRANOLA_CALL_REPORT_STATUS_TOOL(testEnv());

@@ -26,8 +26,7 @@ mock.module("@intx/workflow-host", () => ({
   wrapHubTransportAsMailBus: () => ({
     routeInbound: async () => {},
   }),
-  hashGrants: async (grants: readonly unknown[]) =>
-    `stub-hash:${JSON.stringify(grants)}`,
+  hashGrants: async (grants: readonly unknown[]) => `stub-hash:${JSON.stringify(grants)}`,
 }));
 
 let capturedConfig: unknown;
@@ -35,9 +34,7 @@ let capturedConfig: unknown;
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(
-    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
 async function makeRepoStore(): Promise<{ store: RepoStore; dir: string }> {
@@ -49,8 +46,7 @@ async function makeRepoStore(): Promise<{ store: RepoStore; dir: string }> {
   return { store, dir };
 }
 
-const { createSidecarWorkflowSupervisor, DEFAULT_MAX_GRANTS_AGE_MS } =
-  await import("./supervisor");
+const { createSidecarWorkflowSupervisor, DEFAULT_MAX_GRANTS_AGE_MS } = await import("./supervisor");
 
 test("createSidecarWorkflowSupervisor forwards onSuspensionRegister to the workflow-host supervisor", () => {
   const registerSuspension = mock(() => {});
@@ -158,9 +154,7 @@ test("createSidecarWorkflowSupervisor omits credentialDelivery when the deploy c
     dynamicSpawnEnv: () => ({}),
   });
 
-  expect(
-    (capturedConfig as { credentialDelivery?: unknown }).credentialDelivery,
-  ).toBeUndefined();
+  expect((capturedConfig as { credentialDelivery?: unknown }).credentialDelivery).toBeUndefined();
 });
 
 // CL-6242: the vendor's recycle policy (`RecyclePolicyBounds` /
@@ -188,14 +182,10 @@ test("createSidecarWorkflowSupervisor arms the grants-age recycle policy for a w
   expect(capturedConfig).toMatchObject({
     recyclePolicy: { maxGrantsAgeMs: DEFAULT_MAX_GRANTS_AGE_MS },
   });
-  expect(
-    typeof (capturedConfig as { readGrantsAgeMs?: unknown }).readGrantsAgeMs,
-  ).toBe("function");
+  expect(typeof (capturedConfig as { readGrantsAgeMs?: unknown }).readGrantsAgeMs).toBe("function");
   // No RSS reader: see the module-level comment in `supervisor.ts` on why
   // `maxRssBytes`/`readRssBytes` are never wired.
-  expect(
-    (capturedConfig as { readRssBytes?: unknown }).readRssBytes,
-  ).toBeUndefined();
+  expect((capturedConfig as { readRssBytes?: unknown }).readRssBytes).toBeUndefined();
 });
 
 test("createSidecarWorkflowSupervisor omits the recycle policy for a non-warm-keep deployment", () => {
@@ -215,12 +205,8 @@ test("createSidecarWorkflowSupervisor omits the recycle policy for a non-warm-ke
     warmKeep: false,
   });
 
-  expect(
-    (capturedConfig as { recyclePolicy?: unknown }).recyclePolicy,
-  ).toBeUndefined();
-  expect(
-    (capturedConfig as { readGrantsAgeMs?: unknown }).readGrantsAgeMs,
-  ).toBeUndefined();
+  expect((capturedConfig as { recyclePolicy?: unknown }).recyclePolicy).toBeUndefined();
+  expect((capturedConfig as { readGrantsAgeMs?: unknown }).readGrantsAgeMs).toBeUndefined();
 });
 
 test("readGrantsAgeMs reports undefined until deliverCredentials fires, then a non-negative age", async () => {
@@ -240,9 +226,8 @@ test("readGrantsAgeMs reports undefined until deliverCredentials fires, then a n
     warmKeep: true,
   });
 
-  const readGrantsAgeMs = (
-    capturedConfig as { readGrantsAgeMs: () => number | undefined }
-  ).readGrantsAgeMs;
+  const readGrantsAgeMs = (capturedConfig as { readGrantsAgeMs: () => number | undefined })
+    .readGrantsAgeMs;
   expect(readGrantsAgeMs()).toBeUndefined();
 
   await wired.supervisor.deliverCredentials({
@@ -282,10 +267,7 @@ test("createSidecarWorkflowSupervisor wires onRunStart to assemble the run's cre
 
   const onRunStart = (
     capturedConfig as {
-      onRunStart: (args: {
-        runId: string;
-        anchorRunId: string;
-      }) => Promise<unknown>;
+      onRunStart: (args: { runId: string; anchorRunId: string }) => Promise<unknown>;
     }
   ).onRunStart;
   const snapshot = await onRunStart({ runId: "run-1", anchorRunId: "dep-8" });
@@ -326,16 +308,13 @@ test("onRunStart fails a run with no per-run grants file closed", async () => {
 
   const onRunStart = (
     capturedConfig as {
-      onRunStart: (args: {
-        runId: string;
-        anchorRunId: string;
-      }) => Promise<unknown>;
+      onRunStart: (args: { runId: string; anchorRunId: string }) => Promise<unknown>;
     }
   ).onRunStart;
 
-  await expect(
-    onRunStart({ runId: "run-missing", anchorRunId: "dep-9" }),
-  ).rejects.toThrow(/has no grants file; failing closed/);
+  await expect(onRunStart({ runId: "run-missing", anchorRunId: "dep-9" })).rejects.toThrow(
+    /has no grants file; failing closed/,
+  );
 });
 
 test("onRunStart refreshes readGrantsAgeMs, mirroring deliverCredentials's observation point", async () => {
@@ -360,15 +339,11 @@ test("onRunStart refreshes readGrantsAgeMs, mirroring deliverCredentials's obser
     warmKeep: true,
   });
 
-  const readGrantsAgeMs = (
-    capturedConfig as { readGrantsAgeMs: () => number | undefined }
-  ).readGrantsAgeMs;
+  const readGrantsAgeMs = (capturedConfig as { readGrantsAgeMs: () => number | undefined })
+    .readGrantsAgeMs;
   const onRunStart = (
     capturedConfig as {
-      onRunStart: (args: {
-        runId: string;
-        anchorRunId: string;
-      }) => Promise<unknown>;
+      onRunStart: (args: { runId: string; anchorRunId: string }) => Promise<unknown>;
     }
   ).onRunStart;
   expect(readGrantsAgeMs()).toBeUndefined();

@@ -33,10 +33,7 @@ this workflow as often as scheduling allows costs nothing.
 ## Usage
 
 ```ts
-import {
-  buildHeartbeatWorkflow,
-  serializeHeartbeatWorkflow,
-} from "@corbits/heartbeat-workflow";
+import { buildHeartbeatWorkflow, serializeHeartbeatWorkflow } from "@corbits/heartbeat-workflow";
 
 const definition = buildHeartbeatWorkflow({
   triggerAddress: "heartbeat@tenant.example",

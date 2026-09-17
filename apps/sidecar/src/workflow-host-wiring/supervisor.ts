@@ -5,11 +5,7 @@
 
 import { signEd25519 } from "@intx/crypto";
 import type { HubTransport } from "@intx/mail-memory";
-import type {
-  RepoId,
-  RepoStore,
-  WorkflowRunSupervisorPrincipal,
-} from "@intx/hub-sessions";
+import type { RepoId, RepoStore, WorkflowRunSupervisorPrincipal } from "@intx/hub-sessions";
 import {
   createWorkflowSupervisor,
   hashGrants,
@@ -30,10 +26,7 @@ import {
 
 import { getLogger } from "@intx/log";
 
-import {
-  defaultSubprocessSpawner,
-  SIDECAR_WORKFLOW_CHILD_BINARY,
-} from "./transport";
+import { defaultSubprocessSpawner, SIDECAR_WORKFLOW_CHILD_BINARY } from "./transport";
 import { readRunGrants } from "../run-grants";
 
 const logger = getLogger(["sidecar", "workflow-host-wiring", "supervisor"]);
@@ -242,10 +235,7 @@ export type CreateSidecarWorkflowSupervisorOpts = {
    * (crash-loop latch, channel crash, recycle failure). Production wiring
    * routes it to the deploy router's address reclaim.
    */
-  onSelfTerminate?: (info: {
-    phase: "stopped" | "crash-looping";
-    reason: string;
-  }) => void;
+  onSelfTerminate?: (info: { phase: "stopped" | "crash-looping"; reason: string }) => void;
   /**
    * Decrypted credential material from the deploy frame's
    * `workflow.credentials`, forwarded verbatim to the supervisor's
@@ -315,9 +305,7 @@ export function deriveSidecarMailAuditRef(deploymentId: string): (
 export function createSidecarWorkflowSupervisor(
   opts: CreateSidecarWorkflowSupervisorOpts,
 ): SidecarWorkflowSupervisor {
-  const mailBus: HubTransportMailBusAdapter = wrapHubTransportAsMailBus(
-    opts.transport,
-  );
+  const mailBus: HubTransportMailBusAdapter = wrapHubTransportAsMailBus(opts.transport);
   // Tracks the most recently spawned child's handle so `hardKillChild` can
   // reach it directly. The `WorkflowSupervisor` interface exposes no raw
   // handle access, so wrapping the spawner -- the same injection point
@@ -400,34 +388,24 @@ export function createSidecarWorkflowSupervisor(
     ...(opts.onSuspensionRegister !== undefined
       ? { onSuspensionRegister: opts.onSuspensionRegister }
       : {}),
-    ...(opts.onSelfTerminate !== undefined
-      ? { onSelfTerminate: opts.onSelfTerminate }
-      : {}),
+    ...(opts.onSelfTerminate !== undefined ? { onSelfTerminate: opts.onSelfTerminate } : {}),
     ...(opts.credentialDelivery !== undefined
       ? { credentialDelivery: opts.credentialDelivery }
       : {}),
-    ...(opts.deriveStepRepoId !== undefined
-      ? { deriveStepRepoId: opts.deriveStepRepoId }
-      : {}),
-    ...(opts.onDispatchTiming !== undefined
-      ? { onDispatchTiming: opts.onDispatchTiming }
-      : {}),
+    ...(opts.deriveStepRepoId !== undefined ? { deriveStepRepoId: opts.deriveStepRepoId } : {}),
+    ...(opts.onDispatchTiming !== undefined ? { onDispatchTiming: opts.onDispatchTiming } : {}),
     ...(opts.repackEveryMessages !== undefined
       ? { repackEveryMessages: opts.repackEveryMessages }
       : {}),
     ...(opts.consumedRetentionMs !== undefined
       ? { consumedRetentionMs: opts.consumedRetentionMs }
       : {}),
-    ...(opts.readyTimeoutMs !== undefined
-      ? { readyTimeoutMs: opts.readyTimeoutMs }
-      : {}),
+    ...(opts.readyTimeoutMs !== undefined ? { readyTimeoutMs: opts.readyTimeoutMs } : {}),
     ...(recyclePolicy !== undefined
       ? {
           recyclePolicy,
           readGrantsAgeMs: () =>
-            lastGrantsRefreshAt === undefined
-              ? undefined
-              : Date.now() - lastGrantsRefreshAt,
+            lastGrantsRefreshAt === undefined ? undefined : Date.now() - lastGrantsRefreshAt,
         }
       : {}),
   };

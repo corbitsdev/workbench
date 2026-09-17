@@ -1,10 +1,6 @@
 import { expect, test } from "bun:test";
 
-import {
-  fingerprintMarker,
-  fingerprintOf,
-  fingerprintsIn,
-} from "./fingerprint";
+import { fingerprintMarker, fingerprintOf, fingerprintsIn } from "./fingerprint";
 import type { ReviewerFinding } from "./report";
 
 function finding(overrides: Partial<ReviewerFinding> = {}): ReviewerFinding {
@@ -28,15 +24,11 @@ test("whitespace and case in the summary do not change the fingerprint", () => {
 });
 
 test("a different line changes the fingerprint", () => {
-  expect(fingerprintOf(finding({ line: 3 }))).not.toBe(
-    fingerprintOf(finding({ line: 2 })),
-  );
+  expect(fingerprintOf(finding({ line: 3 }))).not.toBe(fingerprintOf(finding({ line: 2 })));
 });
 
 test("a different file changes the fingerprint", () => {
-  expect(fingerprintOf(finding({ file: "other.ts" }))).not.toBe(
-    fingerprintOf(finding()),
-  );
+  expect(fingerprintOf(finding({ file: "other.ts" }))).not.toBe(fingerprintOf(finding()));
 });
 
 test("fingerprintsIn reads every marker out of posted comment bodies", () => {
@@ -51,7 +43,5 @@ test("fingerprintsIn reads every marker out of posted comment bodies", () => {
 });
 
 test("fingerprintsIn ignores text that only looks like a marker", () => {
-  expect(fingerprintsIn(["<!-- code-review:finding:not-a-hash -->"])).toEqual(
-    new Set(),
-  );
+  expect(fingerprintsIn(["<!-- code-review:finding:not-a-hash -->"])).toEqual(new Set());
 });

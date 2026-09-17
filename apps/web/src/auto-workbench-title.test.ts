@@ -9,9 +9,7 @@ import {
 
 describe("titleFromFirstMessage (CL-6656)", () => {
   test("trims and collapses whitespace into a single-line title", () => {
-    expect(titleFromFirstMessage("  Help me\nplan  Q3  ")).toBe(
-      "Help me plan Q3",
-    );
+    expect(titleFromFirstMessage("  Help me\nplan  Q3  ")).toBe("Help me plan Q3");
   });
 
   test("returns undefined for blank or whitespace-only input", () => {
@@ -20,9 +18,7 @@ describe("titleFromFirstMessage (CL-6656)", () => {
   });
 
   test("keeps a short message intact", () => {
-    expect(titleFromFirstMessage("Draft a launch checklist")).toBe(
-      "Draft a launch checklist",
-    );
+    expect(titleFromFirstMessage("Draft a launch checklist")).toBe("Draft a launch checklist");
   });
 
   test("truncates a long message at a word boundary with an ellipsis", () => {
@@ -39,23 +35,17 @@ describe("titleFromFirstMessage (CL-6656)", () => {
 
 describe("autoNameFromFirstMessage (CL-6656)", () => {
   test("names an ad-hoc New Workbench from the first message", () => {
-    expect(
-      autoNameFromFirstMessage(NEW_WORKBENCH_TITLE, "Plan the Q3 launch"),
-    ).toBe("Plan the Q3 launch");
+    expect(autoNameFromFirstMessage(NEW_WORKBENCH_TITLE, "Plan the Q3 launch")).toBe(
+      "Plan the Q3 launch",
+    );
   });
 
   test("leaves prefab and already-renamed titles alone", () => {
-    expect(
-      autoNameFromFirstMessage("Code review", "Review the auth PR"),
-    ).toBeUndefined();
-    expect(
-      autoNameFromFirstMessage("My research bench", "Dig into pricing"),
-    ).toBeUndefined();
+    expect(autoNameFromFirstMessage("Code review", "Review the auth PR")).toBeUndefined();
+    expect(autoNameFromFirstMessage("My research bench", "Dig into pricing")).toBeUndefined();
   });
 
   test("returns undefined when the first message has no usable text", () => {
-    expect(
-      autoNameFromFirstMessage(NEW_WORKBENCH_TITLE, "   "),
-    ).toBeUndefined();
+    expect(autoNameFromFirstMessage(NEW_WORKBENCH_TITLE, "   ")).toBeUndefined();
   });
 });

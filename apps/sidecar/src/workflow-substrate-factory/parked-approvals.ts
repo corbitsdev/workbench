@@ -17,10 +17,7 @@ import { createIsogitStore } from "@intx/storage-isogit/node";
 import type { ApprovalSnapshot, PendingOperation } from "@intx/types/runtime";
 import type { ParkedApprovalOp } from "@intx/workflow";
 
-import {
-  isErrnoNotFound,
-  reconstructDurableConversation,
-} from "../conversation-state";
+import { isErrnoNotFound, reconstructDurableConversation } from "../conversation-state";
 import { stepStorageRoot } from "./storage-paths";
 
 async function directoryExists(dir: string): Promise<boolean> {
@@ -36,8 +33,7 @@ export function findApprovalSnapshot(
   pendingOperations: readonly PendingOperation[],
   correlationId: string,
 ): ApprovalSnapshot | undefined {
-  return pendingOperations.find((op) => op.correlationId === correlationId)
-    ?.approvalSnapshot;
+  return pendingOperations.find((op) => op.correlationId === correlationId)?.approvalSnapshot;
 }
 
 /**
@@ -82,10 +78,7 @@ export async function readColdParkedApprovalSnapshot(args: {
   attempt: number;
   correlationId: string;
 }): Promise<ApprovalSnapshot | undefined> {
-  return findApprovalSnapshot(
-    await readColdParkedPendingOperations(args),
-    args.correlationId,
-  );
+  return findApprovalSnapshot(await readColdParkedPendingOperations(args), args.correlationId);
 }
 
 /**
@@ -143,10 +136,7 @@ export async function readWarmParkedApprovalSnapshot(args: {
   stepId: string;
   correlationId: string;
 }): Promise<ApprovalSnapshot | undefined> {
-  return findApprovalSnapshot(
-    await readWarmParkedPendingOperations(args),
-    args.correlationId,
-  );
+  return findApprovalSnapshot(await readWarmParkedPendingOperations(args), args.correlationId);
 }
 
 /**
@@ -157,9 +147,7 @@ export async function readWarmParkedApprovalSnapshot(args: {
  * `SignalAwaited` from those alone, and must not see the reactor's
  * pending-operation internals.
  */
-export function toParkedApprovalOps(
-  pendingOperations: PendingOperation[],
-): ParkedApprovalOp[] {
+export function toParkedApprovalOps(pendingOperations: PendingOperation[]): ParkedApprovalOp[] {
   return pendingOperations
     .filter((op) => op.kind === "approval")
     .map((op) => ({

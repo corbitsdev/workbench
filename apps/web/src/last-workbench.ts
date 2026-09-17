@@ -8,10 +8,7 @@
 
 const KEY_PREFIX = "workbench.lastWorkbenchId.";
 
-export function recordLastWorkbenchId(
-  benchTenantId: string,
-  workbenchId: string,
-): void {
+export function recordLastWorkbenchId(benchTenantId: string, workbenchId: string): void {
   try {
     window.sessionStorage.setItem(`${KEY_PREFIX}${benchTenantId}`, workbenchId);
   } catch {

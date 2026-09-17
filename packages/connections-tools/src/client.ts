@@ -45,9 +45,7 @@ const CredentialsPage = type({
 
 const PAGE_LIMIT = 100;
 
-function authHeaders(
-  config: ConnectionsToolClientConfig,
-): Record<string, string> {
+function authHeaders(config: ConnectionsToolClientConfig): Record<string, string> {
   return {
     authorization: `Bearer ${config.sidecarToken}`,
     "x-workflow-run-address": config.address,
@@ -66,9 +64,7 @@ async function readAllPages<T>(
   what: string,
   parse: (
     body: unknown,
-  ) =>
-    | { data: readonly T[]; nextCursor?: string | null | undefined }
-    | type.errors,
+  ) => { data: readonly T[]; nextCursor?: string | null | undefined } | type.errors,
 ): Promise<readonly T[]> {
   const doFetch = config.fetchImpl ?? fetch;
   const items: T[] = [];
@@ -76,20 +72,15 @@ async function readAllPages<T>(
   for (;;) {
     const params = new URLSearchParams({ limit: String(PAGE_LIMIT) });
     if (cursor !== undefined) params.set("cursor", cursor);
-    const response = await doFetch(
-      `${tenantBase(config)}${path}?${params.toString()}`,
-      { headers: authHeaders(config) },
-    );
+    const response = await doFetch(`${tenantBase(config)}${path}?${params.toString()}`, {
+      headers: authHeaders(config),
+    });
     if (!response.ok) {
-      throw new Error(
-        `${what} failed: ${response.status} ${response.statusText}`,
-      );
+      throw new Error(`${what} failed: ${response.status} ${response.statusText}`);
     }
     const parsed = parse(await response.json());
     if (parsed instanceof type.errors) {
-      throw new Error(
-        `${what} came back in an unexpected shape: ${parsed.summary}`,
-      );
+      throw new Error(`${what} came back in an unexpected shape: ${parsed.summary}`);
     }
     items.push(...parsed.data);
     const next = parsed.nextCursor;
@@ -109,23 +100,13 @@ export async function listConnectedProviders(
   config: ConnectionsToolClientConfig,
 ): Promise<ConnectedProviders> {
   const [providers, credentials] = await Promise.all([
-    readAllPages(config, "/providers", "Listing providers", (body) =>
-      ProvidersPage(body),
-    ),
-    readAllPages(config, "/credentials", "Listing credentials", (body) =>
-      CredentialsPage(body),
-    ),
+    readAllPages(config, "/providers", "Listing providers", (body) => ProvidersPage(body)),
+    readAllPages(config, "/credentials", "Listing credentials", (body) => CredentialsPage(body)),
   ]);
   const liveProviderIds = new Set(
-    credentials
-      .filter((row) => row.status === "active")
-      .map((row) => row.providerId),
+    credentials.filter((row) => row.status === "active").map((row) => row.providerId),
   );
-  return new Set(
-    providers
-      .filter((row) => liveProviderIds.has(row.id))
-      .map((row) => row.name),
-  );
+  return new Set(providers.filter((row) => liveProviderIds.has(row.id)).map((row) => row.name));
 }
 
 /** Thrown when the caller's run has no room of its own to post into —
@@ -177,16 +158,12 @@ export async function postConnectServiceBlock(
     throw new NoOwnRoomError("The caller has no room of its own to post into");
   }
   if (!response.ok) {
-    throw new Error(
-      `Posting the connect card failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Posting the connect card failed: ${response.status} ${response.statusText}`);
   }
   const body: unknown = await response.json();
   const parsed = PostedMessageResponse(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `Post-message response did not match the expected shape: ${parsed.summary}`,
-    );
+    throw new Error(`Post-message response did not match the expected shape: ${parsed.summary}`);
   }
   return { messageId: parsed.id };
 }

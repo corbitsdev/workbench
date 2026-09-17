@@ -29,9 +29,7 @@ function connectedInfo(): ServiceConnectedInfo {
 
 describe("fireConnectedHook", () => {
   test("does nothing when no hook is wired", async () => {
-    await expect(
-      fireConnectedHook(undefined, () => {}, connectedInfo()),
-    ).resolves.toBeUndefined();
+    await expect(fireConnectedHook(undefined, () => {}, connectedInfo())).resolves.toBeUndefined();
   });
 
   test("logs and reports a hook failure rather than breaking the connect", async () => {

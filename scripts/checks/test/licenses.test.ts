@@ -58,11 +58,7 @@ test("a library whose LICENSE file drifts from the canonical text is a violation
 });
 
 test("a library failing both checks reports both violations", () => {
-  const report = auditLibraryLicenses(
-    [pkg("packages/chat", "MIT")],
-    "canonical text",
-    () => null,
-  );
+  const report = auditLibraryLicenses([pkg("packages/chat", "MIT")], "canonical text", () => null);
   expect(report.violations).toHaveLength(2);
 });
 

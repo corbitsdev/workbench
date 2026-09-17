@@ -70,8 +70,7 @@ afterEach(() => {
 });
 
 async function mount() {
-  globalThis.ResizeObserver =
-    StubResizeObserver as unknown as typeof ResizeObserver;
+  globalThis.ResizeObserver = StubResizeObserver as unknown as typeof ResizeObserver;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);

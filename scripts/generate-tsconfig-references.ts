@@ -33,13 +33,7 @@ import { existsSync } from "node:fs";
 import { relative } from "node:path";
 import { Glob } from "bun";
 
-const WORKSPACE_ROOTS = [
-  "apps",
-  "packages",
-  "tools",
-  "workflows",
-  "vendor/intx",
-] as const;
+const WORKSPACE_ROOTS = ["apps", "packages", "tools", "workflows", "vendor/intx"] as const;
 
 const SRC_CONFIG_NAME = "tsconfig.src.json";
 
@@ -142,15 +136,9 @@ function stronglyConnectedComponents(
       if (!byName.has(w)) continue;
       if (!indices.has(w)) {
         strongconnect(w);
-        lowlink.set(
-          v,
-          Math.min(lowlink.get(v) as number, lowlink.get(w) as number),
-        );
+        lowlink.set(v, Math.min(lowlink.get(v) as number, lowlink.get(w) as number));
       } else if (onStack.has(w)) {
-        lowlink.set(
-          v,
-          Math.min(lowlink.get(v) as number, indices.get(w) as number),
-        );
+        lowlink.set(v, Math.min(lowlink.get(v) as number, indices.get(w) as number));
       }
     }
 
@@ -245,11 +233,7 @@ async function loadTsconfig(path: string): Promise<Tsconfig | undefined> {
 // its rootDir. They are excluded here and picked up by the combined
 // project's `include` instead, alongside a dedicated `test/` directory
 // when present.
-function withSrcFields(
-  dir: string,
-  config: Tsconfig,
-  referencePaths: readonly string[],
-): Tsconfig {
+function withSrcFields(dir: string, config: Tsconfig, referencePaths: readonly string[]): Tsconfig {
   const {
     compilerOptions,
     references: _oldReferences,
@@ -269,19 +253,14 @@ function withSrcFields(
     ...rest,
     include: [
       ...(include ?? ["src"]).filter(
-        (entry) =>
-          entry !== "test" &&
-          entry !== "package.json" &&
-          entry !== "src/**/*.json",
+        (entry) => entry !== "test" && entry !== "package.json" && entry !== "src/**/*.json",
       ),
       "package.json",
       "src/**/*.json",
     ],
     exclude: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     compilerOptions: { ...compilerOptions, ...BUILD_COMPILER_OPTIONS },
-    ...(referencePaths.length > 0
-      ? { references: referencePaths.map((path) => ({ path })) }
-      : {}),
+    ...(referencePaths.length > 0 ? { references: referencePaths.map((path) => ({ path })) } : {}),
   };
 }
 
@@ -309,9 +288,7 @@ function withLegacyFields(config: Tsconfig): Tsconfig {
   );
   return {
     ...rest,
-    include: cleanedInclude.includes("test")
-      ? cleanedInclude
-      : [...cleanedInclude, "test"],
+    include: cleanedInclude.includes("test") ? cleanedInclude : [...cleanedInclude, "test"],
     compilerOptions: { ...restOptions, noEmit: true },
   };
 }
@@ -360,9 +337,7 @@ function combinedConfigFor(
     // than silently dropped by rebuilding `include` from a fixed list.
     include: [...new Set([...baseInclude, ...extraInclude])],
     exclude: [],
-    ...(referencePaths.length > 0
-      ? { references: referencePaths.map((path) => ({ path })) }
-      : {}),
+    ...(referencePaths.length > 0 ? { references: referencePaths.map((path) => ({ path })) } : {}),
   };
 }
 
@@ -377,10 +352,7 @@ function srcFieldsMatch(current: Tsconfig, next: Tsconfig): boolean {
   }
   if (!referencesMatch(current.references, next.references)) return false;
   if (!listsMatch(current.include, next.include)) return false;
-  return listsMatch(
-    current.exclude as string[] | undefined,
-    next.exclude as string[] | undefined,
-  );
+  return listsMatch(current.exclude as string[] | undefined, next.exclude as string[] | undefined);
 }
 
 function listsMatch(
@@ -392,10 +364,7 @@ function listsMatch(
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
-function referencesMatch(
-  current: Tsconfig["references"],
-  next: Tsconfig["references"],
-): boolean {
+function referencesMatch(current: Tsconfig["references"], next: Tsconfig["references"]): boolean {
   const currentPaths = (current ?? []).map((r) => r.path).sort();
   const nextPaths = (next ?? []).map((r) => r.path).sort();
   return (
@@ -404,10 +373,7 @@ function referencesMatch(
   );
 }
 
-function combinedFieldsMatch(
-  current: Tsconfig | undefined,
-  next: Tsconfig,
-): boolean {
+function combinedFieldsMatch(current: Tsconfig | undefined, next: Tsconfig): boolean {
   if (current === undefined) return false;
   const currentOptions = current.compilerOptions ?? {};
   const nextOptions = next.compilerOptions ?? {};
@@ -505,12 +471,7 @@ async function main(): Promise<void> {
       continue;
     }
 
-    const srcReferences = srcReferencePathsFor(
-      manifest,
-      byName,
-      withTsconfig,
-      excludedNames,
-    );
+    const srcReferences = srcReferencePathsFor(manifest, byName, withTsconfig, excludedNames);
     // The current tsconfig.src.json (if this isn't the first run) carries
     // any package-specific compilerOptions already merged in; fall back to
     // the combined file only the very first time a package joins the
@@ -531,12 +492,7 @@ async function main(): Promise<void> {
     const extraInclude = (currentCombined.include ?? []).filter(
       (entry) => entry !== "src" && entry !== "test",
     );
-    const nextCombined = combinedConfigFor(
-      manifest.dir,
-      srcReferences,
-      hasTestDir,
-      extraInclude,
-    );
+    const nextCombined = combinedConfigFor(manifest.dir, srcReferences, hasTestDir, extraInclude);
     if (!combinedFieldsMatch(currentCombined, nextCombined)) {
       if (checkOnly) {
         drifted.push(`${manifest.dir}/tsconfig.json`);
@@ -571,11 +527,7 @@ async function main(): Promise<void> {
   // but the diagnostic state is no longer split across sibling root
   // arguments.
   const solutionReferences = manifests
-    .filter(
-      (manifest) =>
-        existingCombined.has(manifest.name) &&
-        !excludedNames.has(manifest.name),
-    )
+    .filter((manifest) => existingCombined.has(manifest.name) && !excludedNames.has(manifest.name))
     .map((manifest) => manifest.dir)
     .sort()
     .map((dir) => ({ path: `./${dir}/${SRC_CONFIG_NAME}` }));
@@ -592,10 +544,7 @@ async function main(): Promise<void> {
     if (checkOnly) {
       drifted.push(solutionPath);
     } else {
-      await Bun.write(
-        solutionPath,
-        `${JSON.stringify(nextSolution, null, 2)}\n`,
-      );
+      await Bun.write(solutionPath, `${JSON.stringify(nextSolution, null, 2)}\n`);
       written.push(solutionPath);
     }
   }

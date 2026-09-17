@@ -48,8 +48,7 @@ import { templateReposSettingsPatch } from "./template-settings";
 // the CL-6360 idiom this route follows throughout via
 // `@corbits/error-sink`'s `makeErrorEnvelope`: log the real cause behind
 // a `refId`, answer with one honest, actionable `userMessage`.
-const REPOS_UNREADABLE_MESSAGE =
-  "Couldn't read your GitHub repositories. Try reconnecting.";
+const REPOS_UNREADABLE_MESSAGE = "Couldn't read your GitHub repositories. Try reconnecting.";
 const START_REVIEWING_FAILED_MESSAGE =
   "Couldn't start reviewing those repositories. Try again in a moment.";
 
@@ -77,9 +76,7 @@ export type ConnectGithubRoutesDeps = {
    * `CONNECTOR_REGISTRY` credential name, the same secret
    * `buildCredentialDelivery` decrypts for a tool binding — never a second,
    * bespoke credential store. */
-  resolveGithubConfig(
-    tenantId: string,
-  ): Promise<GitHubClientConfig | undefined>;
+  resolveGithubConfig(tenantId: string): Promise<GitHubClientConfig | undefined>;
   /** The tenant's deployed `code-review` workflow definition id —
    * `undefined` when the template's own workflow was never deployed for
    * this tenant (a create-flow bug, not something this route can fix). */
@@ -90,34 +87,20 @@ export type ConnectGithubRoutesDeps = {
    * the actual concurrency backstop, not `hasRepoGrant`/`hasWebhookTrigger`
    * below. A host binds this to `@corbits/webhook-triggers`'
    * `RepoReviewLeaseStore.acquire`. */
-  acquireRepoReviewLease(
-    tenantId: string,
-    repo: GitHubRepoSummary,
-  ): Promise<boolean>;
+  acquireRepoReviewLease(tenantId: string, repo: GitHubRepoSummary): Promise<boolean>;
   /** Releases a lease `acquireRepoReviewLease` won — see
    * `ConnectGithubSetupPorts.releaseRepoReviewLease`. A host binds
    * this to `RepoReviewLeaseStore.release`. */
-  releaseRepoReviewLease(
-    tenantId: string,
-    repo: GitHubRepoSummary,
-  ): Promise<void>;
+  releaseRepoReviewLease(tenantId: string, repo: GitHubRepoSummary): Promise<void>;
   /** True once this repo already has the `repo:<owner/name>` grant — see
    * `./connect-github-setup.ts`'s `ConnectGithubSetupPorts.hasRepoGrant`
    * for why this makes a retry between minting the grant and creating
    * the trigger safe. */
-  hasRepoGrant(
-    tenantId: string,
-    repo: GitHubRepoSummary,
-    cookies: string[],
-  ): Promise<boolean>;
+  hasRepoGrant(tenantId: string, repo: GitHubRepoSummary, cookies: string[]): Promise<boolean>;
   /** Mints the `repo:<owner/name>`-scoped grant a launched review run
    * needs to read this repo — see `./connect-github-setup.ts`'s
    * `ConnectGithubSetupPorts.mintRepoGrant` for the exact resource shape. */
-  mintRepoGrant(
-    tenantId: string,
-    repo: GitHubRepoSummary,
-    cookies: string[],
-  ): Promise<void>;
+  mintRepoGrant(tenantId: string, repo: GitHubRepoSummary, cookies: string[]): Promise<void>;
   /** Creates the live `webhook_trigger` row this repo's pull-request-opened
    * events fire, scoped to the resolved code-review definition. A host
    * binds this to `@corbits/webhook-triggers`' `WebhookTriggerStore.create`. */
@@ -176,13 +159,10 @@ export type ConnectGithubRoutesDeps = {
   fetchAuthenticatedLoginFn?: typeof fetchAuthenticatedLogin;
 };
 
-export function createConnectGithubRoutes(
-  deps: ConnectGithubRoutesDeps,
-): Hono<TenantEnv> {
+export function createConnectGithubRoutes(deps: ConnectGithubRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
   const runListRepos = deps.listReposFn ?? listRepos;
-  const runFetchAuthenticatedLogin =
-    deps.fetchAuthenticatedLoginFn ?? fetchAuthenticatedLogin;
+  const runFetchAuthenticatedLogin = deps.fetchAuthenticatedLoginFn ?? fetchAuthenticatedLogin;
 
   async function readGithubState(
     tenantId: string,
@@ -207,52 +187,41 @@ export function createConnectGithubRoutes(
       // token — see this module's own `REPOS_UNREADABLE_MESSAGE` comment
       // — so only the log line below carries the real cause.
       const message = cause instanceof Error ? cause.message : String(cause);
-      deps.log(
-        `connect-github: reading GitHub state failed for tenant ${tenantId}: ${message}`,
-      );
+      deps.log(`connect-github: reading GitHub state failed for tenant ${tenantId}: ${message}`);
       return { ok: false };
     }
   }
 
-  app.get(
-    "/:workbenchId/github/state",
-    deps.requireGrant("credential:*", "read"),
-    async (c) => {
-      const tenant = c.get("tenant");
-      const workbenchId = c.req.param("workbenchId");
-      const config = await deps.resolveGithubConfig(tenant.id);
-      if (config === undefined) {
-        return c.json({ kind: "disconnected" }, 200);
-      }
+  app.get("/:workbenchId/github/state", deps.requireGrant("credential:*", "read"), async (c) => {
+    const tenant = c.get("tenant");
+    const workbenchId = c.req.param("workbenchId");
+    const config = await deps.resolveGithubConfig(tenant.id);
+    if (config === undefined) {
+      return c.json({ kind: "disconnected" }, 200);
+    }
 
-      const state = await readGithubState(tenant.id, config);
-      if (!state.ok) {
-        return c.json(
-          { kind: "error", message: REPOS_UNREADABLE_MESSAGE },
-          200,
-        );
-      }
+    const state = await readGithubState(tenant.id, config);
+    if (!state.ok) {
+      return c.json({ kind: "error", message: REPOS_UNREADABLE_MESSAGE }, 200);
+    }
 
-      const settings = await deps.getTemplateSettings(tenant.id, workbenchId);
-      return c.json(
-        {
-          kind: "connected",
-          orgName: state.orgName,
-          repos: state.repos,
-          selectedRepoIds: settings.selectedRepos,
-        },
-        200,
-      );
-    },
-  );
+    const settings = await deps.getTemplateSettings(tenant.id, workbenchId);
+    return c.json(
+      {
+        kind: "connected",
+        orgName: state.orgName,
+        repos: state.repos,
+        selectedRepoIds: settings.selectedRepos,
+      },
+      200,
+    );
+  });
 
   app.post(
     "/:workbenchId/github/start-reviewing",
     deps.requireGrant("credential:*", "read"),
     async (c) => {
-      const body = StartReviewingBody(
-        await c.req.json().catch(() => undefined),
-      );
+      const body = StartReviewingBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
           makeErrorEnvelope({
@@ -289,61 +258,34 @@ export function createConnectGithubRoutes(
         );
       }
 
-      const codeReviewDefinitionId = await deps.resolveCodeReviewDefinitionId(
-        tenant.id,
-      );
+      const codeReviewDefinitionId = await deps.resolveCodeReviewDefinitionId(tenant.id);
       if (codeReviewDefinitionId === undefined) {
         return c.json(
           makeErrorEnvelope({
             code: "not_found",
-            userMessage:
-              "This workbench's code-review workflow isn't set up yet.",
+            userMessage: "This workbench's code-review workflow isn't set up yet.",
           }),
           404,
         );
       }
 
       try {
-        const settingsBefore = await deps.getTemplateSettings(
-          tenant.id,
-          workbenchId,
-        );
-        const introductionsAlreadyPosted =
-          settingsBefore.selectedRepos.length > 0;
+        const settingsBefore = await deps.getTemplateSettings(tenant.id, workbenchId);
+        const introductionsAlreadyPosted = settingsBefore.selectedRepos.length > 0;
         const result = await startReviewingRepos(body.repoIds, state.repos, {
-          acquireRepoReviewLease: (repo) =>
-            deps.acquireRepoReviewLease(tenant.id, repo),
-          releaseRepoReviewLease: (repo) =>
-            deps.releaseRepoReviewLease(tenant.id, repo),
+          acquireRepoReviewLease: (repo) => deps.acquireRepoReviewLease(tenant.id, repo),
+          releaseRepoReviewLease: (repo) => deps.releaseRepoReviewLease(tenant.id, repo),
           hasRepoGrant: (repo) =>
-            deps.hasRepoGrant(
-              tenant.id,
-              repo,
-              cookiesFromHeader(c.req.header("cookie")),
-            ),
+            deps.hasRepoGrant(tenant.id, repo, cookiesFromHeader(c.req.header("cookie"))),
           mintRepoGrant: (repo) =>
-            deps.mintRepoGrant(
-              tenant.id,
-              repo,
-              cookiesFromHeader(c.req.header("cookie")),
-            ),
+            deps.mintRepoGrant(tenant.id, repo, cookiesFromHeader(c.req.header("cookie"))),
           createWebhookTrigger: (repo) =>
-            deps.createWebhookTrigger(
-              tenant.id,
-              principal.id,
-              codeReviewDefinitionId,
-              repo,
-            ),
+            deps.createWebhookTrigger(tenant.id, principal.id, codeReviewDefinitionId, repo),
           hasWebhookTrigger: (repo) =>
             deps.hasWebhookTrigger(tenant.id, codeReviewDefinitionId, repo),
           persistSelectedRepos: async (repoIds) => {
-            const settings = await deps.getTemplateSettings(
-              tenant.id,
-              workbenchId,
-            );
-            const pendingConnections = settings.pendingConnections.filter(
-              (id) => id !== "github",
-            );
+            const settings = await deps.getTemplateSettings(tenant.id, workbenchId);
+            const pendingConnections = settings.pendingConnections.filter((id) => id !== "github");
             await deps.persistSelectedRepos(
               tenant.id,
               workbenchId,
@@ -353,9 +295,7 @@ export function createConnectGithubRoutes(
           },
         });
 
-        const reposById = new Map(
-          state.repos.map((repo) => [repo.id, repo] as const),
-        );
+        const reposById = new Map(state.repos.map((repo) => [repo.id, repo] as const));
         const repoNames = body.repoIds
           .map((repoId) => reposById.get(repoId)?.name)
           .filter((name): name is string => name !== undefined);
@@ -376,10 +316,7 @@ export function createConnectGithubRoutes(
           }
         }
 
-        return c.json(
-          { startedTriggerCount: result.createdTriggerIds.length },
-          200,
-        );
+        return c.json({ startedTriggerCount: result.createdTriggerIds.length }, 200);
       } catch (cause) {
         // A repoId `state.repos` doesn't carry means the card's own
         // selection state is stale against a live re-list — never

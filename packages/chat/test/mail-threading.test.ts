@@ -45,10 +45,8 @@ function harness() {
           }));
         },
       },
-      resolveKnownPrincipalIds: async (
-        _tenantId: string,
-        candidateIds: readonly string[],
-      ) => new Set(candidateIds),
+      resolveKnownPrincipalIds: async (_tenantId: string, candidateIds: readonly string[]) =>
+        new Set(candidateIds),
       resolveTenantDomain: async () => DOMAIN,
     },
   };
@@ -77,10 +75,7 @@ async function postRow(
   return row;
 }
 
-async function dispatch(
-  h: ReturnType<typeof harness>,
-  requestMessageIds: readonly string[],
-) {
+async function dispatch(h: ReturnType<typeof harness>, requestMessageIds: readonly string[]) {
   await dispatchTurn(h.deps as never, {
     tenantId: TENANT,
     workbenchId: WORKBENCH,
@@ -168,11 +163,7 @@ describe("dispatch mail threading", () => {
       workbenchId: WORKBENCH,
       parentMessageId: first.id,
     });
-    const inFirst = await postRow(
-      h.roomMessages,
-      "@ins_echo1 one",
-      firstThread.id,
-    );
+    const inFirst = await postRow(h.roomMessages, "@ins_echo1 one", firstThread.id);
     await h.threads.assignMessage({
       tenantId: TENANT,
       workbenchId: WORKBENCH,
@@ -186,11 +177,7 @@ describe("dispatch mail threading", () => {
       workbenchId: WORKBENCH,
       parentMessageId: second.id,
     });
-    const inSecond = await postRow(
-      h.roomMessages,
-      "@ins_echo1 two",
-      secondThread.id,
-    );
+    const inSecond = await postRow(h.roomMessages, "@ins_echo1 two", secondThread.id);
     await h.threads.assignMessage({
       tenantId: TENANT,
       workbenchId: WORKBENCH,

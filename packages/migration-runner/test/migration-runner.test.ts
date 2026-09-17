@@ -41,14 +41,10 @@ const migrations: readonly PackageMigration[] = [
 ];
 
 describeIfDb("applyPackageMigrations", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchDatabase = new URL(scratchUrl).pathname.replace(/^\//, "");
 
-  async function withMaintenanceConnection<T>(
-    run: (sql: postgres.Sql) => Promise<T>,
-  ): Promise<T> {
+  async function withMaintenanceConnection<T>(run: (sql: postgres.Sql) => Promise<T>): Promise<T> {
     const maintenanceUrl = new URL(scratchUrl);
     maintenanceUrl.pathname = "/postgres";
     const maintenance = postgres(maintenanceUrl.toString(), {
@@ -94,9 +90,7 @@ describeIfDb("applyPackageMigrations", () => {
       packageLabel: "migration-runner-test",
     });
     expect(second.applied).toEqual([]);
-    expect(second.alreadyApplied.sort()).toEqual(
-      ["0001_widget", "0002_widget_label"].sort(),
-    );
+    expect(second.alreadyApplied.sort()).toEqual(["0001_widget", "0002_widget_label"].sort());
   });
 
   test("two replicas booting concurrently both complete without either crashing on a duplicate ledger insert", async () => {
@@ -116,10 +110,7 @@ describeIfDb("applyPackageMigrations", () => {
     ]);
 
     const appliedNames = [...first.applied, ...second.applied].sort();
-    const alreadyAppliedNames = [
-      ...first.alreadyApplied,
-      ...second.alreadyApplied,
-    ].sort();
+    const alreadyAppliedNames = [...first.alreadyApplied, ...second.alreadyApplied].sort();
 
     expect(new Set(appliedNames).size).toBe(appliedNames.length);
     expect([...appliedNames, ...alreadyAppliedNames].sort()).toEqual(
@@ -145,9 +136,7 @@ describeIfDb("applyPackageMigrations", () => {
     const crashLedger = `${LEDGER_TABLE}_crash`;
 
     const holder = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
-    await holder.unsafe(`SELECT pg_advisory_lock(hashtext($1)::bigint)`, [
-      crashLedger,
-    ]);
+    await holder.unsafe(`SELECT pg_advisory_lock(hashtext($1)::bigint)`, [crashLedger]);
     await holder.end({ timeout: 0 });
 
     const result = await applyPackageMigrations({
@@ -176,9 +165,7 @@ describeIfDb("applyPackageMigrations", () => {
         migrations: brokenMigrations,
         packageLabel: "migration-runner-fail-test",
       }),
-    ).rejects.toThrow(
-      /migration-runner-fail-test migration 0001_broken failed/,
-    );
+    ).rejects.toThrow(/migration-runner-fail-test migration 0001_broken failed/);
 
     // A second run reaching the same lock immediately (rather than hanging
     // behind the first run's connection) proves the failed run's `finally`

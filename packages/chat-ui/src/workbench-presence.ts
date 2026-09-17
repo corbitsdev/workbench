@@ -37,9 +37,7 @@ export function parsePresenceEvent(
 
 /** Parses a `chat.presence.snapshot` SSE payload — the one-time roster a
  * freshly opened stream is handed before any delta. */
-export function parsePresenceSnapshotEvent(
-  data: unknown,
-): readonly PresenceRosterEntry[] | null {
+export function parsePresenceSnapshotEvent(data: unknown): readonly PresenceRosterEntry[] | null {
   if (typeof data !== "object" || data === null) return null;
   const members = (data as Record<string, unknown>).members;
   if (!Array.isArray(members)) return null;
@@ -74,21 +72,15 @@ export function nextPresenceRoster(
     const parsed = parsePresenceEvent(event.data);
     if (parsed === null) return current;
     if (parsed.state === "offline") {
-      return current.filter(
-        (member) => member.principalId !== parsed.principalId,
-      );
+      return current.filter((member) => member.principalId !== parsed.principalId);
     }
-    const existingIndex = current.findIndex(
-      (member) => member.principalId === parsed.principalId,
-    );
+    const existingIndex = current.findIndex((member) => member.principalId === parsed.principalId);
     const entry: PresenceRosterEntry = {
       principalId: parsed.principalId,
       lastActiveAt: parsed.lastActiveAt,
     };
     if (existingIndex === -1) return [...current, entry];
-    return current.map((member, index) =>
-      index === existingIndex ? entry : member,
-    );
+    return current.map((member, index) => (index === existingIndex ? entry : member));
   }
   return current;
 }

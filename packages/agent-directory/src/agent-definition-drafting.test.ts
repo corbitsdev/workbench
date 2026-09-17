@@ -95,15 +95,15 @@ describe("parseAgentDefinitionDraftReply", () => {
   });
 
   test("rejects a reply missing the required systemPrompt", () => {
-    expect(() =>
-      parseAgentDefinitionDraftReply(JSON.stringify({ description: "x" })),
-    ).toThrow(AgentDefinitionDraftReplyUnparseableError);
+    expect(() => parseAgentDefinitionDraftReply(JSON.stringify({ description: "x" }))).toThrow(
+      AgentDefinitionDraftReplyUnparseableError,
+    );
   });
 
   test("rejects an empty systemPrompt", () => {
-    expect(() =>
-      parseAgentDefinitionDraftReply(JSON.stringify({ systemPrompt: "" })),
-    ).toThrow(AgentDefinitionDraftReplyUnparseableError);
+    expect(() => parseAgentDefinitionDraftReply(JSON.stringify({ systemPrompt: "" }))).toThrow(
+      AgentDefinitionDraftReplyUnparseableError,
+    );
   });
 
   test("rejects a toolPackagePins array over the cardinality bound", () => {
@@ -277,9 +277,7 @@ describe("createMyraAgentDefinitionDrafting", () => {
         },
       }),
     );
-    await expect(drafting.propose(INPUT)).rejects.toBeInstanceOf(
-      OneShotRunTimedOutError,
-    );
+    await expect(drafting.propose(INPUT)).rejects.toBeInstanceOf(OneShotRunTimedOutError);
   });
 
   test("a name-only propose (no purpose) still runs the drafting flow, never a template", async () => {

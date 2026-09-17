@@ -13,10 +13,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import type {
-  BlockResponseActions,
-  BlockResponseQuery,
-} from "../src/blocks/block-responses";
+import type { BlockResponseActions, BlockResponseQuery } from "../src/blocks/block-responses";
 import type { MessageItem } from "../src/api";
 import { CHAT_STRINGS } from "../src/strings";
 import { WorkbenchTimeline } from "../src/timeline";
@@ -46,10 +43,7 @@ function messageWithQuestionBlock(allowFreeText = false): MessageItem[] {
   ];
 }
 
-function fakeBackend(opts?: {
-  readonly failSubmits?: number;
-  readonly persistFails?: boolean;
-}) {
+function fakeBackend(opts?: { readonly failSubmits?: number; readonly persistFails?: boolean }) {
   let answer: {
     answer: string;
     optionIndex?: number;
@@ -69,20 +63,13 @@ function fakeBackend(opts?: {
           : {
               kind: "question",
               answer: answer.answer,
-              ...(answer.optionIndex !== undefined
-                ? { optionIndex: answer.optionIndex }
-                : {}),
+              ...(answer.optionIndex !== undefined ? { optionIndex: answer.optionIndex } : {}),
               notifiedAt: answer.notifiedAt,
             },
     }),
     submitPoll: async () => ({ kind: "submitted" }),
     submitForm: async () => ({ kind: "submitted" }),
-    submitQuestion: async (
-      _messageId,
-      _blockId,
-      submittedAnswer,
-      optionIndex,
-    ) => {
+    submitQuestion: async (_messageId, _blockId, submittedAnswer, optionIndex) => {
       submitCalls.push({ answer: submittedAnswer, optionIndex });
       if (opts?.persistFails === true) {
         return { kind: "error", message: "persist_failed" };
@@ -107,10 +94,7 @@ function fakeBackend(opts?: {
 }
 
 function setInputValue(input: HTMLInputElement, value: string): void {
-  const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
-    "value",
-  )?.set;
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
   setter?.call(input, value);
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
@@ -141,8 +125,8 @@ async function mount(actions: BlockResponseActions, allowFreeText = false) {
 }
 
 function choiceButton(el: HTMLElement, label: string): HTMLButtonElement {
-  const button = [...el.querySelectorAll(".chat-block-question-choice")].find(
-    (node) => node.textContent?.includes(label),
+  const button = [...el.querySelectorAll(".chat-block-question-choice")].find((node) =>
+    node.textContent?.includes(label),
   ) as HTMLButtonElement | undefined;
   if (button === undefined) throw new Error(`expected ${label}`);
   return button;
@@ -188,9 +172,7 @@ describe("question card — open state", () => {
   test("free-text field renders only when allowFreeText is set", async () => {
     const backend = fakeBackend();
     const withFreeText = await mount(backend.actions, true);
-    expect(
-      withFreeText.querySelector(".chat-block-question-freetext"),
-    ).not.toBeNull();
+    expect(withFreeText.querySelector(".chat-block-question-freetext")).not.toBeNull();
 
     const mounted = root;
     if (mounted !== null) act(() => mounted.unmount());
@@ -199,9 +181,7 @@ describe("question card — open state", () => {
     root = null;
 
     const withoutFreeText = await mount(backend.actions, false);
-    expect(
-      withoutFreeText.querySelector(".chat-block-question-freetext"),
-    ).toBeNull();
+    expect(withoutFreeText.querySelector(".chat-block-question-freetext")).toBeNull();
   });
 
   test("options are focusable buttons in document order (native tab nav)", async () => {
@@ -227,9 +207,7 @@ describe("question card — answering", () => {
       choiceButton(el, "Production").click();
     });
 
-    expect(backend.submitCalls).toEqual([
-      { answer: "Production", optionIndex: 1 },
-    ]);
+    expect(backend.submitCalls).toEqual([{ answer: "Production", optionIndex: 1 }]);
     expect(el.querySelector('[data-answered="true"]')).not.toBeNull();
     expect(el.querySelector(".chat-block-question-check")).not.toBeNull();
     expect(el.textContent).toContain("Production");
@@ -240,12 +218,8 @@ describe("question card — answering", () => {
     const backend = fakeBackend();
     const el = await mount(backend.actions, true);
 
-    const input = el.querySelector(
-      ".chat-block-question-freetext input",
-    ) as HTMLInputElement;
-    const form = el.querySelector(
-      ".chat-block-question-freetext",
-    ) as HTMLFormElement;
+    const input = el.querySelector(".chat-block-question-freetext input") as HTMLInputElement;
+    const form = el.querySelector(".chat-block-question-freetext") as HTMLFormElement;
 
     await act(async () => {
       setInputValue(input, "Somewhere else entirely");
@@ -269,9 +243,7 @@ describe("question card — answering", () => {
       choiceButton(el, "Production").click();
     });
 
-    expect(backend.submitCalls).toEqual([
-      { answer: "Production", optionIndex: 1 },
-    ]);
+    expect(backend.submitCalls).toEqual([{ answer: "Production", optionIndex: 1 }]);
     expect(el.querySelector('[data-answered="true"]')).not.toBeNull();
     expect(el.textContent).toContain("Production");
     expect(el.querySelector(".chat-block-question-check")).toBeNull();
@@ -279,9 +251,7 @@ describe("question card — answering", () => {
     expect(alert).not.toBeNull();
     expect(alert?.textContent).toBe(CHAT_STRINGS.blockQuestionNotifyFailed);
 
-    const retry = el.querySelector(
-      "[data-question-retry]",
-    ) as HTMLButtonElement | null;
+    const retry = el.querySelector("[data-question-retry]") as HTMLButtonElement | null;
     expect(retry).not.toBeNull();
     expect(retry?.disabled).toBe(false);
 
@@ -314,9 +284,7 @@ describe("question card — answering", () => {
     expect(remounted.querySelector(".chat-block-question-check")).toBeNull();
     const alert = remounted.querySelector("[role='alert']");
     expect(alert?.textContent).toBe(CHAT_STRINGS.blockQuestionNotifyFailed);
-    const retry = remounted.querySelector(
-      "[data-question-retry]",
-    ) as HTMLButtonElement | null;
+    const retry = remounted.querySelector("[data-question-retry]") as HTMLButtonElement | null;
     expect(retry).not.toBeNull();
 
     await act(async () => {
@@ -327,21 +295,15 @@ describe("question card — answering", () => {
       { answer: "Production", optionIndex: 1 },
     ]);
     expect(remounted.querySelector("[data-question-retry]")).toBeNull();
-    expect(
-      remounted.querySelector(".chat-block-question-check"),
-    ).not.toBeNull();
+    expect(remounted.querySelector(".chat-block-question-check")).not.toBeNull();
   });
 
   test("free-text notify-failed retry resubmits the same string without optionIndex", async () => {
     const backend = fakeBackend({ failSubmits: 1 });
     const el = await mount(backend.actions, true);
 
-    const input = el.querySelector(
-      ".chat-block-question-freetext input",
-    ) as HTMLInputElement;
-    const form = el.querySelector(
-      ".chat-block-question-freetext",
-    ) as HTMLFormElement;
+    const input = el.querySelector(".chat-block-question-freetext input") as HTMLInputElement;
+    const form = el.querySelector(".chat-block-question-freetext") as HTMLFormElement;
 
     await act(async () => {
       setInputValue(input, "Somewhere else entirely");
@@ -353,9 +315,7 @@ describe("question card — answering", () => {
     expect(backend.submitCalls).toEqual([
       { answer: "Somewhere else entirely", optionIndex: undefined },
     ]);
-    const retry = el.querySelector(
-      "[data-question-retry]",
-    ) as HTMLButtonElement | null;
+    const retry = el.querySelector("[data-question-retry]") as HTMLButtonElement | null;
     expect(retry).not.toBeNull();
 
     await act(async () => {
@@ -377,9 +337,7 @@ describe("question card — answering", () => {
       choiceButton(el, "Production").click();
     });
 
-    expect(backend.submitCalls).toEqual([
-      { answer: "Production", optionIndex: 1 },
-    ]);
+    expect(backend.submitCalls).toEqual([{ answer: "Production", optionIndex: 1 }]);
     expect(el.querySelector('[data-answered="true"]')).toBeNull();
     expect(el.querySelector("[data-question-retry]")).toBeNull();
     expect(el.querySelectorAll(".chat-block-question-choice")).toHaveLength(3);

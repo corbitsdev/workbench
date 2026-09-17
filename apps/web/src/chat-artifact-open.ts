@@ -33,9 +33,7 @@ export function artifactContentFromDetail(
     // presence `/update` route's own write-grant check is the real gate
     // — this only decides which pane a capable viewer sees.
     canEdit: rendererKind === "doc",
-    ...(rendererKind === "html"
-      ? { previewSrc: artifactPreviewPath(tenantId, detail.id) }
-      : {}),
+    ...(rendererKind === "html" ? { previewSrc: artifactPreviewPath(tenantId, detail.id) } : {}),
   };
 }
 
@@ -64,10 +62,7 @@ export function artifactContentFromBlob(
   blobId: string,
   contentBase64: string,
 ): CanvasArtifactContent {
-  const rendererKind = resolveRendererKindFromMediaType(
-    part.mediaType,
-    part.name,
-  );
+  const rendererKind = resolveRendererKindFromMediaType(part.mediaType, part.name);
   if (!isTextDecodableMediaType(part.mediaType)) {
     return {
       id: blobId,
