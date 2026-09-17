@@ -178,10 +178,6 @@ import {
 } from "@corbits/process-provisioner";
 import { createWorkflowRunAuthenticator } from "@corbits/artifacts-hub";
 import {
-  createPresenceRoomRegistry,
-  createPresenceRoutes,
-} from "@corbits/presence";
-import {
   createConnectionRoutes,
   isInferenceProvider,
   createMcpOAuthRoutes,
@@ -1048,9 +1044,6 @@ export async function createHub(config: HubConfig) {
   // nothing reported. See `hubErrorHandler`'s own doc comment.
   app.onError(hubErrorHandler());
 
-  // Presence rooms are ephemeral and process-local by design.
-  const presenceRoomRegistry = createPresenceRoomRegistry();
-
   // The hub's own grant store, built the same way `createApp` builds its
   // default when none is supplied (see `@intx/hub-api`'s
   // `mountHubRoutes`). `createRequireGrant` is the published construction
@@ -1117,16 +1110,6 @@ export async function createHub(config: HubConfig) {
       },
     );
   }
-  app.route(
-    `${TENANT_PREFIX}/presence`,
-    createPresenceRoutes({
-      registry: presenceRoomRegistry,
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: grantConditionRegistry,
-      }),
-    }),
-  );
   const threadStore = createDrizzleThreadStore(db);
   const blockResponseStore = createDrizzleBlockResponseStore(db);
   const reactionStore = createDrizzleReactionStore(db);

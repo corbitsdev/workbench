@@ -96,6 +96,44 @@ export async function uploadArtifactFiles(
   return body.data;
 }
 
+/**
+ * PUT `/api/tenants/:tenantId/artifacts/:id` (CL-8189) — the artifact
+ * editor's one save path now that co-edit presence is gone. Throws with
+ * status on non-2xx so the host can render an honest failed-save state
+ * instead of silently pretending the write landed.
+ */
+export async function saveArtifactContent(
+  tenantId: string,
+  artifactId: string,
+  content: string,
+): Promise<ArtifactDetail> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `/api/tenants/${tenantId}/artifacts/${encodeURIComponent(artifactId)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      },
+    );
+  } catch (cause) {
+    throw new ApiQueryError(
+      cause instanceof Error ? cause.message : String(cause),
+    );
+  }
+  if (response.status === 401) {
+    throw new UnauthenticatedError();
+  }
+  if (!response.ok) {
+    throw new ApiQueryError(
+      `The server answered ${response.status} for artifact save.`,
+      response.status,
+    );
+  }
+  return (await response.json()) as ArtifactDetail;
+}
+
 /** True when the hub answered "artifacts plane not configured" (503) —
  * read off the query's own status field, never string-matched out of a
  * rendered message (that copy is display-boundary plain by design and

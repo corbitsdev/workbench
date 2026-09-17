@@ -19,7 +19,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import * as Y from "yjs";
 import type { ArtifactSaveState } from "@corbits/artifact-ui";
 
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
@@ -27,7 +26,7 @@ import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { usePendingApprovalCount } from "../pending-approvals";
 import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";
-import { usePresenceRoom } from "../presence/use-presence-room";
+import { saveArtifactContent } from "./library-artifacts";
 import { APP_ROUTES, matchesRoute } from "../routes";
 import type { SessionUser } from "../session";
 import { StageTopBar } from "./stage-top-bar";
@@ -85,30 +84,24 @@ export function AppShell({
   const canvasArtifact = useCanvasColumnArtifact();
   const canvasRoutine = useCanvasColumnRoutine();
   const canvasFocus = useCanvasColumnFocus();
-  const { selectedTenantId: tenantId, selectedPrincipalId: viewerPrincipalId } =
-    useBench();
+  const { selectedTenantId: tenantId } = useBench();
 
-  // A text-kind artifact's shared `Y.Doc` (CL-5958 phase 2): one instance
-  // per artifact id, torn down and replaced the moment the open artifact
-  // changes so a stale doc from a previous artifact can never leak into a
-  // newly opened one. Non-"doc" kinds never get one — there's nothing to
-  // co-edit, so `usePresenceRoom` connects awareness-only for them, same
-  // as phase 1.
-  const [artifactDoc, setArtifactDoc] = useState<Y.Doc | null>(null);
+  // A text-kind artifact's save state (CL-8189: single-user editing, no
+  // co-edit presence). Resets to a fresh state the moment the open
+  // artifact changes so a stale "Saved · v3" from a previous artifact can
+  // never leak into a newly opened one.
   const [artifactSaveState, setArtifactSaveState] = useState<ArtifactSaveState>(
     { kind: "read-only" },
   );
-  const artifactDocForId = useRef<string | null>(null);
+  const artifactSaveStateForId = useRef<string | null>(null);
   useEffect(() => {
     if (canvasArtifact === null || canvasArtifact.rendererKind !== "doc") {
-      artifactDocForId.current = null;
-      setArtifactDoc(null);
+      artifactSaveStateForId.current = null;
       setArtifactSaveState({ kind: "read-only" });
       return;
     }
-    if (artifactDocForId.current === canvasArtifact.id) return;
-    artifactDocForId.current = canvasArtifact.id;
-    setArtifactDoc(new Y.Doc());
+    if (artifactSaveStateForId.current === canvasArtifact.id) return;
+    artifactSaveStateForId.current = canvasArtifact.id;
     setArtifactSaveState(
       canvasArtifact.canEdit === true
         ? { kind: "unsaved" }
@@ -116,38 +109,25 @@ export function AppShell({
     );
   }, [canvasArtifact]);
 
-  // Co-viewers of the open artifact, if any — see canvas-column.tsx's own
-  // `PresenceCursor` doc for why this stays plain data across the
-  // package boundary.
-  const artifactPresence = usePresenceRoom(
-    tenantId,
-    canvasArtifact === null ? null : `artifact:${canvasArtifact.id}`,
-    undefined,
-    {
-      ...(viewerPrincipalId === null ? {} : { principalId: viewerPrincipalId }),
-      ...(artifactDoc === null
-        ? {}
-        : {
-            doc: artifactDoc,
-            onSaved: (info: { version: number; savedAt: number }) =>
-              setArtifactSaveState({
-                kind: "saved",
-                version: info.version,
-                savedAt: info.savedAt,
-              }),
-          }),
-    },
-  );
-  const editingCoworkers = artifactPresence.members
-    .filter(
-      (member) =>
-        member.typing === true && member.principalId !== viewerPrincipalId,
-    )
-    .map((member) => member.displayName);
-  const artifactSaveStateWithEditors: ArtifactSaveState =
-    canvasArtifact?.canEdit === true && editingCoworkers.length > 0
-      ? { kind: "editing", by: editingCoworkers }
-      : artifactSaveState;
+  const saveArtifact = (content: string) => {
+    if (tenantId === null || canvasArtifact === null) return;
+    const artifactId = canvasArtifact.id;
+    setArtifactSaveState({ kind: "saving" });
+    void saveArtifactContent(tenantId, artifactId, content).then(
+      (saved) => {
+        if (artifactSaveStateForId.current !== artifactId) return;
+        setArtifactSaveState({
+          kind: "saved",
+          version: saved.version,
+          savedAt: Date.now(),
+        });
+      },
+      () => {
+        if (artifactSaveStateForId.current !== artifactId) return;
+        setArtifactSaveState({ kind: "unsaved" });
+      },
+    );
+  };
   const closeCanvas = useCloseCanvas();
   const toggleCanvasFocus = useToggleCanvasFocus();
   const mainRef = useRef<HTMLDivElement>(null);
@@ -203,20 +183,8 @@ export function AppShell({
             onClose={closeCanvas}
             onToggleFocus={toggleCanvasFocus}
             onNavigate={navigate}
-            presenceCursors={artifactPresence.members
-              .filter((member) => member.cursor !== undefined)
-              .map((member) => ({
-                principalId: member.principalId,
-                displayName: member.displayName,
-                color: member.color,
-                x: member.cursor?.x ?? 0,
-                y: member.cursor?.y ?? 0,
-              }))}
-            onCursorMove={artifactPresence.publishCursor}
-            {...(artifactDoc !== null ? { artifactDoc } : {})}
-            artifactSaveState={artifactSaveStateWithEditors}
-            onArtifactTyping={artifactPresence.publishTyping}
-            presenceConnection={artifactPresence.connection}
+            artifactSaveState={artifactSaveState}
+            onSaveArtifact={saveArtifact}
           />
         </Suspense>
       ) : null}

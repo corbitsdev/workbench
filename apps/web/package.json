@@ -31,7 +31,6 @@
     "@corbits/inbox": "workspace:*",
     "@corbits/inference-settings": "workspace:*",
     "@corbits/plugins-ui": "workspace:*",
-    "@corbits/presence": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
     "@corbits/settings-ui": "workspace:*",
     "@corbits/shell-layout": "workspace:*",
@@ -47,8 +46,7 @@
     "@corbits/connections": "workspace:*",
     "arktype": "catalog:",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "yjs": "^13.6.32"
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.11.2",

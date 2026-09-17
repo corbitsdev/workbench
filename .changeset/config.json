@@ -41,7 +41,6 @@
     "@corbits/mocks",
     "@corbits/notify",
     "@corbits/plugins-ui",
-    "@corbits/presence",
     "@corbits/process-provisioner",
     "@corbits/provider-pricing",
     "@corbits/sandbox-sidecar",

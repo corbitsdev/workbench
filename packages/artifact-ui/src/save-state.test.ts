@@ -24,22 +24,8 @@ describe("formatSaveStateLine", () => {
     expect(formatSaveStateLine({ kind: "read-only" }, 0)).toBe("");
   });
 
-  test("editing with no named co-editors is a generic ellipsis", () => {
-    expect(formatSaveStateLine({ kind: "editing", by: [] }, 0)).toBe(
-      "Editing…",
-    );
-  });
-
-  test("editing names a single co-editor", () => {
-    expect(formatSaveStateLine({ kind: "editing", by: ["Priya"] }, 0)).toBe(
-      "Priya is editing…",
-    );
-  });
-
-  test("editing with multiple co-editors gives a count, never a fabricated list", () => {
-    expect(
-      formatSaveStateLine({ kind: "editing", by: ["Priya", "Sam"] }, 0),
-    ).toBe("2 people are editing…");
+  test("saving reads a plain in-flight ellipsis", () => {
+    expect(formatSaveStateLine({ kind: "saving" }, 0)).toBe("Saving…");
   });
 
   test("saved combines the relative-time label with the version, never claiming a version that wasn't confirmed", () => {

@@ -44,7 +44,6 @@
     "@corbits/morning-brief-workflow": "workspace:*",
     "@corbits/notify": "workspace:*",
     "@corbits/pain-point-collateral-workflow": "workspace:*",
-    "@corbits/presence": "workspace:*",
     "@corbits/process-granola-call-workflow": "workspace:*",
     "@corbits/process-provisioner": "workspace:*",
     "@corbits/reddit-opportunity-scanner-workflow": "workspace:*",
@@ -78,7 +77,6 @@
   },
   "devDependencies": {
     "@types/bun": "catalog:",
-    "typescript": "catalog:",
-    "yjs": "^13.6.32"
+    "typescript": "catalog:"
   }
 }

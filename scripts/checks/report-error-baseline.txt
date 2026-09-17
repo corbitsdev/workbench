@@ -172,12 +172,6 @@ packages/ollama-adapter/src/inline-tool-json.ts	1	return { kind: "incomplete" };
 packages/onboarding/src/pending-seed.ts	1	return drop();
 packages/onboarding/src/routes.ts	1	// Neither `ProvisionError` nor `CliError` messages are safe to show
 packages/onboarding/src/routes.ts	1	return c.json(
-packages/presence/src/artifact-persistence.ts	1	deps.onSnapshotError?.(key, error);
-packages/presence/src/client.ts	1	// A malformed update is dropped rather than crashing the client;
-packages/presence/src/client.ts	1	return [];
-packages/presence/src/client.ts	1	return undefined;
-packages/presence/src/client.ts	2	return undefined;
-packages/presence/src/routes.ts	1	return c.json(
 packages/reddit-tools/src/tool.ts	1	return null;
 packages/reddit-tools/src/tool.ts	1	return {
 packages/reddit-tools/src/tool.ts	2	return {

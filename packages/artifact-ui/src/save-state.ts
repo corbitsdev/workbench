@@ -1,13 +1,13 @@
-// The canvas artifact pane's editing/save-state line — never a fake
-// autosave claim. "Saved · v12" is only ever rendered once the room's
-// stream has actually delivered a `doc.saved` event carrying that version
-// (see `@corbits/presence`'s `PresenceDocSnapshotInfo`); until then the
-// host renders "editing" or "unsaved" honestly instead of guessing that a
-// debounced server-side write already landed.
+// The canvas artifact pane's save-state line — never a fake autosave claim.
+// "Saved · v12" is only ever rendered once the artifact's PUT route has
+// actually answered with that version (CL-8189: single-user editing, no
+// co-edit presence); until then the host renders "Saving…" or "Unsaved
+// changes" honestly instead of guessing that a debounced write already
+// landed.
 
 export type ArtifactSaveState =
   | { readonly kind: "read-only" }
-  | { readonly kind: "editing"; readonly by: readonly string[] }
+  | { readonly kind: "saving" }
   | {
       readonly kind: "saved";
       readonly version: number;
@@ -40,11 +40,8 @@ export function formatSaveStateLine(
   switch (state.kind) {
     case "read-only":
       return "";
-    case "editing": {
-      if (state.by.length === 0) return "Editing…";
-      if (state.by.length === 1) return `${state.by[0]} is editing…`;
-      return `${state.by.length} people are editing…`;
-    }
+    case "saving":
+      return "Saving…";
     case "saved":
       return `${formatSavedLabel(state.savedAt, now)} · v${state.version}`;
     case "unsaved":
