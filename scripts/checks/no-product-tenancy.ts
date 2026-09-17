@@ -137,6 +137,17 @@ const ALLOWLIST: readonly {
     maxOccurrences: 1,
     tables: ["evals.run"],
   },
+  {
+    // CL-8183: the vendored Interchange workflow-trigger grammar has no
+    // `schedule` trigger, so `@corbits/cron` fires a tenant's saved cron
+    // expressions as plain mail instead. Product-owned schedule state,
+    // never tenancy — FK'd back to the native `tenant` table.
+    relPath: "packages/cron/src/schema.ts",
+    maxOccurrences: 2,
+    // CL-8210: Interchange's `tenant` re-declared (id only, never migrated)
+    // to carry the FK from cron.schedule.
+    tables: ["tenant", "cron.schedule"],
+  },
 ];
 
 export async function scanFiles(root: string, dirs: readonly string[]): Promise<string[]> {

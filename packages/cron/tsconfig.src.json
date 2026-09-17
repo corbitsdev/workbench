@@ -3,8 +3,8 @@
   "include": ["src", "package.json", "src/**/*.json"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "compilerOptions": {
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": ["bun"],
+    "customConditions": ["bun"],
     "composite": true,
     "emitDeclarationOnly": true,
     "outDir": "dist",

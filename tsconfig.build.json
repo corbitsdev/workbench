@@ -53,6 +53,9 @@
       "path": "./packages/credential-providers/tsconfig.src.json"
     },
     {
+      "path": "./packages/cron/tsconfig.src.json"
+    },
+    {
       "path": "./packages/docker-provisioner/tsconfig.src.json"
     },
     {
@@ -111,9 +114,6 @@
     },
     {
       "path": "./packages/url-path/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/workflow-schedule/tsconfig.src.json"
     },
     {
       "path": "./packages/workflows/tsconfig.src.json"
