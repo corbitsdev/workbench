@@ -88,12 +88,26 @@ export type StockHub = {
   listMyPrincipals(): Promise<MyMembership[]>;
   getTenant(id: string): Promise<HubTenant | null>;
   listPrincipals(tenantId: string): Promise<HubPrincipal[]>;
+  /** Omitting `parentId` mints a top-level tenant with the caller as its
+   * owner — the stock route the first-signup installer step uses to
+   * create the primary tenant; a workbench child tenant always supplies
+   * it. */
   createTenant(input: {
     name: string;
     slug: string;
-    parentId: string;
+    parentId?: string;
   }): Promise<HubTenant>;
-  inviteMember(tenantId: string, input: { email: string }): Promise<void>;
+  /**
+   * Invites by email and assigns `role` (a system role name, e.g.
+   * "member") in the same op — the stock invite route's `roleId` is the
+   * only way an invited principal gets any grant at all; without it the
+   * principal lands with zero roles and every subsequent read 403s
+   * (CL-8085/CL-8131 fix).
+   */
+  inviteMember(
+    tenantId: string,
+    input: { email: string; role: string },
+  ): Promise<void>;
   deployWorkflow(tenantId: string, input: WorkflowDeployInput): Promise<void>;
   sendRunMail(input: SendRunMailInput): Promise<{ messageId: string }>;
   listRunMail(input: { tenantId: string }): Promise<MailMessage[]>;
@@ -151,7 +165,11 @@ export class StockHubRequestError extends Error {
   }
 }
 
-export async function readHubSnapshot(hub: StockHub): Promise<HubSnapshot> {
+/** Every tenant the signed-in user owns (active `owner` role), regardless
+ * of whether it is a top-level home or a workbench child — the shared
+ * read behind both the primary-tenant gap check and the first-signup
+ * installer's "does a primary tenant already exist" probe. */
+export async function findOwnedTenants(hub: StockHub): Promise<HubTenant[]> {
   const memberships = await hub.listMyPrincipals();
   const activeOwned = memberships.filter(
     (membership) =>
@@ -159,11 +177,15 @@ export async function readHubSnapshot(hub: StockHub): Promise<HubSnapshot> {
       membership.status === "active" &&
       membership.roles.some((role) => role.name === "owner"),
   );
-  const tenants = (
+  return (
     await Promise.all(
       activeOwned.map((membership) => hub.getTenant(membership.tenantId)),
     )
   ).filter((tenant): tenant is HubTenant => tenant !== null);
+}
+
+export async function readHubSnapshot(hub: StockHub): Promise<HubSnapshot> {
+  const tenants = await findOwnedTenants(hub);
   const primaryCandidates = tenants.filter(
     (tenant) => tenant.parentId === null,
   );
@@ -244,7 +266,10 @@ async function convergeWorkbenchTenant(
   });
   for (const principal of workbench.principals) {
     if (principal.email !== undefined) {
-      await hub.inviteMember(created.id, { email: principal.email });
+      await hub.inviteMember(created.id, {
+        email: principal.email,
+        role: principal.roles[0] ?? "member",
+      });
     }
   }
   return { tenantId: created.id, created: true };
@@ -487,6 +512,39 @@ const MailPageShape = type({
   nextCursor: "string | null",
 });
 const SentMailShape = type({ messageId: "string" });
+const RolePageShape = type({
+  data: type({ id: "string", name: "string" }).array(),
+  nextCursor: "string | null",
+});
+
+/**
+ * Resolves a system role name (e.g. "member") to its per-tenant role id
+ * over the stock roles route. A tenant's system roles are seeded by
+ * `createTenant` itself, so this never needs to page past the first
+ * roles listing in practice — the route is still cursor-shaped, so this
+ * follows it rather than assuming a single page.
+ */
+async function resolveRoleId(
+  fetchImpl: typeof fetch,
+  tenantId: string,
+  roleName: string,
+): Promise<string> {
+  const roles = await fetchAllPages(
+    fetchImpl,
+    `/api/tenants/${encodeURIComponent(tenantId)}/roles`,
+    "listRoles",
+    (body) => parseBoundary(RolePageShape, body, "listRoles"),
+  );
+  const found = roles.find((role) => role.name === roleName);
+  if (found === undefined) {
+    throw new StockHubRequestError(
+      "listRoles",
+      undefined,
+      `Stock roles for workbench ${tenantId} carry no role named "${roleName}".`,
+    );
+  }
+  return found.id;
+}
 
 async function readJson(
   response: Response,
@@ -588,13 +646,14 @@ export function createFetchStockHub(fetchImpl: typeof fetch = fetch): StockHub {
       return { ...parsed, parentId: parsed.parentId ?? null };
     },
     async inviteMember(tenantId, input) {
+      const roleId = await resolveRoleId(fetchImpl, tenantId, input.role);
       await readJson(
         await fetchImpl(
           `/api/tenants/${encodeURIComponent(tenantId)}/members/invite`,
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify(input),
+            body: JSON.stringify({ email: input.email, roleId }),
           },
         ),
         "inviteMember",
