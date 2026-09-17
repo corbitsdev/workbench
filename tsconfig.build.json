@@ -5,12 +5,6 @@
       "path": "./agents/assistant/tsconfig.src.json"
     },
     {
-      "path": "./agents/jimmy/tsconfig.src.json"
-    },
-    {
-      "path": "./agents/scout/tsconfig.src.json"
-    },
-    {
       "path": "./apps/sidecar/tsconfig.src.json"
     },
     {
@@ -228,9 +222,6 @@
     },
     {
       "path": "./workflows/credential-expiry/tsconfig.src.json"
-    },
-    {
-      "path": "./workflows/diligence-brief/tsconfig.src.json"
     },
     {
       "path": "./workflows/echo/tsconfig.src.json"

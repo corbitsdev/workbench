@@ -28,7 +28,6 @@ import painPointCollateralPkg from "../../../workflows/pain-point-collateral/pac
 import collateralGenerationPkg from "../../../workflows/collateral-generation/package.json";
 import redditOpportunityScannerPkg from "../../../workflows/reddit-opportunity-scanner/package.json";
 import last30DaysResearchPkg from "../../../workflows/last-30-days-research/package.json";
-import diligenceBriefPkg from "../../../workflows/diligence-brief/package.json";
 import exaTopicWatchPkg from "../../../workflows/exa-topic-watch/package.json";
 import attioTaskAgentPkg from "../../../workflows/attio-task-agent/package.json";
 
@@ -310,38 +309,6 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
         placeholder: "Competing launches",
         required: false,
         help: "Optional — narrows which angle of the topic to chase.",
-      },
-    ],
-  },
-  {
-    ...workflowBlock(diligenceBriefPkg),
-    conversational: false,
-    deliveryMode: "workbench",
-    whatItDoes:
-      "Researches a company across web search and firm memory, and writes a cited diligence brief across five fixed sections, held for approval before it's saved.",
-    requiredConnections: ["exa"],
-    exampleOutput: "Diligence brief: 5 sections, 2 flagged as insufficient evidence",
-    typicalDuration: "1-2 minutes, plus review and approval time",
-    // Mirrors workflows/diligence-brief/src/index.ts's system prompt
-    // exactly: "the trigger carries a `company` and an optional `focus`" —
-    // company is required (the prompt refuses to draft with no subject),
-    // focus narrows which angle to dig into and is skippable.
-    triggerFields: [
-      {
-        key: "company",
-        kind: "text",
-        label: "Company",
-        placeholder: "Acme Corp",
-        required: true,
-        help: "The company this brief is about.",
-      },
-      {
-        key: "focus",
-        kind: "text",
-        label: "Focus",
-        placeholder: "Founder track record",
-        required: false,
-        help: "Optional — narrows which angle to dig into.",
       },
     ],
   },

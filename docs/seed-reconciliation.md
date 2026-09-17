@@ -67,8 +67,8 @@ nobody had asked for yet. Those three, plus every other
 `workflows/<name>` source package that exports a builder
 (`code-review`, `granola-call`, `morning-brief`, `exa-topic-watch`,
 `process-granola-call`, `attio-task-agent`, `pain-point-collateral`,
-`reddit-opportunity-scanner`, `collateral-generation`,
-`diligence-brief`), now live in `CATALOG_WORKFLOWS`, same shape
+`reddit-opportunity-scanner`, `collateral-generation`), now live in
+`CATALOG_WORKFLOWS`, same shape
 (`DefinitionWithAgentSteps`-backed `DefaultWorkflow` entries) and
 deployable through the catalog instantiate route (CL-7073), but never
 automatically at signup.
@@ -236,9 +236,9 @@ garbage-collect.
 
 ## Credential-bound catalog workflows (CL-7073)
 
-Six `CATALOG_WORKFLOWS` entries — granola-call, morning-brief,
-process-granola-call, pain-point-collateral, collateral-generation,
-diligence-brief — declare `credentialBindings` in their definition.
+Five `CATALOG_WORKFLOWS` entries — granola-call, morning-brief,
+process-granola-call, pain-point-collateral, collateral-generation —
+declare `credentialBindings` in their definition.
 `deployCodeSourcedWorkflow` (`vendor/intx/hub-sessions`) refuses to
 resolve those bindings without a `credentialCipher`, and the current
 Interchange pin's `POST /template-blocks/:assetName/deploy` front (the

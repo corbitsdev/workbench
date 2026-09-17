@@ -71,10 +71,4 @@ export const CORBITS_TOOL_PACKAGE_DIRS: readonly string[] = [
   new URL("../../../tools/manus", import.meta.url).pathname,
   new URL("../../../tools/linear", import.meta.url).pathname,
   new URL("../../../tools/workflow-authoring", import.meta.url).pathname,
-  // Scout's own artifact-save/list tool bundle (`scoutArtifactTools`) and
-  // Jimmy's `gif_search` bundle: each package pins itself in its own
-  // `toolPackagePins` (`SCOUT_TOOL_PACKAGE_PINS`, `JIMMY_TOOL_PACKAGE_PINS`),
-  // so each must publish here too or that self-pin never resolves.
-  new URL("../../../agents/scout", import.meta.url).pathname,
-  new URL("../../../agents/jimmy", import.meta.url).pathname,
 ];

@@ -39,11 +39,7 @@ describe("connections pinned-by", () => {
   });
 
   test("exa pins every web-search workflow", () => {
-    expect(CONNECTOR_PINNED_WORKFLOWS.exa).toEqual([
-      "last-30-days-research",
-      "exa-topic-watch",
-      "diligence-brief",
-    ]);
+    expect(CONNECTOR_PINNED_WORKFLOWS.exa).toEqual(["last-30-days-research", "exa-topic-watch"]);
   });
 
   test("attio pins the CRM task agent", () => {

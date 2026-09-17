@@ -17,13 +17,6 @@ import type { ParticipantRecord } from "./wire/participants";
 import type { WorkbenchOnboardingStep } from "./wire/blocks";
 import { UnauthenticatedError } from "@corbits/api-query";
 import { InferenceSettingsApiError } from "@corbits/inference-settings";
-import {
-  JIMMY_AGENT_ID,
-  JIMMY_DESCRIPTION,
-  JIMMY_DISPLAY_NAME,
-  JIMMY_SYSTEM_PROMPT,
-  JIMMY_TOOL_PACKAGE_PINS,
-} from "@corbits/jimmy-agent/metadata";
 import { CHAT_STRINGS } from "./strings";
 
 export {
@@ -600,37 +593,6 @@ export function postWorkbenchOnboardingStep(
     PostedOnboardingStep,
     { method: "POST", body: JSON.stringify(step) },
   );
-}
-
-// Jimmy's own create-agent request shape — CL-6499 removed his workbench
-// template (he is not a "kind of workbench"), so this dialog's own "Add
-// Jimmy" quick-create row (see `invite-agent-dialog.tsx`) is his only
-// create path left. Built straight off his own package's metadata
-// (pure data, no tool bodies, no server-only imports — safe to reference
-// from browser code) rather than an `AgentDefinition` builder: Jimmy has
-// no handle or display name of his own outside this shape. `JIMMY_AGENT_ID`
-// ("jimmy") is both his id and the handle a person types to reach him.
-export const JIMMY_QUICK_CREATE = {
-  name: JIMMY_DISPLAY_NAME,
-  handle: JIMMY_AGENT_ID,
-  description: JIMMY_DESCRIPTION,
-  systemPrompt: JIMMY_SYSTEM_PROMPT,
-  toolPackagePins: JIMMY_TOOL_PACKAGE_PINS.map((pin) => pin.name),
-};
-
-const CreatedAgentDefinition = type({ id: "string" });
-
-/**
- * Creates Jimmy's agent-directory definition in one call — the same
- * one-shot `POST /agent-definitions` a template-driven participant create
- * goes through. Idempotency is the caller's job: only offer this when
- * `JIMMY_QUICK_CREATE.handle` is absent from the tenant's invitable list.
- */
-export function quickCreateJimmy(tenantId: string): Promise<{ readonly id: string }> {
-  return request(`/api/tenants/${tenantId}/agent-definitions`, CreatedAgentDefinition, {
-    method: "POST",
-    body: JSON.stringify(JIMMY_QUICK_CREATE),
-  });
 }
 
 // `DELETE /workbenches/:id/participants/:address` (see

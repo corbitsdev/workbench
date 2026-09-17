@@ -66,7 +66,7 @@ export const CreateAgentDefinitionInput = type({
   // an agent through a form, which has no affordance for typing one;
   // callers that supply it install an agent whose tools ship as pinned
   // packages rather than inline capabilities (a native `workflows/*`
-  // agent-directory create, Scout, Jimmy).
+  // agent-directory create).
   "toolPackagePins?": ToolPackagePinArray,
 });
 export type CreateAgentDefinitionInput = typeof CreateAgentDefinitionInput.infer;

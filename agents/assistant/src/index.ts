@@ -33,14 +33,14 @@ import {
   ASSISTANT_SYSTEM_PROMPT,
   ASSISTANT_TOOL_PACKAGE_PINS,
   ASSISTANT_WORKFLOW_ID,
-} from "./prompt";
+} from "./system-prompt";
 
 export {
   ASSISTANT_STEP_ID,
   ASSISTANT_SYSTEM_PROMPT,
   ASSISTANT_TOOL_PACKAGE_PINS,
   ASSISTANT_WORKFLOW_ID,
-} from "./prompt";
+} from "./system-prompt";
 
 /**
  * Everything the definition needs that is per-deployment data. The
