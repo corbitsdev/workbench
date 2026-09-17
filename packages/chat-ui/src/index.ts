@@ -37,6 +37,9 @@ export type {
   CorbitAvatarSize,
 } from "./avatar";
 
+export { threadMessagesToTimeline, roomRefFor } from "./mailbox-timeline";
+export type { TimelineItem } from "./mailbox-timeline";
+
 export { PinnedStrip } from "./pinned-strip";
 export type { PinsStatus } from "./use-workbench-feed";
 export {

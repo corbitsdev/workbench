@@ -34,6 +34,7 @@
     "@tanstack/react-query": "catalog:",
     "@corbits/connections": "workspace:*",
     "@corbits/jimmy-agent": "workspace:*",
+    "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#bc964040fa42ffe4e5d5004f87edaab6486e5d60",
     "arktype": "catalog:",
     "@corbits/icons": "workspace:*",
     "react": "^19.2.0",

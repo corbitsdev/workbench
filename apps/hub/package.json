@@ -37,7 +37,7 @@
     "@corbits/inbox": "workspace:*",
     "@corbits/inference-catalog": "workspace:*",
     "@corbits/last-30-days-research-workflow": "workspace:*",
-    "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#fea6211e42fddfc87e8e1755c219c437e45a7d62",
+    "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#bc964040fa42ffe4e5d5004f87edaab6486e5d60",
     "@corbits/mcp-tools": "workspace:*",
     "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
     "@corbits/memory-hub": "workspace:*",

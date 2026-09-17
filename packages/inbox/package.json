@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@corbits/error-sink": "workspace:*",
-    "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#fea6211e42fddfc87e8e1755c219c437e45a7d62",
+    "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#bc964040fa42ffe4e5d5004f87edaab6486e5d60",
     "@corbits/notify": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/log": "0.3.0",
