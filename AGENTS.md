@@ -42,12 +42,9 @@ grants); the hub never seeds data on a client's behalf.
 
 ## Working conventions
 
-- `bun run check` (typecheck, lint, test, structural checks) must pass
-  before every commit. `check:structural` (`scripts/checks/run.ts`)
-  discovers and runs every `scripts/checks/*.ts` file with an
-  `import.meta.main` entry point — run one on its own with `bun run
-check:structural <name>` (e.g. `bun run check:structural report-error`),
-  forwarding flags after it.
+- `bun run check` (typecheck, lint, fmt, test) must pass before every
+  commit. There are no custom structural check scripts; a rule lives in
+  the code or schema itself or it does not exist.
 - Worktrees live in `.worktrees/<branch>`; branch = `cl-<issue#>-<slug>`.
 - Commit sequence per change: tests first ("Add tests for X"), then
   implementation ("X: what changed"), then docs ("Update docs: X"). One
@@ -79,24 +76,18 @@ Tests are meaningful red/green tests only — no coverage theater. An
 outdated test is deleted in the same PR that breaks it, not adapted to keep
 passing; rebuilding coverage for the area it covered happens under CL-8150.
 
-## Conventions a check enforces
-
-Each is backed by a `scripts/checks/*.ts` file that `check:structural`
-discovers and runs, so a violation fails CI rather than waiting for review.
+## Conventions
 
 - Report every caught error through `reportError` from
-  `@corbits/error-sink` — never a bare `catch {}`. Pre-existing violations
-  are tracked in `scripts/checks/report-error-baseline.txt`, a shrinking
-  debt ledger, not an allowlist.
-- A package's `browser-safe` subpath may never import a server-only
+  `@corbits/error-sink` — never a bare `catch {}`.
+- A package's `browser-safe` subpath never imports a server-only
   dependency (`postgres`, `drizzle-orm`, `hono`, any `@intx/*`).
-- A tool package's `{ name, version }` pin must match its own
-  `package.json` version, and its `src/` changing requires a version bump.
 - Every package needs a `LICENSE` file (LGPL-2.1-or-later).
-- A dependency declared in the root `catalog` must be consumed as
-  `catalog:` everywhere, never a literal range.
-- `exactOptionalPropertyTypes: true` in `tsconfig.base.json` — omit an
-  optional key rather than assigning it `undefined`.
+- A dependency declared in the root `catalog` is consumed as `catalog:`.
+- `exactOptionalPropertyTypes: true` — omit an optional key rather than
+  assigning it `undefined`.
+- A custom table that gets deleted is hard-removed: delete the schema code,
+  no drop migration. Cutovers are breaking; reset the database.
 
 ## Docs map
 

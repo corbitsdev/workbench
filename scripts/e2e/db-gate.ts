@@ -18,13 +18,11 @@ export const MISSING_DATABASE_HINT =
 
 // GitHub Actions sets CI=true on every job. None of ci.yml's jobs
 // provision Postgres (CL-8150 dropped the db-backed e2e/isolation/
-// db-suites jobs), so every DB-gated suite skips there (loudly) —
-// listed here so `bun run check:structural`'s own fetch-depth: 0
-// checkout doesn't accidentally start hard-failing a suite it never
-// meant to run. Any other CI context — including `CI=true bun test`
-// locally — treats a missing DATABASE_URL as a hard failure so a
-// miswired pipeline cannot skip green.
-const CI_JOBS_WITHOUT_POSTGRES = new Set(["setup", "lint", "typecheck", "structural", "unit"]);
+// db-suites jobs), so every DB-gated suite skips there (loudly). Any
+// other CI context — including `CI=true bun test` locally — treats a
+// missing DATABASE_URL as a hard failure so a miswired pipeline cannot
+// skip green.
+const CI_JOBS_WITHOUT_POSTGRES = new Set(["setup", "lint", "typecheck", "unit"]);
 
 export function databaseIsRequired(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env["CI"] !== "true") return false;

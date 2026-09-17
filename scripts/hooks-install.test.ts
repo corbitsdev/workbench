@@ -8,7 +8,7 @@ import { join } from "node:path";
 const HOOK = join(import.meta.dir, "git-hooks", "pre-push");
 const INSTALLER = join(import.meta.dir, "hooks-install.ts");
 
-const HEAVY_SUITE_MARKERS = ["test:e2e", "walking-skeleton", "check:structural"] as const;
+const HEAVY_SUITE_MARKERS = ["test:e2e", "walking-skeleton"] as const;
 
 function ambientEnv(overrides: Record<string, string> = {}): Record<string, string> {
   const {
@@ -112,7 +112,6 @@ describe("pre-push hook", () => {
       expect(log).toContain("run test");
       expect(log).not.toContain("test:e2e");
       expect(log).not.toContain("walking-skeleton");
-      expect(log).not.toContain("check:structural");
     } finally {
       await rm(work, { recursive: true, force: true });
     }
