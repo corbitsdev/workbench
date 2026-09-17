@@ -16,7 +16,7 @@
 import { Button } from "@corbits/react-ui";
 import { connectorDescriptors } from "@corbits/connections/registry";
 import type { ClassifiedInferenceFailureCategory } from "@corbits/connections/provider-health";
-import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
+import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 import { Warning, X } from "@corbits/icons";
 import { useEffect, useState } from "react";
 

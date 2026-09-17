@@ -7,7 +7,7 @@ import {
   createDefaultAgentWorkbench,
   findDefinitionByAssetName,
 } from "@corbits/chat-ui";
-import { WORKFLOW_CATALOG } from "@workbench/templates";
+import { WORKFLOW_CATALOG } from "@corbits/workflows/catalog";
 
 import { listAgentDefinitions, type AgentDefinition } from "./agents-api";
 

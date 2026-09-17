@@ -31,11 +31,8 @@ import {
   listMcpPresets,
   McpServersApiError,
 } from "@corbits/plugins-ui";
-import { mcpPresetBySlug } from "@corbits/connections/mcp-presets";
-import {
-  CONNECTOR_REGISTRY,
-  MCP_PRESETS,
-} from "@workbench/templates/connectors";
+import { mcpPresetBySlug, MCP_PRESETS } from "@corbits/connections/mcp-presets";
+import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 
 function bareConnectorId(connectorId: string): string {
   return connectorId.startsWith("mcp:")

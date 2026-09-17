@@ -33,7 +33,7 @@
     "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
     "@tanstack/react-query": "catalog:",
     "@corbits/connections": "workspace:*",
-    "@workbench/templates": "workspace:*",
+    "@corbits/jimmy-agent": "workspace:*",
     "arktype": "catalog:",
     "@corbits/icons": "workspace:*",
     "react": "^19.2.0",

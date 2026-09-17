@@ -17,7 +17,13 @@ import type { ParticipantRecord } from "./wire/participants";
 import type { WorkbenchOnboardingStep } from "./wire/blocks";
 import { UnauthenticatedError } from "@corbits/api-query";
 import { InferenceSettingsApiError } from "@corbits/inference-settings";
-import { jimmyAgentRequest } from "@workbench/templates";
+import {
+  JIMMY_AGENT_ID,
+  JIMMY_DESCRIPTION,
+  JIMMY_DISPLAY_NAME,
+  JIMMY_SYSTEM_PROMPT,
+  JIMMY_TOOL_PACKAGE_PINS,
+} from "@corbits/jimmy-agent/metadata";
 import { CHAT_STRINGS } from "./strings";
 
 export {
@@ -757,13 +763,21 @@ export function postWorkbenchOnboardingStep(
   );
 }
 
-// Jimmy's own request shape, the same `@workbench/templates` object a
-// workbench template's participant create used to resolve — CL-6499 removed
-// Jimmy's template (he is not a "kind of workbench"), so this dialog's own
-// "Add Jimmy" quick-create row (see `invite-agent-dialog.tsx`) is his only
-// create path left. `jimmyAgentRequest()` is pure data (no tool bodies, no
-// server-only imports), safe to call from browser code.
-export const JIMMY_QUICK_CREATE = jimmyAgentRequest();
+// Jimmy's own create-agent request shape — CL-6499 removed his workbench
+// template (he is not a "kind of workbench"), so this dialog's own "Add
+// Jimmy" quick-create row (see `invite-agent-dialog.tsx`) is his only
+// create path left. Built straight off his own package's metadata
+// (pure data, no tool bodies, no server-only imports — safe to reference
+// from browser code) rather than an `AgentDefinition` builder: Jimmy has
+// no handle or display name of his own outside this shape. `JIMMY_AGENT_ID`
+// ("jimmy") is both his id and the handle a person types to reach him.
+export const JIMMY_QUICK_CREATE = {
+  name: JIMMY_DISPLAY_NAME,
+  handle: JIMMY_AGENT_ID,
+  description: JIMMY_DESCRIPTION,
+  systemPrompt: JIMMY_SYSTEM_PROMPT,
+  toolPackagePins: JIMMY_TOOL_PACKAGE_PINS.map((pin) => pin.name),
+};
 
 const CreatedAgentDefinition = type({ id: "string" });
 

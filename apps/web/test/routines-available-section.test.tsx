@@ -1,8 +1,8 @@
 // Screen-level proof for the Routines page's "Available" section
 // (CL-7073): lists catalog workflows the bench hasn't added yet, Add
-// posts through the existing template-blocks deploy route, and a
-// missing required connection disables Add with a reason instead of
-// letting the request fail.
+// posts through the catalog-blocks deploy route, and a missing required
+// connection disables Add with a reason instead of letting the request
+// fail.
 
 import { describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
@@ -124,7 +124,7 @@ describe("AvailableCatalogWorkflowsSection", () => {
     }
   });
 
-  test("Add posts to the template-blocks deploy route and the entry disappears from Available", async () => {
+  test("Add posts to the catalog-blocks deploy route and the entry disappears from Available", async () => {
     let available = [echo];
     let deployCalls = 0;
     const { container, root } = await render((async (
@@ -135,7 +135,7 @@ describe("AvailableCatalogWorkflowsSection", () => {
       if (url.includes("/workflows/available")) {
         return jsonResponse({ items: available });
       }
-      if (url.includes("/template-blocks/echo/deploy")) {
+      if (url.includes("/catalog-blocks/echo/deploy")) {
         deployCalls += 1;
         expect(init?.method).toBe("POST");
         available = [];
