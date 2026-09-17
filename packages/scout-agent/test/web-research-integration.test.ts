@@ -14,7 +14,7 @@ describe("Scout's web-research path (@corbits/web-search-tools)", () => {
   test("SCOUT_TOOL_PACKAGE_PINS pins the package this test exercises", () => {
     expect(SCOUT_TOOL_PACKAGE_PINS).toContainEqual({
       name: "@corbits/web-search-tools",
-      version: "0.0.3",
+      version: "0.0.4",
     });
   });
 

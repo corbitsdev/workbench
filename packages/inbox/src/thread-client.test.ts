@@ -78,6 +78,7 @@ describe("readMailboxThreadClient", () => {
             read: true,
             archived: false,
             parentId: null,
+            body: "hello",
           },
         ],
       }),

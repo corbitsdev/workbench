@@ -10,7 +10,7 @@ describe("SCOUT_AGENT_DEFINITION", () => {
 
   test("pins the tool packages Scout's prompt actually depends on", () => {
     const names = SCOUT_TOOL_PACKAGE_PINS.map((pin) => pin.name);
-    expect(names).toContain("@corbits/memory-tools");
+    expect(names).toContain("@corbits/memory");
     expect(names).toContain("@corbits/web-search-tools");
     expect(names).toContain("@corbits/scout-agent");
   });

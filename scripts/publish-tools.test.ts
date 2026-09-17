@@ -101,9 +101,9 @@ function args(
     },
     pack: () =>
       Promise.resolve({
-        name: "@corbits/memory-tools",
+        name: "@corbits/capability-tools",
         version: "0.0.1",
-        filename: "corbits-memory-tools-0.0.1.tgz",
+        filename: "corbits-capability-tools-0.0.1.tgz",
         bytes: new TextEncoder().encode("tarball-bytes"),
       }),
     api: api as never,
@@ -135,7 +135,7 @@ describe("runPublishTools", () => {
         (call) =>
           call.method === "PUT" &&
           call.path ===
-            "/api/tenants/tenant_genesis/assets/asset_registry/tarballs/corbits-memory-tools-0.0.1.tgz",
+            "/api/tenants/tenant_genesis/assets/asset_registry/tarballs/corbits-capability-tools-0.0.1.tgz",
       ),
     ).toBe(true);
   });

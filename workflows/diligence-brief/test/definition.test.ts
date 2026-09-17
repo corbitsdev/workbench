@@ -45,7 +45,7 @@ test("the step pins web-search and memory tool packages and sets an explicit tur
   expect(primitive.agent.toolPackagePins).toEqual(DILIGENCE_BRIEF_TOOL_PACKAGE_PINS);
   expect(DILIGENCE_BRIEF_TOOL_PACKAGE_PINS).toEqual([
     { name: "@corbits/web-search-tools", version: "0.0.4" },
-    { name: "@corbits/memory-tools", version: "0.0.4" },
+    { name: "@corbits/memory", version: "0.1.2" },
   ]);
   expect(primitive.agent.toolFactories).toEqual([]);
 });
