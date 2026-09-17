@@ -30,6 +30,9 @@ export type { AccessPolicyStore } from "./store";
 export { checkSignupGate } from "./gate";
 export type { SignupGateCheckArgs } from "./gate";
 
+export { createEmptyHubCheck } from "./empty-hub";
+export type { EmptyHubCheck } from "./empty-hub";
+
 export { createAccessPolicyRoutes } from "./routes";
 export type { CreateAccessPolicyRoutesDeps } from "./routes";
 

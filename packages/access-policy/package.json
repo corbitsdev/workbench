@@ -16,6 +16,7 @@
   "dependencies": {
     "@corbits/error-sink": "workspace:*",
     "@corbits/migration-runner": "workspace:*",
+    "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
     "arktype": "catalog:",
