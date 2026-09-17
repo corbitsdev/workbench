@@ -4,18 +4,8 @@
 // platform-side noun (see `scripts/checks/ui-vocabulary.ts`).
 
 export const AVAILABLE_SECTION_TITLE = "Available";
-export const AVAILABLE_SECTION_SUBTITLE = "Add one of these to this workbench.";
-
-export const ADD_BUTTON_LABEL = "Add";
-export const ADD_BUTTON_BUSY_LABEL = "Adding…";
-
-export function addSuccessMessage(displayName: string): string {
-  return `${displayName} added`;
-}
-
-export function addFailureMessage(displayName: string, detail: string): string {
-  return `Couldn't add ${displayName}: ${detail}`;
-}
+export const AVAILABLE_SECTION_SUBTITLE =
+  "Workflows this workbench hasn't added yet.";
 
 /**
  * Every connector id `WORKFLOW_CATALOG` currently names as a required

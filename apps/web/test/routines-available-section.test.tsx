@@ -1,8 +1,9 @@
 // Screen-level proof for the Routines page's "Available" section
-// (CL-7073): lists catalog workflows the bench hasn't added yet, Add
-// posts through the catalog-blocks deploy route, and a missing required
-// connection disables Add with a reason instead of letting the request
-// fail.
+// (CL-7073): lists catalog workflows the bench hasn't added yet, and
+// shows a missing-required-connection reason with a link to Plugins.
+// CL-8160 deleted the hub's on-demand catalog-blocks deploy route
+// (`apps/hub/src/catalog-blocks/*`) — the section is read-only until a
+// deploy path lands on stock rails.
 
 import { describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
@@ -100,7 +101,7 @@ describe("AvailableCatalogWorkflowsSection", () => {
     }
   });
 
-  test("Add is disabled with a reason when a required connection is missing, and links to Plugins", async () => {
+  test("shows a missing-connection reason and links to Plugins when a required connection is absent", async () => {
     const { container, root } = await render((async (
       input: RequestInfo | URL,
     ) => {
@@ -111,54 +112,9 @@ describe("AvailableCatalogWorkflowsSection", () => {
       return Promise.reject(new Error(`unrouted fetch: ${url}`));
     }) as typeof fetch);
     try {
-      const addButton = [...container.querySelectorAll("button")].find(
-        (button) => button.textContent?.trim() === "Add",
-      );
-      expect(addButton).not.toBeUndefined();
-      expect(addButton?.hasAttribute("disabled")).toBe(true);
       expect(container.textContent).toContain("Connect GitHub first.");
       const link = container.querySelector("a");
       expect(link?.getAttribute("href")).toBe("/plugins");
-    } finally {
-      restoreFetch(container, root);
-    }
-  });
-
-  test("Add posts to the catalog-blocks deploy route and the entry disappears from Available", async () => {
-    let available = [echo];
-    let deployCalls = 0;
-    const { container, root } = await render((async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
-      const url = String(input);
-      if (url.includes("/workflows/available")) {
-        return jsonResponse({ items: available });
-      }
-      if (url.includes("/catalog-blocks/echo/deploy")) {
-        deployCalls += 1;
-        expect(init?.method).toBe("POST");
-        available = [];
-        return jsonResponse({ id: "wfd_echo", created: true });
-      }
-      return Promise.reject(new Error(`unrouted fetch: ${url}`));
-    }) as typeof fetch);
-    try {
-      const addButton = [...container.querySelectorAll("button")].find(
-        (button) => button.textContent?.trim() === "Add",
-      );
-      expect(addButton).not.toBeUndefined();
-      await act(async () => {
-        addButton?.click();
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-      for (let i = 0; i < 8; i++) {
-        await act(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        });
-      }
-      expect(deployCalls).toBe(1);
-      expect(container.textContent).not.toContain("Echo");
     } finally {
       restoreFetch(container, root);
     }
