@@ -39,9 +39,17 @@ const RECORD_FILENAME = "deployment.json";
  * blindly. Validated at read time (the boot scan) at the trust boundary.
  */
 export const WorkflowDeploymentRecord = type({
-  version: "1",
+  version: "2",
   agentAddress: "string > 0",
   definitionId: "string > 0",
+  // The run's own tenant and principal, from the hub's signed deploy frame.
+  // Required since version 2: the child threads them into its substrate
+  // config so a step tool can address stock `/api/tenants/:tenantId/*` with
+  // the run bearer, and a restore that could not name them would stand up a
+  // child whose tools cannot reach the hub. A version-1 record fails this
+  // parse and is redeployed rather than restored.
+  tenantId: "string > 0",
+  principalId: "string > 0",
   sources: {
     "[string]": InferenceSource.array().atLeastLength(1),
   },

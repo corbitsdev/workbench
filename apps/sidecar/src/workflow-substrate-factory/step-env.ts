@@ -152,6 +152,18 @@ export interface SidecarStepBuildEnvDeps {
    */
   definitionId: string;
   /**
+   * The run's own tenant and principal, threaded from the hub's signed
+   * deploy frame (`HarnessConfig.tenantId` / `.principalId`) through the
+   * `WORKFLOW_TENANT_ID` / `WORKFLOW_PRINCIPAL_ID` substrate-config
+   * entries. Carried on the step env beyond `BaseEnv` exactly like
+   * `definitionId` above so a tool package can address stock
+   * `/api/tenants/:tenantId/*` with the run bearer — the tenant is a path
+   * segment on every stock tenant route, and a step tool has no other
+   * sanctioned way to learn it.
+   */
+  tenantId: string;
+  principalId: string;
+  /**
    * Adapter registry the step agent resolves inference adapters through.
    * The child builds this eagerly at boot from the validated
    * `SIDECAR_ADAPTER_MANIFEST` (built-ins merged with operator custom
@@ -372,6 +384,8 @@ export function createSidecarStepBuildEnv(
       hubAccessUrl: string;
       sidecarToken: string;
       definitionId: string;
+      tenantId: string;
+      principalId: string;
     } = {
       // An `InferenceSource` names a `credentialId`, not an inline secret:
       // the reactor fills the request's credential at send time through
@@ -447,6 +461,11 @@ export function createSidecarStepBuildEnv(
       hubAccessUrl: deps.hubArtifactsUrl,
       sidecarToken: deps.sidecarToken,
       definitionId: deps.definitionId,
+      // The run's own tenant/principal, for the tool bundles that address
+      // stock `/api/tenants/:tenantId/*` routes with the run bearer
+      // (`@corbits/access-tools`, `@corbits/connections-tools`).
+      tenantId: deps.tenantId,
+      principalId: deps.principalId,
     };
     // Carry the materialized tool runtime to the tool-bearing
     // `agentFactory` via the env's symbol-keyed slot. The step-invoker

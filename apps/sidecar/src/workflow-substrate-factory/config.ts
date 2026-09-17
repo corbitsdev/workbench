@@ -26,6 +26,8 @@ import { InferenceSource } from "@intx/types/runtime";
 export const SIDECAR_SUBSTRATE_CONFIG_KEYS = [
   "SIDECAR_DATA_DIR",
   "WORKFLOW_DEFINITION_ID",
+  "WORKFLOW_TENANT_ID",
+  "WORKFLOW_PRINCIPAL_ID",
   "WORKFLOW_RUN_REPO_ID",
   "WORKFLOW_RUN_REF",
   "SIDECAR_SIGNING_PUBLIC_KEY",
@@ -46,6 +48,12 @@ export const SubstrateConfig = type({
   // capabilities route a step tool calls. Identity only: the definition
   // itself is evaluated from the closure, never read from a repo.
   WORKFLOW_DEFINITION_ID: "string > 0",
+  // The run's own tenant and principal, taken from the hub's signed deploy
+  // frame (`HarnessConfig.tenantId` / `.principalId`). A step tool addresses
+  // stock `/api/tenants/:tenantId/*` with them and the run bearer; without
+  // them a tool package has no way to name the tenant it is running for.
+  WORKFLOW_TENANT_ID: "string > 0",
+  WORKFLOW_PRINCIPAL_ID: "string > 0",
   WORKFLOW_RUN_REPO_ID: "string > 0",
   WORKFLOW_RUN_REF: "string > 0",
   SIDECAR_SIGNING_PUBLIC_KEY: "string > 0",

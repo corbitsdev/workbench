@@ -195,7 +195,9 @@ test("a single-step deployment's frozen dead source is never replayed at restore
   });
 
   const record: WorkflowDeploymentRecord = {
-    version: 1,
+    version: 2,
+    tenantId: "ten_test",
+    principalId: "prin_test",
     agentAddress,
     definitionId: "def_1",
     // A single-step deployment's `sources` table has exactly one entry,
@@ -243,7 +245,9 @@ test("a multi-step deployment still restores eagerly from its frozen sources, un
   });
 
   const record: WorkflowDeploymentRecord = {
-    version: 1,
+    version: 2,
+    tenantId: "ten_test",
+    principalId: "prin_test",
     agentAddress,
     definitionId: "def_multi",
     sources: {

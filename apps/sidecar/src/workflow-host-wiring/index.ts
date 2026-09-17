@@ -780,6 +780,15 @@ export function createSidecarDeployRouter(deps: {
     /** Correlates the child's inference events to the deploy's session. */
     sessionId: string | undefined;
     /**
+     * The run's own tenant and principal, from the hub's signed deploy frame
+     * (`HarnessConfig`). Threaded into the child's substrate config so a step
+     * tool can address stock `/api/tenants/:tenantId/*` with the run bearer.
+     * Persisted on the deployment record so a boot-time restore reseeds the
+     * same pair rather than losing it.
+     */
+    tenantId: string;
+    principalId: string;
+    /**
      * Hub public key recorded at the head for deploy-pack verification and
      * inbound hub-frame verification. Required for a single-step
      * deployment (whose head IS the agent identity); undefined for a
@@ -835,9 +844,11 @@ export function createSidecarDeployRouter(deps: {
     // rather than assign `undefined` to it -- hence one conditional-spread
     // per optional field, folded into this single literal.
     return {
-      version: 1 as const,
+      version: 2 as const,
       agentAddress: spec.agentAddress,
       definitionId: spec.definition.id,
+      tenantId: spec.tenantId,
+      principalId: spec.principalId,
       sources,
       ...(spec.sessionId !== undefined ? { sessionId: spec.sessionId } : {}),
       ...(spec.hubPublicKey !== undefined
@@ -928,6 +939,8 @@ export function createSidecarDeployRouter(deps: {
       const substrateEnv: Record<string, string> = {
         ...multistepSubstrateEnv,
         WORKFLOW_DEFINITION_ID: spec.definition.id,
+        WORKFLOW_TENANT_ID: spec.tenantId,
+        WORKFLOW_PRINCIPAL_ID: spec.principalId,
         WORKFLOW_RUN_REPO_ID: deploymentId,
         WORKFLOW_RUN_REF: "refs/heads/main",
         CLOSURE_PACKAGE_DIR: spec.closurePackageDir,
@@ -1511,6 +1524,8 @@ export function createSidecarDeployRouter(deps: {
         definition,
         sources: projection.sources,
         sessionId: frame.config.sessionId,
+        tenantId: frame.config.tenantId,
+        principalId: frame.config.principalId,
         hubPublicKey:
           definition.stepOrder.length === 1 ? frame.hubPublicKey : undefined,
         approvedWireHash: projection.approvedWireHash,
@@ -1809,6 +1824,8 @@ export function createSidecarDeployRouter(deps: {
       definition,
       sources: record.sources,
       sessionId: record.sessionId,
+      tenantId: record.tenantId,
+      principalId: record.principalId,
       hubPublicKey: record.hubPublicKey,
       approvedWireHash: record.approvedWireHash,
       closurePackageDir: applied.packageDir,

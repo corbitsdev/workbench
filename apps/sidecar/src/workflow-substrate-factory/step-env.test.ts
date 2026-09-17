@@ -56,6 +56,8 @@ function buildEnvDeps(dataDir: string) {
     sidecarToken: "sc-token",
     adapters: { resolve: () => undefined } as never,
     definitionId: "wfd_capability_owner",
+    tenantId: "ten_test",
+    principalId: "prin_test",
   };
 }
 
@@ -103,6 +105,8 @@ test("a body-step env with no staged deploy tree still carries definitionId, so 
   const buildEnv = createSidecarStepBuildEnv({
     ...buildEnvDeps(dataDir),
     definitionId: "wfd_parent_definition",
+    tenantId: "ten_test",
+    principalId: "prin_test",
   });
   const sourcesRef: SourcesSnapshotRef = {
     current: {

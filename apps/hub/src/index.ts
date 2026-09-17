@@ -275,6 +275,7 @@ import {
   createInFlightRequestTracker,
   withInFlightRequestTracking,
 } from "./in-flight-requests";
+import { withWorkflowRunTenantAuth } from "./workflow-run-tenant-auth";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
@@ -2350,8 +2351,15 @@ export async function createHub(config: HubConfig) {
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));
 
   // Stock Interchange currently leaves tenant creation and dispatch ungated.
+  // Let a workflow-run agent reach every stock tenant route with the run
+  // bearer, not just the deploy endpoint — see ./workflow-run-tenant-auth.ts
+  // for why this is an outer wrap.
+  const runBearerApp = withWorkflowRunTenantAuth(app, {
+    db,
+    authenticator: createWorkflowRunAuthenticator({ db }),
+  });
   const inFlight = createInFlightRequestTracker();
-  const servingApp = withInFlightRequestTracking(app, inFlight);
+  const servingApp = withInFlightRequestTracking(runBearerApp, inFlight);
 
   return {
     app: servingApp,

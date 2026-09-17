@@ -27,7 +27,9 @@ async function makeDataDir(): Promise<string> {
 }
 
 const baseRecord: WorkflowDeploymentRecord = {
-  version: 1,
+  version: 2,
+  tenantId: "ten_test",
+  principalId: "prin_test",
   agentAddress: "run_parked-test@example.com",
   definitionId: "def_1",
   sources: {},
@@ -98,7 +100,9 @@ describe("scanWorkflowDeploymentRecords reaps pre-cutover records", () => {
   test("an unreadable old-format record (missing approvedWireHash/sourceRef) is reaped once, then boots quietly", async () => {
     const dataDir = await makeDataDir();
     const preCutover = {
-      version: 1,
+      version: 2,
+      tenantId: "ten_test",
+      principalId: "prin_test",
       agentAddress: "run_old-format@example.com",
       definitionId: "def_1",
       sources: {},
