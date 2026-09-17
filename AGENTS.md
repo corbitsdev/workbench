@@ -85,7 +85,7 @@ passing; rebuilding coverage for the area it covered happens under CL-8150.
   `@corbits/error-sink` — never a bare `catch {}`.
 - A package's `browser-safe` subpath never imports a server-only
   dependency (`postgres`, `drizzle-orm`, `hono`, any `@intx/*`).
-- Every package needs a `LICENSE` file (LGPL-2.1-or-later).
+- Every package needs a `LICENSE` file (LGPL-2.1).
 - A dependency declared in the root `catalog` is consumed as `catalog:`.
 - `exactOptionalPropertyTypes: true` — omit an optional key rather than
   assigning it `undefined`.

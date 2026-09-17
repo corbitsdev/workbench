@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "The chat surface's UI: the workspace, timeline, composer, and sidebar composed from the published component library",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "sideEffects": false,
   "exports": {

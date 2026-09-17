@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "Bench tenancy helpers: raw-identifier guard and shared tenancy contracts over Interchange's native tenant model",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

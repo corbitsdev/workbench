@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "The Connections settings surface: shared PKCE/state primitives for OAuth connect flows, the connector registry (inference providers plus tool-credential connectors), and the route factory that tests and stores a connector's credential",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

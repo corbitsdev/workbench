@@ -2,7 +2,7 @@
   "name": "@corbits/assistant-workflow",
   "version": "0.0.2",
   "description": "Mail-triggered conversational workflow with a general-purpose assistant agent",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/corbitsdev/workbench.git",

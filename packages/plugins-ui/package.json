@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "The Plugins gallery: connector and skill cards, search, the installed strip, and the one-flow connect panel — composed from the connections registry and skill registry the Settings surfaces already read.",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

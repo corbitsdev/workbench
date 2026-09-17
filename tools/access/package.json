@@ -2,7 +2,7 @@
   "name": "@corbits/access-tools",
   "version": "0.0.6",
   "description": "Myra's principal and grant tools: list_principals, list_grants, grant_access, and revoke_access as an @intx/agent tool bundle, calling stock Interchange tenant routes with the workflow run's own bearer credential and enforcing a delegation ceiling before it grants",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/corbitsdev/workbench.git",

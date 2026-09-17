@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "The shared hub-query envelope (loading/unauthenticated/error/ready) and its QueryView renderer, so every page reports a fetch the same way",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

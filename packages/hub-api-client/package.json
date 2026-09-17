@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "The hub's native HTTP API as a typed client: authenticate, sign in, and call any route with a validated response",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

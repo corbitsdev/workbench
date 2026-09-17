@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "Webhook-triggered workflow launches: an external service (e.g. Granola) posts a payload that maps to input for an existing tenant workflow definition, launched through Interchange's prepareProvisionedDeployment.",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

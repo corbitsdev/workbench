@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "Creates agent definitions as workflow assets the tenant can browse, invite, and launch",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

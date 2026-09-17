@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "Workbench-owned CredentialProvider plugins beyond @intx/harness's built-ins, for auth schemes the vendored http provider doesn't cover",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
