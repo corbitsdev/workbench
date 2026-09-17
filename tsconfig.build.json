@@ -212,46 +212,7 @@
       "path": "./vendor/intx/workflow-host/tsconfig.src.json"
     },
     {
-      "path": "./workflows/attio-task-agent/tsconfig.src.json"
-    },
-    {
-      "path": "./workflows/code-review/tsconfig.src.json"
-    },
-    {
-      "path": "./workflows/collateral-generation/tsconfig.src.json"
-    },
-    {
-      "path": "./workflows/credential-expiry/tsconfig.src.json"
-    },
-    {
       "path": "./workflows/echo/tsconfig.src.json"
-    },
-    {
-      "path": "./workflows/exa-topic-watch/tsconfig.src.json"
-    },
-    {
-      "path": "./workflows/granola-call/tsconfig.src.json"
-    },
-    {
-      "path": "./workflows/heartbeat/tsconfig.src.json"
-    },
-    {
-      "path": "./workflows/last-30-days-research/tsconfig.src.json"
-    },
-    {
-      "path": "./workflows/morning-brief/tsconfig.src.json"
-    },
-    {
-      "path": "./workflows/pain-point-collateral/tsconfig.src.json"
-    },
-    {
-      "path": "./workflows/process-granola-call/tsconfig.src.json"
-    },
-    {
-      "path": "./workflows/reddit-opportunity-scanner/tsconfig.src.json"
-    },
-    {
-      "path": "./workflows/workbench-digest/tsconfig.src.json"
     }
   ]
 }

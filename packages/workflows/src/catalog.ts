@@ -17,19 +17,7 @@
 import { type } from "arktype";
 
 import echoPkg from "../../../workflows/echo/package.json";
-import codeReviewPkg from "../../../workflows/code-review/package.json";
 import assistantPkg from "../../../agents/assistant/package.json";
-import heartbeatPkg from "../../../workflows/heartbeat/package.json";
-import workbenchDigestPkg from "../../../workflows/workbench-digest/package.json";
-import granolaCallPkg from "../../../workflows/granola-call/package.json";
-import processGranolaCallPkg from "../../../workflows/process-granola-call/package.json";
-import morningBriefPkg from "../../../workflows/morning-brief/package.json";
-import painPointCollateralPkg from "../../../workflows/pain-point-collateral/package.json";
-import collateralGenerationPkg from "../../../workflows/collateral-generation/package.json";
-import redditOpportunityScannerPkg from "../../../workflows/reddit-opportunity-scanner/package.json";
-import last30DaysResearchPkg from "../../../workflows/last-30-days-research/package.json";
-import exaTopicWatchPkg from "../../../workflows/exa-topic-watch/package.json";
-import attioTaskAgentPkg from "../../../workflows/attio-task-agent/package.json";
 
 const CorbitsWorkflowBlock = type({
   assetName: "string > 0",
@@ -53,13 +41,10 @@ function workflowBlock(pkg: {
 
 /**
  * One named field a mail trigger reads by name — the create-time UI's only
- * source of truth for what a workflow's trigger actually expects (see each
+ * source of truth for what a workflow's trigger actually expects (see a
  * workflow's own system prompt / intake tool for the underlying contract
- * this mirrors, e.g. `workflows/last-30-days-research/src/index.ts`'s
- * "the trigger carries a `topic` and an optional `focus`", or
- * `workflows/pain-point-collateral/src/intake-tool.ts`'s `IntakeArgs`).
- * `key` is the exact field name a trigger payload carries — never
- * relabeled or humanized before it reaches the workflow.
+ * this mirrors). `key` is the exact field name a trigger payload carries —
+ * never relabeled or humanized before it reaches the workflow.
  */
 export const WorkflowTriggerField = type({
   key: "/^[a-zA-Z][a-zA-Z0-9]*$/",
@@ -84,13 +69,10 @@ export type WorkflowCatalogEntry = {
   /**
    * A real chat partner a person can open a DM with and converse
    * freely — as opposed to a mail-triggered utility whose only sane
-   * input is its declared trigger contract (a topic, a transcript, a
-   * scheduler-computed digest line, …). `automatable` alone can't tell
-   * these apart: several utilities (`echo`, `last-30-days-research`,
-   * `pain-point-collateral`, …) are non-automatable on-demand runs, not
-   * conversational agents. Only the seeded `assistant`/Myra definition
-   * is `true` today; every other catalog entry — the whole reason this
-   * catalog exists — is a workflow utility, never `true`.
+   * input is its declared trigger contract. `automatable` alone can't
+   * tell these apart: `echo` is a non-automatable on-demand run, not a
+   * conversational agent. Only the seeded `assistant`/Myra definition
+   * is `true`.
    */
   readonly conversational: boolean;
   /**
@@ -146,26 +128,6 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     typicalDuration: "a few seconds",
   },
   {
-    ...workflowBlock(codeReviewPkg),
-    conversational: false,
-    deliveryMode: "workbench",
-    whatItDoes:
-      "Reads a pull request's diff, reviews it for correctness, architecture, and release risk, and posts one review back on the pull request.",
-    requiredConnections: ["github"],
-    exampleOutput: "One review posted: 1 blocking, 2 worth fixing, 1 for later",
-    typicalDuration: "a minute or two",
-    triggerFields: [
-      {
-        key: "pullRequestUrl",
-        kind: "text",
-        label: "Pull request URL",
-        placeholder: "https://github.com/owner/repo/pull/123",
-        required: true,
-        help: "The pull request to review. A GitHub webhook fills this in on its own for every new pull request.",
-      },
-    ],
-  },
-  {
     ...workflowBlock(assistantPkg),
     conversational: true,
     deliveryMode: "workbench",
@@ -174,199 +136,6 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     requiredConnections: [],
     exampleOutput: "Drafted a short, polite decline you can send as-is",
     typicalDuration: "varies with the conversation",
-  },
-  {
-    ...workflowBlock(heartbeatPkg),
-    conversational: false,
-    deliveryMode: "workbench",
-    whatItDoes:
-      "Completes immediately on every trigger with no real reply — a lightweight target for testing scheduling and mail triggers.",
-    requiredConnections: [],
-    exampleOutput: "Completed at the trigger time, no reply content",
-    typicalDuration: "a few seconds",
-  },
-  {
-    ...workflowBlock(workbenchDigestPkg),
-    conversational: false,
-    deliveryMode: "workbench",
-    whatItDoes:
-      "Relays a scheduler-computed digest line straight into a workbench, unchanged — the digest content itself comes entirely from its trigger.",
-    requiredConnections: [],
-    exampleOutput: "Digest of 12 messages since yesterday · last post 9:41am",
-    typicalDuration: "a few seconds",
-  },
-  {
-    ...workflowBlock(granolaCallPkg),
-    conversational: false,
-    deliveryMode: "workbench",
-    whatItDoes:
-      "Polls Granola for recent calls and starts one process-granola-call run per call that doesn't yet have published notes.",
-    requiredConnections: ["granola"],
-    exampleOutput: "Checked 10 calls, started 2 new process-granola-call runs",
-    typicalDuration: "a few seconds",
-  },
-  {
-    ...workflowBlock(processGranolaCallPkg),
-    conversational: false,
-    deliveryMode: "workbench",
-    whatItDoes:
-      "Fetches one call's transcript and publishes five-section working notes — Participants, Summary, Pain points, Decisions, Action items — grounded in the transcript.",
-    requiredConnections: ["granola"],
-    exampleOutput: "Participants, summary, and action items from the call transcript",
-    typicalDuration: "1-2 minutes",
-  },
-  {
-    ...workflowBlock(morningBriefPkg),
-    conversational: false,
-    deliveryMode: "workbench",
-    whatItDoes:
-      "Pulls the sender's recent Granola calls and Linear issues and writes a three-section daily brief: what happened, what needs attention, and suggested next actions.",
-    requiredConnections: ["granola", "linear"],
-    exampleOutput: "Brief covering 2 calls, 3 issue updates, one blocked review",
-    typicalDuration: "under a minute",
-  },
-  {
-    ...workflowBlock(painPointCollateralPkg),
-    conversational: false,
-    deliveryMode: "workbench",
-    whatItDoes:
-      "Extracts a customer's real pain points from a call transcript and drafts one piece of targeted collateral, held for approval before it's finalized.",
-    requiredConnections: ["granola"],
-    exampleOutput: "Drafted a one-pager on the onboarding-speed pain point",
-    typicalDuration: "a few minutes, plus the time to approve",
-    // Neither field is required on its own: the workflow's intake tool
-    // (workflows/pain-point-collateral/src/intake-tool.ts) accepts a
-    // pasted transcript OR a Granola note id — transcript wins if both are
-    // given, and neither given is a valid "teach me what to send" path,
-    // not an error. Both are worth collecting at create/run time even
-    // though neither is required: a manual run with no input at all would
-    // just re-teach the same instructions the workflow already gives.
-    triggerFields: [
-      {
-        key: "transcript",
-        kind: "text",
-        label: "Transcript",
-        placeholder: "Paste the call transcript",
-        required: false,
-        help: "Or leave blank and give a Granola note id below.",
-      },
-      {
-        key: "noteId",
-        kind: "text",
-        label: "Granola note ID",
-        placeholder: "note_abc123",
-        required: false,
-        help: "Used only if no transcript is pasted above.",
-      },
-    ],
-  },
-  {
-    ...workflowBlock(collateralGenerationPkg),
-    conversational: false,
-    deliveryMode: "workbench",
-    whatItDoes:
-      "Drafts marketing collateral across picked content types from Granola notes, Linear issues, or pasted text, with a swipe review on every draft and one approval on the final set.",
-    requiredConnections: ["granola", "linear"],
-    exampleOutput: "Drafts ready to review: LinkedIn post, blog, Twitter thread",
-    typicalDuration: "several minutes, plus review and approval time",
-  },
-  {
-    ...workflowBlock(redditOpportunityScannerPkg),
-    conversational: false,
-    deliveryMode: "workbench",
-    whatItDoes:
-      "Scores Reddit posts as outreach opportunities for a target website, after a review of the search plan and one approval on the final list.",
-    requiredConnections: ["scrapecreators"],
-    exampleOutput: "Ranked 6 opportunities, 2 scored 5/5 on buying signals",
-    typicalDuration: "a few minutes, plus review and approval time",
-  },
-  {
-    ...workflowBlock(last30DaysResearchPkg),
-    conversational: false,
-    deliveryMode: "workbench",
-    whatItDoes:
-      "Researches a topic over the last 30 days across web search and GitHub, and writes a cited report with sourced findings.",
-    requiredConnections: ["exa"],
-    exampleOutput: "Cited report: 3 new competing launches this month",
-    typicalDuration: "1-2 minutes",
-    // Mirrors workflows/last-30-days-research/src/index.ts's system prompt
-    // exactly: "the trigger carries a `topic` and an optional `focus`" —
-    // topic is required (the prompt refuses to invent one), focus narrows
-    // which angle to chase and is skippable.
-    triggerFields: [
-      {
-        key: "topic",
-        kind: "text",
-        label: "Topic",
-        placeholder: "AI coding agents",
-        required: true,
-        help: "What to research over the last 30 days.",
-      },
-      {
-        key: "focus",
-        kind: "text",
-        label: "Focus",
-        placeholder: "Competing launches",
-        required: false,
-        help: "Optional — narrows which angle of the topic to chase.",
-      },
-    ],
-  },
-  {
-    ...workflowBlock(exaTopicWatchPkg),
-    conversational: false,
-    deliveryMode: "workbench",
-    whatItDoes:
-      "Searches the live web for one topic each run and publishes a short digest of what moved, held for approval before it's saved.",
-    requiredConnections: ["exa"],
-    exampleOutput: "Weekly digest: 4 takeaways, 2 worth a closer look",
-    typicalDuration: "a minute or two, plus the time to approve",
-    // Mirrors workflows/exa-topic-watch/src/index.ts's system prompt: the
-    // trigger carries a `topic` and nothing else, and the prompt refuses
-    // to invent or widen one, so it is the single required field.
-    triggerFields: [
-      {
-        key: "topic",
-        kind: "text",
-        label: "Topic",
-        placeholder: "AI coding agents for go-to-market",
-        required: true,
-        help: "What to watch on the web each run.",
-      },
-    ],
-  },
-  {
-    ...workflowBlock(attioTaskAgentPkg),
-    conversational: false,
-    deliveryMode: "workbench",
-    whatItDoes:
-      "Works one Attio task: reads the record and the surrounding context, drafts what the task needs, and writes back to Attio only once you approve it.",
-    requiredConnections: ["attio"],
-    exampleOutput: "Two drafts ready to review, plus a CRM note awaiting your OK",
-    typicalDuration: "a few minutes, plus review and approval time",
-    // Mirrors workflows/attio-task-agent/src/index.ts's system prompt:
-    // the trigger names the task by id, or names whose task list to look
-    // in. Neither is required on its own — with neither, the run lists
-    // the open tasks it can see and asks which one, which is a valid
-    // start, not an error.
-    triggerFields: [
-      {
-        key: "taskId",
-        kind: "text",
-        label: "Attio task ID",
-        placeholder: "The task to work",
-        required: false,
-        help: "Or leave blank and name whose tasks to look at below.",
-      },
-      {
-        key: "assignee",
-        kind: "text",
-        label: "Assignee",
-        placeholder: "Whose task list to look in",
-        required: false,
-        help: "Used only if no task ID is given above.",
-      },
-    ],
   },
 ];
 
@@ -450,9 +219,9 @@ export type TriggerFieldsValidation =
  * The create-time boundary check for a routine's stored `input`
  * (CL-6358): inputs bind at USE, never at creation, so a required
  * field with no value at all in `input` is never a create-time
- * rejection — the seeded last-30-days-research preset's whole reason
- * for existing is a required "Topic" left open until someone actually
- * runs it. Only a value the caller explicitly provided gets checked,
+ * rejection — a workflow with a required trigger field can still be
+ * created with it left open until someone actually runs it. Only a
+ * value the caller explicitly provided gets checked,
  * and only for basic shape (a non-empty string) — a key present but
  * blank is a caller bug, not an open input, and still rejected.
  * `kind: "agent"` resolution (does a provided value name a real

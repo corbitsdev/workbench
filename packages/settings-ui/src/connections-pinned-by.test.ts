@@ -20,36 +20,6 @@ describe("connections pinned-by", () => {
     }
   });
 
-  test("granola pins every Granola-backed GTM workflow, not just the call-notes pair", () => {
-    expect(CONNECTOR_PINNED_WORKFLOWS.granola).toEqual(
-      expect.arrayContaining([
-        "granola-call",
-        "process-granola-call",
-        "morning-brief",
-        "pain-point-collateral",
-        "collateral-generation",
-      ]),
-    );
-  });
-
-  test("linear pins morning-brief and collateral-generation", () => {
-    expect(CONNECTOR_PINNED_WORKFLOWS.linear).toEqual(
-      expect.arrayContaining(["morning-brief", "collateral-generation"]),
-    );
-  });
-
-  test("exa pins every web-search workflow", () => {
-    expect(CONNECTOR_PINNED_WORKFLOWS.exa).toEqual(["last-30-days-research", "exa-topic-watch"]);
-  });
-
-  test("attio pins the CRM task agent", () => {
-    expect(CONNECTOR_PINNED_WORKFLOWS.attio).toEqual(["attio-task-agent"]);
-  });
-
-  test("scrapecreators pins reddit-opportunity-scanner", () => {
-    expect(CONNECTOR_PINNED_WORKFLOWS.scrapecreators).toEqual(["reddit-opportunity-scanner"]);
-  });
-
   test("manus pins the assistant", () => {
     expect(CONNECTOR_PINNED_WORKFLOWS.manus).toEqual(["assistant"]);
   });
