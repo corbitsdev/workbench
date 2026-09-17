@@ -63,7 +63,7 @@ export {
   ALL_EVALS,
   aiDailyResearchEval,
   docsOnSdkChangeEval,
-  githubPrReviewFactoryEval,
+  exaTopicDigestEval,
 } from "./cases/index.ts";
 export type { EvalRunRecord, EvalRunStore } from "./store/store.ts";
 export { createPostgresEvalRunStore } from "./store/pg-store.ts";

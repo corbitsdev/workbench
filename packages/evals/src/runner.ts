@@ -34,15 +34,6 @@ async function playStep(
   if (step.kind === "persona") {
     return runPersonaStep(step, target, personaCall);
   }
-  if (step.kind === "install-template") {
-    if (target.installTemplate === undefined) {
-      throw new Error(
-        `runEval: step installs template "${step.templateId}" but target ` +
-          `"${target.configName}" has no installTemplate capability`,
-      );
-    }
-    return [await target.installTemplate(step.templateId)];
-  }
   if (step.kind === "fire-webhook") {
     if (target.fireWebhook === undefined) {
       throw new Error(

@@ -31,7 +31,7 @@ import {
   connectorDescriptors,
   listMcpServerConnections,
 } from "@corbits/connections";
-import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
+import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 
 import type { FakeReceipt, WorldSnapshot } from "../types.ts";
 

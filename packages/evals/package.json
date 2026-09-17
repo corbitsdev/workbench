@@ -18,7 +18,6 @@
     "@corbits/error-sink": "workspace:*",
     "@corbits/migration-runner": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
-    "@workbench/templates": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
