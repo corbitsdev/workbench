@@ -52,6 +52,7 @@ export {
   createAgentDefinitionRoutes,
   type CreateAgentDefinitionRoutesDeps,
   type PinnedSkillIndexResolver,
+  SkillIndexResolutionError,
 } from "./routes";
 export {
   createDefinitionAssetHistory,

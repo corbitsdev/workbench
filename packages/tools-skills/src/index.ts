@@ -2,7 +2,6 @@ export {
   listSkills,
   loadSkill,
   searchSkills,
-  type FetchLike,
   type LoadedSkill,
   type SkillIndexItem,
   type WorkflowSkillsClientConfig,

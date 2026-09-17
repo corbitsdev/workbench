@@ -19,159 +19,40 @@ function testConfig(fetchImpl: typeof fetch): SkillsToolClientConfig {
   };
 }
 
-test("listSkills gets the workflow-skills index with sidecar auth", async () => {
-  let seenUrl: string | undefined;
-  let seenHeaders: Record<string, string> | undefined;
-  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
-    seenUrl = String(url);
-    seenHeaders = init?.headers as Record<string, string>;
-    return new Response(
-      JSON.stringify({
-        data: [{ name: "triage", description: "Sorts inbound issues." }],
-      }),
-    );
-  }) as unknown as typeof fetch;
+// CL-8086: the workflow-skills HTTP surface these four calls used to
+// reach was deleted, and no stock Interchange route yet serves skill
+// content, so each fails closed with an explicit error instead of
+// reaching a dead route.
+const unreachableFetch = (() => {
+  throw new Error("must not be called: no stock route exists to call");
+}) as unknown as typeof fetch;
 
-  const skills = await listSkills(testConfig(fetchImpl));
-
-  expect(seenUrl).toBe("https://hub.example.com/api/workflow-skills/list");
-  expect(seenHeaders?.["authorization"]).toBe("Bearer sc-token");
-  expect(seenHeaders?.["x-workflow-run-address"]).toBe("run_1@workflow");
-  expect(skills).toEqual([
-    { name: "triage", description: "Sorts inbound issues." },
-  ]);
+test("listSkills fails closed naming the missing stock route", async () => {
+  await expect(listSkills(testConfig(unreachableFetch))).rejects.toThrow(
+    /no stock Interchange HTTP route/,
+  );
 });
 
-test("listSkills throws an honest error on a non-ok response", async () => {
-  const fetchImpl = (async () =>
-    new Response("", {
-      status: 500,
-      statusText: "Internal Server Error",
-    })) as unknown as typeof fetch;
-
-  await expect(listSkills(testConfig(fetchImpl))).rejects.toThrow(/500/);
-});
-
-test("loadSkill posts the name to /load and returns the skill with its full body", async () => {
-  let seenUrl: string | undefined;
-  let seenBody: unknown;
-  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
-    seenUrl = String(url);
-    seenBody = JSON.parse(String(init?.body));
-    return new Response(
-      JSON.stringify({
-        data: {
-          name: "triage",
-          description: "Sorts inbound issues.",
-          body: "## Steps\nAlways label severity first.",
-        },
-      }),
-    );
-  }) as unknown as typeof fetch;
-
-  const skill = await loadSkill(testConfig(fetchImpl), "triage");
-
-  expect(seenUrl).toBe("https://hub.example.com/api/workflow-skills/load");
-  expect(seenBody).toEqual({ name: "triage" });
-  expect(skill.body).toContain("Always label severity first.");
-});
-
-test("createSkill posts to /create and parses back the created summary", async () => {
-  let seenUrl: string | undefined;
-  let seenBody: unknown;
-  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
-    seenUrl = String(url);
-    seenBody = JSON.parse(String(init?.body));
-    return new Response(
-      JSON.stringify({
-        data: {
-          assetId: "asset_1",
-          name: "triage",
-          description: "Sorts inbound issues.",
-          scope: "tenant",
-          creatorPrincipalId: "prn_1",
-          updatedAtIso: "2026-01-01T00:00:00.000Z",
-        },
-      }),
-    );
-  }) as unknown as typeof fetch;
-
-  const skill = await createSkill(testConfig(fetchImpl), {
-    name: "triage",
-    description: "Sorts inbound issues.",
-    body: "Read the report.",
-  });
-
-  expect(seenUrl).toBe("https://hub.example.com/api/workflow-skills/create");
-  expect(seenBody).toEqual({
-    name: "triage",
-    description: "Sorts inbound issues.",
-    body: "Read the report.",
-  });
-  expect(skill.name).toBe("triage");
-  expect(skill.scope).toBe("tenant");
-});
-
-test("createSkill throws on a non-ok response, never fabricating a summary", async () => {
-  const fetchImpl = (async () =>
-    new Response(
-      JSON.stringify({
-        error: { code: "conflict", message: "already exists" },
-      }),
-      { status: 409 },
-    )) as unknown as typeof fetch;
-
+test("loadSkill fails closed naming the missing stock route", async () => {
   await expect(
-    createSkill(testConfig(fetchImpl), {
+    loadSkill(testConfig(unreachableFetch), "triage"),
+  ).rejects.toThrow(/no stock Interchange HTTP route/);
+});
+
+test("createSkill fails closed naming the missing stock route", async () => {
+  await expect(
+    createSkill(testConfig(unreachableFetch), {
       name: "triage",
       description: "d",
       body: "b",
     }),
-  ).rejects.toThrow(/409/);
+  ).rejects.toThrow(/no stock Interchange HTTP route/);
 });
 
-test("updateSkill posts to /update, omitting description when not given", async () => {
-  let seenBody: unknown;
-  const fetchImpl = (async (_url: string | URL, init?: RequestInit) => {
-    seenBody = JSON.parse(String(init?.body));
-    return new Response(
-      JSON.stringify({
-        data: {
-          assetId: "asset_1",
-          name: "triage",
-          description: "Sorts inbound issues.",
-          scope: "tenant",
-          creatorPrincipalId: "prn_1",
-          updatedAtIso: "2026-01-02T00:00:00.000Z",
-        },
-      }),
-    );
-  }) as unknown as typeof fetch;
-
-  const skill = await updateSkill(testConfig(fetchImpl), {
-    name: "triage",
-    body: "Read the report. Pick one label.",
-  });
-
-  expect(seenBody).toEqual({
-    name: "triage",
-    body: "Read the report. Pick one label.",
-  });
-  expect(skill.description).toBe("Sorts inbound issues.");
-});
-
-test("updateSkill throws a 404 as a plain error when the skill doesn't exist", async () => {
-  const fetchImpl = (async () =>
-    new Response(
-      JSON.stringify({
-        error: { code: "not_found", message: "no such skill" },
-      }),
-      { status: 404 },
-    )) as unknown as typeof fetch;
-
+test("updateSkill fails closed naming the missing stock route", async () => {
   await expect(
-    updateSkill(testConfig(fetchImpl), { name: "ghost", body: "b" }),
-  ).rejects.toThrow(/404/);
+    updateSkill(testConfig(unreachableFetch), { name: "triage", body: "b" }),
+  ).rejects.toThrow(/no stock Interchange HTTP route/);
 });
 
 test("pinSkill posts to the agent-directory workflow-skill-pins surface", async () => {

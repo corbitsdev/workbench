@@ -1,8 +1,8 @@
 {
   "name": "@corbits/skills",
   "private": true,
-  "description": "The skill registry over native kind:\"skill\" hub assets: SKILL.md authoring, direct create, git-history versions, per-principal access scoping, and the pinned-skills prompt index",
-  "version": "0.0.1",
+  "description": "SKILL.md authoring (parse/build against native kind:\"skill\" hub assets) and the pinned-skills prompt index. Storage, listing, and access to skill assets themselves are native Interchange asset routes, not this package.",
+  "version": "0.0.2",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
@@ -13,15 +13,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/error-sink": "workspace:*",
-    "@intx/db": "workspace:*",
-    "@intx/hub-api": "workspace:*",
-    "@intx/hub-sessions": "workspace:*",
-    "arktype": "catalog:",
-    "drizzle-orm": "catalog:",
-    "hono": "catalog:",
-    "isomorphic-git": "catalog:",
-    "postgres": "catalog:"
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

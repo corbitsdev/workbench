@@ -25,10 +25,7 @@ import { idResource } from "@intx/hub-api";
 import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 
-import {
-  SkillRegistryError,
-  type PinnedSkillIndexEntry,
-} from "@corbits/skills";
+import { type PinnedSkillIndexEntry } from "@corbits/skills";
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 
 import {
@@ -87,6 +84,16 @@ export type PinnedSkillIndexResolver = {
     names: readonly string[],
   ): Promise<readonly PinnedSkillIndexEntry[]>;
 };
+
+/** Thrown by a `PinnedSkillIndexResolver` when a pinned name can't be
+ * resolved against the tenant's native skill assets — a bad request from
+ * the person editing the agent, not a server fault. */
+export class SkillIndexResolutionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SkillIndexResolutionError";
+  }
+}
 
 export type CreateAgentDefinitionRoutesDeps = {
   db: DB["db"];
@@ -149,7 +156,7 @@ export function createAgentDefinitionRoutes({
   // the person editing the agent, not a server fault — surface either as
   // one rather than letting it read as a 500.
   app.onError((err, c) => {
-    if (err instanceof SkillRegistryError) {
+    if (err instanceof SkillIndexResolutionError) {
       return c.json(
         makeErrorEnvelope({ code: "bad_request", userMessage: err.message }),
         400,

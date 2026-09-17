@@ -1,16 +1,58 @@
-// A definition's `workflow`-kind asset carries its own git history, read
-// through `@corbits/skills`' shared `readAssetCommitHistory` — the same
-// commit-log walk `createHubSkillAssetStore` uses for `kind:"skill"`
-// assets. The git history IS the version store here too: no separate
-// versions table, and restoring a version re-commits an older commit's
-// blobs onto the default ref rather than rewriting history.
+// A definition's `workflow`-kind asset carries its own git history. The
+// git history IS the version store here: no separate versions table, and
+// restoring a version re-commits an older commit's blobs onto the default
+// ref rather than rewriting history.
 import fs from "node:fs";
 import git from "isomorphic-git";
 
-import { readAssetCommitHistory } from "@corbits/skills";
-import { DEFAULT_ASSET_REF, type RepoStore } from "@intx/hub-sessions";
+import {
+  DEFAULT_ASSET_REF,
+  type RepoId,
+  type RepoStore,
+} from "@intx/hub-sessions";
 
 const AGENT_DEFINITION_ASSET_KIND = "workflow";
+
+// The hub genesis commit message — substrate scaffolding from
+// `createAsset` → `initRepo`, never a person-saved version, so it never
+// surfaces in the version list a saver reads back.
+const ASSET_GENESIS_COMMIT_MESSAGE = "Initialize repository";
+
+function isAssetGenesisCommit(message: string): boolean {
+  return message.trim() === ASSET_GENESIS_COMMIT_MESSAGE;
+}
+
+async function readAssetCommitHistory(input: {
+  readonly repoStore: RepoStore;
+  readonly kind: RepoId["kind"];
+  readonly assetId: string;
+  readonly ref: string;
+}): Promise<readonly DefinitionCommit[]> {
+  const dir = await input.repoStore.getRepoDir({
+    kind: input.kind,
+    id: input.assetId,
+  });
+  let entries: Awaited<ReturnType<typeof git.log>>;
+  try {
+    entries = await git.log({ fs, dir, ref: input.ref });
+  } catch {
+    return [];
+  }
+  const commits: DefinitionCommit[] = [];
+  for (const entry of entries) {
+    const message = entry.commit.message.trim();
+    if (isAssetGenesisCommit(message)) continue;
+    commits.push({
+      commitSha: entry.oid,
+      message,
+      author: entry.commit.author.name,
+      committedAtIso: new Date(
+        entry.commit.author.timestamp * 1000,
+      ).toISOString(),
+    });
+  }
+  return commits;
+}
 
 /** One commit on a definition's asset default ref. */
 export type DefinitionCommit = {
