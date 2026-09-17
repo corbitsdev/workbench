@@ -2,7 +2,7 @@
 // package's own migrations. The hub's schema is defined entirely by
 // @intx/db's shipped migrations; this repository authors no SQL for
 // the platform itself. Installed packages may ship their own product
-// tables, though — @corbits/chat is the first — and this script
+// tables, though, and this script
 // applies each installed package's migration set right after the
 // platform's, as an explicit literal list below. This script makes
 // the database in DATABASE_URL runnable: it creates the database if
@@ -28,7 +28,6 @@
 import path from "node:path";
 import { readdir } from "node:fs/promises";
 
-import { applyChatMigrations } from "../packages/chat/src/migrations";
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";
 import { applyInboxMigrations, applyMailboxMigrations } from "../packages/inbox/src/migrations";
@@ -41,8 +40,7 @@ const HUB_DIR = path.join(repoRoot, "apps", "hub");
 /**
  * Installed packages that ship their own product-table migrations,
  * applied after the platform's. Explicit and literal on purpose: no
- * discovery magic, no globbing for migrations. @corbits/chat is the
- * first installed package to need this seam. See
+ * discovery magic, no globbing for migrations. See
  * docs/package-migrations.md for the convention each package's
  * migration runner follows (literal SQL, package-owned ledger,
  * transactional apply) and which shape to pick for a new package.
@@ -51,7 +49,6 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   name: string;
   apply: (databaseUrl: string) => Promise<{ applied: string[] }>;
 }[] = [
-  { name: "@corbits/chat", apply: applyChatMigrations },
   { name: "@corbits/webhook-triggers", apply: applyWebhookTriggersMigrations },
   { name: "@corbits/notify", apply: applyNotifyMigrations },
   { name: "@corbits/mailbox", apply: applyMailboxMigrations },
@@ -65,7 +62,7 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
  * Apply every installed package's migration set, in the explicit
  * order listed above, right after the platform's own migrations. Each
  * package owns its own idempotence and bookkeeping (see
- * applyChatMigrations); this only sequences them and reports what ran.
+ * each package's own runner); this only sequences them and reports what ran.
  */
 async function applyInstalledPackageMigrations(databaseUrl: string): Promise<void> {
   for (const { name, apply } of INSTALLED_PACKAGE_MIGRATIONS) {
@@ -516,14 +513,13 @@ export async function setupDatabase(
 // reset that only drops `schema` would leave those tables behind: the next
 // `bun run dev`/`workbench reset` would boot against fresh `tenant`/
 // `principal` rows while e.g. `mailbox.principal_mail` or
-// `chat.workbench_settings` still held the old ones (and, once the old FKs
+// `notify.notify_dispatch` still held the old ones (and, once the old FKs
 // are cascaded away, orphaned rows no package's `CREATE TABLE IF NOT
 // EXISTS` migration would ever revisit). Always dropped alongside the
 // target schema so a reset is a true clean slate for every installed
 // package's tables, not only the platform's.
 const PACKAGE_SCHEMAS = [
   "mailbox",
-  "chat",
   "routines",
   "insights",
   "notify",

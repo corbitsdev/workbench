@@ -38,9 +38,6 @@
       "path": "./packages/command-palette/tsconfig.src.json"
     },
     {
-      "path": "./packages/commands/tsconfig.src.json"
-    },
-    {
       "path": "./packages/context-menu/tsconfig.src.json"
     },
     {
@@ -102,9 +99,6 @@
     },
     {
       "path": "./packages/tool-registry-publish/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/turn-artifacts/tsconfig.src.json"
     },
     {
       "path": "./packages/url-path/tsconfig.src.json"
