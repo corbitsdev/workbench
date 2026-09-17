@@ -30,7 +30,6 @@ import {
 } from "@corbits/api-query";
 import { reportError } from "@corbits/error-sink";
 import { PRINCIPAL_KIND_LABEL, principalLabel } from "./identity";
-import { AccessPolicyBlock } from "./access-policy";
 
 import { SETTINGS_STRINGS } from "./strings";
 import {
@@ -213,7 +212,6 @@ export function PeopleSection({
               handleRoleChange(p, roleId, people, roles)
             }
           />
-          <AccessPolicyBlock tenantId={tenantId} />
         </SettingsPanel>
       )}
     </QueryView>

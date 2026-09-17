@@ -4,10 +4,6 @@
 
 import { paginatedSchema, PrincipalSummary, TenantResponse } from "@intx/types";
 import { parseAs, type ApiCall } from "@corbits/hub-api-client";
-import {
-  checkSignupGate,
-  type AccessPolicyStore,
-} from "@workbench/access-policy";
 
 export type HubSignupTenancy = {
   countUsers(): Promise<number>;
@@ -29,10 +25,6 @@ export type GenesisOrJoinArgs = {
   defaultTenantSlug: string;
   displayName?: string;
   tenancy: HubSignupTenancy;
-  accessPolicy?: {
-    store: AccessPolicyStore;
-    allowUnverifiedEmails: boolean;
-  };
   log: (line: string) => void;
 };
 
@@ -101,32 +93,6 @@ async function joinRoot(
   };
 }
 
-/**
- * Runs the signup gate before minting anything. `emptyHubException`
- * waives only `signup_closed`: with zero tenants somebody has to be
- * first, but email trust and the domain allowlist still bind even the
- * genesis caller. A rejection is always a 403-shaped `ProvisionError`.
- */
-async function requireSignupAllowed(
-  args: GenesisOrJoinArgs,
-  options: { readonly emptyHubException: boolean },
-): Promise<void> {
-  if (args.accessPolicy === undefined) return;
-  const gate = await checkSignupGate({
-    store: args.accessPolicy.store,
-    email: args.userEmail,
-    emailVerified: args.userEmailVerified,
-    allowUnverifiedEmails: args.accessPolicy.allowUnverifiedEmails,
-  });
-  if (gate.allowed) return;
-  if (options.emptyHubException && gate.reason === "signup_closed") return;
-  throw new ProvisionError(
-    "signup_not_allowed",
-    `signup gate rejected ${args.userEmail} (${gate.reason})`,
-    "permanent",
-  );
-}
-
 async function requireRoot(tenancy: HubSignupTenancy): Promise<{
   id: string;
   slug: string;
@@ -154,11 +120,8 @@ export async function genesisOrJoinHubSignup(
   // still genesis when no tenant exists.
   const tenantCount = await args.tenancy.countTenants();
   if (tenantCount > 0) {
-    await requireSignupAllowed(args, { emptyHubException: false });
     return joinRoot(args, await requireRoot(args.tenancy));
   }
-
-  await requireSignupAllowed(args, { emptyHubException: true });
 
   if (args.displayName === undefined || args.displayName.trim().length === 0) {
     return { kind: "needs-onboarding" };

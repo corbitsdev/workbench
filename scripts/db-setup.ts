@@ -40,7 +40,6 @@ import { applyPreferencesMigrations } from "../packages/preferences/src/migratio
 import { applyBenchMigrations } from "../packages/bench/src/migrations";
 import { applyAgentDirectoryMigrations } from "../packages/agent-directory/src/migrations";
 import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
-import { applyAccessPolicyMigrations } from "../packages/access-policy/src/migrations";
 import { applyRunKeyHistoryMigrations } from "../packages/run-key-history/src/migrations";
 import { applyInferenceCatalogMigrations } from "../packages/inference-catalog/src/migrations";
 
@@ -71,7 +70,6 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/bench", apply: applyBenchMigrations },
   { name: "@corbits/agent-directory", apply: applyAgentDirectoryMigrations },
   { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
-  { name: "@workbench/access-policy", apply: applyAccessPolicyMigrations },
   { name: "@corbits/run-key-history", apply: applyRunKeyHistoryMigrations },
   {
     name: "@corbits/inference-catalog",

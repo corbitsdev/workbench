@@ -65,9 +65,8 @@ type Validator<T> = (data: unknown) => T | type.errors;
 // It exists so a server-side caller — `@corbits/config-profiles`' apply
 // route, composing a profile's writes out of these exact functions — can
 // pass a `fetch` bound to the hub's own base URL and the acting
-// principal's session cookie, the same self-HTTP-call seam
-// `@workbench/access-policy`'s routes use, rather than this module
-// growing a second, duplicated write path for the server-side case.
+// principal's session cookie, rather than this module growing a second,
+// duplicated write path for the server-side case.
 // Exported (not `typeof fetch`) so a bound wrapper — which never carries
 // `fetch`'s own static `preconnect` member — satisfies the type too.
 // `string | URL | Request`, not DOM's `RequestInfo | URL` alias, so this
