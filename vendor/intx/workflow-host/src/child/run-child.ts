@@ -235,7 +235,7 @@ export function createCredentialsBackedAuthorize(
     // iteration shares the base step's grants. `baseStepId` is the identity
     // on an unscoped id, so a plain step is unaffected.
     const lookupStepId = baseStepId(stepId);
-    const entry = findStepGrantsEntry(snapshot.steps, lookupStepId);
+    const entry = snapshot.steps.find((s) => s.stepId === lookupStepId);
     if (entry === undefined) {
       const scopedNote =
         lookupStepId === stepId
@@ -254,26 +254,6 @@ export function createCredentialsBackedAuthorize(
       grants: entry.grants,
     });
   };
-}
-
-/**
- * Resolve a step's grants entry from the credentials snapshot, with the
- * head collapse for onTrigger body steps (CL-6448): the snapshot is
- * keyed by the PARENT deployment's stepOrder, so a body step's own id
- * (`reply`) never appears in it. For a single-step deployment the sole
- * entry IS the deployment's grant set -- the same head/step collapse
- * `resolveStepAddress` applies when the body's tools materialize from
- * the head deploy tree -- so a missed lookup resolves to that sole
- * entry. A multi-step deployment gets no collapse: an unknown stepId
- * against several entries is ambiguous and stays a miss.
- */
-function findStepGrantsEntry<T extends { stepId: string }>(
-  steps: readonly T[],
-  lookupStepId: string,
-): T | undefined {
-  const exact = steps.find((step) => step.stepId === lookupStepId);
-  if (exact !== undefined) return exact;
-  return steps.length === 1 ? steps[0] : undefined;
 }
 
 /**
@@ -669,7 +649,9 @@ export async function runWorkflowChild(
           `workflow-child credential wiring: no credentials snapshot for step ${stepId}; a tool-bearing step cannot resolve its grants before the run carries any`,
         );
       }
-      const entry = findStepGrantsEntry(snapshot.steps, baseStepId(stepId));
+      const entry = snapshot.steps.find(
+        (step) => step.stepId === baseStepId(stepId),
+      );
       if (entry === undefined) {
         throw new Error(
           `workflow-child credential wiring: credentials snapshot has no entry for step ${baseStepId(stepId)}`,
@@ -823,11 +805,6 @@ export async function runWorkflowChild(
   // to a disk read (the exact behaviour this arm exists to avoid). A deployment
   // with no suspendable body leaves the host undefined; its slot is never
   // invoked.
-  const authorize = createCredentialsBackedAuthorize(
-    credentialsRef,
-    opts.bindings.evaluateGrants,
-  );
-
   let suspendableChildHost: HostSpawnSuspendableChild | undefined;
   if (bodiesMap.size > 0) {
     const executor = opts.bindings.runSuspendableChild;
@@ -838,24 +815,9 @@ export async function runWorkflowChild(
           "runSuspendableChild executor; cannot resolve bodies in-memory",
       );
     }
-    // CL-6448: thread the parent's credentials-backed authorize, live
-    // credential wiring and mail part reader into every body spawn, so a body
-    // agent's tool calls gate through the same per-step grant snapshot,
-    // resolve credentials, and read an attachments-only inbound mail's parts
-    // exactly as a top-level step's do. Upstream's native `credentialMaterial`
-    // covers only the material cell, not the per-step `resolveStepGrants` a
-    // body's tool bundles need.
     suspendableChildHost = createInMemorySpawnSuspendableChild({
       bodies: bodiesMap,
       runSuspendableChild: executor,
-      authorize,
-      credentialWiring,
-      mailPartReader: createMailPartReader({
-        substrate: opts.bindings.substrate,
-        repoId: opts.bindings.workflowRunRepoId,
-        principal: opts.bindings.principal,
-        ref: opts.bindings.workflowRunRef,
-      }),
     });
   }
 
@@ -897,6 +859,11 @@ export async function runWorkflowChild(
       );
     };
   }
+
+  const authorize = createCredentialsBackedAuthorize(
+    credentialsRef,
+    opts.bindings.evaluateGrants,
+  );
 
   const drainController = createWorkflowHostDrainController({ definition });
 
@@ -1742,9 +1709,7 @@ function buildRuntimeEnv(args: {
       : (spawnInput) =>
           hostSuspendable(
             spawnInput,
-            (event) => {
-              args.onEvent(event, spawnInput.childRunId);
-            },
+            args.onEvent,
             args.credentialWiring.materialRef,
           );
   // Same adaptation for the terminal childWorkflow seam: inject THIS run's event
@@ -1798,7 +1763,7 @@ function buildRuntimeEnv(args: {
   // authorize, effect ledger, and durable shared repoStore/blobs), giving the
   // body only its own substrate-backed signal channel -- the inherited-env
   // iteration model plus park capability, distinct from an onTrigger body's
-  // fresh capped/toolless env. Resolved from the bodies map by ref (loop
+  // fresh capped env. Resolved from the bodies map by ref (loop
   // bodies were registered there at establish) and wrapped with this run's
   // event funnel. Assigned AFTER env construction because it closes over `env`.
   const loopIterationHost = createInMemorySpawnSuspendableChild({

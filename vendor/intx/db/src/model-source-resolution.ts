@@ -20,19 +20,6 @@ import { resolveCredentialById } from "./credential-resolution";
 import { parseModelOfferingRow } from "./parse-row";
 import { workflowDefinition } from "./schema/workflow-definitions";
 
-// CL-7510 local delta: providers whose serving adapter is a workbench-side
-// custom factory registered under the provider's own name
-// (`apps/sidecar/src/config.ts`'s DEFAULT_ADAPTER_MANIFEST). A catalog
-// provider row named here launches under that registry key instead of its
-// wire-format `plugin`, the same correction `withOllamaAdapterKey` used to
-// make at the retired folded-runs launch seam.
-const ADAPTER_REGISTRY_KEY_BY_PROVIDER_NAME: Readonly<Record<string, string>> =
-  {
-    ollama: "ollama",
-    codex: "codex",
-    "xai-oauth": "xai-oauth",
-  };
-
 /**
  * Why a single offering could not be turned into a launchable source.
  * `wallet_backed` providers are storable in the catalog but not launchable
@@ -156,7 +143,7 @@ function applyPreference(
   return preference.mode === "pin" ? named : [...named, ...rest];
 }
 
-export async function buildSource(
+async function buildSource(
   db: DB["db"],
   tenantId: string,
   resolved: ResolvedOffering,
@@ -270,19 +257,11 @@ export async function buildSource(
     credentialAad(credential.id, "secret"),
   );
   const parsed = parseModelOfferingRow(offering);
-  // CL-7510 local delta: adapter registry-key dispatch. The catalog
-  // `plugin` column stays the wire-format id; a provider whose custom
-  // factory is registered under its own name (the ollama precedent,
-  // `apps/sidecar/src/config.ts`'s DEFAULT_ADAPTER_MANIFEST — codex and
-  // xai-oauth ride the same mechanism) launches under that registry key,
-  // so an offering's `quirks` reaches the adapter that understands them
-  // instead of the built-in wire-format adapter.
-  const registryKey = ADAPTER_REGISTRY_KEY_BY_PROVIDER_NAME[provider.name] ?? provider.plugin;
   return {
     ok: true,
     source: {
       id: offering.id,
-      provider: registryKey,
+      provider: provider.plugin,
       baseURL: provider.baseURL,
       credentialId: provider.credentialId,
       model: model.canonicalName,
@@ -291,7 +270,7 @@ export async function buildSource(
     },
     material: {
       credentialId: provider.credentialId,
-      providerKey: registryKey,
+      providerKey: provider.plugin,
       origin: provider.baseURL,
       secret,
     },

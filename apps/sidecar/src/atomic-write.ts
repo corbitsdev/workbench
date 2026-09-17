@@ -7,6 +7,7 @@
 // exposing a torn record.
 
 import { open, rename, unlink } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { getLogger } from "@intx/log";
@@ -75,5 +76,27 @@ export async function writeFileAtomicDurable(
     }
   } catch (err) {
     logger.warn`parent-dir fsync failed for ${path}; durability is degraded but the file is renamed and fsynced — ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+/**
+ * Durably remove `path`: unlink, then fsync the parent directory so the
+ * removal survives a power loss (an unlink with no directory fsync can be
+ * resurrected after a crash, re-staling a cache the removal was meant to
+ * invalidate). A missing file is a no-op, not an error -- the caller may be
+ * evicting an entry that never made it to disk.
+ */
+export async function removeFileAtomicDurable(path: string): Promise<void> {
+  if (!existsSync(path)) return;
+  await unlink(path).catch(() => undefined);
+  try {
+    const dirHandle = await open(dirname(path), "r");
+    try {
+      await dirHandle.sync();
+    } finally {
+      await dirHandle.close();
+    }
+  } catch (err) {
+    logger.warn`parent-dir fsync failed removing ${path}; durability is degraded but the file is unlinked — ${err instanceof Error ? err.message : String(err)}`;
   }
 }

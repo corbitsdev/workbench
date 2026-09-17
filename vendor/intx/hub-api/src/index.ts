@@ -41,7 +41,6 @@ export {
   type CreateApprovalRoutesDeps,
   type ReadRunLifecycles,
 } from "./routes/approvals";
-export { readDurableWorkflowRunLifecycles } from "./workflow-run-lifecycle";
 export {
   createWorkflowRunDeployAuth,
   type CreateWorkflowRunDeployAuthDeps,

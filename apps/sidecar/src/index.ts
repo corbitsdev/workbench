@@ -19,15 +19,26 @@
 
 import path from "node:path";
 import { createEd25519Crypto, generateKeyPair, verifySSHSignature } from "@intx/crypto";
-import { createSidecarOrchestrator, type HubLink } from "@intx/hub-agent";
+import {
+  createSidecarOrchestrator,
+  createSenderKeyCache,
+  createSenderCryptoResolver,
+  createInboundMailPolicyRegistry,
+  createInboundMailPolicyLookup,
+  type HubLink,
+} from "@intx/hub-agent";
 import { createAgentRepoStore } from "@intx/hub-sessions";
 import { loadAdapterRegistry } from "@intx/inference/providers";
 import { getLogger, setup } from "@intx/log";
 import { createInMemoryTransport } from "@intx/mail-memory";
 import { createTarballCache } from "@intx/tool-packaging";
-import { hexEncode } from "@intx/types";
+import { hexDecode, hexEncode } from "@intx/types";
 
 import { reportError } from "@corbits/error-sink";
+import {
+  removeFileAtomicDurable,
+  writeFileAtomicDurable,
+} from "./atomic-write";
 import { readSidecarConfig } from "./config";
 import { DEFAULT_TOOL_REGISTRIES_JSON, parseToolRegistries } from "./tool-materialization";
 import { createWorkflowProbeExecutor } from "./workflow-probe-handler";
@@ -205,6 +216,21 @@ const workflowProbeExecutor = createWorkflowProbeExecutor({
 // PKCE login for codex/xai-oauth on this machine when the hub requests it.
 const oauthLoopbackLogin = createOAuthLoopbackLoginService();
 
+// Sender-key cache backing inbound-mail signature verification: durably
+// persists the hub-vouched public key per sender address so a later inbound
+// frame can be checked against a locally cached key, not only the key the
+// hub stamped on the frame. The registry starts empty; a deployment
+// registers its resolved inbound-mail policy when it hydrates and
+// unregisters it on teardown, so an unregistered (or torn-down) address
+// falls through to the fully-closed default via `createInboundMailPolicyLookup`.
+const senderKeyCache = await createSenderKeyCache({
+  dataDir: config.dataDir,
+  writeFileDurable: (writePath, contents) =>
+    writeFileAtomicDurable(writePath, contents, { mode: 0o600 }),
+  removeFileDurable: (removePath) => removeFileAtomicDurable(removePath),
+});
+const inboundMailPolicyRegistry = createInboundMailPolicyRegistry();
+
 const watchdogLog = getLogger(["sidecar", "hub-link-watchdog"]);
 const watchdog = createHubLinkWatchdog({
   stallDeadlineMs: 60_000,
@@ -242,6 +268,16 @@ const orchestrator = createSidecarOrchestrator({
   applyWorkflowRunPack: restoreWorkflowRunPack,
   workflowProbeExecutor,
   oauthLoginExecutor: oauthLoopbackLogin.start,
+  resolveSenderCrypto: createSenderCryptoResolver(senderKeyCache),
+  lookupInboundMailPolicy: createInboundMailPolicyLookup(
+    inboundMailPolicyRegistry,
+  ),
+  cacheSenderKey: async (address, publicKey) => {
+    await senderKeyCache.put(address, hexDecode(publicKey));
+  },
+  evictSenderKey: async (address) => {
+    await senderKeyCache.evict(address);
+  },
   // Called from every connection's open handler -- the watchdog's
   // aliveness signal -- and from the close path, which immediately
   // re-schedules a reconnect that re-arms the deadline.

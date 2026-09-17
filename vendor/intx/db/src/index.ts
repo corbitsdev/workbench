@@ -1,4 +1,9 @@
-export { createDB, type DB, type DBExecutor } from "./client";
+export {
+  createDB,
+  type AnyPgDatabase,
+  type DB,
+  type DBExecutor,
+} from "./client";
 export {
   pgErrorCode,
   PG_UNIQUE_VIOLATION,
@@ -22,6 +27,13 @@ export {
   type PrincipalKeyStore,
 } from "./principal-key-store";
 export { lookupLocalPrincipalSigner } from "./signer-identity";
+export {
+  resolveSenderKey,
+  resolveFrameSenderKey,
+  auditSenderKeys,
+  type SenderKeyResolution,
+  type SenderKeyAuditReport,
+} from "./sender-key-resolver";
 export {
   createApprovalStore,
   type ApprovalStore,
@@ -63,6 +75,7 @@ export {
   type MarkSidecarAllocatedArgs,
   type MarkSidecarConnectionLostArgs,
   type MarkSidecarConnectionReadyArgs,
+  type MarkSidecarDestroyFailedArgs,
   type MarkSidecarReleasedArgs,
   type ParkSidecarReconciliationPolicy,
   type ScheduleSidecarAllocationRetryArgs,
@@ -79,7 +92,6 @@ export {
 export {
   createWorkflowDefinitionStore,
   loadFrozenGrantSnapshot,
-  loadFrozenWireProjection,
   resolveDefinitionIdForAsset,
   type WorkflowDefinitionRollbackResult,
   type WorkflowDefinitionSelector,
@@ -127,7 +139,6 @@ export {
   type ResolvedOffering,
 } from "./catalog-resolution";
 export {
-  buildSource,
   resolveModelSources,
   resolveInferencePreferences,
   resolveInstanceModelSources,

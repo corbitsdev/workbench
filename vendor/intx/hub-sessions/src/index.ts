@@ -35,11 +35,13 @@ export {
   createSidecarRouter,
   type SidecarRouter,
   type SidecarRouterConfig,
-  type SidecarAuthIdentity,
-  type SidecarAuthenticator,
-  type OAuthLoginRequestOutcome,
+  type SenderDeploySettledOutcome,
   type OAuthLoginFinalOutcome,
   type OAuthLoginGateOutcome,
+  type OAuthLoginRequestOutcome,
+  DEFAULT_OAUTH_LOGIN_TIMEOUT_MS,
+  type SidecarAuthIdentity,
+  type SidecarAuthenticator,
   type AllocatedSidecarTarget,
   type SidecarAllocationRouter,
   createSidecarCredentialResolver,
@@ -98,9 +100,15 @@ export {
   type SidecarProvisionerChooser,
   type SidecarAllocationReconciler,
   type SidecarAllocationReconcilerDeps,
+  type SidecarReconciliationContext,
 } from "./sidecar-allocation";
 export { ensureWorkflowDefinitionForAsset } from "./workflow-definition-ensure";
 export { workflowSourceAssetMountPath } from "./workflow-closure-resolution";
+export {
+  createReconciliationScheduler,
+  DEFAULT_SIDECAR_ALLOCATION_CONCURRENCY,
+  type ReconciliationSchedulerOptions,
+} from "./reconciliation-scheduler";
 export {
   createWorkflowAllocationService,
   WorkflowProvisioningError,
@@ -197,7 +205,6 @@ export {
   type WorkflowRunSidecarPrincipal,
   type WorkflowRunWorkflowProcessPrincipal,
   type WorkflowRunSupervisorPrincipal,
-  readCommittedWorkflowRunTerminalStatus,
 } from "./workflow-run-kind";
 export {
   restoreWorkflowRunToAllocation,

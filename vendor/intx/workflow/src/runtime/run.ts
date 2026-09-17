@@ -2048,10 +2048,17 @@ async function runLoop(
   let iteration = 0;
   let terminated = false;
   let outcome: "converged" | "exhausted" = "exhausted";
+  // The output of the most recent iteration, boxed so a legitimately
+  // `undefined` iteration output stays distinguishable from "no iteration
+  // has run yet". The settle path below needs it: the loop breaks the
+  // moment `while` goes false, BEFORE `carry` runs, so `currentInput` is
+  // the converging iteration's input and this is its output.
+  let lastIteration: { output: unknown } | undefined;
   while (isIterationDone(state, runId, primitive.id, iteration)) {
     const doneStepId = scopedStepId(primitive.id, iteration);
     const doneInput = await resolveIterationInput(env, log, doneStepId);
     const doneOutput = await resolveIterationOutput(env, log, doneStepId);
+    lastIteration = { output: doneOutput };
     iteration += 1;
     if (!whileFn(doneOutput, doneInput)) {
       outcome = "converged";
@@ -2128,6 +2135,7 @@ async function runLoop(
     // live in the child's durable log, so hydrate them here -- the scoped
     // StepCompleted records them, and while/carry read them.
     const output = await hydrateChildOutputs(env, childRunId);
+    lastIteration = { output };
 
     const after = await reloadState(env, runId);
     if (after.steps.get(stepId)?.phase !== "completed") {
@@ -2160,8 +2168,24 @@ async function runLoop(
     currentInput = carryFn(output, currentInput);
   }
 
+  if (lastIteration === undefined) {
+    // Unreachable through `loop()`, which rejects a non-positive
+    // maxIterations, so every settle follows at least one iteration --
+    // replayed or driven. A definition that reached here by another road
+    // has no last iteration to report; fail loud rather than publish a
+    // `final` the loop never produced. Checked BEFORE the route so the
+    // throw cannot leave one branch of the loop's dependents pruned.
+    throw new Error(
+      `loop ${primitive.id} settled ${outcome} without running an iteration`,
+    );
+  }
   await routeLoopOutcome(definition, env, runId, primitive, outcome, abort);
-  const output = { outcome, iterations, carry: currentInput };
+  const output = {
+    outcome,
+    iterations,
+    carry: currentInput,
+    final: lastIteration.output,
+  };
   await emitStepCompletedWithValue(env, runId, primitive.id, output);
   return output;
 }

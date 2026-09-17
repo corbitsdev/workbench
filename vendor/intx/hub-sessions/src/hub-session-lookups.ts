@@ -23,7 +23,7 @@ import {
   workflowRun,
 } from "@intx/db/schema";
 import { getLogger } from "@intx/log";
-import { formatRunAddress, parseRunAddress, signalName } from "@intx/types";
+import { parseRunAddress, signalName } from "@intx/types";
 import { SignalDeliverFrame } from "@intx/types/sidecar";
 import { deriveWorkflowRunRepoId } from "@intx/workflow-deploy";
 
@@ -34,111 +34,9 @@ import {
   listAcceptedWorkflowDispatches,
   listConsumedWorkflowDispatches,
 } from "./workflow-dispatch-settlement";
-import {
-  readCommittedWorkflowRunLifecycle,
-  readCommittedWorkflowRunTerminalStatus,
-} from "./workflow-run-kind";
+import { readCommittedWorkflowRunLifecycle } from "./workflow-run-kind";
 
 const logger = getLogger(["hub", "lookups"]);
-
-/**
- * Ownership gate for a workflow-run pack: the pushing address must resolve to
- * a self-anchored `workflow_run` row that owns the repository it is writing.
- *
- * Deliberately NOT gated on a live run status (workbench-local; see VENDORED.md).
- * A terminal anchor still has bookkeeping to durably write about its own
- * death -- the inbox enqueue for mail that arrived in the teardown window and
- * the `markConsumed` rejection record that retires it. Gating those writes on
- * a live status wedged the pair into an unbreakable loop: the hub rejected the
- * pack with `path_violation`, the sidecar withheld the ack, the hub redelivered,
- * forever. Accepting the pack is safe because the substrate walk yields no new
- * terminal events for an already-settled run, and the allocation fences below
- * still decide who may write.
- */
-export function ownsWorkflowRunRepo(
-  anchor:
-    | { id: string; address: string | null; anchorRunId: string | null }
-    | undefined,
-): anchor is { id: string; address: string; anchorRunId: string } {
-  return (
-    anchor !== undefined &&
-    anchor.address !== null &&
-    anchor.anchorRunId === anchor.id
-  );
-}
-
-const RUN_ID_HEX_LENGTH = 32;
-const RUN_ID_PATTERN = new RegExp(`^run_[0-9a-f]{${RUN_ID_HEX_LENGTH}}`);
-
-/**
- * Recover the deployment anchor's routing address from a workflow-run pack's
- * source address. A deployment's one addressable anchor run stores its own
- * `<runId>@<domain>` address (`isTopLevelRun`); a multi-step deployment's
- * per-step agents push under `deriveStepAddress`'s `<runId>-<stepId>@<domain>`
- * instead (`vendor/intx/workflow-deploy/src/orchestrator.ts:837`), which never
- * matches any `workflow_run.address` row -- only the anchor row carries one.
- * Peel the step suffix back to the run id so a step's pack resolves to the
- * SAME anchor its base run owns.
- *
- * Run ids are minted `run_` + 32 lowercase hex chars
- * (`generateId("workflowRun")`, `vendor/intx/hub-common/src/ids.ts`), a fixed
- * length disjoint from the free-form `stepId` (`[a-zA-Z0-9_-]+`), so the
- * boundary parses unambiguously: the characters immediately after
- * `run_<32 hex>` are either the end of the local part (a base address) or a
- * `-` (a step address). Matching from the left avoids splitting on `-`
- * generally, since a `stepId` may itself contain dashes.
- *
- * Returns null for an address `parseRunAddress` itself rejects or whose local
- * part is not `run_`-prefixed hex, so a malformed address fails the later
- * ownership lookup closed rather than silently resolving to a fabricated
- * anchor.
- */
-export function anchorAddressForPackSource(
-  agentAddress: string,
-): string | null {
-  const parsed = parseRunAddress(agentAddress);
-  if (parsed === null) return null;
-  const match = RUN_ID_PATTERN.exec(parsed.runId);
-  if (match === null) return null;
-  return formatRunAddress(match[0], parsed.domain);
-}
-
-/**
- * What an accepted workflow-run pack's newly-terminal run means for the
- * `workflow_run` table. `ownedAnchorRunId` is the run's row as the flip
- * transaction read it: `undefined` when no row exists, otherwise the row's
- * own `anchorRunId` (possibly null).
- *
- * Only a minted run id (`run_` + 32 hex, the shape `generateId("workflowRun")
- * produces) ever owns a row. A section-mode occurrence runs as a repo-local
- * child run (`turn__<n>` — see `@corbits/agent-runtime`'s
- * `agentRuntimeTurnRunId`) whose whole identity lives in the deployment's
- * own event repo: it never crosses a route that mints a `workflow_run` row,
- * so its terminal event has no DB flip to perform and its absence is not a
- * defect. A minted id with no row IS one — the run terminated before its
- * anchor committed — and a row anchored elsewhere (or lazily anchored with
- * a null anchor) is not the source deployment's to flip.
- */
-export type TerminalRunFlipDecision =
-  | { kind: "flip" }
-  | { kind: "skip_repo_local" }
-  | { kind: "missing_row" }
-  | { kind: "foreign_anchor" };
-
-export function decideTerminalRunFlip(
-  runId: string,
-  ownedAnchorRunId: string | null | undefined,
-  sourceAnchorId: string,
-): TerminalRunFlipDecision {
-  if (ownedAnchorRunId === undefined) {
-    return RUN_ID_PATTERN.test(runId)
-      ? { kind: "missing_row" }
-      : { kind: "skip_repo_local" };
-  }
-  return ownedAnchorRunId === sourceAnchorId
-    ? { kind: "flip" }
-    : { kind: "foreign_anchor" };
-}
 
 export type HubSessionLookupsDeps = {
   db: DB["db"];
@@ -150,7 +48,10 @@ export function createHubSessionLookups(
 ): Required<
   Omit<
     SidecarLookups,
-    "materializeMailTriggeredRunGrants" | "resyncCredentials"
+    | "materializeMailTriggeredRunGrants"
+    | "resyncCredentials"
+    | "resolveSenderKey"
+    | "resolveSenderKeyStrict"
   >
 > {
   const { db, agentRepoStore } = deps;
@@ -270,16 +171,6 @@ export function createHubSessionLookups(
       kind,
       approvalSnapshot,
     }) {
-      // This co-write is approval-only: it always writes an `approval` row,
-      // built from `approvalSnapshot`, alongside the correlation. A signal
-      // kind this RPC has no persistence for fails loud here rather than
-      // writing a spurious approval row for it.
-      if (kind !== "approval") {
-        throw new Error(
-          `registerSignalCorrelation only supports "approval" signals; got "${kind}" for ${correlationId}`,
-        );
-      }
-
       // Resolve tenancy and co-write both rows in one transaction so a resolver
       // never sees a correlation without its approval or vice versa. Both
       // inserts are idempotent on their dedup key (the signal_correlation
@@ -447,25 +338,29 @@ export function createHubSessionLookups(
         logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source address does not own the repository`;
         return { accepted: false, reason: "path_violation" as const };
       }
-      const anchorLookupAddress =
-        anchorAddressForPackSource(source.agentAddress) ??
-        source.agentAddress;
       const [anchor] = await db
         .select({
           id: workflowRun.id,
           address: workflowRun.address,
           anchorRunId: workflowRun.anchorRunId,
+          tenantId: workflowRun.tenantId,
+          definitionId: workflowRun.definitionId,
         })
         .from(workflowRun)
         .where(
           and(
-            eq(workflowRun.address, anchorLookupAddress),
+            eq(workflowRun.address, source.agentAddress),
+            inArray(workflowRun.status, [...liveWorkflowRunStatuses]),
             isNotNull(workflowRun.definitionId),
           ),
         )
         .limit(1);
-      if (!ownsWorkflowRunRepo(anchor)) {
-        logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source address has no deployment anchor it owns`;
+      if (
+        anchor === undefined ||
+        anchor.anchorRunId !== anchor.id ||
+        anchor.address === null
+      ) {
+        logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source address has no live deployment anchor`;
         return { accepted: false, reason: "path_violation" as const };
       }
       const anchorAddress = anchor.address;
@@ -536,26 +431,48 @@ export function createHubSessionLookups(
       for (const { runId, status } of newlyTerminalRuns) {
         try {
           await db.transaction(async (tx) => {
+            // Lazily anchor the run before settling it. An internal run that
+            // parks only on a plain signal gate never reaches
+            // `registerSignalCorrelation`, the sole other path that mints an
+            // internal run row, so its terminal event can be the first the hub
+            // sees of the run. A never-minted row is ordinary bookkeeping, not
+            // a deployment-boundary violation, so mint it here against this
+            // deployment's anchor rather than letting the ownership guard below
+            // mistake absence for foreignness. The insert no-ops when any row
+            // already exists, which keeps that guard authoritative for a row
+            // that exists and anchors elsewhere. The principal is null: an
+            // internal run inherits its deployment's grants and has none of its
+            // own.
+            //
+            // The mint necessarily precedes the ownership guard, so an id the
+            // hub has never seen is claimed under THIS anchor before anything
+            // establishes it belongs here. That ordering is required -- the
+            // guard reads the row the mint may have to create -- and it is
+            // bounded rather than unbounded: internal run ids are supplied by
+            // the sidecar and accepted verbatim, so the value is
+            // caller-influenced, but it is a different population from the
+            // anchor ids the hub mints itself, and nothing resolves an
+            // internal id without also constraining the anchor or the tenant.
+            // The insert cannot take a row away from another deployment; the
+            // worst it does is create one for an id that deployment would
+            // otherwise have created later.
+            await workflowRunStore.createIfAbsent(
+              {
+                id: runId,
+                anchorRunId: anchor.id,
+                definitionId: anchor.definitionId,
+                tenantId: anchor.tenantId,
+                principalId: null,
+                status: "running",
+              },
+              tx,
+            );
             const [ownedRun] = await tx
               .select({ anchorRunId: workflowRun.anchorRunId })
               .from(workflowRun)
               .where(eq(workflowRun.id, runId))
               .limit(1);
-            const decision = decideTerminalRunFlip(
-              runId,
-              ownedRun === undefined ? undefined : ownedRun.anchorRunId,
-              anchor.id,
-            );
-            if (decision.kind === "skip_repo_local") {
-              // A section occurrence's child run (`turn__<n>`) settles in
-              // the deployment's own event repo; there is no row to flip.
-              return;
-            }
-            if (decision.kind === "missing_row") {
-              logger.error`Terminal event for run ${runId} (deployment ${anchor.id}, target status ${status}) has no workflow_run row; the run terminated before its anchor committed`;
-              return;
-            }
-            if (decision.kind === "foreign_anchor") {
+            if (ownedRun?.anchorRunId !== anchor.id) {
               logger.error`Ignoring terminal event for run ${runId}: it does not belong to source deployment ${anchor.id}`;
               return;
             }
@@ -566,12 +483,11 @@ export function createHubSessionLookups(
               tx,
             );
             if (won === null) {
-              // The row exists and is anchored here, but `markTerminal`'s
-              // guard is a LIVE status (`deployed` or `running`), not just
-              // "running" -- so this also covers a deployment torn down
-              // before its first trigger. No live row matched: the run is
-              // already terminal — a benign replay against an
-              // already-settled row.
+              // The row exists (the mint above guarantees it) and belongs to
+              // this deployment (the guard above), so no running row matched
+              // only because the run is already terminal -- a benign replay
+              // against an already-settled row. Leave its settled status and
+              // `endedAt` alone.
               return;
             }
             // Deactivate the run's own principal, if it has one. Externally-
@@ -710,41 +626,6 @@ export function createHubSessionLookups(
           );
         } catch (error) {
           logger.error`Failed to close unsettled workflow dispatches for terminal run ${anchorAddress}: ${error instanceof Error ? error.message : String(error)}`;
-        }
-
-        // Defense in depth for CL-6595: the committed Git log just proved
-        // this run terminal, independent of whether the newly-terminal
-        // detection above caught it on this pack (or any earlier one). If
-        // `workflow_run.status` is still live, self-heal it here rather than
-        // leaving every future reader to hit the same stale column.
-        try {
-          const reads = await agentRepoStore.repoStore.openCommittedReads(
-            { kind: "hub" },
-            repoId,
-            ref,
-          );
-          const status = await readCommittedWorkflowRunTerminalStatus(
-            reads,
-            anchor.id,
-          );
-          if (status !== null) {
-            const won = await db.transaction((tx) =>
-              workflowRunStore.markTerminal(anchor.id, status, now, tx),
-            );
-            if (won !== null && won.principalId !== null) {
-              await db
-                .update(principal)
-                .set({ status: "deactivated", updatedAt: now })
-                .where(
-                  and(
-                    eq(principal.id, won.principalId),
-                    eq(principal.refId, anchor.id),
-                  ),
-                );
-            }
-          }
-        } catch (error) {
-          logger.error`Terminal-status backfill failed for run ${anchor.id}; workflow_run.status may still read live: ${error instanceof Error ? error.message : String(error)}`;
         }
       }
 

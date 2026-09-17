@@ -1112,7 +1112,7 @@ export function createSidecarDeployRouter(deps: {
         stepOrder,
         definitionHash,
         warmKeep,
-        onInferenceEvent: (event, childRunId) => {
+        onInferenceEvent: (event) => {
           // The event arrives HMAC-verified over the child's event channel.
           // Re-narrow it to the hub's `InferenceEvent` union; a parse
           // failure means upstream corruption, so drop it loudly rather
@@ -1122,7 +1122,11 @@ export function createSidecarDeployRouter(deps: {
             logger.warn`dropping workflow inference event for ${spec.agentAddress}: ${validated.summary}`;
             return;
           }
-          publishInferenceEvent(spec.agentAddress, validated, spec.sessionId, childRunId);
+          // This hook fires for the workflow's own top-level step events,
+          // never a spawned body's -- a body's events carry their own
+          // childRunId through the separate RunSuspendableChild onEvent
+          // seam, not this per-deployment onInferenceEvent.
+          publishInferenceEvent(spec.agentAddress, validated, spec.sessionId);
         },
       };
 
