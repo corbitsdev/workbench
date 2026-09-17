@@ -40,9 +40,6 @@ function mount(onSend: (payload: ComposerSendPayload) => Promise<boolean>) {
         ref,
         agents: [],
         onSend,
-        onInviteAgent: () => undefined,
-        onOpenAgentsSettings: () => undefined,
-        onCreateRoutineInSpace: () => undefined,
       }),
     );
   });

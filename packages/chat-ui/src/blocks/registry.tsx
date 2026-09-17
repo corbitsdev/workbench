@@ -11,24 +11,15 @@ import type { ReactElement } from "react";
 import { CHAT_STRINGS } from "../strings";
 import { ApproveBlockView } from "./approve-block";
 import type { ApprovalActions } from "./approval-actions";
-import type { BlockResponseActions } from "./block-responses";
-import { ConnectGithubBlockContainer } from "./connect-github-block-container";
-import type { ConnectGithubActions } from "./connect-github-actions";
 import { ConnectServiceBlockContainer } from "./connect-service-block-container";
 import type { ConnectServiceActions } from "./connect-service-actions";
-import { FormBlockView } from "./form-block";
 import { MetricsBlockView } from "./metrics-block";
-import { PollBlockView } from "./poll-block";
-import { QuestionBlockView } from "./question-block";
 import { StepsBlockView } from "./steps-block";
 import { StreamBlockView } from "./stream-block";
 
 function renderKnownBlock(
   block: Block,
-  messageId: string,
   approvalActions: ApprovalActions | undefined,
-  blockResponses: BlockResponseActions | undefined,
-  connectGithubActions: ConnectGithubActions | undefined,
   connectServiceActions: ConnectServiceActions | undefined,
 ): ReactElement {
   switch (block.type) {
@@ -43,40 +34,8 @@ function renderKnownBlock(
       return <StepsBlockView data={block.data} />;
     case "metrics":
       return <MetricsBlockView data={block.data} />;
-    case "poll":
-      return (
-        <PollBlockView
-          data={block.data}
-          messageId={messageId}
-          {...(blockResponses !== undefined ? { actions: blockResponses } : {})}
-        />
-      );
-    case "form":
-      return (
-        <FormBlockView
-          data={block.data}
-          messageId={messageId}
-          {...(blockResponses !== undefined ? { actions: blockResponses } : {})}
-        />
-      );
     case "stream":
       return <StreamBlockView data={block.data} />;
-    case "question":
-      return (
-        <QuestionBlockView
-          data={block.data}
-          messageId={messageId}
-          {...(blockResponses !== undefined ? { actions: blockResponses } : {})}
-        />
-      );
-    case "connect-github":
-      return (
-        <ConnectGithubBlockContainer
-          data={block.data}
-          messageId={messageId}
-          {...(connectGithubActions !== undefined ? { actions: connectGithubActions } : {})}
-        />
-      );
     case "connect-service":
       return (
         <ConnectServiceBlockContainer
@@ -98,27 +57,13 @@ function UnsupportedBlock({ type }: { readonly type: string }) {
 
 export function BlockPartView({
   block,
-  messageId,
   approvalActions,
-  blockResponses,
-  connectGithubActions,
   connectServiceActions,
 }: {
   readonly block: BlockPart["block"];
-  /** The message this block part lives in -- polls and forms scope every
-   * response to (messageId, blockId), never `blockId` alone (see
-   * `packages/chat/src/block-responses.ts`). */
-  readonly messageId: string;
   /** Host-supplied approve/deny round-trip; only the "approve" block reads
    * it. Absent means the pre-round-trip fixed-disabled framing. */
   readonly approvalActions?: ApprovalActions;
-  /** Host-supplied poll/form round-trip; only "poll" and "form" blocks read
-   * it. Absent means the pre-round-trip fixed-disabled framing. */
-  readonly blockResponses?: BlockResponseActions;
-  /** Host-supplied connect/list-repos/start-reviewing round-trip; only the
-   * "connect-github" block reads it. Absent means the pre-round-trip
-   * disconnected framing. */
-  readonly connectGithubActions?: ConnectGithubActions;
   /** Host-supplied generic connect round-trip; only the "connect-service"
    * block reads it. Absent means the pre-round-trip disconnected framing. */
   readonly connectServiceActions?: ConnectServiceActions;
@@ -127,12 +72,5 @@ export function BlockPartView({
   if (!result.ok) {
     return <UnsupportedBlock type={result.type} />;
   }
-  return renderKnownBlock(
-    result.block,
-    messageId,
-    approvalActions,
-    blockResponses,
-    connectGithubActions,
-    connectServiceActions,
-  );
+  return renderKnownBlock(result.block, approvalActions, connectServiceActions);
 }

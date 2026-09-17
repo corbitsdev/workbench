@@ -39,8 +39,6 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import type { MessageItem, MessageSender, ParticipantRecord, Part } from "./api";
 import { ArtifactChip } from "./artifact-chip";
 import type { ApprovalActions } from "./blocks/approval-actions";
-import type { BlockResponseActions } from "./blocks/block-responses";
-import type { ConnectGithubActions } from "./blocks/connect-github-actions";
 import type { ConnectServiceActions } from "./blocks/connect-service-actions";
 import { BlockPartView } from "./blocks/registry";
 import {
@@ -1327,8 +1325,6 @@ function MessagePartsInner({
   onOpenArtifactInLibrary,
   onFixConnection,
   approvalActions,
-  blockResponses,
-  connectGithubActions,
   connectServiceActions,
   pendingActions,
   failedTurnRecovery,
@@ -1364,11 +1360,6 @@ function MessagePartsInner({
    * decides where "fix" goes (Plugins' connect panel today). */
   readonly onFixConnection?: () => void;
   readonly approvalActions?: ApprovalActions;
-  readonly blockResponses?: BlockResponseActions;
-  /** The connect-github block's live round-trip — see
-   * `ConnectGithubActions`. Undefined renders the card in its
-   * pre-round-trip disconnected framing. */
-  readonly connectGithubActions?: ConnectGithubActions;
   /** Host round-trip for the generic "connect-service" card. Undefined
    * renders every connect-service card in its disconnected framing. */
   readonly connectServiceActions?: ConnectServiceActions;
@@ -1543,10 +1534,7 @@ function MessagePartsInner({
                 <BlockPartView
                   key={key}
                   block={part.block}
-                  messageId={item.id}
                   {...(approvalActions !== undefined ? { approvalActions } : {})}
-                  {...(blockResponses !== undefined ? { blockResponses } : {})}
-                  {...(connectGithubActions !== undefined ? { connectGithubActions } : {})}
                   {...(connectServiceActions !== undefined ? { connectServiceActions } : {})}
                 />
               );
@@ -1723,8 +1711,6 @@ export function WorkbenchTimeline({
   onOpenArtifactInLibrary,
   onFixConnection,
   approvalActions,
-  blockResponses,
-  connectGithubActions,
   connectServiceActions,
   pendingActions,
   failedTurnRecovery,
@@ -1767,14 +1753,6 @@ export function WorkbenchTimeline({
    * on the platform approval a card references. Undefined renders every
    * approve card in its pre-round-trip fixed-disabled framing. */
   readonly approvalActions?: ApprovalActions;
-  /** The poll/form blocks' live round-trip — the host's read/vote/submit
-   * against the hub's chat response routes. Undefined renders every
-   * poll/form card in its pre-round-trip fixed-disabled framing. */
-  readonly blockResponses?: BlockResponseActions;
-  /** The connect-github block's live round-trip — see
-   * `ConnectGithubActions`. Undefined renders every connect-github card
-   * in its pre-round-trip disconnected framing. */
-  readonly connectGithubActions?: ConnectGithubActions;
   /** Host round-trip for the generic "connect-service" card. Undefined
    * renders every connect-service card in its disconnected framing. */
   readonly connectServiceActions?: ConnectServiceActions;
@@ -1992,8 +1970,6 @@ export function WorkbenchTimeline({
               {...(onFixConnection !== undefined ? { onFixConnection } : {})}
               {...(onOpenArtifactInLibrary !== undefined ? { onOpenArtifactInLibrary } : {})}
               {...(approvalActions !== undefined ? { approvalActions } : {})}
-              {...(blockResponses !== undefined ? { blockResponses } : {})}
-              {...(connectGithubActions !== undefined ? { connectGithubActions } : {})}
               {...(connectServiceActions !== undefined ? { connectServiceActions } : {})}
               {...(pendingActions !== undefined ? { pendingActions } : {})}
               {...(onRetryFailedTurn !== undefined ? { onRetryFailedTurn } : {})}

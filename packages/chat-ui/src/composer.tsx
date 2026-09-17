@@ -6,7 +6,7 @@
 // model (working/stop) this surface does not use, and its send affordance
 // does not compose with an inline mention popover.
 
-import { Avatar, Button } from "@corbits/react-ui";
+import { Button } from "@corbits/react-ui";
 import { ArrowUp, CircleNotch, Microphone, Paperclip, Stop, X } from "@corbits/icons";
 import { reportError } from "@corbits/error-sink";
 import {
@@ -19,25 +19,10 @@ import {
 } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 
-import { CorbitAvatar, avatarClassForPrincipal } from "./avatar";
-import type { Part, ParticipantRecord } from "./api";
-import type { AgentDisplayNames } from "./agent-display-names";
-import {
-  activeMentionQuery,
-  filterMentionOptions,
-  insertMention,
-  mentionOptionsFromWorkbench,
-} from "./mentions";
-import type {
-  BringInAgentDefinition,
-  BringInMember,
-  MentionCandidate,
-  MentionInviteIntent,
-  MentionOption,
-  MentionQuery,
-} from "./mentions";
-import { SLASH_COMMANDS, activeSlashQuery, filterSlashCommands } from "./slash-commands";
-import type { SlashCommandSpec, SlashQuery } from "./slash-commands";
+import { CorbitAvatar } from "./avatar";
+import type { Part } from "./api";
+import { activeMentionQuery, filterMentionCandidates, insertMention } from "./mentions";
+import type { MentionCandidate, MentionQuery } from "./mentions";
 import { CHAT_STRINGS } from "./strings";
 
 /** A file the user picked in the composer, already base64-encoded for the wire. */
@@ -51,11 +36,6 @@ export type ComposerAttachment = {
 export type ComposerSendPayload = {
   readonly text: string;
   readonly attachments: readonly ComposerAttachment[];
-  /** Every "Bring in…" candidate picked since the draft was last sent —
-   * the send path invites each one before posting the message itself
-   * (see `packages/chat/src/routes.ts`'s `MessageInviteEntry`). Omitted
-   * (or empty) when nothing was picked from that group. */
-  readonly invite?: readonly MentionInviteIntent[];
 };
 
 /** Imperative seam a host can grab a ref to, so content from outside the
@@ -396,34 +376,8 @@ export const Composer = forwardRef<
   ComposerHandle,
   {
     readonly agents: readonly MentionCandidate[];
-    /** Every participant record (agent or human) the mention popover's
-     * "Bring in…" group de-dupes against — omitted candidates are
-     * already in the workbench. Defaults to empty. */
-    readonly participants?: readonly ParticipantRecord[];
-    /** Resolved agent display names (CL-6424) — the popover rows show
-     * these, never raw handle slugs. */
-    readonly agentDisplayNames?: AgentDisplayNames;
-    /** Workspace members not yet in this workbench — the "Bring in…"
-     * group's person half. Defaults to empty (no group rendered). */
-    readonly members?: readonly BringInMember[];
-    /** Invitable agent definitions — the "Bring in…" group's agent
-     * half. Defaults to empty (no group rendered). */
-    readonly invitableAgents?: readonly BringInAgentDefinition[];
-    /**
-     * Bring-in members/invitable queries failed — show this instead of an
-     * honest-looking empty "No matches" / missing bring-in roster
-     * (CL-6839). Null/omitted means those queries succeeded or are idle.
-     */
-    readonly bringInLoadError?: string | null;
     /** Resolves to whether the send succeeded; the composer decides draft/attachment cleanup from that. */
     readonly onSend: (payload: ComposerSendPayload) => Promise<boolean>;
-    /** `/invite` — opens the invite-agent dialog. */
-    readonly onInviteAgent: () => void;
-    /** `/agents` — opens this workbench's settings, Agents section. */
-    readonly onOpenAgentsSettings: () => void;
-    /** `/routine` — opens the New Routine panel with this workbench
-     * pre-bound as its destination. */
-    readonly onCreateRoutineInSpace: () => void;
     /** Defaults to the generic workbench copy — a chat passes one naming its counterpart. */
     readonly placeholder?: string;
     /** Whether a turn is currently running for this workbench (CL-7201) —
@@ -442,31 +396,13 @@ export const Composer = forwardRef<
     readonly onStop?: () => void | Promise<unknown>;
   }
 >(function Composer(
-  {
-    agents,
-    participants = [],
-    members = [],
-    invitableAgents = [],
-    bringInLoadError = null,
-    agentDisplayNames,
-    onSend,
-    onInviteAgent,
-    onOpenAgentsSettings,
-    onCreateRoutineInSpace,
-    placeholder = CHAT_STRINGS.composerPlaceholder,
-    running = false,
-    onStop,
-  },
+  { agents, onSend, placeholder = CHAT_STRINGS.composerPlaceholder, running = false, onStop },
   ref,
 ) {
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>([]);
-  const [pendingInvites, setPendingInvites] = useState<readonly MentionInviteIntent[]>([]);
   const [mention, setMention] = useState<MentionQuery | null>(null);
   const [highlight, setHighlight] = useState(0);
-  const [slash, setSlash] = useState<SlashQuery | null>(null);
-  const [slashHighlight, setSlashHighlight] = useState(0);
-  const [helpOpen, setHelpOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -600,15 +536,6 @@ export const Composer = forwardRef<
   }, [value]);
 
   function syncComposerSuggestState(text: string, caret: number) {
-    setHelpOpen(false);
-    const openSlash = activeSlashQuery(text, caret);
-    if (openSlash !== null) {
-      setSlash(openSlash);
-      setSlashHighlight(0);
-      setMention(null);
-      return;
-    }
-    setSlash(null);
     const openMention = activeMentionQuery(text, caret);
     setMention(openMention);
     setHighlight(0);
@@ -633,9 +560,6 @@ export const Composer = forwardRef<
         attachGenerationRef.current += 1;
         setValue(text);
         setMention(null);
-        setSlash(null);
-        setHelpOpen(false);
-        setPendingInvites([]);
         setAttachments([]);
         setErrorMessage(null);
         setPreparing(false);
@@ -649,14 +573,8 @@ export const Composer = forwardRef<
     [value],
   );
 
-  const mentionOptions: readonly MentionOption[] =
-    mention !== null
-      ? filterMentionOptions(
-          mentionOptionsFromWorkbench(participants, members, invitableAgents, agentDisplayNames),
-          mention.query,
-        )
-      : [];
-  const slashCandidates = slash !== null ? filterSlashCommands(slash.query) : [];
+  const mentionOptions: readonly MentionCandidate[] =
+    mention !== null ? filterMentionCandidates(agents, mention.query) : [];
   const busy = { sending, preparing };
   const canSend = canSendComposerAction(value, attachments, busy);
   const canAttach = canAttachComposer(busy);
@@ -685,76 +603,14 @@ export const Composer = forwardRef<
     }
   }
 
-  function runSlashCommand(command: SlashCommandSpec) {
-    switch (command.id) {
-      case "invite":
-        onInviteAgent();
-        return;
-      case "agents":
-        onOpenAgentsSettings();
-        return;
-      case "routine":
-        onCreateRoutineInSpace();
-        return;
-      case "summarize":
-        void summarizeThread();
-        return;
-      case "help":
-        setHelpOpen(true);
-        return;
-    }
-  }
-
-  function chooseSlash(command: SlashCommandSpec) {
-    setValue("");
-    setSlash(null);
-    setSlashHighlight(0);
-    runSlashCommand(command);
-  }
-
-  /** The mock's own honest macro: no server-side "/summarize" exists, so
-   * this addresses the workbench's actual first agent participant the same
-   * way a person would type the mention by hand. */
-  async function summarizeThread() {
-    const target = agents[0];
-    if (target === undefined) {
-      setErrorMessage(CHAT_STRINGS.composerSummarizeNoAgentError);
-      return;
-    }
-    if (sending || preparing) return;
-    await performSend({
-      text: `@${target.handle} summarize this thread`,
-      attachments: [],
-    });
-  }
-
-  /**
-   * Splices the picked candidate's handle into the draft exactly as
-   * before; a bring-in pick (one carrying `invite`) additionally records
-   * its invite intent (de-duplicated by kind+id) so `send()` carries it
-   * through to the server's pre-invite step.
-   */
-  function pickMention(option: MentionOption) {
+  /** Splices the picked candidate's handle into the draft. */
+  function pickMention(option: MentionCandidate) {
     const textarea = textareaRef.current;
     if (mention === null || textarea === null) return;
     const caret = textarea.selectionStart;
-    const result = insertMention(value, caret, mention, option.candidate.handle);
+    const result = insertMention(value, caret, mention, option.handle);
     setValue(result.text);
     setMention(null);
-    if (option.invite !== undefined) {
-      const invite = option.invite;
-      setPendingInvites((current) => {
-        const key =
-          invite.kind === "agent" ? `agent:${invite.definitionId}` : `person:${invite.principalId}`;
-        const alreadyPending = current.some(
-          (pending) =>
-            (pending.kind === "agent"
-              ? `agent:${pending.definitionId}`
-              : `person:${pending.principalId}`) === key,
-        );
-        return alreadyPending ? current : [...current, invite];
-      });
-    }
     requestAnimationFrame(() => {
       textarea.focus();
       textarea.setSelectionRange(result.caret, result.caret);
@@ -828,45 +684,14 @@ export const Composer = forwardRef<
       return;
     }
     abortDictation();
-    const payload: ComposerSendPayload =
-      pendingInvites.length > 0
-        ? { text: value, attachments, invite: pendingInvites }
-        : { text: value, attachments };
+    const payload: ComposerSendPayload = { text: value, attachments };
     setValue("");
     setAttachments([]);
     setMention(null);
-    setPendingInvites([]);
     await performSend(payload);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (helpOpen && event.key === "Escape") {
-      event.preventDefault();
-      setHelpOpen(false);
-      return;
-    }
-    if (slash !== null && slashCandidates.length > 0) {
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setSlashHighlight((index) => (index + 1) % slashCandidates.length);
-        return;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setSlashHighlight((index) => (index - 1 + slashCandidates.length) % slashCandidates.length);
-        return;
-      }
-      if (event.key === "Enter" || event.key === "Tab") {
-        event.preventDefault();
-        const chosen = slashCandidates[slashHighlight];
-        if (chosen !== undefined) chooseSlash(chosen);
-        return;
-      }
-      if (event.key === "Escape") {
-        setSlash(null);
-        return;
-      }
-    }
     if (mention !== null && mentionOptions.length > 0) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -913,121 +738,34 @@ export const Composer = forwardRef<
 
   return (
     <div className="chat-composer">
-      {slash !== null && (
-        <div className="chat-mention-popover chat-popover-enter" role="listbox">
-          {slashCandidates.length === 0 ? (
-            <div className="chat-mention-empty">{CHAT_STRINGS.composerSlashEmpty}</div>
-          ) : (
-            slashCandidates.map((command, index) => (
-              <button
-                key={command.id}
-                type="button"
-                role="option"
-                aria-selected={index === slashHighlight}
-                className="chat-mention-option"
-                data-highlighted={index === slashHighlight}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  chooseSlash(command);
-                }}
-              >
-                <span className="chat-mention-handle">{command.name}</span>
-                <span className="chat-mention-label">{command.description}</span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
-      {slash === null && mention !== null && (
+      {mention !== null && (
         <div className="chat-mention-popover chat-popover-enter" role="listbox">
           {mentionOptions.length === 0 ? (
-            <div
-              className="chat-mention-empty"
-              {...(bringInLoadError !== null ? { role: "alert" as const } : {})}
-            >
-              {bringInLoadError ?? CHAT_STRINGS.mentionEmpty}
-            </div>
+            <div className="chat-mention-empty">{CHAT_STRINGS.mentionEmpty}</div>
           ) : (
             <div className="chat-mention-list">
-              {bringInLoadError !== null ? (
-                <div className="chat-mention-empty" role="alert">
-                  {bringInLoadError}
-                </div>
-              ) : null}
-              {mentionOptions.map((option, index) => {
-                const prev = mentionOptions[index - 1];
-                const showSection = index === 0 || prev?.section !== option.section;
-                const isAgent = option.section === "agents";
-                return (
-                  <div key={`${option.section}:${option.candidate.id}`}>
-                    {showSection ? (
-                      <div className="chat-mention-group-label">
-                        {option.section === "agents"
-                          ? CHAT_STRINGS.mentionAgentsGroupLabel
-                          : CHAT_STRINGS.mentionPeopleGroupLabel}
-                      </div>
-                    ) : null}
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={index === highlight}
-                      className="chat-mention-option"
-                      data-highlighted={index === highlight}
-                      data-mention-section={option.section}
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        pickMention(option);
-                      }}
-                    >
-                      {isAgent ? (
-                        <CorbitAvatar
-                          ariaLabel={option.candidate.label}
-                          size="sm"
-                          className="mention-avatar"
-                        />
-                      ) : (
-                        <Avatar
-                          initials={option.candidate.label}
-                          label={option.candidate.label}
-                          tone="neutral"
-                          size="sm"
-                          className={`mention-avatar ${avatarClassForPrincipal(option.candidate.id)}`}
-                        />
-                      )}
-                      <span className="chat-mention-meta">
-                        <span className="chat-mention-name">{option.candidate.label}</span>
-                        <span className="chat-mention-handle">@{option.candidate.handle}</span>
-                      </span>
-                    </button>
-                  </div>
-                );
-              })}
+              {mentionOptions.map((option, index) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="option"
+                  aria-selected={index === highlight}
+                  className="chat-mention-option"
+                  data-highlighted={index === highlight}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    pickMention(option);
+                  }}
+                >
+                  <CorbitAvatar ariaLabel={option.label} size="sm" className="mention-avatar" />
+                  <span className="chat-mention-meta">
+                    <span className="chat-mention-name">{option.label}</span>
+                    <span className="chat-mention-handle">@{option.handle}</span>
+                  </span>
+                </button>
+              ))}
             </div>
           )}
-        </div>
-      )}
-      {helpOpen && (
-        <div className="chat-mention-popover chat-slash-help chat-popover-enter" role="note">
-          <div className="chat-slash-help-title">{CHAT_STRINGS.composerHelpTitle}</div>
-          {SLASH_COMMANDS.map((command) => (
-            <div key={command.id} className="chat-mention-option">
-              <span className="chat-mention-handle">{command.name}</span>
-              <span className="chat-mention-label">{command.description}</span>
-            </div>
-          ))}
-          <div className="chat-slash-help-footer">
-            <span className="chat-slash-help-note">{CHAT_STRINGS.composerHelpNote}</span>
-            <button
-              type="button"
-              className="chat-slash-help-close"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                setHelpOpen(false);
-              }}
-            >
-              {CHAT_STRINGS.composerHelpClose}
-            </button>
-          </div>
         </div>
       )}
       <div className="chat-composer-row">

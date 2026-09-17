@@ -2,7 +2,6 @@
 // routines). No new analytics backend — I1 is an honest live surface on
 // existing endpoints.
 
-import { isWorkbenchHostDefinitionName } from "@corbits/chat-ui/wire/workbench-host-naming";
 import { runOutcomeStatus, withListingAbandoned } from "@corbits/workflows/client";
 
 import type { InsightsRun } from "./insights-api";
@@ -38,21 +37,15 @@ export type InsightsStats = {
 export const INSIGHTS_RECENT_LIMIT = 12;
 
 /**
- * Purpose runs only — drop workbench-host anchors the same way Home does.
- * `insights-page.tsx` sources `runs` from `insightsTopLevelRunsPath` (see
- * `./insights-api.ts`), the native `GET /workflows/runs` top-level
- * listing (CL-8087) whose own predicate already excludes every
- * non-top-level run (workbench host, invited agent). This filter is a
- * client-side belt-and-suspenders pass against the workbench-host naming
- * pattern alone, not a second scoping layer — a caller no longer needs
- * to (and cannot) hand this a non-top-level run id set. CL-6062 replaced
- * the dead `/me/workflows/runs` feed (its `anchorRunId IS NULL` filter
- * never matched anything, since every addressed run self-anchors at
- * creation) with a scoped feed; CL-8087 repointed that scoped feed from
- * the deleted `feed=fires` route to the native listing.
+ * Purpose runs only. `insights-page.tsx` sources `runs` from
+ * `insightsTopLevelRunsPath` (see `./insights-api.ts`), the native `GET
+ * /workflows/runs` top-level listing (CL-8087) whose own predicate already
+ * excludes every non-top-level run — no workbench-host anchors exist to
+ * filter post-cutover (CL-8175), so this is now an identity pass kept for
+ * callers that still name it explicitly.
  */
 export function purposeRunsForInsights(runs: readonly InsightsRun[]): readonly InsightsRun[] {
-  return runs.filter((run) => !isWorkbenchHostDefinitionName(run.definitionName));
+  return runs;
 }
 
 /**

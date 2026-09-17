@@ -5,7 +5,6 @@
 
 import { libraryArtifactPath } from "@corbits/artifact-ui";
 import { describeApiError } from "@corbits/api-query";
-import { listPrincipals } from "@corbits/settings-ui";
 import { ChatWorkspace, fetchWorkbenchBlob, type Part } from "@corbits/chat-ui";
 import {
   getResolvedCatalog,
@@ -16,7 +15,6 @@ import { useCallback, useEffect, useMemo } from "react";
 
 import { fetchArtifactDetail } from "../api";
 import { createChatApprovalActions } from "../approval-actions";
-import { createChatBlockResponseActions } from "../block-response-actions";
 import { createChatConnectServiceActions } from "../connect-service-actions";
 import { useBench } from "../bench-context";
 import { useSignOut, useSessionUser } from "../navigation";
@@ -108,13 +106,6 @@ export function ChatPage({
     () => (tenantId === null ? undefined : createChatApprovalActions(tenantId, queryClient)),
     [tenantId, queryClient],
   );
-  const blockResponses = useMemo(
-    () =>
-      tenantId === null || workbenchId === null
-        ? undefined
-        : createChatBlockResponseActions(tenantId, workbenchId),
-    [tenantId, workbenchId],
-  );
   const connectServiceActions = useMemo(
     () => (tenantId === null ? undefined : createChatConnectServiceActions(tenantId, path)),
     [tenantId, path],
@@ -131,12 +122,6 @@ export function ChatPage({
   // the click).
   const providerHealthBanner = useProviderHealthBanner();
   const requestPluginsConnect = useRequestPluginsConnect();
-  const listMembers = useCallback(async (memberTenantId: string) => {
-    const principals = await listPrincipals(memberTenantId);
-    return principals
-      .filter((p) => p.kind === "user" && p.status === "active")
-      .map((p) => ({ id: p.id, displayName: p.displayName }));
-  }, []);
 
   const handleFixConnection = useCallback(() => {
     if (providerHealthBanner === null) {
@@ -264,9 +249,7 @@ export function ChatPage({
       {...(hasUsableModel !== undefined ? { hasUsableModel } : {})}
       onConnectModel={handleConnectModel}
       {...(approvalActions !== undefined ? { approvalActions } : {})}
-      {...(blockResponses !== undefined ? { blockResponses } : {})}
       {...(connectServiceActions !== undefined ? { connectServiceActions } : {})}
-      listMembers={listMembers}
       onWorkbenchNotFound={reportWorkbenchNotFound}
       onGoToMissionControl={() => navigate(MISSION_CONTROL_PATH)}
       onNewWorkbench={() => navigate(NEW_WORKBENCH_PATH)}
