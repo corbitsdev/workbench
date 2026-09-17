@@ -107,11 +107,6 @@ import {
   withTurnPartPersistGuard,
 } from "@corbits/insights";
 import {
-  applyBenchMigrations,
-  createBenchRoutes,
-  createPostgresBenchSettingsStore,
-} from "@corbits/bench";
-import {
   applyEvalsMigrations,
   createEvalRunRoutes,
   createPostgresEvalRunStore,
@@ -1732,25 +1727,9 @@ export async function createHub(config: HubConfig) {
   const benchModelPolicy = createPostgresBenchModelPolicyStore(
     config.databaseUrl,
   );
-  // Bench purpose/type: benches are Interchange tenants, so this is a
-  // package-owned side-table keyed by tenant id, migrated at hub start
-  // like insights.
-  await applyBenchMigrations(config.databaseUrl);
-  const benchSettings = createPostgresBenchSettingsStore(config.databaseUrl);
-  app.route(
-    `${TENANT_PREFIX}/bench-settings`,
-    createBenchRoutes({
-      store: benchSettings.store,
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
-      }),
-    }),
-  );
   // Eval run history: read-only surface over the package-owned
-  // `evals.run` table, migrated at hub start like insights and
-  // bench-settings. Eval runs aren't tenant-owned, so the tenant prefix
-  // here is only the grant gate.
+  // `evals.run` table, migrated at hub start like insights. Eval runs
+  // aren't tenant-owned, so the tenant prefix here is only the grant gate.
   await applyEvalsMigrations(config.databaseUrl);
   const evalRuns = createPostgresEvalRunStore(config.databaseUrl);
   app.route(
@@ -2392,7 +2371,6 @@ export async function createHub(config: HubConfig) {
       cronEmitter.stop();
       await insightsUsage.close();
       await insightsLatency.close();
-      await benchSettings.close();
       await evalRuns.close();
       await closeMailbox();
       // The pool end waits on in-flight queries; a query whose socket

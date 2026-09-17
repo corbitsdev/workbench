@@ -104,11 +104,6 @@ const ALLOWLIST: readonly {
     tables: ["usage_turn", "model_price", "turn_latency"],
   },
   {
-    relPath: "packages/bench/src/schema.ts",
-    maxOccurrences: 1,
-    tables: ["bench_settings"],
-  },
-  {
     // A bench's model policy: its allow/deny selectors, price ceilings
     // and provider preference. The platform's catalog owns what a bench
     // can reach; what a bench is willing to spend on it is a product

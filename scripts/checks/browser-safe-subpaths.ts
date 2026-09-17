@@ -53,12 +53,10 @@ export const ENTRIES: readonly BrowserSafeEntry[] = [
   { package: "@corbits/inbox", subpath: "./client" },
   { package: "@corbits/insights", subpath: "./client" },
   { package: "@corbits/agent-directory", subpath: "./client" },
-  { package: "@corbits/bench", subpath: "./client" },
   { package: "@corbits/api-query", subpath: "." },
   // The envelope alone (UnauthenticatedError, ApiQueryError, toAPIQuery) has
-  // no React/JSX dependency, so packages without `jsx` configured (e.g.
-  // @corbits/bench) import this subpath rather than the root, which drags
-  // in query-view.tsx.
+  // no React/JSX dependency, so packages without `jsx` configured import
+  // this subpath rather than the root, which drags in query-view.tsx.
   { package: "@corbits/api-query", subpath: "./envelope" },
   // CL-6099: the Inference settings section (packages/inference-settings)
   // imports this for its known-provider base URL seeds — plain data, no
@@ -186,7 +184,7 @@ function splitPackageSpecifier(specifier: string): {
 
 /**
  * `./client` is this repo's naming convention for a browser-safe subpath
- * (inbox, insights, agent-directory, presence, bench,
+ * (inbox, insights, agent-directory, presence,
  * preferences all use it) — a package that declares one is making the same
  * "nothing server-only reaches here" promise ENTRIES exists to check, so a
  * declared `./client` with no ENTRIES ruling is itself a violation, not a

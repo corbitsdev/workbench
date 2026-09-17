@@ -16,7 +16,6 @@
     "@corbits/approvals",
     "@corbits/artifact-ui",
     "@corbits/artifacts-hub",
-    "@corbits/bench",
     "@corbits/bench-ui",
     "@corbits/chat",
     "@corbits/chat-ui",

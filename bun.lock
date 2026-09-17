@@ -44,7 +44,6 @@
         "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#dc435ba749b4378f19e5de772159c2a57e932938",
         "@corbits/artifacts-hub": "workspace:*",
         "@corbits/attio-task-agent-workflow": "workspace:*",
-        "@corbits/bench": "workspace:*",
         "@corbits/chat": "workspace:*",
         "@corbits/code-review-workflow": "workspace:*",
         "@corbits/codex-provider": "workspace:*",
@@ -372,24 +371,6 @@
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/bench": {
-      "name": "@corbits/bench",
-      "version": "0.0.1",
-      "dependencies": {
-        "@corbits/api-query": "workspace:*",
-        "@corbits/error-sink": "workspace:*",
-        "@corbits/migration-runner": "workspace:*",
-        "@intx/hub-api": "workspace:*",
-        "arktype": "catalog:",
-        "drizzle-orm": "catalog:",
-        "hono": "catalog:",
-        "postgres": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -1381,7 +1362,7 @@
     },
     "packages/workflow-authoring-tools": {
       "name": "@corbits/workflow-authoring-tools",
-      "version": "0.0.6",
+      "version": "0.0.7",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -2115,8 +2096,6 @@
     "@corbits/assistant-workflow": ["@corbits/assistant-workflow@workspace:workflows/assistant"],
 
     "@corbits/attio-task-agent-workflow": ["@corbits/attio-task-agent-workflow@workspace:workflows/attio-task-agent"],
-
-    "@corbits/bench": ["@corbits/bench@workspace:packages/bench"],
 
     "@corbits/bench-ui": ["@corbits/bench-ui@workspace:packages/bench-ui"],
 
