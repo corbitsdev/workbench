@@ -16,10 +16,8 @@ import {
   createSignalCorrelationStore,
   createWorkflowRunDispatchStore,
   listAssetsForTenant,
-  listVisibleOfferings,
 } from "@intx/db";
 import {
-  asset as assetTable,
   tenant as tenantTable,
   user as userTable,
   workflowDefinition,
@@ -38,7 +36,6 @@ import {
   type AppEnv,
   type TenantEnv,
 } from "@intx/hub-api";
-import { WorkflowDefinitionInvalidError } from "@intx/workflow-deploy";
 // CL-7362: computes the preview's wire hash from the probed-but-unapproved
 // projection `installAndApproveWorkflowSource` returns on `grants_not_approved`
 // — the gate itself only stamps this hash on the `ok:true` arm.
@@ -93,8 +90,6 @@ import {
   createInboxRoutes,
   WORKBENCH_MAILBOX_VOCABULARY,
 } from "@corbits/inbox";
-import { generateId } from "@intx/hub-common";
-
 import {
   createInMemoryMailboxEventBus,
   createMailboxDb,
@@ -121,10 +116,7 @@ import {
 import {
   createWorkflowDetailRoute,
   createScheduledWorkflowRoutes,
-  renderWorkflowSourceTree,
-  WORKFLOW_SOURCE_ENTRY,
   ensureRunSession,
-  recordAgentSessionAtProvision,
   isConversationalWorkflowName,
 } from "@corbits/workflows";
 import {
@@ -142,9 +134,7 @@ import {
   createSidecarRouter,
   createWorkflowAllocationService,
   createWorkflowDispatchService,
-  DEFAULT_ASSET_REF,
   resolveRoutableAddress,
-  WorkflowProvisioningError,
   type AgentRepoStore,
   type EventCollectorRegistry,
   type WsHandle,
@@ -190,7 +180,6 @@ import {
   DEFAULT_RETURN_PATH_ALLOWLIST,
   listMcpServerConnections,
 } from "@corbits/connections";
-import { createCatalogBlockRoutes } from "./catalog-blocks/catalog-block-routes";
 import type { ServiceConnectedHook } from "@corbits/connections";
 import { CONNECTOR_REGISTRY, MCP_PRESETS } from "./native-connector-registry";
 import {
@@ -202,8 +191,6 @@ import {
   createWorkflowAuthorRoutes,
   listDeployedCronDefinitions,
   SCHEDULE_TICK_CONTENT,
-  WorkflowAuthorError,
-  type WorkflowDeployer,
 } from "@corbits/workflows";
 import {
   createDrizzleServingRefreshStore,
@@ -1599,103 +1586,6 @@ export async function createHub(config: HubConfig) {
     app.route("/", memoryApp);
   }
 
-  // The hub-side deploy seam the on-demand catalog-block route below
-  // drives — the SAME `prepareProvisionedDeployment` the native `POST
-  // /workflows/deployments` route drives. Inference sources ride as
-  // catalog offering ids (`listVisibleOfferings`); the caller never
-  // supplies or sees a provider secret. The tree is already on the asset
-  // at `commitSha`, so this does not re-populate.
-  //
-  // An agent deploying its own authored workflow does not come through
-  // here: `@corbits/workflow-authoring-tools` calls stock `POST
-  // /api/tenants/:tenantId/workflows/deployments` with the run bearer
-  // (CL-8171), resolving the same offering chain from the stock model
-  // discovery route.
-  const workflowDeployer: WorkflowDeployer = {
-    async deploy({ tenantId, principalId, assetId, commitSha, entry }) {
-      const tenantRow = await db.query.tenant.findFirst({
-        where: eq(tenantTable.id, tenantId),
-      });
-      if (tenantRow === undefined) {
-        throw new WorkflowAuthorError(
-          "not_found",
-          `tenant ${tenantId} not found`,
-        );
-      }
-
-      const offerings = [...(await listVisibleOfferings(db, tenantId))].sort(
-        (a, b) => a.offering.priority - b.offering.priority,
-      );
-      const sourceOfferingIds = offerings.map((o) => o.offering.id);
-      const defaultSourceOfferingId = sourceOfferingIds[0];
-      if (defaultSourceOfferingId === undefined) {
-        throw new WorkflowAuthorError(
-          "invalid",
-          "no catalog offerings visible to this tenant",
-        );
-      }
-
-      try {
-        const sessionId = generateId("session");
-        const prepared =
-          await workflowAllocationService.prepareProvisionedDeployment({
-            tenantId,
-            anchorRunId: generateId("workflowRun"),
-            deploymentDomain: tenantRow.domain,
-            source: {
-              kind: "asset",
-              assetId,
-              package: { format: "source", commitSha },
-            },
-            entry,
-            definitionAssetId: assetId,
-            sessionId,
-            sourceAuthorityPrincipalId: principalId,
-            sourceOfferingIds,
-            defaultSourceOfferingId,
-            deployContent: { systemPrompt: "" },
-          });
-        // The eager record every native launcher makes right after
-        // `prepareProvisionedDeployment` returns (CL-7481): this
-        // deployment mints no opening message of its own, but the
-        // trigger that eventually reconciles a principal onto it runs
-        // entirely through Interchange's own native route, with no
-        // hub-owned hook downstream to record the session
-        // afterward — so this is the only chance to record it at all.
-        await recordAgentSessionAtProvision({
-          db,
-          eventCollectors,
-          runId: prepared.anchorRunId,
-          sessionId,
-          sourceAuthorityPrincipalId: principalId,
-        });
-        return {
-          deploymentId: prepared.anchorRunId,
-          definitionAssetId: assetId,
-          status: prepared.status,
-        };
-      } catch (err) {
-        // Mirrors `@intx/hub-api`'s own `/workflows/deployments` route: an
-        // install/gate rejection or an unapproved source chain is a
-        // client/definition error; a provisioning failure or anything else
-        // (a missing commit, an unreachable sidecar) is `unavailable`.
-        if (err instanceof WorkflowDefinitionInvalidError) {
-          throw new WorkflowAuthorError("invalid", err.message);
-        }
-        if (err instanceof WorkflowProvisioningError) {
-          throw new WorkflowAuthorError("unavailable", err.message);
-        }
-        reportError(err, {
-          operation: "workflow-author-deploy",
-          tenantId,
-        });
-        throw new WorkflowAuthorError(
-          "unavailable",
-          err instanceof Error ? err.message : "Failed to deploy workflow",
-        );
-      }
-    },
-  };
   // Agent-authored workflows (CL-7360): an agent publishes a workflow
   // codebase as a native `kind:"workflow"` asset through this
   // workflow-run-authenticated surface, then deploys it through stock
@@ -1931,97 +1821,6 @@ export async function createHub(config: HubConfig) {
       registry: CONNECTOR_REGISTRY,
       requestOAuthLogin: (args) => sidecarRouter.requestOAuthLogin(args),
       providerHealth: providerHealthStore,
-    }),
-  );
-  // On-demand catalog workflow deploy (CL-6405, generalized by CL-7073):
-  // the "Available" catalog-workflows section (`apps/web`'s routines
-  // page) drives this to add any `workflows/*` package on demand, the
-  // same source-form materialization pattern (asset +
-  // `@corbits/workflows`'s `./source` tree) applied through the same
-  // `workflowDeployer` the agent-authored deploy path above uses rather
-  // than a hub-local inert freeze.
-  app.route(
-    `${TENANT_PREFIX}/catalog-blocks`,
-    createCatalogBlockRoutes({
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: grantConditionRegistry,
-      }),
-      log: (line) => log.info`${line}`,
-      inferencePreferences: (tenantId) =>
-        chatHostInferencePreferencesResolver(tenantId),
-      deployWorkflowSource: async ({
-        tenantId,
-        principalId,
-        assetName,
-        displayName,
-        workflowJson,
-      }) => {
-        const existing = await db.query.workflowDefinition.findFirst({
-          where: and(
-            eq(workflowDefinition.tenantId, tenantId),
-            eq(workflowDefinition.name, assetName),
-            eq(workflowDefinition.status, "deployed"),
-          ),
-          columns: { id: true },
-        });
-        if (existing !== undefined) {
-          return { id: existing.id, created: false };
-        }
-
-        // A prior attempt may have created the asset but died before the
-        // definition projected — reuse the shell instead of 409ing the
-        // retry, the same recovery `createAgentDefinitionCore` documents.
-        let assetId: string;
-        try {
-          const created = await assetService.createAsset({
-            tenantId,
-            kind: "workflow",
-            name: assetName,
-            displayName,
-            creatorPrincipalId: principalId,
-          });
-          assetId = created.id;
-        } catch (cause) {
-          const shell = await db.query.asset.findFirst({
-            where: and(
-              eq(assetTable.tenantId, tenantId),
-              eq(assetTable.kind, "workflow"),
-              eq(assetTable.name, assetName),
-            ),
-            columns: { id: true },
-          });
-          if (shell === undefined) throw cause;
-          assetId = shell.id;
-        }
-
-        const { commitSha } = await assetService.populateAsset({
-          assetId,
-          ref: DEFAULT_ASSET_REF,
-          principal: { kind: "hub" },
-          tree: {
-            files: renderWorkflowSourceTree({
-              packageName: `@workbench-catalog-block/${assetName}`,
-              workflowJson,
-            }),
-            message: `Deploy catalog block ${assetName}`,
-          },
-        });
-
-        // Native deploy, not a hub-local inert freeze: `workflowDeployer`
-        // above, so a catalog block's definition goes through the real
-        // bundle → sidecar probe → capability walk → gate → freeze
-        // pipeline instead of a hub-side shortcut.
-        const result = await workflowDeployer.deploy({
-          tenantId,
-          principalId,
-          assetId,
-          assetName,
-          commitSha,
-          entry: WORKFLOW_SOURCE_ENTRY,
-        });
-        return { id: result.definitionAssetId, created: true };
-      },
     }),
   );
   // MCP servers: the tenant-scoped connect/list/disconnect surface

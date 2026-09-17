@@ -5,10 +5,8 @@
 // — adding a catalog workflow is a single-tenant write, unlike the
 // scheduled roster above, which aggregates every bench the account
 // belongs to.
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
-  Button,
   EmptyState,
   RichEmptyState,
   RunNowButton,
@@ -19,12 +17,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  toast,
 } from "@corbits/react-ui";
 import { Clock } from "@corbits/icons";
 import { cronSentence } from "@corbits/workflows/client";
-import { reportError } from "@corbits/error-sink";
-import { describeApiError, ApiQueryError } from "@corbits/api-query";
 
 import { useGlobalRoutines, useRoutineActions } from "../global-routines";
 import type { GlobalRoutineRow } from "../global-routines";
@@ -32,7 +27,6 @@ import { routineDetailPath } from "../global-routines";
 import { useBench } from "../bench-context";
 import { tenantKeys } from "../query-client";
 import {
-  deployCatalogBlock,
   listAvailableCatalogWorkflows,
   type AvailableCatalogWorkflow,
 } from "../routines-api";
@@ -40,13 +34,9 @@ import { Link } from "../navigation";
 import { PLUGINS_PATH_PREFIX } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
 import {
-  ADD_BUTTON_BUSY_LABEL,
-  ADD_BUTTON_LABEL,
   AVAILABLE_SECTION_SUBTITLE,
   AVAILABLE_SECTION_TITLE,
   CONNECT_LINK_LABEL,
-  addFailureMessage,
-  addSuccessMessage,
   missingConnectionsReason,
 } from "./routines-available-strings";
 
@@ -57,8 +47,6 @@ export function AvailableCatalogWorkflowsSection({
 }: {
   readonly tenantId: string;
 }) {
-  const queryClient = useQueryClient();
-  const [pendingAssetName, setPendingAssetName] = useState<string | null>(null);
   const query = useQuery({
     queryKey: tenantKeys.availableCatalogWorkflows(tenantId),
     queryFn: () => listAvailableCatalogWorkflows(tenantId),
@@ -67,35 +55,6 @@ export function AvailableCatalogWorkflowsSection({
   if (query.isLoading) return null;
   const items: readonly AvailableCatalogWorkflow[] = query.data ?? [];
   if (items.length === 0) return null;
-
-  async function handleAdd(entry: AvailableCatalogWorkflow) {
-    setPendingAssetName(entry.assetName);
-    try {
-      await deployCatalogBlock(tenantId, entry.assetName);
-      await queryClient.invalidateQueries({
-        queryKey: tenantKeys.availableCatalogWorkflows(tenantId),
-      });
-      await queryClient.invalidateQueries({
-        queryKey: tenantKeys.routines(tenantId),
-      });
-      toast(addSuccessMessage(entry.displayName));
-    } catch (cause) {
-      reportError(cause, {
-        operation: "catalog_workflow_add",
-        tenantId,
-      });
-      const detail = describeApiError(cause, "adding this");
-      const refId = cause instanceof ApiQueryError ? cause.refId : undefined;
-      toast(
-        addFailureMessage(
-          entry.displayName,
-          refId !== undefined ? `${detail} (Reference: ${refId})` : detail,
-        ),
-      );
-    } finally {
-      setPendingAssetName(null);
-    }
-  }
 
   return (
     <div className="flex flex-col gap-2 border-b border-[var(--ui-border)] p-4">
@@ -107,8 +66,6 @@ export function AvailableCatalogWorkflowsSection({
       </div>
       <ul className="flex flex-col gap-2">
         {items.map((entry) => {
-          const disabled = !entry.connectionsSatisfied;
-          const busy = pendingAssetName === entry.assetName;
           return (
             <li
               key={entry.assetName}
@@ -129,14 +86,6 @@ export function AvailableCatalogWorkflowsSection({
                   </span>
                 ) : null}
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={disabled || busy}
-                onClick={() => void handleAdd(entry)}
-              >
-                {busy ? ADD_BUTTON_BUSY_LABEL : ADD_BUTTON_LABEL}
-              </Button>
             </li>
           );
         })}
