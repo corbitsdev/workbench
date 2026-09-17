@@ -40,9 +40,6 @@ import {
   Copy,
   DotsThree,
   PencilSimple,
-  PushPin,
-  PushPinSlash,
-  Smiley,
 } from "@corbits/icons";
 import { memo } from "react";
 import { useEffect, useRef, useState } from "react";
@@ -53,9 +50,7 @@ import type {
   MessageSender,
   ParticipantRecord,
   Part,
-  ReactionSummary,
 } from "./api";
-import { REACTION_EMOJI } from "./api";
 import { ArtifactChip } from "./artifact-chip";
 import type { ApprovalActions } from "./blocks/approval-actions";
 import type { BlockResponseActions } from "./blocks/block-responses";
@@ -90,28 +85,8 @@ import type { FailedTurnModelChoice } from "./failed-turn-models";
  */
 export type ThreadAffordanceMode = "reply" | "fork";
 
-/**
- * The reaction chip row's live round-trip — the host's toggle against
- * `@corbits/chat`'s reaction routes, mirroring how `blockResponses`
- * threads the poll/form round-trip down to its card. Undefined renders
- * no reaction affordance at all (no chips, no "add reaction" trigger),
- * the same "no port, no feature" contract every other optional action
- * on this timeline follows.
- */
-export type ReactionActions = {
-  readonly onToggle: (messageId: string, emoji: string) => void;
-};
-
-/** The pin/unpin round-trip a message's hover row offers — undefined
- * renders no pin affordance at all. */
-export type PinActions = {
-  readonly onPin: (messageId: string) => void;
-  readonly onUnpin: (messageId: string) => void;
-};
-
-/** The DOM id a message's group renders under — the pinned strip's
- * jump-to-message target (`document.getElementById`). Exported so the
- * host never has to hand-guess the id format. */
+/** The DOM id a message's group renders under. Exported so the host
+ * never has to hand-guess the id format. */
 export function messageDomId(messageId: string): string {
   return `chat-message-${messageId}`;
 }
@@ -1030,46 +1005,6 @@ function DayDivider({ createdAt }: { createdAt: string }) {
   );
 }
 
-/**
- * The reaction chip row: every emoji with at least one reactor renders as a
- * chip (count + reacted-state). Renders nothing when there are no reactions
- * — the "add a reaction" affordance itself lives in `MessageHoverToolbar`
- * now, not here, so a message with zero reactions shows no chip row at all
- * until hovered.
- */
-function ReactionChips({
-  messageId,
-  reactions,
-  reactionActions,
-}: {
-  readonly messageId: string;
-  readonly reactions: readonly ReactionSummary[];
-  readonly reactionActions: ReactionActions;
-}) {
-  if (reactions.length === 0) return null;
-  return (
-    <div className="chat-reaction-row">
-      {reactions.map((reaction) => (
-        <button
-          key={reaction.emoji}
-          type="button"
-          className="chat-reaction-chip"
-          data-reacted={reaction.reactedByMe}
-          aria-pressed={reaction.reactedByMe}
-          aria-label={CHAT_STRINGS.reactionChipLabel(
-            reaction.emoji,
-            reaction.count,
-          )}
-          onClick={() => reactionActions.onToggle(messageId, reaction.emoji)}
-        >
-          <span aria-hidden="true">{reaction.emoji}</span>
-          <span className="chat-reaction-chip-count">{reaction.count}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 async function copyMessageText(text: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(text);
@@ -1312,7 +1247,7 @@ function StreamingMessageGroup({
 }
 
 /**
- * The ellipsis/right-click menu for a message: reply-in-thread, copy, pin,
+ * The ellipsis/right-click menu for a message: reply-in-thread, copy,
  * and Edit (own prompts) in one place so the hover ellipsis and a
  * right-click always offer the same actions.
  */
@@ -1321,13 +1256,11 @@ function buildMessageMenu({
   threadAffordanceMode,
   onOpenThread,
   onEditMessage,
-  pinActions,
 }: {
   readonly item: MessageItem;
   readonly threadAffordanceMode: ThreadAffordanceMode;
   readonly onOpenThread: ((messageId: string) => void) | undefined;
   readonly onEditMessage: ((messageId: string) => void) | undefined;
-  readonly pinActions: PinActions | undefined;
 }): ContextMenu {
   const entries: ContextMenuEntry[] = [];
 
@@ -1370,25 +1303,6 @@ function buildMessageMenu({
     );
   }
 
-  if (pinActions !== undefined) {
-    const pinned = item.pinned ?? false;
-    entries.push(
-      contextMenuItem({
-        id: "toggle-pin",
-        label: pinned
-          ? CHAT_STRINGS.unpinMessageAction
-          : CHAT_STRINGS.pinMessageAction,
-        icon: pinned ? (
-          <PushPinSlash aria-hidden="true" />
-        ) : (
-          <PushPin aria-hidden="true" />
-        ),
-        onSelect: () =>
-          pinned ? pinActions.onUnpin(item.id) : pinActions.onPin(item.id),
-      }),
-    );
-  }
-
   return { entries };
 }
 
@@ -1408,7 +1322,6 @@ function MessageHoverToolbar({
   threadAffordanceMode,
   onOpenThread,
   onEditMessage,
-  reactionActions,
 }: {
   readonly messageId: string;
   readonly menu: ContextMenu;
@@ -1417,36 +1330,9 @@ function MessageHoverToolbar({
   readonly threadAffordanceMode: ThreadAffordanceMode;
   readonly onOpenThread?: (messageId: string) => void;
   readonly onEditMessage?: (messageId: string) => void;
-  readonly reactionActions?: ReactionActions;
 }) {
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const pickerAnchorRef = useRef<HTMLSpanElement>(null);
-
-  // A click/tap anywhere outside the picker closes it, same as Escape —
-  // without this, the picker is the one popover on this surface that only
-  // ever closes on a second click of its own trigger or a selection.
-  useEffect(() => {
-    if (!pickerOpen) return;
-    function handlePointerDown(event: PointerEvent) {
-      const anchor = pickerAnchorRef.current;
-      if (anchor === null) return;
-      if (event.target instanceof Node && anchor.contains(event.target)) {
-        return;
-      }
-      setPickerOpen(false);
-    }
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [pickerOpen]);
-
-  function toggleReaction(emoji: string) {
-    reactionActions?.onToggle(messageId, emoji);
-    setPickerOpen(false);
-  }
-
   const menuHasEntries = !isContextMenuEmpty(menu);
   if (
-    reactionActions === undefined &&
     onOpenThread === undefined &&
     onEditMessage === undefined &&
     !menuHasEntries
@@ -1458,44 +1344,8 @@ function MessageHoverToolbar({
     <div
       className="chat-hover-toolbar"
       data-thread-affordance-mode={threadAffordanceMode}
-      data-open={pickerOpen || menuOpen}
+      data-open={menuOpen}
     >
-      {reactionActions !== undefined ? (
-        <span className="chat-reaction-picker-anchor" ref={pickerAnchorRef}>
-          <button
-            type="button"
-            className="chat-reaction-add"
-            aria-label={CHAT_STRINGS.reactionAddAction}
-            aria-expanded={pickerOpen}
-            onClick={() => setPickerOpen((open) => !open)}
-          >
-            <Smiley aria-hidden="true" />
-          </button>
-          {pickerOpen ? (
-            <span
-              className="chat-reaction-picker"
-              role="menu"
-              aria-label={CHAT_STRINGS.reactionPickerLabel}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") setPickerOpen(false);
-              }}
-            >
-              {REACTION_EMOJI.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  role="menuitem"
-                  className="chat-reaction-picker-option"
-                  aria-label={CHAT_STRINGS.reactionPickerOptionLabel(emoji)}
-                  onClick={() => toggleReaction(emoji)}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </span>
-          ) : null}
-        </span>
-      ) : null}
       {onOpenThread !== undefined ? (
         <button
           type="button"
@@ -1535,39 +1385,6 @@ function MessageHoverToolbar({
         </button>
       ) : null}
     </div>
-  );
-}
-
-/** The pin/unpin toggle a message's hover row offers — renders nothing
- * when `pinActions` is undefined. */
-function PinToggleButton({
-  messageId,
-  pinned,
-  pinActions,
-}: {
-  readonly messageId: string;
-  readonly pinned: boolean;
-  readonly pinActions: PinActions;
-}) {
-  return (
-    <button
-      type="button"
-      className="chat-pin-toggle"
-      data-pinned={pinned}
-      aria-pressed={pinned}
-      aria-label={
-        pinned ? CHAT_STRINGS.unpinMessageAction : CHAT_STRINGS.pinMessageAction
-      }
-      onClick={() =>
-        pinned ? pinActions.onUnpin(messageId) : pinActions.onPin(messageId)
-      }
-    >
-      {pinned ? (
-        <PushPinSlash aria-hidden="true" />
-      ) : (
-        <PushPin aria-hidden="true" />
-      )}
-    </button>
   );
 }
 
@@ -1628,8 +1445,6 @@ function MessagePartsInner({
   blockResponses,
   connectGithubActions,
   connectServiceActions,
-  reactionActions,
-  pinActions,
   pendingActions,
   failedTurnRecovery,
   onRetryFailedTurn,
@@ -1672,8 +1487,6 @@ function MessagePartsInner({
   /** Host round-trip for the generic "connect-service" card. Undefined
    * renders every connect-service card in its disconnected framing. */
   readonly connectServiceActions?: ConnectServiceActions;
-  readonly reactionActions?: ReactionActions;
-  readonly pinActions?: PinActions;
   /** This reader's own failed send's inline Retry/Discard — see
    * `PendingActions`. Undefined on every ordinary message; on a failed
    * pending item (`item.pendingStatus === "failed"`) with no actions
@@ -1696,9 +1509,9 @@ function MessagePartsInner({
 }) {
   // A message this reader's own composer submitted and the server hasn't
   // issued an id for yet (see `TimelineMessageItem.pendingStatus`) offers
-  // none of the round-trips below — reactions, pin, thread, context menu —
-  // since every one of them targets a server-issued message id that
-  // doesn't exist yet for this item. System / error / connect rows
+  // none of the round-trips below — thread, context menu — since every
+  // one of them targets a server-issued message id that doesn't exist
+  // yet for this item. System / error / connect rows
   // (CL-6739) likewise offer none of the social chrome — see
   // `offersMessageSocialChrome`.
   const isPending = item.pendingStatus !== undefined;
@@ -1722,7 +1535,6 @@ function MessagePartsInner({
         threadAffordanceMode,
         onOpenThread,
         onEditMessage: ownEdit,
-        pinActions,
       })
     : { entries: [] };
   const replyCount = threadMeta?.replyCount ?? 0;
@@ -1884,44 +1696,6 @@ function MessagePartsInner({
             }
             return <FallbackPart key={key} part={part} />;
           })}
-          {(() => {
-            const hasReactions =
-              offersSocialChrome &&
-              reactionActions !== undefined &&
-              (item.reactions?.length ?? 0) > 0;
-            // Unpinned messages offer no persistent glyph here — pinning
-            // itself stays reachable through the ellipsis menu's own
-            // "Pin"/"Unpin" entry (`buildMessageMenu`); this row only shows
-            // once there's something to show (a reaction, or a message
-            // already pinned, which needs a visible way to unpin). Before
-            // this, a pin toggle mounted for every message the moment a host
-            // wired `pinActions` at all, CSS-hidden until hover but present
-            // in the DOM under every line, greeting included. System / error
-            // / connect rows (CL-6739) never show this cluster either.
-            const isPinned =
-              offersSocialChrome &&
-              pinActions !== undefined &&
-              item.pinned === true;
-            if (!hasReactions && !isPinned) return null;
-            return (
-              <div className="chat-message-actions">
-                {hasReactions && reactionActions !== undefined ? (
-                  <ReactionChips
-                    messageId={item.id}
-                    reactions={item.reactions ?? []}
-                    reactionActions={reactionActions}
-                  />
-                ) : null}
-                {isPinned && pinActions !== undefined ? (
-                  <PinToggleButton
-                    messageId={item.id}
-                    pinned={true}
-                    pinActions={pinActions}
-                  />
-                ) : null}
-              </div>
-            );
-          })()}
         </div>
         {offersSocialChrome && onOpenThread !== undefined && replyCount > 0 ? (
           <ThreadAffordance
@@ -1942,7 +1716,6 @@ function MessagePartsInner({
             threadAffordanceMode={threadAffordanceMode}
             {...(onOpenThread !== undefined ? { onOpenThread } : {})}
             {...(ownEdit !== undefined ? { onEditMessage: ownEdit } : {})}
-            {...(reactionActions !== undefined ? { reactionActions } : {})}
           />
         ) : null}
       </div>
@@ -2098,8 +1871,6 @@ export function WorkbenchTimeline({
   blockResponses,
   connectGithubActions,
   connectServiceActions,
-  reactionActions,
-  pinActions,
   pendingActions,
   failedTurnRecovery,
   onRetryFailedTurn,
@@ -2152,13 +1923,6 @@ export function WorkbenchTimeline({
   /** Host round-trip for the generic "connect-service" card. Undefined
    * renders every connect-service card in its disconnected framing. */
   readonly connectServiceActions?: ConnectServiceActions;
-  /** The reaction chip row's live round-trip — see `ReactionActions`.
-   * Undefined renders no chips and no "add reaction" trigger at all,
-   * the same "no port, no feature" contract `blockResponses` follows. */
-  readonly reactionActions?: ReactionActions;
-  /** The hover pin/unpin toggle — see `PinActions`. Undefined renders
-   * no pin affordance on any message. */
-  readonly pinActions?: PinActions;
   /** The failed pending bubble's inline Retry/Discard — see
    * `PendingActions`. Undefined renders a failed pending item with no
    * recovery affordance at all (still shown as failed). */
@@ -2405,8 +2169,6 @@ export function WorkbenchTimeline({
               {...(connectServiceActions !== undefined
                 ? { connectServiceActions }
                 : {})}
-              {...(reactionActions !== undefined ? { reactionActions } : {})}
-              {...(pinActions !== undefined ? { pinActions } : {})}
               {...(pendingActions !== undefined ? { pendingActions } : {})}
               {...(onRetryFailedTurn !== undefined
                 ? { onRetryFailedTurn }

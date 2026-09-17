@@ -39,9 +39,6 @@ import {
   addAgentCapability,
   refreshWorkbenchAgent,
   pingWorkbenchPresence,
-  pinMessage,
-  toggleReaction,
-  unpinMessage,
   workbenchStreamUrl,
   isKnownWorkbenchKind,
   WORKBENCHES_MUTATED_STREAM_TYPE,
@@ -59,7 +56,6 @@ import {
   resolveBringInLists,
 } from "./mentions";
 import type { BringInListFailure, BringInMember } from "./mentions";
-import { PinnedStrip } from "./pinned-strip";
 import { SLASH_COMMANDS } from "./slash-commands";
 import {
   failedTurnModelChoices,
@@ -80,7 +76,6 @@ import {
   WorkbenchTimeline,
   displayNameFromHandle,
   localPartOf,
-  messageDomId,
   messageText,
 } from "./timeline";
 import type { FailedTurnRecovery } from "./timeline";
@@ -93,8 +88,6 @@ import { NoUsableModelBanner } from "./no-usable-model-banner";
 import { ResumeFailedBanner } from "./resume-failed-banner";
 import type {
   CurrentUser,
-  PinActions,
-  ReactionActions,
   ScrollSnapshot,
   TimelineMessageItem,
 } from "./timeline";
@@ -110,19 +103,12 @@ import {
 } from "./typing-indicator";
 import type { ProfileSubject } from "./profile-subject";
 import { useWorkbenchStream } from "./use-workbench-stream";
-import {
-  applyStreamMessage,
-  applyStreamPin,
-  applyStreamReaction,
-  useWorkbenchFeed,
-} from "./use-workbench-feed";
+import { useWorkbenchFeed } from "./use-workbench-feed";
 import { CorbitAvatar, avatarClassForPrincipal } from "./avatar";
 import { useWorkbenchPresenceRoster } from "./workbench-presence";
 import { type } from "arktype";
 import {
   ChatMessageEventData,
-  ChatPinEventData,
-  ChatReactionEventData,
   ChatSettingsEventData,
 } from "./wire/stream-events";
 import { useThreadNavigation } from "./use-thread-navigation";
@@ -136,7 +122,6 @@ import { useWorkbenchTimelineView } from "./workbench-timeline-view";
 export {
   chatFeedQueryKeyPrefix,
   chatThreadsQueryKey,
-  chatPinsQueryKey,
 } from "./use-workbench-feed";
 export type { MessagesState } from "./workbench-timeline-view";
 
@@ -764,7 +749,7 @@ function ChatWorkspaceInner({
     activeWorkbenchId,
     ...(onWorkbenchNotFound !== undefined ? { onWorkbenchNotFound } : {}),
   });
-  const { threads, rootThreadId, pinsStatus, refreshFeed } = feed;
+  const { threads, rootThreadId, refreshFeed } = feed;
 
   const navigation = useThreadNavigation({
     tenantId,
@@ -804,23 +789,7 @@ function ChatWorkspaceInner({
     if (first !== undefined) setActiveWorkbenchId(first.id);
   }, [workbenchesState, activeWorkbenchId]);
 
-  // Reaction/pin toggles never refetch on completion: the same
-  // `chat.reaction`/`chat.pin` event the actor's own toggle provokes comes
-  // back over this workbench's own stream (including to the actor's own
-  // connection) and is folded into the messages/pins cache by
-  // `applyStreamReaction`/`applyStreamPin` below — a second, response-driven
-  // refresh here would be exactly the redundant refetch CL-6328 removes.
-  const handleToggleReaction = useCallback(
-    (messageId: string, emoji: string) => {
-      if (activeWorkbenchId === null) return;
-      toggleReaction(tenantId, activeWorkbenchId, messageId, emoji).catch(() =>
-        toast(CHAT_STRINGS.reactionToggleError),
-      );
-    },
-    [tenantId, activeWorkbenchId],
-  );
-
-  // CL-7201: unlike the reaction/pin handlers above, this rethrows after
+  // CL-7201: this rethrows after
   // toasting — the composer's own `onStop` awaits the returned promise
   // and re-enables its Stop button on rejection, so a genuinely failed
   // request (network, a denied grant) never leaves the button stuck
@@ -834,41 +803,6 @@ function ChatWorkspaceInner({
       throw err;
     });
   }, [tenantId, activeWorkbenchId]);
-
-  const handlePinMessage = useCallback(
-    (messageId: string) => {
-      if (activeWorkbenchId === null) return;
-      pinMessage(tenantId, activeWorkbenchId, messageId).catch(() =>
-        toast(CHAT_STRINGS.pinMessageError),
-      );
-    },
-    [tenantId, activeWorkbenchId],
-  );
-
-  const handleUnpinMessage = useCallback(
-    (messageId: string) => {
-      if (activeWorkbenchId === null) return;
-      unpinMessage(tenantId, activeWorkbenchId, messageId).catch(() =>
-        toast(CHAT_STRINGS.unpinMessageError),
-      );
-    },
-    [tenantId, activeWorkbenchId],
-  );
-
-  const reactionActions: ReactionActions = useMemo(
-    () => ({ onToggle: handleToggleReaction }),
-    [handleToggleReaction],
-  );
-  const pinActions: PinActions = useMemo(
-    () => ({ onPin: handlePinMessage, onUnpin: handleUnpinMessage }),
-    [handlePinMessage, handleUnpinMessage],
-  );
-
-  function jumpToMessage(messageId: string) {
-    document
-      .getElementById(messageDomId(messageId))
-      ?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }
 
   const composerMounted =
     !settingsOpen &&
@@ -957,38 +891,16 @@ function ChatWorkspaceInner({
       if (activeWorkbenchId === null) return;
       switch (eventType) {
         case "chat.message": {
+          // The feed now reads from the mailbox, not this stream's own
+          // `chat.message` payload (CL-8174 slice 2b) — the mailbox's own
+          // `/me/inbox/events` subscription (see `useWorkbenchFeed`) is
+          // what refreshes the timeline once the fan-out lands. A parse
+          // failure here still means something arrived this connection
+          // couldn't read, so still worth a refresh.
           const parsed = ChatMessageEventData(data);
           if (parsed instanceof type.errors) {
             toast(CHAT_STRINGS.streamMessageDropped);
             refreshFeed();
-            break;
-          }
-          applyStreamMessage(queryClient, tenantId, activeWorkbenchId, {
-            id: parsed.id,
-            createdAt: parsed.createdAt,
-            parts: parsed.parts,
-            sender: parsed.sender,
-            ...(parsed.threadId !== null ? { threadId: parsed.threadId } : {}),
-          });
-          break;
-        }
-        case "chat.reaction": {
-          const parsed = ChatReactionEventData(data);
-          if (!(parsed instanceof type.errors)) {
-            applyStreamReaction(
-              queryClient,
-              tenantId,
-              activeWorkbenchId,
-              parsed,
-              currentUser?.principalId,
-            );
-          }
-          break;
-        }
-        case "chat.pin": {
-          const parsed = ChatPinEventData(data);
-          if (!(parsed instanceof type.errors)) {
-            applyStreamPin(queryClient, tenantId, activeWorkbenchId, parsed);
           }
           break;
         }
@@ -1708,9 +1620,6 @@ function ChatWorkspaceInner({
                 />
               ) : (
                 <>
-                  {!inThreadView ? (
-                    <PinnedStrip status={pinsStatus} onJump={jumpToMessage} />
-                  ) : null}
                   {openThreadParent !== undefined ? (
                     <div className="chat-thread-origin-banner">
                       {CHAT_STRINGS.forkThreadOriginBanner}{" "}
@@ -1784,8 +1693,6 @@ function ChatWorkspaceInner({
                     {...(connectServiceActions !== undefined
                       ? { connectServiceActions }
                       : {})}
-                    reactionActions={reactionActions}
-                    pinActions={pinActions}
                     onRetryFailedTurn={handleRetryFailedTurn}
                     failedTurnRecovery={failedTurnRecovery}
                     pendingActions={{

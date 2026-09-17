@@ -1,35 +1,28 @@
-// One workbench's feed: the three reads that make it up, every view the
+// One workbench's feed: the mailbox reads that make it up, every view the
 // timeline can derive from them, and the single refresh that keeps them
-// current (CL-6313).
+// current (CL-6313; CL-8174 slice 2b).
 //
-// Thread membership is a property of a message, not a function of which
-// endpoint was called, so the root feed, any open thread, and the reply
-// counts on each thread affordance are all filters over one cached
-// mailbox — see `./thread-feed.ts`. That is what lets an agent turn's
-// burst of stream events cost one refetch instead of one request per
-// thread per event.
+// The feed reads through `@corbits/mailbox`'s own thread routes rather than
+// `@corbits/chat`'s message/thread routes now: a workbench is a plain
+// tenant (CL-8083), and every message posted to it already lands in the
+// mailbox via the same fan-out the Inbox reads (see
+// `packages/chat-ui/src/mailbox-timeline.ts`). Thread membership is a
+// property of a message, not a function of which endpoint was called, so
+// the root feed and every open thread are both filters over the one
+// mailbox this hook loads — see `./thread-feed.ts`.
+//
+// Pins and reactions have no mailbox equivalent and are retired with this
+// slice: no chip row, no pin toggle, no pinned strip.
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { QueryClient } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { UnauthenticatedError } from "@corbits/api-query";
 import {
-  ChatApiError,
-  describeChatError,
-  listMessages,
-  listPinnedMessages,
-  listThreads,
-  workbenchesQueryKey,
-} from "./api";
-import type {
-  MessageItem,
-  MessagesResponse,
-  PinnedMessage,
-  ReactionSummary,
-  Workbench,
-  WorkbenchThreadRow,
-} from "./api";
-import { CHAT_STRINGS } from "./strings";
+  loadRoomMailboxMessages,
+  loadRoomThreadRows,
+  MailboxThreadFetchError,
+  roomMailboxEventsUrl,
+} from "./mailbox-timeline";
+import type { MessageItem, MessagesResponse, WorkbenchThreadRow } from "./api";
 
 /** Whether this workbench's mailbox has loaded, and why not if it hasn't.
  * The items themselves are a separate question — which slice of the
@@ -49,40 +42,6 @@ export type FeedStatus =
       readonly isUnauthorized: boolean;
     }
   | { readonly kind: "ready" };
-
-/** Whether this workbench's pinned strip has loaded, and why not if it
- * hasn't (CL-6832). A successful empty list is `ready` with no items; a
- * read failure is `error`; a 404 (pins store not wired on this host) is
- * `unavailable` — the same "absent store, absent surface" contract the
- * wire's own `pinned` field follows. Never coerce a failure into `[]`. */
-export type PinsStatus =
-  | { readonly kind: "loading" }
-  | { readonly kind: "ready"; readonly items: readonly PinnedMessage[] }
-  | { readonly kind: "unavailable" }
-  | { readonly kind: "error"; readonly message: string };
-
-/** Pure fold over the pins query — kept free of React so the empty-vs-error
- * distinction is unit-testable without mounting the feed hook. */
-export function pinsStatusFor(args: {
-  readonly activeWorkbenchId: string | null;
-  readonly data: readonly PinnedMessage[] | undefined;
-  readonly error: unknown;
-}): PinsStatus {
-  if (args.activeWorkbenchId === null) return { kind: "loading" };
-  // React Query keeps the last successful data through a failed refetch, so
-  // a background failure leaves the strip exactly as it was.
-  if (args.data !== undefined) return { kind: "ready", items: args.data };
-  if (args.error != null) {
-    if (args.error instanceof ChatApiError && args.error.status === 404) {
-      return { kind: "unavailable" };
-    }
-    return {
-      kind: "error",
-      message: describeChatError(args.error, CHAT_STRINGS.pinnedStripLoadError),
-    };
-  }
-  return { kind: "loading" };
-}
 
 /** How long a loaded feed counts as fresh. An agent turn emits dozens of
  * stream events in under a second; with a stale window every one of them
@@ -122,87 +81,11 @@ export function chatThreadsQueryKey(
 ) {
   return [...chatFeedQueryKeyPrefix(tenantId, workbenchId), "threads"] as const;
 }
-export function chatPinsQueryKey(tenantId: string, workbenchId: string | null) {
-  return [...chatFeedQueryKeyPrefix(tenantId, workbenchId), "pins"] as const;
-}
-
-/** Cap matching `packages/chat/src/room-messages.ts`'s bench-list preview. */
-const LIST_PREVIEW_MAX_LENGTH = 80;
 
 /**
- * Person-facing text for a sidebar list-row preview from one stream
- * message's parts (CL-6795). Text parts only — join/event/attachment-only
- * rows contribute nothing so the prior readable preview is kept rather
- * than blanked. Truncation matches the server's `previewOf`.
- */
-function streamListPreview(parts: MessageItem["parts"]): string {
-  const text = parts
-    .filter(
-      (part): part is Extract<MessageItem["parts"][number], { kind: "text" }> =>
-        part.kind === "text",
-    )
-    .map((part) => part.text)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (text.length === 0) return "";
-  return text.length > LIST_PREVIEW_MAX_LENGTH
-    ? `${text.slice(0, LIST_PREVIEW_MAX_LENGTH).trimEnd()}…`
-    : text;
-}
-
-/**
- * Settles the workbench/chat list-cache row for a streamed message
- * (CL-6795): bump `lastActivityAt` when the message is at least as new as
- * the cached activity, replace `preview` only when this message carries
- * person-facing text, and never blank a prior readable preview on a
- * join/event/attachment-only row. Touches both kind caches — the row
- * lives in exactly one — so the sidebar updates without a list refetch.
- */
-function settleWorkbenchListRow(
-  queryClient: QueryClient,
-  tenantId: string,
-  workbenchId: string,
-  message: MessageItem,
-): void {
-  const nextPreview = streamListPreview(message.parts);
-  for (const kind of ["workbench", "chat"] as const) {
-    queryClient.setQueryData(
-      workbenchesQueryKey(tenantId, kind),
-      (current: readonly Workbench[] | undefined) => {
-        if (current === undefined) return current;
-        let changed = false;
-        const items = current.map((row) => {
-          if (row.id !== workbenchId) return row;
-          const priorActivity = row.lastActivityAt;
-          const isNewerOrEqual =
-            priorActivity === undefined || message.createdAt >= priorActivity;
-          if (!isNewerOrEqual) return row;
-          const lastActivityAt = message.createdAt;
-          const preview = nextPreview.length > 0 ? nextPreview : row.preview;
-          if (
-            lastActivityAt === row.lastActivityAt &&
-            preview === row.preview
-          ) {
-            return row;
-          }
-          changed = true;
-          return {
-            ...row,
-            lastActivityAt,
-            ...(preview !== undefined ? { preview } : {}),
-          };
-        });
-        return changed ? items : current;
-      },
-    );
-  }
-}
-
-/**
- * The `GET /threads` cache shape — shared by stream apply and the
- * optimistic-send path that seeds a just-created reply thread before
- * `openThreadById` runs (CL-6660).
+ * The `GET /threads` cache shape — shared by the optimistic-send path that
+ * seeds a just-created reply thread before `openThreadById` runs
+ * (CL-6660).
  */
 export type ThreadsQueryData = {
   readonly rootThreadId: string;
@@ -276,214 +159,9 @@ export function ensureReplyThreadRow(
   return { ...current, items: [...current.items, newRow] };
 }
 
-/**
- * Folds a freshly published `chat.message` row straight into the messages
- * cache (CL-6328) — the §6/1.2 bar is zero refetches triggered by a stream
- * event, and this event already carries everything a `GET .../messages`
- * page item would. Deduped by `id` or `clientId` so the row this reader's
- * own optimistic send already wrote (`use-optimistic-sends.ts`) is never
- * doubled when its own echo arrives back over the stream.
- *
- * When the matching row is already present but lacks `threadId` and the
- * stream carries one, the cached row is patched in place (CL-6660) — an
- * optimistic confirm that raced ahead of thread assignment used to leave
- * the message stuck on the root feed. A message that belongs to a thread
- * also bumps (or seeds) that thread's `replyCount`/`lastActivityAt` row
- * in the threads cache — only when this apply newly scopes the message
- * into the thread, so an echo of an already-counted optimistic write is
- * a no-op on replyCount. The workbench list-cache row settles its
- * preview/`lastActivityAt` here too (CL-6795).
- */
-export function applyStreamMessage(
-  queryClient: QueryClient,
-  tenantId: string,
-  workbenchId: string,
-  message: MessageItem,
-): void {
-  let threadActivityDelta = 0;
-  queryClient.setQueryData(
-    chatMessagesQueryKey(tenantId, workbenchId),
-    (current: MessagesResponse | undefined) => {
-      if (current === undefined) return current;
-      const matchIndex = current.items.findIndex(
-        (item) =>
-          item.id === message.id ||
-          (message.clientId !== undefined &&
-            item.clientId === message.clientId),
-      );
-      if (matchIndex >= 0) {
-        const existing = current.items[matchIndex];
-        if (existing === undefined) return current;
-        if (
-          message.threadId !== undefined &&
-          existing.threadId !== message.threadId
-        ) {
-          threadActivityDelta = 1;
-          const items = current.items.slice();
-          items[matchIndex] = { ...existing, threadId: message.threadId };
-          return { ...current, items };
-        }
-        return current;
-      }
-      if (message.threadId !== undefined) threadActivityDelta = 1;
-      return { ...current, items: [...current.items, message] };
-    },
-  );
-  settleWorkbenchListRow(queryClient, tenantId, workbenchId, message);
-  if (message.threadId === undefined) return;
-  const threadId = message.threadId;
-  queryClient.setQueryData(
-    chatThreadsQueryKey(tenantId, workbenchId),
-    (current: ThreadsQueryData | undefined) => {
-      if (current === undefined) return current;
-      return ensureReplyThreadRow(current, {
-        threadId,
-        createdAt: message.createdAt,
-        bumpReplyCount: threadActivityDelta > 0,
-      });
-    },
-  );
-}
-
-/**
- * Folds a `chat.reaction` delta into the reacted message's own summary —
- * the emoji, count, and this signed-in principal's own membership in the
- * reactor set — rather than refetching the row it's about.
- */
-export function applyStreamReaction(
-  queryClient: QueryClient,
-  tenantId: string,
-  workbenchId: string,
-  reaction: {
-    readonly messageId: string;
-    readonly emoji: string;
-    readonly principalId: string;
-    readonly added: boolean;
-  },
-  selfPrincipalId: string | undefined,
-): void {
-  const isSelf = reaction.principalId === selfPrincipalId;
-  queryClient.setQueryData(
-    chatMessagesQueryKey(tenantId, workbenchId),
-    (current: MessagesResponse | undefined) => {
-      if (current === undefined) return current;
-      const items = current.items.map((item) => {
-        if (item.id !== reaction.messageId) return item;
-        const reactions = item.reactions ?? [];
-        const existingIndex = reactions.findIndex(
-          (entry) => entry.emoji === reaction.emoji,
-        );
-        let nextReactions: readonly ReactionSummary[];
-        if (reaction.added) {
-          nextReactions =
-            existingIndex === -1
-              ? [
-                  ...reactions,
-                  { emoji: reaction.emoji, count: 1, reactedByMe: isSelf },
-                ]
-              : reactions.map((entry, index) =>
-                  index === existingIndex
-                    ? {
-                        ...entry,
-                        count: entry.count + 1,
-                        reactedByMe: entry.reactedByMe || isSelf,
-                      }
-                    : entry,
-                );
-        } else {
-          // A removal for an emoji this cache never saw added is a
-          // no-op, not a negative count.
-          const existing = reactions[existingIndex];
-          const nextCount = existing === undefined ? 0 : existing.count - 1;
-          if (existing === undefined) {
-            nextReactions = reactions;
-          } else if (nextCount <= 0) {
-            nextReactions = reactions.filter(
-              (_, index) => index !== existingIndex,
-            );
-          } else {
-            nextReactions = reactions.map((entry, index) =>
-              index === existingIndex
-                ? {
-                    ...entry,
-                    count: nextCount,
-                    reactedByMe: isSelf ? false : entry.reactedByMe,
-                  }
-                : entry,
-            );
-          }
-        }
-        return { ...item, reactions: nextReactions };
-      });
-      return { ...current, items };
-    },
-  );
-}
-
-/**
- * Folds a `chat.pin`/unpin delta into both the message's own `pinned` flag
- * and the pinned strip's list — the strip's row is built from the message
- * already sitting in the messages cache plus `pinnedBy`/`pinnedAt`, so
- * pinning never needs a `GET /pins` round-trip.
- */
-export function applyStreamPin(
-  queryClient: QueryClient,
-  tenantId: string,
-  workbenchId: string,
-  pin: {
-    readonly messageId: string;
-    readonly pinned: boolean;
-    readonly pinnedBy?: string;
-    readonly pinnedAt?: string;
-  },
-): void {
-  queryClient.setQueryData(
-    chatMessagesQueryKey(tenantId, workbenchId),
-    (current: MessagesResponse | undefined) => {
-      if (current === undefined) return current;
-      return {
-        ...current,
-        items: current.items.map((item) =>
-          item.id === pin.messageId ? { ...item, pinned: pin.pinned } : item,
-        ),
-      };
-    },
-  );
-  queryClient.setQueryData(
-    chatPinsQueryKey(tenantId, workbenchId),
-    (current: readonly PinnedMessage[] | undefined) => {
-      if (current === undefined) return current;
-      if (!pin.pinned) {
-        return current.filter((entry) => entry.id !== pin.messageId);
-      }
-      if (current.some((entry) => entry.id === pin.messageId)) return current;
-      if (pin.pinnedBy === undefined || pin.pinnedAt === undefined) {
-        return current;
-      }
-      const messages = queryClient.getQueryData<MessagesResponse>(
-        chatMessagesQueryKey(tenantId, workbenchId),
-      );
-      const message = messages?.items.find((item) => item.id === pin.messageId);
-      if (message === undefined) return current;
-      return [
-        ...current,
-        {
-          ...message,
-          pinned: true,
-          pinnedBy: pin.pinnedBy,
-          pinnedAt: pin.pinnedAt,
-        },
-      ];
-    },
-  );
-}
-
 export interface WorkbenchFeed {
   readonly threads: readonly WorkbenchThreadRow[];
   readonly rootThreadId: string;
-  /** Pins load state — empty success, error, and unavailable stay distinct
-   * (CL-6832). Prefer this over inventing an empty list on failure. */
-  readonly pinsStatus: PinsStatus;
   /** Every message in the workbench, unfiltered. What thread a reader is
    * looking at selects a slice of this — see `./thread-feed.ts`. */
   readonly loadedMessages: readonly MessageItem[];
@@ -515,48 +193,30 @@ export function useWorkbenchFeed(args: {
     | undefined
   >(undefined);
 
-  // Threads and the mailbox are two queries, and every view the timeline
-  // can show is derived from them (CL-6313). Each message carries the
-  // thread it belongs to, so opening a thread filters data already
-  // loaded rather than calling a different endpoint — which is what lets
-  // a burst of stream events collapse into a single refetch instead of
-  // one request per thread per event.
   const messagesQuery = useQuery({
     queryKey: chatMessagesQueryKey(tenantId, activeWorkbenchId),
-    queryFn: () => listMessages(tenantId, activeWorkbenchId ?? ""),
+    // Kept as `{ items }` — the same `MessagesResponse` shape the old
+    // `GET .../messages` read produced — so `use-optimistic-sends.ts`'s
+    // own optimistic writes into this cache (which target `.items`,
+    // wholly independent of where the confirmed rows came from) need no
+    // changes for this slice's fetch-source swap.
+    queryFn: async (): Promise<MessagesResponse> => ({
+      items: await loadRoomMailboxMessages(tenantId, activeWorkbenchId ?? ""),
+    }),
     enabled: activeWorkbenchId !== null,
     staleTime: CHAT_FEED_STALE_MS,
   });
   const threadsQuery = useQuery({
     queryKey: chatThreadsQueryKey(tenantId, activeWorkbenchId),
-    queryFn: () => listThreads(tenantId, activeWorkbenchId ?? ""),
-    enabled: activeWorkbenchId !== null,
-    staleTime: CHAT_FEED_STALE_MS,
-  });
-  const pinsQuery = useQuery({
-    queryKey: chatPinsQueryKey(tenantId, activeWorkbenchId),
-    queryFn: () => listPinnedMessages(tenantId, activeWorkbenchId ?? ""),
+    queryFn: () => loadRoomThreadRows(tenantId, activeWorkbenchId ?? ""),
     enabled: activeWorkbenchId !== null,
     staleTime: CHAT_FEED_STALE_MS,
   });
 
   const threads = threadsQuery.data?.items ?? NO_THREADS;
   const rootThreadId = threadsQuery.data?.rootThreadId ?? "";
-  const pinsStatus = useMemo(
-    () =>
-      pinsStatusFor({
-        activeWorkbenchId,
-        data: pinsQuery.data,
-        error: pinsQuery.error,
-      }),
-    [activeWorkbenchId, pinsQuery.data, pinsQuery.error],
-  );
   const loadedMessages = messagesQuery.data?.items ?? NO_MESSAGES;
 
-  // The parent a thread hangs off comes from the thread itself once it
-  // exists, and from the message the reader is replying to before it
-  // does — one value either way, so the feed never has to know which
-  // case it is in.
   // A 401 is terminal for this session: keep refetching and the app would
   // hammer the hub unauthenticated forever, so every refresh trigger
   // below checks this first. A 404 means the workbench itself is gone
@@ -564,10 +224,11 @@ export function useWorkbenchFeed(args: {
   // transient failure a retry could fix.
   const messagesError = messagesQuery.error;
   const isUnauthorized =
-    messagesError instanceof UnauthenticatedError ||
-    (messagesError instanceof ChatApiError && messagesError.status === 401);
+    messagesError instanceof MailboxThreadFetchError &&
+    messagesError.status === 401;
   const workbenchNotFound =
-    messagesError instanceof ChatApiError && messagesError.status === 404;
+    messagesError instanceof MailboxThreadFetchError &&
+    messagesError.status === 404;
 
   // React Query keeps the last successful data through a failed refetch,
   // so a background failure leaves the timeline exactly as it was and
@@ -576,9 +237,14 @@ export function useWorkbenchFeed(args: {
     if (activeWorkbenchId === null) return { kind: "loading" };
     if (messagesQuery.data !== undefined) return { kind: "ready" };
     if (messagesError !== null) {
+      // Never the raw `MailboxThreadFetchError` message verbatim — like
+      // `describeChatError`, it can embed the request path. `workbenchNotFound`
+      // and `isUnauthorized` below carry the two statuses the UI gives its
+      // own dedicated copy and recovery to; everything else gets this one
+      // plain-language fallback.
       return {
         kind: "error",
-        message: describeChatError(messagesError, "Couldn't load messages."),
+        message: "Couldn't load messages.",
         workbenchNotFound,
         isUnauthorized,
       };
@@ -644,10 +310,28 @@ export function useWorkbenchFeed(args: {
     },
     [tenantId, activeWorkbenchId],
   );
+
+  // Live updates: the mailbox's own SSE stream (the same one Inbox reads)
+  // rather than a bespoke chat one — an event names the affected mail
+  // message's id and (optionally) what happened to it, never the full
+  // row, so the only thing a subscriber can safely do with it is refresh
+  // the feed it might belong to. Coalesced through the same `refreshFeed`
+  // every other trigger uses, so a burst of mail events costs one refetch.
+  useEffect(() => {
+    if (activeWorkbenchId === null) return;
+    // A host with no `EventSource` at all (an older test harness that
+    // never stubs one, matching `useWorkbenchStream`'s own contract) gets
+    // no live updates rather than a thrown error — `refreshFeed` still
+    // runs from every other trigger (send, thread navigation, tab focus).
+    if (typeof EventSource === "undefined") return;
+    const source = new EventSource(roomMailboxEventsUrl(tenantId));
+    source.addEventListener("mailbox", () => refreshFeed());
+    return () => source.close();
+  }, [tenantId, activeWorkbenchId, refreshFeed]);
+
   return {
     threads,
     rootThreadId,
-    pinsStatus,
     loadedMessages,
     feedStatus,
     threadsLoaded: threadsQuery.data !== undefined,

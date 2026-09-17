@@ -40,9 +40,6 @@ export type {
   OnboardingStepLabel,
   WorkbenchOnboardingStep,
 } from "./wire/blocks";
-export { REACTION_EMOJI } from "./wire/reaction-emoji";
-export type { ReactionEmoji } from "./wire/reaction-emoji";
-
 export const WorkbenchKind = type("'workbench' | 'chat'");
 export type WorkbenchKind = typeof WorkbenchKind.infer;
 
@@ -519,88 +516,6 @@ export function sendMessage(
   );
 }
 
-/**
- * Toggles this signed-in principal's reaction with `emoji` on a
- * message — `POST .../reactions/toggle` (see
- * `packages/chat/src/routes.ts`). Returns the emoji's fresh summary
- * (count and whether this principal is now among the reactors); the
- * caller re-renders from this rather than assuming its own optimistic
- * guess, the same anti-drift rule `submitPoll`'s live tally follows.
- */
-export function toggleReaction(
-  tenantId: string,
-  workbenchId: string,
-  messageId: string,
-  emoji: string,
-): Promise<ReactionSummary> {
-  return request(
-    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages/${messageId}/reactions/toggle`,
-    ReactionSummaryWire,
-    { method: "POST", body: JSON.stringify({ emoji }) },
-  );
-}
-
-const PinnedWire = type({
-  messageId: "string",
-  pinnedBy: "string",
-  pinnedAt: "string",
-});
-export type Pinned = typeof PinnedWire.infer;
-
-function pinPath(tenantId: string, workbenchId: string, messageId: string) {
-  return `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages/${messageId}/pin`;
-}
-
-export function pinMessage(
-  tenantId: string,
-  workbenchId: string,
-  messageId: string,
-): Promise<Pinned> {
-  return request(pinPath(tenantId, workbenchId, messageId), PinnedWire, {
-    method: "POST",
-  });
-}
-
-export async function unpinMessage(
-  tenantId: string,
-  workbenchId: string,
-  messageId: string,
-): Promise<void> {
-  const response = await fetch(pinPath(tenantId, workbenchId, messageId), {
-    method: "DELETE",
-  });
-  if (response.status === 401) {
-    throw new UnauthenticatedError();
-  }
-  if (!response.ok) {
-    throw new ChatApiError(
-      `The server answered ${response.status} for ${pinPath(tenantId, workbenchId, messageId)}.`,
-      response.status,
-    );
-  }
-}
-
-// A pinned message's own content, for the pinned strip's preview — the
-// same `MessageItem` shape plus who pinned it and when. See `GET
-// /workbenches/:id/pins` in `packages/chat/src/routes.ts`.
-const PinnedMessageWire = MessageItem.and({
-  pinnedBy: "string",
-  pinnedAt: "string",
-});
-export type PinnedMessage = typeof PinnedMessageWire.infer;
-
-const PinnedMessagesResponse = type({ items: PinnedMessageWire.array() });
-
-export function listPinnedMessages(
-  tenantId: string,
-  workbenchId: string,
-): Promise<readonly PinnedMessage[]> {
-  return request(
-    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/pins`,
-    PinnedMessagesResponse,
-  ).then((page) => page.items);
-}
-
 // `parentThreadId` is the thread this one hangs directly off: null for the
 // root thread, the root thread's id for a depth-1 thread, a depth-1
 // thread's id for a depth-2 sub-thread. Two levels, stop — see
@@ -645,23 +560,6 @@ export function listThreads(
   return request(
     `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/threads`,
     ThreadsResponse,
-  );
-}
-
-const ThreadMessagesResponse = type({
-  thread: WorkbenchThread,
-  items: MessageItem.array(),
-});
-export type ThreadMessagesResponse = typeof ThreadMessagesResponse.infer;
-
-export function listThreadMessages(
-  tenantId: string,
-  workbenchId: string,
-  threadId: string,
-): Promise<ThreadMessagesResponse> {
-  return request(
-    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/threads/${threadId}/messages`,
-    ThreadMessagesResponse,
   );
 }
 
