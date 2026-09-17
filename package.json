@@ -4,8 +4,10 @@
   "private": true,
   "license": "SEE LICENSE IN LICENSE.md",
   "workspaces": [
+    "agents/*",
     "apps/*",
     "packages/*",
+    "skills/*",
     "tools/*",
     "vendor/intx/*",
     "workflows/*"
@@ -13,9 +15,9 @@
   "scripts": {
     "check": "bun run typecheck && bun run lint && bun run fmt:check && bun run check:structural && bun run test",
     "typecheck": "bun run scripts/typecheck.ts",
-    "lint": "oxlint apps packages workflows scripts test",
-    "fmt": "oxfmt apps packages workflows scripts test",
-    "fmt:check": "oxfmt --check apps packages workflows scripts test",
+    "lint": "oxlint apps packages tools agents skills workflows scripts test",
+    "fmt": "oxfmt apps packages tools agents skills workflows scripts test",
+    "fmt:check": "oxfmt --check apps packages tools agents skills workflows scripts test",
     "hooks:install": "bun run scripts/hooks-install.ts",
     "prepare": "bun run hooks:install",
     "build": "bun run scripts/run-all.ts build",

@@ -1,6 +1,6 @@
 // DB-gated: skipped when no DATABASE_URL is reachable (a fresh checkout
 // still runs the unit gates), mirroring
-// `packages/granola-tools/test/credential-delivery.drizzle.test.ts`. Runs
+// `tools/granola/test/credential-delivery.drizzle.test.ts`. Runs
 // against its own Postgres schema, never the developer's or the
 // walking-skeleton suite's.
 //

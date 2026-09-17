@@ -151,7 +151,7 @@ thread. Other people's prompts have no Edit.
 
 A **Skill** is a named, reusable capability — instructions an agent can
 pin and a workbench can install, backed by the platform's native
-`kind:"skill"` asset (see `packages/skills`). Skills are visible only to
+`kind:"skill"` asset (see `skills/skills`). Skills are visible only to
 the principal or tenant that owns them; nothing crosses tenant boundaries
 implicitly. Plugins extend what a workbench can do the same way Skills
 extend what an agent knows — both are installable, both are scoped to the

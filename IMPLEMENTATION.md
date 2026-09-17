@@ -237,7 +237,7 @@ appends `toolCount` to the Plugins return query. The Canva row
 (`packages/plugins-ui/src/mcp-preset-cards.tsx`) shows that count when
 it is a non-negative integer; otherwise the row stays "Connected".
 `@corbits/mcp-tools` per-request timeout is two minutes
-(`MCP_REQUEST_TIMEOUT_MS` in `packages/mcp-tools/src/mcp-client.ts`) —
+(`MCP_REQUEST_TIMEOUT_MS` in `tools/mcp/src/mcp-client.ts`) —
 above the SDK's 60s default, below a five-minute chat turn.
 
 These are unit-tested control-flow facts. Live Canva OAuth against
@@ -281,7 +281,7 @@ a plain object whose keys are only `name` plus exactly one of
 declared set. Unknown names, no-tools requests, extra keys, arrays,
 mixed prose, fenced JSON, and incomplete objects stay text.
 
-The assistant definition (`workflows/assistant`) also tells Myra to
+The assistant definition (`agents/assistant`) also tells Myra to
 invoke tools only through tool calls — never by writing a JSON object
 with a tool name into the reply — and not to `memory_search` a bare
 greeting.

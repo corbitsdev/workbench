@@ -4,7 +4,7 @@
 // Tool resolution keys on `name@version`, and every pin is hand-maintained
 // (CL-6437): nothing ripples a version bump to the workflows that pin it.
 // PR #165 bumped `@corbits/connections-tools` to 0.0.5 and left
-// `workflows/assistant/src/index.ts` pinning 0.0.4, breaking that
+// `agents/assistant/src/index.ts` pinning 0.0.4, breaking that
 // workflow's deploy; the same drift hit `@corbits/mcp-tools` during
 // CL-6456. Nothing caught either at merge time. This check is the static,
 // cheap half of that class (CL-6497): every `{ name: "@corbits/x",
@@ -21,7 +21,7 @@ import { Glob } from "bun";
 import path from "node:path";
 import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
-const SCAN_DIRS = ["apps", "packages", "tools", "workflows"];
+const SCAN_DIRS = ["apps", "packages", "tools", "agents", "skills", "workflows"];
 
 const EXCLUDED_SEGMENTS = ["node_modules", "dist", ".worktrees", "vendor"];
 
@@ -100,7 +100,7 @@ export function auditToolPackagePins(
 
 async function manifestVersions(root: string): Promise<Map<string, string>> {
   const versions = new Map<string, string>();
-  const glob = new Glob("{apps,packages,tools,workflows}/*/package.json");
+  const glob = new Glob("{apps,packages,tools,agents,skills,workflows}/*/package.json");
   for await (const relPath of glob.scan(root)) {
     if (relPath.includes("node_modules/")) continue;
     const manifest = (await Bun.file(path.join(root, relPath)).json()) as {
@@ -132,7 +132,7 @@ async function addVendoredDependencyVersions(
   root: string,
   versions: Map<string, string>,
 ): Promise<void> {
-  const glob = new Glob("{apps,packages,tools,workflows}/*/package.json");
+  const glob = new Glob("{apps,packages,tools,agents,skills,workflows}/*/package.json");
   const corbitsDepNames = new Set<string>();
   for await (const relPath of glob.scan(root)) {
     if (relPath.includes("node_modules/")) continue;
@@ -167,7 +167,15 @@ async function addVendoredDependencyVersions(
  * falls back to the root's.
  */
 async function installedVersion(root: string, name: string): Promise<string | undefined> {
-  const candidateDirs = [".", "apps/*", "packages/*", "tools/*", "workflows/*"];
+  const candidateDirs = [
+    ".",
+    "apps/*",
+    "packages/*",
+    "tools/*",
+    "agents/*",
+    "skills/*",
+    "workflows/*",
+  ];
   for (const dir of candidateDirs) {
     const glob = new Glob(`${dir}/node_modules/${name}/package.json`);
     for await (const relPath of glob.scan(root)) {

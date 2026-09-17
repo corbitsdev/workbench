@@ -660,7 +660,7 @@ describe("PluginsRoute", () => {
     expect(window.location.search).toBe("?foo=bar");
   });
 
-  // CL-7141: `presetDeepLink` in `packages/connections-tools/src/tool.ts`
+  // CL-7141: `presetDeepLink` in `tools/connections/src/tool.ts`
   // emits `/plugins?connect=mcp:<slug>` for a curated MCP preset (Exa,
   // Granola, Linear, ...) — this page resolves that against the preset
   // catalog and focuses the matching card's own Connect button once it

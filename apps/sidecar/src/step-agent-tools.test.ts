@@ -6,8 +6,8 @@
 // `createToolBearingAgentFactory` does inside its `credentialCapabilityFor`
 // closure. These tests exercise that composition directly -- a fake
 // `CredentialWiring` in, a shaped `credentials` capability out -- without
-// standing up a full `Agent`, which `packages/granola-tools` and
-// `packages/linear-tools`'s own `tool.test.ts` suites already cover from
+// standing up a full `Agent`, which `tools/granola` and
+// `tools/linear`'s own `tool.test.ts` suites already cover from
 // the tool side (a `CredentialCapability` in, a `ToolResult` out).
 import { describe, expect, test } from "bun:test";
 

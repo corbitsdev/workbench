@@ -1,6 +1,6 @@
 // DB-gated: skipped when DATABASE_URL is unreachable, matching this
 // repo's convention for tests that talk to a real Postgres (see
-// `packages/access-tools/test/routes.test.ts`).
+// `tools/access/test/routes.test.ts`).
 //
 // CL-7481: `recordAgentSessionAtProvision` is the eager write every
 // native launcher makes right after `prepareProvisionedDeployment`

@@ -29,6 +29,63 @@
         "typescript": "6.0.3",
       },
     },
+    "agents/assistant": {
+      "name": "@corbits/assistant-workflow",
+      "version": "0.0.2",
+      "dependencies": {
+        "@corbits/catalog-tools": "0.1.1",
+        "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
+      },
+      "devDependencies": {
+        "@corbits/agent-directory-tools": "workspace:*",
+        "@corbits/connections": "workspace:*",
+        "@corbits/connections-tools": "workspace:*",
+        "@corbits/interaction-tools": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+        "@intx/workflow": "0.3.0",
+      },
+    },
+    "agents/jimmy": {
+      "name": "@corbits/jimmy-agent",
+      "version": "0.0.3",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "agents/scout": {
+      "name": "@corbits/scout-agent",
+      "version": "0.0.6",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
+        "@corbits/web-search-tools": "workspace:*",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
     "apps/hub": {
       "name": "@workbench/hub",
       "version": "0.0.1",
@@ -184,26 +241,6 @@
         "vite": "^7.1.0",
       },
     },
-    "packages/access-tools": {
-      "name": "@corbits/access-tools",
-      "version": "0.0.6",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@corbits/agent-directory": "workspace:*",
-        "@corbits/agent-directory-tools": "workspace:*",
-        "@corbits/tool-registry-publish": "workspace:*",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@corbits/error-sink": "0.0.2",
-        "@intx/agent": "0.3.0",
-        "@intx/authz": "0.3.0",
-        "@intx/types": "0.3.0",
-      },
-    },
     "packages/agent-directory": {
       "name": "@corbits/agent-directory",
       "version": "0.0.1",
@@ -236,21 +273,6 @@
         "@types/bun": "catalog:",
         "@types/semver": "catalog:",
         "typescript": "catalog:",
-      },
-    },
-    "packages/agent-directory-tools": {
-      "name": "@corbits/agent-directory-tools",
-      "version": "0.0.7",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
       },
     },
     "packages/agent-events": {
@@ -353,37 +375,6 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
-      },
-    },
-    "packages/capability-tools": {
-      "name": "@corbits/capability-tools",
-      "version": "0.0.7",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
-      },
-    },
-    "packages/catalog-tools": {
-      "name": "@corbits/catalog-tools",
-      "version": "0.1.1",
-      "dependencies": {
-        "@corbits/inference-catalog": "0.1.0",
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
       },
     },
     "packages/chat": {
@@ -560,21 +551,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/connections-tools": {
-      "name": "@corbits/connections-tools",
-      "version": "0.0.12",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
-      },
-    },
     "packages/context-menu": {
       "name": "@corbits/context-menu",
       "version": "0.0.1",
@@ -678,21 +654,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/github-tools": {
-      "name": "@corbits/github-tools",
-      "version": "0.0.11",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
-      },
-    },
     "packages/gotenberg-render": {
       "name": "@corbits/gotenberg-render",
       "version": "0.0.1",
@@ -703,26 +664,6 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
-      },
-    },
-    "packages/granola-tools": {
-      "name": "@corbits/granola-tools",
-      "version": "0.0.5",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@corbits/credential-providers": "workspace:*",
-        "@intx/authz": "0.3.0",
-        "@intx/crypto": "0.3.0",
-        "@intx/db": "workspace:*",
-        "@intx/harness": "workspace:*",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
       },
     },
     "packages/hub-api-client": {
@@ -797,86 +738,6 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
-      },
-    },
-    "packages/interaction-tools": {
-      "name": "@corbits/interaction-tools",
-      "version": "0.0.10",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@corbits/error-sink": "0.0.2",
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
-      },
-    },
-    "packages/jimmy-agent": {
-      "name": "@corbits/jimmy-agent",
-      "version": "0.0.3",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/linear-tools": {
-      "name": "@corbits/linear-tools",
-      "version": "0.0.5",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@corbits/credential-providers": "workspace:*",
-        "@intx/authz": "0.3.0",
-        "@intx/crypto": "0.3.0",
-        "@intx/db": "workspace:*",
-        "@intx/harness": "workspace:*",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
-      },
-    },
-    "packages/manus-tools": {
-      "name": "@corbits/manus-tools",
-      "version": "0.0.12",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
-      },
-    },
-    "packages/mcp-tools": {
-      "name": "@corbits/mcp-tools",
-      "version": "0.0.12",
-      "dependencies": {
-        "@modelcontextprotocol/sdk": "catalog:",
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
       },
     },
     "packages/migration-runner": {
@@ -1020,21 +881,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/reddit-tools": {
-      "name": "@corbits/reddit-tools",
-      "version": "0.0.2",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
-      },
-    },
     "packages/sandbox-sidecar": {
       "name": "@corbits/sandbox-sidecar",
       "version": "0.0.1",
@@ -1046,21 +892,6 @@
         "arktype": "catalog:",
       },
       "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/scout-agent": {
-      "name": "@corbits/scout-agent",
-      "version": "0.0.5",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/types": "workspace:*",
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
-        "@corbits/web-search-tools": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -1107,32 +938,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/skills": {
-      "name": "@corbits/skills",
-      "version": "0.0.2",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/skills-tools": {
-      "name": "@corbits/skills-tools",
-      "version": "0.0.8",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
-      },
-    },
     "packages/slug": {
       "name": "@corbits/slug",
       "version": "0.0.1",
@@ -1164,21 +969,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/tools-skills": {
-      "name": "@corbits/tools-skills",
-      "version": "0.0.4",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
-      },
-    },
     "packages/turn-artifacts": {
       "name": "@corbits/turn-artifacts",
       "version": "0.0.1",
@@ -1196,21 +986,6 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
-      },
-    },
-    "packages/web-search-tools": {
-      "name": "@corbits/web-search-tools",
-      "version": "0.0.4",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
       },
     },
     "packages/webhook-triggers": {
@@ -1236,21 +1011,6 @@
         "@intx/crypto": "0.3.0",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
-      },
-    },
-    "packages/workflow-authoring-tools": {
-      "name": "@corbits/workflow-authoring-tools",
-      "version": "0.0.8",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
       },
     },
     "packages/workflow-schedule": {
@@ -1298,6 +1058,275 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
+      },
+    },
+    "skills/skills": {
+      "name": "@corbits/skills",
+      "version": "0.0.2",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "tools/access": {
+      "name": "@corbits/access-tools",
+      "version": "0.0.6",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@corbits/agent-directory": "workspace:*",
+        "@corbits/agent-directory-tools": "workspace:*",
+        "@corbits/tool-registry-publish": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@corbits/error-sink": "0.0.2",
+        "@intx/agent": "0.3.0",
+        "@intx/authz": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/agent-directory": {
+      "name": "@corbits/agent-directory-tools",
+      "version": "0.0.7",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/capability": {
+      "name": "@corbits/capability-tools",
+      "version": "0.0.7",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/catalog": {
+      "name": "@corbits/catalog-tools",
+      "version": "0.1.1",
+      "dependencies": {
+        "@corbits/inference-catalog": "0.1.0",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/connections": {
+      "name": "@corbits/connections-tools",
+      "version": "0.0.12",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/github": {
+      "name": "@corbits/github-tools",
+      "version": "0.0.11",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/granola": {
+      "name": "@corbits/granola-tools",
+      "version": "0.0.5",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@corbits/credential-providers": "workspace:*",
+        "@intx/authz": "0.3.0",
+        "@intx/crypto": "0.3.0",
+        "@intx/db": "workspace:*",
+        "@intx/harness": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/interaction": {
+      "name": "@corbits/interaction-tools",
+      "version": "0.0.11",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@corbits/error-sink": "0.0.2",
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/linear": {
+      "name": "@corbits/linear-tools",
+      "version": "0.0.5",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@corbits/credential-providers": "workspace:*",
+        "@intx/authz": "0.3.0",
+        "@intx/crypto": "0.3.0",
+        "@intx/db": "workspace:*",
+        "@intx/harness": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/manus": {
+      "name": "@corbits/manus-tools",
+      "version": "0.0.12",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/mcp": {
+      "name": "@corbits/mcp-tools",
+      "version": "0.0.12",
+      "dependencies": {
+        "@modelcontextprotocol/sdk": "catalog:",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/reddit": {
+      "name": "@corbits/reddit-tools",
+      "version": "0.0.2",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/skills-tools": {
+      "name": "@corbits/skills-tools",
+      "version": "0.0.8",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/tools-skills": {
+      "name": "@corbits/tools-skills",
+      "version": "0.0.4",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/web-search": {
+      "name": "@corbits/web-search-tools",
+      "version": "0.0.4",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+      },
+    },
+    "tools/workflow-authoring": {
+      "name": "@corbits/workflow-authoring-tools",
+      "version": "0.0.8",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
       },
     },
     "vendor/intx/agent": {
@@ -1559,27 +1588,6 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
-      },
-    },
-    "workflows/assistant": {
-      "name": "@corbits/assistant-workflow",
-      "version": "0.0.2",
-      "dependencies": {
-        "@corbits/catalog-tools": "0.1.1",
-        "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
-      },
-      "devDependencies": {
-        "@corbits/agent-directory-tools": "workspace:*",
-        "@corbits/connections": "workspace:*",
-        "@corbits/connections-tools": "workspace:*",
-        "@corbits/interaction-tools": "workspace:*",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
-        "@intx/workflow": "0.3.0",
       },
     },
     "workflows/attio-task-agent": {
@@ -1927,11 +1935,11 @@
 
     "@connectrpc/connect-web": ["@connectrpc/connect-web@2.2.0", "", { "peerDependencies": { "@bufbuild/protobuf": "^2.7.0", "@connectrpc/connect": "2.2.0" } }, "sha512-uuBUcBTYfb/r1o98LzCCZk1H90yx0vmZ5m21dpw/q4EUwsKwkCDGI8H0aEdjcZld+Q2jJ5A5ADvPqfb6lzQ/sg=="],
 
-    "@corbits/access-tools": ["@corbits/access-tools@workspace:packages/access-tools"],
+    "@corbits/access-tools": ["@corbits/access-tools@workspace:tools/access"],
 
     "@corbits/agent-directory": ["@corbits/agent-directory@workspace:packages/agent-directory"],
 
-    "@corbits/agent-directory-tools": ["@corbits/agent-directory-tools@workspace:packages/agent-directory-tools"],
+    "@corbits/agent-directory-tools": ["@corbits/agent-directory-tools@workspace:tools/agent-directory"],
 
     "@corbits/agent-events": ["@corbits/agent-events@workspace:packages/agent-events"],
 
@@ -1945,15 +1953,15 @@
 
     "@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#5309a15", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/hub-api": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-5309a15", "sha512-zGHkq++juclUrOd0O8/Z5ziTldmJZ6gqyH/c9cs5S10UPU4gqn8CHwq174SiJXY0ujJ3cNpJXnrr+0fcqlfQ1w=="],
 
-    "@corbits/assistant-workflow": ["@corbits/assistant-workflow@workspace:workflows/assistant"],
+    "@corbits/assistant-workflow": ["@corbits/assistant-workflow@workspace:agents/assistant"],
 
     "@corbits/attio-task-agent-workflow": ["@corbits/attio-task-agent-workflow@workspace:workflows/attio-task-agent"],
 
     "@corbits/bench-ui": ["@corbits/bench-ui@workspace:packages/bench-ui"],
 
-    "@corbits/capability-tools": ["@corbits/capability-tools@workspace:packages/capability-tools"],
+    "@corbits/capability-tools": ["@corbits/capability-tools@workspace:tools/capability"],
 
-    "@corbits/catalog-tools": ["@corbits/catalog-tools@workspace:packages/catalog-tools"],
+    "@corbits/catalog-tools": ["@corbits/catalog-tools@workspace:tools/catalog"],
 
     "@corbits/chat": ["@corbits/chat@workspace:packages/chat"],
 
@@ -1977,7 +1985,7 @@
 
     "@corbits/connections": ["@corbits/connections@workspace:packages/connections"],
 
-    "@corbits/connections-tools": ["@corbits/connections-tools@workspace:packages/connections-tools"],
+    "@corbits/connections-tools": ["@corbits/connections-tools@workspace:tools/connections"],
 
     "@corbits/context-menu": ["@corbits/context-menu@workspace:packages/context-menu"],
 
@@ -1999,13 +2007,13 @@
 
     "@corbits/exa-topic-watch-workflow": ["@corbits/exa-topic-watch-workflow@workspace:workflows/exa-topic-watch"],
 
-    "@corbits/github-tools": ["@corbits/github-tools@workspace:packages/github-tools"],
+    "@corbits/github-tools": ["@corbits/github-tools@workspace:tools/github"],
 
     "@corbits/gotenberg-render": ["@corbits/gotenberg-render@workspace:packages/gotenberg-render"],
 
     "@corbits/granola-call-workflow": ["@corbits/granola-call-workflow@workspace:workflows/granola-call"],
 
-    "@corbits/granola-tools": ["@corbits/granola-tools@workspace:packages/granola-tools"],
+    "@corbits/granola-tools": ["@corbits/granola-tools@workspace:tools/granola"],
 
     "@corbits/heartbeat-workflow": ["@corbits/heartbeat-workflow@workspace:workflows/heartbeat"],
 
@@ -2019,19 +2027,19 @@
 
     "@corbits/inference-settings": ["@corbits/inference-settings@workspace:packages/inference-settings"],
 
-    "@corbits/interaction-tools": ["@corbits/interaction-tools@workspace:packages/interaction-tools"],
+    "@corbits/interaction-tools": ["@corbits/interaction-tools@workspace:tools/interaction"],
 
-    "@corbits/jimmy-agent": ["@corbits/jimmy-agent@workspace:packages/jimmy-agent"],
+    "@corbits/jimmy-agent": ["@corbits/jimmy-agent@workspace:agents/jimmy"],
 
     "@corbits/last-30-days-research-workflow": ["@corbits/last-30-days-research-workflow@workspace:workflows/last-30-days-research"],
 
-    "@corbits/linear-tools": ["@corbits/linear-tools@workspace:packages/linear-tools"],
+    "@corbits/linear-tools": ["@corbits/linear-tools@workspace:tools/linear"],
 
     "@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#bc96404", { "dependencies": { "@hono/standard-validator": "0.2.3", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "@intx/mime": "^0.2.2", "@intx/types": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-bc96404", "sha512-NEeNP2XsjIKOUbRr5szrCDWAYPQSmMNSu33ODyLUCiXdnq12HYWYG/C+0DcAMELlY+9Ktqf543Kg/Qb22NtjWQ=="],
 
-    "@corbits/manus-tools": ["@corbits/manus-tools@workspace:packages/manus-tools"],
+    "@corbits/manus-tools": ["@corbits/manus-tools@workspace:tools/manus"],
 
-    "@corbits/mcp-tools": ["@corbits/mcp-tools@workspace:packages/mcp-tools"],
+    "@corbits/mcp-tools": ["@corbits/mcp-tools@workspace:tools/mcp"],
 
     "@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#9e6f213", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "@intx/workflow": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-9e6f213", "sha512-utnM4ZT2zmslcPXYWAAqxlDNLcpGsXFiTOtj8h7+OXnhCP0Eaw8yl25+yCTyHpvt3jcdeG4h5uFsSj7ou0BZCA=="],
 
@@ -2063,19 +2071,19 @@
 
     "@corbits/reddit-opportunity-scanner-workflow": ["@corbits/reddit-opportunity-scanner-workflow@workspace:workflows/reddit-opportunity-scanner"],
 
-    "@corbits/reddit-tools": ["@corbits/reddit-tools@workspace:packages/reddit-tools"],
+    "@corbits/reddit-tools": ["@corbits/reddit-tools@workspace:tools/reddit"],
 
     "@corbits/sandbox-sidecar": ["@corbits/sandbox-sidecar@workspace:packages/sandbox-sidecar"],
 
-    "@corbits/scout-agent": ["@corbits/scout-agent@workspace:packages/scout-agent"],
+    "@corbits/scout-agent": ["@corbits/scout-agent@workspace:agents/scout"],
 
     "@corbits/settings-ui": ["@corbits/settings-ui@workspace:packages/settings-ui"],
 
     "@corbits/shell-layout": ["@corbits/shell-layout@workspace:packages/shell-layout"],
 
-    "@corbits/skills": ["@corbits/skills@workspace:packages/skills"],
+    "@corbits/skills": ["@corbits/skills@workspace:skills/skills"],
 
-    "@corbits/skills-tools": ["@corbits/skills-tools@workspace:packages/skills-tools"],
+    "@corbits/skills-tools": ["@corbits/skills-tools@workspace:tools/skills-tools"],
 
     "@corbits/slug": ["@corbits/slug@workspace:packages/slug"],
 
@@ -2083,19 +2091,19 @@
 
     "@corbits/tool-registry-publish": ["@corbits/tool-registry-publish@workspace:packages/tool-registry-publish"],
 
-    "@corbits/tools-skills": ["@corbits/tools-skills@workspace:packages/tools-skills"],
+    "@corbits/tools-skills": ["@corbits/tools-skills@workspace:tools/tools-skills"],
 
     "@corbits/turn-artifacts": ["@corbits/turn-artifacts@workspace:packages/turn-artifacts"],
 
     "@corbits/url-path": ["@corbits/url-path@workspace:packages/url-path"],
 
-    "@corbits/web-search-tools": ["@corbits/web-search-tools@workspace:packages/web-search-tools"],
+    "@corbits/web-search-tools": ["@corbits/web-search-tools@workspace:tools/web-search"],
 
     "@corbits/webhook-triggers": ["@corbits/webhook-triggers@workspace:packages/webhook-triggers"],
 
     "@corbits/workbench-digest-workflow": ["@corbits/workbench-digest-workflow@workspace:workflows/workbench-digest"],
 
-    "@corbits/workflow-authoring-tools": ["@corbits/workflow-authoring-tools@workspace:packages/workflow-authoring-tools"],
+    "@corbits/workflow-authoring-tools": ["@corbits/workflow-authoring-tools@workspace:tools/workflow-authoring"],
 
     "@corbits/workflow-schedule": ["@corbits/workflow-schedule@workspace:packages/workflow-schedule"],
 
@@ -3276,6 +3284,8 @@
     "@babel/helper-compilation-targets/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
     "@corbits/mailbox/hono-openapi": ["hono-openapi@1.3.1", "", { "peerDependencies": { "@hono/standard-validator": "^0.2.0", "@standard-community/standard-json": "^0.3.5", "@standard-community/standard-openapi": "^0.2.9", "@types/json-schema": "^7.0.15", "hono": "^4.11.2", "openapi-types": "^12.1.3" }, "optionalPeers": ["@hono/standard-validator", "hono"] }, "sha512-NLVeVkhKZ3drmQNEIPac8HX8Y54uf1hJAgIM/7MfDsaeVVmB+QILWQxx5x3R3NvRHgedcbEbOCGY2uR7WQYyMw=="],
+
+    "@corbits/scout-agent/@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#9e6f213", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "@intx/workflow": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-9e6f213", "sha512-utnM4ZT2zmslcPXYWAAqxlDNLcpGsXFiTOtj8h7+OXnhCP0Eaw8yl25+yCTyHpvt3jcdeG4h5uFsSj7ou0BZCA=="],
 
     "@esbuild-kit/core-utils/esbuild": ["esbuild@0.18.20", "", { "optionalDependencies": { "@esbuild/android-arm": "0.18.20", "@esbuild/android-arm64": "0.18.20", "@esbuild/android-x64": "0.18.20", "@esbuild/darwin-arm64": "0.18.20", "@esbuild/darwin-x64": "0.18.20", "@esbuild/freebsd-arm64": "0.18.20", "@esbuild/freebsd-x64": "0.18.20", "@esbuild/linux-arm": "0.18.20", "@esbuild/linux-arm64": "0.18.20", "@esbuild/linux-ia32": "0.18.20", "@esbuild/linux-loong64": "0.18.20", "@esbuild/linux-mips64el": "0.18.20", "@esbuild/linux-ppc64": "0.18.20", "@esbuild/linux-riscv64": "0.18.20", "@esbuild/linux-s390x": "0.18.20", "@esbuild/linux-x64": "0.18.20", "@esbuild/netbsd-x64": "0.18.20", "@esbuild/openbsd-x64": "0.18.20", "@esbuild/sunos-x64": "0.18.20", "@esbuild/win32-arm64": "0.18.20", "@esbuild/win32-ia32": "0.18.20", "@esbuild/win32-x64": "0.18.20" }, "bin": { "esbuild": "bin/esbuild" } }, "sha512-ceqxoedUrcayh7Y7ZX6NdbbDzGROiyVBgC4PriJThBKSVPWnnFHZAkfI1lJT8QFkOwH4qOS2SJkS4wvpGl8BpA=="],
 

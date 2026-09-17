@@ -528,7 +528,7 @@ describe("POST /complete", () => {
         throw new HubApiError(
           "publishing the corbits-tools package-registry asset failed: " +
             "tool-package freshness: @corbits/capability-tools@1.2.0 changed " +
-            "src/ without bumping version.\n  /Users/alice/abklabs/workbench/packages/capability-tools",
+            "src/ without bumping version.\n  /Users/alice/abklabs/workbench/tools/capability",
           "check the hub logs for the underlying failure, then re-run: workbench seed",
         );
       },
@@ -556,7 +556,7 @@ describe("POST /complete", () => {
       lines.some(
         (line) =>
           line.includes(body.error.refId) &&
-          line.includes("/Users/alice/abklabs/workbench/packages/capability-tools"),
+          line.includes("/Users/alice/abklabs/workbench/tools/capability"),
       ),
     ).toBe(true);
   });

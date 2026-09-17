@@ -2,13 +2,16 @@
   "files": [],
   "references": [
     {
+      "path": "./agents/assistant/tsconfig.src.json"
+    },
+    {
+      "path": "./agents/jimmy/tsconfig.src.json"
+    },
+    {
+      "path": "./agents/scout/tsconfig.src.json"
+    },
+    {
       "path": "./apps/sidecar/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/access-tools/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/agent-directory-tools/tsconfig.src.json"
     },
     {
       "path": "./packages/agent-events/tsconfig.src.json"
@@ -24,12 +27,6 @@
     },
     {
       "path": "./packages/bench-ui/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/capability-tools/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/catalog-tools/tsconfig.src.json"
     },
     {
       "path": "./packages/client-log/tsconfig.src.json"
@@ -50,9 +47,6 @@
       "path": "./packages/commands/tsconfig.src.json"
     },
     {
-      "path": "./packages/connections-tools/tsconfig.src.json"
-    },
-    {
       "path": "./packages/context-menu/tsconfig.src.json"
     },
     {
@@ -68,13 +62,7 @@
       "path": "./packages/error-sink/tsconfig.src.json"
     },
     {
-      "path": "./packages/github-tools/tsconfig.src.json"
-    },
-    {
       "path": "./packages/gotenberg-render/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/granola-tools/tsconfig.src.json"
     },
     {
       "path": "./packages/hub-api-client/tsconfig.src.json"
@@ -87,21 +75,6 @@
     },
     {
       "path": "./packages/inference-catalog/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/interaction-tools/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/jimmy-agent/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/linear-tools/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/manus-tools/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/mcp-tools/tsconfig.src.json"
     },
     {
       "path": "./packages/migration-runner/tsconfig.src.json"
@@ -119,22 +92,10 @@
       "path": "./packages/process-provisioner/tsconfig.src.json"
     },
     {
-      "path": "./packages/reddit-tools/tsconfig.src.json"
-    },
-    {
       "path": "./packages/sandbox-sidecar/tsconfig.src.json"
     },
     {
-      "path": "./packages/scout-agent/tsconfig.src.json"
-    },
-    {
       "path": "./packages/shell-layout/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/skills/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/skills-tools/tsconfig.src.json"
     },
     {
       "path": "./packages/slug/tsconfig.src.json"
@@ -146,19 +107,10 @@
       "path": "./packages/tool-registry-publish/tsconfig.src.json"
     },
     {
-      "path": "./packages/tools-skills/tsconfig.src.json"
-    },
-    {
       "path": "./packages/turn-artifacts/tsconfig.src.json"
     },
     {
       "path": "./packages/url-path/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/web-search-tools/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/workflow-authoring-tools/tsconfig.src.json"
     },
     {
       "path": "./packages/workflow-schedule/tsconfig.src.json"
@@ -168,6 +120,57 @@
     },
     {
       "path": "./packages/xai-provider/tsconfig.src.json"
+    },
+    {
+      "path": "./skills/skills/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/access/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/agent-directory/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/capability/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/catalog/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/connections/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/github/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/granola/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/interaction/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/linear/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/manus/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/mcp/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/reddit/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/skills-tools/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/tools-skills/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/web-search/tsconfig.src.json"
+    },
+    {
+      "path": "./tools/workflow-authoring/tsconfig.src.json"
     },
     {
       "path": "./vendor/intx/agent/tsconfig.src.json"
@@ -213,9 +216,6 @@
     },
     {
       "path": "./vendor/intx/workflow-host/tsconfig.src.json"
-    },
-    {
-      "path": "./workflows/assistant/tsconfig.src.json"
     },
     {
       "path": "./workflows/attio-task-agent/tsconfig.src.json"

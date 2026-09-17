@@ -39,7 +39,7 @@ function memorySource(files: Map<string, Uint8Array>) {
 describe("readToolSurfaceManifests", () => {
   test("round-trips a packed tarball into a validated manifest", async () => {
     const tarball = await packToolPackageTarball(
-      new URL("../../capability-tools", import.meta.url).pathname,
+      new URL("../../../tools/capability", import.meta.url).pathname,
     );
     const source = memorySource(new Map([[`tarballs/${tarball.filename}`, tarball.bytes]]));
     const manifests = await readToolSurfaceManifests({
@@ -61,7 +61,7 @@ describe("readToolSurfaceManifests", () => {
 
   test("skips a tarball whose package.json is not a valid manifest", async () => {
     const tarball = await packToolPackageTarball(
-      new URL("../../capability-tools", import.meta.url).pathname,
+      new URL("../../../tools/capability", import.meta.url).pathname,
     );
     // Corrupt the packaged manifest by re-packing a tampered file is
     // overkill; a truncated tarball is enough to prove the reader skips
@@ -75,7 +75,7 @@ describe("readToolSurfaceManifests", () => {
 
   test("returns the valid manifests and skips the manifest-less legacy ones", async () => {
     const tarball = await packToolPackageTarball(
-      new URL("../../capability-tools", import.meta.url).pathname,
+      new URL("../../../tools/capability", import.meta.url).pathname,
     );
     const source = memorySource(
       new Map([

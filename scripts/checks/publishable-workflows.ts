@@ -1,7 +1,8 @@
-// check:publishable-workflows — every workflows/* package and every
-// packages/*-tools (or packages/tools-*) package must stay an
-// individually publishable npm package: a standalone tarball with no
-// dependency that only resolves inside this monorepo (CL-8157).
+// check:publishable-workflows — every workflows/*, tools/*, agents/*, and
+// skills/* package (plus any remaining packages/*-tools or
+// packages/tools-* holdout) must stay an individually publishable npm
+// package: a standalone tarball with no dependency that only resolves
+// inside this monorepo (CL-8157, CL-8217).
 //
 // A package opts out of this check entirely by staying `private: true` —
 // that's the escape hatch for a package with a runtime dependency this
@@ -28,10 +29,19 @@ const PackageJson = type({
 });
 type PackageJson = typeof PackageJson.infer;
 
-const PUBLISHABLE_GLOBS = ["workflows/*/package.json", "packages/*/package.json"];
+const PUBLISHABLE_GLOBS = [
+  "workflows/*/package.json",
+  "tools/*/package.json",
+  "agents/*/package.json",
+  "skills/*/package.json",
+  "packages/*/package.json",
+];
 
 function isInScope(dir: string): boolean {
   if (dir.startsWith("workflows/")) return true;
+  if (dir.startsWith("tools/") || dir.startsWith("agents/") || dir.startsWith("skills/")) {
+    return true;
+  }
   const base = path.basename(dir);
   return base.endsWith("-tools") || base.startsWith("tools-");
 }

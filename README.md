@@ -135,11 +135,14 @@ each OAuth app and what redirect URI to configure.
 
 ## Repo layout
 
-| Path         | What lives here                                            |
-| ------------ | ---------------------------------------------------------- |
-| `apps/`      | Deployable services (hub API, web UI, Interchange sidecar) |
-| `packages/`  | Domain packages — all product logic lives here             |
-| `workflows/` | Workflow definition packages, deployed as assets           |
+| Path         | What lives here                                                       |
+| ------------ | ---------------------------------------------------------------------- |
+| `apps/`      | Deployable services (hub API, web UI, Interchange sidecar)             |
+| `packages/`  | Domain packages — Workbench UI/composition and other product logic     |
+| `tools/`     | Individually publishable `@corbits/*` agent-tool packages              |
+| `agents/`    | Individually publishable `@corbits/*` interactive-agent packages       |
+| `skills/`    | Individually publishable `@corbits/*` skill packages                   |
+| `workflows/` | Workflow definition packages, deployed as assets                       |
 
 Chat — the shared conversation surface humans and agents both use — is
 documented separately in [docs/CHAT.md](docs/CHAT.md).

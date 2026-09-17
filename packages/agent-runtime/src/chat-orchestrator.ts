@@ -1185,7 +1185,7 @@ async function postFinalizedTurnMemoryEntries(
  * day's first reply as an honest, lightweight digest of workbench
  * activity — never a fabricated summary. Chosen over an "on thread
  * completion" trigger because this repo's single-step conversational
- * workflows (`workflows/assistant`) keep one warm agent address across
+ * workflows (`agents/assistant`) keep one warm agent address across
  * an entire workbench's lifetime (see that package's header comment): a
  * "thread" never observably completes here, so there is no cheap event
  * to hook without inventing one. A once-per-workbench-per-day bound is

@@ -56,25 +56,25 @@ export function tarballsCoverRequiredSeedPackages(filenames: Iterable<string>): 
  * README for how its request_capability tool reaches the hub.
  */
 export const CORBITS_TOOL_PACKAGE_DIRS: readonly string[] = [
-  new URL("../../capability-tools", import.meta.url).pathname,
-  new URL("../../connections-tools", import.meta.url).pathname,
-  new URL("../../catalog-tools", import.meta.url).pathname,
-  new URL("../../agent-directory-tools", import.meta.url).pathname,
-  new URL("../../access-tools", import.meta.url).pathname,
-  new URL("../../interaction-tools", import.meta.url).pathname,
-  new URL("../../skills-tools", import.meta.url).pathname,
-  new URL("../../mcp-tools", import.meta.url).pathname,
-  new URL("../../tools-skills", import.meta.url).pathname,
-  new URL("../../github-tools", import.meta.url).pathname,
-  new URL("../../web-search-tools", import.meta.url).pathname,
-  new URL("../../granola-tools", import.meta.url).pathname,
-  new URL("../../manus-tools", import.meta.url).pathname,
-  new URL("../../linear-tools", import.meta.url).pathname,
-  new URL("../../workflow-authoring-tools", import.meta.url).pathname,
+  new URL("../../../tools/capability", import.meta.url).pathname,
+  new URL("../../../tools/connections", import.meta.url).pathname,
+  new URL("../../../tools/catalog", import.meta.url).pathname,
+  new URL("../../../tools/agent-directory", import.meta.url).pathname,
+  new URL("../../../tools/access", import.meta.url).pathname,
+  new URL("../../../tools/interaction", import.meta.url).pathname,
+  new URL("../../../tools/skills-tools", import.meta.url).pathname,
+  new URL("../../../tools/mcp", import.meta.url).pathname,
+  new URL("../../../tools/tools-skills", import.meta.url).pathname,
+  new URL("../../../tools/github", import.meta.url).pathname,
+  new URL("../../../tools/web-search", import.meta.url).pathname,
+  new URL("../../../tools/granola", import.meta.url).pathname,
+  new URL("../../../tools/manus", import.meta.url).pathname,
+  new URL("../../../tools/linear", import.meta.url).pathname,
+  new URL("../../../tools/workflow-authoring", import.meta.url).pathname,
   // Scout's own artifact-save/list tool bundle (`scoutArtifactTools`) and
   // Jimmy's `gif_search` bundle: each package pins itself in its own
   // `toolPackagePins` (`SCOUT_TOOL_PACKAGE_PINS`, `JIMMY_TOOL_PACKAGE_PINS`),
   // so each must publish here too or that self-pin never resolves.
-  new URL("../../scout-agent", import.meta.url).pathname,
-  new URL("../../jimmy-agent", import.meta.url).pathname,
+  new URL("../../../agents/scout", import.meta.url).pathname,
+  new URL("../../../agents/jimmy", import.meta.url).pathname,
 ];

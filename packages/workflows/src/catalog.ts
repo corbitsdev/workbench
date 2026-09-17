@@ -18,7 +18,7 @@ import { type } from "arktype";
 
 import echoPkg from "../../../workflows/echo/package.json";
 import codeReviewPkg from "../../../workflows/code-review/package.json";
-import assistantPkg from "../../../workflows/assistant/package.json";
+import assistantPkg from "../../../agents/assistant/package.json";
 import heartbeatPkg from "../../../workflows/heartbeat/package.json";
 import workbenchDigestPkg from "../../../workflows/workbench-digest/package.json";
 import granolaCallPkg from "../../../workflows/granola-call/package.json";
