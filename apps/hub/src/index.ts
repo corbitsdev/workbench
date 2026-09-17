@@ -131,7 +131,7 @@ import {
 } from "@corbits/mailbox";
 import {
   createHubMailboxAuthorizeSender,
-  createHubMailboxResolveRefs,
+  hubMailboxResolveRefs,
   createHubPersistMailWithSessionEnsure,
 } from "./mailbox-persist";
 import {
@@ -637,9 +637,7 @@ export async function createHub(config: HubConfig) {
     grantStore: createGrantStore(db),
   });
   // Hoisted ahead of their other uses below (chat routes, the room
-  // timeline store at CL-6327) so `createHubMailboxResolveRefs`
-  // can share these two instances rather than constructing its own just
-  // for the mailbox wiring.
+  // timeline store at CL-6327).
   const chatStore = createDrizzleChatStore(db);
   const roomMessages = createDrizzleRoomMessageStore(db);
   const lookups = {
@@ -662,7 +660,7 @@ export async function createHub(config: HubConfig) {
       ),
       authorizeSender: createHubMailboxAuthorizeSender(db),
       bus: mailboxBus,
-      resolveRefs: createHubMailboxResolveRefs(chatStore, roomMessages),
+      resolveRefs: hubMailboxResolveRefs,
     }),
     async registerSignalCorrelation(
       args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],

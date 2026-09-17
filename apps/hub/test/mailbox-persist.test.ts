@@ -1,6 +1,6 @@
 // CL-7449: proves the real composition -- `createHubSessionLookups`'s
 // `persistMail` wrapped by `createMailboxPersist` via
-// `createHubMailboxAuthorizeSender` / `createHubMailboxResolveRefs`
+// `createHubMailboxAuthorizeSender` / `hubMailboxResolveRefs`
 // (`../src/mailbox-persist.ts`) -- against a real Postgres, matching how
 // `createHub` wires them in `../src/index.ts`. DB-gated: skipped when
 // DATABASE_URL is unreachable, matching every other suite in this
@@ -29,13 +29,8 @@ import {
   type AgentRepoStore,
 } from "@intx/hub-sessions";
 import {
-  createDrizzleChatStore,
-  createDrizzleRoomMessageStore,
-} from "@corbits/chat";
-
-import {
   createHubMailboxAuthorizeSender,
-  createHubMailboxResolveRefs,
+  hubMailboxResolveRefs,
 } from "../src/mailbox-persist";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 
@@ -72,18 +67,8 @@ function uid(label: string): string {
  * a live `agent_session` row -- `hub-session-lookups.ts`'s `persistMail`
  * throws "has no session" for a sender run with none, which is exactly the
  * upstream-failure branch the dual-write-independence test below exercises.
- *
- * `workbenchIds` optionally seeds one `workbench_settings` row per entry,
- * each naming the sender address as a participant -- so
- * `findWorkbenchIdsByParticipantAddress` (and therefore the participant-scan
- * fallback inside `createHubMailboxResolveRefs`) has one or several
- * workbenches to resolve to. Omitted, the sender belongs to no workbench --
- * the plain-workflow-mail case `resolveRefs` must also handle by stamping
- * no ref.
  */
-async function setup(
-  opts: { withSession?: boolean; workbenchIds?: string[] } = {},
-) {
+async function setup(opts: { withSession?: boolean } = {}) {
   const withSession = opts.withSession ?? true;
 
   const { db, close: closeDb } = createDB(dbConfigFromUrl(databaseUrl));
@@ -157,20 +142,6 @@ async function setup(
     });
   }
 
-  const chatStore = createDrizzleChatStore(db);
-  const roomMessages = createDrizzleRoomMessageStore(db);
-
-  for (const workbenchId of opts.workbenchIds ?? []) {
-    await chatStore.createWorkbenchSettings({
-      tenantId,
-      workbenchId,
-      settings: {
-        "chat/participants": [{ address: senderAddress, handle: "sender" }],
-      },
-      updatedBy: human1Id,
-    });
-  }
-
   const baseLookups = createHubSessionLookups({
     db,
     // persistMail (the only lookup this suite exercises) never touches
@@ -182,8 +153,6 @@ async function setup(
   return {
     db,
     mailboxDb,
-    chatStore,
-    roomMessages,
     baseLookups,
     domain,
     tenantId,
@@ -195,13 +164,10 @@ async function setup(
 }
 
 describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
-  test("an outbound frame to two humans and one agent produces exactly two principal_mail rows, an SSE event per mailbox carrying the workbench ref already, and a durable session_mail row upstream", async () => {
-    const workbenchId = uid("wb_mbxpw");
+  test("an outbound frame to two humans and one agent produces exactly two principal_mail rows, an SSE event per mailbox carrying the workbench (tenant) ref already, and a durable session_mail row upstream", async () => {
     const {
       db,
       mailboxDb,
-      chatStore,
-      roomMessages,
       baseLookups,
       domain,
       tenantId,
@@ -209,7 +175,7 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
       agentRecipientAddress,
       human1Id,
       human2Id,
-    } = await setup({ workbenchIds: [workbenchId] });
+    } = await setup();
 
     const mailboxBus = createInMemoryMailboxEventBus();
     // Asserted INSIDE the subscriber, at event-fire time -- no polling
@@ -241,7 +207,7 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
       upstream: baseLookups.persistMail,
       authorizeSender: createHubMailboxAuthorizeSender(db),
       bus: mailboxBus,
-      resolveRefs: createHubMailboxResolveRefs(chatStore, roomMessages),
+      resolveRefs: hubMailboxResolveRefs,
     });
 
     const raw = new TextEncoder().encode(
@@ -292,133 +258,31 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
       [human1Id, human2Id].sort(),
     );
     for (const row of rows) {
-      expect(row.refs).toEqual([{ kind: "workbench", id: workbenchId }]);
+      expect(row.refs).toEqual([{ kind: "workbench", id: tenantId }]);
     }
 
     // Every SSE subscriber saw the ref already populated at event time.
     expect(seenRefsByPrincipalId.size).toBe(2);
     for (const refs of seenRefsByPrincipalId.values()) {
-      expect(refs).toEqual([{ kind: "workbench", id: workbenchId }]);
+      expect(refs).toEqual([{ kind: "workbench", id: tenantId }]);
     }
   });
 
-  test("a sender run with no workbench participation gets mailbox rows with no ref stamped", async () => {
-    const {
-      db,
-      mailboxDb,
-      chatStore,
-      roomMessages,
-      baseLookups,
-      domain,
-      tenantId,
-      senderAddress,
-      human1Id,
-    } = await setup();
-
-    const persistMail = createMailboxPersist(mailboxDb, {
-      upstream: baseLookups.persistMail,
-      authorizeSender: createHubMailboxAuthorizeSender(db),
-      resolveRefs: createHubMailboxResolveRefs(chatStore, roomMessages),
-    });
-
-    const raw = new TextEncoder().encode(
-      [
-        `From: ${senderAddress}`,
-        `To: usr_${human1Id}@${domain}`,
-        "Subject: Plain workflow mail",
-        "",
-        "Body",
-      ].join("\r\n"),
-    );
-    await persistMail({
-      senderAddress,
-      recipients: [`usr_${human1Id}@${domain}`],
-      raw,
-    });
-
-    const [row] = await mailboxDb
-      .select()
-      .from(principalMail)
-      .where(eq(principalMail.tenantId, tenantId));
-    expect(row?.refs).toBeNull();
-  });
-
-  test("header resolves to the parent row's workbench even when the agent participates in two workbenches", async () => {
-    const [workbenchOne, workbenchTwo] = [uid("wb_mbxpw"), uid("wb_mbxpw")];
-    const {
-      mailboxDb,
-      chatStore,
-      roomMessages,
-      baseLookups,
-      db,
-      domain,
-      tenantId,
-      senderAddress,
-      human1Id,
-    } = await setup({ workbenchIds: [workbenchOne, workbenchTwo] });
-
-    const parentRow = await roomMessages.insertMessage({
-      id: uid("msg_mbxpw_parent"),
-      tenantId,
-      workbenchId: workbenchTwo,
-      sender: { address: `usr_${human1Id}@${domain}`, name: "Human" },
-      parts: [{ kind: "text", text: "the row this reply answers" }],
-    });
-    const mailMessageId = `<${parentRow.id}@${domain}>`;
-    await roomMessages.stampMailMessageId({
-      tenantId,
-      workbenchId: workbenchTwo,
-      messageId: parentRow.id,
-      mailMessageId,
-    });
-
-    const persistMail = createMailboxPersist(mailboxDb, {
-      upstream: baseLookups.persistMail,
-      authorizeSender: createHubMailboxAuthorizeSender(db),
-      resolveRefs: createHubMailboxResolveRefs(chatStore, roomMessages),
-    });
-
-    const raw = new TextEncoder().encode(
-      [
-        `From: ${senderAddress}`,
-        `To: usr_${human1Id}@${domain}`,
-        `In-Reply-To: ${mailMessageId}`,
-        "Subject: Re: the row this reply answers",
-        "",
-        "Body",
-      ].join("\r\n"),
-    );
-    await persistMail({
-      senderAddress,
-      recipients: [`usr_${human1Id}@${domain}`],
-      raw,
-    });
-
-    const [row] = await mailboxDb
-      .select()
-      .from(principalMail)
-      .where(eq(principalMail.tenantId, tenantId));
-    expect(row?.refs).toEqual([{ kind: "workbench", id: workbenchTwo }]);
-  });
-
   test("dual-write independence: a sender run with no live session makes upstream throw, the mailbox rows still get written, and zero session_mail rows land", async () => {
-    const workbenchId = uid("wb_mbxpw");
     const {
       db,
       mailboxDb,
-      chatStore,
-      roomMessages,
       baseLookups,
       domain,
       tenantId,
       senderAddress,
       human1Id,
-    } = await setup({ withSession: false, workbenchIds: [workbenchId] });
+    } = await setup({ withSession: false });
 
     const persistMail = createMailboxPersist(mailboxDb, {
       upstream: baseLookups.persistMail,
       authorizeSender: createHubMailboxAuthorizeSender(db),
-      resolveRefs: createHubMailboxResolveRefs(chatStore, roomMessages),
+      resolveRefs: hubMailboxResolveRefs,
     });
 
     const raw = new TextEncoder().encode(
@@ -444,9 +308,7 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
       .from(principalMail)
       .where(eq(principalMail.tenantId, tenantId));
     expect(mailboxRows).toHaveLength(1);
-    expect(mailboxRows[0]?.refs).toEqual([
-      { kind: "workbench", id: workbenchId },
-    ]);
+    expect(mailboxRows[0]?.refs).toEqual([{ kind: "workbench", id: tenantId }]);
 
     const sessionMailRows = await db
       .select()
@@ -459,8 +321,6 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
     const {
       db,
       mailboxDb,
-      chatStore,
-      roomMessages,
       baseLookups,
       domain,
       tenantId,
@@ -471,7 +331,7 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
     const persistMail = createMailboxPersist(mailboxDb, {
       upstream: baseLookups.persistMail,
       authorizeSender: createHubMailboxAuthorizeSender(db),
-      resolveRefs: createHubMailboxResolveRefs(chatStore, roomMessages),
+      resolveRefs: hubMailboxResolveRefs,
     });
 
     const raw = new TextEncoder().encode(
