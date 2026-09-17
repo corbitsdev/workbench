@@ -67,29 +67,6 @@ test('the two reads and the two grant-free writes (create_skill, update_skill) c
   ]);
 });
 
-test("read_skill returns the skill's full body", async () => {
-  const bundle = skillsTools(testEnv());
-  const result = await withFetch(
-    (async () =>
-      new Response(
-        JSON.stringify({
-          data: {
-            name: "triage",
-            description: "Sorts inbound issues.",
-            body: "## Steps\nAlways label severity first.",
-          },
-        }),
-      )) as unknown as typeof fetch,
-    () =>
-      bundle.run(
-        callFor(READ_SKILL_TOOL, { name: "triage" }),
-        new AbortController().signal,
-      ),
-  );
-  expect(result.isError).toBeFalsy();
-  expect(result.content).toContain("Always label severity first.");
-});
-
 test("read_skill rejects a call missing the name without calling out", async () => {
   const bundle = skillsTools(testEnv());
   const result = await bundle.run(
@@ -100,50 +77,28 @@ test("read_skill rejects a call missing the name without calling out", async () 
   expect(result.content).toMatch(/invalid input/);
 });
 
-test("read_skill surfaces a 404 as an honest tool error", async () => {
+// CL-8086: the workflow-skills HTTP surface these tools used to call was
+// deleted, and no stock Interchange route yet serves skill content, so
+// each fails closed with an explicit error instead of a fabricated
+// result.
+test("read_skill surfaces the missing stock route as an honest tool error", async () => {
   const bundle = skillsTools(testEnv());
-  const result = await withFetch(
-    (async () =>
-      new Response("", {
-        status: 404,
-        statusText: "Not Found",
-      })) as unknown as typeof fetch,
-    () =>
-      bundle.run(
-        callFor(READ_SKILL_TOOL, { name: "ghost" }),
-        new AbortController().signal,
-      ),
+  const result = await bundle.run(
+    callFor(READ_SKILL_TOOL, { name: "triage" }),
+    new AbortController().signal,
   );
   expect(result.isError).toBe(true);
-  expect(result.content).toMatch(/404/);
+  expect(result.content).toMatch(/no stock Interchange HTTP route/);
 });
 
-test("list_skills reports each skill's name and description", async () => {
+test("list_skills surfaces the missing stock route as an honest tool error, never an empty list", async () => {
   const bundle = skillsTools(testEnv());
-  const result = await withFetch(
-    (async () =>
-      new Response(
-        JSON.stringify({
-          data: [{ name: "triage", description: "Sorts inbound issues." }],
-        }),
-      )) as unknown as typeof fetch,
-    () =>
-      bundle.run(callFor(LIST_SKILLS_TOOL, {}), new AbortController().signal),
+  const result = await bundle.run(
+    callFor(LIST_SKILLS_TOOL, {}),
+    new AbortController().signal,
   );
-  expect(result.isError).toBeFalsy();
-  expect(result.content).toContain("triage: Sorts inbound issues.");
-});
-
-test("list_skills reports plainly when the workbench has no skills yet", async () => {
-  const bundle = skillsTools(testEnv());
-  const result = await withFetch(
-    (async () =>
-      new Response(JSON.stringify({ data: [] }))) as unknown as typeof fetch,
-    () =>
-      bundle.run(callFor(LIST_SKILLS_TOOL, {}), new AbortController().signal),
-  );
-  expect(result.isError).toBeFalsy();
-  expect(result.content).toMatch(/no skills/i);
+  expect(result.isError).toBe(true);
+  expect(result.content).toMatch(/no stock Interchange HTTP route/);
 });
 
 test("create_skill rejects a call missing a required field without calling out", async () => {
@@ -156,95 +111,28 @@ test("create_skill rejects a call missing a required field without calling out",
   expect(result.content).toMatch(/invalid input/);
 });
 
-test("create_skill posts the exact input and reports the created skill's name", async () => {
+test("create_skill surfaces the missing stock route as an honest tool error, never a fabricated success", async () => {
   const bundle = skillsTools(testEnv());
-  let seenUrl: string | undefined;
-  let seenBody: unknown;
-  const result = await withFetch(
-    (async (url: string | URL, init?: RequestInit) => {
-      seenUrl = String(url);
-      seenBody = JSON.parse(String(init?.body));
-      return new Response(
-        JSON.stringify({
-          data: {
-            assetId: "asset_1",
-            name: "triage",
-            description: "Sorts inbound issues.",
-            scope: "tenant",
-            creatorPrincipalId: "prn_1",
-            updatedAtIso: "2026-01-01T00:00:00.000Z",
-          },
-        }),
-      );
-    }) as unknown as typeof fetch,
-    () =>
-      bundle.run(
-        callFor(CREATE_SKILL_TOOL, {
-          name: "triage",
-          description: "Sorts inbound issues.",
-          body: "Read the report.",
-        }),
-        new AbortController().signal,
-      ),
-  );
-  expect(seenUrl).toBe("https://hub.example.com/api/workflow-skills/create");
-  expect(seenBody).toEqual({
-    name: "triage",
-    description: "Sorts inbound issues.",
-    body: "Read the report.",
-  });
-  expect(result.isError).toBeFalsy();
-  expect(result.content).toBe('Created the "triage" skill.');
-});
-
-test("update_skill omits description from the request body when not supplied", async () => {
-  const bundle = skillsTools(testEnv());
-  let seenBody: unknown;
-  const result = await withFetch(
-    (async (_url: string | URL, init?: RequestInit) => {
-      seenBody = JSON.parse(String(init?.body));
-      return new Response(
-        JSON.stringify({
-          data: {
-            assetId: "asset_1",
-            name: "triage",
-            description: "Sorts inbound issues.",
-            scope: "tenant",
-            creatorPrincipalId: "prn_1",
-            updatedAtIso: "2026-01-02T00:00:00.000Z",
-          },
-        }),
-      );
-    }) as unknown as typeof fetch,
-    () =>
-      bundle.run(
-        callFor(UPDATE_SKILL_TOOL, { name: "triage", body: "New body." }),
-        new AbortController().signal,
-      ),
-  );
-  expect(seenBody).toEqual({ name: "triage", body: "New body." });
-  expect(result.isError).toBeFalsy();
-  expect(result.content).toBe('Updated the "triage" skill.');
-});
-
-test("update_skill surfaces a 404 from the route as an honest tool error, never a fabricated success", async () => {
-  const bundle = skillsTools(testEnv());
-  const result = await withFetch(
-    (async () =>
-      new Response(
-        JSON.stringify({
-          error: { code: "not_found", message: "no such skill" },
-        }),
-        { status: 404 },
-      )) as unknown as typeof fetch,
-    () =>
-      bundle.run(
-        callFor(UPDATE_SKILL_TOOL, { name: "ghost", body: "b" }),
-        new AbortController().signal,
-      ),
+  const result = await bundle.run(
+    callFor(CREATE_SKILL_TOOL, {
+      name: "triage",
+      description: "Sorts inbound issues.",
+      body: "Read the report.",
+    }),
+    new AbortController().signal,
   );
   expect(result.isError).toBe(true);
-  expect(result.content).toMatch(/404/);
+  expect(result.content).toMatch(/no stock Interchange HTTP route/);
+});
+
+test("update_skill surfaces the missing stock route as an honest tool error, never a fabricated success", async () => {
+  const bundle = skillsTools(testEnv());
+  const result = await bundle.run(
+    callFor(UPDATE_SKILL_TOOL, { name: "triage", body: "New body." }),
+    new AbortController().signal,
+  );
+  expect(result.isError).toBe(true);
+  expect(result.content).toMatch(/no stock Interchange HTTP route/);
 });
 
 test("pin_skill reports the definition's full pinned-skill list after the pin", async () => {

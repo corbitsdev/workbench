@@ -1,15 +1,20 @@
-// A minimal client for the two workflow-run-authenticated surfaces
-// `@corbits/skills-tools`' tools call: `@corbits/skills`'
-// `createWorkflowSkillRoutes` (mounted in `apps/hub` at
-// `/api/workflow-skills`, already serving read-only `list`/`search`/
-// `load` — this client adds the two write endpoints,
-// `POST /create`/`POST /update`, that same route file now also serves)
-// and `@corbits/agent-directory`'s `createWorkflowSkillPinRoutes`
-// (mounted at `/api/workflow-skill-pins`, `POST /pin`).
+// A minimal client for the workflow-run-authenticated surfaces
+// `@corbits/skills-tools`' tools call.
 //
-// Same auth-header/error-handling/arktype-parsing shape as
-// `@corbits/capability-tools`' `client.ts`: a sidecar bearer token plus
-// the run's own address, never a model-supplied identity.
+// CL-8086: `@corbits/skills`' `createWorkflowSkillRoutes` (formerly
+// mounted at `/api/workflow-skills`, serving `list`/`search`/`load` plus
+// the `create`/`update` writes) was deleted — skills are native
+// `kind:"skill"` hub assets now, and no stock Interchange route yet lets
+// a workflow-run bearer identity read or write a skill's content
+// (`@intx/hub-api`'s `routes/assets.ts` covers asset metadata and
+// package-registry tarballs, not skill content). `listSkills`,
+// `loadSkill`, `createSkill`, and `updateSkill` below fail closed with an
+// explicit error naming that gap rather than reaching a dead route or
+// inventing a result.
+//
+// `pinSkill` is unaffected: it calls `@corbits/agent-directory`'s
+// `createWorkflowSkillPinRoutes` (mounted at `/api/workflow-skill-pins`),
+// a live, separate surface this ticket does not touch.
 import { type } from "arktype";
 
 export interface SkillsToolClientConfig {
@@ -44,21 +49,6 @@ export type SkillIndexEntry = {
   readonly description: string;
 };
 
-const SkillSummaryResponse = type({
-  data: {
-    assetId: "string",
-    name: "string",
-    description: "string",
-    scope: "'private' | 'tenant'",
-    creatorPrincipalId: "string",
-    updatedAtIso: "string",
-  },
-});
-
-const SkillIndexResponse = type({
-  data: type({ name: "string", description: "string" }).array(),
-});
-
 const PinResponse = type({ skills: "string[]" });
 
 export type SkillDetail = {
@@ -66,10 +56,6 @@ export type SkillDetail = {
   readonly description: string;
   readonly body: string;
 };
-
-const SkillDetailResponse = type({
-  data: { name: "string", description: "string", body: "string" },
-});
 
 function authHeaders(config: SkillsToolClientConfig): Record<string, string> {
   return {
@@ -100,10 +86,6 @@ async function postJson(
   return response.json();
 }
 
-function skillsEndpoint(config: SkillsToolClientConfig, path: string): string {
-  return `${config.hubSkillsUrl}/api/workflow-skills${path}`;
-}
-
 function skillPinEndpoint(
   config: SkillsToolClientConfig,
   path: string,
@@ -111,92 +93,57 @@ function skillPinEndpoint(
   return `${config.hubAgentDirectoryUrl}/api/workflow-skill-pins${path}`;
 }
 
+const NO_STOCK_SKILL_CONTENT_ROUTE =
+  "Skill content has no stock Interchange HTTP route (CL-8086): the " +
+  "workbench-specific skills registry that used to serve it was removed, " +
+  "and no replacement has been added to @intx/hub-api yet.";
+
 /** Every skill this run can see, index-only (name + description, no
- * body) — mirrors `GET /list`'s own shape. */
-export async function listSkills(
-  config: SkillsToolClientConfig,
+ * body). No stock Interchange route serves this yet (CL-8086); fails
+ * closed rather than reaching a dead route or reading as an empty
+ * registry. */
+export function listSkills(
+  _config: SkillsToolClientConfig,
 ): Promise<readonly SkillIndexEntry[]> {
-  const doFetch = config.fetchImpl ?? fetch;
-  const response = await doFetch(skillsEndpoint(config, "/list"), {
-    headers: authHeaders(config),
-  });
-  if (!response.ok) {
-    throw new Error(
-      `Listing skills failed: ${response.status} ${response.statusText}`,
-    );
-  }
-  const body: unknown = await response.json();
-  const parsed = SkillIndexResponse(body);
-  if (parsed instanceof type.errors) {
-    throw new Error(
-      `Skill list response did not match the expected shape: ${parsed.summary}`,
-    );
-  }
-  return parsed.data;
+  return Promise.reject(new Error(NO_STOCK_SKILL_CONTENT_ROUTE));
 }
 
-/** Loads one skill's full body by name — the on-demand read behind
- * `read_skill`, over the same `/load` route the pinned-skill
- * `load_skill` tool uses. Throws on any transport, HTTP, or shape
- * failure — never fabricates content. */
-export async function loadSkill(
-  config: SkillsToolClientConfig,
-  name: string,
+/** Loads one skill's full body by name. No stock Interchange route
+ * serves this yet (CL-8086); fails closed rather than fabricating
+ * content. */
+export function loadSkill(
+  _config: SkillsToolClientConfig,
+  _name: string,
 ): Promise<SkillDetail> {
-  const body = await postJson(config, skillsEndpoint(config, "/load"), {
-    name,
-  });
-  const parsed = SkillDetailResponse(body);
-  if (parsed instanceof type.errors) {
-    throw new Error(
-      `Load-skill response did not match the expected shape: ${parsed.summary}`,
-    );
-  }
-  return parsed.data;
+  return Promise.reject(new Error(NO_STOCK_SKILL_CONTENT_ROUTE));
 }
 
-/** Creates a new, always tenant-scoped skill. Throws on any transport,
- * HTTP, or shape failure — never fabricates success. */
-export async function createSkill(
-  config: SkillsToolClientConfig,
-  input: {
+/** Creates a new, always tenant-scoped skill. No stock Interchange route
+ * accepts skill content yet (CL-8086); fails closed rather than
+ * fabricating success. */
+export function createSkill(
+  _config: SkillsToolClientConfig,
+  _input: {
     readonly name: string;
     readonly description: string;
     readonly body: string;
   },
 ): Promise<SkillSummary> {
-  const body = await postJson(config, skillsEndpoint(config, "/create"), input);
-  const parsed = SkillSummaryResponse(body);
-  if (parsed instanceof type.errors) {
-    throw new Error(
-      `Create-skill response did not match the expected shape: ${parsed.summary}`,
-    );
-  }
-  return parsed.data;
+  return Promise.reject(new Error(NO_STOCK_SKILL_CONTENT_ROUTE));
 }
 
-/** Republishes an existing skill's body, optionally its description —
- * an omitted `description` leaves the skill's current one untouched
- * (the route's own `/update` fills it in from the skill it loads
- * first). Throws 404 the same way a bare fetch failure throws: as a
- * plain `Error`, on any skill name this run cannot see or that does
- * not exist. */
-export async function updateSkill(
-  config: SkillsToolClientConfig,
-  input: {
+/** Republishes an existing skill's body. No stock Interchange route
+ * accepts skill content yet (CL-8086); fails closed rather than
+ * fabricating success. */
+export function updateSkill(
+  _config: SkillsToolClientConfig,
+  _input: {
     readonly name: string;
     readonly body: string;
     readonly description?: string;
   },
 ): Promise<SkillSummary> {
-  const body = await postJson(config, skillsEndpoint(config, "/update"), input);
-  const parsed = SkillSummaryResponse(body);
-  if (parsed instanceof type.errors) {
-    throw new Error(
-      `Update-skill response did not match the expected shape: ${parsed.summary}`,
-    );
-  }
-  return parsed.data;
+  return Promise.reject(new Error(NO_STOCK_SKILL_CONTENT_ROUTE));
 }
 
 /** Pins a skill name onto any definition in this run's own tenant.

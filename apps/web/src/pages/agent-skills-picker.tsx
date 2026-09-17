@@ -73,9 +73,8 @@ export function AgentSkillsPicker({
   }
 
   const visibleNames = new Set(state.skills.map((skill) => skill.name));
-  // A pin can outlive its skill's visibility — the author made it
-  // private, it was renamed, or it was discarded — leaving a name in
-  // `selected` with no matching registry entry. Render those as
+  // A pin can outlive its skill — it was renamed or discarded — leaving
+  // a name in `selected` with no matching registry entry. Render those as
   // removable rows rather than silently dropping them, so the picker
   // can always reach a saveable state.
   const staleNames = selected.filter((name) => !visibleNames.has(name));
@@ -97,8 +96,7 @@ export function AgentSkillsPicker({
             <span className="flex flex-1 flex-col">
               <span className="font-medium">{name}</span>
               <span className="text-xs text-destructive">
-                No longer available — its author may have made it private,
-                renamed it, or discarded it.
+                No longer available — it may have been renamed or discarded.
               </span>
             </span>
             <Button

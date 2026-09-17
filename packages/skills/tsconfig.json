@@ -10,20 +10,6 @@
     "tsBuildInfoFile": "tsconfig.tsbuildinfo",
     "rootDir": "../.."
   },
-  "include": ["src", "test"],
-  "exclude": [],
-  "references": [
-    {
-      "path": "../../vendor/intx/db/tsconfig.src.json"
-    },
-    {
-      "path": "../../vendor/intx/hub-api/tsconfig.src.json"
-    },
-    {
-      "path": "../../vendor/intx/hub-sessions/tsconfig.src.json"
-    },
-    {
-      "path": "../error-sink/tsconfig.src.json"
-    }
-  ]
+  "include": ["src"],
+  "exclude": []
 }

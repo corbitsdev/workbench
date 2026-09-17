@@ -190,16 +190,21 @@ async function readSkillState(
   skill: SkillPin,
 ): Promise<PinState> {
   try {
-    const existing = await api(
+    const response = await api(
       "GET",
-      `/api/tenants/${tenantId}/skills/${encodeURIComponent(skill.name)}`,
+      `/api/tenants/${tenantId}/assets?kind=skill&inherited=false`,
       undefined,
       cookies,
     );
-    if (existing.status === 200) return "present";
-    // A 502-class response (or a thrown sidecar-unavailable error) is
-    // the sidecar-unavailable class: blocked, not pending.
-    return existing.status >= 500 ? "blocked" : "pending";
+    if (response.status >= 500) return "blocked";
+    const assets = parseAs(
+      AssetWithOriginResponse.array(),
+      response.data,
+      "assets response",
+    );
+    return assets.some((asset) => asset.name === skill.name)
+      ? "present"
+      : "pending";
   } catch (cause) {
     if (isSidecarUnavailableError(cause)) return "blocked";
     throw cause;

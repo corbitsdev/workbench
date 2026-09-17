@@ -1,10 +1,11 @@
 // A skill, given the same dense row treatment as a plugin (owner ruling,
 // CL-6090; density CL-6272.1): icon, name, its one-line description
-// truncated, a scope caption in the same plain words the plugin
-// provenance captions use — "shared" reads as the tenant-wide set an
-// agent can pin, mirroring a plugin connected at the parent tenant;
-// "private" is yours alone, same shape as a plugin this workbench
-// connected for itself — and a quiet view affordance.
+// truncated, and a quiet view affordance.
+//
+// CL-8086: skills are native `kind:"skill"` hub assets now and the stock
+// asset routes carry no scope/visibility flag, so the "Shared with
+// everyone" / "Just you" caption the card used to mirror from the plugin
+// provenance captions is gone — one flat list, no scope groups.
 
 import { Button } from "@corbits/react-ui";
 import { Lightning } from "@corbits/icons";
@@ -13,12 +14,6 @@ export type SkillCardData = {
   readonly assetId: string;
   readonly name: string;
   readonly description: string;
-  readonly scope: "private" | "tenant";
-};
-
-const SCOPE_LABEL: Record<SkillCardData["scope"], string> = {
-  tenant: "Shared with everyone",
-  private: "Just you",
 };
 
 export function SkillCard({
@@ -53,9 +48,6 @@ export function SkillCard({
           {skill.description}
         </span>
       </div>
-      <span className="hidden shrink-0 text-xs text-muted-foreground xl:block">
-        {SCOPE_LABEL[skill.scope]}
-      </span>
       <Button type="button" size="sm" variant="ghost" onClick={onOpen}>
         View
       </Button>

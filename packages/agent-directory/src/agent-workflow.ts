@@ -46,7 +46,7 @@ export const AGENT_DEFINITION_STEP_ID = "agent";
  */
 export const SKILLS_TOOL_PACKAGE_PIN = {
   name: "@corbits/tools-skills",
-  version: "0.0.2",
+  version: "0.0.3",
 } as const;
 
 /**

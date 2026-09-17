@@ -86,20 +86,20 @@ describe("stage chrome consistency (CL-6368)", () => {
     const TENANT = "tnt_1";
     globalThis.fetch = (async (input: unknown) => {
       const path = String(input);
-      if (path === `/api/tenants/${TENANT}/skills`) {
+      if (path === `/api/tenants/${TENANT}/assets?kind=skill&inherited=false`) {
         return new Response(
-          JSON.stringify({
-            skills: [
-              {
-                assetId: "ast_1",
-                name: "triage",
-                description: "Sorts inbound issues.",
-                scope: "private",
-                creatorPrincipalId: "prn_1",
-                updatedAtIso: "2026-08-05T11:00:00.000Z",
-              },
-            ],
-          }),
+          JSON.stringify([
+            {
+              id: "ast_1",
+              tenantId: TENANT,
+              kind: "skill",
+              name: "triage",
+              displayName: "Triage",
+              creatorPrincipalId: "prn_1",
+              createdAt: "2026-08-05T11:00:00.000Z",
+              updatedAt: "2026-08-05T11:00:00.000Z",
+            },
+          ]),
           { status: 200 },
         );
       }

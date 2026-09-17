@@ -78,13 +78,11 @@ const SKILLS: readonly SkillCardData[] = [
     assetId: "skill_1",
     name: "Weekly digest",
     description: "Summarizes the week's channel activity.",
-    scope: "tenant",
   },
   {
     assetId: "skill_2",
     name: "Draft replies",
     description: "Drafts a reply in my voice.",
-    scope: "private",
   },
 ];
 
@@ -389,9 +387,12 @@ describe("PluginsGallery", () => {
       skillsTab?.click();
     });
 
+    // CL-8086: one flat list — the stock asset routes carry no
+    // scope/visibility flag, so there are no scope group headings.
     expect(container.textContent).toContain("Weekly digest");
-    expect(container.textContent).toContain("Shared with everyone");
-    expect(container.textContent).toContain("Just you");
+    expect(container.textContent).toContain("Draft replies");
+    expect(container.textContent).not.toContain("Shared with everyone");
+    expect(container.textContent).not.toContain("Just you");
   });
 
   test("every preset returned by the route reaches a fresh catalog", async () => {

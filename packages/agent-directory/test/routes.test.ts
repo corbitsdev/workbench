@@ -15,7 +15,6 @@ import { AssetServiceError } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
 
-import { SkillRegistryError } from "@corbits/skills";
 import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
 
 import {
@@ -30,7 +29,10 @@ import {
   readAgentDefinitionWorkflowJson,
   RetiredWorkflowEnvelopeError,
 } from "../src/definition-asset";
-import { createAgentDefinitionRoutes } from "../src/routes";
+import {
+  createAgentDefinitionRoutes,
+  SkillIndexResolutionError,
+} from "../src/routes";
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import {
   createWorkflowSkillPinRoutes,
@@ -1554,7 +1556,7 @@ test("a create request indexes its pinned skills into the stored system prompt",
   // The prompt tells the model to call `skills_load`, so the bundle that
   // provides it must be pinned on the same push.
   expect(pinsFrom(workflowJson)).toEqual([
-    { name: "@corbits/tools-skills", version: "0.0.2" },
+    { name: "@corbits/tools-skills", version: "0.0.3" },
   ]);
 });
 
@@ -1565,7 +1567,7 @@ test("pinning a skill the registry cannot resolve is a 400, not a 500", async ()
     skillIndex: {
       resolve: () =>
         Promise.reject(
-          new SkillRegistryError("not_found", 'cannot pin skill "ghost"'),
+          new SkillIndexResolutionError('cannot pin skill "ghost"'),
         ),
     },
     history: fakeHistory(),

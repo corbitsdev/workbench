@@ -55,10 +55,11 @@ describe("runActionCommand off-route dispatch ordering", () => {
 
     // Only now (mirroring main.tsx's setState-based navigate re-rendering
     // the route switch on the next tick) does the section actually mount.
-    // The section reads the registry on mount; serve it an empty one so
-    // the test exercises the pending-flag path, not a network failure.
+    // The section reads the stock skill-asset list on mount; serve it an
+    // empty one so the test exercises the pending-flag path, not a
+    // network failure.
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ skills: [] }), {
+      new Response(JSON.stringify([]), {
         status: 200,
         headers: { "content-type": "application/json" },
       })) as unknown as typeof fetch;

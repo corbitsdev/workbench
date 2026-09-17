@@ -234,34 +234,16 @@ function SkillsTabPanel({
     );
   }
 
-  const groups = [
-    {
-      label: "Shared with everyone",
-      skills: filtered.filter((skill) => skill.scope === "tenant"),
-    },
-    {
-      label: "Just you",
-      skills: filtered.filter((skill) => skill.scope === "private"),
-    },
-  ].filter((group) => group.skills.length > 0);
-
+  // CL-8086: no scope groups — the stock asset routes carry no
+  // scope/visibility flag, so every visible skill renders in one flat list.
   return (
-    <div className="flex flex-col gap-6">
-      {groups.map((group) => (
-        <section key={group.label} className="flex flex-col gap-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {group.label}
-          </h3>
-          <div className="border border-border [&>*:last-child]:border-b-0">
-            {group.skills.map((skill) => (
-              <SkillCard
-                key={skill.assetId}
-                skill={skill}
-                onOpen={() => onOpen(skill)}
-              />
-            ))}
-          </div>
-        </section>
+    <div className="border border-border [&>*:last-child]:border-b-0">
+      {filtered.map((skill) => (
+        <SkillCard
+          key={skill.assetId}
+          skill={skill}
+          onOpen={() => onOpen(skill)}
+        />
       ))}
     </div>
   );
