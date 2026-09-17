@@ -1,9 +1,6 @@
-// The `McpCredentialBindingsFor` port `createHubChatPlatform`'s
-// `CreateHubChatPlatformDeps` is wired with — see `@corbits/chat`'s
-// `platform-adapter.ts` for why this has to be supplied by the
-// composition root rather than derived by the deploy-time
-// capability walk. `@corbits/mcp-tools`' credential handles are dynamic
-// (one `mcp.<slug>` per tenant-connected server), so this builds one
+// The composition root's own port supplying dynamic MCP credential
+// bindings. `@corbits/mcp-tools`' credential handles are dynamic (one
+// `mcp.<slug>` per tenant-connected server), so this builds one
 // `CredentialBinding` per connection `@corbits/connections`' own
 // `listMcpServerConnections` lists for the tenant: `handle` mirrors the
 // `mcp.<slug>` convention `@corbits/mcp-tools`' `mcpCredentialHandle(slug)`
@@ -11,10 +8,18 @@
 // grammar), while `provider` names the stored `mcp:<slug>` provider row
 // `listMcpServerConnections` read it from — a separate, unconstrained
 // namespace.
+//
+// `McpCredentialBindingsFor`'s shape is declared locally rather than
+// imported: it names nothing chat-specific (`CredentialBinding` is native
+// `@intx/types`), so the hub owns its own copy of the port instead of
+// depending on `@corbits/chat` for it.
 import type { DB } from "@intx/db";
 import type { CredentialBinding } from "@intx/types";
-import type { McpCredentialBindingsFor } from "@corbits/chat";
 import { listMcpServerConnections } from "@corbits/connections";
+
+export type McpCredentialBindingsFor = (
+  tenantId: string,
+) => Promise<readonly CredentialBinding[]>;
 
 const MCP_TOOLS_PACKAGE = "@corbits/mcp-tools";
 

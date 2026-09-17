@@ -7,9 +7,9 @@
 // notification — so, unlike a payload naming only the recipients, this
 // one genuinely supports a retry rather than only a log line.
 //
-// `ensureAwake` is chat's own wake primitive (`@corbits/chat`'s
-// `ChatPlatform` has no generic host-agnostic equivalent across chat,
-// tasks, and any other future resident kind). A recipient it rejects
+// `ensureAwake` is the chat platform's own wake primitive (it has no
+// generic host-agnostic equivalent across chat, tasks, and any other
+// future resident kind). A recipient it rejects
 // for — not a chat resident at all, or a task-launched resident whose
 // `wake` is deliberately unreachable once its one-shot turn has run —
 // still gets the `routeMail` retry, since an address can go from
