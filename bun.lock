@@ -1,5 +1,5 @@
 {
-  "lockfileVersion": 1,
+  "lockfileVersion": 2,
   "configVersion": 1,
   "workspaces": {
     "": {
@@ -14,7 +14,6 @@
         "@corbits/connections": "workspace:*",
         "@corbits/evals": "workspace:*",
         "@corbits/ollama-adapter": "workspace:*",
-        "@corbits/run-scope": "workspace:*",
         "@corbits/webhook-triggers": "workspace:*",
         "@corbits/xai-provider": "workspace:*",
         "@eslint/js": "^10.0.0",
@@ -81,7 +80,6 @@
         "@corbits/process-provisioner": "workspace:*",
         "@corbits/reddit-opportunity-scanner-workflow": "workspace:*",
         "@corbits/run-key-history": "workspace:*",
-        "@corbits/run-scope": "workspace:*",
         "@corbits/skills": "workspace:*",
         "@corbits/slack-tag": "workspace:*",
         "@corbits/tool-registry-publish": "workspace:*",
@@ -1226,23 +1224,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/run-scope": {
-      "name": "@corbits/run-scope",
-      "version": "0.0.1",
-      "dependencies": {
-        "@corbits/error-sink": "workspace:*",
-        "@intx/db": "workspace:*",
-        "@intx/hub-api": "workspace:*",
-        "@intx/types": "workspace:*",
-        "arktype": "catalog:",
-        "drizzle-orm": "catalog:",
-        "hono": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "packages/sandbox-sidecar": {
       "name": "@corbits/sandbox-sidecar",
       "version": "0.0.1",
@@ -2287,8 +2268,6 @@
 
     "@corbits/run-key-history": ["@corbits/run-key-history@workspace:packages/run-key-history"],
 
-    "@corbits/run-scope": ["@corbits/run-scope@workspace:packages/run-scope"],
-
     "@corbits/sandbox-sidecar": ["@corbits/sandbox-sidecar@workspace:packages/sandbox-sidecar"],
 
     "@corbits/scout-agent": ["@corbits/scout-agent@workspace:packages/scout-agent"],
@@ -3171,7 +3150,7 @@
 
     "lru-cache": ["lru-cache@11.5.2", "", {}, "sha512-4pfM1Ff0x50o0tQwb5ucw/RzNyD0/YJME6IVcStalZuMWxdt3sR3huStTtxz4PUmvZfRguvDejasvQ2kifR11g=="],
 
-    "lucide-react": ["lucide-react@1.46.0", "", { "peerDependencies": { "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0" } }, "sha512-Bv+FZXgZPrxc/NCl1e7JJVQFLdiCxYgxNVhqoV7X0p6I8ADJo8DxBnK1auH0fZz4AmqOJ3jgneL4f1i8LJQRAA=="],
+    "lucide-react": ["lucide-react@1.47.0", "", { "peerDependencies": { "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0" } }, "sha512-o8C23aXpNQypRY73W7fW02EyvWJinEMXgKeGjFoKym0zj3Q73hD97A1IQps1g8C14HTGsOpZL0Am+xjfgFZAbg=="],
 
     "magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
 
@@ -3303,7 +3282,7 @@
 
     "negotiator": ["negotiator@1.1.0", "", { "dependencies": { "content-type": "^2.1.0" } }, "sha512-NMPBRMJgiQHjbd8phG3Vebdx4kZ1H121rbl5IkMqeOsahptB9BKo/d7oJ3zTXqTgagn2bWlNSXkh0QUGM31RYg=="],
 
-    "node-releases": ["node-releases@2.0.55", "", {}, "sha512-mIrE/Cw9y+9Au6dS5vDKDhQza9YvG6w+ZrS6X+ZzA7yFW/soAeaups4Qzn1bL6g5FVy8WtP79+0j82oPIbqRjQ=="],
+    "node-releases": ["node-releases@2.0.56", "", {}, "sha512-x0InOIyzgdk+eyaWaRJFH5snEtiImgBgblZ2CyPrLmqqcuMQkEvcDPHbzqbD8eDsSeJbVOjn+crzyzHaM4D+/A=="],
 
     "npm-install-checks": ["npm-install-checks@7.1.2", "", { "dependencies": { "semver": "^7.1.1" } }, "sha512-z9HJBCYw9Zr8BqXcllKIs5nI+QggAImbBdHphOzVYrz2CB4iQ6FzWyKmlqDZua+51nAu7FcemlbTc9VgQN5XDQ=="],
 
