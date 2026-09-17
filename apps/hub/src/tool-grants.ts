@@ -9,10 +9,6 @@
 // `ask` for a tool the package itself marks `approval: "ask"` — the
 // grants come from the installed asset's own manifest, never from a
 // source import.
-import type {
-  PinnedToolGrantDeclaration,
-  ToolGrantsForPins,
-} from "@corbits/chat";
 import {
   CORBITS_TOOLS_REGISTRY,
   readToolSurfaceManifests,
@@ -20,6 +16,24 @@ import {
 } from "@corbits/tool-registry-publish";
 import type { AssetWithOrigin } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
+import type { GrantEffect } from "@intx/types";
+import type { ToolPackagePin } from "@intx/types/tool-packages";
+
+/**
+ * Declared locally rather than imported from `@corbits/chat`: nothing
+ * about a pinned tool package's grants is chat-specific, and the shape
+ * names only native `@intx/types` (`GrantEffect`, `ToolPackagePin`).
+ */
+export type PinnedToolGrantDeclaration = {
+  readonly resource: string;
+  readonly action: "invoke";
+  readonly effect: GrantEffect;
+};
+
+export type ToolGrantsForPins = (
+  tenantId: string,
+  pins: readonly ToolPackagePin[],
+) => Promise<readonly PinnedToolGrantDeclaration[]>;
 
 export type CreateToolGrantsForPinsDeps = {
   /**

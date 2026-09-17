@@ -6,9 +6,30 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { configureSync, resetSync } from "@intx/log";
-import { InferenceResolutionError } from "@corbits/chat";
 
 import { hubErrorHandler } from "./hub-error-handler";
+
+/**
+ * `hubErrorHandler` maps a guidance-bearing error by its string `.name`
+ * (duck-typed, see `hub-error-handler.ts`), never by `instanceof` — so this
+ * stands in for the real `InferenceResolutionError` (`@corbits/chat`'s
+ * `model-unavailable.ts`) without importing it.
+ */
+const MODEL_UNAVAILABLE_CONSUMER_MESSAGE =
+  "This agent's model isn't available here.";
+
+class FakeInferenceResolutionError extends Error {
+  readonly guidance: string;
+  constructor(launchLabel: string, resolutionMessage: string) {
+    super(
+      `cannot resolve an inference source for ${launchLabel} ` +
+        `(${resolutionMessage}); seed a tenant catalog source (provider, ` +
+        `credential, catalog model/provider/offering) before launching`,
+    );
+    this.name = "InferenceResolutionError";
+    this.guidance = MODEL_UNAVAILABLE_CONSUMER_MESSAGE;
+  }
+}
 
 let records: { properties: Record<string, unknown> }[];
 
@@ -93,7 +114,7 @@ describe("hubErrorHandler", () => {
     const app = new Hono();
     app.onError(hubErrorHandler());
     app.get("/wake", () => {
-      throw new InferenceResolutionError(
+      throw new FakeInferenceResolutionError(
         "the woken instance",
         'No launchable inference source for model "claude-sonnet-5"',
       );

@@ -1,20 +1,24 @@
-// The `PinnedPackageCredentialBindingsFor` port `createHubChatPlatform`'s
-// `CreateHubChatPlatformDeps` is wired with — see `@corbits/chat`'s
-// `platform-adapter.ts` for why this has to be supplied by the
-// composition root rather than declared as
-// a required assistant `credentialBindings` entry. Static-handle packages
-// (`@corbits/manus-tools`, granola-tools, …) declare
-// `interchange.credentials`, but requiring those binds on the assistant
-// would throw `MissingCredentialError` on signup / first chat. This
-// factory emits a tenant binding only when a pin names a package a
+// The composition root's own port for a provisioned agent's pinned tool
+// packages: a tenant binding only when a pin names a package a
 // `CONNECTOR_REGISTRY` entry `feedsTools` AND the tenant already has a
 // connected credential for that connector (`isConnectorConnected`, the
-// same owning check `createWorkflowConnectionRoutes` uses — not
-// `@corbits/chat`'s catalog-only `listConnectedProviders`).
+// same owning check `createWorkflowConnectionRoutes` uses). Static-handle
+// packages (`@corbits/manus-tools`, granola-tools, …) declare
+// `interchange.credentials`, but requiring those binds unconditionally
+// would throw `MissingCredentialError` on signup / first launch.
+//
+// `PinnedPackageCredentialBindingsFor`'s shape is declared locally rather
+// than imported: it names nothing chat-specific (`CredentialBinding`,
+// `ToolPackagePin` are both native `@intx/types`), so the hub owns its own
+// copy of the port instead of depending on `@corbits/chat` for it.
 import type { CredentialBinding } from "@intx/types";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
-import type { PinnedPackageCredentialBindingsFor } from "@corbits/chat";
 import { CONNECTOR_REGISTRY } from "./native-connector-registry";
+
+export type PinnedPackageCredentialBindingsFor = (
+  tenantId: string,
+  pins: readonly ToolPackagePin[],
+) => Promise<readonly CredentialBinding[]>;
 
 export type IsConnectorConnected = (
   tenantId: string,
