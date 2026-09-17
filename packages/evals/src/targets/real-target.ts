@@ -28,7 +28,7 @@ import { getLogger } from "@intx/log";
 import { generateKeyPair } from "@intx/crypto";
 import { createAgentRepoStore, createAssetService, type AssetService } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
-import { completeCredentialSetup } from "@workbench/onboarding";
+import { completeCredentialSetup } from "@corbits/connections/complete-credential";
 import {
   signPayload,
   WEBHOOK_SIGNATURE_HEADER,

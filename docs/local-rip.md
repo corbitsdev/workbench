@@ -3,10 +3,10 @@
 A "local rip" is the whole platform proof, run by hand on your own
 machine, with your own real key: sign up, get a personal bench, connect a
 real inference provider, and watch a working workbench come up in front of
-you — nothing mocked, nothing skipped. `scripts/e2e/local-rip.test.ts`
-proves the same path with a stubbed provider probe and a scratch database
-(see its own header comment); this doc is the honest, no-shortcuts version
-for a person, not CI.
+you — nothing mocked, nothing skipped. `scripts/e2e/browser/walkthrough.ts` proves the same path end to end
+against a real browser with a stubbed provider probe and a scratch
+database; this doc is the honest, no-shortcuts version for a person, not
+CI.
 
 This covers the whole path: sign-up through a fully connected bench, with
 a real inference provider wired up end to end.
@@ -59,7 +59,7 @@ The app root renders the sign-in screen when you're not authenticated
 an account with any email/password. Self-serve sign-up is ungated in
 stock composition — there is no signup mode left to open, so sign-up
 works out of the box here, against `bun run dev` and any deployed hub
-alike. `scripts/e2e/local-rip.test.ts`'s "signup stays ungated once the
+alike. `scripts/e2e/browser/walkthrough.ts`'s "signup stays ungated once the
 hub is occupied" hop proves exactly that response.
 
 ## 3. Name your bench
@@ -116,7 +116,7 @@ through the hub's native asset REST routes). Descendants inherit it;
 `seedTenant` does not pack. Isolated
 tests run with no explicit tenant config so the walkthrough's personal
 bench is itself the root — then the same publish happens once onto that
-bench, and **assistant** comes up live by default; `scripts/e2e/local-rip.test.ts`
+bench, and **assistant** comes up live by default; `scripts/e2e/browser/walkthrough.ts`
 also deploys **echo** and **workbench-digest** from `CATALOG_WORKFLOWS`
 onto that same bench (the on-demand path, exercised directly rather
 than assumed) to prove they still come up live too. The default

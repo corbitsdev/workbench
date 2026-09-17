@@ -3,7 +3,7 @@
 // ensureCredential → seedCatalog-if-inference. Before CL-6394 this
 // sequence existed as three parallel copies (`routes.ts`'s
 // `/:connectorId/complete`, `oauth-tenant-connect.ts`, and
-// `@workbench/onboarding`'s `testAndPersistCredential`) and their
+// `@corbits/connections`'s `testAndPersistCredential`) and their
 // divergence is exactly what let a GitHub callback fall into an
 // inference-only `seedCatalog` — a non-inference connector must never
 // reach `CATALOG_SEEDS`, and here that rule lives in one place.

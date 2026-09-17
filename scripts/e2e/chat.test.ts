@@ -46,8 +46,8 @@ import { seedCatalog } from "../../packages/connections/src/seed-catalog.ts";
 import { createGitWorkflowPusher } from "../../packages/connections/src/workflow-push.ts";
 import { createHubAPI, type ApiCall } from "../../packages/hub-api-client/src/index.ts";
 import type { Part } from "../../packages/chat/src/index.ts";
-import { DEFAULT_WORKFLOWS, seedTenant } from "../../packages/onboarding/src/tenant-seed.ts";
-import { modelSourceFor } from "../../packages/onboarding/src/complete-credential.ts";
+import { DEFAULT_WORKFLOWS, seedTenant } from "../../packages/connections/src/tenant-seed.ts";
+import { modelSourceFor } from "../../packages/connections/src/complete-credential.ts";
 import { publishCorbitsToolsRegistry } from "../../packages/tool-registry-publish/src/publish.ts";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
@@ -153,7 +153,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   // Suite-scoped tenancy fixture: one conversation tenant carrying both
   // users — user1 as owner, user2 invited by email and activated by the
   // owner, carrying the read/write grants chat's routes gate on (the
-  // same pair `packages/onboarding/src/tenant-seed.ts`'s `plantGrant`
+  // same pair `packages/connections/src/tenant-seed.ts`'s `plantGrant`
   // plants for a bench's own principal), over a placeholder-credential
   // catalog chain. Stock Interchange cutover: `POST .../chat/workbenches`
   // stamps `workbenchId = tenant.id`, so a tenant hosts exactly one

@@ -1,12 +1,13 @@
-// Setup-flow tenant seeding, owned by `@workbench/onboarding` (CL-7585):
-// The default-workflow set (`DEFAULT_WORKFLOWS`, `CATALOG_WORKFLOWS`),
-// the seed grants, skill planting, and
-// `seedTenant`, the grants-plus-workflows installer the first-login
-// provisioning hook drives. The catalog half (`seedCatalog`,
-// `ensureCredential`, `ensureProvider`, `CATALOG_SEEDS`) lives at
-// `@corbits/connections/seed-catalog`, and the git-push transport
-// (`WorkflowPusher`, `createGitWorkflowPusher`) at
-// `@corbits/connections/workflow-push`.
+// Tenant seeding (CL-8207: moved here from the deleted
+// `@workbench/onboarding` — the hub never seeds, so this is test/eval
+// harness infra now, not a product route's dependency). The
+// default-workflow set (`DEFAULT_WORKFLOWS`, `CATALOG_WORKFLOWS`), the
+// seed grants, skill planting, and `seedTenant`, the
+// grants-plus-workflows installer e2e/eval harnesses use to stand up a
+// fully deployed tenant without driving a browser. The catalog half
+// (`seedCatalog`, `ensureCredential`, `ensureProvider`, `CATALOG_SEEDS`)
+// lives at `./seed-catalog`, and the git-push transport (`WorkflowPusher`,
+// `createGitWorkflowPusher`) at `./workflow-push`.
 //
 // Dropped in the move, on purpose: `CATALOG_TEST_WORKFLOWS` (the
 // heartbeat platform-exercise entry) and `EXCLUDED_WORKFLOW_SOURCES`
@@ -97,8 +98,8 @@ import {
   parseAs,
   type ApiCall,
 } from "@corbits/hub-api-client";
-import { DEFAULT_SKILLS } from "@corbits/connections/default-skills";
-import type { WorkflowPusher } from "@corbits/connections/workflow-push";
+import { DEFAULT_SKILLS } from "./default-skills";
+import type { WorkflowPusher } from "./workflow-push";
 
 const GIT_TOKEN_TTL_MS = 10 * 60 * 1000;
 const ECHO_TURN_TIMEOUT_MS = 2 * 60 * 1000;
@@ -219,7 +220,7 @@ export const SETUP_AGENT_ASSET_NAME = "assistant";
 /**
  * The workflow set every real tenant starts with: the general-purpose
  * assistant, and nothing else (CL-7074). This is what
- * `provisionPersonalTenantIfNeeded` (`@workbench/onboarding`) deploys
+ * the deleted first-login provisioning hook used to deploy
  * on first login for every real user — growing it is adding an entry
  * here, nothing more, but an entry here reaches every signup, so it is
  * never the place for a workflow that is not something every person
@@ -1089,7 +1090,7 @@ export type SeedTenantArgs = {
    * message and waiting for a run to start. Defaults to `true` — the
    * behavior `workbench seed` and the operator-key first-login hook
    * rely on, where a deployment nothing ever confirmed is treated as a
-   * seed failure. A self-served connect flow (`@workbench/onboarding`'s
+   * seed failure. A self-served connect flow (`./complete-credential`'s
    * `completeCredentialSetup`) passes `false`: the key was already
    * proven with a free, auth-only probe before seeding started, so
    * spending the connecting user's own (possibly credit-less) balance
@@ -1130,7 +1131,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
   if (workflows.length === 0) {
     throw new HubApiError(
       "the default workflow set is empty; seeding zero workflows is a failure, not a success",
-      "restore the default workflow set (packages/onboarding/src/tenant-seed.ts) before running: workbench seed",
+      "restore the default workflow set (packages/connections/src/tenant-seed.ts) before running: workbench seed",
     );
   }
 

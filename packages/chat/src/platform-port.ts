@@ -9,7 +9,7 @@
 // than duplicating it inside this package (which would violate "apps
 // stay generic; packages own the domain" the other way around), this
 // package depends on this narrow port, injected by the hub exactly as
-// `@workbench/onboarding` injects `pushWorkflow` instead of
+// the deleted `@workbench/onboarding` used to inject `pushWorkflow` instead of
 // reimplementing workflow push.
 //
 // Split into its three real seams — launching, mail, and the live

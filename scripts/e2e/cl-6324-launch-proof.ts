@@ -31,7 +31,7 @@ import { join as pathJoin } from "node:path";
 import { headlineFor } from "../../packages/approvals/src/headline.ts";
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import { createGitWorkflowPusher } from "../../packages/connections/src/workflow-push.ts";
-import { DEFAULT_WORKFLOWS, seedTenant } from "../../packages/onboarding/src/tenant-seed.ts";
+import { DEFAULT_WORKFLOWS, seedTenant } from "../../packages/connections/src/tenant-seed.ts";
 import { createHubAPI, type ApiCall } from "../../packages/hub-api-client/src/index.ts";
 import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflows/src/source.ts";
 import {
@@ -42,7 +42,7 @@ import {
   findPersonalTenant,
   testAndPersistCredential,
   ensureSeeded,
-} from "../../packages/onboarding/src/complete-credential.ts";
+} from "../../packages/connections/src/complete-credential.ts";
 import {
   OLLAMA_PLACEHOLDER_SECRET,
   ollamaOpenAICompatBaseURL,

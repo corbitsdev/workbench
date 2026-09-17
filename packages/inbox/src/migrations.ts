@@ -9,7 +9,7 @@
 //   CL-7208 added `inbox.snooze` for a snooze's `until` timestamp;
 //   CL-8185 drops it forward — snooze is gone per owner ruling.
 //   Bookkeeping uses its own ledger table, following the same pattern as
-//   `@workbench/onboarding`'s `migrations.ts`, so this package's migration
+//   the deleted `@workbench/onboarding`'s `migrations.ts`, so this package's migration
 //   history stays extractable on its own.
 
 import { createMailboxDb, runMailboxMigrations } from "@corbits/mailbox";

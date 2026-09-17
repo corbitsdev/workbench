@@ -11,7 +11,7 @@
 //
 // The one variant that installs cleanly today, entirely over stock
 // routes and with no hub or seed change, is the same shape
-// `packages/onboarding`'s `seedTenant` and the e2e harness already push:
+// `the deleted onboarding package's `seedTenant` and the e2e harness already push:
 // the built definition rendered as the two-file source package
 // `@corbits/workflows`' `renderWorkflowSourceTree` emits, published as a
 // `tarball` inside a stock `package-registry` asset via `PUT

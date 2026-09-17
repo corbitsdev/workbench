@@ -18,7 +18,7 @@
 // shape available the least-bad option is to deploy against the
 // tenant's own real, resolved catalog offering like every other
 // workflow (`resolveRealSourceOfferingIds` in
-// `packages/onboarding/src/tenant-seed.ts`) rather than inventing a
+// `packages/connections/src/tenant-seed.ts`) rather than inventing a
 // fake provider to route around a step that will still make a real
 // call. This definition still accepts `inferencePreferences` as plain
 // deploy-time data; it is the deployer's choice, never this

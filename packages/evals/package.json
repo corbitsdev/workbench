@@ -28,7 +28,6 @@
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",
-    "@workbench/onboarding": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "postgres": "catalog:"

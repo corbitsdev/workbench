@@ -15,7 +15,7 @@
 // `@corbits/heartbeat-workflow`'s own header comment for why), so this
 // step is unavoidably an agent step. CL-8160 stopped pinning a
 // deployer-supplied synthetic noop `ModelSource` here: `seedTenant`
-// (`packages/onboarding/src/tenant-seed.ts`) now deploys this workflow
+// (`packages/connections/src/tenant-seed.ts`) now deploys this workflow
 // against the tenant's own real, resolved catalog offering like every
 // other workflow (`resolveRealSourceOfferingIds`), so a trigger posts
 // an actual, human-visible digest line at that model's ordinary

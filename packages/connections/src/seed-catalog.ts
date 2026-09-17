@@ -220,7 +220,7 @@ export async function ensureCredential(
   // a bad paste — so it rotates on a name conflict only when
   // `args.verified` is set, which a caller sets only for an explicit user
   // submission through a connect UI: `testAndPersistCredential`
-  // (`@workbench/onboarding`'s `complete-credential.ts`) sets it
+  // (`@corbits/connections`'s `complete-credential.ts`) sets it
   // unconditionally for a pasted key or a completed OAuth exchange
   // (CL-6123 dropped the probe that used to gate this), and
   // `connections`' `POST /:connectorId/complete` (`routes.ts`) still

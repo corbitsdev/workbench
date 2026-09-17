@@ -37,12 +37,6 @@ import {
   type HubHandle,
   type SpawnedApp,
 } from "../harness.ts";
-import { createGitWorkflowPusher } from "../../../packages/connections/src/workflow-push.ts";
-import { createHubAPI } from "../../../packages/hub-api-client/src/index.ts";
-import {
-  ensureSeeded,
-  testAndPersistCredential,
-} from "../../../packages/onboarding/src/complete-credential.ts";
 import { OLLAMA_PLACEHOLDER_SECRET } from "../../../packages/connections/src/credential-test.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
@@ -587,89 +581,34 @@ async function run(): Promise<void> {
       () => page,
       "03-connect-provider-stub-key",
       async () => {
-        // Onboarding's own credential step (CL-6123) stores a pasted key
-        // immediately, with no live probe of the provider gating it —
-        // unlike Settings > Connections' connector cards
-        // (packages/connections/src/routes.ts), which still probe a
-        // pasted key for real before storing it. This step drives the
-        // same two halves the onboarding route itself calls
-        // (`testAndPersistCredential` / `ensureSeeded`, from
-        // `@workbench/onboarding`) directly rather than through HTTP —
-        // matching `local-rip.test.ts` (CL-6055)'s pattern of calling a
-        // package's own functions rather than round-tripping through a
-        // browser for a step already covered elsewhere — so everything
-        // (persisting the credential, publishing the tool registry,
-        // pushing and deploying every default workflow including
-        // "assistant"/Myra) runs for real, against the real spawned hub,
-        // using the real session cookie this browser just signed in
-        // with. The stub key itself is never sent anywhere here — it is
-        // stored as an unproven model source, exactly as onboarding's
-        // own key path would store it, so the later chat message is the
-        // first time it is ever dialed for real.
-        const cookies = (await page.cookies()).map((c) => `${c.name}=${c.value}`);
-        const hubApi = createHubAPI(hub.baseUrl);
-        const session = await hubApi("GET", "/api/auth/get-session", undefined, cookies);
-        const userId = (session.data as { user?: { id?: string } } | null)?.user?.id;
-        if (userId === undefined || userId === "") {
-          throw new Error(`no authenticated session found: ${JSON.stringify(session.data)}`);
+        // The hub never seeds (CL-8207): the onboarding page's own
+        // `ProviderConnectStep` is the only path that plants a credential
+        // and installs Myra, so this step drives that real form — the
+        // same radiogroup + password input a person fills in — rather
+        // than calling any package function directly. Selecting `ollama`
+        // needs no key (the placeholder secret still satisfies the
+        // form's `required` input).
+        if (!useOllama) {
+          const providerLabel = connectProvider === "anthropic" ? "Anthropic" : connectProvider;
+          await page.evaluate((label: string) => {
+            const option = Array.from(document.querySelectorAll('[role="radio"]')).find((el) =>
+              el.textContent?.includes(label),
+            );
+            (option as HTMLElement | undefined)?.click();
+          }, providerLabel);
         }
-        const pushWorkflow = createGitWorkflowPusher();
-        const connectArgs = {
-          api: hubApi,
-          cookies,
-          hubUrl: hub.baseUrl,
-          userId,
-          userEmail: email,
-          provider: connectProvider,
-          apiKey: stubApiKey,
-          pushWorkflow,
-          log: () => undefined,
+        await page.type('input[type="password"]', stubApiKey);
+        await page.click('button[type="submit"]');
+        // The form's submit hands off to `runPortableClientBootstrap`
+        // (tool-registry publish + Myra deploy), which lands on `/` once
+        // converged.
+        await page.waitForFunction(() => window.location.pathname === "/", {
+          timeout: 60_000,
+        });
+        return {
+          status: "pass",
+          detail: "stub credential connected through the onboarding UI; Myra installed",
         };
-        const connected = await testAndPersistCredential(
-          useOllama && ollamaBaseUrl !== undefined
-            ? { ...connectArgs, baseURLOverride: ollamaBaseUrl }
-            : connectArgs,
-        );
-        if (connected.kind !== "connected") {
-          throw new Error(
-            `expected the key-path connect to succeed, got: ${JSON.stringify(connected)}`,
-          );
-        }
-        const deadline = Date.now() + 60_000;
-        for (;;) {
-          if (sidecar.exited()) {
-            throw new Error(
-              `sidecar exited before seeding could complete; output:\n${sidecar.output()}`,
-            );
-          }
-          try {
-            const seedArgs = {
-              api: hubApi,
-              cookies,
-              hubUrl: hub.baseUrl,
-              pushWorkflow,
-              log: () => undefined,
-              tenant: connected,
-              provider: connectProvider,
-              apiKey: stubApiKey,
-            };
-            const seeded = await ensureSeeded(
-              useOllama && ollamaBaseUrl !== undefined
-                ? { ...seedArgs, baseURLOverride: ollamaBaseUrl }
-                : seedArgs,
-            );
-            if (seeded.kind === "seeded-pending-agents") {
-              throw new Error(seeded.message);
-            }
-            return {
-              status: "pass",
-              detail: `stub credential stored and every default workflow deployed: ${seeded.workflows.join(", ")}`,
-            };
-          } catch (cause) {
-            if (Date.now() > deadline) throw cause;
-            await Bun.sleep(1000);
-          }
-        }
       },
     );
 
@@ -683,9 +622,9 @@ async function run(): Promise<void> {
       () => page,
       "04-bare-root-lands-in-myra-conversation",
       async () => {
-        // `testAndPersistCredential`/`ensureSeeded` above deployed the
-        // default workflows but never opened Myra's DM — this account has
-        // zero conversations at this point, so `/` (bare root, `HomeRoute`)
+        // Step 03's onboarding-UI connect deployed the default workflows
+        // but never opened Myra's DM — this account has zero
+        // conversations at this point, so `/` (bare root, `HomeRoute`)
         // must land in Myra's DM rather than stranding the account on a
         // spinner or bouncing to `/new`.
         await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });

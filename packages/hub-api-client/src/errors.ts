@@ -23,7 +23,7 @@ export function isHubApiError(value: unknown): value is HubApiError {
  * sidecar that hosts workflow execution is down, but every durable step
  * ahead of it (tenant, grants, credential, catalog, workflow assets)
  * already succeeded. Onboarding's `ensureSeeded` (see
- * `@workbench/onboarding`'s `complete-credential.ts`) parses this exact
+ * `@corbits/connections`'s `complete-credential.ts`) parses this exact
  * class to finish the request successfully with an honest "agents
  * pending" report, instead of failing the whole flow the way any other
  * `HubApiError` still does.

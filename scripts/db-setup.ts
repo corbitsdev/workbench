@@ -33,7 +33,6 @@ import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";
 import { applyInboxMigrations, applyMailboxMigrations } from "../packages/inbox/src/migrations";
 import { applyAgentDirectoryMigrations } from "../packages/agent-directory/src/migrations";
-import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
 import { applyCronMigrations } from "../packages/cron/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
@@ -59,7 +58,6 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   // Own `inbox` schema; CL-8185 forward-drops the CL-7208 snooze table.
   { name: "@corbits/inbox", apply: applyInboxMigrations },
   { name: "@corbits/agent-directory", apply: applyAgentDirectoryMigrations },
-  { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
   { name: "@corbits/cron", apply: applyCronMigrations },
 ];
 
@@ -530,7 +528,6 @@ const PACKAGE_SCHEMAS = [
   "insights",
   "notify",
   "webhook_triggers",
-  "onboarding",
   "access_policy",
   "bench",
   "preferences",

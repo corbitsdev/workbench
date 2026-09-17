@@ -1,36 +1,19 @@
-// The guided credential step of first-run: a signed-in user who reached
-// onboarding with no seed model configured picks a provider — any of
-// `supportedCredentialProviders()` — and pastes their own key. CL-6123
-// dropped the blocking probe that used to sit in front of this: an
-// onboarding submission is accepted and stored immediately, with no
-// live call to the provider gating it. A key that turns out to be wrong
-// is caught later, the first time it is actually dialed for real
-// inference, and surfaces in-chat through the existing credential-error
-// + "Fix this connection" flow (CL-6092) — that is the designed place to
-// catch a bad key, not a synchronous check onboarding makes someone wait
-// on. Storing plants the credential and its catalog through the hub's
-// native `POST /api/tenants/:id/credentials` route (see `seedCatalog`'s
-// `ensureCredential`) — this module never stores a secret itself — the
-// same `seedCatalog` + `seedTenant` the first-login hook runs when a
-// hub-owned key is configured, so a self-served key and an
-// operator-configured one land the same bench.
-//
-// Two halves, on purpose. `testAndPersistCredential` — the fast half —
-// plants the credential and its catalog; nothing in it ever deploys a
-// workflow, so it is all any connect route runs before answering.
-// `ensureSeeded` — the slow half — is the workflow-deploy step, minutes
-// of deploy calls no browser has any business waiting on.
-//
-// CL-6457 finished that split: NO HTTP route runs the slow half any
-// more. Connecting a provider persists the credential, seeds its
-// catalog, and returns in seconds; the deploys belong to the background
-// drain in `./bench-provisioning.ts`, which is also what makes them
-// survive a hub restart. `completeCredentialSetup` at the bottom of this
-// file still composes both halves back-to-back, but it is an
-// eval-harness convenience — a bench that must be fully deployed before
-// a scenario runs — and never the connect path. A route that calls it
-// re-creates the 2+ minute "Connecting…" freeze this split exists to
-// prevent.
+// Credential-connect-and-deploy, for e2e/eval test harnesses only
+// (CL-8207: the hub never seeds — `@workbench/onboarding`, the package
+// that used to drive this from a live HTTP route, is deleted; the web
+// client now drives its own converge loop client-side over stock
+// routes). `testAndPersistCredential` — the fast half — plants a
+// credential and its catalog through the hub's native
+// `POST /api/tenants/:id/credentials` route (see `seedCatalog`'s
+// `ensureCredential`); this module never stores a secret itself.
+// `ensureSeeded` — the slow half — deploys `DEFAULT_WORKFLOWS` against
+// that credential. `completeCredentialSetup` composes both back-to-back
+// and blocks until the bench is genuinely deployed — useful for a
+// harness that needs a fully provisioned bench before a scenario runs
+// (`@workbench/evals`' real-target, and the `scripts/e2e/*` suites that
+// stand up a tenant without driving a browser), never a shape a real
+// HTTP route should re-create (that would be the multi-minute
+// "Connecting…" freeze this split was built to avoid).
 //
 // `ensureSeeded` runs with `confirmDeployments: false`: there is nothing
 // to confirm by triggering a real, billed inference call against an
@@ -44,47 +27,38 @@
 // The workflows deploy against the connected provider's own default
 // model — read straight out of `CATALOG_SEEDS` (`catalog-seed-data.ts`),
 // the one place a provider's curated model list is declared, rather than
-// a second, hand-maintained model choice living here. This is also what
-// recovers a bench the hub's own sign-in hook
-// (`provisionPersonalTenantIfNeeded`) could only mark `bench_unseeded`
-// (no hub-owned `ANTHROPIC_API_KEY` to seed with): the first working
-// credential a user connects — through this module, whichever
-// onboarding path reaches it — finishes seeding with that credential's
-// own provider, so an OAuth-only or bring-your-own-key user is never
-// stuck waiting on an operator-configured key.
+// a second, hand-maintained model choice living here.
 
+import { type } from "arktype";
 import {
+  AssetWithOriginResponse,
   ModelInfo,
   ModelResponse,
   PrincipalSummary,
   TenantResponse,
   paginatedSchema,
 } from "@intx/types";
-import { type SupportedCredentialProvider } from "@corbits/connections/credential-test";
-import { preferCompletionCapable } from "@corbits/connections/model-capability";
-import { CATALOG_SEEDS } from "@corbits/connections/catalog-seed-data";
+import { type SupportedCredentialProvider } from "./credential-test";
+import { preferCompletionCapable } from "./model-capability";
+import { CATALOG_SEEDS } from "./catalog-seed-data";
 import {
   DEFAULT_WORKFLOWS,
+  isLiveDeploymentStatus,
   seedTenant,
   type ModelSource,
   type SeedTenantArgs,
 } from "./tenant-seed";
-import type { WorkflowPusher } from "@corbits/connections/workflow-push";
+import type { WorkflowPusher } from "./workflow-push";
 import { isSidecarUnavailableError, parseAs, type ApiCall } from "@corbits/hub-api-client";
 import {
   persistConnectorCredential,
   type PersistConnectorCredentialFns,
-} from "@corbits/connections/persist-credential";
-import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
-import { TENANT_DESIRED_STATE, seededWorkflowNames } from "./desired-state";
-import { personalTenantSlug } from "./provision";
+} from "./persist-credential";
+import { CONNECTOR_REGISTRY } from "./registry";
 
-/** The onboarding UI's copy for a partial seed: every durable step
- * (credential, tenant, grants, assets) already succeeded, and the
- * deferred workflows finish deploying on their own the next time this
- * account's onboarding page reads `POST /complete-setup` — see
- * `ensureSeeded`'s own doc comment below for the sidecar-unavailable
- * class this covers. */
+/** Reported when every durable step (credential, tenant, grants, assets)
+ * already succeeded but the workflow deploy hit the sidecar-unavailable
+ * class — see `ensureSeeded`'s own doc comment below. */
 export const AGENTS_PENDING_MESSAGE = "Your workbench is ready — agents will come online shortly.";
 
 export type PersonalTenant = {
@@ -136,12 +110,9 @@ export type CompleteCredentialResult =
       readonly kind: "seeded-pending-agents";
       readonly tenantId: string;
       readonly tenantSlug: string;
-      /** Threaded through to `routes.ts`'s `/complete` handler, which
-       * writes them into the same `pendingSeedStore` row an OAuth
-       * connect writes (see `./pending-seed.ts`) so `POST
-       * /complete-setup`'s existing retry path — no new queue — finishes
-       * the deferred workflows on this account's next onboarding-page
-       * visit. */
+      /** Carried for a caller that wants to retry the deferred deploy
+       * once the sidecar is back — this module has no retry queue of
+       * its own. */
       readonly principalId: string;
       readonly tenantDomain: string;
       readonly deployed: string[];
@@ -403,6 +374,23 @@ export async function modelSourceFor(
  * deliberately kept out of this half so an OAuth callback route can run
  * only this and redirect immediately.
  */
+/** A lowercase-kebab personal-bench slug, unique per user without a
+ * coordinating registry: the local part of the email plus a short
+ * fragment of the user's own id, which the platform already treats as
+ * unique. */
+function personalTenantSlug(email: string, userId: string): string {
+  const local = email.split("@")[0] ?? email;
+  const kebab = local
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const suffix = userId
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .slice(-8)
+    .toLowerCase();
+  return `${kebab || "bench"}-${suffix || "personal"}`;
+}
+
 export async function testAndPersistCredential(
   args: TestAndPersistCredentialArgs,
 ): Promise<TestAndPersistCredentialResult> {
@@ -466,6 +454,48 @@ export async function testAndPersistCredential(
  * default workflows made it live and which are still pending. Any other
  * error out of `seedTenant` still throws, unchanged.
  */
+/** Which of `DEFAULT_WORKFLOWS`' asset names already carry an active
+ * deployment on this tenant — the same asset-then-deployment lookup
+ * `seedTenant` performs, read-only. Used only by `ensureSeeded`'s
+ * sidecar-unavailable branch to report exactly which default workflows
+ * made it live before the sidecar dropped out. */
+async function seededWorkflowNames(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+): Promise<{ deployed: string[]; pending: string[] }> {
+  const assetsResponse = await api(
+    "GET",
+    `/api/tenants/${tenantId}/assets?kind=workflow&inherited=false`,
+    undefined,
+    cookies,
+  );
+  const assets = parseAs(AssetWithOriginResponse.array(), assetsResponse.data, "assets response");
+
+  const deploymentsResponse = await api(
+    "GET",
+    `/api/tenants/${tenantId}/workflows/deployments`,
+    undefined,
+    cookies,
+  );
+  const deployments = parseAs(
+    type({ definitionAssetId: "string", status: "string" }).array(),
+    deploymentsResponse.data,
+    "deployments response",
+  );
+
+  const deployed: string[] = [];
+  const pending: string[] = [];
+  for (const workflow of DEFAULT_WORKFLOWS) {
+    const asset = assets.find((a) => a.name === workflow.assetName);
+    const isDeployed =
+      asset !== undefined &&
+      deployments.some((d) => d.definitionAssetId === asset.id && isLiveDeploymentStatus(d.status));
+    (isDeployed ? deployed : pending).push(workflow.assetName);
+  }
+  return { deployed, pending };
+}
+
 export async function ensureSeeded(args: EnsureSeededArgs): Promise<EnsureSeededResult> {
   const runSeedTenant = args.seedTenantFn ?? seedTenant;
 
@@ -491,14 +521,10 @@ export async function ensureSeeded(args: EnsureSeededArgs): Promise<EnsureSeeded
     args.log(
       `sidecar unavailable while deploying default workflows for tenant ${args.tenant.tenantId}; completing onboarding with agents pending: ${cause.message}`,
     );
-    // The single doc-status reader (the same lookup
-    // `readTenantDesiredStateStatus` derives its workflow pins from) —
-    // no second seeded-check lives alongside it.
     const { deployed, pending } = await seededWorkflowNames(
       args.api,
       args.cookies,
       args.tenant.tenantId,
-      TENANT_DESIRED_STATE.workflows,
     );
     return {
       kind: "seeded-pending-agents",
