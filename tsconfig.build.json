@@ -29,9 +29,6 @@
       "path": "./packages/code-review/tsconfig.src.json"
     },
     {
-      "path": "./packages/codex-provider/tsconfig.src.json"
-    },
-    {
       "path": "./packages/collections/tsconfig.src.json"
     },
     {
@@ -105,9 +102,6 @@
     },
     {
       "path": "./packages/workflows/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/xai-provider/tsconfig.src.json"
     },
     {
       "path": "./skills/skills/tsconfig.src.json"

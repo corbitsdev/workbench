@@ -34,7 +34,7 @@
   },
   "dependencies": {
     "@corbits/code-review": "workspace:*",
-    "@corbits/codex-provider": "workspace:*",
+    "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider",
     "@corbits/credential-providers": "workspace:*",
     "@corbits/error-sink": "workspace:*",
     "@corbits/github-tools": "workspace:*",
@@ -44,7 +44,7 @@
     "@corbits/mcp-tools": "workspace:*",
     "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core#v0.1.1",
     "@corbits/workflows": "workspace:*",
-    "@corbits/xai-provider": "workspace:*",
+    "@corbits/xai-provider": "github:corbitsdev/corbits-xai-provider",
     "@intx/crypto": "0.3.0",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
