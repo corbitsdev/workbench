@@ -40,7 +40,7 @@ export type ConnectGithubActions = {
    * `startReviewing`, `skip`) change something, re-reading
    * `getConnectState`. A credential completed elsewhere (the Plugins
    * page, another tab) settles this connector's entry on
-   * `@workbench/templates`'s `template/pendingConnections`
+   * `@corbits/connections/template-settings`'s `template/pendingConnections`
    * (CL-6463's `settleConnectedService`) and publishes `chat.settings`;
    * ChatWorkspace parses that event and calls `notifySettingsChanged`
    * so a card already mounted flips without remounting (CL-6476).
@@ -87,8 +87,8 @@ export type ConnectGithubActions = {
     { readonly ok: true } | { readonly ok: false; readonly message: string }
   >;
   /** Mints a grant and a live webhook trigger per repo id, then
-   * records the selection — `@workbench/templates`'s
-   * `startReviewingRepos`, called through the host's own binding. */
+   * records the selection through the host's own `startReviewingRepos`
+   * binding. */
   readonly startReviewing: (
     repoIds: readonly string[],
   ) => Promise<{ readonly startedTriggerCount: number }>;
