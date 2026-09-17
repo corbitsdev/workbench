@@ -1,27 +1,14 @@
-// The create-skill dialog: paste a skill's fields directly, or upload a
-// `SKILL.md` file and let the registry parse them out. Submitting hands
-// the result to `onSubmit`, which the Skills page turns directly into a
-// native `kind:"skill"` asset write in the workbench's registry
-// (`../skills-api.ts`) — there is no intermediate draft, and both modes
-// converge on the same registry `create`. A rejection from that call (a
-// name conflict, or SKILL.md frontmatter the registry refuses) surfaces
-// inline here rather than closing the dialog, so the person never loses
-// what they typed or which file they picked.
+// The create-skill dialog.
 //
-// The name field is bound by the registry's own rule — lowercase
-// letters, digits, and hyphens — because that is what a SKILL.md's
-// frontmatter must carry. Rejecting it here beats a server error after
-// the person has typed a whole skill body.
-//
-// A skill is one `SKILL.md`, not a bundle: the registry stores a single
-// file per skill asset, so upload is deliberately single-file — no
-// folders, no zips, no attachments to half-support.
-//
-// Creation only. Editing an existing skill happens on its own page
-// (`skill-detail-page.tsx`, CL-6416), where a save is reviewed as a diff
-// before it publishes a new version — this dialog has no edit mode to
-// duplicate that flow.
-
+// CL-8086: this used to hand a full SKILL.md (name/description/body, or
+// an uploaded file) to the workbench's own skill registry, which parsed
+// and stored it. That registry is gone — skills are native `kind:"skill"`
+// hub assets now, and the stock asset routes (`@intx/hub-api`'s
+// `routes/assets.ts`) accept only a bare `{ kind, name, displayName }` on
+// create: there is no stock route yet to write a skill's SKILL.md content
+// in the same call. This dialog is scoped down to match: it names the
+// asset only, and hands off; writing the skill's actual instructions
+// happens through whatever surface eventually covers skill content.
 import {
   Button,
   Dialog,
@@ -31,79 +18,39 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  FileInput,
   IntakeForm,
-  Tabs,
   intakeFieldsComplete,
 } from "@corbits/react-ui";
 import type { IntakeField } from "@corbits/react-ui";
 import { useState } from "react";
 
-export type SkillCreateInput =
-  | {
-      readonly kind: "fields";
-      readonly name: string;
-      readonly description: string;
-      readonly body: string;
-    }
-  | {
-      readonly kind: "file";
-      /** The uploaded file's raw text — the registry parses it with the
-       * same `parseSkillMd` it reads a skill back with. */
-      readonly source: string;
-    };
+export type SkillCreateInput = {
+  readonly name: string;
+  readonly displayName: string;
+};
 
-type Mode = "paste" | "upload";
-
-/** Mirrors `@corbits/skills`' `skillNameSchema` — kebab-case, `<=64`. */
+/** Mirrors the native `kind:"skill"` asset name rule — lowercase-kebab. */
 const SKILL_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-type FormValues = {
-  readonly name: string;
-  readonly description: string;
-  readonly body: string;
-};
-
-const EMPTY_VALUES: FormValues = {
-  name: "",
-  description: "",
-  body: "",
-};
-
-const NAME_FIELD: IntakeField = {
-  name: "name",
-  label: "Name",
-  type: "text",
-  required: true,
-  placeholder: "summarize-transcript",
-  help: "Lowercase letters, digits, and hyphens — this becomes the skill's name in the registry.",
-};
-
 const FIELDS: readonly IntakeField[] = [
-  NAME_FIELD,
   {
-    name: "description",
-    label: "Description",
-    type: "textarea",
+    name: "name",
+    label: "Name",
+    type: "text",
     required: true,
-    placeholder: "What this skill does and when to use it",
-    help: "A short summary of what this skill does and when to use it.",
+    placeholder: "summarize-transcript",
+    help: "Lowercase letters, digits, and hyphens — this becomes the skill asset's name.",
   },
   {
-    name: "body",
-    label: "Skill body",
-    type: "textarea",
-    required: true,
-    placeholder: "Instructions, tools, and guardrails this skill packages…",
-    help: "The instructions an agent can declare and this workbench can share.",
+    name: "displayName",
+    label: "Display name",
+    type: "text",
+    required: false,
+    placeholder: "Summarize transcript",
   },
 ];
 
-/** Every reason a submission is not yet valid, in plain language — never
- * a generic "invalid form". Exported so the create flow can be proven
- * without SSR-rendering the portal-based dialog (Radix portals yield no
- * static markup). */
-export function validationIssues(values: FormValues): readonly string[] {
+export function validationIssues(values: SkillCreateInput): readonly string[] {
   const issues: string[] = [];
   const name = values.name.trim();
   if (name === "") {
@@ -115,10 +62,10 @@ export function validationIssues(values: FormValues): readonly string[] {
   } else if (name.length > 64) {
     issues.push("Name must be at most 64 characters.");
   }
-  if (values.description.trim() === "") issues.push("Description is required.");
-  if (values.body.trim() === "") issues.push("Skill body is required.");
   return issues;
 }
+
+const EMPTY_VALUES: SkillCreateInput = { name: "", displayName: "" };
 
 export function CreateSkillDialog({
   open,
@@ -127,21 +74,17 @@ export function CreateSkillDialog({
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  /** Writes the skill to the registry. A rejection's message is shown
-   * inline and the form is left as typed. */
+  /** Creates the skill asset. A rejection's message is shown inline and
+   * the form is left as typed. */
   readonly onSubmit: (input: SkillCreateInput) => Promise<void>;
 }) {
-  const [mode, setMode] = useState<Mode>("paste");
-  const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
-  const [file, setFile] = useState<File | null>(null);
+  const [values, setValues] = useState<SkillCreateInput>(EMPTY_VALUES);
   const [showIssues, setShowIssues] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   function reset() {
-    setMode("paste");
     setValues(EMPTY_VALUES);
-    setFile(null);
     setShowIssues(false);
     setServerError(null);
   }
@@ -151,44 +94,30 @@ export function CreateSkillDialog({
     onOpenChange(next);
   }
 
-  function handleModeChange(next: Mode) {
-    setMode(next);
-    setShowIssues(false);
-    setServerError(null);
-  }
-
   function handleFormChange(next: Record<string, unknown>) {
     setValues({
       name: typeof next.name === "string" ? next.name : values.name,
-      description: typeof next.description === "string" ? next.description : "",
-      body: typeof next.body === "string" ? next.body : values.body,
+      displayName:
+        typeof next.displayName === "string"
+          ? next.displayName
+          : values.displayName,
     });
   }
 
   const issues = validationIssues(values);
 
   async function handleSubmit() {
-    if (mode === "paste" && issues.length > 0) {
-      setShowIssues(true);
-      return;
-    }
-    if (mode === "upload" && file === null) {
+    if (issues.length > 0) {
       setShowIssues(true);
       return;
     }
     setServerError(null);
     setSubmitting(true);
     try {
-      if (mode === "upload" && file !== null) {
-        await onSubmit({ kind: "file", source: await file.text() });
-      } else {
-        await onSubmit({
-          kind: "fields",
-          name: values.name.trim(),
-          description: values.description.trim(),
-          body: values.body.trim(),
-        });
-      }
+      await onSubmit({
+        name: values.name.trim(),
+        displayName: values.displayName.trim(),
+      });
       reset();
     } catch (cause) {
       setServerError(cause instanceof Error ? cause.message : String(cause));
@@ -203,8 +132,9 @@ export function CreateSkillDialog({
         <DialogHeader>
           <DialogTitle>Create skill</DialogTitle>
           <DialogDescription>
-            Define a reusable capability an agent can declare and this workbench
-            can share.
+            Names a new skill asset in this workbench. Its instructions are
+            written separately — there is no stock hub route yet to author
+            SKILL.md content in this dialog.
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -213,59 +143,22 @@ export function CreateSkillDialog({
               {serverError}
             </p>
           )}
-          <Tabs
-            tabs={[
-              { id: "paste", label: "Paste" },
-              { id: "upload", label: "Upload" },
-            ]}
-            active={mode}
-            onChange={handleModeChange}
-            label="Skill source"
-            variant="enclosed"
-          >
-            {(active) =>
-              active === "paste" ? (
-                <>
-                  {showIssues && issues.length > 0 && (
-                    <ul
-                      className="mb-3 list-inside list-disc text-sm text-destructive"
-                      role="alert"
-                    >
-                      {issues.map((issue) => (
-                        <li key={issue}>{issue}</li>
-                      ))}
-                    </ul>
-                  )}
-                  <IntakeForm
-                    fields={FIELDS}
-                    values={values}
-                    onChange={handleFormChange}
-                    idPrefix="create-skill"
-                  />
-                </>
-              ) : (
-                <>
-                  {showIssues && file === null && (
-                    <p className="mb-3 text-sm text-destructive" role="alert">
-                      Choose a SKILL.md file to upload.
-                    </p>
-                  )}
-                  <FileInput
-                    label="Upload SKILL.md"
-                    hint="A Markdown file with YAML frontmatter — name and description — followed by the skill's instructions. One file per skill; folders and attachments aren't supported."
-                    accept=".md,text/markdown"
-                    disabled={submitting}
-                    onFiles={(files) => setFile(files[0] ?? null)}
-                  />
-                  {file !== null && (
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      {file.name} selected
-                    </p>
-                  )}
-                </>
-              )
-            }
-          </Tabs>
+          {showIssues && issues.length > 0 && (
+            <ul
+              className="mb-3 list-inside list-disc text-sm text-destructive"
+              role="alert"
+            >
+              {issues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          )}
+          <IntakeForm
+            fields={FIELDS}
+            values={values}
+            onChange={handleFormChange}
+            idPrefix="create-skill"
+          />
         </DialogBody>
         <DialogFooter>
           <Button
@@ -278,12 +171,7 @@ export function CreateSkillDialog({
           <Button
             type="button"
             onClick={() => void handleSubmit()}
-            disabled={
-              submitting ||
-              (mode === "paste"
-                ? !intakeFieldsComplete(FIELDS, values)
-                : file === null)
-            }
+            disabled={submitting || !intakeFieldsComplete(FIELDS, values)}
           >
             Create skill
           </Button>

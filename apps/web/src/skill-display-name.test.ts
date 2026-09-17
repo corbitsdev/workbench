@@ -19,6 +19,15 @@ describe("skillDisplayName", () => {
     ).toBe("Prompt writing");
   });
 
+  test("prefers the native asset displayName over the slug", () => {
+    expect(
+      skillDisplayName({
+        name: "summarize",
+        displayName: "Summarize Now!",
+      }),
+    ).toBe("Summarize Now!");
+  });
+
   test("treats a whitespace-only displayTitle as absent", () => {
     expect(skillDisplayName({ name: "triage", displayTitle: "   " })).toBe(
       "Triage",

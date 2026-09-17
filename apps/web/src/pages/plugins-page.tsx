@@ -39,12 +39,7 @@ import {
   useRequestPluginsConnect,
 } from "../shell/provider-health-context";
 import { StageTopBar } from "../shell/stage-top-bar";
-import {
-  createSkill,
-  createSkillFromFile,
-  listSkills,
-  type SkillSummary,
-} from "../skills-api";
+import { createSkill, listSkills, type SkillSummary } from "../skills-api";
 import {
   CreateSkillDialog,
   type SkillCreateInput,
@@ -261,14 +256,10 @@ export function PluginsRoute({
 
   async function handleCreateSkill(input: SkillCreateInput) {
     if (selectedTenantId === null) return;
-    const skill =
-      input.kind === "file"
-        ? await createSkillFromFile(selectedTenantId, input.source)
-        : await createSkill(selectedTenantId, {
-            name: input.name,
-            description: input.description,
-            body: input.body,
-          });
+    const skill = await createSkill(selectedTenantId, {
+      name: input.name,
+      ...(input.displayName !== "" ? { displayName: input.displayName } : {}),
+    });
     setCreateSkillOpen(false);
     reloadSkills();
     openSkill(skill.name);
@@ -330,7 +321,6 @@ export function PluginsRoute({
     assetId: skill.assetId,
     name: skill.name,
     description: skill.description,
-    scope: skill.scope,
   }));
 
   return (

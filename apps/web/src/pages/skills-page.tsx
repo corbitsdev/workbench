@@ -17,7 +17,6 @@
 
 import {
   PageShell,
-  Badge,
   Button,
   EmptyState,
   RichEmptyState,
@@ -34,12 +33,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { rowActivationProps } from "../activatable-row";
 import { consumePendingNewSkill } from "../command-palette-actions";
-import {
-  createSkill,
-  createSkillFromFile,
-  listSkills,
-  type SkillSummary,
-} from "../skills-api";
+import { createSkill, listSkills, type SkillSummary } from "../skills-api";
 import {
   CreateSkillDialog,
   type SkillCreateInput,
@@ -112,14 +106,10 @@ export function SkillsPage({
 
   async function handleCreate(input: SkillCreateInput) {
     if (tenantId === null) return;
-    const skill =
-      input.kind === "file"
-        ? await createSkillFromFile(tenantId, input.source)
-        : await createSkill(tenantId, {
-            name: input.name,
-            description: input.description,
-            body: input.body,
-          });
+    const skill = await createSkill(tenantId, {
+      name: input.name,
+      ...(input.displayName !== "" ? { displayName: input.displayName } : {}),
+    });
     setCreateOpen(false);
     await reload();
     open(skill.name);
@@ -234,7 +224,6 @@ export function SkillsPage({
               <TableRow>
                 <TableHead className="w-48">Name</TableHead>
                 <TableHead className="max-w-sm">Description</TableHead>
-                <TableHead className="w-36">Who can see it</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -249,14 +238,6 @@ export function SkillsPage({
                   </TableCell>
                   <TableCell className="max-w-sm truncate text-muted-foreground">
                     {skill.description}
-                  </TableCell>
-                  <TableCell className="w-36">
-                    <Badge
-                      tone={skill.scope === "tenant" ? "info" : "neutral"}
-                      className="normal-case"
-                    >
-                      {skill.scope === "tenant" ? "Everyone" : "Only me"}
-                    </Badge>
                   </TableCell>
                 </TableRow>
               ))}
