@@ -9,8 +9,9 @@
 // here: Dialog and the context menu's own Menu are both Radix primitives
 // sharing Radix's dismissable-layer stack, which already closes only the
 // topmost one.
-export function isBlockingOverlayOpen(doc: Pick<Document, "querySelector"> = document): boolean {
-  return doc.querySelector('[role="dialog"]') !== null;
+export function isBlockingOverlayOpen(doc?: Pick<Document, "querySelector">): boolean {
+  const target = doc ?? globalThis.document;
+  return target.querySelector('[role="dialog"]') !== null;
 }
 
 export function isInsideInteractiveInput(target: EventTarget | null): boolean {
