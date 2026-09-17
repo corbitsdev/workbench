@@ -31,12 +31,6 @@ export {
   RetiredWorkflowEnvelopeError,
 } from "./definition-asset";
 export {
-  agentDirectoryMigrations,
-  applyAgentDirectoryMigrations,
-  type AgentDirectoryMigration,
-  type ApplyAgentDirectoryMigrationsReport,
-} from "./migrations";
-export {
   CreateAgentDefinitionInput,
   RestoreDefinitionInput,
   UpdateAgentSkillsInput,

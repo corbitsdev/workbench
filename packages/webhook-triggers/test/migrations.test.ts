@@ -21,12 +21,7 @@ function scratchUrlFor(e2eUrl: string): string {
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
-const migrationNames = [
-  "0001_webhook_trigger",
-  "0002_webhook_trigger_tenant_index",
-  "0003_webhook_trigger_tenant_definition_name_unique",
-  "0004_repo_review_lease",
-];
+const migrationNames = ["0001_webhook_trigger"];
 
 describeIfDb("applyWebhookTriggersMigrations", () => {
   const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");

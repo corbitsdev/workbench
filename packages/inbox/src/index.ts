@@ -3,9 +3,4 @@ export {
   createWorkbenchMailboxDelivery,
   type CreateWorkbenchMailboxDeliveryOpts,
 } from "./delivery";
-export {
-  applyInboxMigrations,
-  applyMailboxMigrations,
-  type ApplyInboxMigrationsReport,
-  type ApplyMailboxMigrationsReport,
-} from "./migrations";
+export { applyMailboxMigrations, type ApplyMailboxMigrationsReport } from "./migrations";

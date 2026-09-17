@@ -30,8 +30,7 @@ import { readdir } from "node:fs/promises";
 
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";
-import { applyInboxMigrations, applyMailboxMigrations } from "../packages/inbox/src/migrations";
-import { applyAgentDirectoryMigrations } from "../packages/agent-directory/src/migrations";
+import { applyMailboxMigrations } from "../packages/inbox/src/migrations";
 import { applyCronMigrations } from "../packages/cron/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
@@ -52,9 +51,6 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/webhook-triggers", apply: applyWebhookTriggersMigrations },
   { name: "@corbits/notify", apply: applyNotifyMigrations },
   { name: "@corbits/mailbox", apply: applyMailboxMigrations },
-  // Own `inbox` schema; forward-drops the snooze table.
-  { name: "@corbits/inbox", apply: applyInboxMigrations },
-  { name: "@corbits/agent-directory", apply: applyAgentDirectoryMigrations },
   { name: "@corbits/cron", apply: applyCronMigrations },
 ];
 
