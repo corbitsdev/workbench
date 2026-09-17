@@ -148,7 +148,7 @@ function baseDeps() {
     cryptoProviderCache: {
       get: async (key: string) => {
         cryptoGetKeys.push(key);
-        return { sign: async (input: Uint8Array) => input } as never;
+        return { sign: async () => new Uint8Array(64) } as never;
       },
     },
     repoStore: {
@@ -215,7 +215,10 @@ describe("launchWebhookTrigger", () => {
     });
     expect(prepareCalls).toHaveLength(1);
     expect(resolveRefCalls).toHaveLength(1);
-    expect(routeMailCalls).toHaveLength(1);
+    // isRoutable defaults true in this fixture, so the unreachable send
+    // is retried once per `deliverWhenRoutable`'s contract before the
+    // failure is reported.
+    expect(routeMailCalls).toHaveLength(2);
   });
 
   // CL-7476: a freshly provisioned run's sidecar takes several seconds to

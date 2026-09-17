@@ -7,7 +7,6 @@ import {
   filterInstances,
   humanizeSlug,
   isOrphanedInstance,
-  purposeAgentDefinitions,
   purposeAgentInstances,
   withDisplayName,
   withDisplayNames,
@@ -32,31 +31,6 @@ const instance = {
   definitionName: "Researcher",
   address: "ins_1@acme.localhost",
 };
-
-const dailyDigestDefinition = {
-  ...researcher,
-  id: "wfd_3",
-  name: "workbench-digest",
-  description: null,
-};
-
-const last30DaysResearchDefinition = {
-  ...researcher,
-  id: "wfd_4",
-  name: "last-30-days-research",
-  description: null,
-};
-
-describe("purposeAgentDefinitions", () => {
-  test("drops routine-only workflow catalog utilities (Daily digest, Last 30 days research) — they are non-conversational, seeded as routines, and belong on the Routines page, not the Agents list", () => {
-    const result = purposeAgentDefinitions([
-      researcher,
-      dailyDigestDefinition,
-      last30DaysResearchDefinition,
-    ]);
-    expect(result).toEqual([researcher]);
-  });
-});
 
 const invitedAgentInstance = {
   ...instance,

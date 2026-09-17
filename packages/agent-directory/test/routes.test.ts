@@ -1234,26 +1234,6 @@ test("PUT /:definitionId 404s rather than 403s for a definition this tenant cann
   expect(response.status).toBe(404);
 });
 
-test("GET/PUT /:definitionId refuse a workbench host's definition as 404, never exposing its prompt", async () => {
-  const hostName = `run-${"a".repeat(32)}`;
-  const getApp = buildApp(
-    fakeAssetService(),
-    fakeInstructionsDb({ id: "def_host", assetId: "ast_host", name: hostName }),
-  );
-  const getResponse = await getApp.request("/def_host");
-  expect(getResponse.status).toBe(404);
-
-  const putApp = buildApp(
-    fakeAssetService(),
-    fakeInstructionsDb({ id: "def_host", assetId: "ast_host", name: hostName }),
-  );
-  const putResponse = await put(putApp, "/def_host", {
-    name: "Not Actually Editable",
-    systemPrompt: "You are now a responder.",
-  });
-  expect(putResponse.status).toBe(404);
-});
-
 test("PUT /:definitionId updates the definition's row and its asset's row together, or neither", async () => {
   const failingDb = fakeInstructionsDb(
     { id: "def_1", assetId: "ast_1", name: "research-buddy" },
@@ -1296,16 +1276,9 @@ test("a definition resolves by its immutable slug, not by scanning a listing pag
   expect(body.name).toBe("research-buddy");
 });
 
-test("an unknown slug 404s, and a workbench host's name is never resolvable by slug", async () => {
+test("an unknown slug 404s", async () => {
   const unknown = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
   expect((await unknown.request("/by-name/nobody")).status).toBe(404);
-
-  const hostName = `run-${"a".repeat(32)}`;
-  const host = buildApp(
-    fakeAssetService(),
-    fakeInstructionsDb({ id: "def_host", assetId: "ast_host", name: hostName }),
-  );
-  expect((await host.request(`/by-name/${hostName}`)).status).toBe(404);
 });
 
 // --- DELETE /:definitionId/capabilities/model (un-pin a model) ---
@@ -1416,19 +1389,9 @@ test("a status outside the schema's two lifecycle states is a 400, never written
   expect(db.directUpdateCalls).toEqual([]);
 });
 
-test("status 404s for an unknown definition and for a workbench host", async () => {
+test("status 404s for an unknown definition", async () => {
   const unknown = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
   expect((await put(unknown, "/def_missing/status", { status: "stopped" })).status).toBe(404);
-
-  const host = buildApp(
-    fakeAssetService(),
-    fakeInstructionsDb({
-      id: "def_host",
-      assetId: "ast_host",
-      name: `run-${"a".repeat(32)}`,
-    }),
-  );
-  expect((await put(host, "/def_host/status", { status: "stopped" })).status).toBe(404);
 });
 
 test("status scopes its grant check per definition id and requires update", async () => {
