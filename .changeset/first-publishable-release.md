@@ -1,17 +1,23 @@
 ---
+"@corbits/access-tools": minor
 "@corbits/agent-directory-tools": minor
 "@corbits/assistant-workflow": minor
 "@corbits/attio-task-agent-workflow": minor
 "@corbits/capability-tools": minor
 "@corbits/catalog-tools": minor
+"@corbits/code-review": minor
+"@corbits/code-review-workflow": minor
 "@corbits/collateral-generation-workflow": minor
+"@corbits/connections-tools": minor
 "@corbits/diligence-brief-workflow": minor
 "@corbits/echo-workflow": minor
+"@corbits/error-sink": minor
 "@corbits/exa-topic-watch-workflow": minor
 "@corbits/github-tools": minor
 "@corbits/granola-call-workflow": minor
 "@corbits/granola-tools": minor
 "@corbits/heartbeat-workflow": minor
+"@corbits/interaction-tools": minor
 "@corbits/last-30-days-research-workflow": minor
 "@corbits/linear-tools": minor
 "@corbits/manus-tools": minor
