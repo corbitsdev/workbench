@@ -1,7 +1,6 @@
 // DB-gated: skipped when no DATABASE_URL is reachable (a fresh checkout
-// still runs the unit gates), mirroring @corbits/preferences' migrations
-// test. Runs against its own scratch database, never the developer's or
-// the walking-skeleton suite's.
+// still runs the unit gates). Runs against its own scratch database,
+// never the developer's or the walking-skeleton suite's.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import postgres from "postgres";
 

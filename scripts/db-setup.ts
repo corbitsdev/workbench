@@ -36,11 +36,9 @@ import {
   applyMailboxMigrations,
 } from "../packages/inbox/src/migrations";
 import { applyInsightsMigrations } from "../packages/insights/src/migrations";
-import { applyPreferencesMigrations } from "../packages/preferences/src/migrations";
 import { applyBenchMigrations } from "../packages/bench/src/migrations";
 import { applyAgentDirectoryMigrations } from "../packages/agent-directory/src/migrations";
 import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
-import { applyRunKeyHistoryMigrations } from "../packages/run-key-history/src/migrations";
 import { applyInferenceCatalogMigrations } from "../packages/inference-catalog/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
@@ -66,11 +64,9 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   // CL-7208's snooze-until table, own schema — see packages/inbox/src/schema.ts.
   { name: "@corbits/inbox", apply: applyInboxMigrations },
   { name: "@corbits/insights", apply: applyInsightsMigrations },
-  { name: "@corbits/preferences", apply: applyPreferencesMigrations },
   { name: "@corbits/bench", apply: applyBenchMigrations },
   { name: "@corbits/agent-directory", apply: applyAgentDirectoryMigrations },
   { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
-  { name: "@corbits/run-key-history", apply: applyRunKeyHistoryMigrations },
   {
     name: "@corbits/inference-catalog",
     apply: applyInferenceCatalogMigrations,
@@ -110,6 +106,8 @@ async function applyInstalledPackageMigrations(
   // and grant state stays on the native grant routes.
 
   await dropRoutinesSchemaAfterDigestHandoff(databaseUrl);
+  await dropSchemaIfPresent(databaseUrl, "run_key_history");
+  await dropSchemaIfPresent(databaseUrl, "preferences");
 }
 
 // --- hub-resolved platform dependencies ------------------------------
@@ -396,6 +394,35 @@ async function dropRoutinesSchemaAfterDigestHandoff(
     console.log(
       "db-setup: dropped routines schema after digest enablement handoff",
     );
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * One-shot, forward-only: `@corbits/run-key-history` and
+ * `@corbits/preferences` (CL-8158) had zero web callers on their mounts —
+ * a diagnostics-only listener and a client that was built but never
+ * imported — so both packages, their mounts, and their schemas are gone.
+ * Absent schema is a no-op; safe to re-run.
+ */
+async function dropSchemaIfPresent(
+  databaseUrl: string,
+  schema: string,
+): Promise<void> {
+  const postgres = await loadPostgres();
+  const target = dbTargetFromUrl(databaseUrl);
+  const sql = await connect(postgres, target);
+  try {
+    const existing = await sql.unsafe(
+      "SELECT 1 FROM information_schema.schemata WHERE schema_name = $1",
+      [schema],
+    );
+    if (existing.length === 0) return;
+    await sql.unsafe(
+      `DROP SCHEMA IF EXISTS ${quoteIdentifier(schema)} CASCADE`,
+    );
+    console.log(`db-setup: dropped ${schema} schema (CL-8158, dead mount)`);
   } finally {
     await sql.end();
   }

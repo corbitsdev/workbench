@@ -128,9 +128,6 @@
       "path": "./packages/ollama-adapter/tsconfig.src.json"
     },
     {
-      "path": "./packages/preferences/tsconfig.src.json"
-    },
-    {
       "path": "./packages/presence/tsconfig.src.json"
     },
     {
@@ -138,9 +135,6 @@
     },
     {
       "path": "./packages/reddit-tools/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/run-key-history/tsconfig.src.json"
     },
     {
       "path": "./packages/sandbox-sidecar/tsconfig.src.json"

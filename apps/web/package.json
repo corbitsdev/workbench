@@ -31,7 +31,6 @@
     "@corbits/inference-settings": "workspace:*",
     "@corbits/insights": "workspace:*",
     "@corbits/plugins-ui": "workspace:*",
-    "@corbits/preferences": "workspace:*",
     "@corbits/presence": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
     "@corbits/settings-ui": "workspace:*",

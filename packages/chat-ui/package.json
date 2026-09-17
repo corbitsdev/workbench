@@ -29,7 +29,6 @@
     "@corbits/context-menu": "workspace:*",
     "@corbits/error-sink": "workspace:*",
     "@corbits/inference-settings": "workspace:*",
-    "@corbits/preferences": "workspace:*",
     "@corbits/presence": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
     "@tanstack/react-query": "catalog:",

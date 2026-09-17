@@ -54,12 +54,11 @@ export const ENTRIES: readonly BrowserSafeEntry[] = [
   { package: "@corbits/insights", subpath: "./client" },
   { package: "@corbits/agent-directory", subpath: "./client" },
   { package: "@corbits/bench", subpath: "./client" },
-  { package: "@corbits/preferences", subpath: "./client" },
   { package: "@corbits/api-query", subpath: "." },
   // The envelope alone (UnauthenticatedError, ApiQueryError, toAPIQuery) has
   // no React/JSX dependency, so packages without `jsx` configured (e.g.
-  // @corbits/bench, @corbits/preferences) import this subpath rather than
-  // the root, which drags in query-view.tsx.
+  // @corbits/bench) import this subpath rather than the root, which drags
+  // in query-view.tsx.
   { package: "@corbits/api-query", subpath: "./envelope" },
   // CL-6099: the Inference settings section (packages/inference-settings)
   // imports this for its known-provider base URL seeds — plain data, no
