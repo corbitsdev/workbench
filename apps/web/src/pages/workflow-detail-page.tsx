@@ -1,25 +1,13 @@
-// `/workflows/<definitionAssetId>` (CL-7371) — a workflow definition's own
-// page: what it is, whether it can run right now, its steps in execution
-// order, and its access surface. Read-only, first useful version: header
-// (name, lifecycle, source commit), steps, declared-vs-approved grants and
-// credential binding names, and a "why not launchable" strip when the
-// lifecycle isn't `deployed`.
-//
-// Never renders a credential value — only the binding names the hub
-// route already redacted to (`@corbits/workflows`'s `./detail`'s
-// `detail-route.ts`) — and never reads `workflow.json` (see
-// docs/workflow-model.md's retirement).
-import {
-  Badge,
-  EmptyState,
-  PageShell,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@corbits/react-ui";
+// `/workflows/<definitionId>` (CL-7371) — a workflow definition's own
+// page. CL-8160: the hub-composed detail read (name, lifecycle, source
+// commit, steps, declared-vs-approved grants, credential bindings) is
+// gone with `@corbits/workflows`'s deleted `./detail/detail-route.ts` —
+// stock's `GET /workflows/definitions` (`workflow-detail-api.ts`) exposes
+// only name, description, status (`deployed` | `stopped`), current
+// version, and timestamps. This renders exactly that; see the CL-8160 PR
+// for the upstream ask to expose more (package manifest, wire projection,
+// grant snapshot) through a stock route.
+import { Badge, EmptyState, PageShell } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
 import { Clock, FlowArrow } from "@corbits/icons";
 
@@ -37,52 +25,35 @@ import {
   type WorkflowDefinitionDetailT,
 } from "../workflow-detail-api";
 
-const LIFECYCLE_LABEL: Readonly<
-  Record<WorkflowDefinitionDetailT["lifecycle"], string>
+const STATUS_LABEL: Readonly<
+  Record<WorkflowDefinitionDetailT["status"], string>
 > = {
-  "source-only": "Source only",
-  "pending-approval": "Pending approval",
   deployed: "Deployed",
-  superseded: "Superseded",
-  "build-failed": "Build failed",
+  stopped: "Stopped",
 };
 
-const LIFECYCLE_TONE: Readonly<
-  Record<WorkflowDefinitionDetailT["lifecycle"], BadgeTone>
+const STATUS_TONE: Readonly<
+  Record<WorkflowDefinitionDetailT["status"], BadgeTone>
 > = {
-  "source-only": "neutral",
-  "pending-approval": "warning",
   deployed: "success",
-  superseded: "neutral",
-  "build-failed": "danger",
+  stopped: "neutral",
 };
 
-function shortSha(sha: string): string {
-  return sha.length > 0 ? sha.slice(0, 7) : "";
-}
-
-/** The header row: display name, lifecycle badge, and (when known) the
- * source commit that produced the current definition. */
+/** The header row: display name, status badge, and current version. */
 function WorkflowDetailHeader({
   detail,
 }: {
   readonly detail: WorkflowDefinitionDetailT;
 }) {
-  const sha =
-    detail.source !== undefined && detail.source !== null
-      ? shortSha(detail.source.commitSha)
-      : "";
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <Badge tone={LIFECYCLE_TONE[detail.lifecycle]}>
-          {LIFECYCLE_LABEL[detail.lifecycle]}
+        <Badge tone={STATUS_TONE[detail.status]}>
+          {STATUS_LABEL[detail.status]}
         </Badge>
-        {sha !== "" ? (
-          <span className="font-mono text-xs text-[var(--ui-fg-muted)]">
-            {sha}
-          </span>
-        ) : null}
+        <span className="font-mono text-xs text-[var(--ui-fg-muted)]">
+          v{detail.currentVersion}
+        </span>
       </div>
       {detail.description !== undefined && detail.description !== null ? (
         <p className="m-0 text-sm text-[var(--ui-fg-muted)]">
@@ -93,117 +64,19 @@ function WorkflowDetailHeader({
   );
 }
 
-/** Why this definition can't be launched right now, and the honest next
- * action — absent entirely once it is `deployed`, never a strip with
- * nothing true to say. */
+/** Why this definition can't be launched right now — absent entirely once
+ * it is `deployed`, never a strip with nothing true to say. */
 export function NotLaunchableStrip({
-  lifecycle,
+  status,
 }: {
-  readonly lifecycle: WorkflowDefinitionDetailT["lifecycle"];
+  readonly status: WorkflowDefinitionDetailT["status"];
 }) {
-  const reason = workflowNotLaunchableReason(lifecycle);
+  const reason = workflowNotLaunchableReason(status);
   if (reason === null) return null;
   return (
     <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-bg-muted)] px-4 py-3 text-sm">
       {reason}
     </div>
-  );
-}
-
-/** Every step in execution order, with its role, model, director, tool
- * pins, and the grants the deploy-time capability walk froze onto it. */
-export function WorkflowStepsSection({
-  steps,
-}: {
-  readonly steps: WorkflowDefinitionDetailT["steps"];
-}) {
-  return (
-    <section className="flex flex-col gap-2">
-      <h2 className="m-0 text-sm font-semibold uppercase tracking-wide text-[var(--ui-fg-muted)]">
-        Steps
-      </h2>
-      {steps.length === 0 ? (
-        <p className="m-0 text-sm text-[var(--ui-fg-muted)]">
-          No approved steps yet — this workflow has not been deployed.
-        </p>
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Step</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Director</TableHead>
-              <TableHead>Model</TableHead>
-              <TableHead>Tools</TableHead>
-              <TableHead>Grants</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {steps.map((step) => (
-              <TableRow key={step.id}>
-                <TableCell className="font-mono text-xs">{step.id}</TableCell>
-                <TableCell>{step.role}</TableCell>
-                <TableCell>{step.director ?? "—"}</TableCell>
-                <TableCell>{step.model ?? "—"}</TableCell>
-                <TableCell>
-                  {step.toolPins.length === 0 ? "—" : step.toolPins.join(", ")}
-                </TableCell>
-                <TableCell>
-                  {step.grants.length === 0 ? "—" : step.grants.join(", ")}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-    </section>
-  );
-}
-
-/** Declared (what the source asks for) vs. approved (what the last freeze
- * actually granted) — and the credential binding names a step can use.
- * Names only, never a resolved credential value. */
-export function WorkflowAccessSection({
-  detail,
-}: {
-  readonly detail: WorkflowDefinitionDetailT;
-}) {
-  return (
-    <section className="flex flex-col gap-4">
-      <h2 className="m-0 text-sm font-semibold uppercase tracking-wide text-[var(--ui-fg-muted)]">
-        Access
-      </h2>
-      <div className="flex flex-col gap-1">
-        <span className="text-xs uppercase tracking-wide text-[var(--ui-fg-muted)]">
-          Declared grants
-        </span>
-        <span className="text-sm">
-          {detail.grants.declared.length === 0
-            ? "None declared"
-            : detail.grants.declared.join(", ")}
-        </span>
-      </div>
-      <div className="flex flex-col gap-1">
-        <span className="text-xs uppercase tracking-wide text-[var(--ui-fg-muted)]">
-          Approved grants
-        </span>
-        <span className="text-sm">
-          {detail.grants.approved.length === 0
-            ? "None approved yet"
-            : detail.grants.approved.join(", ")}
-        </span>
-      </div>
-      <div className="flex flex-col gap-1">
-        <span className="text-xs uppercase tracking-wide text-[var(--ui-fg-muted)]">
-          Credential bindings
-        </span>
-        <span className="text-sm">
-          {detail.credentialBindings.length === 0
-            ? "None"
-            : detail.credentialBindings.join(", ")}
-        </span>
-      </div>
-    </section>
   );
 }
 
@@ -219,15 +92,13 @@ export function WorkflowDetailPage({
       <StageTopBar
         crumbs={[
           { label: "Workflows", href: WORKFLOWS_PATH_PREFIX },
-          { label: detail.displayName },
+          { label: detail.name },
         ]}
       />
       <PageShell width="full" className="page-fill">
         <div className="flex flex-col gap-6">
           <WorkflowDetailHeader detail={detail} />
-          <NotLaunchableStrip lifecycle={detail.lifecycle} />
-          <WorkflowStepsSection steps={detail.steps} />
-          <WorkflowAccessSection detail={detail} />
+          <NotLaunchableStrip status={detail.status} />
         </div>
       </PageShell>
     </div>

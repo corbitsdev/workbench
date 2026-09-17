@@ -1,8 +1,9 @@
-// `/workflows/<definitionAssetId>` (CL-7371): a workflow definition's own
-// page. Covers the pure `WorkflowDetailPage` body against fixtures for the
-// three things that matter first — the lifecycle badge/copy actually
-// reflects `lifecycle`, steps render in order, and access reads declared
-// vs. approved grants plus credential binding names, never a value.
+// `/workflows/<definitionId>` (CL-7371, thinned CL-8160): a workflow
+// definition's own page. Covers the pure `WorkflowDetailPage` body
+// against fixtures for what stock's `GET /workflows/definitions` (via
+// `getWorkflowDefinitionDetail`) actually exposes — name, description,
+// status, and current version — now that the hub-composed detail read
+// (lifecycle, source commit, steps, grants, credential bindings) is gone.
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -10,84 +11,47 @@ import { WorkflowDetailPage } from "../src/pages/workflow-detail-page";
 import type { WorkflowDefinitionDetailT } from "../src/workflow-detail-api";
 
 const baseDetail: WorkflowDefinitionDetailT = {
-  definitionAssetId: "asset_outreach",
-  assetName: "outreach",
-  displayName: "Outreach",
+  definitionId: "wfd_1",
+  name: "Outreach",
   description: "Sends outreach messages",
-  lifecycle: "deployed",
-  currentDefinitionId: "wfd_1",
-  wireHash: "hash_1",
-  source: {
-    commitSha: "abcdef1234567890",
-    entry: "src/index.ts",
-    origin: "asset",
-  },
-  steps: [
-    {
-      id: "s1",
-      role: "step",
-      director: "outreach-agent",
-      model: "claude-sonnet-5",
-      toolPins: ["@corbits/mail-tools"],
-      grants: ["mail:send"],
-    },
-  ],
-  grants: {
-    declared: ["mail:*:send"],
-    approved: ["mail:*:send"],
-  },
-  credentialBindings: ["gmail"],
+  status: "deployed",
+  currentVersion: "3",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-02T00:00:00.000Z",
 };
 
 describe("WorkflowDetailPage", () => {
-  test("a deployed workflow shows no not-launchable strip and renders its steps", () => {
+  test("a deployed workflow shows no not-launchable strip", () => {
     const html = renderToStaticMarkup(
       <WorkflowDetailPage detail={baseDetail} />,
     );
     expect(html).toContain("Deployed");
-    expect(html).toContain("abcdef1");
-    expect(html).toContain("outreach-agent");
-    expect(html).toContain("claude-sonnet-5");
-    expect(html).toContain("@corbits/mail-tools");
-    expect(html).toContain("mail:send");
-    expect(html).not.toContain(
-      "This workflow's source has never been deployed",
-    );
+    expect(html).toContain("v3");
+    expect(html).toContain("Sends outreach messages");
+    expect(html).not.toContain("resume it to make it launchable");
   });
 
-  test("a pending-approval workflow shows the why-not-launchable strip", () => {
+  test("a stopped workflow shows the why-not-launchable strip", () => {
     const detail: WorkflowDefinitionDetailT = {
       ...baseDetail,
-      lifecycle: "pending-approval",
-      source: null,
+      status: "stopped",
     };
     const html = renderToStaticMarkup(<WorkflowDetailPage detail={detail} />);
-    expect(html).toContain("Pending approval");
-    expect(html).toContain("waiting on human approval");
+    expect(html).toContain("Stopped");
+    expect(html).toContain("resume it to make it launchable");
   });
 
-  test("access section reads declared vs. approved grants and credential names only", () => {
-    const html = renderToStaticMarkup(
-      <WorkflowDetailPage detail={baseDetail} />,
-    );
-    expect(html).toContain("Declared grants");
-    expect(html).toContain("Approved grants");
-    expect(html).toContain("gmail");
-  });
-
-  test("a source-only workflow with no steps says so plainly", () => {
+  test("a definition with no description renders without one", () => {
     const detail: WorkflowDefinitionDetailT = {
-      definitionAssetId: "asset_new",
-      assetName: "new-workflow",
-      displayName: "New workflow",
-      lifecycle: "source-only",
-      steps: [],
-      grants: { declared: [], approved: [] },
-      credentialBindings: [],
+      definitionId: "wfd_2",
+      name: "New workflow",
+      status: "deployed",
+      currentVersion: "1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
     };
     const html = renderToStaticMarkup(<WorkflowDetailPage detail={detail} />);
-    expect(html).toContain("Source only");
-    expect(html).toContain("No approved steps yet");
-    expect(html).toContain("deploy it to make it launchable");
+    expect(html).toContain("New workflow");
+    expect(html).toContain("Deployed");
   });
 });

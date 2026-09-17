@@ -295,18 +295,12 @@ describe("RoutineDetailRoute", () => {
     window.localStorage.clear();
   }
 
-  test("an id renders the scheduled workflow itself", async () => {
-    const { container, root } = await renderRoute("wfd_mine", {
-      tnt_1: [scheduledRecord({ definitionId: "wfd_mine", name: "My digest" })],
-    });
-    try {
-      expect(container.textContent).toContain("My digest");
-      expect(container.textContent).toContain("Acme Team");
-      expect(container.textContent).not.toContain("0 9 * * *");
-    } finally {
-      cleanup(container, root);
-    }
-  });
+  // CL-8160: `listScheduledWorkflows` (`../src/routines-api.ts`) now
+  // always resolves empty — the hub route this mocked
+  // (`/api/tenants/:id/workflows/scheduled`) is deleted with no
+  // stock-derivable replacement yet. The "renders the scheduled workflow
+  // itself" case this suite used to prove is unreachable; deleted rather
+  // than adapted.
 
   test("an unknown id says no scheduled workflow matches", async () => {
     const { container, root } = await renderRoute("wfd_deleted", {

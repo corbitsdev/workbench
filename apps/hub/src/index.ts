@@ -114,8 +114,6 @@ import {
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
 import {
-  createWorkflowDetailRoute,
-  createScheduledWorkflowRoutes,
   ensureRunSession,
   isConversationalWorkflowName,
 } from "@corbits/workflows";
@@ -217,10 +215,7 @@ import type { SidecarProvisioner } from "@intx/hub-sessions";
 import { withTurnPartWriteDefaults } from "./turn-part-content-default";
 import { createDrizzleTurnTextSnapshotReader } from "./turn-text-snapshot";
 import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
-import {
-  runNowScheduledDefinition,
-  triggerNativeWorkflowRoutineRun,
-} from "./native-workflow-routine-launch";
+import { triggerNativeWorkflowRoutineRun } from "./native-workflow-routine-launch";
 import { createCronEmitter } from "@corbits/workflow-schedule/emitter";
 import { createToolGrantsForPins } from "./tool-grants";
 import { drainHubServer, shutdownHub } from "./shutdown";
@@ -1473,53 +1468,18 @@ export async function createHub(config: HubConfig) {
     `${TENANT_PREFIX}/inbox`,
     createInboxRoutes({ db: mailboxDb, bus: mailboxBus }),
   );
-  // A workflow definition's own detail page (CL-7371): what it is,
-  // whether it can run right now, its steps, and its access surface.
-  // Mounted alongside — not inside — the vendored
-  // `createWorkflowDefinitionRoutes` (`vendor/intx/hub-api/src/app.ts`
-  // already mounts that one at this same `/workflows/definitions`
-  // prefix): this GET is a hub-composed read over native
-  // rows, so it lives in `@corbits/workflows`'s `./detail`, not the
-  // vendored tree.
-  app.route(
-    `${TENANT_PREFIX}/workflows/definitions`,
-    createWorkflowDetailRoute({
-      db,
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: grantConditionRegistry,
-      }),
-    }),
-  );
-  // Hub-zero T4 (CL-8126): the scheduled delivery join is cut — a
-  // triggered run launches straight into the runner with no
-  // settings-row lookup and no chat join. Pre-cutover rows carry no
-  // migration burden: the join never persisted anything (it read the
-  // settings registry and joined the run to a chat in memory per
-  // trigger), so there is no backfill and no default to apply.
-  app.route(
-    `${TENANT_PREFIX}/workflows`,
-    createScheduledWorkflowRoutes({
-      db,
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: grantConditionRegistry,
-      }),
-      runNow: async (args) =>
-        runNowScheduledDefinition(
-          { db, sidecarRouter },
-          {
-            tenantId: args.tenantId,
-            definitionId: args.definitionId,
-            principalId: args.principalId,
-            fromDomain: args.fromDomain,
-            content: args.content,
-            name: args.name,
-            definitionAssetId: args.assetId,
-          },
-        ),
-    }),
-  );
+  // CL-8160: the Workbench-composed workflow detail route
+  // (`@corbits/workflows`'s former `./detail/detail-route.ts`, mounted
+  // here at this same `/workflows/definitions` prefix as the vendored
+  // `createWorkflowDefinitionRoutes`) and the scheduled-workflow routes
+  // (`./schedule/scheduled-route.ts`: list/run-now/available-catalog) are
+  // both deleted per the owner ruling that workflow detail and schedule
+  // state derive from stock `@intx/hub-api` reads, not a hub-composed
+  // route. Stock's `GET /workflows/definitions` (mounted below by
+  // `createWorkflowDefinitionRoutes`) does not yet expose enough to
+  // reconstruct what these routes gave (no manifest/package metadata, no
+  // wire projection, no grant snapshot) — see the PR for CL-8160 for the
+  // upstream ask.
   {
     const mailboxApp = new Hono<TenantEnv>();
     mountMailbox(mailboxApp, {
@@ -1868,9 +1828,9 @@ export async function createHub(config: HubConfig) {
   // Recurring auto-fire for schedule-triggered deployments. The cron and
   // the tick arithmetic belong to `@corbits/workflow-schedule`; this root
   // only supplies the two host bindings the emitter cannot own — which
-  // deployments are live, and how a tick fires. The fire is the same
-  // native trigger `runNowScheduledDefinition` uses, so a scheduled tick
-  // and a run-now are the same primitive with a different clock.
+  // deployments are live, and how a tick fires. CL-8160 deleted the
+  // hub-mounted run-now route (`triggerNativeWorkflowRoutineRun`'s only
+  // other caller); this cron fire is the sole remaining caller now.
   const cronEmitter = createCronEmitter({
     listCronDeployments: async () =>
       (await listDeployedCronDefinitions(db)).map((definition) => ({

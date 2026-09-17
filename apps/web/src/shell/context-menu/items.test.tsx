@@ -186,41 +186,15 @@ describe("shellContextMenuFor: routine", () => {
     expect(navigate).toHaveBeenCalledWith("/routines/rt-1");
   });
 
-  test("run-now invalidates routine queries via onRoutineRan once the run starts", async () => {
-    const realFetch = globalThis.fetch;
-    globalThis.fetch = mock(() =>
-      Promise.resolve(
-        new Response(JSON.stringify({ runId: "run-1" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      ),
-    ) as unknown as typeof fetch;
-    const onRoutineRan = mock((_tenantId: string) => undefined);
-    try {
-      const menu = shellContextMenuFor(target, actions({ onRoutineRan }));
-      findItem(menu.entries, "run-now").onSelect();
-      for (let i = 0; i < 10 && onRoutineRan.mock.calls.length === 0; i++) {
-        await Promise.resolve();
-      }
-      expect(onRoutineRan).toHaveBeenCalledWith("tenant-1");
-      expect(toastMock).toHaveBeenCalledWith("Nightly Digest started");
-    } finally {
-      globalThis.fetch = realFetch;
-    }
-  });
-
-  test("run-now does not invalidate routine queries when the run fails to start", async () => {
-    const realFetch = globalThis.fetch;
+  // CL-8160: `runScheduledWorkflowNow` no longer calls a hub route at all
+  // (`@corbits/workflows`'s scheduled-workflow routes are deleted — see
+  // `apps/web/src/routines-api.ts`'s file header) — it always rejects. The
+  // former "run starts" success-path test asserted an outcome that is no
+  // longer reachable through any fetch response and is deleted rather
+  // than adapted; the failure path below still holds, just without a
+  // mocked fetch to drive it.
+  test("run-now surfaces a toast and reports the error, since it has no stock route yet", async () => {
     const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
-    globalThis.fetch = mock(() =>
-      Promise.resolve(
-        new Response(JSON.stringify({ error: { message: "boom" } }), {
-          status: 500,
-          headers: { "content-type": "application/json" },
-        }),
-      ),
-    ) as unknown as typeof fetch;
     const onRoutineRan = mock((_tenantId: string) => undefined);
     try {
       const menu = shellContextMenuFor(target, actions({ onRoutineRan }));
@@ -228,7 +202,6 @@ describe("shellContextMenuFor: routine", () => {
       for (let i = 0; i < 10 && toastMock.mock.calls.length === 0; i++) {
         await Promise.resolve();
       }
-      expect(toastMock).toHaveBeenCalledWith("Couldn't start the routine");
       expect(onRoutineRan).not.toHaveBeenCalled();
       expect(report).toHaveBeenCalled();
       expect(report.mock.calls[0]?.[1]).toEqual({
@@ -237,7 +210,6 @@ describe("shellContextMenuFor: routine", () => {
       });
     } finally {
       report.mockRestore();
-      globalThis.fetch = realFetch;
     }
   });
 });
