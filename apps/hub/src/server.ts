@@ -1,0 +1,816 @@
+import {
+  createDB,
+  createGrantStore,
+  createPrincipalKeyStore,
+  createSidecarAllocationStore,
+  createWorkflowRunDispatchStore,
+  resolveFrameSenderKey,
+  resolveSenderKey,
+} from "@intx/db";
+import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
+import { and, eq } from "drizzle-orm";
+import { createEnvKeyCredentialCipher, sha256 } from "@intx/crypto";
+import { hexDecode, hexEncode, type SidecarCapabilityRule } from "@intx/types";
+import {
+  createApp,
+  createAuth,
+  createMailTriggeredRunGrantsMaterializer,
+  createRequireGrant,
+  type TenantEnv,
+} from "@intx/hub-api";
+import {
+  createAgentRepoStore,
+  createAssetService,
+  createEventCollectorRegistry,
+  createHubSessionLookups,
+  createHubSessionOrchestrator,
+  createSessionService,
+  createSidecarAllocationReconciler,
+  createSidecarPluginRegistry,
+  createSidecarRouter,
+  createSidecarCredentialResolver,
+  createWorkflowAllocationService,
+  createWorkflowDispatchService,
+  createReconciliationScheduler,
+  DEFAULT_SIDECAR_ALLOCATION_CONCURRENCY,
+  pushCredentialReconcile,
+  WORKSPACE_BUILTINS_REGISTRY,
+  type SidecarLookups,
+  type SidecarProvisioner,
+  type SidecarProvisionerChooser,
+  type WsHandle,
+} from "@intx/hub-sessions";
+import { generateKeyPair } from "@intx/crypto";
+import { timeWindowEvaluator } from "@intx/authz";
+import type { ConditionRegistry } from "@intx/types/authz";
+import { MAX_SIDECAR_FRAME_BYTES } from "@intx/types/sidecar";
+import { upgradeWebSocket, websocket } from "hono/bun";
+import { setup, getLogger } from "@intx/log";
+import { Hono } from "hono";
+
+// ---------------------------------------------------------------------
+// Everything above this line is upstream Interchange's own
+// apps/hub/src/server.ts, verbatim. Corbits libraries are mounted in one
+// delimited block below, after createApp(...) and before the function's
+// return -- see AGENTS.md's "Workbench is a plain Interchange tenant"
+// ruling. Nothing else in this file is Workbench-specific.
+// ---------------------------------------------------------------------
+import {
+  buildMailFrame,
+  createInMemoryMailboxEventBus,
+  createMailboxDb,
+  createMailboxPersist,
+  generateMailboxMessageId,
+  mountMailbox,
+} from "@corbits/mailbox";
+import { createMemory, loadMemoryConfig } from "@corbits/memory";
+import { applyCronMigrations, createCronTicker, mountCron } from "@corbits/cron";
+import {
+  createHubMailboxAuthorizeSender,
+  createHubPersistMailWithSessionEnsure,
+} from "./mailbox-persist";
+import {
+  createDrizzleWebhookTriggerStore,
+  createWebhookIngressRoutes,
+  createWebhookTriggerRoutes,
+  launchWebhookTrigger,
+  createCryptoProviderCache,
+} from "@corbits/webhook-triggers";
+import { createWorkflowAuthorRegistry, createWorkflowAuthorRoutes } from "@corbits/workflows";
+import {
+  createSidecarProvisioner as createE2BSidecarProvisioner,
+  readProvisionerConfig as readE2BProvisionerConfig,
+} from "@corbits/e2b-sandbox-sidecar";
+import { createDockerSidecarProvisioner } from "@corbits/docker-provisioner";
+import {
+  createProcessSidecarProvisioner,
+  readProcessProvisionerConfig,
+  type ProcessProvisionerRole,
+} from "@corbits/process-provisioner";
+import {
+  InlineContentStore,
+  mountArtifacts,
+  mountWorkflowArtifacts,
+  runArtifactMigrations,
+  type WorkflowArtifactEnv,
+} from "@corbits/artifacts";
+import {
+  artifactMatchesLibraryKindSegment,
+  LIBRARY_KIND_SEGMENTS,
+} from "@corbits/artifact-ui/kind-filter";
+import {
+  createConnectionRoutes,
+  createMcpOAuthRoutes,
+  createMcpServerRoutes,
+  createOAuthConnectRoutes,
+  createTenantConnectCredential,
+  createWorkflowConnectionRoutes,
+  DEFAULT_RETURN_PATH_ALLOWLIST,
+  listMcpServerConnections,
+} from "@corbits/connections";
+import { createProviderHealthStore } from "@corbits/connections/provider-health";
+import { CONNECTOR_REGISTRY, MCP_PRESETS } from "./native-connector-registry";
+import type { DB } from "@intx/db";
+import { sidecar, workflowRun } from "@intx/db/schema";
+import { type } from "arktype";
+import path from "node:path";
+
+// The same condition registry `mountHubRoutes` builds by default when no
+// registry is supplied -- kept as one local constant so every Corbits
+// route factory below shares the identical registry rather than each
+// re-deriving stock's own default.
+const grantConditionRegistry: ConditionRegistry = {
+  time_window: timeWindowEvaluator,
+};
+
+// The one concrete `WorkflowRunAuthenticator` every workflow-run-authenticated
+// Corbits surface below takes structurally (connections, workflow-authoring,
+// `@corbits/artifacts`' `mountWorkflowArtifacts`): a sidecar bearer token +
+// run address resolve to the tenant/principal/run it names.
+function createWorkflowRunAuthenticator(deps: { db: DB["db"] }) {
+  return {
+    async resolve(token: string, runAddress: string) {
+      if (token === "" || runAddress === "") return null;
+      const tokenHash = await sha256(token);
+      const sidecarRow = await deps.db.query.sidecar.findFirst({
+        where: eq(sidecar.tokenHashSha256, tokenHash),
+      });
+      if (sidecarRow === undefined) return null;
+      const run = await deps.db.query.workflowRun.findFirst({
+        where: eq(workflowRun.address, runAddress),
+      });
+      if (run === undefined || run.principalId === null) return null;
+      return {
+        tenantId: run.tenantId,
+        principalId: run.principalId,
+        runId: run.id,
+      };
+    },
+  };
+}
+
+// SIDECAR_PROVISIONERS: comma-separated backend ids to register for
+// exclusive-sidecar placement. Unset or empty registers "process" alone,
+// so a single-server install works with no operator configuration.
+const SidecarProvisionersEnv = type({
+  "SIDECAR_PROVISIONERS?": type("string"),
+});
+
+function buildSidecarProvisioner(
+  id: "process" | "docker" | "e2b",
+  hubDataDir: string,
+  hubWebSocketUrl: string,
+  role: ProcessProvisionerRole,
+): SidecarProvisioner {
+  switch (id) {
+    case "process":
+      return createProcessSidecarProvisioner({
+        role,
+        config: readProcessProvisionerConfig({
+          env: process.env,
+          dataDir: path.resolve(
+            hubDataDir,
+            role === "probe" ? "process-provisioner-probe" : "process-provisioner",
+          ),
+          hubWebSocketUrl,
+        }),
+      });
+    case "docker":
+      return createDockerSidecarProvisioner({
+        config: {
+          image: process.env["DOCKER_PROVISIONER_IMAGE"] ?? "",
+          stateFilePath: path.resolve(hubDataDir, "docker-provisioner", "state.json"),
+        },
+      });
+    case "e2b":
+      return createE2BSidecarProvisioner({
+        config: readE2BProvisionerConfig(process.env, path.resolve(hubDataDir, "e2b-provisioner")),
+      });
+  }
+}
+
+export type CreateHubServerOpts = {
+  /** Provisioners eligible to host frozen workflow deployments. */
+  readonly sidecarProvisioners?: readonly SidecarProvisioner[];
+  /** Selects among matching deployment provisioners. Defaults to the first. */
+  readonly sidecarProvisionerChooser?: SidecarProvisionerChooser;
+  /** Provisioners eligible to evaluate workflow source code. */
+  readonly probeSidecarProvisioners?: readonly SidecarProvisioner[];
+  /** Selects among matching probe provisioners. Defaults to the first. */
+  readonly probeSidecarProvisionerChooser?: SidecarProvisionerChooser;
+  readonly probeSidecarCapabilityRules?: readonly SidecarCapabilityRule[];
+  /** Maximum simultaneous allocation reconciliations. Defaults to eight. */
+  readonly sidecarAllocationConcurrency?: number;
+  /** Deadline for provider calls, allocation claims, lease validation, and connection waits. Defaults to 120 seconds. */
+  readonly sidecarOperationTimeoutMs?: number;
+};
+
+export async function createHubServer({
+  sidecarProvisioners,
+  sidecarProvisionerChooser,
+  probeSidecarProvisioners,
+  probeSidecarProvisionerChooser,
+  probeSidecarCapabilityRules = [],
+  sidecarAllocationConcurrency = DEFAULT_SIDECAR_ALLOCATION_CONCURRENCY,
+  sidecarOperationTimeoutMs,
+}: CreateHubServerOpts = {}) {
+  await setup();
+
+  const log = getLogger(["hub"]);
+  const port = Number(process.env["PORT"] ?? 3000);
+
+  // PG_SCHEMA pins the hub to a specific postgres schema. The
+  // integration-test harness sets this so each spawned hub gets a
+  // dedicated, droppable schema. Production deployments leave it
+  // unset and run against postgres' default search_path.
+  const pgSchema = process.env["PG_SCHEMA"];
+  const { db } = createDB({
+    host: process.env["DB_HOST"] ?? "localhost",
+    port: Number(process.env["DB_PORT"] ?? 5432),
+    user: process.env["DB_USER"] ?? "postgres",
+    password: process.env["DB_PASSWORD"] ?? "postgres",
+    database: process.env["DB_NAME"] ?? "interchange",
+    ...(pgSchema !== undefined && { schema: pgSchema }),
+  });
+
+  const auth = createAuth(db);
+
+  const hubDataDir = process.env["HUB_DATA_DIR"];
+  if (!hubDataDir) {
+    throw new Error("HUB_DATA_DIR environment variable is required");
+  }
+
+  // Credential secrets are encrypted at rest under this operator-provided key.
+  const credentialEncryptionKeyHex = process.env["CREDENTIAL_ENCRYPTION_KEY"];
+  if (credentialEncryptionKeyHex === undefined || credentialEncryptionKeyHex.trim() === "") {
+    throw new Error("CREDENTIAL_ENCRYPTION_KEY environment variable is required");
+  }
+  const credentialCipher = createEnvKeyCredentialCipher(hexDecode(credentialEncryptionKeyHex));
+
+  // Per-principal signing keys are sealed at rest under their own operator key.
+  const principalKeyEncryptionKeyHex = process.env["PRINCIPAL_KEY_ENCRYPTION_KEY"];
+  if (principalKeyEncryptionKeyHex === undefined || principalKeyEncryptionKeyHex.trim() === "") {
+    throw new Error("PRINCIPAL_KEY_ENCRYPTION_KEY environment variable is required");
+  }
+  const principalKeyStore = createPrincipalKeyStore({
+    db,
+    cipher: createEnvKeyCredentialCipher(hexDecode(principalKeyEncryptionKeyHex)),
+  });
+
+  const DEFAULT_HUB_MAX_TARBALL_BYTES = 10 * 1024 * 1024;
+  const hubMaxTarballBytesRaw = process.env["HUB_MAX_TARBALL_BYTES"];
+  const hubMaxTarballBytes =
+    hubMaxTarballBytesRaw === undefined || hubMaxTarballBytesRaw.trim() === ""
+      ? DEFAULT_HUB_MAX_TARBALL_BYTES
+      : Number(hubMaxTarballBytesRaw);
+  if (!Number.isFinite(hubMaxTarballBytes) || hubMaxTarballBytes <= 0) {
+    throw new Error(
+      `HUB_MAX_TARBALL_BYTES must be a positive number; got ${JSON.stringify(hubMaxTarballBytesRaw)}`,
+    );
+  }
+
+  const hubSigningKey = await generateKeyPair();
+  log.info("Generated hub deploy signing key");
+
+  const agentRepoStore = createAgentRepoStore({
+    dataDir: hubDataDir,
+    signingKey: hubSigningKey,
+  });
+
+  const httpRegistries = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
+
+  const assetService = createAssetService({
+    db,
+    repoStore: agentRepoStore.repoStore,
+    reservedPackageRegistryNames: new Set(httpRegistries.keys()),
+  });
+
+  const grantStore = createGrantStore(db);
+
+  const lookups: SidecarLookups = {
+    ...createHubSessionLookups({ db, agentRepoStore }),
+    materializeMailTriggeredRunGrants: createMailTriggeredRunGrantsMaterializer({
+      db,
+      principalKeyStore,
+      grantStore,
+    }),
+    resolveSenderKey: (address) => resolveFrameSenderKey(db, principalKeyStore, address),
+    resolveSenderKeyStrict: async (address) =>
+      (await resolveSenderKey(db, principalKeyStore, address))?.publicKey ?? null,
+  };
+
+  const sidecarCredentials = createSidecarCredentialResolver({ db });
+
+  const sidecarRouter = createSidecarRouter({
+    hubPublicKey: hexEncode(hubSigningKey.publicKey),
+    authenticateSidecar: async ({ token }) => sidecarCredentials.resolve(token),
+    validateSidecarIdentity: sidecarCredentials.isCurrent,
+    lookups,
+  });
+
+  lookups.resyncCredentials = (agentAddress) => {
+    void pushCredentialReconcile(db, sidecarRouter, agentAddress, credentialCipher);
+  };
+
+  const eventCollectors = createEventCollectorRegistry({
+    db,
+    onTurnFinalized(agentAddress, turn) {
+      sidecarRouter.dispatchAgentEvent(agentAddress, {
+        type: "turn.committed",
+        data: {
+          turnId: turn.turnId,
+          status: turn.status,
+          text: turn.text,
+          hadReply: turn.hadReply,
+          hadError: turn.hadError,
+          errors: turn.errors,
+          toolCalls: turn.toolCalls,
+          toolErrors: turn.toolErrors,
+        },
+      });
+    },
+  });
+
+  createHubSessionOrchestrator({
+    events: sidecarRouter.events,
+    router: sidecarRouter,
+    db,
+    eventCollectors,
+  });
+
+  const sessionService = createSessionService({
+    sidecarRouter,
+    sidecarAllocationRouter: sidecarRouter,
+    agentRepoStore,
+    assetService,
+    db,
+    toolPackageRegistries: {
+      httpRegistries,
+      defaultRegistry: "npmjs",
+      scopeRouting: [{ scope: "@intx", registry: WORKSPACE_BUILTINS_REGISTRY }],
+    },
+  });
+
+  const hubSidecarWebSocketUrl =
+    process.env["HUB_SIDECAR_WEBSOCKET_URL"] ?? `ws://127.0.0.1:${String(port)}/api/sidecars/ws`;
+
+  const parsedProvisionerIds = SidecarProvisionersEnv(process.env);
+  const provisionerIdsRaw: string =
+    parsedProvisionerIds instanceof type.errors
+      ? ""
+      : (parsedProvisionerIds.SIDECAR_PROVISIONERS ?? "");
+  const provisionerIds = provisionerIdsRaw
+    .split(",")
+    .map((id) => id.trim())
+    .filter(
+      (id): id is "process" | "docker" | "e2b" =>
+        id === "process" || id === "docker" || id === "e2b",
+    );
+  const resolvedProvisionerIds =
+    provisionerIds.length > 0 ? provisionerIds : (["process"] as const);
+  const deploymentProvisioners =
+    sidecarProvisioners ??
+    resolvedProvisionerIds.map((id) =>
+      buildSidecarProvisioner(id, hubDataDir, hubSidecarWebSocketUrl, "deployment"),
+    );
+  const probeProvisioners =
+    probeSidecarProvisioners ??
+    resolvedProvisionerIds.map((id) =>
+      buildSidecarProvisioner(id, hubDataDir, hubSidecarWebSocketUrl, "probe"),
+    );
+
+  const sidecarPlugins = createSidecarPluginRegistry({
+    provisioners: deploymentProvisioners,
+    ...(sidecarProvisionerChooser !== undefined ? { chooser: sidecarProvisionerChooser } : {}),
+  });
+  const probeSidecarPlugins = createSidecarPluginRegistry({
+    provisioners: probeProvisioners,
+    ...(probeSidecarProvisionerChooser !== undefined
+      ? { chooser: probeSidecarProvisionerChooser }
+      : {}),
+  });
+  const workflowAllocationService = createWorkflowAllocationService({
+    db,
+    deploymentPlugins: sidecarPlugins,
+    probePlugins: probeSidecarPlugins,
+    preparedDeployer: sessionService,
+    credentialCipher,
+    probeCapabilityRules: probeSidecarCapabilityRules,
+    allocationRouter: sidecarRouter,
+    hubWebSocketUrl: hubSidecarWebSocketUrl,
+    ...(sidecarOperationTimeoutMs !== undefined
+      ? { operationTimeoutMs: sidecarOperationTimeoutMs }
+      : {}),
+  });
+  const sidecarAllocationStore = createSidecarAllocationStore(db);
+  const workflowDispatchService = createWorkflowDispatchService({
+    dispatchStore: createWorkflowRunDispatchStore(db),
+    allocationStore: sidecarAllocationStore,
+    router: sidecarRouter,
+    resolveAnchorAddress: async (anchorRunId) => {
+      const row = await db.query.workflowRun.findFirst({
+        where: (run, { eq: equals }) => equals(run.id, anchorRunId),
+        columns: { address: true },
+      });
+      return row?.address ?? null;
+    },
+  });
+  const sidecarAllocationReconciler = createSidecarAllocationReconciler({
+    allocationStore: sidecarAllocationStore,
+    plugins: sidecarPlugins,
+    router: sidecarRouter,
+    hubWebSocketUrl: hubSidecarWebSocketUrl,
+    ...(sidecarOperationTimeoutMs !== undefined
+      ? { operationTimeoutMs: sidecarOperationTimeoutMs }
+      : {}),
+    onReady: async (allocation, reconciliation) => {
+      await workflowAllocationService.deployReadyAllocation(allocation, reconciliation);
+      reconciliation.signal.throwIfAborted();
+      await workflowDispatchService.requeueForReadyAllocation(allocation.anchorRunId);
+    },
+  });
+
+  await workflowAllocationService.initialize?.();
+  await sidecarAllocationReconciler.initialize();
+  sidecarRouter.events.on("sidecar.disconnect", ({ allocated }) => {
+    if (allocated === undefined) return;
+    return sidecarAllocationReconciler.handleDisconnect(allocated);
+  });
+  sidecarRouter.events.on("sidecar.allocated.connected", (allocated) =>
+    sidecarAllocationReconciler.handleConnected(allocated),
+  );
+  sidecarRouter.events.on("mail.inbound.acknowledged", ({ messageId, allocated }) => {
+    if (allocated === undefined) return;
+    return workflowDispatchService.acknowledge({ ...allocated, messageId });
+  });
+
+  const allocationScheduler = createReconciliationScheduler({
+    name: "Sidecar allocation",
+    concurrency: sidecarAllocationConcurrency,
+    reconcileNext: () => sidecarAllocationReconciler.reconcileNext(),
+  });
+  const probeCleanupScheduler = createReconciliationScheduler({
+    name: "Workflow probe cleanup",
+    concurrency: 1,
+    intervalMs: 30_000,
+    reconcileNext: async () => {
+      await workflowAllocationService.reconcileReleasingProbes?.();
+      return false;
+    },
+  });
+  const dispatchScheduler = createReconciliationScheduler({
+    name: "Workflow dispatch",
+    concurrency: 1,
+    reconcileNext: async () => {
+      workflowDispatchService.wake();
+      return false;
+    },
+  });
+  const connectionRepairScheduler = createReconciliationScheduler({
+    name: "Sidecar connection repair",
+    concurrency: 1,
+    intervalMs: 30_000,
+    reconcileNext: async () => {
+      await sidecarAllocationReconciler.repairUnscheduledConnections();
+      return false;
+    },
+  });
+
+  allocationScheduler.start();
+  probeCleanupScheduler.start();
+  dispatchScheduler.start();
+  connectionRepairScheduler.start();
+
+  const app = createApp({
+    getSession: async (headers) => {
+      const result = await auth.api.getSession({ headers });
+      return result ? { user: result.user, session: result.session } : null;
+    },
+    authHandler: (c) => auth.handler(c.req.raw),
+    db,
+    sidecarRouter,
+    sessionService,
+    workflowAllocationService,
+    workflowDispatchService,
+    eventCollectors,
+    credentialCipher,
+    principalKeyStore,
+    assetService,
+    repoStore: agentRepoStore.repoStore,
+    maxTarballBytes: hubMaxTarballBytes,
+    workflowRunAuthenticator: createWorkflowRunAuthenticator({ db }),
+    sidecarWsHandler: upgradeWebSocket((_c) => {
+      let handle: WsHandle;
+      return {
+        onOpen(_evt, ws) {
+          handle = {
+            send(data: string) {
+              ws.send(data);
+            },
+            close() {
+              ws.close();
+            },
+          };
+          sidecarRouter.handleOpen(handle);
+        },
+        onMessage(evt, _ws) {
+          if (typeof evt.data === "string") {
+            sidecarRouter.handleMessage(handle, evt.data);
+          }
+        },
+        onClose(_evt, _ws) {
+          sidecarRouter.handleClose(handle);
+        },
+      };
+    }),
+  });
+
+  // ---------------------------------------------------------------------
+  // Corbits mount block -- everything Workbench adds to the stock hub.
+  // Each library gets its own Hono<TenantEnv> routed under the tenant
+  // prefix (or "/" when the library's own routes already carry that
+  // prefix), reusing the app's own db/grantStore/credentialCipher/router.
+  // See AGENTS.md: "any other hub mount is cutover debt with a Linear
+  // issue, never a pattern to extend."
+  // ---------------------------------------------------------------------
+  const TENANT_PREFIX = "/api/tenants/:tenantId";
+  const corbitsDatabaseUrl = `postgres://${encodeURIComponent(process.env["DB_USER"] ?? "postgres")}:${encodeURIComponent(process.env["DB_PASSWORD"] ?? "postgres")}@${process.env["DB_HOST"] ?? "localhost"}:${String(Number(process.env["DB_PORT"] ?? 5432))}/${process.env["DB_NAME"] ?? "interchange"}`;
+  const { db: mailboxDb } = createMailboxDb(corbitsDatabaseUrl);
+  const mailboxBus = createInMemoryMailboxEventBus();
+  const eventCollectorsRef: { current?: typeof eventCollectors } = { current: eventCollectors };
+  const mailboxLookups = {
+    ...lookups,
+    persistMail: createMailboxPersist(mailboxDb, {
+      upstream: createHubPersistMailWithSessionEnsure(
+        db,
+        eventCollectorsRef,
+        createHubSessionLookups({ db, agentRepoStore }).persistMail,
+      ),
+      authorizeSender: createHubMailboxAuthorizeSender(db),
+      bus: mailboxBus,
+    }),
+  };
+
+  await runArtifactMigrations(db);
+  await applyCronMigrations(corbitsDatabaseUrl);
+  const artifactContentStore = InlineContentStore;
+
+  {
+    const artifactsApi = new Hono<TenantEnv>();
+    mountArtifacts(artifactsApi, {
+      db,
+      contentStore: artifactContentStore,
+      requireGrant: createRequireGrant({ grantStore, conditionRegistry: grantConditionRegistry }),
+      countSegments: Object.fromEntries(
+        LIBRARY_KIND_SEGMENTS.map((segment) => [
+          segment,
+          (row: { kind: string; title: string }) => artifactMatchesLibraryKindSegment(row, segment),
+        ]),
+      ),
+    });
+    app.route(TENANT_PREFIX, artifactsApi);
+  }
+  {
+    const workflowArtifactsApi = new Hono<WorkflowArtifactEnv>();
+    const workflowRunAuthenticator = createWorkflowRunAuthenticator({ db });
+    mountWorkflowArtifacts(workflowArtifactsApi, {
+      db,
+      contentStore: artifactContentStore,
+      resolveRunScope: (token, runAddress) => workflowRunAuthenticator.resolve(token, runAddress),
+    });
+    app.route("/api/workflow-artifacts", workflowArtifactsApi);
+  }
+  {
+    const mailboxApp = new Hono<TenantEnv>();
+    mountMailbox(mailboxApp, {
+      db: mailboxDb,
+      bus: mailboxBus,
+      resolvePrincipal: (ctx) => {
+        const c = ctx as { get(key: "tenant" | "principal"): { id: string } };
+        return { tenantId: c.get("tenant").id, principalId: c.get("principal").id };
+      },
+      senderAddressFor: async (principal) => {
+        const [tenantRow] = await db
+          .select({ domain: tenantTable.domain })
+          .from(tenantTable)
+          .where(eq(tenantTable.id, principal.tenantId))
+          .limit(1);
+        if (tenantRow === undefined) {
+          throw new Error(`no tenant "${principal.tenantId}" to address a mailbox sender from`);
+        }
+        return `${principal.principalId}@${tenantRow.domain}`;
+      },
+      deliver: async (message) => {
+        await mailboxLookups.persistMail({
+          senderAddress: message.from,
+          recipients: message.to,
+          raw: message.raw,
+        });
+      },
+    });
+    app.route(`${TENANT_PREFIX}/mailbox`, mailboxApp);
+  }
+
+  let cronTicker: { start(): void; stop(): void } | undefined;
+  {
+    const cronApp = new Hono<TenantEnv>();
+    mountCron(cronApp, {
+      db,
+      requireTenantMember: (ctx, tenantId) => {
+        const c = ctx as { get(key: "tenant"): { id: string } };
+        return c.get("tenant").id === tenantId;
+      },
+    });
+    app.route("/", cronApp);
+
+    cronTicker = createCronTicker({
+      db,
+      intervalMs: 60_000,
+      senderAddressFor: (tenantId) => `cron@${tenantId}`,
+      deliver: async (message) => {
+        const tenantId = message.from.slice("cron@".length);
+        const [tenantRow] = await db
+          .select({ domain: tenantTable.domain })
+          .from(tenantTable)
+          .where(eq(tenantTable.id, tenantId))
+          .limit(1);
+        if (tenantRow === undefined) {
+          throw new Error(`no tenant "${tenantId}" to address cron mail from`);
+        }
+        const from = `cron@${tenantRow.domain}`;
+        await mailboxLookups.persistMail({
+          senderAddress: from,
+          recipients: message.to,
+          raw: buildMailFrame({
+            from,
+            to: message.to.join(", "),
+            subject: message.subject,
+            body: message.body,
+            messageId: generateMailboxMessageId(from),
+          }),
+        });
+      },
+    });
+    cronTicker.start();
+  }
+
+  {
+    const memoryApp = new Hono<TenantEnv>();
+    createMemory({
+      app: memoryApp,
+      config: loadMemoryConfig(),
+      grantStore,
+      conditionRegistry: grantConditionRegistry,
+    });
+    app.route("/", memoryApp);
+  }
+
+  app.route(
+    "/api/workflow-workflow-authoring",
+    createWorkflowAuthorRoutes({
+      authenticator: createWorkflowRunAuthenticator({ db }),
+      registry: createWorkflowAuthorRegistry({
+        db,
+        assetService,
+        repoStore: agentRepoStore.repoStore,
+        grantStore,
+        conditionRegistry: grantConditionRegistry,
+      }),
+    }),
+  );
+
+  const webhookTriggerStore = createDrizzleWebhookTriggerStore(db, credentialCipher);
+  const cryptoProviders = createCryptoProviderCache();
+  app.route(
+    `${TENANT_PREFIX}/webhook-triggers`,
+    createWebhookTriggerRoutes({
+      store: webhookTriggerStore,
+      requireGrant: createRequireGrant({ grantStore, conditionRegistry: grantConditionRegistry }),
+      workflowDefinitionInTenant: async (tenantId, definitionId) => {
+        const row = await db.query.workflowDefinition.findFirst({
+          where: and(
+            eq(workflowDefinition.id, definitionId),
+            eq(workflowDefinition.tenantId, tenantId),
+          ),
+          columns: { id: true },
+        });
+        return row !== undefined;
+      },
+    }),
+  );
+  const isSidecarRoutable = (address: string) =>
+    sidecarRouter.getRoutableAddresses().includes(address);
+  app.route(
+    "/api/webhooks",
+    createWebhookIngressRoutes({
+      store: webhookTriggerStore,
+      launch: (trigger, payload) =>
+        launchWebhookTrigger(
+          {
+            db,
+            sidecarRouter,
+            repoStore: agentRepoStore.repoStore,
+            workflowAllocationService,
+            credentialCipher,
+            eventCollectors,
+            isRoutable: isSidecarRoutable,
+            cryptoProviderCache: cryptoProviders,
+          },
+          trigger,
+          payload,
+        ),
+    }),
+  );
+
+  const hubUrl = process.env["BASE_URL"] ?? `http://localhost:${String(port)}`;
+  const providerHealthStore = createProviderHealthStore();
+  app.route(
+    `${TENANT_PREFIX}/connections`,
+    createConnectionRoutes({
+      hubUrl,
+      registry: CONNECTOR_REGISTRY,
+      requireGrant: createRequireGrant({ grantStore, conditionRegistry: grantConditionRegistry }),
+      log: (line) => log.info`${line}`,
+      oauthEnv: {
+        huggingfaceClientId: process.env["HUGGINGFACE_OAUTH_CLIENT_ID"],
+        githubAppClientId: process.env["GITHUB_APP_CLIENT_ID"],
+        githubAppClientSecret: process.env["GITHUB_APP_CLIENT_SECRET"],
+        gmailClientId: process.env["GMAIL_CLIENT_ID"],
+        gmailClientSecret: process.env["GMAIL_CLIENT_SECRET"],
+      },
+      providerHealth: providerHealthStore,
+      probeBaseUrls:
+        process.env["GITHUB_API_BASE_URL"] !== undefined
+          ? { github: process.env["GITHUB_API_BASE_URL"] }
+          : {},
+    }),
+  );
+  app.route(
+    `${TENANT_PREFIX}/connections/oauth`,
+    createOAuthConnectRoutes<TenantEnv>({
+      hubUrl,
+      log: (line) => log.info`${line}`,
+      credentialCipher,
+      registry: CONNECTOR_REGISTRY,
+      oauthEnv: {
+        huggingfaceClientId: process.env["HUGGINGFACE_OAUTH_CLIENT_ID"],
+        githubAppClientId: process.env["GITHUB_APP_CLIENT_ID"],
+        githubAppClientSecret: process.env["GITHUB_APP_CLIENT_SECRET"],
+        gmailClientId: process.env["GMAIL_CLIENT_ID"],
+        gmailClientSecret: process.env["GMAIL_CLIENT_SECRET"],
+      },
+      connectCredential: createTenantConnectCredential({
+        hubUrl,
+        log: (line) => log.info`${line}`,
+        registry: CONNECTOR_REGISTRY,
+        providerHealth: providerHealthStore,
+      }),
+      defaultReturnPath: "/settings/connections",
+      returnPathAllowlist: [...DEFAULT_RETURN_PATH_ALLOWLIST, "/plugins", "/w/"],
+    }),
+  );
+  app.route(
+    `${TENANT_PREFIX}/mcp-servers`,
+    createMcpServerRoutes({
+      hubUrl,
+      requireGrant: createRequireGrant({ grantStore, conditionRegistry: grantConditionRegistry }),
+      log: (line) => log.info`${line}`,
+      presets: MCP_PRESETS,
+    }),
+  );
+  app.route(
+    `${TENANT_PREFIX}/mcp-servers/oauth`,
+    createMcpOAuthRoutes({
+      hubUrl,
+      requireGrant: createRequireGrant({ grantStore, conditionRegistry: grantConditionRegistry }),
+      log: (line) => log.info`${line}`,
+      credentialCipher,
+      presets: MCP_PRESETS,
+      returnPathAllowlist: [...DEFAULT_RETURN_PATH_ALLOWLIST, "/plugins", "/w/"],
+    }),
+  );
+  app.route(
+    "/api/workflow-connections",
+    createWorkflowConnectionRoutes({
+      authenticator: createWorkflowRunAuthenticator({ db }),
+      listMcpServers: (tenantId) => listMcpServerConnections(db, tenantId),
+    }),
+  );
+  // ---------------------------------------------------------------------
+  // End of Corbits mount block.
+  // ---------------------------------------------------------------------
+
+  log.info("Starting server on port {port}", { port });
+
+  const sidecarWebsocket: typeof websocket & { maxPayloadLength: number } = {
+    ...websocket,
+    maxPayloadLength: MAX_SIDECAR_FRAME_BYTES,
+  };
+
+  return {
+    fetch: app.fetch,
+    websocket: sidecarWebsocket,
+    port,
+    idleTimeout: 0,
+  };
+}
