@@ -1,33 +1,27 @@
-// The failure path for first-login provisioning: a broken hub call
-// must not collapse to "nothing to do". `triggerFirstLoginProvisioning`
-// should report it as a distinct error outcome, and the app shell must
-// render a full blocking screen for it rather than silently continuing
-// into a shell with zero benches.
+// The setup gate (CL-8112): the first-login hook is a read-only status
+// read now — `triggerFirstLoginProvisioning` GETs the hub's native
+// `/api/setup/status` and reports only a routing verdict
+// (`existing-member` / `needs-onboarding` / `error`), never minting
+// anything. The screen at the onboarding path is a thin gate over that
+// verdict: an empty hub renders a static pending panel, a set-up hub
+// bounces into the shell, and a broken status read blocks with retry.
+// Nothing here may touch `/api/onboarding/*` — those routes went with
+// the hub mount, and the setup flow itself (T6/T7) has yet to be built.
 
 import { ThemeProvider } from "@corbits/react-ui";
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, createElement } from "react";
+import { act } from "react";
+import type { ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import {
-  OLLAMA_PLACEHOLDER_SECRET,
-  supportedCredentialProviders,
-} from "@corbits/connections/credential-test";
 
 import { App } from "../src/app";
-import { NavigationProvider } from "../src/navigation";
 import {
-  CREDENTIAL_PROVIDERS,
+  fetchAgentReadiness,
   hasActiveCredential,
-  PRIMARY_CREDENTIAL_PROVIDERS,
-  readHuggingFaceConnectReturn,
-  readOpenRouterConnectReturn,
-  SECONDARY_CREDENTIAL_PROVIDERS,
-  submitCredential,
   triggerFirstLoginProvisioning,
 } from "../src/onboarding";
-import { OnboardingPage } from "../src/pages/onboarding-page";
 import { ONBOARDING_PATH } from "../src/routes";
 import type { SessionState } from "../src/session";
 
@@ -45,10 +39,9 @@ const json = (body: unknown, status = 200) =>
 
 const noop = () => undefined;
 
-/** A `navigate` that records every call — the wizard now hands off to
- * `/` (`HomeRoute`, CL-6104) instead of rendering a "your workbench is
- * ready" ending of its own, so proving the hand-off means proving the
- * navigate call, not scraping ending copy. */
+/** A `navigate` that records every call — the gate hands off to `/`
+ * with a navigate call, so proving the hand-off means proving the
+ * call, not scraping ending copy. */
 function trackedNavigate() {
   const calls: string[] = [];
   return { navigate: (to: string) => calls.push(to), calls };
@@ -59,94 +52,25 @@ const signedIn: SessionState = {
   user: { id: "user_1", name: "Ada", email: "ada@example.com" },
 };
 
-describe("CREDENTIAL_PROVIDERS", () => {
-  // ProviderPicker (onboarding-page.tsx) renders one card per entry here —
-  // this is the data the cards are built from, so covering it covers what
-  // actually shows up: one card per `@corbits/connections` provider the
-  // hub can actually test a credential against, each with a distinct
-  // honest one-liner and a real key-console link. Compared against
-  // `supportedCredentialProviders()` directly, not a second hand-copied
-  // list, so a provider added or removed there is caught here rather than
-  // drifting silently.
-  test("has one card for every provider the hub can test a credential against", () => {
-    // The CL-7510 loopback-OAuth ids (`codex`, `xai-oauth`) are
-    // deliberately absent: their credential only exists after a loopback
-    // OAuth login, so there is no key-paste card to render until that
-    // flow is wired — a card here would offer a paste form no key can
-    // satisfy.
-    const LOOPBACK_OAUTH_ONLY = new Set(["codex", "xai-oauth"]);
-    expect(CREDENTIAL_PROVIDERS.map((p) => p.id).sort()).toEqual(
-      supportedCredentialProviders()
-        .map((p) => p.id)
-        .filter((id) => !LOOPBACK_OAUTH_ONLY.has(id))
-        .sort(),
-    );
-  });
-
-  test("every card has a non-empty label, description, and key console link", () => {
-    for (const provider of CREDENTIAL_PROVIDERS) {
-      expect(provider.label.length).toBeGreaterThan(0);
-      expect(provider.description.length).toBeGreaterThan(0);
-      expect(provider.keyConsoleUrl).toMatch(/^https:\/\//);
-    }
-  });
-
-  test("no two cards share the same description", () => {
-    const descriptions = CREDENTIAL_PROVIDERS.map((p) => p.description);
-    expect(new Set(descriptions).size).toBe(descriptions.length);
-  });
-});
-
-describe("PRIMARY_CREDENTIAL_PROVIDERS and SECONDARY_CREDENTIAL_PROVIDERS", () => {
-  test("the primary six lead in the owner's exact order", () => {
-    expect(PRIMARY_CREDENTIAL_PROVIDERS.map((p) => p.id)).toEqual([
-      "openai",
-      "anthropic",
-      "google-genai",
-      "xai",
-      "openrouter",
-      "opencode-zen",
-    ]);
-  });
-
-  test("groq, deepseek, mistral, huggingface, and ollama sit behind the secondary group", () => {
-    expect(SECONDARY_CREDENTIAL_PROVIDERS.map((p) => p.id)).toEqual([
-      "groq",
-      "deepseek",
-      "mistral",
-      "huggingface",
-      "ollama",
-    ]);
-  });
-
-  test("primary and secondary together account for every card, primary first", () => {
-    expect(CREDENTIAL_PROVIDERS).toEqual([
-      ...PRIMARY_CREDENTIAL_PROVIDERS,
-      ...SECONDARY_CREDENTIAL_PROVIDERS,
-    ]);
-  });
-});
-
 describe("triggerFirstLoginProvisioning", () => {
   test("a structured error envelope becomes an error outcome, not null", async () => {
     globalThis.fetch = (async () =>
       json(
         {
           error: {
-            code: "provisioning_failed",
+            code: "setup_status_failed",
             userMessage:
-              "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
+              "Checking your workbench hit a snag. Try again in a moment.",
             refId: "abc123",
           },
         },
         500,
       )) as unknown as typeof fetch;
 
-    const result = await triggerFirstLoginProvisioning("Ada's bench");
+    const result = await triggerFirstLoginProvisioning();
     expect(result).toEqual({
       kind: "error",
-      message:
-        "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
+      message: "Checking your workbench hit a snag. Try again in a moment.",
       refId: "abc123",
     });
   });
@@ -159,7 +83,7 @@ describe("triggerFirstLoginProvisioning", () => {
       throw new Error("connection refused");
     }) as unknown as typeof fetch;
 
-    const result = await triggerFirstLoginProvisioning("Ada's bench");
+    const result = await triggerFirstLoginProvisioning();
     expect(result.kind).toBe("error");
     if (result.kind !== "error") throw new Error("unreachable");
     expect(result.message).not.toContain("connection refused");
@@ -168,96 +92,73 @@ describe("triggerFirstLoginProvisioning", () => {
     );
   });
 
-  test("an ordinary success still parses through", async () => {
-    globalThis.fetch = (async () =>
-      json({ kind: "existing-member" })) as unknown as typeof fetch;
-
-    const result = await triggerFirstLoginProvisioning("Ada's bench");
-    expect(result).toEqual({ kind: "existing-member" });
-  });
-
-  test("sends the workbench name in the provision request body", async () => {
-    let requestBody: unknown = undefined;
-    let requestInit: RequestInit | undefined;
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      requestInit = init;
-      requestBody =
-        init.body === undefined ? undefined : JSON.parse(init.body as string);
-      return json({ kind: "existing-member" });
-    }) as unknown as typeof fetch;
-
-    await triggerFirstLoginProvisioning("Research bench");
-    expect(requestBody).toEqual({ name: "Research bench" });
-    expect(requestInit?.method).toBe("POST");
-  });
-
-  test("omits a body when no name is given (the shell routing probe)", async () => {
-    let sentBody: unknown = "__sentinel__";
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      sentBody = init.body;
-      return json({ kind: "existing-member" });
-    }) as unknown as typeof fetch;
-
-    await triggerFirstLoginProvisioning();
-    expect(sentBody).toBeUndefined();
-  });
-
-  test("a provisioned bench with a server seed stays a 'provisioned' outcome — seeded is reported faithfully", async () => {
-    // Regression guard: a server-side seed (operator-configured or
-    // env-key-auto-planted key) must not collapse the outcome into
-    // `existing-member` or otherwise hide that the bench was just
-    // provisioned. The wizard reads `seeded` off this exact shape to
-    // decide whether to skip the credential step (see
-    // apps/web/test/onboarding.test.tsx's "App landing fresh on a
-    // hub-seeded workbench" suite).
-    let requestBody: unknown = undefined;
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      requestBody =
-        init.body === undefined ? undefined : JSON.parse(init.body as string);
-      return json({
-        kind: "provisioned",
-        tenantId: "ten_1",
-        tenantSlug: "ada-user1",
-        seeded: true,
-        seedSkipReason: "operator_seed_key",
-      });
-    }) as unknown as typeof fetch;
-
-    const result = await triggerFirstLoginProvisioning("Ada's bench");
-    expect(requestBody).toEqual({ name: "Ada's bench" });
-    expect(result).toEqual({
-      kind: "provisioned",
-      tenantId: "ten_1",
-      tenantSlug: "ada-user1",
-      seeded: true,
-      seedSkipReason: "operator_seed_key",
-    });
-    // The credential step stays in the flow precisely because seeded is
-    // reported faithfully, not folded away.
-    if (result.kind === "provisioned") expect(result.seeded).toBe(true);
-  });
-
-  test("an existing member whose bench is not fully seeded reports seeded: false, not silently dropped", async () => {
-    // Regression guard for the bench_unseeded defect: a returning user
-    // with a real membership but no working credential yet must not read
-    // as an ordinary, fully-set-up existing member. Before this fix the
-    // client discarded `seeded` entirely for `existing-member`.
+  test("an empty hub reports needs-onboarding, never a silent pass-through", async () => {
     globalThis.fetch = (async () =>
       json({
-        kind: "existing-member",
-        seeded: false,
+        setupRequired: true,
+        userCount: 1,
+        tenantCount: 0,
       })) as unknown as typeof fetch;
 
     const result = await triggerFirstLoginProvisioning();
-    expect(result).toEqual({ kind: "existing-member", seeded: false });
+    expect(result).toEqual({ kind: "needs-onboarding" });
   });
 
-  test("an existing member on someone else's tenant carries no seeded field", async () => {
+  test("a hub with tenants reports existing-member", async () => {
     globalThis.fetch = (async () =>
-      json({ kind: "existing-member" })) as unknown as typeof fetch;
+      json({
+        setupRequired: false,
+        userCount: 1,
+        tenantCount: 1,
+      })) as unknown as typeof fetch;
 
     const result = await triggerFirstLoginProvisioning();
     expect(result).toEqual({ kind: "existing-member" });
+  });
+
+  test("an unparseable status body is an error, never a fabricated verdict", async () => {
+    globalThis.fetch = (async () =>
+      json({ not: "a status" })) as unknown as typeof fetch;
+
+    const result = await triggerFirstLoginProvisioning();
+    expect(result.kind).toBe("error");
+  });
+
+  test("reads the native status route with a bare GET — no body, no minting", async () => {
+    const seen: { url: string; init: RequestInit | undefined }[] = [];
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      seen.push({ url, init });
+      return json({ setupRequired: false, userCount: 1, tenantCount: 1 });
+    }) as unknown as typeof fetch;
+
+    await triggerFirstLoginProvisioning();
+    expect(seen.map((s) => s.url)).toEqual(["/api/setup/status"]);
+    expect(seen[0]?.init?.method ?? "GET").toBe("GET");
+    expect(seen[0]?.init?.body).toBeUndefined();
+  });
+});
+
+describe("fetchAgentReadiness", () => {
+  // CL-8112 T1: the legacy `/api/onboarding/provisioning-status` route is
+  // gone with the hub mount — a 404/410 must answer `route-gone`, never
+  // the generic agent error, so no caller can read a deleted route as
+  // "your agent is broken".
+  test("a 404 is route-gone, not a generic agent error", async () => {
+    globalThis.fetch = (async () =>
+      new Response("not found", { status: 404 })) as unknown as typeof fetch;
+
+    expect(await fetchAgentReadiness("tnt_1")).toEqual({
+      kind: "route-gone",
+    });
+  });
+
+  test("a 410 is route-gone, not a generic agent error", async () => {
+    globalThis.fetch = (async () =>
+      new Response("gone", { status: 410 })) as unknown as typeof fetch;
+
+    expect(await fetchAgentReadiness("tnt_1")).toEqual({
+      kind: "route-gone",
+    });
   });
 });
 
@@ -305,109 +206,6 @@ describe("hasActiveCredential", () => {
   });
 });
 
-describe("submitCredential", () => {
-  test("a rejected key comes back as a rejected outcome with the hub's own reason", async () => {
-    globalThis.fetch = (async () =>
-      json(
-        {
-          error: {
-            code: "invalid_credential",
-            userMessage: "invalid x-api-key",
-            refId: "xyz789",
-          },
-        },
-        422,
-      )) as unknown as typeof fetch;
-
-    const result = await submitCredential("anthropic", "sk-ant-bad");
-    expect(result).toEqual({
-      kind: "rejected",
-      message: "invalid x-api-key",
-      refId: "xyz789",
-    });
-  });
-
-  // CL-6457: connecting no longer waits for agents to deploy, so the
-  // success answer is "connected, and here is whether agents are still
-  // coming" — not a list of confirmed workflows.
-  test("a connected bench whose agents are still deploying reports connected, not an error", async () => {
-    let requestBody: unknown = null;
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      requestBody = JSON.parse((init as RequestInit).body as string);
-      return json({
-        kind: "provisioning",
-        tenantId: "ten_1",
-        tenantSlug: "ada-user1",
-        deployed: ["echo"],
-        pending: ["assistant"],
-      });
-    }) as unknown as typeof fetch;
-
-    const result = await submitCredential("google-genai", "AIza-good");
-    expect(result).toEqual({
-      kind: "connected",
-      tenantId: "ten_1",
-      tenantSlug: "ada-user1",
-      agentsPending: true,
-    });
-    expect(requestBody).toEqual({
-      provider: "google-genai",
-      apiKey: "AIza-good",
-    });
-  });
-
-  // CL-6682: a key copied from a provider console often carries a
-  // trailing newline; sent verbatim the provider 401s a valid key.
-  test("strips leading/trailing whitespace from the pasted key", async () => {
-    let requestBody: unknown = null;
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      requestBody = JSON.parse((init as RequestInit).body as string);
-      return json({
-        kind: "ready",
-        tenantSlug: "ada-user1",
-        deployed: [],
-        pending: [],
-      });
-    }) as unknown as typeof fetch;
-
-    await submitCredential("anthropic", " sk-ant-good\n");
-    expect(requestBody).toEqual({
-      provider: "anthropic",
-      apiKey: "sk-ant-good",
-    });
-  });
-
-  test("a bench whose agents are all live reports nothing pending", async () => {
-    globalThis.fetch = (async () =>
-      json({
-        kind: "ready",
-        tenantId: "ten_1",
-        tenantSlug: "ada-user1",
-        deployed: ["echo", "assistant"],
-        pending: [],
-      })) as unknown as typeof fetch;
-
-    const result = await submitCredential("google-genai", "AIza-good");
-    expect(result).toEqual({
-      kind: "connected",
-      tenantId: "ten_1",
-      tenantSlug: "ada-user1",
-      agentsPending: false,
-    });
-  });
-
-  test("a network failure is reported, never mistaken for a bad key, and never the raw cause", async () => {
-    globalThis.fetch = (async () => {
-      throw new Error("connection refused");
-    }) as unknown as typeof fetch;
-
-    const result = await submitCredential("anthropic", "sk-ant-good");
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") throw new Error("unreachable");
-    expect(result.message).not.toContain("connection refused");
-  });
-});
-
 describe("App with a provisioning error", () => {
   test("blocks the shell with a retry action instead of rendering it", () => {
     const markup = renderToStaticMarkup(
@@ -450,328 +248,9 @@ describe("App at the onboarding path", () => {
     expect(markup).not.toContain("shell-bench-dock");
   });
 
-  test("starts provisioning immediately under a default name, no naming step", () => {
+  test("lands on the checking phase first — the verdict arrives after the status read", () => {
     const markup = renderOnboarding();
-    // No naming step (CL-6089): provisioning starts immediately, under a
-    // default name derived from the account, before the credential step.
-    // Onboarding is down to a single screen at this point (CL-6104) — no
-    // stepper needed for one step.
-    // CL-6780: this prepares the account; no workbench exists yet.
-    expect(markup).toContain("Preparing your account");
-    expect(markup).not.toContain("Getting your workbench ready");
-    expect(markup).not.toContain("Setting up your workbench");
-  });
-});
-
-describe("App landing fresh on a hub-seeded workbench", () => {
-  test("a freshly provisioned, fully seeded bench skips the credential step entirely (CL-6101)", async () => {
-    // A hub-owned key (the env-key auto-plant, or the older
-    // ANTHROPIC_API_KEY path) already deployed and confirmed the
-    // default workflow set by the time `/api/onboarding/provision`
-    // answers — there is nothing left to prove or connect, so the
-    // wizard must land straight on the finished ending, exactly like a
-    // returning fully-seeded member does.
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({
-          kind: "provisioned",
-          tenantId: "ten_1",
-          tenantSlug: "ada-user1",
-          seeded: true,
-        });
-      }
-      // The page independently confirms `seeded: true` against a real
-      // stored credential (CL-6101 review) before hard-skipping — this
-      // scenario's premise (a hub-owned key already deployed) means that
-      // confirmation succeeds.
-      if (url === "/api/tenants/ten_1/credentials") {
-        return json({
-          data: [{ id: "cred_1", status: "active" }],
-          nextCursor: null,
-        });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      expect(calls).toEqual(["/"]);
-      expect(container.textContent).not.toContain("Bring your own AI");
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
-  test("provisioned, seeded: true does NOT hard-skip when no active credential is confirmed (CL-6101 review)", async () => {
-    // `seeded: true` here only means the seed run's validation trigger
-    // started a workflow run — never that it succeeded against a real
-    // credential. With the credentials read confirming nothing active,
-    // the page must fall through to the credential step, not the
-    // finished ending.
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({
-          kind: "provisioned",
-          tenantId: "ten_1",
-          tenantSlug: "ada-user1",
-          seeded: true,
-        });
-      }
-      if (url === "/api/tenants/ten_1/credentials") {
-        return json({ data: [], nextCursor: null });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      expect(container.textContent).toContain("Bring your own AI");
-      expect(calls).toEqual([]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
-  test("existing-member, seeded: true does NOT hard-skip when no active credential is confirmed (CL-6101 review)", async () => {
-    // `seeded: true` for an existing member means every default workflow
-    // has an active deployment (the doc reader's workflow pins) — never
-    // that a credential was checked. With the credentials read
-    // confirming nothing active, the page must fall through to the
-    // credential step.
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({
-          kind: "existing-member",
-          seeded: true,
-          tenantId: "ten_1",
-        });
-      }
-      if (url === "/api/tenants/ten_1/credentials") {
-        return json({ data: [], nextCursor: null });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      expect(container.textContent).toContain("Bring your own AI");
-      expect(calls).toEqual([]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
-  test("provisioned, seeded: true stays on setup with Retry when the credential probe fails (CL-6868)", async () => {
-    // Transient credentials-read failure must not open paste-a-key as if
-    // none exists — the key may already be connected. Stay on the setup
-    // step with one consumer sentence and Retry.
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({
-          kind: "provisioned",
-          tenantId: "ten_1",
-          tenantSlug: "ada-user1",
-          seeded: true,
-        });
-      }
-      if (url === "/api/tenants/ten_1/credentials") {
-        throw new Error("connection refused");
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      const text = container.textContent ?? "";
-      expect(text).not.toContain("Bring your own AI");
-      expect(text).not.toContain("or paste a provider API key");
-      expect(text).toContain(
-        "Checking for a connected key hit a snag. Try again in a moment.",
-      );
-      const retry = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Try again",
-      );
-      expect(retry).not.toBeUndefined();
-      expect(calls).toEqual([]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
-  test("existing-member, seeded: true stays on setup with Retry when the credential probe fails (CL-6868)", async () => {
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({
-          kind: "existing-member",
-          seeded: true,
-          tenantId: "ten_1",
-        });
-      }
-      if (url === "/api/tenants/ten_1/credentials") {
-        return json({ error: "boom" }, 500);
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      const text = container.textContent ?? "";
-      expect(text).not.toContain("Bring your own AI");
-      expect(text).not.toContain("or paste a provider API key");
-      expect(text).toContain(
-        "Checking for a connected key hit a snag. Try again in a moment.",
-      );
-      const retry = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Try again",
-      );
-      expect(retry).not.toBeUndefined();
-      expect(calls).toEqual([]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
-  test("a freshly provisioned bench with no working credential still shows the credential step", async () => {
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({
-          kind: "provisioned",
-          tenantId: "ten_1",
-          tenantSlug: "ada-user1",
-          seeded: false,
-          seedSkipReason: "no operator key configured",
-        });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      expect(container.textContent).toContain("Bring your own AI");
-      expect(calls).toEqual([]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
+    expect(markup).toContain("Checking your workbench");
   });
 });
 
@@ -797,782 +276,38 @@ describe("App once onboarding is behind you", () => {
   });
 });
 
-describe("readOpenRouterConnectReturn", () => {
-  test("an unrelated query string is nobody's outcome", () => {
-    expect(readOpenRouterConnectReturn("")).toBeNull();
-    expect(readOpenRouterConnectReturn("?foo=bar")).toBeNull();
-  });
-
-  test("a connected return carries the bench, with no routine list yet — that comes from completeSetup", () => {
-    expect(
-      readOpenRouterConnectReturn(
-        "?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
-      ),
-    ).toEqual({
-      kind: "connected",
-      tenantSlug: "ada-user1",
-    });
-  });
-
-  test("a connected return missing its details is an error, never a fabricated success", () => {
-    const result = readOpenRouterConnectReturn(
-      "?connect=openrouter&outcome=connected",
-    );
-    expect(result?.kind).toBe("error");
-  });
-
-  test("a known failure code maps to its own copy", () => {
-    const result = readOpenRouterConnectReturn(
-      "?connect=openrouter&outcome=error&code=exchange_failed",
-    );
-    expect(result?.kind).toBe("error");
-    if (result?.kind === "error")
-      expect(result.message).toContain("did not hand back a key");
-  });
-
-  test("a rate-limited start explains OpenRouter limits key creation, not internal vocabulary", () => {
-    const result = readOpenRouterConnectReturn(
-      "?connect=openrouter&outcome=error&code=rate_limited",
-    );
-    expect(result?.kind).toBe("error");
-    if (result?.kind === "error") {
-      expect(result.message).toContain("limits how often it can create");
-      expect(result.message).toContain("Wait a minute");
-    }
-  });
-
-  test("an unknown failure code still reads as a failure", () => {
-    const result = readOpenRouterConnectReturn(
-      "?connect=openrouter&outcome=error&code=who_knows",
-    );
-    expect(result?.kind).toBe("error");
-    if (result?.kind === "error")
-      expect(result.message).toContain("did not finish");
-  });
-});
-
-describe("readHuggingFaceConnectReturn", () => {
-  test("an unrelated query string, including an OpenRouter one, is nobody's outcome", () => {
-    expect(readHuggingFaceConnectReturn("")).toBeNull();
-    expect(
-      readHuggingFaceConnectReturn("?connect=openrouter&outcome=connected"),
-    ).toBeNull();
-  });
-
-  test("a connected return carries the bench, with no routine list yet — that comes from completeSetup", () => {
-    expect(
-      readHuggingFaceConnectReturn(
-        "?connect=huggingface&outcome=connected&tenantSlug=ada-user1",
-      ),
-    ).toEqual({
-      kind: "connected",
-      tenantSlug: "ada-user1",
-    });
-  });
-
-  test("the not_configured code maps to its own copy", () => {
-    const result = readHuggingFaceConnectReturn(
-      "?connect=huggingface&outcome=error&code=not_configured",
-    );
-    expect(result?.kind).toBe("error");
-    if (result?.kind === "error")
-      expect(result.message).toContain("Paste a token instead");
-  });
-});
-
-describe("the OpenRouter connect card", () => {
-  const renderOnboardingAt = (url: string) => {
-    window.history.replaceState(null, "", url);
-    try {
-      return renderToStaticMarkup(
-        <App
-          path={ONBOARDING_PATH}
-          navigate={noop}
-          session={signedIn}
-          onSignedIn={noop}
-          onSignOut={noop}
-          onRetry={noop}
-        />,
-      );
-    } finally {
-      window.history.replaceState(null, "", "/");
-    }
-  };
-
-  test("the credential phase leads with the one-click connect above the key form", () => {
-    const markup = renderOnboardingAt(
-      "/onboarding?connect=openrouter&outcome=error&code=state_expired",
-    );
-
-    expect(markup).toContain("OpenRouter");
-    expect(markup).toContain("/api/onboarding/oauth/openrouter/start");
-    expect(markup.indexOf("onboarding-connect-card")).toBeLessThan(
-      markup.indexOf("onboarding-credential-form"),
-    );
-    // The failed round trip's reason is spelled out in the same phase.
-    expect(markup).toContain("took too long");
-  });
-
-  test("a connected return shows the finishing-setup progress state, not a fabricated done checklist", () => {
-    // Before `completeSetup` resolves, the wizard must never claim the
-    // routines already ran — that was the bug this split fixes: the
-    // OAuth callback only stored the key, so the checklist showing
-    // "confirmed running" before the deploy step even started would be
-    // a lie.
-    // CL-6780: finishing-setup prepares the agent; no workbench exists yet.
-    const markup = renderOnboardingAt(
-      "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
-    );
-
-    expect(markup).toContain("Preparing your agent");
-    expect(markup).not.toContain("Getting your workbench ready");
-    expect(markup).not.toContain("Setting up your workbench");
-    expect(markup).not.toContain("Your workbench is ready");
-  });
-
-  test("a connected return finishes setup and hands off to `/` once completeSetup reports the bench connected", async () => {
+describe("the setup gate", () => {
+  function renderGateAtOnboarding(statusBody: unknown, status = 200) {
+    const seen: string[] = [];
     globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/complete-setup") {
-        return json({
-          kind: "ready",
-          tenantSlug: "ada-user1",
-          deployed: ["echo", "assistant"],
-          pending: [],
-        });
+      seen.push(url);
+      // Anything outside the native status read is a failure: the gate
+      // must never touch the deleted `/api/onboarding/*` routes.
+      if (url !== "/api/setup/status") {
+        throw new Error(`unexpected fetch: ${url}`);
       }
-      throw new Error(`unexpected fetch: ${url}`);
+      return json(statusBody, status);
     }) as unknown as typeof fetch;
 
-    window.history.replaceState(
-      null,
-      "",
-      "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
-    );
     const container = document.createElement("div");
     document.body.appendChild(container);
-    const root = createRoot(container);
+    const root: Root = createRoot(container);
     const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
+    return { container, root, navigate, calls, seen };
+  }
 
-      expect(calls).toEqual(["/"]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-      window.history.replaceState(null, "", "/");
-    }
-  });
-
-  test("a blocked desired-state step renders distinctly from a pending one", async () => {
-    // CL-7584: `blocked` (sidecar unavailable — the hub keeps retrying)
-    // must not read as plain `pending` (still working). A person staring
-    // at "Preparing your agent" while the sidecar is down deserves to see
-    // which pin is held up rather than an identical spinner row.
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/complete-setup") {
-        return json({
-          kind: "provisioning",
-          tenantSlug: "ada-user1",
-          deployed: [],
-          pending: ["assistant"],
-          steps: [
-            { name: "assistant", label: "Myra", status: "pending" },
-            {
-              name: "corbits-tools",
-              label: "Tool packages",
-              status: "blocked",
-            },
-          ],
-        });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    window.history.replaceState(
-      null,
-      "",
-      "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
-    );
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={noop}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      const blocked = container.querySelector('li[data-status="blocked"]');
-      const pending = container.querySelector('li[data-status="pending"]');
-      expect(blocked?.textContent).toContain("Tool packages");
-      expect(pending?.textContent).toContain("Myra");
-      // The blocked row carries retry copy the pending row does not.
-      expect(blocked?.textContent).toContain("retrying");
-      expect(pending?.textContent).not.toContain("retrying");
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-      window.history.replaceState(null, "", "/");
-    }
-  });
-
-  test("a connected return falls back to the credential phase, not a dead end, when completeSetup reports unseeded", async () => {
-    // The degraded-but-correct path: the pending-seed cookie can be
-    // missing (a loser duplicate-callback response the browser never
-    // applied, a cookie that already expired) even though the
-    // credential itself connected fine. `completeSetup` answers
-    // `unseeded` — not an error — and the wizard must land somewhere a
-    // person can actually finish from, never stuck on the spinner or a
-    // blank state.
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/complete-setup") {
-        return json({ kind: "unseeded" });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    window.history.replaceState(
-      null,
-      "",
-      "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
-    );
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={noop}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      // Lands back on the credential step, reading as unfinished — the
-      // same "finish setting up" copy a returning bench_unseeded member
-      // gets — with no error banner and no pre-satisfied skip option,
-      // since nothing here actually proved a working key is in place.
-      expect(container.textContent).toContain(
-        "Finish setting up your workbench",
-      );
-      expect(container.textContent).not.toContain(
-        "A working key is already in place",
-      );
-      expect(container.textContent).not.toContain("That key didn't work");
-      // Still offers the one-click connect and the paste-a-key form —
-      // never a dead end.
-      expect(container.textContent).toContain("OpenRouter");
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-      window.history.replaceState(null, "", "/");
-    }
-  });
-
-  test("a stale connect error is superseded when the account turns out to already be fully seeded", async () => {
-    // The belt to the idempotent-duplicate-callback fix's suspenders: a
-    // browser landing on the credential phase's stale `state_expired`
-    // error must not stay stuck there once a real check shows the
-    // connect actually succeeded — it lands on the same finished state
-    // as a fresh connect would.
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({
-          kind: "existing-member",
-          seeded: true,
-          tenantId: "ten_1",
-        });
-      }
-      // The page independently confirms `seeded: true` against a real
-      // stored credential (CL-6101 review) before hard-skipping — this
-      // scenario's premise (a real check shows the connect succeeded)
-      // means that confirmation succeeds.
-      if (url === "/api/tenants/ten_1/credentials") {
-        return json({
-          data: [{ id: "cred_1", status: "active" }],
-          nextCursor: null,
-        });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    window.history.replaceState(
-      null,
-      "",
-      "/onboarding?connect=openrouter&outcome=error&code=state_expired",
-    );
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      expect(calls).toEqual(["/"]);
-      expect(container.textContent).not.toContain("took too long");
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-      window.history.replaceState(null, "", "/");
-    }
-  });
-});
-
-describe("the provider picker's primary row and secondary expander", () => {
-  const renderCredentialPhase = () => {
-    window.history.replaceState(
-      null,
-      "",
-      "/onboarding?connect=openrouter&outcome=error&code=state_expired",
-    );
-    try {
-      return renderToStaticMarkup(
-        <App
-          path={ONBOARDING_PATH}
-          navigate={noop}
-          session={signedIn}
-          onSignedIn={noop}
-          onSignOut={noop}
-          onRetry={noop}
-        />,
-      );
-    } finally {
-      window.history.replaceState(null, "", "/");
-    }
-  };
-
-  test("the primary six render in the owner's exact order, ahead of the expander", () => {
-    const markup = renderCredentialPhase();
-    // Search only from the radiogroup onward — "OpenRouter" also appears
-    // in the one-click connect card above the picker.
-    const pickerMarkup = markup.slice(
-      markup.indexOf('aria-label="Inference provider"'),
-    );
-    const labels = [
-      "OpenAI",
-      "Anthropic",
-      "Google",
-      "xAI",
-      "OpenRouter",
-      "Opencode Zen",
-      "More providers",
-    ];
-    const positions = labels.map((label) => pickerMarkup.indexOf(label));
-
-    expect(positions.every((index) => index >= 0)).toBe(true);
-    const isStrictlyIncreasing = positions.every(
-      (position, i) => i === 0 || position > (positions[i - 1] ?? -Infinity),
-    );
-    expect(isStrictlyIncreasing).toBe(true);
-  });
-
-  test("groq, deepseek, and mistral still render, fully functional, inside the expander", () => {
-    const markup = renderCredentialPhase();
-    // Search only from the radiogroup onward — provider names also appear
-    // in the one-click connect cards' copy above the picker.
-    const pickerMarkup = markup.slice(
-      markup.indexOf('aria-label="Inference provider"'),
-    );
-    const moreIndex = pickerMarkup.indexOf("More providers");
-
-    for (const label of ["Groq", "DeepSeek", "Mistral"]) {
-      const labelIndex = pickerMarkup.indexOf(label);
-      expect(labelIndex).toBeGreaterThan(moreIndex);
-    }
-    // Still real radio buttons, not disabled or decorative.
-    expect(markup).toContain('role="radio"');
-  });
-
-  test("the expander is collapsed by default — anthropic is the initial selection", () => {
-    const markup = renderCredentialPhase();
-    expect(markup).toContain('class="onboarding-provider-more"');
-    expect(markup).not.toMatch(/class="onboarding-provider-more" open/);
-  });
-});
-
-describe("the Hugging Face connect card", () => {
-  const renderOnboardingAt = (url: string) => {
-    window.history.replaceState(null, "", url);
-    try {
-      return renderToStaticMarkup(
-        <App
-          path={ONBOARDING_PATH}
-          navigate={noop}
-          session={signedIn}
-          onSignedIn={noop}
-          onSignOut={noop}
-          onRetry={noop}
-        />,
-      );
-    } finally {
-      window.history.replaceState(null, "", "/");
-    }
-  };
-
-  test("sits below the OpenRouter card, above the key form", () => {
-    const markup = renderOnboardingAt(
-      "/onboarding?connect=huggingface&outcome=error&code=not_configured",
-    );
-
-    expect(markup).toContain("Sign in with Hugging Face");
-    expect(markup).toContain("/api/onboarding/oauth/huggingface/start");
-    expect(markup.indexOf("Connect with OpenRouter")).toBeLessThan(
-      markup.indexOf("Sign in with Hugging Face"),
-    );
-    expect(markup.indexOf("Sign in with Hugging Face")).toBeLessThan(
-      markup.indexOf("onboarding-credential-form"),
-    );
-    expect(markup).toContain("Paste a token instead");
-  });
-
-  test("a connected return shows the finishing-setup progress state, not a fabricated done checklist", () => {
-    const markup = renderOnboardingAt(
-      "/onboarding?connect=huggingface&outcome=connected&tenantSlug=ada-user1",
-    );
-
-    // CL-6780: finishing-setup prepares the agent; no workbench exists yet.
-    expect(markup).toContain("Preparing your agent");
-    expect(markup).not.toContain("Getting your workbench ready");
-    expect(markup).not.toContain("Setting up your workbench");
-    expect(markup).not.toContain("Your workbench is ready");
-  });
-
-  test("a connected return finishes setup and hands off to `/` once completeSetup reports the bench connected", async () => {
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/complete-setup") {
-        return json({
-          kind: "ready",
-          tenantSlug: "ada-user1",
-          deployed: ["echo", "assistant"],
-          pending: [],
-        });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    window.history.replaceState(
-      null,
-      "",
-      "/onboarding?connect=huggingface&outcome=connected&tenantSlug=ada-user1",
-    );
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      expect(calls).toEqual(["/"]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-      window.history.replaceState(null, "", "/");
-    }
-  });
-});
-
-describe("OnboardingPage resuming a bench_unseeded account", () => {
-  const noop = () => undefined;
-  const settle = () =>
-    act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
-
-  let container: HTMLDivElement | null = null;
-  let root: Root | null = null;
-
-  afterEach(() => {
-    if (root !== null) act(() => root?.unmount());
-    container?.remove();
-    container = null;
-    root = null;
-  });
-
-  test("an existing member with seeded: false lands on the credential step reading as unfinished, not pre-satisfied", async () => {
-    // No naming step (CL-6089) — provisioning fires automatically, under
-    // a default name, the moment the wizard mounts.
-    globalThis.fetch = (async () =>
-      json({
-        kind: "existing-member",
-        seeded: false,
-      })) as unknown as typeof fetch;
-
-    container = document.createElement("div");
-    document.body.appendChild(container);
-    root = createRoot(container);
+  async function settle(root: Root, element: ReactElement) {
     act(() => {
-      root?.render(
-        createElement(NavigationProvider, {
-          navigate: noop,
-          children: createElement(OnboardingPage, {
-            user: { id: "user_1", name: "Ada", email: "ada@example.com" },
-          }),
-        }),
-      );
+      root.render(element);
     });
-    await settle();
-
-    // The wizard reads this account as still needing a working
-    // credential — never "a working key is already in place", the copy
-    // a fully seeded existing member gets.
-    expect(container.textContent).toContain("Finish setting up your workbench");
-    expect(container.textContent).not.toContain(
-      "A working key is already in place",
-    );
-  });
-});
-
-describe("connecting a local Ollama instance from onboarding", () => {
-  const settle = () =>
-    act(async () => {
+    await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
-
-  function findByRoleText(
-    container: HTMLElement,
-    role: string,
-    text: string,
-  ): HTMLElement {
-    const match = Array.from(
-      container.querySelectorAll<HTMLElement>(`[role="${role}"]`),
-    ).find((el) => el.textContent?.includes(text));
-    if (match === undefined) {
-      throw new Error(`no [role="${role}"] element containing "${text}"`);
-    }
-    return match;
   }
 
-  function findButtonByText(container: HTMLElement, text: string): HTMLElement {
-    const match = Array.from(container.querySelectorAll("button")).find((el) =>
-      el.textContent?.includes(text),
-    );
-    if (match === undefined) {
-      throw new Error(`no button containing "${text}"`);
-    }
-    return match;
-  }
-
-  test("picking the Ollama card prefills its base URL, and submitting connects it and marks the tenant as having a usable model", async () => {
-    let completeRequestBody: unknown = null;
-    globalThis.fetch = (async (url: string, init?: RequestInit) => {
-      if (url === "/api/onboarding/provision") {
-        return json({ kind: "existing-member", seeded: false });
-      }
-      if (url === "/api/onboarding/complete") {
-        completeRequestBody = JSON.parse((init?.body as string) ?? "{}");
-        // The hub's own connect route is what actually marks the tenant
-        // as having a usable model (persisting the credential + seeding
-        // its catalog) — this response is what that route answers once
-        // it has. The onboarding page's job, proven below, is sending
-        // the URL as `baseURL` with the fixed Ollama placeholder secret,
-        // and moving on once this comes back.
-        return json({
-          kind: "ready",
-          tenantId: "ten_1",
-          tenantSlug: "ada-user1",
-          deployed: ["echo"],
-          pending: [],
-        });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await settle();
-
-      act(() => {
-        findByRoleText(container, "radio", "Ollama (local)").click();
-      });
-
-      const urlInput = container.querySelector<HTMLInputElement>(
-        "#onboarding-provider-url",
-      );
-      expect(urlInput).not.toBeNull();
-      expect(urlInput?.value).toBe("http://localhost:11434");
-
-      act(() => {
-        findButtonByText(container, "Connect this address").click();
-      });
-      await settle();
-
-      expect(completeRequestBody).toEqual({
-        provider: "ollama",
-        apiKey: OLLAMA_PLACEHOLDER_SECRET,
-        baseURL: "http://localhost:11434",
-      });
-      expect(calls).toEqual(["/"]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-});
-
-describe("skipping the onboarding credential step", () => {
-  const settle = () =>
-    act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
-
-  function findButtonByText(container: HTMLElement, text: string): HTMLElement {
-    const match = Array.from(container.querySelectorAll("button")).find((el) =>
-      el.textContent?.includes(text),
-    );
-    if (match === undefined) {
-      throw new Error(`no button containing "${text}"`);
-    }
-    return match;
-  }
-
-  test("skipping hands off to the workbench without connecting a provider", async () => {
-    // A bench with no provider ready yet — this is the anticipated
-    // `bench_unseeded` state, not an error (see `handleSkip`'s own
-    // comment): skipping must never call the credential-complete route.
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({ kind: "existing-member", seeded: false });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await settle();
-
-      act(() => {
-        findButtonByText(container, "Skip for now").click();
-      });
-
-      expect(calls).toEqual(["/"]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-});
-
-// CL-7584: the finishing-setup view renders the hub's own desired-state
-// step list while agents are still coming online, and a ready answer
-// collapses it — the page hands off to `/` without ever showing one.
-describe("CL-7584 desired-state steps in finishing-setup", () => {
-  const settle = (ms = 10) =>
-    act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, ms));
-    });
-
-  let container: HTMLDivElement | null = null;
-  let root: Root | null = null;
-
-  afterEach(() => {
-    if (root !== null) act(() => root?.unmount());
-    container?.remove();
-    container = null;
-    root = null;
-  });
-
-  function renderFinishingSetup(navigate: (path: string) => void) {
-    window.history.replaceState(
-      null,
-      "",
-      "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
-    );
-    container = document.createElement("div");
-    document.body.appendChild(container);
-    root = createRoot(container);
-    act(() => {
-      root?.render(
+  function gateElement(navigate: (to: string) => void) {
+    return (
+      <ThemeProvider>
         <App
           path={ONBOARDING_PATH}
           navigate={navigate}
@@ -1580,65 +315,69 @@ describe("CL-7584 desired-state steps in finishing-setup", () => {
           onSignedIn={noop}
           onSignOut={noop}
           onRetry={noop}
-        />,
-      );
-    });
+        />
+      </ThemeProvider>
+    );
   }
 
-  test("renders the doc-labeled steps from the status body while pins are pending", async () => {
-    let calls = 0;
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/complete-setup") {
-        calls += 1;
-        return json({
-          kind: "provisioning",
-          tenantId: "ten_1",
-          tenantSlug: "ada-user1",
-          setupAgentReady: false,
-          deployed: [],
-          pending: ["assistant"],
-          steps: [
-            { name: "assistant", label: "Myra", status: "pending" },
-            {
-              name: "writing-system-prompts",
-              label: "writing-system-prompts",
-              status: "pending",
-            },
-          ],
-        });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
+  test("an empty hub renders the setup-pending panel with a recheck, and never navigates", async () => {
+    const { container, root, navigate, calls, seen } = renderGateAtOnboarding({
+      setupRequired: true,
+      userCount: 1,
+      tenantCount: 0,
+    });
+    try {
+      await settle(root, gateElement(navigate));
 
-    renderFinishingSetup(noop);
-    await settle(50);
-
-    expect(calls).toBeGreaterThan(0);
-    expect(container?.querySelector(".onboarding-steps")).not.toBeNull();
-    expect(container?.textContent).toContain("Myra");
-    expect(container?.querySelector('[data-status="pending"]')).not.toBeNull();
+      expect(container.textContent).toContain("Set up your workbench");
+      expect(container.textContent).toContain("Check again");
+      expect(calls).toEqual([]);
+      expect(seen).toEqual(["/api/setup/status"]);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
   });
 
-  test("a ready answer collapses the steps and hands off to /", async () => {
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/complete-setup") {
-        return json({
-          kind: "ready",
-          tenantId: "ten_1",
-          tenantSlug: "ada-user1",
-          setupAgentReady: true,
-          deployed: ["assistant"],
-          pending: [],
-          steps: [{ name: "assistant", label: "Myra", status: "present" }],
-        });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
+  test("a hub with tenants bounces straight into the shell", async () => {
+    const { container, root, navigate, calls, seen } = renderGateAtOnboarding({
+      setupRequired: false,
+      userCount: 1,
+      tenantCount: 1,
+    });
+    try {
+      await settle(root, gateElement(navigate));
 
-    const { navigate, calls } = trackedNavigate();
-    renderFinishingSetup(navigate);
-    await settle(50);
+      expect(calls).toEqual(["/"]);
+      expect(seen).toEqual(["/api/setup/status"]);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
 
-    expect(calls).toEqual(["/"]);
+  test("a broken status read blocks with retry instead of the shell", async () => {
+    const { container, root, navigate, calls } = renderGateAtOnboarding(
+      {
+        error: {
+          code: "setup_status_failed",
+          userMessage:
+            "Checking your workbench hit a snag. Try again in a moment.",
+          refId: "r1",
+        },
+      },
+      500,
+    );
+    try {
+      await settle(root, gateElement(navigate));
+
+      expect(container.textContent).toContain("Couldn't check your workbench");
+      expect(container.textContent).toContain("Try again");
+      expect(container.textContent).toContain("r1");
+      expect(calls).toEqual([]);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
   });
 });

@@ -54,10 +54,11 @@ function Root() {
   );
 
   // The first-login hook: once per session that reaches signed-in, ask
-  // the hub whether this is a session with zero principals anywhere.
-  // Without a display name the hub does not mint a bench — it returns
-  // needs-onboarding so we route into the naming wizard. Existing members
-  // cost one read. A failure blocks the shell entirely.
+  // the hub's native setup-status route whether any bench exists yet. An
+  // empty hub reports setup-required so we route into the setup screen;
+  // a hub with tenants loads the shell normally. Read-only on purpose
+  // (CL-8112) — this never mints anything. A failure blocks the shell
+  // entirely rather than leaving the user silently benchless.
   const [provisioningError, setProvisioningError] = useState<{
     message: string;
     refId?: string | undefined;
@@ -70,7 +71,7 @@ function Root() {
     setProvisioningError(null);
     void triggerFirstLoginProvisioning().then((result) => {
       if (cancelled) return;
-      if (result.kind === "needs-onboarding" || result.kind === "provisioned") {
+      if (result.kind === "needs-onboarding") {
         navigate(ONBOARDING_PATH);
       } else if (result.kind === "error") {
         setProvisioningError({ message: result.message, refId: result.refId });

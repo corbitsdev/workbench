@@ -38,7 +38,6 @@ describe("credentialCipherFrom", () => {
       const message = (error as Error).message;
       expect(message).toContain("CREDENTIAL_ENCRYPTION_KEY");
       expect(message).toContain("webhook-trigger signing secrets");
-      expect(message).toContain("onboarding's OAuth PKCE connect state");
       expect(message).toContain("openssl rand -hex 32");
       expect(message).toContain("ALLOW_PLAINTEXT_SECRETS");
     }

@@ -32,7 +32,7 @@ import { useEffect, useState } from "react";
 import { listAllWorkbenches, WorkbenchLoadingState } from "@corbits/chat-ui";
 import { describeApiError } from "@corbits/api-query";
 
-import { fetchAgentReadiness, hasActiveCredential } from "../onboarding";
+import { hasActiveCredential } from "../onboarding";
 import { listAgentDefinitions } from "../agents-api";
 import { openAgentDmChat } from "../agent-dm-launch";
 import { findMyraDefinition } from "../myra-workbench";
@@ -103,45 +103,47 @@ export function HomeRoute({
 
     // Zero workbenches: wait for Myra's own definition to exist, then
     // open her DM the same way "Talk to Myra" does — never `/new`.
-    // "She can't start yet" and "here is her chat" are different
-    // messages, and only the readiness check plus a real definition
-    // tell them apart. Without a credential the drain never starts
-    // (CL-6780), so a not-ready status with no credential is an honest
-    // next step, not a forever spin on "getting ready".
+    // Readiness is Myra's deployed definition itself (CL-8112 T1 cut the
+    // deleted `/api/onboarding/provisioning-status` read, so this flow
+    // makes zero `/api/onboarding/*` requests): a definition means "she
+    // can start", no definition means keep waiting. Without a credential
+    // the drain never starts (CL-6780), so no definition with no
+    // credential is an honest next step, not a forever spin on
+    // "getting ready".
+    // TODO(CL-8112-T6/T7): read native readiness here once T6/T7 builds
+    // it, instead of the definition's existence.
     const awaitFirstWorkbench = () => {
-      void fetchAgentReadiness(selectedTenantId).then((readiness) => {
-        if (cancelled) return;
-        if (readiness.kind === "error") {
-          setState({ kind: "error", message: readiness.message });
-          return;
-        }
-        if (readiness.kind === "ready" || readiness.kind === "chat-ready") {
-          void listAgentDefinitions(selectedTenantId).then((definitions) => {
-            if (cancelled) return;
-            const myra = findMyraDefinition(definitions);
-            if (myra === undefined) {
-              waitAndRetry();
-              return;
-            }
-            void openAgentDmChat(selectedTenantId, myra.id, navigate);
-          });
-          return;
-        }
-        void hasActiveCredential(selectedTenantId).then((probe) => {
+      void listAgentDefinitions(selectedTenantId).then(
+        (definitions) => {
           if (cancelled) return;
-          // Only a confirmed miss means "connect a provider". A probe
-          // failure must not pretend no key exists (CL-6868) — keep
-          // waiting and retry; the key may already be connected.
-          if (probe.kind === "none") {
-            setState({ kind: "needs-provider" });
+          const myra = findMyraDefinition(definitions);
+          if (myra !== undefined) {
+            void openAgentDmChat(selectedTenantId, myra.id, navigate);
             return;
           }
-          setState((current) =>
-            current.kind === "slow" ? current : { kind: "waiting-for-agent" },
-          );
-          waitAndRetry();
-        });
-      });
+          void hasActiveCredential(selectedTenantId).then((probe) => {
+            if (cancelled) return;
+            // Only a confirmed miss means "connect a provider". A probe
+            // failure must not pretend no key exists (CL-6868) — keep
+            // waiting and retry; the key may already be connected.
+            if (probe.kind === "none") {
+              setState({ kind: "needs-provider" });
+              return;
+            }
+            setState((current) =>
+              current.kind === "slow" ? current : { kind: "waiting-for-agent" },
+            );
+            waitAndRetry();
+          });
+        },
+        (cause: unknown) => {
+          if (cancelled) return;
+          setState({
+            kind: "error",
+            message: describeApiError(cause, "preparing your agent"),
+          });
+        },
+      );
     };
 
     void listAllWorkbenches(selectedTenantId).then(
