@@ -1,10 +1,10 @@
 // The one sidebar. Header: the brand mark, then create + search. Body:
 // Agents and Channels — nothing page-scoped ever renders here. Footer: the
 // first-run rail is Routines, Files, Skills, Agents, Plugins; Insights
-// joins only when the existing usage reads return real items (never a
+// joins only when the existing run reads return real items (never a
 // fabricated row, never a new analytics store). Below the rail:
 // the account row — avatar + name, the whole row is the trigger for a menu
-// that pops upward with weekly usage, settings, feedback, and log out.
+// that pops upward with settings, feedback, and log out.
 // Always present; there is no collapse affordance and no second nav column.
 // Approvals belong in the conversation, not as a standing band here.
 //
@@ -32,7 +32,6 @@ import {
   SidebarPanelFooter,
 } from "@corbits/react-ui";
 import {
-  CaretRight,
   ChartBar,
   ChatCircleDots,
   FolderOpen,
@@ -45,18 +44,13 @@ import {
   SlidersHorizontal,
   SquaresFour,
 } from "@corbits/icons";
-import { useMemo } from "react";
 
 import { CHAT_STRINGS, avatarClassForPrincipal } from "@corbits/chat-ui";
-import {
-  createInsightsWindow,
-  usageChromeLabel,
-} from "@corbits/insights/client";
 
 import webPackage from "../../package.json";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
-import { OverallUsageSchema, insightsUsagePath } from "../insights-api";
+import { TopLevelRunsSchema, insightsTopLevelRunsPath } from "../insights-api";
 import {
   matchesRoute,
   MISSION_CONTROL_PATH,
@@ -72,41 +66,6 @@ import { WorkbenchList } from "./workbench-list";
  * from `git remote`) rather than a hardcoded org/repo guess. */
 const FEEDBACK_URL = `${webPackage.repository.url}/issues`;
 
-/**
- * One-line 7-day cost/token summary, read off the same cheap `/usage`
- * route the Insights landing tiles already use (CL-6132). No tenant, no
- * data yet, or a load error all render the same honest fallback — a plain
- * "Weekly usage" link with no number — never a fabricated figure. Ready
- * zero usage uses `usageChromeLabel` (`$0.00`, never `$0.00 · 0 tok`).
- */
-function WeeklyUsageMenuItem({
-  onNavigate,
-}: {
-  readonly onNavigate: (to: string) => void;
-}) {
-  const { selectedTenantId } = useBench();
-  const range = useMemo(() => createInsightsWindow(), []);
-  const usageQuery = useAPIQuery(
-    selectedTenantId === null ? "" : insightsUsagePath(selectedTenantId, range),
-    OverallUsageSchema,
-  );
-  const usage = usageQuery.kind === "ready" ? usageQuery.data : null;
-  const summary = usage === null ? null : usageChromeLabel(usage);
-
-  return (
-    <MenuItem
-      onSelect={() => onNavigate("/insights")}
-      className="shell-sidebar-account-menu-usage"
-    >
-      <span>Weekly usage</span>
-      <span className="shell-sidebar-account-menu-usage-value">
-        {summary}
-        <CaretRight />
-      </span>
-    </MenuItem>
-  );
-}
-
 export function Sidebar({
   path,
   user,
@@ -119,12 +78,12 @@ export function Sidebar({
   readonly onSignOut: () => void;
 }) {
   const { selectedTenantId } = useBench();
-  const range = useMemo(() => createInsightsWindow(), []);
-  const usageQuery = useAPIQuery(
-    selectedTenantId === null ? "" : insightsUsagePath(selectedTenantId, range),
-    OverallUsageSchema,
+  const runsQuery = useAPIQuery(
+    selectedTenantId === null ? "" : insightsTopLevelRunsPath(selectedTenantId),
+    TopLevelRunsSchema,
   );
-  const showInsights = usageQuery.kind === "ready" && usageQuery.data.turns > 0;
+  const showInsights =
+    runsQuery.kind === "ready" && runsQuery.data.data.length > 0;
 
   return (
     <SidebarPanel
@@ -177,8 +136,8 @@ export function Sidebar({
       <SidebarPanelFooter>
         {/* Footer order: Routines, Files, Skills, Agents, Plugins, then
             Insights only when that existing read proves real
-            items, then the account row anchors everything else (weekly
-            usage, Settings, Log out) in its pop-up menu — a single footer,
+            items, then the account row anchors everything else (settings,
+            feedback, log out) in its pop-up menu — a single footer,
             never two stacked rows. Routines (CL-6362) is global-only here
             — no per-workbench routines chrome remains. */}
         <button
@@ -265,7 +224,6 @@ export function Sidebar({
               </button>
             </MenuTrigger>
             <MenuContent align="start" side="top">
-              <WeeklyUsageMenuItem onNavigate={onNavigate} />
               <MenuItem asChild>
                 <a href={FEEDBACK_URL} target="_blank" rel="noreferrer">
                   <ChatCircleDots /> Send Feedback

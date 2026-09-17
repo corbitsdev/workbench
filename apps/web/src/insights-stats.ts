@@ -8,39 +8,22 @@ import {
   withListingAbandoned,
 } from "@corbits/workflows/client";
 
-import type { InsightsRun, RunTraceSpan } from "./insights-api";
+import type { InsightsRun } from "./insights-api";
 import type { ScheduledWorkflowDefinition } from "./routines-api";
 
-export type TraceStats = {
-  readonly steps: number;
-  readonly completed: number;
-  readonly failed: number;
-  readonly durationMs: number;
-};
+/** Compact integer; null/undefined → em-dash. Lifted out of the deleted
+ * `@corbits/insights/client` (CL-8160) — this app's own copy since it has
+ * no other browser-safe home now that the package is gone. */
+export function formatCount(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  return value.toLocaleString();
+}
 
-/**
- * Run-detail stat strip (steps/completed/failed/duration) is derived from
- * the trace's own spans — never fabricated when the trace is absent or
- * empty. Returns null when there is nothing to derive from.
- */
-export function computeTraceStats(
-  spans: readonly RunTraceSpan[] | null,
-): TraceStats | null {
-  if (spans === null || spans.length === 0) return null;
-  let completed = 0;
-  let failed = 0;
-  for (const span of spans) {
-    if (span.phase === "ok") completed += 1;
-    if (span.phase === "failed") failed += 1;
-  }
-  const start = Math.min(...spans.map((s) => s.start));
-  const end = Math.max(...spans.map((s) => s.end));
-  return {
-    steps: spans.length,
-    completed,
-    failed,
-    durationMs: Math.max(0, end - start),
-  };
+/** "1.2s" / "3.4m" duration label — same lift as `formatCount` above. */
+export function durationLabel(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${(ms / 60_000).toFixed(1)}m`;
 }
 
 export type InsightsStats = {
@@ -148,21 +131,6 @@ export function groupRunsByDefinition(
   return groups.sort((a, b) =>
     (b.runs[0]?.createdAt ?? "").localeCompare(a.runs[0]?.createdAt ?? ""),
   );
-}
-
-export function filterRunsByCreatedAt(
-  runs: readonly InsightsRun[],
-  fromIso: string,
-  toIso: string,
-): readonly InsightsRun[] {
-  const fromMs = Date.parse(fromIso);
-  const toMs = Date.parse(toIso);
-  if (Number.isNaN(fromMs) || Number.isNaN(toMs)) return [];
-  return runs.filter((run) => {
-    const t = Date.parse(run.createdAt);
-    if (Number.isNaN(t)) return false;
-    return t >= fromMs && t <= toMs;
-  });
 }
 
 export function computeInsightsStats(

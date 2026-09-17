@@ -2,10 +2,12 @@
 // decision, what's running, and a way back into recent context. A new
 // top-level route (`/mission-control`), never `/` — `/` stays the Myra
 // land-hop redirect (see routes.tsx's header comment). Every panel here is
-// backed by a query already used elsewhere in this app (pending
-// approvals, top-level runs, insights activity); nothing on this page is
-// invented. A panel with no honest data source renders an empty state
-// naming what's missing instead of a fabricated number.
+// backed by a query already used elsewhere in this app (pending approvals,
+// top-level runs); nothing on this page is invented. A panel with no honest
+// data source renders an empty state naming what's missing instead of a
+// fabricated number. CL-8160 dropped the "Runs today" / "Spend today" KPI
+// tiles and the "This week" panel — both read packages/insights routes with
+// no stock equivalent.
 
 import {
   Badge,
@@ -27,10 +29,9 @@ import {
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
 import { ChatCircleDots, Plus, Robot } from "@corbits/icons";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { formatUsd } from "@corbits/insights/client";
 import { CHAT_STRINGS, type Workbench } from "@corbits/chat-ui";
 import {
   runOutcomeStatus,
@@ -38,10 +39,8 @@ import {
   withListingAbandoned,
 } from "@corbits/workflows/client";
 
-import { approveApproval, rejectApproval, useAPIQuery } from "../api";
+import { approveApproval, rejectApproval } from "../api";
 import { useBench } from "../bench-context";
-import { ActivityResponseSchema, insightsActivityPath } from "../insights-api";
-import { Link } from "../navigation";
 import {
   usePendingApprovals,
   type PendingApproval,
@@ -230,17 +229,6 @@ export function MissionControlRoute({
   const { selectedTenantId: tenantId } = useBench();
   const approvalsQuery = usePendingApprovals(tenantId);
   const activity = useBenchActivity(tenantId);
-  const activityRange = useMemo(
-    () => ({
-      from: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-      to: new Date().toISOString(),
-    }),
-    [],
-  );
-  const insightsActivity = useAPIQuery(
-    tenantId === null ? "" : insightsActivityPath(tenantId, activityRange),
-    ActivityResponseSchema,
-  );
 
   const pendingApprovals =
     approvalsQuery.kind === "ready" ? approvalsQuery.data : null;
@@ -267,27 +255,6 @@ export function MissionControlRoute({
           navigate,
         )
       : [];
-
-  const days =
-    insightsActivity.kind === "ready" ? insightsActivity.data.days : [];
-  const insightsReady = insightsActivity.kind === "ready";
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const today = days.find((day) => day.day === todayKey) ?? null;
-  const priorDays = days.filter((day) => day.day !== todayKey);
-  const avgTurns =
-    priorDays.length > 0
-      ? priorDays.reduce((sum, day) => sum + day.turns, 0) / priorDays.length
-      : null;
-  // Ready but no today row means zero activity today, not "unknown". Dash
-  // only while the activity query is still settling (or cost rates unknown).
-  const runsToday = insightsReady ? (today?.turns ?? 0) : null;
-  const todaySpend = !insightsReady
-    ? null
-    : today === null
-      ? 0
-      : today.byModel.some((model) => model.costUsd === null)
-        ? null
-        : today.byModel.reduce((sum, model) => sum + (model.costUsd ?? 0), 0);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -327,20 +294,6 @@ export function MissionControlRoute({
                     ? `oldest ${formatRelativeTime(oldestWaitingAt)}`
                     : "all caught up"
                 }
-              />
-              <StatGridItem
-                label="Runs today"
-                value={dash(runsToday)}
-                sub={
-                  avgTurns !== null
-                    ? `avg ${Math.round(avgTurns)}/day`
-                    : "quiet so far"
-                }
-              />
-              <StatGridItem
-                label="Spend today"
-                value={formatUsd(todaySpend)}
-                sub="so far today"
               />
             </StatGrid>
 
@@ -518,48 +471,6 @@ export function MissionControlRoute({
                       ),
                     )}
                   </div>
-                ) : null}
-              </section>
-
-              <section className="mission-control-panel">
-                <div className="mission-control-panel-header">
-                  <h2>This week</h2>
-                  <Link to="/insights" className="mission-control-hint-link">
-                    Insights →
-                  </Link>
-                </div>
-                {insightsActivity.kind === "loading" ? (
-                  <Skeleton className="h-16 w-full" />
-                ) : null}
-                {insightsActivity.kind === "error" ? (
-                  <p className="mission-control-empty-note">
-                    Couldn't load this week's activity.
-                  </p>
-                ) : null}
-                {insightsActivity.kind === "ready" ? (
-                  <p className="mission-control-week-summary">
-                    {days
-                      .reduce((sum, day) => sum + day.turns, 0)
-                      .toLocaleString()}{" "}
-                    runs ·{" "}
-                    {formatUsd(
-                      days.some((day) =>
-                        day.byModel.some((model) => model.costUsd === null),
-                      )
-                        ? null
-                        : days.reduce(
-                            (sum, day) =>
-                              sum +
-                              day.byModel.reduce(
-                                (modelSum, model) =>
-                                  modelSum + (model.costUsd ?? 0),
-                                0,
-                              ),
-                            0,
-                          ),
-                    )}{" "}
-                    spend
-                  </p>
                 ) : null}
               </section>
             </aside>

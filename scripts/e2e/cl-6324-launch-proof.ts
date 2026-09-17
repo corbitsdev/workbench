@@ -617,32 +617,6 @@ async function main(): Promise<void> {
     return (raw as { runIds: string[] }).runIds;
   }
 
-  /**
-   * The number of completed per-message brackets the hub has durably
-   * recorded for this tenant. `@corbits/insights`' latency tracker opens
-   * a row on the `message.run.started` AGENT event and commits it on
-   * `message.run.ended`, so a non-zero sample count is durable,
-   * HTTP-observable evidence that the bracket both opened and closed —
-   * the only such evidence a folded `step`-mode turn produces.
-   */
-  async function completedTurnBrackets(): Promise<number> {
-    const res = await api(
-      hub.baseUrl,
-      "GET",
-      `/api/tenants/${tenant.tenantId}/insights/latency`,
-      undefined,
-      admin.cookies,
-    );
-    expectStatus("read the turn-latency summary", res, 200);
-    const total = (res.data as { total?: { samples?: unknown } }).total;
-    if (typeof total?.samples !== "number") {
-      throw new Error(
-        `the latency summary carries no total.samples: ${JSON.stringify(res.data)}`,
-      );
-    }
-    return total.samples;
-  }
-
   async function listAgentMessages(): Promise<{ id: string; text: string }[]> {
     const res = await api(
       hub.baseUrl,
@@ -1123,40 +1097,6 @@ async function main(): Promise<void> {
       "In one short sentence, what can you help me with?",
       "proof 3",
     ),
-  );
-
-  // The step shape's per-message bracket, asserted where a real turn has
-  // definitely happened. `@corbits/insights`' latency tracker opens its
-  // row on `message.run.started` and commits it on `message.run.ended`,
-  // so a committed sample IS the agent event reaching the hub — durably,
-  // over HTTP — which is the honest step-mode analogue of the section
-  // shape's `RunStarted`.
-  await hop(
-    "PROOF 2 (step mode) — the turn's message.run.started/ended bracket is durably recorded",
-    async () => {
-      // The latency summary is grant-gated and the seed's grant set does
-      // not cover it; planting it here keeps this a real read of the real
-      // route rather than a skipped check.
-      await plantGrant("insights:*", "read");
-
-      const deadline = Date.now() + 60_000;
-      for (;;) {
-        const brackets = await completedTurnBrackets();
-        if (brackets > 0) {
-          console.log(
-            `  TRANSCRIPT — completed per-message brackets: ${String(brackets)}`,
-          );
-          return;
-        }
-        if (Date.now() > deadline) {
-          throw new Error(
-            "a real reply landed but insights recorded zero turn-latency " +
-              "samples, so no message.run.started/ended pair reached the hub",
-          );
-        }
-        await Bun.sleep(2000);
-      }
-    },
   );
 
   // ---- proof 4: kill the sidecar mid-turn, restart, keep talking ----

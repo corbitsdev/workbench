@@ -36,7 +36,7 @@
     "@corbits/granola-call-workflow": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
     "@corbits/inbox": "workspace:*",
-    "@corbits/insights": "workspace:*",
+    "@corbits/inference-catalog": "workspace:*",
     "@corbits/last-30-days-research-workflow": "workspace:*",
     "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#fea6211e42fddfc87e8e1755c219c437e45a7d62",
     "@corbits/mcp-tools": "workspace:*",
