@@ -1,14 +1,18 @@
 // The `cron` schema's one table: a tenant's saved cron schedules. Kept on
 // its own Postgres schema, with a real FK back to Interchange's `tenant`
 // table, per this repo's "custom tables live on their own schema" rule.
-import { pgSchema, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, pgSchema, text, timestamp } from "drizzle-orm/pg-core";
 import postgres from "postgres";
+
+const hostTenant = pgTable("tenant", { id: text("id").primaryKey() });
 
 export const cronSchema = pgSchema("cron");
 
 export const cronScheduleTable = cronSchema.table("schedule", {
   id: text("id").primaryKey(),
-  tenantId: text("tenant_id").notNull(),
+  tenantId: text("tenant_id")
+    .notNull()
+    .references(() => hostTenant.id, { onDelete: "cascade" }),
   expression: text("expression").notNull(),
   toAddress: text("to_address").notNull(),
   subject: text("subject").notNull(),
