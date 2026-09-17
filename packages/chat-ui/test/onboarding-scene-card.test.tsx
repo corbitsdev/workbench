@@ -99,8 +99,9 @@ function currentStepAria(el: HTMLElement): string | null {
 }
 
 /** A host whose live state is whatever the test says it is, pushed once
- * on mount — the same read-then-subscribe contract the real
- * `createChatConnectGithubActions` binds. */
+ * on mount — the read-then-subscribe contract the `ConnectGithubActions`
+ * port specifies (no host binds it since hub-zero T3 deleted the
+ * workbench-scoped mount, CL-8114). */
 function fixedStateActions(state: ConnectGithubQuery): ConnectGithubActions {
   return {
     getConnectState: () => Promise.resolve(state),

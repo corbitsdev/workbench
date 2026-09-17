@@ -81,9 +81,11 @@ const ALLOWLIST: readonly {
     tables: [
       "webhook_trigger",
       // CL-7242: a short-lived lease serializing the GitHub connect
-      // card's start-reviewing step, entirely workbench-owned state
-      // with no relationship to Interchange's own `grant` table — see
-      // repo-review-lease.ts's doc comment for why the concurrency
+      // card's former start-reviewing step (workbench-scoped mount
+      // deleted in hub-zero T3, CL-8114; the lease still backs the
+      // native `startReviewingRepos` helper), entirely workbench-owned
+      // state with no relationship to Interchange's own `grant` table —
+      // see repo-review-lease.ts's doc comment for why the concurrency
       // fix lives here rather than as any change to Interchange's
       // schema.
       "repo_review_lease",

@@ -2,8 +2,9 @@
 // `startReviewingRepos` calls for the same repo -- against real,
 // database-backed ports rather than plain fakes. `hasRepoGrant`/
 // `mintRepoGrant` here fake a plain read-then-insert against the
-// `grant` table directly, standing in for `apps/hub/src/index.ts`'s
-// real binding (HTTP calls through `native-repo-grants.ts`, see
+// `grant` table directly, standing in for what `apps/hub/src/index.ts`'s
+// real binding did (HTTP calls through `native-repo-grants.ts`, deleted
+// with the workbench-scoped mount in hub-zero T3, CL-8114 -- see the
 // CL-7242 follow-up "Mint workbench tenants and repo grants via
 // Interchange HTTP") without a live hub-api server -- what this test
 // actually proves is that `startReviewingRepos`' lease serializes any

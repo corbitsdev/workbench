@@ -61,7 +61,6 @@ apps/web/src/block-response-actions.ts	1	if (cause instanceof ChatApiError && ca
 apps/web/src/block-response-actions.ts	2	if (cause instanceof ChatApiError && cause.status === 403) {
 apps/web/src/command-palette-recents.ts	1	// Storage disabled or full — recents just stop persisting this tab.
 apps/web/src/command-palette-recents.ts	1	return null;
-apps/web/src/connect-github-actions.ts	1	const message =
 apps/web/src/connect-service-actions.ts	1	const message =
 apps/web/src/connect-service-actions.ts	1	return { ok: false, message: "Couldn't connect. Try again." };
 apps/web/src/connect-service-actions.ts	2	const message =

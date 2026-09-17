@@ -810,48 +810,17 @@ export async function bootMyraTarget(
         },
       });
 
-      // The rest of the definition's onboarding walkthrough, driven
-      // here rather than by a person clicking the in-room card: read the
-      // connect card's live state, then start reviewing every listed repo —
-      // which mints the per-repo grant and `webhook_trigger` row the
-      // fire-webhook step needs.
-      let startedTriggerCount = 0;
+      // Hub-zero T3 (CL-8114): the hub's workbench-scoped GitHub
+      // state/start-reviewing routes are deleted with no native
+      // equivalent yet, so this harness no longer drives the card's
+      // repo-pick walkthrough — the per-repo grant and
+      // `webhook_trigger` rows the fire-webhook step needs now come
+      // from a connections follow-up. The install honestly reports
+      // zero started triggers until then.
+      const startedTriggerCount = 0;
       if (definition.plugins.required.includes("github")) {
-        const stateRes = await api(
-          hub.baseUrl,
-          "GET",
-          `/api/tenants/${seeded.tenantId}/workbenches/${workbenchId}/github/state`,
-          undefined,
-          cookies,
-        );
-        expectStatus("read the connect card's GitHub state", stateRes, 200);
-        const state = stateRes.data as {
-          kind: string;
-          repos?: { id: string }[];
-        };
-        if (state.kind !== "connected") {
-          throw new Error(
-            `installTemplate("${templateId}"): expected the GitHub connect ` +
-              `card to read connected, got: ${JSON.stringify(stateRes.data)}`,
-          );
-        }
-        const repoIds = (state.repos ?? []).map((repo) => repo.id);
-        const startRes = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${seeded.tenantId}/workbenches/${workbenchId}/github/start-reviewing`,
-          { repoIds },
-          cookies,
-        );
-        expectStatus("start reviewing the listed repos", startRes, 200);
-        const started = (startRes.data as { startedTriggerCount?: unknown })
-          .startedTriggerCount;
-        if (typeof started !== "number") {
-          throw new Error(
-            `start-reviewing answered without a startedTriggerCount: ${JSON.stringify(startRes.data)}`,
-          );
-        }
-        startedTriggerCount = started;
+        // TODO(connections-follow-up): rebind the repo-pick walkthrough
+        // to the native tenant-scoped repo-review setup once it exists.
       }
 
       return {
