@@ -2,11 +2,9 @@
 // verifies the Postgres in DATABASE_URL is reachable, and starts the hub.
 // The hub provisions sidecars on demand. Prerequisite failures name the
 // actual problem and the fix.
-import { existsSync, statSync, watch } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join, resolve } from "node:path";
-import { readHubConfig, type HubConfig } from "../apps/hub/src/config.ts";
 import { setupDatabase } from "./db-setup.ts";
 import { localDevMemoryEmbedEnv } from "./setup-memory.ts";
 
@@ -30,18 +28,52 @@ function requireEnvFile(): void {
   );
 }
 
-function validateConfig(): HubConfig {
-  try {
-    return readHubConfig(process.env);
-  } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
+/**
+ * The slice of the hub's own env config this script needs to validate
+ * before spawning anything. The hub itself (apps/hub/src/server.ts)
+ * reads process.env directly now, upstream-style — this is just the
+ * subset dev.ts needs for its own preflight checks.
+ */
+interface DevConfig {
+  databaseUrl: string;
+  baseUrl: string;
+}
+
+function validateConfig(): DevConfig {
+  const databaseUrl = process.env["DATABASE_URL"];
+  if (databaseUrl === undefined || databaseUrl === "") {
+    fail("DATABASE_URL is not set. Set it in .env; see .env.example.");
   }
+  const port = process.env["PORT"] ?? "3000";
+  const baseUrl = process.env["BASE_URL"] ?? `http://localhost:${port}`;
+  for (const [name, hex] of [
+    ["CREDENTIAL_ENCRYPTION_KEY", process.env["CREDENTIAL_ENCRYPTION_KEY"]],
+    ["PRINCIPAL_KEY_ENCRYPTION_KEY", process.env["PRINCIPAL_KEY_ENCRYPTION_KEY"]],
+  ] as const) {
+    if (hex === undefined || hex.trim() === "") {
+      fail(`${name} is not set. Set it in .env; see .env.example.`);
+    }
+  }
+  // apps/hub/src/server.ts reads DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME
+  // individually (upstream's own shape), while every other script in this
+  // repo (migrations, the memory/artifacts planes) uses the single
+  // DATABASE_URL connection string. Derive the former from the latter here
+  // so .env only needs to state one URL.
+  const url = new URL(databaseUrl);
+  mergeHubEnv({
+    DB_HOST: url.hostname,
+    DB_PORT: url.port === "" ? "5432" : url.port,
+    DB_USER: decodeURIComponent(url.username || process.env["USER"] || "postgres"),
+    DB_PASSWORD: decodeURIComponent(url.password),
+    DB_NAME: url.pathname.replace(/^\//, ""),
+  });
+  return { databaseUrl, baseUrl };
 }
 
 // A DATABASE_URL without a username makes the postgres driver fall back to
 // the USER environment variable; without that either, the connection dies
 // deep inside the hub as a Postgres role error. Catch it before boot.
-function requireDatabaseUser(config: HubConfig): void {
+function requireDatabaseUser(config: DevConfig): void {
   if (new URL(config.databaseUrl).username !== "") return;
   if ((process.env["USER"] ?? "") !== "") return;
   fail(
@@ -85,7 +117,7 @@ function probePostgres(host: string, port: number): Promise<ProbeResult> {
   });
 }
 
-async function requireDatabaseReachable(config: HubConfig): Promise<void> {
+async function requireDatabaseReachable(config: DevConfig): Promise<void> {
   const url = new URL(config.databaseUrl);
   const host = url.hostname;
   const port = Number(url.port === "" ? "5432" : url.port);
@@ -149,22 +181,20 @@ if (localMemoryEmbed !== undefined) {
   mergeHubEnv(localMemoryEmbed);
 }
 
-const apps: App[] = [hubApp];
-
-// The hub serves the web app's build output as static files, so dev
-// watches and rebuilds that output on every source change — a browser
-// refresh then picks up the fresh bundle, no manual build step. Started
-// separately from `apps` because a fresh, unchanged checkout can defer
-// spawning it entirely — see isWebBuildFresh below.
+// The hub is a plain API now (CL-8083): it serves no static build, so
+// the web app runs its own dev server, proxying /api to the hub per
+// apps/web/vite.config.ts.
 const webDir = join(repoRoot, "apps", "web");
 const webApp: App = {
   label: "web",
   dir: webDir,
-  command: [join(webDir, "node_modules", ".bin", "vite"), "build", "--watch"],
+  command: [join(webDir, "node_modules", ".bin", "vite")],
 };
 
+const apps: App[] = [hubApp, webApp];
+
 function requireApps(): void {
-  const missing = [...apps, webApp, { dir: join(repoRoot, "apps", "sidecar") }].filter(
+  const missing = [...apps, { dir: join(repoRoot, "apps", "sidecar") }].filter(
     (app) => !existsSync(join(app.dir, "package.json")),
   );
   if (missing.length === 0) return;
@@ -176,63 +206,6 @@ function requireApps(): void {
       "run until the required apps exist. Use an up-to-date checkout.",
     ].join("\n"),
   );
-}
-
-// Everything the web build reads: source, its own manifest, and vite's
-// config. If none of these are newer than the last dist/index.html, the
-// existing bundle already matches HUB_STATIC_DIR and there's nothing to
-// rebuild before the hub can serve it.
-const webWatchedPaths = [
-  join(webDir, "src"),
-  join(webDir, "index.html"),
-  join(webDir, "vite.config.ts"),
-  join(webDir, "package.json"),
-];
-
-async function latestMtimeMs(path: string): Promise<number> {
-  const info = await stat(path).catch(() => null);
-  if (!info) return 0;
-  if (!info.isDirectory()) return info.mtimeMs;
-  const entries = await readdir(path, { withFileTypes: true });
-  const childMtimes = await Promise.all(
-    entries.map((entry) => latestMtimeMs(join(path, entry.name))),
-  );
-  return Math.max(info.mtimeMs, ...childMtimes, 0);
-}
-
-async function latestWebSourceMtimeMs(): Promise<number> {
-  const mtimes = await Promise.all(webWatchedPaths.map(latestMtimeMs));
-  return Math.max(...mtimes, 0);
-}
-
-function webDistMtimeMs(staticDir: string): number | null {
-  try {
-    return statSync(join(staticDir, "index.html")).mtimeMs;
-  } catch {
-    return null;
-  }
-}
-
-// Pure decision, unit-tested on its own: a dist bundle newer than every
-// file the build reads is already correct, so paying for another full
-// vite build before the hub can serve it would be pure waste.
-export function isWebBuildFresh(latestSourceMtimeMs: number, distMtimeMs: number | null): boolean {
-  return distMtimeMs !== null && distMtimeMs > latestSourceMtimeMs;
-}
-
-// Fires `onChange` once, the first time anything under `paths` changes,
-// then stops watching. Used to start the web build lazily when the
-// existing dist is already fresh, instead of paying for a rebuild that
-// would produce byte-identical output.
-function watchOnce(paths: string[], onChange: () => void): void {
-  const watchers = paths.map((path) => watch(path, { recursive: true }, fire));
-  let fired = false;
-  function fire(): void {
-    if (fired) return;
-    fired = true;
-    for (const watcher of watchers) watcher.close();
-    onChange();
-  }
 }
 
 async function forwardWithPrefix(
@@ -272,7 +245,7 @@ function spawnApp(app: App, running: RunningApp[], onExit: (app: App, code: numb
   void proc.exited.then((code) => onExit(app, code));
 }
 
-async function startApps(webFresh: boolean): Promise<never> {
+async function startApps(): Promise<never> {
   const running: RunningApp[] = [];
   const stopAll = () => {
     for (const { proc } of running) proc.kill();
@@ -286,20 +259,9 @@ async function startApps(webFresh: boolean): Promise<never> {
     process.exit(143);
   });
 
-  // Promise.resolve is idempotent, so the first process to exit — eager
-  // or deferred — is the only one that determines the outcome here.
   const firstExit = await new Promise<{ app: App; code: number }>((resolveExit) => {
     const onExit = (app: App, code: number) => resolveExit({ app, code });
     for (const app of apps) spawnApp(app, running, onExit);
-    if (webFresh) {
-      console.log(
-        "[dev] the web bundle is newer than every file the build reads; " +
-          "deferring the rebuild watcher until a source file changes",
-      );
-      watchOnce(webWatchedPaths, () => spawnApp(webApp, running, onExit));
-    } else {
-      spawnApp(webApp, running, onExit);
-    }
   });
   stopAll();
   fail(`${firstExit.app.label} exited with code ${firstExit.code}; stopping the other apps.`);
@@ -308,7 +270,7 @@ async function startApps(webFresh: boolean): Promise<never> {
 // Bring the database's schema current before the apps boot: creates
 // the database and applies the platform migrations when needed, and
 // reports either way. Failures name the problem and the fix.
-async function requireDatabaseSetUp(config: HubConfig): Promise<void> {
+async function requireDatabaseSetUp(config: DevConfig): Promise<void> {
   try {
     const report = await setupDatabase(config.databaseUrl);
     if (report.createdDatabase) {
@@ -338,7 +300,7 @@ async function requireDatabaseSetUp(config: HubConfig): Promise<void> {
  * Sign-in is tried first so a re-run against an existing account skips
  * registration entirely.
  */
-async function seedDevAccount(config: HubConfig): Promise<void> {
+async function seedDevAccount(config: DevConfig): Promise<void> {
   const email = process.env["HUB_ADMIN_EMAIL"] ?? "alice@example.com";
   const password = process.env["HUB_ADMIN_PASSWORD"] ?? "password123";
   const name = email.split("@")[0] ?? email;
@@ -413,7 +375,7 @@ async function seedDevAccount(config: HubConfig): Promise<void> {
 // stale state, the new sidecar attaches to it, agents fail their
 // challenges, and every symptom points somewhere else. Refuse loudly
 // up front instead.
-async function requireHubPortFree(config: HubConfig): Promise<void> {
+async function requireHubPortFree(config: DevConfig): Promise<void> {
   const base = new URL(config.baseUrl);
   const port = Number(base.port === "" ? (base.protocol === "https:" ? "443" : "80") : base.port);
   const occupied = await new Promise<boolean>((resolvePort) => {
@@ -454,8 +416,6 @@ if (import.meta.main) {
   await requireDatabaseReachable(config);
   await requireDatabaseSetUp(config);
   requireApps();
-  const hubStaticDir = resolve(join(repoRoot, "apps", "hub"), config.hubStaticDir);
-  const webFresh = isWebBuildFresh(await latestWebSourceMtimeMs(), webDistMtimeMs(hubStaticDir));
   void seedDevAccount(config);
-  await startApps(webFresh);
+  await startApps();
 }

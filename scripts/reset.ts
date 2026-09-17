@@ -21,7 +21,6 @@ import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 
-import { readHubConfig } from "../apps/hub/src/config.ts";
 import { resetSchema } from "./db-setup.ts";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
@@ -86,12 +85,19 @@ export async function resetLocalState(
   env: Record<string, string | undefined>,
   deps: ResetDeps = defaultDeps,
 ): Promise<ResetReport> {
-  const config = readHubConfig(env);
-  requireLocalDatabase(config.databaseUrl);
+  const databaseUrl = env["DATABASE_URL"];
+  if (databaseUrl === undefined || databaseUrl === "") {
+    throw new Error("DATABASE_URL is not set. Set it in .env; see .env.example.");
+  }
+  requireLocalDatabase(databaseUrl);
 
-  await deps.resetSchema(config.databaseUrl);
+  await deps.resetSchema(databaseUrl);
 
-  const dirs = resolveLocalStateDirs(deps.root, config.hubDataDir);
+  const hubDataDir = env["HUB_DATA_DIR"];
+  if (hubDataDir === undefined || hubDataDir === "") {
+    throw new Error("HUB_DATA_DIR is not set. Set it in .env; see .env.example.");
+  }
+  const dirs = resolveLocalStateDirs(deps.root, hubDataDir);
   const removedDirs: string[] = [];
   for (const dir of [dirs.hubDataDir]) {
     if (!deps.exists(dir)) continue;
@@ -99,7 +105,7 @@ export async function resetLocalState(
     removedDirs.push(dir);
   }
 
-  const database = new URL(config.databaseUrl).pathname.replace(/^\//, "");
+  const database = new URL(databaseUrl).pathname.replace(/^\//, "");
   return { database, removedDirs };
 }
 

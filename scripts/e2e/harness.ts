@@ -260,15 +260,13 @@ export async function startHub(options: {
   extraEnv?: Record<string, string>;
 }): Promise<HubHandle> {
   const baseUrl = `http://localhost:${options.port}`;
+  const dbUrl = new URL(options.databaseUrl);
   const app = spawnApp("hub", HUB_DIR, {
     ...osEnv(),
-    // e2e hubs point at the web build (absent for API-only suites, which
-    // makes non-/api paths 404) and advertise BASE_URL as their own
-    // listen address by default; a caller's extraEnv can override any of
-    // these (e.g. a public BASE_URL that differs from the actual listen
-    // port — see PORT below — for a browser-driven suite fronted by a
-    // dev-server proxy).
-    HUB_STATIC_DIR: "../web/dist",
+    // BASE_URL feeds only the Corbits connections/OAuth mount's callback
+    // URLs now; a caller's extraEnv can override it (e.g. a public origin
+    // that differs from the actual listen port — see PORT below — for a
+    // browser-driven suite fronted by a dev-server proxy).
     BASE_URL: baseUrl,
     // The routine scheduler's real production cadence is a 30s
     // setInterval (routine-scheduler.ts); waiting that out for real on
@@ -279,19 +277,22 @@ export async function startHub(options: {
     // real cadence — a caller's extraEnv can still opt back into it by
     // omitting or overriding this key.
     ...options.extraEnv,
-    DATABASE_URL: options.databaseUrl,
     // Always the real bind port, independent of whatever port BASE_URL's
     // own origin names — this is the same PORT/BASE_URL split the hub's
-    // own config already documents for a reverse proxy in front of it
-    // (config.ts's PORT field); it is what lets a caller's extraEnv
-    // point BASE_URL at a fronting dev server without also moving where
-    // the hub actually listens.
+    // own server already documents for a reverse proxy in front of it;
+    // it is what lets a caller's extraEnv point BASE_URL at a fronting
+    // dev server without also moving where the hub actually listens.
     PORT: String(options.port),
-    SESSION_SECRET: options.sessionSecret,
+    DB_HOST: dbUrl.hostname,
+    DB_PORT: dbUrl.port === "" ? "5432" : dbUrl.port,
+    DB_USER: decodeURIComponent(dbUrl.username),
+    DB_PASSWORD: decodeURIComponent(dbUrl.password),
+    DB_NAME: dbUrl.pathname.replace(/^\//, ""),
     HUB_DATA_DIR: options.dataDir,
-    // The e2e suite never configures CREDENTIAL_ENCRYPTION_KEY; opt into
-    // the hub's dev/test fallback so boot doesn't hard-fail here.
-    ALLOW_PLAINTEXT_SECRETS: "1",
+    // The e2e suite never rotates real secrets; a fixed dev-shaped hex
+    // key is fine here, matching .env.example's own dev key.
+    CREDENTIAL_ENCRYPTION_KEY: "0".repeat(64),
+    PRINCIPAL_KEY_ENCRYPTION_KEY: "1".repeat(64),
   });
   const deadline = Date.now() + 30_000;
   for (;;) {
