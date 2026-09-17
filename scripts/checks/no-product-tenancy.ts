@@ -72,8 +72,14 @@ const ALLOWLIST: readonly {
   },
   {
     relPath: "packages/webhook-triggers/src/schema.ts",
-    maxOccurrences: 2,
+    maxOccurrences: 4,
     tables: [
+      // CL-8210: `tenant`/`principal` are Interchange's own tables,
+      // re-declared here (id column only, never migrated) just far
+      // enough to carry the FK from webhook_trigger/repo_review_lease —
+      // same pattern as @corbits/artifacts's src/schema.ts.
+      "tenant",
+      "principal",
       "webhook_trigger",
       // CL-7242: a short-lived lease serializing the GitHub connect
       // card's former start-reviewing step (workbench-scoped mount
@@ -88,8 +94,15 @@ const ALLOWLIST: readonly {
   },
   {
     relPath: "packages/notify/src/schema.ts",
-    maxOccurrences: 1,
-    tables: ["notify_dispatch"],
+    maxOccurrences: 3,
+    tables: [
+      // CL-8210: Interchange's own `tenant`/`principal`, re-declared
+      // (id column only, never migrated) to carry the FK from
+      // notify_dispatch — same pattern as @corbits/artifacts.
+      "tenant",
+      "principal",
+      "notify_dispatch",
+    ],
   },
   {
     relPath: "packages/bench/src/schema.ts",
@@ -109,8 +122,13 @@ const ALLOWLIST: readonly {
   },
   {
     relPath: "packages/onboarding/src/schema.ts",
-    maxOccurrences: 1,
-    tables: ["pending_seed"],
+    maxOccurrences: 2,
+    tables: [
+      // CL-8210: Interchange's own `tenant`, re-declared (id column
+      // only, never migrated) to carry the FK from pending_seed.
+      "tenant",
+      "pending_seed",
+    ],
   },
   {
     // Eval-run history (CL-6143): one row per (eval, config) scored
