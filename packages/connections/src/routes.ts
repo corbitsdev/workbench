@@ -193,10 +193,8 @@ export type CreateConnectionRoutesDeps = {
   hubUrl: string;
   requireGrant: RequireGrant;
   log: (line: string) => void;
-  /** The connector set this build ships — this package carries none of
-   * its own (CL-7384), so a caller always supplies one (the hub passes
-   * `@workbench/templates/connectors`' `CONNECTOR_REGISTRY`; a test
-   * passes its own stub). */
+  /** The connector set this build ships — this module's own
+   * `CONNECTOR_REGISTRY` for the hub; a test passes its own stub. */
   registry: Readonly<Record<string, ConnectorDescriptor>>;
   /** Test-only override, matching `complete-credential.ts`'s `seedCatalogFn`
    * override pattern — lets `routes.test.ts` stub credential storage

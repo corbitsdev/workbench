@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { WORKFLOW_CATALOG } from "@workbench/templates";
+import { WORKFLOW_CATALOG } from "@corbits/workflows/catalog";
 
 import { CONNECTOR_PINNED_WORKFLOWS } from "./connections-pinned-by";
 

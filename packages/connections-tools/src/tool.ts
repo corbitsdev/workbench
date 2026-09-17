@@ -58,7 +58,8 @@ export interface WorkflowConnectionEnv extends BaseEnv {
    * default registry of its own (that would hardcode one product's
    * connector lineup into a bundle any Interchange-backed hub should
    * be able to install), so the caller wiring this env supplies its
-   * own, e.g. Workbench's `@workbench/templates`' `CONNECTOR_REGISTRY`. */
+   * own, e.g. Workbench's `@corbits/connections/registry`'s
+   * `CONNECTOR_REGISTRY`. */
   readonly connectorRegistry: ConnectorRegistry;
   /** Same reasoning as `connectorRegistry`, for curated MCP presets. */
   readonly mcpPresets: readonly McpPreset[];

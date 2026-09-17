@@ -61,7 +61,7 @@ import {
   type ConnectorDescriptor,
   type OAuthExchangeResult,
 } from "@corbits/connections";
-import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
+import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 import type { PendingSeedStore } from "./pending-seed";
 import { exchangeCodeForKey } from "./openrouter-connect";
 import { exchangeCodeForToken as exchangeHuggingFaceCodeForToken } from "./huggingface-connect";

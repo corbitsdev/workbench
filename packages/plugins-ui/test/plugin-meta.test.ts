@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { Stack } from "@corbits/icons";
-import { connectorDescriptors } from "@corbits/connections/registry";
 import {
+  connectorDescriptors,
   CONNECTOR_REGISTRY,
-  MCP_PRESETS,
-} from "@workbench/templates/connectors";
+} from "@corbits/connections/registry";
+import { MCP_PRESETS } from "@corbits/connections/mcp-presets";
 
 import { pluginCategory, pluginIcon, pluginOutcome } from "../src/plugin-meta";
 import { isNativePluginCatalogDescriptor } from "../src/plugins-gallery";

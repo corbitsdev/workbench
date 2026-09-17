@@ -32,7 +32,6 @@
   "devDependencies": {
     "@types/bun": "catalog:",
     "@corbits/connections": "workspace:*",
-    "@workbench/templates": "workspace:*",
     "typescript": "catalog:"
   }
 }

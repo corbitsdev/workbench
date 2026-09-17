@@ -7,7 +7,7 @@ import type { ResolvedPlugin } from "@corbits/connections/plugins";
 import {
   MCP_PRESETS,
   MCP_PRESET_CONNECTOR_IDS,
-} from "@workbench/templates/connectors";
+} from "@corbits/connections/mcp-presets";
 
 import { McpServersSection } from "./mcp-servers-section";
 import { McpPresetCard, useMcpPresetCatalog } from "./mcp-preset-cards";

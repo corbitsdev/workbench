@@ -79,7 +79,7 @@ import {
   persistConnectorCredential,
   type PersistConnectorCredentialFns,
 } from "@corbits/connections/persist-credential";
-import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
+import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 import { TENANT_DESIRED_STATE, seededWorkflowNames } from "./desired-state";
 import { personalTenantSlug } from "./provision";
 

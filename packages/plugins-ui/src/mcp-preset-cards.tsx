@@ -4,10 +4,8 @@
 
 import { reportError } from "@corbits/error-sink";
 import { Button, toast } from "@corbits/react-ui";
-import {
-  CONNECTOR_REGISTRY,
-  MCP_PRESETS,
-} from "@workbench/templates/connectors";
+import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
+import { MCP_PRESETS } from "@corbits/connections/mcp-presets";
 import { useEffect, useState } from "react";
 
 import {

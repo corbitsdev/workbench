@@ -11,9 +11,10 @@ import {
 } from "./tool";
 
 // A minimal registry/preset fixture, standing in for whatever connector
-// set the deploying build actually wires (e.g. Workbench's
-// `@workbench/templates`) — this package carries no default of its own,
-// so its tests exercise the lookup logic against a small stand-in.
+// set the deploying build actually wires (e.g. Workbench's own
+// `@corbits/connections/registry` `CONNECTOR_REGISTRY`) — this package
+// carries no default of its own, so its tests exercise the lookup logic
+// against a small stand-in.
 const TEST_CONNECTOR_REGISTRY = createConnectorRegistry({
   github: {
     id: "github",

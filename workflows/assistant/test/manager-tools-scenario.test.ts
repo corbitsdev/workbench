@@ -43,10 +43,8 @@ import {
 // takes one through its env, so any Interchange-backed hub can install
 // it with its own connector lineup) — this scenario plays back against
 // Workbench's actual shipped set, so it wires in the real thing.
-import {
-  CONNECTOR_REGISTRY,
-  MCP_PRESETS,
-} from "@workbench/templates/connectors";
+import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
+import { MCP_PRESETS } from "@corbits/connections/mcp-presets";
 import {
   agentDirectoryTools,
   CREATE_AGENT_TOOL,
