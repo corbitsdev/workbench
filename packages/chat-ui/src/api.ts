@@ -147,6 +147,12 @@ const MessageItem = type({
   // root feed and every open thread — see `./thread-feed.ts`. Absent
   // on a host that mounts no thread store, matching `rootThreadId: ""`.
   "threadId?": "string",
+  // The RFC 5322 `Message-ID` this row's mail carries (CL-8175) — absent
+  // for a row with no mail original. This is what a reply's own
+  // `inReplyTo` threads onto, never this item's `id`, which for a
+  // mail-derived row is the mailbox's own local uid (see
+  // `mailbox-timeline.ts`'s `threadTreeToTimeline`).
+  "messageId?": "string",
 });
 export type MessageItem = typeof MessageItem.infer;
 
@@ -155,13 +161,6 @@ const MessagesResponse = type({
   "nextCursor?": "string",
 });
 export type MessagesResponse = typeof MessagesResponse.infer;
-
-const SentMessage = type({
-  id: "string",
-  createdAt: "string",
-  "threadId?": "string",
-  "clientId?": "string",
-});
 
 const ReadState = type({
   "lastSeenCreatedAt?": "string | null",
@@ -430,55 +429,36 @@ export function fetchWorkbenchBlob(
   ).then((body) => body.contentBase64);
 }
 
-/** A message-send's pre-invite entry — the wire shape of a picked
- * "Bring in…" candidate's `MentionInviteIntent` (see `mentions.ts`),
- * mirroring `packages/chat/src/routes.ts`'s `MessageInviteEntry`. */
-export type MessageInviteInput =
-  | { readonly kind: "agent"; readonly definitionId: string }
-  | {
-      readonly kind: "person";
-      readonly principalId: string;
-      readonly name?: string;
-    };
+// The wire response of `@corbits/mailbox`'s `POST /me/inbox/send`
+// (CL-8175): the Sent-folder copy's own RFC 5322 `Message-ID` and its
+// mailbox uid, the same uid `mailbox-timeline.ts`'s `threadTreeToTimeline`
+// keys every timeline row by.
+const SentInboxMessage = type({
+  messageId: "string",
+  uid: "number",
+});
+export type SentInboxMessage = typeof SentInboxMessage.infer;
 
-export type SendMessageOptions = {
-  readonly threadId?: string;
-  readonly inReplyToMessageId?: string;
-  /** Every not-yet-participant a mention in this message names, invited
-   * server-side before the send so the mention fans out normally. */
-  readonly invite?: readonly MessageInviteInput[];
-  /** This composer submit's own client-generated send identity
-   * (CL-6251) — the pending bubble's `nonce`, carried on the wire so
-   * the server can echo it back (in this call's own response, and on
-   * every later `GET .../messages` page) and the pending bubble can
-   * reconcile with the confirmed message by identity rather than by
-   * guessing from content or timing. */
-  readonly clientId?: string;
-};
-
-export function sendMessage(
+/**
+ * A human composer send, straight onto the tenant's own mailbox
+ * (`POST /me/inbox/send`, CL-8175) — no chat route in between. `to` is
+ * every other recipient address this send goes to; `inReplyTo` is the
+ * RFC `Message-ID` of the message this one threads under (the thread
+ * root when replying inside an open thread, or the specific message being
+ * replied to when starting a new one) — never a mailbox uid, which is a
+ * local, per-mailbox integer the wire format has no room for.
+ */
+export function sendInboxMessage(
   tenantId: string,
-  workbenchId: string,
-  parts: readonly Part[],
-  options?: SendMessageOptions,
-): Promise<{
-  readonly id: string;
-  readonly createdAt: string;
-  readonly threadId?: string;
-  readonly clientId?: string;
-}> {
-  const body: Record<string, unknown> = { parts };
-  if (options?.threadId !== undefined) body["threadId"] = options.threadId;
-  if (options?.inReplyToMessageId !== undefined) {
-    body["inReplyToMessageId"] = options.inReplyToMessageId;
-  }
-  if (options?.invite !== undefined && options.invite.length > 0) {
-    body["invite"] = options.invite;
-  }
-  if (options?.clientId !== undefined) body["clientId"] = options.clientId;
-  return request(`/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages`, SentMessage, {
+  to: readonly string[],
+  body: string,
+  options?: { readonly inReplyTo?: string },
+): Promise<SentInboxMessage> {
+  const requestBody: Record<string, unknown> = { to, body };
+  if (options?.inReplyTo !== undefined) requestBody["inReplyTo"] = options.inReplyTo;
+  return request(`/api/tenants/${tenantId}/mailbox/me/inbox/send`, SentInboxMessage, {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify(requestBody),
   });
 }
 

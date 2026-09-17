@@ -984,6 +984,13 @@ function ChatWorkspaceInner({
     setResumeAttempt((attempt) => attempt + 1);
   }, []);
 
+  // Every other participant's address (CL-8175) — the signed-in sender's
+  // own entry (matched by local-part against `principalId`, the same
+  // convention `typingLabel` above reads) never belongs in its own `to`.
+  const recipientAddresses = (activeWorkbench?.participants ?? [])
+    .map((participant) => participant.address)
+    .filter((address) => localPartOf(address) !== currentUser?.principalId);
+
   const { pendingSends, handleSend, retryPendingSend, discardPendingSend } = useOptimisticSends({
     tenantId,
     activeWorkbenchId,
@@ -991,6 +998,8 @@ function ChatWorkspaceInner({
     openThreadId,
     pendingParentMessageId,
     openThreadById,
+    recipientAddresses,
+    messages: feed.loadedMessages,
     noteAwaitingReply,
     hasAgentParticipant,
     restoreDraft: (text) => composerRef.current?.insertText(text),
