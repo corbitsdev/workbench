@@ -99,7 +99,10 @@ export type DefinitionRunGroup = {
   /** `routineId` when the newest run in the group fired from one,
    * else `definitionId` — two different routines sharing one
    * definition (e.g. two workbench-digest schedules) never merge into
-   * one group. */
+   * one group. The native `GET /workflows/runs` feed (CL-8087) carries
+   * no routine attribution, so in practice this is always `definitionId`
+   * until a fires equivalent exists — the `routineId` branch is kept for
+   * that feed, not removed. */
   readonly groupKey: string;
   readonly displayName: string;
   /** Newest run first. */
@@ -111,7 +114,10 @@ export type DefinitionRunGroup = {
  * fetched for the flat list, bucketed by routine (falling back to
  * definition, for a run with no routine parent) and sorted newest-run
  * first — a client-side grouping of already-fetched data, no new endpoint.
- * Group order follows each group's own newest run, newest overall first.
+ * With the native feed every row lacks routine attribution, so every
+ * group is definition-keyed today; the routine branch rejoins once a
+ * fires equivalent exists. Group order follows each group's own newest
+ * run, newest overall first.
  */
 export function groupRunsByDefinition(
   runs: readonly InsightsRun[],

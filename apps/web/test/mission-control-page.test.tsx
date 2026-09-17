@@ -276,6 +276,10 @@ describe("MissionControlRoute", () => {
     expect(container.textContent).not.toContain("New bench");
     expect(container.textContent).toContain("Nothing waiting on you");
     expect(container.textContent).toContain("Nothing running right now");
+    // CL-8087: the In flight band is routine-feed only and the feed is
+    // stubbed, so the empty state says so instead of implying agent runs
+    // appear here.
+    expect(container.textContent).toContain("Routine activity has no feed");
     expect(container.textContent).toContain("Nothing recent yet.");
   });
 

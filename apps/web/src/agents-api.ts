@@ -140,6 +140,10 @@ export function listAgentInstances(
  * native `GET /workflows/runs` listing's own predicate (`address IS NOT
  * NULL AND anchorRunId = id`), the same one `isTopLevelRun` uses. Used
  * wherever a page needs "real deployments only" — the Agent Directory.
+ * Single-tenant (CL-8087 accepted loss): the deleted route expanded the
+ * requested tenant to its whole descendant subtree via
+ * `getDescendantTenants`; the native listing filters one tenant, so a
+ * workspace parent sees only its own runs, not its child workbenches'.
  */
 export function listTopLevelRuns(
   tenantId: string,

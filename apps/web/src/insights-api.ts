@@ -267,16 +267,23 @@ const TOP_LEVEL_RUNS_LIMIT = 100;
  * listing's own predicate (`address IS NOT NULL AND anchorRunId = id`,
  * see `vendor/intx/hub-api/src/routes/runs.ts`) already excludes every
  * non-top-level run (workbench host, invited agent), so this page never
- * derives that exclusion itself. Three differences from the deleted
+ * derives that exclusion itself. Four differences from the deleted
  * `feed=fires` feed, all recorded as accepted loss in CL-8087: a
  * routine's fire (not a top-level run) is no longer included, so
  * Insights no longer sees routine executions; there is no routine
- * attribution, so history groups by definition; and the resident,
+ * attribution, so history groups by definition; the resident,
  * never-triggered deployment placeholder (`status: "deployed"`) is now
  * included — `computeInsightsStats` counts it as deployed rather than
- * hiding it. Used in place of the dead `/me/workflows/runs` — its
- * `anchorRunId IS NULL` filter never matches, because every addressed run
- * self-anchors at creation, so that feed always came back empty.
+ * hiding it; and the feed is single-tenant — the deleted route expanded
+ * the requested tenant to its whole descendant subtree via
+ * `getDescendantTenants` (the same rollup `resolveScope` still gives
+ * `/usage`, `/activity`, and `/tools`), while the native listing filters
+ * `tenantId = requested tenant` only, so a workspace parent's runs feed
+ * no longer rolls up its child workbenches and now sits mismatched
+ * against its own usage aggregate. Used in place of the dead
+ * `/me/workflows/runs` — its `anchorRunId IS NULL` filter never matches,
+ * because every addressed run self-anchors at creation, so that feed
+ * always came back empty.
  */
 export function insightsTopLevelRunsPath(tenantId: string): string {
   return `/api/tenants/${tenantId}/workflows/runs?limit=${TOP_LEVEL_RUNS_LIMIT}`;

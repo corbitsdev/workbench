@@ -42,8 +42,10 @@ export function purposeAgentDefinitions(
  * `instances` is expected to already come from `listTopLevelRuns`
  * (see `./agents-api.ts`), which excludes every non-top-level run
  * (workbench host, invited agent, task) server-side — the native
- * `GET /workflows/runs` listing's own predicate. This still applies the
- * shared name-based workbench-host filter as defense in depth.
+ * `GET /workflows/runs` listing's own predicate. That listing is
+ * single-tenant (CL-8087 accepted loss: no descendant-subtree rollup),
+ * so this still applies the shared name-based workbench-host filter as
+ * defense in depth.
  */
 export function purposeAgentInstances(
   instances: readonly AgentInstance[],

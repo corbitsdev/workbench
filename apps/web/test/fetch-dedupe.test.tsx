@@ -2,7 +2,7 @@
 // because independent components each fetched independently instead of
 // sharing a cache. Every mount of `useBenchActivity` (the sidebar's
 // `WorkbenchList`, and any second subscriber) shares the same TanStack
-// Query keys (`tenantKeys.workbenches`, `.topLevelRuns` — see
+// Query keys (`tenantKeys.workbenches`, `.routineActivity` — see
 // `../src/query-client.ts`) under one `QueryClient`, so two mounts fetch
 // each listing exactly once.
 import { afterEach, describe, expect, test } from "bun:test";
