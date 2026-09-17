@@ -13,6 +13,7 @@ const REAL_CHECKS_DIR = path.resolve(import.meta.dir, "..");
 const EXPECTED_CHECK_NAMES = [
   "browser-safe-subpaths",
   "catalog-pins",
+  "changeset-ignore",
   "db-gate",
   "deletion",
   "error-envelope",
