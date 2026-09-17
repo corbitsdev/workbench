@@ -9,7 +9,7 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { dbGate } from "../../../scripts/e2e/db-gate";
+import { dbGate } from "../../../e2e/db-gate";
 
 const databaseUrl = process.env["DATABASE_URL"] ?? "";
 const describeIfDb = dbGate(databaseUrl, import.meta.path);

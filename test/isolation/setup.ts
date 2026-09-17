@@ -8,8 +8,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { freePort, startHub, type HubHandle } from "../../scripts/e2e/harness.ts";
-import { assertDatabaseConfigured } from "../../scripts/e2e/db-gate.ts";
+import { freePort, startHub, type HubHandle } from "../../e2e/harness.ts";
+import { assertDatabaseConfigured } from "../../e2e/db-gate.ts";
 
 /**
  * The minimal surface of the hub the suite needs: a fetch-shaped
@@ -82,7 +82,7 @@ export async function prepareDatabase(databaseUrl: string): Promise<void> {
 
 /**
  * Boots the real hub as a spawned process, exactly as
- * `scripts/e2e/harness.ts` does for the walking skeleton — a
+ * `e2e/harness.ts` does for the walking skeleton — a
  * chat-workbench create launches a real agent instance over its own
  * process-provisioner-spawned sidecar's WebSocket dial-in, so an
  * in-process hub with no sidecar plugin wired up cannot exercise the
@@ -127,7 +127,7 @@ export async function bootIsolationHub(databaseUrl: string): Promise<IsolationHu
 /**
  * A workbench-launching route has no "not yet connected" contract the
  * way the native workflow-deploy route does (which answers 502 while
- * the sidecar's dial-in is in flight, see `scripts/e2e/harness.ts`) —
+ * the sidecar's dial-in is in flight, see `e2e/harness.ts`) —
  * it fails outright. So this probes readiness itself: sign up a
  * throwaway account, create a throwaway tenant, and retry a workbench
  * create until it succeeds or the sidecar visibly died or too much

@@ -6,8 +6,7 @@
 // workspace dependency.
 //
 // `tsc --build` is invoked against a single generated solution file
-// (`tsconfig.build.json`, a `references`-only manifest kept in sync by
-// scripts/generate-tsconfig-references.ts), not against every composite
+// (`tsconfig.build.json`, a `references`-only manifest), not against every composite
 // project's tsconfig.src.json as separate command-line roots. Handing it
 // many unrelated roots in one invocation was tried first and produces
 // incorrect results: `tsc --build` shares source-file/diagnostic state
@@ -18,9 +17,9 @@
 // gets the same dependency-order build with the same up-to-date skipping.
 //
 // Every package's combined `tsconfig.json` (src + test together) is then
-// checked separately, in parallel -- see scripts/generate-tsconfig-references.ts
-// for why the composite src-only project (`tsconfig.src.json`, used only by
-// the build above and by composite dependents' `references`) can't include
+// checked separately, in parallel -- the composite src-only project
+// (`tsconfig.src.json`, used only by the build above and by composite
+// dependents' `references`) can't include
 // test files itself. This is the same shape for every package regardless
 // of whether it has a `tsconfig.src.json` at all: a package excluded from
 // the composite graph entirely (a real dependency cycle, or a transitive

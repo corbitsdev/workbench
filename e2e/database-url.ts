@@ -1,4 +1,4 @@
-// The env-gate half of scripts/e2e/harness.ts, split out so a DB-gated
+// The env-gate half of e2e/harness.ts, split out so a DB-gated
 // unit suite (every package's migrations.test.ts / *.drizzle.test.ts)
 // can resolve DATABASE_URL without pulling in harness.ts's process-
 // spawning machinery — which imports @corbits/connections and

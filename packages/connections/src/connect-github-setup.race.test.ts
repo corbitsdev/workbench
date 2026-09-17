@@ -34,8 +34,8 @@ import {
 } from "@corbits/webhook-triggers";
 import type { GitHubRepoSummary } from "@corbits/github-tools";
 
-import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
-import { dbGate } from "../../../scripts/e2e/db-gate";
+import { e2eDatabaseUrl } from "../../../e2e/database-url";
+import { dbGate } from "../../../e2e/db-gate";
 import {
   startReviewingRepos,
   webhookTriggerName,

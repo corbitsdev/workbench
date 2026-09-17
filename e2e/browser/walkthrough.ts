@@ -7,17 +7,17 @@
 // scratch database, the real hub, the real sidecar, a stubbed provider
 // credential) and drives the actual built web app in headless Chrome via
 // puppeteer-core — clicking, typing, and screenshotting exactly as a human
-// would. Scripted API-only e2e suites (scripts/e2e/*.test.ts) had been
+// would. Scripted API-only e2e suites (e2e/*.test.ts) had been
 // passing while the real UI broke; this is the acceptance mechanism for
 // "works in the owner's browser."
 //
-// Run: bun run scripts/e2e/browser/walkthrough.ts
+// Run: bun run e2e/browser/walkthrough.ts
 // Requires: DATABASE_URL (see .env.example), and a system Chrome/Chromium
 // (this script looks in the usual per-OS install locations — no download).
 //
-// Every step screenshots to scripts/e2e/browser/shots/NN-name.png and
+// Every step screenshots to e2e/browser/shots/NN-name.png and
 // records its own pass/repro-confirmed/fail outcome; the full run also
-// writes scripts/e2e/browser/shots/summary.json. Re-runnable: resets its
+// writes e2e/browser/shots/summary.json. Re-runnable: resets its
 // own scratch database on every run. Finishes inside a 3-minute budget —
 // every wait below is bounded, nothing blocks forever.
 
@@ -27,7 +27,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 
-import { resetSchema, setupDatabase } from "../../db-setup.ts";
+import { resetSchema, setupDatabase } from "../../scripts/db-setup.ts";
 import {
   e2eDatabaseUrl,
   freePort,
@@ -37,7 +37,7 @@ import {
   type HubHandle,
   type SpawnedApp,
 } from "../harness.ts";
-import { OLLAMA_PLACEHOLDER_SECRET } from "../../../packages/connections/src/credential-test.ts";
+import { OLLAMA_PLACEHOLDER_SECRET } from "../../packages/connections/src/credential-test.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 const WEB_DIR = path.join(REPO_ROOT, "apps", "web");

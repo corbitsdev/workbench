@@ -4,8 +4,8 @@
 // Most harness consumers (spawning the hub/sidecar, calling its HTTP
 // API) never touch these two; keeping them here means importing
 // harness.ts no longer pays that load cost on their behalf.
-import { createGitWorkflowPusher } from "../../packages/connections/src/workflow-push.ts";
-import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflows/src/source.ts";
+import { createGitWorkflowPusher } from "../packages/connections/src/workflow-push.ts";
+import { WORKFLOW_SOURCE_ENTRY } from "../packages/workflows/src/source.ts";
 
 /**
  * Publishes a workflow definition into its asset repo in the one shape

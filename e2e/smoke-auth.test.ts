@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { resetSchema, setupDatabase } from "../db-setup.ts";
+import { resetSchema, setupDatabase } from "../scripts/db-setup.ts";
 import {
   api,
   createCleanupHarness,

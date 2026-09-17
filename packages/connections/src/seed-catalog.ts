@@ -769,7 +769,7 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<SeedCatalogRes
 }
 
 // The noop-inference offering planter (`ensureNoopCatalogOffering`) that
-// used to live here moved to `scripts/e2e/noop-inference-server.ts`
+// used to live here moved to `e2e/noop-inference-server.ts`
 // (CL-8160): the hub no longer mounts a noop-inference route at all, so
 // planting a catalog offering against one is exclusively an e2e-suite
 // concern now, not something this connect-time planting module should

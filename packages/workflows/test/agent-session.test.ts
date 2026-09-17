@@ -21,7 +21,7 @@ import { eq } from "drizzle-orm";
 import { createDB, schema, type DB } from "@intx/db";
 import { generateId } from "@intx/hub-common";
 import { resolveRunSessionId } from "@intx/hub-sessions";
-import { dbGate } from "../../../scripts/e2e/db-gate";
+import { dbGate } from "../../../e2e/db-gate";
 
 import { ensureRunSession, recordAgentSessionAtProvision } from "../src/launch/agent-session";
 
