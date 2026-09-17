@@ -13,7 +13,8 @@
     }
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./prompt": "./src/prompt.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
