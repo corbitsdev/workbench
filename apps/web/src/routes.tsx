@@ -2,8 +2,8 @@
 // (label) and the route switch (render), so navigation and pages cannot
 // drift apart. The sidebar itself lists workbenches (conversations), not
 // routes — the first-run footer reaches Routines, Files, Skills, Agents,
-// and Plugins; Insights and Evals join that rail only given honest usage.
-// Insights, Evals, and Settings stay reachable by deep link and the
+// and Plugins; Insights joins that rail only given honest usage.
+// Insights and Settings stay reachable by deep link and the
 // palette even when they are off the rail. Conversation deep links
 // (`/w/:workbenchId`) stay routable; `/` is the Myra land hop (ensure +
 // open her conversation) for a bench with a workbench already, or the
@@ -25,7 +25,6 @@ import {
   FlowArrow,
   FolderOpen,
   Lightning,
-  ListBullets,
   PuzzlePiece,
   Robot,
   SlidersHorizontal,
@@ -37,7 +36,6 @@ import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
 
 import {
   AGENTS_PATH_PREFIX,
-  EVALS_PATH_PREFIX,
   SKILLS_PATH_PREFIX,
   ROUTINES_PATH_PREFIX,
   WORKFLOWS_PATH_PREFIX,
@@ -83,9 +81,6 @@ const SkillsRoute = lazy(async () => ({
 }));
 const InsightsRoute = lazy(async () => ({
   default: (await import("./pages/insights-page")).InsightsRoute,
-}));
-const EvalsRoute = lazy(async () => ({
-  default: (await import("./pages/evals-page")).EvalsRoute,
 }));
 const PluginsRoute = lazy(async () => ({
   default: (await import("./pages/plugins-page")).PluginsRoute,
@@ -244,7 +239,6 @@ export function matchesRoute(routePath: string, path: string): boolean {
     routePath === "/library" ||
     routePath === "/files" ||
     routePath === "/insights" ||
-    routePath === EVALS_PATH_PREFIX ||
     routePath === "/agents" ||
     routePath === "/skills" ||
     routePath === "/settings/agents" ||
@@ -410,12 +404,6 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <InsightsRoute path={path} />,
   },
   {
-    path: EVALS_PATH_PREFIX,
-    label: "Evals",
-    icon: <ListBullets />,
-    render: (path: string) => <EvalsRoute path={path} />,
-  },
-  {
     // First-run footer rail destination. No `/plugins/:slug` until
     // CL-6417 (CL-6817 unlinked the stub).
     path: "/plugins",
@@ -446,8 +434,8 @@ function routesInOrder(paths: readonly string[]): readonly AppRoute[] {
 /**
  * Everything the command palette treats as a product destination (its
  * "Pages" group). The first-run sidebar footer reaches Routines / Files /
- * Skills / Agents / Plugins (and Insights / Evals only given honest
- * usage); Insights, Evals, and Settings stay palette- and
+ * Skills / Agents / Plugins (and Insights only given honest
+ * usage); Insights and Settings stay palette- and
  * deep-link-reachable even when they are off the rail.
  */
 export const NAV_ROUTES: readonly AppRoute[] = routesInOrder([
@@ -457,6 +445,5 @@ export const NAV_ROUTES: readonly AppRoute[] = routesInOrder([
   "/agents",
   "/plugins",
   "/insights",
-  EVALS_PATH_PREFIX,
   SETTINGS_PATH,
 ]);

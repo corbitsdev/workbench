@@ -20,7 +20,6 @@
     "@corbits/webhook-triggers": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/db": "workspace:*",
-    "@intx/hub-api": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
     "@intx/log": "0.3.0",
     "@intx/types": "workspace:*",
@@ -32,7 +31,6 @@
     "@workbench/onboarding": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
-    "hono": "catalog:",
     "postgres": "catalog:"
   },
   "devDependencies": {

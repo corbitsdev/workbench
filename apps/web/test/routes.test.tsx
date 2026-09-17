@@ -118,8 +118,8 @@ function stagePageTitle(markup: string): string | undefined {
 
 /** The first-run footer rail marks its own destination current: Routines,
  * Files, Skills, Agents, and Plugins are text rows with `aria-current="page"`
- * on the lit one. Insights and Evals join only given honest usage, and
- * stay reachable by URL and palette instead until then. Settings lives
+ * on the lit one. Insights joins only given honest usage, and
+ * stays reachable by URL and palette instead until then. Settings lives
  * beside the account row, so its route lights nothing in the chrome - the
  * stage title carries it. Returns the active row's label so tests confirm
  * the *right* footer affordance lights, and nothing else does. */
@@ -160,13 +160,12 @@ describe("route table", () => {
       "/skills",
       "/settings/skills",
       "/insights",
-      "/evals",
       "/plugins",
       "/settings",
     ]);
   });
 
-  test("palette pages are Routines, Files, Skills, Agents, Plugins, Insights, Evals, Settings", () => {
+  test("palette pages are Routines, Files, Skills, Agents, Plugins, Insights, Settings", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
       "Routines",
       "Files",
@@ -174,7 +173,6 @@ describe("route table", () => {
       "Agents",
       "Plugins",
       "Insights",
-      "Evals",
       "Settings",
     ]);
   });

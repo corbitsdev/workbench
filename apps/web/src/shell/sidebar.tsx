@@ -1,8 +1,8 @@
 // The one sidebar. Header: the brand mark, then create + search. Body:
 // Agents and Channels — nothing page-scoped ever renders here. Footer: the
-// first-run rail is Routines, Files, Skills, Agents, Plugins; Insights and
-// Evals join only when the existing usage / eval-run reads return real items
-// (never a fabricated row, never a new analytics store). Below the rail:
+// first-run rail is Routines, Files, Skills, Agents, Plugins; Insights
+// joins only when the existing usage reads return real items (never a
+// fabricated row, never a new analytics store). Below the rail:
 // the account row — avatar + name, the whole row is the trigger for a menu
 // that pops upward with weekly usage, settings, feedback, and log out.
 // Always present; there is no collapse affordance and no second nav column.
@@ -37,7 +37,6 @@ import {
   ChatCircleDots,
   FolderOpen,
   Lightning,
-  ListBullets,
   Plus,
   PuzzlePiece,
   Robot,
@@ -57,7 +56,6 @@ import {
 import webPackage from "../../package.json";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
-import { EvalRunsResponseSchema, evalRunsPath } from "../evals-api";
 import { OverallUsageSchema, insightsUsagePath } from "../insights-api";
 import {
   matchesRoute,
@@ -126,13 +124,7 @@ export function Sidebar({
     selectedTenantId === null ? "" : insightsUsagePath(selectedTenantId, range),
     OverallUsageSchema,
   );
-  const evalsQuery = useAPIQuery(
-    selectedTenantId === null ? "" : evalRunsPath(selectedTenantId, null),
-    EvalRunsResponseSchema,
-  );
   const showInsights = usageQuery.kind === "ready" && usageQuery.data.turns > 0;
-  const showEvals =
-    evalsQuery.kind === "ready" && evalsQuery.data.runs.length > 0;
 
   return (
     <SidebarPanel
@@ -184,7 +176,7 @@ export function Sidebar({
 
       <SidebarPanelFooter>
         {/* Footer order: Routines, Files, Skills, Agents, Plugins, then
-            Insights and Evals only when those existing reads prove real
+            Insights only when that existing read proves real
             items, then the account row anchors everything else (weekly
             usage, Settings, Log out) in its pop-up menu — a single footer,
             never two stacked rows. Routines (CL-6362) is global-only here
@@ -249,18 +241,6 @@ export function Sidebar({
           >
             <ChartBar />
             <span>Insights</span>
-          </button>
-        ) : null}
-        {showEvals ? (
-          <button
-            type="button"
-            className="shell-sidebar-footer-row"
-            data-active={matchesRoute("/evals", path) ? "true" : undefined}
-            aria-current={matchesRoute("/evals", path) ? "page" : undefined}
-            onClick={() => onNavigate("/evals")}
-          >
-            <ListBullets />
-            <span>Evals</span>
           </button>
         ) : null}
 

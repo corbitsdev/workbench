@@ -72,22 +72,9 @@ function usageBody(turns: number): unknown {
   };
 }
 
-const oneEvalRun = {
-  id: "evalrun_1",
-  evalName: "factory",
-  evalDescription: null,
-  configName: "default",
-  startedAt: "2026-01-01T00:00:00.000Z",
-  finishedAt: "2026-01-01T00:02:00.000Z",
-  stepCount: 1,
-  scorerTally: { passed: 1, failed: 0, skipped: 0 },
-};
-
 function stubFetch(options?: {
   readonly usageTurns?: number;
-  readonly evalRuns?: boolean;
   readonly failUsage?: boolean;
-  readonly failEvals?: boolean;
 }): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
@@ -99,13 +86,6 @@ function stubFetch(options?: {
       if (options?.failUsage === true)
         return Promise.resolve(json({ error: "unavailable" }, 500));
       return Promise.resolve(json(usageBody(options?.usageTurns ?? 0)));
-    }
-    if (path.includes("/eval-runs/runs")) {
-      if (options?.failEvals === true)
-        return Promise.resolve(json({ error: "unavailable" }, 500));
-      return Promise.resolve(
-        json({ runs: options?.evalRuns === true ? [oneEvalRun] : [] }),
-      );
     }
     return Promise.resolve(json({ items: [] }));
   }) as typeof fetch;
@@ -217,7 +197,7 @@ describe("Sidebar", () => {
     expect(markup).not.toContain("shell-rail-item");
   });
 
-  test("first-run footer rail is Routines, Files, Skills, Agents, Plugins, then the account row — no Insights, Evals, or Inbox", () => {
+  test("first-run footer rail is Routines, Files, Skills, Agents, Plugins, then the account row — no Insights or Inbox", () => {
     const markup = renderSidebar("/w");
     expect(footerRowLabelsFromMarkup(markup)).toEqual([
       "Routines",
@@ -241,8 +221,8 @@ describe("Sidebar", () => {
     );
   });
 
-  test("first-run footer rail does not list Evals or Insights before there is honest usage", async () => {
-    stubFetch({ usageTurns: 0, evalRuns: false });
+  test("first-run footer rail does not list Insights before there is honest usage", async () => {
+    stubFetch({ usageTurns: 0 });
     const { container, root } = await mountSidebar("/w");
     expect(footerRowLabelsFromDom(container)).toEqual([
       "Routines",
@@ -271,13 +251,11 @@ describe("Sidebar", () => {
     expect(elsewhere).not.toMatch(/>Plugins<[\s\S]{0,80}aria-current="page"/);
   });
 
-  test("Evals, Insights, and Plugins remain reachable by URL and command palette", () => {
+  test("Insights and Plugins remain reachable by URL and command palette", () => {
     const palettePaths = NAV_ROUTES.map((route) => route.path);
     const routedPaths = APP_ROUTES.map((route) => route.path);
-    expect(palettePaths).toContain("/evals");
     expect(palettePaths).toContain("/insights");
     expect(palettePaths).toContain("/plugins");
-    expect(routedPaths).toContain("/evals");
     expect(routedPaths).toContain("/insights");
     expect(routedPaths).toContain("/plugins");
   });
@@ -292,7 +270,7 @@ describe("Sidebar", () => {
   });
 
   test("Insights joins the footer rail only when usage has turns", async () => {
-    stubFetch({ usageTurns: 4, evalRuns: false });
+    stubFetch({ usageTurns: 4 });
     const { container, root } = await mountSidebar("/insights");
     expect(footerRowLabelsFromDom(container)).toEqual([
       "Routines",
@@ -310,27 +288,8 @@ describe("Sidebar", () => {
     container.remove();
   });
 
-  test("Evals joins the footer rail only when eval runs exist", async () => {
-    stubFetch({ usageTurns: 0, evalRuns: true });
-    const { container, root } = await mountSidebar("/evals");
-    expect(footerRowLabelsFromDom(container)).toEqual([
-      "Routines",
-      "Files",
-      "Skills",
-      "Agents",
-      "Plugins",
-      "Evals",
-    ]);
-    const evals = [
-      ...container.querySelectorAll(".shell-sidebar-footer-row"),
-    ].find((row) => row.textContent?.includes("Evals") === true);
-    expect(evals?.getAttribute("aria-current")).toBe("page");
-    act(() => root.unmount());
-    container.remove();
-  });
-
-  test("a failed usage or evals probe omits the row rather than claiming usage", async () => {
-    stubFetch({ failUsage: true, failEvals: true });
+  test("a failed usage probe omits the row rather than claiming usage", async () => {
+    stubFetch({ failUsage: true });
     const { container, root } = await mountSidebar("/w");
     expect(footerRowLabelsFromDom(container)).toEqual([
       "Routines",
