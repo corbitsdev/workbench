@@ -3,15 +3,15 @@
 // (CL-6405) generalized to any catalog entry with a source package
 // under `workflows/<name>` (CL-7073), not just `code-review`.
 //
-// Runtime wiring (CL-7585): the per-workflow `buildJson` closures (each
-// one closing over its workflow package's trigger address and turn
-// timeouts) live on `@workbench/onboarding`'s tenant-seed
-// `CATALOG_WORKFLOWS` entries, reached here through
-// `deployableCatalogWorkflow` — the hub names no builder of its own, so
+// Runtime wiring (CL-8113, hub-zero T2): the per-workflow `buildJson`
+// closures (each one closing over its workflow package's trigger
+// address and turn timeouts) live on this hub's own native
+// `./catalog-blocks` `CATALOG_BLOCKS` entries, reached here through
+// `deployableCatalogBlock` — the hub names no builder of its own, so
 // the catalog's deployable set and the block sources served here can
 // never drift apart silently. `assistant` (seeded, never redeployed
 // here) and `heartbeat` (test-only, never deployed onto a real bench)
-// are outside `CATALOG_WORKFLOWS`, so they answer `undefined` here, same
+// are outside `CATALOG_BLOCKS`, so they answer `undefined` here, same
 // as any name outside the catalog entirely — a route answering
 // `undefined` as a 404 is the honest statement of that.
 //
@@ -20,10 +20,7 @@
 // `@intx/agent`/`@intx/workflow`. Only `./template-block-routes.ts`
 // (mounted in `apps/hub`) imports this; it is deliberately not
 // re-exported from the package root.
-import { deployableCatalogWorkflow } from "@workbench/onboarding/tenant-seed";
-// TODO(CL-8113, hub-zero T2): this tenant-seed import is the hub's last
-// `@workbench/onboarding` edge — cut it over to the native catalog when
-// T2 lands, then drop the dependency from `apps/hub/package.json`.
+import { deployableCatalogBlock } from "./catalog-blocks";
 
 export interface BlockWorkflowBuildInput {
   readonly tenantDomain: string;
@@ -42,7 +39,7 @@ export interface BlockWorkflowSource {
 /**
  * The serialized source-form definition for one catalog workflow — or
  * `undefined` for `assistant`, `heartbeat`, and any name outside the
- * catalog. `buildJson` is a required field on every `CATALOG_WORKFLOWS`
+ * catalog. `buildJson` is a required field on every `CATALOG_BLOCKS`
  * entry, so a catalog name always answers here: the deployable set and
  * the served sources cannot drift apart silently.
  */
@@ -50,7 +47,7 @@ export function buildBlockWorkflowSource(
   assetName: string,
   input: BlockWorkflowBuildInput,
 ): BlockWorkflowSource | undefined {
-  const workflow = deployableCatalogWorkflow(assetName);
+  const workflow = deployableCatalogBlock(assetName);
   if (workflow === undefined) {
     return undefined;
   }
