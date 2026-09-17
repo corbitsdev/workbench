@@ -19,7 +19,10 @@ import {
   buildHeartbeatWorkflow,
   serializeHeartbeatWorkflow,
 } from "../../workflows/heartbeat/src/index.ts";
-import { ensureNoopCatalogOffering } from "../../packages/connections/src/seed-catalog.ts";
+import {
+  ensureNoopCatalogOffering,
+  startNoopInferenceServer,
+} from "./noop-inference-server.ts";
 import {
   api,
   createCleanupHarness,
@@ -176,19 +179,27 @@ describe.skipIf(databaseUrl === undefined)("heartbeat workflow", () => {
       },
     );
 
-    // The deploy's source is the hub's own, really-reachable
-    // noop-inference endpoint — not a placeholder like the walking
-    // skeleton's `https://inference.invalid`. That distinction is the
-    // whole point of this suite: a run started against this source
-    // actually completes an inference call, at zero cost, because
-    // noop-inference answers it locally without reaching a real model.
+    // The deploy's source is this suite's own, really-reachable noop
+    // inference server — not a placeholder like the walking skeleton's
+    // `https://inference.invalid`, and never the hub (CL-8160 dropped
+    // its noop-inference mount). That distinction is the whole point of
+    // this suite: a run started against this source actually completes
+    // an inference call, at zero cost, because the noop server answers
+    // it locally without reaching a real model.
+    const noopServer = startNoopInferenceServer();
+    track({
+      label: "noop-inference-server",
+      output: () => "",
+      exited: () => false,
+      stop: async () => noopServer.stop(),
+    });
     const offeringId = await hop("noop catalog seeding", () =>
       ensureNoopCatalogOffering(
         (method, path, body, cookies) =>
           api(hub.baseUrl, method, path, body, cookies),
         user.cookies,
         tenantId,
-        hub.baseUrl,
+        noopServer.baseUrl,
         () => {},
       ),
     );

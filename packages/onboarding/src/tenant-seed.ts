@@ -3,10 +3,10 @@
 // the seed grants, skill planting, and
 // `seedTenant`, the grants-plus-workflows installer the first-login
 // provisioning hook drives. The catalog half (`seedCatalog`,
-// `ensureCredential`, `ensureProvider`, `ensureNoopCatalogOffering`,
-// `CATALOG_SEEDS`) lives at `@corbits/connections/seed-catalog`, and
-// the git-push transport (`WorkflowPusher`, `createGitWorkflowPusher`)
-// at `@corbits/connections/workflow-push`.
+// `ensureCredential`, `ensureProvider`, `CATALOG_SEEDS`) lives at
+// `@corbits/connections/seed-catalog`, and the git-push transport
+// (`WorkflowPusher`, `createGitWorkflowPusher`) at
+// `@corbits/connections/workflow-push`.
 //
 // Dropped in the move, on purpose: `CATALOG_TEST_WORKFLOWS` (the
 // heartbeat platform-exercise entry) and `EXCLUDED_WORKFLOW_SOURCES`
@@ -104,7 +104,6 @@ import {
   type ApiCall,
 } from "@corbits/hub-api-client";
 import { DEFAULT_SKILLS } from "@corbits/connections/default-skills";
-import { ensureNoopCatalogOffering } from "@corbits/connections/seed-catalog";
 import type { WorkflowPusher } from "@corbits/connections/workflow-push";
 
 const GIT_TOKEN_TTL_MS = 10 * 60 * 1000;
@@ -158,10 +157,9 @@ const WorkflowRunTriggerResponse = type({
  * A provider/model pair a deployed workflow's rendered definition names
  * in its inference preferences (`DefaultWorkflow.buildJson`'s second
  * argument). What a deployment actually resolves inference against is
- * the tenant's catalog offerings, resolved separately by `ensureDeployment`
- * (or, for a noop-pinned workflow, `ensureNoopCatalogOffering`) — this
- * type carries no `baseURL`/`apiKey` because `seedTenant` never needs
- * either (CL-7461).
+ * the tenant's catalog offerings, resolved separately by
+ * `resolveRealSourceOfferingIds` — this type carries no `baseURL`/`apiKey`
+ * because `seedTenant` never needs either (CL-7461).
  */
 export type ModelSource = {
   readonly provider: string;
@@ -202,17 +200,6 @@ export type DefaultWorkflow = {
     tenantDomain: string,
     inferencePreferences: readonly InferencePreference[],
   ) => string;
-  /**
-   * Overrides the deploy's inference source for this workflow only.
-   * Present on a workflow that must stay free to run continuously: it
-   * names a synthetic model source instead of the tenant's real catalog
-   * model, and `seedTenant` deploys it against a dedicated noop catalog
-   * offering (`ensureNoopCatalogOffering`) rather than the tenant's own
-   * resolved offerings. Absent on every conversational workflow and on
-   * the seeded workbench-digest automation, which deploy against the
-   * tenant's real model.
-   */
-  modelSource?: () => ModelSource;
   /**
    * When true, PUT the authored definition to `stopped` after deploy so
    * a native ScheduleTrigger does not fire every tenant at the next
@@ -1021,16 +1008,12 @@ async function listDiscoveredModelOfferings(
 }
 
 /**
- * Resolves the catalog offering ids a REAL (non-noop-pinned) workflow
- * deploys against: every offering visible to the tenant (owned or
- * inherited from an ancestor), ordered by priority ascending, with the
- * lowest-priority offering as the default —
- * the SAME rule `apps/hub/src/index.ts`'s `workflowDeployer.deploy` and
- * `packages/chat/src/platform-adapter.ts`'s `catalogOfferings` apply
- * in-process via `listVisibleOfferings`. `excludeOfferingId` drops the
- * noop offering (`ensureNoopCatalogOffering`) from this list when one
- * has already been planted on the same tenant this run — it must never
- * win a real workflow's default just because it happens to sort first.
+ * Resolves the catalog offering ids a workflow deploys against: every
+ * offering visible to the tenant (owned or inherited from an ancestor),
+ * ordered by priority ascending, with the lowest-priority offering as
+ * the default — the SAME rule `apps/hub/src/index.ts`'s
+ * `workflowDeployer.deploy` and `packages/chat/src/platform-adapter.ts`'s
+ * `catalogOfferings` apply in-process via `listVisibleOfferings`.
  *
  * Throws when nothing is left to deploy against: "seeded but not
  * launchable" (`seedCatalog` with no credential) is a valid catalog
@@ -1042,14 +1025,13 @@ async function resolveRealSourceOfferingIds(
   api: ApiCall,
   cookies: string[],
   tenantId: string,
-  excludeOfferingId: string | undefined,
 ): Promise<{
   sourceOfferingIds: readonly string[];
   defaultSourceOfferingId: string;
 }> {
-  const offerings = (await listDiscoveredModelOfferings(api, cookies, tenantId))
-    .filter((offering) => offering.id !== excludeOfferingId)
-    .sort((a, b) => a.priority - b.priority);
+  const offerings = (
+    await listDiscoveredModelOfferings(api, cookies, tenantId)
+  ).sort((a, b) => a.priority - b.priority);
   const defaultSourceOfferingId = offerings[0]?.id;
   if (defaultSourceOfferingId === undefined) {
     throw new HubApiError(
@@ -1215,38 +1197,22 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
 
   // Resolved lazily and cached across the loop below: most seed runs
   // deploy several workflows against the same tenant catalog state, so
-  // this fetches the tenant's real offerings (or plants the noop one)
-  // at most once each, however many workflows ask for them.
-  let noopOfferingId: string | undefined;
+  // this fetches the tenant's real offerings at most once, however many
+  // workflows ask for them.
   let realOfferings:
     | { sourceOfferingIds: readonly string[]; defaultSourceOfferingId: string }
     | undefined;
 
   let confirmed = 0;
   for (const workflow of workflows) {
-    const workflowModel = workflow.modelSource?.() ?? model;
+    const workflowModel = model;
 
-    let sourceOfferingIds: readonly string[];
-    let defaultSourceOfferingId: string;
-    if (workflow.modelSource !== undefined) {
-      noopOfferingId ??= await ensureNoopCatalogOffering(
-        api,
-        cookies,
-        tenant.tenantId,
-        hubUrl,
-        log,
-      );
-      sourceOfferingIds = [noopOfferingId];
-      defaultSourceOfferingId = noopOfferingId;
-    } else {
-      realOfferings ??= await resolveRealSourceOfferingIds(
-        api,
-        cookies,
-        tenant.tenantId,
-        noopOfferingId,
-      );
-      ({ sourceOfferingIds, defaultSourceOfferingId } = realOfferings);
-    }
+    realOfferings ??= await resolveRealSourceOfferingIds(
+      api,
+      cookies,
+      tenant.tenantId,
+    );
+    const { sourceOfferingIds, defaultSourceOfferingId } = realOfferings;
 
     const assetId = await ensureWorkflowAsset(
       api,

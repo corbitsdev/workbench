@@ -1,9 +1,7 @@
 // Credential + catalog planting over the hub HTTP API — idempotent
 // ensure-by-name helpers (`ensureProvider`, `ensureCredential`,
-// `ensureCatalogModel/Provider/Offering`), the curated-catalog planter
-// (`seedCatalog`, driven by `./catalog-seed-data.ts`), and the
-// noop-inference offering planter tests pin catalog-less workflows
-// against (`ensureNoopCatalogOffering`).
+// `ensureCatalogModel/Provider/Offering`) and the curated-catalog planter
+// (`seedCatalog`, driven by `./catalog-seed-data.ts`).
 //
 // Relocated here by CL-7585: this is the credential domain's own connect-time planting,
 // not bench seeding, so it lives with the connect flows that call it
@@ -281,7 +279,7 @@ export async function ensureCredential(
   return existing.id;
 }
 
-async function ensureCatalogModel(
+export async function ensureCatalogModel(
   api: ApiCall,
   cookies: string[],
   args: { tenantId: string; canonicalName: string },
@@ -331,7 +329,7 @@ async function ensureCatalogModel(
   return existing.id;
 }
 
-async function ensureCatalogProvider(
+export async function ensureCatalogProvider(
   api: ApiCall,
   cookies: string[],
   args: {
@@ -392,7 +390,7 @@ async function ensureCatalogProvider(
   return existing.id;
 }
 
-async function ensureCatalogOffering(
+export async function ensureCatalogOffering(
   api: ApiCall,
   cookies: string[],
   args: {
@@ -823,96 +821,11 @@ export async function seedCatalog(
   };
 }
 
-// The provider/model pair `noop-inference` (packages/chat/src/noop-inference.ts)
-// answers for any request, regardless of what is actually sent — the
-// route ignores its body and `x-api-key` entirely. Naming a distinct
-// pair here (rather than reusing the tenant's real model id) keeps a
-// noop-pinned deployment visually distinct from a real one in the hub's
-// UI and logs.
-const NOOP_PROVIDER = "anthropic";
-const NOOP_MODEL = "noop";
-// The catalog provider/credential name a noop-pinned deployment's own
-// offering is planted under — distinct from any real curated provider
-// name (`CATALOG_SEEDS`'s keys), so `ensureNoopCatalogOffering` never
-// collides with a tenant's real catalog and is trivially recognizable
-// in the hub's own catalog UI.
-const NOOP_CATALOG_PROVIDER_NAME = "noop";
-// Priority is meaningless for this offering — it is never included in
-// a real workflow's `sourceOfferingIds` (`ensureNoopCatalogOffering`'s
-// id is threaded through explicitly, never discovered by sorting), so
-// any fixed value is honest here.
-const NOOP_OFFERING_PRIORITY = 0;
-
-/**
- * Plants (or finds) the dedicated catalog offering a noop-pinned
- * workflow deploys against: a catalog model named `NOOP_MODEL`, a
- * provider pointed at the hub's own `noop-inference` endpoint, and a
- * placeholder credential — the same `ensureCatalogModel` /
- * `ensureProvider` / `ensureCredential` / `ensureCatalogProvider` /
- * `ensureCatalogOffering` sequence `seedCatalog` runs for a real
- * provider, run here for this one synthetic one. Idempotent, same as
- * every other seed step: a re-run finds the existing rows by name and
- * reuses them.
- */
-export async function ensureNoopCatalogOffering(
-  api: ApiCall,
-  cookies: string[],
-  tenantId: string,
-  hubUrl: string,
-  log: (line: string) => void,
-): Promise<string> {
-  const baseURL = `${hubUrl}/api/chat/noop-inference`;
-  const modelId = await ensureCatalogModel(
-    api,
-    cookies,
-    { tenantId, canonicalName: NOOP_MODEL },
-    log,
-  );
-  const providerId = await ensureProvider(
-    api,
-    cookies,
-    {
-      tenantId,
-      name: NOOP_CATALOG_PROVIDER_NAME,
-      plugin: NOOP_PROVIDER,
-      apiBaseUrl: baseURL,
-    },
-    log,
-  );
-  const credentialId = await ensureCredential(
-    api,
-    cookies,
-    {
-      tenantId,
-      providerId,
-      name: inferenceCredentialName(NOOP_CATALOG_PROVIDER_NAME),
-      secret: PLACEHOLDER_CATALOG_API_KEY,
-      type: "api_key",
-    },
-    log,
-  );
-  const catalogProviderId = await ensureCatalogProvider(
-    api,
-    cookies,
-    {
-      tenantId,
-      name: NOOP_CATALOG_PROVIDER_NAME,
-      plugin: NOOP_PROVIDER,
-      baseURL,
-      credentialId,
-    },
-    log,
-  );
-  return ensureCatalogOffering(
-    api,
-    cookies,
-    {
-      tenantId,
-      modelId,
-      providerId: catalogProviderId,
-      priority: NOOP_OFFERING_PRIORITY,
-      capabilities: [],
-    },
-    log,
-  );
-}
+// The noop-inference offering planter (`ensureNoopCatalogOffering`) that
+// used to live here moved to `scripts/e2e/noop-inference-server.ts`
+// (CL-8160): the hub no longer mounts a noop-inference route at all, so
+// planting a catalog offering against one is exclusively an e2e-suite
+// concern now, not something this connect-time planting module should
+// know about. That file reuses `ensureCatalogModel`, `ensureProvider`,
+// `ensureCredential`, `ensureCatalogProvider`, and `ensureCatalogOffering`
+// exported from here against its own tiny local noop server.

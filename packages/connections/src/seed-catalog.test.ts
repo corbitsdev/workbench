@@ -1,15 +1,13 @@
 // Tests for the credential + catalog planting now owned by this package
-// (CL-7585): `seedCatalog` plants
-// one provider's curated catalog idempotently, refuses a placeholder
-// credential for OAuth-only providers, and `ensureNoopCatalogOffering`
-// plants the synthetic noop-inference offering. The hub HTTP API is an
-// in-memory stub below — no network, no database.
+// (CL-7585): `seedCatalog` plants one provider's curated catalog
+// idempotently and refuses a placeholder credential for OAuth-only
+// providers. The hub HTTP API is an in-memory stub below — no network,
+// no database.
 
 import { describe, expect, test } from "bun:test";
 import type { ApiCall } from "@corbits/hub-api-client";
 import { CATALOG_SEEDS } from "./catalog-seed-data";
 import {
-  ensureNoopCatalogOffering,
   inferenceCredentialName,
   PLACEHOLDER_CATALOG_API_KEY,
   PlaceholderCredentialError,
@@ -230,33 +228,6 @@ describe("seedCatalog", () => {
         placeholderCredential: true,
       }),
     ).rejects.toBeInstanceOf(PlaceholderCredentialError);
-  });
-});
-
-describe("ensureNoopCatalogOffering", () => {
-  test("plants the synthetic noop offering under the placeholder secret", async () => {
-    const { api, providers, credentials } = stubHub();
-    const lines: string[] = [];
-    const offeringId = await ensureNoopCatalogOffering(
-      api,
-      [],
-      "tnt_1",
-      "https://hub.invalid",
-      (line) => lines.push(line),
-    );
-
-    expect(offeringId).toStartWith("off_mdl_noop_cprv_noop");
-    expect(providers.map((p) => p.name)).toEqual(["noop"]);
-    expect(credentials.map((c) => c.name)).toEqual(["noop-default"]);
-
-    const second = await ensureNoopCatalogOffering(
-      api,
-      [],
-      "tnt_1",
-      "https://hub.invalid",
-      () => undefined,
-    );
-    expect(second).toBe(offeringId);
   });
 });
 

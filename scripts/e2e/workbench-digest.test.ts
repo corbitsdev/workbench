@@ -1,15 +1,16 @@
 // A light end-to-end smoke test for the workbench-digest workflow: the
 // real hub and sidecar as spawned processes against a real Postgres, a
-// workbench-digest deployment whose inference source is the hub's own
-// `noop-inference` endpoint (not a placeholder, not a real provider),
-// and a trigger that runs the step to completion.
+// workbench-digest deployment whose inference source is this suite's
+// own local noop inference server (not a placeholder, not a real
+// provider, and never the hub — CL-8160 dropped its noop-inference
+// mount), and a trigger that runs the step to completion.
 //
 // This is the proof-by-construction that workbench-digest costs nothing
 // to run frequently: the deploy's source is a real, reachable endpoint
 // (unlike the walking skeleton's `https://inference.invalid`
 // placeholder), so a run started against it actually resolves its
-// inference call — against `noop-inference`'s constant, locally
-// served reply, never a real model.
+// inference call — against the noop server's constant, locally served
+// reply, never a real model.
 
 import { describe, test } from "bun:test";
 
@@ -19,7 +20,10 @@ import {
   buildWorkbenchDigestWorkflow,
   serializeWorkbenchDigestWorkflow,
 } from "../../workflows/workbench-digest/src/index.ts";
-import { ensureNoopCatalogOffering } from "../../packages/connections/src/seed-catalog.ts";
+import {
+  ensureNoopCatalogOffering,
+  startNoopInferenceServer,
+} from "./noop-inference-server.ts";
 import {
   api,
   createCleanupHarness,
@@ -180,19 +184,27 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
       },
     );
 
-    // The deploy's source is the hub's own, really-reachable
-    // noop-inference endpoint — not a placeholder like the walking
-    // skeleton's `https://inference.invalid`. That distinction is the
-    // whole point of this suite: a run started against this source
-    // actually completes an inference call, at zero cost, because
-    // noop-inference answers it locally without reaching a real model.
+    // The deploy's source is this suite's own, really-reachable noop
+    // inference server — not a placeholder like the walking skeleton's
+    // `https://inference.invalid`, and never the hub (CL-8160 dropped
+    // its noop-inference mount). That distinction is the whole point of
+    // this suite: a run started against this source actually completes
+    // an inference call, at zero cost, because the noop server answers
+    // it locally without reaching a real model.
+    const noopServer = startNoopInferenceServer();
+    track({
+      label: "noop-inference-server",
+      output: () => "",
+      exited: () => false,
+      stop: async () => noopServer.stop(),
+    });
     const offeringId = await hop("noop catalog seeding", () =>
       ensureNoopCatalogOffering(
         (method, path, body, cookies) =>
           api(hub.baseUrl, method, path, body, cookies),
         user.cookies,
         tenantId,
-        hub.baseUrl,
+        noopServer.baseUrl,
         () => {},
       ),
     );
