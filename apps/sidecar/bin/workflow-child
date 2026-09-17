@@ -1,9 +1,8 @@
-#!/usr/bin/env bun
-// The workflow-process child this host spawns, one per workflow
-// deployment. The supervisor spawns it by path (`Bun.spawn([binaryPath])`)
-// with a fresh env carrying only the typed substrate-config keys; the
-// published `runWorkflowChildFromProcessEnv` owns the env crossing and
-// hands the validated config to this host's substrate factory.
+#!/usr/bin/env -S bun --conditions=intx-src
+// The intx-src condition resolves @intx/* to TypeScript source. The
+// sidecar spawns this child by path (`Bun.spawn([binaryPath])`) and
+// `--conditions` is not inherited, so it is set on the shebang. The dev
+// loop builds no dist; a bundled deployment does not run this file.
 import { runWorkflowChildFromProcessEnv } from "@intx/workflow-host";
 import {
   SIDECAR_SUBSTRATE_CONFIG_KEYS,

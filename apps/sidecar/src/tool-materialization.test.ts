@@ -34,7 +34,6 @@ describe("materializeToolPackages — manifest.invalid gate", () => {
       cacheRoot: "/unused-by-manifest-invalid-gate",
       cacheMaxBytes: 1024 * 1024,
       registryMaxTarballBytes: 10 * 1024 * 1024,
-      registries: new Map(),
     });
     expect(result.factories).toEqual([]);
     expect(result.pluginFactories).toEqual([]);
@@ -53,7 +52,6 @@ describe("materializeToolPackages — manifest.invalid gate", () => {
         cacheRoot: "/unused-by-manifest-invalid-gate",
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 10 * 1024 * 1024,
-        registries: new Map(),
       });
     } catch (err) {
       caught = err;
@@ -103,7 +101,6 @@ describe("materializeToolPackages — manifest.invalid gate", () => {
         cacheRoot: "/unused-by-manifest-invalid-gate",
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 10 * 1024 * 1024,
-        registries: new Map(),
       });
     } catch (err) {
       caught = err;
@@ -173,7 +170,7 @@ describe("materializeToolPackages — manifest.invalid gate", () => {
       // The dirty marker must be cleared so the next boot reads the
       // freshly-recorded id directly, not the stale marker that
       // pre-dated the successful persist.
-      let dirtyExists: boolean;
+      let dirtyExists = false;
       try {
         await fs.promises.access(dirtyFile);
         dirtyExists = true;
@@ -200,7 +197,7 @@ describe("materializeToolPackages — manifest.invalid gate", () => {
       const dirtyFile = `${activeIdFile}.dirty`;
       await fs.promises.writeFile(dirtyFile, "v1:stale-from-prior-apply");
       await clearDirtyMarker(activeIdFile, "test");
-      let dirtyExists: boolean;
+      let dirtyExists = false;
       try {
         await fs.promises.access(dirtyFile);
         dirtyExists = true;
@@ -267,7 +264,6 @@ describe("materializeToolPackages — manifest.invalid gate", () => {
         cacheRoot: "/unused-by-manifest-invalid-gate",
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 10 * 1024 * 1024,
-        registries: new Map(),
       });
     } catch (err) {
       caught = err;
@@ -299,7 +295,6 @@ describe("materializeToolPackages — manifest.invalid gate", () => {
         cacheRoot: "/unused-by-manifest-invalid-gate",
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 10 * 1024 * 1024,
-        registries: new Map(),
       });
     } catch (err) {
       caught = err;

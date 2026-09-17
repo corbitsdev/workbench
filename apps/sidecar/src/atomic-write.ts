@@ -7,13 +7,12 @@
 // exposing a torn record.
 
 import { open, rename, unlink } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { getLogger } from "@intx/log";
-import { hexEncode } from "@intx/types";
+import { hasCode, hexEncode } from "@intx/types";
 
-const logger = getLogger(["sidecar", "atomic-write"]);
+const logger = getLogger(["interchange", "sidecar", "atomic-write"]);
 
 export interface AtomicWriteOptions {
   /** Permission mode applied when the temp file is created. */
@@ -80,15 +79,26 @@ export async function writeFileAtomicDurable(
 }
 
 /**
- * Durably remove `path`: unlink, then fsync the parent directory so the
- * removal survives a power loss (an unlink with no directory fsync can be
- * resurrected after a crash, re-staling a cache the removal was meant to
- * invalidate). A missing file is a no-op, not an error -- the caller may be
- * evicting an entry that never made it to disk.
+ * Remove `path` durably: unlink it, then fsync the parent directory so the
+ * removal survives a power loss. A raw `unlink` leaves the directory-entry
+ * removal in the OS's delayed-metadata window, so a power loss can resurrect
+ * the file -- for a cache whose on-disk entry is the restore source, a
+ * resurrected entry re-stales the cache. Idempotent: a file already absent is a
+ * completed removal, so ENOENT on the unlink is success.
+ *
+ * The parent-directory fsync mirrors `writeFileAtomicDurable`, including its
+ * degrade: a filesystem that rejects directory fsync (FAT/exFAT, some network
+ * mounts) only weakens durability -- the file is already unlinked -- so that
+ * failure is logged, not thrown. It runs unconditionally so a prior removal
+ * that unlinked but died before the fsync is made durable on the next attempt.
  */
 export async function removeFileAtomicDurable(path: string): Promise<void> {
-  if (!existsSync(path)) return;
-  await unlink(path).catch(() => undefined);
+  try {
+    await unlink(path);
+  } catch (err) {
+    if (!(hasCode(err) && err.code === "ENOENT")) throw err;
+  }
+
   try {
     const dirHandle = await open(dirname(path), "r");
     try {
@@ -97,9 +107,6 @@ export async function removeFileAtomicDurable(path: string): Promise<void> {
       await dirHandle.close();
     }
   } catch (err) {
-    // report-error-ignore: mirrors writeFileAtomicDurable's own degraded-durability
-    // warn above — the file is already unlinked, so this is a best-effort fsync,
-    // not a failed operation, and the caller has nothing actionable to catch.
-    logger.warn`parent-dir fsync failed removing ${path}; durability is degraded but the file is unlinked — ${err instanceof Error ? err.message : String(err)}`;
+    logger.warn`parent-dir fsync failed for ${path}; durability is degraded but the file is unlinked — ${err instanceof Error ? err.message : String(err)}`;
   }
 }
