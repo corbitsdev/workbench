@@ -2,7 +2,7 @@
   "name": "@corbits/reddit-tools",
   "version": "0.0.2",
   "description": "Reddit integration (via ScrapeCreators): a minimal client and an @intx/agent tool bundle for searching Reddit sitewide or within one subreddit",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/corbitsdev/workbench.git",

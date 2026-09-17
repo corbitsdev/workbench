@@ -94,4 +94,4 @@ See `src/index.ts` for the full public surface and its TSDoc; the Codex
 
 ## License
 
-LGPL-2.1-or-later.
+LGPL-2.1.

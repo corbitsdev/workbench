@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "Packs workbench @corbits/*-tools packages into self-contained npm-style tarballs and publishes them into a tenant's corbits-tools package-registry asset, so tool-package pins under the @corbits scope resolve at agent launch",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

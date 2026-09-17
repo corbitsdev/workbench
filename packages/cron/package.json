@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "Experimental cron-to-mail bridge: fires a tenant's saved cron schedules as plain `mail` deliveries, since the vendored Interchange workflow-trigger grammar has no native `schedule` trigger",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "Myra evals (CL-6143): a first-class eval library — defineEval/runEval, composable scorers, and a persisted evals.run store — that plays a hardcoded scripted scenario against a real Myra deployment (real hub + sidecar) and grades what she actually did, not what a prompt merely claims.",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

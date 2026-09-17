@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "The @corbits/notify -> @corbits/mailbox delivery adapter, plus this package's own migration ledger",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

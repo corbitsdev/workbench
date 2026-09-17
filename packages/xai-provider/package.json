@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "xAI (Grok) OAuth config, token mapping, and a Responses adapter configured for xAI's CLI chat proxy.",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "sideEffects": false,
   "exports": {

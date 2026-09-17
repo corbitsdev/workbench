@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "The artifact library's domain seam: the ArtifactSummary type a Library page renders, plus the sort and filter rules every artifact surface shares",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "sideEffects": false,
   "exports": {

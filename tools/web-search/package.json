@@ -2,7 +2,7 @@
   "name": "@corbits/web-search-tools",
   "version": "0.0.4",
   "description": "Web search integration: a minimal Exa client and an @intx/agent tool bundle exposing web_search",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/corbitsdev/workbench.git",

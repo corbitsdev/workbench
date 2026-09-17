@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "SidecarProvisioner plugin that runs sidecar sandboxes on E2B",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

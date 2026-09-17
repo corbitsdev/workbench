@@ -2,7 +2,7 @@
   "name": "@corbits/interaction-tools",
   "version": "0.0.11",
   "description": "The ask_user tool: an @intx/agent bundle that poses an interview question in-thread as a question block, then ends the turn — the user's answer arrives as the agent's next message, not this call's result",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/corbitsdev/workbench.git",

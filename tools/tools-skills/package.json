@@ -2,7 +2,7 @@
   "name": "@corbits/tools-skills",
   "version": "0.0.4",
   "description": "skills_list / skills_search / skills_load as an @intx/agent tool bundle: calls the sanctioned workflow-skills HTTP surface (@corbits/skills) with the sidecar's own bearer token and the run's own address, and fails closed rather than returning an empty registry",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/corbitsdev/workbench.git",

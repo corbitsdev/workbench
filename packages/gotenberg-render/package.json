@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "Renders a Markdown Library artifact to PDF via an operator-configured Gotenberg server (CL-6499): config resolution that treats an unset endpoint as an absent capability, a thin Gotenberg HTTP client, and an orchestration step that reports failures through @corbits/error-sink",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

@@ -2,7 +2,7 @@
   "name": "@corbits/manus-tools",
   "version": "0.0.12",
   "description": "Manus integration: a v2 API client and an @intx/agent tool bundle for running tasks and retrieving files",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/corbitsdev/workbench.git",

@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "Deterministic mocks of the inference boundary — local providers first — for tests that need a scriptable model and a record of exactly what was sent",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

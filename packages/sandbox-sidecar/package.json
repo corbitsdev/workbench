@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "Backend-agnostic sidecar allocation lifecycle: state store and ensure/destroy convergence for a SidecarProvisioner",
-  "license": "LGPL-2.1-or-later",
+  "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
