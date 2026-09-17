@@ -5,7 +5,7 @@
 import { type } from "arktype";
 import { WorkflowProjectionDefinition } from "@intx/types/sidecar";
 
-import { isValidCronExpression } from "./cron";
+import { isValidCronExpression } from "@corbits/workflow-schedule";
 
 const ScheduleTrigger = type({
   type: "'schedule'",

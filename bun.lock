@@ -1393,11 +1393,20 @@
         "@intx/types": "0.3.0",
       },
     },
+    "packages/workflow-schedule": {
+      "name": "@corbits/workflow-schedule",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/workflows": {
       "name": "@corbits/workflows",
       "version": "0.0.1",
       "dependencies": {
         "@corbits/error-sink": "workspace:*",
+        "@corbits/workflow-schedule": "workspace:*",
         "@intx/authz": "0.3.0",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
@@ -2248,6 +2257,8 @@
     "@corbits/workbench-digest-workflow": ["@corbits/workbench-digest-workflow@workspace:workflows/workbench-digest"],
 
     "@corbits/workflow-authoring-tools": ["@corbits/workflow-authoring-tools@workspace:packages/workflow-authoring-tools"],
+
+    "@corbits/workflow-schedule": ["@corbits/workflow-schedule@workspace:packages/workflow-schedule"],
 
     "@corbits/workflows": ["@corbits/workflows@workspace:packages/workflows"],
 

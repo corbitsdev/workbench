@@ -268,13 +268,7 @@ import {
 import type { SidecarProvisioner } from "@intx/hub-sessions";
 import { withTurnPartWriteDefaults } from "./turn-part-content-default";
 import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
-import {
-  claimScheduleMinuteFromDb,
-  createWorkflowScheduler,
-  launchScheduledDefinitionFromDb,
-  listScheduledDefinitionsFromDb,
-  runNowScheduledDefinition,
-} from "./workflow-scheduler";
+import { runNowScheduledDefinition } from "./native-workflow-routine-launch";
 import { createToolGrantsForPins } from "./tool-grants";
 import { drainHubServer, shutdownHub } from "./shutdown";
 import {
@@ -2353,24 +2347,6 @@ export async function createHub(config: HubConfig) {
     bus: mailboxBus,
   });
 
-  // Recurring auto-fire: `workflow-scheduler.ts` ticks authored, deployed
-  // definitions whose frozen projection carries a native ScheduleTrigger.
-  // This hub has no general job-runner today, so the loop is scoped to
-  // exactly that job rather than standing up a bespoke cron daemon as a
-  // hidden dependency. Every hub replica can safely run it: each native
-  // fire is claimed on `workflow_definition.schedule_claimed_minute`.
-  const workflowScheduler = createWorkflowScheduler({
-    listScheduledDefinitions: listScheduledDefinitionsFromDb(db),
-    claimScheduleMinute: claimScheduleMinuteFromDb(db),
-    launch: launchScheduledDefinitionFromDb({
-      db,
-      sidecarRouter,
-    }),
-    ...(config.routineSchedulerPollIntervalMs !== undefined
-      ? { pollIntervalMs: config.routineSchedulerPollIntervalMs }
-      : {}),
-  });
-
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));
 
   // Stock Interchange currently leaves tenant creation and dispatch ungated.
@@ -2402,7 +2378,6 @@ export async function createHub(config: HubConfig) {
       relaunchSweepSeries += 1;
       clearTimeout(relaunchSweepTimer);
       chatOrchestrator.dispose();
-      workflowScheduler.stop();
       credentialExpirySweep.stop();
       inboxUnsnoozeSweep.stop();
       await insightsUsage.close();

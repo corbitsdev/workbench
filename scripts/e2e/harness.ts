@@ -291,7 +291,6 @@ export async function startHub(options: {
     // apps/hub/test/routine-scheduler.test.ts, so no e2e test needs the
     // real cadence — a caller's extraEnv can still opt back into it by
     // omitting or overriding this key.
-    ROUTINE_SCHEDULER_POLL_INTERVAL_MS: "300",
     ...options.extraEnv,
     DATABASE_URL: options.databaseUrl,
     // Always the real bind port, independent of whatever port BASE_URL's

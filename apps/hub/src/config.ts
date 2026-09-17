@@ -70,9 +70,6 @@ const HubEnv = type({
   "SIGNIN_RATE_LIMIT_MAX?": type(/^[1-9]\d*$/).describe(
     "the maximum failed sign-in attempts a single account may accrue per window before further failures are rejected, e.g. 10 — keyed on the target email, not client IP (see sign-in-rate-limit.ts); a correct password always succeeds regardless of this budget",
   ),
-  "ROUTINE_SCHEDULER_POLL_INTERVAL_MS?": type(/^[1-9]\d*$/).describe(
-    "dev/test-only override for the routine scheduler's poll interval, in milliseconds — unset (default) runs the real 30s production cadence; the e2e harness sets this to a fast interval so a scheduled-routine test doesn't wait out the real cadence",
-  ),
   "GOOGLE_CLIENT_ID?": type("string > 0").describe(
     "Google OAuth client id; set together with GOOGLE_CLIENT_SECRET to enable Google sign-in",
   ),
@@ -282,10 +279,6 @@ export type HubConfig = {
   readonly allowPlaintextSecrets: boolean;
   /** Opt-in to initialize git-on-disk state inside an existing git work tree. */
   readonly allowGitInsideWorkTree?: boolean;
-  /** Dev/test-only override for the routine scheduler's poll interval —
-   * see `ROUTINE_SCHEDULER_POLL_INTERVAL_MS` above. Unset runs the real
-   * production cadence (`routine-scheduler.ts`'s own default). */
-  readonly routineSchedulerPollIntervalMs?: number;
   /** Every sidecar-allocation backend registered for exclusive placement,
    * one or more, each addressable by its provisioner id. Never empty: an
    * install that configures nothing registers the `process` backend, so
@@ -551,10 +544,6 @@ export function readHubConfig(
   if (parsed.HUB_ALLOW_GIT_INSIDE_WORK_TREE !== undefined)
     hubConfig.allowGitInsideWorkTree = true;
   if (parsed.PORT !== undefined) hubConfig.listenPort = Number(parsed.PORT);
-  if (parsed.ROUTINE_SCHEDULER_POLL_INTERVAL_MS !== undefined)
-    hubConfig.routineSchedulerPollIntervalMs = Number(
-      parsed.ROUTINE_SCHEDULER_POLL_INTERVAL_MS,
-    );
   if (parsed.HUGGINGFACE_OAUTH_CLIENT_ID !== undefined)
     hubConfig.huggingfaceOAuthClientId = parsed.HUGGINGFACE_OAUTH_CLIENT_ID;
   if (parsed.GITHUB_APP_CLIENT_ID !== undefined)

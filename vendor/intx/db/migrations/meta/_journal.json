@@ -652,6 +652,13 @@
       "when": 1788617577404,
       "tag": "0093_principal_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1789000000000,
+      "tag": "0094_drop_workflow_definition_schedule_claimed_minute",
+      "breakpoints": true
     }
   ]
 }
