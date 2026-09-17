@@ -1,6 +1,6 @@
 {
   "name": "@corbits/connections-tools",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "description": "The list_connections and request_connection tools as an @intx/agent tool bundle: an agent sees which third-party connections this workbench already has live and hands the human a deep link to connect one that isn't, reusing the existing connections plane and never inventing new state or completing OAuth itself",
   "license": "LGPL-2.1-or-later",
   "repository": {

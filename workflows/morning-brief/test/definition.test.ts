@@ -64,8 +64,8 @@ test("the agent pins the wired sources' tool packages by name and version", () =
   const agent = morningBriefStep(buildMorningBriefWorkflow(INPUT)).agent;
   expect(agent.toolPackagePins).toEqual([...MORNING_BRIEF_TOOL_PACKAGE_PINS]);
   expect(MORNING_BRIEF_TOOL_PACKAGE_PINS).toEqual([
-    { name: "@corbits/granola-tools", version: "0.0.4" },
-    { name: "@corbits/linear-tools", version: "0.0.4" },
+    { name: "@corbits/granola-tools", version: "0.0.5" },
+    { name: "@corbits/linear-tools", version: "0.0.5" },
   ]);
 });
 

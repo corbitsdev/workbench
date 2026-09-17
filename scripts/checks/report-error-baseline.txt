@@ -42,9 +42,9 @@ apps/sidecar/src/tool-materialization.ts	1	logger.warn`fsync failed for ${filePa
 apps/sidecar/src/tool-materialization.ts	1	logger.warn`parent-dir fsync failed for ${instanceDir} after deploy-id persist; deploy-id durability is degraded but the committed deploy is staged on disk — ${err instanceof Error ? err.message : String(err)}`;
 apps/sidecar/src/workflow-deployment-record.ts	1	const reason = cause instanceof Error ? cause.message : String(cause);
 apps/sidecar/src/workflow-deployment-record.ts	1	return undefined;
-apps/sidecar/src/workflow-host-wiring/index.ts	1	const message =
-apps/sidecar/src/workflow-host-wiring/index.ts	1	const reason =
-apps/sidecar/src/workflow-host-wiring/index.ts	2	const reason =
+apps/sidecar/src/workflow-host-wiring/index.ts	1	const message = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+apps/sidecar/src/workflow-host-wiring/index.ts	1	const reason = cause instanceof Error ? cause.message : String(cause);
+apps/sidecar/src/workflow-host-wiring/index.ts	2	const reason = cause instanceof Error ? cause.message : String(cause);
 apps/sidecar/src/workflow-host-wiring/supervisor.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
 apps/sidecar/src/workflow-probe-handler.ts	1	logger.debug`probe child ${String(handle.pid)} SIGKILL raised (already exited?): ${errorMessage(err)}`;
 apps/sidecar/src/workflow-probe-handler.ts	1	logger.debug`probe child ${String(handle.pid)} SIGTERM raised (already exited?): ${errorMessage(err)}`;
@@ -69,9 +69,9 @@ apps/web/src/pages/agent-detail-page.tsx	1	// A handle collision is the one fail
 apps/web/src/pages/agent-detail-page.tsx	1	setLifecycle({
 apps/web/src/pages/agent-detail-page.tsx	1	setSave({ kind: "idle" });
 apps/web/src/pages/create-agent-panel.tsx	1	setDraftFailed(true);
-apps/web/src/pages/create-agent-panel.tsx	1	setSubmitError(
+apps/web/src/pages/create-agent-panel.tsx	1	setSubmitError(submitErrorFromCause(cause, "Could not create the agent."));
 apps/web/src/pages/create-skill-dialog.tsx	1	setServerError(cause instanceof Error ? cause.message : String(cause));
-apps/web/src/pages/library-page.tsx	1	setUploadError(
+apps/web/src/pages/library-page.tsx	1	setUploadError(describeApiError(err, "uploading those files"));
 apps/web/src/pages/mission-control-page.tsx	1	toast(
 apps/web/src/pages/skills-page.tsx	1	setState({ status: "error", message: messageOf(cause) });
 apps/web/src/profile-relations.ts	1	return {
@@ -147,8 +147,8 @@ packages/manus-tools/src/tool.ts	3	return errorResult(call.id, err);
 packages/manus-tools/src/tool.ts	4	return errorResult(call.id, err);
 packages/manus-tools/src/tool.ts	5	return errorResult(call.id, err);
 packages/manus-tools/src/tool.ts	6	return errorResult(call.id, err);
-packages/mcp-tools/src/tool.ts	1	return errorResult(
 packages/mcp-tools/src/tool.ts	1	return errorResult(call.id, err);
+packages/mcp-tools/src/tool.ts	1	return errorResult(call.id, new Error(`"${pattern}" is not a valid regex: ${String(err)}`));
 packages/mcp-tools/src/tool.ts	1	return {
 packages/mcp-tools/src/tool.ts	2	return errorResult(call.id, err);
 packages/mcp-tools/src/tool.ts	3	return errorResult(call.id, err);

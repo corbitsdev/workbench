@@ -1,6 +1,6 @@
 {
   "name": "@corbits/granola-tools",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Granola integration: a minimal client and an @intx/agent tool bundle for listing a user's recent call notes",
   "license": "LGPL-2.1-or-later",
   "repository": {

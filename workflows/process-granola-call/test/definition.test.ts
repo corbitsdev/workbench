@@ -62,7 +62,7 @@ test("the agent pins @corbits/granola-tools by name and version", () => {
   const agent = processStep(buildProcessGranolaCallWorkflow(INPUT)).agent;
   expect(agent.toolPackagePins).toEqual([...PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS]);
   expect(PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS).toEqual([
-    { name: "@corbits/granola-tools", version: "0.0.4" },
+    { name: "@corbits/granola-tools", version: "0.0.5" },
   ]);
 });
 

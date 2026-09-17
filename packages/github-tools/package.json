@@ -1,6 +1,6 @@
 {
   "name": "@corbits/github-tools",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "description": "GitHub search integration: a minimal REST client and an @intx/agent tool bundle exposing github_activity",
   "license": "LGPL-2.1-or-later",
   "repository": {

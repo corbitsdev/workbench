@@ -64,8 +64,8 @@ test("the agent pins @corbits/granola-tools and @corbits/linear-tools by name an
   const agent = collateralStep(buildCollateralGenerationWorkflow(INPUT)).agent;
   expect(agent.toolPackagePins).toEqual([...COLLATERAL_GENERATION_TOOL_PACKAGE_PINS]);
   expect(COLLATERAL_GENERATION_TOOL_PACKAGE_PINS).toEqual([
-    { name: "@corbits/granola-tools", version: "0.0.4" },
-    { name: "@corbits/linear-tools", version: "0.0.4" },
+    { name: "@corbits/granola-tools", version: "0.0.5" },
+    { name: "@corbits/linear-tools", version: "0.0.5" },
   ]);
 });
 

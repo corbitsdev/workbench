@@ -105,7 +105,7 @@ export const DILIGENCE_BRIEF_WIRED_SOURCES = ["Web search", "Firm memory"] as co
  * resolved the same way through its own `interchange.tools` surface.
  */
 export const DILIGENCE_BRIEF_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/web-search-tools", version: "0.0.3" },
+  { name: "@corbits/web-search-tools", version: "0.0.4" },
   { name: "@corbits/memory", version: "0.1.2" },
 ];
 

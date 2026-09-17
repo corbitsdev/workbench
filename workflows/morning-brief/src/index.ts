@@ -79,8 +79,8 @@ export const MORNING_BRIEF_PENDING_SOURCES = ["Attio", "Vercel"] as const;
  * pipeline.
  */
 export const MORNING_BRIEF_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/granola-tools", version: "0.0.4" },
-  { name: "@corbits/linear-tools", version: "0.0.4" },
+  { name: "@corbits/granola-tools", version: "0.0.5" },
+  { name: "@corbits/linear-tools", version: "0.0.5" },
 ];
 
 /**

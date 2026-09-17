@@ -140,8 +140,8 @@ export const COLLATERAL_GENERATION_PENDING_SOURCES = ["workbench artifacts"] as 
  * `@corbits/artifact-tools` stays unpinned.
  */
 export const COLLATERAL_GENERATION_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/granola-tools", version: "0.0.4" },
-  { name: "@corbits/linear-tools", version: "0.0.4" },
+  { name: "@corbits/granola-tools", version: "0.0.5" },
+  { name: "@corbits/linear-tools", version: "0.0.5" },
 ];
 
 /**

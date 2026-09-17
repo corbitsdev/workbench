@@ -62,7 +62,7 @@ test("the agent pins @corbits/granola-tools by name and version", () => {
   const agent = collateralStep(buildPainPointCollateralWorkflow(INPUT)).agent;
   expect(agent.toolPackagePins).toEqual([...PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS]);
   expect(PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS).toEqual([
-    { name: "@corbits/granola-tools", version: "0.0.4" },
+    { name: "@corbits/granola-tools", version: "0.0.5" },
   ]);
 });
 
