@@ -113,6 +113,9 @@
       "path": "./tools/github/tsconfig.src.json"
     },
     {
+      "path": "./tools/gotenberg/tsconfig.src.json"
+    },
+    {
       "path": "./tools/granola/tsconfig.src.json"
     },
     {
