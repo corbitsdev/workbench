@@ -20,7 +20,6 @@ import {
 } from "@intx/db";
 import {
   asset as assetTable,
-  modelPricing,
   tenant as tenantTable,
   user as userTable,
   workflowDefinition,
@@ -106,10 +105,6 @@ import {
   withTurnPartPersistGuard,
 } from "@corbits/insights";
 import {
-  applyInferenceCatalogMigrations,
-  createPostgresBenchModelPolicyStore,
-  createWorkflowCatalogRoutes,
-} from "@corbits/inference-catalog";
 import { generateId } from "@intx/hub-common";
 
 import {
@@ -1706,13 +1701,6 @@ export async function createHub(config: HubConfig) {
         ),
     }),
   );
-  // Bench model policy migrations still run: the store itself is read
-  // below (tenant-session bench-model-policy read), even though the
-  // dedicated read/write mount is gone.
-  await applyInferenceCatalogMigrations(config.databaseUrl);
-  const benchModelPolicy = createPostgresBenchModelPolicyStore(
-    config.databaseUrl,
-  );
   {
     const mailboxApp = new Hono<TenantEnv>();
     mountMailbox(mailboxApp, {
@@ -2208,26 +2196,6 @@ export async function createHub(config: HubConfig) {
     createWorkflowConnectionRoutes({
       authenticator: createWorkflowRunAuthenticator({ db }),
       listMcpServers: (tenantId) => listMcpServerConnections(db, tenantId),
-    }),
-  );
-  // How a running agent asks what this bench can reach for a kind of work
-  // (`@corbits/catalog-tools`' `list_model_concepts` / `pick_models` /
-  // `estimate_run_cost`): the workflow-run-authenticated counterpart to
-  // the tenant-session bench-model-policy mount above. Read-only, and it
-  // takes ports rather than a db handle, so the package never learns the
-  // catalog schema.
-  app.route(
-    "/api/workflow-inference-catalog",
-    createWorkflowCatalogRoutes({
-      authenticator: createWorkflowRunAuthenticator({ db }),
-      listOfferings: (tenantId) => listVisibleOfferings(db, tenantId),
-      listPricing: async (_tenantId, offeringIds) =>
-        offeringIds.length === 0
-          ? []
-          : await db.query.modelPricing.findMany({
-              where: inArray(modelPricing.offeringId, [...offeringIds]),
-            }),
-      getPolicy: (tenantId) => benchModelPolicy.store.getPolicy(tenantId),
     }),
   );
   // Notify-to-reconnect for an OAuth-connected credential whose token
