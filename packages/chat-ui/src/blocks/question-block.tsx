@@ -12,7 +12,7 @@
 // collapsing as if the agent had already been reached.
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { QuestionBlockData } from "@corbits/chat/blocks";
+import type { QuestionBlockData } from "../wire/blocks";
 import { Check } from "@corbits/icons";
 
 import { CHAT_STRINGS } from "../strings";

@@ -8,7 +8,17 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./src/styles.css",
+    "./wire/parts": "./src/wire/parts.ts",
+    "./wire/blocks": "./src/wire/blocks.ts",
+    "./wire/mentions": "./src/wire/mentions.ts",
+    "./wire/participants": "./src/wire/participants.ts",
+    "./wire/display-name": "./src/wire/display-name.ts",
+    "./wire/agent-address": "./src/wire/agent-address.ts",
+    "./wire/reaction-emoji": "./src/wire/reaction-emoji.ts",
+    "./wire/workbench-host-naming": "./src/wire/workbench-host-naming.ts",
+    "./wire/stream-events": "./src/wire/stream-events.ts",
+    "./wire/consumer-inference-text": "./src/wire/consumer-inference-text.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -16,7 +26,6 @@
   },
   "dependencies": {
     "@corbits/api-query": "workspace:*",
-    "@corbits/chat": "workspace:*",
     "@corbits/context-menu": "workspace:*",
     "@corbits/error-sink": "workspace:*",
     "@corbits/inference-settings": "workspace:*",

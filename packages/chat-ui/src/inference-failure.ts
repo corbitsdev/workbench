@@ -32,7 +32,7 @@ export const CLASSIFIED_INFERENCE_FAILURE_PREAMBLES: readonly string[] = [
 export {
   CONSUMER_INFERENCE_FAILURE_NOTICE,
   consumerFacingInferenceText,
-} from "@corbits/chat/consumer-inference-text";
+} from "./wire/consumer-inference-text";
 
 export function isClassifiedInferenceFailureText(text: string): boolean {
   return CLASSIFIED_INFERENCE_FAILURE_PREAMBLES.some((preamble) =>

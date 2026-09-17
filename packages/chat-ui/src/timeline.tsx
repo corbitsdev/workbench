@@ -9,7 +9,7 @@
 // an agent address), and anything else falls back to a deterministic
 // "Member" label with an initials avatar — never the address.
 
-import { isAgentAddress } from "@corbits/chat/mentions";
+import { isAgentAddress } from "./wire/mentions";
 import {
   ContextMenuView,
   contextMenuItem,
@@ -782,7 +782,7 @@ function FailedTurnStrip({
    * whose turn failed, never its raw handle slug. */
   readonly agentDisplayNames?: AgentDisplayNames;
   /** The undelivered-turn notice's own text (`postUndeliveredNotice`,
-   * `@corbits/chat`) — already cause-aware server-side (a missing model
+   * the hub's chat routes) — already cause-aware server-side (a missing model
    * credential reads "add or check your model key," a generic dispatch
    * failure reads "send it again"). Shown as this strip's own detail
    * rather than the fixed `turnFailedSub` string, so the person reads
@@ -2142,7 +2142,7 @@ export function WorkbenchTimeline({
    * approve card in its pre-round-trip fixed-disabled framing. */
   readonly approvalActions?: ApprovalActions;
   /** The poll/form blocks' live round-trip — the host's read/vote/submit
-   * against `@corbits/chat`'s response routes. Undefined renders every
+   * against the hub's chat response routes. Undefined renders every
    * poll/form card in its pre-round-trip fixed-disabled framing. */
   readonly blockResponses?: BlockResponseActions;
   /** The connect-github block's live round-trip — see

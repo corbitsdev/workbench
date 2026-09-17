@@ -2,7 +2,7 @@
 // a reader as an identifier or as JSON. Every assertion below is either
 // "this reads like a sentence" or "this string never appears".
 import { describe, expect, test } from "bun:test";
-import type { Part, ToolTracePart } from "@corbits/chat/parts";
+import type { Part, ToolTracePart } from "./wire/parts";
 
 import {
   describeToolCall,

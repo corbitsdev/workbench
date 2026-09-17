@@ -5,7 +5,7 @@
 // nothing here is ever trusted twice.
 
 import { useEffect, useState } from "react";
-import type { PollBlockData } from "@corbits/chat/blocks";
+import type { PollBlockData } from "../wire/blocks";
 
 import { CHAT_STRINGS } from "../strings";
 import { BlockCard } from "./block-card";

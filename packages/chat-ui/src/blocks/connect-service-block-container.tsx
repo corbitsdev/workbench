@@ -8,7 +8,7 @@
 // connect that goes nowhere, matching the "no port, no feature"
 // fallback every other block uses.
 import { useEffect, useState } from "react";
-import type { ConnectServiceBlockData } from "@corbits/chat/blocks";
+import type { ConnectServiceBlockData } from "../wire/blocks";
 
 import type {
   ConnectServiceActions,

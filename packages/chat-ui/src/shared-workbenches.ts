@@ -4,7 +4,7 @@
 // (`workbenchOrder.filter(members.some(subject))`, capped at 4) over the real
 // `Workbench.participants` feed instead of the mock's in-memory fixture.
 
-import { localPartOf } from "@corbits/chat/agent-address";
+import { localPartOf } from "./wire/agent-address";
 
 import type { Workbench } from "./api";
 

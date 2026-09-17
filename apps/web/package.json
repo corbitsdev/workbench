@@ -22,7 +22,6 @@
     "@corbits/approvals": "workspace:*",
     "@corbits/artifact-ui": "workspace:*",
     "@corbits/bench-ui": "workspace:*",
-    "@corbits/chat": "workspace:*",
     "@corbits/chat-ui": "workspace:*",
     "@corbits/client-log": "workspace:*",
     "@corbits/command-palette": "workspace:*",

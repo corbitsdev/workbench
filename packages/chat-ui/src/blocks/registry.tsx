@@ -3,9 +3,9 @@
 // and routes each known type to its view; anything unknown or malformed
 // renders a labeled fallback card instead of raw JSON or a crash.
 
-import type { Block } from "@corbits/chat/blocks";
-import { parseBlock } from "@corbits/chat/blocks";
-import type { BlockPart } from "@corbits/chat/parts";
+import type { Block } from "../wire/blocks";
+import { parseBlock } from "../wire/blocks";
+import type { BlockPart } from "../wire/parts";
 import type { ReactElement } from "react";
 
 import { CHAT_STRINGS } from "../strings";

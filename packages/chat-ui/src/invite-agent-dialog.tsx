@@ -21,7 +21,7 @@ import {
 import { Users, WarningCircle } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
-import { deriveDisplayName } from "@corbits/chat/display-name";
+import { deriveDisplayName } from "./wire/display-name";
 import {
   ChatApiError,
   describeChatError,
@@ -158,7 +158,7 @@ export function InviteAgentDialog({
                 // set at creation, else a humanized reading of the
                 // immutable slug — never a scattered reimplementation
                 // that could drift (or leak an internal id as a fake
-                // name) beside `@corbits/chat/display-name`.
+                // name) beside `@corbits/chat-ui/wire/display-name`.
                 const displayName = deriveDisplayName({
                   name: definition.name,
                   ...(definition.description !== undefined

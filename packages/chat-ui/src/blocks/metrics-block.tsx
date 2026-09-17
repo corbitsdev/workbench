@@ -1,4 +1,4 @@
-import type { MetricsBlockData } from "@corbits/chat/blocks";
+import type { MetricsBlockData } from "../wire/blocks";
 
 import { BlockCard } from "./block-card";
 

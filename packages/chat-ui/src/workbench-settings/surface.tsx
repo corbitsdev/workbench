@@ -9,7 +9,7 @@
 // only re-houses what the panel already rendered.
 
 import { Button, toast } from "@corbits/react-ui";
-import { isAgentAddress } from "@corbits/chat/mentions";
+import { isAgentAddress } from "../wire/mentions";
 import { useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";

@@ -1,7 +1,7 @@
 // Turning a turn's tool calls into something a person can read.
 //
 // The wire carries a tool call as an identifier plus an argument bag plus
-// whatever the tool handed back (`ToolTracePart` in `@corbits/chat/parts`,
+// whatever the tool handed back (`ToolTracePart` in `@corbits/chat-ui/wire/parts`,
 // assembled by the chat orchestrator from `inferenceDoneBlocks` /
 // `toolDoneResult`). None of those three is fit to show anyone: the
 // identifier is a symbol (`slack__post_message`, or an Interchange qualified
@@ -20,7 +20,7 @@
 // "pricing"" while it runs and "Searched the web for "pricing"" once it
 // settles.
 
-import type { Part, ToolTracePart } from "@corbits/chat/parts";
+import type { Part, ToolTracePart } from "./wire/parts";
 
 export type ToolActivityStatus = "pending" | "running" | "success" | "failed";
 

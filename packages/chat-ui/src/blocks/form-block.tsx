@@ -9,7 +9,7 @@
 import { Button } from "@corbits/react-ui";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import type { FormBlockData } from "@corbits/chat/blocks";
+import type { FormBlockData } from "../wire/blocks";
 
 import { CHAT_STRINGS } from "../strings";
 import { BlockCard } from "./block-card";

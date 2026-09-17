@@ -12,7 +12,7 @@
 // pre-round-trip framing: fixed disabled buttons, no fetch.
 
 import { Button, toast } from "@corbits/react-ui";
-import type { ApproveBlockData } from "@corbits/chat/blocks";
+import type { ApproveBlockData } from "../wire/blocks";
 import { useEffect, useState } from "react";
 
 import { CHAT_STRINGS } from "../strings";

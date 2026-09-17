@@ -9,13 +9,13 @@
 // `packages/chat/src/participants.ts`), the same friendly, deduplicated
 // mention name `mentionedParticipants` in `packages/chat/src/routes.ts`
 // matches against — never the instance-id local part. Filtering to agent
-// addresses delegates to `@corbits/chat`'s `isAgentAddress`, the same
+// addresses delegates to this package's own `isAgentAddress` (`./wire/mentions`), the same
 // function the server's fan-out uses, so the candidate set is always
 // exactly the set the server will fan a copy to. `label` is a friendlier
 // string shown alongside the handle in the popover only.
 
-import { isAgentAddress } from "@corbits/chat/mentions";
-import { handleFromName } from "@corbits/chat/participants";
+import { isAgentAddress } from "./wire/mentions";
+import { handleFromName } from "./wire/participants";
 import type { ParticipantRecord } from "./api";
 import {
   displayNameForAddress,

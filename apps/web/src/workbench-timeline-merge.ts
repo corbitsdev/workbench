@@ -4,8 +4,8 @@
 // array. No new backend: every input here is already fetched by an
 // existing page (chat-ui, api.ts).
 
-import { isAgentAddress } from "@corbits/chat/mentions";
-import { localPartOf } from "@corbits/chat/agent-address";
+import { isAgentAddress } from "@corbits/chat-ui/wire/mentions";
+import { localPartOf } from "@corbits/chat-ui/wire/agent-address";
 import type { WorkbenchThread, MessageItem } from "@corbits/chat-ui";
 
 import type { PendingApproval } from "./pending-approvals";

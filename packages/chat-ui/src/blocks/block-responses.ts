@@ -1,4 +1,4 @@
-// The in-chat poll/form cards' one seam to `@corbits/chat`'s response
+// The in-chat poll/form cards' one seam to the hub's chat response
 // routes. `@corbits/chat-ui` owns no session, so it never fetches or
 // mutates responses itself -- the host supplies this port, mirroring how
 // `ApprovalActions` threads the approve card's round-trip through
