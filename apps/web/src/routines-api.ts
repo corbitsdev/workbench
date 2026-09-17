@@ -19,7 +19,6 @@
 // CL-8160 PR for exactly what is missing.
 
 import { type } from "arktype";
-import type { ArkErrors } from "arktype";
 import { useQuery } from "@tanstack/react-query";
 import type { APIQuery } from "@corbits/api-query";
 import {
@@ -44,10 +43,6 @@ export const ScheduledWorkflowDefinition = type({
 export type ScheduledWorkflowDefinition =
   typeof ScheduledWorkflowDefinition.infer;
 
-const ScheduledWorkflowsResponse = type({
-  items: ScheduledWorkflowDefinition.array(),
-});
-
 export const AvailableCatalogWorkflow = type({
   assetName: "string",
   displayName: "string",
@@ -58,62 +53,6 @@ export const AvailableCatalogWorkflow = type({
 });
 
 export type AvailableCatalogWorkflow = typeof AvailableCatalogWorkflow.infer;
-
-const AvailableCatalogWorkflowsResponse = type({
-  items: AvailableCatalogWorkflow.array(),
-});
-
-const RunNowResponse = type({ runId: "string" });
-
-type Validator<T> = (data: unknown) => T | ArkErrors;
-
-async function request<T>(
-  path: string,
-  schema: Validator<T>,
-  init?: RequestInit,
-): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(path, {
-      ...init,
-      headers: { "content-type": "application/json", ...init?.headers },
-    });
-  } catch (cause) {
-    throw new ApiQueryError(
-      cause instanceof Error ? cause.message : String(cause),
-      undefined,
-      path,
-    );
-  }
-  if (response.status === 401) {
-    throw new ApiQueryError("Not signed in.", 401, path);
-  }
-  if (!response.ok) {
-    const detail = await response
-      .json()
-      .then(
-        (body: { error?: { userMessage?: string } }) =>
-          body.error?.userMessage ?? "",
-      )
-      .catch(() => "");
-    throw new ApiQueryError(
-      detail === "" ? `The server answered ${response.status}.` : detail,
-      response.status,
-      path,
-    );
-  }
-  if (response.status === 204) return undefined as T;
-  const body: unknown = await response.json().catch(() => undefined);
-  const parsed = schema(body);
-  if (parsed instanceof type.errors) {
-    throw new ApiQueryError(
-      `Unexpected response shape: ${parsed.summary}`,
-      undefined,
-      path,
-    );
-  }
-  return parsed;
-}
 
 /** CL-8160: no route exists at this path any more — kept as a documented
  * dead address, not a live fetch target, for any caller that still reads

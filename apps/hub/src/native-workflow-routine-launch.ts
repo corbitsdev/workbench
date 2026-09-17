@@ -184,32 +184,3 @@ export async function triggerNativeWorkflowRoutineRun(
 
   return { runId: anchor.id, address };
 }
-
-export type RunNowScheduledDefinitionArgs = {
-  tenantId: string;
-  definitionId: string;
-  principalId: string;
-  fromDomain: string;
-  content: string;
-  name: string;
-  definitionAssetId: string;
-};
-
-/**
- * Fire a schedule-triggered definition now and return its `{ runId }`. No
- * delivery join: the run launches straight into the runner (hub-zero T4,
- * CL-8126).
- */
-export async function runNowScheduledDefinition(
-  deps: NativeWorkflowRoutineTriggerDeps,
-  args: RunNowScheduledDefinitionArgs,
-): Promise<{ runId: string }> {
-  const triggered = await triggerNativeWorkflowRoutineRun(deps, {
-    tenantId: args.tenantId,
-    definitionId: args.definitionId,
-    principalId: args.principalId,
-    fromDomain: args.fromDomain,
-    content: args.content,
-  });
-  return { runId: triggered.runId };
-}

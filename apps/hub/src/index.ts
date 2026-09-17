@@ -114,8 +114,6 @@ import {
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
 import {
-  renderWorkflowSourceTree,
-  WORKFLOW_SOURCE_ENTRY,
   ensureRunSession,
   isConversationalWorkflowName,
 } from "@corbits/workflows";
@@ -219,10 +217,7 @@ import type { SidecarProvisioner } from "@intx/hub-sessions";
 import { withTurnPartWriteDefaults } from "./turn-part-content-default";
 import { createDrizzleTurnTextSnapshotReader } from "./turn-text-snapshot";
 import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
-import {
-  runNowScheduledDefinition,
-  triggerNativeWorkflowRoutineRun,
-} from "./native-workflow-routine-launch";
+import { triggerNativeWorkflowRoutineRun } from "./native-workflow-routine-launch";
 import { createCronEmitter } from "@corbits/workflow-schedule/emitter";
 import { createToolGrantsForPins } from "./tool-grants";
 import { drainHubServer, shutdownHub } from "./shutdown";
@@ -1857,9 +1852,9 @@ export async function createHub(config: HubConfig) {
   // Recurring auto-fire for schedule-triggered deployments. The cron and
   // the tick arithmetic belong to `@corbits/workflow-schedule`; this root
   // only supplies the two host bindings the emitter cannot own — which
-  // deployments are live, and how a tick fires. The fire is the same
-  // native trigger `runNowScheduledDefinition` uses, so a scheduled tick
-  // and a run-now are the same primitive with a different clock.
+  // deployments are live, and how a tick fires. CL-8160 deleted the
+  // hub-mounted run-now route (`triggerNativeWorkflowRoutineRun`'s only
+  // other caller); this cron fire is the sole remaining caller now.
   const cronEmitter = createCronEmitter({
     listCronDeployments: async () =>
       (await listDeployedCronDefinitions(db)).map((definition) => ({
