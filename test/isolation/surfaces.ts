@@ -81,14 +81,4 @@ export const tenantSurfaces: TenantSurface[] = [
     memberStatus: 404,
   },
   // Extension surfaces. One entry per extension route the hub mounts.
-  {
-    // Every workbench is now minted as a child tenant of the bench that
-    // creates it (see packages/chat/src/workbench-tenancy.ts); this
-    // covers the listing seam that owns "which workbenches belong to this
-    // bench" in the absence of a native child-tenant listing route.
-    name: "chat workbenches list",
-    method: "GET",
-    path: (t) => `/api/tenants/${t}/chat/workbenches`,
-    memberStatus: 200,
-  },
 ];
