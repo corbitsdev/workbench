@@ -24,7 +24,6 @@
         "@intx/types": "0.3.0",
         "@types/bun": "1.3.14",
         "@typescript/native-preview": "7.0.0-dev.20260707.2",
-        "@workbench/templates": "workspace:*",
         "eslint": "^10.8.0",
         "jiti": "^2.7.0",
         "prettier": "^3.6.2",
@@ -180,7 +179,6 @@
         "@radix-ui/react-dialog": "^1.1.15",
         "@radix-ui/react-slot": "^1.2.3",
         "@tanstack/react-query": "catalog:",
-        "@workbench/templates": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
@@ -243,7 +241,6 @@
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
-        "@workbench/templates": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
@@ -494,10 +491,10 @@
         "@corbits/error-sink": "workspace:*",
         "@corbits/icons": "workspace:*",
         "@corbits/inference-settings": "workspace:*",
+        "@corbits/jimmy-agent": "workspace:*",
         "@corbits/presence": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
         "@tanstack/react-query": "catalog:",
-        "@workbench/templates": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
@@ -590,6 +587,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/code-review": "workspace:*",
+        "@corbits/codex-provider": "workspace:*",
         "@corbits/credential-providers": "workspace:*",
         "@corbits/error-sink": "workspace:*",
         "@corbits/github-tools": "workspace:*",
@@ -599,6 +597,7 @@
         "@corbits/mcp-tools": "workspace:*",
         "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core#v0.1.1",
         "@corbits/workflows": "workspace:*",
+        "@corbits/xai-provider": "workspace:*",
         "@intx/crypto": "0.3.0",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
@@ -618,7 +617,7 @@
     },
     "packages/connections-tools": {
       "name": "@corbits/connections-tools",
-      "version": "0.0.9",
+      "version": "0.0.10",
       "dependencies": {
         "@corbits/connections": "workspace:*",
         "@intx/agent": "workspace:*",
@@ -719,7 +718,6 @@
         "@intx/workflow": "workspace:*",
         "@modelcontextprotocol/sdk": "catalog:",
         "@workbench/onboarding": "workspace:*",
-        "@workbench/templates": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
@@ -1085,7 +1083,6 @@
         "@intx/hub-api": "workspace:*",
         "@intx/hub-common": "workspace:*",
         "@intx/types": "workspace:*",
-        "@workbench/templates": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
@@ -1105,7 +1102,6 @@
         "@corbits/icons": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
         "@corbits/settings-ui": "workspace:*",
-        "@workbench/templates": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
@@ -1217,8 +1213,8 @@
         "@corbits/icons": "workspace:*",
         "@corbits/inference-settings": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
+        "@corbits/workflows": "workspace:*",
         "@intx/types": "workspace:*",
-        "@workbench/templates": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
@@ -1422,7 +1418,6 @@
       "devDependencies": {
         "@corbits/connections": "workspace:*",
         "@types/bun": "catalog:",
-        "@workbench/templates": "workspace:*",
         "typescript": "catalog:",
       },
     },
@@ -1435,25 +1430,6 @@
         "@intx/inference": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "templates": {
-      "name": "@workbench/templates",
-      "version": "0.0.1",
-      "dependencies": {
-        "@corbits/code-review": "workspace:*",
-        "@corbits/codex-provider": "workspace:*",
-        "@corbits/connections": "workspace:*",
-        "@corbits/jimmy-agent": "workspace:*",
-        "@corbits/scout-agent": "workspace:*",
-        "@corbits/workflows": "workspace:*",
-        "@corbits/xai-provider": "workspace:*",
-        "arktype": "catalog:",
-        "simple-icons": "^16.28.0",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -1732,7 +1708,6 @@
         "@corbits/connections-tools": "workspace:*",
         "@corbits/interaction-tools": "workspace:*",
         "@types/bun": "catalog:",
-        "@workbench/templates": "workspace:*",
         "typescript": "catalog:",
       },
       "peerDependencies": {
@@ -2684,8 +2659,6 @@
 
     "@workbench/sidecar": ["@workbench/sidecar@workspace:apps/sidecar"],
 
-    "@workbench/templates": ["@workbench/templates@workspace:templates"],
-
     "@workbench/web": ["@workbench/web@workspace:apps/web"],
 
     "@workflow/serde": ["@workflow/serde@4.1.0-beta.2", "", {}, "sha512-8kkeoQKLDaKXefjV5dbhBj2aErfKp1Mc4pb6tj8144cF+Em5SPbyMbyLCHp+BVrFfFVCBluCtMx+jjvaFVZGww=="],
@@ -3502,8 +3475,6 @@
 
     "@babel/helper-compilation-targets/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
-    "@corbits/inbox/@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#118a2cd", { "dependencies": { "@hono/standard-validator": "0.2.3", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "@intx/mime": "^0.2.2", "@intx/types": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-118a2cd", "sha512-jVRl6/IH34JBPVUz7mqWyBm1w7uJxvYAI27gjw7zL1dFO4L+D0E5q/8b+mpwKMNOKKlGXU6UF5pdHnY8ilYx8g=="],
-
     "@corbits/mailbox/hono-openapi": ["hono-openapi@1.3.1", "", { "peerDependencies": { "@hono/standard-validator": "^0.2.0", "@standard-community/standard-json": "^0.3.5", "@standard-community/standard-openapi": "^0.2.9", "@types/json-schema": "^7.0.15", "hono": "^4.11.2", "openapi-types": "^12.1.3" }, "optionalPeers": ["@hono/standard-validator", "hono"] }, "sha512-NLVeVkhKZ3drmQNEIPac8HX8Y54uf1hJAgIM/7MfDsaeVVmB+QILWQxx5x3R3NvRHgedcbEbOCGY2uR7WQYyMw=="],
 
     "@corbits/memory-hub/@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#9e6f213", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "@intx/workflow": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-9e6f213", "sha512-utnM4ZT2zmslcPXYWAAqxlDNLcpGsXFiTOtj8h7+OXnhCP0Eaw8yl25+yCTyHpvt3jcdeG4h5uFsSj7ou0BZCA=="],
@@ -3581,8 +3552,6 @@
     "wrap-ansi/string-width": ["string-width@7.2.0", "", { "dependencies": { "emoji-regex": "^10.3.0", "get-east-asian-width": "^1.0.0", "strip-ansi": "^7.1.0" } }, "sha512-tsaTIkKW9b4N+AEj+SVA+WhJzV7/zMhcSu78mLKWSk7cXMOSHsBKFWUs0fWwq8QyK3MgJBQRX6Gbi4kYbdvGkQ=="],
 
     "@babel/helper-compilation-targets/lru-cache/yallist": ["yallist@3.1.1", "", {}, "sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g=="],
-
-    "@corbits/inbox/@corbits/mailbox/hono-openapi": ["hono-openapi@1.3.1", "", { "peerDependencies": { "@hono/standard-validator": "^0.2.0", "@standard-community/standard-json": "^0.3.5", "@standard-community/standard-openapi": "^0.2.9", "@types/json-schema": "^7.0.15", "hono": "^4.11.2", "openapi-types": "^12.1.3" }, "optionalPeers": ["@hono/standard-validator", "hono"] }, "sha512-NLVeVkhKZ3drmQNEIPac8HX8Y54uf1hJAgIM/7MfDsaeVVmB+QILWQxx5x3R3NvRHgedcbEbOCGY2uR7WQYyMw=="],
 
     "@esbuild-kit/core-utils/esbuild/@esbuild/android-arm": ["@esbuild/android-arm@0.18.20", "", { "os": "android", "cpu": "arm" }, "sha512-fyi7TDI/ijKKNZTUJAQqiG5T7YjJXgnzkURqmGj13C6dCqckZBLdl4h7bkhHt/t0WP+zO9/zwroDvANaOqO5Sw=="],
 
