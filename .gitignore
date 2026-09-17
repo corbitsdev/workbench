@@ -35,3 +35,7 @@ scripts/e2e/browser/shots/
 
 # Lint caches — local only; CI installs fresh and rebuilds them.
 .eslintcache
+
+# `bun pm pack` / `bun run release` tarballs — built on demand, never
+# committed (CL-8167).
+*.tgz

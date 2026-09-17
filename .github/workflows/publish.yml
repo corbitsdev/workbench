@@ -1,0 +1,51 @@
+name: Publish
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: publish-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Every PR gets a cheap correctness signal: pack and dry-run publish
+  # every publishable package, no token required.
+  publish-dry-run:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-workbench
+      - run: bun run release -- --dry-run
+
+  # On push to main: changesets/action opens or updates the "Version
+  # Packages" PR when unreleased changesets exist. When there are none
+  # left to release (that PR just merged), it instead reports
+  # hasChangesets: false and this job runs the real release.
+  version-or-publish:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-workbench
+      - name: Configure npm registry auth
+        run: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Create version PR or publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: bun run version-packages
+          publish: bun run release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
