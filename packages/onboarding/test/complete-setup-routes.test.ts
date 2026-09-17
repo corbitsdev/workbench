@@ -5,8 +5,9 @@
 // here is a status reporter over hub reads, and it has to answer three
 // cases correctly: every default workflow live (`ready` — answered
 // from the read alone), a credential with pins still missing
-// (`provisioning` — kick the desired-state reconcile fire-and-forget
-// and answer the status for the waiting surface to poll on), and
+// (`provisioning` — the client's needs-list convergence drives the
+// deploy, so this call just answers the status for the waiting surface
+// to poll on), and
 // nothing to converge with (`unseeded`, a 200 and not an error,
 // telling the caller to fall back to the ordinary credential step).
 //
@@ -19,17 +20,6 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { DEFAULT_WORKFLOWS, inferenceCredentialName } from "@corbits/seeding";
 import { createOnboardingRoutes } from "../src/routes";
-
-// These tests never exercise the genesis-or-join join path — the stub
-// satisfies the required tenancy wiring without standing up a DB.
-const emptyHubTenancy = {
-  countUsers: async () => 0,
-  countTenants: async () => 0,
-  findRootTenant: async () => null,
-  addActiveMember: async () => {
-    throw new Error("these suites never exercise the join path");
-  },
-};
 
 const TENANT_ID = "ten_1";
 const PRINCIPAL_ID = "prn_1";
@@ -116,8 +106,6 @@ describe("POST /complete-setup", () => {
     app.route(
       "/api/onboarding",
       createOnboardingRoutes({
-        tenancy: emptyHubTenancy,
-        defaultTenantSlug: "workbench",
         hubUrl: "https://bench.example.com",
         pushWorkflow: async () => ({
           outcome: "pushed" as const,
@@ -143,8 +131,6 @@ describe("POST /complete-setup", () => {
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes({
-          tenancy: emptyHubTenancy,
-          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
@@ -205,8 +191,6 @@ describe("POST /complete-setup", () => {
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes({
-          tenancy: emptyHubTenancy,
-          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
@@ -254,27 +238,21 @@ describe("POST /complete-setup", () => {
         })),
       ),
     );
-    const kicks: string[] = [];
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes({
-          tenancy: emptyHubTenancy,
-          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
             commitSha: "a".repeat(40),
           }),
           log: () => undefined,
-          desiredStateKick: ({ tenantId }) => {
-            kicks.push(tenantId);
-          },
         }),
       );
 
-      // An already-seeded bench answers from the read alone — and a
-      // `ready` read kicks nothing, there is nothing to converge.
+      // An already-seeded bench answers from the read alone — there is
+      // nothing to converge, and the route starts no work of its own.
       const response = await app.request("/api/onboarding/complete-setup", {
         method: "POST",
       });
@@ -292,7 +270,6 @@ describe("POST /complete-setup", () => {
         DEFAULT_WORKFLOWS.map((w) => w.assetName).sort(),
       );
       expect(body.pending).toEqual([]);
-      expect(kicks).toEqual([]);
     } finally {
       server.stop(true);
     }
@@ -309,8 +286,6 @@ describe("POST /complete-setup", () => {
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes({
-          tenancy: emptyHubTenancy,
-          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
@@ -332,7 +307,7 @@ describe("POST /complete-setup", () => {
     }
   });
 
-  test("a credential with nothing live reports provisioning and kicks without waiting", async () => {
+  test("a credential with nothing live reports provisioning, answered from the read alone", async () => {
     const hub = new Hono();
     principalsRoute(hub);
     credentialsRoute(hub, { inferenceCredential: true });
@@ -341,27 +316,15 @@ describe("POST /complete-setup", () => {
       c.json([]),
     );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    let kickStarted = false;
-    let kickFinished = false;
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes({
-          tenancy: emptyHubTenancy,
-          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
             commitSha: "a".repeat(40),
           }),
           log: () => undefined,
-          desiredStateKick: () => {
-            kickStarted = true;
-            void new Promise((resolve) => setTimeout(resolve, 5_000)).then(
-              () => {
-                kickFinished = true;
-              },
-            );
-          },
         }),
       );
 
@@ -390,70 +353,25 @@ describe("POST /complete-setup", () => {
         pending: DEFAULT_WORKFLOWS.map((w) => w.assetName),
         steps: expect.any(Array),
       });
-      // The point of CL-6457, kept by CL-7586: a credential waiting on
-      // pins is not a licence to do the converge on the request path.
-      // The kick started, but the route never waited on its five
-      // seconds — it answered from the status read alone.
+      // The point of CL-6457, kept by CL-7586 and CL-8085: a credential
+      // waiting on pins is not a licence to do the converge on the
+      // request path. The client's needs-list convergence owns the
+      // deploy from here — this route answers from the status read
+      // alone, so it stays fast.
       expect(elapsedMs).toBeLessThan(1_000);
-      expect(kickStarted).toBe(true);
-      expect(kickFinished).toBe(false);
     } finally {
       server.stop(true);
     }
   });
 
-  test("a still-provisioning bench kicks the reconcile instead of waiting on it", async () => {
-    const hub = new Hono();
-    principalsRoute(hub);
-    credentialsRoute(hub, { inferenceCredential: true });
-    hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
-    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
-      c.json([]),
-    );
-    const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    try {
-      const kicks: string[] = [];
-      const app = mountAuthenticated(
-        createOnboardingRoutes({
-          tenancy: emptyHubTenancy,
-          defaultTenantSlug: "workbench",
-          hubUrl: `http://localhost:${server.port}`,
-          pushWorkflow: async () => ({
-            outcome: "pushed" as const,
-            commitSha: "a".repeat(40),
-          }),
-          log: () => undefined,
-          desiredStateKick: ({ tenantId }) => {
-            kicks.push(tenantId);
-          },
-        }),
-      );
-
-      const response = await app.request("/api/onboarding/complete-setup", {
-        method: "POST",
-      });
-
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as { kind: string };
-      expect(body.kind).toBe("provisioning");
-      // Without the kick a credential with missing pins waits out the
-      // reconcile's whole tick interval before anything happens — the
-      // reason a waiting onboarding page calls this route at all.
-      expect(kicks).toEqual([TENANT_ID]);
-    } finally {
-      server.stop(true);
-    }
-  });
-
-  test("two overlapping calls both report provisioning and each kicks", async () => {
+  test("two overlapping calls both report provisioning and start no work", async () => {
     // Two "finish setup" requests racing (a double effect fire, a
     // retried fetch) used to be this route's sharpest edge, because
     // both would deploy. Post-CL-6457 the route deploys nothing at all,
     // so the only thing left to hold is that overlapping callers get
     // the same honest status and still start no work of their own. The
-    // route deliberately does not dedupe the kicks either — one
-    // fire-and-forget nudge per caller, and the reconcile itself
-    // converges (covered where it lives, in
+    // client's needs-list convergence owns the deploy from here (the
+    // converge itself is covered where it lives, in
     // `./desired-state-reconcile.test.ts`).
     const hub = new Hono();
     credentialsRoute(hub, { inferenceCredential: true });
@@ -504,20 +422,14 @@ describe("POST /complete-setup", () => {
     );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
-      const kicks: string[] = [];
       const app = mountAuthenticated(
         createOnboardingRoutes({
-          tenancy: emptyHubTenancy,
-          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
             commitSha: "a".repeat(40),
           }),
           log: () => undefined,
-          desiredStateKick: ({ tenantId }) => {
-            kicks.push(tenantId);
-          },
         }),
       );
 
@@ -536,28 +448,25 @@ describe("POST /complete-setup", () => {
       const secondBody = (await second.json()) as { kind: string };
       expect(firstBody.kind).toBe("provisioning");
       expect(secondBody.kind).toBe("provisioning");
-
-      // One kick per caller — the route never dedupes, the reconcile
-      // converges on its own.
-      expect(kicks).toEqual([TENANT_ID, TENANT_ID]);
     } finally {
       server.stop(true);
     }
   });
 
   // CL-6264, re-homed by CL-6457 and kept by CL-7586: a bench that got
-  // partway through its workflows must read as still provisioning, and
-  // must kick the reconcile so the rest actually goes live. The
+  // partway through its workflows must read as still provisioning. The
   // convergence itself — deploying only what is missing on a later
   // pass — is covered by "a non-sidecar failure reports failed, and a
-  // re-run can converge" in ./desired-state-reconcile.test.ts.
+  // re-run can converge" in ./desired-state-reconcile.test.ts; the
+  // deploy from here is the client's needs-list convergence (CL-8085),
+  // not a server-side kick.
   //
   // CL-7074 narrowed DEFAULT_WORKFLOWS to just the setup agent, so
   // "partway through" no longer means "one of several live, the rest
   // pending" — it means the one default workflow's asset exists but
   // has not gone live yet (the sidecar push landed, the deploy
   // confirmation has not).
-  test("a bench whose agent is not yet live reports provisioning and kicks", async () => {
+  test("a bench whose agent is not yet live reports provisioning for the client to converge", async () => {
     const liveWorkflow = DEFAULT_WORKFLOWS[0];
     if (liveWorkflow === undefined) {
       throw new Error("DEFAULT_WORKFLOWS is empty");
@@ -586,20 +495,14 @@ describe("POST /complete-setup", () => {
     );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
-      const kicks: string[] = [];
       const app = mountAuthenticated(
         createOnboardingRoutes({
-          tenancy: emptyHubTenancy,
-          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
             commitSha: "a".repeat(40),
           }),
           log: () => undefined,
-          desiredStateKick: ({ tenantId }) => {
-            kicks.push(tenantId);
-          },
         }),
       );
 
@@ -627,8 +530,8 @@ describe("POST /complete-setup", () => {
         steps: expect.any(Array),
       });
 
-      // Not finished yet — and the kick is what finishes it.
-      expect(kicks).toEqual([TENANT_ID]);
+      // Not finished yet — the waiting surface keeps polling this
+      // status while the client's needs-list convergence finishes it.
     } finally {
       server.stop(true);
     }

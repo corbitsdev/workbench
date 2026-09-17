@@ -1,12 +1,12 @@
-// The failure path for first-login provisioning: a broken hub call
-// must not collapse to "nothing to do". `triggerFirstLoginProvisioning`
-// should report it as a distinct error outcome, and the app shell must
-// render a full blocking screen for it rather than silently continuing
-// into a shell with zero benches.
+// App-shell rendering around the onboarding wizard's credential-connect
+// surface. 0→1 tenant creation moved to the client's needs-list
+// (CL-8085, see bench-context.tsx) — this page now only checks
+// membership (`/api/me/principals`) and credential state before
+// deciding whether to show the credential step.
 
 import { ThemeProvider } from "@corbits/react-ui";
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, createElement } from "react";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -16,7 +16,6 @@ import {
 } from "@corbits/connections/credential-test";
 
 import { App } from "../src/app";
-import { NavigationProvider } from "../src/navigation";
 import {
   CREDENTIAL_PROVIDERS,
   hasActiveCredential,
@@ -25,11 +24,19 @@ import {
   readOpenRouterConnectReturn,
   SECONDARY_CREDENTIAL_PROVIDERS,
   submitCredential,
-  triggerFirstLoginProvisioning,
 } from "../src/onboarding";
-import { OnboardingPage } from "../src/pages/onboarding-page";
 import { ONBOARDING_PATH } from "../src/routes";
 import type { SessionState } from "../src/session";
+
+/** The `/api/me/principals` page an existing member with an active
+ * principal on `tenantId` reads as, so the onboarding wizard's own
+ * membership check resolves past genesis straight to the credential
+ * probe. */
+const existingMemberPrincipals = (tenantId: string) =>
+  json({
+    data: [{ tenantId, status: "active" }],
+    nextCursor: null,
+  });
 
 const realFetch = globalThis.fetch;
 
@@ -124,140 +131,6 @@ describe("PRIMARY_CREDENTIAL_PROVIDERS and SECONDARY_CREDENTIAL_PROVIDERS", () =
       ...PRIMARY_CREDENTIAL_PROVIDERS,
       ...SECONDARY_CREDENTIAL_PROVIDERS,
     ]);
-  });
-});
-
-describe("triggerFirstLoginProvisioning", () => {
-  test("a structured error envelope becomes an error outcome, not null", async () => {
-    globalThis.fetch = (async () =>
-      json(
-        {
-          error: {
-            code: "provisioning_failed",
-            userMessage:
-              "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
-            refId: "abc123",
-          },
-        },
-        500,
-      )) as unknown as typeof fetch;
-
-    const result = await triggerFirstLoginProvisioning("Ada's bench");
-    expect(result).toEqual({
-      kind: "error",
-      message:
-        "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
-      refId: "abc123",
-    });
-  });
-
-  // CL-6360: a raw network failure (or any body that doesn't match the
-  // hub's error envelope) must never surface its own text to the user —
-  // only the fixed consumer sentence.
-  test("a network failure becomes a consumer-language error outcome, never the raw cause", async () => {
-    globalThis.fetch = (async () => {
-      throw new Error("connection refused");
-    }) as unknown as typeof fetch;
-
-    const result = await triggerFirstLoginProvisioning("Ada's bench");
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") throw new Error("unreachable");
-    expect(result.message).not.toContain("connection refused");
-    expect(result.message).toBe(
-      "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
-    );
-  });
-
-  test("an ordinary success still parses through", async () => {
-    globalThis.fetch = (async () =>
-      json({ kind: "existing-member" })) as unknown as typeof fetch;
-
-    const result = await triggerFirstLoginProvisioning("Ada's bench");
-    expect(result).toEqual({ kind: "existing-member" });
-  });
-
-  test("sends the workbench name in the provision request body", async () => {
-    let requestBody: unknown = undefined;
-    let requestInit: RequestInit | undefined;
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      requestInit = init;
-      requestBody =
-        init.body === undefined ? undefined : JSON.parse(init.body as string);
-      return json({ kind: "existing-member" });
-    }) as unknown as typeof fetch;
-
-    await triggerFirstLoginProvisioning("Research bench");
-    expect(requestBody).toEqual({ name: "Research bench" });
-    expect(requestInit?.method).toBe("POST");
-  });
-
-  test("omits a body when no name is given (the shell routing probe)", async () => {
-    let sentBody: unknown = "__sentinel__";
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      sentBody = init.body;
-      return json({ kind: "existing-member" });
-    }) as unknown as typeof fetch;
-
-    await triggerFirstLoginProvisioning();
-    expect(sentBody).toBeUndefined();
-  });
-
-  test("a provisioned bench with a server seed stays a 'provisioned' outcome — seeded is reported faithfully", async () => {
-    // Regression guard: a server-side seed (operator-configured or
-    // env-key-auto-planted key) must not collapse the outcome into
-    // `existing-member` or otherwise hide that the bench was just
-    // provisioned. The wizard reads `seeded` off this exact shape to
-    // decide whether to skip the credential step (see
-    // apps/web/test/onboarding.test.tsx's "App landing fresh on a
-    // hub-seeded workbench" suite).
-    let requestBody: unknown = undefined;
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      requestBody =
-        init.body === undefined ? undefined : JSON.parse(init.body as string);
-      return json({
-        kind: "provisioned",
-        tenantId: "ten_1",
-        tenantSlug: "ada-user1",
-        seeded: true,
-        seedSkipReason: "operator_seed_key",
-      });
-    }) as unknown as typeof fetch;
-
-    const result = await triggerFirstLoginProvisioning("Ada's bench");
-    expect(requestBody).toEqual({ name: "Ada's bench" });
-    expect(result).toEqual({
-      kind: "provisioned",
-      tenantId: "ten_1",
-      tenantSlug: "ada-user1",
-      seeded: true,
-      seedSkipReason: "operator_seed_key",
-    });
-    // The credential step stays in the flow precisely because seeded is
-    // reported faithfully, not folded away.
-    if (result.kind === "provisioned") expect(result.seeded).toBe(true);
-  });
-
-  test("an existing member whose bench is not fully seeded reports seeded: false, not silently dropped", async () => {
-    // Regression guard for the bench_unseeded defect: a returning user
-    // with a real membership but no working credential yet must not read
-    // as an ordinary, fully-set-up existing member. Before this fix the
-    // client discarded `seeded` entirely for `existing-member`.
-    globalThis.fetch = (async () =>
-      json({
-        kind: "existing-member",
-        seeded: false,
-      })) as unknown as typeof fetch;
-
-    const result = await triggerFirstLoginProvisioning();
-    expect(result).toEqual({ kind: "existing-member", seeded: false });
-  });
-
-  test("an existing member on someone else's tenant carries no seeded field", async () => {
-    globalThis.fetch = (async () =>
-      json({ kind: "existing-member" })) as unknown as typeof fetch;
-
-    const result = await triggerFirstLoginProvisioning();
-    expect(result).toEqual({ kind: "existing-member" });
   });
 });
 
@@ -460,318 +333,6 @@ describe("App at the onboarding path", () => {
     expect(markup).toContain("Preparing your account");
     expect(markup).not.toContain("Getting your workbench ready");
     expect(markup).not.toContain("Setting up your workbench");
-  });
-});
-
-describe("App landing fresh on a hub-seeded workbench", () => {
-  test("a freshly provisioned, fully seeded bench skips the credential step entirely (CL-6101)", async () => {
-    // A hub-owned key (the env-key auto-plant, or the older
-    // ANTHROPIC_API_KEY path) already deployed and confirmed the
-    // default workflow set by the time `/api/onboarding/provision`
-    // answers — there is nothing left to prove or connect, so the
-    // wizard must land straight on the finished ending, exactly like a
-    // returning fully-seeded member does.
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({
-          kind: "provisioned",
-          tenantId: "ten_1",
-          tenantSlug: "ada-user1",
-          seeded: true,
-        });
-      }
-      // The page independently confirms `seeded: true` against a real
-      // stored credential (CL-6101 review) before hard-skipping — this
-      // scenario's premise (a hub-owned key already deployed) means that
-      // confirmation succeeds.
-      if (url === "/api/tenants/ten_1/credentials") {
-        return json({
-          data: [{ id: "cred_1", status: "active" }],
-          nextCursor: null,
-        });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      expect(calls).toEqual(["/"]);
-      expect(container.textContent).not.toContain("Bring your own AI");
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
-  test("provisioned, seeded: true does NOT hard-skip when no active credential is confirmed (CL-6101 review)", async () => {
-    // `seeded: true` here only means the seed run's validation trigger
-    // started a workflow run — never that it succeeded against a real
-    // credential. With the credentials read confirming nothing active,
-    // the page must fall through to the credential step, not the
-    // finished ending.
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({
-          kind: "provisioned",
-          tenantId: "ten_1",
-          tenantSlug: "ada-user1",
-          seeded: true,
-        });
-      }
-      if (url === "/api/tenants/ten_1/credentials") {
-        return json({ data: [], nextCursor: null });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      expect(container.textContent).toContain("Bring your own AI");
-      expect(calls).toEqual([]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
-  test("existing-member, seeded: true does NOT hard-skip when no active credential is confirmed (CL-6101 review)", async () => {
-    // `seeded: true` for an existing member means every default workflow
-    // has an active deployment (the doc reader's workflow pins) — never
-    // that a credential was checked. With the credentials read
-    // confirming nothing active, the page must fall through to the
-    // credential step.
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({
-          kind: "existing-member",
-          seeded: true,
-          tenantId: "ten_1",
-        });
-      }
-      if (url === "/api/tenants/ten_1/credentials") {
-        return json({ data: [], nextCursor: null });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      expect(container.textContent).toContain("Bring your own AI");
-      expect(calls).toEqual([]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
-  test("provisioned, seeded: true stays on setup with Retry when the credential probe fails (CL-6868)", async () => {
-    // Transient credentials-read failure must not open paste-a-key as if
-    // none exists — the key may already be connected. Stay on the setup
-    // step with one consumer sentence and Retry.
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({
-          kind: "provisioned",
-          tenantId: "ten_1",
-          tenantSlug: "ada-user1",
-          seeded: true,
-        });
-      }
-      if (url === "/api/tenants/ten_1/credentials") {
-        throw new Error("connection refused");
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      const text = container.textContent ?? "";
-      expect(text).not.toContain("Bring your own AI");
-      expect(text).not.toContain("or paste a provider API key");
-      expect(text).toContain(
-        "Checking for a connected key hit a snag. Try again in a moment.",
-      );
-      const retry = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Try again",
-      );
-      expect(retry).not.toBeUndefined();
-      expect(calls).toEqual([]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
-  test("existing-member, seeded: true stays on setup with Retry when the credential probe fails (CL-6868)", async () => {
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({
-          kind: "existing-member",
-          seeded: true,
-          tenantId: "ten_1",
-        });
-      }
-      if (url === "/api/tenants/ten_1/credentials") {
-        return json({ error: "boom" }, 500);
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      const text = container.textContent ?? "";
-      expect(text).not.toContain("Bring your own AI");
-      expect(text).not.toContain("or paste a provider API key");
-      expect(text).toContain(
-        "Checking for a connected key hit a snag. Try again in a moment.",
-      );
-      const retry = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Try again",
-      );
-      expect(retry).not.toBeUndefined();
-      expect(calls).toEqual([]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
-  test("a freshly provisioned bench with no working credential still shows the credential step", async () => {
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({
-          kind: "provisioned",
-          tenantId: "ten_1",
-          tenantSlug: "ada-user1",
-          seeded: false,
-          seedSkipReason: "no operator key configured",
-        });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const { navigate, calls } = trackedNavigate();
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={navigate}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      expect(container.textContent).toContain("Bring your own AI");
-      expect(calls).toEqual([]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
   });
 });
 
@@ -1110,17 +671,12 @@ describe("the OpenRouter connect card", () => {
     // connect actually succeeded — it lands on the same finished state
     // as a fresh connect would.
     globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({
-          kind: "existing-member",
-          seeded: true,
-          tenantId: "ten_1",
-        });
+      if (url === "/api/me/principals") {
+        return existingMemberPrincipals("ten_1");
       }
-      // The page independently confirms `seeded: true` against a real
-      // stored credential (CL-6101 review) before hard-skipping — this
-      // scenario's premise (a real check shows the connect succeeded)
-      // means that confirmation succeeds.
+      // The page independently confirms a real stored credential before
+      // hard-skipping — this scenario's premise (a real check shows the
+      // connect succeeded) means that confirmation succeeds.
       if (url === "/api/tenants/ten_1/credentials") {
         return json({
           data: [{ id: "cred_1", status: "active" }],
@@ -1333,57 +889,6 @@ describe("the Hugging Face connect card", () => {
   });
 });
 
-describe("OnboardingPage resuming a bench_unseeded account", () => {
-  const noop = () => undefined;
-  const settle = () =>
-    act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
-
-  let container: HTMLDivElement | null = null;
-  let root: Root | null = null;
-
-  afterEach(() => {
-    if (root !== null) act(() => root?.unmount());
-    container?.remove();
-    container = null;
-    root = null;
-  });
-
-  test("an existing member with seeded: false lands on the credential step reading as unfinished, not pre-satisfied", async () => {
-    // No naming step (CL-6089) — provisioning fires automatically, under
-    // a default name, the moment the wizard mounts.
-    globalThis.fetch = (async () =>
-      json({
-        kind: "existing-member",
-        seeded: false,
-      })) as unknown as typeof fetch;
-
-    container = document.createElement("div");
-    document.body.appendChild(container);
-    root = createRoot(container);
-    act(() => {
-      root?.render(
-        createElement(NavigationProvider, {
-          navigate: noop,
-          children: createElement(OnboardingPage, {
-            user: { id: "user_1", name: "Ada", email: "ada@example.com" },
-          }),
-        }),
-      );
-    });
-    await settle();
-
-    // The wizard reads this account as still needing a working
-    // credential — never "a working key is already in place", the copy
-    // a fully seeded existing member gets.
-    expect(container.textContent).toContain("Finish setting up your workbench");
-    expect(container.textContent).not.toContain(
-      "A working key is already in place",
-    );
-  });
-});
-
 describe("connecting a local Ollama instance from onboarding", () => {
   const settle = () =>
     act(async () => {
@@ -1417,8 +922,11 @@ describe("connecting a local Ollama instance from onboarding", () => {
   test("picking the Ollama card prefills its base URL, and submitting connects it and marks the tenant as having a usable model", async () => {
     let completeRequestBody: unknown = null;
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
-      if (url === "/api/onboarding/provision") {
-        return json({ kind: "existing-member", seeded: false });
+      if (url === "/api/me/principals") {
+        return existingMemberPrincipals("ten_1");
+      }
+      if (url === "/api/tenants/ten_1/credentials") {
+        return json({ data: [], nextCursor: null });
       }
       if (url === "/api/onboarding/complete") {
         completeRequestBody = JSON.parse((init?.body as string) ?? "{}");
@@ -1507,8 +1015,11 @@ describe("skipping the onboarding credential step", () => {
     // `bench_unseeded` state, not an error (see `handleSkip`'s own
     // comment): skipping must never call the credential-complete route.
     globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/provision") {
-        return json({ kind: "existing-member", seeded: false });
+      if (url === "/api/me/principals") {
+        return existingMemberPrincipals("ten_1");
+      }
+      if (url === "/api/tenants/ten_1/credentials") {
+        return json({ data: [], nextCursor: null });
       }
       throw new Error(`unexpected fetch: ${url}`);
     }) as unknown as typeof fetch;

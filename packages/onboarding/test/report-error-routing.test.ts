@@ -1,7 +1,6 @@
 // CL-7234: every caught failure in this package's routes and
 // env-credential-plant paths must reach @corbits/error-sink's
-// reportError with the operation/tenant context it expects — the same
-// precedent ../src/provision.ts already sets. This mocks
+// reportError with the operation/tenant context it expects. This mocks
 // @corbits/error-sink and dynamically imports each module under test
 // afterward (the same recipe packages/workflow-deploy-source and
 // packages/webhook-triggers already use for this exact kind of
@@ -30,17 +29,6 @@ const { createOnboardingRoutes } = await import("../src/routes");
 const { plantEnvProviderCredentials } =
   await import("../src/plant-env-credentials");
 
-// These tests never exercise the genesis-or-join join path — the stub
-// satisfies the required tenancy wiring without standing up a DB.
-const emptyHubTenancy = {
-  countUsers: async () => 0,
-  countTenants: async () => 0,
-  findRootTenant: async () => null,
-  addActiveMember: async () => {
-    throw new Error("these suites never exercise the join path");
-  },
-};
-
 const asUser: MiddlewareHandler<AppEnv> = async (c, next) => {
   c.set("user", { id: "user_1", email: "user_1@example.com" } as never);
   await next();
@@ -56,26 +44,32 @@ function mountAuthenticated(routes: Hono<AppEnv>): Hono<AppEnv> {
 describe("routes.ts routes caught errors through reportError", () => {
   test("a failure with no tenant known yet reports operation + userId, no tenantId", async () => {
     const routes = createOnboardingRoutes({
-      tenancy: emptyHubTenancy,
-      defaultTenantSlug: "workbench",
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
         commitSha: "a".repeat(40),
       }),
       log: () => undefined,
+      // The credential step itself blows up, so no tenant is ever known.
+      testAndPersistCredentialFn: async () => {
+        throw new Error("connection refused");
+      },
     });
     const app = mountAuthenticated(routes);
 
-    const response = await app.request("/provision", { method: "POST" });
+    const response = await app.request("/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: "anthropic", apiKey: "sk-ant-x" }),
+    });
 
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(500);
     expect(reportErrorCalls).toHaveLength(1);
     const [, context] = reportErrorCalls[0] as [
       unknown,
       Record<string, unknown>,
     ];
-    expect(context.operation).toBe("onboarding_provision");
+    expect(context.operation).toBe("onboarding_complete");
     expect(context.tenantId).toBeUndefined();
     expect((context.extra as { userId: string }).userId).toBe("user_1");
   });
@@ -121,8 +115,6 @@ describe("routes.ts routes caught errors through reportError", () => {
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
-        tenancy: emptyHubTenancy,
-        defaultTenantSlug: "workbench",
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => ({
           outcome: "pushed" as const,
@@ -230,8 +222,6 @@ describe("recentlyConnectedCredential reports through reportError and still find
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
-        tenancy: emptyHubTenancy,
-        defaultTenantSlug: "workbench",
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => ({
           outcome: "pushed" as const,

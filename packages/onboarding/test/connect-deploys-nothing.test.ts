@@ -1,14 +1,13 @@
 // "Connecting should deploy nothing" (CL-6457), asserted at the route
 // layer. The live repro: pasting a key sat on "Connecting…" for 2+
 // minutes because `POST /complete` deployed five default workflows —
-// ~20s each — before it answered. The fix is structural, so the test is
-// too: the follow-up work is handed in as a kick seam that takes five
-// seconds and records when it ran, and the route has to answer long
-// before it could possibly have waited on that. A route that ever awaits
-// a deploy again fails here on the clock, not on a mock's call count
-// alone. CL-7586 deleted the pending-seed drain the kick used to wake:
-// the kick now names the tenant for the desired-state reconcile, and no
-// row is parked anywhere.
+// ~20s each — before it answered. The fix is structural: the route only
+// ever runs the fast half (persist the credential, seed its catalog,
+// answer status) and hands convergence to the client's needs-list
+// (CL-8085), so a route that ever awaits a deploy again fails here on
+// the clock. CL-7586 deleted the pending-seed drain the old kick used to
+// wake, and CL-8085 deleted the kick itself: no row is parked anywhere
+// and no follow-up work leaves this route at all.
 import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
@@ -155,23 +154,9 @@ function activeCredentialRow() {
   };
 }
 
-function routeDeps(args: {
-  hubUrl: string;
-  onKick?: (tenantId: string) => void;
-}) {
+function routeDeps(args: { hubUrl: string }) {
   return {
     hubUrl: args.hubUrl,
-    // This suite never exercises the genesis-or-join join path; the
-    // stub satisfies the required tenancy wiring without a DB.
-    tenancy: {
-      countUsers: async () => 0,
-      countTenants: async () => 0,
-      findRootTenant: async () => null,
-      addActiveMember: async () => {
-        throw new Error("this suite never exercises the join path");
-      },
-    },
-    defaultTenantSlug: "workbench",
     pushWorkflow: async () => ({
       outcome: "pushed" as const,
       commitSha: "a".repeat(40),
@@ -184,17 +169,6 @@ function routeDeps(args: {
       principalId: PRINCIPAL_ID,
       tenantDomain: TENANT_DOMAIN,
     }),
-    // CL-7586 deleted the pending-seed drain: the route hands follow-up
-    // work to the desired-state reconcile as a fire-and-forget kick
-    // naming the tenant. Tests hand in slow kicks to prove the route
-    // answers without waiting on them.
-    ...(args.onKick === undefined
-      ? {}
-      : {
-          desiredStateKick: ({ tenantId }: { tenantId: string }) => {
-            args.onKick?.(tenantId);
-          },
-        }),
   };
 }
 
@@ -206,25 +180,13 @@ function mountAuthenticated(routes: Hono<AppEnv>): Hono<AppEnv> {
 }
 
 describe("POST /complete — connecting deploys nothing", () => {
-  test("answers in a moment even when the kicked reconcile would take five seconds", async () => {
+  test("answers in a moment and attempts nothing deploy-shaped", async () => {
     const { hub, requests } = fakeHub();
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    let kickStarted = false;
-    let kickFinished = false;
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes(
-          routeDeps({
-            hubUrl: `http://localhost:${server.port}`,
-            onKick: () => {
-              kickStarted = true;
-              void new Promise((resolve) => setTimeout(resolve, 5_000)).then(
-                () => {
-                  kickFinished = true;
-                },
-              );
-            },
-          }),
+          routeDeps({ hubUrl: `http://localhost:${server.port}` }),
         ),
       );
 
@@ -238,11 +200,7 @@ describe("POST /complete — connecting deploys nothing", () => {
 
       expect(response.status).toBe(200);
       expect(elapsedMs).toBeLessThan(1_000);
-      // The response never waited on the kicked reconcile — the whole
-      // point: the kick started, but its five seconds are still running.
-      expect(kickStarted).toBe(true);
-      expect(kickFinished).toBe(false);
-      // And nothing deploy-shaped was even attempted against the hub.
+      // Nothing deploy-shaped was even attempted against the hub.
       expect(
         requests.filter(
           (line) =>
@@ -290,50 +248,13 @@ describe("POST /complete — connecting deploys nothing", () => {
     }
   });
 
-  test("kicks the desired-state reconcile for the bench instead of parking a row", async () => {
-    const { hub } = fakeHub();
-    const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const kickedTenants: string[] = [];
-    try {
-      const app = mountAuthenticated(
-        createOnboardingRoutes(
-          routeDeps({
-            hubUrl: `http://localhost:${server.port}`,
-            onKick: (tenantId) => {
-              kickedTenants.push(tenantId);
-            },
-          }),
-        ),
-      );
-
-      const response = await app.request("/api/onboarding/complete", {
-        method: "POST",
-        body: JSON.stringify({ provider: "anthropic", apiKey: "sk-ant-x" }),
-        headers: { "content-type": "application/json" },
-      });
-
-      expect(response.status).toBe(200);
-      // No row is parked anywhere: the reconcile learns the tenant from
-      // the kick's arguments, not from a drain table.
-      expect(kickedTenants).toEqual([TENANT_ID]);
-    } finally {
-      server.stop(true);
-    }
-  });
-
   test("an already-provisioned bench reconnecting reports ready, with nothing left pending", async () => {
     const { hub } = fakeHub({ seededWorkflows: ALL_WORKFLOWS });
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const kickedTenants: string[] = [];
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes(
-          routeDeps({
-            hubUrl: `http://localhost:${server.port}`,
-            onKick: (tenantId) => {
-              kickedTenants.push(tenantId);
-            },
-          }),
+          routeDeps({ hubUrl: `http://localhost:${server.port}` }),
         ),
       );
 
@@ -349,8 +270,6 @@ describe("POST /complete — connecting deploys nothing", () => {
 
       expect(body.kind).toBe("ready");
       expect(body.pending).toEqual([]);
-      // Nothing left to reconcile, so no kick either.
-      expect(kickedTenants).toEqual([]);
     } finally {
       server.stop(true);
     }
@@ -474,29 +393,17 @@ describe("GET /provisioning-status", () => {
   });
 });
 
-describe("POST /complete-setup — kicks instead of deploying", () => {
-  test("kicks the reconcile and answers provisioning without waiting on it", async () => {
+describe("POST /complete-setup — converges instead of deploying", () => {
+  test("answers provisioning immediately without a reconcile kick", async () => {
     // The key is already persisted under the setup catalog's name, so
-    // the route finds something to reconcile toward; the workflows are
-    // not deployed yet, so the answer is provisioning either way.
+    // the route finds something to report on; the route never deploys
+    // anything and never kicks a reconcile — it answers provisioning.
     const { hub } = fakeHub({ inferenceCredential: true });
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    let kickStarted = false;
-    let kickFinished = false;
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes(
-          routeDeps({
-            hubUrl: `http://localhost:${server.port}`,
-            onKick: () => {
-              kickStarted = true;
-              void new Promise((resolve) => setTimeout(resolve, 5_000)).then(
-                () => {
-                  kickFinished = true;
-                },
-              );
-            },
-          }),
+          routeDeps({ hubUrl: `http://localhost:${server.port}` }),
         ),
       );
 
@@ -510,10 +417,6 @@ describe("POST /complete-setup — kicks instead of deploying", () => {
       expect(response.status).toBe(200);
       expect(elapsedMs).toBeLessThan(1_000);
       expect(body.kind).toBe("provisioning");
-      // Same structural guarantee as /complete: the kicked reconcile
-      // started, but the route never waited on its five seconds.
-      expect(kickStarted).toBe(true);
-      expect(kickFinished).toBe(false);
     } finally {
       server.stop(true);
     }

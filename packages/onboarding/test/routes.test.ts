@@ -1,7 +1,7 @@
-// The route's own error handling: a provisioning failure must never
-// reach the caller as a bare, unhandled 500 — it should come back as
-// the same `{ error: { code, userMessage, refId } }` envelope every other hub
-// route uses, so the web layer can tell "nothing to do" apart from
+// Route-level error-envelope coverage: a failure inside a route must
+// never reach the caller as a bare, unhandled 500 — it should come back as
+// the same `{ error: { code, userMessage, refId } }` envelope every other
+// hub route uses, so the web layer can tell "nothing to do" apart from
 // "this broke" instead of both looking like silence.
 
 import { describe, expect, test } from "bun:test";
@@ -12,17 +12,6 @@ import { createOnboardingRoutes } from "../src/routes";
 import { testAndPersistCredential } from "../src/complete-credential";
 import { createProviderHealthStore } from "@corbits/connections/provider-health";
 import { HubApiError } from "@corbits/hub-api-client";
-
-// These tests never exercise the genesis-or-join join path — the stub
-// satisfies the required tenancy wiring without standing up a DB.
-const emptyHubTenancy = {
-  countUsers: async () => 0,
-  countTenants: async () => 0,
-  findRootTenant: async () => null,
-  addActiveMember: async () => {
-    throw new Error("these suites never exercise the join path");
-  },
-};
 
 const asUser: MiddlewareHandler<AppEnv> = async (c, next) => {
   c.set("user", { id: "user_1", email: "alice@example.com" } as never);
@@ -36,299 +25,9 @@ function mountAuthenticated(routes: Hono<AppEnv>): Hono<AppEnv> {
   return app;
 }
 
-describe("POST /provision", () => {
-  test("an unreachable hub surfaces a transient error envelope (503), not a bare 500 body", async () => {
-    const lines: string[] = [];
-    const routes = createOnboardingRoutes({
-      tenancy: emptyHubTenancy,
-      defaultTenantSlug: "workbench",
-      // Port 0 on loopback refuses every connection immediately, so the
-      // underlying fetch throws deterministically without a live hub.
-      hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({
-        outcome: "pushed" as const,
-        commitSha: "a".repeat(40),
-      }),
-      log: (line) => lines.push(line),
-    });
-    const app = mountAuthenticated(routes);
-
-    const response = await app.request("/provision", { method: "POST" });
-
-    // An unrecognized failure (connection refused) is transient: the hub
-    // may come back, and provisioning is idempotent so retry is safe.
-    expect(response.status).toBe(503);
-    const body = (await response.json()) as {
-      error: { code: string; kind: string; userMessage: string; refId: string };
-    };
-    expect(body.error.code).toBe("provisioning_failed");
-    expect(body.error.kind).toBe("transient");
-    expect(typeof body.error.userMessage).toBe("string");
-    expect(typeof body.error.refId).toBe("string");
-    // The raw detail (here, the connection-refused failure) is logged
-    // behind the refId — never handed to the client as `userMessage`.
-    expect(body.error.userMessage).not.toContain("ECONNREFUSED");
-    expect(lines.some((line) => line.includes("user_1"))).toBe(true);
-  });
-
-  test("a permanent provision failure (slug conflict, no principal) maps to 500 with kind permanent", async () => {
-    // A slug-conflict where the caller still has no principal anywhere is a
-    // dead end the client cannot retry out of — it must surface as a
-    // permanent error so the UI offers "contact support", not "try again".
-    // Body must include a name so provision enters the create path; without
-    // a name the route returns needs-onboarding and never hits the hub.
-    const hub = new Hono();
-    hub.get("/api/me/principals", (c) =>
-      c.json({ data: [], nextCursor: null }),
-    );
-    hub.post("/api/tenants", (c) =>
-      c.json({ error: { code: "conflict", message: "Slug taken" } }, 409),
-    );
-    const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    try {
-      const routes = createOnboardingRoutes({
-        tenancy: emptyHubTenancy,
-        defaultTenantSlug: "workbench",
-        hubUrl: `http://localhost:${server.port}`,
-        pushWorkflow: async () => ({
-          outcome: "pushed" as const,
-          commitSha: "a".repeat(40),
-        }),
-        log: () => undefined,
-      });
-      const app = mountAuthenticated(routes);
-
-      const response = await app.request("/provision", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: "Alice's Lab" }),
-      });
-
-      expect(response.status).toBe(500);
-      const body = (await response.json()) as {
-        error: { code: string; kind: string; message: string };
-      };
-      expect(body.error.code).toBe("slug_conflict_no_principal");
-      expect(body.error.kind).toBe("permanent");
-    } finally {
-      server.stop(true);
-    }
-  });
-
-  test("a nameless membership probe returns needs-onboarding without creating", async () => {
-    const creates: unknown[] = [];
-    const hub = new Hono();
-    hub.get("/api/me/principals", (c) =>
-      c.json({ data: [], nextCursor: null }),
-    );
-    hub.post("/api/tenants", async (c) => {
-      creates.push(await c.req.json());
-      return c.json({ id: "tnt_x" }, 201);
-    });
-    const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    try {
-      const routes = createOnboardingRoutes({
-        tenancy: emptyHubTenancy,
-        defaultTenantSlug: "workbench",
-        hubUrl: `http://localhost:${server.port}`,
-        pushWorkflow: async () => ({
-          outcome: "pushed" as const,
-          commitSha: "a".repeat(40),
-        }),
-        log: () => undefined,
-      });
-      const app = mountAuthenticated(routes);
-
-      const response = await app.request("/provision", { method: "POST" });
-
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as { kind: string };
-      expect(body.kind).toBe("needs-onboarding");
-      expect(creates).toEqual([]);
-    } finally {
-      server.stop(true);
-    }
-  });
-
-  test("rapid named create retries from the same user are rate-limited (429)", async () => {
-    // Rate limit applies only to named creates (the membership probe must not
-    // burn a slot — otherwise the naming wizard always 429s within 10s of
-    // first login).
-    const routes = createOnboardingRoutes({
-      tenancy: emptyHubTenancy,
-      defaultTenantSlug: "workbench",
-      hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({
-        outcome: "pushed" as const,
-        commitSha: "a".repeat(40),
-      }),
-      log: () => undefined,
-    });
-    const app = mountAuthenticated(routes);
-    const named = {
-      method: "POST" as const,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Alice's Lab" }),
-    };
-
-    const first = await app.request("/provision", named);
-    const second = await app.request("/provision", named);
-
-    // The first call runs (and fails transiently against the dead hub).
-    expect(first.status).toBe(503);
-    // The second is short-circuited before provisioning runs.
-    expect(second.status).toBe(429);
-    const body = (await second.json()) as {
-      error: { code: string; kind: string; message: string };
-    };
-    expect(body.error.code).toBe("rate_limited");
-    expect(body.error.kind).toBe("transient");
-  });
-
-  test("a membership probe does not rate-limit the following named create", async () => {
-    // Two-step first-login: shell probe (no name) then naming submit (with name).
-    // The probe must not consume the create rate-limit slot.
-    const hub = new Hono();
-    hub.get("/api/me/principals", (c) =>
-      c.json({ data: [], nextCursor: null }),
-    );
-    const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    try {
-      const routes = createOnboardingRoutes({
-        tenancy: emptyHubTenancy,
-        defaultTenantSlug: "workbench",
-        hubUrl: `http://localhost:${server.port}`,
-        pushWorkflow: async () => ({
-          outcome: "pushed" as const,
-          commitSha: "a".repeat(40),
-        }),
-        log: () => undefined,
-      });
-      const app = mountAuthenticated(routes);
-
-      const probe = await app.request("/provision", { method: "POST" });
-      expect(probe.status).toBe(200);
-      expect(((await probe.json()) as { kind: string }).kind).toBe(
-        "needs-onboarding",
-      );
-
-      // Named create reaches the hub (503/500 from incomplete mock is fine);
-      // the only failure mode this test forbids is 429 from the probe.
-      const create = await app.request("/provision", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: "Alice's Lab" }),
-      });
-      expect(create.status).not.toBe(429);
-      expect([500, 503]).toContain(create.status);
-    } finally {
-      server.stop(true);
-    }
-  });
-
-  test("malformed JSON on /provision is 400, not a silent membership probe", async () => {
-    const creates: unknown[] = [];
-    const hub = new Hono();
-    hub.get("/api/me/principals", (c) =>
-      c.json({ data: [], nextCursor: null }),
-    );
-    hub.post("/api/tenants", async (c) => {
-      creates.push(await c.req.json());
-      return c.json({ id: "tnt_x" }, 201);
-    });
-    const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    try {
-      const routes = createOnboardingRoutes({
-        tenancy: emptyHubTenancy,
-        defaultTenantSlug: "workbench",
-        hubUrl: `http://localhost:${server.port}`,
-        pushWorkflow: async () => ({
-          outcome: "pushed" as const,
-          commitSha: "a".repeat(40),
-        }),
-        log: () => undefined,
-      });
-      const app = mountAuthenticated(routes);
-
-      const response = await app.request("/provision", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{not-json",
-      });
-
-      expect(response.status).toBe(400);
-      const body = (await response.json()) as {
-        error: { code: string; message: string };
-      };
-      expect(body.error.code).toBe("bad_request");
-      expect(creates).toEqual([]);
-    } finally {
-      server.stop(true);
-    }
-  });
-
-  test("schema-invalid provision body is 400, not a silent membership probe", async () => {
-    const hub = new Hono();
-    hub.get("/api/me/principals", (c) =>
-      c.json({ data: [], nextCursor: null }),
-    );
-    const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    try {
-      const routes = createOnboardingRoutes({
-        tenancy: emptyHubTenancy,
-        defaultTenantSlug: "workbench",
-        hubUrl: `http://localhost:${server.port}`,
-        pushWorkflow: async () => ({
-          outcome: "pushed" as const,
-          commitSha: "a".repeat(40),
-        }),
-        log: () => undefined,
-      });
-      const app = mountAuthenticated(routes);
-
-      const response = await app.request("/provision", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: 12 }),
-      });
-
-      expect(response.status).toBe(400);
-      const body = (await response.json()) as {
-        error: { code: string; message: string };
-      };
-      expect(body.error.code).toBe("bad_request");
-    } finally {
-      server.stop(true);
-    }
-  });
-
-  test("an anonymous request is rejected before provisioning runs", async () => {
-    const routes = createOnboardingRoutes({
-      tenancy: emptyHubTenancy,
-      defaultTenantSlug: "workbench",
-      hubUrl: "http://127.0.0.1:0",
-      pushWorkflow: async () => ({
-        outcome: "pushed" as const,
-        commitSha: "a".repeat(40),
-      }),
-      log: () => undefined,
-    });
-
-    const response = await routes.request("/provision", { method: "POST" });
-
-    expect(response.status).toBe(401);
-    const body = (await response.json()) as {
-      error: { code: string; message: string };
-    };
-    expect(body.error.code).toBe("unauthorized");
-  });
-});
-
 describe("POST /complete", () => {
   test("an anonymous request is rejected before anything is seeded", async () => {
     const routes = createOnboardingRoutes({
-      tenancy: emptyHubTenancy,
-      defaultTenantSlug: "workbench",
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
@@ -355,8 +54,6 @@ describe("POST /complete", () => {
 
   test("a missing provider is rejected with a specific message, no network call made", async () => {
     const routes = createOnboardingRoutes({
-      tenancy: emptyHubTenancy,
-      defaultTenantSlug: "workbench",
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
@@ -397,8 +94,6 @@ describe("POST /complete", () => {
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
-        tenancy: emptyHubTenancy,
-        defaultTenantSlug: "workbench",
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => ({
           outcome: "pushed" as const,
@@ -433,8 +128,6 @@ describe("POST /complete", () => {
     const providerHealth = createProviderHealthStore();
     providerHealth.report("tnt_own", "anthropic", "credential_failure");
     const routes = createOnboardingRoutes({
-      tenancy: emptyHubTenancy,
-      defaultTenantSlug: "workbench",
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
@@ -462,21 +155,17 @@ describe("POST /complete", () => {
   });
 
   // CL-6457 moved partial-deploy convergence off this route entirely,
-  // and CL-7586 deleted the pending-seed drain: `/complete` no longer
-  // deploys anything and parks no row, so there is no half-finished
-  // deploy for it to report. What the route still owes the waiting
-  // surface — a fire-and-forget kick naming the tenant for the
-  // desired-state reconcile — is covered by
-  // `./connect-deploys-nothing.test.ts` ("hands follow-up work to the
-  // desired-state reconcile as a fire-and-forget kick"), and the
-  // convergence that kick buys is covered by
+  // CL-7586 deleted the pending-seed drain, and CL-8085 deleted the
+  // server-side desired-state kick with it: `/complete` neither deploys
+  // anything nor kicks anything, so there is no half-finished deploy for
+  // it to report. The client's needs-list convergence
+  // (`apps/web/src/needs-converge.ts`) drives the deploy from the
+  // browser; the reconcile it replaces is covered by
   // `./desired-state-reconcile.test.ts` ("a non-sidecar failure reports
   // failed, and a re-run can converge").
 
   test("a non-sidecar failure during setup still fails loudly with the existing 500 envelope", async () => {
     const routes = createOnboardingRoutes({
-      tenancy: emptyHubTenancy,
-      defaultTenantSlug: "workbench",
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
@@ -510,8 +199,6 @@ describe("POST /complete", () => {
   test("a HubApiError naming an absolute file path never reaches the client", async () => {
     const lines: string[] = [];
     const routes = createOnboardingRoutes({
-      tenancy: emptyHubTenancy,
-      defaultTenantSlug: "workbench",
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
@@ -598,8 +285,6 @@ describe("POST /complete — seeded-admin fallback", () => {
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
-        tenancy: emptyHubTenancy,
-        defaultTenantSlug: "workbench",
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => ({
           outcome: "pushed" as const,
@@ -637,22 +322,11 @@ describe("POST /complete — seeded-admin fallback", () => {
   });
 });
 
-// CL-7584: the revisit kick and the doc-derived step list. Every probe on
-// a joined or just-minted tenant fires exactly one fire-and-forget
-// reconcile kick — unconditionally, without awaiting the multi-GET status
-// read (`reconcileTenantDesiredState` is reads-only when converged, so the
-// pending check would only ever delay the response); a repeat probe after
-// a killed kick re-fires safely (idempotent, no new queue);
-// `/provisioning-status` carries the doc-labeled steps a waiting
-// surface renders.
-describe("CL-7584 desired-state kicks and steps", () => {
-  const joinedTenancy = {
-    countUsers: async () => 1,
-    countTenants: async () => 1,
-    findRootTenant: async () => ({ id: "ten_root", slug: "workbench" }),
-    addActiveMember: async () => ({ principalId: "prn_root" }),
-  };
-
+// CL-7584: the doc-derived step list. `/provisioning-status` carries the
+// doc-labeled steps a waiting surface renders; the converge itself moved
+// to the client's needs-list (CL-8085), so no server-side kick remains
+// to test here.
+describe("CL-7584 desired-state steps", () => {
   function assetRow(name: string, kind: string) {
     return {
       id: `ast_${name}`,
@@ -667,7 +341,7 @@ describe("CL-7584 desired-state kicks and steps", () => {
     };
   }
 
-  function mountHub(state: { seeded: boolean; brokenStatus?: boolean }) {
+  function mountHub(state: { seeded: boolean }) {
     const hub = new Hono();
     hub.get("/api/me/principals", (c) =>
       c.json({
@@ -697,11 +371,6 @@ describe("CL-7584 desired-state kicks and steps", () => {
       }),
     );
     hub.get("/api/tenants/ten_root/assets", (c) => {
-      // The latency probe: the first read the old inline pending-check
-      // awaited. A 500 here must never cost the kick its fire.
-      if (state.brokenStatus === true) {
-        return c.json({ error: { code: "boom" } }, 500);
-      }
       if (c.req.query("kind") === "workflow") {
         return c.json(state.seeded ? [assetRow("assistant", "workflow")] : []);
       }
@@ -740,110 +409,22 @@ describe("CL-7584 desired-state kicks and steps", () => {
     return hub;
   }
 
-  function routesWithKick(hub: Hono, kicks: string[]) {
+  function mountRoutes(hub: Hono) {
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     const routes = createOnboardingRoutes({
-      tenancy: joinedTenancy,
-      defaultTenantSlug: "workbench",
       hubUrl: `http://localhost:${server.port}`,
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
         commitSha: "a".repeat(40),
       }),
       log: () => undefined,
-      desiredStateKick: (args) => kicks.push(args.tenantId),
     });
     return { server, app: mountAuthenticated(routes) };
   }
 
-  // The kick is fire-and-forget behind the response: a probe that must
-  // first resolve its tenant (a plain existing member carries no id)
-  // settles the lookup after the 200 is already serialized. Poll — never
-  // a fixed sleep — so the suite stays green when the whole monorepo
-  // test leg runs packages in parallel and loopback slows down.
-  async function awaitKicks(kicks: string[], count: number) {
-    const deadline = Date.now() + 2000;
-    while (kicks.length < count) {
-      if (Date.now() > deadline) break;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-  }
-
-  test("a joined member's probe fires one kick when pins are pending", async () => {
-    const hub = mountHub({ seeded: false });
-    const kicks: string[] = [];
-    const { server, app } = routesWithKick(hub, kicks);
-    try {
-      const response = await app.request("/provision", { method: "POST" });
-      expect(response.status).toBe(200);
-      await awaitKicks(kicks, 1);
-      expect(kicks).toEqual(["ten_root"]);
-    } finally {
-      server.stop(true);
-    }
-  });
-
-  test("a converged tenant's probe still fires one kick — the reconcile is reads-only when converged", async () => {
-    const hub = mountHub({ seeded: true });
-    const kicks: string[] = [];
-    const { server, app } = routesWithKick(hub, kicks);
-    try {
-      const response = await app.request("/provision", { method: "POST" });
-      expect(response.status).toBe(200);
-      // No pending-check gates the kick: converged or not, the probe
-      // fires and the reconcile itself no-ops on reads alone.
-      await awaitKicks(kicks, 1);
-      expect(kicks).toEqual(["ten_root"]);
-    } finally {
-      server.stop(true);
-    }
-  });
-
-  test("a failing status read neither delays nor suppresses the kick", async () => {
-    const hub = mountHub({ seeded: false, brokenStatus: true });
-    // With the pending-check inline, this 500 would swallow the kick
-    // (kicks == []); with the kick unconditional, the response never
-    // touches the status endpoints.
-    const kicks: string[] = [];
-    const { server, app } = routesWithKick(hub, kicks);
-    try {
-      const response = await app.request("/provision", { method: "POST" });
-      expect(response.status).toBe(200);
-      await awaitKicks(kicks, 1);
-      expect(kicks).toEqual(["ten_root"]);
-    } finally {
-      server.stop(true);
-    }
-  });
-
-  test("a revisit after a killed kick re-fires the reconcile — no new queue", async () => {
-    const hub = mountHub({ seeded: false });
-    const kicks: string[] = [];
-    const { server, app } = routesWithKick(hub, kicks);
-    try {
-      // The first kick "dies with the process": the fire is recorded but
-      // the reconcile never runs, so the pins stay pending — exactly what
-      // a hub kill between kick and converge leaves behind.
-      const first = await app.request("/provision", { method: "POST" });
-      expect(first.status).toBe(200);
-      await awaitKicks(kicks, 1);
-      expect(kicks).toEqual(["ten_root"]);
-      // The retry is the same idempotent probe, not a new queue table or
-      // endpoint: the revisit fires again unconditionally, and the
-      // reconcile itself re-reads the pins. There is no durable queue
-      // left — this re-kick is the whole recovery story.
-      const revisit = await app.request("/provision", { method: "POST" });
-      expect(revisit.status).toBe(200);
-      await awaitKicks(kicks, 2);
-      expect(kicks).toEqual(["ten_root", "ten_root"]);
-    } finally {
-      server.stop(true);
-    }
-  });
-
   test("GET /provisioning-status carries the doc-derived step list", async () => {
     const hub = mountHub({ seeded: false });
-    const { server, app } = routesWithKick(hub, []);
+    const { server, app } = mountRoutes(hub);
     try {
       const response = await app.request(
         "/provisioning-status?tenantId=ten_root",

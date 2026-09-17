@@ -202,24 +202,11 @@ function connectRoutes(
 ): Hono<AppEnv> {
   const deps: CreateOnboardingRoutesDeps = {
     hubUrl: overrides.hubUrl ?? "https://bench.example.com",
-    // This suite never exercises the genesis-or-join join path; the
-    // stub satisfies the required tenancy wiring without a DB.
-    tenancy: {
-      countUsers: async () => 0,
-      countTenants: async () => 0,
-      findRootTenant: async () => null,
-      addActiveMember: async () => {
-        throw new Error("this suite never exercises the join path");
-      },
-    },
-    defaultTenantSlug: "workbench",
     pushWorkflow:
       overrides.pushWorkflow ??
       (async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) })),
     log: overrides.log ?? (() => undefined),
   };
-  if (overrides.desiredStateKick !== undefined)
-    deps.desiredStateKick = overrides.desiredStateKick;
   if (overrides.openrouterConnect !== undefined)
     deps.openrouterConnect = overrides.openrouterConnect;
   if (overrides.credentialCipher !== undefined)
@@ -315,11 +302,7 @@ describe("GET /oauth/openrouter/callback", () => {
       apiKey: string;
       userId: string;
     }[] = [];
-    const kickedTenants: string[] = [];
     const app = connectRoutes({
-      desiredStateKick: ({ tenantId }) => {
-        kickedTenants.push(tenantId);
-      },
       openrouterConnect: {
         exchange: async ({ code, codeVerifier }) => {
           exchanges.push({ code, codeVerifier });
@@ -376,15 +359,14 @@ describe("GET /oauth/openrouter/callback", () => {
       { provider: "openrouter", apiKey: "sk-or-v1-minted", userId: "user_1" },
     ]);
 
-    // The callback kicks the desired-state reconcile for the
-    // just-connected bench and carries the minted key nowhere: no
-    // pending-seed row (CL-7586 deleted the drain), no cookie (this
-    // response still clears the connect-state cookies, but never sets
-    // the pre-CL-6031 `workbench_pending_seed` one), no redirect query
-    // parameter.
+    // The callback carries the minted key nowhere: no pending-seed row
+    // (CL-7586 deleted the drain), no cookie (this response still clears
+    // the connect-state cookies, but never sets the pre-CL-6031
+    // `workbench_pending_seed` one), no redirect query parameter. Client-
+    // side needs-list convergence (CL-8085) owns deploying onto the
+    // bench from here, not a server-side kick.
     const setCookie = response.headers.get("set-cookie") ?? "";
     expect(setCookie).not.toContain("workbench_pending_seed=");
-    expect(kickedTenants).toEqual(["ten_1"]);
   });
 
   test("a callback without the state cookie never exchanges", async () => {
