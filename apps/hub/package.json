@@ -21,7 +21,6 @@
     "@corbits/artifacts-hub": "workspace:*",
     "@corbits/attio-task-agent-workflow": "workspace:*",
     "@corbits/bench": "workspace:*",
-    "@corbits/catalog-tools": "workspace:*",
     "@corbits/chat": "workspace:*",
     "@corbits/code-review-workflow": "workspace:*",
     "@corbits/collateral-generation-workflow": "workspace:*",
