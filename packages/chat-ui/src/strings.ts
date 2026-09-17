@@ -21,13 +21,11 @@ export const CHAT_STRINGS = {
   noWorkbenchesTitle: "No workbenches yet",
   noWorkbenchesDescription: "Create one to get started.",
   noChatSelectedTitle: "Select a conversation",
-  noChatSelectedDescription:
-    "Choose a workbench from the sidebar, or create a new one.",
+  noChatSelectedDescription: "Choose a workbench from the sidebar, or create a new one.",
   couldNotLoadWorkbenches: "workbenches",
   couldNotLoadMessages: "messages",
   workbenchNotFoundTitle: "This workbench isn't here anymore",
-  workbenchNotFoundDescription:
-    "It may have been deleted, or the link is out of date.",
+  workbenchNotFoundDescription: "It may have been deleted, or the link is out of date.",
   /** @deprecated Prefer Mission Control / New workbench recovery (CL-6796). */
   workbenchNotFoundAction: "Back to workbenches",
   workbenchNotFoundMissionControlAction: "Mission Control",
@@ -44,12 +42,10 @@ export const CHAT_STRINGS = {
   composerAttachmentsLabel: "Selected attachments",
   composerRemoveAttachment: (name: string) => `Remove ${name}`,
   composerPreparing: "Preparing attachments…",
-  composerAttachmentCountError: (max: number) =>
-    `You can attach at most ${max} files.`,
+  composerAttachmentCountError: (max: number) => `You can attach at most ${max} files.`,
   composerAttachmentPerFileError: (name: string, maxMiB: number) =>
     `"${name}" is too large (max ${maxMiB} MB per file).`,
-  composerAttachmentTotalError: (maxMiB: number) =>
-    `Those files total more than ${maxMiB} MB.`,
+  composerAttachmentTotalError: (maxMiB: number) => `Those files total more than ${maxMiB} MB.`,
   composerAttachmentReadError: "Couldn't read one of those files — try again.",
   composerDictate: "Dictate",
   composerDictateStop: "Stop dictating",
@@ -66,8 +62,7 @@ export const CHAT_STRINGS = {
     "Tip: press / for commands",
   ],
   emptyTimelineDescription: "Say something to get the conversation going.",
-  emptyAgentTimelineDescription:
-    "They're ready — send the first message to get started.",
+  emptyAgentTimelineDescription: "They're ready — send the first message to get started.",
   jumpToLatestAction: "Jump to latest",
   mentionEmpty: "No matches",
   mentionAgentsGroupLabel: "Agents",
@@ -93,12 +88,10 @@ export const CHAT_STRINGS = {
   legacyBadgeLabel: "Legacy",
   eventAgentJoined: (displayName: string) => `${displayName} joined`,
   eventAgentJoinedUnknown: "An agent joined",
-  eventAgentsJoined: (displayNames: readonly string[]) =>
-    `${joinWithAnd(displayNames)} joined`,
+  eventAgentsJoined: (displayNames: readonly string[]) => `${joinWithAnd(displayNames)} joined`,
   eventMembershipChanged: "Membership updated",
   eventSettingsChanged: "Settings updated",
-  eventWorkbenchRenamed: (from: string, to: string): string =>
-    `Renamed "${from}" to "${to}"`,
+  eventWorkbenchRenamed: (from: string, to: string): string => `Renamed "${from}" to "${to}"`,
   eventWorkbenchRenamedTo: (to: string): string => `Renamed to "${to}"`,
   eventBlockResponsePoll: "A vote was recorded",
   eventBlockResponseForm: "A form was submitted",
@@ -114,16 +107,12 @@ export const CHAT_STRINGS = {
   inviteAgentAction: "Invite agent",
   workbenchMembersLabel: "Members",
   workbenchPresenceLabel: "Live",
-  teamStackOverflow: (count: number) =>
-    `${count} more ${count === 1 ? "member" : "members"}`,
-  threadsMenuCount: (count: number) =>
-    `${count} ${count === 1 ? "thread" : "threads"}`,
+  teamStackOverflow: (count: number) => `${count} more ${count === 1 ? "member" : "members"}`,
+  threadsMenuCount: (count: number) => `${count} ${count === 1 ? "thread" : "threads"}`,
   inviteAgentDialogTitle: "Invite an agent",
-  inviteAgentDialogDescription:
-    "Launch one of your workbench's agents into this conversation.",
+  inviteAgentDialogDescription: "Launch one of your workbench's agents into this conversation.",
   inviteAgentEmptyTitle: "No agents to invite",
-  inviteAgentEmptyDescription:
-    "Add an agent to this workbench before inviting it here.",
+  inviteAgentEmptyDescription: "Add an agent to this workbench before inviting it here.",
   inviteAgentLoadError: "Couldn't load invitable agents",
   inviteAgentInviting: "Inviting…",
   inviteAgentInviteError: "Couldn't invite that agent — try again.",
@@ -150,8 +139,7 @@ export const CHAT_STRINGS = {
     pinned
       ? "Couldn't pin that workbench — try again."
       : "Couldn't unpin that workbench — try again.",
-  agentDmOpenError: (name: string) =>
-    `Couldn't open a conversation with ${name} — try again.`,
+  agentDmOpenError: (name: string) => `Couldn't open a conversation with ${name} — try again.`,
   streamMessageDropped: "Couldn't apply that message live — refreshing.",
   turnCancelError: "Couldn't stop that turn — try again.",
   pendingSendLabel: "Sending…",
@@ -160,8 +148,7 @@ export const CHAT_STRINGS = {
   pendingSendDiscardAction: "Discard",
   fallbackPartUnsupported: "Unsupported content",
   blockUnsupportedTitle: "Unsupported block",
-  blockUnsupportedBody: (type: string) =>
-    `This "${type}" block can't be shown here yet.`,
+  blockUnsupportedBody: (type: string) => `This "${type}" block can't be shown here yet.`,
   blockApproveAction: "Approve",
   blockDenyAction: "Not now",
   blockApproveAllowStanding: (offer: { verb: string; resource: string }) =>
@@ -175,21 +162,17 @@ export const CHAT_STRINGS = {
   blockApproveStatusNotFound: "This approval could not be found.",
   blockApproveStatusLoadError: "Couldn't load this approval's status.",
   blockApproveSpectatorNote: "This one isn't yours to decide.",
-  blockApproveUndeterminedNote:
-    "We're still checking whether this is yours to decide.",
+  blockApproveUndeterminedNote: "We're still checking whether this is yours to decide.",
   blockApproveApproving: "Approving…",
   blockApproveRejecting: "Denying…",
   blockApproveActionForbidden: "You do not have permission to act on this.",
   blockApproveActionError: "Couldn't reach the approval — try again.",
   blockDenyActionForbidden: "You do not have permission to deny this.",
   blockDenyActionError: "Couldn't deny this request.",
-  blockApprovePlatformRequestedBy: (agentName: string) =>
-    `${agentName} is asking to`,
+  blockApprovePlatformRequestedBy: (agentName: string) => `${agentName} is asking to`,
   blockApproveAgentNoteLabel: "Agent's note",
-  blockApproveConflictNote:
-    "Someone else already resolved this while you were deciding.",
-  blockPollVoteCount: (count: number) =>
-    count === 1 ? "1 vote" : `${count} votes`,
+  blockApproveConflictNote: "Someone else already resolved this while you were deciding.",
+  blockPollVoteCount: (count: number) => (count === 1 ? "1 vote" : `${count} votes`),
   blockPollYourVote: "Your vote",
   blockPollChangeVote: "Change vote",
   blockPollVoteError: "Couldn't record your vote — try again.",
@@ -197,8 +180,7 @@ export const CHAT_STRINGS = {
   blockFormSubmitted: "Submitted",
   blockFormEdit: "Edit response",
   blockFormSubmitError: "Couldn't submit — try again.",
-  blockFormSubmitForbidden:
-    "You do not have permission to respond in this conversation.",
+  blockFormSubmitForbidden: "You do not have permission to respond in this conversation.",
   blockFormFieldRequired: "This field is required.",
   blockQuestionFreeTextLabel: "Type your own answer",
   blockQuestionFreeTextPlaceholder: "Type your own answer…",
@@ -226,13 +208,11 @@ export const CHAT_STRINGS = {
     "Under Repository permissions, set Contents, Issues, and Pull requests to Read and write, so the reviewers can read your diffs and post back on them.",
     "Paste it here. It's stored encrypted, only your agents use it, and you can remove it any time.",
   ] as readonly string[],
-  blockConnectGithubTokenSettingsUrl:
-    "https://github.com/settings/personal-access-tokens/new",
+  blockConnectGithubTokenSettingsUrl: "https://github.com/settings/personal-access-tokens/new",
   blockConnectGithubTokenSettingsLink: "Open GitHub's token page",
   blockConnectGithubTokenHelper:
     "Your token is stored encrypted, only your agents use it, and you can remove it any time.",
-  blockConnectGithubConnectedAs: (org: string) =>
-    `Connected to GitHub as ${org}`,
+  blockConnectGithubConnectedAs: (org: string) => `Connected to GitHub as ${org}`,
   blockConnectGithubChange: "change",
   blockConnectGithubRepoCount: (found: number, picked: number) =>
     `${found} repo${found === 1 ? "" : "s"} your token can reach · ${picked} picked`,
@@ -244,8 +224,7 @@ export const CHAT_STRINGS = {
   blockConnectGithubStartReviewing: (count: number) =>
     `Start reviewing ${count} repo${count === 1 ? "" : "s"}`,
   blockConnectGithubSkip: "skip for now",
-  blockConnectGithubStartReviewingError:
-    "Couldn't start reviewing — try again.",
+  blockConnectGithubStartReviewingError: "Couldn't start reviewing — try again.",
   blockConnectGithubStateUnreadable:
     "Couldn't reach GitHub with your token just now — try connecting again.",
   blockConnectGithubTokenFieldLabel: "Personal access token",
@@ -263,13 +242,11 @@ export const CHAT_STRINGS = {
     `You'll paste a ${name} API key — it stays in your workbench and you can disconnect any time.`,
   blockConnectServiceKeyFieldLabel: (name: string) => `${name} API key`,
   blockConnectServiceKeyFieldPlaceholder: "Paste your key",
-  blockConnectServiceKeyWhere: (name: string) =>
-    `Where do I find my ${name} key?`,
+  blockConnectServiceKeyWhere: (name: string) => `Where do I find my ${name} key?`,
   blockConnectServiceKeySubmit: "Connect",
   blockConnectServiceKeySubmitting: "Connecting…",
   blockConnectServiceKeyCancel: "cancel",
-  blockConnectServiceConnected: (name: string) =>
-    `${name} connected — you're set.`,
+  blockConnectServiceConnected: (name: string) => `${name} connected — you're set.`,
   prThreadStatusReviewed: "Reviewed",
   prThreadStatusReading: "Reading now",
   prThreadStatusWaitingOnYou: "Waiting on you",
@@ -288,8 +265,7 @@ export const CHAT_STRINGS = {
   prThreadCopyAction: "Copy",
   prThreadOpenOnGithubAction: "Open on GitHub",
   prThreadFailedTitle: (sender: string) => `${sender}'s review didn't finish`,
-  prThreadFailedSub: (repo: string) =>
-    `We retried once. Nothing was posted to ${repo}.`,
+  prThreadFailedSub: (repo: string) => `We retried once. Nothing was posted to ${repo}.`,
   prThreadRetryAction: "Retry",
   prThreadWhatHappenedAction: "what happened",
   optionLetter: (index: number) => String.fromCharCode(65 + index),
@@ -311,16 +287,13 @@ export const CHAT_STRINGS = {
     `Couldn't resume the running reply — try again. (ref ${refId})`,
   resumeFailedRetryAction: "Retry",
   turnFailedTitle: (sender: string) => `${sender} didn't reply`,
-  turnFailedModelUnavailable: (sender: string) =>
-    `${sender}'s model isn't available here.`,
-  turnFailedToolsUnsupported: (sender: string) =>
-    `${sender}'s model can't use tools.`,
+  turnFailedModelUnavailable: (sender: string) => `${sender}'s model isn't available here.`,
+  turnFailedToolsUnsupported: (sender: string) => `${sender}'s model can't use tools.`,
   turnFailedPickModel: "Pick a model",
   turnFailedMoreInSettings: "More in Settings",
   turnCancelledTitle: (sender: string) => `You stopped ${sender}'s turn`,
   turnFailedSub: "No reply arrived — the agent may be unavailable.",
-  noUsableModelBannerText:
-    "No model is connected yet, so a reply here won't come through.",
+  noUsableModelBannerText: "No model is connected yet, so a reply here won't come through.",
   noUsableModelBannerAction: "Connect a model",
   rowMenuLabel: "Conversation actions",
   rowMenuRename: "Rename",
@@ -351,10 +324,8 @@ export const CHAT_STRINGS = {
   workbenchSettingsUseBenchDefault: (benchDefault: number) =>
     `Use workbench default (${benchDefault})`,
   workbenchSettingsUseOverride: "Set a custom value for this conversation",
-  workbenchSettingsContextWindowDisabled:
-    "Disabled — mentioned agents see no history",
-  workbenchSettingsContextWindowCustom: (count: number) =>
-    `Last ${count} messages`,
+  workbenchSettingsContextWindowDisabled: "Disabled — mentioned agents see no history",
+  workbenchSettingsContextWindowCustom: (count: number) => `Last ${count} messages`,
   workbenchSettingsDeliveryTitle: "Delivery thread",
   workbenchSettingsDeliveryBody:
     "Routine and agent delivery always lands in a dedicated delivery thread — never the main timeline — so broadcast stays readable.",
@@ -379,10 +350,8 @@ export const CHAT_STRINGS = {
   workbenchSettingsAgentDetailInstructionsLabel: "Instructions",
   workbenchSettingsAgentDetailInstructionsHint:
     "How this agent should act and what it knows to do. Applies from this agent's next reply in this conversation; other conversations with the same agent pick it up the next time their agent wakes.",
-  workbenchSettingsAgentDetailLoadError:
-    "Couldn't load this agent's instructions",
-  workbenchSettingsAgentDetailSaveError:
-    "Couldn't save these changes — try again.",
+  workbenchSettingsAgentDetailLoadError: "Couldn't load this agent's instructions",
+  workbenchSettingsAgentDetailSaveError: "Couldn't save these changes — try again.",
   workbenchSettingsAgentDetailSavedToast: "Instructions saved",
   // Scoped rather than a bare "Save" (CL-6215 EMIL #4) — the top-bar Save
   // right above it in the same view saves the conversation's own General
@@ -391,13 +360,11 @@ export const CHAT_STRINGS = {
   workbenchSettingsAgentDetailSave: "Save instructions",
   workbenchSettingsAgentDetailSaving: "Saving…",
   workbenchSettingsAgentDetailCancel: "Cancel",
-  workbenchSettingsAgentDetailNoAgents:
-    "No agents to configure in this conversation.",
+  workbenchSettingsAgentDetailNoAgents: "No agents to configure in this conversation.",
   workbenchSettingsAgentDetailCapabilitiesTitle: "Capabilities",
   workbenchSettingsAgentDetailCapabilitiesHint:
     "What this agent can use. Add a tool, skill, or model from what's available in this workbench.",
-  workbenchSettingsAgentDetailNoCapabilities:
-    "No tools, skills, or model set yet.",
+  workbenchSettingsAgentDetailNoCapabilities: "No tools, skills, or model set yet.",
   workbenchSettingsAgentDetailModelLabel: "Model",
   workbenchSettingsAgentDetailModelUnset: "No model set",
   workbenchSettingsAgentDetailAddCapabilityLabel: "Add a capability",
@@ -417,12 +384,9 @@ export const CHAT_STRINGS = {
   workbenchSettingsAgentDetailAddCapabilityAdding: "Adding…",
   workbenchSettingsAgentDetailAddCapabilityError:
     "Couldn't add that — it may no longer be available.",
-  workbenchSettingsAgentDetailCapabilityInventoryError:
-    "Couldn't load what's available to add.",
-  workbenchSettingsAgentDetailModelOption: (
-    canonicalName: string,
-    providerName: string,
-  ) => `${canonicalName} · ${providerName}`,
+  workbenchSettingsAgentDetailCapabilityInventoryError: "Couldn't load what's available to add.",
+  workbenchSettingsAgentDetailModelOption: (canonicalName: string, providerName: string) =>
+    `${canonicalName} · ${providerName}`,
   workbenchSettingsAgentDetailNoConnectedModels:
     "No connected providers yet — connect one in Shared Settings.",
   workbenchSettingsAgentDetailCatalogError: "Couldn't load the models.",
@@ -431,28 +395,24 @@ export const CHAT_STRINGS = {
   workbenchSettingsAgentDetailHistoryTitle: "History",
   workbenchSettingsAgentDetailHistoryHint:
     "Every change to this agent's instructions and capabilities, oldest actions first.",
-  workbenchSettingsAgentDetailHistoryLoadError:
-    "Couldn't load this agent's history",
+  workbenchSettingsAgentDetailHistoryLoadError: "Couldn't load this agent's history",
   workbenchSettingsAgentDetailHistoryEmpty: "No history yet.",
   workbenchSettingsAgentDetailHistoryCurrent: "Current",
   workbenchSettingsAgentDetailHistoryRestore: "Restore",
   workbenchSettingsAgentDetailHistoryRestoring: "Restoring…",
-  workbenchSettingsAgentDetailHistoryRestoreError:
-    "Couldn't restore that version — try again.",
+  workbenchSettingsAgentDetailHistoryRestoreError: "Couldn't restore that version — try again.",
   workbenchSettingsNotificationsLabel: "Notifications",
   workbenchSettingsNotifyAll: "All messages",
   workbenchSettingsNotifyMentions: "Mentions only",
   workbenchSettingsNotifyMute: "Mute",
   workbenchSettingsNotificationsHint:
     "This choice is yours alone — it doesn't change notifications for anyone else.",
-  workbenchSettingsNotificationsSaveError:
-    "Couldn't save your notification setting — try again.",
+  workbenchSettingsNotificationsSaveError: "Couldn't save your notification setting — try again.",
   workbenchSettingsArchiveTitle: "Archive workbench",
   workbenchSettingsArchiveBody:
     "Archiving is not available yet. Closing this workbench would hide it from the sidebar without deleting history once the action lands.",
   workbenchSettingsLoadError: "this conversation's settings",
-  workbenchSettingsSaveError:
-    "Couldn't save this conversation's settings — try again.",
+  workbenchSettingsSaveError: "Couldn't save this conversation's settings — try again.",
   workbenchSettingsSavedToast: "Settings saved",
   workbenchSettingsSave: "Save",
   workbenchSettingsSaving: "Saving…",

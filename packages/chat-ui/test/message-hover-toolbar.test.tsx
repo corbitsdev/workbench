@@ -21,11 +21,9 @@ const chatUiCss = readFileSync(
 
 function cssRuleBodies(selector: string): string[] {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return [
-    ...chatUiCss.matchAll(
-      new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]+)\\}`, "g"),
-    ),
-  ].map((match) => match[1] ?? "");
+  return [...chatUiCss.matchAll(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]+)\\}`, "g"))].map(
+    (match) => match[1] ?? "",
+  );
 }
 
 /** Radix's exit-animation handling runs through a couple of microtasks even
@@ -38,9 +36,7 @@ async function flush(): Promise<void> {
   });
 }
 
-function textMessage(
-  overrides: Partial<TimelineMessageItem> = {},
-): TimelineMessageItem[] {
+function textMessage(overrides: Partial<TimelineMessageItem> = {}): TimelineMessageItem[] {
   return [
     {
       id: "m1",
@@ -75,15 +71,9 @@ async function mount(props: {
     root?.render(
       <WorkbenchTimeline
         items={props.items}
-        {...(props.onOpenThread !== undefined
-          ? { onOpenThread: props.onOpenThread }
-          : {})}
-        {...(props.onEditMessage !== undefined
-          ? { onEditMessage: props.onEditMessage }
-          : {})}
-        {...(props.currentUser !== undefined
-          ? { currentUser: props.currentUser }
-          : {})}
+        {...(props.onOpenThread !== undefined ? { onOpenThread: props.onOpenThread } : {})}
+        {...(props.onEditMessage !== undefined ? { onEditMessage: props.onEditMessage } : {})}
+        {...(props.currentUser !== undefined ? { currentUser: props.currentUser } : {})}
       />,
     );
   });
@@ -148,9 +138,7 @@ describe("hover Edit on own prompts", () => {
       onEditMessage: () => undefined,
     });
 
-    expect(
-      el.querySelector(".chat-message-group")?.getAttribute("data-own"),
-    ).toBe("false");
+    expect(el.querySelector(".chat-message-group")?.getAttribute("data-own")).toBe("false");
     expect(el.querySelector(".chat-hover-edit")).toBeNull();
   });
 
@@ -192,9 +180,7 @@ describe("hover Edit on own prompts", () => {
       onEditMessage: () => undefined,
     });
 
-    expect(
-      el.querySelector(".chat-message-group")?.getAttribute("data-own"),
-    ).toBe("true");
+    expect(el.querySelector(".chat-message-group")?.getAttribute("data-own")).toBe("true");
     expect(el.querySelector(".chat-hover-edit")).toBeNull();
   });
 
@@ -235,9 +221,7 @@ describe("hover Edit on own prompts", () => {
 
 describe("own-prompt hover toolbar is mirrored off the prompt", () => {
   test("own rows pin the toolbar to the inboard (left) edge", () => {
-    const bodies = cssRuleBodies(
-      '.chat-message-group[data-own="true"] .chat-hover-toolbar',
-    );
+    const bodies = cssRuleBodies('.chat-message-group[data-own="true"] .chat-hover-toolbar');
     expect(bodies.length).toBeGreaterThan(0);
     const body = bodies[0] ?? "";
     expect(body).toMatch(/right:\s*auto/);
@@ -253,12 +237,8 @@ describe("own-prompt hover toolbar is mirrored off the prompt", () => {
   });
 
   test("hover, focus-within, and data-open still reveal the toolbar", () => {
-    expect(chatUiCss).toMatch(
-      /\.chat-message-group:hover\s+\.chat-hover-toolbar/,
-    );
-    expect(chatUiCss).toMatch(
-      /\.chat-message-group:focus-within\s+\.chat-hover-toolbar/,
-    );
+    expect(chatUiCss).toMatch(/\.chat-message-group:hover\s+\.chat-hover-toolbar/);
+    expect(chatUiCss).toMatch(/\.chat-message-group:focus-within\s+\.chat-hover-toolbar/);
     expect(chatUiCss).toMatch(/\.chat-hover-toolbar\[data-open="true"\]/);
   });
 });
@@ -305,9 +285,7 @@ describe("the persistent inline 'Reply in thread' link is gone", () => {
     });
 
     expect(withReplies.querySelector(".chat-thread-affordance")).not.toBeNull();
-    expect(
-      withReplies.querySelector(".chat-thread-reply-count")?.textContent,
-    ).toBe("3 replies");
+    expect(withReplies.querySelector(".chat-thread-reply-count")?.textContent).toBe("3 replies");
 
     act(() => repliesRoot.unmount());
     withReplies.remove();
@@ -323,22 +301,16 @@ describe("the ellipsis menu", () => {
       onOpenThread: (id) => opened.push(id),
     });
 
-    const ellipsis = el.querySelector(
-      ".chat-hover-ellipsis",
-    ) as HTMLButtonElement;
+    const ellipsis = el.querySelector(".chat-hover-ellipsis") as HTMLButtonElement;
     await act(async () => ellipsis.click());
     await flush();
 
-    const items = Array.from(
-      document.querySelectorAll<HTMLElement>('[data-slot="menu-item"]'),
-    );
+    const items = Array.from(document.querySelectorAll<HTMLElement>('[data-slot="menu-item"]'));
     const labels = items.map((item) => item.textContent);
     expect(labels).toContain("Reply in thread");
     expect(labels).toContain("Copy text");
 
-    const replyItem = items.find(
-      (item) => item.textContent === "Reply in thread",
-    );
+    const replyItem = items.find((item) => item.textContent === "Reply in thread");
     act(() => replyItem?.click());
     await flush();
 
@@ -355,9 +327,7 @@ describe("the ellipsis menu", () => {
 
     const group = el.querySelector(".chat-message-group") as HTMLElement;
     await act(async () => {
-      group.dispatchEvent(
-        new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
-      );
+      group.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     });
     await flush();
 

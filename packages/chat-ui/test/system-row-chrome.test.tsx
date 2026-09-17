@@ -23,10 +23,7 @@ const socialActions = {
   onOpenThread: () => undefined,
 };
 
-async function mount(
-  items: MessageItem[],
-  extra: { onFixConnection?: () => void } = {},
-) {
+async function mount(items: MessageItem[], extra: { onFixConnection?: () => void } = {}) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -35,9 +32,7 @@ async function mount(
       <WorkbenchTimeline
         items={items}
         onOpenThread={socialActions.onOpenThread}
-        {...(extra.onFixConnection !== undefined
-          ? { onFixConnection: extra.onFixConnection }
-          : {})}
+        {...(extra.onFixConnection !== undefined ? { onFixConnection: extra.onFixConnection } : {})}
       />,
     );
   });
@@ -92,9 +87,7 @@ describe("CL-6739: system / error / connect rows hide social chrome", () => {
 
     const line = el.querySelector(".chat-event-line");
     expect(line).not.toBeNull();
-    expect(line?.textContent).toContain(
-      "GitHub connected successfully. Manage in Plugins",
-    );
+    expect(line?.textContent).toContain("GitHub connected successfully. Manage in Plugins");
     const pluginsLink = line?.querySelector('a[href="/plugins"]');
     expect(pluginsLink).not.toBeNull();
     expect(pluginsLink?.textContent).toBe("Plugins");
@@ -244,9 +237,7 @@ describe("CL-6739: system / error / connect rows hide social chrome", () => {
 
     const group = el.querySelector(".chat-message-group") as HTMLElement;
     await act(async () => {
-      group.dispatchEvent(
-        new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
-      );
+      group.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     });
 
     expect(document.querySelector('[data-slot="menu-content"]')).toBeNull();

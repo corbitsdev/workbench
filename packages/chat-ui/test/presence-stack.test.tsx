@@ -24,10 +24,7 @@ class StubEventSource {
     StubEventSource.instances.push(this);
   }
 
-  addEventListener(
-    eventType: string,
-    listener: (message: MessageEvent) => void,
-  ) {
+  addEventListener(eventType: string, listener: (message: MessageEvent) => void) {
     this.listeners.set(eventType, listener);
   }
 
@@ -68,16 +65,13 @@ function stubFetch() {
     if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
       return json({ items: [WORKBENCH_WIRE] });
     }
-    if (/\/chat\/workbenches\?kind=chat$/.test(path))
-      return json({ items: [] });
+    if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
     if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
       return json({ rootThreadId: "", items: [] });
     }
-    if (/\/chat\/workbenches\/[^/]+\/messages/.test(path))
-      return json({ items: [] });
+    if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) return json({ items: [] });
     if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
-    if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path))
-      return json({ items: [] });
+    if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) return json({ items: [] });
     if (/\/mailbox\/me\/threads/.test(path)) {
       return json({ threads: [] });
     }
@@ -85,8 +79,7 @@ function stubFetch() {
   }) as typeof fetch;
 }
 
-const { ChatWorkspace, TEAM_AVATAR_STACK_LIMIT } =
-  await import("../src/chat-workspace");
+const { ChatWorkspace, TEAM_AVATAR_STACK_LIMIT } = await import("../src/chat-workspace");
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -156,9 +149,7 @@ describe("workbench header presence stack", () => {
 
     const avatars = harness.container.querySelectorAll(".chat-presence-avatar");
     expect(avatars).toHaveLength(2);
-    expect(
-      harness.container.querySelector(".chat-presence-stack"),
-    ).not.toBeNull();
+    expect(harness.container.querySelector(".chat-presence-stack")).not.toBeNull();
     expect(harness.container.querySelector(".chat-member-stack")).toBeNull();
     harness.unmount();
   });
@@ -179,9 +170,7 @@ describe("workbench header presence stack", () => {
       });
     });
     await harness.settle();
-    expect(
-      harness.container.querySelectorAll(".chat-presence-avatar"),
-    ).toHaveLength(1);
+    expect(harness.container.querySelectorAll(".chat-presence-avatar")).toHaveLength(1);
 
     act(() => {
       firstStream().emit("chat.presence", {
@@ -191,9 +180,7 @@ describe("workbench header presence stack", () => {
       });
     });
     await harness.settle();
-    expect(
-      harness.container.querySelectorAll(".chat-presence-avatar"),
-    ).toHaveLength(0);
+    expect(harness.container.querySelectorAll(".chat-presence-avatar")).toHaveLength(0);
     harness.unmount();
   });
 
@@ -216,12 +203,10 @@ describe("workbench header presence stack", () => {
     });
     await harness.settle();
 
-    expect(
-      harness.container.querySelectorAll(".chat-presence-avatar"),
-    ).toHaveLength(TEAM_AVATAR_STACK_LIMIT);
-    const overflow = harness.container.querySelector(
-      ".chat-presence-stack-overflow",
+    expect(harness.container.querySelectorAll(".chat-presence-avatar")).toHaveLength(
+      TEAM_AVATAR_STACK_LIMIT,
     );
+    const overflow = harness.container.querySelector(".chat-presence-stack-overflow");
     expect(overflow).not.toBeNull();
     expect(overflow?.textContent).toBe("+4");
     harness.unmount();

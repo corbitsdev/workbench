@@ -17,18 +17,9 @@ import {
   useContextMenuState,
 } from "@corbits/context-menu";
 import type { ContextMenu, ContextMenuEntry } from "@corbits/context-menu";
-import {
-  Avatar,
-  Button,
-  EmptyState,
-  PartsRenderer,
-  toast,
-} from "@corbits/react-ui";
+import { Avatar, Button, EmptyState, PartsRenderer, toast } from "@corbits/react-ui";
 import { toReactUiReasoning } from "./agent-part-adapter";
-import {
-  displayNameForAddress,
-  type AgentDisplayNames,
-} from "./agent-display-names";
+import { displayNameForAddress, type AgentDisplayNames } from "./agent-display-names";
 import { CorbitAvatar, avatarClassForPrincipal } from "./avatar";
 import { groupTimelineParts } from "./tool-activity";
 import { ToolActivityGroup } from "./tool-activity-view";
@@ -45,12 +36,7 @@ import { memo } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
-import type {
-  MessageItem,
-  MessageSender,
-  ParticipantRecord,
-  Part,
-} from "./api";
+import type { MessageItem, MessageSender, ParticipantRecord, Part } from "./api";
 import { ArtifactChip } from "./artifact-chip";
 import type { ApprovalActions } from "./blocks/approval-actions";
 import type { BlockResponseActions } from "./blocks/block-responses";
@@ -204,8 +190,7 @@ function formatDayLabel(iso: string): string {
 
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  if (isSameCalendarDay(date, yesterday))
-    return CHAT_STRINGS.dayDividerYesterday;
+  if (isSameCalendarDay(date, yesterday)) return CHAT_STRINGS.dayDividerYesterday;
 
   return date.toLocaleDateString([], {
     month: "short",
@@ -226,10 +211,7 @@ function initialsOf(source: string): string {
     .filter((word) => word.length > 0);
   if (words.length === 0) return "?";
   const first = words[0]?.charAt(0) ?? "";
-  const second =
-    words.length > 1
-      ? (words[1]?.charAt(0) ?? "")
-      : (words[0]?.charAt(1) ?? "");
+  const second = words.length > 1 ? (words[1]?.charAt(0) ?? "") : (words[0]?.charAt(1) ?? "");
   const initials = `${first}${second}`.toUpperCase();
   return initials.length > 0 ? initials : "?";
 }
@@ -271,10 +253,7 @@ function senderDisplay(
 ): SenderDisplay | undefined {
   if (sender === undefined) return undefined;
 
-  if (
-    currentUser !== undefined &&
-    localPartOf(sender.address) === currentUser.principalId
-  ) {
+  if (currentUser !== undefined && localPartOf(sender.address) === currentUser.principalId) {
     const label = currentUser.name ?? CHAT_STRINGS.senderYou;
     return {
       label,
@@ -284,16 +263,11 @@ function senderDisplay(
     };
   }
 
-  const matched = participants.find(
-    (participant) => participant.address === sender.address,
-  );
+  const matched = participants.find((participant) => participant.address === sender.address);
   if (matched !== undefined) {
     const isAgent = isAgentAddress(matched.address);
     const senderName = sender.name;
-    const wireName =
-      senderName !== null && senderName.trim().length > 0
-        ? senderName
-        : undefined;
+    const wireName = senderName !== null && senderName.trim().length > 0 ? senderName : undefined;
     // An agent renders its resolved display name (CL-6424) — the wire
     // name when the server sent one, else the `/agents` snapshot's — and
     // only then falls back to a human reading of its handle ("myra" ->
@@ -304,8 +278,7 @@ function senderDisplay(
         ? (displayNameForAddress(matched.address, displayNames) ?? wireName)
         : wireName;
     const label =
-      resolvedName ??
-      (isAgent ? displayNameFromHandle(matched.handle) : matched.handle);
+      resolvedName ?? (isAgent ? displayNameFromHandle(matched.handle) : matched.handle);
     return {
       label,
       handle: matched.handle,
@@ -361,11 +334,7 @@ function SenderAvatar({
         />
       )}
       {tenantMonogram !== undefined ? (
-        <span
-          className="chat-sender-tenant-badge"
-          title={tenantName}
-          aria-hidden="true"
-        >
+        <span className="chat-sender-tenant-badge" title={tenantName} aria-hidden="true">
           {tenantMonogram}
         </span>
       ) : null}
@@ -374,9 +343,7 @@ function SenderAvatar({
 }
 
 export function AgentBadge() {
-  return (
-    <span className="chat-agent-badge">{CHAT_STRINGS.agentBadgeLabel}</span>
-  );
+  return <span className="chat-agent-badge">{CHAT_STRINGS.agentBadgeLabel}</span>;
 }
 
 /** The one visible cue a message this reader just sent is still in
@@ -436,12 +403,7 @@ function TextBubble({
   pendingActions?: PendingActions;
 }) {
   const consumerText = consumerFacingInferenceText(text);
-  const display = senderDisplay(
-    sender,
-    participants,
-    currentUser,
-    agentDisplayNames,
-  );
+  const display = senderDisplay(sender, participants, currentUser, agentDisplayNames);
   const isOwn =
     currentUser !== undefined &&
     sender !== undefined &&
@@ -449,11 +411,8 @@ function TextBubble({
   const matched =
     sender === undefined
       ? undefined
-      : participants.find(
-          (participant) => participant.address === sender.address,
-        );
-  const profileSubject =
-    matched !== undefined ? profileSubjectFromParticipant(matched) : null;
+      : participants.find((participant) => participant.address === sender.address);
+  const profileSubject = matched !== undefined ? profileSubjectFromParticipant(matched) : null;
 
   function handleOpenProfile() {
     if (profileSubject !== null && onOpenProfile !== undefined) {
@@ -462,11 +421,7 @@ function TextBubble({
   }
 
   return (
-    <div
-      className="chat-bubble-row"
-      data-own={isOwn}
-      data-grouped={!showHeader}
-    >
+    <div className="chat-bubble-row" data-own={isOwn} data-grouped={!showHeader}>
       {showHeader && display !== undefined && (
         <button
           type="button"
@@ -483,9 +438,7 @@ function TextBubble({
             {...(sender?.tenantMonogram !== undefined
               ? { tenantMonogram: sender.tenantMonogram }
               : {})}
-            {...(sender?.tenantName !== undefined
-              ? { tenantName: sender.tenantName }
-              : {})}
+            {...(sender?.tenantName !== undefined ? { tenantName: sender.tenantName } : {})}
           />
         </button>
       )}
@@ -496,15 +449,12 @@ function TextBubble({
               <button
                 type="button"
                 className="chat-bubble-sender-button"
-                disabled={
-                  profileSubject === null || onOpenProfile === undefined
-                }
+                disabled={profileSubject === null || onOpenProfile === undefined}
                 onClick={handleOpenProfile}
               >
                 <span
                   className="chat-bubble-sender"
-                  {...(display.handle !== undefined &&
-                  display.handle !== display.label
+                  {...(display.handle !== undefined && display.handle !== display.label
                     ? { title: `@${display.handle}` }
                     : {})}
                 >
@@ -513,16 +463,12 @@ function TextBubble({
                 </span>
               </button>
             )}
-            <span className="chat-bubble-time">
-              {formatTimestamp(createdAt)}
-            </span>
+            <span className="chat-bubble-time">{formatTimestamp(createdAt)}</span>
             {pendingStatus === "sending" ? <PendingGlyph /> : null}
           </div>
         ) : (
           <>
-            <span className="chat-bubble-time-grouped">
-              {formatTimestamp(createdAt)}
-            </span>
+            <span className="chat-bubble-time-grouped">{formatTimestamp(createdAt)}</span>
             {pendingStatus === "sending" ? <PendingGlyph /> : null}
           </>
         )}
@@ -543,10 +489,7 @@ function TextBubble({
             </Button>
           )}
         {pendingStatus === "failed" && pendingActions !== undefined ? (
-          <PendingFailedRow
-            nonce={pendingNonce ?? ""}
-            pendingActions={pendingActions}
-          />
+          <PendingFailedRow nonce={pendingNonce ?? ""} pendingActions={pendingActions} />
         ) : null}
       </div>
     </div>
@@ -577,16 +520,13 @@ function joinedAgentName(
     typeof part.data === "object" && part.data !== null
       ? (part.data as Record<string, unknown>)
       : undefined;
-  const address =
-    data !== undefined && typeof data.address === "string"
-      ? data.address
-      : undefined;
+  const address = data !== undefined && typeof data.address === "string" ? data.address : undefined;
   if (address === undefined) return undefined;
   const resolved = displayNameForAddress(address, displayNames);
   if (resolved !== undefined) return resolved;
   const handle =
-    participants.find((participant) => participant.address === address)
-      ?.handle ?? localPartOf(address);
+    participants.find((participant) => participant.address === address)?.handle ??
+    localPartOf(address);
   return displayNameFromHandle(handle);
 }
 
@@ -610,23 +550,15 @@ export function friendlyEventText(
       return CHAT_STRINGS.eventMembershipChanged;
     case "workbench.settings-changed": {
       const changed =
-        data !== undefined &&
-        typeof data.changed === "object" &&
-        data.changed !== null
+        data !== undefined && typeof data.changed === "object" && data.changed !== null
           ? (data.changed as Record<string, unknown>)
           : undefined;
       const previous =
-        data !== undefined &&
-        typeof data.previous === "object" &&
-        data.previous !== null
+        data !== undefined && typeof data.previous === "object" && data.previous !== null
           ? (data.previous as Record<string, unknown>)
           : undefined;
       const to = changed?.["chat/name"];
-      if (
-        changed !== undefined &&
-        Object.keys(changed).length === 1 &&
-        typeof to === "string"
-      ) {
+      if (changed !== undefined && Object.keys(changed).length === 1 && typeof to === "string") {
         const from = previous?.["chat/name"];
         return typeof from === "string" && from !== to
           ? CHAT_STRINGS.eventWorkbenchRenamed(from, to)
@@ -642,9 +574,7 @@ export function friendlyEventText(
     }
     case "connection.connected": {
       const displayName =
-        data !== undefined && typeof data.displayName === "string"
-          ? data.displayName
-          : undefined;
+        data !== undefined && typeof data.displayName === "string" ? data.displayName : undefined;
       return displayName !== undefined
         ? CHAT_STRINGS.eventConnectionConnected(displayName)
         : CHAT_STRINGS.eventGeneric(part.event);
@@ -687,12 +617,8 @@ function EventLine({
           collapsedText
         ) : connectedDisplayName !== undefined ? (
           <>
-            {CHAT_STRINGS.eventConnectionConnectedBeforePlugins(
-              connectedDisplayName,
-            )}
-            <a href="/plugins">
-              {CHAT_STRINGS.eventConnectionConnectedPlugins}
-            </a>
+            {CHAT_STRINGS.eventConnectionConnectedBeforePlugins(connectedDisplayName)}
+            <a href="/plugins">{CHAT_STRINGS.eventConnectionConnectedPlugins}</a>
           </>
         ) : (
           friendlyEventText(part, participants, agentDisplayNames)
@@ -778,20 +704,14 @@ function FailedTurnStrip({
   ) => void | Promise<void>;
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
 }) {
-  const display = senderDisplay(
-    item.sender,
-    participants,
-    currentUser,
-    agentDisplayNames,
-  );
+  const display = senderDisplay(item.sender, participants, currentUser, agentDisplayNames);
   const sender = display?.label ?? CHAT_STRINGS.senderFallbackMember;
   const consumerDetail = consumerFacingInferenceText(detailText);
   const [expanded, setExpanded] = useState(false);
   // Guards the resend itself against a double-click firing two sends —
   // not composer state, since Retry never touches the composer any more.
   const [retrying, setRetrying] = useState(false);
-  const definitionId =
-    failedTurnRecovery?.definitionIdByAddress[item.sender.address];
+  const definitionId = failedTurnRecovery?.definitionIdByAddress[item.sender.address];
 
   if (namedRecovery !== undefined) {
     const recoveryTitle =
@@ -854,9 +774,7 @@ function FailedTurnStrip({
 
   return (
     <div className="chat-turn-failed" role="status">
-      <span className="chat-turn-failed-text">
-        {CHAT_STRINGS.turnFailedTitle(sender)}
-      </span>
+      <span className="chat-turn-failed-text">{CHAT_STRINGS.turnFailedTitle(sender)}</span>
       <Button
         type="button"
         variant="ghost"
@@ -866,8 +784,8 @@ function FailedTurnStrip({
         onClick={() => {
           if (retrying) return;
           setRetrying(true);
-          void Promise.resolve(onRetryFailedTurn?.(item, retryText)).finally(
-            () => setRetrying(false),
+          void Promise.resolve(onRetryFailedTurn?.(item, retryText)).finally(() =>
+            setRetrying(false),
           );
         }}
       >
@@ -886,9 +804,7 @@ function FailedTurnStrip({
       </button>
       {expanded ? (
         <span className="chat-turn-failed-detail">
-          {consumerDetail.length > 0
-            ? consumerDetail
-            : CHAT_STRINGS.turnFailedSub}
+          {consumerDetail.length > 0 ? consumerDetail : CHAT_STRINGS.turnFailedSub}
         </span>
       ) : null}
     </div>
@@ -914,12 +830,7 @@ function CancelledTurnStrip({
   readonly currentUser: CurrentUser | undefined;
   readonly agentDisplayNames?: AgentDisplayNames;
 }) {
-  const display = senderDisplay(
-    item.sender,
-    participants,
-    currentUser,
-    agentDisplayNames,
-  );
+  const display = senderDisplay(item.sender, participants, currentUser, agentDisplayNames);
   const sender = display?.label ?? CHAT_STRINGS.senderFallbackMember;
   return (
     <div className="chat-turn-cancelled" role="status">
@@ -961,12 +872,8 @@ export function findRetryText(
 function FallbackPart({ part }: { part: Part }) {
   return (
     <div className="chat-fallback-block">
-      <span className="chat-fallback-label">
-        {CHAT_STRINGS.fallbackPartLabel(part.kind)}
-      </span>
-      <span className="chat-fallback-body">
-        {CHAT_STRINGS.fallbackPartUnsupported}
-      </span>
+      <span className="chat-fallback-label">{CHAT_STRINGS.fallbackPartLabel(part.kind)}</span>
+      <span className="chat-fallback-body">{CHAT_STRINGS.fallbackPartUnsupported}</span>
     </div>
   );
 }
@@ -1045,10 +952,7 @@ export function offersMessageSocialChrome(item: MessageItem): boolean {
       return true;
     }
     if (part.kind === "block") {
-      return (
-        part.block.type === "connect-github" ||
-        part.block.type === "connect-service"
-      );
+      return part.block.type === "connect-github" || part.block.type === "connect-service";
     }
     return false;
   });
@@ -1062,9 +966,7 @@ export function offersMessageSocialChrome(item: MessageItem): boolean {
  * right edge.
  */
 export function isSystemNoticeItem(item: MessageItem): boolean {
-  return (
-    item.parts.length > 0 && item.parts.every((part) => part.kind === "event")
-  );
+  return item.parts.length > 0 && item.parts.every((part) => part.kind === "event");
 }
 
 /**
@@ -1074,9 +976,7 @@ export function isSystemNoticeItem(item: MessageItem): boolean {
  * is the room talking, not a person.
  */
 export function isSystemSenderItem(item: MessageItem): boolean {
-  return (
-    item.sender !== undefined && localPartOf(item.sender.address) === "system"
-  );
+  return item.sender !== undefined && localPartOf(item.sender.address) === "system";
 }
 
 /** The display name a lone agent-joined row names, or undefined when the
@@ -1088,11 +988,7 @@ function agentJoinName(
 ): string | undefined {
   if (item.parts.length !== 1) return undefined;
   const part = item.parts[0];
-  if (
-    part === undefined ||
-    part.kind !== "event" ||
-    part.event !== "workbench.agent-joined"
-  ) {
+  if (part === undefined || part.kind !== "event" || part.event !== "workbench.agent-joined") {
     return undefined;
   }
   return joinedAgentName(part, participants, displayNames);
@@ -1159,9 +1055,7 @@ function PendingFailedRow({
 }) {
   return (
     <div className="chat-pending-failed-row" role="alert">
-      <span className="chat-pending-failed-label">
-        {CHAT_STRINGS.pendingSendFailedLabel}
-      </span>
+      <span className="chat-pending-failed-label">{CHAT_STRINGS.pendingSendFailedLabel}</span>
       <Button
         type="button"
         variant="ghost"
@@ -1208,12 +1102,7 @@ function StreamingMessageGroup({
   readonly agentDisplayNames?: AgentDisplayNames;
 }) {
   const text = messageText(item);
-  const display = senderDisplay(
-    item.sender,
-    participants,
-    currentUser,
-    agentDisplayNames,
-  );
+  const display = senderDisplay(item.sender, participants, currentUser, agentDisplayNames);
 
   return (
     <div className="chat-message-group" id={messageDomId(item.id)}>
@@ -1332,11 +1221,7 @@ function MessageHoverToolbar({
   readonly onEditMessage?: (messageId: string) => void;
 }) {
   const menuHasEntries = !isContextMenuEmpty(menu);
-  if (
-    onOpenThread === undefined &&
-    onEditMessage === undefined &&
-    !menuHasEntries
-  ) {
+  if (onOpenThread === undefined && onEditMessage === undefined && !menuHasEntries) {
     return null;
   }
 
@@ -1584,19 +1469,11 @@ function MessagePartsInner({
                   part.turnFailedReason === "tools_unsupported"
                     ? { namedRecovery: part.turnFailedReason }
                     : {})}
-                  {...(agentDisplayNames !== undefined
-                    ? { agentDisplayNames }
-                    : {})}
+                  {...(agentDisplayNames !== undefined ? { agentDisplayNames } : {})}
                   {...(retryText !== undefined ? { retryText } : {})}
-                  {...(failedTurnRecovery !== undefined
-                    ? { failedTurnRecovery }
-                    : {})}
-                  {...(onRetryFailedTurn !== undefined
-                    ? { onRetryFailedTurn }
-                    : {})}
-                  {...(onWhatHappenedFailedTurn !== undefined
-                    ? { onWhatHappenedFailedTurn }
-                    : {})}
+                  {...(failedTurnRecovery !== undefined ? { failedTurnRecovery } : {})}
+                  {...(onRetryFailedTurn !== undefined ? { onRetryFailedTurn } : {})}
+                  {...(onWhatHappenedFailedTurn !== undefined ? { onWhatHappenedFailedTurn } : {})}
                 />
               );
             }
@@ -1607,9 +1484,7 @@ function MessagePartsInner({
                   item={item}
                   participants={participants}
                   currentUser={currentUser}
-                  {...(agentDisplayNames !== undefined
-                    ? { agentDisplayNames }
-                    : {})}
+                  {...(agentDisplayNames !== undefined ? { agentDisplayNames } : {})}
                 />
               );
             }
@@ -1623,17 +1498,13 @@ function MessagePartsInner({
                   participants={participants}
                   currentUser={currentUser}
                   showHeader={showHeader}
-                  {...(agentDisplayNames !== undefined
-                    ? { agentDisplayNames }
-                    : {})}
+                  {...(agentDisplayNames !== undefined ? { agentDisplayNames } : {})}
                   {...(item.pendingStatus !== undefined
                     ? { pendingStatus: item.pendingStatus, pendingNonce }
                     : {})}
                   {...(pendingActions !== undefined ? { pendingActions } : {})}
                   {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
-                  {...(onFixConnection !== undefined
-                    ? { onFixConnection }
-                    : {})}
+                  {...(onFixConnection !== undefined ? { onFixConnection } : {})}
                 />
               );
             }
@@ -1644,12 +1515,8 @@ function MessagePartsInner({
                   part={part}
                   createdAt={item.createdAt}
                   participants={participants}
-                  {...(collapsedJoinText !== undefined
-                    ? { collapsedText: collapsedJoinText }
-                    : {})}
-                  {...(agentDisplayNames !== undefined
-                    ? { agentDisplayNames }
-                    : {})}
+                  {...(collapsedJoinText !== undefined ? { collapsedText: collapsedJoinText } : {})}
+                  {...(agentDisplayNames !== undefined ? { agentDisplayNames } : {})}
                 />
               );
             }
@@ -1659,9 +1526,7 @@ function MessagePartsInner({
                   key={key}
                   part={part}
                   {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
-                  {...(onOpenArtifactInLibrary !== undefined
-                    ? { onOpenArtifactInLibrary }
-                    : {})}
+                  {...(onOpenArtifactInLibrary !== undefined ? { onOpenArtifactInLibrary } : {})}
                 />
               );
             }
@@ -1671,9 +1536,7 @@ function MessagePartsInner({
             // above, and react-ui's `ToolBlock` renders one call at a time
             // with its arguments and result as `JSON.stringify` output.
             if (part.kind === "reasoning") {
-              return (
-                <PartsRenderer key={key} parts={[toReactUiReasoning(part)]} />
-              );
+              return <PartsRenderer key={key} parts={[toReactUiReasoning(part)]} />;
             }
             if (part.kind === "block") {
               return (
@@ -1681,16 +1544,10 @@ function MessagePartsInner({
                   key={key}
                   block={part.block}
                   messageId={item.id}
-                  {...(approvalActions !== undefined
-                    ? { approvalActions }
-                    : {})}
+                  {...(approvalActions !== undefined ? { approvalActions } : {})}
                   {...(blockResponses !== undefined ? { blockResponses } : {})}
-                  {...(connectGithubActions !== undefined
-                    ? { connectGithubActions }
-                    : {})}
-                  {...(connectServiceActions !== undefined
-                    ? { connectServiceActions }
-                    : {})}
+                  {...(connectGithubActions !== undefined ? { connectGithubActions } : {})}
+                  {...(connectServiceActions !== undefined ? { connectServiceActions } : {})}
                 />
               );
             }
@@ -1835,9 +1692,7 @@ function ThreadAffordance({
       ) : null}
       <span className="chat-thread-affordance-meta">
         <span className="chat-thread-reply-count">{label}</span>
-        {activity !== "" ? (
-          <span className="chat-thread-last-activity">{activity}</span>
-        ) : null}
+        {activity !== "" ? <span className="chat-thread-last-activity">{activity}</span> : null}
       </span>
       <button type="button" className="chat-thread-open" onClick={onOpen}>
         {mode === "fork" ? CHAT_STRINGS.forkThreadAction : "Open"}
@@ -1965,9 +1820,7 @@ export function WorkbenchTimeline({
   // Starts pinned (true) unless a restored snapshot says otherwise — a
   // workbench's first-ever render always lands at the bottom, but remounting
   // after Settings closes restores exactly how the reader left it.
-  const [pinnedToLatest, setPinnedToLatest] = useState(
-    scrollRestore?.pinned ?? true,
-  );
+  const [pinnedToLatest, setPinnedToLatest] = useState(scrollRestore?.pinned ?? true);
   const pinnedRef = useRef(pinnedToLatest);
 
   // Kept current every render (never a dependency) so the unmount cleanup
@@ -1985,9 +1838,7 @@ export function WorkbenchTimeline({
       container.scrollHeight - container.scrollTop - container.clientHeight;
     const nextPinned = distanceFromBottom <= BOTTOM_PIN_THRESHOLD_PX;
     pinnedRef.current = nextPinned;
-    setPinnedToLatest((current) =>
-      current === nextPinned ? current : nextPinned,
-    );
+    setPinnedToLatest((current) => (current === nextPinned ? current : nextPinned));
   };
 
   const jumpToLatest = () => {
@@ -2044,11 +1895,7 @@ export function WorkbenchTimeline({
     return () => observer.disconnect();
   }, []);
 
-  const joinRuns = collapseAgentJoinRuns(
-    items,
-    participants,
-    agentDisplayNames,
-  );
+  const joinRuns = collapseAgentJoinRuns(items, participants, agentDisplayNames);
 
   if (items.length === 0) {
     // A freshly created agent chat answers before it finishes setting up
@@ -2068,9 +1915,7 @@ export function WorkbenchTimeline({
     // caller), an empty timeline isn't a stage to wait out — it's a ready
     // conversation with nobody in it yet. Leads with the agent's own name
     // so the affordance is "message them", not the generic feed copy.
-    const readyAgent = participants.find((participant) =>
-      isAgentAddress(participant.address),
-    );
+    const readyAgent = participants.find((participant) => isAgentAddress(participant.address));
     if (readyAgent !== undefined) {
       const readyAgentName =
         displayNameForAddress(readyAgent.address, agentDisplayNames) ??
@@ -2104,10 +1949,7 @@ export function WorkbenchTimeline({
           const previous = index > 0 ? items[index - 1] : undefined;
           const showDayDivider =
             previous === undefined ||
-            !isSameCalendarDay(
-              new Date(previous.createdAt),
-              new Date(item.createdAt),
-            );
+            !isSameCalendarDay(new Date(previous.createdAt), new Date(item.createdAt));
           // Keyed by `clientId` (falling back to `id`) when present: a
           // pending send and the confirmed message that later reconciles
           // it (CL-6251's wire `clientId`) share this key, so React
@@ -2124,17 +1966,11 @@ export function WorkbenchTimeline({
                 participants={participants}
                 currentUser={currentUser}
                 showDayDivider={showDayDivider}
-                {...(agentDisplayNames !== undefined
-                  ? { agentDisplayNames }
-                  : {})}
+                {...(agentDisplayNames !== undefined ? { agentDisplayNames } : {})}
               />
             );
           }
-          const showHeader = !isGroupedWithPrevious(
-            item,
-            previous,
-            showDayDivider,
-          );
+          const showHeader = !isGroupedWithPrevious(item, previous, showDayDivider);
           const collapsedJoinText = joinRuns.textByLeadId.get(item.id);
           return (
             <MessageParts
@@ -2145,12 +1981,8 @@ export function WorkbenchTimeline({
               currentUser={currentUser}
               showDayDivider={showDayDivider}
               showHeader={showHeader}
-              {...(agentDisplayNames !== undefined
-                ? { agentDisplayNames }
-                : {})}
-              {...(collapsedJoinText !== undefined
-                ? { collapsedJoinText }
-                : {})}
+              {...(agentDisplayNames !== undefined ? { agentDisplayNames } : {})}
+              {...(collapsedJoinText !== undefined ? { collapsedJoinText } : {})}
               threadMeta={threadMetaByMessageId?.get(item.id)}
               threadAffordanceMode={threadAffordanceMode}
               {...(onOpenThread !== undefined ? { onOpenThread } : {})}
@@ -2158,38 +1990,22 @@ export function WorkbenchTimeline({
               {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
               {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
               {...(onFixConnection !== undefined ? { onFixConnection } : {})}
-              {...(onOpenArtifactInLibrary !== undefined
-                ? { onOpenArtifactInLibrary }
-                : {})}
+              {...(onOpenArtifactInLibrary !== undefined ? { onOpenArtifactInLibrary } : {})}
               {...(approvalActions !== undefined ? { approvalActions } : {})}
               {...(blockResponses !== undefined ? { blockResponses } : {})}
-              {...(connectGithubActions !== undefined
-                ? { connectGithubActions }
-                : {})}
-              {...(connectServiceActions !== undefined
-                ? { connectServiceActions }
-                : {})}
+              {...(connectGithubActions !== undefined ? { connectGithubActions } : {})}
+              {...(connectServiceActions !== undefined ? { connectServiceActions } : {})}
               {...(pendingActions !== undefined ? { pendingActions } : {})}
-              {...(onRetryFailedTurn !== undefined
-                ? { onRetryFailedTurn }
-                : {})}
-              {...(onWhatHappenedFailedTurn !== undefined
-                ? { onWhatHappenedFailedTurn }
-                : {})}
-              {...(failedTurnRecovery !== undefined
-                ? { failedTurnRecovery }
-                : {})}
+              {...(onRetryFailedTurn !== undefined ? { onRetryFailedTurn } : {})}
+              {...(onWhatHappenedFailedTurn !== undefined ? { onWhatHappenedFailedTurn } : {})}
+              {...(failedTurnRecovery !== undefined ? { failedTurnRecovery } : {})}
             />
           );
         })}
         {footer}
       </div>
       {pinnedToLatest ? null : (
-        <button
-          type="button"
-          className="chat-jump-to-latest"
-          onClick={jumpToLatest}
-        >
+        <button type="button" className="chat-jump-to-latest" onClick={jumpToLatest}>
           <ArrowDown aria-hidden="true" />
           {CHAT_STRINGS.jumpToLatestAction}
         </button>

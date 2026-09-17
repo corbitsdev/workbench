@@ -36,10 +36,7 @@ export {
   Part,
 } from "./wire/parts";
 export type { ParticipantRecord } from "./wire/participants";
-export type {
-  OnboardingStepLabel,
-  WorkbenchOnboardingStep,
-} from "./wire/blocks";
+export type { OnboardingStepLabel, WorkbenchOnboardingStep } from "./wire/blocks";
 export const WorkbenchKind = type("'workbench' | 'chat'");
 export type WorkbenchKind = typeof WorkbenchKind.infer;
 
@@ -93,14 +90,12 @@ export type Workbench = Omit<typeof WorkbenchWire.infer, "participants"> & {
   readonly participants: readonly ParticipantRecord[];
 };
 
-const WorkbenchesResponse = type({ items: WorkbenchWire.array() }).pipe(
-  (response) => ({
-    items: response.items.map((wire) => ({
-      ...wire,
-      participants: parseParticipants(wire.participants),
-    })),
-  }),
-);
+const WorkbenchesResponse = type({ items: WorkbenchWire.array() }).pipe((response) => ({
+  items: response.items.map((wire) => ({
+    ...wire,
+    participants: parseParticipants(wire.participants),
+  })),
+}));
 
 // `tenantId`/`tenantName`/`tenantMonogram` are set server-side only for a
 // message sent by a shared workbench's "other side" participant — a share
@@ -230,9 +225,7 @@ export class ChatApiError extends Error {
  */
 export function describeChatError(cause: unknown, fallback: string): string {
   const statused =
-    cause instanceof ChatApiError || cause instanceof InferenceSettingsApiError
-      ? cause
-      : null;
+    cause instanceof ChatApiError || cause instanceof InferenceSettingsApiError ? cause : null;
   if (statused === null) return fallback;
   switch (statused.status) {
     case 401:
@@ -242,10 +235,7 @@ export function describeChatError(cause: unknown, fallback: string): string {
     case undefined:
       return "Couldn't reach the server. Check your connection and try again.";
     default: {
-      if (
-        cause instanceof InferenceSettingsApiError &&
-        statused.message.trim() !== ""
-      ) {
+      if (cause instanceof InferenceSettingsApiError && statused.message.trim() !== "") {
         return statused.message;
       }
       return statused.status >= 500
@@ -257,11 +247,7 @@ export function describeChatError(cause: unknown, fallback: string): string {
 
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
-async function request<T>(
-  path: string,
-  schema: Validator<T>,
-  init?: RequestInit,
-): Promise<T> {
+async function request<T>(path: string, schema: Validator<T>, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, {
@@ -269,25 +255,18 @@ async function request<T>(
       headers: { "content-type": "application/json", ...init?.headers },
     });
   } catch (cause) {
-    throw new ChatApiError(
-      cause instanceof Error ? cause.message : String(cause),
-    );
+    throw new ChatApiError(cause instanceof Error ? cause.message : String(cause));
   }
   if (response.status === 401) {
     throw new UnauthenticatedError();
   }
   if (!response.ok) {
-    throw new ChatApiError(
-      `The server answered ${response.status} for ${path}.`,
-      response.status,
-    );
+    throw new ChatApiError(`The server answered ${response.status} for ${path}.`, response.status);
   }
   const body: unknown = await response.json().catch(() => undefined);
   const parsed = schema(body);
   if (parsed instanceof type.errors) {
-    throw new ChatApiError(
-      `Unexpected response shape from ${path}: ${parsed.summary}`,
-    );
+    throw new ChatApiError(`Unexpected response shape from ${path}: ${parsed.summary}`);
   }
   return parsed;
 }
@@ -314,9 +293,7 @@ export function workbenchesQueryKey(
 
 /** Prefix covering every `workbenchesQueryKey` kind for a tenant — invalidate
  * this after a mutation (create, rename, pin) to refetch both kinds. */
-export function workbenchesQueryKeyPrefix(
-  tenantId: string,
-): readonly [string, string, string] {
+export function workbenchesQueryKeyPrefix(tenantId: string): readonly [string, string, string] {
   return ["tenant", tenantId, "workbenches"] as const;
 }
 
@@ -324,9 +301,7 @@ export function listWorkbenches(
   tenantId: string,
   kind: WorkbenchKind,
 ): Promise<readonly Workbench[]> {
-  return request(workbenchesPath(tenantId, kind), WorkbenchesResponse).then(
-    (page) => page.items,
-  );
+  return request(workbenchesPath(tenantId, kind), WorkbenchesResponse).then((page) => page.items);
 }
 
 /**
@@ -339,13 +314,10 @@ export function listWorkbenches(
  * the shell's second column splitting the result into its workbenches and
  * chats sections (see `apps/web/src/shell/bench-activity.ts`).
  */
-export function listAllWorkbenches(
-  tenantId: string,
-): Promise<readonly Workbench[]> {
-  return request(
-    `/api/tenants/${tenantId}/chat/workbenches`,
-    WorkbenchesResponse,
-  ).then((page) => page.items);
+export function listAllWorkbenches(tenantId: string): Promise<readonly Workbench[]> {
+  return request(`/api/tenants/${tenantId}/chat/workbenches`, WorkbenchesResponse).then(
+    (page) => page.items,
+  );
 }
 
 // A chat is a direct thread with exactly one counterpart, picked at
@@ -415,18 +387,13 @@ export function applyStreamWorkbenchesMutated(data: unknown): void {
   );
 }
 
-export function createWorkbench(
-  tenantId: string,
-  input: CreateWorkbenchInput,
-): Promise<Workbench> {
+export function createWorkbench(tenantId: string, input: CreateWorkbenchInput): Promise<Workbench> {
   return request(`/api/tenants/${tenantId}/chat/workbenches`, Workbench, {
     method: "POST",
     body: JSON.stringify(input),
   }).then((workbench) => {
     if (typeof window !== "undefined") {
-      window.dispatchEvent(
-        new CustomEvent(WORKBENCHES_MUTATED_EVENT, { detail: { tenantId } }),
-      );
+      window.dispatchEvent(new CustomEvent(WORKBENCHES_MUTATED_EVENT, { detail: { tenantId } }));
     }
     return workbench;
   });
@@ -509,11 +476,10 @@ export function sendMessage(
     body["invite"] = options.invite;
   }
   if (options?.clientId !== undefined) body["clientId"] = options.clientId;
-  return request(
-    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages`,
-    SentMessage,
-    { method: "POST", body: JSON.stringify(body) },
-  );
+  return request(`/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages`, SentMessage, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 // `parentThreadId` is the thread this one hangs directly off: null for the
@@ -591,18 +557,14 @@ export function putReadState(
   workbenchId: string,
   input: { readonly lastSeenCreatedAt: string; readonly lastSeenId: string },
 ): Promise<void> {
-  return request(
-    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/read-state`,
-    ReadState,
-    { method: "PUT", body: JSON.stringify(input) },
-  ).then(() => undefined);
+  return request(`/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/read-state`, ReadState, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  }).then(() => undefined);
 }
 
 export function listRuns(tenantId: string): Promise<readonly Run[]> {
-  return request(
-    `/api/tenants/${tenantId}/workflows/deployments`,
-    RunsResponse,
-  );
+  return request(`/api/tenants/${tenantId}/workflows/deployments`, RunsResponse);
 }
 
 export function listInvitableDefinitions(
@@ -634,11 +596,10 @@ export function inviteAgent(
   workbenchId: string,
   definitionId: string,
 ): Promise<InvitedAgent> {
-  return request(
-    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invite`,
-    InvitedAgent,
-    { method: "POST", body: JSON.stringify({ definitionId }) },
-  );
+  return request(`/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invite`, InvitedAgent, {
+    method: "POST",
+    body: JSON.stringify({ definitionId }),
+  });
 }
 
 const PostedOnboardingStep = type({ id: "string" });
@@ -685,14 +646,11 @@ const CreatedAgentDefinition = type({ id: "string" });
  * goes through. Idempotency is the caller's job: only offer this when
  * `JIMMY_QUICK_CREATE.handle` is absent from the tenant's invitable list.
  */
-export function quickCreateJimmy(
-  tenantId: string,
-): Promise<{ readonly id: string }> {
-  return request(
-    `/api/tenants/${tenantId}/agent-definitions`,
-    CreatedAgentDefinition,
-    { method: "POST", body: JSON.stringify(JIMMY_QUICK_CREATE) },
-  );
+export function quickCreateJimmy(tenantId: string): Promise<{ readonly id: string }> {
+  return request(`/api/tenants/${tenantId}/agent-definitions`, CreatedAgentDefinition, {
+    method: "POST",
+    body: JSON.stringify(JIMMY_QUICK_CREATE),
+  });
 }
 
 // `DELETE /workbenches/:id/participants/:address` (see
@@ -834,10 +792,7 @@ export function listVisibleAgentDefinitions(
  * never the caller's own tenant when the agent was reached through
  * ancestor inheritance — the DM workbench lives where the agent lives.
  */
-export function openAgentDm(
-  tenantId: string,
-  definitionId: string,
-): Promise<Workbench> {
+export function openAgentDm(tenantId: string, definitionId: string): Promise<Workbench> {
   return createWorkbench(tenantId, {
     kind: "chat",
     definitionId,
@@ -845,14 +800,8 @@ export function openAgentDm(
   });
 }
 
-export function getAgentInstructions(
-  tenantId: string,
-  definitionId: string,
-): Promise<AgentDetail> {
-  return request(
-    agentInstructionsPath(tenantId, definitionId),
-    AgentDetailWire,
-  );
+export function getAgentInstructions(tenantId: string, definitionId: string): Promise<AgentDetail> {
+  return request(agentInstructionsPath(tenantId, definitionId), AgentDetailWire);
 }
 
 export function updateAgentInstructions(
@@ -860,11 +809,10 @@ export function updateAgentInstructions(
   definitionId: string,
   input: AgentInstructions,
 ): Promise<AgentInstructions> {
-  return request(
-    agentInstructionsPath(tenantId, definitionId),
-    AgentInstructionsWire,
-    { method: "PUT", body: JSON.stringify(input) },
-  );
+  return request(agentInstructionsPath(tenantId, definitionId), AgentInstructionsWire, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
 }
 
 // `GET /:definitionId/versions` / `POST /:definitionId/restore` (see
@@ -896,11 +844,10 @@ export function restoreAgentVersion(
   definitionId: string,
   commitSha: string,
 ): Promise<AgentDetail> {
-  return request(
-    `${agentInstructionsPath(tenantId, definitionId)}/restore`,
-    AgentDetailWire,
-    { method: "POST", body: JSON.stringify({ commitSha }) },
-  );
+  return request(`${agentInstructionsPath(tenantId, definitionId)}/restore`, AgentDetailWire, {
+    method: "POST",
+    body: JSON.stringify({ commitSha }),
+  });
 }
 
 // `GET /agent-definitions/capabilities/inventory` /
@@ -916,9 +863,7 @@ const CapabilityInventoryWire = type({
 });
 export type CapabilityInventory = typeof CapabilityInventoryWire.infer;
 
-export function listCapabilityInventory(
-  tenantId: string,
-): Promise<CapabilityInventory> {
+export function listCapabilityInventory(tenantId: string): Promise<CapabilityInventory> {
   return request(
     `/api/tenants/${tenantId}/agent-definitions/capabilities/inventory`,
     CapabilityInventoryWire,
@@ -942,10 +887,7 @@ export function addAgentCapability(
   );
 }
 
-export function workbenchStreamUrl(
-  tenantId: string,
-  workbenchId: string,
-): string {
+export function workbenchStreamUrl(tenantId: string, workbenchId: string): string {
   return `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/stream`;
 }
 
@@ -957,14 +899,10 @@ export function workbenchStreamUrl(
  * on a polling interval. Best-effort: a dropped ping just means the next
  * one (or the eventual `"offline"` on disconnect) catches up.
  */
-export function pingWorkbenchPresence(
-  tenantId: string,
-  workbenchId: string,
-): Promise<void> {
-  return fetch(
-    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/presence`,
-    { method: "POST" },
-  )
+export function pingWorkbenchPresence(tenantId: string, workbenchId: string): Promise<void> {
+  return fetch(`/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/presence`, {
+    method: "POST",
+  })
     .then(() => undefined)
     .catch(() => undefined);
 }
@@ -1019,10 +957,7 @@ export function getBlockResponses(
   messageId: string,
   blockId: string,
 ): Promise<BlockResponses> {
-  return request(
-    blockResponsesPath(tenantId, workbenchId, messageId, blockId),
-    BlockResponsesWire,
-  );
+  return request(blockResponsesPath(tenantId, workbenchId, messageId, blockId), BlockResponsesWire);
 }
 
 export function submitPollResponse(
@@ -1099,10 +1034,7 @@ const WorkbenchSettingsResponse = WorkbenchWire.and({
   ...wire,
   participants: parseParticipants(wire.participants),
 }));
-export type WorkbenchSettings = Omit<
-  typeof WorkbenchSettingsResponse.infer,
-  "participants"
-> & {
+export type WorkbenchSettings = Omit<typeof WorkbenchSettingsResponse.infer, "participants"> & {
   readonly participants: readonly ParticipantRecord[];
 };
 
@@ -1171,13 +1103,8 @@ const BenchChatSettingsResponse = type({
 });
 export type BenchChatSettings = typeof BenchChatSettingsResponse.infer;
 
-export function getBenchChatSettings(
-  tenantId: string,
-): Promise<BenchChatSettings> {
-  return request(
-    `/api/tenants/${tenantId}/chat/bench/settings`,
-    BenchChatSettingsResponse,
-  );
+export function getBenchChatSettings(tenantId: string): Promise<BenchChatSettings> {
+  return request(`/api/tenants/${tenantId}/chat/bench/settings`, BenchChatSettingsResponse);
 }
 
 export type BenchChatSettingsPatch = {
@@ -1188,11 +1115,10 @@ export function patchBenchChatSettings(
   tenantId: string,
   patch: BenchChatSettingsPatch,
 ): Promise<BenchChatSettings> {
-  return request(
-    `/api/tenants/${tenantId}/chat/bench/settings`,
-    BenchChatSettingsResponse,
-    { method: "PATCH", body: JSON.stringify(patch) },
-  );
+  return request(`/api/tenants/${tenantId}/chat/bench/settings`, BenchChatSettingsResponse, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
 }
 
 // The turn projection's read surface (CL-6329/CL-6380): what a client
@@ -1221,9 +1147,7 @@ export function listWorkbenchTurns(
   tenantId: string,
   workbenchId: string,
 ): Promise<readonly AgentTurnSummary[]> {
-  return request(turnsPath(tenantId, workbenchId), AgentTurnsListWire).then(
-    (body) => body.items,
-  );
+  return request(turnsPath(tenantId, workbenchId), AgentTurnsListWire).then((body) => body.items);
 }
 
 const AgentTurnDetailWire = AgentTurnWire.and({
@@ -1236,10 +1160,7 @@ export function getWorkbenchTurn(
   workbenchId: string,
   turnId: string,
 ): Promise<AgentTurnDetail> {
-  return request(
-    `${turnsPath(tenantId, workbenchId)}/${turnId}`,
-    AgentTurnDetailWire,
-  );
+  return request(`${turnsPath(tenantId, workbenchId)}/${turnId}`, AgentTurnDetailWire);
 }
 
 const CancelWorkbenchTurnWire = type({ cancelledCount: "number" });
@@ -1258,13 +1179,9 @@ export function cancelWorkbenchTurn(
   tenantId: string,
   workbenchId: string,
 ): Promise<CancelWorkbenchTurnResult> {
-  return request(
-    `${turnsPath(tenantId, workbenchId)}/cancel`,
-    CancelWorkbenchTurnWire,
-    {
-      method: "POST",
-    },
-  );
+  return request(`${turnsPath(tenantId, workbenchId)}/cancel`, CancelWorkbenchTurnWire, {
+    method: "POST",
+  });
 }
 
 /**

@@ -11,10 +11,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 
-import {
-  parseStreamEventJson,
-  useWorkbenchStream,
-} from "../src/use-workbench-stream";
+import { parseStreamEventJson, useWorkbenchStream } from "../src/use-workbench-stream";
 
 const realEventSource = globalThis.EventSource;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -34,10 +31,7 @@ class StubEventSource {
     StubEventSource.instances.push(this);
   }
 
-  addEventListener(
-    eventType: string,
-    listener: (message: MessageEvent) => void,
-  ) {
+  addEventListener(eventType: string, listener: (message: MessageEvent) => void) {
     this.listeners.set(eventType, listener);
   }
 
@@ -105,8 +99,7 @@ function mount(
 
   return {
     latest: (): StubEventSource => {
-      const instance =
-        StubEventSource.instances[StubEventSource.instances.length - 1];
+      const instance = StubEventSource.instances[StubEventSource.instances.length - 1];
       if (instance === undefined) throw new Error("no EventSource was opened");
       return instance;
     },
@@ -219,9 +212,7 @@ describe("useWorkbenchStream (reconnect + poll wiring)", () => {
 
     harness.latest().emit("chat.message", { id: "m1", parts: [] });
 
-    expect(harness.events()).toEqual([
-      ["chat.message", { id: "m1", parts: [] }],
-    ]);
+    expect(harness.events()).toEqual([["chat.message", { id: "m1", parts: [] }]]);
     expect(harness.pollCount()).toBe(pollsAfterOpen);
     harness.unmount();
   });

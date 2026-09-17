@@ -43,8 +43,7 @@ type RecordedCall = { readonly path: string; readonly init?: RequestInit };
 function stubFetch(respond: (path: string) => Response): RecordedCall[] {
   const calls: RecordedCall[] = [];
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const path =
-      typeof input === "string" ? input : new URL(String(input)).pathname;
+    const path = typeof input === "string" ? input : new URL(String(input)).pathname;
     calls.push(init === undefined ? { path } : { path, init });
     return Promise.resolve(respond(path));
   }) as typeof fetch;
@@ -73,9 +72,7 @@ describe("listWorkbenches", () => {
       }),
     );
     const workbenches = await listWorkbenches("tenant_1", "workbench");
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/workbenches?kind=workbench",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/workbenches?kind=workbench");
     expect(workbenches).toEqual([
       {
         id: "c1",
@@ -111,25 +108,19 @@ describe("listWorkbenches", () => {
       }),
     );
     const workbenches = await listWorkbenches("tenant_1", "workbench");
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/workbenches?kind=workbench",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/workbenches?kind=workbench");
     expect(workbenches[0]?.tenancy).toEqual({ tenantId: "tnt_1" });
     expect(workbenches[1]?.tenancy).toBeNull();
   });
 
   test("throws a ChatApiError on a malformed response", async () => {
     stubFetch(() => json({ items: [{ id: "c1" }] }));
-    await expect(listWorkbenches("tenant_1", "chat")).rejects.toBeInstanceOf(
-      ChatApiError,
-    );
+    await expect(listWorkbenches("tenant_1", "chat")).rejects.toBeInstanceOf(ChatApiError);
   });
 
   test("throws an UnauthenticatedError on 401", async () => {
     stubFetch(() => json(null, 401));
-    await expect(listWorkbenches("tenant_1", "chat")).rejects.toBeInstanceOf(
-      UnauthenticatedError,
-    );
+    await expect(listWorkbenches("tenant_1", "chat")).rejects.toBeInstanceOf(UnauthenticatedError);
   });
 });
 
@@ -243,13 +234,9 @@ describe("createWorkbench", () => {
 
 describe("sendMessage", () => {
   test("posts { parts } with the TextPart payload", async () => {
-    const calls = stubFetch(() =>
-      json({ id: "m1", createdAt: "2026-01-01T00:00:00.000Z" }, 201),
-    );
+    const calls = stubFetch(() => json({ id: "m1", createdAt: "2026-01-01T00:00:00.000Z" }, 201));
     await sendMessage("tenant_1", "chan_1", [{ kind: "text", text: "hello" }]);
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/workbenches/chan_1/messages",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/workbenches/chan_1/messages");
     expect(calls[0]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
       parts: [{ kind: "text", text: "hello" }],
@@ -331,9 +318,7 @@ describe("listMessages", () => {
         ],
       }),
     );
-    await expect(listMessages("tenant_1", "chan_1")).rejects.toBeInstanceOf(
-      ChatApiError,
-    );
+    await expect(listMessages("tenant_1", "chan_1")).rejects.toBeInstanceOf(ChatApiError);
   });
 });
 
@@ -342,16 +327,14 @@ describe("fetchWorkbenchBlob", () => {
     const calls = stubFetch(() => json({ contentBase64: "aGVsbG8=" }));
     const content = await fetchWorkbenchBlob("tenant_1", "chan_1", "blob_m1_1");
     expect(content).toBe("aGVsbG8=");
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/workbenches/chan_1/blobs/blob_m1_1",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/workbenches/chan_1/blobs/blob_m1_1");
   });
 
   test("throws a ChatApiError on a non-2xx response", async () => {
     stubFetch(() => json({ error: { code: "not_found" } }, 404));
-    await expect(
-      fetchWorkbenchBlob("tenant_1", "chan_1", "blob_missing"),
-    ).rejects.toBeInstanceOf(ChatApiError);
+    await expect(fetchWorkbenchBlob("tenant_1", "chan_1", "blob_missing")).rejects.toBeInstanceOf(
+      ChatApiError,
+    );
   });
 });
 
@@ -377,34 +360,26 @@ describe("listRuns", () => {
 
 describe("listTenantInvitableDefinitions", () => {
   test("fetches the tenant-wide listing with no workbench id", async () => {
-    const calls = stubFetch(() =>
-      json({ items: [{ id: "wfd_echo", name: "echo" }] }),
-    );
+    const calls = stubFetch(() => json({ items: [{ id: "wfd_echo", name: "echo" }] }));
     const items = await listTenantInvitableDefinitions("tenant_1");
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/invitable-definitions",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/invitable-definitions");
     expect(items).toEqual([{ id: "wfd_echo", name: "echo" }]);
   });
 });
 
 describe("listInvitableDefinitions", () => {
   test("fetches the workbench's invitable definitions", async () => {
-    const calls = stubFetch(() =>
-      json({ items: [{ id: "wfd_echo", name: "echo" }] }),
-    );
+    const calls = stubFetch(() => json({ items: [{ id: "wfd_echo", name: "echo" }] }));
     const items = await listInvitableDefinitions("tenant_1", "chan_1");
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/workbenches/chan_1/invitable",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/workbenches/chan_1/invitable");
     expect(items).toEqual([{ id: "wfd_echo", name: "echo" }]);
   });
 
   test("throws a ChatApiError on a malformed response", async () => {
     stubFetch(() => json({ items: [{ id: "wfd_echo" }] }));
-    await expect(
-      listInvitableDefinitions("tenant_1", "chan_1"),
-    ).rejects.toBeInstanceOf(ChatApiError);
+    await expect(listInvitableDefinitions("tenant_1", "chan_1")).rejects.toBeInstanceOf(
+      ChatApiError,
+    );
   });
 });
 
@@ -424,9 +399,7 @@ describe("listWorkbenchAgents", () => {
       }),
     );
     const items = await listWorkbenchAgents("tenant_1", "chan_1");
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/workbenches/chan_1/agents",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/workbenches/chan_1/agents");
     expect(items).toEqual([
       {
         address: "ins_echo@acme.example",
@@ -451,9 +424,7 @@ describe("listWorkbenchAgents", () => {
         ],
       }),
     );
-    await expect(
-      listWorkbenchAgents("tenant_1", "chan_1"),
-    ).rejects.toBeInstanceOf(ChatApiError);
+    await expect(listWorkbenchAgents("tenant_1", "chan_1")).rejects.toBeInstanceOf(ChatApiError);
   });
 });
 
@@ -501,9 +472,7 @@ describe("listVisibleAgentDefinitions", () => {
 
   test("throws a ChatApiError on a malformed response", async () => {
     stubFetch(() => json({ definitions: [{ id: "wfd_outreach" }] }));
-    await expect(listVisibleAgentDefinitions("tnt_1")).rejects.toBeInstanceOf(
-      ChatApiError,
-    );
+    await expect(listVisibleAgentDefinitions("tnt_1")).rejects.toBeInstanceOf(ChatApiError);
   });
 });
 
@@ -535,15 +504,10 @@ describe("openAgentDm", () => {
 describe("inviteAgent", () => {
   test("posts the definitionId and returns the launched agent's address", async () => {
     const calls = stubFetch(() =>
-      json(
-        { address: "ins_invited1@acme.example", definitionId: "wfd_echo" },
-        201,
-      ),
+      json({ address: "ins_invited1@acme.example", definitionId: "wfd_echo" }, 201),
     );
     const invited = await inviteAgent("tenant_1", "chan_1", "wfd_echo");
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/workbenches/chan_1/invite",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/workbenches/chan_1/invite");
     expect(calls[0]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
       definitionId: "wfd_echo",
@@ -562,29 +526,19 @@ describe("postWorkbenchOnboardingStep", () => {
       kind: "connect-github" as const,
       requiredForTemplate: "Code review",
       promise: "Three reviewers read every pull request.",
-      steps: [
-        { title: "Connect GitHub", why: "So reviewers can read your code." },
-      ],
+      steps: [{ title: "Connect GitHub", why: "So reviewers can read your code." }],
     };
 
-    const posted = await postWorkbenchOnboardingStep(
-      "tenant_1",
-      "chan_1",
-      step,
-    );
+    const posted = await postWorkbenchOnboardingStep("tenant_1", "chan_1", step);
 
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/workbenches/chan_1/onboarding",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/workbenches/chan_1/onboarding");
     expect(calls[0]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual(step);
     expect(posted).toEqual({ id: "msg_1" });
   });
 
   test("a rejected step surfaces as a ChatApiError", async () => {
-    stubFetch(() =>
-      json({ error: { code: "bad_request", message: "nope" } }, 400),
-    );
+    stubFetch(() => json({ error: { code: "bad_request", message: "nope" } }, 400));
 
     await expect(
       postWorkbenchOnboardingStep("tenant_1", "chan_1", {
@@ -603,9 +557,7 @@ describe("quickCreateJimmy", () => {
     const created = await quickCreateJimmy("tenant_1");
     expect(calls[0]?.path).toBe("/api/tenants/tenant_1/agent-definitions");
     expect(calls[0]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual(
-      JIMMY_QUICK_CREATE,
-    );
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual(JIMMY_QUICK_CREATE);
     expect(created).toEqual({ id: "wfd_jimmy" });
   });
 });
@@ -624,9 +576,7 @@ describe("getWorkbenchSettings", () => {
       }),
     );
     const settings = await getWorkbenchSettings("tenant_1", "c1");
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/workbenches/c1/settings",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/workbenches/c1/settings");
     expect(settings.settings["chat/contextWindow"]).toBe(5);
     expect(settings.contextWindow).toEqual({ value: 5, source: "override" });
   });
@@ -654,9 +604,7 @@ describe("patchWorkbenchSettings", () => {
       "chat/pinned": false,
       "chat/contextWindow": 0,
     });
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tenant_1/chat/workbenches/c1/settings",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/workbenches/c1/settings");
     expect(calls[0]?.init?.method).toBe("PATCH");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
       "chat/name": "Renamed",
@@ -713,45 +661,33 @@ describe("describeChatError", () => {
   const fallback = "Couldn't load the models.";
 
   test("surfaces an InferenceSettingsApiError envelope userMessage on 500", () => {
-    expect(
-      describeChatError(
-        new InferenceSettingsApiError("catalog boom", 500),
-        fallback,
-      ),
-    ).toBe("catalog boom");
+    expect(describeChatError(new InferenceSettingsApiError("catalog boom", 500), fallback)).toBe(
+      "catalog boom",
+    );
   });
 
   test("maps an InferenceSettingsApiError 401 the same way as ChatApiError", () => {
-    expect(
-      describeChatError(
-        new InferenceSettingsApiError("signed out boom", 401),
-        fallback,
-      ),
-    ).toBe("You're signed out. Sign in again to continue.");
+    expect(describeChatError(new InferenceSettingsApiError("signed out boom", 401), fallback)).toBe(
+      "You're signed out. Sign in again to continue.",
+    );
     expect(describeChatError(new ChatApiError("boom", 401), fallback)).toBe(
       "You're signed out. Sign in again to continue.",
     );
   });
 
   test("maps a network InferenceSettingsApiError the same way as ChatApiError", () => {
-    expect(
-      describeChatError(
-        new InferenceSettingsApiError("Failed to fetch"),
-        fallback,
-      ),
-    ).toBe("Couldn't reach the server. Check your connection and try again.");
-    expect(
-      describeChatError(new ChatApiError("Failed to fetch"), fallback),
-    ).toBe("Couldn't reach the server. Check your connection and try again.");
+    expect(describeChatError(new InferenceSettingsApiError("Failed to fetch"), fallback)).toBe(
+      "Couldn't reach the server. Check your connection and try again.",
+    );
+    expect(describeChatError(new ChatApiError("Failed to fetch"), fallback)).toBe(
+      "Couldn't reach the server. Check your connection and try again.",
+    );
   });
 
   test("never leaks a ChatApiError path on 500", () => {
     expect(
       describeChatError(
-        new ChatApiError(
-          "The server answered 500 for /api/tenants/tnt_1/models.",
-          500,
-        ),
+        new ChatApiError("The server answered 500 for /api/tenants/tnt_1/models.", 500),
         fallback,
       ),
     ).toBe("Something went wrong on our end. Try again in a moment.");

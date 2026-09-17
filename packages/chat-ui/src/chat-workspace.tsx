@@ -15,13 +15,7 @@ import { isAgentAddress } from "./wire/mentions";
 import { Button, EmptyState, toast } from "@corbits/react-ui";
 import { reportError } from "@corbits/error-sink";
 import { getResolvedCatalog } from "@corbits/inference-settings";
-import {
-  CaretDown,
-  ChatCircle,
-  SlidersHorizontal,
-  UserPlus,
-  WarningCircle,
-} from "@corbits/icons";
+import { CaretDown, ChatCircle, SlidersHorizontal, UserPlus, WarningCircle } from "@corbits/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -51,16 +45,10 @@ import { Composer } from "./composer";
 import type { ComposerHandle } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
 import { WorkbenchLoadingState } from "./loading-state";
-import {
-  mentionCandidatesFromParticipants,
-  resolveBringInLists,
-} from "./mentions";
+import { mentionCandidatesFromParticipants, resolveBringInLists } from "./mentions";
 import type { BringInListFailure, BringInMember } from "./mentions";
 import { SLASH_COMMANDS } from "./slash-commands";
-import {
-  failedTurnModelChoices,
-  failedTurnToolCapableModelChoices,
-} from "./failed-turn-models";
+import { failedTurnModelChoices, failedTurnToolCapableModelChoices } from "./failed-turn-models";
 import { CHAT_STRINGS } from "./strings";
 import { displayWorkbenchTitle } from "./workbench-display-title";
 import {
@@ -86,11 +74,7 @@ import {
 } from "./agent-display-names";
 import { NoUsableModelBanner } from "./no-usable-model-banner";
 import { ResumeFailedBanner } from "./resume-failed-banner";
-import type {
-  CurrentUser,
-  ScrollSnapshot,
-  TimelineMessageItem,
-} from "./timeline";
+import type { CurrentUser, ScrollSnapshot, TimelineMessageItem } from "./timeline";
 import type { ApprovalActions } from "./blocks/approval-actions";
 import type { BlockResponseActions } from "./blocks/block-responses";
 import type { ConnectGithubActions } from "./blocks/connect-github-actions";
@@ -107,22 +91,13 @@ import { useWorkbenchFeed } from "./use-workbench-feed";
 import { CorbitAvatar, avatarClassForPrincipal } from "./avatar";
 import { useWorkbenchPresenceRoster } from "./workbench-presence";
 import { type } from "arktype";
-import {
-  ChatMessageEventData,
-  ChatSettingsEventData,
-} from "./wire/stream-events";
+import { ChatMessageEventData, ChatSettingsEventData } from "./wire/stream-events";
 import { useThreadNavigation } from "./use-thread-navigation";
 import { mergePendingSends, useOptimisticSends } from "./use-optimistic-sends";
-export {
-  mergePendingSends,
-  pendingSenderAddress,
-} from "./use-optimistic-sends";
+export { mergePendingSends, pendingSenderAddress } from "./use-optimistic-sends";
 export type { PendingSend } from "./use-optimistic-sends";
 import { useWorkbenchTimelineView } from "./workbench-timeline-view";
-export {
-  chatFeedQueryKeyPrefix,
-  chatThreadsQueryKey,
-} from "./use-workbench-feed";
+export { chatFeedQueryKeyPrefix, chatThreadsQueryKey } from "./use-workbench-feed";
 export type { MessagesState } from "./workbench-timeline-view";
 
 /**
@@ -220,11 +195,7 @@ export function buildMemberAvatarStack(
   const humans = participants
     .filter((participant) => !isAgentAddress(participant.address))
     .map((participant) => {
-      const label = typingLabel(
-        localPartOf(participant.address),
-        participants,
-        currentUser,
-      );
+      const label = typingLabel(localPartOf(participant.address), participants, currentUser);
       return {
         key: participant.address,
         initials: label.slice(0, 1).toUpperCase(),
@@ -306,8 +277,7 @@ export function workbenchNotFoundRecoveryAction(args: {
   readonly onBackToWorkbenchList?: () => void;
 }): ReactNode | undefined {
   const { onGoToMissionControl, onNewWorkbench, onBackToWorkbenchList } = args;
-  const hasModernRecovery =
-    onGoToMissionControl !== undefined || onNewWorkbench !== undefined;
+  const hasModernRecovery = onGoToMissionControl !== undefined || onNewWorkbench !== undefined;
   if (hasModernRecovery) {
     return (
       <>
@@ -354,17 +324,14 @@ export function composerPlaceholderFor(
     | undefined,
   options?: { readonly slashCommandCount?: number },
 ): string {
-  const slashAvailable =
-    (options?.slashCommandCount ?? SLASH_COMMANDS.length) > 0;
+  const slashAvailable = (options?.slashCommandCount ?? SLASH_COMMANDS.length) > 0;
   if (workbench === undefined || workbench.kind !== "chat") {
     return slashAvailable
       ? `${CHAT_STRINGS.composerPlaceholder}, / for commands`
       : CHAT_STRINGS.composerPlaceholder;
   }
   const counterpart =
-    workbench.title.trim().length > 0
-      ? workbench.title
-      : CHAT_STRINGS.unnamedWorkbench;
+    workbench.title.trim().length > 0 ? workbench.title : CHAT_STRINGS.unnamedWorkbench;
   const base = CHAT_STRINGS.composerPlaceholderChat(counterpart);
   return slashAvailable ? `${base} / for commands` : base;
 }
@@ -393,9 +360,7 @@ const STREAMING_REPLY_ITEM_ID = "streaming_reply";
 function firstAgentParticipant(
   participants: readonly ParticipantRecord[],
 ): ParticipantRecord | undefined {
-  return participants.find((participant) =>
-    isAgentAddress(participant.address),
-  );
+  return participants.find((participant) => isAgentAddress(participant.address));
 }
 
 /**
@@ -414,11 +379,7 @@ export function mergeStreamingReply(
   // in the incoming-message slot owns that phase until the first delta
   // lands. A `"replied"` turn renders nothing: its reply is already a
   // persisted message.
-  if (
-    streamingReply === null ||
-    streamingReply.phase === "replied" ||
-    streamingReply.text === ""
-  ) {
+  if (streamingReply === null || streamingReply.phase === "replied" || streamingReply.text === "") {
     return items;
   }
   const agent = firstAgentParticipant(participants);
@@ -525,10 +486,7 @@ function useWorkbenchLists(tenantId: string) {
     if (workbenches.isError) {
       return {
         kind: "error",
-        message: describeChatError(
-          workbenches.error,
-          "Couldn't load workbenches.",
-        ),
+        message: describeChatError(workbenches.error, "Couldn't load workbenches."),
       };
     }
     if (chats.isError) {
@@ -611,9 +569,7 @@ function ChatWorkspaceInner({
   readonly settingsSection?: WorkbenchSettingsSectionId;
   /** Fired when the user switches tabs while the settings surface is
    * already open, so the host can reflect it in the URL. */
-  readonly onSettingsSectionChange?: (
-    section: WorkbenchSettingsSectionId,
-  ) => void;
+  readonly onSettingsSectionChange?: (section: WorkbenchSettingsSectionId) => void;
   /** Section sub-selection while settings are open — host-controlled from
    * the URL (`/w/:id/settings/:section/:entityId`). `null` means the
    * section's own list (or a section with no list). */
@@ -655,18 +611,14 @@ function ChatWorkspaceInner({
    * mounts, and with `null` when it unmounts so the host never holds a
    * stale handle. Optional: hosts that don't need the insert path omit it.
    */
-  readonly registerComposerInsert?: (
-    insert: ((text: string) => void) | null,
-  ) => void;
+  readonly registerComposerInsert?: (insert: ((text: string) => void) | null) => void;
   /**
    * Tenant members the mention popover's "Bring in…" group can offer —
    * the same reduced listing the shell already fetches for its
    * people/agents surfaces. Optional: omitting it hides the People group
    * (a workbench that can't grow its human roster still works).
    */
-  readonly listMembers?: (
-    tenantId: string,
-  ) => Promise<readonly BringInMember[]>;
+  readonly listMembers?: (tenantId: string) => Promise<readonly BringInMember[]>;
   /**
    * The composer's `/routine` command: opens the New Routine panel with
    * the active workbench pre-bound as its destination. Host-supplied so
@@ -678,10 +630,7 @@ function ChatWorkspaceInner({
    * CL-6099) are global-only pages now — reached from the shell rail, not
    * a per-workbench header button or composer command.
    */
-  readonly onCreateRoutineInSpace?: (
-    workbenchId: string,
-    preselectedAssetId?: string,
-  ) => void;
+  readonly onCreateRoutineInSpace?: (workbenchId: string, preselectedAssetId?: string) => void;
   /** Fired when the routed workbench 404s — a deleted workbench, or a stale
    * Recents entry that outlived it. The host owns Recents (this package
    * never touches localStorage), so it's told rather than reaching out. */
@@ -716,11 +665,8 @@ function ChatWorkspaceInner({
       queryKey: workbenchesQueryKeyPrefix(tenantId),
     });
   }, [queryClient, tenantId]);
-  const { state: workbenchesState, reload: reloadWorkbenches } =
-    useWorkbenchLists(tenantId);
-  const [selectedWorkbenchId, setSelectedWorkbenchId] = useState<string | null>(
-    null,
-  );
+  const { state: workbenchesState, reload: reloadWorkbenches } = useWorkbenchLists(tenantId);
+  const [selectedWorkbenchId, setSelectedWorkbenchId] = useState<string | null>(null);
   const activeWorkbenchId = controlledWorkbenchId ?? selectedWorkbenchId;
   const setActiveWorkbenchId = (id: string) => {
     setSelectedWorkbenchId(id);
@@ -729,9 +675,7 @@ function ChatWorkspaceInner({
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   // CL-6833: catch-up `fetchRunningTurn` failure must surface a banner with
   // Retry — never look idle. `resumeAttempt` re-arms the effect on Retry.
-  const [resumeFailedRefId, setResumeFailedRefId] = useState<string | null>(
-    null,
-  );
+  const [resumeFailedRefId, setResumeFailedRefId] = useState<string | null>(null);
   const [resumeAttempt, setResumeAttempt] = useState(0);
   // null = workbench root feed. A concrete id opens that thread in the same
   // geometry (timeline + composer). pendingParentMessageId is set when the
@@ -805,9 +749,7 @@ function ChatWorkspaceInner({
   }, [tenantId, activeWorkbenchId]);
 
   const composerMounted =
-    !settingsOpen &&
-    activeWorkbenchId !== null &&
-    messagesState.kind === "ready";
+    !settingsOpen && activeWorkbenchId !== null && messagesState.kind === "ready";
 
   useEffect(() => {
     if (registerComposerInsert === undefined) return;
@@ -819,8 +761,10 @@ function ChatWorkspaceInner({
     return () => registerComposerInsert(null);
   }, [registerComposerInsert, composerMounted]);
 
-  const { typingState, handleStreamEvent: handleTypingEvent } =
-    useTypingIndicator(currentUser?.principalId, activeWorkbenchId);
+  const { typingState, handleStreamEvent: handleTypingEvent } = useTypingIndicator(
+    currentUser?.principalId,
+    activeWorkbenchId,
+  );
   const {
     streamingReply,
     replyTimedOutRefId,
@@ -853,13 +797,9 @@ function ChatWorkspaceInner({
   // was. A ref (not state) holds each workbench's last snapshot: recording it
   // never needs to trigger a re-render, only be there the next time this
   // workbench's `WorkbenchTimeline` mounts.
-  const scrollSnapshotsRef = useRef<ReadonlyMap<string, ScrollSnapshot>>(
-    new Map(),
-  );
+  const scrollSnapshotsRef = useRef<ReadonlyMap<string, ScrollSnapshot>>(new Map());
   const restoredScrollSnapshot =
-    activeWorkbenchId !== null
-      ? scrollSnapshotsRef.current.get(activeWorkbenchId)
-      : undefined;
+    activeWorkbenchId !== null ? scrollSnapshotsRef.current.get(activeWorkbenchId) : undefined;
   const handleScrollSnapshot = useCallback(
     (snapshot: ScrollSnapshot) => {
       if (activeWorkbenchId === null) return;
@@ -880,9 +820,7 @@ function ChatWorkspaceInner({
   // `handleStreamingReplyEvent`/`handleTurnActivityEvent`, and the real
   // message it eventually produces arrives as its own `chat.message`.
   useWorkbenchStream(
-    activeWorkbenchId !== null
-      ? workbenchStreamUrl(tenantId, activeWorkbenchId)
-      : "",
+    activeWorkbenchId !== null ? workbenchStreamUrl(tenantId, activeWorkbenchId) : "",
     (eventType, data) => {
       handleTypingEvent(eventType, data);
       handleStreamingReplyEvent(eventType, data);
@@ -992,17 +930,15 @@ function ChatWorkspaceInner({
     isKnownWorkbenchKind(activeWorkbench.kind) &&
     activeWorkbench.kind === "chat";
   const activeChatAgent = isActiveChat
-    ? activeWorkbench?.participants.find((participant) =>
-        isAgentAddress(participant.address),
-      )
+    ? activeWorkbench?.participants.find((participant) => isAgentAddress(participant.address))
     : undefined;
 
-  const hasAgentParticipant = (activeWorkbench?.participants ?? []).some(
-    (participant) => isAgentAddress(participant.address),
+  const hasAgentParticipant = (activeWorkbench?.participants ?? []).some((participant) =>
+    isAgentAddress(participant.address),
   );
 
-  const resumeAgentAddress = (activeWorkbench?.participants ?? []).find(
-    (participant) => isAgentAddress(participant.address),
+  const resumeAgentAddress = (activeWorkbench?.participants ?? []).find((participant) =>
+    isAgentAddress(participant.address),
   )?.address;
 
   // CL-6380: a turn runs entirely server-side — this component mounting or
@@ -1048,18 +984,17 @@ function ChatWorkspaceInner({
     setResumeAttempt((attempt) => attempt + 1);
   }, []);
 
-  const { pendingSends, handleSend, retryPendingSend, discardPendingSend } =
-    useOptimisticSends({
-      tenantId,
-      activeWorkbenchId,
-      currentUserPrincipalId: currentUser?.principalId,
-      openThreadId,
-      pendingParentMessageId,
-      openThreadById,
-      noteAwaitingReply,
-      hasAgentParticipant,
-      restoreDraft: (text) => composerRef.current?.insertText(text),
-    });
+  const { pendingSends, handleSend, retryPendingSend, discardPendingSend } = useOptimisticSends({
+    tenantId,
+    activeWorkbenchId,
+    currentUserPrincipalId: currentUser?.principalId,
+    openThreadId,
+    pendingParentMessageId,
+    openThreadById,
+    noteAwaitingReply,
+    hasAgentParticipant,
+    restoreDraft: (text) => composerRef.current?.insertText(text),
+  });
 
   /** Retry on a failed-turn strip: sends the recovered text
    * (`findRetryText`) straight back through the normal send path — same
@@ -1078,13 +1013,7 @@ function ChatWorkspaceInner({
     queryFn: () => getResolvedCatalog(tenantId),
   });
   const workbenchAgentsQuery = useQuery({
-    queryKey: [
-      "tenant",
-      tenantId,
-      "chat",
-      "workbench-agents",
-      activeWorkbenchId,
-    ],
+    queryKey: ["tenant", tenantId, "chat", "workbench-agents", activeWorkbenchId],
     queryFn: () =>
       activeWorkbenchId !== null
         ? listWorkbenchAgents(tenantId, activeWorkbenchId)
@@ -1122,9 +1051,7 @@ function ChatWorkspaceInner({
     }
     return {
       models: failedTurnModelChoices(catalogQuery.data ?? []),
-      toolCapableModels: failedTurnToolCapableModelChoices(
-        catalogQuery.data ?? [],
-      ),
+      toolCapableModels: failedTurnToolCapableModelChoices(catalogQuery.data ?? []),
       definitionIdByAddress,
       onApplyModel: async ({ definitionId, address, canonicalName }) => {
         if (activeWorkbenchId === null) return;
@@ -1138,12 +1065,7 @@ function ChatWorkspaceInner({
         openWorkbenchSettings("agents", definitionId);
       },
     };
-  }, [
-    catalogQuery.data,
-    workbenchAgentsQuery.data,
-    tenantId,
-    activeWorkbenchId,
-  ]);
+  }, [catalogQuery.data, workbenchAgentsQuery.data, tenantId, activeWorkbenchId]);
 
   const addressedMessageParts = useMemo(
     () =>
@@ -1177,27 +1099,19 @@ function ChatWorkspaceInner({
   });
   const bringInMembersQuery = useQuery({
     queryKey: ["tenant", tenantId, "chat", "bring-in-members"],
-    queryFn: () =>
-      listMembers !== undefined ? listMembers(tenantId) : Promise.resolve([]),
+    queryFn: () => (listMembers !== undefined ? listMembers(tenantId) : Promise.resolve([])),
     enabled: bringInEnabled && listMembers !== undefined,
   });
   const bringInLists = resolveBringInLists({
     members: bringInMembersQuery,
     invitableAgents: invitableAgentsQuery,
   });
-  const bringInLoadError = bringInLoadErrorMessage(
-    bringInLists.failures,
-    bringInLists.firstError,
-  );
+  const bringInLoadError = bringInLoadErrorMessage(bringInLists.failures, bringInLists.firstError);
 
   const offerInviteControl = shouldOfferInviteControl({
     kind: activeWorkbench?.kind,
-    invitableAgents: invitableAgentsQuery.isSuccess
-      ? (invitableAgentsQuery.data ?? [])
-      : undefined,
-    ...(bringInMembersQuery.isSuccess
-      ? { bringInMembers: bringInMembersQuery.data ?? [] }
-      : {}),
+    invitableAgents: invitableAgentsQuery.isSuccess ? (invitableAgentsQuery.data ?? []) : undefined,
+    ...(bringInMembersQuery.isSuccess ? { bringInMembers: bringInMembersQuery.data ?? [] } : {}),
   });
 
   // A settings URL for a workbench id that resolved workbenches don't contain
@@ -1228,12 +1142,9 @@ function ChatWorkspaceInner({
     workbenchesState.kind === "ready" &&
     activeWorkbenchId !== null &&
     activeWorkbench === undefined;
-  const workbenchGone =
-    messagesState.kind === "error" && messagesState.workbenchNotFound;
+  const workbenchGone = messagesState.kind === "error" && messagesState.workbenchNotFound;
   const awaitingWorkbenchEvidence =
-    workbenchMissingFromList &&
-    !workbenchGone &&
-    messagesState.kind !== "ready";
+    workbenchMissingFromList && !workbenchGone && messagesState.kind !== "ready";
 
   // Who's live in this workbench right now, beyond the static participants
   // list — derived from this workbench's own `chat.presence`/
@@ -1266,12 +1177,8 @@ function ChatWorkspaceInner({
   );
   const visibleMemberStack = memberStack.slice(0, TEAM_AVATAR_STACK_LIMIT);
   const memberStackOverflow = memberStack.length - visibleMemberStack.length;
-  const visiblePresenceStack = presenceMembers.slice(
-    0,
-    TEAM_AVATAR_STACK_LIMIT,
-  );
-  const presenceStackOverflow =
-    presenceMembers.length - visiblePresenceStack.length;
+  const visiblePresenceStack = presenceMembers.slice(0, TEAM_AVATAR_STACK_LIMIT);
+  const presenceStackOverflow = presenceMembers.length - visiblePresenceStack.length;
 
   const showRoomChrome =
     workbenchesState.kind === "ready" &&
@@ -1279,8 +1186,7 @@ function ChatWorkspaceInner({
     !workbenchGone &&
     !awaitingWorkbenchEvidence;
 
-  const roomTitle =
-    activeWorkbenchDisplayTitle || CHAT_STRINGS.unnamedWorkbench;
+  const roomTitle = activeWorkbenchDisplayTitle || CHAT_STRINGS.unnamedWorkbench;
 
   const headerActions = (
     <>
@@ -1306,34 +1212,29 @@ function ChatWorkspaceInner({
                       ? `Reply · ${thread.parentMessageId.slice(0, 8)}`
                       : "Thread")}
                 </button>
-                {(subThreadsByParentId.get(thread.id) ?? []).map(
-                  (subThread) => (
-                    <button
-                      key={subThread.id}
-                      type="button"
-                      role="menuitem"
-                      className="chat-threads-menu-item chat-threads-menu-item-nested"
-                      onClick={() => {
-                        openThreadById(subThread.id);
-                      }}
-                    >
-                      {subThread.title ??
-                        (subThread.parentMessageId !== null
-                          ? `Fork · ${subThread.parentMessageId.slice(0, 8)}`
-                          : "Sub-thread")}
-                    </button>
-                  ),
-                )}
+                {(subThreadsByParentId.get(thread.id) ?? []).map((subThread) => (
+                  <button
+                    key={subThread.id}
+                    type="button"
+                    role="menuitem"
+                    className="chat-threads-menu-item chat-threads-menu-item-nested"
+                    onClick={() => {
+                      openThreadById(subThread.id);
+                    }}
+                  >
+                    {subThread.title ??
+                      (subThread.parentMessageId !== null
+                        ? `Fork · ${subThread.parentMessageId.slice(0, 8)}`
+                        : "Sub-thread")}
+                  </button>
+                ))}
               </div>
             ))}
           </div>
         </details>
       ) : null}
       {visibleMemberStack.length > 0 ? (
-        <div
-          className="chat-member-stack"
-          aria-label={CHAT_STRINGS.workbenchMembersLabel}
-        >
+        <div className="chat-member-stack" aria-label={CHAT_STRINGS.workbenchMembersLabel}>
           {visibleMemberStack.map((entry) =>
             entry.tone === "agent" ? (
               <span
@@ -1342,11 +1243,7 @@ function ChatWorkspaceInner({
                 data-agent="true"
                 title={entry.label}
               >
-                <CorbitAvatar
-                  size="sm"
-                  ariaLabel={entry.label}
-                  className="!size-full"
-                />
+                <CorbitAvatar size="sm" ariaLabel={entry.label} className="!size-full" />
               </span>
             ) : (
               <span
@@ -1369,10 +1266,7 @@ function ChatWorkspaceInner({
         </div>
       ) : null}
       {presenceMembers.length > 0 ? (
-        <div
-          className="chat-presence-stack"
-          aria-label={CHAT_STRINGS.workbenchPresenceLabel}
-        >
+        <div className="chat-presence-stack" aria-label={CHAT_STRINGS.workbenchPresenceLabel}>
           {visiblePresenceStack.map((member) => (
             <span
               key={member.principalId}
@@ -1393,11 +1287,7 @@ function ChatWorkspaceInner({
         </div>
       ) : null}
       {offerInviteControl ? (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setInviteDialogOpen(true)}
-        >
+        <Button variant="outline" size="sm" onClick={() => setInviteDialogOpen(true)}>
           <UserPlus />
           {CHAT_STRINGS.inviteAgentAction}
         </Button>
@@ -1418,11 +1308,7 @@ function ChatWorkspaceInner({
 
   const threadBreadcrumb = inThreadView ? (
     <nav className="chat-thread-breadcrumb" aria-label="Thread">
-      <button
-        type="button"
-        className="chat-thread-breadcrumb-link"
-        onClick={closeThread}
-      >
+      <button type="button" className="chat-thread-breadcrumb-link" onClick={closeThread}>
         {roomTitle}
       </button>
       <span className="chat-thread-breadcrumb-sep" aria-hidden="true">
@@ -1446,9 +1332,7 @@ function ChatWorkspaceInner({
       ) : null}
       <span
         className="chat-thread-breadcrumb-current"
-        {...(headerSlot === undefined
-          ? { "aria-current": "page" as const }
-          : {})}
+        {...(headerSlot === undefined ? { "aria-current": "page" as const } : {})}
       >
         {threadTitle}
       </span>
@@ -1470,9 +1354,7 @@ function ChatWorkspaceInner({
   // shell's col2 toggle) so the sidebar stays reachable. When `headerSlot`
   // owns the bar, that chrome lifts out of `.chat-workbench-header`.
   const bareLeadingHeader =
-    headerSlot === undefined &&
-    headerLeading !== undefined &&
-    !showRoomChrome ? (
+    headerSlot === undefined && headerLeading !== undefined && !showRoomChrome ? (
       <div className="chat-workbench-header">{headerLeading}</div>
     ) : null;
 
@@ -1481,11 +1363,7 @@ function ChatWorkspaceInner({
       ? headerSlot(showRoomChrome ? roomChrome : WORKBENCHES_LIST_CHROME)
       : bareLeadingHeader;
 
-  if (
-    settingsOpen &&
-    activeWorkbenchId !== null &&
-    activeWorkbench !== undefined
-  ) {
+  if (settingsOpen && activeWorkbenchId !== null && activeWorkbench !== undefined) {
     return (
       <>
         <div className="chat-workspace">
@@ -1494,10 +1372,8 @@ function ChatWorkspaceInner({
             tenantId={tenantId}
             workbenchId={activeWorkbenchId}
             workbenchTitle={
-              displayWorkbenchTitle(
-                activeWorkbench.title,
-                activeWorkbench.id,
-              ) || CHAT_STRINGS.unnamedWorkbench
+              displayWorkbenchTitle(activeWorkbench.title, activeWorkbench.id) ||
+              CHAT_STRINGS.unnamedWorkbench
             }
             section={settingsSection}
             onSectionChange={(next) => onSettingsSectionChange?.(next)}
@@ -1540,10 +1416,7 @@ function ChatWorkspaceInner({
               title={`Couldn't load ${CHAT_STRINGS.couldNotLoadWorkbenches}`}
               description={workbenchesState.message}
               action={
-                <Button
-                  variant="outline"
-                  onClick={() => void reloadWorkbenches()}
-                >
+                <Button variant="outline" onClick={() => void reloadWorkbenches()}>
                   Try again
                 </Button>
               }
@@ -1564,13 +1437,9 @@ function ChatWorkspaceInner({
               title={CHAT_STRINGS.workbenchNotFoundTitle}
               description={CHAT_STRINGS.workbenchNotFoundDescription}
               action={workbenchNotFoundRecoveryAction({
-                ...(onGoToMissionControl !== undefined
-                  ? { onGoToMissionControl }
-                  : {}),
+                ...(onGoToMissionControl !== undefined ? { onGoToMissionControl } : {}),
                 ...(onNewWorkbench !== undefined ? { onNewWorkbench } : {}),
-                ...(onBackToWorkbenchList !== undefined
-                  ? { onBackToWorkbenchList }
-                  : {}),
+                ...(onBackToWorkbenchList !== undefined ? { onBackToWorkbenchList } : {}),
               })}
             />
           ) : awaitingWorkbenchEvidence ? (
@@ -1609,10 +1478,7 @@ function ChatWorkspaceInner({
                         </Button>
                       ) : undefined
                     ) : (
-                      <Button
-                        variant="outline"
-                        onClick={() => feed.refetchMessages()}
-                      >
+                      <Button variant="outline" onClick={() => feed.refetchMessages()}>
                         Try again
                       </Button>
                     )
@@ -1638,8 +1504,8 @@ function ChatWorkspaceInner({
                     settingUpAgent={
                       activeWorkbench?.kind === "chat" &&
                       typeof activeWorkbench.definitionId === "string" &&
-                      !(activeWorkbench.participants ?? []).some(
-                        (participant) => isAgentAddress(participant.address),
+                      !(activeWorkbench.participants ?? []).some((participant) =>
+                        isAgentAddress(participant.address),
                       )
                     }
                     items={appendReplyTimedOutNotice(
@@ -1660,39 +1526,21 @@ function ChatWorkspaceInner({
                     agentDisplayNames={agentDisplayNames}
                     threadMetaByMessageId={threadMetaByMessageId}
                     threadAffordanceMode={inThreadView ? "fork" : "reply"}
-                    onOpenThread={
-                      inThreadView ? forkMessage : openThreadForMessage
-                    }
+                    onOpenThread={inThreadView ? forkMessage : openThreadForMessage}
                     onEditMessage={(messageId) => {
                       if (messagesState.kind !== "ready") return;
-                      const item = messagesState.items.find(
-                        (message) => message.id === messageId,
-                      );
+                      const item = messagesState.items.find((message) => message.id === messageId);
                       if (item === undefined) return;
                       composerRef.current?.setText(messageText(item));
                     }}
                     {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
-                    {...(onOpenArtifact !== undefined
-                      ? { onOpenArtifact }
-                      : {})}
-                    {...(onOpenArtifactInLibrary !== undefined
-                      ? { onOpenArtifactInLibrary }
-                      : {})}
-                    {...(onFixConnection !== undefined
-                      ? { onFixConnection }
-                      : {})}
-                    {...(approvalActions !== undefined
-                      ? { approvalActions }
-                      : {})}
-                    {...(blockResponses !== undefined
-                      ? { blockResponses }
-                      : {})}
-                    {...(connectGithubActions !== undefined
-                      ? { connectGithubActions }
-                      : {})}
-                    {...(connectServiceActions !== undefined
-                      ? { connectServiceActions }
-                      : {})}
+                    {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
+                    {...(onOpenArtifactInLibrary !== undefined ? { onOpenArtifactInLibrary } : {})}
+                    {...(onFixConnection !== undefined ? { onFixConnection } : {})}
+                    {...(approvalActions !== undefined ? { approvalActions } : {})}
+                    {...(blockResponses !== undefined ? { blockResponses } : {})}
+                    {...(connectGithubActions !== undefined ? { connectGithubActions } : {})}
+                    {...(connectServiceActions !== undefined ? { connectServiceActions } : {})}
                     onRetryFailedTurn={handleRetryFailedTurn}
                     failedTurnRecovery={failedTurnRecovery}
                     pendingActions={{
@@ -1727,15 +1575,10 @@ function ChatWorkspaceInner({
                   <TurnActivityStrip activity={turnActivity} />
                   <div className="chat-composer-stack">
                     {resumeFailedRefId !== null ? (
-                      <ResumeFailedBanner
-                        refId={resumeFailedRefId}
-                        onRetry={handleRetryResume}
-                      />
+                      <ResumeFailedBanner refId={resumeFailedRefId} onRetry={handleRetryResume} />
                     ) : null}
                     {hasUsableModel === false && hasAgentParticipant ? (
-                      <NoUsableModelBanner
-                        onConnectModel={() => onConnectModel?.()}
-                      />
+                      <NoUsableModelBanner onConnectModel={() => onConnectModel?.()} />
                     ) : null}
                     <Composer
                       ref={composerRef}
@@ -1753,14 +1596,9 @@ function ChatWorkspaceInner({
                       running={isAwaitingReply(streamingReply)}
                       onStop={handleStopTurn}
                       onInviteAgent={() => setInviteDialogOpen(true)}
-                      onOpenAgentsSettings={() =>
-                        openWorkbenchSettings("agents")
-                      }
+                      onOpenAgentsSettings={() => openWorkbenchSettings("agents")}
                       onCreateRoutineInSpace={() => {
-                        if (
-                          onCreateRoutineInSpace !== undefined &&
-                          activeWorkbenchId !== null
-                        ) {
+                        if (onCreateRoutineInSpace !== undefined && activeWorkbenchId !== null) {
                           onCreateRoutineInSpace(
                             activeWorkbenchId,
                             singleWorkbenchAgentDefinitionAssetId,
@@ -1777,9 +1615,7 @@ function ChatWorkspaceInner({
           )}
         </div>
       </div>
-      {activeWorkbenchId !== null &&
-      !workbenchGone &&
-      !awaitingWorkbenchEvidence ? (
+      {activeWorkbenchId !== null && !workbenchGone && !awaitingWorkbenchEvidence ? (
         <InviteAgentDialog
           open={inviteDialogOpen}
           onOpenChange={setInviteDialogOpen}
@@ -1873,9 +1709,7 @@ export function ChatWorkspace({
   readonly settingsSection?: WorkbenchSettingsSectionId;
   /** Fired when the user switches tabs while the settings surface is
    * already open, so the host can reflect it in the URL. */
-  readonly onSettingsSectionChange?: (
-    section: WorkbenchSettingsSectionId,
-  ) => void;
+  readonly onSettingsSectionChange?: (section: WorkbenchSettingsSectionId) => void;
   /** Section sub-selection — host-controlled from the URL
    * (`/w/:id/settings/:section/:entityId`). */
   readonly settingsEntityId?: string | null;
@@ -1911,18 +1745,11 @@ export function ChatWorkspace({
    * of `.chat-workbench-header`. */
   readonly headerSlot?: (chrome: ChatHeaderChrome) => ReactNode;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
-  readonly registerComposerInsert?: (
-    insert: ((text: string) => void) | null,
-  ) => void;
+  readonly registerComposerInsert?: (insert: ((text: string) => void) | null) => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
-  readonly listMembers?: (
-    tenantId: string,
-  ) => Promise<readonly BringInMember[]>;
+  readonly listMembers?: (tenantId: string) => Promise<readonly BringInMember[]>;
   /** "New routine in this space" — see `ChatWorkspaceInner`'s prop note. */
-  readonly onCreateRoutineInSpace?: (
-    workbenchId: string,
-    preselectedAssetId?: string,
-  ) => void;
+  readonly onCreateRoutineInSpace?: (workbenchId: string, preselectedAssetId?: string) => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly onWorkbenchNotFound?: (workbenchId: string) => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
@@ -1950,48 +1777,26 @@ export function ChatWorkspace({
           {...(currentUser !== undefined ? { currentUser } : {})}
           {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
           {...(settingsOpen !== undefined ? { settingsOpen } : {})}
-          {...(onSettingsOpenChange !== undefined
-            ? { onSettingsOpenChange }
-            : {})}
+          {...(onSettingsOpenChange !== undefined ? { onSettingsOpenChange } : {})}
           {...(settingsSection !== undefined ? { settingsSection } : {})}
-          {...(onSettingsSectionChange !== undefined
-            ? { onSettingsSectionChange }
-            : {})}
+          {...(onSettingsSectionChange !== undefined ? { onSettingsSectionChange } : {})}
           {...(settingsEntityId !== undefined ? { settingsEntityId } : {})}
-          {...(onSettingsEntityIdChange !== undefined
-            ? { onSettingsEntityIdChange }
-            : {})}
+          {...(onSettingsEntityIdChange !== undefined ? { onSettingsEntityIdChange } : {})}
           {...(approvalActions !== undefined ? { approvalActions } : {})}
           {...(blockResponses !== undefined ? { blockResponses } : {})}
-          {...(connectGithubActions !== undefined
-            ? { connectGithubActions }
-            : {})}
-          {...(connectServiceActions !== undefined
-            ? { connectServiceActions }
-            : {})}
+          {...(connectGithubActions !== undefined ? { connectGithubActions } : {})}
+          {...(connectServiceActions !== undefined ? { connectServiceActions } : {})}
           {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
-          {...(onOpenArtifactInLibrary !== undefined
-            ? { onOpenArtifactInLibrary }
-            : {})}
+          {...(onOpenArtifactInLibrary !== undefined ? { onOpenArtifactInLibrary } : {})}
           {...(onFixConnection !== undefined ? { onFixConnection } : {})}
           {...(headerLeading !== undefined ? { headerLeading } : {})}
           {...(headerSlot !== undefined ? { headerSlot } : {})}
-          {...(registerComposerInsert !== undefined
-            ? { registerComposerInsert }
-            : {})}
+          {...(registerComposerInsert !== undefined ? { registerComposerInsert } : {})}
           {...(listMembers !== undefined ? { listMembers } : {})}
-          {...(onCreateRoutineInSpace !== undefined
-            ? { onCreateRoutineInSpace }
-            : {})}
-          {...(onWorkbenchNotFound !== undefined
-            ? { onWorkbenchNotFound }
-            : {})}
-          {...(onBackToWorkbenchList !== undefined
-            ? { onBackToWorkbenchList }
-            : {})}
-          {...(onGoToMissionControl !== undefined
-            ? { onGoToMissionControl }
-            : {})}
+          {...(onCreateRoutineInSpace !== undefined ? { onCreateRoutineInSpace } : {})}
+          {...(onWorkbenchNotFound !== undefined ? { onWorkbenchNotFound } : {})}
+          {...(onBackToWorkbenchList !== undefined ? { onBackToWorkbenchList } : {})}
+          {...(onGoToMissionControl !== undefined ? { onGoToMissionControl } : {})}
           {...(onNewWorkbench !== undefined ? { onNewWorkbench } : {})}
           {...(onSignIn !== undefined ? { onSignIn } : {})}
           {...(hasUsableModel !== undefined ? { hasUsableModel } : {})}
