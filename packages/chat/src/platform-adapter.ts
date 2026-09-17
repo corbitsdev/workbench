@@ -10,15 +10,12 @@
 import { reportError } from "@corbits/error-sink";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
-  authoredDefinitionCandidates,
-  DefinitionProjectionMissingError,
   deliverWhenRoutable,
+  DefinitionProjectionMissingError,
   endAgentSessionForRun,
   ensureRunSession,
   isAgentUnreachableError,
-  readFoldedBody,
   recordAgentSessionAtProvision,
-  resolveNewestProjectedDefinition,
   WORKFLOW_SOURCE_ENTRY,
 } from "@corbits/workflows";
 import { domainOf as addressDomainOf } from "./agent-address";
@@ -524,96 +521,23 @@ export function createHubChatPlatform(deps: CreateHubChatPlatformDeps): HubChatP
   }
 
   /**
-   * A JSON encoding with every object's keys sorted, recursively —
-   * order-independent, so two objects with the same key/value pairs
-   * built by different code paths (a fresh `readFoldedBody()` call vs.
-   * whatever `workbench_launch.foldedBody` already holds) always
-   * encode identically regardless of construction order.
-   */
-  function canonicalJSON(value: unknown): string {
-    return JSON.stringify(value, function replacer(_key, val) {
-      if (val === null || typeof val !== "object" || Array.isArray(val)) {
-        return val;
-      }
-      const sorted: Record<string, unknown> = {};
-      for (const k of Object.keys(val as Record<string, unknown>).sort()) {
-        sorted[k] = (val as Record<string, unknown>)[k];
-      }
-      return sorted;
-    });
-  }
-
-  /**
-   * Whether two folded bodies are the same deployable content.
-   *
-   * Deliberately NOT a wire-hash comparison. The first version of this
-   * check compared CL-6452's per-deploy clone's `wireHash` against the
-   * asset's current hub-authored `wireHash` — but that clone's hash is
-   * unique to the run BY DESIGN (`launch.ts`'s `markRunDeployClone`:
-   * "a folded run's deployed bytes carry per-run values (`wf_<runId>`,
-   * the run's trigger address), so their wire hash is unique to the
-   * run"). Comparing it to the authored hash therefore reads every
-   * live run as "drifted" on every single send, regardless of whether
-   * anything actually changed — the PR #298 regression that broke
-   * three chat e2e tests by relaunching a healthy run mid-flight.
-   * `foldedBody` itself carries no per-run values, so comparing its
-   * content directly is the correct, stable signal.
-   *
-   * A second, subtler regression on the way to this version: a raw
-   * `JSON.stringify(a) === JSON.stringify(b)` comparison is NOT the
-   * same as content equality — a freshly-built `readFoldedBody()`
-   * result and the object already stored on `workbench_launch` can
-   * hold identical key/value pairs in different insertion order (e.g.
-   * `model` last vs. first), which `JSON.stringify` renders as
-   * different strings. Confirmed live against the real echo-agent e2e
-   * fixture: `fresh`/`current` were byte-for-byte the same data,
-   * reordered, and every send relaunched a perfectly healthy run.
-   * `canonicalJSON` above sorts keys at every level before comparing,
-   * so construction order can never manufacture a false drift signal.
-   */
-  function foldedBodyContentEquals(a: FoldedBody, b: FoldedBody): boolean {
-    return canonicalJSON(a) === canonicalJSON(b);
-  }
-
-  /**
    * Whether a routable run's deployed content has drifted from its
    * definition's current hub-authored projection, and the folded body
    * it should redeploy with if so.
    *
-   * CL-6588: a launch (and every wake/relaunch since) renders a run's
-   * `foldedBody` once and never re-reads the definition's asset again
-   * on its own — `refreshAgentInstanceFromDefinition` above is the
-   * existing, explicitly-triggered lever for that, fired only when a
-   * human saves an edit. This is the same recompute, fired automatically
-   * ahead of a send instead of waiting for someone to click refresh, so
-   * a definition that changed for a reason the room's occupants never
-   * caused (a platform code fix, a redeployed default agent package)
-   * still reaches an already-launched instance.
+   * CL-8206: Interchange 79adc433 retired the frozen wire-projection
+   * `resolveAuthoredProjectedDefinition` used to read a launch body
+   * back off a definition — see its own comment. Drift detection has
+   * no data source left, so this always reports "no drift" instead of
+   * silently doing something wrong; chat itself is retiring under
+   * CL-8175.
    */
   async function resolveDriftedFoldedBody(
-    tenantId: string,
-    run: LiveAgent["run"],
-    currentFoldedBody: FoldedBody,
-  ) {
-    if (run.definitionId === null) return undefined;
-    const definitionRow = await deps.db.query.workflowDefinition.findFirst({
-      where: and(
-        eq(workflowDefinition.id, run.definitionId),
-        eq(workflowDefinition.tenantId, tenantId),
-      ),
-    });
-    if (definitionRow === undefined || definitionRow.assetId === null) {
-      return undefined;
-    }
-    const { row: authoredRow, projection } = await resolveAuthoredProjectedDefinition(tenantId, {
-      assetId: definitionRow.assetId,
-      name: definitionRow.name,
-    });
-    const freshFoldedBody = readFoldedBody(projection, authoredRow.grantRequirements);
-    if (foldedBodyContentEquals(freshFoldedBody, currentFoldedBody)) {
-      return undefined;
-    }
-    return freshFoldedBody;
+    _tenantId: string,
+    _run: LiveAgent["run"],
+    _currentFoldedBody: FoldedBody,
+  ): Promise<FoldedBody | undefined> {
+    return undefined;
   }
 
   /**
@@ -1042,41 +966,19 @@ export function createHubChatPlatform(deps: CreateHubChatPlatformDeps): HubChatP
     }
   }
 
-  // CL-6452: every run deploy ensures a same-named sibling definition
-  // over the agent's asset under its per-run wire hash — a frozen
-  // deploy record carrying whatever projection was current at that
-  // deploy. Launch bodies resolve only from the hub-authored row(s) of
-  // the asset, so a skill pin or instructions save (which refreezes
-  // the authored row in place) reaches every later launch instead of
-  // being shadowed by the newest clone. Raises the named
-  // `DefinitionProjectionMissingError` — mapped to a 4xx at the route
-  // boundary, never an unhandled 500 — when the asset has no authored
-  // definition or none of its authored rows carries a projection.
+  // CL-8206: Interchange 79adc433 retired the frozen wire-projection
+  // storage this used to read a launch body back off a definition's
+  // version row (`@corbits/workflows`' `readDefinitionProjection` and
+  // the `workflow_definition.origin`/`workflow_definition_version.wire_projection`
+  // columns are gone). Chat itself is retiring under CL-8175, so this is
+  // a hard cutover, not a reimplementation: every caller below now fails
+  // loud with a named error instead of silently launching a stale or
+  // empty body.
   async function resolveAuthoredProjectedDefinition(
-    tenantId: string,
+    _tenantId: string,
     definitionAsset: { assetId: string; name: string },
-  ) {
-    const assetSiblingRows = await deps.db.query.workflowDefinition.findMany({
-      where: and(
-        eq(workflowDefinition.tenantId, tenantId),
-        eq(workflowDefinition.assetId, definitionAsset.assetId),
-        eq(workflowDefinition.status, "deployed"),
-      ),
-      orderBy: desc(workflowDefinition.createdAt),
-    });
-    const candidates = authoredDefinitionCandidates(assetSiblingRows);
-    if (candidates.length === 0) {
-      throw new DefinitionProjectionMissingError(definitionAsset.name);
-    }
-    const resolved = await resolveNewestProjectedDefinition(deps.db, candidates);
-    const row = candidates.find((candidate) => candidate.id === resolved.definitionId);
-    if (row === undefined) {
-      throw new Error(
-        `resolved definition "${resolved.definitionId}" is not among the ` +
-          `authored candidates for asset "${definitionAsset.assetId}"`,
-      );
-    }
-    return { row, projection: resolved.projection };
+  ): Promise<never> {
+    throw new DefinitionProjectionMissingError(definitionAsset.name);
   }
 
   async function resolveDefinitionAssetId(definitionId: string): Promise<string | undefined> {
@@ -1124,15 +1026,10 @@ export function createHubChatPlatform(deps: CreateHubChatPlatformDeps): HubChatP
         return { instanceId: standing.stableId, address: standing.roomAddress };
       }
 
-      const { row: resolvedDefinitionRow, projection } = await resolveAuthoredProjectedDefinition(
-        input.tenantId,
-        {
-          assetId: definitionAssetId,
-          name: definitionRow.name,
-        },
-      );
-
-      const foldedBody = readFoldedBody(projection, resolvedDefinitionRow.grantRequirements);
+      const foldedBody: FoldedBody = await resolveAuthoredProjectedDefinition(input.tenantId, {
+        assetId: definitionAssetId,
+        name: definitionRow.name,
+      });
       if (foldedBody.systemPrompt === "") {
         throw new Error(
           `Definition "${input.definitionId}" cannot be launched without ` +
@@ -1189,12 +1086,10 @@ export function createHubChatPlatform(deps: CreateHubChatPlatformDeps): HubChatP
       );
       const distanceOf = (row: { readonly tenantId: string }): number =>
         distanceByTenantId.get(row.tenantId) ?? Number.MAX_SAFE_INTEGER;
-      // Only hub-authored definitions are invitable: the run-deploy
-      // clones sharing an agent's name are deploy records, and listing
-      // them would offer N stale copies of every agent that has run.
-      const candidates = authoredDefinitionCandidates(rows).filter(
-        (row) => !isWorkbenchHostDefinitionName(row.name),
-      );
+      // CL-8206: Interchange 79adc433 dropped `workflow_definition.origin`
+      // along with it — every row this query returns is now the only kind
+      // there is, so the prior "hub-authored only" filter is a no-op.
+      const candidates = rows.filter((row) => !isWorkbenchHostDefinitionName(row.name));
       const nearestByName = new Map<string, { id: string; distance: number }>();
       for (const row of candidates) {
         const distance = distanceOf(row);
@@ -1257,11 +1152,10 @@ export function createHubChatPlatform(deps: CreateHubChatPlatformDeps): HubChatP
       // repointed it to; the refresh recomputes from the hub-authored
       // sibling so the saved edit — not the clone's frozen snapshot —
       // is what the next wake replays.
-      const { row: authoredRow, projection } = await resolveAuthoredProjectedDefinition(tenantId, {
+      const foldedBody: FoldedBody = await resolveAuthoredProjectedDefinition(tenantId, {
         assetId: definitionRow.assetId,
         name: definitionRow.name,
       });
-      const foldedBody = readFoldedBody(projection, authoredRow.grantRequirements);
 
       await deps.db
         .update(workbenchLaunch)

@@ -174,12 +174,7 @@ import {
   createProviderHealthPort,
   createProviderHealthStore,
 } from "@corbits/connections/provider-health";
-import {
-  createWorkflowAuthorRegistry,
-  createWorkflowAuthorRoutes,
-  listDeployedCronDefinitions,
-  SCHEDULE_TICK_CONTENT,
-} from "@corbits/workflows";
+import { createWorkflowAuthorRegistry, createWorkflowAuthorRoutes } from "@corbits/workflows";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, Hono, type Next } from "hono";
@@ -193,8 +188,6 @@ import {
   type SidecarProvisionerConfig,
 } from "./config";
 import type { SidecarProvisioner } from "@intx/hub-sessions";
-import { triggerNativeWorkflowRoutineRun } from "./native-workflow-routine-launch";
-import { createCronEmitter } from "@corbits/workflow-schedule/emitter";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
@@ -789,8 +782,8 @@ export async function createHub(config: HubConfig) {
     plugins: sidecarPlugins,
     router: sidecarRouter,
     hubWebSocketUrl,
-    onReady: async (allocation) => {
-      await workflowAllocationService.deployReadyAllocation(allocation);
+    onReady: async (allocation, reconciliation) => {
+      await workflowAllocationService.deployReadyAllocation(allocation, reconciliation);
       await workflowDispatchService.requeueForReadyAllocation(allocation.anchorRunId);
     },
   });
@@ -1439,7 +1432,7 @@ export async function createHub(config: HubConfig) {
         launchWebhookTrigger(
           {
             db,
-            sessionService,
+            sidecarRouter,
             repoStore: agentRepoStore.repoStore,
             workflowAllocationService,
             credentialCipher,
@@ -1645,41 +1638,14 @@ export async function createHub(config: HubConfig) {
   // Snooze is dropped (CL-8185): the unsnooze sweep and its `inbox.snooze`
   // table are gone — see `packages/inbox/src/migrations.ts`'s forward-drop.
 
-  // Recurring auto-fire for schedule-triggered deployments. The cron and
-  // the tick arithmetic belong to `@corbits/workflow-schedule`; this root
-  // only supplies the two host bindings the emitter cannot own — which
-  // deployments are live, and how a tick fires. CL-8160 deleted the
-  // hub-mounted run-now route (`triggerNativeWorkflowRoutineRun`'s only
-  // other caller); this cron fire is the sole remaining caller now.
-  const cronEmitter = createCronEmitter({
-    listCronDeployments: async () =>
-      (await listDeployedCronDefinitions(db)).map((definition) => ({
-        ...definition,
-        deploymentId: definition.definitionId,
-      })),
-    fire: async (definition) => {
-      await triggerNativeWorkflowRoutineRun(
-        { db, sidecarRouter },
-        {
-          tenantId: definition.tenantId,
-          definitionId: definition.definitionId,
-          principalId: definition.creatorPrincipalId,
-          fromDomain: definition.tenantDomain,
-          content: SCHEDULE_TICK_CONTENT,
-        },
-      );
-    },
-    onError: (error, deployment) => {
-      reportError(error, {
-        operation: "workflow-schedule.cron-emitter",
-        extra: { deploymentId: deployment.deploymentId },
-      });
-    },
-    clock: () => new Date(),
-  });
-  void cronEmitter.rescan().catch((error: unknown) => {
-    reportError(error, { operation: "workflow-schedule.cron-emitter.boot" });
-  });
+  // CL-8206: the hub-computed cron auto-fire over a definition's frozen
+  // wire projection is gone — Interchange 79adc433 retired the
+  // projection storage `listDeployedCronDefinitions` read the cron
+  // trigger off of, with no replacement column. Per CL-8181's own
+  // direction (see the notify-to-reconnect comment above), a
+  // schedule-triggered routine is deployed like any other workflow now
+  // rather than driven by a hub-owned periodic loop; this hard cutover
+  // has no port to a stock equivalent.
 
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));
 
@@ -1715,7 +1681,6 @@ export async function createHub(config: HubConfig) {
       relaunchSweepSeries += 1;
       clearTimeout(relaunchSweepTimer);
       chatOrchestrator.dispose();
-      cronEmitter.stop();
       await closeMailbox();
       // The pool end waits on in-flight queries; a query whose socket
       // died with the process must never stall shutdown, so bound it.

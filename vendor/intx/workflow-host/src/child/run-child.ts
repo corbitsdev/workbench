@@ -213,6 +213,27 @@ export type GrantEvaluator = (input: {
   grants: readonly unknown[];
 }) => Promise<AuthzCallResult>;
 
+/**
+ * CL-6448: the credentials snapshot is keyed by the PARENT step's own
+ * stepOrder, so an `onTrigger` body's step id (e.g. a section's inline
+ * `reply` step) never appears in it verbatim. For a single-step
+ * deployment the sole entry IS the deployment's whole grant set, so an
+ * unmatched lookup collapses to it — mirroring the head/step collapse
+ * the body's tool materialization already uses. A multi-step snapshot
+ * stays strict: an unmatched id there is genuinely ambiguous (which of
+ * several sibling steps' grants would apply?), so it falls through to
+ * the loud miss below instead of guessing.
+ */
+function findStepGrantsEntry(
+  steps: CredentialsSnapshot["steps"],
+  stepId: string,
+): CredentialsSnapshot["steps"][number] | undefined {
+  const direct = steps.find((s) => s.stepId === stepId);
+  if (direct !== undefined) return direct;
+  if (steps.length === 1) return steps[0];
+  return undefined;
+}
+
 export function createCredentialsBackedAuthorize(
   ref: CredentialsSnapshotRef,
   evaluate: GrantEvaluator,
@@ -235,7 +256,7 @@ export function createCredentialsBackedAuthorize(
     // iteration shares the base step's grants. `baseStepId` is the identity
     // on an unscoped id, so a plain step is unaffected.
     const lookupStepId = baseStepId(stepId);
-    const entry = snapshot.steps.find((s) => s.stepId === lookupStepId);
+    const entry = findStepGrantsEntry(snapshot.steps, lookupStepId);
     if (entry === undefined) {
       const scopedNote =
         lookupStepId === stepId

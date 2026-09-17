@@ -1,23 +1,21 @@
-// Reads a `WorkflowDefinition`'s launch body back out of the hub's
-// own record of the definition.
+// Reads a `WorkflowDefinition`'s launch body back out of an already-resolved
+// inert wire projection.
 //
-// Under the `workflow.json` retirement a deployed definition's body is
-// whatever its source closure evaluates to on the sidecar, and a
-// source-format workflow asset carries no envelope to read it back from.
-// The hub-side record of that body is the inert wire projection the
-// approval freeze hashed, persisted on the definition's version row
-// beside the hash that addresses it
-// (`vendor/intx/db/src/workflow-definition-store.ts`'s
-// `loadFrozenWireProjection`). This module is the single reader of that
-// projection for launch purposes.
+// CL-8206: Interchange 79adc433 retired the frozen-wire-projection storage
+// this module used to read directly (`loadFrozenWireProjection`, the
+// `workflow_definition.origin` / `workflow_definition_version.wire_projection`
+// columns) — there is no longer a hub-side row to read a launch body back
+// off of. What survives here is the pure half: the named errors and the
+// schema-validated reader that turns an already-in-hand inert projection
+// into a `FoldedBody`, still needed by chat (retiring separately under
+// CL-8175) and anything else holding a projection value from elsewhere.
+// Nothing in this file queries a database.
 //
 // One field of the launch body is deliberately NOT in the projection:
 // `grantRequirements` does not survive the live->inert projector and is
 // therefore outside the wire hash. Its hub-side home is the
 // `workflow_definition.grant_requirements` column, so it is passed in
 // alongside the projection rather than read off it.
-import type { DB } from "@intx/db";
-import { loadFrozenWireProjection } from "@intx/db";
 import type { FoldedBody } from "@intx/workflow-deploy";
 import { GrantRequirement, CredentialBinding } from "@intx/types";
 import { ToolPackagePin } from "@intx/types/tool-packages";
@@ -45,41 +43,12 @@ export class DefinitionProjectionMissingError extends Error {
   }
 }
 
-/**
- * Read one definition's frozen inert projection, failing with the named
- * error above rather than a raw miss.
- */
-export async function readDefinitionProjection(
-  db: DB["db"],
-  definition: { id: string; name: string },
-): Promise<unknown> {
-  const projection = await loadFrozenWireProjection(db, definition.id);
-  if (projection === null) {
-    throw new DefinitionProjectionMissingError(definition.name);
-  }
-  return projection;
-}
-
 /** One definition candidate, ordered newest-first by the caller
  * (typically `createdAt desc`). */
 export type DefinitionCandidate = {
   readonly id: string;
   readonly name: string;
 };
-
-/**
- * The launch-authoritative subset of an asset's definition rows: only
- * the hub-authored row(s), whose projection a skill pin or
- * instructions save refreezes in place. Every code-sourced run deploy
- * ensures a same-named sibling over the same asset under its per-run
- * wire hash — a frozen deploy record carrying whatever projection was
- * current at that deploy, which must never resolve a launch (CL-6452).
- */
-export function authoredDefinitionCandidates<T extends { readonly origin: "authored" | "run" }>(
-  rows: readonly T[],
-): T[] {
-  return rows.filter((row) => row.origin === "authored");
-}
 
 /**
  * Thrown when a definition's frozen projection carries more than one
@@ -111,28 +80,6 @@ export class MultiStepFoldUnsupportedError extends Error {
     this.stepCount = stepCount;
     this.guidance = guidance;
   }
-}
-
-/**
- * Resolves a definition's launch body by trying its candidates
- * newest-first and returning the first one that actually carries a
- * frozen projection — a stale pre-cutover sibling never wins over a
- * healthy newer one (the DB-side successor to CL-6357's asset-drift
- * walk). Raises `DefinitionProjectionMissingError` only once every
- * candidate has come back empty.
- */
-export async function resolveNewestProjectedDefinition(
-  db: DB["db"],
-  candidates: readonly DefinitionCandidate[],
-): Promise<{ definitionId: string; projection: unknown }> {
-  for (const candidate of candidates) {
-    const projection = await loadFrozenWireProjection(db, candidate.id);
-    if (projection !== null) {
-      return { definitionId: candidate.id, projection };
-    }
-  }
-  const definitionName = candidates[0]?.name ?? "unknown";
-  throw new DefinitionProjectionMissingError(definitionName);
 }
 
 /**

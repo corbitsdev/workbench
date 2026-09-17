@@ -97,6 +97,9 @@ export async function removeFileAtomicDurable(path: string): Promise<void> {
       await dirHandle.close();
     }
   } catch (err) {
+    // report-error-ignore: mirrors writeFileAtomicDurable's own degraded-durability
+    // warn above — the file is already unlinked, so this is a best-effort fsync,
+    // not a failed operation, and the caller has nothing actionable to catch.
     logger.warn`parent-dir fsync failed removing ${path}; durability is degraded but the file is unlinked — ${err instanceof Error ? err.message : String(err)}`;
   }
 }

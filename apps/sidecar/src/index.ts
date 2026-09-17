@@ -35,10 +35,7 @@ import { createTarballCache } from "@intx/tool-packaging";
 import { hexDecode, hexEncode } from "@intx/types";
 
 import { reportError } from "@corbits/error-sink";
-import {
-  removeFileAtomicDurable,
-  writeFileAtomicDurable,
-} from "./atomic-write";
+import { removeFileAtomicDurable, writeFileAtomicDurable } from "./atomic-write";
 import { readSidecarConfig } from "./config";
 import { DEFAULT_TOOL_REGISTRIES_JSON, parseToolRegistries } from "./tool-materialization";
 import { createWorkflowProbeExecutor } from "./workflow-probe-handler";
@@ -269,9 +266,7 @@ const orchestrator = createSidecarOrchestrator({
   workflowProbeExecutor,
   oauthLoginExecutor: oauthLoopbackLogin.start,
   resolveSenderCrypto: createSenderCryptoResolver(senderKeyCache),
-  lookupInboundMailPolicy: createInboundMailPolicyLookup(
-    inboundMailPolicyRegistry,
-  ),
+  lookupInboundMailPolicy: createInboundMailPolicyLookup(inboundMailPolicyRegistry),
   cacheSenderKey: async (address, publicKey) => {
     await senderKeyCache.put(address, hexDecode(publicKey));
   },

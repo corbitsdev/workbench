@@ -4,7 +4,7 @@
 // the definition asset HEAD and asks Interchange to provision that
 // existing source; it does not mint the run row itself.
 //
-// Opening mail is one `sessionService.sendUserMessage`. Launch is
+// Opening mail is one signed `SidecarRouter.routeMail` delivery. Launch is
 // async: mail sent before ready is queued. A delivery already accepted
 // (202) has already committed a real run by the time this send runs, so
 // a failed mail must not throw past `createWebhookIngressRoutes` — that
@@ -15,8 +15,6 @@
 import { reportError } from "@corbits/error-sink";
 import {
   deliverWhenRoutable,
-  readDefinitionProjection,
-  readFoldedBody,
   recordAgentSessionAtProvision,
   WORKFLOW_SOURCE_ENTRY,
   type EventCollectorPort,
@@ -25,12 +23,18 @@ import { listVisibleOfferings, type DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
 import {
+  assembleMessage,
+  assembleSignedContent,
+  createDetachedSignatureFromProvider,
+  type MessageHeaders,
+} from "@intx/mime";
+import { base64Encode, type CredentialCipher } from "@intx/types";
+import {
   DEFAULT_ASSET_REF,
   type RepoStore,
-  type SessionService,
+  type SidecarRouter,
   type WorkflowAllocationService,
 } from "@intx/hub-sessions";
-import type { CredentialCipher } from "@intx/types";
 import type { CryptoProvider } from "@intx/types/runtime";
 import { and, eq } from "drizzle-orm";
 
@@ -45,7 +49,7 @@ export type LaunchWebhookTriggerDeps = {
   db: DB["db"];
   repoStore: Pick<RepoStore, "resolveRef">;
   workflowAllocationService: Pick<WorkflowAllocationService, "prepareProvisionedDeployment">;
-  sessionService: Pick<SessionService, "sendUserMessage">;
+  sidecarRouter: Pick<SidecarRouter, "routeMail">;
   /**
    * The same wrapped `EventCollectorRegistry` every native launcher
    * threads through (`apps/hub/src/index.ts`'s `eventCollectors`) — this
@@ -120,15 +124,6 @@ export async function launchWebhookTrigger(
     throw new Error(`no tenant "${trigger.tenantId}"`);
   }
 
-  const projection = await readDefinitionProjection(deps.db, definitionRow);
-  const foldedBody = readFoldedBody(projection, definitionRow.grantRequirements);
-  if (foldedBody.systemPrompt === "") {
-    throw new Error(
-      `workflow definition "${trigger.workflowDefinitionId}" cannot be ` +
-        "launched without a system prompt configured",
-    );
-  }
-
   const offerings = [...(await listVisibleOfferings(deps.db, trigger.tenantId))].sort(
     (a, b) => a.offering.priority - b.offering.priority,
   );
@@ -166,9 +161,6 @@ export async function launchWebhookTrigger(
     sourceOfferingIds,
     defaultSourceOfferingId,
     deployContent: { systemPrompt: "" },
-    ...(foldedBody.toolPackagePins.length > 0
-      ? { toolPackagePins: foldedBody.toolPackagePins }
-      : {}),
   });
 
   await recordAgentSessionAtProvision({
@@ -183,17 +175,42 @@ export async function launchWebhookTrigger(
   const cryptoProvider = await deps.cryptoProviderCache.get(prepared.anchorRunId);
   try {
     await deliverWhenRoutable({
-      send: () =>
-        deps.sessionService.sendUserMessage({
-          agentAddress: prepared.deploymentAddress,
-          from: `webhook-trigger:${trigger.id}`,
-          messageId: `<${crypto.randomUUID()}@${tenantRow.domain}>`,
+      send: async () => {
+        const from = `webhook-trigger:${trigger.id}`;
+        const messageId = `<${crypto.randomUUID()}@${tenantRow.domain}>`;
+        const headers: MessageHeaders = {
+          from,
+          to: [prepared.deploymentAddress],
+          cc: undefined,
           date: new Date(),
-          content,
-          sessionId,
-          tenantId: trigger.tenantId,
-          cryptoProvider,
-        }),
+          messageId,
+          subject: undefined,
+          inReplyTo: undefined,
+          references: undefined,
+          mimeVersion: "1.0",
+          interchangeType: "conversation.message",
+          interchangeCorrelationId: undefined,
+          interchangeTenantId: trigger.tenantId,
+          interchangeAgentId: undefined,
+          interchangeSessionId: sessionId,
+          interchangeOfferingId: undefined,
+          interchangeSchemaVersion: undefined,
+          traceparent: undefined,
+          tracestate: undefined,
+        };
+        const signedContent = assembleSignedContent({ kind: "conversation", text: content });
+        const signature = await createDetachedSignatureFromProvider(signedContent, cryptoProvider);
+        const rawMessage = assembleMessage(headers, signedContent, signature);
+        const delivered = deps.sidecarRouter.routeMail(
+          prepared.deploymentAddress,
+          base64Encode(rawMessage),
+          from,
+          messageId,
+        );
+        if (!delivered) {
+          throw new Error(`agent is unreachable: ${prepared.deploymentAddress} is not routable`);
+        }
+      },
       isRoutable: () => deps.isRoutable(prepared.deploymentAddress),
     });
   } catch (error) {

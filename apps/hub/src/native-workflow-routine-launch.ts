@@ -166,7 +166,7 @@ export async function triggerNativeWorkflowRoutineRun(
   const rawMessage = assembleMessage(headers, signedContent, signature);
   const base64 = base64Encode(rawMessage);
 
-  const delivered = deps.sidecarRouter.routeMail(address, base64, messageId);
+  const delivered = deps.sidecarRouter.routeMail(address, base64, headers.from, messageId);
   if (!delivered) {
     throw new Error(
       `native workflow deployment ${address} is not routable; cannot deliver routine's trigger mail`,

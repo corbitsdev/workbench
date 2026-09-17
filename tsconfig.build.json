@@ -164,6 +164,9 @@
       "path": "./packages/workflow-schedule/tsconfig.src.json"
     },
     {
+      "path": "./packages/workflows/tsconfig.src.json"
+    },
+    {
       "path": "./packages/xai-provider/tsconfig.src.json"
     },
     {
