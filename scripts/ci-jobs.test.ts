@@ -1,5 +1,6 @@
-// Pins the CI job split so a flake names the suite that failed, and so
-// checkout depth / cache keys cannot silently revert to the old shared job.
+// Pins the shape of the single fast CI workflow (CL-8150) so a future
+// edit can't silently reintroduce the sharded/db-suite/e2e machinery it
+// replaced, or drop one of the five required jobs.
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -25,96 +26,57 @@ function jobBodies(yaml: string): Map<string, string> {
 }
 
 const SETUP = "./.github/actions/setup-workbench";
-const POSTGRES_IMAGE = "pgvector/pgvector:pg17";
-const DB_JOBS = ["e2e-suite", "isolation", "db-suites"] as const;
-// "build-test" itself is a no-op summary job over the build-test-shard
-// matrix (see ci.yml) — the matrix job is the one that actually checks
-// out the repo and needs full history for tool-package-freshness's
-// merge-base diff.
-const MERGE_BASE_JOBS = ["typecheck", "build-test-shard", "structural"] as const;
+const EXPECTED_JOBS = ["setup", "typecheck", "lint", "structural", "unit"] as const;
 
-test("CI splits e2e, isolation, and db-suites onto their own Postgres jobs", async () => {
+test("CI declares exactly the five fast jobs and nothing sharded/db-backed", async () => {
   const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
   const jobs = jobBodies(yaml);
 
-  expect(yaml).not.toContain("E2E_REQUIRED");
-  expect(yaml).not.toContain("CHECK_BASE_REF");
+  expect([...jobs.keys()].sort()).toEqual([...EXPECTED_JOBS].sort());
 
-  expect(jobs.has("walking-skeleton")).toBe(false);
-  for (const name of DB_JOBS) {
-    const body = jobs.get(name);
-    expect(body).toBeDefined();
-    expect(body).toContain("postgres:");
-    expect(body).toContain(`image: ${POSTGRES_IMAGE}`);
-    expect(body).toContain(`uses: ${SETUP}`);
-    expect(body).not.toContain("fetch-depth: 0");
+  for (const name of ["typecheck", "lint", "structural", "unit"]) {
+    expect(jobs.get(name)).toContain("needs: setup");
   }
 
-  const dbSuites = jobs.get("db-suites") ?? "";
-  expect(dbSuites).toContain("bun test apps/hub/test");
-  expect(dbSuites).toContain("grep -rl DATABASE_URL");
-
-  // Unlike e2e and isolation, which provision their own schema through
-  // the harness, apps/hub/test and most package suites connect straight
-  // to DATABASE_URL or its `_e2e`-suffixed sibling from
-  // `e2eDatabaseUrl()` — both databases must exist and be migrated
-  // before those suites run, or their queries fail with "database ...
-  // does not exist".
-  const plainSetupIndex = dbSuites.indexOf(
-    "postgres://postgres:postgres@localhost:5432/workbench bun scripts/db-setup.ts",
-  );
-  const e2eSetupIndex = dbSuites.indexOf(
-    "postgres://postgres:postgres@localhost:5432/workbench_e2e bun scripts/db-setup.ts",
-  );
-  const hubSuiteIndex = dbSuites.indexOf("bun test apps/hub/test");
-  expect(plainSetupIndex).toBeGreaterThan(-1);
-  expect(e2eSetupIndex).toBeGreaterThan(-1);
-  expect(plainSetupIndex).toBeLessThan(hubSuiteIndex);
-  expect(e2eSetupIndex).toBeLessThan(hubSuiteIndex);
+  expect(yaml).not.toContain("postgres:");
+  expect(yaml).not.toContain("matrix:");
+  expect(yaml).not.toContain("--shard");
+  expect(yaml).not.toContain("upload-artifact");
 });
 
-test('e2e runs as a plan/matrix/summary trio so branch protection\'s "e2e" check still exists', async () => {
+test("every job checks out and runs the setup-workbench action", async () => {
   const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
   const jobs = jobBodies(yaml);
 
-  const plan = jobs.get("e2e-plan");
-  expect(plan).toBeDefined();
-  expect(plan).toContain("scripts/e2e/list-suites.ts");
-  expect(plan).toContain("outputs:");
-
-  const suite = jobs.get("e2e-suite");
-  expect(suite).toBeDefined();
-  expect(suite).toContain("needs: e2e-plan");
-  expect(suite).toContain("fail-fast: false");
-  expect(suite).toContain("matrix:");
-  expect(suite).toContain("fromJson(needs.e2e-plan.outputs.suites)");
-  expect(suite).toContain("postgres:");
-  expect(suite).toContain(`image: ${POSTGRES_IMAGE}`);
-  expect(suite).toContain("E2E_LOG_DIR");
-  expect(suite).toContain("actions/upload-artifact@v4");
-  expect(suite).toContain("if: always()");
-
-  const summary = jobs.get("e2e");
-  expect(summary).toBeDefined();
-  expect(summary).toContain("needs: e2e-suite");
-  expect(summary).toContain("if: always()");
+  for (const name of EXPECTED_JOBS) {
+    const body = jobs.get(name);
+    expect(body).toBeDefined();
+    expect(body).toContain("uses: actions/checkout@v4");
+    expect(body).toContain(`uses: ${SETUP}`);
+  }
 });
 
-test('build-test runs as a shard/summary pair so branch protection\'s "build-test" check still exists', async () => {
+test("only structural fetches full history; the rest stay shallow", async () => {
   const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
   const jobs = jobBodies(yaml);
 
-  const shard = jobs.get("build-test-shard");
-  expect(shard).toBeDefined();
-  expect(shard).toContain("fail-fast: false");
-  expect(shard).toContain("matrix:");
-  expect(shard).toContain("shard:");
-  expect(shard).toContain("run: bun run scripts/run-all.ts test --shard");
+  expect(jobs.get("structural")).toContain("fetch-depth: 0");
+  for (const name of ["setup", "typecheck", "lint", "unit"]) {
+    expect(jobs.get(name)).not.toContain("fetch-depth: 0");
+  }
+});
 
-  const summary = jobs.get("build-test");
-  expect(summary).toBeDefined();
-  expect(summary).toContain("needs: build-test-shard");
-  expect(summary).toContain("if: always()");
+test("lint runs oxlint and oxfmt --check; the unit job has a hard timeout", async () => {
+  const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
+  const jobs = jobBodies(yaml);
+
+  const lint = jobs.get("lint") ?? "";
+  expect(lint).toContain("bun run lint");
+  expect(lint).toContain("bun run fmt:check");
+
+  const unit = jobs.get("unit") ?? "";
+  expect(unit).toContain("timeout-minutes: 10");
+  expect(unit).toContain("bun test apps packages workflows scripts");
 });
 
 test("the structural job runs the same list as local check:structural", async () => {
@@ -129,35 +91,7 @@ test("the structural job runs the same list as local check:structural", async ()
   expect(structural).not.toContain("check:packages");
 });
 
-test("jobs that need merge-base fetch full history; the rest stay shallow", async () => {
-  const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
-  const jobs = jobBodies(yaml);
-
-  for (const name of MERGE_BASE_JOBS) {
-    const body = jobs.get(name);
-    expect(body).toBeDefined();
-    expect(body).toContain(`uses: ${SETUP}`);
-    expect(body).toContain("fetch-depth: 0");
-  }
-
-  const lint = jobs.get("lint");
-  expect(lint).toBeDefined();
-  expect(lint).toContain(`uses: ${SETUP}`);
-  expect(lint).not.toContain("fetch-depth: 0");
-});
-
-test("lint cache keys on tool and config versions, not an OS-wide restore", async () => {
-  const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
-  const lint = jobBodies(yaml).get("lint") ?? "";
-
-  expect(lint).toContain(
-    "hashFiles('bun.lock', 'eslint.config.ts', '.prettierrc.json', '.bun-version')",
-  );
-  expect(lint).not.toContain("lint-${{ runner.os }}-${{ github.sha }}");
-  expect(lint).not.toContain("restore-keys: lint-${{ runner.os }}-");
-});
-
-test("setup-workbench caches bun install and node_modules on the lockfile", async () => {
+test("setup-workbench caches the bun install cache on the lockfile", async () => {
   const action = await readFile(join(ROOT, ".github/actions/setup-workbench/action.yml"), "utf8");
 
   expect(action).toContain("using: composite");
@@ -166,9 +100,5 @@ test("setup-workbench caches bun install and node_modules on the lockfile", asyn
   expect(action).toContain(
     "key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}",
   );
-  expect(action).toContain(
-    "key: node-modules-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}",
-  );
-  expect(action).not.toContain("restore-keys:");
   expect(action).toContain("bun install --frozen-lockfile");
 });
