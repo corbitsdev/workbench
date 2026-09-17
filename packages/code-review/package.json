@@ -36,6 +36,6 @@
     "typescript": "catalog:"
   },
   "peerDependencies": {
-    "@corbits/github-tools": "0.0.10"
+    "@corbits/github-tools": "0.0.11"
   }
 }

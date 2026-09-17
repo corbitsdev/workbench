@@ -186,7 +186,7 @@
     },
     "packages/access-tools": {
       "name": "@corbits/access-tools",
-      "version": "0.0.5",
+      "version": "0.0.6",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -240,7 +240,7 @@
     },
     "packages/agent-directory-tools": {
       "name": "@corbits/agent-directory-tools",
-      "version": "0.0.6",
+      "version": "0.0.7",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -357,7 +357,7 @@
     },
     "packages/capability-tools": {
       "name": "@corbits/capability-tools",
-      "version": "0.0.6",
+      "version": "0.0.7",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -372,7 +372,7 @@
     },
     "packages/catalog-tools": {
       "name": "@corbits/catalog-tools",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@corbits/inference-catalog": "0.1.0",
         "arktype": "catalog:",
@@ -471,7 +471,7 @@
         "typescript": "catalog:",
       },
       "peerDependencies": {
-        "@corbits/github-tools": "0.0.10",
+        "@corbits/github-tools": "0.0.11",
       },
     },
     "packages/codex-provider": {
@@ -562,7 +562,7 @@
     },
     "packages/connections-tools": {
       "name": "@corbits/connections-tools",
-      "version": "0.0.11",
+      "version": "0.0.12",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -680,7 +680,7 @@
     },
     "packages/github-tools": {
       "name": "@corbits/github-tools",
-      "version": "0.0.10",
+      "version": "0.0.11",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -707,7 +707,7 @@
     },
     "packages/granola-tools": {
       "name": "@corbits/granola-tools",
-      "version": "0.0.4",
+      "version": "0.0.5",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -801,7 +801,7 @@
     },
     "packages/interaction-tools": {
       "name": "@corbits/interaction-tools",
-      "version": "0.0.9",
+      "version": "0.0.10",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -817,7 +817,7 @@
     },
     "packages/jimmy-agent": {
       "name": "@corbits/jimmy-agent",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -830,7 +830,7 @@
     },
     "packages/linear-tools": {
       "name": "@corbits/linear-tools",
-      "version": "0.0.4",
+      "version": "0.0.5",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -850,7 +850,7 @@
     },
     "packages/manus-tools": {
       "name": "@corbits/manus-tools",
-      "version": "0.0.11",
+      "version": "0.0.12",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -865,7 +865,7 @@
     },
     "packages/mcp-tools": {
       "name": "@corbits/mcp-tools",
-      "version": "0.0.11",
+      "version": "0.0.12",
       "dependencies": {
         "@modelcontextprotocol/sdk": "catalog:",
         "arktype": "catalog:",
@@ -1052,7 +1052,7 @@
     },
     "packages/scout-agent": {
       "name": "@corbits/scout-agent",
-      "version": "0.0.4",
+      "version": "0.0.5",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -1120,7 +1120,7 @@
     },
     "packages/skills-tools": {
       "name": "@corbits/skills-tools",
-      "version": "0.0.7",
+      "version": "0.0.8",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -1166,7 +1166,7 @@
     },
     "packages/tools-skills": {
       "name": "@corbits/tools-skills",
-      "version": "0.0.3",
+      "version": "0.0.4",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -1200,7 +1200,7 @@
     },
     "packages/web-search-tools": {
       "name": "@corbits/web-search-tools",
-      "version": "0.0.3",
+      "version": "0.0.4",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -1240,7 +1240,7 @@
     },
     "packages/workflow-authoring-tools": {
       "name": "@corbits/workflow-authoring-tools",
-      "version": "0.0.7",
+      "version": "0.0.8",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -1564,7 +1564,7 @@
       "name": "@corbits/assistant-workflow",
       "version": "0.0.2",
       "dependencies": {
-        "@corbits/catalog-tools": "0.1.0",
+        "@corbits/catalog-tools": "0.1.1",
         "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
       },
       "devDependencies": {
