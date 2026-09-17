@@ -71,6 +71,11 @@ export {
   type ScheduledWorkflowDefinitionRow,
 } from "./schedule/list-scheduled";
 export {
+  listDeployedCronDefinitions,
+  SCHEDULE_TICK_CONTENT,
+  type DeployedCronDefinition,
+} from "./schedule/deployed-cron-deployments";
+export {
   createScheduledWorkflowRoutes,
   RUN_NOW_CONTENT,
   type CreateScheduledWorkflowRoutesDeps,

@@ -230,6 +230,8 @@ import { createHubNotifyDeliveryDeps } from "./notify-delivery";
 import {
   createWorkflowAuthorRegistry,
   createWorkflowAuthorRoutes,
+  listDeployedCronDefinitions,
+  SCHEDULE_TICK_CONTENT,
   WorkflowAuthorError,
   type WorkflowDeployer,
 } from "@corbits/workflows";
@@ -263,7 +265,11 @@ import {
 import type { SidecarProvisioner } from "@intx/hub-sessions";
 import { withTurnPartWriteDefaults } from "./turn-part-content-default";
 import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
-import { runNowScheduledDefinition } from "./native-workflow-routine-launch";
+import {
+  runNowScheduledDefinition,
+  triggerNativeWorkflowRoutineRun,
+} from "./native-workflow-routine-launch";
+import { createCronEmitter } from "@corbits/workflow-schedule/emitter";
 import { createToolGrantsForPins } from "./tool-grants";
 import { drainHubServer, shutdownHub } from "./shutdown";
 import {
@@ -2307,6 +2313,42 @@ export async function createHub(config: HubConfig) {
     bus: mailboxBus,
   });
 
+  // Recurring auto-fire for schedule-triggered deployments. The cron and
+  // the tick arithmetic belong to `@corbits/workflow-schedule`; this root
+  // only supplies the two host bindings the emitter cannot own — which
+  // deployments are live, and how a tick fires. The fire is the same
+  // native trigger `runNowScheduledDefinition` uses, so a scheduled tick
+  // and a run-now are the same primitive with a different clock.
+  const cronEmitter = createCronEmitter({
+    listCronDeployments: async () =>
+      (await listDeployedCronDefinitions(db)).map((definition) => ({
+        ...definition,
+        deploymentId: definition.definitionId,
+      })),
+    fire: async (definition) => {
+      await triggerNativeWorkflowRoutineRun(
+        { db, sidecarRouter },
+        {
+          tenantId: definition.tenantId,
+          definitionId: definition.definitionId,
+          principalId: definition.creatorPrincipalId,
+          fromDomain: definition.tenantDomain,
+          content: SCHEDULE_TICK_CONTENT,
+        },
+      );
+    },
+    onError: (error, deployment) => {
+      reportError(error, {
+        operation: "workflow-schedule.cron-emitter",
+        extra: { deploymentId: deployment.deploymentId },
+      });
+    },
+    clock: () => new Date(),
+  });
+  void cronEmitter.rescan().catch((error: unknown) => {
+    reportError(error, { operation: "workflow-schedule.cron-emitter.boot" });
+  });
+
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));
 
   // Stock Interchange currently leaves tenant creation and dispatch ungated.
@@ -2347,6 +2389,7 @@ export async function createHub(config: HubConfig) {
       chatOrchestrator.dispose();
       credentialExpirySweep.stop();
       inboxUnsnoozeSweep.stop();
+      cronEmitter.stop();
       await insightsUsage.close();
       await insightsLatency.close();
       await benchSettings.close();

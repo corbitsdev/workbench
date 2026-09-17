@@ -32,7 +32,9 @@ export type CronTimerArmOpts = {
   readonly firedAt?: Date;
   /** IANA zone the expression is read in; the instant is always UTC. */
   readonly timeZone?: string;
-  readonly newTimerId: () => string;
+  /** Names the tick. Given the instant it falls on, so an identity can be
+   * derived from it rather than minted. */
+  readonly newTimerId: (fireAt: Date) => string;
 };
 
 /**
@@ -47,7 +49,7 @@ export function armCronTimer(opts: CronTimerArmOpts): CronTimerSet {
       : opts.now;
   const fireAt = nextCronFireAfter(opts.cron, from, opts.timeZone ?? "UTC");
   return {
-    timerId: opts.newTimerId(),
+    timerId: opts.newTimerId(fireAt),
     fireAt: fireAt.toISOString(),
     cron: opts.cron,
   };
