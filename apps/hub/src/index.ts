@@ -60,7 +60,6 @@ import {
   createTurnCancelRegistry,
   createChatOrchestrator,
   createChatRoutes,
-  joinRunParticipant,
   createDrizzleBlockResponseStore,
   createDrizzleChatStore,
   createDrizzleClientIdStore,
@@ -159,10 +158,6 @@ import {
   createWebhookTriggerRoutes,
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
-import {
-  deliveryWorkbenchRequiredForWorkflowName,
-  isConversationalWorkflowName,
-} from "@workbench/templates";
 import { createTemplateBlockRoutes } from "./templates/template-block-routes";
 import {
   createWorkflowDetailRoute,
@@ -171,6 +166,7 @@ import {
   WORKFLOW_SOURCE_ENTRY,
   ensureRunSession,
   recordAgentSessionAtProvision,
+  isConversationalWorkflowName,
 } from "@corbits/workflows";
 import {
   createSidecarProvisioner as createE2BSidecarProvisioner,
@@ -244,10 +240,7 @@ import {
   listMcpServerConnections,
 } from "@corbits/connections";
 import type { ServiceConnectedHook } from "@corbits/connections";
-import {
-  CONNECTOR_REGISTRY,
-  MCP_PRESETS,
-} from "@workbench/templates/connectors";
+import { CONNECTOR_REGISTRY, MCP_PRESETS } from "./native-connector-registry";
 import {
   createProviderHealthPort,
   createProviderHealthStore,
@@ -298,7 +291,6 @@ import {
   launchScheduledDefinitionFromDb,
   listScheduledDefinitionsFromDb,
   runNowScheduledDefinition,
-  type ScheduledDeliveryJoinDeps,
 } from "./workflow-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
 import { drainHubServer, shutdownHub } from "./shutdown";
@@ -1765,18 +1757,12 @@ export async function createHub(config: HubConfig) {
       }),
     }),
   );
-  const scheduledDeliveryJoinDeps: ScheduledDeliveryJoinDeps = {
-    deliveryChatRequired: deliveryWorkbenchRequiredForWorkflowName,
-    resolveDeliveryChat: async (tenantId) => {
-      const rows = await chatStore.listWorkbenchSettings(tenantId);
-      const first = [...rows].sort((a, b) =>
-        a.workbenchId.localeCompare(b.workbenchId),
-      )[0];
-      return first?.workbenchId;
-    },
-    joinDeliveryChat: (input) =>
-      joinRunParticipant({ store: chatStore }, input),
-  };
+  // Hub-zero T4 (CL-8126): the scheduled delivery join is cut — a
+  // triggered run launches straight into the runner with no
+  // settings-row lookup and no chat join. Pre-cutover rows carry no
+  // migration burden: the join never persisted anything (it read the
+  // settings registry and joined the run to a chat in memory per
+  // trigger), so there is no backfill and no default to apply.
   app.route(
     `${TENANT_PREFIX}/workflows`,
     createScheduledWorkflowRoutes({
@@ -1787,7 +1773,7 @@ export async function createHub(config: HubConfig) {
       }),
       runNow: async (args) =>
         runNowScheduledDefinition(
-          { db, sidecarRouter, ...scheduledDeliveryJoinDeps },
+          { db, sidecarRouter },
           {
             tenantId: args.tenantId,
             definitionId: args.definitionId,
@@ -2508,7 +2494,6 @@ export async function createHub(config: HubConfig) {
     launch: launchScheduledDefinitionFromDb({
       db,
       sidecarRouter,
-      ...scheduledDeliveryJoinDeps,
     }),
     ...(config.routineSchedulerPollIntervalMs !== undefined
       ? { pollIntervalMs: config.routineSchedulerPollIntervalMs }

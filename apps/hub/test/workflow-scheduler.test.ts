@@ -1,10 +1,8 @@
 // Scheduler poller: cron match → CAS → launch. Skip-missed, no backoff.
-import { afterEach, describe, expect, jest, spyOn, test } from "bun:test";
-import * as errorSink from "@corbits/error-sink";
+import { afterEach, describe, expect, jest, test } from "bun:test";
 import {
   createWorkflowScheduler,
   DEFAULT_WORKFLOW_SCHEDULER_POLL_INTERVAL_MS,
-  joinScheduledDefinitionToChat,
   runNowScheduledDefinition,
   tickWorkflowScheduler,
   type ScheduledDefinition,
@@ -239,63 +237,9 @@ describe("createWorkflowScheduler's setInterval wiring", () => {
   });
 });
 
-describe("joinScheduledDefinitionToChat", () => {
-  test("joins the first chat when delivery is required", async () => {
-    const joined: unknown[] = [];
-    await joinScheduledDefinitionToChat(
-      {
-        deliveryChatRequired: async () => true,
-        resolveDeliveryChat: async () => "chn_1",
-        joinDeliveryChat: async (input) => {
-          joined.push(input);
-        },
-      },
-      scheduled(),
-      "run@example.test",
-    );
-    expect(joined).toEqual([
-      {
-        tenantId: "t1",
-        workbenchId: "chn_1",
-        principalId: "user_1",
-        address: "run@example.test",
-        handle: "workbench-digest",
-      },
-    ]);
-  });
-
-  test("omits join when the tenant has no chat and still returns", async () => {
-    let joined = 0;
-    await joinScheduledDefinitionToChat(
-      {
-        deliveryChatRequired: async () => true,
-        resolveDeliveryChat: async () => undefined,
-        joinDeliveryChat: async () => {
-          joined += 1;
-        },
-      },
-      scheduled(),
-      "run@example.test",
-    );
-    expect(joined).toBe(0);
-  });
-
-  test("omits join when the catalog says inbox delivery", async () => {
-    let joined = 0;
-    await joinScheduledDefinitionToChat(
-      {
-        deliveryChatRequired: async () => false,
-        resolveDeliveryChat: async () => "chn_1",
-        joinDeliveryChat: async () => {
-          joined += 1;
-        },
-      },
-      scheduled(),
-      "run@example.test",
-    );
-    expect(joined).toBe(0);
-  });
-});
+// Hub-zero T4 (CL-8126) cut the scheduled delivery join: a triggered run
+// launches straight into the runner with no settings-row lookup and no
+// chat join, so there is no `joinScheduledDefinitionToChat` left to test.
 
 type FakeRunRow = {
   id: string;
@@ -347,61 +291,14 @@ function runNowArgs() {
 }
 
 describe("runNowScheduledDefinition", () => {
-  test("joins the first chat after a successful trigger", async () => {
-    const joined: unknown[] = [];
+  test("launches without a delivery join and returns runId", async () => {
     const result = await runNowScheduledDefinition(
       {
         db: createFakeTriggerDb([LIVE_ANCHOR]) as never,
         sidecarRouter: { routeMail: () => true } as never,
-        deliveryChatRequired: async () => true,
-        resolveDeliveryChat: async () => "chn_1",
-        joinDeliveryChat: async (input) => {
-          joined.push(input);
-        },
       },
       runNowArgs(),
     );
     expect(result).toEqual({ runId: "wfr_anchor1" });
-    expect(joined).toEqual([
-      {
-        tenantId: "t1",
-        workbenchId: "chn_1",
-        principalId: "clicker_1",
-        address: "wfr_anchor1@acme.workbench.test",
-        handle: "workbench-digest",
-      },
-    ]);
-  });
-
-  test("join throw reports and still returns runId", async () => {
-    const boom = new Error("join failed");
-    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
-    try {
-      const result = await runNowScheduledDefinition(
-        {
-          db: createFakeTriggerDb([LIVE_ANCHOR]) as never,
-          sidecarRouter: { routeMail: () => true } as never,
-          deliveryChatRequired: async () => true,
-          resolveDeliveryChat: async () => "chn_1",
-          joinDeliveryChat: async () => {
-            throw boom;
-          },
-        },
-        runNowArgs(),
-      );
-      expect(result).toEqual({ runId: "wfr_anchor1" });
-      expect(report).toHaveBeenCalledTimes(1);
-      expect(report.mock.calls[0]?.[0]).toBe(boom);
-      expect(report.mock.calls[0]?.[1]).toEqual({
-        operation: "scheduled-workflow.run-now.join-chat",
-        tenantId: "t1",
-        extra: {
-          definitionId: "wfd_digest",
-          address: "wfr_anchor1@acme.workbench.test",
-        },
-      });
-    } finally {
-      report.mockRestore();
-    }
   });
 });

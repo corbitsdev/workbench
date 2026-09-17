@@ -17,7 +17,6 @@ import {
   workflowDefinition,
   workflowDefinitionVersion,
 } from "@intx/db/schema";
-import { handleFromName, type JoinRunParticipantInput } from "@corbits/chat";
 import { reportError } from "@corbits/error-sink";
 import {
   cronMatchesMinute,
@@ -37,46 +36,11 @@ export type ScheduledDefinition = {
   cron: string;
 };
 
-export type ScheduledDeliveryJoinDeps = {
-  deliveryChatRequired?: (name: string) => boolean | Promise<boolean>;
-  resolveDeliveryChat?: (tenantId: string) => Promise<string | undefined>;
-  joinDeliveryChat?: (input: JoinRunParticipantInput) => Promise<void>;
-};
-
-/**
- * After a scheduled tick launches, join the run to a chat when the
- * catalog says this workflow delivers there. No chat → still launched
- * (join omitted). Inbox-mode workflows skip the join. A join throw is the
- * caller's to log; this helper rethrows.
- */
-export async function joinScheduledDefinitionToChat(
-  deps: ScheduledDeliveryJoinDeps,
-  def: ScheduledDefinition,
-  address: string,
-): Promise<void> {
-  if (def.creatorPrincipalId === null) return;
-  if (
-    deps.deliveryChatRequired !== undefined &&
-    (await deps.deliveryChatRequired(def.name)) !== true
-  ) {
-    return;
-  }
-  if (
-    deps.resolveDeliveryChat === undefined ||
-    deps.joinDeliveryChat === undefined
-  ) {
-    return;
-  }
-  const chatId = await deps.resolveDeliveryChat(def.tenantId);
-  if (chatId === undefined) return;
-  await deps.joinDeliveryChat({
-    tenantId: def.tenantId,
-    workbenchId: chatId,
-    principalId: def.creatorPrincipalId,
-    address,
-    handle: handleFromName(def.name, address),
-  });
-}
+// Hub-zero T4 (CL-8126) cut the scheduled delivery join that lived here:
+// resolving a delivery chat from the settings registry and joining the run
+// to it after launch. A triggered run now launches straight into the
+// runner with no settings-row lookup and no chat join (owner ruling: chat
+// is T5-owned).
 
 export type WorkflowSchedulerDeps = {
   listScheduledDefinitions: () => Promise<readonly ScheduledDefinition[]>;
@@ -230,7 +194,7 @@ export function listScheduledDefinitionsFromDb(
 const SCHEDULE_TICK_CONTENT = "Scheduled tick.";
 
 export function launchScheduledDefinitionFromDb(
-  deps: NativeWorkflowRoutineTriggerDeps & ScheduledDeliveryJoinDeps,
+  deps: NativeWorkflowRoutineTriggerDeps,
 ): WorkflowSchedulerDeps["launch"] {
   return async (def) => {
     if (def.creatorPrincipalId === null) return;
@@ -242,25 +206,13 @@ export function launchScheduledDefinitionFromDb(
     if (tenant === undefined) {
       throw new Error(`no tenant "${def.tenantId}"`);
     }
-    const triggered = await triggerNativeWorkflowRoutineRun(deps, {
+    await triggerNativeWorkflowRoutineRun(deps, {
       tenantId: def.tenantId,
       definitionId: def.definitionId,
       principalId: def.creatorPrincipalId,
       fromDomain: tenant.domain,
       content: SCHEDULE_TICK_CONTENT,
     });
-    try {
-      await joinScheduledDefinitionToChat(deps, def, triggered.address);
-    } catch (error) {
-      reportError(error, {
-        operation: "workflow-scheduler.join-chat",
-        tenantId: def.tenantId,
-        extra: {
-          definitionId: def.definitionId,
-          address: triggered.address,
-        },
-      });
-    }
   };
 }
 
@@ -275,12 +227,11 @@ export type RunNowScheduledDefinitionArgs = {
 };
 
 /**
- * Fire a scheduled definition now, then join the run to a chat the
- * same way the poller does. Join failures are reported and do not fail
- * the launch — the caller still gets `{ runId }`.
+ * Fire a scheduled definition now and return its `{ runId }`. No delivery
+ * join: the run launches straight into the runner (hub-zero T4, CL-8126).
  */
 export async function runNowScheduledDefinition(
-  deps: NativeWorkflowRoutineTriggerDeps & ScheduledDeliveryJoinDeps,
+  deps: NativeWorkflowRoutineTriggerDeps,
   args: RunNowScheduledDefinitionArgs,
 ): Promise<{ runId: string }> {
   const triggered = await triggerNativeWorkflowRoutineRun(deps, {
@@ -290,28 +241,5 @@ export async function runNowScheduledDefinition(
     fromDomain: args.fromDomain,
     content: args.content,
   });
-  try {
-    await joinScheduledDefinitionToChat(
-      deps,
-      {
-        definitionId: args.definitionId,
-        tenantId: args.tenantId,
-        creatorPrincipalId: args.principalId,
-        definitionAssetId: args.definitionAssetId,
-        name: args.name,
-        cron: "",
-      },
-      triggered.address,
-    );
-  } catch (error) {
-    reportError(error, {
-      operation: "scheduled-workflow.run-now.join-chat",
-      tenantId: args.tenantId,
-      extra: {
-        definitionId: args.definitionId,
-        address: triggered.address,
-      },
-    });
-  }
   return { runId: triggered.runId };
 }

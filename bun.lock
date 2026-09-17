@@ -100,12 +100,12 @@
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
         "@modelcontextprotocol/sdk": "catalog:",
-        "@workbench/templates": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
         "postgres": "catalog:",
+        "simple-icons": "^16.28.0",
       },
       "devDependencies": {
         "@types/bun": "catalog:",

@@ -14,7 +14,7 @@
 import type { CredentialBinding } from "@intx/types";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type { PinnedPackageCredentialBindingsFor } from "@corbits/chat";
-import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
+import { CONNECTOR_REGISTRY } from "./native-connector-registry";
 
 export type IsConnectorConnected = (
   tenantId: string,

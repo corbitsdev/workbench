@@ -9,8 +9,8 @@
 // same as any name outside the catalog entirely.
 //
 // Display names come from the native `WORKFLOW_CATALOG` entry
-// (`@corbits/workflows`, the package `@workbench/templates`
-// re-exports its own catalog mirror from), so the labels served here
+// (`@corbits/workflows`, which the legacy template package re-exports its
+// own catalog mirror from), so the labels served here
 // and the catalog's can never drift apart silently. Turn timeouts match
 // the seed table's per-workflow budgets one-for-one: a research turn
 // fans out and writes long-form, a call-transcript pass runs past the

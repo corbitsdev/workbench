@@ -1,21 +1,25 @@
-// Hub-zero T3 (CL-8114): the hub mounts no workbench-scoped GitHub-connect
-// surface. `@corbits/connections` keeps owning the `createConnectGithubRoutes`
-// factory (its own package tests still cover it) — what is gone is the hub
-// composition root's `${TENANT_PREFIX}/workbenches` mount of it, whose
-// `getTemplateSettings` / `persistSelectedRepos` / `onReviewingStarted` ports
-// were the last hub readers of the `workbench_settings` row. GitHub
-// connect/disconnect now goes through the native tenant-scoped
+// Hub-zero T3 (CL-8114) deleted the hub's workbench-scoped GitHub-connect
+// mount; hub-zero T4 (CL-8126) cut the scheduled delivery join and the last
+// `@workbench/templates` import. `@corbits/connections` keeps owning the
+// `createConnectGithubRoutes` factory (its own package tests still cover
+// it). GitHub connect/disconnect goes through the native tenant-scoped
 // `/api/tenants/:tenantId/connections/*` routes only; the room card's
 // state/start-reviewing rebind is a connections follow-up (the card renders
 // its existing no-port disabled framing until then).
 //
-// This check locks the done-when: no `createConnectGithubRoutes` reference
-// and no bare `${TENANT_PREFIX}/workbenches` mount in `apps/hub/src`, the
-// brief's `workbench-settings|/workbenches.*github|github.*workbench` rg
-// empty over `apps/hub/src`, and `listWorkbenchSettings` surviving in
-// `apps/hub` only inside the T4-owned scheduled-delivery seam
-// (`scheduledDeliveryJoinDeps`), which reads the row for delivery — never
-// for GitHub connect.
+// This check locks both done-whens: no `createConnectGithubRoutes`
+// reference and no bare `${TENANT_PREFIX}/workbenches` mount in
+// `apps/hub/src`, the brief's `workbench-settings|/workbenches.*github|
+// github.*workbench` rg empty over `apps/hub/src`, no `@workbench/templates`
+// import anywhere in `apps/hub/src`, and no `listWorkbenchSettings` at all.
+//
+// Get/update variants (the T3 critic note): `getWorkbenchSettings` survives
+// exactly once, inside `createCommandRoutes`' membership check — the
+// T5-owned command guard a file carries the `COMMAND_GUARD_MARKER` for.
+// `updateWorkbenchSettings` has no such exception. Any get/update call site
+// outside a marker-carrying file is a settings-row reader the cutover
+// missed. List-only was never an option: the surviving call site is a get,
+// and the check treats each variant on its own terms.
 import { readFileSync } from "node:fs";
 import {
   emptyReport,
@@ -29,11 +33,11 @@ export type SourceFile = {
   readonly contents: string;
 };
 
-/** The T4-owned seam still allowed to read the settings row: scheduled
- * delivery resolving the workbench a run belongs to. Any
- * `listWorkbenchSettings` call site outside a file containing this marker
- * is a new workbench-settings reader the hub-zero cutover missed. */
-const DELIVERY_SEAM_MARKER = "scheduledDeliveryJoinDeps";
+/** The T5-owned command guard allowed to hold the surviving get-variant
+ * read: `createCommandRoutes`' membership check. Any settings-row get/update
+ * call site outside a file containing this marker is a reader the hub-zero
+ * cutover missed. */
+const COMMAND_GUARD_MARKER = "workbenchBelongsToTenant";
 
 /** The brief's done-when rg, per line, case-insensitive. */
 const DONE_WHEN_PATTERN =
@@ -73,17 +77,36 @@ export function auditHubWorkbenchRoutes(
     }
   }
   for (const file of files) {
+    if (file.contents.includes("@workbench/templates")) {
+      report.violations.push(
+        `${file.relPath}: still imports @workbench/templates — ` +
+          "the hub's connector surface is native now " +
+          "(./native-connector-registry.ts); the legacy dep must stay deleted",
+      );
+    }
+  }
+  for (const file of files) {
     if (!file.contents.includes("listWorkbenchSettings")) continue;
-    if (file.contents.includes(DELIVERY_SEAM_MARKER)) {
+    report.violations.push(
+      `${file.relPath}: listWorkbenchSettings survives — ` +
+        "T4 cut the scheduled-delivery seam that owned the only list read",
+    );
+  }
+  for (const file of files) {
+    const readsSettingsRow =
+      file.contents.includes("getWorkbenchSettings") ||
+      file.contents.includes("updateWorkbenchSettings");
+    if (!readsSettingsRow) continue;
+    if (file.contents.includes(COMMAND_GUARD_MARKER)) {
       report.notes.push(
-        `${file.relPath}: listWorkbenchSettings survives inside the ` +
-          "T4-owned scheduled-delivery seam only — documented, not a violation",
+        `${file.relPath}: a settings-row get/update read survives inside ` +
+          "the T5-owned command guard only — documented, not a violation",
       );
       continue;
     }
     report.violations.push(
-      `${file.relPath}: listWorkbenchSettings outside the T4-owned ` +
-        "scheduled-delivery seam — a workbench-settings reader hub-zero missed",
+      `${file.relPath}: a settings-row get/update read outside the ` +
+        "T5-owned command guard — a workbench-settings reader hub-zero missed",
     );
   }
   return report;
