@@ -29,9 +29,23 @@ import path from "node:path";
 import { readdir } from "node:fs/promises";
 
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
-import { applyNotifyMigrations } from "../packages/notify/src/migrations";
-import { applyMailboxMigrations } from "../packages/inbox/src/migrations";
 import { applyCronMigrations } from "../packages/cron/src/migrations";
+import { createMailboxDb, runMailboxMigrations } from "@corbits/mailbox";
+
+/**
+ * Apply `@corbits/mailbox`'s own migrations against `databaseUrl`. The
+ * package keeps its own ledger inside the `mailbox` schema; this wrapper
+ * only opens a short-lived handle, runs the migrator, and closes it.
+ */
+async function applyMailboxMigrations(databaseUrl: string): Promise<{ applied: string[] }> {
+  const { db, close } = createMailboxDb(databaseUrl);
+  try {
+    await runMailboxMigrations(db);
+    return { applied: ["mailbox"] };
+  } finally {
+    await close();
+  }
+}
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const HUB_DIR = path.join(repoRoot, "apps", "hub");
@@ -49,7 +63,6 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   apply: (databaseUrl: string) => Promise<{ applied: string[] }>;
 }[] = [
   { name: "@corbits/webhook-triggers", apply: applyWebhookTriggersMigrations },
-  { name: "@corbits/notify", apply: applyNotifyMigrations },
   { name: "@corbits/mailbox", apply: applyMailboxMigrations },
   { name: "@corbits/cron", apply: applyCronMigrations },
 ];
@@ -518,7 +531,6 @@ const PACKAGE_SCHEMAS = [
   "mailbox",
   "routines",
   "insights",
-  "notify",
   "webhook_triggers",
   "access_policy",
   "bench",

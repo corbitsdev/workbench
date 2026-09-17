@@ -6,14 +6,14 @@
 //
 // This file makes its own `fetch()` calls against the native
 // `@corbits/mailbox` 1.0 routes (`/me/inbox/threads*`) and validates
-// responses with local arktype schemas, rather than importing
-// `@corbits/inbox/client` — that client's package re-exports pull in
-// `@corbits/mailbox`'s server-only `migrations.ts` (a `node:crypto` user)
-// at the value level, which a real bundler (Vite/Rollup) walks into even
-// though only types are used, breaking the browser build. Per the owner
-// ruling that `@corbits/mailbox` is a temporary, shrinking surface, every
-// mailbox read in chat-ui goes through this one file, so swapping to
-// Interchange's native mailbox thread shape later is a one-file change.
+// responses with local arktype schemas rather than a package client,
+// since importing `@corbits/mailbox`'s server-only `migrations.ts` (a
+// `node:crypto` user) at the value level is something a real bundler
+// (Vite/Rollup) walks into even though only types are used, breaking the
+// browser build. Per the owner ruling that `@corbits/mailbox` is a
+// temporary, shrinking surface, every mailbox read in chat-ui goes
+// through this one file, so swapping to Interchange's native mailbox
+// thread shape later is a one-file change.
 //
 // A workbench is a plain Interchange tenant now (CL-8083): there is one
 // chat room per tenant, so the tenant's own `/me/inbox` mailbox already IS
