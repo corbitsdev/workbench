@@ -108,9 +108,25 @@ function harness(state: Stub) {
     }
     if (
       method === "GET" &&
-      path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      path === `/api/tenants/${TENANT_ID}/assets?kind=skill&inherited=false`
     ) {
-      return { status: state.skills ? 200 : 404, data: {}, cookies: [] };
+      return {
+        status: 200,
+        data: state.skills
+          ? TENANT_DESIRED_STATE.skills.map((skill, index) => ({
+              id: `ast_skill_${index}`,
+              tenantId: TENANT_ID,
+              kind: "skill",
+              name: skill.name,
+              displayName: null,
+              creatorPrincipalId: null,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              origin: { tenantId: TENANT_ID, direct: true },
+            }))
+          : [],
+        cookies: [],
+      };
     }
     if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
       return {

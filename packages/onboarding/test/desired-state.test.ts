@@ -103,14 +103,19 @@ function stubApi(state: StubState): ApiCall & { calls: [string, string][] } {
     }
     if (
       method === "GET" &&
-      path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      path === `/api/tenants/${TENANT_ID}/assets?kind=skill&inherited=false`
     ) {
       if (state.failSkillReadsWith !== undefined) {
         return { status: state.failSkillReadsWith, data: {}, cookies: [] };
       }
       return {
-        status: state.skills === true ? 200 : 404,
-        data: state.skills === true ? { name: "writing-system-prompts" } : {},
+        status: 200,
+        data:
+          state.skills === true
+            ? TENANT_DESIRED_STATE.skills.map((skill) =>
+                assetRow(TENANT_ID, "skill", skill.name),
+              )
+            : [],
         cookies: [],
       };
     }
