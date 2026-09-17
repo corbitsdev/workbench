@@ -96,7 +96,6 @@ import {
   serializeDiligenceBriefWorkflow,
 } from "@corbits/diligence-brief-workflow";
 import { WORKFLOW_CATALOG } from "@corbits/workflows/catalog";
-import { type PublishCorbitsToolsRegistryArgs } from "@corbits/tool-registry-publish";
 import { WORKFLOW_SOURCE_ENTRY } from "@corbits/workflows";
 import {
   HubApiError,
@@ -1123,18 +1122,6 @@ export type SeedTenant = {
   principalId: string;
   domain: string;
 };
-
-/**
- * Publishes a tenant's `corbits-tools` package-registry asset. Defaults
- * to the real `publishCorbitsToolsRegistry`; a test double can replace
- * it so a unit test never bundles a real tarball or dials the hub's
- * tarball REST routes, the same way `pushWorkflow` replaces the real
- * git push. Used by `workbench setup` (the root tenant), not by
- * `seedTenant`.
- */
-export type ToolRegistryPublisher = (
-  args: Omit<PublishCorbitsToolsRegistryArgs, "fetchImpl">,
-) => Promise<unknown>;
 
 export type SeedTenantArgs = {
   api: ApiCall;
