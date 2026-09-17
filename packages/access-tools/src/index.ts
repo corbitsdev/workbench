@@ -5,6 +5,8 @@ export {
   revokeAccess,
   AccessForbiddenError,
   AccessNotFoundError,
+  DelegationCeilingError,
+  firstActionOutsideCeiling,
   type AccessToolClientConfig,
   type GrantAccessRequest,
   type ListedGrant,

@@ -1,6 +1,8 @@
 export {
-  listConnections,
-  type ConnectionStatus,
+  listConnectedProviders,
+  NoOwnRoomError,
+  postConnectServiceBlock,
+  type ConnectedProviders,
   type ConnectionsToolClientConfig,
 } from "./client";
 export {

@@ -1,22 +1,27 @@
-// Client for the workflow-run-authenticated counterpart of the native
-// Interchange tenant routes (`@intx/hub-api`: `createPrincipalRoutes`,
-// `createGrantRoutes`) — see `./routes.ts`, mounted at
-// `/api/workflow-access`. Same auth-header shape, same error-handling,
-// same arktype-response-parsing pattern as every other tool bundle's
-// `client.ts` in this codebase (`@corbits/agent-directory-tools`,
-// `@corbits/capability-tools`); only the base path differs.
+// A minimal client for the STOCK `@intx/hub-api` principal and grant
+// routes (`/api/tenants/:tenantId/principals`, `/grants`), spoken with the
+// workflow run's own bearer credential: the sidecar token plus the run
+// address, which the hub resolves to this run's principal and tenant before
+// the stock handler's own `requireGrant` check runs. There is no
+// Workbench-specific mirror of these routes any more.
 //
-// Every request and response speaks the native Interchange contract:
-// `{data, nextCursor}` pages for `GET /principals` and `GET /grants`,
-// one single-action `POST /grants` body per grant (returning the single
-// `GrantResponse` object), `DELETE /grants/:grantId` returning `204`, and
-// the canonical `{error: {code, message}}` envelope on failures
-// (`AccessForbiddenError` / `AccessNotFoundError` surface the hub's
-// `message` verbatim so Myra can act on it).
+// The tenant id is a path segment on every stock tenant route, so it rides
+// in the client config; the sidecar threads it onto the step env from the
+// hub's signed deploy frame. It is never trusted as authority — the hub sets
+// the acting tenant from the authenticated run alone.
+//
+// Grants are NOT inherited across the tenant ancestor tree, so every read
+// and write here is the run's own tenant and nothing above it.
 import { type } from "arktype";
+import { evaluateGrants, type GrantRule } from "@intx/authz";
 
 export interface AccessToolClientConfig {
+  /** The hub's plain HTTP origin. */
   readonly hubAccessUrl: string;
+  /** The run's own tenant — the `:tenantId` segment of every stock route. */
+  readonly tenantId: string;
+  /** The run's own principal, whose authority bounds every grant it makes. */
+  readonly principalId: string;
   readonly sidecarToken: string;
   readonly address: string;
   /** Override for tests; defaults to the global `fetch`. */
@@ -51,104 +56,161 @@ function authHeaders(config: AccessToolClientConfig): Record<string, string> {
   };
 }
 
-/** Pulls `error.message` out of the canonical hub envelope
- * (`{error: {code, message}}`, per `errorResponse` in
- * `@intx/hub-common/errors`), if `body` matches that shape. */
+function tenantBase(config: AccessToolClientConfig): string {
+  return `${config.hubAccessUrl}/api/tenants/${encodeURIComponent(config.tenantId)}`;
+}
+
+/** Pulls a message out of either error envelope the hub emits: the
+ * canonical `{error: {code, userMessage, refId}}` and the stock
+ * `{error: {code, message}}` shape the vendored routes use. */
 function errorMessageFrom(body: unknown): string | undefined {
   if (body === null || typeof body !== "object" || !("error" in body)) {
     return undefined;
   }
   const error = (body as { error: unknown }).error;
-  if (error === null || typeof error !== "object" || !("message" in error)) {
-    return undefined;
+  if (error === null || typeof error !== "object") return undefined;
+  for (const key of ["userMessage", "message"] as const) {
+    if (key in error) {
+      const value = (error as Record<string, unknown>)[key];
+      if (typeof value === "string") return value;
+    }
   }
-  const message = (error as { message: unknown }).message;
-  return typeof message === "string" ? message : undefined;
+  return undefined;
 }
 
-export class AccessForbiddenError extends Error {
-  override readonly name = "AccessForbiddenError";
-}
-
-export class AccessNotFoundError extends Error {
-  override readonly name = "AccessNotFoundError";
-}
-
-async function throwForStatus(
-  operation: string,
+async function readErrorMessage(
   response: Response,
-): Promise<never> {
-  const body: unknown = await response.json().catch(() => null);
-  const message = errorMessageFrom(body) ?? response.statusText;
+  fallback: string,
+): Promise<string> {
+  const body: unknown = await response.json().catch(() => undefined);
+  return errorMessageFrom(body) ?? fallback;
+}
+
+/** Thrown when the hub rejects the request as forbidden — the caller's own
+ * principal holds no `principal:*`/`grant:*` grant — distinct from a bare
+ * transport/HTTP failure, so a caller can report honestly that a human must
+ * grant it access first. */
+export class AccessForbiddenError extends Error {}
+
+/** Thrown for a not-found principal/grant id, distinct from a bare
+ * transport/HTTP failure. */
+export class AccessNotFoundError extends Error {}
+
+async function doRequest(
+  config: AccessToolClientConfig,
+  path: string,
+  init: RequestInit,
+  failureLabel: string,
+): Promise<Response> {
+  const doFetch = config.fetchImpl ?? fetch;
+  const response = await doFetch(`${tenantBase(config)}${path}`, {
+    ...init,
+    headers: { ...authHeaders(config), ...(init.headers ?? {}) },
+  });
   if (response.status === 403) {
-    throw new AccessForbiddenError(`${operation} failed: ${message}`);
+    throw new AccessForbiddenError(
+      await readErrorMessage(response, `${failureLabel}: forbidden`),
+    );
   }
   if (response.status === 404) {
-    throw new AccessNotFoundError(`${operation} failed: ${message}`);
+    throw new AccessNotFoundError(
+      await readErrorMessage(response, `${failureLabel}: not found`),
+    );
   }
-  throw new Error(`${operation} failed: ${message}`);
+  if (!response.ok) {
+    throw new Error(
+      `${failureLabel}: ${response.status} ${response.statusText}`,
+    );
+  }
+  return response;
 }
 
-const ListedPrincipalsResponse = type({
+const PAGE_LIMIT = 100;
+
+const PrincipalsPage = type({
   data: type({
     id: "string",
-    kind: "'user' | 'agent' | 'workflow'",
+    kind: "'user'|'agent'|'workflow'",
     refId: "string",
-    status: "'active' | 'suspended' | 'invited' | 'deactivated'",
+    status: "'active'|'suspended'|'invited'|'deactivated'",
   }).array(),
   "nextCursor?": "string | null",
 });
 
-const ListedGrantsResponse = type({
+const GrantsPage = type({
   data: type({
     id: "string",
     principalId: "string | null",
     resource: "string",
     action: "string",
-    effect: "'allow' | 'deny' | 'ask'",
+    effect: "'allow'|'deny'|'ask'",
+    origin: "'system'|'role'|'creator'|'invoker'",
+    "roleId?": "string | null",
+    "conditions?": "Record<string, unknown> | null",
+    "expiresAt?": "string | null",
   }).array(),
   "nextCursor?": "string | null",
 });
 
-const CreatedGrantResponse = type({
+const CreatedGrant = type({
   id: "string",
   principalId: "string | null",
   resource: "string",
   action: "string",
-  effect: "'allow' | 'deny' | 'ask'",
+  effect: "'allow'|'deny'|'ask'",
 });
 
-/** Lists every principal in the run's tenant, following the native
- * `nextCursor` pages to the end — Myra needs the full list to find the
- * agent she just created before granting it access. */
-export async function listPrincipals(
+type GrantRow = (typeof GrantsPage.infer)["data"][number];
+
+/** Walks every page of a stock paginated collection. The tool surfaces a
+ * tenant's whole principal or grant list, so a truncated first page would
+ * read as "that principal has no grants" — a wrong answer, not a slow one. */
+async function readAllPages<T>(
   config: AccessToolClientConfig,
-): Promise<ListedPrincipal[]> {
-  const fetchImpl = config.fetchImpl ?? ((...args) => fetch(...args));
-  const principals: ListedPrincipal[] = [];
-  let cursor: string | null | undefined;
-  do {
-    const url =
-      cursor === undefined || cursor === null
-        ? `${config.hubAccessUrl}/principals`
-        : `${config.hubAccessUrl}/principals?cursor=${encodeURIComponent(cursor)}`;
-    const response = await fetchImpl(url, {
-      headers: { ...authHeaders(config) },
-    });
-    if (!response.ok) {
-      await throwForStatus("Listing principals", response);
-    }
-    const body: unknown = await response.json();
-    const parsed = ListedPrincipalsResponse(body);
+  path: string,
+  query: URLSearchParams,
+  failureLabel: string,
+  parse: (
+    body: unknown,
+  ) =>
+    | { data: readonly T[]; nextCursor?: string | null | undefined }
+    | type.errors,
+): Promise<readonly T[]> {
+  const items: T[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const params = new URLSearchParams(query);
+    params.set("limit", String(PAGE_LIMIT));
+    if (cursor !== undefined) params.set("cursor", cursor);
+    const response = await doRequest(
+      config,
+      `${path}?${params.toString()}`,
+      {},
+      failureLabel,
+    );
+    const parsed = parse(await response.json());
     if (parsed instanceof type.errors) {
       throw new Error(
-        `Principals response did not match the expected shape: ${parsed.summary}`,
+        `${failureLabel}: response did not match the expected shape: ${parsed.summary}`,
       );
     }
-    principals.push(...parsed.data);
-    cursor = parsed.nextCursor ?? null;
-  } while (cursor !== null);
-  return principals;
+    items.push(...parsed.data);
+    const next = parsed.nextCursor;
+    if (next === undefined || next === null) return items;
+    cursor = next;
+  }
+}
+
+export async function listPrincipals(
+  config: AccessToolClientConfig,
+): Promise<readonly ListedPrincipal[]> {
+  return await readAllPages(
+    config,
+    "/principals",
+    new URLSearchParams(),
+    "Listing principals failed",
+    (body) => PrincipalsPage(body),
+  );
 }
 
 export interface ListGrantsFilter {
@@ -156,92 +218,182 @@ export interface ListGrantsFilter {
   readonly resource?: string;
 }
 
-/** Lists every grant in the run's tenant matching the given filters,
- * following the native `nextCursor` pages to the end — the mirror honors
- * the same `principalId`/`resource` query params as the native
- * `GET /grants`. */
+async function listGrantRows(
+  config: AccessToolClientConfig,
+  filter?: ListGrantsFilter,
+): Promise<readonly GrantRow[]> {
+  const params = new URLSearchParams();
+  if (filter?.principalId !== undefined) {
+    params.set("principalId", filter.principalId);
+  }
+  if (filter?.resource !== undefined) params.set("resource", filter.resource);
+  return await readAllPages(
+    config,
+    "/grants",
+    params,
+    "Listing grants failed",
+    (body) => GrantsPage(body),
+  );
+}
+
 export async function listGrants(
   config: AccessToolClientConfig,
   filter?: ListGrantsFilter,
-): Promise<ListedGrant[]> {
-  const fetchImpl = config.fetchImpl ?? ((...args) => fetch(...args));
-  const grants: ListedGrant[] = [];
-  let cursor: string | null | undefined;
-  do {
-    const params = new URLSearchParams();
-    if (filter?.principalId !== undefined)
-      params.set("principalId", filter.principalId);
-    if (filter?.resource !== undefined) params.set("resource", filter.resource);
-    if (cursor !== undefined && cursor !== null) params.set("cursor", cursor);
-    const query = params.size === 0 ? "" : `?${params.toString()}`;
-    const response = await fetchImpl(`${config.hubAccessUrl}/grants${query}`, {
-      headers: { ...authHeaders(config) },
-    });
-    if (!response.ok) {
-      await throwForStatus("Listing grants", response);
-    }
-    const body: unknown = await response.json();
-    const parsed = ListedGrantsResponse(body);
-    if (parsed instanceof type.errors) {
-      throw new Error(
-        `List-grants response did not match the expected shape: ${parsed.summary}`,
-      );
-    }
-    grants.push(...parsed.data);
-    cursor = parsed.nextCursor ?? null;
-  } while (cursor !== null);
-  return grants;
+): Promise<readonly ListedGrant[]> {
+  const rows = await listGrantRows(config, filter);
+  return rows.map((row) => ({
+    id: row.id,
+    principalId: row.principalId,
+    resource: row.resource,
+    action: row.action,
+    effect: row.effect,
+  }));
 }
 
-/** Grants access by posting one native single-action `POST /grants` body
- * per requested action — `effect: "allow"`, `origin: "invoker"` — and
- * parsing each single `GrantResponse` object the hub returns. */
+function toGrantRule(row: GrantRow): GrantRule {
+  return {
+    id: row.id,
+    resource: row.resource,
+    action: row.action,
+    effect: row.effect,
+    origin: row.origin,
+    conditions: row.conditions ?? null,
+    expiresAt:
+      row.expiresAt === undefined || row.expiresAt === null
+        ? null
+        : new Date(row.expiresAt),
+    roleId: row.roleId ?? null,
+    principalId: row.principalId,
+  };
+}
+
+/** Thrown when the caller asks to grant or revoke authority it does not
+ * itself hold. */
+export class DelegationCeilingError extends Error {}
+
+/**
+ * The delegation ceiling: a caller may only grant (or revoke) authority it
+ * already holds itself, or `grant:*`/`create` alone would let any principal
+ * escalate past its own reach.
+ *
+ * Stock `POST /grants` has no such check, so the tool enforces it before
+ * calling: it reads the caller's own grants in its own tenant and evaluates
+ * each requested pair with `@intx/authz`'s own `evaluateGrants`, the same
+ * engine the hub authorizes with. A parent tenant's grant is never consulted
+ * — grants are not inherited across the ancestor tree, unlike credentials
+ * and tool packages.
+ *
+ * Returns the first action outside the ceiling, or null when every pair is
+ * within it.
+ *
+ * Two fidelity gaps against a server-side check, both recorded as upstream
+ * asks on CL-7575: role-derived grants are not visible through the stock
+ * principal-filtered listing, and the read-then-write is not atomic.
+ */
+export async function firstActionOutsideCeiling(
+  config: AccessToolClientConfig,
+  resource: string,
+  actions: readonly string[],
+): Promise<string | null> {
+  const own = await listGrantRows(config, {
+    principalId: config.principalId,
+  });
+  const rules = own.map(toGrantRule);
+  for (const action of actions) {
+    const result = await evaluateGrants(rules, resource, action, {
+      principalId: config.principalId,
+      tenantId: config.tenantId,
+    });
+    if (result.effect !== "allow") return action;
+  }
+  return null;
+}
+
 export async function grantAccess(
   config: AccessToolClientConfig,
-  request: GrantAccessRequest,
-): Promise<ListedGrant[]> {
-  const fetchImpl = config.fetchImpl ?? ((...args) => fetch(...args));
+  input: GrantAccessRequest,
+): Promise<readonly ListedGrant[]> {
+  const outside = await firstActionOutsideCeiling(
+    config,
+    input.resource,
+    input.actions,
+  );
+  if (outside !== null) {
+    throw new DelegationCeilingError(
+      `Cannot grant "${input.resource}" "${outside}": exceeds the caller's own authority`,
+    );
+  }
+
+  // Stock `POST /grants` creates one resource/action pair per call, so a
+  // multi-action request is one call per action. A failure part-way leaves
+  // the already-created grants in place and surfaces loudly rather than
+  // rolling back behind the caller's back.
   const created: ListedGrant[] = [];
-  for (const action of request.actions) {
-    const response = await fetchImpl(`${config.hubAccessUrl}/grants`, {
-      method: "POST",
-      headers: { ...authHeaders(config), "content-type": "application/json" },
-      body: JSON.stringify({
-        principalId: request.principalId,
-        resource: request.resource,
-        action,
-        effect: "allow",
-        origin: "invoker",
-      }),
-    });
-    if (!response.ok) {
-      await throwForStatus("Granting access", response);
-    }
-    const body: unknown = await response.json();
-    const parsed = CreatedGrantResponse(body);
+  for (const action of input.actions) {
+    const response = await doRequest(
+      config,
+      "/grants",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          principalId: input.principalId,
+          resource: input.resource,
+          action,
+          effect: "allow",
+          // The invoking human's authority delegated this grant: the tool
+          // declares `approval: "ask"`, so a human approved this exact
+          // principal/resource/actions triple before this call ran.
+          origin: "invoker",
+        }),
+      },
+      "Granting access failed",
+    );
+    const parsed = CreatedGrant(await response.json());
     if (parsed instanceof type.errors) {
       throw new Error(
         `Grant-access response did not match the expected shape: ${parsed.summary}`,
       );
     }
-    created.push(parsed);
+    created.push({
+      id: parsed.id,
+      principalId: parsed.principalId,
+      resource: parsed.resource,
+      action: parsed.action,
+      effect: parsed.effect,
+    });
   }
   return created;
 }
 
-/** Revokes the grant with the given id. The native
- * `DELETE /grants/:grantId` returns `204` with no body, so success is the
- * absence of a throw. */
 export async function revokeAccess(
   config: AccessToolClientConfig,
   grantId: string,
 ): Promise<void> {
-  const fetchImpl = config.fetchImpl ?? ((...args) => fetch(...args));
-  const response = await fetchImpl(
-    `${config.hubAccessUrl}/grants/${encodeURIComponent(grantId)}`,
-    { method: "DELETE", headers: { ...authHeaders(config) } },
+  const response = await doRequest(
+    config,
+    `/grants/${encodeURIComponent(grantId)}`,
+    {},
+    "Revoking access failed",
   );
-  if (!response.ok) {
-    await throwForStatus("Revoking access", response);
+  const target = CreatedGrant(await response.json());
+  if (target instanceof type.errors) {
+    throw new Error(
+      `Grant lookup response did not match the expected shape: ${target.summary}`,
+    );
   }
+  const outside = await firstActionOutsideCeiling(config, target.resource, [
+    target.action,
+  ]);
+  if (outside !== null) {
+    throw new DelegationCeilingError(
+      `Cannot revoke "${target.resource}" "${target.action}": exceeds the caller's own authority`,
+    );
+  }
+  await doRequest(
+    config,
+    `/grants/${encodeURIComponent(grantId)}`,
+    { method: "DELETE" },
+    "Revoking access failed",
+  );
 }

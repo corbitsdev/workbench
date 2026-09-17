@@ -10,7 +10,9 @@ import {
 
 function testEnv(): WorkflowAccessEnv {
   return {
-    hubAccessUrl: "https://hub.example.com/api/workflow-access",
+    hubAccessUrl: "https://hub.example.com",
+    tenantId: "ten_1",
+    principalId: "prin_caller",
     sidecarToken: "sc-token",
     address: "run_1@workflow",
   } as unknown as WorkflowAccessEnv;
@@ -38,7 +40,7 @@ test("list_grants rejects invalid input before ever calling fetch", async () => 
   }
 });
 
-test("a 403 with the native error envelope from grant_access surfaces as a clear tool error", async () => {
+test("a 403 from the stock grant route surfaces as a clear tool error", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>
     new Response(
@@ -63,7 +65,7 @@ test("a 403 with the native error envelope from grant_access surfaces as a clear
     );
     expect(result.isError).toBe(true);
     expect(result.content).toBe(
-      "Granting access failed: Myra can only grant room:read — she herself holds no room:write here",
+      "Myra can only grant room:read — she herself holds no room:write here",
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -82,6 +84,7 @@ test("a successful grant_access round-trips into list_grants", async () => {
       origin: "invoker",
       conditions: null,
       expiresAt: null,
+      roleId: null,
       createdAt: "2026-09-01T00:00:00.000Z",
       updatedAt: "2026-09-01T00:00:00.000Z",
     };
@@ -100,7 +103,16 @@ test("a successful grant_access round-trips into list_grants", async () => {
       );
     }
     if (path.endsWith("/grants")) {
-      // Native `GET /grants` returns the `{data, nextCursor}` page envelope.
+      // The caller's own ceiling read: wide enough to delegate anything.
+      if (String(url).includes("principalId=prin_caller")) {
+        return new Response(
+          JSON.stringify({
+            data: [{ ...nativeRow("own_1", "*"), principalId: "prin_caller" }],
+            nextCursor: null,
+          }),
+        );
+      }
+      // Stock `GET /grants` returns the `{data, nextCursor}` page envelope.
       return new Response(
         JSON.stringify({
           data:

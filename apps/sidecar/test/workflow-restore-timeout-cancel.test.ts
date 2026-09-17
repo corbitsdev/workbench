@@ -101,7 +101,9 @@ test("a restore that outlasts its timeout corrects its record once the spawn act
   const agentAddress = "run_late-restore@example.com";
   const deploymentId = deriveDeploymentId(agentAddress);
   const record: WorkflowDeploymentRecord = {
-    version: 1,
+    version: 2,
+    tenantId: "ten_test",
+    principalId: "prin_test",
     agentAddress,
     definitionId: "def_1",
     sources: {
@@ -177,7 +179,9 @@ test("a reclaiming teardown racing a dangling restore's boot-failure write is no
   const agentAddress = "run_teardown-race@example.com";
   const deploymentId = deriveDeploymentId(agentAddress);
   const record: WorkflowDeploymentRecord = {
-    version: 1,
+    version: 2,
+    tenantId: "ten_test",
+    principalId: "prin_test",
     agentAddress,
     definitionId: "def_1",
     sources: {

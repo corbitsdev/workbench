@@ -17,7 +17,6 @@ import {
   createWorkflowRunDispatchStore,
   listAssetsForTenant,
   listVisibleOfferings,
-  resolveCredentialRequirement,
 } from "@intx/db";
 import {
   asset as assetTable,
@@ -122,7 +121,6 @@ import {
   createPostgresBenchModelPolicyStore,
   createWorkflowCatalogRoutes,
 } from "@corbits/inference-catalog";
-import { createWorkflowAccessRoutes } from "@corbits/access-tools/routes";
 import { generateId } from "@intx/hub-common";
 
 import {
@@ -272,6 +270,7 @@ import {
   createInFlightRequestTracker,
   withInFlightRequestTracking,
 } from "./in-flight-requests";
+import { withWorkflowRunTenantAuth } from "./workflow-run-tenant-auth";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
@@ -674,18 +673,6 @@ export async function createHub(config: HubConfig) {
     },
   };
   const hubPublicKey = hexEncode(signingKey.publicKey);
-  // Same owning check GET /connections uses — see
-  // `@corbits/connections`' `workflow-connection-routes.ts` and the
-  // `createWorkflowConnectionRoutes` wiring below. Not
-  // `listConnectedProviders` (catalog-only).
-  const isConnectorConnected = async (tenantId: string, connectorId: string) =>
-    (await resolveCredentialRequirement(
-      db,
-      tenantId,
-      { providerName: connectorId, source: "tenant" },
-      null,
-      null,
-    )) !== null;
   // One resolver serves both seams, exactly as @intx/hub-sessions's own
   // reference host wires them: `resolve` turns a presented bearer token
   // into a verified identity at the handshake, and `isCurrent`
@@ -2266,10 +2253,6 @@ export async function createHub(config: HubConfig) {
     "/api/workflow-connections",
     createWorkflowConnectionRoutes({
       authenticator: createWorkflowRunAuthenticator({ db }),
-      registry: CONNECTOR_REGISTRY,
-      // Same `isConnectorConnected` the pinned-package factory is wired
-      // with above (CL-6492).
-      isConnectorConnected,
       listMcpServers: (tenantId) => listMcpServerConnections(db, tenantId),
     }),
   );
@@ -2291,24 +2274,6 @@ export async function createHub(config: HubConfig) {
               where: inArray(modelPricing.offeringId, [...offeringIds]),
             }),
       getPolicy: (tenantId) => benchModelPolicy.store.getPolicy(tenantId),
-    }),
-  );
-  // Myra's own principal/grant surface (`@corbits/access-tools`'
-  // `list_principals`/`list_grants`/`grant_access`/`revoke_access`): the
-  // workflow-run-authenticated counterpart to the tenant-session
-  // `/api/tenants/:tenantId/principals` and `/grants` routes
-  // `@intx/hub-api` mounts above. Reuses the SAME `chatGrantStore`/
-  // `chatConditionRegistry` every other extension's own requireGrant
-  // check runs against, so a seeded principal's real grants (see
-  // the deleted seeding package's `SEED_GRANTS`) gate this surface exactly like
-  // every other write route.
-  app.route(
-    "/api/workflow-access",
-    createWorkflowAccessRoutes({
-      db,
-      authenticator: createWorkflowRunAuthenticator({ db }),
-      grantStore: chatGrantStore,
-      conditionRegistry: chatConditionRegistry,
     }),
   );
   // Notify-to-reconnect for an OAuth-connected credential whose token
@@ -2347,8 +2312,15 @@ export async function createHub(config: HubConfig) {
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));
 
   // Stock Interchange currently leaves tenant creation and dispatch ungated.
+  // Let a workflow-run agent reach every stock tenant route with the run
+  // bearer, not just the deploy endpoint — see ./workflow-run-tenant-auth.ts
+  // for why this is an outer wrap.
+  const runBearerApp = withWorkflowRunTenantAuth(app, {
+    db,
+    authenticator: createWorkflowRunAuthenticator({ db }),
+  });
   const inFlight = createInFlightRequestTracker();
-  const servingApp = withInFlightRequestTracking(app, inFlight);
+  const servingApp = withInFlightRequestTracking(runBearerApp, inFlight);
 
   return {
     app: servingApp,

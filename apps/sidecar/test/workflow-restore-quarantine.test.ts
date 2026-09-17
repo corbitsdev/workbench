@@ -178,7 +178,9 @@ test("a permanently unrestorable record is quarantined after RESTORE_QUARANTINE_
   // no future boot ever makes `deriveDeploymentId` agree with the directory.
   const mismatchedDeploymentId = "dep_mismatched-directory";
   const record: WorkflowDeploymentRecord = {
-    version: 1,
+    version: 2,
+    tenantId: "ten_test",
+    principalId: "prin_test",
     agentAddress: "run_permanent-case@example.com",
     definitionId: "def_1",
     sources: {},
@@ -239,7 +241,9 @@ test("a transiently unbuildable provider is retried every boot and never quarant
   const deploymentId = deriveDeploymentId(agentAddress);
   stageClosureDefinition(deploymentId);
   const record: WorkflowDeploymentRecord = {
-    version: 1,
+    version: 2,
+    tenantId: "ten_test",
+    principalId: "prin_test",
     agentAddress,
     definitionId: "def_1",
     // `step-1`'s unbuildable source throws before `step-2` is ever
@@ -297,7 +301,9 @@ test("a missing/incomplete closure staging directory quarantines as a permanent 
   });
 
   const brokenRecord: WorkflowDeploymentRecord = {
-    version: 1,
+    version: 2,
+    tenantId: "ten_test",
+    principalId: "prin_test",
     agentAddress: brokenAgentAddress,
     definitionId: "def_1",
     sources: {},
@@ -311,7 +317,9 @@ test("a missing/incomplete closure staging directory quarantines as a permanent 
   );
 
   const healthyRecord: WorkflowDeploymentRecord = {
-    version: 1,
+    version: 2,
+    tenantId: "ten_test",
+    principalId: "prin_test",
     agentAddress: healthyAgentAddress,
     definitionId: "def_1",
     // A buildable provider clears the source-admission gate and reaches

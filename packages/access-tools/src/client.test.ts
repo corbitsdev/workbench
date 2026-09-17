@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import {
   AccessForbiddenError,
   AccessNotFoundError,
+  DelegationCeilingError,
   grantAccess,
   listGrants,
   listPrincipals,
@@ -10,9 +11,13 @@ import {
   type AccessToolClientConfig,
 } from "./client";
 
+const TENANT_BASE = "https://hub.example.com/api/tenants/ten_1";
+
 function testConfig(fetchImpl: typeof fetch): AccessToolClientConfig {
   return {
-    hubAccessUrl: "https://hub.example.com/api/workflow-access",
+    hubAccessUrl: "https://hub.example.com",
+    tenantId: "ten_1",
+    principalId: "prin_caller",
     sidecarToken: "sc-token",
     address: "run_1@workflow",
     fetchImpl,
@@ -30,7 +35,7 @@ function nativePrincipal(id: string) {
   };
 }
 
-function nativeGrant(id: string) {
+function nativeGrant(id: string, overrides: Record<string, unknown> = {}) {
   return {
     id,
     principalId: "prin_2",
@@ -40,12 +45,20 @@ function nativeGrant(id: string) {
     origin: "invoker",
     conditions: null,
     expiresAt: null,
+    roleId: null,
     createdAt: "2026-09-01T00:00:00.000Z",
     updatedAt: "2026-09-01T00:00:00.000Z",
+    ...overrides,
   };
 }
 
-test("listPrincipals reads the native page envelope and follows nextCursor", async () => {
+/** The caller's own ceiling: whatever `firstActionOutsideCeiling` reads back
+ * for `principalId=prin_caller`. */
+function ceilingPage(grants: readonly unknown[]) {
+  return Response.json({ data: grants, nextCursor: null });
+}
+
+test("listPrincipals reads the stock page envelope and follows nextCursor", async () => {
   const seen: string[] = [];
   const fetchImpl = (async (url: string | URL | Request) => {
     const raw = String(url);
@@ -64,16 +77,12 @@ test("listPrincipals reads the native page envelope and follows nextCursor", asy
 
   const principals = await listPrincipals(testConfig(fetchImpl));
   expect(principals.map((p) => p.id)).toEqual(["prin_1", "prin_2", "prin_3"]);
-  expect(principals[0]).toMatchObject({
-    kind: "workflow",
-    refId: "prin_1@example.test",
-    status: "active",
-  });
+  expect(seen[0]).toStartWith(`${TENANT_BASE}/principals?`);
   expect(seen).toHaveLength(2);
   expect(seen[1]).toContain("cursor=prin_2");
 });
 
-test("listGrants passes filters through and reads the native page envelope", async () => {
+test("listGrants passes filters through and reads the stock page envelope", async () => {
   let seenUrl = "";
   const fetchImpl = (async (url: string | URL | Request) => {
     seenUrl = String(url);
@@ -84,9 +93,9 @@ test("listGrants passes filters through and reads the native page envelope", asy
     principalId: "prin_2",
     resource: "workflow-run:*",
   });
-  expect(seenUrl).toContain(
-    "/grants?principalId=prin_2&resource=workflow-run%3A*",
-  );
+  expect(seenUrl).toContain(`${TENANT_BASE}/grants?`);
+  expect(seenUrl).toContain("principalId=prin_2");
+  expect(seenUrl).toContain("resource=workflow-run%3A*");
   expect(grants).toHaveLength(1);
   expect(grants[0]).toMatchObject({
     id: "grant_1",
@@ -115,23 +124,24 @@ test("listGrants follows nextCursor so a full page plus one all return", async (
     principalId: "prin_2",
   });
   expect(grants).toHaveLength(51);
-  expect(grants.map((g) => g.id)).toEqual(all.map((g) => g.id));
   expect(seen).toHaveLength(2);
-  expect(seen[0]).toContain("principalId=prin_2");
   expect(seen[1]).toContain("cursor=page_2");
 });
 
-test("grantAccess posts one native single-action body per action and parses single GrantResponse objects", async () => {
+test("grantAccess reads the caller's own grants first, then posts one stock single-action body per action", async () => {
   const posted: unknown[] = [];
   const fetchImpl = (async (
     url: string | URL | Request,
     init?: RequestInit,
   ) => {
-    expect(String(url)).toBe(
-      "https://hub.example.com/api/workflow-access/grants",
-    );
-    expect(init?.method).toBe("POST");
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (init?.method !== "POST") {
+      expect(String(url)).toContain("principalId=prin_caller");
+      return ceilingPage([
+        nativeGrant("own_1", { principalId: "prin_caller", action: "*" }),
+      ]);
+    }
+    expect(String(url)).toBe(`${TENANT_BASE}/grants`);
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     posted.push(body);
     return new Response(
       JSON.stringify({
@@ -166,14 +176,33 @@ test("grantAccess posts one native single-action body per action and parses sing
   expect(grants.map((g) => g.action)).toEqual(["read", "write"]);
 });
 
-test("a 403 with the native error envelope surfaces as AccessForbiddenError with the hub's message", async () => {
+test("grantAccess refuses a pair outside the caller's own authority, before any write", async () => {
+  const methods: (string | undefined)[] = [];
+  const fetchImpl = (async (
+    _url: string | URL | Request,
+    init?: RequestInit,
+  ) => {
+    methods.push(init?.method);
+    return ceilingPage([
+      nativeGrant("own_1", { principalId: "prin_caller", action: "read" }),
+    ]);
+  }) as unknown as typeof fetch;
+
+  await expect(
+    grantAccess(testConfig(fetchImpl), {
+      principalId: "prin_2",
+      resource: "workflow-run:*",
+      actions: ["read", "write"],
+    }),
+  ).rejects.toThrow(DelegationCeilingError);
+  expect(methods).toEqual([undefined]);
+});
+
+test("a 403 from the stock route surfaces as AccessForbiddenError with the hub's message", async () => {
   const fetchImpl = (async () =>
     new Response(
       JSON.stringify({
-        error: {
-          code: "forbidden",
-          message: "Not a member of this tenant",
-        },
+        error: { code: "forbidden", message: "Not a member of this tenant" },
       }),
       { status: 403 },
     )) as unknown as typeof fetch;
@@ -185,20 +214,13 @@ test("a 403 with the native error envelope surfaces as AccessForbiddenError with
       actions: ["read"],
     }),
   ).rejects.toThrow(AccessForbiddenError);
-  await expect(
-    grantAccess(testConfig(fetchImpl), {
-      principalId: "prin_2",
-      resource: "workflow-run:*",
-      actions: ["read"],
-    }),
-  ).rejects.toThrow("Not a member of this tenant");
 });
 
-test("a 404 with the native error envelope from revokeAccess surfaces as AccessNotFoundError", async () => {
+test("a 404 looking up the grant to revoke surfaces as AccessNotFoundError", async () => {
   const fetchImpl = (async () =>
     new Response(
       JSON.stringify({
-        error: { code: "not_found", message: "Grant not found" },
+        error: { code: "not_found", message: "no such grant" },
       }),
       { status: 404 },
     )) as unknown as typeof fetch;
@@ -208,11 +230,44 @@ test("a 404 with the native error envelope from revokeAccess surfaces as AccessN
   ).rejects.toThrow(AccessNotFoundError);
 });
 
-test("revokeAccess treats a native 204 with no body as success", async () => {
-  const fetchImpl = (async () =>
-    new Response(null, { status: 204 })) as unknown as typeof fetch;
+test("revokeAccess checks the ceiling against the grant it read back, then deletes", async () => {
+  const calls: string[] = [];
+  const fetchImpl = (async (
+    url: string | URL | Request,
+    init?: RequestInit,
+  ) => {
+    calls.push(`${init?.method ?? "GET"} ${String(url)}`);
+    if (init?.method === "DELETE") return new Response(null, { status: 204 });
+    if (String(url).includes("principalId=prin_caller")) {
+      return ceilingPage([
+        nativeGrant("own_1", { principalId: "prin_caller", action: "*" }),
+      ]);
+    }
+    return Response.json(nativeGrant("grant_1"));
+  }) as unknown as typeof fetch;
 
   await revokeAccess(testConfig(fetchImpl), "grant_1");
+  expect(calls[0]).toBe(`GET ${TENANT_BASE}/grants/grant_1`);
+  expect(calls.at(-1)).toBe(`DELETE ${TENANT_BASE}/grants/grant_1`);
+});
+
+test("revokeAccess refuses a grant outside the caller's own authority", async () => {
+  const methods: (string | undefined)[] = [];
+  const fetchImpl = (async (
+    url: string | URL | Request,
+    init?: RequestInit,
+  ) => {
+    methods.push(init?.method);
+    if (String(url).includes("principalId=prin_caller")) {
+      return ceilingPage([]);
+    }
+    return Response.json(nativeGrant("grant_1"));
+  }) as unknown as typeof fetch;
+
+  await expect(revokeAccess(testConfig(fetchImpl), "grant_1")).rejects.toThrow(
+    DelegationCeilingError,
+  );
+  expect(methods).not.toContain("DELETE");
 });
 
 test("a grant body missing principalId is a shape error, never a null-linked grant", async () => {

@@ -396,6 +396,8 @@ export function createSidecarSubstrateFactory(
       hubArtifactsUrl: deriveHubHttpUrl(validated.HUB_WS_URL),
       sidecarToken: validated.SIDECAR_TOKEN,
       definitionId: validated.WORKFLOW_DEFINITION_ID,
+      tenantId: validated.WORKFLOW_TENANT_ID,
+      principalId: validated.WORKFLOW_PRINCIPAL_ID,
     };
     const buildStepEnv = createSidecarStepBuildEnv(
       durableConversation !== undefined

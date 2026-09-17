@@ -1,40 +1,49 @@
-// A minimal client for the workflow-run-authenticated connections
-// surface a running agent calls to see which third-party connectors
-// this workbench already has live — the execution half of
-// `@corbits/connections`'s `createWorkflowConnectionRoutes`
-// (`packages/connections/src/workflow-connection-routes.ts`), mounted
-// in `apps/hub` at `/api/workflow-connections` beside
-// `/api/workflow-capabilities` and `/api/workflow-skills` —
-// authenticated the same way, via a `WorkflowRunAuthenticator` (sidecar
-// bearer token + run address), never a human browser session.
+// A minimal client for the two hub surfaces this bundle reads.
+//
+// `list_connections` reads the STOCK Interchange tenant routes —
+// `/api/tenants/:tenantId/providers` and `/credentials` — with the workflow
+// run's own bearer credential (sidecar token plus run address), which the hub
+// resolves to this run's principal and tenant. A connector counts as
+// connected when the tenant has an active credential against a provider named
+// for it, the same `provider.name = connector id` keying an agent launch
+// resolves a credential by. There is no Workbench-specific
+// `/api/workflow-connections` mirror any more.
+//
+// `request_connection` still posts its `connect-service` card through the
+// workflow-chat participant route; that surface is unchanged.
 import { type } from "arktype";
 
 export interface ConnectionsToolClientConfig {
-  /** The hub's plain HTTP origin — same value capability-tools'
-   * `hubCapabilitiesUrl` and memory-tools' `hubMemoryUrl` reach the hub
-   * through. */
+  /** The hub's plain HTTP origin. */
   readonly hubConnectionsUrl: string;
+  /** The run's own tenant — the `:tenantId` segment of a stock route. */
+  readonly tenantId: string;
   readonly sidecarToken: string;
   readonly address: string;
   /** Override for tests; defaults to the global `fetch`. */
   readonly fetchImpl?: typeof fetch;
 }
 
-export type ConnectionStatus = {
-  readonly id: string;
-  readonly displayName: string;
-  readonly docsUrl: string;
-  readonly connected: boolean;
-};
+/** Which connectors this tenant currently has a live credential for.
+ * Keyed by connector id — the caller pairs it with its own connector
+ * registry for display names and docs links, which the hub does not know. */
+export type ConnectedProviders = ReadonlySet<string>;
 
-const ConnectionsResponse = type({
+const ProvidersPage = type({
+  data: type({ id: "string", name: "string" }).array(),
+  "nextCursor?": "string | null",
+});
+
+const CredentialsPage = type({
   data: type({
     id: "string",
-    displayName: "string",
-    docsUrl: "string",
-    connected: "boolean",
+    providerId: "string",
+    status: "'active'|'expired'|'revoked'",
   }).array(),
+  "nextCursor?": "string | null",
 });
+
+const PAGE_LIMIT = 100;
 
 function authHeaders(
   config: ConnectionsToolClientConfig,
@@ -45,31 +54,78 @@ function authHeaders(
   };
 }
 
-/** Fetches every connector this workbench knows about, each flagged
- * with whether the calling tenant currently has a live credential for
- * it. Throws on any transport, HTTP, or shape failure — never
- * fabricates a result. */
-export async function listConnections(
+function tenantBase(config: ConnectionsToolClientConfig): string {
+  return `${config.hubConnectionsUrl}/api/tenants/${encodeURIComponent(config.tenantId)}`;
+}
+
+/** Walks every page: a truncated first page would read as "not connected",
+ * a wrong answer rather than a slow one. */
+async function readAllPages<T>(
   config: ConnectionsToolClientConfig,
-): Promise<readonly ConnectionStatus[]> {
+  path: string,
+  what: string,
+  parse: (
+    body: unknown,
+  ) =>
+    | { data: readonly T[]; nextCursor?: string | null | undefined }
+    | type.errors,
+): Promise<readonly T[]> {
   const doFetch = config.fetchImpl ?? fetch;
-  const response = await doFetch(
-    `${config.hubConnectionsUrl}/api/workflow-connections/connections`,
-    { headers: authHeaders(config) },
+  const items: T[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const params = new URLSearchParams({ limit: String(PAGE_LIMIT) });
+    if (cursor !== undefined) params.set("cursor", cursor);
+    const response = await doFetch(
+      `${tenantBase(config)}${path}?${params.toString()}`,
+      { headers: authHeaders(config) },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `${what} failed: ${response.status} ${response.statusText}`,
+      );
+    }
+    const parsed = parse(await response.json());
+    if (parsed instanceof type.errors) {
+      throw new Error(
+        `${what} came back in an unexpected shape: ${parsed.summary}`,
+      );
+    }
+    items.push(...parsed.data);
+    const next = parsed.nextCursor;
+    if (next === undefined || next === null) return items;
+    cursor = next;
+  }
+}
+
+/** Connector ids this tenant currently has a live credential for. Throws on
+ * any transport, HTTP, or shape failure — never fabricates a result.
+ *
+ * The stock provider listing already includes providers inherited from
+ * ancestor tenants; the stock credential listing does not, so a credential
+ * that only exists on a parent tenant reads as not connected here. Recorded
+ * as an upstream ask rather than papered over with a second query. */
+export async function listConnectedProviders(
+  config: ConnectionsToolClientConfig,
+): Promise<ConnectedProviders> {
+  const [providers, credentials] = await Promise.all([
+    readAllPages(config, "/providers", "Listing providers", (body) =>
+      ProvidersPage(body),
+    ),
+    readAllPages(config, "/credentials", "Listing credentials", (body) =>
+      CredentialsPage(body),
+    ),
+  ]);
+  const liveProviderIds = new Set(
+    credentials
+      .filter((row) => row.status === "active")
+      .map((row) => row.providerId),
   );
-  if (!response.ok) {
-    throw new Error(
-      `Fetching connections failed: ${response.status} ${response.statusText}`,
-    );
-  }
-  const body: unknown = await response.json();
-  const parsed = ConnectionsResponse(body);
-  if (parsed instanceof type.errors) {
-    throw new Error(
-      `Connections response did not match the expected shape: ${parsed.summary}`,
-    );
-  }
-  return parsed.data;
+  return new Set(
+    providers
+      .filter((row) => liveProviderIds.has(row.id))
+      .map((row) => row.name),
+  );
 }
 
 /** Thrown when the caller's run has no room of its own to post into —
@@ -133,47 +189,4 @@ export async function postConnectServiceBlock(
     );
   }
   return { messageId: parsed.id };
-}
-
-export type McpServerConnectionStatus = {
-  readonly slug: string;
-  readonly name: string;
-  readonly url: string;
-};
-
-const McpServersResponse = type({
-  data: type({
-    slug: "string",
-    name: "string",
-    url: "string",
-  }).array(),
-});
-
-/** Fetches every MCP server this tenant has connected through Plugins —
- * the same `/api/workflow-connections/mcp-servers` route
- * `@corbits/mcp-tools`' `mcp_list_servers` reads, reused here rather
- * than a second listing mechanism, so `list_connections` reports the
- * same connected set an agent would see calling `mcp_list_servers`
- * directly. Throws on any transport, HTTP, or shape failure. */
-export async function listMcpServerConnections(
-  config: ConnectionsToolClientConfig,
-): Promise<readonly McpServerConnectionStatus[]> {
-  const doFetch = config.fetchImpl ?? fetch;
-  const response = await doFetch(
-    `${config.hubConnectionsUrl}/api/workflow-connections/mcp-servers`,
-    { headers: authHeaders(config) },
-  );
-  if (!response.ok) {
-    throw new Error(
-      `Fetching MCP servers failed: ${response.status} ${response.statusText}`,
-    );
-  }
-  const body: unknown = await response.json();
-  const parsed = McpServersResponse(body);
-  if (parsed instanceof type.errors) {
-    throw new Error(
-      `MCP servers response did not match the expected shape: ${parsed.summary}`,
-    );
-  }
-  return parsed.data;
 }

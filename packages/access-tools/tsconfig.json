@@ -10,17 +10,11 @@
     "tsBuildInfoFile": "tsconfig.tsbuildinfo",
     "rootDir": "../.."
   },
-  "include": ["src", "test"],
+  "include": ["src"],
   "exclude": [],
   "references": [
     {
       "path": "../../vendor/intx/agent/tsconfig.src.json"
-    },
-    {
-      "path": "../../vendor/intx/db/tsconfig.src.json"
-    },
-    {
-      "path": "../../vendor/intx/hub-api/tsconfig.src.json"
     },
     {
       "path": "../../vendor/intx/types/tsconfig.src.json"

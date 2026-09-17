@@ -59,6 +59,7 @@ const TEST_MCP_PRESETS: readonly McpPreset[] = [
 function testEnv(): WorkflowConnectionEnv {
   return {
     hubConnectionsUrl: "https://hub.example.com",
+    tenantId: "ten_1",
     sidecarToken: "sc-token",
     address: "run_1@workflow",
     connectorRegistry: TEST_CONNECTOR_REGISTRY,
@@ -80,17 +81,20 @@ test("declares exactly list_connections and request_connection, neither gated be
 test("requires the sanctioned workflow-connection env keys", () => {
   expect(connectionsTools.requires).toEqual([
     "hubConnectionsUrl",
+    "tenantId",
     "sidecarToken",
     "address",
   ]);
 });
 
+/** Serves the stock tenant provider + credential routes, reporting every
+ * connector id in `live` as having an active credential. */
 function stubFetch(opts: {
-  connections?: unknown[];
-  mcpServers?: unknown[];
+  live?: string[];
   posted?: unknown[];
   postStatus?: number;
 }): typeof fetch {
+  const live = opts.live ?? [];
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
     if (url.endsWith("/participants/messages")) {
@@ -106,39 +110,26 @@ function stubFetch(opts: {
         { status: 201 },
       );
     }
-    if (url.endsWith("/mcp-servers")) {
-      return new Response(JSON.stringify({ data: opts.mcpServers ?? [] }));
+    if (url.includes("/providers")) {
+      return Response.json({
+        data: live.map((name) => ({ id: `prv_${name}`, name })),
+        nextCursor: null,
+      });
     }
-    return new Response(JSON.stringify({ data: opts.connections ?? [] }));
+    return Response.json({
+      data: live.map((name) => ({
+        id: `crd_${name}`,
+        providerId: `prv_${name}`,
+        status: "active",
+      })),
+      nextCursor: null,
+    });
   }) as unknown as typeof fetch;
 }
 
-test("list_connections summarizes connected and not-connected connectors from the client", async () => {
+test("list_connections summarizes connected and not-connected connectors from the stock routes", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = stubFetch({
-    connections: [
-      {
-        id: "github",
-        displayName: "GitHub",
-        docsUrl: "https://github.com/settings/tokens",
-        connected: true,
-      },
-      {
-        id: "scrapecreators",
-        displayName: "ScrapeCreators",
-        docsUrl: "https://scrapecreators.com",
-        connected: false,
-      },
-    ],
-    mcpServers: [
-      {
-        slug: "fieldnotes",
-        name: "Fieldnotes",
-        url: "https://mcp.fieldnotes.example",
-      },
-      { slug: "exa", name: "Exa", url: "https://mcp.exa.ai/mcp" },
-    ],
-  });
+  globalThis.fetch = stubFetch({ live: ["github", "exa"] });
   try {
     const bundle = connectionsTools(testEnv());
     const result = await bundle.run(
@@ -147,11 +138,9 @@ test("list_connections summarizes connected and not-connected connectors from th
     );
     expect(result.isError).toBeFalsy();
     expect(result.content).toMatch(/Connected: GitHub/);
-    expect(result.content).toMatch(/Exa \(via MCP\)/);
-    expect(result.content).toMatch(/Fieldnotes \(MCP server\)/);
-    expect(result.content).toMatch(/Not connected: [^.]*ScrapeCreators/);
-    expect(result.content).toMatch(/Granola/);
-    expect(result.content).not.toMatch(/Exa,/); // Exa never listed twice
+    expect(result.content).toMatch(/Connected: [^.]*Exa/);
+    expect(result.content).toMatch(/Not connected: [^.]*Granola/);
+    expect(result.content).toMatch(/Not connected: [^.]*Notion/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -177,7 +166,7 @@ test("list_connections returns an honest error on an unreachable hub, never fabr
 
 test("request_connection tells the agent to keep helping for a name this workspace can't connect, never sending the human off to add servers", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = stubFetch({ mcpServers: [] });
+  globalThis.fetch = stubFetch({});
   try {
     const bundle = connectionsTools(testEnv());
     const result = await bundle.run(
@@ -198,40 +187,10 @@ test("request_connection tells the agent to keep helping for a name this workspa
   }
 });
 
-test("request_connection reports an already-connected MCP server rather than re-requesting it", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = stubFetch({
-    mcpServers: [
-      { slug: "notion", name: "Notion", url: "https://mcp.notion.example" },
-    ],
-  });
-  try {
-    const bundle = connectionsTools(testEnv());
-    const result = await bundle.run(
-      callFor(REQUEST_CONNECTION_TOOL, { connector: "notion" }),
-      new AbortController().signal,
-    );
-    expect(result.isError).toBeFalsy();
-    expect(result.content).toMatch(/already connected/);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
 test("request_connection posts a connect-service card into the room for a registry connector", async () => {
   const originalFetch = globalThis.fetch;
   const posted: unknown[] = [];
-  globalThis.fetch = stubFetch({
-    connections: [
-      {
-        id: "github",
-        displayName: "GitHub",
-        docsUrl: "https://github.com/settings/tokens",
-        connected: false,
-      },
-    ],
-    posted,
-  });
+  globalThis.fetch = stubFetch({ posted });
   try {
     const bundle = connectionsTools(testEnv());
     const result = await bundle.run(
@@ -263,17 +222,7 @@ test("request_connection posts a connect-service card into the room for a regist
 test("request_connection reports an already-connected registry connector rather than posting a card", async () => {
   const originalFetch = globalThis.fetch;
   const posted: unknown[] = [];
-  globalThis.fetch = stubFetch({
-    connections: [
-      {
-        id: "github",
-        displayName: "GitHub",
-        docsUrl: "https://github.com/settings/tokens",
-        connected: true,
-      },
-    ],
-    posted,
-  });
+  globalThis.fetch = stubFetch({ live: ["github"], posted });
   try {
     const bundle = connectionsTools(testEnv());
     const result = await bundle.run(
@@ -291,7 +240,7 @@ test("request_connection reports an already-connected registry connector rather 
 test("request_connection posts a connect-service card for a curated MCP preset, defaulting the reason from the preset", async () => {
   const originalFetch = globalThis.fetch;
   const posted: unknown[] = [];
-  globalThis.fetch = stubFetch({ mcpServers: [], posted });
+  globalThis.fetch = stubFetch({ posted });
   try {
     const bundle = connectionsTools(testEnv());
     const result = await bundle.run(
@@ -319,7 +268,7 @@ test("request_connection posts a connect-service card for a curated MCP preset, 
 
 test("request_connection hands over a plain link when the run has no room to post into", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = stubFetch({ mcpServers: [], postStatus: 404 });
+  globalThis.fetch = stubFetch({ postStatus: 404 });
   try {
     const bundle = connectionsTools(testEnv());
     const result = await bundle.run(
@@ -335,9 +284,7 @@ test("request_connection hands over a plain link when the run has no room to pos
 
 test("request_connection reports an already-connected preset rather than re-requesting it", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = stubFetch({
-    mcpServers: [{ slug: "exa", name: "Exa", url: "https://mcp.exa.ai/mcp" }],
-  });
+  globalThis.fetch = stubFetch({ live: ["exa"] });
   try {
     const bundle = connectionsTools(testEnv());
     const result = await bundle.run(

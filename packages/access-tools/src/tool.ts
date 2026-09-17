@@ -11,9 +11,9 @@
 // sidecar's per-step env builder, the same ground every other manager-
 // tools bundle's own env keys are threaded from.
 //
-// See `./client.ts` for the workflow-run-authenticated routes this
-// bundle's execution calls, and `./routes.ts` for their hub-side
-// implementation.
+// See `./client.ts` for the stock Interchange tenant routes this bundle's
+// execution calls with the run bearer, and for the delegation ceiling it
+// enforces before it grants anything.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
@@ -37,6 +37,8 @@ export interface WorkflowAccessEnv extends BaseEnv {
   readonly hubAccessUrl: string;
   readonly sidecarToken: string;
   readonly address: string;
+  readonly tenantId: string;
+  readonly principalId: string;
 }
 
 const ListGrantsInput = type({
@@ -68,6 +70,8 @@ function clientConfig(env: WorkflowAccessEnv): AccessToolClientConfig {
     hubAccessUrl: env.hubAccessUrl,
     sidecarToken: env.sidecarToken,
     address: env.address,
+    tenantId: env.tenantId,
+    principalId: env.principalId,
   };
 }
 
@@ -187,7 +191,13 @@ async function runRevokeAccess(
  */
 export const accessTools = defineTool<WorkflowAccessEnv>({
   id: "@corbits/access-tools/access",
-  requires: ["hubAccessUrl", "sidecarToken", "address"],
+  requires: [
+    "hubAccessUrl",
+    "sidecarToken",
+    "address",
+    "tenantId",
+    "principalId",
+  ],
   definitions: [
     { name: LIST_PRINCIPALS_TOOL },
     { name: LIST_GRANTS_TOOL },
