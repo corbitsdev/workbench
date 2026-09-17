@@ -171,9 +171,9 @@ export type CreateConnectionRoutesDeps = {
   /** The connector set this build ships — this module's own
    * `CONNECTOR_REGISTRY` for the hub; a test passes its own stub. */
   registry: Readonly<Record<string, ConnectorDescriptor>>;
-  /** Test-only override, matching `complete-credential.ts`'s `seedCatalogFn`
-   * override pattern — lets `routes.test.ts` stub credential storage
-   * without reaching for module mocking. */
+  /** Test-only override, matching every other override in this file —
+   * lets `routes.test.ts` stub credential storage without reaching for
+   * module mocking. */
   ensureProviderFn?: (
     api: ApiCall,
     cookies: string[],
@@ -186,10 +186,10 @@ export type CreateConnectionRoutesDeps = {
     args: EnsureCredentialArgs,
     log: (line: string) => void,
   ) => ReturnType<typeof ensureCredential>;
-  /** Test-only override, matching `complete-credential.ts`'s
-   * `seedCatalogFn` override pattern — lets `routes.test.ts` prove an
-   * inference-provider connect seeds the catalog (and a non-inference
-   * connector never does) without reaching for module mocking. */
+  /** Test-only override, matching every other override in this file —
+   * lets `routes.test.ts` prove an inference-provider connect seeds the
+   * catalog (and a non-inference connector never does) without reaching
+   * for module mocking. */
   seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
   /** Test-only override, matching every other override in this file —
    * lets `routes.test.ts` stub disconnect's catalog/provider cleanup

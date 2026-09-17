@@ -23,8 +23,9 @@ re-explaining these three independent flags each time:
   conversational agent/chat host, a workflow spawned only as another
   workflow's child (never picked directly), or a workflow whose
   approval gate is a poor fit for unattended scheduling.
-- **Seeded** — whether the workflow is provisioned into every tenant's
-  bench by default, via `DEFAULT_WORKFLOWS` in
-  `packages/connections/src/tenant-seed.ts`. A workflow can be `automatable`
-  without being seeded (opt-in, e.g. because it needs a credential not
-  every tenant has connected) — the two are independent decisions.
+- **Seeded** — historically, whether the workflow was provisioned into
+  every tenant's bench by default via a hub-side seed step; CL-8207 deleted
+  that step (the hub never seeds — the web client deploys only Myra, over
+  stock routes, per tenant). A workflow can be `automatable` without being
+  seeded (opt-in, e.g. because it needs a credential not every tenant has
+  connected) — the two are independent decisions.

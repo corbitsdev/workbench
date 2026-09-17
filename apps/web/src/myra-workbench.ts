@@ -10,11 +10,10 @@ import { listAgentDefinitions, type AgentDefinition } from "./agents-api";
 
 export const MYRA_WORKBENCH_TITLE = "Myra";
 
-/** The seeded workflow asset backing Myra
- * (`packages/connections/src/tenant-seed.ts` deploys it as `assistant`,
- * stamped with catalog displayName "Myra"). A
- * chat's `definitionId` names this deployed definition's row id, never the
- * asset name itself. */
+/** The deployed workflow asset backing Myra (`myra-source.ts` /
+ * `myra-deploy.ts` deploy it as `assistant`, stamped with catalog
+ * displayName "Myra"). A chat's `definitionId` names this deployed
+ * definition's row id, never the asset name itself. */
 const MYRA_ASSET_NAME = WORKFLOW_CATALOG.find(
   (entry) => entry.displayName === MYRA_WORKBENCH_TITLE,
 )?.assetName;
