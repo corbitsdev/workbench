@@ -151,7 +151,7 @@ export {
   applyStreamWorkbenchesMutated,
   createWorkbench,
   listMessages,
-  sendMessage,
+  sendInboxMessage,
   fetchWorkbenchBlob,
   listThreads,
   putReadState,

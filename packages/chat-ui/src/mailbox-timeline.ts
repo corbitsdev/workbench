@@ -148,6 +148,7 @@ export function threadTreeToTimeline(root: MailboxThreadNode): TimelineItem[] {
       createdAt: envelope.date,
       parts: [{ kind: "text", text }],
       sender: { name: null, address: envelope.from },
+      messageId: envelope.messageId,
       ...(parentUid !== undefined ? { threadId: String(parentUid) } : {}),
     });
     for (const child of node.children) visit(child, node.uid);

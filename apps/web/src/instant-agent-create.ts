@@ -14,9 +14,8 @@ import type { QueryClient } from "@tanstack/react-query";
 import {
   createWorkbench as createWorkbenchChannel,
   inviteAgent,
-  partsForSend,
   patchWorkbenchSettings,
-  sendMessage,
+  sendInboxMessage,
   workbenchesQueryKeyPrefix,
 } from "@corbits/chat-ui";
 import { reportError } from "@corbits/error-sink";
@@ -125,14 +124,15 @@ export async function createWorkbench(
   });
 
   if (firstMessage !== undefined && firstMessage.trim() !== "") {
-    const selectedAgentInvites = [...new Set(selectedAgentDefinitionIds)].map((definitionId) => ({
-      kind: "agent" as const,
-      definitionId,
-    }));
     try {
-      await sendMessage(tenantId, workbench.id, partsForSend(firstMessage, []), {
-        ...(selectedAgentInvites.length > 0 ? { invite: selectedAgentInvites } : {}),
-      });
+      const invitedAgentAddresses: string[] = [];
+      for (const definitionId of new Set(selectedAgentDefinitionIds)) {
+        const invited = await inviteAgent(tenantId, workbench.id, definitionId);
+        invitedAgentAddresses.push(invited.address);
+      }
+      if (invitedAgentAddresses.length > 0) {
+        await sendInboxMessage(tenantId, invitedAgentAddresses, firstMessage);
+      }
     } catch (cause) {
       throw new WorkbenchPostCreateError(workbench.id, "opening-message", cause);
     }

@@ -14,11 +14,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChatApiError, pingWorkbenchPresence, sendMessage } from "./api";
+import { ChatApiError, pingWorkbenchPresence, sendInboxMessage } from "./api";
 import type { MessageItem, MessagesResponse } from "./api";
 import { partsForSend } from "./composer";
 import type { ComposerAttachment, ComposerSendPayload } from "./composer";
-import type { MentionInviteIntent } from "./mentions";
 import { CHAT_STRINGS } from "./strings";
 import type { PendingMessageStatus, TimelineMessageItem } from "./timeline";
 import { toast } from "@corbits/react-ui";
@@ -35,10 +34,6 @@ export type PendingSend = {
   readonly attachments: readonly ComposerAttachment[];
   readonly createdAt: string;
   readonly status: PendingMessageStatus;
-  /** The "Bring in…" picks this submit carried — kept on the pending
-   * entry so a Retry re-runs the same pre-invite step the original
-   * submit did. */
-  readonly invite?: readonly MentionInviteIntent[];
 };
 
 let pendingSendSeq = 0;
@@ -137,6 +132,15 @@ export function useOptimisticSends(args: {
   readonly openThreadId: string | null;
   readonly pendingParentMessageId: string | null;
   readonly openThreadById: (threadId: string) => void;
+  /** Every other participant's mailbox address this send goes `to`
+   * (CL-8175) — the room's own `Workbench.participants`, minus the
+   * signed-in sender. */
+  readonly recipientAddresses: readonly string[];
+  /** The loaded feed's own messages, used only to resolve the RFC
+   * `Message-ID` a reply threads onto: `openThreadId`/
+   * `pendingParentMessageId` are mailbox uids (see
+   * `use-thread-navigation.ts`), never the wire id `inReplyTo` needs. */
+  readonly messages: readonly MessageItem[];
   /** Fires once a send lands in a workbench that has an agent in it: a
    * reply is owed, so the typing indicator shows now rather than sitting
    * silent until the turn's first stream event arrives. */
@@ -153,6 +157,8 @@ export function useOptimisticSends(args: {
     openThreadId,
     pendingParentMessageId,
     openThreadById,
+    recipientAddresses,
+    messages,
     noteAwaitingReply,
     hasAgentParticipant,
     restoreDraft,
@@ -176,63 +182,50 @@ export function useOptimisticSends(args: {
     activeWorkbenchIdRef.current = activeWorkbenchId;
   }, [activeWorkbenchId]);
 
-  async function sendPending(
-    nonce: string,
-    text: string,
-    attachments: readonly ComposerAttachment[],
-    invite?: readonly MentionInviteIntent[],
-  ): Promise<void> {
+  async function sendPending(nonce: string, text: string): Promise<void> {
     if (activeWorkbenchId === null) return;
-    const parts = partsForSend(text, attachments);
-    if (parts.length === 0) return;
-    const inviteOption = invite !== undefined ? { invite } : {};
-    // The pending bubble's own nonce doubles as its wire `clientId` —
-    // no second id needed. The server echoes it back below and, once
-    // wired, records it against the message so the next `GET
-    // .../messages` page carries it too; `mergePendingSends` drops
-    // this pending entry the moment either arrival shows up with a
-    // matching `clientId`, so whichever wins this race, the other is
-    // a no-op.
+    // The mailbox send wire (`{ to, body, inReplyTo? }`) has no room for
+    // an attachment — dropped rather than shimmed (CL-8175); `parts` below
+    // is still text-only, which is exactly what `partsForSend` already
+    // produces for an empty attachments array.
+    const trimmedBody = text.trim();
+    if (trimmedBody.length === 0) return;
+    if (recipientAddresses.length === 0) return;
+    const parts = partsForSend(text, []);
+    // The thread this reply threads onto, by its RFC `Message-ID` — never
+    // `openThreadId`/`pendingParentMessageId` directly, which are mailbox
+    // uids (see `use-thread-navigation.ts`).
+    const replyTargetUid = openThreadId ?? pendingParentMessageId;
+    const inReplyTo =
+      replyTargetUid !== null
+        ? messages.find((item) => item.id === replyTargetUid)?.messageId
+        : undefined;
+    // The pending bubble's own nonce is this send's only identity: the
+    // mailbox route echoes no `clientId`, so `mergePendingSends` matches
+    // this pending entry to its own confirmed write below by uid instead
+    // (see the cache write just under this).
     try {
-      let sent: {
-        readonly id: string;
-        readonly createdAt: string;
-        readonly threadId?: string;
-        readonly clientId?: string;
-      };
-      if (openThreadId !== null) {
-        sent = await sendMessage(tenantId, activeWorkbenchId, parts, {
-          threadId: openThreadId,
-          clientId: nonce,
-          ...inviteOption,
-        });
-      } else if (pendingParentMessageId !== null) {
-        sent = await sendMessage(tenantId, activeWorkbenchId, parts, {
-          inReplyToMessageId: pendingParentMessageId,
-          clientId: nonce,
-          ...inviteOption,
-        });
-      } else {
-        sent = await sendMessage(tenantId, activeWorkbenchId, parts, {
-          clientId: nonce,
-          ...inviteOption,
-        });
-      }
+      const sent = await sendInboxMessage(
+        tenantId,
+        recipientAddresses,
+        trimmedBody,
+        inReplyTo !== undefined ? { inReplyTo } : {},
+      );
       const confirmed: MessageItem = {
-        id: sent.id,
-        createdAt: sent.createdAt,
+        id: String(sent.uid),
+        createdAt: new Date().toISOString(),
         parts,
         sender: {
           name: null,
           address: pendingSenderAddress(currentUserPrincipalId),
         },
-        clientId: sent.clientId ?? nonce,
-        // Stamp the server-assigned thread so the confirmed row scopes into
-        // the reply feed immediately (CL-6660). The stream echo may still
-        // arrive without threadId when assignment raced publish; keeping
-        // this stamp means that echo's dedupe path is a no-op rather than
-        // leaving the message stuck on the root feed.
-        ...(sent.threadId !== undefined ? { threadId: sent.threadId } : {}),
+        messageId: sent.messageId,
+        clientId: nonce,
+        // The reply's own thread is the root it threads onto: either the
+        // thread already open, or (starting a fresh one) the message just
+        // replied to — matching `WorkbenchThreadRow.id`'s "root uid as
+        // string" shape (see `mailbox-timeline.ts`).
+        ...(replyTargetUid !== null ? { threadId: replyTargetUid } : {}),
       };
       // A refresh already in flight was issued before this send and will
       // report a mailbox without it — letting it resolve into the cache
@@ -275,8 +268,8 @@ export function useOptimisticSends(args: {
       // Seed / bump the threads cache before navigation opens the just-
       // created id (CL-6660). Without the row, `useThreadNavigation`'s
       // stale-id effect would drop `openThreadId` the moment it was set.
-      if (sent.threadId !== undefined) {
-        const threadId = sent.threadId;
+      if (confirmed.threadId !== undefined) {
+        const threadId = confirmed.threadId;
         const parentMessageId = pendingParentMessageId;
         queryClient.setQueryData(
           chatThreadsQueryKey(tenantId, activeWorkbenchId),
@@ -284,7 +277,7 @@ export function useOptimisticSends(args: {
             if (current === undefined) return current;
             return ensureReplyThreadRow(current, {
               threadId,
-              createdAt: sent.createdAt,
+              createdAt: confirmed.createdAt,
               ...(parentMessageId !== null ? { parentMessageId } : {}),
               bumpReplyCount: true,
             });
@@ -321,7 +314,7 @@ export function useOptimisticSends(args: {
 
   async function handleSend(payload: ComposerSendPayload): Promise<boolean> {
     if (activeWorkbenchId === null) return false;
-    const parts = partsForSend(payload.text, payload.attachments);
+    const parts = partsForSend(payload.text, []);
     if (parts.length === 0) return false;
     const nonce = nextPendingSendNonce();
     setPendingSends((current) => [
@@ -332,10 +325,9 @@ export function useOptimisticSends(args: {
         attachments: payload.attachments,
         createdAt: new Date().toISOString(),
         status: "sending",
-        ...(payload.invite !== undefined ? { invite: payload.invite } : {}),
       },
     ]);
-    await sendPending(nonce, payload.text, payload.attachments, payload.invite);
+    await sendPending(nonce, payload.text);
     return true;
   }
 
@@ -345,7 +337,7 @@ export function useOptimisticSends(args: {
     setPendingSends((current) =>
       current.map((p) => (p.nonce === nonce ? { ...p, status: "sending" } : p)),
     );
-    void sendPending(nonce, pending.text, pending.attachments, pending.invite);
+    void sendPending(nonce, pending.text);
   }
 
   /** Drops the failed pending bubble and hands its text back to the
