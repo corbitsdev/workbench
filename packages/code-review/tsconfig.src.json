@@ -8,10 +8,5 @@
     "emitDeclarationOnly": true,
     "outDir": "dist",
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
-  },
-  "references": [
-    {
-      "path": "../github-tools/tsconfig.src.json"
-    }
-  ]
+  }
 }

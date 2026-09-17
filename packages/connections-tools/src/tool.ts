@@ -31,9 +31,6 @@
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
-import { mcpPresetByName } from "@corbits/connections/mcp-presets";
-import type { ConnectorRegistry } from "@corbits/connections/registry";
-import type { McpPreset } from "@corbits/connections/mcp-presets";
 import { type } from "arktype";
 
 import {
@@ -41,6 +38,11 @@ import {
   NoOwnRoomError,
   postConnectServiceBlock,
 } from "./client";
+import {
+  mcpPresetByName,
+  type ConnectorRegistry,
+  type McpPreset,
+} from "./registry-shape";
 
 export const LIST_CONNECTIONS_TOOL = "list_connections";
 export const REQUEST_CONNECTION_TOOL = "request_connection";

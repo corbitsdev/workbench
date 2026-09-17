@@ -125,7 +125,6 @@ packages/connections-tools/src/tool.ts	1	if (err instanceof NoOwnRoomError) {
 packages/connections-tools/src/tool.ts	1	return errorResult(call.id, err);
 packages/connections-tools/src/tool.ts	2	return errorResult(call.id, err);
 packages/connections-tools/src/tool.ts	3	return errorResult(call.id, err);
-packages/connections-tools/src/tool.ts	4	return errorResult(call.id, err);
 packages/connections/src/connect-github-routes.ts	1	// A repoId `state.repos` doesn't carry means the card's own
 packages/connections/src/connect-github-routes.ts	1	// The GitHub client's own errors (transport, HTTP status, shape
 packages/connections/src/credential-test.ts	1	// Not JSON, or didn't match either shape — fall through to the

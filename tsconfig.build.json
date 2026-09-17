@@ -59,6 +59,9 @@
       "path": "./packages/commands/tsconfig.src.json"
     },
     {
+      "path": "./packages/connections-tools/tsconfig.src.json"
+    },
+    {
       "path": "./packages/context-menu/tsconfig.src.json"
     },
     {

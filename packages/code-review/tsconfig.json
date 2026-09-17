@@ -11,10 +11,5 @@
     "rootDir": "../.."
   },
   "include": ["src"],
-  "exclude": [],
-  "references": [
-    {
-      "path": "../github-tools/tsconfig.src.json"
-    }
-  ]
+  "exclude": []
 }

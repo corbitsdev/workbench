@@ -1,8 +1,15 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "include": ["src", "test"],
+  "extends": "./tsconfig.src.json",
   "compilerOptions": {
-    "types": ["bun"],
-    "noEmit": true
-  }
+    "composite": false,
+    "noEmit": true,
+    "disableSourceOfProjectReferenceRedirect": true,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo",
+    "rootDir": "../.."
+  },
+  "include": ["src"],
+  "exclude": []
 }

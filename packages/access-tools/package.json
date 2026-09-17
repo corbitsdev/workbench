@@ -1,23 +1,37 @@
 {
   "name": "@corbits/access-tools",
-  "private": true,
   "description": "Myra's principal and grant tools: list_principals, list_grants, grant_access, and revoke_access as an @intx/agent tool bundle, calling stock Interchange tenant routes with the workflow run's own bearer credential and enforcing a delegation ceiling before it grants",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "packages/access-tools"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/error-sink": "workspace:*",
-    "@intx/agent": "workspace:*",
-    "@intx/authz": "0.3.0",
-    "@intx/types": "workspace:*",
     "arktype": "catalog:"
+  },
+  "peerDependencies": {
+    "@corbits/error-sink": "0.0.2",
+    "@intx/agent": "0.3.0",
+    "@intx/authz": "0.3.0",
+    "@intx/types": "0.3.0"
   },
   "devDependencies": {
     "@corbits/agent-directory": "workspace:*",
