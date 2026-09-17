@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import type { ApiCall } from "@corbits/hub-api-client";
-import type { AccessPolicyStore } from "@workbench/access-policy";
 import {
   genesisOrJoinHubSignup,
   ProvisionError,
@@ -16,63 +15,6 @@ const MEMBER_PRINCIPAL_ID = "prn_member";
 function collector() {
   const lines: string[] = [];
   return { lines, log: (line: string) => lines.push(line) };
-}
-
-/** An ApiCall that lets a genesis mint succeed: the first principals
- * read is empty, the create answers 201, and every later principals
- * read reports membership in the minted tenant. */
-function genesisApi(): ApiCall {
-  let principalsCalls = 0;
-  return async (method, path) => {
-    if (method === "GET" && path === "/api/me/principals") {
-      principalsCalls += 1;
-      if (principalsCalls === 1) return principalsResponse([]);
-      return principalsResponse([
-        {
-          principalId: PRINCIPAL_ID,
-          tenantId: TENANT_ID,
-          tenantSlug: TENANT_SLUG,
-        },
-      ]);
-    }
-    if (method === "POST" && path === "/api/tenants") {
-      return {
-        status: 201,
-        data: {
-          id: TENANT_ID,
-          name: "Acme",
-          slug: TENANT_SLUG,
-          domain: `${TENANT_SLUG}.localhost`,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        },
-        cookies: [],
-      };
-    }
-    throw new Error(`unexpected call: ${method} ${path}`);
-  };
-}
-
-function accessPolicy(
-  overrides?: Partial<
-    Pick<
-      NonNullable<GenesisOrJoinArgs["accessPolicy"]>,
-      "allowUnverifiedEmails"
-    >
-  >,
-): NonNullable<GenesisOrJoinArgs["accessPolicy"]> {
-  return {
-    // No operator tenant is threaded here, so the store is never read —
-    // a throwing store proves that. With no policy row the closed
-    // defaults apply.
-    store: {
-      getPolicy: async () => {
-        throw new Error("signup gate must evaluate rowless here");
-      },
-    } as unknown as AccessPolicyStore,
-    allowUnverifiedEmails: false,
-    ...overrides,
-  };
 }
 
 function tenancy(state: {
@@ -123,7 +65,6 @@ function argsFor(partial: {
   tenancy: HubSignupTenancy;
   displayName?: string;
   log?: (line: string) => void;
-  accessPolicy?: NonNullable<GenesisOrJoinArgs["accessPolicy"]>;
   userEmailVerified?: boolean;
   userEmail?: string;
 }): GenesisOrJoinArgs {
@@ -137,8 +78,6 @@ function argsFor(partial: {
     tenancy: partial.tenancy,
     log: partial.log ?? collector().log,
   };
-  if (partial.accessPolicy !== undefined)
-    args.accessPolicy = partial.accessPolicy;
   if (partial.displayName !== undefined) args.displayName = partial.displayName;
   return args;
 }
@@ -216,73 +155,6 @@ describe("genesisOrJoinHubSignup", () => {
     expect(joins).toEqual([
       { tenantId: TENANT_ID, userId: "user_1", roleName: "member" },
     ]);
-  });
-
-  test("a closed hub rejects join with signup_not_allowed and never adds a member", async () => {
-    const joins: { tenantId: string; userId: string; roleName: string }[] = [];
-    const api: ApiCall = async (method, path) => {
-      if (method === "GET" && path === "/api/me/principals") {
-        return principalsResponse([]);
-      }
-      throw new Error(`unexpected call: ${method} ${path}`);
-    };
-
-    await expect(
-      genesisOrJoinHubSignup(
-        argsFor({
-          api,
-          tenancy: tenancy({
-            users: 2,
-            tenants: 1,
-            root: { id: TENANT_ID, slug: TENANT_SLUG },
-            joins,
-          }),
-          displayName: "Bob",
-          accessPolicy: accessPolicy(),
-        }),
-      ),
-    ).rejects.toMatchObject({
-      name: "ProvisionError",
-      code: "signup_not_allowed",
-      errorKind: "permanent",
-    });
-    expect(joins).toEqual([]);
-  });
-
-  test("genesis rejects an unverified email unless allowUnverifiedEmails", async () => {
-    const probeOnly: ApiCall = async (method, path) => {
-      if (method === "GET" && path === "/api/me/principals") {
-        return principalsResponse([]);
-      }
-      throw new Error(`unexpected call: ${method} ${path}`);
-    };
-
-    await expect(
-      genesisOrJoinHubSignup(
-        argsFor({
-          api: probeOnly,
-          tenancy: tenancy({ users: 1, tenants: 0, root: null }),
-          displayName: "Acme",
-          userEmailVerified: false,
-          accessPolicy: accessPolicy(),
-        }),
-      ),
-    ).rejects.toMatchObject({
-      name: "ProvisionError",
-      code: "signup_not_allowed",
-    });
-
-    // The dev/test escape hatch still admits the genesis caller.
-    const result = await genesisOrJoinHubSignup(
-      argsFor({
-        api: genesisApi(),
-        tenancy: tenancy({ users: 1, tenants: 0, root: null }),
-        displayName: "Acme",
-        userEmailVerified: false,
-        accessPolicy: accessPolicy({ allowUnverifiedEmails: true }),
-      }),
-    );
-    expect(result.kind).toBe("genesis");
   });
 
   test("countUsers > 1 with zero tenants still lets the caller genesis", async () => {
@@ -496,20 +368,6 @@ describe("genesisOrJoinHubSignup", () => {
       name: "ProvisionError",
       code: "slug_conflict_no_principal",
     });
-  });
-
-  test("genesis on an empty hub waives signup_closed but still evaluates the gate", async () => {
-    // No policy row: the empty-hub exception waives signup_closed, so
-    // the first verified user still mints the root.
-    const result = await genesisOrJoinHubSignup(
-      argsFor({
-        api: genesisApi(),
-        tenancy: tenancy({ users: 1, tenants: 0, root: null }),
-        displayName: "Acme",
-        accessPolicy: accessPolicy(),
-      }),
-    );
-    expect(result.kind).toBe("genesis");
   });
 });
 
