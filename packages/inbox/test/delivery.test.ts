@@ -3,16 +3,18 @@
 // scripts/db-setup.ts (the hub's standard migration path), each of the four
 // kinds `@corbits/notify` defines writes a real row through
 // `createWorkbenchMailboxDelivery`, and that row renders back out through
-// `@corbits/mailbox`'s own read path (`listUserMailbox`) — the same query
-// the inbox/bell UI drives, grouped the same way `inboxGroupOf` groups it.
-// Runs against its own scratch database, never the developer's or the
-// walking-skeleton suite's.
+// `@corbits/mailbox`'s own native store (CL-8174: the triage/priority/
+// classification vocabulary this test used to assert on is gone with the
+// retired product-inbox layer — a notify item is a plain mailbox message
+// now, read back the same way `/me/inbox` does). Runs against its own
+// scratch database, never the developer's or the walking-skeleton suite's.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import postgres from "postgres";
 
 import { createDB, schema } from "@intx/db";
 import { generateId } from "@intx/hub-common";
-import { createMailboxDb, listUserMailbox } from "@corbits/mailbox";
+import { and, eq, like } from "drizzle-orm";
+import { createMailboxDb, openNativeMailboxStore, principalMail } from "@corbits/mailbox";
 import {
   createInMemoryNotifyDispatchStore,
   createSinkRegistry,
@@ -29,8 +31,6 @@ import {
 import { setupDatabase } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { createResolveExistingMailIds, createWorkbenchMailboxDelivery } from "../src/delivery";
-import { inboxGroupOf } from "../src/group";
-import { WORKBENCH_INBOX_PRIORITIES } from "../src/vocabulary";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
@@ -182,26 +182,19 @@ describeIfDb("notify delivery writes a real mailbox row for every notification k
         expect(report.deliveredMailboxRowIds).toHaveLength(1);
       }
 
-      const page = await listUserMailbox(mailboxDb.db, {
+      const store = await openNativeMailboxStore(mailboxDb.db, {
         tenantId,
         principalId,
-        limit: 10,
-        view: "all",
-        priorities: WORKBENCH_INBOX_PRIORITIES,
+        folder: "INBOX",
       });
-      expect(page.items).toHaveLength(4);
+      expect(store.messages).toHaveLength(4);
+      const subjects = store.messages.map((message) => message.envelope.subject);
+      expect(subjects.some((subject) => subject.includes("delete_repo"))).toBe(true);
+      expect(subjects.some((subject) => subject.includes("failed"))).toBe(true);
+      expect(subjects.some((subject) => subject.includes("mentioned you"))).toBe(true);
+      expect(subjects.some((subject) => subject.includes("Reconnect"))).toBe(true);
 
-      const groupBySubject = (needle: string): string | undefined => {
-        const item = page.items.find((i) => (i.subject ?? "").includes(needle));
-        expect(item).toBeDefined();
-        return item === undefined ? undefined : inboxGroupOf(item);
-      };
-      expect(groupBySubject("delete_repo")).toBe("action");
-      expect(groupBySubject("failed")).toBe("delivery");
-      expect(groupBySubject("mentioned you")).toBe("mention");
-      expect(groupBySubject("Reconnect")).toBe("action");
-
-      expect(page.items.every((item) => item.read === false)).toBe(true);
+      expect(store.messages.every((message) => !message.flags.has("\\Seen"))).toBe(true);
     } finally {
       await mailboxDb.close();
     }
@@ -262,20 +255,28 @@ describeIfDb("notify delivery writes a real mailbox row for every notification k
       expect(redelivery.deliveredMailboxRowIds).toEqual([]);
       expect(redelivery.queuedDispatchCount).toBe(1);
 
-      const page = await listUserMailbox(mailboxDb.db, {
+      const store = await openNativeMailboxStore(mailboxDb.db, {
         tenantId,
         principalId,
-        limit: 10,
-        view: "all",
-        priorities: WORKBENCH_INBOX_PRIORITIES,
+        folder: "INBOX",
       });
       // Exactly one mail row for the redelivered event — the crash and
       // both redeliveries deduped onto the first attempt's row.
-      const matching = page.items.filter((item) =>
-        (item.subject ?? "").includes("quarantine_token"),
+      const matching = store.messages.filter((message) =>
+        message.envelope.subject.includes("quarantine_token"),
       );
       expect(matching).toHaveLength(1);
-      const mailId = matching[0]?.id;
+      const rows = await mailboxDb.db
+        .select({ id: principalMail.id })
+        .from(principalMail)
+        .where(
+          and(
+            eq(principalMail.tenantId, tenantId),
+            eq(principalMail.principalId, principalId),
+            like(principalMail.subject, "%quarantine_token%"),
+          ),
+        );
+      const mailId = rows[0]?.id;
       if (mailId === undefined) throw new Error("expected the redelivered mail row to list");
       expect(await dispatch.listFor(mailId)).toHaveLength(1);
 

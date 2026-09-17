@@ -3,36 +3,20 @@
 // so every outbound agent frame also lands a durable `principal_mail` row in
 // each addressed human participant's mailbox, not just `session_mail`.
 //
-// Two small seams live here, both host-owned by the package's own contract
+// One seam lives here, host-owned by the package's own contract
 // (`persist.ts` in `@corbits/mailbox`): `authorizeSender` decides which
-// sender addresses may write at all, and `resolveRefs` stamps a workbench
-// ref onto every row of the frame INSIDE the same transaction the package
-// already opens, so a bus subscriber sees the ref at event time -- no
-// out-of-band UPDATE, no polling read.
+// sender addresses may write at all.
 
 import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { tenant as tenantTable } from "@intx/db/schema";
-import type {
-  AuthorizeMailboxSender,
-  CreateMailboxPersistOpts,
-  MailboxPersistArgs,
-  MailboxRef,
-} from "@corbits/mailbox";
+import type { AuthorizeMailboxSender, MailboxPersistArgs } from "@corbits/mailbox";
 import { resolveRoutableAddress } from "@intx/hub-sessions";
 import { ensureRunSession, type EventCollectorPort } from "@corbits/workflows";
 import { reportError } from "@corbits/error-sink";
 import { getLogger } from "@intx/log";
 
 const logger = getLogger(["hub", "mailbox-persist"]);
-
-/**
- * `@corbits/mailbox` does not export `ResolveMailboxRefs` itself (only the
- * `CreateMailboxPersistOpts` shape it hangs off), so this derives the same
- * type from the one place it is public rather than re-declaring its shape
- * by hand and drifting from the package's own definition.
- */
-type ResolveMailboxRefs = NonNullable<CreateMailboxPersistOpts<unknown>["resolveRefs"]>;
 
 /**
  * Resolve a `mail.outbound` frame's sender run address to the mailbox
@@ -129,21 +113,3 @@ export function createHubMailboxAuthorizeSender(db: DB["db"]): AuthorizeMailboxS
     return { tenantId: sender.tenantId, domain: row.domain };
   };
 }
-
-/**
- * The `resolveRefs` seam: stamps `refs: [{ kind: "workbench", id }]` onto
- * every recipient row of one frame.
- *
- * A workbench IS a tenant, so the workbench a frame belongs to is exactly
- * the tenant `authorizeSender` already resolved from the sender run's own
- * address — the same tenant the resulting `principal_mail` rows are scoped
- * under. There is no second id to chase and no header or participant scan
- * to disambiguate: an agent run is launched in the workbench it serves.
- */
-export const hubMailboxResolveRefs: ResolveMailboxRefs = ({ senderAuthorization }) => {
-  const ref: MailboxRef = {
-    kind: "workbench",
-    id: senderAuthorization.tenantId,
-  };
-  return Promise.resolve([ref]);
-};

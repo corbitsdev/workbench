@@ -2,12 +2,11 @@
   "name": "@corbits/inbox",
   "version": "0.0.1",
   "private": true,
-  "description": "Workbench product inbox over @corbits/mailbox: three groups, mark-all-read, clear-done",
+  "description": "The @corbits/notify -> @corbits/mailbox delivery adapter, plus this package's own migration ledger",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./client": "./src/client.ts",
     "./migrations": "./src/migrations.ts"
   },
   "scripts": {
@@ -15,14 +14,9 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/error-sink": "workspace:*",
-    "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#bc964040fa42ffe4e5d5004f87edaab6486e5d60",
+    "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#e85b81e4a2e0cc318dd33a4f0f92337b6fac7f38",
     "@corbits/notify": "workspace:*",
-    "@intx/hub-api": "workspace:*",
-    "@intx/log": "0.3.0",
-    "arktype": "catalog:",
     "drizzle-orm": "catalog:",
-    "hono": "catalog:",
     "postgres": "catalog:"
   },
   "devDependencies": {

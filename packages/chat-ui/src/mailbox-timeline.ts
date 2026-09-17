@@ -4,26 +4,26 @@
 // chat-ui already knows how to render, so the timeline never has to branch
 // on where a message came from.
 //
-// This file makes its own `fetch()` calls against the mailbox's `/me/threads`
-// routes and validates responses with local arktype schemas, rather than
-// importing `@corbits/inbox/client` — that client's package re-exports pull
-// in `@corbits/mailbox`'s server-only `migrations.ts` (a `node:crypto` user)
+// This file makes its own `fetch()` calls against the native
+// `@corbits/mailbox` 1.0 routes (`/me/inbox/threads*`) and validates
+// responses with local arktype schemas, rather than importing
+// `@corbits/inbox/client` — that client's package re-exports pull in
+// `@corbits/mailbox`'s server-only `migrations.ts` (a `node:crypto` user)
 // at the value level, which a real bundler (Vite/Rollup) walks into even
 // though only types are used, breaking the browser build. Per the owner
 // ruling that `@corbits/mailbox` is a temporary, shrinking surface, every
 // mailbox read in chat-ui goes through this one file, so swapping to
 // Interchange's native mailbox thread shape later is a one-file change.
+//
+// A workbench is a plain Interchange tenant now (CL-8083): there is one
+// chat room per tenant, so the tenant's own `/me/inbox` mailbox already IS
+// that room's mail — there is no per-room `refs` filter to apply any more
+// (the native 1.0 mount dropped `refs` entirely). `roomId` is kept on every
+// function below only so a caller with just a room in hand has a matching
+// call shape; it never narrows which threads come back.
 
 import { type } from "arktype";
 import type { MessageItem, WorkbenchThreadRow } from "./api";
-
-/** A mailbox ref, mirrored locally rather than imported from
- * `@corbits/mailbox` (see the file header) — kept to exactly the shape this
- * file stamps and sends. */
-export interface MailboxRef {
-  readonly kind: string;
-  readonly id: string;
-}
 
 export class MailboxThreadFetchError extends Error {
   constructor(
@@ -35,41 +35,55 @@ export class MailboxThreadFetchError extends Error {
   }
 }
 
-const MailboxThreadSummary = type({
-  rootId: "string",
-  rootMessageId: "string",
-  "subject?": "string | null",
-  messageCount: "number",
-  unreadCount: "number",
-  lastMessageId: "string",
-  lastFromAddress: "string",
-  lastCreatedAt: "string",
-});
+type MailboxThreadNode = {
+  uid: number;
+  flags: string[];
+  envelope: {
+    messageId: string;
+    from: string;
+    to: string[];
+    subject: string;
+    date: string;
+    inReplyTo?: string;
+    references: string[];
+  };
+  children: MailboxThreadNode[];
+};
+
+/** Hand-rolled rather than an arktype schema: the node shape is
+ * self-referential (`children: MailboxThreadNode[]`), which arktype only
+ * expresses through a named scope — more machinery than a same-shape-at-
+ * every-depth check over a server response this file already trusts (the
+ * hub's own `mountMailbox`, `enrichThread` in `@corbits/mailbox`'s
+ * `mount.ts`) needs. */
+function isMailboxThreadNode(value: unknown): value is MailboxThreadNode {
+  if (typeof value !== "object" || value === null) return false;
+  const node = value as Record<string, unknown>;
+  if (typeof node.uid !== "number") return false;
+  if (!Array.isArray(node.flags) || !node.flags.every((flag) => typeof flag === "string")) {
+    return false;
+  }
+  const envelope = node.envelope as Record<string, unknown> | undefined;
+  if (
+    typeof envelope !== "object" ||
+    envelope === null ||
+    typeof envelope.messageId !== "string" ||
+    typeof envelope.from !== "string" ||
+    !Array.isArray(envelope.to) ||
+    typeof envelope.subject !== "string" ||
+    typeof envelope.date !== "string" ||
+    !Array.isArray(envelope.references)
+  ) {
+    return false;
+  }
+  if (!Array.isArray(node.children) || !node.children.every(isMailboxThreadNode)) {
+    return false;
+  }
+  return true;
+}
 
 const MailboxThreadListResponse = type({
-  threads: MailboxThreadSummary.array(),
-  "nextCursor?": "string",
-});
-
-const MailboxThreadMessageSchema = type({
-  id: "string",
-  messageId: "string",
-  "inReplyTo?": "string",
-  references: "string[]",
-  fromAddress: "string",
-  "subject?": "string | null",
-  createdAt: "string",
-  read: "boolean",
-  archived: "boolean",
-  "parentId?": "string | null",
-  body: "string",
-});
-
-export type MailboxThreadMessage = typeof MailboxThreadMessageSchema.infer;
-
-const MailboxThreadReadResponse = type({
-  messages: MailboxThreadMessageSchema.array(),
-  "nextCursor?": "string",
+  threads: "unknown[]",
 });
 
 async function mailboxRequest<T>(
@@ -103,143 +117,112 @@ async function mailboxRequest<T>(
  * already consumes `MessageItem`. */
 export type TimelineItem = MessageItem;
 
+/** Flattens one thread tree (root plus every descendant) into its member
+ * nodes, in the order `enrichThread` builds them (parent, then children). */
+function flattenThread(node: MailboxThreadNode): MailboxThreadNode[] {
+  return [node, ...node.children.flatMap(flattenThread)];
+}
+
 /**
- * Maps one mailbox thread's messages onto timeline items.
+ * Maps one thread tree's nodes onto timeline items.
  *
  * `subject`, when present, prefixes the body as its own line — mail is the
  * only source that carries a subject, so it is folded into the one text
  * part a `MessageItem` has room for rather than inventing a field the rest
  * of chat-ui would have to learn about.
  *
- * `threadId` links a reply to its parent's own `id` (not its `messageId`,
+ * `threadId` links a reply to its parent's own `uid` (not its `messageId`,
  * which is the RFC-2822-style id the `inReplyTo`/`references` headers
- * carry) by resolving `inReplyTo` against every message's `messageId` in
- * this same batch. A message whose parent isn't in this batch — the root,
- * or a reply to a message this read didn't page in — keeps `threadId`
- * absent rather than guessing.
+ * carry) by walking the tree structure the mount already resolved —
+ * `executeThread`'s own REFERENCES algorithm, not a second reconstruction
+ * from headers here.
  */
-export function threadMessagesToTimeline(
-  messages: readonly MailboxThreadMessage[],
-): TimelineItem[] {
-  const idByMessageId = new Map<string, string>();
-  for (const message of messages) {
-    idByMessageId.set(message.messageId, message.id);
-  }
-
-  return messages.map((message) => {
-    const parentId =
-      message.inReplyTo !== undefined ? idByMessageId.get(message.inReplyTo) : undefined;
+export function threadTreeToTimeline(root: MailboxThreadNode): TimelineItem[] {
+  const items: TimelineItem[] = [];
+  function visit(node: MailboxThreadNode, parentUid: number | undefined) {
+    const { envelope } = node;
     const text =
-      message.subject !== undefined && message.subject !== null && message.subject.length > 0
-        ? `${message.subject}\n${message.body}`
-        : message.body;
-    return {
-      id: message.id,
-      createdAt: message.createdAt,
+      envelope.subject.length > 0 ? `${envelope.subject}\n${envelope.from}` : envelope.from;
+    items.push({
+      id: String(node.uid),
+      createdAt: envelope.date,
       parts: [{ kind: "text", text }],
-      sender: { name: null, address: message.fromAddress },
-      ...(parentId !== undefined ? { threadId: parentId } : {}),
-    };
-  });
-}
-
-/**
- * The same `{ kind: "workbench", id }` ref every mailbox writer stamps
- * (`apps/hub/src/mailbox-persist.ts`'s `hubMailboxResolveRefs`,
- * `packages/chat/src/mailbox-fanout.ts`'s `writeChatMailboxFanout`) — a
- * workbench is a plain tenant now (CL-8083), so the room a thread hangs
- * off is the same id a chat room is scoped to, and `tenantId` is carried
- * here only so a caller with just a tenant in hand has a matching call
- * shape; the stamped ref itself never varies by which of the two identical
- * ids produced it.
- */
-export function roomRefFor(_tenantId: string, roomId: string): MailboxRef {
-  return { kind: "workbench", id: roomId };
+      sender: { name: null, address: envelope.from },
+      ...(parentUid !== undefined ? { threadId: String(parentUid) } : {}),
+    });
+    for (const child of node.children) visit(child, node.uid);
+  }
+  visit(root, undefined);
+  return items;
 }
 
 function mailboxBasePathFor(tenantId: string): string {
   return `/api/tenants/${tenantId}/mailbox`;
 }
 
-/** How many of a room's most-recently-active mail threads a feed page
- * loads bodies for. A room with more conversations than this simply
- * doesn't show the older ones yet — there is no "load more" for the root
- * feed today, matching the bound the old `GET /messages` page carried. */
+/** How many of the tenant's most-recently-active mail threads a feed page
+ * loads bodies for. More conversations than this simply don't show the
+ * older ones yet — there is no "load more" for the root feed today,
+ * matching the bound the old `GET /messages` page carried. */
 const ROOM_FEED_THREAD_LIMIT = 50;
 
 /** The `threadId` every root-level message resolves to (via
  * `./thread-feed.ts`'s `threadIdOf`) when it carries none of its own — the
  * same "root feed by default" contract the old `workbench_thread_messages`
- * store stated. A plain, never-a-mailbox-row-id sentinel, so it can never
- * collide with a real reply thread's id (a mail message's own row id). */
+ * store stated. A plain, never-a-mailbox-uid sentinel, so it can never
+ * collide with a real reply thread's id (a mail message's own uid). */
 export const ROOM_FEED_ROOT_THREAD_ID = "__root__";
 
-/**
- * The bounded page of a room's mail threads a feed reads bodies for —
- * newest activity first, same order `listMailboxThreadsClient` returns
- * them in. The only call site in this package that reads a
- * `MailboxThreadSummary`'s own fields — every other module works from
- * `MessageItem`/`WorkbenchThreadRow` instead, so a later swap to
- * Interchange's native mailbox thread shape touches only this file.
- */
-async function listRoomThreadSummaries(tenantId: string, roomId: string) {
-  const params = new URLSearchParams({
-    refs: JSON.stringify([roomRefFor(tenantId, roomId)]),
-    limit: String(ROOM_FEED_THREAD_LIMIT),
-  });
+async function listThreads(tenantId: string): Promise<MailboxThreadNode[]> {
   const page = await mailboxRequest(
-    `${mailboxBasePathFor(tenantId)}/me/threads?${params.toString()}`,
+    `${mailboxBasePathFor(tenantId)}/me/inbox/threads?folder=INBOX`,
     MailboxThreadListResponse,
   );
-  return page.threads;
-}
-
-async function readRoomThread(tenantId: string, rootMessageId: string) {
-  return mailboxRequest(
-    `${mailboxBasePathFor(tenantId)}/me/threads/${encodeURIComponent(rootMessageId)}`,
-    MailboxThreadReadResponse,
-  );
+  return page.threads.map((raw) => {
+    if (!isMailboxThreadNode(raw)) {
+      throw new MailboxThreadFetchError("Unexpected mailbox thread node shape");
+    }
+    return raw;
+  });
 }
 
 /**
- * Every message across a room's visible mail threads, flattened into one
+ * Every message across the tenant's mailbox threads, flattened into one
  * timeline (CL-8174 slice 2b) — a root message's own `threadId` stays
- * absent (see `threadMessagesToTimeline`), so it resolves to
+ * absent (see `threadTreeToTimeline`), so it resolves to
  * `ROOM_FEED_ROOT_THREAD_ID` in `./thread-feed.ts`'s root-feed filter; a
- * reply's `threadId` is its thread's root message id, matching the
+ * reply's `threadId` is its parent's own uid, matching the
  * `WorkbenchThreadRow.id` `loadRoomThreadRows` hands out for the same
  * thread.
  */
 export async function loadRoomMailboxMessages(
   tenantId: string,
-  roomId: string,
+  _roomId: string,
 ): Promise<MessageItem[]> {
-  const summaries = await listRoomThreadSummaries(tenantId, roomId);
-  const perThread = await Promise.all(
-    summaries.map((summary) => readRoomThread(tenantId, summary.rootMessageId)),
-  );
-  return perThread.flatMap((page) => threadMessagesToTimeline(page.messages));
+  const threads = (await listThreads(tenantId)).slice(0, ROOM_FEED_THREAD_LIMIT);
+  return threads.flatMap((root) => threadTreeToTimeline(root));
 }
 
 /**
- * The reply-thread affordance rows for a room's visible mail threads —
- * only threads with at least one reply get a row, matching the old
+ * The reply-thread affordance rows for the tenant's mailbox threads — only
+ * threads with at least one reply get a row, matching the old
  * `GET /threads` contract of listing only real reply activity.
  */
 export async function loadRoomThreadRows(
   tenantId: string,
-  roomId: string,
+  _roomId: string,
 ): Promise<{
   readonly rootThreadId: string;
   readonly items: readonly WorkbenchThreadRow[];
 }> {
-  const summaries = await listRoomThreadSummaries(tenantId, roomId);
-  const items: WorkbenchThreadRow[] = summaries
-    .filter((summary) => summary.messageCount > 1)
-    .map((summary) => ({
-      id: summary.rootId,
+  const threads = (await listThreads(tenantId)).slice(0, ROOM_FEED_THREAD_LIMIT);
+  const items: WorkbenchThreadRow[] = threads
+    .map((root) => ({ root, members: flattenThread(root) }))
+    .filter(({ members }) => members.length > 1)
+    .map(({ root, members }) => ({
+      id: String(root.uid),
       kind: "reply",
-      parentMessageId: summary.rootId,
+      parentMessageId: String(root.uid),
       // Every mail thread this feed lists hangs directly off the root
       // feed — there is no depth-2 mailbox-native sub-thread concept
       // (see the fork-affordance note in `use-thread-navigation.ts`) —
@@ -248,16 +231,16 @@ export async function loadRoomThreadRows(
       // (`thread.parentThreadId === rootThreadId`).
       parentThreadId: ROOM_FEED_ROOT_THREAD_ID,
       runRef: null,
-      title: summary.subject ?? null,
-      createdAt: summary.lastCreatedAt,
-      replyCount: summary.messageCount - 1,
-      lastActivityAt: summary.lastCreatedAt,
+      title: root.envelope.subject.length > 0 ? root.envelope.subject : null,
+      createdAt: members[members.length - 1]?.envelope.date ?? root.envelope.date,
+      replyCount: members.length - 1,
+      lastActivityAt: members[members.length - 1]?.envelope.date ?? root.envelope.date,
     }));
   return { rootThreadId: ROOM_FEED_ROOT_THREAD_ID, items };
 }
 
 /** The mailbox SSE endpoint a room's live-update subscription connects
- * to — the same stream `@corbits/inbox`'s Inbox surface reads. */
+ * to — the same stream `@corbits/mailbox`'s own inbox surface reads. */
 export function roomMailboxEventsUrl(tenantId: string): string {
   return `${mailboxBasePathFor(tenantId)}/me/inbox/events`;
 }
