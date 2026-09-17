@@ -35,6 +35,9 @@
       "path": "./packages/bench-ui/tsconfig.src.json"
     },
     {
+      "path": "./packages/capability-tools/tsconfig.src.json"
+    },
+    {
       "path": "./packages/catalog-tools/tsconfig.src.json"
     },
     {
@@ -174,6 +177,9 @@
     },
     {
       "path": "./packages/web-search-tools/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/workflow-authoring-tools/tsconfig.src.json"
     },
     {
       "path": "./packages/xai-provider/tsconfig.src.json"
