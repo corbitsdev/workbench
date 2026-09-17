@@ -140,10 +140,6 @@ packages/jimmy-agent/src/gif-search-tool.ts	1	return null;
 packages/jimmy-agent/src/gif-search-tool.ts	1	return {
 packages/linear-tools/src/tool.ts	1	return null;
 packages/linear-tools/src/tool.ts	1	return {
-packages/longevity-sim/src/cli.ts	1	const detail =
-packages/longevity-sim/src/engine.ts	1	defects.push({
-packages/longevity-sim/src/engine.ts	2	defects.push({
-packages/longevity-sim/src/engine.ts	3	defects.push({
 packages/manus-tools/src/tool.ts	1	return errorResult(call.id, err);
 packages/manus-tools/src/tool.ts	1	return null;
 packages/manus-tools/src/tool.ts	2	return errorResult(call.id, err);
