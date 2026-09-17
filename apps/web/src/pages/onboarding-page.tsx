@@ -1,28 +1,51 @@
-// The setup gate (CL-8112/CL-8131): the screen a signed-in session lands
-// on when the hub reports setup-required. It reads the hub's native
-// setup-status route, and a hub that already has tenants bounces
-// straight into the shell (`/`). An empty hub drives the browser
-// installer itself: `bootstrapClientSession` mints the account's primary
-// tenant over the stock `POST /api/tenants` route and converges Myra
-// onto it, all over stock routes — the hub never seeds anything. A
-// converged install lands on `/`; a stock capability gap (most commonly
-// "no myraDeploy configured yet") renders here so the operator sees
-// exactly what stock Interchange is missing, with a retry; a broken
-// status read blocks with retry too.
+// The setup gate (CL-8112/CL-8131/CL-8154): the screen a signed-in
+// session lands on when the hub reports setup-required. It reads the
+// hub's native setup-status route, and a hub that already has tenants
+// bounces straight into the shell (`/`). An empty hub drives the
+// browser installer itself, as one converge loop over stock routes,
+// asking the operator only where a human input is genuinely required:
+//
+//   1. mint the account's primary tenant (stock `POST /api/tenants`) if
+//      it does not already own one;
+//   2. resolve a catalog offering to deploy Myra against — if the
+//      tenant already resolves one (inherited, or a previous run of
+//      this step), skip straight past; otherwise ask the operator to
+//      connect exactly one provider credential (`ProviderConnectStep`);
+//   3. publish Myra's tarball-sourced deploy input for that offering
+//      (`deployMyraSource`) and hand it to `bootstrapClientSession` as
+//      `myraDeploy`.
+//
+// A converged install lands on `/`; a stock capability gap this loop did
+// not anticipate, or a hard failure at any step, renders here with a
+// retry — a gap is not "ready".
 import { Button, EmptyState } from "@corbits/react-ui";
 import { WarningCircle } from "@corbits/icons";
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { useCallback, useEffect, useState } from "react";
 
-import { runPortableClientBootstrap } from "../client-bootstrap";
+import {
+  ensurePrimaryTenant,
+  runPortableClientBootstrap,
+} from "../client-bootstrap";
+import { createFetchStockHub, findOwnedTenants } from "../needs-converge";
+import { deployMyraSource } from "../myra-deploy";
 import { useNavigate } from "../navigation";
 import { triggerFirstLoginProvisioning } from "../onboarding";
 import { OnboardingLayout } from "../onboarding/onboarding-layout";
+import {
+  ProviderConnectStep,
+  resolveExistingOffering,
+  type ExistingOffering,
+} from "../onboarding/provider-connect-step";
+import type { WorkflowDeployInput } from "../needs-list";
 import type { SessionUser } from "../session";
 
 type GateState =
   | { readonly phase: "checking" }
-  | { readonly phase: "installing" }
+  | { readonly phase: "resolving-tenant" }
+  | { readonly phase: "provider-setup"; readonly tenantId: string }
+  | { readonly phase: "publishing-myra" }
+  | { readonly phase: "installing"; readonly myraDeploy: WorkflowDeployInput }
   | {
       readonly phase: "setup-pending";
       readonly message: string;
@@ -39,8 +62,8 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   const [state, setState] = useState<GateState>({ phase: "checking" });
 
   // One status read per landing (plus each manual recheck): a hub that
-  // already has tenants means setup is done; an empty hub drives the
-  // installer immediately rather than showing a dead-end panel.
+  // already has tenants means setup is done; an empty hub starts the
+  // converge loop immediately rather than showing a dead-end panel.
   const checkStatus = useCallback(() => {
     setState({ phase: "checking" });
     void triggerFirstLoginProvisioning().then((result) => {
@@ -57,7 +80,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
       } else if (result.kind === "existing-member") {
         navigate("/");
       } else {
-        setState({ phase: "installing" });
+        setState({ phase: "resolving-tenant" });
       }
     });
   }, [navigate]);
@@ -65,14 +88,107 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     checkStatus();
   }, [checkStatus]);
 
-  // The installer itself: runs once the status read confirms setup is
-  // required. A converged install hands off to the shell; a stock
-  // capability gap or a hard failure surfaces here instead of retrying
-  // silently forever.
+  // Step 1: mint the primary tenant if this account does not already
+  // own one, then move to the offering-resolution step. Stays a
+  // separate phase from "installing" (which still runs the full
+  // `bootstrapClientSession` converge for the rest of the needs list)
+  // because a credential connect needs a tenant id to write against.
+  useEffect(() => {
+    if (state.phase !== "resolving-tenant") return;
+    let cancelled = false;
+    const hub = createFetchStockHub();
+    void (async () => {
+      await ensurePrimaryTenant(user, hub);
+      const owned = await findOwnedTenants(hub);
+      const primary = owned.find((tenant) => tenant.parentId === null);
+      if (primary === undefined) {
+        throw new Error(
+          "Sign-in is expected to leave exactly one owned top-level home behind, but this session shows none.",
+        );
+      }
+      return primary;
+    })().then(
+      (primary) => {
+        if (cancelled) return;
+        void resolveExistingOffering(primary.id).then(
+          (existing) => {
+            if (cancelled) return;
+            if (existing !== null) {
+              setState({ phase: "publishing-myra" });
+              void publishAndInstall(primary.id, primary.domain, existing);
+              return;
+            }
+            setState({ phase: "provider-setup", tenantId: primary.id });
+          },
+          (error: unknown) => {
+            if (cancelled) return;
+            setState({
+              phase: "error",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Checking your model access hit a snag.",
+            });
+          },
+        );
+      },
+      (error: unknown) => {
+        if (cancelled) return;
+        setState({
+          phase: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Setting up your workbench hit a snag.",
+        });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+    // `publishAndInstall` is defined below and stable across renders (it
+    // closes over nothing but `setState`), so it is intentionally left
+    // out of this effect's dependency list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.phase, user]);
+
+  // Step 3: publish Myra's deploy input for the resolved offering, then
+  // hand off to the installing phase. Shared by both the
+  // already-resolved-offering path (above) and the operator-connected
+  // path (`ProviderConnectStep`'s `onConnected` below).
+  function publishAndInstall(
+    tenantId: string,
+    tenantDomain: string,
+    offering: ExistingOffering,
+  ): Promise<void> {
+    return deployMyraSource({
+      tenantId,
+      tenantDomain,
+      sourceOfferingIds: offering.sourceOfferingIds,
+      defaultSourceOfferingId: offering.defaultSourceOfferingId,
+    }).then(
+      (myraDeploy) => setState({ phase: "installing", myraDeploy }),
+      (error: unknown) => {
+        setState({
+          phase: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Publishing Myra's source hit a snag.",
+        });
+      },
+    );
+  }
+
+  // Step 4: the installer itself, run once a `myraDeploy` is in hand. A
+  // converged install hands off to the shell; a stock capability gap or
+  // a hard failure surfaces here instead of retrying silently forever.
   useEffect(() => {
     if (state.phase !== "installing") return;
     let cancelled = false;
-    void runPortableClientBootstrap(user).then(
+    void runPortableClientBootstrap(user, {
+      myraDeploy: state.myraDeploy,
+    }).then(
       (result) => {
         if (cancelled) return;
         if (result.kind === "ready") {
@@ -97,9 +213,9 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     return () => {
       cancelled = true;
     };
-  }, [state.phase, user, navigate]);
+  }, [state, user, navigate]);
 
-  if (state.phase === "checking") {
+  if (state.phase === "checking" || state.phase === "resolving-tenant") {
     return (
       <OnboardingLayout>
         <div className="onboarding-phase" key="checking">
@@ -116,7 +232,48 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     );
   }
 
-  if (state.phase === "installing") {
+  if (state.phase === "provider-setup") {
+    return (
+      <OnboardingLayout>
+        <div
+          className="onboarding-phase onboarding-phase--credential"
+          key="provider-setup"
+        >
+          <h1 className="onboarding-title">Connect a model provider</h1>
+          <p className="onboarding-subtitle">
+            Myra needs one working inference credential before she can start.
+          </p>
+          <div className="onboarding-content">
+            <ProviderConnectStep
+              tenantId={state.tenantId}
+              onConnected={(offering) => {
+                const tenantId = state.tenantId;
+                setState({ phase: "publishing-myra" });
+                // The tenant's domain never changes mid-flow — re-derive
+                // it fresh rather than threading it through state, since
+                // `resolving-tenant` already looked the tenant up once.
+                void findOwnedTenants(createFetchStockHub()).then((owned) => {
+                  const primary = owned.find((t) => t.id === tenantId);
+                  if (primary === undefined) {
+                    setState({
+                      phase: "error",
+                      message:
+                        "Your primary workbench disappeared mid-setup — please retry.",
+                    });
+                    return;
+                  }
+                  void publishAndInstall(tenantId, primary.domain, offering);
+                });
+              }}
+              onError={(message) => setState({ phase: "error", message })}
+            />
+          </div>
+        </div>
+      </OnboardingLayout>
+    );
+  }
+
+  if (state.phase === "publishing-myra" || state.phase === "installing") {
     return (
       <OnboardingLayout>
         <div className="onboarding-phase" key="installing">

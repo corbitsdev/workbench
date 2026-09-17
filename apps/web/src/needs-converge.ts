@@ -38,6 +38,7 @@ export type HubTenant = {
   name: string;
   slug: string;
   parentId: string | null;
+  domain: string;
 };
 
 export type HubRole = { id: string; name: string };
@@ -468,6 +469,7 @@ const TenantShape = type({
   id: "string",
   name: "string",
   slug: "string",
+  domain: "string",
   "parentId?": "string | null",
 });
 const RoleShape = type({ id: "string", name: "string" });
