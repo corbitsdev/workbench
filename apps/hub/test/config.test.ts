@@ -6,7 +6,7 @@ const validEnv = {
   BASE_URL: "http://localhost:3000",
   SESSION_SECRET: "insecure-dev-only-session-secret-0000",
   HUB_DATA_DIR: ".data/hub",
-  HUB_STATIC_DIR: "apps/hub/public",
+  HUB_STATIC_DIR: "apps/web/dist",
 };
 
 function readExpectingError(env: Record<string, string | undefined>): string {

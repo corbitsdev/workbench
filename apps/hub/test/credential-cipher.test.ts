@@ -16,7 +16,7 @@ const baseConfig: HubConfig = {
   baseUrl: "http://localhost:3000",
   sessionSecret: "insecure-test-only-session-secret-0000",
   hubDataDir: ".data/hub",
-  hubStaticDir: "apps/hub/public",
+  hubStaticDir: "apps/web/dist",
   signupRateLimit: { windowSeconds: 60, max: 5 },
   socialProviders: {},
   allowPlaintextSecrets: false,

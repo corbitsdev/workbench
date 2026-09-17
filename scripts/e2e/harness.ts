@@ -262,14 +262,13 @@ export async function startHub(options: {
   const baseUrl = `http://localhost:${options.port}`;
   const app = spawnApp("hub", HUB_DIR, {
     ...osEnv(),
-    // e2e hubs serve apps/hub/public and advertise BASE_URL as their
-    // own listen address by default (signup is ungated in stock
-    // composition, so no signup env is needed); a caller's
-    // extraEnv can still override any of these (e.g. a real web build's
-    // dist dir, or a public BASE_URL that differs from the actual listen
+    // e2e hubs point at the web build (absent for API-only suites, which
+    // makes non-/api paths 404) and advertise BASE_URL as their own
+    // listen address by default; a caller's extraEnv can override any of
+    // these (e.g. a public BASE_URL that differs from the actual listen
     // port — see PORT below — for a browser-driven suite fronted by a
     // dev-server proxy).
-    HUB_STATIC_DIR: "public",
+    HUB_STATIC_DIR: "../web/dist",
     BASE_URL: baseUrl,
     // The routine scheduler's real production cadence is a 30s
     // setInterval (routine-scheduler.ts); waiting that out for real on
