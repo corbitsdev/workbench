@@ -22,14 +22,14 @@ import {
 } from "@corbits/webhook-triggers";
 import { describe, expect, test } from "bun:test";
 
-import { resetSchema, setupDatabase } from "../db-setup.ts";
+import { resetSchema, setupDatabase } from "../scripts/db-setup.ts";
 import {
   buildAssistantWorkflow,
   serializeAssistantWorkflow,
-} from "../../agents/assistant/src/index.ts";
+} from "../agents/assistant/src/index.ts";
 import { ensureNoopCatalogOffering, startNoopInferenceServer } from "./noop-inference-server.ts";
-import { publishCorbitsToolsRegistry } from "../../packages/tool-registry-publish/src/publish.ts";
-import { createHubAPI } from "../../packages/hub-api-client/src/index.ts";
+import { publishCorbitsToolsRegistry } from "../packages/tool-registry-publish/src/publish.ts";
+import { createHubAPI } from "../packages/hub-api-client/src/index.ts";
 import {
   api,
   connectE2eDb,

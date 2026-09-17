@@ -41,7 +41,7 @@ import { createAgentDefinitionRoutes } from "../src/routes";
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import type { DefinitionAssetHistory } from "../src/definition-history";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
-import { dbGate } from "../../../scripts/e2e/db-gate";
+import { dbGate } from "../../../e2e/db-gate";
 
 const databaseUrl = process.env["DATABASE_URL"];
 const describeIfDb = dbGate(databaseUrl, import.meta.path);

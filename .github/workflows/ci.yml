@@ -36,8 +36,8 @@ jobs:
       - run: bun run fmt:check
 
   # A single fast pass over every workspace's tests. DB-gated suites
-  # (scripts/e2e/* included) skip themselves when DATABASE_URL is unset —
-  # see scripts/e2e/db-gate.ts — so this job needs no Postgres service.
+  # (e2e/* included) skip themselves when DATABASE_URL is unset —
+  # see e2e/db-gate.ts — so this job needs no Postgres service.
   unit:
     needs: setup
     runs-on: ubuntu-latest

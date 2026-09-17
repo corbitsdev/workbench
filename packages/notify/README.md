@@ -57,5 +57,5 @@ cd packages/notify && bun test
 ```
 
 `test/migrations.test.ts` is DB-gated against its own scratch database via
-`scripts/e2e/harness.ts`'s `e2eDatabaseUrl` — set
+`e2e/harness.ts`'s `e2eDatabaseUrl` — set
 `DATABASE_URL=postgres://localhost:5432/workbench_e2e` or it skips.

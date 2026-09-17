@@ -31,7 +31,7 @@ tmp/
 .corbits/
 
 # Browser walkthrough harness screenshots + run summary (CL-6072)
-scripts/e2e/browser/shots/
+e2e/browser/shots/
 
 # `bun pm pack` / `bun run release` tarballs — built on demand, never
 # committed (CL-8167).

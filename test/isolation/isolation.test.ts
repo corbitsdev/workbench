@@ -65,7 +65,7 @@ if (!databaseUrl) {
   const hub = await bootIsolationHub(databaseUrl);
   const app: AppLike = hub.app;
   // `hub.shutdown()` stops the sidecar then the hub in sequence
-  // (`test/isolation/setup.ts`), and each `stop()` (`scripts/e2e/
+  // (`test/isolation/setup.ts`), and each `stop()` (`e2e/
   // harness.ts`) gives its process up to 5s to exit on SIGTERM before
   // escalating to SIGKILL — so a graceful-but-slow exit on either
   // process alone can approach Bun's 5000ms default hook timeout, and

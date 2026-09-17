@@ -13,9 +13,9 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
+import { e2eDatabaseUrl } from "../../../e2e/database-url";
 import { listMcpServerConnections } from "../src/mcp-server-store";
-import { dbGate } from "../../../scripts/e2e/db-gate";
+import { dbGate } from "../../../e2e/db-gate";
 
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);

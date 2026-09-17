@@ -147,7 +147,7 @@ export async function connectE2eDb(databaseUrl: string): Promise<SqlClient> {
  * connect-and-immediately-reject loop, not a usable dial-in. Every
  * suite this repo runs against CI now lets the hub's own
  * process-provisioner spawn a dedicated sidecar per allocation instead
- * (see `startHub`'s doc comment and `scripts/e2e/chat.test.ts`); this
+ * (see `startHub`'s doc comment and `e2e/chat.test.ts`); this
  * function is kept only for the handful of scripts not yet migrated off
  * a directly-controlled sidecar process (e.g. ones that kill and
  * restart a specific sidecar mid-scenario) and is not a working dial-in

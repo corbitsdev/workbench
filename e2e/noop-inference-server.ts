@@ -19,7 +19,7 @@
 // earn by producing no text, so nothing downstream mistakes the
 // constant for a real answer.
 
-import type { ApiCall } from "../../packages/hub-api-client/src/index.ts";
+import type { ApiCall } from "../packages/hub-api-client/src/index.ts";
 import {
   ensureCatalogModel,
   ensureCatalogOffering,
@@ -28,7 +28,7 @@ import {
   ensureProvider,
   inferenceCredentialName,
   PLACEHOLDER_CATALOG_API_KEY,
-} from "../../packages/connections/src/seed-catalog.ts";
+} from "../packages/connections/src/seed-catalog.ts";
 
 const NOOP_REPLY_TEXT = "";
 

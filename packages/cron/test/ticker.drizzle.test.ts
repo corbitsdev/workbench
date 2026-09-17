@@ -9,8 +9,8 @@ import { createDB, dropSchema, runMigrations, schema } from "@intx/db";
 import { eq } from "drizzle-orm";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
-import { dbGate } from "../../../scripts/e2e/db-gate";
+import { e2eDatabaseUrl } from "../../../e2e/database-url";
+import { dbGate } from "../../../e2e/db-gate";
 import { applyCronMigrations, cronScheduleTable } from "../src/schema";
 import { createCronTicker } from "../src/ticker";
 

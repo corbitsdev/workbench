@@ -10,7 +10,7 @@
 // (defaults to the admin's only membership when exactly one).
 import { type } from "arktype";
 import { PrincipalSummary, paginatedSchema } from "@intx/types";
-// Relative imports, the same convention scripts/e2e uses: the root
+// Relative imports, the same convention e2e uses: the root
 // package.json does not depend on these workspace packages, only the
 // hub-facing products do.
 import {
