@@ -3,7 +3,7 @@
 // `ensureCatalogModel/Provider/Offering`) and the curated-catalog planter
 // (`seedCatalog`, driven by `./catalog-seed-data.ts`).
 //
-// Relocated here by CL-7585: this is the credential domain's own connect-time planting,
+// This is the credential domain's own connect-time planting,
 // not bench seeding, so it lives with the connect flows that call it
 // (`persist-credential.ts`, `routes.ts`, `mcp-oauth-routes.ts`,
 // `mcp-server-routes.ts`). The tenant-scale `seedTenant` deploy flow
@@ -132,13 +132,12 @@ export type EnsureCredentialArgs = {
    * Set by a caller that received `secret` as an explicit user
    * submission through a connect UI (a pasted key, a completed OAuth
    * exchange) before reaching `ensureCredential` — never inferred here,
-   * and never conditioned on a probe (CL-6123 dropped the onboarding
-   * probe that used to gate this). Gates whether an `api_key` name
+   * and never conditioned on a probe. Gates whether an `api_key` name
    * conflict rotates the stored secret (see the 409 branch below); an
    * `oauth_token` conflict decides rotation from the stored row's
    * `status` instead and ignores this flag. Left unset by a plain
-   * `workbench seed` or the hub-owned env auto-plant (CL-6101's
-   * `plantEnvProviderCredentials`, which keeps its own boot-time probe
+   * `workbench seed` or the hub-owned env auto-plant
+   * (`plantEnvProviderCredentials`, which keeps its own boot-time probe
    * but never sets this — its rule is never-overwrite, not rotate), so
    * a routine re-seed with an unchanged key still just skips.
    */
@@ -205,7 +204,7 @@ export async function ensureCredential(
   //    and is handing `ensureCredential` a genuinely new token, even
   //    though the existing row hasn't technically expired yet (the user
   //    re-authorized proactively, or the provider-side scopes changed).
-  //    Gating on `status` alone silently dropped this token (CL-7236):
+  //    Gating on `status` alone silently dropped this token:
   //    zero PATCH call, and the stale row's id returned as if the
   //    reconnect had worked.
   //
@@ -554,7 +553,7 @@ export type SeedCatalogResult = {
    * `hasCompletionCapableModel`. `false` only when every seeded model
    * resolves to no capability data and an embedding-shaped name (a fresh
    * Ollama connect whose instance has only an embedding model pulled,
-   * most concretely, CL-6351) -- the connect itself still succeeds, but
+   * most concretely) -- the connect itself still succeeds, but
    * the caller (`connections`' `/complete` route) surfaces this as a
    * guided state rather than letting every chat turn fail with "does not
    * support generate".
@@ -701,7 +700,7 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<SeedCatalogRes
   }[] = [];
   for (const [modelIndex, model] of seededModels.entries()) {
     // Ollama's dynamic entries already carry their own live-probed
-    // capabilities (`fetchOllamaModelCatalog`, CL-6366) — narrowed against
+    // capabilities (`fetchOllamaModelCatalog`) — narrowed against
     // the real `Capability` enum here, the trust boundary, rather than
     // trusted as the instance reported them. Every curated seed entry has
     // no live probe of its own, so it still resolves from the pinned
