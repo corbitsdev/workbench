@@ -219,8 +219,8 @@ function createWorkflowRunAuthenticator(deps: { db: DB["db"] }) {
     },
   };
 }
-// In-repo tool packages (`packages/granola-tools`, `packages/linear-tools`,
-// `packages/skills-tools`) are unpublished to npm and stay that way:
+// In-repo tool packages (`tools/granola`, `tools/linear`,
+// `tools/skills-tools`) are unpublished to npm and stay that way:
 // they are integration bundles for this product's own routes, not
 // general-purpose npm packages, so publishing them to a public registry would be the
 // wrong distribution surface for what they are. `@intx/hub-sessions`

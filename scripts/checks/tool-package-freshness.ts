@@ -25,22 +25,21 @@ import {
   StaleToolPackageError,
 } from "../../packages/tool-registry-publish/src/freshness-check";
 
-const PACKAGE_ROOT = "packages";
-
 /**
- * The packages the hub publishes to its tool registry and that workflows
- * pin by `{ name, version }`. Sourced from `CORBITS_TOOL_PACKAGE_DIRS`
- * (`packages/tool-registry-publish/src/registry.ts`) — the same list the
- * publish step walks, so this check and the publisher agree on what a
- * "tool package" is. Every other workspace package is resolved by path,
- * not by version, and is deliberately out of scope.
+ * The package directories (repo-root-relative) the hub publishes to its
+ * tool registry and that workflows pin by `{ name, version }`. Sourced
+ * from `CORBITS_TOOL_PACKAGE_DIRS` (`packages/tool-registry-publish/src/
+ * registry.ts`) — the same list the publish step walks, so this check
+ * and the publisher agree on what a "tool package" is. Every other
+ * workspace package is resolved by path, not by version, and is
+ * deliberately out of scope.
  */
 const TOOL_PACKAGE_REGISTRY = "packages/tool-registry-publish/src/registry.ts";
 
 export function readToolPackageNames(source: string): string[] {
   const block = source.match(/CORBITS_TOOL_PACKAGE_DIRS[^=]*=\s*\[([\s\S]*?)\]/);
   if (block === null) return [];
-  return [...(block[1] ?? "").matchAll(/\.\.\/\.\.\/([a-z0-9-]+)/g)]
+  return [...(block[1] ?? "").matchAll(/\.\.\/\.\.\/\.\.\/([a-z0-9/-]+)/g)]
     .map((match) => match[1] ?? "")
     .filter((name) => name.length > 0)
     .sort();
@@ -105,21 +104,20 @@ export function resolveBaseRef(root: string): string | undefined {
 }
 
 /**
- * The package names whose non-test `src/` files appear in a changed-file
- * list. Test files are excluded: they ship no source an agent resolves.
+ * The package directories (repo-root-relative) whose non-test `src/`
+ * files appear in a changed-file list. Test files are excluded: they
+ * ship no source an agent resolves.
  */
 export function packagesWithChangedSource(
   changedFiles: readonly string[],
   toolPackages: readonly string[],
 ): string[] {
-  const isToolPackage = new Set(toolPackages);
   const touched = new Set<string>();
   for (const file of changedFiles) {
-    const [root, name, dir] = file.split("/");
-    if (root !== PACKAGE_ROOT || name === undefined || dir !== "src") continue;
     if (file.endsWith(".test.ts") || file.endsWith(".test.tsx")) continue;
-    if (!isToolPackage.has(name)) continue;
-    touched.add(name);
+    for (const dir of toolPackages) {
+      if (file.startsWith(`${dir}/src/`)) touched.add(dir);
+    }
   }
   return [...touched].sort();
 }
@@ -134,7 +132,7 @@ export function auditFreshness(changes: readonly PackageChange[]): CheckReport {
     if (change.baseVersion === undefined) continue;
     if (change.headVersion !== change.baseVersion) continue;
     report.violations.push(
-      `packages/${change.name}: src/ changed but package.json stayed at ` +
+      `${change.name}: src/ changed but package.json stayed at ` +
         `${change.baseVersion}. Tool resolution keys on name@version, so new ` +
         `source under an unchanged version never reaches a running or ` +
         `freshly launched agent and the hub rejects it at publish time. ` +
@@ -145,14 +143,14 @@ export function auditFreshness(changes: readonly PackageChange[]): CheckReport {
   return report;
 }
 
-function versionAtRef(root: string, ref: string, name: string): string | undefined {
-  const shown = git(root, ["show", `${ref}:${PACKAGE_ROOT}/${name}/package.json`]);
+function versionAtRef(root: string, ref: string, dir: string): string | undefined {
+  const shown = git(root, ["show", `${ref}:${dir}/package.json`]);
   if (shown === undefined) return undefined;
   return (JSON.parse(shown) as { version?: string }).version;
 }
 
-async function versionAtHead(root: string, name: string): Promise<string | undefined> {
-  const manifest = Bun.file(path.join(root, PACKAGE_ROOT, name, "package.json"));
+async function versionAtHead(root: string, dir: string): Promise<string | undefined> {
+  const manifest = Bun.file(path.join(root, dir, "package.json"));
   if (!(await manifest.exists())) return undefined;
   return ((await manifest.json()) as { version?: string }).version;
 }
@@ -164,20 +162,20 @@ async function main(): Promise<void> {
   const toolPackages = (await registry.exists()) ? readToolPackageNames(await registry.text()) : [];
   const diff =
     baseRef === undefined ? undefined : git(root, ["diff", "--name-only", `${baseRef}...HEAD`]);
-  const names = packagesWithChangedSource((diff ?? "").split("\n"), toolPackages);
+  const dirs = packagesWithChangedSource((diff ?? "").split("\n"), toolPackages);
   const changes: PackageChange[] = [];
-  for (const name of names) {
+  for (const dir of dirs) {
     changes.push({
-      name,
-      baseVersion: baseRef === undefined ? undefined : versionAtRef(root, baseRef, name),
-      headVersion: await versionAtHead(root, name),
+      name: dir,
+      baseVersion: baseRef === undefined ? undefined : versionAtRef(root, baseRef, dir),
+      headVersion: await versionAtHead(root, dir),
     });
   }
 
   const report = auditFreshness(changes);
   try {
     await checkToolPackageFreshness({
-      packageDirs: toolPackages.map((name) => path.join(root, PACKAGE_ROOT, name)),
+      packageDirs: toolPackages.map((dir) => path.join(root, dir)),
     });
   } catch (error) {
     if (!(error instanceof StaleToolPackageError)) throw error;

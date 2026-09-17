@@ -84,7 +84,7 @@ export const GRANOLA_CALL_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
  * tenant-owned Granola credential (CL-6028). The launch resolves this
  * against `buildCredentialDelivery`, materializing a consumer-scoped
  * `credential:{id}` / `use` grant for the pinned package — see
- * `packages/granola-tools/src/tool.ts`'s header comment for the runtime
+ * `tools/granola/src/tool.ts`'s header comment for the runtime
  * gap that still separates a binding resolved at launch and a credential
  * actually reachable by the tool at call time.
  */

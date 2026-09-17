@@ -178,7 +178,7 @@ const ASSISTANT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
  * `defineWorkflow`/`step`, which pull in `@intx/agent`'s Node-bound runtime
  * (file locking) that a browser bundle cannot resolve (confirmed by a failed
  * `apps/web` build importing `@corbits/assistant-workflow` directly).
- * `apps/web/src/myra-deploy.test.ts` and `workflows/assistant`'s own
+ * `apps/web/src/myra-deploy.test.ts` and `agents/assistant`'s own
  * `validate-push.test.ts`-style round-trip both guard this shape against
  * drift from `defineWorkflow`'s own normalization
  * (`vendor/intx/workflow/src/definition/workflow.ts`'s `normalize`/

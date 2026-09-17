@@ -11,7 +11,7 @@ import {
   readToolPackageNames,
 } from "../tool-package-freshness";
 
-const TOOL_PACKAGES = ["github-tools", "memory-tools"];
+const TOOL_PACKAGES = ["tools/github", "tools/memory"];
 
 test("rejects stale source already on main and accepts a version bump", () => {
   const root = mkdtempSync(path.join(tmpdir(), "tool-freshness-main-"));
@@ -47,7 +47,7 @@ test("rejects stale source already on main and accepts a version bump", () => {
       },
     );
   try {
-    mkdirSync(path.join(root, "packages/github-tools/src"), {
+    mkdirSync(path.join(root, "tools/github/src"), {
       recursive: true,
     });
     mkdirSync(path.join(root, "packages/tool-registry-publish/src"), {
@@ -55,11 +55,11 @@ test("rejects stale source already on main and accepts a version bump", () => {
     });
     writeFileSync(
       path.join(root, "packages/tool-registry-publish/src/registry.ts"),
-      'const CORBITS_TOOL_PACKAGE_DIRS = ["../../github-tools"];',
+      'const CORBITS_TOOL_PACKAGE_DIRS = ["../../../tools/github"];',
     );
-    const manifest = path.join(root, "packages/github-tools/package.json");
+    const manifest = path.join(root, "tools/github/package.json");
     writeFileSync(manifest, JSON.stringify({ name: "@corbits/github-tools", version: "1.0.0" }));
-    const source = path.join(root, "packages/github-tools/src/index.ts");
+    const source = path.join(root, "tools/github/src/index.ts");
     writeFileSync(source, "export const value = 1;");
     git("init");
     git("add", ".");
@@ -83,15 +83,15 @@ test("rejects stale source already on main and accepts a version bump", () => {
 
 describe("packagesWithChangedSource", () => {
   test("names a package whose src/ moved", () => {
-    expect(
-      packagesWithChangedSource(["packages/github-tools/src/client.ts"], TOOL_PACKAGES),
-    ).toEqual(["github-tools"]);
+    expect(packagesWithChangedSource(["tools/github/src/client.ts"], TOOL_PACKAGES)).toEqual([
+      "tools/github",
+    ]);
   });
 
   test("ignores tests — they ship no source an agent resolves", () => {
     expect(
       packagesWithChangedSource(
-        ["packages/github-tools/src/client.test.ts", "packages/chat-ui/src/timeline.test.tsx"],
+        ["tools/github/src/client.test.ts", "packages/chat-ui/src/timeline.test.tsx"],
         TOOL_PACKAGES,
       ),
     ).toEqual([]);
@@ -100,11 +100,7 @@ describe("packagesWithChangedSource", () => {
   test("ignores everything outside a package's src/", () => {
     expect(
       packagesWithChangedSource(
-        [
-          "packages/github-tools/README.md",
-          "apps/hub/src/index.ts",
-          "workflows/code-review/src/index.ts",
-        ],
+        ["tools/github/README.md", "apps/hub/src/index.ts", "workflows/code-review/src/index.ts"],
         TOOL_PACKAGES,
       ),
     ).toEqual([]);
@@ -114,31 +110,31 @@ describe("packagesWithChangedSource", () => {
 describe("auditFreshness", () => {
   test("the recurring incident: src moved, version did not", () => {
     const report = auditFreshness([
-      { name: "github-tools", baseVersion: "0.0.5", headVersion: "0.0.5" },
+      { name: "tools/github", baseVersion: "0.0.5", headVersion: "0.0.5" },
     ]);
     expect(report.violations).toHaveLength(1);
-    expect(report.violations[0]).toContain("packages/github-tools");
+    expect(report.violations[0]).toContain("tools/github");
     expect(report.violations[0]).toContain("stayed at 0.0.5");
   });
 
   test("a bumped package passes", () => {
     const report = auditFreshness([
-      { name: "github-tools", baseVersion: "0.0.5", headVersion: "0.0.6" },
+      { name: "tools/github", baseVersion: "0.0.5", headVersion: "0.0.6" },
     ]);
     expect(report.violations).toEqual([]);
   });
 
   test("a package that did not exist at the base ref is new, not stale", () => {
     const report = auditFreshness([
-      { name: "scout-agent", baseVersion: undefined, headVersion: "0.0.1" },
+      { name: "agents/scout", baseVersion: undefined, headVersion: "0.0.1" },
     ]);
     expect(report.violations).toEqual([]);
   });
 
   test("names every stale package, not just the first", () => {
     const report = auditFreshness([
-      { name: "github-tools", baseVersion: "0.0.5", headVersion: "0.0.5" },
-      { name: "memory-tools", baseVersion: "0.0.4", headVersion: "0.0.4" },
+      { name: "tools/github", baseVersion: "0.0.5", headVersion: "0.0.5" },
+      { name: "tools/memory", baseVersion: "0.0.4", headVersion: "0.0.4" },
     ]);
     expect(report.violations).toHaveLength(2);
   });
@@ -154,11 +150,11 @@ describe("scope", () => {
   test("reads the publisher's own list so the two cannot disagree", () => {
     const names = readToolPackageNames(`
       export const CORBITS_TOOL_PACKAGE_DIRS: readonly string[] = [
-        new URL("../../memory-tools", import.meta.url).pathname,
-        new URL("../../github-tools", import.meta.url).pathname,
+        new URL("../../../tools/memory", import.meta.url).pathname,
+        new URL("../../../tools/github", import.meta.url).pathname,
       ];
     `);
-    expect(names).toEqual(["github-tools", "memory-tools"]);
+    expect(names).toEqual(["tools/github", "tools/memory"]);
   });
 });
 

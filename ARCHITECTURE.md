@@ -226,7 +226,7 @@ relaunch are separate passes.
 An agent's capability set grows through what it is granted, not through
 code changes: Skills are installable, tenant- or principal-scoped
 capabilities layered onto a definition or a workbench, resolved live
-rather than baked in at deploy time (see `packages/skills`). Plugins are
+rather than baked in at deploy time (see `skills/skills`). Plugins are
 installed globally rather than per bench or workbench (CL-6272.2). Every
 external side effect — anything leaving the
 platform's own boundary — sits behind a human approval gate. Approval

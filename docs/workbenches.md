@@ -23,7 +23,7 @@ teammate in its reply.
 
 ## Myra as standing host
 
-Myra (the `assistant` default workflow, `workflows/assistant/src/index.ts`)
+Myra (the `assistant` default workflow, `agents/assistant/src/index.ts`)
 is the host every new workbench starts with. Her triage clause decides, on
 every message, whether to answer directly or delegate: answer directly for
 questions, drafting, or anything reasoned through in the conversation;

@@ -102,7 +102,7 @@ a "Meet Myra" button into the bench itself.
 ### Publishing the corbits-tools registry
 
 The **assistant** default workflow pins the `@corbits/memory-tools` tool
-package (`workflows/assistant/src/index.ts`), and that pin only resolves
+package (`agents/assistant/src/index.ts`), and that pin only resolves
 once a `package-registry`-kind asset named `corbits-tools` carries its
 tarball (see `apps/hub/src/index.ts`'s `CORBITS_TOOLS_REGISTRY` comment).
 Hub boot does not publish that asset, and neither does anything

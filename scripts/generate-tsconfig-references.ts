@@ -33,7 +33,15 @@ import { existsSync } from "node:fs";
 import { relative } from "node:path";
 import { Glob } from "bun";
 
-const WORKSPACE_ROOTS = ["apps", "packages", "tools", "workflows", "vendor/intx"] as const;
+const WORKSPACE_ROOTS = [
+  "apps",
+  "packages",
+  "tools",
+  "agents",
+  "skills",
+  "workflows",
+  "vendor/intx",
+] as const;
 
 const SRC_CONFIG_NAME = "tsconfig.src.json";
 

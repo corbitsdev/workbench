@@ -1,0 +1,55 @@
+{
+  "name": "@corbits/assistant-workflow",
+  "version": "0.0.2",
+  "description": "Mail-triggered conversational workflow with a general-purpose assistant agent",
+  "license": "LGPL-2.1-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "agents/assistant"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./prompt": "./src/prompt.ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/catalog-tools": "0.1.1",
+    "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3"
+  },
+  "devDependencies": {
+    "@corbits/agent-directory-tools": "workspace:*",
+    "@corbits/connections": "workspace:*",
+    "@corbits/connections-tools": "workspace:*",
+    "@corbits/interaction-tools": "workspace:*",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0",
+    "@intx/workflow": "0.3.0"
+  },
+  "corbits": {
+    "workflow": {
+      "assetName": "assistant",
+      "displayName": "Myra",
+      "automatable": false
+    }
+  },
+  "interchange": {
+    "workflow": "./src/index.ts"
+  }
+}

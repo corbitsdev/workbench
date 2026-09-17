@@ -8,16 +8,16 @@ test("extractPins reads a single-line array-entry pin literal", () => {
     '  { name: "@corbits/mcp-tools", version: "0.0.8" },',
     "];",
   ].join("\n");
-  const pins = extractPins("workflows/assistant/src/index.ts", contents);
+  const pins = extractPins("agents/assistant/src/index.ts", contents);
   expect(pins).toEqual([
     {
-      relPath: "workflows/assistant/src/index.ts",
+      relPath: "agents/assistant/src/index.ts",
       line: 2,
       name: "@corbits/memory-tools",
       version: "0.0.4",
     },
     {
-      relPath: "workflows/assistant/src/index.ts",
+      relPath: "agents/assistant/src/index.ts",
       line: 3,
       name: "@corbits/mcp-tools",
       version: "0.0.8",
@@ -55,7 +55,7 @@ test("a pin matching its package's manifest version is not a violation", () => {
   const report = auditToolPackagePins(
     [
       {
-        relPath: "workflows/assistant/src/index.ts",
+        relPath: "agents/assistant/src/index.ts",
         line: 47,
         name: "@corbits/agent-directory-tools",
         version: "0.0.4",
@@ -70,7 +70,7 @@ test("a pin behind its package's manifest version is a violation naming the file
   const report = auditToolPackagePins(
     [
       {
-        relPath: "workflows/assistant/src/index.ts",
+        relPath: "agents/assistant/src/index.ts",
         line: 49,
         name: "@corbits/connections-tools",
         version: "0.0.4",
@@ -79,7 +79,7 @@ test("a pin behind its package's manifest version is a violation naming the file
     new Map([["@corbits/connections-tools", "0.0.5"]]),
   );
   expect(report.violations).toHaveLength(1);
-  expect(report.violations[0]).toContain("workflows/assistant/src/index.ts:49");
+  expect(report.violations[0]).toContain("agents/assistant/src/index.ts:49");
   expect(report.violations[0]).toContain("0.0.4");
   expect(report.violations[0]).toContain("0.0.5");
 });
@@ -88,7 +88,7 @@ test("a pin naming a package with no workspace manifest is a violation", () => {
   const report = auditToolPackagePins(
     [
       {
-        relPath: "workflows/assistant/src/index.ts",
+        relPath: "agents/assistant/src/index.ts",
         line: 60,
         name: "@corbits/does-not-exist",
         version: "0.0.1",

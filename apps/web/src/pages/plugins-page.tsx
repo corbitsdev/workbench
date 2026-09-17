@@ -207,7 +207,7 @@ export function PluginsRoute({
   // with (e.g. an in-flight `mcpOauth` return) must survive the rewrite.
   // A curated MCP preset (Exa, Granola, Linear, ...) has no fixed
   // `CONNECTOR_REGISTRY` id, so its own deep link is `mcp:<slug>`
-  // (`presetDeepLink` in `packages/connections-tools/src/tool.ts`) and
+  // (`presetDeepLink` in `tools/connections/src/tool.ts`) and
   // is matched against the preset catalog instead. An id neither side
   // recognizes (typo, stale link) is ignored rather than surfaced as a
   // notice.

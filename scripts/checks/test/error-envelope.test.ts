@@ -28,14 +28,14 @@ test("an arrow ErrorEnvelope factory is a violation naming the file", () => {
 test("a function errorEnvelope factory is a violation naming the file", () => {
   const report = auditLocalErrorEnvelopeFactories([
     {
-      relPath: "packages/skills/src/routes.ts",
+      relPath: "skills/skills/src/routes.ts",
       contents: `function errorEnvelope(code: string, message: string) {
   return { error: { code, message } };
 }`,
     },
   ]);
   expect(report.violations).toHaveLength(1);
-  expect(report.violations[0]).toContain("packages/skills/src/routes.ts");
+  expect(report.violations[0]).toContain("skills/skills/src/routes.ts");
 });
 
 test("an arktype parser named ErrorEnvelope is not a factory", () => {

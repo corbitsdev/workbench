@@ -12,7 +12,7 @@ import type { OllamaChatReply } from "./types";
 const CL_6478_MALFORMED_TOOL_NAME = "@intx/tools-posix/sidecar-bundle:run_shell\n</parameter";
 
 // A model calling the tool by its old, retired name instead of the
-// canonical `skills_load` (packages/tools-skills/src/tool.ts). `load_skill`
+// canonical `skills_load` (tools/tools-skills/src/tool.ts). `load_skill`
 // no longer exists as a tool; this fixture reproduces a model still
 // guessing it.
 const HALLUCINATED_TOOL_NAME = "load_skill";

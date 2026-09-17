@@ -2,7 +2,7 @@
 // reads: `GET /api/tenants/:tenantId/credentials` and `/providers`, with
 // the workflow run's own bearer (sidecar token plus run address), the
 // same pairing `@corbits/connections-tools`' `listConnectedProviders`
-// uses (`packages/connections-tools/src/client.ts`) — this package
+// uses (`tools/connections/src/client.ts`) — this package
 // cannot depend on that one directly (a workflow ships as its own npm
 // tarball; `@corbits/connections-tools` is not part of that surface),
 // so the fetch/paginate shape is duplicated rather than imported.

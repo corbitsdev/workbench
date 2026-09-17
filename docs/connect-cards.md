@@ -20,7 +20,7 @@ the agent — no settings page round-trip, no "report back when done".
   keyless MCP presets, an inline key-paste for api-key connectors.
   `apps/web/src/connect-service-actions.ts` is the workbench binding.
 - **Emission** — `request_connection`
-  (`packages/connections-tools/src/tool.ts`) posts the block into the
+  (`tools/connections/src/tool.ts`) posts the block into the
   caller's own room through the same `participants/messages` route
   `ask_user` uses, and tells the model to keep helping in the meantime
   (draft now, finish once connected). A run with no room of its own

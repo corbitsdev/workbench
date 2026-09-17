@@ -249,7 +249,7 @@ function splitQualifiedName(name: string): {
  * describing what it does.
  *
  * `mcp_read`/`mcp_call` are the generic MCP dispatch tools
- * (`packages/mcp-tools/src/tool.ts`): every downstream call arrives under
+ * (`tools/mcp/src/tool.ts`): every downstream call arrives under
  * one of those two names, with the tool it actually invoked sitting in its
  * `{server, tool}` arguments — so those are read first, or a whole
  * conversation's worth of calls would all read alike.

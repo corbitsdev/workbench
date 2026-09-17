@@ -1,6 +1,6 @@
 // Stands up a real MCP server (CL-6338) — same SDK pieces
 // `@corbits/mcp-tools`' own test double already proves against
-// (`packages/mcp-tools/test/stub-mcp-server.ts`) — that replays a
+// (`tools/mcp/test/stub-mcp-server.ts`) — that replays a
 // checked-in `McpFakeRecording` (./recording.ts) instead of a
 // hand-written tool set. Connected into a tenant through the exact
 // same `POST /mcp-servers` route real users use
