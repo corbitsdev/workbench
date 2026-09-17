@@ -197,9 +197,6 @@ packages/skills-tools/src/tool.ts	2	return errorResult(call.id, err);
 packages/skills-tools/src/tool.ts	3	return errorResult(call.id, err);
 packages/skills-tools/src/tool.ts	4	return errorResult(call.id, err);
 packages/skills-tools/src/tool.ts	5	return errorResult(call.id, err);
-packages/slack-tag/src/principal-resolver.ts	1	log.error("Auto-provision failed for {email}: {error}", {
-packages/slack-tag/src/slack-channel-name.ts	1	log.warn("conversations.info lookup failed for {channel}: {error}", {
-packages/slack-tag/src/thread-state.ts	1	log.error(
 packages/tool-registry-publish/src/freshness-check.ts	1	log.error`${err instanceof Error ? err.message : String(err)}`;
 packages/tools-skills/src/tool.ts	1	return errorResult(call.id, err);
 packages/tools-skills/src/tool.ts	2	return errorResult(call.id, err);
