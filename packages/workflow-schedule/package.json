@@ -7,7 +7,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./timer": "./src/timer.ts"
+    "./timer": "./src/timer.ts",
+    "./emitter": "./src/emitter.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

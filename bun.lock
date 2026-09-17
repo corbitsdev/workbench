@@ -81,6 +81,7 @@
         "@corbits/url-path": "workspace:*",
         "@corbits/webhook-triggers": "workspace:*",
         "@corbits/workbench-digest-workflow": "workspace:*",
+        "@corbits/workflow-schedule": "workspace:*",
         "@corbits/workflows": "workspace:*",
         "@corbits/xai-provider": "workspace:*",
         "@intx/authz": "0.3.0",
