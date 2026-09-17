@@ -2555,9 +2555,8 @@ export async function createHub(config: HubConfig) {
       // querying `chat.workbench_launch` on a timer this function is
       // about to end — including, once `close()` below tears down the
       // db pool, querying a pool that's already shut down. In a test
-      // suite that boots many hubs back to back (e.g.
-      // slack-tag-mount.test.ts, CL-7453) those leaked timers pile up
-      // across the whole `bun test` process and contend with later
+      // suite that boots many hubs back to back (CL-7453) those leaked
+      // timers pile up across the whole `bun test` process and contend with later
       // tests' own boots for Postgres connections, which is what
       // surfaced as `chat·relaunch-sweep: relaunch sweep pass failed:
       // Failed query: select ... from chat.workbench_launch` and an

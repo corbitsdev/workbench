@@ -544,7 +544,6 @@ const PACKAGE_SCHEMAS = [
   "bench",
   "preferences",
   "skills",
-  "slack_tag",
   "tasks",
   "agent_directory",
 ] as const;

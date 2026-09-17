@@ -14,7 +14,7 @@ native tenant middleware.
   app never re-implements them.
 - Every `@corbits/*` and `@workbench/*` package route (chat, approvals,
   bench, insights, access-policy, mailbox, memory, skills, artifacts,
-  routines, tasks, webhooks, Slack tag, and more) mounts here as one
+  routines, tasks, webhooks, and more) mounts here as one
   explicit import plus one `app.route(...)` call, inside or outside the
   tenant prefix as the extension requires. `src/index.ts` is the single
   file where all of this comes together.

@@ -16,8 +16,8 @@ for the concrete stack.
 Packages own product rules. Apps stay generic — they compose packages
 rather than own domain logic — with one tracked exception: `apps/hub`
 carries a small, explicitly-listed set of mounts (`artifacts-mount.ts`,
-`memory-mount.ts`, `skills-mount.ts`, `slack-tag-mount.ts`,
-`tenant-create-guard.ts`) pending extraction into packages (tracked as
+`memory-mount.ts`, `skills-mount.ts`, `tenant-create-guard.ts`) pending
+extraction into packages (tracked as
 CL-6127). Outside that list, a product rule that lives inside `apps/*` is
 a defect — it belongs in a package.
 

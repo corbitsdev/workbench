@@ -1,9 +1,8 @@
 // Whether this tenant has Granola connected — the routine trigger popover
 // (see `shell/routine-panel.tsx`) reads this so an unconnected bench never
 // offers "Granola call notes" as if it were a working trigger (CL-6759).
-// Same honesty rule as Slack via `deployment-capabilities-api.ts`, but
-// tenant-scoped: Granola's credential resolves through the ancestor chain
-// (`GET /credentials/resolve/Granola`), not a deployment env gate.
+// Tenant-scoped: Granola's credential resolves through the ancestor chain
+// (`GET /credentials/resolve/Granola`).
 import { type } from "arktype";
 import { useQuery } from "@tanstack/react-query";
 

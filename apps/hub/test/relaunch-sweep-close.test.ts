@@ -8,8 +8,7 @@
 // kept firing — and logging `relaunch sweep pass failed: ...` when it
 // queried a pool `close()` had already shut down — for the rest of the
 // `bun test` process. A suite that boots several hubs back to back
-// (slack-tag-mount.test.ts's env-gate suite among them) accumulated
-// these leaked loops, contending with later tests' own boots for
+// accumulated these leaked loops, contending with later tests' own boots for
 // Postgres connections and surfacing as an intermittent test timeout.
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

@@ -54,7 +54,6 @@
     "@corbits/run-key-history": "workspace:*",
     "@corbits/run-scope": "workspace:*",
     "@corbits/skills": "workspace:*",
-    "@corbits/slack-tag": "workspace:*",
     "@corbits/tool-registry-publish": "workspace:*",
     "@corbits/turn-artifacts": "workspace:*",
     "@corbits/url-path": "workspace:*",
