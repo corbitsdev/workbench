@@ -125,9 +125,6 @@
       "path": "./packages/ollama-adapter/tsconfig.src.json"
     },
     {
-      "path": "./packages/presence/tsconfig.src.json"
-    },
-    {
       "path": "./packages/process-provisioner/tsconfig.src.json"
     },
     {
