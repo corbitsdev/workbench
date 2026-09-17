@@ -14,7 +14,6 @@ import type { ArkErrors } from "arktype";
 import { Part } from "./wire/parts";
 import { parseParticipants } from "./wire/participants";
 import type { ParticipantRecord } from "./wire/participants";
-import type { WorkbenchOnboardingStep } from "./wire/blocks";
 import { UnauthenticatedError } from "@corbits/api-query";
 import { InferenceSettingsApiError } from "@corbits/inference-settings";
 import { CHAT_STRINGS } from "./strings";
@@ -29,7 +28,6 @@ export {
   Part,
 } from "./wire/parts";
 export type { ParticipantRecord } from "./wire/participants";
-export type { OnboardingStepLabel, WorkbenchOnboardingStep } from "./wire/blocks";
 export const WorkbenchKind = type("'workbench' | 'chat'");
 export type WorkbenchKind = typeof WorkbenchKind.infer;
 
@@ -575,26 +573,6 @@ export function inviteAgent(
   });
 }
 
-const PostedOnboardingStep = type({ id: "string" });
-
-/**
- * Posts one onboarding step into a room
- * (`POST /workbenches/:id/onboarding`): the walkthrough card lands as a
- * system row, with no agent launched or woken, so an empty channel can
- * run its onboarding with nobody in the room yet.
- */
-export function postWorkbenchOnboardingStep(
-  tenantId: string,
-  workbenchId: string,
-  step: WorkbenchOnboardingStep,
-): Promise<{ readonly id: string }> {
-  return request(
-    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/onboarding`,
-    PostedOnboardingStep,
-    { method: "POST", body: JSON.stringify(step) },
-  );
-}
-
 // `DELETE /workbenches/:id/participants/:address` (see
 // `packages/chat/src/routes.ts`): the removal counterpart to
 // `inviteAgent`/workbench creation's own join — drops the participant and,
@@ -847,115 +825,6 @@ export function pingWorkbenchPresence(tenantId: string, workbenchId: string): Pr
   })
     .then(() => undefined)
     .catch(() => undefined);
-}
-
-// `POST`/`GET .../blocks/:blockId/responses` (see
-// `packages/chat/src/routes.ts`): the poll/form round-trip. `own` is only
-// ever this signed-in principal's own response — a poll's `tally` is the
-// one place another principal's participation shows up at all, and only as
-// an anonymous count, never whose it was.
-const BlockResponsePayloadWire = type({
-  kind: "'poll'",
-  choiceIds: "string[]",
-})
-  .or(type({ kind: "'form'", values: "Record<string, string>" }))
-  .or(
-    type({
-      kind: "'question'",
-      answer: "string",
-      "optionIndex?": "number",
-      notifiedAt: "string | null",
-    }),
-  );
-export type BlockResponsePayload = typeof BlockResponsePayloadWire.infer;
-
-const BlockResponsesWire = type({
-  tally: "Record<string, number>",
-  total: "number",
-  own: BlockResponsePayloadWire.or("null"),
-});
-export type BlockResponses = typeof BlockResponsesWire.infer;
-
-const SubmittedBlockResponse = type({
-  blockId: "string",
-  updatedAt: "string",
-});
-
-function blockResponsesPath(
-  tenantId: string,
-  workbenchId: string,
-  messageId: string,
-  blockId: string,
-): string {
-  return (
-    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/messages/` +
-    `${messageId}/blocks/${blockId}/responses`
-  );
-}
-
-export function getBlockResponses(
-  tenantId: string,
-  workbenchId: string,
-  messageId: string,
-  blockId: string,
-): Promise<BlockResponses> {
-  return request(blockResponsesPath(tenantId, workbenchId, messageId, blockId), BlockResponsesWire);
-}
-
-export function submitPollResponse(
-  tenantId: string,
-  workbenchId: string,
-  messageId: string,
-  blockId: string,
-  choiceIds: readonly string[],
-): Promise<void> {
-  return request(
-    blockResponsesPath(tenantId, workbenchId, messageId, blockId),
-    SubmittedBlockResponse,
-    {
-      method: "POST",
-      body: JSON.stringify({ kind: "poll", choiceIds }),
-    },
-  ).then(() => undefined);
-}
-
-export function submitFormResponse(
-  tenantId: string,
-  workbenchId: string,
-  messageId: string,
-  blockId: string,
-  values: Readonly<Record<string, string>>,
-): Promise<void> {
-  return request(
-    blockResponsesPath(tenantId, workbenchId, messageId, blockId),
-    SubmittedBlockResponse,
-    {
-      method: "POST",
-      body: JSON.stringify({ kind: "form", values }),
-    },
-  ).then(() => undefined);
-}
-
-export function submitQuestionResponse(
-  tenantId: string,
-  workbenchId: string,
-  messageId: string,
-  blockId: string,
-  answer: string,
-  optionIndex?: number,
-): Promise<void> {
-  return request(
-    blockResponsesPath(tenantId, workbenchId, messageId, blockId),
-    SubmittedBlockResponse,
-    {
-      method: "POST",
-      body: JSON.stringify(
-        optionIndex !== undefined
-          ? { kind: "question", answer, optionIndex }
-          : { kind: "question", answer },
-      ),
-    },
-  ).then(() => undefined);
 }
 
 // `chat/contextWindow`'s two-way "inherit vs override" resolution — see

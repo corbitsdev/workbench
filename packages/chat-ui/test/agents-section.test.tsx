@@ -312,7 +312,6 @@ function baseProps(overrides: Partial<Parameters<typeof WorkbenchSettingsSurface
     workbenchId: "ch_1",
     workbenchTitle: "Talk to Myra",
     onBack: () => undefined,
-    onInviteParticipant: () => undefined,
     section: "agents" as const,
     ...overrides,
   };
@@ -342,7 +341,7 @@ function openAgent(el: HTMLElement, handle: string) {
 }
 
 describe("Agents section — list", () => {
-  test("lists every agent participant, with Invite agent and the autonomy note", async () => {
+  test("lists every agent participant, with the autonomy note", async () => {
     const second: AgentFixture = {
       address: "researcher@acme.example",
       handle: "researcher",
@@ -360,7 +359,6 @@ describe("Agents section — list", () => {
       (row) => row.textContent,
     );
     expect(rows.sort()).toEqual(["@myra", "@researcher"]);
-    expect(findButton(el, "Invite agent")).toBeDefined();
     expect(el.textContent).toContain("Autonomy");
   });
 

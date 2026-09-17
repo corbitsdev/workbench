@@ -50,7 +50,6 @@ export function WorkbenchSettingsSurface({
   workbenchId,
   workbenchTitle,
   onBack,
-  onInviteParticipant,
   onSaved,
   section = "general",
   onSectionChange,
@@ -62,7 +61,6 @@ export function WorkbenchSettingsSurface({
   readonly workbenchId: string;
   readonly workbenchTitle: string;
   readonly onBack: () => void;
-  readonly onInviteParticipant: () => void;
   readonly onSaved?: (settings: WorkbenchSettings) => void;
   /** The signed-in viewer's own principal id — threaded down to
    * `MembersSection` so their own row's Remove button is disabled.
@@ -295,7 +293,6 @@ export function WorkbenchSettingsSurface({
                   workbenchId={workbenchId}
                   participants={data.participants}
                   {...(currentUserPrincipalId !== undefined ? { currentUserPrincipalId } : {})}
-                  onInvite={onInviteParticipant}
                   onParticipantsChanged={reload}
                 />
               ) : null}
@@ -304,7 +301,6 @@ export function WorkbenchSettingsSurface({
                 <AgentsSection
                   tenantId={tenantId}
                   workbenchId={workbenchId}
-                  onInvite={onInviteParticipant}
                   entityId={entityId}
                   {...(onEntityIdChange !== undefined ? { onEntityIdChange } : {})}
                 />

@@ -2,13 +2,9 @@ import { describe, expect, test } from "bun:test";
 
 import {
   activeMentionQuery,
-  bringInOptionsFromMembersAndAgents,
   filterMentionCandidates,
-  filterMentionOptions,
   insertMention,
   mentionCandidatesFromParticipants,
-  mentionOptionsFromWorkbench,
-  resolveBringInLists,
 } from "../src/mentions";
 
 describe("activeMentionQuery", () => {
@@ -111,98 +107,6 @@ describe("filterMentionCandidates", () => {
   });
 });
 
-describe("bringInOptionsFromMembersAndAgents (CL-5879 mention-pulls-in)", () => {
-  const participants = [
-    { address: "researcher@agents.example", handle: "researcher" },
-    { address: "prn_alice", handle: "alice" },
-  ];
-
-  test("a workspace member already in the workbench is excluded", () => {
-    const options = bringInOptionsFromMembersAndAgents(
-      [
-        { id: "prn_alice", displayName: "Alice" },
-        { id: "prn_bob", displayName: "Bob" },
-      ],
-      [],
-      participants,
-    );
-    expect(options).toEqual([
-      {
-        section: "people",
-        candidate: { id: "prn_bob", handle: "bob", label: "Bob" },
-        invite: { kind: "person", principalId: "prn_bob", name: "Bob" },
-      },
-    ]);
-  });
-
-  test("an invitable agent uses its name — never its description — as the label", () => {
-    const options = bringInOptionsFromMembersAndAgents(
-      [],
-      [
-        {
-          id: "wfd_echo",
-          name: "echo",
-          description: "You turn a conversation into a website proposal…",
-        },
-      ],
-      participants,
-    );
-    expect(options).toEqual([
-      {
-        section: "agents",
-        candidate: { id: "wfd_echo", handle: "echo", label: "echo" },
-        invite: { kind: "agent", definitionId: "wfd_echo" },
-      },
-    ]);
-  });
-});
-
-describe("mentionOptionsFromWorkbench and filterMentionOptions (CL-5879 mention-pulls-in)", () => {
-  test("lists Agents then People, in-workbench ahead of bring-in within each section", () => {
-    const options = mentionOptionsFromWorkbench(
-      [
-        { address: "researcher@agents.example", handle: "researcher" },
-        { address: "prn_alice", handle: "alice" },
-      ],
-      [{ id: "prn_bob", displayName: "Bob" }],
-      [{ id: "wfd_echo", name: "echo", description: "Echo" }],
-    );
-    expect(options.map((option) => option.section)).toEqual([
-      "agents",
-      "agents",
-      "people",
-      "people",
-    ]);
-    expect(options.map((option) => option.candidate.handle)).toEqual([
-      "researcher",
-      "echo",
-      "alice",
-      "bob",
-    ]);
-  });
-
-  test("filterMentionOptions narrows both sections by the same prefix rule", () => {
-    const options = mentionOptionsFromWorkbench(
-      [{ address: "researcher@agents.example", handle: "researcher" }],
-      [{ id: "prn_reed", displayName: "Reed" }],
-      [{ id: "wfd_echo", name: "echo", description: "Echo" }],
-    );
-    const filtered = filterMentionOptions(options, "re");
-    expect(filtered.map((option) => option.candidate.handle)).toEqual(["researcher", "reed"]);
-  });
-
-  test("in-workbench agent rows show the resolved display name (CL-6424)", () => {
-    const options = mentionOptionsFromWorkbench(
-      [{ address: "researcher@agents.example", handle: "researcher" }],
-      [],
-      [],
-      new Map([["researcher@agents.example", "Myra"]]),
-    );
-    expect(options.map((option) => option.candidate.label)).toEqual(["Myra"]);
-    expect(options.map((option) => option.candidate.handle)).toEqual(["researcher"]);
-  });
-});
-
 describe("insertMention", () => {
   test("splices the mention in with a trailing space and advances the caret", () => {
     const result = insertMention("hi @re", 6, { start: 3, query: "re" }, "researcher");
@@ -213,75 +117,5 @@ describe("insertMention", () => {
   test("preserves text after the caret", () => {
     const result = insertMention("hi @re please", 6, { start: 3, query: "re" }, "researcher");
     expect(result.text).toBe("hi @researcher  please");
-  });
-});
-
-describe("resolveBringInLists (CL-6839)", () => {
-  const members = [{ id: "prn_bob", displayName: "Bob" }];
-  const agents = [{ id: "wfd_echo", name: "echo" }];
-
-  test("successful queries pass their data through", () => {
-    expect(
-      resolveBringInLists({
-        members: { data: members, isError: false, error: null },
-        invitableAgents: { data: agents, isError: false, error: null },
-      }),
-    ).toEqual({
-      members,
-      invitableAgents: agents,
-      failures: [],
-      firstError: null,
-    });
-  });
-
-  test("undefined data while idle/loading is an empty list, not a failure", () => {
-    expect(
-      resolveBringInLists({
-        members: { data: undefined, isError: false, error: null },
-        invitableAgents: { data: undefined, isError: false, error: null },
-      }),
-    ).toEqual({
-      members: [],
-      invitableAgents: [],
-      failures: [],
-      firstError: null,
-    });
-  });
-
-  test("a members query error is a failure, never an honest empty members list", () => {
-    const err = new Error("members boom");
-    const resolved = resolveBringInLists({
-      members: { data: undefined, isError: true, error: err },
-      invitableAgents: { data: agents, isError: false, error: null },
-    });
-    expect(resolved.members).toEqual([]);
-    expect(resolved.invitableAgents).toEqual(agents);
-    expect(resolved.failures).toEqual(["members"]);
-    expect(resolved.firstError).toBe(err);
-  });
-
-  test("an invitable-agents query error is a failure, never an honest empty agents list", () => {
-    const err = new Error("agents boom");
-    const resolved = resolveBringInLists({
-      members: { data: members, isError: false, error: null },
-      invitableAgents: { data: undefined, isError: true, error: err },
-    });
-    expect(resolved.members).toEqual(members);
-    expect(resolved.invitableAgents).toEqual([]);
-    expect(resolved.failures).toEqual(["invitableAgents"]);
-    expect(resolved.firstError).toBe(err);
-  });
-
-  test("both query errors surface both failures without inventing empty success", () => {
-    const membersErr = new Error("members boom");
-    const agentsErr = new Error("agents boom");
-    const resolved = resolveBringInLists({
-      members: { data: undefined, isError: true, error: membersErr },
-      invitableAgents: { data: undefined, isError: true, error: agentsErr },
-    });
-    expect(resolved.members).toEqual([]);
-    expect(resolved.invitableAgents).toEqual([]);
-    expect(resolved.failures).toEqual(["members", "invitableAgents"]);
-    expect(resolved.firstError).toBe(membersErr);
   });
 });

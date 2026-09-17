@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import { bringInLoadErrorMessage, buildMemberAvatarStack } from "./chat-workspace";
+import { buildMemberAvatarStack } from "./chat-workspace";
 import type { ParticipantRecord } from "./api";
 import { avatarClassForPrincipal } from "./avatar";
-import { CHAT_STRINGS } from "./strings";
 
 describe("buildMemberAvatarStack", () => {
   test("identifies agent participants with agent tone for Corbit rendering", () => {
@@ -74,29 +73,5 @@ describe("buildMemberAvatarStack", () => {
     );
 
     expect(stack.map((entry) => entry.label)).toEqual(["Myra the Helper"]);
-  });
-});
-
-describe("bringInLoadErrorMessage (CL-6839)", () => {
-  test("no failures yields null — honest empty stays empty", () => {
-    expect(bringInLoadErrorMessage([], null)).toBeNull();
-  });
-
-  test("members-only failure uses the people copy", () => {
-    expect(bringInLoadErrorMessage(["members"], new Error("x"))).toBe(
-      CHAT_STRINGS.mentionMembersLoadError,
-    );
-  });
-
-  test("invitable-agents-only failure uses the agents copy", () => {
-    expect(bringInLoadErrorMessage(["invitableAgents"], new Error("x"))).toBe(
-      CHAT_STRINGS.mentionInvitableLoadError,
-    );
-  });
-
-  test("both failures use the combined copy", () => {
-    expect(bringInLoadErrorMessage(["members", "invitableAgents"], new Error("x"))).toBe(
-      CHAT_STRINGS.mentionBringInLoadError,
-    );
   });
 });

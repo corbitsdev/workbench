@@ -8,11 +8,9 @@ import { describe, expect, test } from "bun:test";
 
 import {
   appendReplyTimedOutNotice,
-  canInviteAgent,
   composerPlaceholderFor,
   mergePendingSends,
   mergeStreamingReply,
-  shouldOfferInviteControl,
   withScrollSnapshot,
 } from "../src/chat-workspace";
 import type { PendingSend } from "../src/chat-workspace";
@@ -31,7 +29,6 @@ import {
   validateAttachmentPick,
 } from "../src/composer";
 import type { ComposerAttachment } from "../src/composer";
-import { SLASH_COMMANDS } from "../src/slash-commands";
 import { CHAT_STRINGS } from "../src/strings";
 import { backoffDelayMs, shouldConnect } from "../src/use-workbench-stream";
 
@@ -215,118 +212,36 @@ describe("composer busy state rules (preparing blocks send and attach)", () => {
   });
 });
 
-describe("canInviteAgent (a chat's agent is fixed at creation; the server 409s an invite into one)", () => {
-  test("is false for a chat", () => {
-    expect(canInviteAgent("chat")).toBe(false);
-  });
-
-  test("is true for a workbench", () => {
-    expect(canInviteAgent("workbench")).toBe(true);
-  });
-
-  test("defaults false with no resolved workbench yet (CL-6796 fail-closed)", () => {
-    expect(canInviteAgent(undefined)).toBe(false);
-  });
-
-  test("is true for a kind this UI doesn't otherwise recognize", () => {
-    expect(canInviteAgent("archive")).toBe(true);
-  });
-});
-
-describe("shouldOfferInviteControl (CL-6781: Invite stays hidden until someone is invitable)", () => {
-  test("hides while the invitable listing has not succeeded yet", () => {
-    expect(
-      shouldOfferInviteControl({
-        kind: "workbench",
-        invitableAgents: undefined,
-      }),
-    ).toBe(false);
-  });
-
-  test("hides when the listing succeeded with nobody left to invite", () => {
-    expect(
-      shouldOfferInviteControl({
-        kind: "workbench",
-        invitableAgents: [],
-        bringInMembers: [],
-      }),
-    ).toBe(false);
-  });
-
-  test("shows once at least one invitable agent is available", () => {
-    expect(
-      shouldOfferInviteControl({
-        kind: "workbench",
-        invitableAgents: [{ id: "wfd_echo" }],
-      }),
-    ).toBe(true);
-  });
-
-  test("shows when a person can still be brought in even if every agent is already in the room", () => {
-    expect(
-      shouldOfferInviteControl({
-        kind: "workbench",
-        invitableAgents: [],
-        bringInMembers: [{ id: "prn_bob" }],
-      }),
-    ).toBe(true);
-  });
-
-  test("never offers Invite on a chat, even with invitable agents", () => {
-    expect(
-      shouldOfferInviteControl({
-        kind: "chat",
-        invitableAgents: [{ id: "wfd_echo" }],
-      }),
-    ).toBe(false);
-  });
-});
-
-describe("composerPlaceholderFor (CL-6070 / CL-6740: names the open recipient; no / promise without slash commands)", () => {
+describe("composerPlaceholderFor (CL-6070: names the open recipient)", () => {
   test("names the counterpart for an agent chat from the workbench title — never a hardcoded agent", () => {
     expect(composerPlaceholderFor({ kind: "chat", title: "Myra" })).toBe(
-      `${CHAT_STRINGS.composerPlaceholderChat("Myra")} / for commands`,
+      CHAT_STRINGS.composerPlaceholderChat("Myra"),
     );
     expect(composerPlaceholderFor({ kind: "chat", title: "Scout" })).toBe(
-      `${CHAT_STRINGS.composerPlaceholderChat("Scout")} / for commands`,
+      CHAT_STRINGS.composerPlaceholderChat("Scout"),
     );
     expect(composerPlaceholderFor({ kind: "chat", title: "Scout" })).not.toContain("Myra");
   });
 
   test("names the counterpart for a person chat too — a chat's title is always its counterpart's name", () => {
     expect(composerPlaceholderFor({ kind: "chat", title: "Priya" })).toBe(
-      `${CHAT_STRINGS.composerPlaceholderChat("Priya")} / for commands`,
+      CHAT_STRINGS.composerPlaceholderChat("Priya"),
     );
   });
 
   test("keeps the generic workbench copy for a workbench", () => {
     expect(composerPlaceholderFor({ kind: "workbench", title: "General" })).toBe(
-      `${CHAT_STRINGS.composerPlaceholder}, / for commands`,
+      CHAT_STRINGS.composerPlaceholder,
     );
   });
 
   test("keeps the generic copy with no workbench resolved yet", () => {
-    expect(composerPlaceholderFor(undefined)).toBe(
-      `${CHAT_STRINGS.composerPlaceholder}, / for commands`,
-    );
+    expect(composerPlaceholderFor(undefined)).toBe(CHAT_STRINGS.composerPlaceholder);
   });
 
   test("falls back to the unnamed-workbench label for a titleless chat", () => {
     expect(composerPlaceholderFor({ kind: "chat", title: "" })).toBe(
-      `${CHAT_STRINGS.composerPlaceholderChat(CHAT_STRINGS.unnamedWorkbench)} / for commands`,
-    );
-  });
-
-  test("advertises / for commands only when the slash catalog is non-empty", () => {
-    expect(SLASH_COMMANDS.length).toBeGreaterThan(0);
-    expect(composerPlaceholderFor({ kind: "workbench", title: "General" })).toContain(
-      "/ for commands",
-    );
-    expect(
-      composerPlaceholderFor({ kind: "workbench", title: "General" }, { slashCommandCount: 0 }),
-    ).not.toContain("/ for commands");
-    expect(composerPlaceholderFor({ kind: "chat", title: "Priya" }, { slashCommandCount: 0 })).toBe(
-      "Message Priya…",
+      CHAT_STRINGS.composerPlaceholderChat(CHAT_STRINGS.unnamedWorkbench),
     );
   });
 });

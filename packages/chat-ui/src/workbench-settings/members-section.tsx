@@ -1,16 +1,13 @@
 // Members section: the human participants split out from agents (see
-// AgentsSection) — invite hops into the same InviteAgentDialog the header
-// action uses. Each row also carries a Remove affordance (CL-6122): a
+// AgentsSection). Each row carries a Remove affordance (CL-6122): a
 // second-click `ConfirmButton` that drops the member's participant
 // record server-side (`removeWorkbenchParticipant`), disabled for the
 // signed-in viewer's own row — there is no "leave" flow yet, so removing
-// yourself here would strand you outside a workbench you can't rejoin
-// without another member re-inviting you.
+// yourself here would strand you outside a workbench you can't rejoin.
 
 import { useState } from "react";
-import { Button, ConfirmButton } from "@corbits/react-ui";
+import { ConfirmButton } from "@corbits/react-ui";
 import { isAgentAddress } from "../wire/mentions";
-import { UserPlus } from "@corbits/icons";
 
 import type { ParticipantRecord } from "../api";
 import { describeChatError, removeWorkbenchParticipant } from "../api";
@@ -21,7 +18,6 @@ export function MembersSection({
   workbenchId,
   participants,
   currentUserPrincipalId,
-  onInvite,
   onParticipantsChanged,
 }: {
   readonly tenantId: string;
@@ -30,7 +26,6 @@ export function MembersSection({
   /** The signed-in viewer's own principal id, so their own row's Remove
    * button can be disabled — omitted, no row is treated as "you". */
   readonly currentUserPrincipalId?: string;
-  readonly onInvite: () => void;
   /** Fired after a successful removal so the host can refetch the
    * workbench's participants — this section never trusts an optimistic
    * local edit for who still belongs to the workbench. */
@@ -94,10 +89,6 @@ export function MembersSection({
             {rowError}
           </p>
         ) : null}
-        <Button variant="outline" size="sm" onClick={onInvite}>
-          <UserPlus />
-          {CHAT_STRINGS.inviteAgentAction}
-        </Button>
       </div>
     </div>
   );

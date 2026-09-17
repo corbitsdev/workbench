@@ -35,7 +35,7 @@ import {
   providerDisplayName,
 } from "@corbits/inference-settings";
 import type { ModelInfo } from "@corbits/inference-settings";
-import { ArrowLeft, CaretRight, UserPlus, WarningCircle } from "@corbits/icons";
+import { ArrowLeft, CaretRight, WarningCircle } from "@corbits/icons";
 import { CorbitAvatar } from "../avatar";
 
 import {
@@ -66,13 +66,11 @@ type ListState =
 export function AgentsSection({
   tenantId,
   workbenchId,
-  onInvite,
   entityId = null,
   onEntityIdChange,
 }: {
   readonly tenantId: string;
   readonly workbenchId: string;
-  readonly onInvite: () => void;
   /** Host-controlled selection (`definitionId`) — driven from the URL when
    * the workbench settings surface is deep-linked. Only honored when
    * `onEntityIdChange` is also passed (that callback is the controlled-mode
@@ -184,10 +182,6 @@ export function AgentsSection({
             ))}
           </ul>
         )}
-        <button type="button" className="chat-settings-invite-agent-action" onClick={onInvite}>
-          <UserPlus aria-hidden="true" />
-          {CHAT_STRINGS.inviteAgentAction}
-        </button>
       </div>
       <div className="chat-settings-callout">
         <span className="chat-settings-callout-label">

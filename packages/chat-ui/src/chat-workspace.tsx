@@ -15,7 +15,7 @@ import { isAgentAddress } from "./wire/mentions";
 import { Button, EmptyState, toast } from "@corbits/react-ui";
 import { reportError } from "@corbits/error-sink";
 import { getResolvedCatalog } from "@corbits/inference-settings";
-import { CaretDown, ChatCircle, SlidersHorizontal, UserPlus, WarningCircle } from "@corbits/icons";
+import { CaretDown, ChatCircle, SlidersHorizontal, WarningCircle } from "@corbits/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -26,9 +26,7 @@ import {
   cancelWorkbenchTurn,
   describeChatError,
   fetchRunningTurn,
-  inviteAgent,
   listWorkbenches,
-  listInvitableDefinitions,
   listWorkbenchAgents,
   addAgentCapability,
   refreshWorkbenchAgent,
@@ -43,11 +41,8 @@ import { WorkbenchSettingsSurface } from "./workbench-settings";
 import type { WorkbenchSettingsSectionId } from "./workbench-settings";
 import { Composer } from "./composer";
 import type { ComposerHandle } from "./composer";
-import { InviteAgentDialog } from "./invite-agent-dialog";
 import { WorkbenchLoadingState } from "./loading-state";
-import { mentionCandidatesFromParticipants, resolveBringInLists } from "./mentions";
-import type { BringInListFailure, BringInMember } from "./mentions";
-import { SLASH_COMMANDS } from "./slash-commands";
+import { mentionCandidatesFromParticipants } from "./mentions";
 import { failedTurnModelChoices, failedTurnToolCapableModelChoices } from "./failed-turn-models";
 import { CHAT_STRINGS } from "./strings";
 import { displayWorkbenchTitle } from "./workbench-display-title";
@@ -76,8 +71,6 @@ import { NoUsableModelBanner } from "./no-usable-model-banner";
 import { ResumeFailedBanner } from "./resume-failed-banner";
 import type { CurrentUser, ScrollSnapshot, TimelineMessageItem } from "./timeline";
 import type { ApprovalActions } from "./blocks/approval-actions";
-import type { BlockResponseActions } from "./blocks/block-responses";
-import type { ConnectGithubActions } from "./blocks/connect-github-actions";
 import type { ConnectServiceActions } from "./blocks/connect-service-actions";
 import {
   typingLabel,
@@ -218,55 +211,6 @@ type WorkbenchesState =
     };
 
 /**
- * A chat's agent is fixed at creation — the server 409s an invite into one
- * — so the "invite agent" affordance only ever makes sense on a workbench or
- * on a kind this UI doesn't otherwise recognize. Undefined (no workbench
- * resolved yet, or a routed id that isn't a workbench) stays closed: showing
- * Invite over a missing room is exactly the chrome flash CL-6796 closes.
- */
-export function canInviteAgent(kind: string | undefined): boolean {
-  if (kind === undefined) return false;
-  return !isKnownWorkbenchKind(kind) || kind !== "chat";
-}
-
-/**
- * User-facing copy when the mention popover's bring-in queries fail
- * (CL-6839) — never collapse those failures into an honest empty list.
- */
-export function bringInLoadErrorMessage(
-  failures: readonly BringInListFailure[],
-  firstError: unknown | null,
-): string | null {
-  if (failures.length === 0) return null;
-  const fallback =
-    failures.length === 2
-      ? CHAT_STRINGS.mentionBringInLoadError
-      : failures[0] === "members"
-        ? CHAT_STRINGS.mentionMembersLoadError
-        : CHAT_STRINGS.mentionInvitableLoadError;
-  return describeChatError(firstError, fallback);
-}
-
-/**
- * CL-6781: the header Invite control must not open an empty "who to invite"
- * dead end. Hide while the invitable listing is still in flight (or errored),
- * and hide once a successful listing proves nobody — agent or person — is
- * left to bring in. Kind gating stays with `canInviteAgent`.
- */
-export function shouldOfferInviteControl(args: {
-  readonly kind: string | undefined;
-  /** Successful invitable-definitions listing; `undefined` while loading/errored. */
-  readonly invitableAgents: readonly unknown[] | undefined;
-  /** Successful bring-in people listing when the host wired `listMembers`. */
-  readonly bringInMembers?: readonly unknown[];
-}): boolean {
-  if (!canInviteAgent(args.kind)) return false;
-  if (args.invitableAgents === undefined) return false;
-  if (args.invitableAgents.length > 0) return true;
-  return (args.bringInMembers?.length ?? 0) > 0;
-}
-
-/**
  * Recovery controls for a gone / non-workbench id (CL-6796). Prefer the
  * Mission Control + New workbench pair; fall back to the legacy single
  * "Back to workbenches" action when a host has not wired the new props.
@@ -311,9 +255,6 @@ export function workbenchNotFoundRecoveryAction(args: {
  * `POST /workbenches`), so it's always the right word here even when the
  * counterpart is a person, not an agent. A workbench (or a surface that
  * hasn't resolved yet) keeps the generic, mention-driven copy.
- *
- * CL-6740: only advertise "/ for commands" when the slash catalog actually
- * has commands — an empty/disabled catalog must not promise a dead hop.
  */
 export function composerPlaceholderFor(
   workbench:
@@ -322,18 +263,13 @@ export function composerPlaceholderFor(
         readonly title: string;
       }
     | undefined,
-  options?: { readonly slashCommandCount?: number },
 ): string {
-  const slashAvailable = (options?.slashCommandCount ?? SLASH_COMMANDS.length) > 0;
   if (workbench === undefined || workbench.kind !== "chat") {
-    return slashAvailable
-      ? `${CHAT_STRINGS.composerPlaceholder}, / for commands`
-      : CHAT_STRINGS.composerPlaceholder;
+    return CHAT_STRINGS.composerPlaceholder;
   }
   const counterpart =
     workbench.title.trim().length > 0 ? workbench.title : CHAT_STRINGS.unnamedWorkbench;
-  const base = CHAT_STRINGS.composerPlaceholderChat(counterpart);
-  return slashAvailable ? `${base} / for commands` : base;
+  return CHAT_STRINGS.composerPlaceholderChat(counterpart);
 }
 
 /**
@@ -527,14 +463,10 @@ function ChatWorkspaceInner({
   onOpenArtifactInLibrary,
   onFixConnection,
   approvalActions,
-  blockResponses,
-  connectGithubActions,
   connectServiceActions,
   headerLeading,
   headerSlot,
   registerComposerInsert,
-  listMembers,
-  onCreateRoutineInSpace,
   onWorkbenchNotFound,
   onBackToWorkbenchList,
   onGoToMissionControl,
@@ -588,12 +520,6 @@ function ChatWorkspaceInner({
   /** The approve block's live round-trip — see `WorkbenchTimeline`'s
    * `approvalActions`. */
   readonly approvalActions?: ApprovalActions;
-  /** The poll/form blocks' live round-trip — see `WorkbenchTimeline`'s
-   * `blockResponses`. */
-  readonly blockResponses?: BlockResponseActions;
-  /** The connect-github block's live round-trip — see `WorkbenchTimeline`'s
-   * `connectGithubActions`. */
-  readonly connectGithubActions?: ConnectGithubActions;
   /** Host round-trip for the generic "connect-service" card. Undefined
    * renders every connect-service card in its disconnected framing. */
   readonly connectServiceActions?: ConnectServiceActions;
@@ -612,25 +538,6 @@ function ChatWorkspaceInner({
    * stale handle. Optional: hosts that don't need the insert path omit it.
    */
   readonly registerComposerInsert?: (insert: ((text: string) => void) | null) => void;
-  /**
-   * Tenant members the mention popover's "Bring in…" group can offer —
-   * the same reduced listing the shell already fetches for its
-   * people/agents surfaces. Optional: omitting it hides the People group
-   * (a workbench that can't grow its human roster still works).
-   */
-  readonly listMembers?: (tenantId: string) => Promise<readonly BringInMember[]>;
-  /**
-   * The composer's `/routine` command: opens the New Routine panel with
-   * the active workbench pre-bound as its destination. Host-supplied so
-   * the panel's own route (and its prefill store) stays owned by the
-   * host; the active workbench id is closed over here rather than passed
-   * as an argument, since only this component knows it. Omitted, the
-   * command is hidden — the "no dead promise" contract every optional
-   * header/composer action here follows. Routines and Insights (CL-6362,
-   * CL-6099) are global-only pages now — reached from the shell rail, not
-   * a per-workbench header button or composer command.
-   */
-  readonly onCreateRoutineInSpace?: (workbenchId: string, preselectedAssetId?: string) => void;
   /** Fired when the routed workbench 404s — a deleted workbench, or a stale
    * Recents entry that outlived it. The host owns Recents (this package
    * never touches localStorage), so it's told rather than reaching out. */
@@ -672,7 +579,6 @@ function ChatWorkspaceInner({
     setSelectedWorkbenchId(id);
     onWorkbenchChange?.(id);
   };
-  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   // CL-6833: catch-up `fetchRunningTurn` failure must surface a banner with
   // Retry — never look idle. `resumeAttempt` re-arms the effect on Retry.
   const [resumeFailedRefId, setResumeFailedRefId] = useState<string | null>(null);
@@ -845,13 +751,6 @@ function ChatWorkspaceInner({
         case "chat.settings": {
           const parsed = ChatSettingsEventData(data);
           if (!(parsed instanceof type.errors)) {
-            connectGithubActions?.notifySettingsChanged().catch((cause) => {
-              reportError(cause, {
-                operation: "chat.notifyGithubSettingsChanged",
-                tenantId,
-                roomId: activeWorkbenchId,
-              });
-            });
             connectServiceActions?.notifySettingsChanged().catch((cause) => {
               reportError(cause, {
                 operation: "chat.notifyServiceSettingsChanged",
@@ -885,16 +784,6 @@ function ChatWorkspaceInner({
     entityId?: string,
   ) {
     onSettingsOpenChange?.(true, section, entityId);
-  }
-
-  async function handleInvite(definitionId: string) {
-    if (activeWorkbenchId === null) return;
-    await inviteAgent(tenantId, activeWorkbenchId, definitionId);
-    // The invited agent's address lands on the workbench's participants
-    // (the mention popover picks it up via the reload below); its join
-    // notice lands on the timeline via its own `chat.message` stream event
-    // (applied straight into the messages cache), not a refetch here.
-    refreshWorkbenchLists();
   }
 
   /**
@@ -1029,22 +918,6 @@ function ChatWorkspaceInner({
         : Promise.resolve([]),
     enabled: activeWorkbenchId !== null,
   });
-  // `/routine`'s and "New routine in this space"'s optional preselection
-  // (CL-7356): exactly one agent participant hands its definition asset id
-  // straight to the routine panel's picker, visibly and replaceably — zero
-  // or several participants leave the picker with nothing chosen, same as
-  // opening it from `/routines` (CL-7357). Not a guarantee: this reads
-  // `workbenchAgentsQuery`'s current data, which can still be loading (or
-  // mid-refetch after a participant just joined/left) the moment `/routine`
-  // fires — a person who types it before the query resolves gets no
-  // preselection even with exactly one agent, silently. In the common case
-  // the query is already warm (`failedTurnRecovery` below reads the same
-  // data), so this is rarely hit in practice; it's a soft nicety, not
-  // something a caller should rely on always firing.
-  const singleWorkbenchAgentDefinitionAssetId: string | undefined =
-    workbenchAgentsQuery.data?.length === 1
-      ? workbenchAgentsQuery.data[0]?.definitionAssetId
-      : undefined;
   // Person-facing display names for this workbench's agents (CL-6424),
   // keyed by participant address. Memoized so `MessageParts`'s memo guard
   // (CL-6625) keeps working: a fresh Map every render would read as new
@@ -1087,41 +960,6 @@ function ChatWorkspaceInner({
       ),
     [messagesState, pendingSends, currentUser?.principalId],
   );
-
-  // The mention popover's "Bring in…" group: only a `workbench` grows its
-  // participants after creation (a chat's counterpart is fixed at
-  // creation — see `workbench-service.ts`'s `joinHumanParticipant`/
-  // `launchAndJoinAgent` doc comments), so these only fetch for that
-  // kind, and never before a workbench is actually selected.
-  const bringInEnabled =
-    activeWorkbenchId !== null &&
-    activeWorkbench !== undefined &&
-    isKnownWorkbenchKind(activeWorkbench.kind) &&
-    activeWorkbench.kind === "workbench";
-  const invitableAgentsQuery = useQuery({
-    queryKey: ["tenant", tenantId, "chat", "invitable", activeWorkbenchId],
-    queryFn: () =>
-      activeWorkbenchId !== null
-        ? listInvitableDefinitions(tenantId, activeWorkbenchId)
-        : Promise.resolve([]),
-    enabled: bringInEnabled,
-  });
-  const bringInMembersQuery = useQuery({
-    queryKey: ["tenant", tenantId, "chat", "bring-in-members"],
-    queryFn: () => (listMembers !== undefined ? listMembers(tenantId) : Promise.resolve([])),
-    enabled: bringInEnabled && listMembers !== undefined,
-  });
-  const bringInLists = resolveBringInLists({
-    members: bringInMembersQuery,
-    invitableAgents: invitableAgentsQuery,
-  });
-  const bringInLoadError = bringInLoadErrorMessage(bringInLists.failures, bringInLists.firstError);
-
-  const offerInviteControl = shouldOfferInviteControl({
-    kind: activeWorkbench?.kind,
-    invitableAgents: invitableAgentsQuery.isSuccess ? (invitableAgentsQuery.data ?? []) : undefined,
-    ...(bringInMembersQuery.isSuccess ? { bringInMembers: bringInMembersQuery.data ?? [] } : {}),
-  });
 
   // A settings URL for a workbench id that resolved workbenches don't contain
   // (deleted, mistyped, cross-tenant) would otherwise leave the surface
@@ -1295,12 +1133,6 @@ function ChatWorkspaceInner({
           ) : null}
         </div>
       ) : null}
-      {offerInviteControl ? (
-        <Button variant="outline" size="sm" onClick={() => setInviteDialogOpen(true)}>
-          <UserPlus />
-          {CHAT_STRINGS.inviteAgentAction}
-        </Button>
-      ) : null}
       <div className="chat-workbench-settings-slot">
         <Button
           variant="ghost"
@@ -1391,23 +1223,12 @@ function ChatWorkspaceInner({
               ? { onEntityIdChange: onSettingsEntityIdChange }
               : {})}
             onBack={() => onSettingsOpenChange?.(false)}
-            onInviteParticipant={() => {
-              onSettingsOpenChange?.(false);
-              setInviteDialogOpen(true);
-            }}
             onSaved={refreshWorkbenchLists}
             {...(currentUser !== undefined
               ? { currentUserPrincipalId: currentUser.principalId }
               : {})}
           />
         </div>
-        <InviteAgentDialog
-          open={inviteDialogOpen}
-          onOpenChange={setInviteDialogOpen}
-          tenantId={tenantId}
-          workbenchId={activeWorkbenchId}
-          onInvite={handleInvite}
-        />
       </>
     );
   }
@@ -1547,8 +1368,6 @@ function ChatWorkspaceInner({
                     {...(onOpenArtifactInLibrary !== undefined ? { onOpenArtifactInLibrary } : {})}
                     {...(onFixConnection !== undefined ? { onFixConnection } : {})}
                     {...(approvalActions !== undefined ? { approvalActions } : {})}
-                    {...(blockResponses !== undefined ? { blockResponses } : {})}
-                    {...(connectGithubActions !== undefined ? { connectGithubActions } : {})}
                     {...(connectServiceActions !== undefined ? { connectServiceActions } : {})}
                     onRetryFailedTurn={handleRetryFailedTurn}
                     failedTurnRecovery={failedTurnRecovery}
@@ -1595,27 +1414,10 @@ function ChatWorkspaceInner({
                         activeWorkbench?.participants ?? [],
                         agentDisplayNames,
                       )}
-                      participants={activeWorkbench?.participants ?? []}
-                      agentDisplayNames={agentDisplayNames}
-                      members={bringInLists.members}
-                      invitableAgents={bringInLists.invitableAgents}
-                      bringInLoadError={bringInLoadError}
                       placeholder={composerPlaceholderFor(activeWorkbench)}
                       onSend={handleSend}
                       running={isAwaitingReply(streamingReply)}
                       onStop={handleStopTurn}
-                      onInviteAgent={() => setInviteDialogOpen(true)}
-                      onOpenAgentsSettings={() => openWorkbenchSettings("agents")}
-                      onCreateRoutineInSpace={() => {
-                        if (onCreateRoutineInSpace !== undefined && activeWorkbenchId !== null) {
-                          onCreateRoutineInSpace(
-                            activeWorkbenchId,
-                            singleWorkbenchAgentDefinitionAssetId,
-                          );
-                          return;
-                        }
-                        toast(CHAT_STRINGS.runRoutineUnavailable);
-                      }}
                     />
                   </div>
                 </>
@@ -1624,15 +1426,6 @@ function ChatWorkspaceInner({
           )}
         </div>
       </div>
-      {activeWorkbenchId !== null && !workbenchGone && !awaitingWorkbenchEvidence ? (
-        <InviteAgentDialog
-          open={inviteDialogOpen}
-          onOpenChange={setInviteDialogOpen}
-          tenantId={tenantId}
-          workbenchId={activeWorkbenchId}
-          onInvite={handleInvite}
-        />
-      ) : null}
     </>
   );
 }
@@ -1672,14 +1465,10 @@ export function ChatWorkspace({
   onOpenArtifactInLibrary,
   onFixConnection,
   approvalActions,
-  blockResponses,
-  connectGithubActions,
   connectServiceActions,
   headerLeading,
   headerSlot,
   registerComposerInsert,
-  listMembers,
-  onCreateRoutineInSpace,
   onWorkbenchNotFound,
   onBackToWorkbenchList,
   onGoToMissionControl,
@@ -1736,12 +1525,6 @@ export function ChatWorkspace({
   /** The approve block's live round-trip — see `WorkbenchTimeline`'s
    * `approvalActions`. */
   readonly approvalActions?: ApprovalActions;
-  /** The poll/form blocks' live round-trip — see `WorkbenchTimeline`'s
-   * `blockResponses`. */
-  readonly blockResponses?: BlockResponseActions;
-  /** The connect-github block's live round-trip — see `WorkbenchTimeline`'s
-   * `connectGithubActions`. */
-  readonly connectGithubActions?: ConnectGithubActions;
   /** Host round-trip for the generic "connect-service" card. Undefined
    * renders every connect-service card in its disconnected framing. */
   readonly connectServiceActions?: ConnectServiceActions;
@@ -1755,10 +1538,6 @@ export function ChatWorkspace({
   readonly headerSlot?: (chrome: ChatHeaderChrome) => ReactNode;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly registerComposerInsert?: (insert: ((text: string) => void) | null) => void;
-  /** See `ChatWorkspaceInner`'s prop of the same name. */
-  readonly listMembers?: (tenantId: string) => Promise<readonly BringInMember[]>;
-  /** "New routine in this space" — see `ChatWorkspaceInner`'s prop note. */
-  readonly onCreateRoutineInSpace?: (workbenchId: string, preselectedAssetId?: string) => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly onWorkbenchNotFound?: (workbenchId: string) => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
@@ -1792,8 +1571,6 @@ export function ChatWorkspace({
           {...(settingsEntityId !== undefined ? { settingsEntityId } : {})}
           {...(onSettingsEntityIdChange !== undefined ? { onSettingsEntityIdChange } : {})}
           {...(approvalActions !== undefined ? { approvalActions } : {})}
-          {...(blockResponses !== undefined ? { blockResponses } : {})}
-          {...(connectGithubActions !== undefined ? { connectGithubActions } : {})}
           {...(connectServiceActions !== undefined ? { connectServiceActions } : {})}
           {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
           {...(onOpenArtifactInLibrary !== undefined ? { onOpenArtifactInLibrary } : {})}
@@ -1801,8 +1578,6 @@ export function ChatWorkspace({
           {...(headerLeading !== undefined ? { headerLeading } : {})}
           {...(headerSlot !== undefined ? { headerSlot } : {})}
           {...(registerComposerInsert !== undefined ? { registerComposerInsert } : {})}
-          {...(listMembers !== undefined ? { listMembers } : {})}
-          {...(onCreateRoutineInSpace !== undefined ? { onCreateRoutineInSpace } : {})}
           {...(onWorkbenchNotFound !== undefined ? { onWorkbenchNotFound } : {})}
           {...(onBackToWorkbenchList !== undefined ? { onBackToWorkbenchList } : {})}
           {...(onGoToMissionControl !== undefined ? { onGoToMissionControl } : {})}

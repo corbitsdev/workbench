@@ -60,51 +60,25 @@ export type {
 } from "./composer";
 export { renamePayload, rowMenuLabels } from "./sidebar";
 
-export { InviteAgentDialog } from "./invite-agent-dialog";
-
 export { useWorkbenchStream } from "./use-workbench-stream";
 export type { WorkbenchStreamState } from "./use-workbench-stream";
 
 export {
   activeMentionQuery,
-  bringInOptionsFromMembersAndAgents,
   filterMentionCandidates,
-  filterMentionOptions,
   insertMention,
   mentionCandidatesFromParticipants,
-  mentionOptionsFromWorkbench,
-  resolveBringInLists,
 } from "./mentions";
 export { agentDisplayNamesFromAgents, displayNameForAddress } from "./agent-display-names";
 export type { AgentDisplayNames } from "./agent-display-names";
-export type {
-  BringInAgentDefinition,
-  BringInListFailure,
-  BringInMember,
-  MentionCandidate,
-  MentionInviteIntent,
-  MentionOption,
-  MentionQuery,
-  MentionSection,
-} from "./mentions";
-
-export { SLASH_COMMANDS, activeSlashQuery, filterSlashCommands } from "./slash-commands";
-export type { SlashCommandId, SlashCommandSpec, SlashQuery } from "./slash-commands";
+export type { MentionCandidate, MentionQuery } from "./mentions";
 
 export { CHAT_STRINGS } from "./strings";
 export { displayWorkbenchTitle } from "./workbench-display-title";
 
 export { BlockPartView } from "./blocks/registry";
 export { BlockCard } from "./blocks/block-card";
-export { ConnectGithubBlockView } from "./blocks/connect-github-block";
 
-export type {
-  ConnectGithubCardBody,
-  ConnectGithubCardProps,
-  ConnectGithubRepo,
-  OnboardingScene,
-  OnboardingSceneStep,
-} from "./blocks/connect-github-block";
 export type {
   ApprovalActions,
   ApprovalLiveStatus,
@@ -112,16 +86,6 @@ export type {
   ApprovalDecisionResult,
   PlatformApprovalDetail,
 } from "./blocks/approval-actions";
-export type {
-  BlockResponseActions,
-  BlockResponseQuery,
-  BlockResponseSubmitResult,
-  BlockResponsePayload,
-  PollResponsePayload,
-  FormResponsePayload,
-  QuestionResponsePayload,
-} from "./blocks/block-responses";
-export type { ConnectGithubActions, ConnectGithubQuery } from "./blocks/connect-github-actions";
 export type {
   ConnectServiceActions,
   ConnectServiceQuery,
@@ -165,20 +129,13 @@ export {
   runDisplayName,
   getWorkbenchSettings,
   patchWorkbenchSettings,
-  postWorkbenchOnboardingStep,
   getBenchChatSettings,
   patchBenchChatSettings,
-  getBlockResponses,
-  submitPollResponse,
-  submitFormResponse,
-  submitQuestionResponse,
   listWorkbenchAgents,
 } from "./api";
 export type {
   Workbench,
   CreateWorkbenchInput,
-  OnboardingStepLabel,
-  WorkbenchOnboardingStep,
   ParticipantRecord,
   MessageItem,
   MessagesResponse,
@@ -192,8 +149,6 @@ export type {
   ResolvedContextWindow,
   BenchChatSettings,
   BenchChatSettingsPatch,
-  BlockResponses,
-  BlockResponsePayload as BlockResponsePayloadWire,
   WorkbenchAgent,
 } from "./api";
 export { WorkbenchSettingsSurface } from "./workbench-settings";

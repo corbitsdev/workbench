@@ -42,7 +42,7 @@ function scheduled(
 }
 
 describe("computeInsightsStats", () => {
-  test("counts purposeful runs by status and drops workbench hosts", () => {
+  test("counts purposeful runs by status", () => {
     const stats = computeInsightsStats(
       [
         run({
@@ -59,12 +59,6 @@ describe("computeInsightsStats", () => {
           id: "3",
           status: "stopped",
           createdAt: "2026-01-01T00:00:00.000Z",
-        }),
-        run({
-          id: "host",
-          status: "running",
-          definitionName: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
-          createdAt: "2026-01-04T00:00:00.000Z",
         }),
       ],
       [
@@ -128,16 +122,7 @@ describe("computeInsightsStats", () => {
 });
 
 describe("purposeRunsForInsights", () => {
-  const workbenchHost = run({
-    id: "host",
-    status: "running",
-    definitionName: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
-  });
   const deployment = run({ id: "ins_deployed", status: "running" });
-
-  test("drops a workbench-host run by its definition-name pattern", () => {
-    expect(purposeRunsForInsights([deployment, workbenchHost])).toEqual([deployment]);
-  });
 
   test("leaves an ordinary top-level deployment run alone", () => {
     expect(purposeRunsForInsights([deployment])).toEqual([deployment]);

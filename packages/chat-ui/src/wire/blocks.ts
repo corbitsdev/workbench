@@ -58,123 +58,12 @@ export const MetricsBlockData = type({
 }).onDeepUndeclaredKey("delete");
 export type MetricsBlockData = typeof MetricsBlockData.infer;
 
-// Choices carry no percentages or counts: tallies come from stored
-// responses, not agent-authored numbers.
-export const PollBlockData = type({
-  pollId: "string",
-  title: "string",
-  choices: type({
-    id: "string",
-    label: "string",
-  }).array(),
-  "multi?": "boolean",
-  "closesAt?": "string.date.iso",
-}).onDeepUndeclaredKey("delete");
-export type PollBlockData = typeof PollBlockData.infer;
-
-// A select field must bring its options; the other inputs have none. The
-// discriminated union makes that a parse-time guarantee and lets renderers
-// narrow on `input` without defaulting a missing list.
-const SelectFormField = type({
-  id: "string",
-  label: "string",
-  input: "'select'",
-  options: "string[] > 0",
-  "value?": "string",
-  "required?": "boolean",
-});
-
-const PlainFormField = type({
-  id: "string",
-  label: "string",
-  input: "'text' | 'textarea' | 'checkbox'",
-  "value?": "string",
-  "required?": "boolean",
-});
-
-export const FormBlockData = type({
-  formId: "string",
-  title: "string",
-  fields: SelectFormField.or(PlainFormField).array(),
-  "submitLabel?": "string",
-}).onDeepUndeclaredKey("delete");
-export type FormBlockData = typeof FormBlockData.infer;
-
 export const StreamBlockData = type({
   title: "string",
   text: "string",
   done: "boolean",
 }).onDeepUndeclaredKey("delete");
 export type StreamBlockData = typeof StreamBlockData.infer;
-
-// An interview question with lettered options, posed by an agent
-// (`ask_user`, `@corbits/interaction-tools`) and answered in-thread. Like
-// `PollBlockData`, it carries no resolved answer — the chosen option (or
-// free-text) lives in the block-response row, read back through the same
-// `/blocks/:blockId/responses` surface polls use, never in the message.
-export const QuestionBlockData = type({
-  questionId: "string",
-  question: "string",
-  "subtitle?": "string",
-  options: "2 <= string[] <= 6",
-  "allowFreeText?": "boolean",
-}).onDeepUndeclaredKey("delete");
-export type QuestionBlockData = typeof QuestionBlockData.infer;
-
-// A template room's inline GitHub connect card (CL-6345). Like
-// `ApproveBlockData`, this carries only the agent/server-authored
-// framing that decided the card exists at all — which connector the
-// template still needs, and (once connected) the display-only org
-// login. It never carries the live repo list, the person's selection,
-// or a connected/disconnected verdict beyond what the room's own
-// settings say: an agent authoring this block could otherwise spoof
-// "already connected" or plant a fake repo list next to live buttons,
-// exactly the confused-deputy failure mode this file's other blocks
-// guard against. The card's actual live state — repos, selection, and
-// the connected verdict itself — comes from a host-supplied actions
-// port at render time, resolved against the room's real connection and
-// settings, never from this data.
-// One labelled step of a room's onboarding walkthrough: what the person
-// does, and why it matters to them. The definition that owns the
-// walkthrough owns the copy — the card renders its step rail from these
-// labels rather than holding step text of its own.
-export const OnboardingStepLabel = type({
-  title: "string > 0",
-  why: "string > 0",
-}).onDeepUndeclaredKey("delete");
-export type OnboardingStepLabel = typeof OnboardingStepLabel.infer;
-
-// The body `POST /workbenches/:id/onboarding` parses: one declared
-// onboarding step a host may post into a room, never an arbitrary block.
-// A `.or(...)` here is the extension point when a second kind of step
-// earns one.
-export const WorkbenchOnboardingStep = type({
-  kind: "'connect-github'",
-  requiredForTemplate: "string > 0",
-  promise: "string > 0",
-  steps: OnboardingStepLabel.array(),
-}).onDeepUndeclaredKey("delete");
-export type WorkbenchOnboardingStep = typeof WorkbenchOnboardingStep.infer;
-
-// `promise` and `steps` are optional so cards persisted before the
-// onboarding route existed still parse; the route always writes both.
-const ConnectGithubDisconnectedData = type({
-  requiredForTemplate: "string > 0",
-  state: "'disconnected'",
-  "promise?": "string > 0",
-  "steps?": OnboardingStepLabel.array(),
-}).onDeepUndeclaredKey("delete");
-
-const ConnectGithubConnectedData = type({
-  requiredForTemplate: "string > 0",
-  state: "'connected'",
-  orgName: "string",
-  "promise?": "string > 0",
-  "steps?": OnboardingStepLabel.array(),
-}).onDeepUndeclaredKey("delete");
-
-export const ConnectGithubBlockData = ConnectGithubDisconnectedData.or(ConnectGithubConnectedData);
-export type ConnectGithubBlockData = typeof ConnectGithubBlockData.infer;
 
 // An agent-authored "connect this service" card (CL-6393), the
 // generalization of `connect-github` to every connector and MCP preset:
@@ -197,11 +86,7 @@ export type Block =
   | { readonly type: "approve"; readonly data: ApproveBlockData }
   | { readonly type: "steps"; readonly data: StepsBlockData }
   | { readonly type: "metrics"; readonly data: MetricsBlockData }
-  | { readonly type: "poll"; readonly data: PollBlockData }
-  | { readonly type: "form"; readonly data: FormBlockData }
   | { readonly type: "stream"; readonly data: StreamBlockData }
-  | { readonly type: "question"; readonly data: QuestionBlockData }
-  | { readonly type: "connect-github"; readonly data: ConnectGithubBlockData }
   | {
       readonly type: "connect-service";
       readonly data: ConnectServiceBlockData;
@@ -240,40 +125,12 @@ export function parseBlock(envelope: BlockPart["block"]): BlockParseResult {
       }
       return { ok: true, block: { type: "metrics", data } };
     }
-    case "poll": {
-      const data = PollBlockData(envelope.data);
-      if (data instanceof type.errors) {
-        return { ok: false, type: envelope.type, summary: data.summary };
-      }
-      return { ok: true, block: { type: "poll", data } };
-    }
-    case "form": {
-      const data = FormBlockData(envelope.data);
-      if (data instanceof type.errors) {
-        return { ok: false, type: envelope.type, summary: data.summary };
-      }
-      return { ok: true, block: { type: "form", data } };
-    }
     case "stream": {
       const data = StreamBlockData(envelope.data);
       if (data instanceof type.errors) {
         return { ok: false, type: envelope.type, summary: data.summary };
       }
       return { ok: true, block: { type: "stream", data } };
-    }
-    case "question": {
-      const data = QuestionBlockData(envelope.data);
-      if (data instanceof type.errors) {
-        return { ok: false, type: envelope.type, summary: data.summary };
-      }
-      return { ok: true, block: { type: "question", data } };
-    }
-    case "connect-github": {
-      const data = ConnectGithubBlockData(envelope.data);
-      if (data instanceof type.errors) {
-        return { ok: false, type: envelope.type, summary: data.summary };
-      }
-      return { ok: true, block: { type: "connect-github", data } };
     }
     case "connect-service": {
       const data = ConnectServiceBlockData(envelope.data);
