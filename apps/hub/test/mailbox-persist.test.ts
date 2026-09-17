@@ -1,11 +1,6 @@
-// CL-7449: proves the real composition -- `createHubSessionLookups`'s
-// `persistMail` wrapped by `createMailboxPersist` via
-// `createHubMailboxAuthorizeSender` (`../src/mailbox-persist.ts`) -- against
-// a real Postgres, matching how
-// `createHub` wires them in `../src/index.ts`. DB-gated: skipped when
-// DATABASE_URL is unreachable, matching every other suite in this
-// directory (`composition.test.ts` boots the whole hub over HTTP; this
-// suite exercises the same `persistMail` wiring directly, without a boot).
+// DB-gated: skipped when DATABASE_URL is unreachable, matching every other
+// suite in this directory (`composition.test.ts` boots the whole hub over
+// HTTP; this suite exercises `persistMail` wiring directly, without a boot).
 import { afterAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { createDB } from "@intx/db";

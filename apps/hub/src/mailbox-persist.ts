@@ -43,8 +43,8 @@ const logger = getLogger(["hub", "mailbox-persist"]);
 /**
  * Wraps the hub's own `persistMail` (vendor's `baseLookups.persistMail`)
  * so a run's `agent_session` and event collector exist before that write
- * runs — CL-7480: the first inbound mail on a freshly triggered run is
- * often the earliest point the run is mail-routable at all, since
+ * runs: the first inbound mail on a freshly triggered run is often the
+ * earliest point the run is mail-routable at all, since
  * `workflow_run.principal_id` only reconciles onto the trigger that just
  * fired. Resolves the frame's own sender address to its run
  * (`resolveRoutableAddress`, the same resolver `persistMail` itself

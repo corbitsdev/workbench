@@ -1,19 +1,10 @@
-// The hub's native connector registry (hub-zero T4, CL-8126): every
-// connector and curated MCP preset this build actually ships, built from
-// `@corbits/connections`' generic descriptor shape and route factories — a
-// hub-local port of the legacy template package's registry, with zero
-// import from that package. `@corbits/connections` itself carries no
-// default connector set, so the hub composes its own here and passes
-// `CONNECTOR_REGISTRY` / `MCP_PRESETS` into the route factories that need
-// one (connections, connections/oauth, workflow-connections, mcp-servers,
-// the chat orchestrator's connector registry).
-//
-// Ported one-for-one: descriptor ids, auth kinds, credential plugins, docs
-// URLs, `feedsTools` tool packages, probe functions, OAuth configs, icons,
-// and the preset list are identical to the legacy source, so the settings
-// surface, connect flows, and pinned-package bindings behave exactly as
-// before. The one deliberate divergence is documented on
-// `chatgptAccountIdFromIdToken` below.
+// The hub's native connector registry: every connector and curated MCP
+// preset this build ships, built from `@corbits/connections`' generic
+// descriptor shape and route factories. `@corbits/connections` itself
+// carries no default connector set, so the hub composes its own here and
+// passes `CONNECTOR_REGISTRY` / `MCP_PRESETS` into the route factories that
+// need one (connections, connections/oauth, workflow-connections,
+// mcp-servers, the chat orchestrator's connector registry).
 //
 // Server-only, on purpose: the hub (bun) serves this to the settings
 // surface over HTTP — it never ships in a browser bundle from here.
@@ -79,10 +70,9 @@ function chatgptAccountIdFromIdToken(idToken: string): string | undefined {
 // registry actually has a listing for pulls in only those icons' data, not
 // the whole ~3000-brand package (CC0-1.0 licensed — see the package's own
 // LICENSE — so redistributing these marks needs no separate clearance).
-// Granola and ScrapeCreators have no simple-icons listing (CL-6215's
-// plugins-directory rebuild); OpenAI, xAI, Groq, and Opencode Zen have none
-// either (CL-6258's connections logos) — those descriptors carry no `icon`,
-// so a caller renders their monochrome initial tile instead. Exa publishes
+// Granola, ScrapeCreators, OpenAI, xAI, Groq, and Opencode Zen have no
+// simple-icons listing, so those descriptors carry no `icon` and a caller
+// renders their monochrome initial tile instead. Exa publishes
 // its own mark in its official brand kit, used below. Google's mark
 // here is Gemini's, not the generic Google "G" — the model brand a person
 // actually recognizes from connecting an AI provider, matching
@@ -305,7 +295,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
       },
     },
   };
-  // The two loopback OAuth providers (CL-7510). Their authorization
+  // The two loopback OAuth providers. Their authorization
   // servers only accept the fixed `http://localhost:<port>` redirect URI
   // the provider's own CLI registers (`authKind: "oauth-loopback"`), so
   // `buildAuthorizeUrl` ignores the hub callback URL the generic
@@ -604,7 +594,7 @@ export const CONNECTOR_REGISTRY: ConnectorRegistry = createConnectorRegistry({
     // token. Absent entirely, github-tools degrades to a lower
     // unauthenticated rate limit rather than "not connected" — see its
     // tool.ts. `authKind` stays "api-key" (the PAT paste form is
-    // always available, CL-6386's guaranteed fallback); the `oauth`
+    // always available as a guaranteed fallback); the `oauth`
     // config below is this connector's one exception to "oauth fields
     // are oauth-pkce/oauth-code only" — a caller checks
     // `GET /oauth-configured`'s `github` entry to decide whether to
@@ -779,7 +769,7 @@ export const MCP_PRESETS: readonly McpPreset[] = [
     docsUrl: "https://sumble.com/guides/account-research",
   },
   {
-    // No simple-icons listing for Canva (CL-6647) — same gap as Granola
+    // No simple-icons listing for Canva — same gap as Granola
     // and Sumble above, so this card falls back to the initial-letter
     // tile rather than risk a hand-traced or doctored mark.
     slug: "canva",
