@@ -1,38 +1,40 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  fetchChain,
-  listConcepts,
+  fetchCatalog,
+  fetchModelPolicy,
   type CatalogToolClientConfig,
 } from "./client";
 
-const CHAIN_BODY = {
-  concept: "cheap-loop",
-  requiredCapabilities: ["plain-text"],
-  entries: [
-    {
-      canonicalName: "thrifty",
-      displayName: "Thrifty",
-      providerName: "globex",
-      plugin: "openai-compatible",
-      offeringId: "off_1",
-      capabilities: ["plain-text"],
-      price: {
-        currency: "USD",
-        known: true,
-        inputUsdPerMTok: 0.1,
-        outputUsdPerMTok: 0.4,
+const MODELS_BODY = [
+  {
+    id: "m1",
+    canonicalName: "thrifty",
+    displayName: "Thrifty",
+    offerings: [
+      {
+        offeringId: "off_1",
+        providerName: "globex",
+        plugin: "openai-compatible",
+        priority: 0,
+        capabilities: ["plain-text"],
+        pricing: [
+          {
+            offeringId: "off_1",
+            currency: "USD",
+            inputTokenPrice: "0.0000001",
+            outputTokenPrice: "0.0000004",
+          },
+        ],
       },
-      referenceCostUsd: 0.12,
-      overCeiling: false,
-    },
-  ],
-  note: null,
-};
+    ],
+  },
+];
 
 function config(fetchImpl: typeof fetch): CatalogToolClientConfig {
   return {
     hubCatalogUrl: "https://hub.example.com",
+    tenantId: "bench_1",
     sidecarToken: "sc-token",
     address: "run_1@workflow",
     fetchImpl,
@@ -44,13 +46,13 @@ describe("catalog tool client", () => {
     let seen: Request | undefined;
     const fetchImpl = (async (input: string, init?: RequestInit) => {
       seen = new Request(input, init);
-      return new Response(JSON.stringify(CHAIN_BODY), { status: 200 });
+      return new Response(JSON.stringify(MODELS_BODY), { status: 200 });
     }) as unknown as typeof fetch;
 
-    await fetchChain(config(fetchImpl), { concept: "cheap-loop" });
+    await fetchCatalog(config(fetchImpl));
 
     expect(seen?.url).toBe(
-      "https://hub.example.com/api/workflow-inference-catalog/chain",
+      "https://hub.example.com/api/tenants/bench_1/models",
     );
     expect(seen?.headers.get("authorization")).toBe("Bearer sc-token");
     expect(seen?.headers.get("x-workflow-run-address")).toBe("run_1@workflow");
@@ -62,27 +64,27 @@ describe("catalog tool client", () => {
         JSON.stringify({
           error: {
             code: "bad_request",
-            userMessage: '"jazz" is not a kind of work',
+            userMessage: "the bench is not reachable",
             refId: "ref_test",
           },
         }),
         { status: 400 },
       )) as unknown as typeof fetch;
 
-    await expect(
-      fetchChain(config(fetchImpl), { concept: "jazz" }),
-    ).rejects.toThrow("is not a kind of work");
+    await expect(fetchCatalog(config(fetchImpl))).rejects.toThrow(
+      "the bench is not reachable",
+    );
   });
 
   test("a body in an unexpected shape is an error, not a half-parsed answer", async () => {
     const fetchImpl = (async () =>
-      new Response(JSON.stringify({ entries: "lots" }), {
+      new Response(JSON.stringify({ not: "a model list" }), {
         status: 200,
       })) as unknown as typeof fetch;
 
-    await expect(
-      fetchChain(config(fetchImpl), { concept: "cheap-loop" }),
-    ).rejects.toThrow("unexpected shape");
+    await expect(fetchCatalog(config(fetchImpl))).rejects.toThrow(
+      "unexpected shape",
+    );
   });
 
   test("an unreachable hub is an error, never an empty list", async () => {
@@ -90,8 +92,33 @@ describe("catalog tool client", () => {
       throw new Error("connection refused");
     }) as unknown as typeof fetch;
 
-    await expect(listConcepts(config(fetchImpl))).rejects.toThrow(
+    await expect(fetchCatalog(config(fetchImpl))).rejects.toThrow(
       "connection refused",
     );
+  });
+
+  test("reads the model policy out of the tenant's own config blob", async () => {
+    const fetchImpl = (async () =>
+      new Response(
+        JSON.stringify({
+          id: "bench_1",
+          config: { corbits: { modelPolicy: { deny: ["acme/alpha"] } } },
+        }),
+        { status: 200 },
+      )) as unknown as typeof fetch;
+
+    const policy = await fetchModelPolicy(config(fetchImpl));
+    expect(policy.deny).toEqual(["acme/alpha"]);
+  });
+
+  test("a bench with no config blob reads as the empty policy", async () => {
+    const fetchImpl = (async () =>
+      new Response(JSON.stringify({ id: "bench_1" }), {
+        status: 200,
+      })) as unknown as typeof fetch;
+
+    const policy = await fetchModelPolicy(config(fetchImpl));
+    expect(policy.allow).toEqual([]);
+    expect(policy.deny).toEqual([]);
   });
 });
