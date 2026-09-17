@@ -1,12 +1,16 @@
-// Price normalization. `model_pricing` stores per-token prices as decimal
+// Price normalization. The catalog stores per-token prices as decimal
 // strings; every human number in this package — ceilings, estimates, the
 // copy an agent reads — is USD per million tokens. That conversion happens
 // here and nowhere else.
 //
+// As-of selection is not restated here: the platform's model discovery
+// route already returns the row in effect per currency, so this module only
+// picks the currency and converts.
+//
 // A missing row, a missing currency, or a null price component yields
 // `known: false` with null numbers. It never yields zero: a fabricated zero
 // would read as "free" and quietly win every cheapest-first sort.
-import { resolveActivePrice, type ModelPricingRow } from "@intx/db";
+import type { CatalogPricingRow } from "./catalog";
 
 export const DEFAULT_CURRENCY = "USD";
 
@@ -20,16 +24,16 @@ export type OfferingPrice = {
 const TOKENS_PER_MTOK = 1_000_000;
 
 /** Converts one per-token decimal string to USD per million tokens. */
-export function perMTok(perToken: string | null): number | null {
-  if (perToken === null) return null;
+export function perMTok(perToken: string | null | undefined): number | null {
+  if (perToken === null || perToken === undefined) return null;
   const parsed = Number(perToken);
   return Number.isFinite(parsed) ? parsed * TOKENS_PER_MTOK : null;
 }
 
 export function groupPricingByOffering(
-  rows: readonly ModelPricingRow[],
-): Map<string, ModelPricingRow[]> {
-  const byOffering = new Map<string, ModelPricingRow[]>();
+  rows: readonly CatalogPricingRow[],
+): Map<string, CatalogPricingRow[]> {
+  const byOffering = new Map<string, CatalogPricingRow[]>();
   for (const row of rows) {
     const existing = byOffering.get(row.offeringId);
     if (existing === undefined) byOffering.set(row.offeringId, [row]);
@@ -38,19 +42,12 @@ export function groupPricingByOffering(
   return byOffering;
 }
 
-/**
- * The price in effect for one offering at `asOf`, in USD per million tokens.
- * As-of selection is the platform's own `resolveActivePrice`; this adds only
- * the currency pick and the per-million normalization.
- */
+/** The offering's price in `currency`, in USD per million tokens. */
 export function priceForOffering(
-  rows: readonly ModelPricingRow[],
-  asOf: Date,
+  rows: readonly CatalogPricingRow[],
   currency: string,
 ): OfferingPrice {
-  const active = resolveActivePrice([...rows], asOf).find(
-    (row) => row.currency === currency,
-  );
+  const active = rows.find((row) => row.currency === currency);
   if (active === undefined) {
     return {
       currency,
@@ -82,5 +79,22 @@ export function referenceCostUsd(
   return (
     price.inputUsdPerMTok * mix.inputMTok +
     price.outputUsdPerMTok * mix.outputMTok
+  );
+}
+
+/** What a run of the given size would cost at this price, in USD. Null
+ * whenever either axis is unpriced: half an estimate is not an estimate,
+ * and a zero would read as free. */
+export function estimateUsd(
+  price: OfferingPrice,
+  expectedInputTokens: number,
+  expectedOutputTokens: number,
+): number | null {
+  if (price.inputUsdPerMTok === null || price.outputUsdPerMTok === null) {
+    return null;
+  }
+  return (
+    (price.inputUsdPerMTok * expectedInputTokens) / TOKENS_PER_MTOK +
+    (price.outputUsdPerMTok * expectedOutputTokens) / TOKENS_PER_MTOK
   );
 }

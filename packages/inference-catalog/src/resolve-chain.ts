@@ -1,8 +1,9 @@
 // Chain resolution: what this bench can reach for a given kind of work,
 // cheapest first, with fallbacks.
 //
-// Pure — every read is done by the caller and handed in, so the whole
-// algorithm is exercised with plain literals and no database. It answers
+// Pure — every read is done by the caller against the platform's own model
+// discovery route and handed in, so the whole algorithm is exercised with
+// plain literals and no database anywhere near it. It answers
 // with an ordered chain, never a single model: one model is not a fallback
 // plan, and the platform's own source resolution already consumes chains.
 //
@@ -11,8 +12,9 @@
 // turns into runnable sources — the capability predicate and the priority
 // tiebreakers here are deliberately the same ones it uses, so a chain this
 // package returns can never be rejected downstream by upstream's own rules.
-import type { ResolvedOffering, ModelPricingRow } from "@intx/db";
 import type { Capability, ProviderPreference } from "@intx/types";
+
+import type { CatalogOffering, CatalogPricingRow } from "./catalog";
 
 import {
   conceptById,
@@ -47,19 +49,15 @@ export type ChainOrder = "cheapest" | "catalog";
 
 export type ResolveChainInput = {
   readonly need: ChainNeed;
-  readonly offerings: readonly ResolvedOffering[];
-  readonly pricing: readonly ModelPricingRow[];
+  readonly offerings: readonly CatalogOffering[];
+  readonly pricing: readonly CatalogPricingRow[];
   readonly policy: BenchModelPolicy;
-  /** Never read from the clock inside: discovery passes now, historical
-   * attribution passes the moment it is attributing. */
-  readonly asOf: Date;
   readonly currency?: string | undefined;
   readonly limit?: number | undefined;
   readonly order?: ChainOrder | undefined;
 };
 
 export type ExclusionReason =
-  | "provider-not-connected"
   | "missing-capabilities"
   | "policy-deny"
   | "outside-policy-allow"
@@ -76,7 +74,6 @@ export type ChainEntry = {
   readonly price: OfferingPrice;
   readonly referenceCostUsd: number | null;
   readonly overCeiling: boolean;
-  readonly provenance: "set-here" | "inherited";
 };
 
 export type ModelChain = {
@@ -223,16 +220,11 @@ export function resolveModelChain(input: ResolveChainInput): ModelChain {
   const unpriced: Candidate[] = [];
 
   for (const resolved of input.offerings) {
-    const offeringId = resolved.offering.id;
-    const canonicalName = resolved.model.canonicalName;
-    const providerName = resolved.provider.name;
+    const offeringId = resolved.offeringId;
+    const canonicalName = resolved.canonicalName;
+    const providerName = resolved.providerName;
 
-    if (resolved.provider.credentialId === null) {
-      excluded.push({ offeringId, reason: "provider-not-connected" });
-      continue;
-    }
-
-    const capabilities = resolved.offering.capabilities as Capability[];
+    const capabilities = resolved.capabilities;
     if (!need.required.every((required) => capabilities.includes(required))) {
       excluded.push({ offeringId, reason: "missing-capabilities" });
       continue;
@@ -250,7 +242,6 @@ export function resolveModelChain(input: ResolveChainInput): ModelChain {
 
     const price = priceForOffering(
       pricingByOffering.get(offeringId) ?? [],
-      input.asOf,
       currency,
     );
     const overBenchCeiling = overCeiling(
@@ -273,16 +264,15 @@ export function resolveModelChain(input: ResolveChainInput): ModelChain {
 
     const entry: ChainEntry = {
       canonicalName,
-      displayName: resolved.model.displayName,
+      displayName: resolved.displayName,
       providerName,
-      plugin: resolved.provider.plugin,
+      plugin: resolved.plugin,
       offeringId,
-      priority: resolved.offering.priority,
+      priority: resolved.priority,
       capabilities,
       price,
       referenceCostUsd: referenceCostUsd(price, need.mix),
       overCeiling: isOverCeiling,
-      provenance: resolved.origin.direct ? "set-here" : "inherited",
     };
     const candidate: Candidate = {
       entry,

@@ -1,34 +1,43 @@
 {
   "name": "@corbits/inference-catalog",
-  "private": true,
   "description": "Model concepts and chain resolution: agents ask for what the work needs (a concept or a capability set) and get an ordered, priced fallback chain of the models this bench can actually reach — never a single model, never a model named by hand.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./catalog": "./src/catalog.ts",
     "./concepts": "./src/concepts.ts",
+    "./policy": "./src/policy.ts",
+    "./price": "./src/price.ts",
     "./resolve-chain": "./src/resolve-chain.ts",
     "./offering-capabilities": "./src/offering-capabilities.ts",
-    "./ollama-context-defaults": "./src/ollama-context-defaults.ts",
-    "./migrations": "./src/migrations.ts"
+    "./ollama-context-defaults": "./src/ollama-context-defaults.ts"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "packages/inference-catalog"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/error-sink": "workspace:*",
-    "@corbits/migration-runner": "workspace:*",
-    "@corbits/ollama-adapter": "workspace:*",
-    "@intx/db": "workspace:*",
-    "@intx/hub-api": "workspace:*",
+    "@corbits/ollama-adapter": "0.0.2",
     "@intx/inference-catalog": "0.3.0",
-    "@intx/types": "workspace:*",
-    "arktype": "catalog:",
-    "drizzle-orm": "catalog:",
-    "hono": "catalog:",
-    "postgres": "catalog:"
+    "arktype": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/types": "0.3.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
