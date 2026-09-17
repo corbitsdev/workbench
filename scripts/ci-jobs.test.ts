@@ -76,7 +76,7 @@ test("lint runs oxlint and oxfmt --check; the unit job has a hard timeout", asyn
 
   const unit = jobs.get("unit") ?? "";
   expect(unit).toContain("timeout-minutes: 10");
-  expect(unit).toContain("bun test apps packages workflows scripts");
+  expect(unit).toContain("bun run test");
 });
 
 test("the structural job runs the same list as local check:structural", async () => {
