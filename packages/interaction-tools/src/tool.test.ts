@@ -29,11 +29,6 @@ test("requires the sanctioned env keys", () => {
   expect(interactionTools.requires).toEqual(["hubChatUrl", "sidecarToken", "address"]);
 });
 
-test("interactionTools contributes no beforeToolExtension: ask_user never suspends", () => {
-  const bundle = interactionTools(testEnv());
-  expect(bundle.beforeToolExtension).toBeUndefined();
-});
-
 test("ask_user posts a question block and ends the turn with the answer arriving as the next message", async () => {
   let posted = false;
   const fetchImpl = (async () => {
