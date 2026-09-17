@@ -8,8 +8,6 @@ import {
   referenceCostUsd,
 } from "./price";
 
-const ASOF = new Date("2026-06-01T00:00:00.000Z");
-
 describe("perMTok", () => {
   test("scales a per-token decimal string to USD per million tokens", () => {
     expect(perMTok("0.000003")).toBeCloseTo(3, 10);
@@ -25,29 +23,9 @@ describe("perMTok", () => {
 });
 
 describe("priceForOffering", () => {
-  test("takes the latest row at or before asOf", () => {
+  test("takes the row in the requested currency", () => {
     const price = priceForOffering(
-      [
-        pricing({
-          offeringId: "o1",
-          inputUsdPerMTok: 3,
-          outputUsdPerMTok: 15,
-          effectiveFrom: new Date("2026-01-01T00:00:00.000Z"),
-        }),
-        pricing({
-          offeringId: "o1",
-          inputUsdPerMTok: 2,
-          outputUsdPerMTok: 10,
-          effectiveFrom: new Date("2026-05-01T00:00:00.000Z"),
-        }),
-        pricing({
-          offeringId: "o1",
-          inputUsdPerMTok: 99,
-          outputUsdPerMTok: 99,
-          effectiveFrom: new Date("2026-09-01T00:00:00.000Z"),
-        }),
-      ],
-      ASOF,
+      [pricing({ offeringId: "o1", inputUsdPerMTok: 2, outputUsdPerMTok: 10 })],
       "USD",
     );
     expect(price.inputUsdPerMTok).toBeCloseTo(2, 10);
@@ -65,7 +43,6 @@ describe("priceForOffering", () => {
           currency: "EUR",
         }),
       ],
-      ASOF,
       "USD",
     );
     expect(price).toEqual({
@@ -77,7 +54,7 @@ describe("priceForOffering", () => {
   });
 
   test("no rows at all is unknown, never zero", () => {
-    const price = priceForOffering([], ASOF, "USD");
+    const price = priceForOffering([], "USD");
     expect(price.known).toBe(false);
     expect(price.inputUsdPerMTok).toBeNull();
   });
@@ -91,7 +68,6 @@ describe("priceForOffering", () => {
           outputUsdPerMTok: null,
         }),
       ],
-      ASOF,
       "USD",
     );
     expect(price.known).toBe(false);
@@ -102,7 +78,6 @@ describe("referenceCostUsd", () => {
   test("weights the two axes by the concept's mix", () => {
     const price = priceForOffering(
       [pricing({ offeringId: "o1", inputUsdPerMTok: 3, outputUsdPerMTok: 15 })],
-      ASOF,
       "USD",
     );
     expect(
@@ -129,12 +104,7 @@ describe("groupPricingByOffering", () => {
   test("keeps every row for an offering together", () => {
     const grouped = groupPricingByOffering([
       pricing({ offeringId: "o1", inputUsdPerMTok: 1, outputUsdPerMTok: 2 }),
-      pricing({
-        offeringId: "o1",
-        inputUsdPerMTok: 1,
-        outputUsdPerMTok: 2,
-        effectiveFrom: new Date("2026-02-01T00:00:00.000Z"),
-      }),
+      pricing({ offeringId: "o1", inputUsdPerMTok: 1, outputUsdPerMTok: 2 }),
       pricing({ offeringId: "o2", inputUsdPerMTok: 1, outputUsdPerMTok: 2 }),
     ]);
     expect(grouped.get("o1")?.length).toBe(2);

@@ -14,6 +14,10 @@
 //
 // All three tools read only, so none declares an `approval` key — the same
 // call `@corbits/connections-tools` makes for `list_connections`.
+//
+// The chain is resolved here, in the workflow child, from two stock tenant
+// reads (see `client.ts`). Nothing about a kind of work, a price, or a
+// bench's policy is computed by a Workbench-specific hub route.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
@@ -21,13 +25,15 @@ import { WIRE_CAPABILITIES, type Capability } from "@intx/types";
 import { type } from "arktype";
 
 import {
-  fetchChain,
-  fetchEstimate,
-  listConcepts,
-  type CatalogToolClientConfig,
+  CONCEPTS,
+  estimateUsd,
   type ChainEntry,
-  type ModelChainResult,
-} from "./client";
+  type ChainNeed,
+  type ModelChain,
+} from "@corbits/inference-catalog";
+
+import { chainFor, chainNote, readBenchCatalog } from "./chain";
+import type { CatalogToolClientConfig } from "./client";
 
 export const LIST_MODEL_CONCEPTS_TOOL = "list_model_concepts";
 export const PICK_MODELS_TOOL = "pick_models";
@@ -37,6 +43,8 @@ export const ESTIMATE_RUN_COST_TOOL = "estimate_run_cost";
  * mirroring `@corbits/connections-tools`' `WorkflowConnectionEnv`. */
 export interface WorkflowCatalogEnv extends BaseEnv {
   readonly hubCatalogUrl: string;
+  /** The run's own tenant — the `:tenantId` segment of a stock route. */
+  readonly tenantId: string;
   readonly sidecarToken: string;
   readonly address: string;
 }
@@ -92,17 +100,18 @@ function errorResult(callId: string, err: unknown): ToolResult {
 function clientConfig(env: WorkflowCatalogEnv): CatalogToolClientConfig {
   return {
     hubCatalogUrl: env.hubCatalogUrl,
+    tenantId: env.tenantId,
     sidecarToken: env.sidecarToken,
     address: env.address,
   };
 }
 
-/** The need, as exactly one of the two forms the hub accepts. The input
- * schema has already rejected both-at-once and neither. */
-function needOf(input: { concept?: string; capabilities?: Capability[] }): {
+/** The need, as exactly one of the two forms chain resolution accepts. The
+ * input schema has already rejected both-at-once and neither. */
+function needOf(input: {
   concept?: string;
-  capabilities?: readonly Capability[];
-} {
+  capabilities?: Capability[];
+}): ChainNeed {
   return input.concept !== undefined
     ? { concept: input.concept }
     : { capabilities: input.capabilities ?? [] };
@@ -121,11 +130,10 @@ function describeEntry(entry: ChainEntry, position: number): string {
   return `${position}. ${name} via ${entry.providerName} — ${price}${flag}`;
 }
 
-export function describeChain(chain: ModelChainResult): string {
+export function describeChain(chain: ModelChain): string {
+  const note = chainNote(chain);
   if (chain.entries.length === 0) {
-    return (
-      chain.note ?? "Nothing on this bench can do that kind of work right now."
-    );
+    return note ?? "Nothing on this bench can do that kind of work right now.";
   }
   const lines = chain.entries.map((entry, index) =>
     describeEntry(entry, index + 1),
@@ -134,7 +142,7 @@ export function describeChain(chain: ModelChainResult): string {
     chain.entries.length === 1
       ? "One model here fits:"
       : "Use the first; the rest are fallbacks, in order:";
-  return [head, ...lines, chain.note].filter(Boolean).join("\n");
+  return [head, ...lines, note].filter(Boolean).join("\n");
 }
 
 async function runListModelConcepts(
@@ -142,12 +150,15 @@ async function runListModelConcepts(
   call: ToolCall,
 ): Promise<ToolResult> {
   try {
-    const concepts = await listConcepts(clientConfig(env));
-    const lines = concepts.map((concept) => {
+    const bench = await readBenchCatalog(clientConfig(env));
+    const lines = CONCEPTS.map((concept) => {
+      const chain = chainFor(bench, { concept: concept.id }, "cheapest", 10);
+      const head = chain.entries[0];
+      const available = chain.entries.length;
       const availability =
-        concept.availableModels === 0
+        available === 0
           ? "nothing here can do it yet"
-          : `${concept.availableModels} model${concept.availableModels === 1 ? "" : "s"} here, best via ${concept.headProvider ?? "unknown"}`;
+          : `${available} model${available === 1 ? "" : "s"} here, best via ${head?.providerName ?? "unknown"}`;
       return `${concept.id} — ${concept.whenToUse} (${availability})`;
     });
     return {
@@ -169,13 +180,8 @@ async function runPickModels(
   parsed: PickModelsInput,
 ): Promise<ToolResult> {
   try {
-    const need = needOf(parsed);
-    const chain = await fetchChain(clientConfig(env), {
-      concept: need.concept,
-      capabilities: need.capabilities,
-      order: parsed.order,
-      limit: parsed.limit,
-    });
+    const bench = await readBenchCatalog(clientConfig(env));
+    const chain = chainFor(bench, needOf(parsed), parsed.order, parsed.limit);
     return { callId: call.id, isError: false, content: describeChain(chain) };
   } catch (err) {
     return errorResult(call.id, err);
@@ -188,25 +194,25 @@ async function runEstimateRunCost(
   parsed: EstimateRunCostInput,
 ): Promise<ToolResult> {
   try {
-    const need = needOf(parsed);
-    const estimate = await fetchEstimate(clientConfig(env), {
-      concept: need.concept,
-      capabilities: need.capabilities,
-      expectedInputTokens: parsed.expectedInputTokens,
-      expectedOutputTokens: parsed.expectedOutputTokens,
-    });
-    if (estimate.estimates.length === 0) {
+    const bench = await readBenchCatalog(clientConfig(env));
+    const chain = chainFor(bench, needOf(parsed), "cheapest", 10);
+    if (chain.entries.length === 0) {
       return {
         callId: call.id,
         isError: false,
         content: "Nothing on this bench can do that kind of work right now.",
       };
     }
-    const lines = estimate.estimates.map((row) =>
-      row.estimatedUsd === null
-        ? `${row.canonicalName} via ${row.providerName} — no price on record, so no estimate`
-        : `${row.canonicalName} via ${row.providerName} — about ${usd(row.estimatedUsd)}`,
-    );
+    const lines = chain.entries.map((entry) => {
+      const amount = estimateUsd(
+        entry.price,
+        parsed.expectedInputTokens,
+        parsed.expectedOutputTokens,
+      );
+      return amount === null
+        ? `${entry.canonicalName} via ${entry.providerName} — no price on record, so no estimate`
+        : `${entry.canonicalName} via ${entry.providerName} — about ${usd(amount)}`;
+    });
     return {
       callId: call.id,
       isError: false,
@@ -223,7 +229,7 @@ async function runEstimateRunCost(
  */
 export const catalogTools = defineTool<WorkflowCatalogEnv>({
   id: "@corbits/catalog-tools/catalog",
-  requires: ["hubCatalogUrl", "sidecarToken", "address"],
+  requires: ["hubCatalogUrl", "tenantId", "sidecarToken", "address"],
   definitions: [
     { name: LIST_MODEL_CONCEPTS_TOOL },
     { name: PICK_MODELS_TOOL },

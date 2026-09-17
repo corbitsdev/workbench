@@ -446,8 +446,9 @@ export function createSidecarStepBuildEnv(
       hubRoutinesUrl: deps.hubArtifactsUrl,
       hubConnectionsUrl: deps.hubArtifactsUrl,
       // And once more under the key `@corbits/catalog-tools` declares
-      // (`requires: ["hubCatalogUrl", "sidecarToken", "address"]`) for the
-      // inference catalog's own run-authenticated surface.
+      // (`requires: ["hubCatalogUrl", "tenantId", "sidecarToken",
+      // "address"]`) for the stock tenant model-discovery and tenant reads
+      // it resolves a model chain from.
       hubCatalogUrl: deps.hubArtifactsUrl,
       hubAgentDirectoryUrl: deps.hubArtifactsUrl,
       hubChatUrl: deps.hubArtifactsUrl,
@@ -466,7 +467,7 @@ export function createSidecarStepBuildEnv(
       // The run's own tenant/principal, for the tool bundles that address
       // stock `/api/tenants/:tenantId/*` routes with the run bearer
       // (`@corbits/access-tools`, `@corbits/connections-tools`,
-      // `@corbits/workflow-authoring-tools`).
+      // `@corbits/workflow-authoring-tools`, `@corbits/catalog-tools`).
       tenantId: deps.tenantId,
       principalId: deps.principalId,
     };

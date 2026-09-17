@@ -11,13 +11,5 @@
     "rootDir": "../.."
   },
   "include": ["src"],
-  "exclude": [],
-  "references": [
-    {
-      "path": "../../vendor/intx/inference/tsconfig.src.json"
-    },
-    {
-      "path": "../../vendor/intx/types/tsconfig.src.json"
-    }
-  ]
+  "exclude": []
 }

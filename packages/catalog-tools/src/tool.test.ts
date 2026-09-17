@@ -9,52 +9,70 @@ import {
   type WorkflowCatalogEnv,
 } from "./tool";
 
-const CHAIN_BODY = {
-  concept: "cheap-loop",
-  requiredCapabilities: ["plain-text"],
-  entries: [
-    {
-      canonicalName: "thrifty",
-      displayName: "Thrifty",
-      providerName: "globex",
-      plugin: "openai-compatible",
-      offeringId: "off_1",
-      capabilities: ["plain-text"],
-      price: {
-        currency: "USD",
-        known: true,
-        inputUsdPerMTok: 0.1,
-        outputUsdPerMTok: 0.4,
+const CHEAP_LOOP_MODELS = [
+  {
+    id: "m1",
+    canonicalName: "thrifty",
+    displayName: "Thrifty",
+    offerings: [
+      {
+        offeringId: "off_1",
+        providerName: "globex",
+        plugin: "openai-compatible",
+        priority: 0,
+        capabilities: ["plain-text"],
+        pricing: [
+          {
+            offeringId: "off_1",
+            currency: "USD",
+            inputTokenPrice: "0.0000001",
+            outputTokenPrice: "0.0000004",
+          },
+        ],
       },
-      referenceCostUsd: 0.12,
-      overCeiling: false,
-    },
-    {
-      canonicalName: "mystery",
-      displayName: null,
-      providerName: "initech",
-      plugin: "openai-compatible",
-      offeringId: "off_2",
-      capabilities: ["plain-text"],
-      price: {
-        currency: "USD",
-        known: false,
-        inputUsdPerMTok: null,
-        outputUsdPerMTok: null,
+    ],
+  },
+  {
+    id: "m2",
+    canonicalName: "mystery",
+    displayName: null,
+    offerings: [
+      {
+        offeringId: "off_2",
+        providerName: "initech",
+        plugin: "openai-compatible",
+        priority: 1,
+        capabilities: ["plain-text"],
+        pricing: [],
       },
-      referenceCostUsd: null,
-      overCeiling: false,
-    },
-  ],
-  note: null,
-};
+    ],
+  },
+];
 
-function env(fetchImpl?: typeof fetch): WorkflowCatalogEnv {
+const IMAGE_MAKER_MODELS = [
+  {
+    id: "m1",
+    canonicalName: "thrifty",
+    displayName: "Thrifty",
+    offerings: [
+      {
+        offeringId: "off_1",
+        providerName: "globex",
+        plugin: "openai-compatible",
+        priority: 0,
+        capabilities: ["plain-text"],
+        pricing: [],
+      },
+    ],
+  },
+];
+
+function env(): WorkflowCatalogEnv {
   return {
     hubCatalogUrl: "https://hub.example.com",
+    tenantId: "bench_1",
     sidecarToken: "sc-token",
     address: "run_1@workflow",
-    fetch: fetchImpl,
   } as unknown as WorkflowCatalogEnv;
 }
 
@@ -62,11 +80,19 @@ function callFor(name: string, args: Record<string, unknown>): ToolCall {
   return { id: "call_1", name, arguments: args };
 }
 
-function stubbing(body: unknown): void {
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify(body), {
-      status: 200,
-    })) as unknown as typeof fetch;
+/** Stubs both stock reads `readBenchCatalog` makes: the model list at
+ * `/models`, and the tenant itself (for its config's model policy). */
+function stubbing(models: unknown, config?: Record<string, unknown>): void {
+  globalThis.fetch = (async (input: string) => {
+    const url = String(input);
+    if (url.endsWith("/models")) {
+      return new Response(JSON.stringify(models), { status: 200 });
+    }
+    return new Response(
+      JSON.stringify({ id: "bench_1", config: config ?? null }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
 }
 
 describe("pick_models", () => {
@@ -99,7 +125,7 @@ describe("pick_models", () => {
   });
 
   test("names every model in the chain, in order, and no model that is not", async () => {
-    stubbing(CHAIN_BODY);
+    stubbing(CHEAP_LOOP_MODELS);
     const result = await catalogTools(env()).run(
       callFor(PICK_MODELS_TOOL, { concept: "cheap-loop" }),
       new AbortController().signal,
@@ -113,7 +139,7 @@ describe("pick_models", () => {
   });
 
   test("an unpriced model is reported as unpriced, never as free", async () => {
-    stubbing(CHAIN_BODY);
+    stubbing(CHEAP_LOOP_MODELS);
     const result = await catalogTools(env()).run(
       callFor(PICK_MODELS_TOOL, { concept: "cheap-loop" }),
       new AbortController().signal,
@@ -123,12 +149,7 @@ describe("pick_models", () => {
   });
 
   test("an empty chain says nothing here can do it, without inventing a model", async () => {
-    stubbing({
-      concept: "image-maker",
-      requiredCapabilities: ["image-output"],
-      entries: [],
-      note: "nothing on this bench can do that",
-    });
+    stubbing(IMAGE_MAKER_MODELS);
     const result = await catalogTools(env()).run(
       callFor(PICK_MODELS_TOOL, { concept: "image-maker" }),
       new AbortController().signal,
@@ -140,17 +161,7 @@ describe("pick_models", () => {
 
 describe("estimate_run_cost", () => {
   test("reports an honest no-estimate for an unpriced model", async () => {
-    stubbing({
-      concept: "cheap-loop",
-      estimates: [
-        {
-          canonicalName: "mystery",
-          providerName: "initech",
-          known: false,
-          estimatedUsd: null,
-        },
-      ],
-    });
+    stubbing(CHEAP_LOOP_MODELS);
     const result = await catalogTools(env()).run(
       callFor(ESTIMATE_RUN_COST_TOOL, {
         concept: "cheap-loop",
@@ -173,24 +184,7 @@ describe("estimate_run_cost", () => {
 
 describe("list_model_concepts", () => {
   test("says how many models this bench has for each kind of work", async () => {
-    stubbing({
-      data: [
-        {
-          id: "cheap-loop",
-          title: "Cheap loop",
-          whenToUse: "A step that runs hundreds of times.",
-          availableModels: 2,
-          headProvider: "globex",
-        },
-        {
-          id: "image-maker",
-          title: "Image maker",
-          whenToUse: "Produce a picture rather than words.",
-          availableModels: 0,
-          headProvider: null,
-        },
-      ],
-    });
+    stubbing(CHEAP_LOOP_MODELS);
     const result = await catalogTools(env()).run(
       callFor(LIST_MODEL_CONCEPTS_TOOL, {}),
       new AbortController().signal,

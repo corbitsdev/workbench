@@ -1,12 +1,13 @@
 export {
-  fetchChain,
-  fetchEstimate,
-  listConcepts,
+  chainFor,
+  chainNote,
+  readBenchCatalog,
+  type BenchCatalog,
+} from "./chain";
+export {
+  fetchCatalog,
+  fetchModelPolicy,
   type CatalogToolClientConfig,
-  type ChainEntry,
-  type ConceptSummary,
-  type EstimateResult,
-  type ModelChainResult,
 } from "./client";
 export {
   catalogTools,
@@ -16,7 +17,9 @@ export {
   PICK_MODELS_TOOL,
   type WorkflowCatalogEnv,
 } from "./tool";
-// The read-only tools call the workflow-run-authenticated catalog surface
-// `@corbits/inference-catalog` mounts in `apps/hub` at
-// `/api/workflow-inference-catalog`. Catalog administration is UI-only
-// (CL-7588): this package exposes no write tools and no hub routes.
+// The three read-only tools resolve the chain in the workflow child from
+// two stock Interchange tenant reads — `/api/tenants/:tenantId/models` and
+// `/api/tenants/:tenantId` — with the run's own bearer credential. There is
+// no `/api/workflow-inference-catalog` mount any more. Catalog
+// administration stays UI-only (CL-7588): this package exposes no write
+// tools and no hub routes.

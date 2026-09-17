@@ -1,5 +1,11 @@
 export { Capability, WIRE_CAPABILITIES } from "./capabilities";
 export {
+  catalogOfferingsFrom,
+  CatalogPricingRow,
+  DiscoveredModel,
+  type CatalogOffering,
+} from "./catalog";
+export {
   CONCEPTS,
   CONCEPT_IDS,
   DEFAULT_MIX,
@@ -16,6 +22,7 @@ export {
 } from "./offering-capabilities";
 export {
   DEFAULT_CURRENCY,
+  estimateUsd,
   groupPricingByOffering,
   perMTok,
   priceForOffering,
@@ -23,10 +30,12 @@ export {
   type OfferingPrice,
 } from "./price";
 export {
-  BenchModelPolicyPatch,
   EMPTY_POLICY,
+  MODEL_POLICY_CONFIG_PATH,
   matchesAny,
+  readModelPolicy,
   selectorMatches,
+  StoredModelPolicy,
   type BenchModelPolicy,
   type PolicyCeiling,
   type PolicySelector,
@@ -42,27 +51,3 @@ export {
   type ModelChain,
   type ResolveChainInput,
 } from "./resolve-chain";
-export {
-  applyInferenceCatalogMigrations,
-  inferenceCatalogMigrations,
-  type ApplyInferenceCatalogMigrationsReport,
-  type InferenceCatalogMigration,
-} from "./migrations";
-export {
-  benchModelPolicy,
-  inferenceCatalogSchema,
-  type BenchModelPolicyRow,
-} from "./schema";
-export {
-  applyPolicyPatch,
-  createMemoryBenchModelPolicyStore,
-  type BenchModelPolicyStore,
-} from "./store";
-export { createPostgresBenchModelPolicyStore } from "./pg-store";
-export {
-  createWorkflowCatalogRoutes,
-  estimateUsd,
-  type CreateWorkflowCatalogRoutesDeps,
-  type WorkflowCatalogEnv,
-  type WorkflowCatalogRunScope,
-} from "./workflow-catalog-routes";

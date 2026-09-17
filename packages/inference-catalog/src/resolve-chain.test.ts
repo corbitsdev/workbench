@@ -10,8 +10,6 @@ import {
   type ResolveChainInput,
 } from "./resolve-chain";
 
-const ASOF = new Date("2026-06-01T00:00:00.000Z");
-
 const CHEAP_LOOP_CAPABLE = ["plain-text", "structured-output"] as const;
 
 function input(overrides: Partial<ResolveChainInput>): ResolveChainInput {
@@ -20,7 +18,6 @@ function input(overrides: Partial<ResolveChainInput>): ResolveChainInput {
     offerings: [],
     pricing: [],
     policy: EMPTY_POLICY,
-    asOf: ASOF,
     ...overrides,
   };
 }
@@ -87,26 +84,6 @@ describe("resolveModelChain: what qualifies", () => {
     expect(chain.entries).toEqual([]);
     expect(chain.excluded).toEqual([
       { offeringId: "o1", reason: "missing-capabilities" },
-    ]);
-  });
-
-  test("a provider with no credential is not something this bench can reach", () => {
-    const chain = resolveModelChain(
-      input({
-        offerings: [
-          offering({
-            id: "o1",
-            canonicalName: "unreachable",
-            providerName: "acme",
-            capabilities: [...CHEAP_LOOP_CAPABLE],
-            connected: false,
-          }),
-        ],
-      }),
-    );
-    expect(chain.entries).toEqual([]);
-    expect(chain.excluded).toEqual([
-      { offeringId: "o1", reason: "provider-not-connected" },
     ]);
   });
 });
@@ -514,7 +491,6 @@ describe("resolveModelChain: the chain itself", () => {
       ],
       pricing: [],
       policy: EMPTY_POLICY,
-      asOf: ASOF,
     });
     expect(chain.entries.map((entry) => entry.canonicalName)).toEqual([
       "only-model",
@@ -545,23 +521,6 @@ describe("resolveModelChain: the chain itself", () => {
     expect(chain.excluded).toEqual([
       { offeringId: "o1", reason: "missing-capabilities" },
     ]);
-  });
-
-  test("provenance records whether the offering was set here or inherited", () => {
-    const chain = resolveModelChain(
-      input({
-        offerings: [
-          offering({
-            id: "o1",
-            canonicalName: "inherited-model",
-            providerName: "acme",
-            capabilities: [...CHEAP_LOOP_CAPABLE],
-            inherited: true,
-          }),
-        ],
-      }),
-    );
-    expect(chain.entries[0]?.provenance).toBe("inherited");
   });
 });
 
