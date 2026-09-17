@@ -32,10 +32,10 @@
   },
   "devDependencies": {
     "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#5309a15d4aa504f132c54b4da08bb672b4903873",
-    "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider",
+    "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
     "@corbits/evals": "workspace:*",
     "@corbits/ollama-adapter": "workspace:*",
-    "@corbits/xai-provider": "github:corbitsdev/corbits-xai-provider",
+    "@corbits/xai-provider": "github:corbitsdev/corbits-xai-provider#9f2d4bac40ea075df092fef807404a13c638cf14",
     "@intx/db": "workspace:*",
     "@intx/crypto": "workspace:*",
     "@intx/log": "workspace:*",
