@@ -4,23 +4,33 @@
 // connect card's start-reviewing step (CL-7242, `./repo-review-lease.ts`).
 // Both live in this package's own `webhook_triggers` Postgres schema,
 // fully siloed from the platform's `public` schema — see
-// docs/package-migrations.md. `repoReviewLease` carries no foreign key
-// to any Interchange core table: every workbench package already
-// stores a platform id as a plain text column, never a cross-schema
-// FK (see e.g. packages/chat/src/schema.ts's own header), and "repo"
-// is a GitHub identity Interchange has no row for at all.
+// docs/package-migrations.md.
+//
+// `tenant_id` (both tables) and `webhook_trigger.created_by` (a real
+// Interchange principal id — see `management-routes.ts`'s
+// `createdBy: principal.id`) are hard foreign keys into Interchange's
+// own `tenant`/`principal` tables (CL-8210): `hostTenant`/`hostPrincipal`
+// below are declared, never migrated, just far enough to carry the FK,
+// same pattern as `@corbits/artifacts`'s `src/schema.ts`.
+// `repo_review_lease` carries no FK beyond `tenant_id`: "repo" is a
+// GitHub identity Interchange has no row for at all.
 //
 // The signing secret is encrypted at rest via Interchange's
 // `CredentialCipher` seam — see `./store.ts` for the encrypt/decrypt
 // wiring and `./signature.ts` for the security-model note on what that
 // does and does not close.
-import { boolean, pgSchema, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, pgSchema, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const webhookTriggersSchema = pgSchema("webhook_triggers");
 
+const hostTenant = pgTable("tenant", { id: text("id").primaryKey() });
+const hostPrincipal = pgTable("principal", { id: text("id").primaryKey() });
+
 export const webhookTrigger = webhookTriggersSchema.table("webhook_trigger", {
   id: text("id").primaryKey(),
-  tenantId: text("tenant_id").notNull(),
+  tenantId: text("tenant_id")
+    .notNull()
+    .references(() => hostTenant.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   workflowDefinitionId: text("workflow_definition_id").notNull(),
   /**
@@ -39,7 +49,9 @@ export const webhookTrigger = webhookTriggersSchema.table("webhook_trigger", {
    */
   secret: text("secret").notNull(),
   enabled: boolean("enabled").notNull().default(true),
-  createdBy: text("created_by").notNull(),
+  createdBy: text("created_by")
+    .notNull()
+    .references(() => hostPrincipal.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
 });
@@ -62,7 +74,9 @@ export const repoReviewLease = webhookTriggersSchema.table(
   "repo_review_lease",
   {
     id: text("id").primaryKey(),
-    tenantId: text("tenant_id").notNull(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => hostTenant.id, { onDelete: "cascade" }),
     repo: text("repo").notNull(),
     leasedAt: timestamp("leased_at", { withTimezone: true }).notNull().defaultNow(),
   },

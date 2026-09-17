@@ -59,13 +59,19 @@ test("allowlisted product schema files pass at their max count", () => {
     {
       relPath: "packages/webhook-triggers/src/schema.ts",
       contents: [
+        `const tenant = pgTable("tenant", {});`,
+        `const principal = pgTable("principal", {});`,
         `export const webhookTrigger = webhookTriggersSchema.table("webhook_trigger", {});`,
         `export const repoReviewLease = webhookTriggersSchema.table("repo_review_lease", {});`,
       ].join("\n"),
     },
     {
       relPath: "packages/notify/src/schema.ts",
-      contents: `export const notifyDispatch = notifySchema.table("notify_dispatch", {});`,
+      contents: [
+        `const tenant = pgTable("tenant", {});`,
+        `const principal = pgTable("principal", {});`,
+        `export const notifyDispatch = notifySchema.table("notify_dispatch", {});`,
+      ].join("\n"),
     },
   ]);
   expect(report.violations).toEqual([]);
@@ -77,6 +83,8 @@ test("allowlisted files fail when they grow past their max", () => {
     {
       relPath: "packages/webhook-triggers/src/schema.ts",
       contents: [
+        `const tenant = pgTable("tenant", {});`,
+        `const principal = pgTable("principal", {});`,
         `export const webhookTrigger = webhookTriggersSchema.table("webhook_trigger", {});`,
         `export const repoReviewLease = webhookTriggersSchema.table("repo_review_lease", {});`,
         `export const extra = webhookTriggersSchema.table("webhook_extra", {});`,
@@ -85,7 +93,7 @@ test("allowlisted files fail when they grow past their max", () => {
   ]);
   expect(report.violations).toHaveLength(1);
   expect(report.violations[0]).toContain("packages/webhook-triggers/src/schema.ts");
-  expect(report.violations[0]).toContain("3 pgTable");
+  expect(report.violations[0]).toContain("5 pgTable");
 });
 
 test("a `xyzSchema.table(...)` call is a violation naming the file, same as pgTable", () => {
