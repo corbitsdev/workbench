@@ -72,36 +72,12 @@ export type LaunchWebhookTriggerDeps = {
    * the composition root can keep passing the cipher it tagged at boot.
    */
   credentialCipher: CredentialCipher;
-  /**
-   * Records the relaunch mapping after Interchange has prepared the
-   * run. Invoked with Interchange's returned `anchorRunId`, not a
-   * pre-minted id used as the run. No nested transaction: the host
-   * writes after prepare has already committed the run rows.
-   */
-  persistLaunch: (input: {
-    readonly tenantId: string;
-    readonly instanceId: string;
-    readonly foldedBody: ReturnType<typeof readFoldedBody>;
-  }) => void | Promise<void>;
-  /**
-   * Records the inference chain the launch just deployed with.
-   * Digest is the joined catalog offering ids, same as chat's
-   * `offeringDigest`.
-   */
-  recordLaunchSources: (input: {
-    readonly instanceId: string;
-    readonly sourcesDigest: string;
-  }) => Promise<void>;
 };
 
 export type LaunchedWebhookTrigger = {
   readonly instanceId: string;
   readonly triggerAddress: string;
 };
-
-function offeringDigest(sourceOfferingIds: readonly string[]): string {
-  return sourceOfferingIds.join("\0");
-}
 
 /**
  * Resolves the trigger's referenced workflow definition (must be
@@ -211,16 +187,6 @@ export async function launchWebhookTrigger(
     runId: prepared.anchorRunId,
     sessionId,
     sourceAuthorityPrincipalId: trigger.createdBy,
-  });
-
-  await deps.persistLaunch({
-    tenantId: trigger.tenantId,
-    instanceId: prepared.anchorRunId,
-    foldedBody,
-  });
-  await deps.recordLaunchSources({
-    instanceId: prepared.anchorRunId,
-    sourcesDigest: offeringDigest(sourceOfferingIds),
   });
 
   const content = renderInputTemplate(trigger.inputTemplate, payload);

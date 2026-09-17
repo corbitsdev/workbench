@@ -4,8 +4,7 @@
 // persisted (`agent.modelSources`, no `grantRequirements` — the
 // projector drops it, so the definition row supplies it), and fails
 // loud on a malformed projection, a multi-step one, or a step that is
-// not a step primitive. `readLiveFoldedBody` reads the pre-projection
-// live shape the in-process workbench-host launch still carries.
+// not a step primitive.
 //
 // `resolveNewestProjectedDefinition` is the DB-side successor to
 // CL-6357's asset-drift walk: a pre-cutover sibling carrying no stored
@@ -39,7 +38,6 @@ afterEach(() => mock.restore());
 const {
   authoredDefinitionCandidates,
   readFoldedBody,
-  readLiveFoldedBody,
   readDefinitionProjection,
   resolveNewestProjectedDefinition,
   DefinitionProjectionMissingError,
@@ -238,30 +236,6 @@ describe("readFoldedBody", () => {
         [],
       ),
     ).toThrow(/body step reply is not a step primitive/);
-  });
-});
-
-describe("readLiveFoldedBody", () => {
-  test("extracts the launch body from the in-process live definition shape", () => {
-    expect(readLiveFoldedBody(liveDefinition())).toEqual({
-      systemPrompt: "you are a workbench host",
-      toolPackagePins: [],
-      grantRequirements: [],
-      credentialBindings: [],
-      model: "qwen3:8b",
-    });
-  });
-
-  test("fails loud on a malformed definition", () => {
-    expect(() => readLiveFoldedBody({ not: "a definition" })).toThrow(
-      /live definition is malformed/,
-    );
-  });
-
-  test("raises the named MultiStepFoldUnsupportedError on a multi-step live definition", () => {
-    expect(() =>
-      readLiveFoldedBody(liveDefinition({ stepOrder: ["host", "second"] })),
-    ).toThrow(MultiStepFoldUnsupportedError);
   });
 });
 

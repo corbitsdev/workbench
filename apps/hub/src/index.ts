@@ -78,10 +78,11 @@ import {
   isWorkbenchHostDefinitionName,
   listConnectedProviders,
   listDefaultInferencePreferences,
-  recordSourcesDigest,
+  localPartOf,
+  parseParticipants,
+  postRoomMessage,
   startWorkflowCommand,
   settleConnectedService,
-  workbenchLaunchPersistExtra,
   createCryptoProviderCache,
   tagCredentialCipher,
   verifyInternalRunTriggerToken,
@@ -2083,11 +2084,6 @@ export async function createHub(config: HubConfig) {
             eventCollectors,
             isRoutable: isSidecarRoutable,
             cryptoProviderCache: cryptoProviders,
-            persistLaunch: async (input) => {
-              await workbenchLaunchPersistExtra(input)(db);
-            },
-            recordLaunchSources: ({ instanceId, sourcesDigest }) =>
-              recordSourcesDigest(db, instanceId, sourcesDigest),
           },
           trigger,
           payload,
