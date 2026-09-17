@@ -39,3 +39,4 @@ export {
   createWebhookTriggerRoutes,
   type CreateWebhookTriggerRoutesDeps,
 } from "./management-routes";
+export { createCryptoProviderCache, type CryptoProviderCache } from "./crypto-cache";

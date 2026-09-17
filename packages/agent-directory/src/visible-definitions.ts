@@ -10,7 +10,6 @@
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { getAncestorChain, schema } from "@intx/db";
-import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 import { isConversationalWorkflowName } from "@corbits/workflows/catalog";
 import { deriveDisplayName } from "./client";
 
@@ -66,7 +65,6 @@ export async function listVisibleAgentDefinitions(
       // automation, not a conversational agent — DMing it produces
       // nonsense, so only a genuinely conversational definition is listed.
       if (row.assetId === null) continue;
-      if (isWorkbenchHostDefinitionName(row.name)) continue;
       if (!isConversationalWorkflowName(row.name)) continue;
       // Leaf-to-root order means the closer tenant's definition for this
       // name was already recorded — an ancestor's same-name row never

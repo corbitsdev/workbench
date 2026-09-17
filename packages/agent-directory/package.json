@@ -15,8 +15,6 @@
   },
   "dependencies": {
     "@corbits/agent-events": "workspace:*",
-    "@corbits/agent-runtime": "workspace:*",
-    "@corbits/chat": "workspace:*",
     "@corbits/error-sink": "workspace:*",
     "@corbits/skills": "workspace:*",
     "@corbits/tool-registry-publish": "workspace:*",

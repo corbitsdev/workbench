@@ -7,14 +7,13 @@
 // to identify that plumbing; a host injects only its raw definition/
 // instance lists, already fetched from wherever it gets them.
 
-import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 import {
   deriveDisplayName,
   humanizeSlug,
   withDisplayName,
   withDisplayNames,
   type WithDisplayName,
-} from "@corbits/chat/display-name";
+} from "./display-name";
 import { isConversationalWorkflowName } from "@corbits/workflows/catalog";
 
 // `deriveDisplayName`/`humanizeSlug` (CL-6413) live in `@corbits/chat`
@@ -59,9 +58,7 @@ export type UserFacingAgentInstance = {
 export function purposeAgentDefinitions<T extends UserFacingAgentDefinition>(
   definitions: readonly T[],
 ): readonly T[] {
-  return definitions.filter(
-    (d) => !isWorkbenchHostDefinitionName(d.name) && isConversationalWorkflowName(d.name),
-  );
+  return definitions.filter((d) => isConversationalWorkflowName(d.name));
 }
 
 /**
@@ -75,10 +72,7 @@ export function purposeAgentInstances<T extends UserFacingAgentInstance>(
   instances: readonly T[],
   excludeRunIds: ReadonlySet<string> = new Set(),
 ): readonly T[] {
-  return instances.filter(
-    (instance) =>
-      !isWorkbenchHostDefinitionName(instance.definitionName) && !excludeRunIds.has(instance.id),
-  );
+  return instances.filter((instance) => !excludeRunIds.has(instance.id));
 }
 
 export function filterDefinitions<T extends UserFacingAgentDefinition>(

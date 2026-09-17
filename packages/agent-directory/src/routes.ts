@@ -26,7 +26,6 @@ import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 
 import { type PinnedSkillIndexEntry } from "@corbits/skills";
-import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 
 import {
   createAgentDefinitionCore,
@@ -132,7 +131,7 @@ function definitionNotFound(definitionId: string) {
 function hostGuardedRow(
   row: { readonly name: string; readonly assetId: string | null } | undefined,
 ): row is { readonly name: string; readonly assetId: string } {
-  return row !== undefined && row.assetId !== null && !isWorkbenchHostDefinitionName(row.name);
+  return row !== undefined && row.assetId !== null;
 }
 
 export function createAgentDefinitionRoutes({
