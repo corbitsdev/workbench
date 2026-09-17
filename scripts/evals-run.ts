@@ -27,6 +27,7 @@ import {
   applyEvalsMigrations,
   bootMyraTarget,
   captureWorldSnapshot,
+  createEvalAssetService,
   createPostgresEvalRunStore,
   GITHUB_MCP_FAKE_RECORDING,
   renderResultsMarkdown,
@@ -37,7 +38,6 @@ import {
   type RunConfig,
 } from "@corbits/evals";
 import { createDB } from "@intx/db";
-import { createBootAssetWiring } from "../apps/hub/src/asset-service-factory.ts";
 import { resetSchema, setupDatabase } from "./db-setup.ts";
 import {
   api,
@@ -82,14 +82,14 @@ const infra: MyraTargetInfra = {
   startHub,
   startSidecar,
   // World scorers read real state (CL-6404): an `AssetService` over the
-  // scratch hub's own data dir — built by the hub's OWN boot factory
-  // (`createBootAssetWiring`), never a parallel implementation — plus a
-  // drizzle handle on the same scratch database.
+  // scratch hub's own data dir, built the same way hub boot builds one
+  // (a fresh signing key only ever signs writes, which a snapshot reader
+  // never performs), plus a drizzle handle on the same scratch database.
   captureWorldSnapshot: async ({ tenantId, hubDataDir, fakeReceipts }) => {
     const url = requireE2eDatabaseUrl("captureWorldSnapshot");
     const { db, close } = createDB(dbConfigFromUrl(url));
     try {
-      const { assetService } = await createBootAssetWiring({
+      const assetService = await createEvalAssetService({
         db,
         dataDir: hubDataDir,
       });

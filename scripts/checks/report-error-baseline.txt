@@ -19,11 +19,7 @@
 # `occurrence` is this evidence string's 1-based rank among matches in
 # the same file — line numbers aren't used as the key because they
 # drift as unrelated code around a catch changes.
-apps/hub/src/grant-allowance.ts	1	return null;
-apps/hub/src/index.ts	1	email = undefined;
 apps/hub/src/index.ts	1	sidecarAllocationLog.error`Sidecar allocation reconciliation failed: ${error instanceof Error ? error.message : String(error)}`;
-apps/hub/src/mail-redelivery.ts	1	log.warn`could not wake ${recipient} ahead of redelivery: ${
-apps/hub/src/shutdown.ts	1	return { kind: "failed", error };
 apps/sidecar/src/atomic-write.ts	1	logger.warn`parent-dir fsync failed for ${path}; durability is degraded but the file is renamed and fsynced — ${err instanceof Error ? err.message : String(err)}`;
 apps/sidecar/src/concurrency.ts	1	failures.push({ item, error });
 apps/sidecar/src/conversation-state.ts	1	logger.warn`connector route for ${opts.agentKey} could not parse the inbound sender; leaving the thread unadvanced: ${cause instanceof Error ? cause.message : String(cause)}`;
