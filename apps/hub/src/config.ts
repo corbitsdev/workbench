@@ -119,7 +119,7 @@ const HubEnv = type({
     "a filesystem directory for the hub's durable repo and asset state, e.g. .data/hub",
   ),
   HUB_STATIC_DIR: type("string > 0").describe(
-    "a directory of built user-interface files the hub serves, e.g. apps/hub/public",
+    "a directory of built user-interface files the hub serves, e.g. apps/web/dist",
   ),
   "SIGNUP_RATE_LIMIT_WINDOW_SECONDS?": type(/^[1-9]\d*$/).describe(
     "the per-IP sign-up rate-limit window, in seconds, e.g. 60",
