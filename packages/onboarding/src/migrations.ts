@@ -27,6 +27,19 @@ export const onboardingMigrations: readonly OnboardingMigration[] = [
       );
     `,
   },
+  {
+    // CL-8210: tenant_id becomes a real foreign key into Interchange's own
+    // tenant table, ON DELETE CASCADE. user_id stays a plain text column —
+    // it is the workbench web app's better-auth user id, not an
+    // Interchange principal id, so there is no Interchange row to
+    // reference (see packages/onboarding/src/schema.ts).
+    name: "0002_pending_seed_tenant_fk",
+    sql: `
+      ALTER TABLE "onboarding"."pending_seed"
+        ADD CONSTRAINT "pending_seed_tenant_id_fkey"
+          FOREIGN KEY ("tenant_id") REFERENCES "public"."tenant" ("id") ON DELETE CASCADE;
+    `,
+  },
 ];
 
 const LEDGER_TABLE = "onboarding_migrations";

@@ -98,6 +98,26 @@ export const webhookTriggersMigrations: readonly WebhookTriggersMigration[] = [
         ON "webhook_triggers"."repo_review_lease" ("tenant_id", "repo");
     `,
   },
+  {
+    // CL-8210: tenant_id (both tables) and webhook_trigger.created_by (a
+    // real Interchange principal id — see management-routes.ts's
+    // `createdBy: principal.id`) become hard foreign keys into
+    // Interchange's own tenant/principal tables, ON DELETE CASCADE, so
+    // deleting a tenant or principal cleans up the triggers and leases it
+    // owned.
+    name: "0005_tenant_principal_fk",
+    sql: `
+      ALTER TABLE "webhook_triggers"."webhook_trigger"
+        ADD CONSTRAINT "webhook_trigger_tenant_id_fkey"
+          FOREIGN KEY ("tenant_id") REFERENCES "public"."tenant" ("id") ON DELETE CASCADE,
+        ADD CONSTRAINT "webhook_trigger_created_by_fkey"
+          FOREIGN KEY ("created_by") REFERENCES "public"."principal" ("id") ON DELETE CASCADE;
+
+      ALTER TABLE "webhook_triggers"."repo_review_lease"
+        ADD CONSTRAINT "repo_review_lease_tenant_id_fkey"
+          FOREIGN KEY ("tenant_id") REFERENCES "public"."tenant" ("id") ON DELETE CASCADE;
+    `,
+  },
 ];
 
 // Named distinctly from the platform's setup ledger and from any
