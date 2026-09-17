@@ -1,5 +1,4 @@
-// DB-gated: skipped when no DATABASE_URL is reachable, mirroring
-// `@corbits/run-scope`'s `scope-routes.drizzle.test.ts`. Runs the
+// DB-gated: skipped when no DATABASE_URL is reachable. Runs the
 // real platform schema (`@intx/db`'s `runMigrations`) alongside this
 // package's own `applyRunKeyHistoryMigrations`, so the reconnect
 // repair is proven against a real `workflow_run` row and a real

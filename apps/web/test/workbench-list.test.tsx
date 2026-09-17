@@ -57,8 +57,6 @@ function stubFetch(
     const path = typeof input === "string" ? input : String(input);
     if (path.includes("/api/me/principals"))
       return Promise.resolve(json(membership));
-    if (path.includes("/top-level-runs"))
-      return Promise.resolve(json({ data: [], nextCursor: null }));
     if (path.includes("/approvals"))
       return Promise.resolve(
         json({ data: data.pendingApprovals ?? [], nextCursor: null }),

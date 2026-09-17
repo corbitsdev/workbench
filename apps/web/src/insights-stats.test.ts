@@ -229,6 +229,22 @@ describe("groupRunsByDefinition", () => {
     expect(groupRunsByDefinition([])).toEqual([]);
   });
 
+  test("groups native rows with no routine attribution by definition (CL-8087)", () => {
+    // The native `GET /workflows/runs` listing carries no `routineId`, so
+    // history groups by definition — never by an invented routine.
+    const native = run({
+      id: "n1",
+      status: "running",
+      definitionId: "wfd_a",
+      definitionName: "Research brief",
+    });
+    delete native.routineId;
+    delete native.routineName;
+    const groups = groupRunsByDefinition([native]);
+    expect(groups.map((g) => g.groupKey)).toEqual(["wfd_a"]);
+    expect(groups[0]?.displayName).toBe("Research brief");
+  });
+
   test("uses the newest run's name, not input-array-first, when a definition was renamed", () => {
     // Old run (chronologically oldest) appears FIRST in the input array,
     // simulating an unsorted/out-of-order feed. Newer run (renamed) is second.
@@ -313,6 +329,17 @@ describe("runDisplayName", () => {
         }),
       ),
     ).toBe("researcher");
+  });
+
+  test("falls back to the definition name for a native row with no routine attribution (CL-8087)", () => {
+    const native = run({
+      id: "native1",
+      status: "running",
+      definitionName: "researcher",
+    });
+    delete native.routineId;
+    delete native.routineName;
+    expect(runDisplayName(native)).toBe("researcher");
   });
 });
 

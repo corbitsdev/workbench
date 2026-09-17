@@ -60,16 +60,16 @@ export const INSIGHTS_RECENT_LIMIT = 12;
 /**
  * Purpose runs only — drop workbench-host anchors the same way Home does.
  * `insights-page.tsx` sources `runs` from `insightsTopLevelRunsPath` (see
- * `./insights-api.ts`), which already excludes every non-top-level run
- * (workbench host, invited agent) with no routine parent, and the
- * resident never-fired deployment placeholder, server-side via
- * `@corbits/run-scope`'s `scope-routes.ts`'s `listTopLevelRunFires`. This
- * filter is a client-side belt-and-suspenders pass against the
- * workbench-host naming pattern alone, not a second scoping layer — a
- * caller no longer needs to (and cannot) hand this a non-top-level run
- * id set. CL-6062 replaced the dead `/me/workflows/runs` feed (its
- * `anchorRunId IS NULL` filter never matched anything, since every
- * addressed run self-anchors at creation) with this scoped one.
+ * `./insights-api.ts`), the native `GET /workflows/runs` top-level
+ * listing (CL-8087) whose own predicate already excludes every
+ * non-top-level run (workbench host, invited agent). This filter is a
+ * client-side belt-and-suspenders pass against the workbench-host naming
+ * pattern alone, not a second scoping layer — a caller no longer needs
+ * to (and cannot) hand this a non-top-level run id set. CL-6062 replaced
+ * the dead `/me/workflows/runs` feed (its `anchorRunId IS NULL` filter
+ * never matched anything, since every addressed run self-anchors at
+ * creation) with a scoped feed; CL-8087 repointed that scoped feed from
+ * the deleted `feed=fires` route to the native listing.
  */
 export function purposeRunsForInsights(
   runs: readonly InsightsRun[],
@@ -80,12 +80,12 @@ export function purposeRunsForInsights(
 }
 
 /**
- * A run's human-facing name (CL-6249): its routine's name when it fired
- * from one, honestly falling back to the definition name for a run with
- * no routine/task parent — e.g. a directly launched workflow. Never
- * mapped from a client-side lookup table; the route already resolved
- * `routineName` server-side (`@corbits/run-scope`'s
- * `listTopLevelRunFires`).
+ * A run's human-facing name (CL-6249): its routine's name when the feed
+ * attributed one, honestly falling back to the definition name for a run
+ * with no routine attribution — e.g. every row of the native
+ * `GET /workflows/runs` listing (CL-8087), which carries no
+ * `routineName`, or a directly launched workflow. Never mapped from a
+ * client-side lookup table.
  */
 export function runDisplayName(run: InsightsRun): string {
   return run.routineName ?? run.definitionName;
@@ -99,7 +99,10 @@ export type DefinitionRunGroup = {
   /** `routineId` when the newest run in the group fired from one,
    * else `definitionId` — two different routines sharing one
    * definition (e.g. two workbench-digest schedules) never merge into
-   * one group. */
+   * one group. The native `GET /workflows/runs` feed (CL-8087) carries
+   * no routine attribution, so in practice this is always `definitionId`
+   * until a fires equivalent exists — the `routineId` branch is kept for
+   * that feed, not removed. */
   readonly groupKey: string;
   readonly displayName: string;
   /** Newest run first. */
@@ -111,7 +114,10 @@ export type DefinitionRunGroup = {
  * fetched for the flat list, bucketed by routine (falling back to
  * definition, for a run with no routine parent) and sorted newest-run
  * first — a client-side grouping of already-fetched data, no new endpoint.
- * Group order follows each group's own newest run, newest overall first.
+ * With the native feed every row lacks routine attribution, so every
+ * group is definition-keyed today; the routine branch rejoins once a
+ * fires equivalent exists. Group order follows each group's own newest
+ * run, newest overall first.
  */
 export function groupRunsByDefinition(
   runs: readonly InsightsRun[],

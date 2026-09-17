@@ -93,8 +93,6 @@ function stubFetch(options?: {
     const path = typeof input === "string" ? input : String(input);
     if (path.includes("/api/me/principals"))
       return Promise.resolve(json(membership));
-    if (path.includes("/top-level-runs"))
-      return Promise.resolve(json({ data: [], nextCursor: null }));
     if (path.includes("/agent-definitions/visible"))
       return Promise.resolve(json({ definitions: [] }));
     if (path.includes("/insights/usage")) {
@@ -371,8 +369,6 @@ describe("Sidebar", () => {
           return Promise.resolve(json({ items: [] }));
         if (path.includes("/approvals"))
           return Promise.resolve(json({ data: [], nextCursor: null }));
-        if (path.includes("/top-level-runs"))
-          return Promise.resolve(json({ data: [], nextCursor: null }));
         if (path.includes("/agent-definitions/visible"))
           return Promise.resolve(json({ definitions: [] }));
         return Promise.resolve(json({ items: [] }));
@@ -490,8 +486,6 @@ describe("Sidebar", () => {
           );
         if (path.includes("/approvals"))
           return Promise.resolve(json({ data: [], nextCursor: null }));
-        if (path.includes("/top-level-runs"))
-          return Promise.resolve(json({ data: [], nextCursor: null }));
         return Promise.resolve(json({ items: [] }));
       }) as typeof fetch;
     }
@@ -573,8 +567,6 @@ describe("Sidebar", () => {
       if (path.includes("/chat/workbenches?kind=chat"))
         return Promise.resolve(json({ items: [dm] }));
       if (path.includes("/approvals"))
-        return Promise.resolve(json({ data: [], nextCursor: null }));
-      if (path.includes("/top-level-runs"))
         return Promise.resolve(json({ data: [], nextCursor: null }));
       if (path.includes("/agent-definitions/visible"))
         return Promise.resolve(json({ definitions: [] }));

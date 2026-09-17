@@ -1,7 +1,8 @@
-// CL-6062: Insights' run feed reads from the tenant-scoped top-level-runs
-// endpoint (packages/run-scope/src/scope-routes.ts), not the dead
-// `/me/workflows/runs` (every addressed run self-anchors at creation, so
-// that feed's `anchorRunId IS NULL` filter never matched anything). These
+// CL-6062: Insights' run feed reads from the native tenant-scoped
+// `GET /workflows/runs` top-level listing (CL-8087 repointed it off the
+// deleted `/top-level-runs` route), not the dead `/me/workflows/runs`
+// (every addressed run self-anchors at creation, so that feed's
+// `anchorRunId IS NULL` filter never matched anything). These
 // tests exercise the real fetch wiring `InsightsRoute` owns — the unit
 // tests in `../src/insights-stats.test.ts` cover the pure filtering logic.
 import { afterEach, describe, expect, test } from "bun:test";
@@ -78,7 +79,17 @@ function stubFetch(runsBody: { data: readonly unknown[] }): RecordedCall[] {
     calls.push({ path });
     if (path.includes("/api/me/principals"))
       return Promise.resolve(json(membership));
-    if (path.includes("/top-level-runs"))
+    if (path.includes("/me/workflows/runs"))
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: { message: "dead endpoint" } }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    // CL-8087: the native tenant-scoped top-level listing. Checked after
+    // the dead `/me/workflows/runs` branch above — that path also contains
+    // "/workflows/runs".
+    if (path.includes("/workflows/runs"))
       return Promise.resolve(json({ data: runsBody.data, nextCursor: null }));
     if (path.includes("/insights/usage"))
       return Promise.resolve(
@@ -102,13 +113,6 @@ function stubFetch(runsBody: { data: readonly unknown[] }): RecordedCall[] {
       return Promise.resolve(json({ tools: [] }));
     if (path.includes("/routines"))
       return Promise.resolve(json({ data: [], nextCursor: null }));
-    if (path.includes("/me/workflows/runs"))
-      return Promise.resolve(
-        new Response(JSON.stringify({ error: { message: "dead endpoint" } }), {
-          status: 500,
-          headers: { "content-type": "application/json" },
-        }),
-      );
     return Promise.resolve(json({ data: [], nextCursor: null }));
   }) as typeof fetch;
   return calls;
@@ -142,7 +146,7 @@ describe("InsightsRoute run feed", () => {
     const calls = stubFetch({ data: [deployment] });
     const el = await mount();
     expect(el.textContent).toContain("Morning brief");
-    expect(calls.some((c) => c.path.includes("/top-level-runs"))).toBe(true);
+    expect(calls.some((c) => c.path.includes("/workflows/runs"))).toBe(true);
     expect(calls.some((c) => c.path.includes("/me/workflows/runs"))).toBe(
       false,
     );
@@ -159,9 +163,28 @@ describe("InsightsRoute run feed", () => {
     const calls = stubFetch({ data: [deployment] });
     const el = await mount("/insights/runs");
     expect(el.textContent).toContain("Morning brief");
-    expect(calls.some((c) => c.path.includes("/top-level-runs"))).toBe(true);
+    expect(calls.some((c) => c.path.includes("/workflows/runs"))).toBe(true);
     expect(calls.some((c) => c.path.includes("/me/workflows/runs"))).toBe(
       false,
     );
+  });
+
+  // CL-8087: the native listing carries no routine attribution at all, so
+  // a row without `routineId`/`routineName` must still validate and reach
+  // the surface via the definition-name fallback.
+  test("a native row without routine attribution still reaches the surface", async () => {
+    const nativeRow = {
+      id: "run_native",
+      definitionId: "wfd_1",
+      definitionName: "Morning brief",
+      tenantId: "tnt_1",
+      address: "run_native@acme.localhost",
+      status: "running",
+      createdAt: new Date(Date.now() - 60_000).toISOString(),
+      updatedAt: new Date(Date.now() - 60_000).toISOString(),
+    };
+    stubFetch({ data: [nativeRow] });
+    const el = await mount();
+    expect(el.textContent).toContain("Morning brief");
   });
 });

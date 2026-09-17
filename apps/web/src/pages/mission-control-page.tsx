@@ -419,7 +419,7 @@ export function MissionControlRoute({
               inFlightRows.length === 0 ? (
                 <RichEmptyState
                   title="Nothing running right now"
-                  description="Agent runs and routine fires will show up here while they're in progress."
+                  description="Routine activity has no feed in this build (CL-8087 deleted feed=fires with no native equivalent), so this stays empty until one lands."
                 />
               ) : null}
               {inFlightRows.length > 0 ? (

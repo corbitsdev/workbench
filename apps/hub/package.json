@@ -52,7 +52,6 @@
     "@corbits/process-provisioner": "workspace:*",
     "@corbits/reddit-opportunity-scanner-workflow": "workspace:*",
     "@corbits/run-key-history": "workspace:*",
-    "@corbits/run-scope": "workspace:*",
     "@corbits/skills": "workspace:*",
     "@corbits/slack-tag": "workspace:*",
     "@corbits/tool-registry-publish": "workspace:*",

@@ -32,15 +32,12 @@ function stubTenantFetch(
   data: {
     readonly workbenches?: readonly unknown[];
     readonly chats?: readonly unknown[];
-    readonly runs?: readonly unknown[];
     readonly agents?: readonly unknown[];
   } = {},
 ): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
     calls.push(path);
-    if (path.includes("/top-level-runs"))
-      return Promise.resolve(json({ data: data.runs ?? [], nextCursor: null }));
     if (path.includes("/agent-definitions/visible"))
       return Promise.resolve(json({ definitions: data.agents ?? [] }));
     if (path.includes("kind=chat"))
@@ -91,7 +88,10 @@ describe("useBenchActivity", () => {
     container.remove();
   });
 
-  test("fetches workbenches, chats, and running routines for the selected bench", async () => {
+  // CL-8087: the routines query resolves with no items and no fetch —
+  // the `feed=fires` route is deleted and the native listing has no
+  // fires equivalent — so the band renders its honest empty state.
+  test("fetches workbenches, chats, and agents for the selected bench; routines resolve empty", async () => {
     const calls: string[] = [];
     stubTenantFetch(calls);
     const { latest, root, container } = await mountHook("tnt_1");
@@ -107,7 +107,8 @@ describe("useBenchActivity", () => {
     // subscribes to (see `tenantKeys.workbenches`).
     expect(calls.some((path) => path.includes("kind=workbench"))).toBe(true);
     expect(calls.some((path) => path.includes("kind=chat"))).toBe(true);
-    expect(calls.some((path) => path.includes("/top-level-runs"))).toBe(true);
+    expect(calls.some((path) => path.includes("/workflows/runs"))).toBe(false);
+    expect(calls.some((path) => path.includes("/top-level-runs"))).toBe(false);
     expect(
       calls.some((path) => path.includes("/agent-definitions/visible")),
     ).toBe(true);
@@ -115,7 +116,7 @@ describe("useBenchActivity", () => {
     container.remove();
   });
 
-  test("splits workbenches by kind and shows only genuine routine fires (CL-6595)", async () => {
+  test("splits workbenches by kind; routines stay empty without fetching (CL-8087)", async () => {
     const calls: string[] = [];
     stubTenantFetch(calls, {
       workbenches: [
@@ -138,41 +139,6 @@ describe("useBenchActivity", () => {
           participants: [],
         },
       ],
-      // The workbench host and the invited agent never appear here: the
-      // hub's `/top-level-runs?feed=fires` route excludes every
-      // non-top-level run that isn't a routine fire (see
-      // `@corbits/run-scope`'s `scope-routes.ts`). A routine's own fire
-      // is not a top-level run, so it must still show up here
-      // (`run_routine1`, tagged with its
-      // `routineId`) -- that is the CL-6595 fix; a directly-triggered
-      // deployment with no routine parent (`run_deployment1`) is not
-      // routine activity and must not appear.
-      runs: [
-        {
-          id: "run_deployment1",
-          definitionId: "def_researcher",
-          definitionName: "researcher",
-          tenantId: "tnt_1",
-          address: "run_deployment1@tnt1.example",
-          status: "running",
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-          routineId: null,
-          routineName: null,
-        },
-        {
-          id: "run_routine1",
-          definitionId: "def_digest",
-          definitionName: "Digest agent",
-          tenantId: "tnt_1",
-          address: "run_routine1@tnt1.example",
-          status: "running",
-          createdAt: "2026-01-02T00:00:00.000Z",
-          updatedAt: "2026-01-02T00:00:00.000Z",
-          routineId: "rtn_1",
-          routineName: "Weekly digest",
-        },
-      ],
     });
     const { latest, root, container } = await mountHook("tnt_1");
     await settle();
@@ -180,8 +146,8 @@ describe("useBenchActivity", () => {
     if (state.kind !== "ready") throw new Error(`not ready: ${state.kind}`);
     expect(state.workbenches.map((c) => c.id)).toEqual(["run_host1"]);
     expect(state.chats.map((c) => c.id)).toEqual(["run_chat1"]);
-    expect(state.routines.map((r) => r.id)).toEqual(["run_routine1"]);
-    expect(state.routines.map((r) => r.name)).toEqual(["Weekly digest"]);
+    expect(state.routines).toEqual([]);
+    expect(calls.some((path) => path.includes("/top-level-runs"))).toBe(false);
     root.unmount();
     container.remove();
   });

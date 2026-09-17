@@ -2,7 +2,7 @@
 // because independent components each fetched independently instead of
 // sharing a cache. Every mount of `useBenchActivity` (the sidebar's
 // `WorkbenchList`, and any second subscriber) shares the same TanStack
-// Query keys (`tenantKeys.workbenches`, `.topLevelRuns` — see
+// Query keys (`tenantKeys.workbenches`, `.routineActivity` — see
 // `../src/query-client.ts`) under one `QueryClient`, so two mounts fetch
 // each listing exactly once.
 import { afterEach, describe, expect, test } from "bun:test";
@@ -63,8 +63,6 @@ function stubFetch(calls: string[]): void {
     calls.push(path);
     if (path.includes("/api/me/principals"))
       return Promise.resolve(json(membership));
-    if (path.includes("/top-level-runs"))
-      return Promise.resolve(json({ data: [], nextCursor: null }));
     if (path.includes("/agent-definitions/visible"))
       return Promise.resolve(json({ definitions: [] }));
     return Promise.resolve(json({ items: [] }));
@@ -112,7 +110,11 @@ describe("shell listing dedupe (CL-6045)", () => {
     // per (tenant, kind) no matter how many bands subscribe.
     expect(countsByMatch(calls, (p) => p.includes("kind=workbench"))).toBe(1);
     expect(countsByMatch(calls, (p) => p.includes("kind=chat"))).toBe(1);
-    expect(countsByMatch(calls, (p) => p.includes("/top-level-runs"))).toBe(1);
+    // CL-8087: the routines query resolves with no items and no fetch (the
+    // `feed=fires` route is deleted and the native listing has no fires
+    // equivalent), so both mounts share that without any request at all.
+    expect(countsByMatch(calls, (p) => p.includes("/top-level-runs"))).toBe(0);
+    expect(countsByMatch(calls, (p) => p.includes("/workflows/runs"))).toBe(0);
   });
 
   test("a rename invalidates the shared listing query, triggering exactly one refetch", async () => {
@@ -129,8 +131,6 @@ describe("shell listing dedupe (CL-6045)", () => {
       calls.push(path);
       if (path.includes("/api/me/principals"))
         return Promise.resolve(json(membership));
-      if (path.includes("/top-level-runs"))
-        return Promise.resolve(json({ data: [], nextCursor: null }));
       if (path.includes("/agent-definitions/visible"))
         return Promise.resolve(json({ definitions: [] }));
       if (init?.method === "PATCH") {

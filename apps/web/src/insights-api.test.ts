@@ -41,9 +41,13 @@ describe("insights path range contract", () => {
 });
 
 describe("insightsTopLevelRunsPath", () => {
-  test("hits the tenant-scoped top-level-runs route, not /me/workflows/runs", () => {
+  // CL-8087: the native tenant-scoped top-level listing, not the deleted
+  // `/top-level-runs` route (or its `feed=fires` variant) and not the dead
+  // `/me/workflows/runs`.
+  test("hits the native tenant-scoped GET /workflows/runs listing", () => {
     const path = insightsTopLevelRunsPath("tenant-1");
-    expect(path.startsWith("/api/tenants/tenant-1/top-level-runs?")).toBe(true);
+    expect(path.startsWith("/api/tenants/tenant-1/workflows/runs?")).toBe(true);
+    expect(path).not.toContain("/top-level-runs");
     expect(path).not.toContain("/me/workflows/runs");
   });
 });

@@ -12,9 +12,10 @@
 //     workbenches. usage/activity/tools roll up automatically when called
 //     with a parent's tenantId (see @corbits/insights' resolveScope) —
 //     /scope is how a page discovers that shape to build a switcher.
-// Plus one more reused as Insights' run feed: GET /top-level-runs?feed=fires
-// → Paginated<WorkflowRunResponse & { routineId, routineName }>
-// (packages/run-scope/src/scope-routes.ts's `listTopLevelRunFires`).
+// Plus one more reused as Insights' run feed: the native tenant-scoped
+// `GET /workflows/runs` top-level listing → Paginated<WorkflowRunResponse>
+// (CL-8087 deleted `@corbits/run-scope`'s `/top-level-runs?feed=fires`,
+// which used to attribute each fire to its routine server-side).
 
 import { type } from "arktype";
 import { WorkflowRunResponse, paginatedSchema } from "@intx/types";
@@ -230,11 +231,14 @@ export const ListingTurnSchema = type({
 });
 
 /**
- * `WorkflowRunResponse` plus the two fields only the `feed=fires` mode of
- * `/top-level-runs` reports (CL-6249): the routine that fired this run,
- * when it has one. Both are `null` for a run with no routine/task
- * parent — a directly launched workflow — so a caller falls back to
- * `definitionName` honestly instead of inventing a routine.
+ * `WorkflowRunResponse` plus the two routine-attribution fields the deleted
+ * `feed=fires` mode of `/top-level-runs` used to report (CL-6249): the
+ * routine that fired this run, when it has one. The native
+ * `GET /workflows/runs` listing has no routine attribution, so both are
+ * absent there — callers fall back to `definitionId`/`definitionName`
+ * (`groupRunsByDefinition`, `runDisplayName` in `./insights-stats.ts`)
+ * instead of inventing a routine. Both stay `null` (when present) for a
+ * run with no routine/task parent — a directly launched workflow.
  * `turns` / `hasInFlightTurn` are this build's listing of in-flight
  * inference turns for the run (not Interchange fields) so a live
  * tool-loop can stay running past the abandoned-fire window. Omitting
@@ -242,15 +246,15 @@ export const ListingTurnSchema = type({
  */
 export const InsightsRunSchema = WorkflowRunResponse.and(
   type({
-    routineId: "string | null",
-    routineName: "string | null",
+    "routineId?": "string | null",
+    "routineName?": "string | null",
     "hasInFlightTurn?": "boolean",
     "turns?": ListingTurnSchema.array(),
   }),
 );
 export type InsightsRun = typeof InsightsRunSchema.infer;
 
-/** GET /top-level-runs?feed=fires envelope. */
+/** Native `GET /workflows/runs` envelope (CL-8087). */
 export const TopLevelRunsSchema = paginatedSchema(InsightsRunSchema);
 
 // The REST pagination ceiling (see `vendor/intx/hub-api/src/pagination.ts`) —
@@ -258,16 +262,29 @@ export const TopLevelRunsSchema = paginatedSchema(InsightsRunSchema);
 const TOP_LEVEL_RUNS_LIMIT = 100;
 
 /**
- * Insights' run feed (CL-6062, `feed=fires` added by CL-6249): the
- * tenant's genuine *executed* runs — a routine's fire (not a top-level
- * run though it is) included, and the resident, never-triggered deployment
- * placeholder for a definition (`status: "deployed"` forever) excluded —
- * both decided server-side by `@corbits/run-scope`'s
- * `scope-routes.ts`'s `listTopLevelRunFires`, never by a definitionName
- * slug guess here. Used in place of the dead `/me/workflows/runs` — its
- * `anchorRunId IS NULL` filter never matches, because every addressed run
- * self-anchors at creation, so that feed always came back empty.
+ * Insights' run feed (CL-6062; repointed to native in CL-8087): the
+ * tenant's top-level runs from `GET /workflows/runs` — the native
+ * listing's own predicate (`address IS NOT NULL AND anchorRunId = id`,
+ * see `vendor/intx/hub-api/src/routes/runs.ts`) already excludes every
+ * non-top-level run (workbench host, invited agent), so this page never
+ * derives that exclusion itself. Four differences from the deleted
+ * `feed=fires` feed, all recorded as accepted loss in CL-8087: a
+ * routine's fire (not a top-level run) is no longer included, so
+ * Insights no longer sees routine executions; there is no routine
+ * attribution, so history groups by definition; the resident,
+ * never-triggered deployment placeholder (`status: "deployed"`) is now
+ * included — `computeInsightsStats` counts it as deployed rather than
+ * hiding it; and the feed is single-tenant — the deleted route expanded
+ * the requested tenant to its whole descendant subtree via
+ * `getDescendantTenants` (the same rollup `resolveScope` still gives
+ * `/usage`, `/activity`, and `/tools`), while the native listing filters
+ * `tenantId = requested tenant` only, so a workspace parent's runs feed
+ * no longer rolls up its child workbenches and now sits mismatched
+ * against its own usage aggregate. Used in place of the dead
+ * `/me/workflows/runs` — its `anchorRunId IS NULL` filter never matches,
+ * because every addressed run self-anchors at creation, so that feed
+ * always came back empty.
  */
 export function insightsTopLevelRunsPath(tenantId: string): string {
-  return `/api/tenants/${tenantId}/top-level-runs?limit=${TOP_LEVEL_RUNS_LIMIT}&feed=fires`;
+  return `/api/tenants/${tenantId}/workflows/runs?limit=${TOP_LEVEL_RUNS_LIMIT}`;
 }

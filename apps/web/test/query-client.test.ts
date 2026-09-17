@@ -28,3 +28,20 @@ describe("pathToQueryKey", () => {
     expect(pathToQueryKey("/api/mystery")).toEqual(["path", "/api/mystery"]);
   });
 });
+
+describe("tenantKeys.routineActivity", () => {
+  // CL-8087: the sidebar routine-activity seam keeps a shared cache key that
+  // names the seam — not the deleted `/top-level-runs` route — so both
+  // mounts subscribe to one entry and a future native fires equivalent has
+  // a key to rewire.
+  test("keys routine activity per tenant without the deleted route name", () => {
+    expect(tenantKeys.routineActivity("tnt_1")).toEqual([
+      "tenant",
+      "tnt_1",
+      "routine-activity",
+    ]);
+    expect(
+      (tenantKeys.routineActivity("tnt_1") as readonly unknown[]).join("/"),
+    ).not.toContain("top-level-runs");
+  });
+});

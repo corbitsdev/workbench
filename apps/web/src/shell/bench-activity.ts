@@ -81,9 +81,15 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
     queryFn: () => listWorkbenches(key, "chat"),
   });
   const routinesQuery = useQuery({
-    queryKey: tenantKeys.topLevelRuns(key),
+    queryKey: tenantKeys.routineActivity(key),
     enabled,
-    queryFn: () => listRoutineActivity(key),
+    // CL-8087: `listRoutineActivity` resolves no items without fetching
+    // (the `feed=fires` route is deleted and the native listing has no
+    // fires equivalent), so this query never fires a request — the
+    // column keeps the shared key and renders the seam's honest empty
+    // state. Rewire `listRoutineActivity` (not this key) when a native
+    // fires equivalent exists.
+    queryFn: () => listRoutineActivity(),
   });
   const agentsQuery = useQuery({
     queryKey: tenantKeys.visibleAgents(key),

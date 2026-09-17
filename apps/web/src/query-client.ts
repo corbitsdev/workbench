@@ -128,8 +128,13 @@ export const tenantKeys = {
    * of the literal that could drift apart. */
   workbenches: (tenantId: string, kind: WorkbenchKind) =>
     workbenchesQueryKey(tenantId, kind),
-  topLevelRuns: (tenantId: string) =>
-    ["tenant", tenantId, "top-level-runs"] as const,
+  /** The sidebar routine-activity seam (`./shell/routine-activity.ts`).
+   * CL-8087 deleted the `feed=fires` route this read, so the query resolves
+   * with no items and issues no fetch — the key is kept (not the deleted
+   * `/top-level-runs` path) so both sidebar mounts still share one cache
+   * entry, and so a future native fires equivalent has a key to rewire. */
+  routineActivity: (tenantId: string) =>
+    ["tenant", tenantId, "routine-activity"] as const,
   /** A workbench's own timeline reads (CL-6224): `tenantId` is the owning
    * bench chat's workbench-tenancy addresses these routes at (see
    * docs/workbench-tenancy.md), `workbenchId` the workbench's own id. */
