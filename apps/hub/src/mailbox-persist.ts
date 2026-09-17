@@ -20,11 +20,6 @@ import type {
   MailboxRef,
 } from "@corbits/mailbox";
 import { resolveRoutableAddress } from "@intx/hub-sessions";
-import {
-  resolveWorkbenchIdForAgentFrame,
-  type ChatStore,
-  type RoomMessageStore,
-} from "@corbits/chat";
 import { ensureRunSession, type EventCollectorPort } from "@corbits/workflows";
 import { reportError } from "@corbits/error-sink";
 import { getLogger } from "@intx/log";
@@ -142,50 +137,21 @@ export function createHubMailboxAuthorizeSender(
 }
 
 /**
- * Build the `resolveRefs` seam: stamps
- * `refs: [{ kind: "workbench", id: chatId }]` onto every recipient row
- * of one frame.
+ * The `resolveRefs` seam: stamps `refs: [{ kind: "workbench", id }]` onto
+ * every recipient row of one frame.
  *
- * The chat id is NOT `senderAuthorization.tenantId`. An agent run is
- * launched in its parent BENCH tenant -- that tenant is what
- * `authorizeSender` resolves, and it is also what the resulting
- * `principal_mail` rows themselves are scoped under (same tenant the
- * addressed human principals belong to). The chat the run is a
- * participant of is a separate id `@corbits/chat` tracks inside that same
- * bench tenant, on `workbench_settings.workbenchId` -- one bench tenant
- * hosts many chats. Stamping the bench's tenant id here instead would
- * point every row at an id no chat thread read can ever resolve.
- *
- * Header-first (CL-7449): an agent that participates in several
- * chats at once has no single "the" chat a bare participant
- * scan can name honestly, so `@corbits/chat`'s
- * `resolveWorkbenchIdForAgentFrame` reads the frame's own `In-Reply-To` /
- * `References` and maps that Message-ID back to the timeline row it
- * answers -- that row's `workbenchId` is authoritative. Only when the
- * frame carries no such header does it fall back to the participant scan,
- * and only takes that scan's answer when it is unambiguous (exactly one
- * chat); this seam is a thin adapter handing that helper the two
- * stores it needs (`chatStore`, `roomMessages`) plus the frame's own
- * decoded headers.
+ * A workbench IS a tenant, so the workbench a frame belongs to is exactly
+ * the tenant `authorizeSender` already resolved from the sender run's own
+ * address — the same tenant the resulting `principal_mail` rows are scoped
+ * under. There is no second id to chase and no header or participant scan
+ * to disambiguate: an agent run is launched in the workbench it serves.
  */
-export function createHubMailboxResolveRefs(
-  chatStore: ChatStore,
-  roomMessages: Pick<RoomMessageStore, "findByMailMessageId">,
-): ResolveMailboxRefs {
-  return async ({ senderAddress, senderAuthorization, decoded }) => {
-    const inReplyTo = decoded?.headers.get("in-reply-to") ?? undefined;
-    const references = decoded?.references;
-    const chatId = await resolveWorkbenchIdForAgentFrame(
-      { chatStore, roomMessages },
-      senderAuthorization.tenantId,
-      {
-        senderAddress,
-        ...(inReplyTo !== undefined ? { inReplyTo } : {}),
-        ...(references !== undefined ? { references } : {}),
-      },
-    );
-    if (chatId === undefined) return undefined;
-    const ref: MailboxRef = { kind: "workbench", id: chatId };
-    return [ref];
+export const hubMailboxResolveRefs: ResolveMailboxRefs = ({
+  senderAuthorization,
+}) => {
+  const ref: MailboxRef = {
+    kind: "workbench",
+    id: senderAuthorization.tenantId,
   };
-}
+  return Promise.resolve([ref]);
+};

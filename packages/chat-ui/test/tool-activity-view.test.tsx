@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
-import type { ToolTracePart } from "@corbits/chat/parts";
+import type { ToolTracePart } from "../src/wire/parts";
 import { toToolActivityRow, type ToolActivityRow } from "../src/tool-activity";
 import { LiveToolActivity, ToolActivityGroup } from "../src/tool-activity-view";
 

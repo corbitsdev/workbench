@@ -12,7 +12,7 @@ import {
   DEFAULT_WAKE_TIMEOUT_MS,
 } from "@corbits/agent-lifecycle";
 import { reportError } from "@corbits/error-sink";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   authoredDefinitionCandidates,
   DefinitionProjectionMissingError,
@@ -51,7 +51,7 @@ import {
 } from "./agent-binding";
 import type { RelaunchNoticePort } from "./relaunch-notice";
 import type { DB } from "@intx/db";
-import { listVisibleOfferings } from "@intx/db";
+import { getAncestorChain, listVisibleOfferings } from "@intx/db";
 import {
   asset as assetTable,
   principal as principalTable,
@@ -1251,18 +1251,45 @@ export function createHubChatPlatform(
     async listInvitableDefinitions(
       tenantId,
     ): Promise<readonly InvitableDefinition[]> {
+      // A definition deployed in a parent tenant is invitable from a child
+      // workbench like a plugin, so this reads the whole ancestor chain --
+      // the same walk credential and catalog resolution already perform --
+      // rather than the workbench's own tenant alone. Inheritance stops at
+      // visibility: a grant is never inherited, so every participant and
+      // permission check stays scoped to the workbench tenant itself.
+      const chain = await getAncestorChain(deps.db, tenantId);
       const rows = await deps.db.query.workflowDefinition.findMany({
         where: and(
-          eq(workflowDefinition.tenantId, tenantId),
+          inArray(workflowDefinition.tenantId, chain),
           eq(workflowDefinition.status, "deployed"),
         ),
         orderBy: desc(workflowDefinition.createdAt),
       });
+      // `getAncestorChain` returns leaf-to-root, so a lower index is a
+      // nearer tenant: when an ancestor and a descendant both expose a
+      // definition of the same name, the descendant shadows the ancestor
+      // (the convention asset and catalog resolution already follow).
+      const distanceByTenantId = new Map(
+        chain.map((ancestorId, distance) => [ancestorId, distance]),
+      );
+      const distanceOf = (row: { readonly tenantId: string }): number =>
+        distanceByTenantId.get(row.tenantId) ?? Number.MAX_SAFE_INTEGER;
       // Only hub-authored definitions are invitable: the run-deploy
       // clones sharing an agent's name are deploy records, and listing
       // them would offer N stale copies of every agent that has run.
-      return authoredDefinitionCandidates(rows)
-        .filter((row) => !isWorkbenchHostDefinitionName(row.name))
+      const candidates = authoredDefinitionCandidates(rows).filter(
+        (row) => !isWorkbenchHostDefinitionName(row.name),
+      );
+      const nearestByName = new Map<string, { id: string; distance: number }>();
+      for (const row of candidates) {
+        const distance = distanceOf(row);
+        const incumbent = nearestByName.get(row.name);
+        if (incumbent === undefined || distance < incumbent.distance) {
+          nearestByName.set(row.name, { id: row.id, distance });
+        }
+      }
+      return candidates
+        .filter((row) => nearestByName.get(row.name)?.id === row.id)
         .map((row) => {
           const base = { id: row.id, name: row.name };
           return typeof row.description === "string" && row.description !== ""
