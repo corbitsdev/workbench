@@ -155,8 +155,7 @@ export function auditFreshness(changes: readonly PackageChange[]): CheckReport {
         `${change.baseVersion}. Tool resolution keys on name@version, so new ` +
         `source under an unchanged version never reaches a running or ` +
         `freshly launched agent and the hub rejects it at publish time. ` +
-        `Run \`bun run changeset\` and describe this change (see ` +
-        `CONTRIBUTING.md) — the version PR bumps it for you — then update ` +
+        `Bump the package.json version (see CONTRIBUTING.md) — then update ` +
         `every { name, version } pin that references it.`,
     );
   }

@@ -45,7 +45,7 @@ describe("resolveDatabaseUrl", () => {
     process.env["CI"] = "true";
     unset("GITHUB_JOB");
     expect(() => resolveDatabaseUrl()).toThrow(
-      /docker compose -f docker-compose\.test\.yml up -d/,
+      /docker compose -f compose\.test\.yml up -d/,
     );
   });
 

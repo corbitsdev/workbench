@@ -1,6 +1,6 @@
 // Unit coverage for dbGate: a missing database must never skip in
 // total silence. Locally (CI unset) it returns describe.skip and the
-// summary names `docker-compose.test.yml`. Under CI=true it throws
+// summary names `compose.test.yml`. Under CI=true it throws
 // instead, so a miswired pipeline cannot report green on a suite that
 // never ran. GitHub's unit/structural jobs have no Postgres and are
 // not required; they still skip with the same compose hint.
@@ -86,7 +86,7 @@ describe("dbGate", () => {
     unset("GITHUB_JOB");
     expect(() => dbGate(undefined, "example-suite")).toThrow(/example-suite/);
     expect(() => dbGate(undefined, "example-suite")).toThrow(
-      /docker compose -f docker-compose\.test\.yml up -d/,
+      /docker compose -f compose\.test\.yml up -d/,
     );
     expect(() => dbGate("", "example-suite")).toThrow(
       /postgres:\/\/postgres:postgres@localhost:5432\/workbench/,

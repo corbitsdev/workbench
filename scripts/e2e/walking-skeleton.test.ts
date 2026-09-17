@@ -45,7 +45,7 @@ if (databaseUrl === undefined) {
   console.warn(
     "walking-skeleton: DATABASE_URL is not set; suite skipped. " +
       "Set DATABASE_URL (see .env.example) to run it; " +
-      "start Postgres with `docker compose -f docker-compose.test.yml up -d`.",
+      "start Postgres with `docker compose -f compose.test.yml up -d`.",
   );
 }
 

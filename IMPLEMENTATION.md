@@ -101,7 +101,7 @@ own `noop-inference` endpoint or an unreachable placeholder host —
 enforced by `assertNeverRealProvider` in `scripts/e2e/harness.ts`. CI infers
 required-ness from `CI=true` so a missing `DATABASE_URL` fails loudly there
 instead of silently skipping. Start Postgres locally with
-`docker compose -f docker-compose.test.yml up -d`.
+`docker compose -f compose.test.yml up -d`.
 
 ## Deployment
 

@@ -26,14 +26,10 @@
     "setup:memory": "bun run scripts/setup-memory.ts",
     "reset": "bun scripts/reset.ts",
     "check:structural": "bun run scripts/checks/run.ts",
-    "changeset": "changeset",
-    "version-packages": "changeset version && bun run scripts/gen-changeset-config.ts",
-    "release": "bun run scripts/release.ts",
     "build:sidecar-image": "docker build -f apps/sidecar/Dockerfile -t corbits-sidecar:dev .",
     "eval": "bun run scripts/evals-run.ts"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.29.7",
     "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#dc435ba749b4378f19e5de772159c2a57e932938",
     "@corbits/artifacts-hub": "workspace:*",
     "@corbits/codex-provider": "workspace:*",
