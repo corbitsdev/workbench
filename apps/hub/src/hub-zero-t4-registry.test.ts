@@ -3,7 +3,7 @@
 // from the legacy template package.
 //
 // Part A (structural): `index.ts`, `pinned-package-credential-bindings.ts`,
-// and `workflow-scheduler.ts` carry no legacy template import, and the
+// and `native-workflow-routine-launch.ts` carry no legacy template import, and the
 // delivery join (settings-row read + run-participant join) is gone —
 // scheduled runs launch without joining a chat.
 //
@@ -43,7 +43,7 @@ describe("hub-zero T4: no legacy template import in the hub", () => {
   for (const rel of [
     "index.ts",
     "pinned-package-credential-bindings.ts",
-    "workflow-scheduler.ts",
+    "native-workflow-routine-launch.ts",
   ]) {
     test(`${rel} imports no legacy template package`, () => {
       expect(
@@ -56,7 +56,7 @@ describe("hub-zero T4: no legacy template import in the hub", () => {
 
 describe("hub-zero T4: the scheduled delivery join is cut", () => {
   test("no settings-row list read survives in the hub", () => {
-    for (const rel of ["index.ts", "workflow-scheduler.ts"]) {
+    for (const rel of ["index.ts", "native-workflow-routine-launch.ts"]) {
       expect(
         readHub(rel).includes(LIST_SETTINGS),
         `${rel} still reads ${LIST_SETTINGS}`,
@@ -64,12 +64,12 @@ describe("hub-zero T4: the scheduled delivery join is cut", () => {
     }
   });
 
-  test("no delivery-join seam survives in workflow-scheduler.ts", () => {
-    const source = readHub("workflow-scheduler.ts");
+  test("no delivery-join seam survives in the routine launch path", () => {
+    const source = readHub("native-workflow-routine-launch.ts");
     for (const needle of [JOIN_DEPS, JOIN_FN, JOIN_PORT, JOIN_INPUT]) {
       expect(
         source.includes(needle),
-        `workflow-scheduler.ts still contains ${needle}`,
+        `native-workflow-routine-launch.ts still contains ${needle}`,
       ).toBe(false);
     }
   });

@@ -1,0 +1,20 @@
+{
+  "name": "@corbits/workflow-schedule",
+  "private": true,
+  "description": "Cron grammar and the native TimerSet re-arm helper a schedule-triggered workflow uses to own its own cron: the next fire time for a ScheduleTrigger expression, and the cron-flagged TimerSet the @intx/workflow-host scheduler seam fires and the run re-arms on every tick",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./timer": "./src/timer.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -176,6 +176,9 @@
       "path": "./packages/workflow-authoring-tools/tsconfig.src.json"
     },
     {
+      "path": "./packages/workflow-schedule/tsconfig.src.json"
+    },
+    {
       "path": "./packages/xai-provider/tsconfig.src.json"
     },
     {

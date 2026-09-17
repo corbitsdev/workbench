@@ -38,9 +38,10 @@ describeIfDb("runMigrations replays the shipped SQL into a fresh schema", () => 
             ('workflow_definition_version', 'wire_projection'),
             ('workflow_definition', 'origin'),
             ('workflow_definition', 'schedule_claimed_minute'))`;
+      // `schedule_claimed_minute` is dropped by 0094 (CL-8162): the replay
+      // must not leave it behind.
       expect(columns.map((row) => row.column_name).sort()).toEqual([
         "origin",
-        "schedule_claimed_minute",
         "wire_projection",
       ]);
       const indexes = await sql<{ indexname: string }[]>`

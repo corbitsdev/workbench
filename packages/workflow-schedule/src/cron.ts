@@ -305,7 +305,7 @@ export function cronMatchesMinute(
 }
 
 /** The UTC minute `at` falls in, as a stable, comparable integer key. */
-export function minuteKey(at: Date): number {
+function minuteKey(at: Date): number {
   return Math.floor(at.getTime() / 60_000);
 }
 
