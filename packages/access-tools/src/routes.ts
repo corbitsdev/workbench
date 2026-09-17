@@ -100,6 +100,9 @@ function parsePageParams(query: {
       );
       cursor = data instanceof type.errors ? null : data;
     } catch {
+      // report-error-ignore: a malformed cursor from a caller is bad
+      // input, not an incident — it falls back to the first page like an
+      // absent cursor, exactly as the native tenant routes do.
       cursor = null;
     }
   }

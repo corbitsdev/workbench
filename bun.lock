@@ -218,9 +218,6 @@
         "hono": "catalog:",
       },
       "devDependencies": {
-        "@corbits/agent-directory": "workspace:*",
-        "@corbits/agent-directory-tools": "workspace:*",
-        "@corbits/tool-registry-publish": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },

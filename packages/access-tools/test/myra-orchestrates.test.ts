@@ -26,7 +26,6 @@ import { createDB, schema, type DB } from "@intx/db";
 import { createInMemoryGrantStore } from "@intx/authz";
 import { generateId } from "@intx/hub-common";
 import {
-  createInMemoryDefinitionSkillsStore,
   createWorkflowAgentCreateRoutes,
   type CapabilityInventoryProvider,
   type CreateWorkflowAgentCreateRoutesDeps,
@@ -331,7 +330,6 @@ describeIfDb("Myra orchestrates the bench", () => {
         populatedFiles = files;
       }),
       skillIndex: fakeSkillIndex,
-      skillsStore: createInMemoryDefinitionSkillsStore(),
       capabilityInventory: fakeCapabilityInventory,
       authenticator: agentAuthenticator,
       deployer,
