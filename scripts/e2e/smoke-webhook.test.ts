@@ -49,7 +49,7 @@ const databaseUrl = e2eDatabaseUrl();
 if (databaseUrl === undefined) {
   console.warn(
     "smoke-webhook: DATABASE_URL is not set; suite skipped. Set " +
-      "DATABASE_URL (see .env.example) to run it; start Postgres with `docker compose -f docker-compose.test.yml up -d` " +
+      "DATABASE_URL (see .env.example) to run it; start Postgres with `docker compose -f compose.test.yml up -d` " +
       "so this skip can never pass silently there.",
   );
 }

@@ -4,7 +4,8 @@ import type { MailboxThreadMessage } from "@corbits/mailbox";
 import { roomRefFor, threadMessagesToTimeline } from "./mailbox-timeline";
 
 function message(
-  overrides: Partial<MailboxThreadMessage> & Pick<MailboxThreadMessage, "id" | "messageId">,
+  overrides: Partial<MailboxThreadMessage> &
+    Pick<MailboxThreadMessage, "id" | "messageId">,
 ): MailboxThreadMessage {
   return {
     references: [],

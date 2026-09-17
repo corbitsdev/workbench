@@ -39,14 +39,9 @@ Thanks for your interest in Corbits Workbench.
    a package-owned ledger table, applied transactionally.
 8. Security issues go through [SECURITY.md](SECURITY.md), never a public
    issue.
-9. Changed a publishable `workflows/*` or `packages/*-tools` package?
-   Run `bun run changeset`, describe the change, and commit the
-   generated `.changeset/*.md` file alongside it — that's what the
-   tool-package-freshness check now expects instead of a hand-bumped
-   version. A "Version Packages" PR opened automatically off `main`
-   applies every pending changeset's version bump and changelog; merging
-   it is what actually ships the release to npm. See
-   [.changeset/config.json](.changeset/config.json) for which packages
-   are still `private` and excluded from this.
+9. Changed a publishable `workflows/*` or `packages/*-tools` package's
+   `src/`? Bump its `package.json` version — the tool-package-freshness
+   check enforces this. Nothing publishes to npm from this monorepo; a
+   package moves to its own repository before it can be published.
 
 This document will grow as the project does.

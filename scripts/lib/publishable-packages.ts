@@ -1,9 +1,9 @@
-// Shared plumbing for the npm publish pipeline (CL-8167): finds every
+// Shared plumbing for deploy-compatibility auditing (CL-8167): finds every
 // workspace package and splits it into publishable (not `private`) vs.
 // still-private, the same way scripts/checks/publishable-workflows.ts
 // scopes its audit. Computed from package.json files on disk — never
-// hand-typed — so a package flipping `private` never silently drifts
-// out of sync with `.changeset/config.json`'s ignore list.
+// hand-typed — so a package flipping `private` never silently drifts out
+// of sync with what the check expects.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Glob } from "bun";

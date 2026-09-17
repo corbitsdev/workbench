@@ -39,10 +39,10 @@ brew services start postgresql@17
 ```
 
 Or, to match what CI runs against exactly, bring up
-[`docker-compose.test.yml`](docker-compose.test.yml) instead:
+[`compose.test.yml`](compose.test.yml) instead:
 
 ```sh
-docker compose -f docker-compose.test.yml up -d
+docker compose -f compose.test.yml up -d
 ```
 
 Then:
@@ -178,7 +178,7 @@ in any order:
 `<database>_e2e` database that it owns outright — drops and rebuilds its
 own schema on every run — so it can never touch your working database.
 Without `DATABASE_URL` the suite skips with a warning naming
-`docker compose -f docker-compose.test.yml up -d`; CI infers
+`docker compose -f compose.test.yml up -d`; CI infers
 required-ness from `CI=true` so that skip fails loudly there instead of
 silently passing.
 
@@ -212,7 +212,7 @@ a hard failure on CI jobs that provision Postgres.
 To run these locally against the same Postgres CI uses:
 
 ```sh
-docker compose -f docker-compose.test.yml up -d
+docker compose -f compose.test.yml up -d
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/workbench bun test packages apps/hub/test
 ```
 

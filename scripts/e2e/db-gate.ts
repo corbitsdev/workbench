@@ -8,7 +8,7 @@
 // provision Postgres) — throws instead of skipping.
 import { afterAll, describe } from "bun:test";
 
-export const TEST_COMPOSE_FILE = "docker-compose.test.yml";
+export const TEST_COMPOSE_FILE = "compose.test.yml";
 export const TEST_COMPOSE_UP = `docker compose -f ${TEST_COMPOSE_FILE} up -d`;
 export const TEST_DATABASE_URL =
   "postgres://postgres:postgres@localhost:5432/workbench";
