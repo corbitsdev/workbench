@@ -51,7 +51,7 @@ export interface WebhookTriggerStore {
    * row untouched rather than inserting (or throwing) — the id and the
    * real, already-persisted secret, never a freshly generated one that
    * was never stored. This is what a retry-safe *mint* wants
-   * (`startReviewingRepos`'s trigger-per-repo convention, CL-7242): two
+   * (`startReviewingRepos`'s trigger-per-repo convention): two
    * concurrent calls for the same repo must settle on exactly one live
    * trigger.
    */

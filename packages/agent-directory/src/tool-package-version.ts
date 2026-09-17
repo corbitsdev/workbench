@@ -1,4 +1,4 @@
-// CL-7389: a runtime tool-package pin must resolve to a concrete,
+// A runtime tool-package pin must resolve to a concrete,
 // published version — never the npm "any version" range `*` — so a new
 // tarball landing in the tenant's registry never silently changes what
 // an already-deployed specialist runs. `withAgentToolPackagePin` (see
@@ -96,7 +96,7 @@ function resolveFromFilenames(
  * one-name convenience wrapper; a caller resolving several names in one
  * request (e.g. `create_agent`'s own `toolPackagePins`) should build one
  * resolver and call it once per name instead, so a five-pin create still
- * costs one ancestor walk and one listing, not five (CL-7389).
+ * costs one ancestor walk and one listing, not five.
  */
 export function createPinnedVersionResolver(
   deps: ResolvePinnedVersionDeps,

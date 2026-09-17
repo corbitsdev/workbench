@@ -100,7 +100,7 @@ async function ensureRegistryAsset(
   if (created.status === 201) {
     return parseSchema(AssetResponse, created.data, "create asset response").id;
   }
-  // CL-7486: two overlapping seed runs for the same tenant (the root
+  // Two overlapping seed runs for the same tenant (the root
   // tenant's own boot-time seed racing a second caller seeding that
   // same tenant) can both pass the `listRegistryAsset` check above
   // before either has created the row, then both post-create — the

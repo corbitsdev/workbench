@@ -65,7 +65,7 @@ describe("mentionCandidatesFromParticipants", () => {
     ).toEqual([]);
   });
 
-  test("prefers the resolved display name over the slug-derived label (CL-6424)", () => {
+  test("prefers the resolved display name over the slug-derived label", () => {
     expect(
       mentionCandidatesFromParticipants(
         [

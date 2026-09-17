@@ -1,6 +1,6 @@
 // A warm-kept scheduled fire still settles. Native ScheduleTrigger
 // definitions own one self-anchored workflow_run that must stay live
-// across fires (CL-7418), so no server-side stamp ever flips it terminal
+// across fires, so no server-side stamp ever flips it terminal
 // per fire — surfaces read the fire settled through runOutcomeStatus
 // past FIRE_RUNNING_WINDOW_MS instead.
 import { describe, expect, test } from "bun:test";
@@ -11,7 +11,7 @@ const NOW = Date.parse("2026-09-15T12:00:00.000Z");
 const OLD = new Date(NOW - FIRE_RUNNING_WINDOW_MS - 1).toISOString();
 const FRESH = new Date(NOW - 1_000).toISOString();
 
-describe("warm-kept scheduled fire settling (CL-7418)", () => {
+describe("warm-kept scheduled fire settling", () => {
   test("a fire with no in-flight turn past the window reads completed", () => {
     expect(
       runOutcomeStatus({ createdAt: OLD, status: "running", endedAt: null, turns: [] }, NOW),

@@ -1,4 +1,4 @@
-// Regression for CL-6334: `SKILLS_TOOL_PACKAGE_PIN` named
+// `SKILLS_TOOL_PACKAGE_PIN` named
 // `@corbits/tools-skills`, but `tool-registry-publish`'s
 // `CORBITS_TOOL_PACKAGE_DIRS` never listed that package's directory, so
 // a definition pinning skills carried a pin the corbits-tools registry
@@ -32,7 +32,7 @@ describe("SKILLS_TOOL_PACKAGE_PIN", () => {
   });
 });
 
-// CL-7389: a runtime tool-package pin must resolve to a concrete,
+// A runtime tool-package pin must resolve to a concrete,
 // published version — never the npm "any version" range `*` — so a
 // later tarball landing in the registry never silently changes what an
 // already-deployed specialist runs.
@@ -85,7 +85,7 @@ describe("withAgentToolPackagePin", () => {
   });
 });
 
-// CL-7592: pinned skill names read back out of the definition's own
+// Pinned skill names read back out of the definition's own
 // serialized `workflow.json` (the `<available_skills>` stanza
 // `reindexPinnedSkills` writes) — the asset is the source of truth for
 // pins now that the Workbench-owned `definition_skills` store is gone.
@@ -121,7 +121,7 @@ describe("readPinnedSkillNames", () => {
   });
 });
 
-// CL-7389: a `create_agent`/`POST /agent-definitions` call pinning several
+// A `create_agent`/`POST /agent-definitions` call pinning several
 // tool packages by name shares one registry resolver across all of them
 // (`createPinnedVersionResolver`), so it costs one ancestor walk and one
 // tarball listing, never one per pin.

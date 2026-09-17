@@ -1,4 +1,4 @@
-// Myra-backed agent-definition drafting (CL-6074): turns a name and a
+// Myra-backed agent-definition drafting: turns a name and a
 // plain-language "what should this agent do?" description into a
 // machine-checked draft via one one-shot Myra call — the third consumer
 // of the inventory-assembly + strict-reply-schema +
@@ -32,7 +32,7 @@ const MAX_REPLY_EXCERPT = 400;
 const MAX_SYSTEM_PROMPT_LENGTH = 8000;
 const MAX_DESCRIPTION_LENGTH = 500;
 
-/** `@corbits/capability-tools`' package name (CL-6084/CL-6086) — the
+/** `@corbits/capability-tools`' package name — the
  * `request_capability` bundle every drafted agent gets pinned by
  * default (see `validateAgentDefinitionDraftReplyAgainstInventory`'s
  * default-pin step below), the same way a definition that pins skills

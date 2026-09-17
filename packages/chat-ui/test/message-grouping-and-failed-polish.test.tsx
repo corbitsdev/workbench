@@ -1,4 +1,4 @@
-// DOM tests for the CL-6106 timeline polish pass: consecutive same-author
+// DOM tests for the timeline polish pass: consecutive same-author
 // messages collapse into a grouped run (avatar/name shown once, follow-ups
 // indented with a hover-revealed timestamp), and a failed pending bubble's
 // Retry/Discard render as proper react-ui buttons rather than underlined
@@ -178,13 +178,12 @@ describe("failed pending message's inline recovery affordance", () => {
   });
 });
 
-// CL-6677: the client-side reply-timeout backstop (a cold-waking room —
-// PR #327's defer-to-wake path — that never streams a single token back)
-// used to render as a bare quiet event line: no ref id, no Retry. It now
-// carries a `turnFailed` text part exactly like the server's own
-// undelivered-turn notice (`postUndeliveredNotice`, CL-6308/CL-6644), so
-// it renders through the same `FailedTurnStrip` — ref id quotable, Retry
-// wired — instead of a second, weaker backstop with no actions.
+// The client-side reply-timeout backstop (a cold-waking room's
+// defer-to-wake path that never streams a single token back) carries a
+// `turnFailed` text part exactly like the server's own undelivered-turn
+// notice (`postUndeliveredNotice`), so it renders through the same
+// `FailedTurnStrip` — ref id quotable, Retry wired — instead of a
+// second, weaker backstop with no actions.
 describe("the reply-timed-out notice gets the same ref+Retry treatment as the server-side backstop", () => {
   test("shows the honest 'no reply arrived' copy with a quotable ref id, through FailedTurnStrip", async () => {
     const items: MessageItem[] = [
@@ -234,7 +233,7 @@ describe("the reply-timed-out notice gets the same ref+Retry treatment as the se
   });
 });
 
-// CL-6252 #5: `initialsOf("You")` reads as "YO" — a fabricated pair with no
+// #5: `initialsOf("You")` reads as "YO" — a fabricated pair with no
 // relationship to the signed-in person. The own-message avatar now derives
 // its initials from `currentUser.name`/`handle`, falling back to "•" (never
 // "YO") when neither is known, while the "You" label itself is untouched.

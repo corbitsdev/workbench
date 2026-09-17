@@ -4,7 +4,7 @@
 // gpt-oss and qwen instead emit their chain-of-thought inline inside the
 // ordinary `content` field, wrapped in `<think>…</think>`. Left alone, that
 // text is indistinguishable from the reply and rides every hop downstream
-// as a genuine `inference.text.delta` — this is the CL-6654 leak. This
+// as a genuine `inference.text.delta` leak. This
 // module reclassifies it into `inference.thinking.delta` before anything
 // else ever sees it, at the one place that already knows these tokens came
 // from Ollama.

@@ -62,7 +62,7 @@ const WorkbenchWire = type({
   "preview?": "string",
   // `GET /workbenches` sets this server-side (see
   // `packages/chat/src/routes.ts`) only for a workbench projected into
-  // this tenant via CL-5882's shared-workbench machinery: "shared via
+  // this tenant via shared-workbench machinery: "shared via
   // parent · <parent name>" for true siblings, "shared · <owning tenant
   // name>" otherwise. Absent for every ordinary, non-projected workbench.
   "sharedLabel?": "string",
@@ -125,20 +125,20 @@ const MessageItem = type({
   // `false`, mirroring how `unreadCount` on `Workbench` works.
   "reactions?": ReactionSummaryWire.array(),
   "pinned?": "boolean",
-  // The client-generated send identity (CL-6251) this message's own
+  // The client-generated send identity this message's own
   // sender's composer submitted it with, echoed back once the server
   // records it — see `sendMessage`'s `clientId` option and
   // `packages/chat/src/client-ids.ts`. Absent for every message not
   // sent with one (anything from before this feature, or from a peer
   // whose own client never set it) — never a fabricated id.
   "clientId?": "string",
-  // The thread this message belongs to (CL-6313), resolved server-side
+  // The thread this message belongs to, resolved server-side
   // against the same "root feed by default" contract the per-thread
   // feed filters on. Carrying it here is what lets one query serve the
   // root feed and every open thread — see `./thread-feed.ts`. Absent
   // on a host that mounts no thread store, matching `rootThreadId: ""`.
   "threadId?": "string",
-  // The RFC 5322 `Message-ID` this row's mail carries (CL-8175) — absent
+  // The RFC 5322 `Message-ID` this row's mail carries — absent
   // for a row with no mail original. This is what a reply's own
   // `inReplyTo` threads onto, never this item's `id`, which for a
   // mail-derived row is the mailbox's own local uid (see
@@ -319,7 +319,7 @@ export function listAllWorkbenches(tenantId: string): Promise<readonly Workbench
 // `POST /workbenches` for the server side of this union.
 //
 // `kind: "chat"` + `definitionId` always find-or-reopens the one DM
-// for that agent (CL-6981). `reuseExisting` is still accepted on the
+// for that agent. `reuseExisting` is still accepted on the
 // wire and ignored. `kind: "workbench"` mints an empty channel; a room's
 // onboarding walkthrough is posted separately through
 // `postWorkbenchOnboardingStep`, never as a side effect of create.
@@ -421,7 +421,7 @@ export function fetchWorkbenchBlob(
 }
 
 // The wire response of `@corbits/mailbox`'s `POST /me/inbox/send`
-// (CL-8175): the Sent-folder copy's own RFC 5322 `Message-ID` and its
+//: the Sent-folder copy's own RFC 5322 `Message-ID` and its
 // mailbox uid, the same uid `mailbox-timeline.ts`'s `threadTreeToTimeline`
 // keys every timeline row by.
 const SentInboxMessage = type({
@@ -432,7 +432,7 @@ export type SentInboxMessage = typeof SentInboxMessage.infer;
 
 /**
  * A human composer send, straight onto the tenant's own mailbox
- * (`POST /me/inbox/send`, CL-8175) — no chat route in between. `to` is
+ * (`POST /me/inbox/send`) — no chat route in between. `to` is
  * every other recipient address this send goes to; `inReplyTo` is the
  * RFC `Message-ID` of the message this one threads under (the thread
  * root when replying inside an open thread, or the specific message being
@@ -468,7 +468,7 @@ export const WorkbenchThread = type({
 });
 export type WorkbenchThread = typeof WorkbenchThread.infer;
 
-// A listed thread carries its own reply activity (CL-6313) — the
+// A listed thread carries its own reply activity — the
 // affordance on a parent message shows "N replies" and a last-activity
 // stamp, and computing those client-side meant a `GET
 // /threads/:id/messages` per thread on every timeline refresh. Only the
@@ -502,7 +502,7 @@ export function listThreads(
 
 /**
  * A first-class fork: spawn a sub-thread rooted at any message inside a
- * thread — something Slack doesn't have (CL-5948). Idempotent per origin
+ * thread — something Slack doesn't have. Idempotent per origin
  * message, and honors the two-level cap server-side: forking a message
  * already inside a sub-thread creates a sibling sub-thread under that
  * sub-thread's parent, never a third level (see `resolveThreadAnchor` in
@@ -812,7 +812,7 @@ export function workbenchStreamUrl(tenantId: string, workbenchId: string): strin
 }
 
 /**
- * `POST .../presence` (CL-6328, see `packages/chat/src/routes.ts`): keeps
+ * `POST .../presence` (see `packages/chat/src/routes.ts`): keeps
  * this principal's `lastActiveAt` fresh on the who's-here roster while its
  * stream connection sits open — "here at all" already comes for free from
  * the open connection itself, so this is called on real activity, never
@@ -899,12 +899,6 @@ export function patchWorkbenchSettings(
   );
 }
 
-// Hub-zero T3 (CL-8114): the room card's live state read and
-// start-reviewing write lived here, backed by the hub's now-deleted
-// workbench-scoped GitHub mount. GitHub connect/disconnect
-// itself stays native `connections/*` (`@corbits/settings-ui`); the card's
-// state/start rebind is a connections follow-up.
-
 // `GET`/`PATCH /bench/settings` (see `packages/chat/src/routes.ts`): the
 // bench-wide chat defaults every workbench inherits unless it sets its own
 // override. Currently just the default context window.
@@ -932,7 +926,7 @@ export function patchBenchChatSettings(
   });
 }
 
-// The turn projection's read surface (CL-6329/CL-6380): what a client
+// The turn projection's read surface: what a client
 // reattaching to a workbench (page navigation, tab refocus, a dropped SSE
 // connection) uses to find whether a turn is still running and, if so,
 // replay whatever text it has already committed before the live stream's
@@ -978,10 +972,10 @@ const CancelWorkbenchTurnWire = type({ cancelledCount: "number" });
 export type CancelWorkbenchTurnResult = typeof CancelWorkbenchTurnWire.infer;
 
 /**
- * Stops a workbench's in-flight turn(s) (CL-7201) — `POST
+ * Stops a workbench's in-flight turn(s) — `POST
  * .../turns/cancel` in `packages/chat/src/routes.ts`. `cancelledCount`
  * is the honest count of turns actually settled `cancelled`, not a
- * promise that the underlying agent process stopped (see CL-7230): the
+ * promise that the underlying agent process stopped: the
  * composer's own Stop affordance treats any non-throwing response as
  * "asked," and relies on the timeline's cancelled-turn notice — not this
  * response — to clear the typing indicator.

@@ -1,4 +1,4 @@
-// Eval-harness fixture (CL-7585): pushes a workflow definition into its
+// Eval-harness fixture: pushes a workflow definition into its
 // asset repo over the hub's smart-HTTP git route, using the system git
 // binary with a bearer token as the basic-auth password and a
 // GIT_ASKPASS shim as the non-interactive fallback — the platform's
@@ -176,7 +176,7 @@ export function createGitWorkflowPusher(): WorkflowPusher {
           args: [
             // Pushed commits are authored as hub@workbench.localhost and
             // must never inherit the operator's signing identity
-            // (CL-7492): a global `commit.gpgsign = true` would fail the
+            //: a global `commit.gpgsign = true` would fail the
             // commit — or worse, sign a bot commit with a personal key.
             "-c",
             "commit.gpgsign=false",

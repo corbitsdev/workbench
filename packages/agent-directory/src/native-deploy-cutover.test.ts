@@ -1,4 +1,4 @@
-// Regression for CL-7363: Agent Builder definitions used to self-freeze
+// Agent Builder definitions used to self-freeze
 // through `@corbits/workflow-freeze`'s `DefinitionFreezer`, a hub-local
 // path that bypasses the native sidecar probe. This package now deploys
 // every definition write through the injected `WorkflowDeployer` — the

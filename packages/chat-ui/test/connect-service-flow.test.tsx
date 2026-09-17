@@ -1,5 +1,5 @@
 // Container + actions-port round-trip for the generic service connect
-// card (CL-6393): an initial `getConnectState` read on mount, live
+// card: an initial `getConnectState` read on mount, live
 // `subscribeConnectState` folds after — the same contract
 // `connect-github-flow.test.tsx` proves for the GitHub card. The flip
 // to "connected" arriving through the subscription is the card's whole

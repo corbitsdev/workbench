@@ -9,7 +9,7 @@
 // `PRINCIPAL_KIND_LABEL` and `PRINCIPAL_KIND_ORDER` live here too, shared by
 // every picker that lists principals (Grants' target select and filter).
 // Grants assign to people, agents, *and* workflows. Roles' assignment picker
-// is scoped to user-kind principals only (CL-6664): agents/workflows are
+// is scoped to user-kind principals only: agents/workflows are
 // machine identities that belong on separate surfaces.
 
 import { SETTINGS_STRINGS } from "./strings";

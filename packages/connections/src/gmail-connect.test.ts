@@ -88,7 +88,7 @@ test("a Google error response maps to an honest failure that never echoes token 
   expect(result.message).not.toContain("secret-1");
 });
 
-// CL-7235: a Google token endpoint that never answers used to leave this
+// A Google token endpoint that never answers used to leave this
 // exchange awaiting `doFetch` forever. It now carries a bounded
 // `AbortSignal`, so a stalled provider is caught the same way any other
 // network failure already is instead of hanging the `/callback` request

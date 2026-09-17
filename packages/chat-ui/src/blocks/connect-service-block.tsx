@@ -1,4 +1,4 @@
-// The generic service connect card (CL-6393) — `connect-github`'s
+// The generic service connect card — `connect-github`'s
 // first-run card generalized to every connector and MCP preset, in the
 // same `BlockCard` frame. Pure and props-driven like
 // `ConnectGithubBlockView`: the disconnected arm renders one of three

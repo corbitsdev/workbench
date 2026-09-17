@@ -20,7 +20,7 @@ describe("providerDisplayName", () => {
   test("resolves a known provider slug to its own display name", () => {
     expect(providerDisplayName("ollama")).toBe("Ollama (local)");
     expect(providerDisplayName("opencode-zen")).toBe("Opencode Zen");
-    // The CL-7510 OAuth-only ids resolve too, not fall back to their slug.
+    // The OAuth-only ids resolve too, not fall back to their slug.
     expect(providerDisplayName("codex")).toBe("Codex");
     expect(providerDisplayName("xai-oauth")).toBe("xAI (Grok OAuth)");
   });
@@ -121,7 +121,7 @@ describe("defaultModelForProvider", () => {
     });
   });
 
-  test("CL-6351: skips an embedding-capability offering tied at the same priority even when its name sorts first", () => {
+  test("skips an embedding-capability offering tied at the same priority even when its name sorts first", () => {
     // Two offerings tied at the same priority -- exactly what
     // `packages/connections/src/seed-catalog.ts`'s `seedCatalog` does for a fresh
     // Ollama connect. The embedding offering's real capability data (no
@@ -169,7 +169,7 @@ describe("defaultModelForProvider", () => {
     });
   });
 
-  test("CL-6351: an uncataloged embedding-named offering never wins even at the lowest priority", () => {
+  test("an uncataloged embedding-named offering never wins even at the lowest priority", () => {
     const models: ModelInfo[] = [
       model({
         id: "model-embed",
@@ -212,7 +212,7 @@ describe("defaultModelForProvider", () => {
     });
   });
 
-  test("CL-6351: an offering set that is entirely uncataloged embedding-named models resolves to no default", () => {
+  test("an offering set that is entirely uncataloged embedding-named models resolves to no default", () => {
     const models: ModelInfo[] = [
       model({
         id: "model-embed-1",
@@ -252,7 +252,7 @@ describe("defaultModelForProvider", () => {
     expect(defaultModelForProvider(models, "ollama")).toBeNull();
   });
 
-  test("CL-6744: an hf.co path never wins the Ollama default when a chat model exists", () => {
+  test("an hf.co path never wins the Ollama default when a chat model exists", () => {
     const models: ModelInfo[] = [
       model({
         id: "model-hf",
@@ -297,7 +297,7 @@ describe("defaultModelForProvider", () => {
 });
 
 describe("chatCapableModels", () => {
-  test("CL-6744: drops embedding-named, hf.co, and .gguf models from picker lists", () => {
+  test("drops embedding-named, hf.co, and .gguf models from picker lists", () => {
     const models: ModelInfo[] = [
       model({
         id: "model-embed",
@@ -413,7 +413,7 @@ describe("buildEffectiveInferenceRows", () => {
     expect(buildEffectiveInferenceRows([], new Set())).toEqual([]);
   });
 
-  test("CL-6744: omits embedding, hf.co, and .gguf offerings from Settings route rows", () => {
+  test("omits embedding, hf.co, and .gguf offerings from Settings route rows", () => {
     const rows = buildEffectiveInferenceRows(
       [
         model({

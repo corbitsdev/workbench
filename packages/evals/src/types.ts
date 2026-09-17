@@ -1,4 +1,4 @@
-// Core shapes for the Myra eval library (CL-6143). Modeled after
+// Core shapes for the Myra eval library. Modeled after
 // Mastra evals / LangChain evaluators: an eval is a hardcoded expected
 // scenario (`EvalDefinition.steps`), each step a scripted human turn
 // plus the `Scorer`s that grade what actually happened on that turn.

@@ -18,7 +18,7 @@
   --chat-ease: var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
 
   /* Avatar identity pastels: the single definition of the deterministic
-     principal palette (CL-7478). Numbered like react-ui's --chart-1..5
+     principal palette. Numbered like react-ui's --chart-1..5
      series — slot order is the resolution order, not a ranking. These four
      names are the proposed upstream contract: when @corbits/react-ui's
      theme ships them natively, delete this block and consume them there. */
@@ -47,7 +47,7 @@
   justify-content: center;
   /* Without this, a short viewport lets the centered loader overflow past
      this frame's own box and render on top of the page header above it
-     (CL-6624) — `overflow` makes the frame clip/scroll its own content
+ — `overflow` makes the frame clip/scroll its own content
      instead of bleeding into chrome it doesn't own. */
   overflow: auto;
 }
@@ -170,14 +170,14 @@
   white-space: nowrap;
 }
 
-/* One primary-action language for the whole surface (CL-6215 EMIL #4): the
+/* One primary-action language for the whole surface: the
    top-bar Save is now a react-ui primary Button, the same visual language
    as the agent-detail Save below rather than a bespoke black pill. */
 .workbench-settings-topbar [data-slot="button"]:disabled,
 .chat-settings-field-actions [data-slot="button"]:disabled {
   /* A disabled primary action reads as neutral-gray, never a dimmed
      orange — dimmed orange still reads as "another orange" on a page
-     where orange means "act here" (CL-6215 EMIL #3). Scoped to this
+     where orange means "act here". Scoped to this
      surface's own buttons rather than react-ui's shared disabled state. */
   opacity: 1;
   border-color: transparent;
@@ -315,11 +315,11 @@
   gap: 0.5rem;
 }
 
-/* Sidebar-row pattern (CL-6215 DRAPER): a row's "you can act here" signal
+/* Sidebar-row pattern: a row's "you can act here" signal
    is the 2px inset accent edge, never a background wash — the same rule
    the shell's own workbench list follows (`apps/web/src/app.css`'s
    `.shell-ch-row` / sidebar-item-row overrides). A persistent trailing
-   chevron marks the row as a drill-in, not a toggle (CL-6215 EMIL #1). */
+   chevron marks the row as a drill-in, not a toggle. */
 .chat-settings-agent-picker-row {
   display: flex;
   width: 100%;
@@ -470,7 +470,7 @@
 /* A static fact ("this agent has @corbits/github-tools") is not a button
    and should not wear button chrome — no border, a muted tint fill only,
    never the bordered-and-transparent look `Button variant="outline"` and
-   `Badge tone="neutral"` share (CL-6215 EMIL #2). */
+   `Badge tone="neutral"` share. */
 .chat-settings-capability-chip {
   display: inline-flex;
   align-items: center;
@@ -484,10 +484,9 @@
   font-weight: 600;
 }
 
-/* Invite agent (CL-6215 EMIL #5): a quiet, small, self-start control — the
-   giant bordered pill it used to render was a flex-stretch accident
-   (`.chat-settings-field`'s column has no `align-self`, and flex's default
-   `align-items: stretch` filled the whole row). */
+/* Invite agent: a quiet, small, self-start control — without an explicit
+   `align-self`, flex's default `align-items: stretch` would fill the
+   whole row. */
 .chat-settings-invite-agent-action {
   display: inline-flex;
   align-self: flex-start;
@@ -529,7 +528,7 @@
   min-width: 8rem;
 }
 
-/* History (CL-6215 EMIL #8/#9): the current version reads through a
+/* History: the current version reads through a
    hairline inset accent on the row, the same signal every selected/active
    row in this surface uses — never a colored Badge. */
 .chat-settings-history-row-current {
@@ -550,7 +549,7 @@
   color: var(--muted-foreground);
 }
 
-/* Plugins directory (CL-6215 DRAPER): a marketplace-style list, not a grid
+/* Plugins directory: a marketplace-style list, not a grid
    of grey cards — one row per connector, search on top, Active before
    Available. */
 .plugins-directory-toolbar {
@@ -731,7 +730,7 @@
    keeps every group at full width so its own left gutter (2.9rem) reads
    consistently. `flex-shrink: 0` on the group (below) is what stops a
    flex column from collapsing two groups onto the same line when content
-   overflows — the layout crash CL-6784. */
+   overflows into the sibling group. */
 .chat-timeline {
   display: flex;
   flex: 1;
@@ -818,7 +817,7 @@
    brand's zero-radius language) pulsing while the launches finish.
    `flex: 1` claims the rest of `.chat-main`'s column instead of sitting
    flush under `.chat-workbench-header` with no gap — without it the dots
-   render right on top of the header's bottom rule (CL-6624). Centering
+   render right on top of the header's bottom rule. Centering
    in that claimed space, plus its own padding, keeps a real gap from the
    header at any viewport height; `overflow: auto` is the same
    containment `.chat-workspace-frame` needs for the pre-workbench
@@ -954,7 +953,7 @@
 }
 
 /* Wraps a message sender's avatar with room for the shared-workbench
-   tenant-monogram badge (CL-5882), positioned bottom-right — only
+   tenant-monogram badge, positioned bottom-right — only
    rendered when the server annotates the sender with a
    `tenantMonogram` (see `resolveMessageSenderTenant` in
    `packages/chat/src/routes.ts`). */
@@ -1059,7 +1058,7 @@
   align-self: baseline;
 }
 
-/* CL-5879: the safe markdown subset a message bubble renders. */
+/* The safe markdown subset a message bubble renders. */
 .chat-md-paragraph,
 .chat-md-heading {
   display: block;
@@ -1094,7 +1093,7 @@
   color: var(--primary, inherit);
 }
 
-/* Grouped continuation (CL-6106): the run's second-and-later messages from
+/* Grouped continuation: the run's second-and-later messages from
    the same author drop the avatar/name header entirely — indented to sit
    under the name above, with the timestamp tucked into the avatar gutter
    and only revealed on hover/focus rather than shown on every line. */
@@ -1124,7 +1123,7 @@
   opacity: 1;
 }
 
-/* CL-6092: a classified inference failure's reply already says what went
+/* A classified inference failure's reply already says what went
    wrong; this is a low-key next step, not a second alert — a small
    outline button rather than a bare underlined link, matching the
    pending-bubble's failed-state buttons. */
@@ -1137,9 +1136,9 @@
   align-self: flex-end;
 }
 
-/* CL-6558: the owner asked for own messages back on the right, evaluated
+/* The owner asked for own messages back on the right, evaluated
    per viewer (`isOwn` in timeline.tsx already keys off `currentUser`, never
-   a fixed account) — reversing CL-6488's flat, no-alignment timeline. Still
+   a fixed account) — reversing flat, no-alignment timeline. Still
    no bubble, no border, no background fill: only the row mirrors, so the
    avatar sits on the right and the header/text shrink to their own content
    width against that same edge instead of stretching the full row. `.chat-
@@ -1183,7 +1182,7 @@
   margin-left: auto;
 }
 
-/* Optimistic sends (CL-5879): a message the reader just sent renders
+/* Optimistic sends: a message the reader just sent renders
    exactly like a normal message immediately — full opacity, no restyling —
    with only the small clock glyph next to its header while in flight, and
    an inline "Not sent — retry" row appended below it (never replacing or
@@ -1252,7 +1251,7 @@
   align-items: center;
   justify-content: flex-start;
   gap: 0.5rem;
-  /* CL-6772: same left gutter as failed-turn / gen-ui blocks — system
+  /* Same left gutter as failed-turn / gen-ui blocks — system
      notices sit under the message column, never centered and never on
      the signed-in user's right edge. */
   margin: 0.15rem 0 0.15rem 2.9rem;
@@ -1870,7 +1869,7 @@
   color: var(--foreground);
 }
 
-/* GitHub connect card (CL-6342 screen 2). The row's checkbox control is
+/* GitHub connect card. The row's checkbox control is
    `@corbits/react-ui`'s own `Checkbox`; only the row layout around it
    (name left, open-PR count right) is workbench-specific. */
 .chat-block-connect-steps {
@@ -1993,7 +1992,7 @@
   box-sizing: border-box;
 }
 
-/* CL-6568's pre-send banner — a tenant with no usable model sees this
+/* pre-send banner — a tenant with no usable model sees this
    above the composer, before typing a single character, rather than
    discovering it only after a reply never arrives. Never disables the
    composer beneath it. */
@@ -2019,7 +2018,7 @@
   flex: 1;
 }
 
-/* CL-6833: catch-up fetch for a still-running turn failed — soft alert
+/* Catch-up fetch for a still-running turn failed — soft alert
    above the activity strip so a mid-turn reopen never looks idle. Same
    visual weight as the no-model banner; role=alert is set in markup. */
 .chat-resume-failed-banner {
@@ -2214,7 +2213,7 @@
   color: var(--muted-foreground);
 }
 
-/* Tool-use chips (CL-6466, conforming to mock-spec §12.3): inline chips
+/* Tool-use chips (conforming to mock-spec §12.3): inline chips
    stacked under the agent's prose, one per call — never collapsibles.
    `.chat-tool-activity` is the stack; each `.chat-tool-activity-row` wraps
    one chip plus optional detail. The chip hugs its content so a wall of
@@ -2649,8 +2648,7 @@
 /* Growth is measured in JS (scrollHeight, capped at max-height above) and
    applied as an inline `height`; this transition is what turns that
    per-keystroke instant write into a contained ~120ms glide instead of an
-   instant reflow of the composer's flex siblings (CL-6250 — "the whole
-   thing moves"). Shrink-on-delete rides the same transition. */
+   instant reflow of the composer's flex siblings. Shrink-on-delete rides the same transition. */
 @media (prefers-reduced-motion: no-preference) {
   .chat-composer-input {
     /* Grows/shrinks in place, not an entrance — DESIGN.md calls for
@@ -2700,7 +2698,7 @@
 
 /* Extends the attach/send hit area to >=40px without visually bloating the
    36px icon button: a borderless ::after grows the clickable box, since
-   it's still inside the button's own hit-test region (CL-6250). */
+   it's still inside the button's own hit-test region. */
 .chat-composer-icon-button {
   position: relative;
   display: inline-flex;
@@ -2738,7 +2736,7 @@
   }
 }
 
-/* CL-6124: the first-run prompt box for a zero-workbench bench — one big
+/* The first-run prompt box for a zero-workbench bench — one big
    ChatGPT-style box with corner affordances instead of the conversation
    composer's slim inline row, since there is no workbench here to carry
    mentions, slash commands, or a pending-bubble hand-off. */
@@ -2824,7 +2822,7 @@
 /* Entrance for the mention/slash/help popovers: all three anchor
    `bottom: 100%` (they open above the caret line), so a single
    caret-side-aware direction — rising up from the input — covers every
-   case (CL-6250). */
+   case. */
 @keyframes chat-popover-enter {
   from {
     opacity: 0;
@@ -3074,7 +3072,7 @@
   color: var(--muted-foreground);
 }
 
-/* The fork's visible back-reference to its origin message (CL-5948) —
+/* The fork's visible back-reference to its origin message —
    shown atop a sub-thread's timeline, distinct from the breadcrumb's
    "walk back out" affordance directly above it. */
 .chat-thread-origin-banner {
@@ -3174,10 +3172,10 @@
 
 /* Message body column: bubble/parts + reaction/pin row share one flex
    column so chips sit under the bubble instead of as a loose sibling of
-   the whole header+bubble cluster (CL-6661). Each direct child is a
+   the whole header+bubble cluster. Each direct child is a
    block that must keep its own height — no shrinking that would let
    the tool-activity stack or a failed-turn strip collapse onto the row
-   below (CL-6784). */
+   below. */
 .chat-message-body {
   display: flex;
   flex-direction: column;
@@ -3304,7 +3302,7 @@
    prompt — fading in on hover/focus-within like `.chat-pin-toggle` above,
    plus `data-open` so it stays put while its own picker or menu is open
    even if focus moves into a portaled menu.
-   Positioned relative to `.chat-message-row` (CL-6376) — the wrapper
+   Positioned relative to `.chat-message-row` — the wrapper
    around this one message's own content, siblings-with but excluding its
    optional `.chat-day-divider` — rather than `.chat-message-group` as a
    whole: anchoring to the outer group let the toolbar float up into the
@@ -3715,7 +3713,7 @@
   white-space: nowrap;
 }
 
-/* PR thread (CL-6342 screen 3, screen 4 turn states). A thread is a
+/* PR thread. A thread is a
    bordered container inside the one timeline; a reply row matches the
    mock's `.msg` layout — avatar-plus-body, same shape as any other
    message. */
@@ -4018,14 +4016,14 @@
   color: var(--foreground);
 }
 
-/* The general chat timeline's own failed-turn row (CL-6376) — a quiet
+/* The general chat timeline's own failed-turn row — a quiet
    inline system line under the same left gutter every message sits
    under, not a bordered banner: muted danger-tinted text, a small ghost
    Retry, and "What happened" as an inline disclosure. Reads as part of
    the conversation rather than an alert dropped into it. Collapsed it
    is a single flex line (consumer sentence + recovery); the detail
    disclosure, when open, is the only thing that wraps to a second line
-   (CL-6784 — not stacked chrome). Width is `calc`'d against the 2.9rem
+   (not stacked chrome). Width is `calc`'d against the 2.9rem
    gutter so `max-width:100%` plus that margin never overflows the
    message column and collapses the next row's height. */
 .chat-turn-failed {
@@ -4104,12 +4102,12 @@
   color: var(--muted-foreground);
 }
 
-/* CL-7201's cancelled-turn row: the same quiet inline layout as
+/* cancelled-turn row: the same quiet inline layout as
    .chat-turn-failed, but neutral rather than danger-tinted — the user
    asked for this outcome, so it reads as a plain fact, not a warning,
    and carries no Retry (the person can just send again). Same width
    fix as `.chat-turn-failed` — `calc` against the gutter so the row
-   never overflows and collapses the next message (CL-6784). */
+   never overflows and collapses the next message. */
 .chat-turn-cancelled {
   display: flex;
   align-items: center;

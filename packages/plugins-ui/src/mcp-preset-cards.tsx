@@ -1,4 +1,4 @@
-// Curated MCP preset rows (CL-6152): verified OAuth/DCR and keyless services
+// Curated MCP preset rows: verified OAuth/DCR and keyless services
 // get the catalog's one-click installation path. Presets and previously
 // connected custom servers share the same server-side store.
 

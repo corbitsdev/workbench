@@ -1,7 +1,7 @@
 // DB-gated: skipped when no DATABASE_URL is reachable, mirroring
 // `store.drizzle.test.ts`. Runs against its own scratch database.
 //
-// CL-7242: proves the actual compare-and-swap `acquire` relies on —
+// Proves the actual compare-and-swap `acquire` relies on —
 // concurrent callers racing the same (tenant, repo), a stale lease
 // being stolen, and a released lease being immediately reacquirable —
 // against a real Postgres. A mocked port proves nothing about

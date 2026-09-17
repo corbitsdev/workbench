@@ -46,7 +46,7 @@ export function resetPendingSendNonceForTests(): void {
 }
 
 /** Random per-page-load prefix: a pending nonce doubles as the message's
- * wire `clientId` (CL-6251), which the server persists — a bare counter
+ * wire `clientId`, which the server persists — a bare counter
  * would repeat `pending_1` on every reload, colliding with a prior
  * session's stored clientId in the same workbench (wrong-message matches
  * in `mergePendingSends`, duplicate React keys in `WorkbenchTimeline`). */
@@ -133,7 +133,7 @@ export function useOptimisticSends(args: {
   readonly pendingParentMessageId: string | null;
   readonly openThreadById: (threadId: string) => void;
   /** Every other participant's mailbox address this send goes `to`
-   * (CL-8175) — the room's own `Workbench.participants`, minus the
+   * — the room's own `Workbench.participants`, minus the
    * signed-in sender. */
   readonly recipientAddresses: readonly string[];
   /** The loaded feed's own messages, used only to resolve the RFC
@@ -176,7 +176,7 @@ export function useOptimisticSends(args: {
   // called with, which stays fixed for the life of that async call. This
   // ref tracks the live value so a continuation resolving after the reader
   // has switched benches can tell its own send is no longer for the
-  // workbench currently on screen (CL-7198).
+  // workbench currently on screen.
   const activeWorkbenchIdRef = useRef(activeWorkbenchId);
   useEffect(() => {
     activeWorkbenchIdRef.current = activeWorkbenchId;
@@ -185,7 +185,7 @@ export function useOptimisticSends(args: {
   async function sendPending(nonce: string, text: string): Promise<void> {
     if (activeWorkbenchId === null) return;
     // The mailbox send wire (`{ to, body, inReplyTo? }`) has no room for
-    // an attachment — dropped rather than shimmed (CL-8175); `parts` below
+    // an attachment — dropped rather than shimmed; `parts` below
     // is still text-only, which is exactly what `partsForSend` already
     // produces for an empty attachments array.
     const trimmedBody = text.trim();
@@ -266,7 +266,7 @@ export function useOptimisticSends(args: {
         },
       );
       // Seed / bump the threads cache before navigation opens the just-
-      // created id (CL-6660). Without the row, `useThreadNavigation`'s
+      // created id. Without the row, `useThreadNavigation`'s
       // stale-id effect would drop `openThreadId` the moment it was set.
       if (confirmed.threadId !== undefined) {
         const threadId = confirmed.threadId;
@@ -286,7 +286,7 @@ export function useOptimisticSends(args: {
         // A continuation that started before the reader switched to a
         // different workbench must not drag them back into this one's
         // thread — `useThreadNavigation` already reset the open thread on
-        // that switch; re-opening it here would undo that reset (CL-7198).
+        // that switch; re-opening it here would undo that reset.
         if (pendingParentMessageId !== null && activeWorkbenchIdRef.current === activeWorkbenchId) {
           openThreadById(threadId);
         }
@@ -296,7 +296,7 @@ export function useOptimisticSends(args: {
       // is owed, so show the typing indicator now rather than sitting
       // silent until the turn's first stream event arrives.
       if (hasAgentParticipant) noteAwaitingReply();
-      // No follow-up GET (CL-6328): the confirmed row is already written
+      // No follow-up GET: the confirmed row is already written
       // above, and this workbench's own `chat.message` echo (dedup'd by
       // `clientId`/`id` in `applyStreamMessage`) is what every *other*
       // connection learns the send from. Sending is real activity, so it

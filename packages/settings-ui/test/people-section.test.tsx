@@ -1,4 +1,4 @@
-// CL-6075: the People section lists humans only. A tenant with one real
+// The People section lists humans only. A tenant with one real
 // member and several machine principals (one per folded-run launch, kind
 // "workflow") must render exactly the human row — never the machine rows
 // flooding the human-management surface.
@@ -6,7 +6,7 @@
 // Role changes go through the native role-assignment routes, and the last
 // owner can't be demoted.
 //
-// CL-7378: the People table's Actions cells must not inherit page-fill's
+// The People table's Actions cells must not inherit page-fill's
 // nowrap+ellipsis clip, or Suspend/Remove controls get truncated.
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
@@ -296,7 +296,7 @@ describe("PeopleSection", () => {
     }
   });
 
-  // CL-7139: every mutation catch must report the failure through
+  // Every mutation catch must report the failure through
   // reportError with its own operation, not just set the generic message.
   const REPORT_ERROR_CASES: {
     readonly name: string;

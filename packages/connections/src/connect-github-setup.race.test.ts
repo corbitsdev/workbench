@@ -1,12 +1,12 @@
-// CL-7242: reconstructs the audit's own reproduction -- two concurrent
+// Reconstructs the audit's own reproduction -- two concurrent
 // `startReviewingRepos` calls for the same repo -- against real,
 // database-backed ports rather than plain fakes. `hasRepoGrant`/
 // `mintRepoGrant` here fake a plain read-then-insert against the
 // `grant` table directly, standing in for what `apps/hub/src/index.ts`'s
 // real binding did (HTTP calls through `native-repo-grants.ts`, deleted
-// with the workbench-scoped mount in hub-zero T3, CL-8114 -- see the
-// CL-7242 follow-up "Mint workbench tenants and repo grants via
-// Interchange HTTP") without a live hub-api server -- what this test
+// with the workbench-scoped mount -- see the follow-up "Mint workbench
+// tenants and repo grants via Interchange HTTP") without a live
+// hub-api server -- what this test
 // actually proves is that `startReviewingRepos`' lease serializes any
 // such hasRepoGrant/mintRepoGrant pair correctly, which is exactly
 // what makes the real HTTP-bound versions safe too. The lease store's
@@ -59,7 +59,7 @@ const REPO: GitHubRepoSummary = {
 const TENANT_ID = "tnt_race";
 const DEFINITION_ID = "def_code_review";
 
-describeIfDb("startReviewingRepos under real concurrency (CL-7242)", () => {
+describeIfDb("startReviewingRepos under real concurrency", () => {
   const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchTarget = new URL(scratchUrl);
   const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
@@ -180,7 +180,7 @@ describeIfDb("startReviewingRepos under real concurrency (CL-7242)", () => {
       ]);
 
       // Whether the second call gets skipped by the lease or simply
-      // finds the work already done (CL-7134's fast path) depends on
+      // finds the work already done (fast path) depends on
       // real, non-deterministic timing between the two real Postgres
       // round trips -- both are correct outcomes. The property this
       // test actually cares about is that at most one trigger is ever

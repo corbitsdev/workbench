@@ -1,4 +1,4 @@
-// Pins the exact start URL every connect surface renders (CL-6394): the
+// Pins the exact start URL every connect surface renders: the
 // tenant-scoped `connections/oauth` mount, never onboarding's own
 // first-login mount — targeting the latter is what crashed the hosted
 // GitHub one-click connect. `@corbits/connections`' own

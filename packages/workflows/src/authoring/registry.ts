@@ -9,7 +9,7 @@
 // `RepoStore`. Deploying is not this registry's job: an agent deploys a
 // committed workflow asset through stock `POST
 // /api/tenants/:tenantId/workflows/deployments` with the run bearer
-// (CL-8171).
+//.
 //
 // `populateAsset` is called with `principal: { kind: "hub" }`, the same
 // principal `@corbits/skills`' `writeSkillMd` uses. This is deliberate,
@@ -100,7 +100,7 @@ export type WorkflowDeployResult = {
  * /workflows/deployments` route drives (`prepareProvisionedDeployment`),
  * with catalog offering ids resolved server-side. An agent authoring a
  * workflow does not use it — it calls the stock route directly with the
- * run bearer (CL-8171); the hub's own on-demand catalog-block deploy
+ * run bearer; the hub's own on-demand catalog-block deploy
  * does.
  */
 export type WorkflowDeployer = {
@@ -248,7 +248,7 @@ async function collectTree(
 }
 
 /**
- * CL-7362: a best-effort, read-only render of an inert `export default
+ * A best-effort, read-only render of an inert `export default
  * {...}` object literal in an entry module — the shape a folded/single-step
  * workflow package's entry commonly takes. Deliberately NOT a JS parser or
  * evaluator (the source is untrusted agent output and must never be

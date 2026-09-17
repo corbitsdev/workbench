@@ -170,7 +170,7 @@ export function createGitWorkflowPusher(): WorkflowPusher {
           args: [
             // Seed commits are authored as seed@workbench.localhost and
             // must never inherit the operator's signing identity
-            // (CL-7492): a global `commit.gpgsign = true` would fail the
+            //: a global `commit.gpgsign = true` would fail the
             // commit — or worse, sign a bot commit with a personal key.
             "-c",
             "commit.gpgsign=false",

@@ -69,7 +69,7 @@ function argumentFragments(events: readonly InferenceEvent[]): string {
 }
 
 describe("reclassifyInlineToolJsonEvents", () => {
-  test("the CL-7186 memory_search JSON becomes a tool_call.start with no text", () => {
+  test("a memory_search JSON payload becomes a tool_call.start with no text", () => {
     const out = reclassify([textDelta(CL_7186_PAYLOAD), usageEvent()], ["memory_search"]);
     expect(textDeltas(out)).toEqual([]);
     const starts = toolStarts(out);

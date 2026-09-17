@@ -28,7 +28,7 @@ function toolPackagePinsField(
 }
 
 /**
- * CL-7362: `workflow_deploy` (`@corbits/workflow-authoring-tools`) parks an
+ * `workflow_deploy` (`@corbits/workflow-authoring-tools`) parks an
  * approval whose arguments carry the packageName/toolPackagePins a prior
  * `wf_deploy_preview` call (a static read of the committed source)
  * reported, passed through. This renders that directly rather than
@@ -36,7 +36,7 @@ function toolPackagePinsField(
  * names the real package and tools instead of a bare asset id. It does
  * NOT show grants/capabilities: those are stamped by the native
  * install+probe+gate `workflow_deploy` itself runs, which has no
- * no-freeze preview yet (CL-7362).
+ * no-freeze preview yet.
  */
 function workflowDeployHeadline(toolArguments: object): string | undefined {
   const commitSha = stringField(toolArguments, "commitSha");

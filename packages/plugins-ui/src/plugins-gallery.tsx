@@ -202,7 +202,7 @@ function SkillsTabPanel({
     );
   }
 
-  // CL-8086: no scope groups — the stock asset routes carry no
+  // No scope groups — the stock asset routes carry no
   // scope/visibility flag, so every visible skill renders in one flat list.
   return (
     <div className="border border-border [&>*:last-child]:border-b-0">
@@ -234,7 +234,7 @@ export function PluginsGallery({
   readonly onTabChange: (tab: PluginsGalleryTab) => void;
   readonly query: string;
   /** A curated MCP preset's slug named by a `/plugins?connect=mcp:<slug>`
-   * deep link (CL-7141) — passed through to the presets section so it can
+   * deep link — passed through to the presets section so it can
    * focus that preset's own card once its catalog has loaded. */
   readonly autoConnectPresetSlug?: string | null;
   readonly onAutoConnectPresetHandled?: () => void;

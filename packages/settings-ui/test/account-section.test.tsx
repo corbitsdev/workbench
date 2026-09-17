@@ -1,5 +1,5 @@
-// Personal Settings' opening section (CL-6133): the Account card's Sign out
-// affordance (CL-6105 — the footer avatar menu is not the only way in), its
+// Personal Settings' opening section: the Account card's Sign out
+// affordance (the footer avatar menu is not the only way in), its
 // copy-to-clipboard email action, and the Appearance card's theme Select
 // wired to `ThemeProvider`'s three-state mode contract.
 

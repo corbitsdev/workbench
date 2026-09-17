@@ -1,7 +1,7 @@
 # @corbits/credential-providers
 
 Workbench-owned `CredentialProvider` plugins for auth schemes the vendored
-`@intx/harness` `http` provider doesn't cover (CL-6032).
+`@intx/harness` `http` provider doesn't cover.
 
 ## `http-raw-authorization`
 

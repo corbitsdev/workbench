@@ -1,4 +1,4 @@
-// MCP preset cards (CL-6152): the connect/disconnect flow hits the exact
+// MCP preset cards: the connect/disconnect flow hits the exact
 // same `/mcp-servers` routes a hand-typed server uses, just with a
 // `presetSlug` in the body — this suite fakes `fetch` and asserts the
 // right method/URL/body went out, never a real network call.
@@ -110,10 +110,10 @@ describe("MCP preset catalog", () => {
     );
   });
 
-  // CL-6794: Connect's accessible name must name the preset so a gallery of
+  // Connect's accessible name must name the preset so a gallery of
   // identical "Connect" verbs is distinguishable to a screen reader; the
   // visible label stays the single verb.
-  test("Connect's accessible name includes the preset display name (CL-6794)", async () => {
+  test("Connect's accessible name includes the preset display name", async () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ data: PRESETS }))) as unknown as typeof fetch;
 
@@ -395,7 +395,7 @@ describe("MCP preset catalog", () => {
     expect(card.querySelector("input")).toBeNull();
   });
 
-  // CL-6472: a fresh bench with zero connections still owns the same
+  // A fresh bench with zero connections still owns the same
   // curated catalog — the route returns all 10 presets regardless, so
   // every one of them must reach the page.
   test("every preset the route returns reaches the page on a fresh bench", async () => {

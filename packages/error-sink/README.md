@@ -1,7 +1,7 @@
 # @corbits/error-sink
 
 The structured convention every catch block reports a failure to instead of
-swallowing it (CL-6496 — the owner ruling this package exists to enforce):
+swallowing it (the owner ruling this package exists to enforce):
 one function, `reportError(error, context)`, that never throws and returns
 a `refId` a person can quote to support. It redacts (see below) and
 preserves the error's `.cause` chain, depth-capped so a cyclic or

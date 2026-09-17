@@ -1,4 +1,4 @@
-// CL-7469: "we need someone to watch our Exa topics and post a digest to
+// "we need someone to watch our Exa topics and post a digest to
 // this bench" — Myra coordinates rather than declining or answering
 // inline: the same interview -> tool-map -> memory -> specialist ->
 // routine flow as ai-daily-research, with the plan itself naming the

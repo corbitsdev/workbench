@@ -1,4 +1,4 @@
-// The MCP-server connector's tenant-scoped CRUD surface (CL-6142): drop a
+// The MCP-server connector's tenant-scoped CRUD surface: drop a
 // name + Streamable HTTP URL (+ optional bearer token) in Plugins and it
 // becomes a `mcp:<slug>` credential handle every agent can reach through
 // `@corbits/mcp-tools`' `mcp_list_servers`/`mcp_list_tools`/`mcp_call`.
@@ -56,8 +56,8 @@ export function slugify(name: string): string {
  * bearer it would 401. */
 export const NO_TOKEN_SENTINEL = MCP_NO_TOKEN_SENTINEL;
 
-/** Either a hand-typed `name`+`url` (the original CL-6142 shape) or a
- * curated `presetSlug` (CL-6152) -- resolving a preset's fixed `url`/
+/** Either a hand-typed `name`+`url` or a
+ * curated `presetSlug` -- resolving a preset's fixed `url`/
  * `displayName` happens in the route handler below, never trusted off
  * the wire, so a preset connect can never be redirected at an arbitrary
  * URL by tampering with the request body. */
@@ -86,7 +86,7 @@ export type CreateMcpServerRoutesDeps = {
   requireGrant: RequireGrant;
   log: (line: string) => void;
   /** The curated MCP preset list this build ships — this package
-   * carries none of its own (CL-7384), so a caller always supplies
+   * carries none of its own, so a caller always supplies
    * one. */
   presets: readonly McpPreset[];
   /** Test-only override, matching `routes.ts`' own `ensureProviderFn`
@@ -338,7 +338,7 @@ export function createMcpServerRoutes(deps: CreateMcpServerRoutesDeps): Hono<Ten
     const provider = providers.find((p) => p.name === providerName(slug));
     if (provider === undefined) {
       // The tenant's own list (own-tenant only, matching `GET /`) has
-      // no such slug — but CL-6191's inheritance means an ancestor's
+      // no such slug — but inheritance means an ancestor's
       // connection can still resolve for this tenant's tools, so a
       // second, inherited-inclusive lookup distinguishes "no such
       // server anywhere in the chain" from "it exists, but only at an

@@ -18,7 +18,7 @@ import {
 
 test("eval tool-name constants match the real manager-tools bundles", () => {
   expect(CREATE_AGENT_TOOL).toBe(REAL_CREATE_AGENT_TOOL);
-  // `@corbits/memory` exports no name constant (CL-8186) — its
+  // `@corbits/memory` exports no name constant — its
   // `memoryAdd` tool factory names itself "memory_add" inline.
   expect(MEMORY_ADD_TOOL).toBe("memory_add");
   expect(LIST_CONNECTIONS_TOOL).toBe(REAL_LIST_CONNECTIONS_TOOL);

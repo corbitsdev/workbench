@@ -58,7 +58,7 @@ test("a transport failure is reported honestly, never as a key", async () => {
   report.mockRestore();
 });
 
-// CL-7235: an OpenRouter key endpoint that never answers used to leave
+// An OpenRouter key endpoint that never answers used to leave
 // this exchange awaiting `doFetch` forever. It now carries a bounded
 // `AbortSignal`, so a stalled provider is caught the same way any other
 // network failure already is instead of hanging the `/callback` request

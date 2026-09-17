@@ -3,20 +3,16 @@
 // `drizzle-orm`, no `hono` — `@corbits/workflows/client` re-exports this
 // directly so `apps/web` can import it.
 //
-// CL-8160: the Workbench-composed detail read (former `./detail-route.ts`,
-// which joined `workflow_definition`/`workflow_definition_version`/`asset`
-// through native freeze reads for steps, grants, credential bindings, a
-// five-value lifecycle, and source commit info) is gone — the hub mounts
-// no route of its own for this any more. The client now renders directly
-// off `@intx/hub-api`'s stock `GET /api/tenants/:tenantId/workflows/
-// definitions` list (`vendor/intx/hub-api/src/routes/workflow-definitions.ts`,
+// The hub mounts no Workbench-composed detail route for this — the
+// client renders directly off `@intx/hub-api`'s stock
+// `GET /api/tenants/:tenantId/workflows/definitions` list
+// (`vendor/intx/hub-api/src/routes/workflow-definitions.ts`,
 // `WorkflowDefinitionResponse` in `vendor/intx/types/src/workflows.ts`),
 // which exposes only `id`, `name`, `description`, `currentVersion`,
 // `status` (`deployed` | `stopped`), `createdAt`, `updatedAt` — no asset
 // display name, no manifest/package metadata, no wire projection (so no
-// steps, no schedule trigger), and no grant/credential-binding read. See
-// `docs/CL-8160-upstream-ask.md`-equivalent PR note: this is a real gap,
-// not a design choice made here.
+// steps, no schedule trigger), and no grant/credential-binding read.
+// This is a real gap, not a design choice made here.
 import { type } from "arktype";
 
 export const WorkflowDefinitionDetail = type({

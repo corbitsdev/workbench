@@ -1,4 +1,4 @@
-// CL-6077: the grant preview sentence and table both used to splice the
+// The grant preview sentence and table both used to splice the
 // raw resource slug (`workflow-definition`, `git-token`) straight into
 // "plain-language" copy. `GRANT_RESOURCE_LABEL` is the one map both
 // consume, so a person reads "agent workflows," never "workflow-definition."

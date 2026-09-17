@@ -4,7 +4,7 @@
 // "workbench" is the product word for a conversation with an agent (each
 // one its own tenancy). Nothing in the chat/* components inlines its own
 // copy; it imports from here. There is no in-package new-workbench dialog
-// any more (CL-6138): the one creation verb mints and navigates directly —
+// any more: the one creation verb mints and navigates directly —
 // see `apps/web/src/instant-agent-create.ts`.
 
 function joinWithAnd(names: readonly string[]): string {
@@ -12,7 +12,7 @@ function joinWithAnd(names: readonly string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-/** Canonical create-workbench CTA and untitled-mint label (CL-6767). */
+/** Canonical create-workbench CTA and untitled-mint label. */
 const NEW_WORKBENCH_LABEL = "New workbench";
 
 export const CHAT_STRINGS = {
@@ -26,11 +26,11 @@ export const CHAT_STRINGS = {
   couldNotLoadMessages: "messages",
   workbenchNotFoundTitle: "This workbench isn't here anymore",
   workbenchNotFoundDescription: "It may have been deleted, or the link is out of date.",
-  /** @deprecated Prefer Mission Control / New workbench recovery (CL-6796). */
+  /** @deprecated Prefer Mission Control / New workbench recovery. */
   workbenchNotFoundAction: "Back to workbenches",
   workbenchNotFoundMissionControlAction: "Mission Control",
   workbenchNotFoundNewWorkbenchAction: NEW_WORKBENCH_LABEL,
-  /** Create-workbench CTA on every mint surface (CL-6767). */
+  /** Create-workbench CTA on every mint surface. */
   newWorkbenchAction: NEW_WORKBENCH_LABEL,
   composerPlaceholder: "Send a message… use @ to mention an agent",
   composerPlaceholderChat: (name: string) => `Message ${name}…`,
@@ -95,7 +95,7 @@ export const CHAT_STRINGS = {
   eventWorkbenchRenamedTo: (to: string): string => `Renamed to "${to}"`,
   eventBlockResponsePoll: "A vote was recorded",
   eventBlockResponseForm: "A form was submitted",
-  /** Plain-text form of the settle notice (CL-6741). EventLine renders
+  /** Plain-text form of the settle notice. EventLine renders
    * the same copy with "Plugins" as a `/plugins` link. */
   eventConnectionConnected: (displayName: string): string =>
     `${displayName} connected successfully. Manage in Plugins`,
@@ -349,7 +349,7 @@ export const CHAT_STRINGS = {
   workbenchSettingsAgentDetailLoadError: "Couldn't load this agent's instructions",
   workbenchSettingsAgentDetailSaveError: "Couldn't save these changes — try again.",
   workbenchSettingsAgentDetailSavedToast: "Instructions saved",
-  // Scoped rather than a bare "Save" (CL-6215 EMIL #4) — the top-bar Save
+  // Scoped rather than a bare "Save" — the top-bar Save
   // right above it in the same view saves the conversation's own General
   // fields, a different scope entirely; this one only ever writes this
   // agent's instructions.

@@ -260,8 +260,7 @@ test("pins a skill onto another definition in the same tenant and re-indexes its
   });
   expect(response.status).toBe(200);
   // The pin's rewrite redeploys through the native source pipeline so
-  // the next launch advertises the pinned skill (CL-6447, cut over to
-  // native deploy by CL-7363).
+  // the next launch advertises the pinned skill.
   expect(deployer.deploys).toHaveLength(1);
   expect(deployer.deploys[0]?.commitSha).toBe("deadbeef");
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);

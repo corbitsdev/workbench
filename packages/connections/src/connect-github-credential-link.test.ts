@@ -1,4 +1,4 @@
-// CL-6463: the room's GitHub connect card submits a PAT through
+// The room's GitHub connect card submits a PAT through
 // `@corbits/connections`' generic `persistConnectorCredential` (the
 // exact sequence `POST /:connectorId/complete` runs) and reads its own
 // connected state back through `createConnectGithubRoutes`' injected
@@ -22,7 +22,7 @@ import { createConnectGithubRoutes } from "./connect-github-routes";
 
 /** A fixture standing in for the real `github` connector descriptor a
  * build's own connector set (`templates/connectors.ts`) carries — this
- * package holds no concrete connector set of its own (CL-7384), so its
+ * package holds no concrete connector set of its own, so its
  * own tests build the minimal shape `persistConnectorCredential` and
  * `createConnectGithubRoutes` actually read. */
 const GITHUB_DESCRIPTOR: ConnectorDescriptor = {
@@ -183,8 +183,8 @@ describe("the room GitHub connect card reads what its own submit writes", () => 
 
     // A second, independently-typed name -- e.g. the connector's `id`
     // instead of its `displayName` -- is exactly the kind of hardcoded
-    // literal CL-6463 removed from `apps/hub/src/index.ts`. Reading by it
-    // instead of the descriptor's own field reproduces the stuck card.
+    // literal reading by it instead of the descriptor's own field would
+    // reproduce the stuck card.
     const routes = createConnectGithubRoutes({
       requireGrant: allowAll,
       log: () => {},

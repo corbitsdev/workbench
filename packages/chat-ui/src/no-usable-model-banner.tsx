@@ -1,4 +1,4 @@
-// CL-6568: the pre-send half of the fix. A tenant whose one seeded
+// The pre-send half of the fix. A tenant whose one seeded
 // `model_provider` row carries no credential (the shape seeding always
 // leaves behind) can't run inference — the composer stays live (a person
 // may still want to leave a note), but this banner says so before they

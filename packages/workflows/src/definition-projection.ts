@@ -1,15 +1,11 @@
 // Reads a `WorkflowDefinition`'s launch body back out of an already-resolved
 // inert wire projection.
 //
-// CL-8206: Interchange 79adc433 retired the frozen-wire-projection storage
-// this module used to read directly (`loadFrozenWireProjection`, the
-// `workflow_definition.origin` / `workflow_definition_version.wire_projection`
-// columns) — there is no longer a hub-side row to read a launch body back
-// off of. What survives here is the pure half: the named errors and the
-// schema-validated reader that turns an already-in-hand inert projection
-// into a `FoldedBody`, still needed by chat (retiring separately under
-// CL-8175) and anything else holding a projection value from elsewhere.
-// Nothing in this file queries a database.
+// There is no hub-side row to read a launch body back off of — this
+// module is the pure half: the named errors and the schema-validated
+// reader that turns an already-in-hand inert projection into a
+// `FoldedBody`, needed by chat and anything else holding a projection
+// value from elsewhere. Nothing in this file queries a database.
 //
 // One field of the launch body is deliberately NOT in the projection:
 // `grantRequirements` does not survive the live->inert projector and is
@@ -101,7 +97,7 @@ const InertWorkflowStepSchema = type({
 
 /**
  * The launch-relevant subset of an inert projection's `onTrigger`
- * primitive (CL-6329's per-turn section shape,
+ * primitive (per-turn section shape,
  * `@corbits/agent-runtime`'s `buildSectionWorkflow`): the agent-bearing
  * step lives one level down, inside the section's inline body, not on
  * the section step itself. `readFoldedBody` below reads through this

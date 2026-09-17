@@ -1,4 +1,4 @@
-// CL-6833: mid-turn reopen whose catch-up fetch fails must not leave the
+// Mid-turn reopen whose catch-up fetch fails must not leave the
 // room looking idle — a visible soft banner with Retry, never a silent
 // swallow of `fetchRunningTurn(...).catch(() => undefined)`.
 import { afterEach, describe, expect, test } from "bun:test";
@@ -18,7 +18,7 @@ afterEach(() => {
   root = null;
 });
 
-describe("ResumeFailedBanner (CL-6833)", () => {
+describe("ResumeFailedBanner", () => {
   test("names the gap with a quotable ref and offers Retry, never a dead end", async () => {
     const retries: number[] = [];
     container = document.createElement("div");

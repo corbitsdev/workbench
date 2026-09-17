@@ -332,7 +332,7 @@ describe("createMyraAgentDefinitionDrafting", () => {
     expect(sentPrompt).not.toContain("request_capability");
   });
 
-  // CL-5879: a specialist agent delegated to via @mention deep-dives in
+  // A specialist agent delegated to via @mention deep-dives in
   // a thread; the drafting brief must tell the drafted agent to close
   // that thread out with a summary back to whoever delegated it and to
   // the main conversation, so a handoff never dead-ends in the thread.
@@ -358,7 +358,7 @@ describe("createMyraAgentDefinitionDrafting", () => {
     expect(sentPrompt).toContain("whoever delegated it and to the main");
   });
 
-  // CL-6350: every drafted agent's systemPrompt must carry an explicit
+  // Every drafted agent's systemPrompt must carry an explicit
   // output contract and name its own tools, matching the prompt
   // discipline Myra's own system prompt already follows.
   test("the drafting brief requires an explicit output contract and named tools in the drafted systemPrompt", async () => {

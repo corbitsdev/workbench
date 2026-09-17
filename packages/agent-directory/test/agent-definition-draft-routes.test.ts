@@ -1,4 +1,4 @@
-// Draft-route envelope (CL-6749): a fail-closed Myra draft answers the
+// Draft-route envelope: a fail-closed Myra draft answers the
 // canonical `{ code, userMessage, refId }` envelope, reports through
 // `reportError` so the person can quote the same id, and never puts a
 // legacy `{ code, message }` body — or a stack — on the wire.

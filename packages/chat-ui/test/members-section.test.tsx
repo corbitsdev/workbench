@@ -1,5 +1,5 @@
 // DOM-mounted composition tests for the Members settings section's
-// removal flow (CL-6122): a two-click `ConfirmButton` per human row that
+// removal flow: a two-click `ConfirmButton` per human row that
 // DELETEs the participant, shows a busy state while the request is in
 // flight, disables the signed-in viewer's own row, and refetches the
 // workbench's participants on success — the same effect-driven mount

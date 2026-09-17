@@ -202,8 +202,8 @@ export function WorkbenchSettingsSurface({
           <span className="workbench-settings-section-dot" aria-hidden="true" />
           <span className="workbench-settings-section-label">{activeSection.label}</span>
         </div>
-        {/* One primary action visible per view where possible (CL-6215
-            EMIL #4): the Agents section has its own scoped "Save
+        {/* One primary action visible per view where possible: the
+            Agents section has its own scoped "Save
             instructions" action per agent, so the top-bar Save — which
             only ever writes the General section's fields — stays hidden
             rather than sitting alongside a second, unrelated primary. */}

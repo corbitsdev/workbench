@@ -221,7 +221,7 @@ describe("launchWebhookTrigger", () => {
     expect(routeMailCalls).toHaveLength(2);
   });
 
-  // CL-7476: a freshly provisioned run's sidecar takes several seconds to
+  // A freshly provisioned run's sidecar takes several seconds to
   // boot and register with the hub. The opening mail can land in that
   // gap and fail "agent is unreachable" even though the run deployed
   // fine — `deliverWhenRoutable` must retry once the address becomes
@@ -340,7 +340,7 @@ describe("launchWebhookTrigger", () => {
     expect(prepareCalls[0]?.toolPackagePins).toBeUndefined();
   });
 
-  // CL-6534 part 1: a webhook delivery is a one-off native run — the
+  // Part 1: a webhook delivery is a one-off native run — the
   // native `workflow_run` row Interchange commits answers identity, so
   // launch provisions it and delivers the opening mail with no
   // `workbench_launch` mirror write (the deps surface no longer carries

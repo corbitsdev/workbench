@@ -1,4 +1,4 @@
-// DOM tests for the generic service connect card (CL-6393) — the
+// DOM tests for the generic service connect card — the
 // preset-driven generalization of the GitHub card. Mounts
 // `ConnectServiceBlockView` directly, the same standalone-mount shape
 // `connect-github-block.test.tsx` uses; the container + actions-port

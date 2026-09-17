@@ -21,7 +21,7 @@ import { displayNameForAddress, type AgentDisplayNames } from "./agent-display-n
 import { displayNameFromHandle } from "./timeline";
 
 /**
- * The current turn's reply state, phase-tagged (CL-6432 reopened):
+ * The current turn's reply state, phase-tagged:
  *
  * - `"awaiting"` — a turn is in flight and its visible reply hasn't posted
  *   yet: an empty `text` renders the typing pulse, streamed tokens render
@@ -113,8 +113,8 @@ function hasTurnFailedPart(data: unknown): boolean {
 }
 
 /** Whether a `chat.message` payload carries `postCancelledNotice`'s
- * `turnCancelled` part (see `packages/chat/src/workbench-service.ts`,
- * CL-7201) — the cancellation counterpart to `hasTurnFailedPart` above,
+ * `turnCancelled` part (see `packages/chat/src/workbench-service.ts`)
+ * — the cancellation counterpart to `hasTurnFailedPart` above,
  * kept as its own flag rather than reusing `turnFailed` because a user
  * stopping a turn is not a failure. Same reasoning applies here: a
  * cancelled turn's dispatch can close with no `chat.agent` events of its
@@ -165,8 +165,8 @@ function isRenderedAgentReply(data: unknown): boolean {
 }
 
 /**
- * The streaming reply's whole state machine, pure and turn-phase aware
- * (CL-6432 reopened). `message.run.started` — the harness's per-dequeued-
+ * The streaming reply's whole state machine, pure and turn-phase aware.
+ * `message.run.started` — the harness's per-dequeued-
  * message turn begin, the same event the chat orchestrator keys new turns
  * off (see `chat-orchestrator.ts`'s use of `messageRunStarted`) — opens a
  * fresh awaiting turn. While awaiting, `inference.start`/`reactor.start`
@@ -191,7 +191,7 @@ function isRenderedAgentReply(data: unknown): boolean {
  * `chat.agent` events of their own) — return to idle from any phase.
  * A `turnCancelled` notice is the exception: it settles `"replied"` so a
  * late `inference.start` / `reactor.start` / text delta from the still-
- * running occurrence (CL-7230's ceiling) cannot reopen the pulse.
+ * running occurrence (ceiling) cannot reopen the pulse.
  * Every other event type (tool calls, thinking, usage) leaves the
  * current state untouched.
  */
@@ -262,7 +262,7 @@ export function openPendingReply(current: StreamingReplyState): StreamingReplySt
 
 /**
  * The catch-up snapshot a client reattaching mid-turn (a fresh mount after
- * navigating away and back, CL-6380) hydrates its streaming reply with,
+ * navigating away and back) hydrates its streaming reply with,
  * before the live SSE tail resumes: a running turn with committed text
  * opens the reply already carrying it; a running turn with none yet (still
  * in its first inference call) opens the same empty pending state
@@ -281,7 +281,7 @@ export function hydrateStreamingReplyFromTurn(
  * dead — the backstop for both a turn whose stream events never arrive at
  * all (agent down, SSE dropped mid-reconnect) and one that starts streaming
  * and then stalls (model OOM, dropped Ollama connection, sidecar crash: all
- * routine with local models, CL-6486). This measures the gap *since the
+ * routine with local models). This measures the gap *since the
  * last token*, not total turn duration — a healthy local model can
  * legitimately run 200s+ end to end (round 1 measured ~216s on
  * `qwen3.8:27b`), so a total-elapsed timeout would fire on working replies.
@@ -303,7 +303,7 @@ export function useStreamingReply(
 ): {
   readonly streamingReply: StreamingReplyState;
   /** Set once the backstop above has fired for the turn just cleared — a
-   * `reportError` refId (CL-6677) the host's honest notice quotes, the
+   * `reportError` refId the host's honest notice quotes, the
    * same "ref id + Retry" treatment `postUndeliveredNotice`
    * (the hub's chat routes) gives a dispatch failure that surfaces server-side.
    * This is the same class of failure with no server signal at all (a
@@ -335,7 +335,7 @@ export function useStreamingReply(
 
   useEffect(() => {
     // Arm for the whole "awaiting" phase, not just its tokenless prefix
-    // (CL-6486): a token still growing the reply is not evidence the turn
+    //: a token still growing the reply is not evidence the turn
     // is alive forever, only that it was alive as of that token. Every
     // token produces a new `streamingReply` object (see `awaiting`), so
     // this effect's own dependency below tears down the previous timer and

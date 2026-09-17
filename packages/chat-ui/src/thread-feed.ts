@@ -1,4 +1,4 @@
-// Deriving what the timeline shows from one loaded mailbox (CL-6313).
+// Deriving what the timeline shows from one loaded mailbox.
 //
 // Every message carries the thread it belongs to (`GET /messages` stamps
 // it — see `resolveThreadMembership` in `packages/chat/src/routes.ts`), so

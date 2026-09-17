@@ -1,4 +1,4 @@
-// CL-6345: read-only tool calls ride the grant allowance instead of
+// Read-only tool calls ride the grant allowance instead of
 // per-call approval. An `approval: "ask"` tool call parks as a pending
 // approval row the moment the sidecar registers its suspension
 // (`registerSignalCorrelation`); this module is the allowance gate that

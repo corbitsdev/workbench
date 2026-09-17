@@ -31,8 +31,8 @@ export type DefaultProviderModel = {
 };
 
 /**
- * The one model a connected provider's settings row shows inline — CL-6258
- * collapsed "which model does this provider default to" to exactly this:
+ * The one model a connected provider's settings row shows inline: "which
+ * model does this provider default to" collapses to exactly this —
  * the resolved catalog's own resolution-priority order (lowest `priority`
  * number wins, `vendor/intx/db/src/model-source-resolution.ts`'s
  * `byPriority`), never a second, hand-maintained notion of a provider's
@@ -102,7 +102,7 @@ export type EffectiveInferenceRow = {
  * appears here — the cascade in `listVisibleOfferings` already dropped it
  * from the resolved catalog entirely, not merely flagged there. Embedding
  * models, Hugging Face Hub paths, and bare `.gguf` names are also omitted
- * (CL-6351 / CL-6744) so Settings' ModelRoutePanel never offers them as
+ * so Settings' ModelRoutePanel never offers them as
  * the shared chat default.
  */
 export function buildEffectiveInferenceRows(
@@ -130,7 +130,7 @@ export function buildEffectiveInferenceRows(
 
 /**
  * Models safe to offer in a person-facing chat picker or as a shared
- * default (CL-6351 / CL-6744). Keeps only offerings
+ * default. Keeps only offerings
  * {@link preferCompletionCapable} accepts — embedding-named models,
  * Hugging Face Hub paths (`hf.co/...`), and bare `.gguf` names drop out.
  * When every offering on a model is excluded the model itself is omitted.

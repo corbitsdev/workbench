@@ -1,9 +1,8 @@
-// DOM tests for CL-6332/CL-6376's failed-turn strip: the server's
+// DOM tests for the failed-turn strip: the server's
 // undelivered-turn notice (`postUndeliveredNotice`, `@corbits/chat`'s
 // `workbench-service.ts`) marks its text part `turnFailed: true`; the
 // general chat timeline renders that part as its own quiet inline system
-// row (`.chat-turn-failed`, CL-6376) instead of an ordinary text bubble —
-// or, before the CL-6376 redesign, `PrFailedTurnStrip`'s bordered banner.
+// row (`.chat-turn-failed`) instead of an ordinary text bubble.
 import { afterEach, describe, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act } from "react";

@@ -1,4 +1,4 @@
-// CL-6487: `connections-section.tsx`'s visibility/focus refresh effect
+// `connections-section.tsx`'s visibility/focus refresh effect
 // re-reads connections on `visibilitychange`/`focus` and every 30s while
 // visible, gated on a non-null `tenantId`, with a microtask guard
 // collapsing a same-tick visibilitychange+focus pair into a single reload.

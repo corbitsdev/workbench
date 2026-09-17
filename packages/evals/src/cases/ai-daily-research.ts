@@ -1,4 +1,4 @@
-// CL-6143 case 1: "do research on AI daily for me" — the owner's
+// Case 1: "do research on AI daily for me" — the owner's
 // canonical interview -> tool-map -> memory -> specialist -> routine
 // flow. Expects Myra to: (1) ask a short interview about
 // topics/sources/cadence/delivery rather than building anything first,

@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-/* Avatar identity pastels (CL-7478). The palette is token references, not
+/* Avatar identity pastels. The palette is token references, not
    hex: --avatar-1 through --avatar-4 are defined once in this package's
    stylesheet :root (the proposed upstream contract for @corbits/react-ui's
    theme) and consumed here by reference, so no product code hardcodes a

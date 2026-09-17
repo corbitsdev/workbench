@@ -290,7 +290,7 @@ export function RoleAssignments({
   const [principalId, setPrincipalId] = useState("");
   const [roleId, setRoleId] = useState("");
 
-  // CL-6664: Scope both picker and assignments to user-kind principals only.
+  // Scope both picker and assignments to user-kind principals only.
   // Agents and workflows are machine identities — the "Person" picker and
   // its assignment table should match the People section's member roster,
   // not the full tenant-wide principal list.

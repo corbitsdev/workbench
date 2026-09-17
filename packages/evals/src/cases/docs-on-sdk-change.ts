@@ -1,4 +1,4 @@
-// CL-6143 case 2: "automatically update my docs when my SDK changes" —
+// Case 2: "automatically update my docs when my SDK changes" —
 // the same interview -> tool-map -> memory -> specialist -> routine
 // flow, but the routine is webhook-triggered (see
 // packages/webhook-triggers) rather than a schedule, and the specialist

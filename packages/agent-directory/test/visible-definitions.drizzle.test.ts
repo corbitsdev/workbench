@@ -4,8 +4,8 @@
 // against its own Postgres schema, never the developer's or the
 // walking-skeleton suite's.
 //
-// Proves CL-6253: `listVisibleAgentDefinitions` walks the tenant
-// ancestor chain the same way `listMcpServerConnections` does (CL-6191) —
+// `listVisibleAgentDefinitions` walks the tenant
+// ancestor chain the same way `listMcpServerConnections` does —
 // a child tenant sees an ancestor's agent definitions, and a same-name
 // definition made at the child shadows the ancestor's.
 import { afterAll, beforeAll, expect, test } from "bun:test";

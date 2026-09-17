@@ -1,8 +1,5 @@
-// Mirrored from packages/chat/src (CL-8148 T5b): apps/web and @corbits/chat-ui
-// must not import @corbits/chat, a server-only package. This is the browser-
-// facing half of the same wire contract the hub's chat routes still speak;
-// once the hub moves onto native mail threads (T5a/T5c) this file becomes
-// the one source of truth and packages/chat's copy goes away.
+// Mirrored from packages/chat/src: apps/web and @corbits/chat-ui must not
+// import @corbits/chat, a server-only package.
 
 // A workflow definition's person-facing display name, derived once here
 // so every caller that decides "what does this agent look like to a
@@ -50,7 +47,7 @@ export function humanizeSlug(slug: string): string {
  * `wfd_…`, …, see `./id-leak-guard`) — the product rule is that a person
  * never sees an internal identifier, so a caller that reaches this
  * function with a run id where a definition's slug belongs gets a loud
- * failure instead of a Title-Cased leak like "Run 737a058d…" (CL-6471).
+ * failure instead of a Title-Cased leak like "Run 737a058d…".
  */
 export function deriveDisplayName(definition: {
   readonly name: string;

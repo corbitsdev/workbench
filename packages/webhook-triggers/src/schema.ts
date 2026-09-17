@@ -1,7 +1,7 @@
 // Two product tables `@corbits/webhook-triggers` owns: a trigger row
 // per external-webhook-to-workflow binding, and a short-lived lease
 // row (`repoReviewLease`) closing a concurrency race in the GitHub
-// connect card's start-reviewing step (CL-7242, `./repo-review-lease.ts`).
+// connect card's start-reviewing step (`./repo-review-lease.ts`).
 // Both live in this package's own `webhook_triggers` Postgres schema,
 // fully siloed from the platform's `public` schema — see
 // docs/package-migrations.md.
@@ -9,7 +9,7 @@
 // `tenant_id` (both tables) and `webhook_trigger.created_by` (a real
 // Interchange principal id — see `management-routes.ts`'s
 // `createdBy: principal.id`) are hard foreign keys into Interchange's
-// own `tenant`/`principal` tables (CL-8210): `hostTenant`/`hostPrincipal`
+// own `tenant`/`principal` tables: `hostTenant`/`hostPrincipal`
 // below are declared, never migrated, just far enough to carry the FK,
 // same pattern as `@corbits/artifacts`'s `src/schema.ts`.
 // `repo_review_lease` carries no FK beyond `tenant_id`: "repo" is a
@@ -60,13 +60,13 @@ export type WebhookTriggerRow = typeof webhookTrigger.$inferSelect;
 
 /**
  * A short-lived lease serializing `startReviewingRepos`' per-repo
- * mint-grant-and-create-trigger work (CL-7242): two concurrent calls
+ * mint-grant-and-create-trigger work: two concurrent calls
  * for the same `(tenantId, repo)` can both read "not set up yet"
  * before either write lands, so the lease is acquired first and is
  * the sole thing preventing both from proceeding. Never a record of
  * *completion* — only ever "someone claimed responsibility for this
  * repo's setup as of `leasedAt`" — so it can never assert something
- * untrue the way a stale "done" marker could (CL-7213). See
+ * untrue the way a stale "done" marker could. See
  * `./repo-review-lease.ts` for the acquire/release/steal-if-stale
  * semantics this table backs.
  */

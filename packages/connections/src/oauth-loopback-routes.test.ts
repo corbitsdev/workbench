@@ -1,4 +1,4 @@
-// CL-7508: the loopback connect route returns the authorize URL the
+// The loopback connect route returns the authorize URL the
 // sidecar's login staged, resolves the typed gate outcome when no local
 // sidecar passed the gate, and persists the terminal tokens through the
 // shared connect pipeline (including the id_token-derived metadata).

@@ -1,5 +1,5 @@
 // Adapting the chat wire's parts (`./wire/parts`) to the shapes `@corbits/react-ui`
-// renders (CL-6318).
+// renders.
 //
 // Only reasoning crosses this boundary now. Tool calls used to as well,
 // but the conversation renders them through `tool-activity.tsx` instead:

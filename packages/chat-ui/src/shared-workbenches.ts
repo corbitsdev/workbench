@@ -1,4 +1,4 @@
-// Which workbenches a profile's shared-workbenches list shows (CL-5919): every
+// Which workbenches a profile's shared-workbenches list shows: every
 // workbench where both the signed-in viewer and the profile's subject are
 // participants. Mirrors the mock's `openProfile` filter
 // (`workbenchOrder.filter(members.some(subject))`, capped at 4) over the real

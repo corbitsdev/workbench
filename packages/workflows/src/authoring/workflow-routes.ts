@@ -15,7 +15,7 @@
 // `POST /api/tenants/:tenantId/workflows/deployments` with the run bearer
 // instead. What remains is the git half — reading and writing the asset
 // repo's trees — which no run-bearer credential can do against stock git
-// smart-HTTP today (CL-8171).
+// smart-HTTP today.
 import { type } from "arktype";
 import { Hono } from "hono";
 import { makeErrorEnvelope } from "@corbits/error-sink";
@@ -153,7 +153,7 @@ export function createWorkflowAuthorRoutes(
     return c.json({ data: snapshot });
   });
 
-  // CL-7362: a preview of `/:assetId/deploy` — a STATIC read of the
+  // A preview of `/:assetId/deploy` — a STATIC read of the
   // already-committed source at `commitSha` (package name, entry, file
   // list, any statically-declared tool pins). Never calls install/probe/
   // gate/freeze, so it cannot deploy anything; a human approves the real

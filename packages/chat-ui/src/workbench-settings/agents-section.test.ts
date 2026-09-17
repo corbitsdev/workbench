@@ -1,4 +1,4 @@
-// CL-6215 EMIL #8: the History table's raw backend commit message names
+// EMIL #8: the History table's raw backend commit message names
 // the agent in full-sentence form and repeats verbatim across seed rows —
 // these are the pure pieces that turn it into a short per-row change
 // summary and soften repeated runs, independent of the DOM-mounted

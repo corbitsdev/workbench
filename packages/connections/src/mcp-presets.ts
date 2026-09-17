@@ -1,7 +1,5 @@
 // The `McpPreset` shape, the generic helpers a caller needs to work with a
-// preset list, and Workbench's curated remote MCP servers — folded back in
-// here by CL-8156 from `templates/connectors.ts` (CL-7384 had split them
-// out) now that `@workbench/templates` no longer exists to own them.
+// preset list, and Workbench's curated remote MCP servers.
 import { siGithub, siNotion, siPosthog, siRailway, siSentry } from "simple-icons";
 
 export type McpPresetConnectionMode = "oauth" | "keyless" | "token";
@@ -156,7 +154,7 @@ export const MCP_PRESETS: readonly McpPreset[] = [
     docsUrl: "https://sumble.com/guides/account-research",
   },
   {
-    // No simple-icons listing for Canva (CL-6647) — same gap as Granola
+    // No simple-icons listing for Canva — same gap as Granola
     // and Sumble above, so this card falls back to the initial-letter
     // tile rather than risk a hand-traced or doctored mark.
     slug: "canva",

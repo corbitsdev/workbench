@@ -1,6 +1,6 @@
 // Find-or-create a bench's 1:1 with a given deployed agent, generalizing
 // `apps/web/src/myra-workbench.ts`'s original Myra-specific resolution: this
-// is the one deliberate find-or-create path in the product (CL-6089), the
+// is the one deliberate find-or-create path in the product, the
 // account's home-workbench land-hop (Myra), where landing twice must mean
 // the same conversation, never two. Every other agent-chat creation — "+ New
 // Workbench" picking an agent as a template, a freshly drafted agent's own

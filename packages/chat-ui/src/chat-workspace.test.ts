@@ -30,7 +30,7 @@ describe("buildMemberAvatarStack", () => {
     expect(stack.every((entry) => entry.tone === "agent")).toBe(true);
   });
 
-  test("includes the signed-in human from the roster even with empty presence (CL-6779)", () => {
+  test("includes the signed-in human from the roster even with empty presence", () => {
     // Onboarding/template rooms list the human as a participant before any
     // presence snapshot arrives — the stack must not be agent-only.
     const participants: readonly ParticipantRecord[] = [
@@ -62,7 +62,7 @@ describe("buildMemberAvatarStack", () => {
     expect(stack.map((entry) => entry.initials)).toEqual(["A"]);
   });
 
-  test("prefers resolved agent display names over handle slugs (CL-6424)", () => {
+  test("prefers resolved agent display names over handle slugs", () => {
     const participants: readonly ParticipantRecord[] = [
       { address: "run_myra@dana.localhost", handle: "myra" },
     ];

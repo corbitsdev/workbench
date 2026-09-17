@@ -1,14 +1,14 @@
 // A message's `file` part is the wire shape for an artifact reference: it
 // always carries a name and media type, and carries `blobId` once the
 // platform has persisted the bytes, or `artifactId` when it also links back
-// to a Library row (`packages/chat/src/parts.ts`, CL-6000). Either one gives
+// to a Library row (`packages/chat/src/parts.ts`). Either one gives
 // the host a stable id to open — a still-in-flight `data`-only attachment
 // with neither renders the same chip, inert.
 //
 // Opening a chip is a callback the host supplies (mirrors `onOpenProfile`
 // and `onOpenThread` in `timeline.tsx`): this package owns no router. A
 // second, artifactId-only affordance — "Open in Files" — hands the host a
-// separate callback so it can navigate there directly (CL-6015); it only
+// separate callback so it can navigate there directly; it only
 // ever renders when `artifactId` is present, since a blob-only part has no
 // Library row to deep-link to.
 

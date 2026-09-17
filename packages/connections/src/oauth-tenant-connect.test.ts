@@ -1,5 +1,5 @@
 // Proves `createTenantConnectCredential` end to end through the actual
-// `createOAuthConnectRoutes` mount apps/hub uses (CL-6389): a full
+// `createOAuthConnectRoutes` mount apps/hub uses: a full
 // authorize -> callback -> credential-stored round trip against a fake
 // provider (mirroring `oauth-routes.test.ts`'s `fakeDescriptor`), and a
 // mismatched-state callback that must never reach persistence at all.

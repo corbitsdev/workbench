@@ -1,19 +1,15 @@
-// The Personal Settings / Shared Settings section registry (CL-6089, CL-
-// 6116): the grouping, ordering, icons, and tenancy gates every Interchange
-// deployment gets when it mounts this package's settings surface. The
-// single-concept collapse folded Personal/Workspace into one account-scoped
-// group and one shared group — there is one workbench per account now, so
-// a "workspace-scoped" setting and an "account-scoped" one are the same
-// tenant's settings. Shared Settings is the multiplayer-sharing surface:
-// it leads with what everyone inherits (shared keys/connections, then
-// People), and tucks the access-control mechanics (Roles, Grants, Audit)
-// under a collapsed Advanced disclosure — nobody should have to parse
-// grants and roles just to find where a shared API key lives. Bench dies
-// outright — there is no longer a second thing to name, distinct from the
-// account, so its rename/purpose/icon form and member list have no home to
-// keep them separate in. Conversation-scoped settings (agent, capabilities,
-// history) live on the workbench's own settings surface
-// (`@corbits/chat-ui`'s `WorkbenchSettingsSurface`, CL-6084) — not here.
+// The Personal Settings / Shared Settings section registry: the grouping,
+// ordering, icons, and tenancy gates every Interchange deployment gets
+// when it mounts this package's settings surface. There is one workbench
+// per account, so a "workspace-scoped" setting and an "account-scoped"
+// one are the same tenant's settings. Shared Settings is the
+// multiplayer-sharing surface: it leads with what everyone inherits
+// (shared keys/connections, then People), and tucks the access-control
+// mechanics (Roles, Grants, Audit) under a collapsed Advanced disclosure
+// — nobody should have to parse grants and roles just to find where a
+// shared API key lives. Conversation-scoped settings (agent,
+// capabilities, history) live on the workbench's own settings surface
+// (`@corbits/chat-ui`'s `WorkbenchSettingsSurface`) — not here.
 // Consuming apps compose bench context and routing around
 // `resolveSettingsSectionGroups` — the domain model of "what settings
 // exist and who can see them" lives here, not in an app.
@@ -50,7 +46,7 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
     // Re-add only once a hub preference store exists and save actually persists.
     // No Notifications ("chat") section either: toggles with no per-user
     // preference store are fake controls — see notifications-section.tsx
-    // for the re-add condition (CL-6843). Account (General) is the sole
+    // for the re-add condition. Account (General) is the sole
     // Account-group section until those stores exist.
     sections: [
       {
@@ -70,8 +66,8 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
       {
         // Plugins (`/plugins`) is the canonical surface for discovering
         // and connecting a key; this section is management-only for keys
-        // that already exist (rotate, name, revoke) — see connections-
-        // section.tsx and the CL-6077 audit this reorganization follows.
+        // that already exist (rotate, name, revoke) — see
+        // connections-section.tsx.
         // Leads Shared Settings: a key added here is the thing everyone
         // creating workbenches in this tenancy inherits.
         id: "connections",

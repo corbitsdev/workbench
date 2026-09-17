@@ -1,10 +1,7 @@
-// The oauth-pkce/oauth-code half of the Connections surface, generalized
-// from `packages/onboarding`'s hand-written OpenRouter and Hugging Face
-// routes (see that package's `routes.ts`, pre-CL-6028-wave-2, for the
-// two flows this factory now drives instead). One `GET /:connectorId/start`
-// and one `GET /:connectorId/callback`, reading everything provider-
-// specific off `ConnectorDescriptor.oauth` (`./descriptor.ts`) rather
-// than one hand-rolled route pair per provider.
+// The oauth-pkce/oauth-code half of the Connections surface: one
+// `GET /:connectorId/start` and one `GET /:connectorId/callback`, reading
+// everything provider-specific off `ConnectorDescriptor.oauth`
+// (`./descriptor.ts`) rather than one hand-rolled route pair per provider.
 //
 // What moved here, unchanged: the state-sealing/PKCE mechanics
 // (`./pkce.ts`, untouched by this ticket — see its own header for the
@@ -95,7 +92,7 @@ export function sanitizeReturnPath(
     const decodedOnceMore = decodeURIComponent(candidate);
     if (decodedOnceMore !== candidate) candidate = decodedOnceMore;
   } catch {
-    // report-error-ignore: CL-7247 — a malformed percent-encoding here is
+    // report-error-ignore: a malformed percent-encoding here is
     // untrusted, possibly adversarial redirect input; the function's own
     // contract (see header) is to fail silently to the default path
     // exactly like an absent `?return=` would, never to surface as an
@@ -148,7 +145,7 @@ export type CreateOAuthConnectRoutesDeps<E extends AppEnv = AppEnv> = {
    * seam in the hub shares. */
   readonly credentialCipher: CredentialCipher;
   /** The connector set this build ships — this package carries none of
-   * its own (CL-7384), so a caller always supplies one. */
+   * its own, so a caller always supplies one. */
   readonly registry: Readonly<Record<string, ConnectorDescriptor>>;
   /** The env bag a descriptor's `oauth.clientId(env)` reads a
    * registered app id from (e.g. `{huggingfaceClientId}`). */
@@ -224,7 +221,7 @@ const VerifierStatePayload = type({
   // Empty for a non-PKCE flow (GitHub's confidential-client web flow
   // seals `codeVerifier: ""`), so this must accept the empty string —
   // `string > 0` here silently expired every non-PKCE callback
-  // (CL-6394).
+  //.
   codeVerifier: "string",
 });
 type VerifierStatePayload = typeof VerifierStatePayload.infer;
@@ -264,7 +261,7 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
   // A loopback OAuth connector's authorization server only accepts a fixed
   // `http://localhost:<port>` redirect captured by the host's own login
   // server — redirecting a browser there from this web flow would be a
-  // dead-end consent (CL-7510). These providers connect through the
+  // dead-end consent. These providers connect through the
   // sidecar lane instead, so both routes refuse them with a typed error.
   function loopbackRefusalBody(connectorId: string) {
     return {

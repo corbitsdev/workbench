@@ -2,7 +2,7 @@
 // settings are a full stage surface (mock § Workbench settings), grouped
 // Shared / Personal / Danger zone, never a dialog with tabs.
 //
-// CL-6215: Agents is now the one place an agent participant's persona,
+// Agents is now the one place an agent participant's persona,
 // capabilities, and history are edited — a click-through master-detail,
 // not a separate "Myra" nav item duplicating the same editor for one
 // hardcoded agent. Keys & plugins and Inference are gone as distinct

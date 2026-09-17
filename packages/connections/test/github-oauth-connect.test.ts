@@ -1,4 +1,4 @@
-// CL-6394 regression: the hosted GitHub one-click connect, driven
+// Regression: the hosted GitHub one-click connect, driven
 // through the exact tenant-scoped start URL the UI now emits
 // (`@corbits/settings-ui`'s `oauthStartHref` — its output is pinned
 // literally in that package's own tests, and repeated literally here so
@@ -31,7 +31,7 @@ import { createTenantConnectCredential } from "../src/oauth-tenant-connect";
 
 /** A fixture standing in for the real `github` connector descriptor a
  * build's own connector set (`templates/connectors.ts`) carries — this
- * package holds no concrete connector set of its own (CL-7384). Mirrors
+ * package holds no concrete connector set of its own. Mirrors
  * that descriptor's oauth wiring exactly (see its own comments there),
  * with `exchange` pointed at the fake GitHub token server below instead
  * of github.com. */

@@ -54,7 +54,7 @@ export function useThreadNavigation(args: {
     args;
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
   const [pendingParentMessageId, setPendingParentMessageId] = useState<string | null>(null);
-  // A thread id `openThreadById` just set (first reply create, CL-6660)
+  // A thread id `openThreadById` just set (first reply create)
   // can land one render before the seeded `GET /threads` row is visible
   // to this hook. Hold it so the stale-id effect below does not drop a
   // brand-new open back to the root feed; clear once the row appears or

@@ -30,7 +30,7 @@ listing, not five.
 
 This matters because a `*` (or any non-exact) pin would let a later tarball
 landing in the registry silently change what an already-deployed specialist
-runs, with no record of the change (CL-7389). Resolving a version only
+runs, with no record of the change. Resolving a version only
 happens when a pin is newly added or a definition is newly created with
 named pins:
 

@@ -2,7 +2,7 @@
 // repo's convention for tests that talk to a real Postgres (see
 // `tools/access/test/routes.test.ts`).
 //
-// CL-7481: `recordAgentSessionAtProvision` is the eager write every
+// `recordAgentSessionAtProvision` is the eager write every
 // native launcher makes right after `prepareProvisionedDeployment`
 // returns — this proves it lands the `agent_session` row under the
 // *deploying* principal (the run's own principal does not exist yet)

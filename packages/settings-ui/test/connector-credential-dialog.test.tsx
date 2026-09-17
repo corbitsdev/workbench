@@ -1,10 +1,10 @@
-// CL-6377: one action, not test-then-save — pasting a key and pressing
+// One action, not test-then-save — pasting a key and pressing
 // the single Connect button is the whole flow. There is no separate
 // client-driven "test" round-trip before it: `/complete` itself proves
 // the key against the connector's own probe and only stores it once that
 // probe accepts, so a rejected key never gets sealed.
 //
-// CL-6793: Ollama's field is a base URL, not a sealed secret — the same
+// Ollama's field is a base URL, not a sealed secret — the same
 // dialog swaps copy when `credentialInputKind` is `"url"`.
 
 import { afterEach, describe, expect, test } from "bun:test";

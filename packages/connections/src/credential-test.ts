@@ -45,7 +45,7 @@ export type SupportedCredentialProvider =
  * protocol, so they ride `"openai-responses"`.
  *
  * This is NOT the same string as the registry key a launched
- * `InferenceSource.provider` dispatches against (CL-6586). The launch-time
+ * `InferenceSource.provider` dispatches against. The launch-time
  * dispatch field is resolved from the catalog provider row's own `plugin`
  * column at serving time (`vendor/intx/db/src/model-source-resolution.ts`,
  * `buildSource`'s `provider: provider.plugin`) — there is no separate
@@ -626,7 +626,7 @@ function translateOllamaCapabilities(ollamaCapabilities: readonly string[]): rea
  * /api/show` — the live signal `fetchOllamaModelCatalog` probes for
  * every model it lists, so a fresh Ollama connect's offerings carry real
  * capability data instead of the empty list every pulled model used to
- * get (CL-6351's `preferCompletionCapable` had nothing to filter on).
+ * get (`preferCompletionCapable` had nothing to filter on).
  * Returns an empty list — never throws, never guesses — on any failure
  * (unreachable origin, malformed response, an Ollama build old enough
  * that `/api/show` carries no `capabilities` field at all).
@@ -666,7 +666,7 @@ export async function fetchOllamaModelCapabilities(
  * Each listed model is also probed for its own capabilities
  * (`fetchOllamaModelCapabilities`) so the catalog this seeds never has
  * to fall back to a heuristic (name-sorting, a curated allowlist) to
- * tell a chat model from an embedding one (CL-6351/CL-6366).
+ * tell a chat model from an embedding one.
  */
 /**
  * Ollama's `-cloud` suffix names a model that this instance merely proxies
@@ -674,7 +674,7 @@ export async function fetchOllamaModelCapabilities(
  * in, but every actual inference call needs an ollama.com account and its
  * own credential, which this catalog has no way to supply. Seeding one
  * puts a keyed cloud upstream into what is otherwise an unauthenticated
- * local chain (CL-6645). Excluded here rather than filtered by capability
+ * local chain. Excluded here rather than filtered by capability
  * because a signed-in box's `-cloud` model still reports full
  * capabilities — the suffix, not the capability probe, is what marks it.
  */

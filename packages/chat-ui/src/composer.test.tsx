@@ -94,7 +94,7 @@ describe("speechRecognitionConstructor", () => {
   });
 });
 
-// CL-7201: the composer's stop affordance is a stand-in for "is there a
+// The composer's stop affordance is a stand-in for "is there a
 // turn to cancel" — offered whenever the host says a turn is running,
 // independent of the composer's own `sending`/`preparing` state (queuing
 // a follow-up message while a turn runs is still allowed, so the stop

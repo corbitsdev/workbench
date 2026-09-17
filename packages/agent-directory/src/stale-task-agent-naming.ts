@@ -1,5 +1,5 @@
 // Recognizes an agent definition minted by the now-deleted tasks
-// primitive's planner `{create}` branch (CL-6051), each of which
+// primitive's planner `{create}` branch, each of which
 // existed for exactly one task. The minting side (what used to be
 // `@corbits/task-planner`'s `plannerCreatedDefinitionHandle`) is gone
 // along with that primitive — nothing creates a definition with this

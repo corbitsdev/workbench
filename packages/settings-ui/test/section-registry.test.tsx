@@ -1,4 +1,4 @@
-// The Personal Settings / Shared Settings registry (CL-6089, CL-6116) is the
+// The Personal Settings / Shared Settings registry is the
 // single source of truth for both the settings stage and a host's own
 // section nav (col2) — these tests pin its ordering, its tenancy gating,
 // and which sections are tucked under Advanced, so the two can never

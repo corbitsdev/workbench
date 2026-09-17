@@ -1,4 +1,4 @@
-// CL-5879: a message the reader just sent must render exactly like a
+// A message the reader just sent must render exactly like a
 // normal message immediately (full opacity, no restyling) with only a
 // small clock glyph while in flight, and never disappear or get replaced
 // once the send fails.
@@ -54,7 +54,7 @@ describe("pending send lifecycle", () => {
     expect(el.querySelector(".chat-pending-glyph")).not.toBeNull();
   });
 
-  // CL-6251 reopened: a pending send used to render through its own
+  // Reopened: a pending send used to render through its own
   // avatar-less, timestamp-less tier below the real timeline — the exact
   // mechanism the owner read as "unsent -> sent". It now renders through
   // the same path (`MessageParts`/`TextBubble`) any confirmed message

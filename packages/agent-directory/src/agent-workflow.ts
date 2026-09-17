@@ -235,7 +235,7 @@ export function readAgentCapabilities(workflowJson: string): AgentDefinitionCapa
  * an operator hand-authoring a workflow source file is free to write
  * one; but every RUNTIME site this package writes a pin from
  * (`create_agent`'s tool-package pins, guided capability-add) must name
- * a version the resolver actually offers today (CL-7389) — a `*` pin
+ * a version the resolver actually offers today — a `*` pin
  * means a later tarball landing in the registry silently changes what
  * an already-deployed specialist runs, with no record of the change.
  * `./tool-package-version.ts`'s `resolvePinnedVersion` is how a caller
@@ -248,7 +248,7 @@ export const NonWildcardToolPackagePin = type({
   semver.valid(pin.version) !== null
     ? true
     : ctx.mustBe(
-        'a concrete published version, never "*", "latest", or a range/tag like "^1", "~1.2", ">=1.0.0", "1.x" — anything but an exact version would let a later tarball silently change what this pin resolves to (CL-7389)',
+        'a concrete published version, never "*", "latest", or a range/tag like "^1", "~1.2", ">=1.0.0", "1.x" — anything but an exact version would let a later tarball silently change what this pin resolves to',
       ),
 );
 export type NonWildcardToolPackagePin = typeof NonWildcardToolPackagePin.infer;
@@ -354,7 +354,7 @@ export interface AgentDefinitionWorkflowInput {
    * Credential bindings the deployed definition carries at the workflow
    * level — the same `CredentialBinding[]` shape and the same
    * `defineWorkflow({ credentialBindings, ... })` field
-   * `workflows/granola-call` pins through (CL-6028's pattern). Additive:
+   * `workflows/granola-call` pins through (pattern). Additive:
    * undeclared or empty behaves exactly like a definition built before
    * this field existed. Required for a `toolPackagePins` entry whose
    * tool needs a live credential to do anything at runtime — a pin with
@@ -548,7 +548,7 @@ export async function createAgentDefinitionCore(
   // One resolver shared across every named pin: it loads the tenant's
   // registry asset and tarball listing at most once, so a five-pin
   // create still costs one ancestor walk and one listing, not five
-  // (CL-7389).
+  //.
   const resolvePin = createPinnedVersionResolver(
     { db: deps.db, assetService: deps.assetService },
     input.tenantId,

@@ -1,4 +1,4 @@
-// CL-6833: mid-turn reopen whose catch-up fetch (`fetchRunningTurn`) fails
+// Mid-turn reopen whose catch-up fetch (`fetchRunningTurn`) fails
 // must not leave the room looking idle. This soft banner names the gap,
 // quotes a `reportError` ref id, and offers Retry — never a silent
 // `.catch(() => undefined)`.

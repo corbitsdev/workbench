@@ -1,5 +1,4 @@
-// DOM tests for the Reviews-room PR thread (CL-6342 screen 3, plus screen
-// 4's turn states). This view is not wired into the timeline yet, so these
+// DOM tests for the Reviews-room PR thread. This view is not wired into the timeline yet, so these
 // tests mount `PrThreadView` and `PrQueuedStrip` directly, the same
 // standalone-mount shape `connect-github-block.test.tsx` uses. Covers: the
 // settled thread footer, the live thread footer with next-reviewer

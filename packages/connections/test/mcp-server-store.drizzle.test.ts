@@ -4,7 +4,7 @@
 // against its own Postgres schema, never the developer's or the
 // walking-skeleton suite's.
 //
-// Proves CL-6191: `listMcpServerConnections` walks the tenant ancestor
+// `listMcpServerConnections` walks the tenant ancestor
 // chain the same way `@intx/db`'s own `resolveProviderByName`/
 // `listAssetsForTenant` do, rather than matching the exact tenant only —
 // a child tenant sees an ancestor's MCP server connections, and a

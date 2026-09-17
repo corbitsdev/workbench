@@ -1,4 +1,4 @@
-// The room's own GitHub connect card, wired to real ports (CL-6344): the
+// The room's own GitHub connect card, wired to real ports: the
 // production half of `./connect-github-setup.ts`'s `startReviewingRepos`
 // and the read side `@corbits/chat-ui`'s `ConnectGithubActions` polls.
 // Mounted per-workbench, inside the platform's native tenant middleware
@@ -45,7 +45,7 @@ import { templateReposSettingsPatch } from "./template-settings";
 // `startReviewingRepos`' own selected-repo mismatch throw and a GitHub
 // client failure both carry provider/internal detail (a rejected repo id,
 // an HTTP status line) that a person pasting a token never needs to read —
-// the CL-6360 idiom this route follows throughout via
+// the idiom this route follows throughout via
 // `@corbits/error-sink`'s `makeErrorEnvelope`: log the real cause behind
 // a `refId`, answer with one honest, actionable `userMessage`.
 const REPOS_UNREADABLE_MESSAGE = "Couldn't read your GitHub repositories. Try reconnecting.";
@@ -63,7 +63,7 @@ export type ConnectGithubTemplateSettings = {
 
 export type ConnectGithubRoutesDeps = {
   requireGrant: RequireGrant;
-  /** Where a failure's real cause goes — the CL-6360 idiom: the client
+  /** Where a failure's real cause goes: the client
    * only ever sees `{code, userMessage, refId}`; the raw detail (a
    * GitHub HTTP status line, a `startReviewingRepos` mismatch) is
    * logged here, keyed by the same `refId`, so an operator can look it
@@ -82,7 +82,7 @@ export type ConnectGithubRoutesDeps = {
    * this tenant (a create-flow bug, not something this route can fix). */
   resolveCodeReviewDefinitionId(tenantId: string): Promise<string | undefined>;
   /** Acquires the short-lived lease serializing one repo's setup
-   * (CL-7242) — see `./connect-github-setup.ts`'s
+   * — see `./connect-github-setup.ts`'s
    * `ConnectGithubSetupPorts.acquireRepoReviewLease` for why this is
    * the actual concurrency backstop, not `hasRepoGrant`/`hasWebhookTrigger`
    * below. A host binds this to `@corbits/webhook-triggers`'

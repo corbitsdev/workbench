@@ -1,5 +1,4 @@
-// The Reviews-room PR thread (CL-6342 screen 3, plus screen 4's turn
-// states). Per the mock's own spec note, a thread is a bordered container
+// The Reviews-room PR thread. Per the mock's own spec note, a thread is a bordered container
 // inside the one timeline -- never a separate page or a master-detail
 // split -- and a reviewer reply uses the same flat avatar-plus-body row as
 // any other message, so a pull-request thread and a plain conversation
@@ -76,7 +75,7 @@ export type PrThreadFailedTurn = {
   /** Overrides the PR-review copy (`prThreadFailedTitle`/`-Sub`, both
    * scoped to "review"/"repo" language) for a non-PR consumer of this
    * same strip — the general chat timeline's own failed-turn notice
-   * (CL-6332), which has neither. `repo` stays required so every
+   *, which has neither. `repo` stays required so every
    * existing PR-thread caller is untouched; these two just take
    * priority over it when present. */
   readonly titleText?: string;

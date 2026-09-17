@@ -47,7 +47,7 @@ function mount(initialWorkbenchId: string | null, staleMs?: number) {
   };
 }
 
-describe("useTurnActivity + TurnActivityStrip (CL-6196: live wiring)", () => {
+describe("useTurnActivity + TurnActivityStrip (live wiring)", () => {
   test("a tool call in flight renders a running row phrased in the present tense", () => {
     const harness = mount("chan_a");
     expect(harness.container.querySelector(".chat-tool-activity")).toBeNull();

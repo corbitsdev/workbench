@@ -158,7 +158,7 @@ describeIfDb("createDrizzleWebhookTriggerStore: secret encryption at rest", () =
     }
   });
 
-  // CL-7242: `startReviewingRepos`'s check-then-act
+  // `startReviewingRepos`'s check-then-act
   // (hasWebhookTrigger then createWebhookTrigger) can race two
   // concurrent "start reviewing" calls for the same repo past the
   // read before either write lands. `ensure` is the actual backstop

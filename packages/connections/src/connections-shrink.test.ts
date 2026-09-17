@@ -1,5 +1,5 @@
-// CL-7593: shrink @corbits/connections to the PKCE OAuth client +
-// callback surface. Guards the cutover: the one-time CL-7242
+// Shrink @corbits/connections to the PKCE OAuth client +
+// callback surface. Guards the cutover: the one-time
 // duplicate-grant cleanup entry point must stay gone (module file and
 // export-map subpath) so no caller can drift back onto a custom grant
 // flow outside the native credential/grant routes.

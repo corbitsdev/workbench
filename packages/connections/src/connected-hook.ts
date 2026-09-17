@@ -1,5 +1,5 @@
 // The one seam every connect surface fires once a credential is
-// durably stored (CL-6393): OAuth callback, pasted API key, MCP OAuth,
+// durably stored: OAuth callback, pasted API key, MCP OAuth,
 // and keyless MCP preset all report the same shape, so a composition
 // (the hub) can settle in-room connect cards and resume waiting agents
 // without knowing which door the connection came through. Best-effort

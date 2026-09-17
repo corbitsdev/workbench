@@ -1,4 +1,4 @@
-// The host port behind the generic service connect card (CL-6393) —
+// The host port behind the generic service connect card —
 // the `ConnectGithubActions` shape generalized to any connector or MCP
 // preset. The block's data carries only agent-authored framing; every
 // live fact — connected or not, and which connect affordance the
@@ -35,7 +35,7 @@ export interface ConnectServiceActions {
    * Re-reads live connect state for every subscribed connector and fans
    * it to those listeners. ChatWorkspace calls this when a parsed
    * `chat.settings` event lands so a mounted card flips without
-   * remounting (CL-6476).
+   * remounting.
    */
   notifySettingsChanged(): Promise<void>;
   /** One-click connect: starts the hosted OAuth hand-off (navigating

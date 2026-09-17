@@ -307,7 +307,7 @@ describe("POST /:connectorId/complete", () => {
     expect(credentialSecret).toBe("ollama");
   });
 
-  test("CL-6403: probeBaseUrls threads a fake server's origin into the probe and the stored provider row", async () => {
+  test("probeBaseUrls threads a fake server's origin into the probe and the stored provider row", async () => {
     let probedBaseUrl: string | undefined;
     const registry: Readonly<Record<string, ConnectorDescriptor>> = {
       ...FAKE_REGISTRY,
@@ -484,7 +484,7 @@ describe("POST /:connectorId/complete", () => {
     expect(body.modelGuidance).toBeUndefined();
   });
 
-  test("CL-6351: connecting Ollama with only an embedding model installed surfaces guided model guidance, never a bare success", async () => {
+  test("connecting Ollama with only an embedding model installed surfaces guided model guidance, never a bare success", async () => {
     const registry: Readonly<Record<string, ConnectorDescriptor>> = {
       ...FAKE_REGISTRY,
       ollama: {
@@ -525,7 +525,7 @@ describe("POST /:connectorId/complete", () => {
     );
   });
 
-  test("CL-6351: connecting Ollama with a chat-capable model installed never surfaces model guidance", async () => {
+  test("connecting Ollama with a chat-capable model installed never surfaces model guidance", async () => {
     const registry: Readonly<Record<string, ConnectorDescriptor>> = {
       ...FAKE_REGISTRY,
       ollama: {
@@ -657,7 +657,7 @@ describe("POST /:connectorId/complete", () => {
     const body = (await response.json()) as { error: { userMessage: string } };
     expect(body.error.userMessage).toBe("the key was rejected");
     // ...but the provider-health record never carries it — only a closed
-    // category the shell banner maps to fixed copy (CL-6092).
+    // category the shell banner maps to fixed copy.
     const record = providerHealth.get(TENANT.id, "rejecting-connector");
     expect(record?.status).toBe("needs_attention");
     expect(record?.category).toBe("credential_failure");
@@ -722,7 +722,7 @@ describe("POST /:connectorId/complete", () => {
     expect(providerHealth.get(TENANT.id, "accepting-connector")).toBeUndefined();
   });
 
-  // CL-6092: a storage failure after a passing probe must never clear a
+  // A storage failure after a passing probe must never clear a
   // prior needs-attention record — the credential never actually became
   // durable, so the record should survive for the next attempt to see.
   test("a storage failure after a passing probe leaves a prior needs_attention record standing", async () => {

@@ -47,7 +47,7 @@ export interface CodeReviewGitHub {
  * is the reviewer's lens *plus* the JSON report contract this run parses
  * back — a host must use it rather than `reviewer.systemPrompt`, which
  * carries the lens alone so the same reviewer can answer a person in
- * prose (CL-7189). */
+ * prose. */
 export type ReviewerTurn = (input: {
   readonly reviewer: ReviewerDefinition;
   readonly systemPrompt: string;

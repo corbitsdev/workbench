@@ -1,5 +1,5 @@
 // Members section: the human participants split out from agents (see
-// AgentsSection). Each row carries a Remove affordance (CL-6122): a
+// AgentsSection). Each row carries a Remove affordance: a
 // second-click `ConfirmButton` that drops the member's participant
 // record server-side (`removeWorkbenchParticipant`), disabled for the
 // signed-in viewer's own row — there is no "leave" flow yet, so removing

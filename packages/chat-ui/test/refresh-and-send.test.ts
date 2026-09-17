@@ -212,7 +212,7 @@ describe("composer busy state rules (preparing blocks send and attach)", () => {
   });
 });
 
-describe("composerPlaceholderFor (CL-6070: names the open recipient)", () => {
+describe("composerPlaceholderFor (names the open recipient)", () => {
   test("names the counterpart for an agent chat from the workbench title — never a hardcoded agent", () => {
     expect(composerPlaceholderFor({ kind: "chat", title: "Myra" })).toBe(
       CHAT_STRINGS.composerPlaceholderChat("Myra"),
@@ -246,13 +246,13 @@ describe("composerPlaceholderFor (CL-6070: names the open recipient)", () => {
   });
 });
 
-// CL-6677: this notice used to render as a bare `event`-kind item with no
+// This notice used to render as a bare `event`-kind item with no
 // ref id and no Retry — unlike `postUndeliveredNotice`'s server-side
 // backstop for the same class of failure (a turn that ends with no
 // reply). It now carries a `turnFailed` text part instead, so it renders
 // through the same `FailedTurnStrip` treatment: ref id quotable, Retry
 // wired.
-describe("appendReplyTimedOutNotice (CL-6677: same ref+Retry backstop as the server-side notice)", () => {
+describe("appendReplyTimedOutNotice (same ref+Retry backstop as the server-side notice)", () => {
   const serverItems = [
     {
       id: "m1",
@@ -288,7 +288,7 @@ describe("appendReplyTimedOutNotice (CL-6677: same ref+Retry backstop as the ser
   });
 });
 
-describe("withScrollSnapshot (CL-6252 #3: settings toggle preserves scroll position)", () => {
+describe("withScrollSnapshot (settings toggle preserves scroll position)", () => {
   test("records a new workbench's snapshot without disturbing another workbench's", () => {
     const withA = withScrollSnapshot(new Map(), "ch_a", {
       scrollTop: 120,
@@ -366,7 +366,7 @@ describe("shouldConnect (S3: an empty workbench url opens no connection)", () =>
   });
 });
 
-describe("composerSendVisualState (CL-6103: the send button reflects state)", () => {
+describe("composerSendVisualState (the send button reflects state)", () => {
   test("empty draft, idle: muted/disabled", () => {
     expect(composerSendVisualState("", [], { sending: false })).toBe("empty");
   });
@@ -385,7 +385,7 @@ describe("composerSendVisualState (CL-6103: the send button reflects state)", ()
   });
 });
 
-describe("mergePendingSends (CL-6103: optimistic sends fold into the timeline)", () => {
+describe("mergePendingSends (optimistic sends fold into the timeline)", () => {
   const serverItems = [
     {
       id: "m1",
@@ -418,7 +418,7 @@ describe("mergePendingSends (CL-6103: optimistic sends fold into the timeline)",
     expect(merged[1]?.parts).toEqual([{ kind: "text", text: "hi" }]);
   });
 
-  test("CL-6251 reopened: a pending item's own clientId matches its nonce, so it keys identically to whichever confirmed message later reconciles it", () => {
+  test("a pending item's own clientId matches its nonce, so it keys identically to whichever confirmed message later reconciles it", () => {
     const pending: PendingSend[] = [
       {
         nonce: "pending_1",
@@ -452,7 +452,7 @@ describe("mergePendingSends (CL-6103: optimistic sends fold into the timeline)",
   });
 });
 
-describe("mergePendingSends (CL-6251: clientId reconciliation never double-renders a send)", () => {
+describe("mergePendingSends (clientId reconciliation never double-renders a send)", () => {
   const serverItems = [
     {
       id: "m1",
@@ -533,7 +533,7 @@ describe("mergePendingSends (CL-6251: clientId reconciliation never double-rende
   });
 });
 
-describe("mergeStreamingReply (CL-6115: the in-progress agent reply folds into the timeline)", () => {
+describe("mergeStreamingReply (the in-progress agent reply folds into the timeline)", () => {
   const agent = { address: "myra@ins_abc123", handle: "myra" };
   const serverItems = [
     {

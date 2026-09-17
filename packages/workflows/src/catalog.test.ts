@@ -146,7 +146,7 @@ describe("workflow catalog", () => {
     { key: "prompt", kind: "text", label: "Prompt", required: true },
   ];
 
-  // CL-6358: inputs bind at USE, never at creation — a scheduled
+  // Inputs bind at USE, never at creation — a scheduled
   // definition (or a seed preset) must be creatable with a required
   // trigger field left entirely unbound. `validateTriggerFieldsAtCreate`
   // is the boundary check the schedule create path applies now:

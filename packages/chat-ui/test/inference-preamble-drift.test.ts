@@ -1,4 +1,4 @@
-// Drift guard (CL-6092): chat-ui's inference-failure.ts hand-copies the
+// Drift guard: chat-ui's inference-failure.ts hand-copies the
 // two preambles @intx/inference's formatInferenceError writes for
 // credential_failure and quota_exhausted. Nothing else ties the copies
 // together — this test fails the moment the published director's wording

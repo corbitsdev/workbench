@@ -265,7 +265,7 @@ export const CATALOG_SEEDS: Readonly<Record<SupportedCredentialProvider, Catalog
     },
     // Curated against a real instance's `/api/tags` (see this ticket's
     // report): whichever of these the person's own Ollama actually has
-    // loaded. `gpt-oss:20b` leads — CL-6477's overnight run confirmed it
+    // loaded. `gpt-oss:20b` leads — overnight run confirmed it
     // correct and tool-obedient, and 12-25x faster than `qwen3.8:27b` (8s
     // vs 100-216s for the same task) — with `qwen3.8:27b` kept next as
     // the prior confirmed-good default and `qwen3.5:9b-mlx` last.

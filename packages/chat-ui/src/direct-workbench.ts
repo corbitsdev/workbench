@@ -1,6 +1,6 @@
 // Finding an existing 1:1 by participant address — the read half of the
 // "open-or-create" pattern the profile card's Message action needs
-// (CL-5914), matching by participant address since a profile subject is
+//, matching by participant address since a profile subject is
 // identified by address, not by a fixed workbench title.
 
 import type { Workbench } from "./api";

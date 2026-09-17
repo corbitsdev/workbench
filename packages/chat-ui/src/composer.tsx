@@ -39,7 +39,7 @@ export type ComposerSendPayload = {
 };
 
 /** Imperative seam a host can grab a ref to, so content from outside the
- * composer's own tree — the profile card's Mention action (CL-5914) or
+ * composer's own tree — the profile card's Mention action or
  * hover-edit of a previous prompt — can land in the active draft. */
 export type ComposerHandle = {
   readonly insertText: (text: string) => void;
@@ -308,7 +308,7 @@ export function canSendComposerAction(
 }
 
 /**
- * Whether the composer offers a Stop affordance (CL-7201) — a stand-in
+ * Whether the composer offers a Stop affordance — a stand-in
  * for "is there a turn to cancel," reported by the host from its own
  * `isAwaitingReply` signal (the whole in-flight phase, including after
  * tokens have started streaming — not the tokenless `isPendingReply`
@@ -380,7 +380,7 @@ export const Composer = forwardRef<
     readonly onSend: (payload: ComposerSendPayload) => Promise<boolean>;
     /** Defaults to the generic workbench copy — a chat passes one naming its counterpart. */
     readonly placeholder?: string;
-    /** Whether a turn is currently running for this workbench (CL-7201) —
+    /** Whether a turn is currently running for this workbench —
      * typically the host's own `isAwaitingReply(streamingReply)`. Absent
      * or `false` renders no Stop affordance at all. */
     readonly running?: boolean;
@@ -407,11 +407,11 @@ export const Composer = forwardRef<
   const [preparing, setPreparing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
-  // CL-7201: guards Stop against a double-click firing two cancel
+  // Guards Stop against a double-click firing two cancel
   // requests. A second cancel is harmless server-side (compare-and-set),
   // but there is no reason to send it. Resets once the host reports the
   // turn is no longer running -- not on a timer, since a slow cancel
-  // (CL-7230's ceiling) must stay disabled rather than re-arm early.
+  // (ceiling) must stay disabled rather than re-arm early.
   const [stopping, setStopping] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -421,7 +421,7 @@ export const Composer = forwardRef<
   // (an Enter keydown and a click both firing before a render lands) would
   // both read `sending === false` and both post. This ref is set the
   // instant a send starts, synchronously ahead of any render, so a second
-  // call in the same tick is turned away (CL-7198).
+  // call in the same tick is turned away.
   const sendInFlightRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const dictatePrefixRef = useRef("");
@@ -727,7 +727,7 @@ export const Composer = forwardRef<
   function handleStop() {
     if (stopping || onStop === undefined) return;
     setStopping(true);
-    // CL-7201 (Critique finding): a rejected stop request is a FAILED
+    // (Critique finding): a rejected stop request is a FAILED
     // cancel, not a slow one -- the `useEffect` above only re-enables
     // once the host reports `running` has gone false, which never
     // happens for a request that never reached the server. Without

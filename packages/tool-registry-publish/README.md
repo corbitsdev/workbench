@@ -71,7 +71,7 @@ for how a pin resolves through it).
 - Any workflow definition or `DEFAULT_WORKFLOWS` — this package knows
   which tool packages to publish, never which workflows pin them.
 
-## CL-7587 end state
+## End state
 
 This package stays pack + explicit publish: no boot-time publish (the
 hub only reads the registry; `seedTenant` never packs), no daemon or

@@ -1,7 +1,7 @@
 // A TTL-eviction map for process-lifetime state whose only invariant is
 // "how recently was this key touched" — a rate limiter, a dedupe guard,
 // anything where an entry older than its own TTL is worthless and safe
-// to forget (CL-7233). `get` drops an expired entry lazily on read;
+// to forget. `get` drops an expired entry lazily on read;
 // `set` opportunistically sweeps every expired entry once per TTL
 // window, amortizing the cost of a full pass rather than checking every
 // key on every call. There is no background timer: nothing to `unref`,

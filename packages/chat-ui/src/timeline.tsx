@@ -58,7 +58,7 @@ import type { FailedTurnModelChoice } from "./failed-turn-models";
  * Which affordance a message's thread row offers:
  * - `"reply"` (root feed) — open/create the depth-1 thread for this message
  * - `"fork"` (inside an open thread) — spawn a sub-thread rooted at this
- *   message, the first-class fork affordance from CL-5948 ("something
+ *   message, the first-class fork affordance ("something
  *   Slack doesn't have"). The two-level cap is enforced server-side; this
  *   UI never needs to reason about depth itself.
  *
@@ -266,7 +266,7 @@ function senderDisplay(
     const isAgent = isAgentAddress(matched.address);
     const senderName = sender.name;
     const wireName = senderName !== null && senderName.trim().length > 0 ? senderName : undefined;
-    // An agent renders its resolved display name (CL-6424) — the wire
+    // An agent renders its resolved display name — the wire
     // name when the server sent one, else the `/agents` snapshot's — and
     // only then falls back to a human reading of its handle ("myra" ->
     // "Myra"). The raw @handle is a wire identifier, kept to the tooltip
@@ -378,7 +378,7 @@ function TextBubble({
   sender: MessageSender | undefined;
   participants: readonly ParticipantRecord[];
   currentUser: CurrentUser | undefined;
-  /** Resolved agent display names (CL-6424) — the message header shows
+  /** Resolved agent display names — the message header shows
    * these, never the raw handle slug. */
   readonly agentDisplayNames?: AgentDisplayNames;
   onOpenProfile?: (subject: ProfileSubject) => void;
@@ -390,7 +390,7 @@ function TextBubble({
    * modern chat UIs use rather than repeating the header on every line. */
   showHeader?: boolean;
   /** Set while this reader's own send is still in flight or has failed
-   * (CL-6251/CL-5879) — the bubble renders exactly like any confirmed
+   * — the bubble renders exactly like any confirmed
    * message; `"sending"` only adds `PendingGlyph` next to the timestamp,
    * `"failed"` appends `PendingFailedRow` inside this same bubble, never
    * a different layout. */
@@ -647,8 +647,8 @@ export type FailedTurnRecovery = {
 };
 
 /**
- * The general chat timeline's failed-turn treatment (CL-6332, redesigned
- * CL-6376 to match the timeline's own idiom rather than borrow
+ * The general chat timeline's failed-turn treatment, matching the
+ * timeline's own idiom rather than borrowing
  * `PrFailedTurnStrip`'s bordered banner — that component stays as-is for
  * the PR-review surface it was built for, but reusing it here read as a
  * floating alert dropped mid-conversation). A text part
@@ -677,7 +677,7 @@ function FailedTurnStrip({
   agentDisplayNames,
 }: {
   readonly item: TimelineMessageItem;
-  /** Resolved agent display names (CL-6424) — the strip names the agent
+  /** Resolved agent display names — the strip names the agent
    * whose turn failed, never its raw handle slug. */
   readonly agentDisplayNames?: AgentDisplayNames;
   /** The undelivered-turn notice's own text (`postUndeliveredNotice`,
@@ -810,7 +810,7 @@ function FailedTurnStrip({
 }
 
 /**
- * The cancelled-turn counterpart to `FailedTurnStrip` (CL-7201) — same
+ * The cancelled-turn counterpart to `FailedTurnStrip` — same
  * quiet inline placement, deliberately simpler: no Retry (the user
  * chose to stop this; resending is just typing again, not recovering
  * from an error) and no disclosure, since `postCancelledNotice`'s own
@@ -927,7 +927,7 @@ export function messageText(item: MessageItem): string {
 }
 
 /**
- * Whether a timeline row should expose message social chrome (CL-6739) —
+ * Whether a timeline row should expose message social chrome —
  * add-reaction, reply-in-thread, overflow/ellipsis, reaction chips, and the
  * thread-summary affordance. System event lines, failed-turn strips,
  * connect cards, and classified inference-failure bubbles are not
@@ -958,7 +958,7 @@ export function offersMessageSocialChrome(item: MessageItem): boolean {
 
 /**
  * System notices (event-only rows) are never "own" for any viewer —
- * DESIGN.md Message Alignment and CL-6772. Join / rename / membership
+ * see DESIGN.md's Message Alignment section. Join / rename / membership
  * lines often carry the acting principal as `sender`, but they still
  * align left; treating them as own put them on the signed-in user's
  * right edge.
@@ -1039,7 +1039,7 @@ export function collapseAgentJoinRuns(
 }
 
 /**
- * A failed send's inline recovery row (CL-6251/CL-5879): appended below
+ * A failed send's inline recovery row: appended below
  * the bubble text of the exact same message group a confirmed message
  * would render as — never a status line elsewhere on the page,
  * disconnected from the message it describes.
@@ -1272,7 +1272,7 @@ function MessageHoverToolbar({
 }
 
 /**
- * `MessageParts`'s own memo guard (CL-6625): a streamed token, a typing
+ * `MessageParts`'s own memo guard: a streamed token, a typing
  * ping, or a presence update re-renders `WorkbenchTimeline`'s parent with a
  * freshly-built `items` array (`mergeStreamingReply`/`mergePendingSends` in
  * `chat-workspace.tsx`), but every *unchanged* message keeps its own
@@ -1354,7 +1354,7 @@ function MessagePartsInner({
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
   /** The classified-inference-failure text bubble's quiet "Fix this
-   * connection" action (CL-6092) — undefined renders no affordance at
+   * connection" action — undefined renders no affordance at
    * all, the same "no port, no feature" contract every other optional
    * action here follows. No chat-ui component owns routing: the host
    * decides where "fix" goes (Plugins' connect panel today). */
@@ -1368,7 +1368,7 @@ function MessagePartsInner({
    * pending item (`item.pendingStatus === "failed"`) with no actions
    * wired, the failed row simply doesn't render. */
   readonly pendingActions?: PendingActions;
-  /** The failed-turn strip's Retry/what-happened actions (CL-6332) —
+  /** The failed-turn strip's Retry/what-happened actions —
    * see `WorkbenchTimeline`'s own doc of the same two props. Undefined
    * renders the strip with inert buttons, never hiding the strip
    * itself: a failed turn stays visible even on a host that wires no
@@ -1379,7 +1379,7 @@ function MessagePartsInner({
   ) => void | Promise<void>;
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
   readonly failedTurnRecovery?: FailedTurnRecovery;
-  /** Resolved agent display names (CL-6424) — headers, strips, and event
+  /** Resolved agent display names — headers, strips, and event
    * lines show these, never raw handle slugs. */
   readonly agentDisplayNames?: AgentDisplayNames;
 }) {
@@ -1388,12 +1388,12 @@ function MessagePartsInner({
   // none of the round-trips below — thread, context menu — since every
   // one of them targets a server-issued message id that doesn't exist
   // yet for this item. System / error / connect rows
-  // (CL-6739) likewise offer none of the social chrome — see
+  // likewise offer none of the social chrome — see
   // `offersMessageSocialChrome`.
   const isPending = item.pendingStatus !== undefined;
   const offersSocialChrome = !isPending && offersMessageSocialChrome(item);
   // System notices (join / rename / membership) never read as own even when
-  // this viewer triggered them — see `isSystemNoticeItem` (CL-6772).
+  // this viewer triggered them — see `isSystemNoticeItem`.
   const isOwn =
     currentUser !== undefined &&
     item.sender !== undefined &&
@@ -1589,7 +1589,7 @@ const MessageParts = memo(MessagePartsInner, messagePartsPropsEqual);
  * itself a plain text bubble (an event line or a fallback block always
  * gets its own header on the next real bubble). A pending (optimistic)
  * send groups exactly like any confirmed message from the same author —
- * CL-5879 renders it through this same path, not a separate tier.
+ * Renders it through this same path, not a separate tier.
  */
 function isGroupedWithPrevious(
   item: TimelineMessageItem,
@@ -1747,7 +1747,7 @@ export function WorkbenchTimeline({
    * `artifactId` (see `ArtifactChip`). */
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
   /** The classified-inference-failure text bubble's quiet "Fix this
-   * connection" action (CL-6092) — see `MessageParts`' own doc. */
+   * connection" action — see `MessageParts`' own doc. */
   readonly onFixConnection?: () => void;
   /** The approve block's live round-trip — the host's read/approve/reject
    * on the platform approval a card references. Undefined renders every
@@ -1760,7 +1760,7 @@ export function WorkbenchTimeline({
    * `PendingActions`. Undefined renders a failed pending item with no
    * recovery affordance at all (still shown as failed). */
   readonly pendingActions?: PendingActions;
-  /** Retry action offered on a failed-turn strip (CL-6332) — the
+  /** Retry action offered on a failed-turn strip — the
    * server's undelivered-turn notice (`agent_turns` closed `failed`,
    * see `postUndeliveredNotice`), rendered via `FailedTurnStrip` above.
    * Undefined still renders the strip, just with a Retry button that
@@ -1788,7 +1788,7 @@ export function WorkbenchTimeline({
   /** Incoming-slot pulse (typing / pending-reply) rendered after the last
    * message so it sits where the next agent reply will land. */
   readonly footer?: ReactNode;
-  /** Resolved agent display names (CL-6424) — headers, join lines, and
+  /** Resolved agent display names — headers, join lines, and
    * empty states show these, never raw handle slugs. Undefined keeps the
    * slug-derived fallback, so a host that never resolves names renders
    * exactly what it always did. */
@@ -1930,11 +1930,11 @@ export function WorkbenchTimeline({
             !isSameCalendarDay(new Date(previous.createdAt), new Date(item.createdAt));
           // Keyed by `clientId` (falling back to `id`) when present: a
           // pending send and the confirmed message that later reconciles
-          // it (CL-6251's wire `clientId`) share this key, so React
+          // it (wire `clientId`) share this key, so React
           // updates the same DOM node in place — avatar, header and all —
           // rather than unmounting a "sending" bubble and mounting an
-          // unrelated "confirmed" one, which is what used to read as an
-          // unsent→sent swap (CL-6251, reopened).
+          // unrelated "confirmed" one, which would read as an
+          // unsent→sent swap.
           const key = item.clientId ?? item.id;
           if (item.streaming === true) {
             return (

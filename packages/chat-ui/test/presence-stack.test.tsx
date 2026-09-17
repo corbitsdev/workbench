@@ -1,5 +1,5 @@
-// The workbench header's live who's-here stack (CL-5958), now driven off
-// the workbench's own `/stream` connection (CL-6328) rather than a plain
+// The workbench header's live who's-here stack, now driven off
+// the workbench's own `/stream` connection rather than a plain
 // `presenceMembers` prop: nothing rendered until a `chat.presence.snapshot`
 // arrives, one avatar per member from there, colored deterministically per
 // principal. Mirrors chat-workspace.test.tsx's stub-fetch/mount harness.
@@ -107,7 +107,7 @@ function mount(props: Parameters<typeof ChatWorkspace>[0]) {
 }
 
 // The workbench's own chat stream, not the mailbox live-update
-// subscription `useWorkbenchFeed` also opens (CL-8174 slice 2b).
+// subscription `useWorkbenchFeed` also opens.
 function firstStream(): StubEventSource {
   const instance = StubEventSource.instances.find((source) =>
     /\/chat\/workbenches\/[^/]+\/stream/.test(source.url),

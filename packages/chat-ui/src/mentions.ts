@@ -40,7 +40,7 @@ function readableLabel(handle: string): string {
  * participants (the same set `mentionedParticipants` fans a copy to on the
  * server), each keyed by its own settings-held handle so a picked candidate
  * always inserts text the server will actually match — while the row shows
- * the agent's resolved display name (CL-6424), never the raw slug. Kept
+ * the agent's resolved display name, never the raw slug. Kept
  * agent-only so the composer's `/summarize` path (which needs an agent
  * address) stays honest when it reads from the same helper via the
  * `agents` prop.

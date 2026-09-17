@@ -131,7 +131,7 @@ describe("fetchProviderHealth", () => {
     await expect(fetchProviderHealth("bench_1")).rejects.toThrow();
   });
 
-  // CL-6092: the record's `category` is a closed enum a render layer maps
+  // The record's `category` is a closed enum a render layer maps
   // to fixed, pre-written copy — this is the guarantee that makes it safe
   // to store at all. A response that ever smuggled a provider's own raw
   // error prose (which can carry a request URL, an account id, or a key

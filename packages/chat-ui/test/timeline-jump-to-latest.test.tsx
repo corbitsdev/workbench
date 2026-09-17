@@ -1,4 +1,4 @@
-// Jump-to-latest (CL-6424): when the reader has scrolled up from the live
+// Jump-to-latest: when the reader has scrolled up from the live
 // tail past `BOTTOM_PIN_THRESHOLD_PX` (40px), the timeline offers a control
 // that re-pins and jumps to the bottom. There is no such control while
 // pinned, on an empty timeline, or when the reader is still within the
@@ -81,7 +81,7 @@ function jumpControl(from: HTMLElement): HTMLButtonElement | null {
   return from.querySelector(".chat-jump-to-latest");
 }
 
-describe("WorkbenchTimeline jump-to-latest (CL-6424)", () => {
+describe("WorkbenchTimeline jump-to-latest", () => {
   test("a pinned reader sees no jump-to-latest control", async () => {
     const { container: el } = await mount();
     expect(jumpControl(el)).toBeNull();

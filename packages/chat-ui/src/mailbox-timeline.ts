@@ -1,5 +1,5 @@
 // Pure adapter from a mailbox thread read onto the timeline item shape
-// `use-workbench-feed.ts` already produces (CL-8174 slice 2a/2b). No new wire
+// `use-workbench-feed.ts` already produces. No new wire
 // shape: a mail message becomes exactly the `MessageItem` the rest of
 // chat-ui already knows how to render, so the timeline never has to branch
 // on where a message came from.
@@ -15,7 +15,7 @@
 // through this one file, so swapping to Interchange's native mailbox
 // thread shape later is a one-file change.
 //
-// A workbench is a plain Interchange tenant now (CL-8083): there is one
+// A workbench is a plain Interchange tenant now: there is one
 // chat room per tenant, so the tenant's own `/me/inbox` mailbox already IS
 // that room's mail — there is no per-room `refs` filter to apply any more
 // (the native 1.0 mount dropped `refs` entirely). `roomId` is kept on every
@@ -189,7 +189,7 @@ async function listThreads(tenantId: string): Promise<MailboxThreadNode[]> {
 
 /**
  * Every message across the tenant's mailbox threads, flattened into one
- * timeline (CL-8174 slice 2b) — a root message's own `threadId` stays
+ * timeline — a root message's own `threadId` stays
  * absent (see `threadTreeToTimeline`), so it resolves to
  * `ROOM_FEED_ROOT_THREAD_ID` in `./thread-feed.ts`'s root-feed filter; a
  * reply's `threadId` is its parent's own uid, matching the

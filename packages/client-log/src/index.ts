@@ -1,4 +1,4 @@
-// The one browser-side logger (CL-6359): every ad-hoc `console.*` call in
+// The one browser-side logger: every ad-hoc `console.*` call in
 // apps/web and chat-ui routes through this instead, so a user's actions
 // are traceable end-to-end through one category+level shape instead of
 // scattered, differently-worded console lines. Two jobs: an in-memory
@@ -7,7 +7,7 @@
 // production console isn't flooded with routine debug/info trace lines.
 //
 // This module is the sanctioned exception to the `no-console` lint rule
-// (CL-6359) — every other file under `src/` calls `getLogger` instead of
+// — every other file under `src/` calls `getLogger` instead of
 // `console.*` directly.
 
 export type LogLevel = "debug" | "info" | "warn" | "error";

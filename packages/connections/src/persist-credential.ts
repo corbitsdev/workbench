@@ -1,12 +1,8 @@
 // The one persist-and-seed sequence every connect surface runs once a
 // secret is proven (by probe or by OAuth exchange): ensureProvider →
-// ensureCredential → seedCatalog-if-inference. Before CL-6394 this
-// sequence existed as three parallel copies (`routes.ts`'s
-// `/:connectorId/complete`, `oauth-tenant-connect.ts`, and
-// `@corbits/connections`'s `testAndPersistCredential`) and their
-// divergence is exactly what let a GitHub callback fall into an
-// inference-only `seedCatalog` — a non-inference connector must never
-// reach `CATALOG_SEEDS`, and here that rule lives in one place.
+// ensureCredential → seedCatalog-if-inference. Keeping this in one place
+// is what stops a non-inference connector (a GitHub callback, say) from
+// ever reaching `CATALOG_SEEDS`.
 //
 // The provider row is named by the connector's lowercase `id` (the
 // canonical name `credentialBindings` resolve against); the credential
@@ -71,7 +67,7 @@ export type PersistConnectorCredentialArgs = PersistConnectorCredentialFns & {
   readonly refreshSecret?: string;
   /** ISO instant the access token expires — stored on the credential
    * row's own `expiresAt` COLUMN, which serving-time refresh keys on
-   * (CL-7508). Never folded into `credentialMetadata`. */
+   *. Never folded into `credentialMetadata`. */
   readonly expiresAt?: string;
   /** The instance origin a url-kind connector actually points at —
    * stored as the provider row's `apiBaseUrl` and threaded into
@@ -82,7 +78,7 @@ export type PersistConnectorCredentialArgs = PersistConnectorCredentialFns & {
 
 export async function persistConnectorCredential(args: PersistConnectorCredentialArgs): Promise<{
   credentialId: string;
-  /** The catalog seed's own report (CL-6351's model-capability read
+  /** The catalog seed's own report (model-capability read
    * included) — absent for a non-inference connector, which never
    * seeds a catalog. */
   seedResult?: Awaited<ReturnType<typeof seedCatalog>>;

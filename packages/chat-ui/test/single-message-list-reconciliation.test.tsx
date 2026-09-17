@@ -1,4 +1,4 @@
-// CL-6251 reopened: dedup by clientId alone still let a sent message read
+// Reopened: dedup by clientId alone still let a sent message read
 // as "unsent -> sent" because the pending bubble and its confirmed copy
 // were two structurally different renders (a stripped-down pending tier
 // swapping for a full bubble under a brand-new React key). This suite

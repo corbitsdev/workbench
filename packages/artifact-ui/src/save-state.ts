@@ -1,7 +1,6 @@
 // The canvas artifact pane's save-state line — never a fake autosave claim.
 // "Saved · v12" is only ever rendered once the artifact's PUT route has
-// actually answered with that version (CL-8189: single-user editing, no
-// co-edit presence); until then the host renders "Saving…" or "Unsaved
+// actually answered with that version; until then the host renders "Saving…" or "Unsaved
 // changes" honestly instead of guessing that a debounced write already
 // landed.
 

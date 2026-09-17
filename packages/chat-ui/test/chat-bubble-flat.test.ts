@@ -1,5 +1,5 @@
 // happy-dom does not apply stylesheets, so paint/chrome for `.chat-bubble`
-// is locked against CSS source (CL-6466: leftover bubble class, no chrome).
+// is locked against CSS source: leftover bubble class, no chrome.
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

@@ -32,7 +32,7 @@ describe("deriveDisplayName", () => {
     );
   });
 
-  test("throws rather than humanizing an internal run id into a fake name (CL-6471)", () => {
+  test("throws rather than humanizing an internal run id into a fake name", () => {
     expect(() => deriveDisplayName({ name: "run_737a058d48006e2bde12559576f422e0" })).toThrow(
       /internal identifier/,
     );

@@ -1,4 +1,4 @@
-// The structured shape every `reportError` call carries (CL-6496): the
+// The structured shape every `reportError` call carries: the
 // operation that failed, optional tenant/room/agent identifiers scoping
 // it, and a `refId` a person can quote back to support -- the same
 // `refId` pattern `packages/onboarding/src/routes.ts`'s

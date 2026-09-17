@@ -300,18 +300,17 @@ export function judge(
   };
 }
 
-// --- CL-6322 §8.2 scorers -------------------------------------------
+// --- §8.2 scorers -------------------------------------------
 //
 // Every scorer below grades "what Myra actually built" (plan.md §8.1
 // item 1), not what a tool call merely asked for, against the product
 // that actually shipped: the code-review template instantiated from
-// the seeded library (CL-6344/#140), per-repo grants + webhook
-// triggers minted at repo selection (CL-6345/#142's start-reviewing),
-// and one aggregated comment-only review per PR posted free under the
-// grant by `github_post_pr_review` (CL-6340/#62) — never
-// N per-reviewer `create_agent`-shaped posts. `WorldSnapshot` still
-// has no `reviewComments` or `runs` field (CL-6322 Phase 1), so the
-// two scorers needing those skip, naming that gap.
+// the seeded library, per-repo grants + webhook triggers minted at
+// repo selection (start-reviewing), and one aggregated comment-only
+// review per PR posted free under the grant by
+// `github_post_pr_review` — never N per-reviewer `create_agent`-shaped
+// posts. `WorldSnapshot` still has no `reviewComments` or `runs`
+// field, so the two scorers needing those skip, naming that gap.
 
 function worldSnapshotFieldMissing(name: string, needs: string): ScorerResult {
   return {
@@ -345,7 +344,7 @@ export function githubConnectedViaConnectionsLayer() {
 /** Passes once every named reviewer handle has a materialized agent
  * definition AND the tenant's deployed code-review workflow definition
  * carries a GitHub-shaped tool-package pin. This is the shipped
- * install shape (CL-6344): `instantiateWorkbenchTemplate` creates the
+ * install shape: `instantiateWorkbenchTemplate` creates the
  * reviewer roster as prompt-only agent definitions, while the GitHub
  * reach lives on the one `code-review` workflow the template's blocks
  * install — the reviewers themselves never carry a github pin. */
@@ -374,7 +373,7 @@ export function agentDefinitionsHaveToolGrants(handles: readonly string[]) {
 }
 
 /** Passes once the snapshot carries an enabled `webhook_trigger` row —
- * the shipped per-repo trigger CL-6345's start-reviewing mints (one
+ * the shipped per-repo trigger start-reviewing mints (one
  * per selected repo, bound to the deployed code-review definition),
  * not a chat-driven `routine_create` with a webhook trigger kind. */
 export function triggerIsWebhookPerPr() {
@@ -392,8 +391,8 @@ export function triggerIsWebhookPerPr() {
 
 /** Passes once every named reviewer handle posted at least one review
  * comment, and every posted comment carries its own child run id — the
- * per-turn/per-reviewer run tracing CL-6322 Phase 1.3 (`onTrigger`
- * adoption) is meant to produce. `WorldSnapshot` has no
+ * per-turn/per-reviewer run tracing `onTrigger` adoption is meant to
+ * produce. `WorldSnapshot` has no
  * `reviewComments` field today, so this always skips naming that gap. */
 export function reviewCommentsAttributable(handles: readonly string[]) {
   return function reviewCommentsAttributableScorer(ctx: ScorerContext): ScorerResult {
@@ -404,8 +403,8 @@ export function reviewCommentsAttributable(handles: readonly string[]) {
 }
 
 /** Passes once every successful `github_post_pr_review` call is
- * structurally sound in the shipped aggregated-review shape (CL-6340
- * #62): a non-empty markdown `body`, a `headSha` anchoring the review,
+ * structurally sound in the shipped aggregated-review shape: a
+ * non-empty markdown `body`, a `headSha` anchoring the review,
  * and every inline comment carrying `path`/`line`/`body` — with at
  * least one GitHub `suggestion` fence somewhere in the review, the
  * form `aggregateReview` renders a reviewer's `suggestedFix` into. */

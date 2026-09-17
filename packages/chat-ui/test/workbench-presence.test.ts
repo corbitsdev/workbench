@@ -1,4 +1,4 @@
-// Pure-logic tests for the who's-here roster's state machine (CL-6328):
+// Pure-logic tests for the who's-here roster's state machine:
 // `nextPresenceRoster` is what `useWorkbenchPresenceRoster` calls on every
 // stream event, kept separate so the rule is testable without mounting
 // anything — mirrors `typing-indicator.tsx`'s own pure/stateful split.

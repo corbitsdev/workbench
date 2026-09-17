@@ -1,6 +1,6 @@
 // Tenant-scoped credential connect-and-store for the Connections surface:
 // `POST /:connectorId/complete` proves a pasted api-key against the
-// connector's own probe (CL-6377: one action, not a separate test step
+// connector's own probe (one action, not a separate test step
 // the client calls first) and, on success, plants the credential through
 // the same `ensureProvider` / `ensureCredential` seam `seedCatalog` uses —
 // never reimplementing credential storage. A rejected probe 422s with no
@@ -54,7 +54,7 @@ export type DisconnectConnectorResult = {
  * `DELETE /credentials/:id` directly 500'd for every inference-provider
  * connector once `seedCatalog` had planted its catalog provider row
  * against that credential — the connect flow worked, the disconnect
- * button never did (CL-6258). Deleting the catalog provider row first
+ * button never did. Deleting the catalog provider row first
  * clears that reference (and cascades its offerings — `model_offering
  * .providerId` is `ON DELETE CASCADE` — so nothing in
  * `getResolvedCatalog` is ever left resolving to a provider this tenant
@@ -154,7 +154,7 @@ export async function disconnectConnector(
 // `provider-health.ts`'s own header for why.
 const CREDENTIAL_TEST_FAILURE_CATEGORY = "credential_failure" as const;
 
-// CL-6351: a fresh Ollama connect whose instance has only embedding
+// A fresh Ollama connect whose instance has only embedding
 // models pulled still succeeds (the URL and instance are real) but has
 // no model any workbench turn can actually use — surfaced as a guided
 // `modelGuidance` string on an otherwise-normal 200, never as a per-turn
@@ -208,7 +208,7 @@ export type CreateConnectionRoutesDeps = {
   /**
    * The provider-health signal `GET /provider-health` reads and both
    * `/:connectorId/credential/test` and `/:connectorId/complete` write to
-   * (CL-6092): a failing connect-time test marks the connector
+   *: a failing connect-time test marks the connector
    * needs-attention with the closed `credential_failure` category (never
    * the probe's own message — see this module's own
    * `CREDENTIAL_TEST_FAILURE_CATEGORY` comment), a passing one clears it.
@@ -232,7 +232,7 @@ export type CreateConnectionRoutesDeps = {
    */
   listConnectedProviders?: (tenantId: string) => Promise<readonly string[]>;
   /**
-   * Per-connector API base URL override, keyed by connector id — CL-6403's
+   * Per-connector API base URL override, keyed by connector id —
    * seam letting a fake server stand in for a real provider's production
    * origin in tests/evals (e.g. `{github: "http://localhost:4010"}` for a
    * recorded GitHub fake). Threaded into `descriptor.probe`'s second
@@ -283,7 +283,7 @@ export function createConnectionRoutes(deps: CreateConnectionRoutesDeps): Hono<T
     return c.json(configured, 200);
   });
 
-  // The shell banner's read (CL-6092): every provider this tenant has
+  // The shell banner's read: every provider this tenant has
   // marked needs-attention, from either write path (`/complete`'s failing
   // test below, or a classified runtime inference failure reported
   // through `ProviderHealthPort` elsewhere in the hub process). Read-only,
@@ -370,7 +370,7 @@ export function createConnectionRoutes(deps: CreateConnectionRoutesDeps): Hono<T
     // itself as the provider row's `apiBaseUrl` (the same seam MCP
     // servers use). The persist-and-seed sequence itself is the one
     // shared `persistConnectorCredential` every connect surface runs
-    // (CL-6394).
+    //.
     const isUrlCredential = descriptor.credentialInputKind === "url";
     try {
       const { credentialId, seedResult } = await persistConnectorCredential({
@@ -395,7 +395,7 @@ export function createConnectionRoutes(deps: CreateConnectionRoutesDeps): Hono<T
           : {}),
         ...(deps.seedCatalogFn !== undefined ? { seedCatalogFn: deps.seedCatalogFn } : {}),
       });
-      // CL-6351: a fresh Ollama connect whose instance serves no
+      // A fresh Ollama connect whose instance serves no
       // completion-capable model gets guided copy, not a silent dead
       // end — read off the catalog seed the shared persist sequence
       // just ran.
@@ -408,7 +408,7 @@ export function createConnectionRoutes(deps: CreateConnectionRoutesDeps): Hono<T
       // Only clear once the credential is actually durable — a storage
       // failure below (the `catch`) must leave a prior needs-attention
       // record standing rather than clearing it on a test pass whose
-      // save then failed (CL-6092).
+      // save then failed.
       deps.providerHealth?.clear(tenant.id, descriptor.id);
       await fireConnectedHook(deps.onConnected, deps.log, {
         tenantId: tenant.id,

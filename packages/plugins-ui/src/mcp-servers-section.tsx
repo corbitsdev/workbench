@@ -1,4 +1,4 @@
-// MCP servers (CL-6142): unlike the rest of the gallery, these aren't
+// MCP servers: unlike the rest of the gallery, these aren't
 // entries in the static `CONNECTOR_REGISTRY` grid — a tenant can connect
 // any number of them, each named by whoever adds it — so this section
 // owns its own fetch/connect/disconnect loop rather than routing through

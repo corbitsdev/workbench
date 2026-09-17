@@ -204,7 +204,7 @@ export type TriggerFieldsValidation =
 
 /**
  * The create-time boundary check for a routine's stored `input`
- * (CL-6358): inputs bind at USE, never at creation, so a required
+ *: inputs bind at USE, never at creation, so a required
  * field with no value at all in `input` is never a create-time
  * rejection — a workflow with a required trigger field can still be
  * created with it left open until someone actually runs it. Only a

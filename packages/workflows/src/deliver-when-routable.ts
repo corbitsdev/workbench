@@ -1,10 +1,10 @@
-// CL-7476: since the process provisioner started spawning one sidecar per
+// Since the process provisioner started spawning one sidecar per
 // allocation, a freshly launched run's first mail can arrive before that
 // sidecar has finished booting and registering with the hub, so the send
 // fails with "agent is unreachable" even though nothing is actually wrong
 // — the address just isn't routable yet. The webhook trigger's ingress
 // delivery goes through this helper; chat's `sendRunMailWithReclaimRetry`
-// (CL-7488) shares this same budget rather than declaring its own.
+// shares this same budget rather than declaring its own.
 export const DEFAULT_ROUTABLE_DEADLINE_MS = 20_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
 

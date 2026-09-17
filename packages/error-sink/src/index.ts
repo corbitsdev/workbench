@@ -1,5 +1,5 @@
 // The one entry point every catch block calls instead of swallowing a
-// failure (CL-6496, the owner ruling this package exists to enforce).
+// failure (the owner ruling this package exists to enforce).
 //
 // `@intx/log` (LogTape underneath) is already the repo's one logging
 // concept -- 65+ `getLogger`/`log.error` call sites across apps/hub and a

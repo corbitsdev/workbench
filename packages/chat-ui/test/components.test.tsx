@@ -63,7 +63,7 @@ describe("WorkbenchTimeline", () => {
     expect(markup).toContain("hello there");
   });
 
-  // CL-6318: the timeline used to render text, event, file and block and
+  // The timeline used to render text, event, file and block and
   // drop `reasoning` and `tool-trace` on the floor — the agent's thinking
   // and every tool call it made were invisible in the product.
   test("renders a tool call as a sentence, with the tool id nowhere in sight", () => {
@@ -418,10 +418,8 @@ describe("WorkbenchTimeline", () => {
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
 
-  // Was asserted against `tool-trace` until CL-6318, which is to say it
-  // locked in the defect: a kind the wire really does define was being
-  // shown as unsupported. The fallback is for kinds this build genuinely
-  // does not know, and it must still never leak the raw payload.
+  // The fallback is for kinds this build genuinely does not know, and it
+  // must still never leak the raw payload.
   test("renders an unknown part kind as a labeled fallback block, never the raw payload", () => {
     const unknown = [
       {
@@ -442,7 +440,7 @@ describe("WorkbenchTimeline", () => {
     expect(markup).toContain("No messages yet");
   });
 
-  // CL-6092: the quiet "Fix this connection" affordance on a classified
+  // The quiet "Fix this connection" affordance on a classified
   // inference-failure reply.
   const classifiedFailureItems: MessageItem[] = [
     {
@@ -767,7 +765,7 @@ describe("typingLabel", () => {
     expect(typingLabel("prn_unknown1", [])).toBe("Member");
   });
 
-  test("prefers currentUser.name for the signed-in principal (CL-6655)", () => {
+  test("prefers currentUser.name for the signed-in principal", () => {
     expect(
       typingLabel("prn_self", [], {
         principalId: "prn_self",

@@ -65,7 +65,7 @@ export function isTypingStateExpired(state: TypingState, now: number): boolean {
 }
 
 /** A typing/presence principal's friendly label — prefers the signed-in
- * reader's own `currentUser.name` when the principal is self (CL-6655),
+ * reader's own `currentUser.name` when the principal is self,
  * else the participant handle, else the same deterministic "Member"
  * fallback the timeline uses. Never a raw address. */
 export function typingLabel(

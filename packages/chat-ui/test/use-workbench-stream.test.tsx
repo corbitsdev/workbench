@@ -180,7 +180,7 @@ describe("useWorkbenchStream (reconnect + poll wiring)", () => {
     harness.unmount();
   });
 
-  test("invalid JSON on chat.message is not forwarded and polls immediately (CL-6837)", async () => {
+  test("invalid JSON on chat.message is not forwarded and polls immediately", async () => {
     const parseErrors: string[] = [];
     const harness = mount(
       {
@@ -201,7 +201,7 @@ describe("useWorkbenchStream (reconnect + poll wiring)", () => {
     harness.unmount();
   });
 
-  test("valid JSON on chat.message still forwards and does not poll (CL-6837)", async () => {
+  test("valid JSON on chat.message still forwards and does not poll", async () => {
     const harness = mount({
       pollMs: 1000,
       baseDelayMs: 5000,
@@ -218,7 +218,7 @@ describe("useWorkbenchStream (reconnect + poll wiring)", () => {
   });
 });
 
-describe("parseStreamEventJson (CL-6837)", () => {
+describe("parseStreamEventJson", () => {
   test("parses a JSON object through arktype", () => {
     expect(parseStreamEventJson('{"id":"m1"}')).toEqual({
       ok: true,

@@ -1,13 +1,13 @@
 // A platform run's status the way surfaces should show it, and its words.
-// Warm-keep (CL-6681) leaves a fire's delivery agent deployed after it
+// Warm-keep leaves a fire's delivery agent deployed after it
 // replies, so `workflow_run.status` never settles out of `running` on its
 // own. Insights, Mission Control, and the shell activity feed all read a
 // listing-shaped payload through here rather than badging the raw column,
 // so a lingering `running` status past `FIRE_RUNNING_WINDOW_MS` reads as
-// completed instead of still in flight (CL-6778). Originally
+// completed instead of still in flight. Originally
 // `@corbits/routines`' `health.ts`/`run-language.ts`; carried over verbatim
 // when routines were cut over to native `ScheduleTrigger` definitions
-// (CL-4455) — every surface that reads a run's displayed status still
+// — every surface that reads a run's displayed status still
 // needs the same reading.
 
 /** One turn on a listing-shaped payload — enough to tell in-flight from settled. */
@@ -42,7 +42,7 @@ function nestedTurns(run: Record<string, unknown> | undefined): readonly unknown
 
 /**
  * How long an *abandoned* fire may linger as `running` with no `endedAt`
- * before it is read as completed (warm-keep CL-6681 / CL-6778). A finished
+ * before it is read as completed (warm-keep). A finished
  * fire is supposed to land `completed`/`failed`/`cancelled` plus `endedAt`
  * via `markTerminal`; this window is last-resort for a fire already known
  * abandoned that never got that write. It is never applied to a live

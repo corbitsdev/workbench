@@ -1,12 +1,11 @@
 // What is left of the workflow-run connections mirror: the MCP-server
 // registry `@corbits/mcp-tools` resolves a `mcp:<slug>` server's URL
 // through. MCP servers are not a stock Interchange concept, so there is no
-// stock route to read them from; CL-8164 moves MCP server configuration into
-// the connections/OAuth library and retires this mount with it.
+// stock route to read them from.
 //
 // `GET /connections` is gone: `@corbits/connections-tools` now reads live
 // connections from the stock tenant provider and credential routes with the
-// run bearer (CL-8159).
+// run bearer.
 //
 // A workflow child has no browser session, only its sidecar bearer token and
 // its own run address, so it authenticates through a

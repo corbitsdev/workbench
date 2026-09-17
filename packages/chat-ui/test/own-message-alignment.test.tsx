@@ -1,4 +1,4 @@
-// The owner reversed CL-6488's flat, no-alignment timeline (itself matching
+// The owner reversed flat, no-alignment timeline (itself matching
 // the shell mock's "no right-alignment for you" spec, mock-spec.md §12.2):
 // a shared workbench is multiplayer, so "your messages on the right" has to
 // be evaluated per viewer, never baked into the message itself. The same
@@ -92,7 +92,7 @@ describe("own-message alignment is per viewer, not per message", () => {
       },
     ];
     const el = await mount(items, { principalId: "sawyer" });
-    // System notices align left for every viewer (CL-6772 / DESIGN.md) —
+    // System notices align left for every viewer (see DESIGN.md) —
     // even when this reader caused the event. Marking the group as own
     // would put them on the signed-in user's right edge.
     expect(el.querySelector(".chat-message-group")?.getAttribute("data-own")).toBe("false");

@@ -1,9 +1,9 @@
-// CL-6664: the "Assign a role" person picker must show only user-kind
+// The "Assign a role" person picker must show only user-kind
 // principals — the same roster as the People section. Agent/workflow
 // machine identities are excluded to prevent placeholder-named garbage
 // accounts from polluting the picker.
 //
-// CL-7378: the Roles table's Actions cells must not inherit page-fill's
+// The Roles table's Actions cells must not inherit page-fill's
 // nowrap+ellipsis clip, or system-role notes and Rename/Delete controls
 // get truncated.
 

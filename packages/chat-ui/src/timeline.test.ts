@@ -12,7 +12,7 @@ function agentJoinedPart(address: string): Part & { kind: "event" } {
   };
 }
 
-describe("friendlyEventText — workbench.agent-joined (CL-6594)", () => {
+describe("friendlyEventText — workbench.agent-joined", () => {
   test("names the agent by its participant handle", () => {
     const participants: readonly ParticipantRecord[] = [
       { address: "run_scout@dana.localhost", handle: "scout" },
@@ -40,7 +40,7 @@ describe("friendlyEventText — workbench.agent-joined (CL-6594)", () => {
     expect(friendlyEventText(part, [])).toBe("An agent joined");
   });
 
-  test("prefers the resolved display name over the handle slug (CL-6424)", () => {
+  test("prefers the resolved display name over the handle slug", () => {
     const participants: readonly ParticipantRecord[] = [
       { address: "run_myra@dana.localhost", handle: "myra" },
     ];
@@ -54,7 +54,7 @@ describe("friendlyEventText — workbench.agent-joined (CL-6594)", () => {
   });
 });
 
-describe("friendlyEventText — connection.connected (CL-6741)", () => {
+describe("friendlyEventText — connection.connected", () => {
   test("names the connected service and points at Plugins", () => {
     const part: Part & { kind: "event" } = {
       kind: "event",

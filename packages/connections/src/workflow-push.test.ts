@@ -1,6 +1,6 @@
 // Proves `createGitWorkflowPusher` never fails the whole seed on a
 // re-seed of an existing, seed-owned asset whose repo has diverged
-// history (CL-6357): the owner's second seed run hit exactly this —
+// history: the owner's second seed run hit exactly this —
 // `workflow asset last-30-days-research already exists (skipped)`
 // followed by `! [remote rejected] HEAD -> main (non-fast-forward)`.
 // The asset repo is seed-owned (this pusher is its only writer), so a
@@ -38,7 +38,7 @@ async function findRepositoryRoot(): Promise<string> {
 }
 
 // Every fixture repo this suite writes must live outside the repository's
-// own work tree (CL-7372) — a git-fixture test must never be able to
+// own work tree — a git-fixture test must never be able to
 // touch real history, however indirectly.
 async function assertOutsideRepository(work: string): Promise<void> {
   const resolved = await realpath(work);
@@ -216,7 +216,7 @@ describe("createGitWorkflowPusher", () => {
       // Seed commits are authored as seed@workbench.localhost and must
       // never inherit the operator's signing identity: with
       // `commit.gpgsign = true` globally (and a gpg program that fails
-      // closed) the push still succeeds (CL-7492).
+      // closed) the push still succeeds.
       const globalConfig = join(work, "gitconfig");
       await writeFile(
         globalConfig,

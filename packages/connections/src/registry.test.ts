@@ -24,7 +24,7 @@ describe("CONNECTOR_REGISTRY", () => {
     }
   });
 
-  // `github` is the one deliberate exception (CL-6386): it stays
+  // `github` is the one deliberate exception: it stays
   // `authKind: "api-key"` (the PAT paste form is always available) but
   // also carries an `oauth` config a caller checks `GET
   // /oauth-configured` before offering, ahead of the paste form, as a
@@ -41,7 +41,7 @@ describe("CONNECTOR_REGISTRY", () => {
     }
   });
 
-  // CL-6258: every provider row in Settings > Connections needs a logo
+  // Every provider row in Settings > Connections needs a logo
   // tile -- a simple-icons mark where one exists, a monochrome initial
   // tile (rendered from `displayName` alone) where it doesn't.
   test("every inference provider with a simple-icons listing carries a hex-keyed icon", () => {

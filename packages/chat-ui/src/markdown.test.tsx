@@ -1,4 +1,4 @@
-// DOM assertions for the CL-5879 markdown subset: bold, lists, and code
+// DOM assertions for the safe markdown subset: bold, lists, and code
 // render as real elements rather than literal `**`/`1.`/backtick text.
 import { describe, expect, test } from "bun:test";
 import { act } from "react";
