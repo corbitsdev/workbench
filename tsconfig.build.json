@@ -239,6 +239,9 @@
       "path": "./workflows/collateral-generation/tsconfig.src.json"
     },
     {
+      "path": "./workflows/credential-expiry/tsconfig.src.json"
+    },
+    {
       "path": "./workflows/diligence-brief/tsconfig.src.json"
     },
     {

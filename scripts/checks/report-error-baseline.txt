@@ -19,7 +19,6 @@
 # `occurrence` is this evidence string's 1-based rank among matches in
 # the same file — line numbers aren't used as the key because they
 # drift as unrelated code around a catch changes.
-apps/hub/src/credential-expiry-sweep.ts	1	log.error`credential expiry sweep failed: ${
 apps/hub/src/grant-allowance.ts	1	return null;
 apps/hub/src/index.ts	1	email = undefined;
 apps/hub/src/index.ts	1	sidecarAllocationLog.error`Sidecar allocation reconciliation failed: ${error instanceof Error ? error.message : String(error)}`;

@@ -1763,6 +1763,21 @@
         "@intx/workflow": "0.3.0",
       },
     },
+    "workflows/credential-expiry": {
+      "name": "@corbits/credential-expiry-workflow",
+      "version": "0.0.1",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/workflow": "0.3.0",
+      },
+    },
     "workflows/diligence-brief": {
       "name": "@corbits/diligence-brief-workflow",
       "version": "0.0.1",
@@ -2141,6 +2156,8 @@
     "@corbits/connections-tools": ["@corbits/connections-tools@workspace:packages/connections-tools"],
 
     "@corbits/context-menu": ["@corbits/context-menu@workspace:packages/context-menu"],
+
+    "@corbits/credential-expiry-workflow": ["@corbits/credential-expiry-workflow@workspace:workflows/credential-expiry"],
 
     "@corbits/credential-providers": ["@corbits/credential-providers@workspace:packages/credential-providers"],
 
