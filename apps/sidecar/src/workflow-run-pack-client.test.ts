@@ -1,9 +1,8 @@
 import { describe, test, expect } from "bun:test";
 
 import type { InferenceSource } from "@intx/types/runtime";
-import { CredentialsUpdateFrame } from "@intx/types/sidecar";
-import { type } from "arktype";
-import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions";
+import type { CredentialDelivery } from "@intx/types/sidecar";
+import type { RepoId, RepoStore } from "@intx/hub-sessions";
 
 import {
   createDeploymentAddressRegistry,
@@ -14,7 +13,6 @@ import {
   createMultistepCredentialsRouter,
   createWorkflowRunPackClient,
   createWorkflowRunPackPushingRepoStore,
-  type WorkflowRunPackClient,
 } from "./workflow-run-pack-client";
 
 function createRecordingUnderlyingRepoStore(): {
@@ -54,13 +52,6 @@ function createRecordingUnderlyingRepoStore(): {
         newlyTerminalRuns: [],
       };
     },
-    async writeTreeDelta(principal, repoId, ref) {
-      preserveCalls.push({ principal, repoId, ref });
-      return {
-        commitSha: `sha-${String(preserveCalls.length)}`,
-        newlyTerminalRuns: [],
-      };
-    },
     async resolveRef(_principal, _repoId, _ref) {
       // The client's empty-delta guard compares the current ref tip against
       // the last commit it acked. Return a fixed tip distinct from the
@@ -81,6 +72,7 @@ function createRecordingUnderlyingRepoStore(): {
       packedTipCommits.push({ repoId, ref, commitSha });
     },
   };
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- in-test stub; the unused RepoStore methods are guarded by the Proxy below
   const store = new Proxy(stub as RepoStore, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
@@ -185,7 +177,6 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
         async push(opts) {
           pushed.push(opts);
         },
-        markRestored() {},
       },
       registry,
     });
@@ -237,7 +228,6 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
           await gate;
           pushOrder.push("exit");
         },
-        markRestored() {},
       },
       registry,
     });
@@ -286,7 +276,6 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
           pushCount += 1;
           if (idx === 0) await firstGate;
         },
-        markRestored() {},
       },
       registry,
     });
@@ -333,7 +322,6 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
             throw new Error("hub_rejected: non_fast_forward");
           }
         },
-        markRestored() {},
       },
       registry,
     });
@@ -363,7 +351,7 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
     const registry = createDeploymentAddressRegistry();
     const facade = createWorkflowRunPackPushingRepoStore({
       underlying: store,
-      packClient: { push: () => Promise.resolve(), markRestored() {} },
+      packClient: { push: () => Promise.resolve() },
       registry,
     });
     await facade.flushWorkflowRunPushes(
@@ -382,7 +370,6 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
         async push(opts) {
           pushed.push(opts);
         },
-        markRestored() {},
       },
       registry,
     });
@@ -408,7 +395,6 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
       underlying: store,
       packClient: {
         push: () => Promise.resolve(),
-        markRestored() {},
       },
       registry,
     });
@@ -424,15 +410,15 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
           message: "append",
         },
       ),
-    ).rejects.toThrow(/no agent address registered/);
+    ).rejects.toThrow(/no run address registered/);
   });
 
   test("markAddressUnroutable holds a push until notifyAddressRoutable resumes it", async () => {
     // The reconnect ordering contract. A WS disconnect blocks the address:
     // a write that lands while blocked schedules no wire push, because a
-    // push shipped on the fresh, not-yet-challenged connection is dropped by
-    // the hub as "unrouted". The reconnect challenge lifts the block and the
-    // held push ships then -- after the hub has re-routed the address.
+    // push shipped on the fresh, not-yet-registered connection is dropped by
+    // the hub as "unrouted". The reconnect route announcement lifts the block,
+    // and the held push ships after the hub has re-routed the address.
     const { store } = createRecordingUnderlyingRepoStore();
     const registry = createDeploymentAddressRegistry();
     registry.record("dep-blocked", "agent-blocked@example.com");
@@ -443,7 +429,6 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
         async push() {
           pushCount += 1;
         },
-        markRestored() {},
       },
       registry,
     });
@@ -470,7 +455,7 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
     // in-flight transfer) and latches its error. There is no later local
     // write to re-arm the coalescing loop, so without the routable-again
     // re-drive the run would strand forever. notifyAddressRoutable re-ships
-    // the un-acked commits once the challenge re-routes the address.
+    // the un-acked commits once reconnect registration re-routes the address.
     const { store } = createRecordingUnderlyingRepoStore();
     const registry = createDeploymentAddressRegistry();
     registry.record("dep-cancelled", "agent-cancelled@example.com");
@@ -484,7 +469,6 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
             throw new Error("transfer cancelled: Connection lost");
           }
         },
-        markRestored() {},
       },
       registry,
     });
@@ -523,7 +507,6 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
         async push() {
           pushCount += 1;
         },
-        markRestored() {},
       },
       registry,
     });
@@ -650,6 +633,17 @@ describe("createMultistepCredentialsRouter", () => {
     expect(received[0]?.delivery).toEqual(delivery);
   });
 
+  test("a frame's revoke list threads through to the handler", async () => {
+    const router = createMultistepCredentialsRouter();
+    const received: { delivery: typeof delivery; revoke?: string[] }[] = [];
+    router.register("dep@integration.interchange", async (args) => {
+      received.push(args);
+    });
+    expect(await router.tryRoute({ ...frame, revoke: ["cred_1"] })).toBe(true);
+    expect(received).toHaveLength(1);
+    expect(received[0]?.revoke).toEqual(["cred_1"]);
+  });
+
   test("registration is per-address; an unrelated address falls through", async () => {
     const router = createMultistepCredentialsRouter();
     router.register("dep-a@integration.interchange", async () => undefined);
@@ -668,19 +662,28 @@ describe("createMultistepCredentialsRouter", () => {
     expect(await router.tryRoute(frame)).toBe(false);
   });
 
-  test("a malformed delivery is rejected at the wire boundary, so it never reaches the router", () => {
-    // Validation belongs to the frame schema, not to this adapter: hub-link's
-    // `handleMessage` narrows every inbound frame through `HubFrame` (which
-    // unions `CredentialsUpdateFrame`) and answers a malformed one with an
-    // error frame before any router is consulted. So the contract to assert is
-    // the boundary's, and the router carries no defensive re-validation of a
-    // shape it can no longer be handed.
+  test("rejects a malformed delivery for a registered address without dispatching", async () => {
+    const router = createMultistepCredentialsRouter();
+    let called = false;
+    router.register("dep@integration.interchange", async () => {
+      called = true;
+    });
+    // A malformed delivery would crash the child's control-channel receiver on
+    // its `CredentialsUpdateFrame` narrow, so the router rejects before
+    // dispatch and the hub-link turns the throw into a truthful session.error.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- deliberately malformed delivery to exercise the pre-dispatch validation
     const malformed = {
-      type: "credentials.update",
-      agentAddress: "dep@integration.interchange",
-      delivery: { bindings: [{ handle: "x" }], materials: [] },
-    };
-    expect(CredentialsUpdateFrame(malformed)).toBeInstanceOf(type.errors);
+      bindings: [{ handle: "x" }],
+      materials: [],
+    } as unknown as CredentialDelivery;
+    await expect(
+      router.tryRoute({
+        type: "credentials.update",
+        agentAddress: "dep@integration.interchange",
+        delivery: malformed,
+      }),
+    ).rejects.toThrow();
+    expect(called).toBe(false);
   });
 
   test("propagates the handler's rejection (deliverCredentials throwing) verbatim", async () => {
@@ -1046,59 +1049,4 @@ describe("createMultistepSignalRouter", () => {
     });
     expect(claimed).toBe(false);
   });
-});
-
-test("unregister reclaim drops the push slot so flush does not wait on an in-flight push", async () => {
-  const REF = "refs/heads/main";
-  const DEPLOYMENT_ID = "dep-reclaim";
-  const AGENT_ADDRESS = "run_reclaim@bench.localhost";
-  const REPO_ID: RepoId = { kind: "workflow-run", id: DEPLOYMENT_ID };
-  const PRINCIPAL: Principal = { kind: "hub" };
-  const { store: underlying } = createRecordingUnderlyingRepoStore();
-  let pushCalls = 0;
-  let releaseFirst!: () => void;
-  const firstPush = new Promise<void>((resolve) => {
-    releaseFirst = resolve;
-  });
-  const packClient: WorkflowRunPackClient = {
-    async push() {
-      pushCalls += 1;
-      if (pushCalls === 1) await firstPush;
-    },
-    markRestored() {},
-  };
-  const registry = createDeploymentAddressRegistry();
-  registry.record(DEPLOYMENT_ID, AGENT_ADDRESS);
-  const store = createWorkflowRunPackPushingRepoStore({
-    underlying,
-    packClient,
-    registry,
-  });
-  const deltaArgs = {
-    computeDelta: async () => ({ puts: {}, deletes: [] as const }),
-    changedPathPrefixes: undefined,
-    message: "test",
-  };
-
-  await store.writeTreeDelta(PRINCIPAL, REPO_ID, REF, deltaArgs);
-  expect(pushCalls).toBe(1);
-
-  store.markAddressUnroutable(AGENT_ADDRESS);
-  store.reclaimPushState({
-    deploymentId: DEPLOYMENT_ID,
-    agentAddress: AGENT_ADDRESS,
-  });
-
-  await Promise.race([
-    store.flushWorkflowRunPushes(REPO_ID, REF),
-    new Promise<void>((_, reject) => {
-      setTimeout(() => reject(new Error("flush hung on a residual slot")), 50);
-    }),
-  ]);
-
-  registry.record(DEPLOYMENT_ID, AGENT_ADDRESS);
-  await store.writeTreeDelta(PRINCIPAL, REPO_ID, REF, deltaArgs);
-  expect(pushCalls).toBe(2);
-
-  releaseFirst();
 });

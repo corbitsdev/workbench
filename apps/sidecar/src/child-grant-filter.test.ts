@@ -92,6 +92,7 @@ describe("filterGrantsToDeclaredResources", () => {
       declared,
     );
     const decision = await evaluateGrants(
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the filter returns unknown[]; the seeded rows are GrantRule by construction here
       [...(filtered as readonly GrantRule[])],
       "tool:foo",
       "invoke",

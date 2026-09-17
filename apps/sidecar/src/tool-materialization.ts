@@ -21,10 +21,8 @@ import { type } from "arktype";
 import { type AnnotatedPluginFactory } from "@intx/agent";
 import { getLogger } from "@intx/log";
 import {
-  type HostPlatform,
   type LoadedToolFactory,
   type LoadedToolPackage,
-  type RegistryConfig,
   applyAtomic,
   createTarballCache,
   createToolLoader,
@@ -33,163 +31,9 @@ import { hasCode } from "@intx/types";
 import type { ToolCredentialDeclaration } from "@intx/types/package-json";
 import { ToolPackageManifest } from "@intx/types/tool-packages";
 
-/**
- * A loaded tool factory paired with the identity of the package it came
- * from. `buildCredentialCapabilities` keys Gate 2 on `packageName`.
- */
-export interface StepToolFactory {
-  readonly packageName: string;
-  readonly declaredCredentials: readonly ToolCredentialDeclaration[];
-  readonly factory: LoadedToolFactory;
-}
-
-// Boundary validator for the tool-registries JSON the sidecar's config
-// (`SIDECAR_TOOL_REGISTRIES`) resolves at boot and threads into every
-// workflow-process child's spawn env. The wire shape carries `name`
-// alongside the registry config so an operator can author the JSON as
-// a flat array; the boundary collapses the array into a Map keyed by
-// name before handing it to the loader.
-const RegistryConfigEnvEntry = type({
-  name: "string",
-  url: "string",
-  "auth?": type({
-    "token?": "string",
-    "basic?": type({ user: "string", pass: "string" }),
-  }),
-});
-const RegistryConfigEnvArray = RegistryConfigEnvEntry.array();
-
-/**
- * The registries serialized into the child spawn env when the operator
- * pins none: the public npmjs registry. The default is decided once at
- * the sidecar's boot edge — materialization itself always receives an
- * explicit registry map and never falls back on its own, so a value
- * lost in threading fails loud instead of silently routing tool
- * packages through public npm.
- */
-export const DEFAULT_TOOL_REGISTRIES_JSON = JSON.stringify([
-  { name: "npmjs", url: "https://registry.npmjs.org" },
-]);
-
-/**
- * Parse and validate a `SIDECAR_TOOL_REGISTRIES` JSON payload into the
- * registry map the tool loader consumes. Throws, naming the variable,
- * on an empty value (a set-but-empty variable almost always indicates
- * misconfig — CI secret expansion failed, a templater dropped the
- * value; the recovery is `unset SIDECAR_TOOL_REGISTRIES`, not `=""`),
- * on malformed JSON, on a wrong-shape payload, and on duplicate
- * registry names.
- */
-export function parseToolRegistries(raw: string): ReadonlyMap<string, RegistryConfig> {
-  if (raw.trim() === "") {
-    throw new Error(
-      "SIDECAR_TOOL_REGISTRIES is set but empty — unset the variable to use the default npmjs registry",
-    );
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    throw new Error(
-      `SIDECAR_TOOL_REGISTRIES is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
-      { cause: err },
-    );
-  }
-  const validated = RegistryConfigEnvArray(parsed);
-  if (validated instanceof type.errors) {
-    throw new Error(`SIDECAR_TOOL_REGISTRIES failed validation: ${validated.summary}`);
-  }
-  const out = new Map<string, RegistryConfig>();
-  for (const entry of validated) {
-    if (out.has(entry.name)) {
-      throw new Error(
-        `SIDECAR_TOOL_REGISTRIES has duplicate registry name ${JSON.stringify(entry.name)}`,
-      );
-    }
-    const config: RegistryConfig =
-      entry.auth !== undefined ? { url: entry.url, auth: entry.auth } : { url: entry.url };
-    out.set(entry.name, config);
-  }
-  return out;
-}
+import { readRegistries, resolveHostPlatform } from "./sidecar-materialization-config";
 
 const logger = getLogger(["sidecar", "harness-builder"]);
-
-// npm's `os` token namespace, mirrored from Node's `process.platform`
-// enum. Any value outside this set means the host is running a Node
-// build the loader's platform filter would silently mis-route — a
-// pinned package whose `os` list excludes the host would not be
-// excluded if `process.platform` is a token npm has never heard of.
-// Validate at the boundary so an unknown platform fails the boot
-// instead of producing a quiet, host-shaped mis-resolution at apply
-// time.
-//
-// UPGRADE TAX: Node periodically adds platforms (and Bun ships
-// extensions of its own). A Node/Bun major bump that lands a new
-// `process.platform` value will fail boot until this allowlist is
-// refreshed against the upstream enum. Sidecar operators upgrading
-// the runtime should expect this as part of the cutover, not as a
-// surprise regression.
-const KNOWN_PROCESS_PLATFORMS = new Set<NodeJS.Platform>([
-  "aix",
-  "android",
-  "darwin",
-  "freebsd",
-  "haiku",
-  "linux",
-  "openbsd",
-  "sunos",
-  "win32",
-  "cygwin",
-  "netbsd",
-]);
-
-// npm's `cpu` token namespace, mirrored from Node's `process.arch`
-// enum. Same rationale as KNOWN_PROCESS_PLATFORMS — an unknown arch
-// would mis-route the loader's filter without surfacing the gap.
-// Same upgrade tax applies: Node has added `loong64` and `riscv64`
-// in recent releases, and future arch additions will need to be
-// added here when the sidecar is rebuilt against them.
-const KNOWN_PROCESS_ARCHS = new Set<NodeJS.Architecture>([
-  "arm",
-  "arm64",
-  "ia32",
-  "loong64",
-  "mips",
-  "mipsel",
-  "ppc64",
-  "riscv64",
-  "s390x",
-  "x64",
-]);
-
-function assertKnownHostPlatform(platform: NodeJS.Platform): void {
-  if (!KNOWN_PROCESS_PLATFORMS.has(platform)) {
-    throw new Error(
-      `sidecar boot: process.platform ${JSON.stringify(platform)} is not a recognized npm \`os\` token; tool-package platform filtering would be unreliable`,
-    );
-  }
-}
-
-function assertKnownHostArch(arch: NodeJS.Architecture): void {
-  if (!KNOWN_PROCESS_ARCHS.has(arch)) {
-    throw new Error(
-      `sidecar boot: process.arch ${JSON.stringify(arch)} is not a recognized npm \`cpu\` token; tool-package platform filtering would be unreliable`,
-    );
-  }
-}
-
-/**
- * The host platform token pair the `@intx/tool-packaging` loader filters
- * manifest entries against, asserted against npm's `os`/`cpu` namespaces
- * first. Shared by the per-step tool apply below and the workflow-definition
- * closure materializer so both filter against one resolution.
- */
-export function resolveHostPlatform(): HostPlatform {
-  assertKnownHostPlatform(process.platform);
-  assertKnownHostArch(process.arch);
-  return { os: process.platform, cpu: process.arch };
-}
 
 // Sentinel `previousDeployId` for an instance that has never applied
 // a deploy successfully. Encoded as a literal string so the value
@@ -198,8 +42,25 @@ export function resolveHostPlatform(): HostPlatform {
 // than as a real id.
 const NO_PRIOR_DEPLOY_ID = "none";
 
+/**
+ * A loaded tool factory paired with the identity of the package it came
+ * from. `collectFactories` flattens every package's factories into one list
+ * but preserves this association per factory, because the per-bundle
+ * credential assembly downstream needs two things the bare factory (which
+ * carries only its bundle id) cannot supply: the package name, to derive the
+ * consumer identity (`toolConsumer(packageName)`) that Gate 2 checks, and the
+ * package's declared credential handles, to reconcile against the delivered
+ * bindings. `declaredCredentials` is the package-level set, repeated on each
+ * of that package's factories.
+ */
+export interface StepToolFactory {
+  readonly packageName: string;
+  readonly declaredCredentials: readonly ToolCredentialDeclaration[];
+  readonly factory: LoadedToolFactory;
+}
+
 interface MaterializedToolPackages {
-  readonly factories: readonly LoadedToolFactory[];
+  readonly factories: readonly StepToolFactory[];
   readonly pluginFactories: readonly AnnotatedPluginFactory[];
 }
 
@@ -233,14 +94,6 @@ export async function materializeToolPackages(args: {
   cacheRoot: string;
   cacheMaxBytes: number;
   registryMaxTarballBytes: number;
-  /**
-   * Registries the tool loader resolves registry-kind manifest entries
-   * against. Always supplied explicitly — the sidecar's config resolves
-   * `SIDECAR_TOOL_REGISTRIES` (or the npmjs default) at boot and
-   * threads it here — so there is no in-process env fallback to mask a
-   * value lost in threading.
-   */
-  registries: ReadonlyMap<string, RegistryConfig>;
 }): Promise<MaterializedToolPackages> {
   if (args.rawManifestBytes === undefined) {
     return { factories: [], pluginFactories: [] };
@@ -342,7 +195,7 @@ export async function materializeToolPackages(args: {
   });
   const loader = createToolLoader({
     cache,
-    registries: args.registries,
+    registries: readRegistries(),
     host: resolveHostPlatform(),
     maxRegistryTarballBytes: args.registryMaxTarballBytes,
   });
@@ -673,10 +526,16 @@ async function fsyncWriteFile(filePath: string, contents: string): Promise<void>
   }
 }
 
-function collectFactories(loaded: readonly LoadedToolPackage[]): readonly LoadedToolFactory[] {
-  const out: LoadedToolFactory[] = [];
+function collectFactories(loaded: readonly LoadedToolPackage[]): readonly StepToolFactory[] {
+  const out: StepToolFactory[] = [];
   for (const pkg of loaded) {
-    for (const f of pkg.factories) out.push(f);
+    for (const f of pkg.factories) {
+      out.push({
+        packageName: pkg.name,
+        declaredCredentials: pkg.credentials,
+        factory: f,
+      });
+    }
   }
   return out;
 }

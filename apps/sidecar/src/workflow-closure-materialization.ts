@@ -50,7 +50,7 @@ import type { WorkflowProbeRequestFrame } from "@intx/types/sidecar";
 import type { ToolPackageManifest } from "@intx/types/tool-packages";
 
 import { materializeWorkflowAssets } from "./source-asset-delivery";
-import { resolveHostPlatform } from "./tool-materialization";
+import { resolveHostPlatform } from "./sidecar-materialization-config";
 import type {
   MaterializedWorkflowClosure,
   MaterializeWorkflowClosure,

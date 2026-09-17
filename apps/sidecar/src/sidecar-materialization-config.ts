@@ -49,7 +49,6 @@ export function readRegistries(): ReadonlyMap<string, RegistryConfig> {
   } catch (err) {
     throw new Error(
       `SIDECAR_TOOL_REGISTRIES is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
-      { cause: err },
     );
   }
   const validated = RegistryConfigEnvArray(parsed);

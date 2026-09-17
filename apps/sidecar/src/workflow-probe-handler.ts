@@ -211,6 +211,7 @@ export const defaultProbeChildSpawner: ProbeChildSpawner = ({
         proc.kill(signal);
         return;
       }
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the probe reaper passes "SIGTERM"/"SIGKILL"; Bun's runtime accepts the same "SIG*" strings, narrowed back at the boundary.
       proc.kill(signal as NodeJS.Signals);
     },
     exited: proc.exited,
