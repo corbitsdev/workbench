@@ -1,6 +1,5 @@
 {
   "name": "@corbits/agent-directory-tools",
-  "private": true,
   "description": "Myra's manager tools: list_agents and create_agent as an @intx/agent tool bundle — creates a new specialist agent definition in the caller's own tenant and, by default, mints or reopens that specialist's own 1:1 chat. Creation is free; the reactor never parks the create/mint pair",
   "version": "0.0.6",
   "license": "LGPL-2.1-or-later",
@@ -8,14 +7,29 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "packages/agent-directory-tools"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/agent": "workspace:*",
-    "@intx/types": "workspace:*",
     "arktype": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

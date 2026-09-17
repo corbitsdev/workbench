@@ -1,6 +1,5 @@
 {
   "name": "@corbits/last-30-days-research-workflow",
-  "private": true,
   "description": "Single-step, mail-triggered workflow that researches a topic across a handful of source platforms and writes a long-form, cited report",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
@@ -12,17 +11,35 @@
       "automatable": false
     }
   },
+  "interchange": {
+    "workflow": "./src/index.ts"
+  },
   "exports": {
     ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "workflows/last-30-days-research"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/agent": "workspace:*",
-    "@intx/workflow": "workspace:*",
     "arktype": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/workflow": "0.3.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

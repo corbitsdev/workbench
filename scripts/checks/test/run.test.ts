@@ -22,6 +22,7 @@ const EXPECTED_CHECK_NAMES = [
   "licenses",
   "no-product-tenancy",
   "packages",
+  "publishable-workflows",
   "react-ui-drift",
   "react-ui-pin",
   "report-error",

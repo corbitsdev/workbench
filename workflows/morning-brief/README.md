@@ -145,3 +145,24 @@ registration/automatable/seeded mean — this one is `automatable: true`
 but not seeded, since it needs real Granola/Linear credentials to be
 useful. `workbench-digest` is not seeded either; both are deployable
 through the catalog instantiate route (CL-7073).
+
+## Deploy from the npm registry
+
+Once published, deploy this workflow definition to a tenant by name and
+version pin:
+
+```
+POST /api/tenants/:id/workflows/deployments
+{
+  "source": { "kind": "registry", "registry": "npm" },
+  "entry": "./src/index.ts",
+  "pin": "@corbits/morning-brief-workflow@0.0.1",
+  "sourceOfferingIds": ["<catalog offering id>", ...],
+  "defaultSourceOfferingId": "<catalog offering id>"
+}
+```
+
+`entry` is the package's `interchange.workflow` module path; `pin` is
+`"@corbits/morning-brief-workflow@0.0.1"` or a semver range on the same name. The hub
+installs, probes, gates, and freezes the definition from the registry
+tarball before creating the deployment.
