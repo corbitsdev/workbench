@@ -15,8 +15,7 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@intx/harness": "workspace:*",

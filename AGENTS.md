@@ -6,9 +6,9 @@ libraries, each mounted once (`@corbits/mailbox`, `@corbits/memory`,
 `@corbits/artifacts`, `@corbits/webhooks`, an OAuth library on
 `@corbits/oauth-core`); any other hub mount is cutover debt with a Linear
 issue, never a pattern to extend. A workbench is a plain
-Interchange tenant, nothing more. The web client drives setup itself, as a
-converge loop over stock routes (auth → tenant → definitions/credentials/
-grants); the hub never seeds data on a client's behalf.
+Interchange tenant, nothing more. The web client sets itself up over stock
+routes on start (auth → tenant → definitions/credentials/grants); the hub
+never seeds data on a client's behalf.
 
 ## Ground rules
 
