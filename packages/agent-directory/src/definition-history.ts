@@ -36,6 +36,8 @@ async function readAssetCommitHistory(input: {
   try {
     entries = await git.log({ fs, dir, ref: input.ref });
   } catch {
+    // report-error-ignore: history is best-effort enrichment — an
+    // unreadable ref reads back as no history rather than failing the page.
     return [];
   }
   const commits: DefinitionCommit[] = [];

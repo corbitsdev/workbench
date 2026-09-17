@@ -39,7 +39,7 @@ const FIELDS: readonly IntakeField[] = [
     type: "text",
     required: true,
     placeholder: "summarize-transcript",
-    help: "Lowercase letters, digits, and hyphens — this becomes the skill asset's name.",
+    help: "Lowercase letters, digits, and hyphens — this becomes the skill's name.",
   },
   {
     name: "displayName",

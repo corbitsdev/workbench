@@ -58,6 +58,9 @@ export function SkillDetailPage({
       const { skill } = await loadSkill(tenantId, name);
       setState({ status: "ready", skill });
     } catch (cause) {
+      // report-error-ignore: the failure is the page state — missing vs
+      // error renders distinct honest copy, so there is nothing to report
+      // beyond what the user already sees.
       setState(
         statusOf(cause) === 404
           ? { status: "missing" }
@@ -140,7 +143,7 @@ export function SkillDetailPage({
 
       <Section
         title="Skill content"
-        description="Not readable here yet: there is no stock Interchange route for a skill asset's SKILL.md content (CL-8086)."
+        description="Not readable here yet: there is no stock Interchange route for a skill's SKILL.md content (CL-8086)."
       >
         <p className="text-sm text-muted-foreground">
           This skill's description, instructions, version history, and pinned-by

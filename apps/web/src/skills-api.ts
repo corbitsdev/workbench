@@ -137,7 +137,7 @@ export async function loadSkill(
   const skill = skills.find((candidate) => candidate.name === name);
   if (skill === undefined) {
     throw new ApiQueryError(
-      `No skill named "${name}" in this tenant.`,
+      `No skill named "${name}" in this workbench.`,
       404,
       base(tenantId),
     );
