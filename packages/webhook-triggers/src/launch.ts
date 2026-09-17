@@ -35,15 +35,12 @@ import {
   type SidecarRouter,
   type WorkflowAllocationService,
 } from "@intx/hub-sessions";
-import type { CryptoProvider } from "@intx/types/runtime";
 import { and, eq } from "drizzle-orm";
 
 import { renderInputTemplate } from "./mapping";
 import type { WebhookTriggerRow } from "./schema";
 
-export type CryptoProviderCache = {
-  get(key: string): Promise<CryptoProvider>;
-};
+import type { CryptoProviderCache } from "./crypto-cache";
 
 export type LaunchWebhookTriggerDeps = {
   db: DB["db"];

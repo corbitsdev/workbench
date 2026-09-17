@@ -29,8 +29,6 @@ import type { DB } from "@intx/db";
 import { workflowDefinition } from "@intx/db/schema";
 import type { AssetService } from "@intx/hub-sessions";
 
-import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
-
 import { readPinnedSkillNames, reindexPinnedSkills } from "./agent-workflow";
 import { commitLatestAgentAssetSnapshot } from "./asset-write";
 import {
@@ -73,7 +71,7 @@ function definitionNotFound(definitionId: string) {
 function hostGuardedRow(
   row: { readonly name: string; readonly assetId: string | null } | undefined,
 ): row is { readonly name: string; readonly assetId: string } {
-  return row !== undefined && row.assetId !== null && !isWorkbenchHostDefinitionName(row.name);
+  return row !== undefined && row.assetId !== null;
 }
 
 const PinBody = type({

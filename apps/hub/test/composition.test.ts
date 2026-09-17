@@ -104,12 +104,12 @@ describeIfDb("shutdown", () => {
 });
 
 describeIfDb("extension mounting", () => {
-  test("chat mounts inside the native tenant middleware", async () => {
+  test("the mailbox mounts inside the native tenant middleware", async () => {
     const hub = await bootHub();
 
     // Anonymous request to an extension route: the platform's tenant
     // middleware answers 401 before the extension's handler runs.
-    const gated = await hub.app.request("/api/tenants/some-tenant/chat/workbenches");
+    const gated = await hub.app.request("/api/tenants/some-tenant/mailbox/me/inbox");
     expect(gated.status).toBe(401);
     expect(await gated.json()).toEqual({
       error: { code: "unauthorized", message: "Authentication required" },
@@ -117,7 +117,7 @@ describeIfDb("extension mounting", () => {
 
     // The route exists only under the tenant scope; outside it the
     // path falls through to the interface shell.
-    const outside = await hub.app.request("/chat/workbenches");
+    const outside = await hub.app.request("/mailbox/me/inbox");
     expect(await outside.text()).toBe("<html>shell</html>");
   });
 });

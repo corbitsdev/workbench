@@ -19,10 +19,10 @@ const researcher = {
   description: "Answers research questions",
 };
 
-const workbenchHostDefinition = {
+const slugDefinition = {
   ...researcher,
   id: "wfd_2",
-  name: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  name: "research-analyst",
   description: null,
 };
 
@@ -31,13 +31,6 @@ const instance = {
   definitionId: "wfd_1",
   definitionName: "Researcher",
   address: "ins_1@acme.localhost",
-};
-
-const workbenchHostInstance = {
-  ...instance,
-  id: "ins_2",
-  definitionId: "wfd_2",
-  definitionName: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
 };
 
 const dailyDigestDefinition = {
@@ -55,11 +48,6 @@ const last30DaysResearchDefinition = {
 };
 
 describe("purposeAgentDefinitions", () => {
-  test("drops the chat anchor machinery's workbench-host definitions", () => {
-    const result = purposeAgentDefinitions([researcher, workbenchHostDefinition]);
-    expect(result).toEqual([researcher]);
-  });
-
   test("drops routine-only workflow catalog utilities (Daily digest, Last 30 days research) — they are non-conversational, seeded as routines, and belong on the Routines page, not the Agents list", () => {
     const result = purposeAgentDefinitions([
       researcher,
@@ -78,11 +66,6 @@ const invitedAgentInstance = {
 };
 
 describe("purposeAgentInstances", () => {
-  test("drops workbench-host instances", () => {
-    const result = purposeAgentInstances([instance, workbenchHostInstance]);
-    expect(result).toEqual([instance]);
-  });
-
   test("with no excludeRunIds set, leaves an ordinary top-level deployment alone", () => {
     const result = purposeAgentInstances([instance]);
     expect(result).toEqual([instance]);
@@ -91,14 +74,6 @@ describe("purposeAgentInstances", () => {
   test("drops an invited-agent chat run whose id is in excludeRunIds, even under a real definitionId", () => {
     const result = purposeAgentInstances(
       [instance, invitedAgentInstance],
-      new Set([invitedAgentInstance.id]),
-    );
-    expect(result).toEqual([instance]);
-  });
-
-  test("still drops a workbench host when excludeRunIds is also given", () => {
-    const result = purposeAgentInstances(
-      [instance, workbenchHostInstance, invitedAgentInstance],
       new Set([invitedAgentInstance.id]),
     );
     expect(result).toEqual([instance]);
@@ -228,10 +203,10 @@ describe("withDisplayName / withDisplayNames", () => {
   });
 
   test("maps over a list", () => {
-    const result = withDisplayNames([researcher, workbenchHostDefinition]);
+    const result = withDisplayNames([researcher, slugDefinition]);
     expect(result.map((d) => d.displayName)).toEqual([
       researcher.description,
-      humanizeSlug(workbenchHostDefinition.name),
+      humanizeSlug(slugDefinition.name),
     ]);
   });
 });

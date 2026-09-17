@@ -40,7 +40,6 @@ import { tenant, workflowDefinition } from "@intx/db/schema";
 import type { AssetService } from "@intx/hub-sessions";
 
 import { skillNameSchema } from "@corbits/skills";
-import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 import { isAutomatableWorkflowName } from "@corbits/workflows/catalog";
 
 import {
@@ -90,9 +89,7 @@ const CreateWorkflowAgentDefinitionInput = type({
  * anchor definition.
  */
 function isConversationalAgentDefinition(definition: { readonly name: string }): boolean {
-  return (
-    !isAutomatableWorkflowName(definition.name) && !isWorkbenchHostDefinitionName(definition.name)
-  );
+  return !isAutomatableWorkflowName(definition.name);
 }
 
 export type CreateWorkflowAgentCreateRoutesDeps = {

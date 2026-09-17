@@ -8,7 +8,6 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import {
-  createApprovalStore,
   createDB,
   createGrantStore,
   createPrincipalKeyStore,
@@ -16,14 +15,8 @@ import {
   createWorkflowRunDispatchStore,
   type DB,
 } from "@intx/db";
-import {
-  sidecar,
-  tenant as tenantTable,
-  user as userTable,
-  workflowDefinition,
-  workflowRun,
-} from "@intx/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { sidecar, tenant as tenantTable, workflowDefinition, workflowRun } from "@intx/db/schema";
+import { and, eq } from "drizzle-orm";
 import { createEnvKeyCredentialCipher, createNoopCredentialCipher, sha256 } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
 import {
@@ -37,48 +30,7 @@ import {
 // projection `installAndApproveWorkflowSource` returns on `grants_not_approved`
 // — the gate itself only stamps this hash on the `ok:true` arm.
 
-import { isPlannerCreatedDefinitionName } from "@corbits/agent-directory";
-
-import {
-  DEFAULT_TURN_CLAIM_TTL_MS,
-  createWorkbenchHostInferencePreferencesResolver,
-  createWorkbenchSubscriberRegistry,
-  createTurnCancelRegistry,
-  createChatRoutes,
-  createDrizzleBlockResponseStore,
-  createDrizzleChatStore,
-  createDrizzleNativePrincipalStore,
-  createDrizzlePinStore,
-  createDrizzleReactionStore,
-  createDrizzleRoomMessageStore,
-  createDrizzleThreadStore,
-  createHubChatPlatform,
-  createRelaunchNoticePoster,
-  createRunTriggerClient,
-  createWorkflowParticipantRoutes,
-  isWorkbenchHostDefinitionName,
-  listConnectedProviders,
-  listDefaultInferencePreferences,
-  startWorkflowCommand,
-  settleConnectedService,
-  createCryptoProviderCache,
-  tagCredentialCipher,
-  verifyInternalRunTriggerToken,
-} from "@corbits/chat";
-import {
-  createArtifactDeliveryHandler,
-  createChatOrchestrator,
-  createDrizzleAgentTurnStore,
-  createDrizzleClientIdStore,
-  createDrizzleTurnMailCorrelationStore,
-  createDrizzleWriteClaimStore,
-  createInMemoryTurnClaimStore,
-  createWorkbenchTurnQueue,
-} from "@corbits/agent-runtime";
-import { createDrizzleMailboxWriter, type MailboxFanoutDeps } from "@corbits/chat/mailbox-fanout";
-import type { RelaunchNoticePort } from "@corbits/chat";
 import { reportError } from "@corbits/error-sink";
-import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
 import {
   createInMemoryMailboxEventBus,
@@ -92,17 +44,13 @@ import {
   createHubPersistMailWithSessionEnsure,
 } from "./mailbox-persist";
 import {
-  createCommandRegistry,
-  createCommandRoutes,
-  createWorkflowCommandPlugin,
-} from "@corbits/commands";
-import {
   createDrizzleWebhookTriggerStore,
   createWebhookIngressRoutes,
   createWebhookTriggerRoutes,
   launchWebhookTrigger,
+  createCryptoProviderCache,
 } from "@corbits/webhook-triggers";
-import { ensureRunSession, isConversationalWorkflowName } from "@corbits/workflows";
+import { ensureRunSession } from "@corbits/workflows";
 import {
   createSidecarProvisioner as createE2BSidecarProvisioner,
   readProvisionerConfig as readE2BProvisionerConfig,
@@ -156,7 +104,6 @@ import {
 } from "@corbits/artifact-ui/kind-filter";
 import {
   createConnectionRoutes,
-  isInferenceProvider,
   createMcpOAuthRoutes,
   createMcpServerRoutes,
   createOAuthConnectRoutes,
@@ -166,12 +113,8 @@ import {
   DEFAULT_RETURN_PATH_ALLOWLIST,
   listMcpServerConnections,
 } from "@corbits/connections";
-import type { ServiceConnectedHook } from "@corbits/connections";
 import { CONNECTOR_REGISTRY, MCP_PRESETS } from "./native-connector-registry";
-import {
-  createProviderHealthPort,
-  createProviderHealthStore,
-} from "@corbits/connections/provider-health";
+import { createProviderHealthStore } from "@corbits/connections/provider-health";
 import { createWorkflowAuthorRegistry, createWorkflowAuthorRoutes } from "@corbits/workflows";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -375,7 +318,7 @@ export function hubCredentialCipher(
   config: HubConfig,
   log: ReturnType<typeof getLogger>,
 ): CredentialCipher {
-  return tagCredentialCipher(credentialCipherFrom(config, log));
+  return credentialCipherFrom(config, log);
 }
 
 /**
@@ -536,10 +479,6 @@ export async function createHub(config: HubConfig) {
     principalKeyStore,
     grantStore: createGrantStore(db),
   });
-  // Hoisted ahead of their other uses below (chat routes, the room
-  // timeline store at CL-6327).
-  const chatStore = createDrizzleChatStore(db);
-  const roomMessages = createDrizzleRoomMessageStore(db);
   const lookups = {
     ...baseLookups,
     materializeMailTriggeredRunGrants: mailTriggeredRunGrants,
@@ -597,13 +536,6 @@ export async function createHub(config: HubConfig) {
   });
   const isSidecarRoutable = (address: string) =>
     sidecarRouter.getRoutableAddresses().includes(address);
-  // A finalized turn's persisted-artifact tool-call results become
-  // delivery file parts (CL-6000) via `createArtifactDeliveryHandler`,
-  // built once `chatStore`/`chatPlatform` exist further down this
-  // composition. `onTurnFinalized` itself must be supplied at
-  // `createEventCollectorRegistry` construction time, before those
-  // deps exist, so this indirection ref is set once they do and every
-  // call before that point is a harmless no-op.
   // Process-lifetime provider-health signal (CL-6092): the one store
   // both the chat orchestrator's classified-failure port and
   // `GET .../connections/provider-health` read/write, so a runtime
@@ -611,16 +543,6 @@ export async function createHub(config: HubConfig) {
   // very next poll. In-memory by design — see `provider-health.ts`'s own
   // header for why this never needs to survive a restart.
   const providerHealthStore = createProviderHealthStore();
-  const artifactDeliveryHandlerRef: {
-    current?: (
-      agentAddress: string,
-      turn: {
-        turnId: string;
-        toolCalls: FinalizedTurnToolCall[];
-        errors: readonly { category: string; message: string }[];
-      },
-    ) => void;
-  } = {};
   // Package-owned artifacts tables (CL-8188): idempotent, advisory-locked,
   // safe on every boot of every replica — see @corbits/artifacts' README.
   await runArtifactMigrations(db);
@@ -638,9 +560,6 @@ export async function createHub(config: HubConfig) {
     // Stamping the anchor terminal per fire would brick the schedule,
     // so a warm-kept fire settles through the runOutcomeStatus /
     // FIRE_RUNNING_WINDOW_MS display-side reading instead.
-    onTurnFinalized: (agentAddress, turn) => {
-      artifactDeliveryHandlerRef.current?.(agentAddress, turn);
-    },
   });
   // Wraps `dispatch` for CL-7480: a run's turn events can start arriving
   // before anything else ever recorded its session — the first inbound
@@ -690,24 +609,6 @@ export async function createHub(config: HubConfig) {
     db,
     eventCollectors,
   });
-  // CL-8185: the launch-path SHA-keyed read cache (`launch-caches.ts`) was
-  // a pure performance optimization -- deleted under the hub-sweep's
-  // less-is-more ruling. Every launch now re-reads the tool-package
-  // registry and rebuilds deploy packs uncached; see "Upstream asks".
-  //
-  // CL-6149: a launch's pinned tool packages (`toolPackagePins`) carry no
-  // grants of their own — the deploy-time capability walk only derives
-  // `tool:` grants for inline tool factories, and this hub-owned
-  // `tool-grants.ts` port (deleted in the same sweep) was the workaround
-  // that minted `tool:<qualifiedId>` grants from a pinned package's own
-  // manifest. Stubbed to no grants for now; see "Upstream asks" — a
-  // pinned tool package's calls fail closed until this is addressed.
-  const toolGrantsForPins = async () =>
-    [] as readonly {
-      readonly resource: string;
-      readonly action: "invoke";
-      readonly effect: "allow" | "ask" | "deny";
-    }[];
   // Shared-capacity `deployWorkflowFromSource` / `deployAdoptedWorkflowFromSource`
   // are gone on this pin. The provisioned path persists its source in
   // `workflow_run_launch_spec`; there is nothing left for a session-service
@@ -832,42 +733,7 @@ export async function createHub(config: HubConfig) {
     workflowDispatchService,
     credentialCipher,
     principalKeyStore,
-    // `@intx/hub-api`'s `GetSession` is a deliberately pluggable seam
-    // (its own doc comment: "so a third-party identity provider can be
-    // plugged in"), and this composition root owns it. `@corbits/chat`'s
-    // run-trigger client (CL-7490) has no browser cookie to present for
-    // most of its calls — mention fan-out, a relaunch resend, the
-    // mailbox-fanout persist seam all run with no inbound HTTP request
-    // in scope — so it signs a short-lived internal token instead (see
-    // `@corbits/chat`'s `run-trigger-internal-auth.ts`) naming the
-    // better-auth user it authenticates as. This checks that token
-    // FIRST and only falls through to the real cookie-session path when
-    // the header is absent; a PRESENT-but-invalid token fails closed
-    // (401 via a null session) rather than silently retrying as a
-    // session, the same posture `workflow-run-deploy-auth` documents for
-    // its own bearer mirror in `vendor/intx/hub-api`.
     getSession: async (headers) => {
-      const internalRunTriggerToken = headers.get("x-corbits-internal-run-trigger");
-      if (internalRunTriggerToken !== null) {
-        const userId = verifyInternalRunTriggerToken(config.sessionSecret, internalRunTriggerToken);
-        if (userId === null) return null;
-        const userRow = await db.query.user.findFirst({
-          where: eq(userTable.id, userId),
-        });
-        if (userRow === undefined) return null;
-        const now = new Date();
-        return {
-          user: userRow,
-          session: {
-            id: `internal_run_trigger_${userRow.id}`,
-            createdAt: now,
-            updatedAt: now,
-            userId: userRow.id,
-            expiresAt: new Date(now.getTime() + 30_000),
-            token: internalRunTriggerToken,
-          },
-        };
-      }
       const result = await auth.api.getSession({ headers });
       return result ? { user: result.user, session: result.session } : null;
     },
@@ -909,357 +775,8 @@ export async function createHub(config: HubConfig) {
   // default when none is supplied (see `@intx/hub-api`'s
   // `mountHubRoutes`). `createRequireGrant` is the published construction
   // the platform's own internal instance is not exported for.
-  const chatGrantStore = createGrantStore(db);
-  const threadStore = createDrizzleThreadStore(db);
-  const blockResponseStore = createDrizzleBlockResponseStore(db);
-  const reactionStore = createDrizzleReactionStore(db);
-  const pinStore = createDrizzlePinStore(db);
-  // Durable redelivery-dedup for the finalized-turn write surfaces
-  // (CL-6039) — see `WriteClaimStore`'s own doc comment. Same `db`
-  // handle as every other Drizzle store above, never a second
-  // connection.
-  const writeClaims = createDrizzleWriteClaimStore(db);
-  // Durable dispatch-mail -> source-message correlation (CL-6314) — the
-  // record the reply path reads back to thread an agent's answer under
-  // the message that woke its turn. Same `db` handle, same reasoning.
-  const turnMailCorrelation = createDrizzleTurnMailCorrelationStore(db);
-  // The chat platform's invite-launch fallback: a definition with no
-  // model requirements of its own resolves the tenant-catalog default.
-  const chatHostInferencePreferencesResolver = createWorkbenchHostInferencePreferencesResolver(
-    (tenantId) => listDefaultInferencePreferences(db, tenantId),
-  );
-  // Where a relaunch announces itself in the room (see `@corbits/chat`'s
-  // `relaunch-notice.ts`). Armed further down, once the room-message
-  // store the poster writes through exists — the platform that fires
-  // notices has to be constructed first, since the sweep that triggers
-  // most of them hangs off it.
-  const relaunchNoticeRef: RelaunchNoticePort = {};
-  // One CryptoProviderCache for the whole hub process (CL-7284). Chat
-  // sendMail keys by chat id; webhook, routine, and agent-definition
-  // drafting first-turn mail key by the launched run's instance id. New
-  // chats and run ids are `run_` (`generateId("workflowRun")`);
-  // older chats are `ins_` (`generateId("instance")`). They share a
-  // string shape — a second cache for the same id would mint a different
-  // signing key. generateId uniqueness keeps distinct entities from
-  // colliding; sharing the cache keeps the same entity from rotating keys
-  // across consumers. TTL-bounded by `createCryptoProviderCache` itself
-  // (CL-7223).
+  const grantStore = createGrantStore(db);
   const cryptoProviders = createCryptoProviderCache();
-  // Delivers chat's outbound run mail through Interchange's own
-  // workflow-run mail-trigger route (CL-7490), in-process against this
-  // same `app` — see `@corbits/chat`'s `run-trigger-client.ts` and the
-  // `getSession` internal-token check above for how it authenticates.
-  const runTrigger = createRunTriggerClient({
-    app,
-    internalAuthSecret: config.sessionSecret,
-  });
-  const chatPlatform = createHubChatPlatform({
-    db,
-    runTrigger,
-    repoStore: agentRepoStore.repoStore,
-    sidecarRouter,
-    eventCollectors,
-    credentialCipher,
-    toolGrantsForPins,
-    cryptoProviders,
-    workflowAllocationService,
-    // CL-8185: serving-time oauth_token refresh (`credential-material-refresh.ts`)
-    // was deleted under the hub-sweep's less-is-more ruling; see
-    // "Upstream asks" — a run can now dial on a stale token instead of
-    // refreshing it first.
-    // A hand-authored definition with no model requirements of its own
-    // (see `@corbits/agent-directory`'s `createAgentDefinitionCore`
-    // doc) still launches on invite by falling back to this same
-    // tenant-catalog default, instead of 409ing `not_launchable`.
-    workbenchHostInferencePreferences: chatHostInferencePreferencesResolver,
-    relaunchNotice: relaunchNoticeRef,
-  });
-  // The one SSE subscriber registry for this process's chat events
-  // (see `@corbits/chat`'s `workbench-events.ts`), constructed here in
-  // the composition root and shared by every consumer below: the chat
-  // router bridges it onto `/workbenches/:id/stream`, the
-  // workflow-command path publishes through the same instance so a
-  // command-started workflow's join event reaches an open stream
-  // immediately (exactly like `POST .../invite`'s does), and the
-  // orchestrator publishes every message it posts onto a chat's
-  // timeline.
-  const chatSubscribers = createWorkbenchSubscriberRegistry();
-  // One in-flight turn per chat (CL-6331), shared by every send
-  // surface below the same way `chatSubscribers` is: the chat
-  // router and the workflow-participant router (a workflow child's own
-  // sends) all route through this one queue,
-  // so a burst arriving through any of them for the same chat
-  // still serializes against the others rather than each queue only
-  // seeing its own slice of the traffic.
-  const turnQueue = createWorkbenchTurnQueue({
-    claims: createInMemoryTurnClaimStore({ ttlMs: DEFAULT_TURN_CLAIM_TTL_MS }),
-    publish: chatSubscribers.publish,
-  });
-  // The live abort seam a running turn is reachable through (CL-7201) —
-  // shared the same way `turnQueue` above is, so a cancel request lands
-  // wherever a chat's turn was actually dispatched from.
-  const turnCancellation = createTurnCancelRegistry();
-  relaunchNoticeRef.current = createRelaunchNoticePoster({
-    store: chatStore,
-    roomMessages,
-    publish: chatSubscribers.publish,
-  });
-  // Built once, beside the platform, for the process's lifetime: turns
-  // an invited agent's `connector.reply` events into chat messages,
-  // and a gate-blocked run's approval park into an in-chat approve
-  // block, by subscribing to the sidecar's own event stream, replacing
-  // the old per-agent reply-bridge machinery armed (and re-armed) from
-  // inside the routes. `approvals` is the same `ApprovalStore` the
-  // platform's own approve/reject routes read and write — this
-  // orchestrator only ever reads it.
-  const agentTurns = createDrizzleAgentTurnStore(db);
-  const chatOrchestratorDeps: Parameters<typeof createChatOrchestrator>[0] = {
-    db,
-    agentTurns,
-    store: chatStore,
-    roomMessages,
-    publish: chatSubscribers.publish,
-    platform: chatPlatform,
-    events: sidecarRouter.events,
-    approvals: createApprovalStore(db),
-    claims: writeClaims,
-    threads: threadStore,
-    turnMailCorrelation,
-    connectorRegistry: CONNECTOR_REGISTRY,
-  };
-  const chatOrchestrator = createChatOrchestrator(chatOrchestratorDeps);
-  // CL-6644: a loud, unconditional boot confirmation that message intake
-  // is actually wired — a composition-root mistake here (an import
-  // dropped, a construction reordered, an argument omitted) type-checks
-  // fine but produces a hub that accepts messages into a void: no
-  // dispatch, no error, no notice, just a message that persists and is
-  // never asked of anyone. This can't detect every such mistake (the
-  // pieces below are non-optional local bindings, not feature-flagged),
-  // but it turns "intake is wired" from an assumption nothing checks
-  // into a line every boot log carries — the next investigation starts
-  // by grepping for this instead of re-deriving the whole call chain.
-  getLogger(["hub", "chat-intake"]).info(
-    "Chat message intake wired: turnQueue={hasTurnQueue} " +
-      "chatOrchestrator={hasOrchestrator} chatPlatform={hasPlatform}",
-    {
-      hasTurnQueue: turnQueue !== undefined,
-      hasOrchestrator: chatOrchestrator !== undefined,
-      hasPlatform: chatPlatform !== undefined,
-    },
-  );
-  // A room participant that died with its sidecar is otherwise silently
-  // dead until somebody writes into it, and the turn the crash
-  // interrupted never surfaces at all — the run that died never sends
-  // the `message.run.ended` the orchestrator's turn-drop notice hangs
-  // off. The sweep finds those runs and relaunches each one, posting
-  // its notice.
-  //
-  // A series of passes rather than one, because "this run is dead" is
-  // not knowable at the instant the execution plane comes back: the
-  // terminal event is committed to the run's durable log by the dying
-  // sidecar and reaches `workflow_run.status` only once the restarted
-  // sidecar has packed it back to the hub, seconds later. The series is
-  // bounded and re-armed by a sidecar disconnect, which is the one
-  // event that can newly orphan a room.
-  const relaunchSweepLog = getLogger(["chat", "relaunch-sweep"]);
-  const RELAUNCH_SWEEP_DELAYS_MS = [0, 2_000, 5_000, 15_000, 45_000];
-  // Bumped by every reschedule so a pass still in flight from the
-  // previous series retires instead of continuing beside the new one.
-  let relaunchSweepSeries = 0;
-  let relaunchSweepTimer: ReturnType<typeof setTimeout> | undefined;
-  function runNextRelaunchSweepPass(series: number, pass: number): void {
-    const delay = RELAUNCH_SWEEP_DELAYS_MS[pass];
-    if (delay === undefined || series !== relaunchSweepSeries) return;
-    const timer = setTimeout(() => {
-      void chatPlatform
-        .sweepTerminalRuns()
-        .catch((cause: unknown) => {
-          relaunchSweepLog.error`relaunch sweep pass failed: ${
-            cause instanceof Error ? cause.message : String(cause)
-          }`;
-        })
-        .finally(() => {
-          runNextRelaunchSweepPass(series, pass + 1);
-        });
-    }, delay);
-    timer.unref?.();
-    relaunchSweepTimer = timer;
-  }
-  function scheduleRelaunchSweep(): void {
-    clearTimeout(relaunchSweepTimer);
-    relaunchSweepSeries += 1;
-    runNextRelaunchSweepPass(relaunchSweepSeries, 0);
-  }
-  scheduleRelaunchSweep();
-  sidecarRouter.events.on("sidecar.disconnect", () => {
-    scheduleRelaunchSweep();
-  });
-  // Now that `chatStore`/`chatPlatform` exist, arm the finalized-turn
-  // artifact-delivery ref declared beside `eventCollectors` above.
-  const artifactDeliveryHandlerDeps: Parameters<typeof createArtifactDeliveryHandler>[0] = {
-    db,
-    store: chatStore,
-    roomMessages,
-    publish: chatSubscribers.publish,
-    platform: chatPlatform,
-    events: sidecarRouter.events,
-    approvals: createApprovalStore(db),
-    claims: writeClaims,
-    agentTurns,
-    threads: threadStore,
-    turnMailCorrelation,
-    providerHealth: createProviderHealthPort(providerHealthStore),
-    listConnectedProviders: (tenantId) => listConnectedProviders(db, tenantId),
-  };
-  artifactDeliveryHandlerRef.current = createArtifactDeliveryHandler(artifactDeliveryHandlerDeps);
-  // The "/name args" and "@name args" command registry: every tenant's
-  // invitable workflow definitions, exposed as commands by
-  // `createWorkflowCommandPlugin`, resolved fresh on every list/lookup
-  // so a newly-deployed definition is a command on its very next use —
-  // no re-registration step. `startWorkflow` is `@corbits/chat`'s own
-  // `startWorkflowCommand`, sharing the exact invite-then-send core
-  // `POST .../invite` uses, including its live `publish` — bound to
-  // `chatSubscribers` above, the same registry `createChatRoutes`
-  // is given below.
-  const commandRegistry = createCommandRegistry();
-  commandRegistry.registerCommandPlugin(
-    createWorkflowCommandPlugin({
-      listInvitableDefinitions: (tenantId) => chatPlatform.listInvitableDefinitions(tenantId),
-      startWorkflow: (input) =>
-        startWorkflowCommand(
-          {
-            store: chatStore,
-            platform: chatPlatform,
-            roomMessages,
-            publish: chatSubscribers.publish,
-          },
-          input,
-        ),
-    }),
-  );
-
-  // The one "is this a conversational agent?" ruling, shared by every
-  // picker that offers agents to a person and by a routine's `"agent"`-kind
-  // trigger-field validation below: a catalog workflow whose entry says
-  // `conversational: false` (routine/automation material — Echo, "Last 30
-  // days research report", …) and chat-host anchor definitions
-  // (chat's own plumbing, never a person-facing agent) belong in neither.
-  // `isConversationalWorkflowName`, not `isAutomatableWorkflowName`: a
-  // non-automatable utility workflow (Echo, the research report a routine
-  // delivers) is still not conversational, and the old automatable-only
-  // check let both leak into every agent picker (CL-6649).
-  const isConversationalAgentDefinition = (definition: { name: string }) =>
-    isConversationalWorkflowName(definition.name) &&
-    !isWorkbenchHostDefinitionName(definition.name);
-
-  // A second, narrower ruling layered on top of the ruling above, for
-  // LISTING/PICKER surfaces only. A planner-created agent (the
-  // now-deleted tasks primitive's planner `{create}` branch, CL-6051;
-  // see `@corbits/agent-directory`'s `stale-task-agent-naming.ts`)
-  // existed for exactly one now-retired task; any that still linger
-  // must stay out of a picker meant for agents a person deliberately
-  // keeps around. Wired into the picker surface: chat's invite/new-chat
-  // dialogs (`chatDeps.isInvitableDefinition` below).
-  const isPickerListableDefinition = (definition: { name: string }) =>
-    isConversationalAgentDefinition(definition) && !isPlannerCreatedDefinitionName(definition.name);
-
-  const chatDeps: Parameters<typeof createChatRoutes>[0] = {
-    store: chatStore,
-    roomMessages,
-    platform: chatPlatform,
-    principals: createDrizzleNativePrincipalStore(db),
-    threads: threadStore,
-    turnMailCorrelation,
-    agentTurns,
-    blockResponses: blockResponseStore,
-    reactions: reactionStore,
-    pins: pinStore,
-    clientIds: createDrizzleClientIdStore(db),
-    workbenchSubscribers: chatSubscribers,
-    turnQueue,
-    turnCancellation,
-    requireGrant: createRequireGrant({
-      grantStore: chatGrantStore,
-      conditionRegistry: grantConditionRegistry,
-    }),
-    isInvitableDefinition: isPickerListableDefinition,
-    turnTimeoutMs: DEFAULT_TURN_CLAIM_TTL_MS,
-    resolvePrincipalName: async (_tenantId, principalId) => {
-      const principalRow = await db.query.principal.findFirst({
-        where: (p, { eq: equals }) => equals(p.id, principalId),
-        columns: { kind: true, refId: true },
-      });
-      if (principalRow === undefined || principalRow.kind !== "user") {
-        return undefined;
-      }
-      const userRow = await db.query.user.findFirst({
-        where: (u, { eq: equals }) => equals(u.id, principalRow.refId),
-        columns: { name: true },
-      });
-      return userRow?.name ?? undefined;
-    },
-    commands: commandRegistry,
-    // The native undeploy call this hub uses to tear an invited agent's
-    // instance down when it is removed from a chat's participants,
-    // rather than leaving it deployed with nothing routing messages to
-    // it.
-    releaseAgentInstance: (address, reason) => sidecarRouter.sendAgentUndeploy(address, reason),
-    // CL-7450: fans a sent human message into every human participant's
-    // `@corbits/mailbox` inbox, on the same `mailboxDb`/`mailboxBus` every
-    // other mailbox consumer in this file shares. `resolveKnownPrincipalIds`
-    // reads the control plane's own `principal` table directly (the
-    // authoritative "is this a real principal in this tenant" check),
-    // rather than `@corbits/mailbox`'s FK, so an unknown participant is a
-    // reported skip, not a database error deep in a transaction.
-    mailbox: {
-      writer: createDrizzleMailboxWriter(mailboxDb, mailboxBus),
-      resolveKnownPrincipalIds: async (tenantId, candidateIds) => {
-        if (candidateIds.length === 0) return new Set();
-        const rows = await db.query.principal.findMany({
-          where: (p, { eq: equals, and: andAll }) =>
-            andAll(equals(p.tenantId, tenantId), inArray(p.id, candidateIds)),
-          columns: { id: true },
-        });
-        return new Set(rows.map((row) => row.id));
-      },
-      // A row's Message-ID always addresses under the row's OWN tenant's
-      // domain, never the acting caller's — see `mailbox-fanout.ts`'s
-      // `MailboxFanoutDeps.resolveTenantDomain` doc comment. Same
-      // `tenant` lookup `workflowDeployer.deploy` below uses for the
-      // identical reason (an instance's trigger address, minted against
-      // its own tenant's domain).
-      resolveTenantDomain: async (tenantId) => {
-        const tenantRow = await db.query.tenant.findFirst({
-          where: eq(tenantTable.id, tenantId),
-        });
-        if (tenantRow === undefined) {
-          throw new Error(`no tenant "${tenantId}" to address a mailbox from`);
-        }
-        return tenantRow.domain;
-      },
-    } satisfies MailboxFanoutDeps,
-  };
-  app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
-  // Myra's workflow-run chat surfaces (`@corbits/agent-directory-tools`'
-  // `create_agent` default mint-dm + invite for non-chat kinds): the
-  // workflow-run-authenticated counterpart to browser chat routes,
-  // self-WORKBENCH scoped — see `@corbits/chat`'s
-  // `workflow-participant-routes.ts` for the [Intx/repo gap] this resolves
-  // around (no direct run-address -> chat index; resolved by scanning
-  // the tenant's chat participant lists).
-  app.route(
-    "/api/workflow-chat",
-    createWorkflowParticipantRoutes({
-      store: chatStore,
-      platform: chatPlatform,
-      roomMessages,
-      publish: chatSubscribers.publish,
-      turnQueue,
-      turnCancellation,
-      turnMailCorrelation,
-      authenticator: createWorkflowRunAuthenticator({ db }),
-    }),
-  );
   // The `@corbits/inbox` product-inbox routes (triage groups, mark-all-read,
   // clear-done) are retired (CL-8209): they sat on `@corbits/mailbox` APIs
   // (`listUserMailbox`, refs, classification) removed in the native 1.0
@@ -1280,7 +797,7 @@ export async function createHub(config: HubConfig) {
       db,
       contentStore: artifactContentStore,
       requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
+        grantStore: grantStore,
         conditionRegistry: grantConditionRegistry,
       }),
       countSegments: Object.fromEntries(
@@ -1372,7 +889,7 @@ export async function createHub(config: HubConfig) {
     // — matching `mailboxApp` above — routed at "/" rather than
     // `TENANT_PREFIX`, which would double the tenant-route prefix.
     // Guarded by the hub's own `requireGrant`: the same
-    // `chatGrantStore`/`grantConditionRegistry` every other tenant-scoped
+    // `grantStore`/`grantConditionRegistry` every other tenant-scoped
     // mount above uses. `loadMemoryConfig` reads
     // `DATABASE_URL`/`EMBED_BASE_URL`/`EMBED_MODEL` (and friends) from
     // env itself; nothing else in this file constructs the memory plane.
@@ -1380,7 +897,7 @@ export async function createHub(config: HubConfig) {
     createMemory({
       app: memoryApp,
       config: loadMemoryConfig(),
-      grantStore: chatGrantStore,
+      grantStore: grantStore,
       conditionRegistry: grantConditionRegistry,
     });
     app.route("/", memoryApp);
@@ -1394,7 +911,7 @@ export async function createHub(config: HubConfig) {
   // writing the asset repo's trees — which no run-bearer credential can do
   // against stock git smart-HTTP today (CL-8171). Unlike
   // `/api/workflow-skills` above, every write here runs a real
-  // `chatGrantStore` authorization check (`asset:*`/create,
+  // `grantStore` authorization check (`asset:*`/create,
   // `asset:<id>`/write, `workflow:*`/create) before reaching `RepoStore`,
   // because authoring source is a side effect, not a markdown skill edit.
   app.route(
@@ -1405,22 +922,9 @@ export async function createHub(config: HubConfig) {
         db,
         assetService,
         repoStore: agentRepoStore.repoStore,
-        grantStore: chatGrantStore,
+        grantStore: grantStore,
         conditionRegistry: grantConditionRegistry,
       }),
-    }),
-  );
-  app.route(
-    `${TENANT_PREFIX}/chat`,
-    createCommandRoutes({
-      registry: commandRegistry,
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: grantConditionRegistry,
-      }),
-      workbenchBelongsToTenant: async (tenantId, chatId) =>
-        (await chatStore.getWorkbenchSettings(tenantId, chatId)) !== undefined ||
-        (await chatStore.hasLaunchedInstance(tenantId, chatId)),
     }),
   );
 
@@ -1441,7 +945,7 @@ export async function createHub(config: HubConfig) {
     createWebhookTriggerRoutes({
       store: webhookTriggerStore,
       requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
+        grantStore: grantStore,
         conditionRegistry: grantConditionRegistry,
       }),
       workflowDefinitionInTenant: async (tenantId, definitionId) => {
@@ -1477,54 +981,6 @@ export async function createHub(config: HubConfig) {
         ),
     }),
   );
-  // A connection completing through ANY door below — OAuth callback,
-  // pasted key, MCP OAuth, keyless MCP preset — settles every room
-  // waiting on that connector: the room's `connections/pending` entry
-  // clears (flipping the in-room connect card via `chat.settings`).
-  // Rooms with `connections/pending` still wake the host agent via
-  // `dispatchTurn` without a forged signed-in-user timeline row;
-  // code-review template rooms are not woken on PAT settle.
-  //
-  // An inference provider's credential landing also re-checks every
-  // live participant's deployed inference chain (CL-6687): a rotated
-  // key only ever reaches an agent at deploy time, so the relaunch has
-  // to be kicked here, not left for the next message. A tool-package
-  // connector (`feedsTools`, e.g. Manus) is the same shape for a
-  // different payload: `pinnedPackageCredentialBindingsFor` only folds
-  // at deploy, so a live Myra launched at signup before the key was
-  // pasted stays on a snapshot that cannot `resolve("manus")` until
-  // this pass relaunches it. Not awaited — a relaunch is a sidecar
-  // deploy round-trip, and the connect response must not wait on it.
-  const settleServiceConnection: ServiceConnectedHook = async (info) => {
-    await settleConnectedService(
-      {
-        store: chatStore,
-        platform: chatPlatform,
-        roomMessages,
-        publish: chatSubscribers.publish,
-        agentTurns,
-      },
-      {
-        tenantId: info.tenantId,
-        principalId: info.principalId,
-        connectorId: info.connectorId,
-        displayName: info.displayName,
-      },
-    );
-    if (isInferenceProvider(info.connectorId)) {
-      void chatPlatform
-        .reconcileInferenceSources(info.tenantId)
-        .then(({ scanned, relaunched }) => {
-          log.info`inference credential ${info.connectorId} changed on tenant ${info.tenantId}: re-checked ${String(scanned)} live agents, relaunched ${String(relaunched)}`;
-        })
-        .catch((cause: unknown) => {
-          reportError(cause, {
-            operation: "connections.reconcile-inference-sources",
-            tenantId: info.tenantId,
-          });
-        });
-    }
-  };
   // Connections: the settings surface's tenant-scoped credential
   // test-and-store, mounted under the same tenant prefix and reusing
   // the same grant store/condition registry every other credential-
@@ -1535,7 +991,7 @@ export async function createHub(config: HubConfig) {
       hubUrl: config.baseUrl,
       registry: CONNECTOR_REGISTRY,
       requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
+        grantStore: grantStore,
         conditionRegistry: grantConditionRegistry,
       }),
       log: (line) => log.info`${line}`,
@@ -1550,7 +1006,6 @@ export async function createHub(config: HubConfig) {
         gmailClientSecret: config.gmailClientSecret,
       },
       providerHealth: providerHealthStore,
-      listConnectedProviders: (tenantId) => listConnectedProviders(db, tenantId),
       // CL-6403: an operator-set GITHUB_API_BASE_URL lets a fake server
       // stand in for api.github.com for the `github` connector's PAT
       // probe and stored provider origin; unset in every real deployment,
@@ -1558,7 +1013,6 @@ export async function createHub(config: HubConfig) {
       // fixed production origin.
       probeBaseUrls:
         config.githubApiBaseUrl !== undefined ? { github: config.githubApiBaseUrl } : {},
-      onConnected: settleServiceConnection,
     }),
   );
   // Connections' own OAuth connect flow (CL-6389): `createOAuthConnectRoutes`
@@ -1591,7 +1045,6 @@ export async function createHub(config: HubConfig) {
         registry: CONNECTOR_REGISTRY,
         providerHealth: providerHealthStore,
       }),
-      onConnected: settleServiceConnection,
       defaultReturnPath: "/settings/connections",
       // `/w/` is the chat room prefix: the in-room connect card
       // (CL-6393) starts OAuth from a room and must land back in it.
@@ -1622,12 +1075,11 @@ export async function createHub(config: HubConfig) {
     createMcpServerRoutes({
       hubUrl: config.baseUrl,
       requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
+        grantStore: grantStore,
         conditionRegistry: grantConditionRegistry,
       }),
       log: (line) => log.info`${line}`,
       presets: MCP_PRESETS,
-      onConnected: settleServiceConnection,
     }),
   );
   // MCP servers' OAuth connect flow (CL-6152): discovers and drives a
@@ -1639,13 +1091,12 @@ export async function createHub(config: HubConfig) {
     createMcpOAuthRoutes({
       hubUrl: config.baseUrl,
       requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
+        grantStore: grantStore,
         conditionRegistry: grantConditionRegistry,
       }),
       log: (line) => log.info`${line}`,
       credentialCipher,
       presets: MCP_PRESETS,
-      onConnected: settleServiceConnection,
       // `/w/` for the same reason as the connections/oauth mount above.
       returnPathAllowlist: [...DEFAULT_RETURN_PATH_ALLOWLIST, "/plugins", "/w/"],
     }),
@@ -1697,22 +1148,6 @@ export async function createHub(config: HubConfig) {
       if (sidecarAllocationReconciliationTimer !== undefined) {
         clearTimeout(sidecarAllocationReconciliationTimer);
       }
-      // Retire the relaunch sweep's series so any in-flight pass's
-      // `.finally` reschedule is a no-op, and cancel whatever pass is
-      // currently pending. Without this the sweep outlives `close()`
-      // entirely (it's only ever re-armed, never torn down) and keeps
-      // querying `chat.workbench_launch` on a timer this function is
-      // about to end — including, once `close()` below tears down the
-      // db pool, querying a pool that's already shut down. In a test
-      // suite that boots many hubs back to back (CL-7453) those leaked
-      // timers pile up across the whole `bun test` process and contend with later
-      // tests' own boots for Postgres connections, which is what
-      // surfaced as `chat·relaunch-sweep: relaunch sweep pass failed:
-      // Failed query: select ... from chat.workbench_launch` and an
-      // intermittent test timeout.
-      relaunchSweepSeries += 1;
-      clearTimeout(relaunchSweepTimer);
-      chatOrchestrator.dispose();
       await closeMailbox();
       // The pool end waits on in-flight queries; a query whose socket
       // died with the process must never stall shutdown, so bound it.

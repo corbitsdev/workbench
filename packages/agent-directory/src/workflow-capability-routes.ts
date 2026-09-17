@@ -46,8 +46,6 @@ import type { DB } from "@intx/db";
 import { workflowDefinition, workflowRun } from "@intx/db/schema";
 import type { AssetService } from "@intx/hub-sessions";
 
-import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
-
 import { commitAgentCapabilityAdd } from "./capability-add";
 import {
   AddCapabilityInput,
@@ -99,7 +97,7 @@ function definitionNotFound(definitionId: string) {
 function hostGuardedRow(
   row: { readonly name: string; readonly assetId: string | null } | undefined,
 ): row is { readonly name: string; readonly assetId: string } {
-  return row !== undefined && row.assetId !== null && !isWorkbenchHostDefinitionName(row.name);
+  return row !== undefined && row.assetId !== null;
 }
 
 export type CreateWorkflowCapabilityRoutesDeps = {
