@@ -107,12 +107,6 @@
       "path": "./packages/mcp-tools/tsconfig.src.json"
     },
     {
-      "path": "./packages/memory-hub/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/memory-tools/tsconfig.src.json"
-    },
-    {
       "path": "./packages/migration-runner/tsconfig.src.json"
     },
     {

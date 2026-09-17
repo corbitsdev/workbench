@@ -543,8 +543,8 @@ describe("POST /complete", () => {
       testAndPersistCredentialFn: async () => {
         throw new HubApiError(
           "publishing the corbits-tools package-registry asset failed: " +
-            "tool-package freshness: @corbits/memory-tools@1.2.0 changed " +
-            "src/ without bumping version.\n  /Users/alice/abklabs/workbench/packages/memory-tools",
+            "tool-package freshness: @corbits/capability-tools@1.2.0 changed " +
+            "src/ without bumping version.\n  /Users/alice/abklabs/workbench/packages/capability-tools",
           "check the hub logs for the underlying failure, then re-run: workbench seed",
         );
       },
@@ -572,7 +572,9 @@ describe("POST /complete", () => {
       lines.some(
         (line) =>
           line.includes(body.error.refId) &&
-          line.includes("/Users/alice/abklabs/workbench/packages/memory-tools"),
+          line.includes(
+            "/Users/alice/abklabs/workbench/packages/capability-tools",
+          ),
       ),
     ).toBe(true);
   });
@@ -746,7 +748,7 @@ describe("CL-7584 desired-state kicks and steps", () => {
         state.seeded
           ? [
               {
-                filename: "corbits-memory-tools-0.0.4.tgz",
+                filename: "corbits-capability-tools-0.0.6.tgz",
                 size: 1,
                 integrity: "sha512-x",
               },

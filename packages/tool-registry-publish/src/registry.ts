@@ -16,11 +16,17 @@ export const CORBITS_TOOLS_REGISTRY = "corbits-tools";
 /**
  * Package names a seeded `corbits-tools` registry must carry for the
  * default workflow set to launch. Default workflows pin at least these
- * (Myra's assistant pins `@corbits/memory-tools`); an empty or dangling
- * registry — a package-registry row whose git repo has no tarball
- * commits — is not seeded.
+ * (Myra's assistant pins `@corbits/capability-tools` into every drafted
+ * agent's default tool-package set); an empty or dangling registry — a
+ * package-registry row whose git repo has no tarball commits — is not
+ * seeded. `@corbits/memory` (CL-8186) is not listed here: it is a
+ * published dependency this repo does not build or publish into this
+ * registry itself, not one of the workspace `packages/*-tools` this
+ * publisher packs.
  */
-export const REQUIRED_SEED_TOOL_PACKAGES = ["@corbits/memory-tools"] as const;
+export const REQUIRED_SEED_TOOL_PACKAGES = [
+  "@corbits/capability-tools",
+] as const;
 
 /** True when `filename` is an npm-style tarball for `packageName` (any version). */
 export function tarballCoversPackage(
@@ -57,7 +63,6 @@ export function tarballsCoverRequiredSeedPackages(
  * README for how its request_capability tool reaches the hub.
  */
 export const CORBITS_TOOL_PACKAGE_DIRS: readonly string[] = [
-  new URL("../../memory-tools", import.meta.url).pathname,
   new URL("../../capability-tools", import.meta.url).pathname,
   new URL("../../connections-tools", import.meta.url).pathname,
   new URL("../../catalog-tools", import.meta.url).pathname,

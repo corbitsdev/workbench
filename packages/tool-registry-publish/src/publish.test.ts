@@ -41,9 +41,9 @@ describe("tarballsCoverRequiredSeedPackages", () => {
     expect(tarballsCoverRequiredSeedPackages([])).toBe(false);
   });
 
-  test("covers @corbits/memory-tools at any version", () => {
+  test("covers @corbits/capability-tools at any version", () => {
     expect(
-      tarballsCoverRequiredSeedPackages(["corbits-memory-tools-0.0.4.tgz"]),
+      tarballsCoverRequiredSeedPackages(["corbits-capability-tools-0.0.6.tgz"]),
     ).toBe(true);
   });
 
@@ -89,13 +89,13 @@ describe("publishCorbitsToolsRegistry", () => {
         "uploaded none",
       );
       expect((cause as EmptyRegistryPublishError).message).toContain(
-        "still missing @corbits/memory-tools",
+        "still missing @corbits/capability-tools",
       );
     }
     expect(createdAssets).toBe(0);
   });
 
-  test("success is false when uploads land but memory-tools is still missing", async () => {
+  test("success is false when uploads land but capability-tools is still missing", async () => {
     const api: ApiCall = async (method, path) => {
       if (
         method === "GET" &&
@@ -153,7 +153,7 @@ describe("publishCorbitsToolsRegistry", () => {
         "uploaded corbits-other-tools-1.0.0.tgz",
       );
       expect((cause as EmptyRegistryPublishError).message).toContain(
-        "still missing @corbits/memory-tools",
+        "still missing @corbits/capability-tools",
       );
       expect((cause as EmptyRegistryPublishError).message).not.toContain(
         "uploaded none",

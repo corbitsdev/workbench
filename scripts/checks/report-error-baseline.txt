@@ -161,11 +161,6 @@ packages/mcp-tools/src/tool.ts	1	return {
 packages/mcp-tools/src/tool.ts	2	return errorResult(call.id, err);
 packages/mcp-tools/src/tool.ts	3	return errorResult(call.id, err);
 packages/mcp-tools/src/tool.ts	4	return errorResult(call.id, err);
-packages/memory-hub/src/workflow-routes.ts	1	return c.json(
-packages/memory-hub/src/workflow-routes.ts	2	return c.json(
-packages/memory-tools/src/tool.ts	1	if (err instanceof MemoryUnavailableError) {
-packages/memory-tools/src/tool.ts	2	if (err instanceof MemoryUnavailableError) {
-packages/memory-tools/src/tool.ts	3	if (err instanceof MemoryUnavailableError) {
 packages/mocks/src/ollama/capture.ts	1	return raw;
 packages/ollama-adapter/src/inline-tool-json.ts	1	return false;
 packages/ollama-adapter/src/inline-tool-json.ts	1	return { kind: "incomplete" };

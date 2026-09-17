@@ -13,12 +13,17 @@ export const ASSISTANT_WORKFLOW_ID = "wf_assistant";
 export const ASSISTANT_STEP_ID = "assistant";
 
 /**
- * The tool packages this deployment pins. `@corbits/memory-tools`
- * is the original pin; `@corbits/capability-tools` lets Myra self-service
- * a missing tool, skill, or model; the manager-tools bundles give Myra
- * real workbench-management capability — a specialist agent she can
- * create (each gets their own chat), connection visibility, and skill
- * capture — each a thin wrapper over an existing platform primitive (see each package's own file-header comment for
+ * The tool packages this deployment pins. Firm memory
+ * (`memory_add`/`memory_search`/`memory_list`) is no longer one of
+ * these: `@corbits/memory` is a normal published dependency, not a
+ * workspace tool package the pin/registry resolver can name, so its
+ * tool factories are attached directly on `toolFactories` in
+ * `./index.ts` instead (CL-8186). `@corbits/capability-tools` lets Myra
+ * self-service a missing tool, skill, or model; the manager-tools
+ * bundles give Myra real workbench-management capability — a specialist
+ * agent she can create (each gets their own chat), connection
+ * visibility, and skill capture — each a thin wrapper over an existing
+ * platform primitive (see each package's own file-header comment for
  * which one). `@corbits/mcp-tools` and `@corbits/interaction-tools`
  * expose tenant-connected MCP servers and the ask-user card;
  * `@corbits/manus-tools` is pinned so Manus tools exist when the tenant
@@ -30,7 +35,7 @@ export const ASSISTANT_STEP_ID = "assistant";
  * access.
  */
 export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/memory-tools", version: "0.0.4" },
+  { name: "@corbits/memory", version: "0.1.2" },
   { name: "@corbits/capability-tools", version: "0.0.6" },
   { name: "@corbits/agent-directory-tools", version: "0.0.6" },
   { name: "@corbits/connections-tools", version: "0.0.11" },

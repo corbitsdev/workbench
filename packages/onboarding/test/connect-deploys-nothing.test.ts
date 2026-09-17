@@ -112,7 +112,7 @@ function fakeHub(
   hub.get("/api/tenants/:id/assets/ast_registry/tarballs", (c) =>
     c.json([
       {
-        filename: "corbits-memory-tools-0.0.4.tgz",
+        filename: "corbits-capability-tools-0.0.6.tgz",
         size: 1,
         integrity: "sha512-x",
       },

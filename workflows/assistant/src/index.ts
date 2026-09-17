@@ -14,12 +14,15 @@
 // config — it is vendored, read-only source for this change — so the
 // agent below is built directly against `AgentDefinition`'s own type,
 // which already carries the field, matching
-// `workflows/collateral-generation`'s precedent. `@corbits/memory-tools`
-// is pinned so this deployment can search, add, and list the tenant's
-// firm memory (`memory_search`/`memory_add`/`memory_list`); whether the
-// pin *resolves* at deploy time still depends on an operator publishing
-// it to a registry the host's tool-package resolver can reach (see
-// `apps/hub/src/index.ts`'s `toolPackageRegistries` wiring).
+// `workflows/collateral-generation`'s precedent. `@corbits/memory`
+// (CL-8186) is pinned so this deployment can search, add, and list the
+// tenant's firm memory (`memory_search`/`memory_add`/`memory_list`) — a
+// published dependency, not a workbench-built tool package, resolved
+// through its own `interchange.tools` surface the same way any other
+// pin is; whether the pin *resolves* at deploy time still depends on an
+// operator publishing it to a registry the host's tool-package resolver
+// can reach (see `apps/hub/src/index.ts`'s `toolPackageRegistries`
+// wiring).
 
 import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";

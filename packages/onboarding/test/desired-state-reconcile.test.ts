@@ -96,7 +96,7 @@ function harness(state: Stub) {
         data: state.registryTarballs
           ? [
               {
-                filename: "corbits-memory-tools-0.0.4.tgz",
+                filename: "corbits-capability-tools-0.0.6.tgz",
                 size: 1,
                 integrity: "sha512-x",
               },
@@ -331,8 +331,8 @@ describe("reconcileTenantDesiredState", () => {
       cookies: [],
       hubUrl: "https://hub.example.com",
       tenantId: TENANT_ID,
-      name: "@corbits/memory-tools",
-      version: "0.0.4",
+      name: "@corbits/capability-tools",
+      version: "0.0.6",
       fetchSource: async () => bytes,
       fetchImpl: async (input) => {
         putUrls.push(String(input));
@@ -343,7 +343,7 @@ describe("reconcileTenantDesiredState", () => {
     expect(outcome).toBe("installed");
     expect(putUrls.length).toBe(1);
     expect(putUrls[0]).toContain(
-      `/api/tenants/${TENANT_ID}/assets/${REGISTRY_ASSET.id}/tarballs/corbits-memory-tools-0.0.4.tgz`,
+      `/api/tenants/${TENANT_ID}/assets/${REGISTRY_ASSET.id}/tarballs/corbits-capability-tools-0.0.6.tgz`,
     );
 
     // And a republished same name@version is skipped (immutable). The
@@ -354,8 +354,8 @@ describe("reconcileTenantDesiredState", () => {
       cookies: [],
       hubUrl: "https://hub.example.com",
       tenantId: TENANT_ID,
-      name: "@corbits/memory-tools",
-      version: "0.0.4",
+      name: "@corbits/capability-tools",
+      version: "0.0.6",
       fetchSource: async () => bytes,
       fetchImpl: async () => {
         throw new Error("must not PUT over an existing name@version");

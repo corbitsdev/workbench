@@ -146,7 +146,7 @@ const TarballListResponse = TarballSummary.array();
 
 /**
  * Thrown when a publish run leaves `corbits-tools` without the required
- * seed tarballs (`@corbits/memory-tools`). Covers both zero uploads onto
+ * seed tarballs (`@corbits/capability-tools`). Covers both zero uploads onto
  * an empty/dangling registry (`GET tarballs` → `[]`) and a partial run
  * that uploaded other packages but still cannot resolve first-launch
  * pins. Callers must not treat this as success.

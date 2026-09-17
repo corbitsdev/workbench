@@ -25,7 +25,7 @@ export type CapabilityModelEntry = { readonly canonicalName: string };
  */
 export const BASELINE_AGENT_TOOL_PINS = [
   "@corbits/mcp-tools",
-  "@corbits/memory-tools",
+  "@corbits/memory",
   "@corbits/interaction-tools",
 ] as const;
 

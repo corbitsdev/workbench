@@ -541,6 +541,15 @@ export const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   // vocabulary.
   { resource: "asset:*", action: "create" },
   { resource: "asset:*", action: "write" },
+  // Firm memory (CL-8186): `@corbits/memory`'s mounted routes gate on
+  // `requireGrant("memory", action)` (see its `routes/deps.ts`
+  // `grantGuard`) — "add" for `POST .../memory/add`, "search" for both
+  // `POST .../memory/search` and `GET .../memory/list` (list reuses the
+  // search grant; there is no separate "list" action). Grants never
+  // inherit across tenants, so every workflow-run principal needs its
+  // own pair, exactly like every other tenant-scoped resource above.
+  { resource: "memory", action: "add" },
+  { resource: "memory", action: "search" },
 ];
 
 // Grants planted ONLY on Myra's own run principal (see
