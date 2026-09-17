@@ -37,7 +37,6 @@ import { generateKeyPair } from "@intx/crypto";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { applyAgentDirectoryMigrations } from "../src/migrations";
 import { createAgentDefinitionRoutes } from "../src/routes";
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import type { DefinitionAssetHistory } from "../src/definition-history";
@@ -158,8 +157,6 @@ describeIfDb("agent-directory routes against a real assetService", () => {
     if (databaseUrl === undefined) {
       throw new Error("DATABASE_URL is unset — describeIfDb should skip");
     }
-    await applyAgentDirectoryMigrations(databaseUrl);
-
     const handle = createDB(dbTargetFromUrl(databaseUrl));
     db = handle.db;
     close = handle.close;

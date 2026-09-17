@@ -30,92 +30,32 @@ export const webhookTriggersMigrations: readonly WebhookTriggersMigration[] = [
     sql: `
       CREATE TABLE IF NOT EXISTS "webhook_triggers"."webhook_trigger" (
         "id" text PRIMARY KEY,
-        "tenant_id" text NOT NULL,
+        "tenant_id" text NOT NULL REFERENCES "public"."tenant" ("id") ON DELETE CASCADE,
         "name" text NOT NULL,
         "workflow_definition_id" text NOT NULL,
         "input_template" text NOT NULL,
         "secret" text NOT NULL,
         "enabled" boolean NOT NULL DEFAULT true,
-        "created_by" text NOT NULL,
+        "created_by" text NOT NULL REFERENCES "public"."principal" ("id") ON DELETE CASCADE,
         "created_at" timestamptz NOT NULL DEFAULT now(),
         "last_fired_at" timestamptz
       );
-    `,
-  },
-  {
-    name: "0002_webhook_trigger_tenant_index",
-    sql: `
+
       CREATE INDEX IF NOT EXISTS "webhook_trigger_tenant_id_idx"
         ON "webhook_triggers"."webhook_trigger" ("tenant_id");
-    `,
-  },
-  {
-    // CL-7242: startReviewingRepos's check-then-act (hasWebhookTrigger
-    // then createWebhookTrigger) reads (tenant_id, workflow_definition_id,
-    // name) with no atomic backstop, so two concurrent "start reviewing"
-    // calls for the same repo can both read "no trigger yet" and both
-    // insert -- two live triggers with the same name but different
-    // secrets. Reconcile first: a database already carrying the race's
-    // duplicates would otherwise fail CREATE UNIQUE INDEX. Keep the
-    // oldest row per tuple and delete the rest. This whole migration
-    // runs inside one transaction (applyWebhookTriggersMigrations wraps
-    // each entry in `sql.begin`), so the delete and the index build
-    // can't be split by a concurrent writer.
-    name: "0003_webhook_trigger_tenant_definition_name_unique",
-    sql: `
-      DELETE FROM "webhook_triggers"."webhook_trigger" AS t
-      USING "webhook_triggers"."webhook_trigger" AS older
-      WHERE t.tenant_id = older.tenant_id
-        AND t.workflow_definition_id = older.workflow_definition_id
-        AND t.name = older.name
-        AND (older.created_at, older.id) < (t.created_at, t.id);
 
       CREATE UNIQUE INDEX IF NOT EXISTS "webhook_trigger_tenant_definition_name_unique"
         ON "webhook_triggers"."webhook_trigger" ("tenant_id", "workflow_definition_id", "name");
-    `,
-  },
-  {
-    // CL-7242: the paired fix to 0003, in our own schema rather than
-    // Interchange's. `startReviewingRepos` acquires a short-lived
-    // lease on `(tenant_id, repo)` before its check-then-act body
-    // (hasRepoGrant/mintRepoGrant, hasWebhookTrigger/createWebhookTrigger)
-    // runs, so two concurrent calls for the same repo can never both
-    // enter that body -- only one can hold the lease at a time. The
-    // unique index must exist before any `ON CONFLICT (tenant_id, repo)`
-    // is issued against this table at runtime (Postgres requires a
-    // matching unique constraint/index for that clause, or the insert
-    // errors), so both land in this one migration, index second.
-    name: "0004_repo_review_lease",
-    sql: `
+
       CREATE TABLE IF NOT EXISTS "webhook_triggers"."repo_review_lease" (
         "id" text PRIMARY KEY,
-        "tenant_id" text NOT NULL,
+        "tenant_id" text NOT NULL REFERENCES "public"."tenant" ("id") ON DELETE CASCADE,
         "repo" text NOT NULL,
         "leased_at" timestamptz NOT NULL DEFAULT now()
       );
 
       CREATE UNIQUE INDEX IF NOT EXISTS "repo_review_lease_tenant_repo_unique"
         ON "webhook_triggers"."repo_review_lease" ("tenant_id", "repo");
-    `,
-  },
-  {
-    // CL-8210: tenant_id (both tables) and webhook_trigger.created_by (a
-    // real Interchange principal id — see management-routes.ts's
-    // `createdBy: principal.id`) become hard foreign keys into
-    // Interchange's own tenant/principal tables, ON DELETE CASCADE, so
-    // deleting a tenant or principal cleans up the triggers and leases it
-    // owned.
-    name: "0005_tenant_principal_fk",
-    sql: `
-      ALTER TABLE "webhook_triggers"."webhook_trigger"
-        ADD CONSTRAINT "webhook_trigger_tenant_id_fkey"
-          FOREIGN KEY ("tenant_id") REFERENCES "public"."tenant" ("id") ON DELETE CASCADE,
-        ADD CONSTRAINT "webhook_trigger_created_by_fkey"
-          FOREIGN KEY ("created_by") REFERENCES "public"."principal" ("id") ON DELETE CASCADE;
-
-      ALTER TABLE "webhook_triggers"."repo_review_lease"
-        ADD CONSTRAINT "repo_review_lease_tenant_id_fkey"
-          FOREIGN KEY ("tenant_id") REFERENCES "public"."tenant" ("id") ON DELETE CASCADE;
     `,
   },
 ];

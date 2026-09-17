@@ -17,8 +17,8 @@ export const notifyMigrations: readonly NotifyMigration[] = [
       CREATE TABLE IF NOT EXISTS "notify"."notify_dispatch" (
         "id" text PRIMARY KEY,
         "mailbox_row_id" text NOT NULL,
-        "tenant_id" text NOT NULL,
-        "principal_id" text NOT NULL,
+        "tenant_id" text NOT NULL REFERENCES "public"."tenant" ("id") ON DELETE CASCADE,
+        "principal_id" text NOT NULL REFERENCES "public"."principal" ("id") ON DELETE CASCADE,
         "sink_name" text NOT NULL,
         "status" text NOT NULL,
         "attempts" integer NOT NULL DEFAULT 0,
@@ -31,20 +31,6 @@ export const notifyMigrations: readonly NotifyMigration[] = [
       );
       CREATE INDEX IF NOT EXISTS "notify_dispatch_due_idx"
         ON "notify"."notify_dispatch" ("status", "next_attempt_at");
-    `,
-  },
-  {
-    // CL-8210: tenant_id/principal_id become real foreign keys into
-    // Interchange's own tenant/principal tables, ON DELETE CASCADE, so
-    // deleting a tenant or principal cleans up its dispatch rows instead
-    // of leaving them to dangle.
-    name: "0002_notify_dispatch_tenant_principal_fk",
-    sql: `
-      ALTER TABLE "notify"."notify_dispatch"
-        ADD CONSTRAINT "notify_dispatch_tenant_id_fkey"
-          FOREIGN KEY ("tenant_id") REFERENCES "public"."tenant" ("id") ON DELETE CASCADE,
-        ADD CONSTRAINT "notify_dispatch_principal_id_fkey"
-          FOREIGN KEY ("principal_id") REFERENCES "public"."principal" ("id") ON DELETE CASCADE;
     `,
   },
 ];

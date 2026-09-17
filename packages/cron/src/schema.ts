@@ -71,7 +71,7 @@ export interface ApplyCronMigrationsReport {
 /**
  * Apply `cronMigrations` against `databaseUrl`, idempotently: a migration
  * already recorded in this package's own ledger is skipped, never re-run.
- * Mirrors `@corbits/inbox`'s `applyInboxMigrations` shape.
+ * Package-owned ledger, transactional apply.
  */
 export async function applyCronMigrations(
   databaseUrl: string,
