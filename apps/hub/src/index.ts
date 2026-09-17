@@ -162,7 +162,6 @@ import { createWorkflowCatalogAdminRoutes } from "@corbits/catalog-tools/routes"
 import { createWorkflowAccessRoutes } from "@corbits/access-tools/routes";
 import { generateId } from "@intx/hub-common";
 
-import { createHubSignupTenancy } from "./signup-tenancy";
 import {
   createInMemoryMailboxEventBus,
   createMailboxDb,
@@ -278,7 +277,6 @@ import {
   createPresenceRoutes,
   type PresenceRoomKey,
 } from "@corbits/presence";
-import { supportedCredentialProviders } from "@corbits/connections/credential-test";
 import { CATALOG_WORKFLOWS, createGitWorkflowPusher } from "@corbits/seeding";
 import { createHubAPI } from "@corbits/hub-api-client";
 import { createOnboardingRoutes } from "@workbench/onboarding";
@@ -307,15 +305,14 @@ import {
   applyAccessPolicyMigrations,
   createAccessPolicyRoutes,
   createDrizzleAccessPolicyStore,
+  createEmptyHubCheck,
 } from "@workbench/access-policy";
-import { guardedHubApp, resolveCallerRoleNames } from "./tenant-create-guard";
 import {
   loadAnchorDispatch,
   resolveAnchorTenantId,
   withDispatchTenantGuard,
   withTenantBoundAllocationService,
 } from "./dispatch-tenant-guard";
-import { createTenantCreateObserver } from "./tenant-create-onboard";
 import {
   createInMemoryNotifyDispatchStore,
   createSinkRegistry,
@@ -661,10 +658,11 @@ export async function createHub(config: HubConfig) {
   // Per-principal signing keys are sealed under their own operator key —
   // see `principalKeyStoreFrom`.
   const principalKeyStore = principalKeyStoreFrom(config, db, log);
-  // The genesis-or-join first-signup decision's tenancy reads/writes —
-  // also read by the sign-up gate (empty-hub exception) and the
-  // tenant-create guard below. See ./signup-tenancy.ts.
-  const signupTenancy = createHubSignupTenancy(db, principalKeyStore);
+  // The closed-signup empty-hub exception's native count read (CL-8085):
+  // with zero users and zero tenants, someone has to be first. Owned by
+  // `@workbench/access-policy`, not this hub — see
+  // packages/access-policy/src/empty-hub.ts.
+  const emptyHubCheck = createEmptyHubCheck(db);
 
   const auth = betterAuth({
     baseURL: config.baseUrl,
@@ -1284,8 +1282,8 @@ export async function createHub(config: HubConfig) {
           // here a user row also counts, because it means the 0→1
           // signup already happened.
           const [users, tenants] = await Promise.all([
-            signupTenancy.countUsers(),
-            signupTenancy.countTenants(),
+            emptyHubCheck.countUsers(),
+            emptyHubCheck.countTenants(),
           ]);
           if (users > 0 || tenants > 0) {
             return c.json(
@@ -2610,37 +2608,10 @@ export async function createHub(config: HubConfig) {
           ? { github: config.githubApiBaseUrl }
           : {},
       onConnected: settleServiceConnection,
-      // CL-6568's other half: a tenant whose only provider is one it
-      // connected itself through Settings — never an operator-configured
-      // hub key — must converge on Myra and the default workflow set the
-      // same way an onboarding-connected one does. The drain is gone
-      // (CL-7586), so this kicks the same desired-state reconcile the
-      // tenant-create observer and the onboarding routes kick, under the
-      // connecting user's own minted session — `sessionFor` is declared
-      // further up this function, and `observerRef` further down, but
-      // this closure only runs on a future request, well after both are
-      // constructed below. Best-effort like every other kick: absent or
-      // unmintable means convergence waits for the revisit probe.
-      onInferenceCredentialUsable: async (info) => {
-        const provider = supportedCredentialProviders().find(
-          (candidate) => candidate.id === info.provider,
-        )?.id;
-        if (provider === undefined) {
-          log.error`onInferenceCredentialUsable fired for an unsupported provider ${info.provider} on tenant ${info.tenantId}; skipping the desired-state kick`;
-          return;
-        }
-        const cookies = await sessionFor({
-          userId: info.userId,
-          tenantId: info.tenantId,
-        });
-        if (cookies === undefined) {
-          log.error`onInferenceCredentialUsable could not mint a session for user ${info.userId} on tenant ${info.tenantId}; skipping the desired-state kick`;
-          return;
-        }
-        void observerRef.current
-          ?.kick({ tenantId: info.tenantId, cookies })
-          .catch(() => undefined);
-      },
+      // CL-6568's other half — a tenant whose only provider is one it
+      // connected itself through Settings converging on Myra and the
+      // default workflow set — now runs from the client's own
+      // needs-list convergence (CL-8085), not a server-side kick.
     }),
   );
   // Connections' own OAuth connect flow (CL-6389): `createOAuthConnectRoutes`
@@ -3368,50 +3339,18 @@ export async function createHub(config: HubConfig) {
     }),
   );
 
-  // The first-login hook mounts outside the tenant prefix, since the
-  // session it serves belongs to no tenant yet. The route is
-  // `@workbench/onboarding`'s; what it decides is documented in that
-  // package's provision.ts.
-  // Connecting a provider deploys nothing by itself (CL-6457): the
-  // onboarding routes persist the credential and kick the desired-state
-  // reconcile below, which converges the bench on the next kick (tenant
-  // create, connect, revisit probe) — including one a previous process
-  // died halfway through, since the reconcile re-reads
-  // the pins on every kick rather than consuming a durable work item.
-  // (CL-7586 removed the pending-seed drain that used to do this.)
-
-  // CL-7584: the tenant-create trigger. A 201 from the native
-  // `POST /api/tenants` route kicks a fire-and-forget desired-state
-  // reconcile for the new tenant under the creator's minted session.
-  // No durable row anywhere: a kick lost to a restart is re-covered by
-  // the revisit kick on the tenant's next visit. The observer itself is
-  // composed just before the guard wrap, after every route mount: Hono
-  // copies routes at `.route()` time, so wrapping earlier would strand
-  // everything mounted after it.
-  const observerRef: {
-    current?: ReturnType<typeof createTenantCreateObserver>;
-  } = {};
-
+  // The credential-connect hook mounts outside the tenant prefix, since a
+  // fresh signup belongs to no tenant yet. 0→1 tenant creation and
+  // desired-state convergence no longer live here (CL-8085): the
+  // client's own needs-list drives both directly over stock routes
+  // (`apps/web/src/needs-converge.ts`). This mount is credential-connect
+  // only — see `@workbench/onboarding/routes.ts`.
   const onboardingDeps: Parameters<typeof createOnboardingRoutes>[0] = {
     hubUrl: config.baseUrl,
-    defaultTenantSlug: config.defaultTenantSlug,
-    tenancy: signupTenancy,
     pushWorkflow: createGitWorkflowPusher(),
     log: (line) => log.info`${line}`,
     logError: (line) => log.error`${line}`,
     credentialCipher,
-    desiredStateKick: (args) => {
-      // Fire-and-forget; the route already decided pins are pending.
-      void observerRef.current
-        ?.kick({ tenantId: args.tenantId, cookies: args.cookies })
-        .catch(() => undefined);
-    },
-    accessPolicy: {
-      store: accessPolicyStore,
-      envSignupMode: config.signupMode,
-      envAllowedDomains: config.allowedEmailDomains,
-      allowUnverifiedEmails: config.allowUnverifiedEmails,
-    },
     // Same provider-health store `@corbits/connections`' own routes
     // report to and clear (CL-6092) — a successful `/complete` here must
     // clear the same record the shell banner's zero-provider "Fix it"
@@ -3581,49 +3520,12 @@ export async function createHub(config: HubConfig) {
 
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));
 
-  // [Intx gap] CL-6041: the native POST /api/tenants route is ungated —
-  // wrap the fully-built app in a guard that enforces
-  // @workbench/access-policy in front of it. See
-  // ./tenant-create-guard.ts's module comment for why this has to be an
-  // outer wrap rather than an `app.use()` added here: the native route
-  // is already registered by the time `createApp()` returns above, and
-  // Hono composes handlers in registration order.
-  const guardDeps: Parameters<typeof guardedHubApp>[1] = {
-    store: accessPolicyStore,
-    resolveCallerRoleNames: (tenantId, userId) =>
-      resolveCallerRoleNames(db, tenantId, userId),
-    countTenants: signupTenancy.countTenants,
-    envSignupMode: config.signupMode,
-    envAllowedDomains: config.allowedEmailDomains,
-    allowUnverifiedEmails: config.allowUnverifiedEmails,
-    getSessionUser: async (headers) => {
-      const result = await auth.api.getSession({ headers });
-      return result
-        ? {
-            id: result.user.id,
-            email: result.user.email,
-            emailVerified: result.user.emailVerified,
-          }
-        : undefined;
-    },
-  };
-  const observer = createTenantCreateObserver(
-    {
-      api: selfApi,
-      hubUrl: config.baseUrl,
-      pushWorkflow: createGitWorkflowPusher(),
-      log: (line) => log.info`${line}`,
-      logError: (line) => log.error`${line}`,
-    },
-    app,
-  );
-  observerRef.current = observer;
-  const guardedApp = guardedHubApp(observer.app, guardDeps);
   // [Intx gap] CL-7324: deny foreign-tenant allocations at the two dispatch
   // routes (403 `allocation_tenant_mismatch`) before the native handler can
-  // enqueue or materialize grants — same outer-wrap composition as the
-  // tenant-create guard above. See ./dispatch-tenant-guard.ts.
-  const dispatchGuardedApp = withDispatchTenantGuard(guardedApp, {
+  // enqueue or materialize grants. See ./dispatch-tenant-guard.ts. The
+  // tenant-create guard that used to wrap here is gone (CL-7590/CL-8085):
+  // native grant-gating on `POST /api/tenants` is the only gate now.
+  const dispatchGuardedApp = withDispatchTenantGuard(app, {
     loadAnchorDispatch: (anchorRunId) => loadAnchorDispatch(db, anchorRunId),
   });
   const inFlight = createInFlightRequestTracker();
@@ -3635,16 +3537,6 @@ export async function createHub(config: HubConfig) {
     db,
     close: async () => {
       sidecarAllocationReconciliationStopped = true;
-      // Let any in-flight tenant-create reconcile reach its next HTTP
-      // call before the server stops — the call then fails and the kick
-      // logs it, so a fire-and-forget reconcile never races the DB
-      // teardown. Bounded: a kick stuck on an already-dying connection
-      // must not stall shutdown (CL-7584).
-      observerRef.current?.stop();
-      await Promise.race([
-        observerRef.current?.whenIdle(),
-        new Promise((resolve) => setTimeout(resolve, 250)),
-      ]);
       if (sidecarAllocationReconciliationTimer !== undefined) {
         clearTimeout(sidecarAllocationReconciliationTimer);
       }
