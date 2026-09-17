@@ -1,12 +1,14 @@
-// The credential-expiry workflow (CL-8181): on a schedule, check this
+// The credential-expiry workflow (CL-8181): on each trigger, check this
 // tenant's credentials and mail a reconnect notice for each one that is
 // active but past its own `expiresAt`. Replaces the hub-owned periodic
 // loop `apps/hub/src/credential-expiry-sweep.ts` — that loop's own
 // decision logic now lives in `./decide.ts` (moved rather than
 // reimplemented; it needs no DB and no mail infrastructure to stay
-// correct), and this definition is deployed like any other scheduled
-// Routine instead of running inside the hub process for every tenant at
-// once.
+// correct), and this definition is deployed like any other Routine
+// instead of running inside the hub process for every tenant at once.
+// It is mail-triggered, not schedule-triggered: `@corbits/cron`
+// delivers a tick mail on the daily cadence, so this definition never
+// declares `type: "schedule"` itself (CL-8183).
 //
 // Scope narrows on the port: the old sweep also refreshed
 // `mcp:<slug>` OAuth tokens in place before ever mailing anyone
@@ -34,10 +36,6 @@ import { CREDENTIAL_EXPIRY_CHECK_TOOL_NAME } from "./tool";
 export const CREDENTIAL_EXPIRY_WORKFLOW_ID = "wf_credential_expiry";
 export const CREDENTIAL_EXPIRY_STEP_ID = "credential-expiry-check";
 
-/** Daily at 08:00 UTC — ahead of `workbench-digest`'s 09:00 slot, so a
- * reconnect notice for the day lands before the day's own digest. */
-export const CREDENTIAL_EXPIRY_SCHEDULE_CRON = "0 8 * * *";
-
 export const CREDENTIAL_EXPIRY_SYSTEM_PROMPT = [
   "You are a scheduled credential-expiry check for this workbench's " +
     "tenant. Nobody is watching this run happen — write for the tenant " +
@@ -55,10 +53,12 @@ export const CREDENTIAL_EXPIRY_SYSTEM_PROMPT = [
 
 /**
  * Everything the definition needs that is per-deployment data. The
- * schedule trigger is fixed on the definition; inference and the
- * per-turn timeout are resolved at deploy time.
+ * trigger address names a specific deployment's inbox, so a definition
+ * built here is per-deployment by construction.
  */
 export interface CredentialExpiryWorkflowInput {
+  /** The deployment's mail address; each inbound mail is one run. */
+  readonly triggerAddress: string;
   /** Provider/model preferences, in order; resolved at deploy time. */
   readonly inferencePreferences: readonly InferencePreference[];
   /** Per-turn timeout in milliseconds, enforced on the single step. */
@@ -78,6 +78,9 @@ export interface CredentialExpiryWorkflowInput {
 export function buildCredentialExpiryWorkflow(
   input: CredentialExpiryWorkflowInput,
 ): WorkflowDefinition {
+  if (input.triggerAddress === "") {
+    throw new Error("buildCredentialExpiryWorkflow requires a non-empty triggerAddress");
+  }
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
     throw new Error(
       "buildCredentialExpiryWorkflow requires turnTimeoutMs to be a positive integer",
@@ -85,7 +88,7 @@ export function buildCredentialExpiryWorkflow(
   }
   return defineWorkflow({
     id: CREDENTIAL_EXPIRY_WORKFLOW_ID,
-    trigger: { type: "schedule", cron: CREDENTIAL_EXPIRY_SCHEDULE_CRON },
+    trigger: { type: "mail", to: input.triggerAddress },
     steps: {
       [CREDENTIAL_EXPIRY_STEP_ID]: step({
         agent: defineAgent({
