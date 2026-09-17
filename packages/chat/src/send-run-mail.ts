@@ -25,7 +25,7 @@ import type { DB } from "@intx/db";
 import type { SidecarRouter } from "@intx/hub-sessions";
 import type { CryptoProvider, MessageAttachment } from "@intx/types/runtime";
 
-import { mailIdFromBracketMessageId } from "./turn-mail-correlation";
+import { mailIdFromBracketMessageId } from "@corbits/agent-runtime";
 import type { RunTriggerClient } from "./run-trigger-client";
 
 export type RunMailDeps = {

@@ -8,7 +8,7 @@
 // attach to a running row again.
 import { describe, expect, test } from "bun:test";
 
-import { createInMemoryAgentTurnStore } from "../src/agent-turns";
+import { createInMemoryAgentTurnStore } from "@corbits/agent-runtime";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import { TurnCancelledError } from "../src/turn-cancellation";
 import { dispatchTurn } from "../src/workbench-service";

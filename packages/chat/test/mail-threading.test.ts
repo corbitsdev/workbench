@@ -9,8 +9,8 @@ import { dispatchTurn } from "../src/workbench-service";
 import type { MailContent } from "../src/codec";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import { createInMemoryThreadStore } from "../src/threads";
-import { createInMemoryTurnMailCorrelationStore } from "../src/turn-mail-correlation";
-import { mailIdFromBracketMessageId } from "../src/turn-mail-correlation";
+import { createInMemoryTurnMailCorrelationStore } from "@corbits/agent-runtime";
+import { mailIdFromBracketMessageId } from "@corbits/agent-runtime";
 
 const TENANT = "ten_1";
 const WORKBENCH = "ins_workbench1";

@@ -16,7 +16,7 @@
 import { and, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
-import { finalizedTurnWriteClaim } from "./schema";
+import { finalizedTurnWriteClaim } from "@corbits/chat/schema";
 
 export type WriteClaimSurface = "memory" | "artifact" | "digest";
 

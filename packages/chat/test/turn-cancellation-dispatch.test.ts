@@ -14,7 +14,7 @@
 //    ceiling: it can record the outcome, not stop the underlying work.
 import { describe, expect, test } from "bun:test";
 
-import { createInMemoryAgentTurnStore } from "../src/agent-turns";
+import { createInMemoryAgentTurnStore } from "@corbits/agent-runtime";
 import { createChatRoutes } from "../src/routes";
 import { createTurnCancelRegistry } from "../src/turn-cancellation";
 import { createWorkbenchSubscriberRegistry } from "../src/workbench-events";

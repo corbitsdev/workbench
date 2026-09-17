@@ -3,8 +3,8 @@
 // "no store, no feature" 404 every optional chat store already follows.
 import { describe, expect, test } from "bun:test";
 
-import { createInMemoryAgentTurnStore } from "../src/agent-turns";
-import type { AgentTurn } from "../src/agent-turns";
+import { createInMemoryAgentTurnStore } from "@corbits/agent-runtime";
+import type { AgentTurn } from "@corbits/agent-runtime";
 import { createChatRoutes } from "../src/routes";
 import {
   buildDeps,

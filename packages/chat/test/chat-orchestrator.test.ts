@@ -23,8 +23,8 @@ import {
   createArtifactDeliveryHandler,
   createChatOrchestrator,
   POSTED_APPROVAL_GUARD_TTL_MS,
-} from "../src/chat-orchestrator";
-import { createInMemoryAgentTurnStore } from "../src/agent-turns";
+} from "@corbits/agent-runtime";
+import { createInMemoryAgentTurnStore } from "@corbits/agent-runtime";
 import { parseBlock } from "../src/blocks";
 import type { ChatPlatform, ChatWorkbenchEvent } from "../src/platform-port";
 import {
@@ -35,9 +35,9 @@ import {
 } from "../src/room-messages";
 import type { WorkbenchSettingsRow } from "../src/store";
 import { createInMemoryThreadStore } from "../src/threads";
-import { createInMemoryTurnMailCorrelationStore } from "../src/turn-mail-correlation";
+import { createInMemoryTurnMailCorrelationStore } from "@corbits/agent-runtime";
 import type { WorkbenchSubscriberRegistry } from "../src/workbench-events";
-import { createInMemoryWriteClaimStore } from "../src/write-claims";
+import { createInMemoryWriteClaimStore } from "@corbits/agent-runtime";
 
 // A fresh claim store per test, unless a test explicitly wants to share
 // one across two separately-constructed orchestrators/handlers to prove

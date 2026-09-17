@@ -20,8 +20,8 @@ import type { ParticipantRecord } from "../src/participants";
 import { sendWorkbenchMessage } from "../src/workbench-service";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import { createInMemoryChatStore } from "../src/store";
-import { createWorkbenchTurnQueue } from "../src/turn-queue";
-import { createInMemoryTurnClaimStore } from "../src/turn-claims";
+import { createWorkbenchTurnQueue } from "@corbits/agent-runtime";
+import { createInMemoryTurnClaimStore } from "@corbits/agent-runtime";
 import { createTurnCancelRegistry } from "../src/turn-cancellation";
 
 function inMemoryWriter(): {

@@ -18,9 +18,9 @@ import { reportError } from "@corbits/error-sink";
 import { getLogger } from "@intx/log";
 import { type } from "arktype";
 
-import type { Part as PartType } from "./parts";
+import type { Part as PartType } from "@corbits/chat/parts";
 import type { TurnClaimStore, TurnClaimToken } from "./turn-claims";
-import type { WorkbenchSubscriberRegistry } from "./workbench-events";
+import type { WorkbenchSubscriberRegistry } from "@corbits/chat/workbench-events";
 
 const log = getLogger(["chat", "turn-queue"]);
 

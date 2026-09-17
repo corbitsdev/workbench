@@ -50,33 +50,39 @@ import {
   type ConnectorRegistry,
 } from "@corbits/connections/registry";
 import { artifactPartsForFinalizedTurn } from "./artifact-delivery";
-import type { ApproveBlockData } from "./blocks";
-import { encodeParts } from "./codec";
-import { mailMessageIdFor } from "./mail-headers";
-import { consumerFacingInferenceText } from "./consumer-inference-text";
-import type { ConnectedProviderLister } from "./inference-preferences";
-import { mentionedParticipants } from "./mentions";
-import { domainOf, localPartOf } from "./agent-address";
+import type { ApproveBlockData } from "@corbits/chat/blocks";
+import { encodeParts } from "@corbits/chat/codec";
+import { mailMessageIdFor } from "@corbits/chat/mail-headers";
+import { consumerFacingInferenceText } from "@corbits/chat/consumer-inference-text";
+import type { ConnectedProviderLister } from "@corbits/chat/inference-preferences";
+import { mentionedParticipants } from "@corbits/chat/mentions";
+import { domainOf, localPartOf } from "@corbits/chat/agent-address";
 import {
   readBindingByAddressAnyTenant,
   resolveLiveAgent,
-} from "./agent-binding";
-import { parseParticipants, type ParticipantRecord } from "./participants";
-import type { Part, TextPart } from "./parts";
-import type { ChatPlatform } from "./platform-port";
-import { postRoomMessage, type RoomMessageStore } from "./room-messages";
+} from "@corbits/chat/agent-binding";
+import {
+  parseParticipants,
+  type ParticipantRecord,
+} from "@corbits/chat/participants";
+import type { Part, TextPart } from "@corbits/chat/parts";
+import type { ChatPlatform } from "@corbits/chat/platform-port";
+import {
+  postRoomMessage,
+  type RoomMessageStore,
+} from "@corbits/chat/room-messages";
 import type { AgentTurn, AgentTurnStore } from "./agent-turns";
 import {
   mailIdFromBracketMessageId,
   type TurnMailCorrelationStore,
 } from "./turn-mail-correlation";
-import type { ChatStore } from "./store";
-import type { ThreadStore } from "./threads";
+import type { ChatStore } from "@corbits/chat/store";
+import type { ThreadStore } from "@corbits/chat/threads";
 import {
   TOOLS_UNSUPPORTED_CONSUMER_MESSAGE,
   isToolsUnsupportedInferenceText,
-} from "./tools-unsupported";
-import type { WorkbenchSubscriberRegistry } from "./workbench-events";
+} from "@corbits/chat/tools-unsupported";
+import type { WorkbenchSubscriberRegistry } from "@corbits/chat/workbench-events";
 import type { WriteClaimStore } from "./write-claims";
 
 const log = getLogger(["chat", "orchestrator"]);

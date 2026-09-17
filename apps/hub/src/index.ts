@@ -30,8 +30,6 @@ import {
   createEnvKeyCredentialCipher,
   createNoopCredentialCipher,
 } from "@intx/crypto";
-import { timeWindowEvaluator } from "@intx/authz";
-import type { ConditionRegistry } from "@intx/types/authz";
 import type { CredentialCipher } from "@intx/types";
 import {
   createApp,
@@ -50,27 +48,18 @@ import { isPlannerCreatedDefinitionName } from "@corbits/agent-directory";
 
 import {
   DEFAULT_TURN_CLAIM_TTL_MS,
-  createArtifactDeliveryHandler,
-  createDrizzleAgentTurnStore,
-  createInMemoryTurnClaimStore,
   createWorkbenchHostInferencePreferencesResolver,
   createWorkbenchSubscriberRegistry,
-  createWorkbenchTurnQueue,
   createTurnCancelRegistry,
-  createChatOrchestrator,
   createChatRoutes,
   createDrizzleBlockResponseStore,
   createDrizzleChatStore,
-  createDrizzleClientIdStore,
   createDrizzleNativePrincipalStore,
   createDrizzlePinStore,
   createDrizzleReactionStore,
   createDrizzleRoomMessageStore,
   createDrizzleThreadStore,
-  createDrizzleTurnMailCorrelationStore,
-  createDrizzleWriteClaimStore,
   createHubChatPlatform,
-  createNoopInferenceRoutes,
   createRelaunchNoticePoster,
   createRunTriggerClient,
   createWorkflowParticipantRoutes,
@@ -83,6 +72,16 @@ import {
   tagCredentialCipher,
   verifyInternalRunTriggerToken,
 } from "@corbits/chat";
+import {
+  createArtifactDeliveryHandler,
+  createChatOrchestrator,
+  createDrizzleAgentTurnStore,
+  createDrizzleClientIdStore,
+  createDrizzleTurnMailCorrelationStore,
+  createDrizzleWriteClaimStore,
+  createInMemoryTurnClaimStore,
+  createWorkbenchTurnQueue,
+} from "@corbits/agent-runtime";
 import {
   createDrizzleMailboxWriter,
   type MailboxFanoutDeps,
@@ -173,6 +172,8 @@ import {
 } from "@intx/hub-sessions";
 import { createLaunchCaches } from "./launch-caches";
 import { hubErrorHandler } from "./hub-error-handler";
+import { grantConditionRegistry } from "./grant-conditions";
+import { createNoopInferenceRoutes } from "./e2e/noop-inference";
 import { wireMailRedelivery } from "./mail-redelivery";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
@@ -1152,16 +1153,11 @@ export async function createHub(config: HubConfig) {
   // Presence rooms are ephemeral and process-local by design.
   const presenceRoomRegistry = createPresenceRoomRegistry();
 
-  // Chat's own grant store/condition registry, built the same way
-  // `createApp` builds its default when none is supplied (see
-  // `@intx/hub-api`'s `mountHubRoutes`): a db-backed grant store and
-  // the time-window condition evaluator. `createRequireGrant` is the
-  // published construction the platform's own internal instance is
-  // not exported for.
+  // The hub's own grant store, built the same way `createApp` builds its
+  // default when none is supplied (see `@intx/hub-api`'s
+  // `mountHubRoutes`). `createRequireGrant` is the published construction
+  // the platform's own internal instance is not exported for.
   const chatGrantStore = createGrantStore(db);
-  const chatConditionRegistry: ConditionRegistry = {
-    time_window: timeWindowEvaluator,
-  };
   // CL-6345: arm the grant-allowance gate declared up at `lookups`. The
   // one annotation today is `mcp_call` (registered under both its bare
   // and pinned-namespaced names): a downstream MCP tool the server
@@ -1213,7 +1209,7 @@ export async function createHub(config: HubConfig) {
               };
             },
             grantStore: chatGrantStore,
-            conditionRegistry: chatConditionRegistry,
+            conditionRegistry: grantConditionRegistry,
             approvalStore: createApprovalStore(db),
             signalCorrelationStore: createSignalCorrelationStore(db),
           },
@@ -1229,7 +1225,7 @@ export async function createHub(config: HubConfig) {
       registry: presenceRoomRegistry,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
+        conditionRegistry: grantConditionRegistry,
       }),
     }),
   );
@@ -1555,7 +1551,7 @@ export async function createHub(config: HubConfig) {
     turnCancellation,
     requireGrant: createRequireGrant({
       grantStore: chatGrantStore,
-      conditionRegistry: chatConditionRegistry,
+      conditionRegistry: grantConditionRegistry,
     }),
     isInvitableDefinition: isPickerListableDefinition,
     turnTimeoutMs: DEFAULT_TURN_CLAIM_TTL_MS,
@@ -1662,7 +1658,7 @@ export async function createHub(config: HubConfig) {
       store: insightsUsage.store,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
+        conditionRegistry: grantConditionRegistry,
       }),
       runTraceReader: createDrizzleRunTraceReader(db),
       latencyStore: insightsLatency.store,
@@ -1687,7 +1683,7 @@ export async function createHub(config: HubConfig) {
       db,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
+        conditionRegistry: grantConditionRegistry,
       }),
     }),
   );
@@ -1703,7 +1699,7 @@ export async function createHub(config: HubConfig) {
       db,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
+        conditionRegistry: grantConditionRegistry,
       }),
       runNow: async (args) =>
         runNowScheduledDefinition(
@@ -1738,7 +1734,7 @@ export async function createHub(config: HubConfig) {
       store: evalRuns.store,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
+        conditionRegistry: grantConditionRegistry,
       }),
     }),
   );
@@ -1879,7 +1875,7 @@ export async function createHub(config: HubConfig) {
         assetService,
         repoStore: agentRepoStore.repoStore,
         grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
+        conditionRegistry: grantConditionRegistry,
       }),
     }),
   );
@@ -1889,7 +1885,7 @@ export async function createHub(config: HubConfig) {
       registry: commandRegistry,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
+        conditionRegistry: grantConditionRegistry,
       }),
       workbenchBelongsToTenant: async (tenantId, chatId) =>
         (await chatStore.getWorkbenchSettings(tenantId, chatId)) !==
@@ -1918,7 +1914,7 @@ export async function createHub(config: HubConfig) {
       store: webhookTriggerStore,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
+        conditionRegistry: grantConditionRegistry,
       }),
       workflowDefinitionInTenant: async (tenantId, definitionId) => {
         const row = await db.query.workflowDefinition.findFirst({
@@ -2012,7 +2008,7 @@ export async function createHub(config: HubConfig) {
       registry: CONNECTOR_REGISTRY,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
+        conditionRegistry: grantConditionRegistry,
       }),
       log: (line) => log.info`${line}`,
       // Same env bag the OAuth connect flow itself reads below, so
@@ -2108,7 +2104,7 @@ export async function createHub(config: HubConfig) {
     createCatalogBlockRoutes({
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
+        conditionRegistry: grantConditionRegistry,
       }),
       log: (line) => log.info`${line}`,
       inferencePreferences: (tenantId) =>
@@ -2197,7 +2193,7 @@ export async function createHub(config: HubConfig) {
       hubUrl: config.baseUrl,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
+        conditionRegistry: grantConditionRegistry,
       }),
       log: (line) => log.info`${line}`,
       presets: MCP_PRESETS,
@@ -2214,7 +2210,7 @@ export async function createHub(config: HubConfig) {
       hubUrl: config.baseUrl,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
+        conditionRegistry: grantConditionRegistry,
       }),
       log: (line) => log.info`${line}`,
       credentialCipher,

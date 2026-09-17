@@ -17,7 +17,7 @@ import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import {
   AGENT_TURN_STALE_MS,
   createDrizzleAgentTurnStore,
-} from "../src/agent-turns";
+} from "@corbits/agent-runtime";
 import { applyChatMigrations } from "../src/migrations";
 import { createDrizzleRoomMessageStore } from "../src/room-messages";
 import { listWorkbenchLiveState } from "../src/workbench-reply-activity";

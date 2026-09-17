@@ -9,7 +9,7 @@ import {
   createCommandRegistry,
   createWorkflowCommandPlugin,
 } from "@corbits/commands";
-import { createInMemoryAgentTurnStore } from "../src/agent-turns";
+import { createInMemoryAgentTurnStore } from "@corbits/agent-runtime";
 import { startWorkflowCommand } from "../src/workbench-service";
 import {
   buildDeps,

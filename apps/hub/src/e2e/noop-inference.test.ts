@@ -9,7 +9,7 @@
 // up here, not only when a real workbench host tries to use it.
 import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
-import { createNoopInferenceRoutes } from "../src/noop-inference";
+import { createNoopInferenceRoutes } from "./noop-inference";
 
 const ContentBlockDelta = type({
   type: "'content_block_delta'",

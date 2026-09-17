@@ -16,8 +16,8 @@ import {
   type WorkflowParticipantRunScope,
   type WorkflowRunAuthenticator,
 } from "../src/workflow-participant-routes";
-import { createInMemoryTurnClaimStore } from "../src/turn-claims";
-import { createWorkbenchTurnQueue } from "../src/turn-queue";
+import { createInMemoryTurnClaimStore } from "@corbits/agent-runtime";
+import { createWorkbenchTurnQueue } from "@corbits/agent-runtime";
 import { createTurnCancelRegistry } from "../src/turn-cancellation";
 import { fakePlatform, TENANT } from "./test-support";
 

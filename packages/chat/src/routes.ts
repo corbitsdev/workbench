@@ -37,7 +37,7 @@ import {
 } from "./reactions";
 import { isKnownReactionEmoji } from "./reaction-emoji";
 import type { PinRow, PinStore } from "./pins";
-import type { ClientIdStore } from "./client-ids";
+import type { ClientIdStore } from "@corbits/agent-runtime";
 import { presetForKind } from "./kinds";
 import { localPartOf } from "./agent-address";
 import {
@@ -89,16 +89,16 @@ import {
   createWorkbenchPresenceRegistry,
   type WorkbenchPresenceRegistry,
 } from "./workbench-presence";
-import { createInMemoryTurnClaimStore } from "./turn-claims";
+import { createInMemoryTurnClaimStore } from "@corbits/agent-runtime";
 import {
   createWorkbenchTurnQueue,
   type WorkbenchTurnQueue,
-} from "./turn-queue";
+} from "@corbits/agent-runtime";
 import {
   createTurnCancelRegistry,
   type TurnCancelRegistry,
 } from "./turn-cancellation";
-import type { TurnMailCorrelationStore } from "./turn-mail-correlation";
+import type { TurnMailCorrelationStore } from "@corbits/agent-runtime";
 import type { ChatPlatform } from "./platform-port";
 import type { ChatStore } from "./store";
 import {
@@ -110,7 +110,7 @@ import type { CommandRegistry, CommandResult } from "@corbits/commands";
 import { InferenceResolutionError } from "./model-unavailable";
 import { DefinitionProjectionMissingError } from "@corbits/workflows";
 import type { NativePrincipal, NativePrincipalStore } from "./native-principal";
-import type { AgentTurnStore } from "./agent-turns";
+import type { AgentTurnStore } from "@corbits/agent-runtime";
 import type { ThreadStore } from "./threads";
 import { ThreadDepthCapError } from "./threads";
 import {
