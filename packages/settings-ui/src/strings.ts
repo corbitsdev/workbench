@@ -74,28 +74,6 @@ export const SETTINGS_STRINGS = {
   peopleLastOwnerError:
     "This workbench needs at least one owner — make someone else an owner first.",
 
-  accessPolicyHeading: "Who can join",
-  accessPolicyLoadError: "who can join",
-  accessPolicySignupLabel: "Self-signup",
-  accessPolicySignupOff: "Off — no self-signup (default)",
-  accessPolicySignupAllowedDomains: "Anyone with an allowed email domain",
-  accessPolicySignupOpenOption: "Anyone with an account",
-  accessPolicyDomainsLabel: "Allowed email domains",
-  accessPolicyDomainsPlaceholder: "acme.example",
-  accessPolicyDomainsAdd: "Add",
-  accessPolicyDomainsEmptyHint:
-    "No domains added yet — with self-signup on and no domains listed, any email domain is allowed.",
-  accessPolicyDomainsRemove: "Remove",
-  accessPolicySubCreationLabel: "Who can create a sub-workbench here",
-  accessPolicySubCreationOwners: "Owners only (default)",
-  accessPolicySubCreationOwnersAdmins: "Owners and admins",
-  accessPolicySubCreationNone: "Nobody",
-  accessPolicySaveAction: "Save",
-  accessPolicySaving: "Saving…",
-  accessPolicySaveError: "Couldn't save that change — try again.",
-  accessPolicyNote:
-    "Closed by default: no open signup, no self-serve sub-workbenches. These settings apply to this workbench.",
-
   rolesSectionTitle: "Roles",
   rolesSectionDescription:
     "This workbench's roles and who they're assigned to.",

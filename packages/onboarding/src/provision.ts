@@ -7,7 +7,6 @@
 // user's own credential, never by signup.
 
 import { type ApiCall } from "@corbits/hub-api-client";
-import type { AccessPolicyStore } from "@workbench/access-policy";
 import { genesisOrJoinHubSignup, type HubSignupTenancy } from "./genesis";
 
 export { ProvisionError } from "./genesis";
@@ -39,10 +38,6 @@ export type ProvisionArgs = {
   cookies: string[];
   userId: string;
   userEmail: string;
-  /** better-auth is configured without `requireEmailVerification` — an
-   * unverified email must never pass a domain-allowlist meant for
-   * someone else. See `@workbench/access-policy`'s `evaluateSignupGate`
-   * doc comment. */
   userEmailVerified: boolean;
   /** Slug for the genesis tenant — the first tenant on an empty hub.
    * Later signups join the existing root and never read this. */
@@ -53,14 +48,6 @@ export type ProvisionArgs = {
   displayName?: string;
   tenancy: HubSignupTenancy;
   log: (line: string) => void;
-  /** The closed-by-default access-policy gate. Join consults it
-   * outright (a closed hub never self-grants membership); genesis on an
-   * empty hub waives only `signup_closed` — email verification and the
-   * domain allowlist still bind the first user. */
-  accessPolicy?: {
-    store: AccessPolicyStore;
-    allowUnverifiedEmails: boolean;
-  };
 };
 
 /** A lowercase-kebab personal-bench slug, unique per user without a
@@ -98,9 +85,6 @@ export async function provisionPersonalTenantIfNeeded(
     defaultTenantSlug: args.defaultTenantSlug,
     tenancy: args.tenancy,
     log: args.log,
-    ...(args.accessPolicy !== undefined
-      ? { accessPolicy: args.accessPolicy }
-      : {}),
     ...(args.displayName !== undefined
       ? { displayName: args.displayName }
       : {}),

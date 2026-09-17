@@ -129,11 +129,6 @@ const ALLOWLIST: readonly {
     tables: ["bench_model_policy"],
   },
   {
-    relPath: "packages/access-policy/src/schema.ts",
-    maxOccurrences: 1,
-    tables: ["policy"],
-  },
-  {
     relPath: "packages/onboarding/src/schema.ts",
     maxOccurrences: 1,
     tables: ["pending_seed"],

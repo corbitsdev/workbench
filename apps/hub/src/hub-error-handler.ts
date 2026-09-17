@@ -33,9 +33,8 @@ function hasGuidance(err: unknown): err is Error & { guidance: string } {
  * `app.onError` runs for routes mounted both inside and outside the
  * platform's tenant middleware, so `c`'s `Variables` aren't statically
  * known here; this borrows the same `TenantEnv` a tenant-scoped route
- * types `c.get("tenant")` with (see `packages/access-policy/src/routes.ts`)
- * to read `tenant.id` when a tenant-scoped route set it, without claiming
- * the wider type up front.
+ * types `c.get("tenant")` with to read `tenant.id` when a tenant-scoped
+ * route set it, without claiming the wider type up front.
  */
 function extractTenantId(c: Context): string | undefined {
   return (c as unknown as Context<TenantEnv>).var.tenant?.id;

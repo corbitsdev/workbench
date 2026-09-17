@@ -88,7 +88,6 @@ apps/web/src/session.ts	3	return {
 apps/web/src/shell/context-menu/items.tsx	1	toast("Couldn't copy the link");
 apps/web/src/shell/workbench-list.tsx	1	// Revert the optimistic title on failure; the list will refetch on
 apps/web/src/shell/workbench-list.tsx	1	setPinned(!next);
-packages/access-policy/src/policy.ts	1	return [];
 packages/agent-directory-tools/src/tool.ts	1	// The agent was genuinely created — that half-success must never
 packages/agent-directory-tools/src/tool.ts	1	if (err instanceof CreateAgentDefinitionError) {
 packages/agent-directory-tools/src/tool.ts	1	return errorResult(call.id, err);

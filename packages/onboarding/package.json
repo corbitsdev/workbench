@@ -38,7 +38,6 @@
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "workspace:*",
     "@intx/types": "workspace:*",
-    "@workbench/access-policy": "workspace:*",
     "@corbits/connections": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
     "@corbits/tool-registry-publish": "workspace:*",

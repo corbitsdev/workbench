@@ -28,7 +28,6 @@ import {
 } from "@corbits/hub-api-client";
 import { Hono } from "hono";
 import { type } from "arktype";
-import type { AccessPolicyStore } from "@workbench/access-policy";
 import {
   generateRefId,
   makeErrorEnvelope,
@@ -213,14 +212,6 @@ export type CreateOnboardingRoutesDeps = {
    * from `createDrizzlePendingSeedStore(db, credentialCipher)` in
    * production; tests inject `createInMemoryPendingSeedStore`. */
   pendingSeedStore: PendingSeedStore;
-  /** The closed-by-default access-policy gate threaded straight into
-   * `provisionPersonalTenantIfNeeded` — see that function's own
-   * `accessPolicy` doc comment. Absent means no access-policy package
-   * is wired in at all; never a valid production shape. */
-  accessPolicy?: {
-    store: AccessPolicyStore;
-    allowUnverifiedEmails: boolean;
-  };
   /** Seals the OAuth connect state (PKCE verifier included) parked
    * between `/start` and `/callback`, so a hub restart in between
    * doesn't strand it — see `@corbits/connections`' `pkce.ts`. The same `CredentialCipher`
@@ -487,8 +478,6 @@ export function createOnboardingRoutes(
         log: deps.log,
       };
       if (body?.name !== undefined) provisionArgs.displayName = body.name;
-      if (deps.accessPolicy !== undefined)
-        provisionArgs.accessPolicy = deps.accessPolicy;
 
       const result = await provisionPersonalTenantIfNeeded(provisionArgs);
 
