@@ -10,8 +10,6 @@ export { WorkbenchTimeline, messageDomId, findRetryText } from "./timeline";
 export { NoUsableModelBanner } from "./no-usable-model-banner";
 export type {
   CurrentUser,
-  ReactionActions,
-  PinActions,
   PendingActions,
   PendingMessageStatus,
   TimelineMessageItem,
@@ -40,8 +38,6 @@ export type {
 export { threadMessagesToTimeline, roomRefFor } from "./mailbox-timeline";
 export type { TimelineItem } from "./mailbox-timeline";
 
-export { PinnedStrip } from "./pinned-strip";
-export type { PinsStatus } from "./use-workbench-feed";
 export {
   Composer,
   draftAfterSend,
@@ -177,7 +173,6 @@ export {
   sendMessage,
   fetchWorkbenchBlob,
   listThreads,
-  listThreadMessages,
   putReadState,
   listRuns,
   listInvitableDefinitions,
@@ -196,11 +191,6 @@ export {
   submitPollResponse,
   submitFormResponse,
   submitQuestionResponse,
-  REACTION_EMOJI,
-  toggleReaction,
-  pinMessage,
-  unpinMessage,
-  listPinnedMessages,
   listWorkbenchAgents,
 } from "./api";
 export type {
@@ -212,7 +202,6 @@ export type {
   MessageItem,
   MessagesResponse,
   WorkbenchThread,
-  ThreadMessagesResponse,
   Run,
   InvitableDefinition,
   InvitedAgent,
@@ -224,10 +213,6 @@ export type {
   BenchChatSettingsPatch,
   BlockResponses,
   BlockResponsePayload as BlockResponsePayloadWire,
-  ReactionEmoji,
-  ReactionSummary,
-  Pinned,
-  PinnedMessage,
   WorkbenchAgent,
 } from "./api";
 export { WorkbenchSettingsSurface } from "./workbench-settings";

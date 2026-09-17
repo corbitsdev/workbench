@@ -8,7 +8,6 @@ import type { Root } from "react-dom/client";
 
 import type { MessageItem } from "../src/api";
 import { WorkbenchTimeline } from "../src/timeline";
-import type { PinActions, ReactionActions } from "../src/timeline";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -22,11 +21,6 @@ afterEach(() => {
 
 const socialActions = {
   onOpenThread: () => undefined,
-  reactionActions: { onToggle: () => undefined } satisfies ReactionActions,
-  pinActions: {
-    onPin: () => undefined,
-    onUnpin: () => undefined,
-  } satisfies PinActions,
 };
 
 async function mount(
@@ -41,8 +35,6 @@ async function mount(
       <WorkbenchTimeline
         items={items}
         onOpenThread={socialActions.onOpenThread}
-        reactionActions={socialActions.reactionActions}
-        pinActions={socialActions.pinActions}
         {...(extra.onFixConnection !== undefined
           ? { onFixConnection: extra.onFixConnection }
           : {})}
@@ -230,7 +222,6 @@ describe("CL-6739: system / error / connect rows hide social chrome", () => {
 
     const toolbar = el.querySelector(".chat-hover-toolbar");
     expect(toolbar).not.toBeNull();
-    expect(toolbar?.querySelector(".chat-reaction-add")).not.toBeNull();
     expect(toolbar?.querySelector(".chat-hover-reply")).not.toBeNull();
     expect(toolbar?.querySelector(".chat-hover-ellipsis")).not.toBeNull();
   });

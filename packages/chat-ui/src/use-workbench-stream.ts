@@ -165,8 +165,6 @@ export function useWorkbenchStream(
         "chat.agent",
         "chat.settings",
         "chat.typing",
-        "chat.reaction",
-        "chat.pin",
         "chat.presence",
         "chat.presence.snapshot",
         "chat.workbenches-mutated",

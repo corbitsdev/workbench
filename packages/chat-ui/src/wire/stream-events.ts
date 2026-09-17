@@ -18,11 +18,7 @@
 // `GET /workbenches/:id/messages` page item and a freshly published
 // `chat.message` are structurally the same shape, minus the fields
 // (`reactions`, `pinned`, `clientId`) that are always absent on a
-// message nobody has reacted to, pinned, or reconciled yet. Reaction
-// and pin events already carry the full changed row for their own
-// narrow concern (which emoji, which principal, pinned by whom, when)
-// — a subscriber folds that delta into state it already has rather
-// than refetching the row it's about.
+// message nobody has reacted to, pinned, or reconciled yet.
 import { type } from "arktype";
 import { Part } from "./parts";
 
@@ -62,22 +58,6 @@ export const ChatSettingsEventData = type({
   settings: "Record<string, unknown>",
 });
 export type ChatSettingsEventData = typeof ChatSettingsEventData.infer;
-
-export const ChatReactionEventData = type({
-  messageId: "string",
-  emoji: "string",
-  principalId: "string",
-  added: "boolean",
-});
-export type ChatReactionEventData = typeof ChatReactionEventData.infer;
-
-export const ChatPinEventData = type({
-  messageId: "string",
-  pinned: "boolean",
-  "pinnedBy?": "string",
-  "pinnedAt?": "string",
-});
-export type ChatPinEventData = typeof ChatPinEventData.infer;
 
 export const ChatTypingEventData = type({
   principalId: "string",

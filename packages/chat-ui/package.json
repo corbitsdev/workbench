@@ -15,7 +15,6 @@
     "./wire/participants": "./src/wire/participants.ts",
     "./wire/display-name": "./src/wire/display-name.ts",
     "./wire/agent-address": "./src/wire/agent-address.ts",
-    "./wire/reaction-emoji": "./src/wire/reaction-emoji.ts",
     "./wire/workbench-host-naming": "./src/wire/workbench-host-naming.ts",
     "./wire/stream-events": "./src/wire/stream-events.ts",
     "./wire/consumer-inference-text": "./src/wire/consumer-inference-text.ts"
@@ -33,7 +32,6 @@
     "@tanstack/react-query": "catalog:",
     "@corbits/connections": "workspace:*",
     "@corbits/jimmy-agent": "workspace:*",
-    "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#bc964040fa42ffe4e5d5004f87edaab6486e5d60",
     "arktype": "catalog:",
     "@corbits/icons": "workspace:*",
     "react": "^19.2.0",

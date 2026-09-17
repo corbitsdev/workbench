@@ -29,9 +29,10 @@ function stubFetch() {
         status: 200,
         headers: { "content-type": "application/json" },
       });
-    if (/\/threads$/.test(path)) return json({ rootThreadId: "", items: [] });
-    if (/\/messages/.test(path)) return json({ items: [] });
-    if (/\/pins$/.test(path)) return json({ items: [] });
+    // The feed now reads via `@corbits/mailbox`'s thread routes
+    // (CL-8174 slice 2b) — an empty thread list means neither query
+    // ever needs to read a thread's own messages.
+    if (/\/mailbox\/me\/threads/.test(path)) return json({ threads: [] });
     throw new Error(`unstubbed fetch: ${path}`);
   }) as typeof fetch;
 }
