@@ -1,8 +1,5 @@
-// Mirrored from packages/chat/src (CL-8148 T5b): apps/web and @corbits/chat-ui
-// must not import @corbits/chat, a server-only package. This is the browser-
-// facing half of the same wire contract the hub's chat routes still speak;
-// once the hub moves onto native mail threads (T5a/T5c) this file becomes
-// the one source of truth and packages/chat's copy goes away.
+// Mirrored from packages/chat/src: apps/web and @corbits/chat-ui must not
+// import @corbits/chat, a server-only package.
 
 /**
  * Person-facing inference copy. HTTP status, raw provider dumps, and
@@ -24,7 +21,7 @@ export const CONSUMER_INFERENCE_FAILURE_NOTICE =
 /**
  * Byte-for-byte copies of the two preambles `@intx/inference`'s
  * `formatInferenceError` writes for `credential_failure` and
- * `quota_exhausted`. Kept here so the bench-list preview path (CL-6735)
+ * `quota_exhausted`. Kept here so the bench-list preview path
  * can refuse them without depending on `@corbits/chat-ui`. The chat-ui
  * drift guard still owns matching these against the published director.
  */
@@ -68,7 +65,7 @@ export function isClassifiedInferenceFailureText(text: string): boolean {
 }
 
 /**
- * Bench-list / sidebar preview copy (CL-6735): never the full failure
+ * Bench-list / sidebar preview copy: never the full failure
  * paragraph, never HTTP/raw provider dumps — a short consumer sentence
  * when the text is a classified failure.
  */

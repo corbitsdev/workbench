@@ -49,7 +49,7 @@ export function fetchOAuthConfigured(tenantId: string): Promise<Record<string, b
 }
 
 /**
- * The one connect action (CL-6377): the server proves the pasted key
+ * The one connect action: the server proves the pasted key
  * against the connector's own probe and only stores it once that probe
  * accepts — there is no separate client-driven "test" round-trip before
  * this call. A rejected probe 422s with the probe's own message, which
@@ -66,7 +66,7 @@ export function completeConnectorCredential(
   modelGuidance?: string;
 }> {
   // A key copied from a provider console often carries a trailing
-  // newline; sent verbatim the provider 401s a valid key (CL-6682).
+  // newline; sent verbatim the provider 401s a valid key.
   return request(
     `/api/tenants/${tenantId}/connections/${connectorId}/complete`,
     CompleteResult,
@@ -84,7 +84,7 @@ export function completeConnectorCredential(
  * this route deletes the catalog provider first (cascading its
  * offerings), then the credential provider row (cascading its
  * credentials) — see `@corbits/connections`' `disconnectConnector` for
- * the full ordering and why (CL-6258).
+ * the full ordering and why.
  */
 export function disconnectConnector(tenantId: string, connectorId: string): Promise<void> {
   return request<void>(

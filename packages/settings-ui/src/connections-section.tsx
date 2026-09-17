@@ -74,7 +74,7 @@ const OAUTH_CARDS: readonly OAuthConnectorCard[] = [
  * `connections/oauth` mount instead of re-deriving this URL. Onboarding's
  * own `/api/onboarding/oauth/...` mount serves only its first-login
  * OpenRouter/Hugging Face flow and is never a connect surface's target
- * (CL-6394).
+ *.
  */
 export function oauthStartHref(
   tenantId: string,
@@ -89,7 +89,7 @@ type ConnectionsData = {
   readonly providers: readonly Provider[];
   readonly oauthConfigured: Readonly<Record<string, boolean>>;
   /** The resolved model catalog — read only to derive each connected
-   * inference provider's one default model (CL-6258's replacement for
+   * inference provider's one default model (replacement for
    * the removed Models settings page; see `defaultModelForProvider`'s
    * own header for why this is never a second, hand-maintained notion of
    * "the" model). */
@@ -106,11 +106,9 @@ type ConnectionsData = {
  * a caller only supplies the data it already has and a place to send a
  * reload/error signal. `ConnectionsSection` composes this with the OAuth
  * row pair and the advanced credentials table for the full Settings >
- * Connections page — its one consumer today. The onboarding wizard's own
- * "Connect your tools" step (CL-6028), which once rendered this alone
- * filtered to `feedsTools`-bearing connectors, was dropped in CL-6104:
- * connecting tools now lives only in Settings and the Plugins gallery,
- * never in onboarding. Renders bare `ConnectorRow`s — not wrapped in
+ * Connections page — its one consumer today. Connecting tools lives only
+ * in Settings and the Plugins gallery, never in onboarding. Renders bare
+ * `ConnectorRow`s — not wrapped in
  * `.settings-connections-list` itself — so a caller controls the list
  * container (and can put other rows, like the OAuth pair, in the same
  * list alongside these).
@@ -301,7 +299,7 @@ export function ConnectionsSection({ tenantId }: { readonly tenantId: string | n
   // a raw credential, so it goes through `disconnectConnector`'s
   // orchestrated cleanup (catalog provider, then credential provider —
   // see that function's own header for why a direct credential delete
-  // 500s for an inference provider, CL-6258).
+  // 500s for an inference provider).
   function handleDisconnectConnector(connectorId: string) {
     setRowError(null);
     disconnectConnector(currentTenantId, connectorId)
@@ -422,7 +420,7 @@ function ModelRoutePanel({
   }
 
   function chooseModel(canonicalName: string) {
-    // Tenant default is an offering-priority write only (CL-6782). Existing
+    // Tenant default is an offering-priority write only. Existing
     // agents keep whatever `capabilities.model` they already store; new
     // agents may still pick up the default at create. Never PATCH
     // `/agent-definitions`.
@@ -549,7 +547,7 @@ function StatusCaption({ statusResult }: { readonly statusResult: ConnectorStatu
  * registry has one, a monochrome initial tile otherwise — the same tile
  * pattern (zero radius, hairline border) the plugins directory's own
  * `PluginLogo` uses (`packages/chat-ui/src/workbench-settings/plugins-
- * section.tsx`), reused here rather than re-derived (CL-6258). */
+ * section.tsx`), reused here rather than re-derived. */
 function ConnectorLogo({
   displayName,
   icon,
@@ -780,7 +778,7 @@ export function ConnectorCredentialDialog({
   const open = descriptor !== null;
   const canSubmit = apiKey.trim() !== "" && !submitting;
 
-  // One action, not test-then-save (CL-6377): the server proves the key
+  // One action, not test-then-save: the server proves the key
   // with a real call before ever storing it, so a rejected key never gets
   // sealed — this call is the only round-trip, and its 422 rejection
   // renders inline the same as any other connect failure.
@@ -790,7 +788,7 @@ export function ConnectorCredentialDialog({
     setSubmitError(null);
     completeConnectorCredential(tenantId, descriptor.id, apiKey)
       .then((completed) => {
-        // CL-6351: a fresh Ollama connect with only an embedding model
+        // A fresh Ollama connect with only an embedding model
         // pulled still succeeds — `modelGuidance` says so in the same
         // consumer language the "connected" toast normally would,
         // instead of the generic success line.

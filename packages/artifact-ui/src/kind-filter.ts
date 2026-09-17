@@ -1,9 +1,8 @@
 // Pure helpers for the Files kind nav (`/files`, `/files/document`, …) —
 // this package's own names keep the "library" vocabulary (it's the
 // internal name for the artifact store), but `LIBRARY_PATH` tracks the
-// app's real mount point, renamed off `/library` to `/files` (CL-6353;
-// user-facing copy dropped "Library" entirely, the app's `/library` prefix
-// stays routable only as a redirect — see `legacy-settings-redirects.tsx`).
+// app's real mount point: `/library` stays routable only as a redirect
+// to `/files` — see `legacy-settings-redirects.tsx`.
 // Framework-free so both the web app (rendering the nav + filtering the
 // visible list) and the hub (computing honest per-kind counts server-side)
 // share one mapping instead of two copies drifting apart.
@@ -34,7 +33,7 @@ export function libraryKindSegmentFromPath(path: string): string {
 const LIBRARY_ARTIFACT_SEGMENT = "a";
 
 /** Deep link to one artifact selected in Files — the seam a chat
- * artifact chip's "Open in Files" affordance navigates to (CL-6015). */
+ * artifact chip's "Open in Files" affordance navigates to. */
 export function libraryArtifactPath(artifactId: string): string {
   return `${LIBRARY_PATH}/${LIBRARY_ARTIFACT_SEGMENT}/${encodeURIComponent(artifactId)}`;
 }

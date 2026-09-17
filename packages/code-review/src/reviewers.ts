@@ -18,7 +18,7 @@
  * same prompts install these reviewers as ordinary chat agents
  * (`./agent-requests.ts`), and a reviewer carrying this contract answers
  * a person in the room with `{"summary": ..., "findings": []}` instead of
- * a sentence (CL-7189). Append it with `reviewerReportPrompt` on the one
+ * a sentence. Append it with `reviewerReportPrompt` on the one
  * path that reads JSON back.
  */
 export const REVIEWER_REPORT_CONTRACT =

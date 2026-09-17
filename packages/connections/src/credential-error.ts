@@ -9,7 +9,7 @@
 // structurally. This class is the shared, identifiable shape a thrower
 // and a catcher can agree on. `displayName` is an optional caller-supplied
 // override (this package carries no connector set of its own to look one
-// up in, CL-7384) — a caller with a registry handy passes the connector's
+// up in) — a caller with a registry handy passes the connector's
 // `displayName`; one without falls back to the raw connector id.
 export class MissingCredentialError extends Error {
   readonly connectorId: string;

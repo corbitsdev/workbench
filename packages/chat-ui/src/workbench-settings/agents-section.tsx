@@ -1,5 +1,5 @@
 // Agents: master-detail over every agent participant this workbench has
-// (CL-6215). The list (every invited agent, Invite agent, the autonomy
+//. The list (every invited agent, Invite agent, the autonomy
 // callout) is the whole surface until one is picked; clicking a row opens
 // that agent's detail — the editor the old, separate "Myra" tab rendered,
 // generalized to any agent: name/instructions (`getAgentInstructions`/
@@ -407,7 +407,7 @@ type CatalogState =
  * tenant — an entry with none has no provider connected anywhere up the
  * ancestor chain, so it is left off the picker rather than offered to fail
  * at launch. Embedding / Hugging Face / GGUF path names are also omitted
- * (CL-6744) via `chatCapableModels`. Labeled by its top (highest-priority)
+ * via `chatCapableModels`. Labeled by its top (highest-priority)
  * offering's provider — the same one `getResolvedCatalog`'s resolution
  * would pick. */
 function connectedModelOptions(
@@ -429,7 +429,7 @@ function connectedModelOptions(
 }
 
 /**
- * The obvious, top-of-detail way to change an agent's model (CL-6272.3) —
+ * The obvious, top-of-detail way to change an agent's model —
  * the "Add a capability" flow below stays for tools/skills/models added
  * one at a time, but a model is a property every agent already has one
  * of, not an optional add-on, so it gets its own labeled control that
@@ -739,7 +739,7 @@ function CapabilitiesBlock({
  * skill-pin route files), but it's written as a full sentence naming the
  * agent — redundant on a page that's already scoped to this one agent, and
  * repetitive across rows. This turns it into the short change summary the
- * history table actually shows (CL-6215 EMIL #8), falling back to the raw
+ * history table actually shows, falling back to the raw
  * message for anything this doesn't recognize rather than hiding it. */
 export function summarizeHistoryMessage(message: string): string {
   if (/^Update agent instructions for /.test(message)) {

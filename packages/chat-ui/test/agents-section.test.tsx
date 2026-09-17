@@ -1,5 +1,5 @@
 // DOM-mounted composition tests for the Agents master-detail settings
-// section (CL-6215): the list (every invited agent, Invite agent, the
+// section: the list (every invited agent, Invite agent, the
 // autonomy callout) is the whole surface until a row is clicked; its
 // detail is the old, separate "Myra" tab's editor — name/instructions,
 // Capabilities (including a model picker fed from the tenant's resolved
@@ -754,7 +754,7 @@ describe("Agents section — Capabilities", () => {
   });
 });
 
-describe("Agents section — Model select (CL-6272.3)", () => {
+describe("Agents section — Model select", () => {
   function modelSelect(el: HTMLElement) {
     return el.querySelector(".chat-settings-agent-model-select select") as HTMLSelectElement | null;
   }
@@ -847,7 +847,7 @@ describe("Agents section — Model select (CL-6272.3)", () => {
     expect(modelSelect(el)?.options[0]?.textContent).toBe("No model set");
   });
 
-  test("a catalog load failure reads as an error, not an empty picker (CL-6831)", async () => {
+  test("a catalog load failure reads as an error, not an empty picker", async () => {
     stubFetch({ catalogFails: true });
     const el = mount(baseProps());
     await settle();

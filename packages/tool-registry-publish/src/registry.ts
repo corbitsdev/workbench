@@ -19,7 +19,7 @@ export const CORBITS_TOOLS_REGISTRY = "corbits-tools";
  * (Myra's assistant pins `@corbits/capability-tools` into every drafted
  * agent's default tool-package set); an empty or dangling registry — a
  * package-registry row whose git repo has no tarball commits — is not
- * seeded. `@corbits/memory` (CL-8186) is not listed here: it is a
+ * seeded. `@corbits/memory` is not listed here: it is a
  * published dependency this repo does not build or publish into this
  * registry itself, not one of the workspace `packages/*-tools` this
  * publisher packs.
@@ -51,7 +51,7 @@ export function tarballsCoverRequiredSeedPackages(filenames: Iterable<string>): 
  * into the `corbits-tools` registry. Every workflow's
  * `toolPackagePins` under the `@corbits` scope must name a package
  * listed here, or its pin never resolves. `capability-tools`
- * (CL-6084/CL-6086) is published here and pinned into every drafted
+ * is published here and pinned into every drafted
  * agent's default tool-package set — see `@corbits/capability-tools`'s
  * README for how its request_capability tool reaches the hub.
  */

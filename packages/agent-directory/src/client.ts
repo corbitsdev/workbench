@@ -16,11 +16,11 @@ import {
 } from "./display-name";
 import { isConversationalWorkflowName } from "@corbits/workflows/catalog";
 
-// `deriveDisplayName`/`humanizeSlug` (CL-6413) live in `@corbits/chat`
+// `deriveDisplayName`/`humanizeSlug` live in `@corbits/chat`
 // itself, not here: this package already depends on `@corbits/chat` (for
 // `isWorkbenchHostDefinitionName` below), so a copy defined here could
 // never be imported back by `@corbits/chat`'s own call sites without a
-// circular dependency — exactly the gap CL-6471 traces the "Run
+// circular dependency — exactly the gap that traces the "Run
 // 737a058d…" leak to (the chat participant invite/greeting path never
 // migrated onto this derivation because it couldn't). Re-exported here so
 // every existing caller of `@corbits/agent-directory/client`'s

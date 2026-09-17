@@ -107,7 +107,7 @@ export type TenantResolution =
   | { readonly kind: "ready"; readonly tenantId: string };
 
 /**
- * One live presence entry for the workbench's who's-here stack (CL-6328) —
+ * One live presence entry for the workbench's who's-here stack —
  * derived from this workbench's own `/stream` connection
  * (`useWorkbenchPresenceRoster`), never a second connection or an HTTP
  * heartbeat poll. The roster carries only ids, so display names and avatar
@@ -158,7 +158,7 @@ const WORKBENCHES_LIST_CHROME: ChatHeaderChrome = {
  * The workbench's static member stack: every agent participant plus every
  * human on the roster. Agents first (they have no presence concept of
  * their own); humans follow. Roster humans are included even when live
- * presence is empty (CL-6779) — onboarding/template rooms often list the
+ * presence is empty — onboarding/template rooms often list the
  * signed-in human as a participant before any `chat.presence.snapshot`
  * arrives. Live who's-here is a separate round stack, not mixed in here.
  *
@@ -211,7 +211,7 @@ type WorkbenchesState =
     };
 
 /**
- * Recovery controls for a gone / non-workbench id (CL-6796). Prefer the
+ * Recovery controls for a gone / non-workbench id. Prefer the
  * Mission Control + New workbench pair; fall back to the legacy single
  * "Back to workbenches" action when a host has not wired the new props.
  */
@@ -344,9 +344,8 @@ const REPLY_TIMED_OUT_ITEM_ID = "reply_timed_out_notice";
  * the same class of failure `postUndeliveredNotice` (the hub's chat routes)
  * already gives an honest, actionable backstop to when the dispatch fails
  * loud enough for the server to see it — a cold-waking agent that never
- * streams a token back fails silently instead, so before CL-6677 this
- * synthetic notice rendered as a bare quiet event line with no ref id and
- * no Retry. It now carries a `turnFailed` text part exactly like the
+ * streams a token back fails silently instead, so this synthetic notice
+ * carries a `turnFailed` text part exactly like the
  * server's own notice (`replyTimedOutRefId` is minted by `reportError` at
  * the moment `useStreamingReply`'s timer fires), so it renders through
  * `FailedTurnStrip` — same ref-quotable copy, same Retry action — instead
@@ -515,7 +514,7 @@ function ChatWorkspaceInner({
    * `onOpenArtifactInLibrary`. */
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
   /** The classified-inference-failure text bubble's "Fix this connection"
-   * action — see `WorkbenchTimeline`'s `onFixConnection` (CL-6092). */
+   * action — see `WorkbenchTimeline`'s `onFixConnection`. */
   readonly onFixConnection?: () => void;
   /** The approve block's live round-trip — see `WorkbenchTimeline`'s
    * `approvalActions`. */
@@ -543,11 +542,11 @@ function ChatWorkspaceInner({
    * never touches localStorage), so it's told rather than reaching out. */
   readonly onWorkbenchNotFound?: (workbenchId: string) => void;
   /** Legacy single recovery for a gone workbench — prefer
-   * `onGoToMissionControl` / `onNewWorkbench` (CL-6796). */
+   * `onGoToMissionControl` / `onNewWorkbench`. */
   readonly onBackToWorkbenchList?: () => void;
-  /** Not-found empty state's Mission Control recovery (CL-6796). */
+  /** Not-found empty state's Mission Control recovery. */
   readonly onGoToMissionControl?: () => void;
-  /** Not-found empty state's New workbench recovery (CL-6796). */
+  /** Not-found empty state's New workbench recovery. */
   readonly onNewWorkbench?: () => void;
   /** The 401 messages-error state's way out — sign back in instead of a
    * retry that can only ever hit the same 401. Omitted, that state falls
@@ -556,7 +555,7 @@ function ChatWorkspaceInner({
   /** Whether this tenant can actually run inference right now — the
    * host's read of `hasUsableModel` (`@corbits/inference-settings`)
    * against its resolved catalog, never mere `model_provider` row
-   * presence (CL-6568). `undefined` while that read is still in flight:
+   * presence. `undefined` while that read is still in flight:
    * the banner stays hidden rather than flashing "no model" before the
    * real answer lands. */
   readonly hasUsableModel?: boolean;
@@ -579,7 +578,7 @@ function ChatWorkspaceInner({
     setSelectedWorkbenchId(id);
     onWorkbenchChange?.(id);
   };
-  // CL-6833: catch-up `fetchRunningTurn` failure must surface a banner with
+  // Catch-up `fetchRunningTurn` failure must surface a banner with
   // Retry — never look idle. `resumeAttempt` re-arms the effect on Retry.
   const [resumeFailedRefId, setResumeFailedRefId] = useState<string | null>(null);
   const [resumeAttempt, setResumeAttempt] = useState(0);
@@ -639,7 +638,7 @@ function ChatWorkspaceInner({
     if (first !== undefined) setActiveWorkbenchId(first.id);
   }, [workbenchesState, activeWorkbenchId]);
 
-  // CL-7201: this rethrows after
+  // This rethrows after
   // toasting — the composer's own `onStop` awaits the returned promise
   // and re-enables its Stop button on rejection, so a genuinely failed
   // request (network, a denied grant) never leaves the button stuck
@@ -719,7 +718,7 @@ function ChatWorkspaceInner({
   );
 
   // Every event applies straight into the query cache it describes rather
-  // than triggering a refetch (CL-6328, §6/1.2): each payload already
+  // than triggering a refetch: each payload already
   // carries what a subscriber needs, so there is no "invalidate, then
   // fetch" fallback left beside this. `chat.agent` needs no cache
   // application of its own — it's fully owned by
@@ -736,7 +735,7 @@ function ChatWorkspaceInner({
       switch (eventType) {
         case "chat.message": {
           // The feed now reads from the mailbox, not this stream's own
-          // `chat.message` payload (CL-8174 slice 2b) — the mailbox's own
+          // `chat.message` payload — the mailbox's own
           // `/me/inbox/events` subscription (see `useWorkbenchFeed`) is
           // what refreshes the timeline once the fan-out lands. A parse
           // failure here still means something arrived this connection
@@ -830,7 +829,7 @@ function ChatWorkspaceInner({
     isAgentAddress(participant.address),
   )?.address;
 
-  // CL-6380: a turn runs entirely server-side — this component mounting or
+  // A turn runs entirely server-side — this component mounting or
   // unmounting never starts or stops it (see `useWorkbenchStream`'s own
   // header: unmount only closes the `EventSource`, nothing server-side).
   // So a fresh mount (first visit, or a return after navigating away while
@@ -839,7 +838,7 @@ function ChatWorkspaceInner({
   // rather than showing nothing until the next live token arrives. Any
   // live event that beats this fetch back always wins — see
   // `resumeFromTurn`'s own guard.
-  // CL-6833: a failed catch-up must not swallow into idle — report a ref
+  // A failed catch-up must not swallow into idle — report a ref
   // and keep `ResumeFailedBanner` visible until Retry succeeds (or the
   // workbench changes).
   useEffect(() => {
@@ -873,7 +872,7 @@ function ChatWorkspaceInner({
     setResumeAttempt((attempt) => attempt + 1);
   }, []);
 
-  // Every other participant's address (CL-8175) — the signed-in sender's
+  // Every other participant's address — the signed-in sender's
   // own entry (matched by local-part against `principalId`, the same
   // convention `typingLabel` above reads) never belongs in its own `to`.
   const recipientAddresses = (activeWorkbench?.participants ?? [])
@@ -918,9 +917,9 @@ function ChatWorkspaceInner({
         : Promise.resolve([]),
     enabled: activeWorkbenchId !== null,
   });
-  // Person-facing display names for this workbench's agents (CL-6424),
+  // Person-facing display names for this workbench's agents,
   // keyed by participant address. Memoized so `MessageParts`'s memo guard
-  // (CL-6625) keeps working: a fresh Map every render would read as new
+  // keeps working: a fresh Map every render would read as new
   // props on every row and re-render the whole timeline per token.
   const agentDisplayNames: AgentDisplayNames = useMemo(
     () => agentDisplayNamesFromAgents(workbenchAgentsQuery.data ?? []),
@@ -979,7 +978,7 @@ function ChatWorkspaceInner({
     onSettingsOpenChange,
   ]);
 
-  // CL-6796: a routed id missing from the ready workbench list is NOT proof
+  // A routed id missing from the ready workbench list is NOT proof
   // the room is gone — create→navigate races the React Query list cache, so
   // a freshly created id is absent until refetch. Only an authoritative
   // messages/workbench fetch 404 marks the room gone. While the list miss
@@ -995,7 +994,7 @@ function ChatWorkspaceInner({
 
   // Who's live in this workbench right now, beyond the static participants
   // list — derived from this workbench's own `chat.presence`/
-  // `chat.presence.snapshot` stream events (CL-6328), never a second
+  // `chat.presence.snapshot` stream events, never a second
   // connection or an HTTP heartbeat poll. Display name and color are
   // resolved client-side (the roster itself carries only ids) the same way
   // `typingLabel` resolves a typing ping's principal.
@@ -1258,7 +1257,7 @@ function ChatWorkspaceInner({
               description={CHAT_STRINGS.noChatSelectedDescription}
             />
           ) : workbenchGone ? (
-            // CL-6796: fail closed — never mount Invite / composer / room
+            // Fail closed — never mount Invite / composer / room
             // header over a missing or 404'd workbench. Recovery is the
             // whole stage. Authoritative evidence only (messages 404), never
             // a stale ready-list miss alone.
@@ -1520,7 +1519,7 @@ export function ChatWorkspace({
    * `onOpenArtifactInLibrary`. */
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
   /** The classified-inference-failure text bubble's "Fix this connection"
-   * action — see `WorkbenchTimeline`'s `onFixConnection` (CL-6092). */
+   * action — see `WorkbenchTimeline`'s `onFixConnection`. */
   readonly onFixConnection?: () => void;
   /** The approve block's live round-trip — see `WorkbenchTimeline`'s
    * `approvalActions`. */

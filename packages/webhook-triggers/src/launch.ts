@@ -51,12 +51,12 @@ export type LaunchWebhookTriggerDeps = {
    * The same wrapped `EventCollectorRegistry` every native launcher
    * threads through (`apps/hub/src/index.ts`'s `eventCollectors`) — this
    * launcher records the run's `agent_session` and event collector the
-   * instant `prepareProvisionedDeployment` returns (CL-7481).
+   * instant `prepareProvisionedDeployment` returns.
    */
   eventCollectors: Pick<EventCollectorPort, "create" | "has">;
   /**
    * Reads the hub's live sidecar routing table. A freshly provisioned
-   * run's sidecar takes several seconds to boot and register (CL-7476)
+   * run's sidecar takes several seconds to boot and register
    * — a webhook's opening mail can land in that gap and fail with
    * "agent is unreachable" even though the run itself deployed fine.
    * `deliverWhenRoutable` polls this until the address is routable

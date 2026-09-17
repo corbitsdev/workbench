@@ -127,7 +127,7 @@ describe("chat error copy never leaks a raw API path", () => {
       if (/\/chat\/bench\/settings$/.test(path)) {
         return json({ settings: {}, contextWindow: 20 });
       }
-      // The feed reads via the mailbox now (CL-8174 slice 2b) — a 500
+      // The feed reads via the mailbox — a 500
       // here is what this test's "no raw path/status leaks" copy check
       // actually exercises.
       if (/\/mailbox\/me\/threads/.test(path)) {

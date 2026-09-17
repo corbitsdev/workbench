@@ -1,4 +1,4 @@
-// App-level provider health (CL-6092): a tenant-scoped, in-process signal
+// App-level provider health: a tenant-scoped, in-process signal
 // that a provider's connection needs attention, fed by two write paths —
 // a connect-time credential test failure (`routes.ts`'s `/complete` and
 // `/credential/test` handlers) and a RUNTIME classified inference failure
@@ -148,7 +148,7 @@ const ProviderHealthSnapshotEnvelope = type({
   "connectedProviderCount?": "number",
 });
 
-/** The browser-safe client for `GET /provider-health` (CL-6092) — same
+/** The browser-safe client for `GET /provider-health` — same
  * shape as `plugins.ts`'s own tenant-scoped fetch, reused by
  * `apps/web`'s shell banner rather than each caller building the path
  * itself. Parses the response at this trust boundary (never an `as`

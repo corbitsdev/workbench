@@ -5,7 +5,7 @@
 // `packages/webhook-triggers/src/management-routes.ts`), so this is the
 // only place that value is ever on screen. First built inline in the
 // Routines page's webhook panel; lifted here so the Connections surface's
-// Granola webhook card (CL-6028) renders the identical panel instead of a
+// Granola webhook card renders the identical panel instead of a
 // second hand-rolled copy.
 
 import { Button } from "@corbits/react-ui";

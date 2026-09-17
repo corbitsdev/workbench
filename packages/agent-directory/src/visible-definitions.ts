@@ -3,7 +3,7 @@
 // same way `@intx/db`'s own `resolveProviderByName`/`listAssetsForTenant`
 // do and `packages/connections/src/mcp-server-store.ts`'s
 // `listMcpServerConnections` already does for MCP server connections
-// (CL-6191) — a child tenant can reach anything a parent tenant made
+// — a child tenant can reach anything a parent tenant made
 // available, and a same-name definition made at the child shadows the
 // ancestor's. Reads inherit up the chain; creating/editing a definition
 // stays own-tenant only (`./routes.ts`).
@@ -17,7 +17,7 @@ export type VisibleAgentDefinition = {
   readonly id: string;
   /** The definition's display name — its own description when one was
    * set at creation, otherwise a humanized reading of its immutable slug
-   * (`deriveDisplayName`, CL-6413). Never the raw slug itself. */
+   * (`deriveDisplayName`). Never the raw slug itself. */
   readonly name: string;
   /** The tenant that actually owns this definition — where its DM workbench
    * must be minted, not necessarily the caller's own tenant. */

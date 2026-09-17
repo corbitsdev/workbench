@@ -1,5 +1,5 @@
 // The HTTP surface for Myra-backed agent-definition drafting
-// (CL-6074): tenant-scoped, `requireGrant`-gated, personal to the
+//: tenant-scoped, `requireGrant`-gated, personal to the
 // requesting principal, request parsing via arktype at the boundary,
 // route registration only. Error copy at this boundary is plain
 // language for the person who typed the description; the technical
@@ -38,7 +38,7 @@ const CreateAgentDefinitionDraftBody = type({
 export type CreateAgentDefinitionDraftRoutesDeps = {
   requireGrant: RequireGrant;
   /**
-   * The agent-definition drafting port (CL-6074) — omitted entirely on
+   * The agent-definition drafting port — omitted entirely on
    * a host that hasn't wired Myra drafting up yet, in which case this
    * route 404s rather than pretending to draft and always failing.
    * The route never touches `./agent-definition-drafting.ts`'s

@@ -1,4 +1,4 @@
-// The shared configuration surface (CL-6090) keeps credential and management
+// The shared configuration surface keeps credential and management
 // controls out of the catalog grid. It reuses the exact mutations
 // `@corbits/settings-ui`'s own
 // Connections section already calls (`completeConnectorCredential`,
@@ -7,8 +7,8 @@
 // than forking its dialog — see that component's own header comment for
 // why a routine picker is deliberately not offered when zero `granola-call`
 // routines exist yet. That one remaining gap (an inline "set up the
-// call-notes routine" affordance) is CL-6079's to close, not re-implemented
-// here — see this package's CL-6090 report for the disposition.
+// call-notes routine" affordance) is to close, not re-implemented
+// here.
 
 import {
   Badge,
@@ -80,14 +80,14 @@ function ApiKeyConnectForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // One connect action (CL-6377): the server proves the key before ever
+  // One connect action: the server proves the key before ever
   // storing it, so this is the only round-trip — no separate test step.
   function handleSubmit() {
     setSubmitting(true);
     setError(null);
     completeConnectorCredential(tenantId, connectorId, value)
       .then((completed) => {
-        // CL-6351: a fresh Ollama connect with only an embedding model
+        // A fresh Ollama connect with only an embedding model
         // pulled still succeeds — `modelGuidance` says so instead of
         // the generic "connected" toast.
         toast(completed.modelGuidance ?? `${displayName} connected.`);
@@ -339,7 +339,7 @@ export function PluginConnectPanel({
   const plugin = subject?.kind === "connector" ? subject.plugin : null;
   const preset = subject?.kind === "mcp-preset" ? subject.preset : null;
   const toolCount = subject?.kind === "mcp-preset" ? subject.toolCount : undefined;
-  // CL-6830: probe is tri-state — never fold a failure into `{}`, which
+  // Probe is tri-state — never fold a failure into `{}`, which
   // reads as "hosted app absent" and hides one-click connect behind the
   // not-configured token paste.
   const [oauthProbe, setOauthProbe] = useState<

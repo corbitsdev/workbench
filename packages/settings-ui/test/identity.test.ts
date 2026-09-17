@@ -30,7 +30,7 @@ describe("principalLabel", () => {
     expect(result.label).toBe("Unnamed agent");
   });
 
-  // CL-6075: a workflow principal's vendor-formatted display name is
+  // A workflow principal's vendor-formatted display name is
   // `Workflow (<runId>@<slug>.localhost)` — the derivation strips the
   // scheme/host down to the last segment, which drags the wrapper's
   // trailing ")" along for the ride unless parens are stripped too.
@@ -42,7 +42,7 @@ describe("principalLabel", () => {
   });
 });
 
-// CL-6077: a principal picker that shows only a name, never its kind, is
+// A principal picker that shows only a name, never its kind, is
 // kind-blind — a workflow's machine principal can read identically to a
 // person's account. Every picker groups or annotates by this shared label.
 describe("PRINCIPAL_KIND_LABEL", () => {

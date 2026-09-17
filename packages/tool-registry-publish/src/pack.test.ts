@@ -96,7 +96,7 @@ describe("packToolPackageTarball", () => {
           // from the workspace source tree — a bundle dropped from
           // `./index.ts`'s re-exports would still leave
           // `factories.length` above 0. Catalog administration is UI-only
-          // (CL-7588), so there is no second bundle anymore.
+          //, so there is no second bundle anymore.
           const ids = factories.map((factory) => (factory as { id: string }).id);
           expect(ids).toContain("@corbits/catalog-tools/catalog");
           expect(ids).not.toContain("@corbits/catalog-tools/off");

@@ -14,7 +14,7 @@ import type { McpPreset } from "./mcp-presets";
 
 /** Fixtures standing in for the real curated preset list a build's own
  * `templates/connectors.ts` carries — this package holds no concrete
- * preset list of its own (CL-7384). */
+ * preset list of its own. */
 const TEST_PRESETS: readonly McpPreset[] = [
   {
     slug: "granola",

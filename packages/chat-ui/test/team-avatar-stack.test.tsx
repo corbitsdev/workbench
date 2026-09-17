@@ -123,7 +123,7 @@ function mount(props: Parameters<typeof ChatWorkspace>[0]) {
 }
 
 // The workbench's own chat stream, not the mailbox live-update
-// subscription `useWorkbenchFeed` also opens (CL-8174 slice 2b).
+// subscription `useWorkbenchFeed` also opens.
 function firstStream(): StubEventSource {
   const instance = StubEventSource.instances.find((source) =>
     /\/chat\/workbenches\/[^/]+\/stream/.test(source.url),
@@ -204,7 +204,7 @@ describe("workbench header member avatar stack", () => {
     harness.unmount();
   });
 
-  test("shows the resolved agent display name, never the raw handle slug (CL-6424)", async () => {
+  test("shows the resolved agent display name, never the raw handle slug", async () => {
     stubFetch({
       participants: [{ address: "myra@agents.example", handle: "myra" }],
       agents: [
@@ -257,7 +257,7 @@ describe("workbench header member avatar stack", () => {
     harness.unmount();
   });
 
-  test("own presence avatar uses currentUser.name, never Member (CL-6655)", async () => {
+  test("own presence avatar uses currentUser.name, never Member", async () => {
     // The signed-in reader is live in presence but not yet on the workbench
     // participants list (or has no handle there) — without currentUser.name
     // the stack title falls back to "Member".

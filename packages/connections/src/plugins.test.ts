@@ -11,7 +11,7 @@ import type { ConnectorRegistry } from "./registry";
 
 /** A fixture standing in for the real connector set a build's own
  * `templates/connectors.ts` carries — this package holds no concrete
- * connector set of its own (CL-7384). */
+ * connector set of its own. */
 const TEST_REGISTRY: ConnectorRegistry = {
   github: {
     id: "github",

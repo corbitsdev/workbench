@@ -1,10 +1,10 @@
 // Which deployed workflow asset names pin a given connector's tool package,
-// per CL-5999's toolPackagePins mechanism. This is a hand-maintained
+// per toolPackagePins mechanism. This is a hand-maintained
 // approximation, not a live query against deployed definitions — the
 // settings-ui card labels it "Used by workflows:" for readability, but
 // carries the approximation caveat on a title/tooltip
 // (connectionsPinnedByApproximationNote) rather than baking it into the
-// label itself, until CL-6028's item 9 (tool-package credential-binding
+// label itself, until item 9 (tool-package credential-binding
 // adoption) makes it exact.
 //
 // The shipped workflow catalog was deleted (owner ruling 2026-09-17):

@@ -47,7 +47,7 @@ async function findRepositoryRoot(): Promise<string> {
 }
 
 // Every fixture repo this suite writes must live outside the repository's
-// own work tree (CL-7372) — a git-fixture test must never be able to
+// own work tree — a git-fixture test must never be able to
 // touch real history, however indirectly.
 async function assertOutsideRepository(dir: string): Promise<void> {
   const resolved = await realpath(dir);

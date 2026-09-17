@@ -33,8 +33,8 @@ export type OAuthExchangeResult =
        * expiring access token (Google) — stored as the credential row's
        * `refreshSecret`, never in metadata. */
       readonly refreshToken?: string;
-      /** An id_token-derived account label (codex: `chatgpt_account_id`,
-       * CL-7508) — folded into the credential's `metadata`, never stored
+      /** An id_token-derived account label (codex: `chatgpt_account_id`)
+       * — folded into the credential's `metadata`, never stored
        * as a secret. */
       readonly accountId?: string;
     }
@@ -129,7 +129,7 @@ export interface ConnectorDescriptor {
    * the string this receives is the URL the person typed, not a secret —
    * see that field's own doc. `opts.baseUrl`, when present, overrides the
    * connector's own production API origin — `./routes.ts`'s `probeBaseUrls`
-   * is the one caller that sets it (CL-6403: a fake server standing in for
+   * is the one caller that sets it (a fake server standing in for
    * a real provider in tests/evals); a descriptor that ignores the second
    * argument keeps probing its fixed production origin. */
   readonly probe?: (
@@ -156,7 +156,7 @@ export interface ConnectorDescriptor {
    * `"api-key"` connector. */
   readonly credentialPlaceholder?: string;
   /** One line describing what this connector is for — the plugins
-   * directory's (CL-6215) subtitle under the connector's name. Absent for
+   * directory's subtitle under the connector's name. Absent for
    * every inference-provider descriptor today (that surface names the
    * provider and nothing else); present on every tool/plugin connector so
    * the directory never renders a bare name with nothing under it. */

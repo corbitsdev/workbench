@@ -180,7 +180,7 @@ describe("startReviewingRepos", () => {
     expect(result.createdTriggerIds).toEqual(["trg_2", "trg_3"]);
   });
 
-  test("two concurrent calls for the same repo mint exactly one grant and one trigger (CL-7242)", async () => {
+  test("two concurrent calls for the same repo mint exactly one grant and one trigger", async () => {
     // Reconstructs the audit's own reproduction: `Promise.all` of two
     // concurrent `startReviewingRepos` calls sharing the same
     // backing state, for the same repo. Before the lease existed,

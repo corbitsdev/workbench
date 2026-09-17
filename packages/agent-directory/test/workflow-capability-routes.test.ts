@@ -269,8 +269,7 @@ test("a run may add a capability to its own definition without any grant check",
   });
   expect(response.status).toBe(200);
   // The rewrite redeploys the definition through the native source
-  // pipeline so the next launch carries the added capability (CL-6447,
-  // cut over to native deploy by CL-7363).
+  // pipeline so the next launch carries the added capability.
   expect(deployer.deploys).toHaveLength(1);
   expect(deployer.deploys[0]?.commitSha).toBe("deadbeef");
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);

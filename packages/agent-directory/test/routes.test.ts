@@ -551,10 +551,6 @@ test("a create request with skills writes the definition source tree to the asse
   expect(response.status).toBe(201);
   expect(writtenFiles).toBeDefined();
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
-  // The definition is deployed through the native source pipeline with
-  // the exact commit the asset write produced — this is what makes the
-  // created definition launchable (CL-6447, cut over to native deploy
-  // by CL-7363).
   expect(deployer.deploys).toHaveLength(1);
   expect(deployer.deploys[0]?.assetId).toBe("ast_1");
   expect(deployer.deploys[0]?.commitSha).toBe("deadbeef");
@@ -1033,7 +1029,7 @@ test("PUT /:definitionId writes the new system prompt in a single source-tree co
   // Saving instructions redeploys the definition through the native
   // source pipeline with the commit the edit produced, so the next
   // launch answers with the edit — the native install/probe/gate/freeze
-  // replaces the old bare-freeze call (CL-7363).
+  // replaces the old bare-freeze call.
   expect(deployer.deploys).toHaveLength(1);
   expect(deployer.deploys[0]?.assetId).toBe("ast_1");
   expect(deployer.deploys[0]?.commitSha).toBe("deadbeef");
@@ -1051,7 +1047,7 @@ test("PUT /:definitionId writes the new system prompt in a single source-tree co
   });
 });
 
-// CL-7389: PUT /:definitionId only rewrites the name and system prompt —
+// PUT /:definitionId only rewrites the name and system prompt —
 // it must never re-touch tool-package pins, so a tarball that lands in
 // the registry after this definition deployed never silently moves an
 // already-deployed specialist's stored pin.

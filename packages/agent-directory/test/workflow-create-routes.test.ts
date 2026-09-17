@@ -298,7 +298,7 @@ test("a toolPackagePins entry the tenant's inventory offers is pinned onto the c
   expect(written).toContain("@corbits/memory");
 });
 
-test("a create naming no pins gets the baseline set the inventory offers — a specialist is never toolless (CL-6206)", async () => {
+test("a create naming no pins gets the baseline set the inventory offers — a specialist is never toolless", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   const app = buildApp({
     assetService: fakeAssetService({

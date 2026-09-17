@@ -10,7 +10,7 @@ export {
   AgentGeneralSection,
 } from "./account-section";
 // NotificationsSection is not exported: it is draft-only and not in the
-// registry (CL-6843). Re-export when a preference store backs it.
+// registry. Re-export when a preference store backs it.
 export { AuditSection } from "./audit-section";
 export { PeopleSection, PeopleTable } from "./people-section";
 export { RolesSection, RolesTable, RoleAssignments, CreateRoleDialog } from "./roles-section";

@@ -1,4 +1,4 @@
-// The shared persist-and-seed sequence (CL-6394): one place decides
+// The shared persist-and-seed sequence: one place decides
 // which connectors seed a model catalog — a non-inference connector
 // (GitHub) must never reach `CATALOG_SEEDS`, the exact fall-through
 // that crashed the hosted one-click connect when three parallel copies
@@ -13,7 +13,7 @@ import {
 } from "./persist-credential";
 /** Minimal fixtures standing in for the real connector set a build's own
  * `templates/connectors.ts` carries — this package holds no concrete
- * connector set of its own (CL-7384), so its own tests build only the
+ * connector set of its own, so its own tests build only the
  * fields `persistConnectorCredential` actually reads. */
 const FIXTURE_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> = {
   github: {

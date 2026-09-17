@@ -6,7 +6,7 @@ function agentEvent(inner: unknown) {
   return { eventType: "chat.agent", data: inner };
 }
 
-describe("nextTurnActivityState (CL-6196: live tool-call and thinking states)", () => {
+describe("nextTurnActivityState (live tool-call and thinking states)", () => {
   test("a non chat.agent event never opens or changes the activity", () => {
     expect(nextTurnActivityState(null, { eventType: "chat.typing", data: {} }, 0)).toBeNull();
   });

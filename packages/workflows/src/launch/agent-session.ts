@@ -1,13 +1,11 @@
 // Every Workbench launch path provisions through Interchange's
 // `prepareProvisionedDeployment` with a `sessionId` it mints itself, but
-// nothing ever wrote that id into `agent_session` (vendor-owned,
+// nothing writes that id into `agent_session` (vendor-owned,
 // `vendor/intx/db/src/schema/sessions.ts`) — the table
 // `resolveRunSessionId` (`vendor/intx/hub-sessions/src/hub-session-lookups.ts`)
-// reads to route a run's outbound mail. Before the folded-runs package
-// was deleted it was the only writer of that table; every current
-// launcher must now do this itself, through this one shared helper, so
-// mail and spans persist against a real session from the run's first
-// turn (CL-7477).
+// reads to route a run's outbound mail. Every launcher must do this
+// itself, through this one shared helper, so mail and spans persist
+// against a real session from the run's first turn.
 //
 // Timing matters: `workflow_run.principal_id` (the FK `agent_session`
 // keys on) is still null the instant `prepareProvisionedDeployment`
@@ -21,29 +19,19 @@
 // already committed", throwing rather than re-materializing — so nothing
 // upstream of that first trigger may write the principal first.
 //
-// CL-7480 made `ensureRunSession` lazy: called from every seam that
-// might be a run's first mail-routable moment, no-opping until a
-// principal existed to key the row on. That left a real gap — a run's
-// very first outbound message can itself be that seam, both for chat's
-// `sendMail` (which looks the session up by run principal) and for the
-// vendored `persistMail` a heartbeat run's own first outbound mail hits
-// — and both landed on an un-anchored run with nothing recorded yet.
-// CL-7481 fixes this at the root: `recordAgentSessionAtProvision` writes
-// the row immediately after `prepareProvisionedDeployment` returns,
-// keyed on the deploying principal (`sourceAuthorityPrincipalId`) since
-// the run principal does not exist yet — every other field the launcher
-// already knows or can read straight off the fresh run row.
-// `ensureRunSession` re-keys onto the run's own principal once one is
-// anchored, moving `principal_id` without ever touching the session id.
-//
-// That eager write only ever runs for a Workbench launcher, though — a
-// run deployed straight through Interchange's own
-// `POST /api/tenants/:id/workflows/deployments` route (the e2e suites,
-// or any other API client) never passes through one, so no
-// `agent_session` row exists for it until something creates one.
-// CL-7489 makes `ensureRunSession` a true upsert: by the time
-// persist/dispatch call it the run is anchored, so a missing row is
-// created rather than treated as a bug.
+// `recordAgentSessionAtProvision` writes the row immediately after
+// `prepareProvisionedDeployment` returns, keyed on the deploying
+// principal (`sourceAuthorityPrincipalId`) since the run principal does
+// not exist yet — every other field the launcher already knows or can
+// read straight off the fresh run row. `ensureRunSession` re-keys onto
+// the run's own principal once one is anchored, moving `principal_id`
+// without ever touching the session id; it is called from every seam
+// that might be a run's first mail-routable moment (chat's `sendMail`,
+// the vendored `persistMail` a heartbeat run's first outbound mail
+// hits), and is a true upsert so a missing row — a run deployed
+// straight through Interchange's own
+// `POST /api/tenants/:id/workflows/deployments` route never gets the
+// eager write above — is created rather than treated as a bug.
 import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { agentSession, workflowRun, workflowRunLaunchSpec } from "@intx/db/schema";
@@ -54,8 +42,7 @@ import type { EventCollectorRegistry } from "@intx/hub-sessions";
  * `EventCollectorRegistry` through (`apps/hub/src/index.ts`'s
  * `eventCollectors`) — never a second registry construction. `create`
  * is what actually makes `inference_turn`/`turn_part` rows exist for a
- * run (CL-7479: nothing else ever called it once `folded-runs` was
- * deleted); `abandon` tears the collector down when a run's session
+ * run; `abandon` tears the collector down when a run's session
  * ends; `has` lets a caller check whether a collector already exists
  * before creating a second one.
  */
@@ -63,7 +50,7 @@ export type EventCollectorPort = Pick<EventCollectorRegistry, "create" | "abando
 
 /**
  * The one shared write every native launcher calls right after its own
- * `prepareProvisionedDeployment` returns (CL-7481) — a run row exists
+ * `prepareProvisionedDeployment` returns — a run row exists
  * the instant that call resolves, so the session it will use is known
  * then too: the launch-spec `sessionId` it just minted, `tenantId` and
  * `definitionId` read fresh off the new `workflow_run` row (Interchange

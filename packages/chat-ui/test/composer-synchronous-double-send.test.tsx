@@ -1,4 +1,4 @@
-// CL-7198: the composer's send guard used to test the `sending` *state*
+// The composer's send guard used to test the `sending` *state*
 // variable, which `performSend` only sets after the click/keydown handler
 // that started it has already returned. Two triggers landing in the same
 // synchronous tick (e.g. a stray double dispatch of the send action) both
@@ -73,7 +73,7 @@ function sendButton(): HTMLButtonElement {
   return button;
 }
 
-describe("Composer synchronous double-send guard (CL-7198)", () => {
+describe("Composer synchronous double-send guard", () => {
   test("two clicks in the same tick post exactly one send", async () => {
     let sendCount = 0;
     const payloads: ComposerSendPayload[] = [];

@@ -1,8 +1,5 @@
-// Mirrored from packages/chat/src (CL-8148 T5b): apps/web and @corbits/chat-ui
-// must not import @corbits/chat, a server-only package. This is the browser-
-// facing half of the same wire contract the hub's chat routes still speak;
-// once the hub moves onto native mail threads (T5a/T5c) this file becomes
-// the one source of truth and packages/chat's copy goes away.
+// Mirrored from packages/chat/src: apps/web and @corbits/chat-ui must not
+// import @corbits/chat, a server-only package.
 
 // Agent-address helpers shared by this package's own fan-out
 // (`routes.ts`) and by `@corbits/chat-ui`'s composer: splitting an

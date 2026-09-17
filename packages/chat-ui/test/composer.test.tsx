@@ -175,7 +175,7 @@ describe("Composer keyboard hint", () => {
   });
 });
 
-describe("Composer growth containment (CL-6250)", () => {
+describe("Composer growth containment", () => {
   test("the textarea carries the max-height/overflow class and keeps applying its measured inline height", async () => {
     mount(() => Promise.resolve(true));
     expect(textarea().className).toContain("chat-composer-input");
@@ -183,13 +183,13 @@ describe("Composer growth containment (CL-6250)", () => {
     typeInto(textarea(), "line one\nline two\nline three");
     await settle();
     // The auto-grow effect still measures and writes an inline height on
-    // every change — the CSS transition added for CL-6250 smooths that
-    // write, it does not replace it.
+    // every change — the CSS transition only smooths that write, it does
+    // not replace it.
     expect(textarea().style.height.endsWith("px")).toBe(true);
   });
 });
 
-describe("Composer popover entrance (CL-6250)", () => {
+describe("Composer popover entrance", () => {
   test("the mention popover carries the entrance class", async () => {
     mountWithMentions(() => Promise.resolve(true));
     typeInto(textarea(), "@");
@@ -199,7 +199,7 @@ describe("Composer popover entrance (CL-6250)", () => {
   });
 });
 
-describe("Composer hit targets (CL-6250)", () => {
+describe("Composer hit targets", () => {
   test("attach and send buttons carry the extended-hit-area class", () => {
     mount(() => Promise.resolve(true));
     const buttons = container?.querySelectorAll(".chat-composer-icon-button");
@@ -343,12 +343,12 @@ describe("ComposerHandle.setText", () => {
   });
 });
 
-// CL-7201: the composer's Stop affordance. `handleStop` guards against a
+// The composer's Stop affordance. `handleStop` guards against a
 // double-click and re-enables itself once the host reports the turn is
 // no longer running -- but a REJECTED stop request must also re-enable
 // it, or a genuinely failed cancel (not a slow one) leaves the person
 // with a permanently disabled button and no way to retry for the rest
-// of that turn's life (Critique finding, CL-7201).
+// of that turn's life.
 function stopButton(): HTMLButtonElement {
   const button = container?.querySelector<HTMLButtonElement>('[aria-label="Stop"]');
   if (button === null || button === undefined) {
@@ -392,7 +392,7 @@ function mountStoppable(
   };
 }
 
-describe("Composer stop affordance (CL-7201)", () => {
+describe("Composer stop affordance", () => {
   test("keeps Stop and Send together in the right-aligned action group", () => {
     mountStoppable(true, () => undefined);
 

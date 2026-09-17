@@ -3,7 +3,7 @@ import type { ModelInfo } from "@intx/types";
 /**
  * Whether this tenant can actually run inference right now — never
  * "does a `model_provider` row exist," since seeding mints that row
- * regardless of whether a credential was ever attached (CL-6568's root
+ * regardless of whether a credential was ever attached (root
  * cause). `models` is `getResolvedCatalog`'s read, the same one
  * `resolveModelSources` acts on at launch: a model only carries an
  * offering here once its provider has a credential and passes policy, so

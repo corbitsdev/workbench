@@ -346,7 +346,7 @@ describe("PluginsGallery", () => {
       skillsTab?.click();
     });
 
-    // CL-8086: one flat list — the stock asset routes carry no
+    // One flat list — the stock asset routes carry no
     // scope/visibility flag, so there are no scope group headings.
     expect(container.textContent).toContain("Weekly digest");
     expect(container.textContent).toContain("Draft replies");

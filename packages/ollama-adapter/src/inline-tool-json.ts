@@ -1,5 +1,5 @@
 // Ollama's OpenAI-compatible endpoint sometimes emits a declared tool call
-// as a JSON object in `content` instead of native `tool_calls` (CL-7186).
+// as a JSON object in `content` instead of native `tool_calls`.
 // `@intx/inference`'s OpenAI parser only reads `delta.tool_calls`, so that
 // JSON rides downstream as assistant text and the tool never runs. This
 // module reclassifies a content stream that is exactly that object into

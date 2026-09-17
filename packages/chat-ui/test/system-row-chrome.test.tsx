@@ -1,4 +1,4 @@
-// CL-6739: error, join, connect, and system rows must not expose message
+// Error, join, connect, and system rows must not expose message
 // social chrome (reaction / reply / overflow). Fix-this-connection recovery
 // on classified inference failures stays; only the social cluster goes.
 import { afterEach, describe, expect, test } from "bun:test";
@@ -48,7 +48,7 @@ function expectNoSocialChrome(el: HTMLElement) {
   expect(el.querySelector(".chat-thread-affordance")).toBeNull();
 }
 
-describe("CL-6739: system / error / connect rows hide social chrome", () => {
+describe("system / error / connect rows hide social chrome", () => {
   test("a join event row has no reaction, reply, or overflow", async () => {
     const el = await mount([
       {
@@ -69,7 +69,7 @@ describe("CL-6739: system / error / connect rows hide social chrome", () => {
     expectNoSocialChrome(el);
   });
 
-  test("connection.connected settle notice links Plugins to /plugins (CL-6741)", async () => {
+  test("connection.connected settle notice links Plugins to /plugins", async () => {
     const el = await mount([
       {
         id: "settle_1",

@@ -97,7 +97,7 @@ describe("testGitHubCredential", () => {
     expect(result.ok).toBe(true);
   });
 
-  test("targets api.github.com by default (CL-6403)", async () => {
+  test("targets api.github.com by default", async () => {
     const requested: string[] = [];
     const fetchImpl: FetchLike = async (input) => {
       requested.push(String(input));
@@ -109,7 +109,7 @@ describe("testGitHubCredential", () => {
     expect(requested).toEqual(["https://api.github.com/user"]);
   });
 
-  test("targets an override baseUrl when the caller sets one (CL-6403)", async () => {
+  test("targets an override baseUrl when the caller sets one", async () => {
     const requested: string[] = [];
     const fetchImpl: FetchLike = async (input) => {
       requested.push(String(input));

@@ -1,10 +1,10 @@
-// CL-6258: the dead disconnect button. Disconnecting a connector must hit
+// The dead disconnect button. Disconnecting a connector must hit
 // the orchestrated `/connections/:id/disconnect` route -- never
 // `DELETE /credentials/:id` directly, which 500s for any inference
 // provider once a catalog provider row exists against its credential
 // (see `@corbits/connections`' `disconnectConnector`). This also covers
-// the provider row's new default-model caption, the Models page's
-// replacement (CL-6258 item 1).
+// the provider row's default-model caption, the Models page's
+// replacement.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";

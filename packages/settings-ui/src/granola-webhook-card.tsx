@@ -1,4 +1,4 @@
-// The Granola inbound-webhook connector card (CL-6028). Workbench is the
+// The Granola inbound-webhook connector card. Workbench is the
 // secret *issuer* here — the reverse of the `granola` api-key connector
 // above it in the grid, which stores a key Granola issued. This card
 // surfaces `@corbits/webhook-triggers`' existing mint/rotate machinery

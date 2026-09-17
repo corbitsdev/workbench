@@ -37,7 +37,7 @@ export type InventoryToolPackage = {
   /** The credential a `{create}` definition pinning this tool package
    * must be granted for the pin to work at runtime — the same
    * `CredentialBinding` shape `workflows/granola-call`'s
-   * `GRANOLA_CALL_CREDENTIAL_BINDINGS` uses (CL-6028). `null` for a
+   * `GRANOLA_CALL_CREDENTIAL_BINDINGS` uses. `null` for a
    * tool package that needs no per-tenant credential (e.g. the memory
    * tool package). */
   readonly credentialBinding: CredentialBinding | null;

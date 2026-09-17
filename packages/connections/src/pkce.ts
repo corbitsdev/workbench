@@ -129,7 +129,7 @@ export function createConnectStateStore<Payload>(args: {
         if (parsed instanceof type.errors) return undefined;
         envelope = parsed;
       } catch {
-        // report-error-ignore: CL-7247 — decrypt/parse failure here is the
+        // report-error-ignore: decrypt/parse failure here is the
         // expected outcome for a tampered, expired-then-reused, or wrong-
         // provider state, indistinguishable from malicious probing by
         // design (see module header). Reporting it would create a

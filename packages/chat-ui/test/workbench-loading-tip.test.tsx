@@ -1,4 +1,4 @@
-// The async-mint setup state (CL-6272 follow-up): one honest headline for
+// The async-mint setup state: one honest headline for
 // every waiting stage — the reader never sees which internal stage this
 // is — plus a rotating product tip underneath so the pause reads as
 // useful rather than dead. Proves the headline copy, that a tip renders,

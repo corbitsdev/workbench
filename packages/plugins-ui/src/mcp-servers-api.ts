@@ -1,4 +1,4 @@
-// Tenant-scoped MCP server connections (CL-6142): drop a server URL in and
+// Tenant-scoped MCP server connections: drop a server URL in and
 // its tools become usable by any agent in the workbench. Same
 // fetch+parse+error-envelope convention every other plugins-ui/settings-ui
 // API seam uses (see `@corbits/settings-ui`'s `connections-api.ts`), kept

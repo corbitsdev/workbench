@@ -10,7 +10,7 @@ Presentational primitives come from `@corbits/react-ui`
 package holds the workbench-specific composition and domain rules on top
 of them.
 
-Rendering is currently read-only (CL-5938); the multiplayer-editing half
+Rendering is currently read-only; the multiplayer-editing half
 is separate follow-up work built on top of this package's substrate.
 
 ## Key modules

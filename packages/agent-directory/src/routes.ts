@@ -306,7 +306,7 @@ export function createAgentDefinitionRoutes({
   });
 
   // Every agent this tenant can open a direct chat with — its own agent
-  // definitions plus every ancestor's (CL-6253): the sidebar's unified
+  // definitions plus every ancestor's: the sidebar's unified
   // recency-sorted stream reads this list, keyed by `tenantId` per row
   // so a click can mint the DM in the agent's actual owning tenant, not
   // the caller's.
@@ -317,7 +317,7 @@ export function createAgentDefinitionRoutes({
   });
 
   // A definition's kebab `name` is its immutable, URL-facing slug
-  // (CL-6413), so a slug-addressed detail screen resolves through this
+  //, so a slug-addressed detail screen resolves through this
   // route rather than scanning a page of the definitions listing — an
   // agent past the listing's pagination ceiling still answers on its own
   // URL. Grant-checked tenant-wide because there is no definition id to

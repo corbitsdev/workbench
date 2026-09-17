@@ -1,11 +1,10 @@
-// A skill, given the same dense row treatment as a plugin (owner ruling,
-// CL-6090; density CL-6272.1): icon, name, its one-line description
-// truncated, and a quiet view affordance.
+// A skill, given the same dense row treatment as a plugin (owner ruling):
+// icon, name, its one-line description truncated, and a quiet view
+// affordance.
 //
-// CL-8086: skills are native `kind:"skill"` hub assets now and the stock
-// asset routes carry no scope/visibility flag, so the "Shared with
-// everyone" / "Just you" caption the card used to mirror from the plugin
-// provenance captions is gone — one flat list, no scope groups.
+// Skills are native `kind:"skill"` hub assets, and the stock asset
+// routes carry no scope/visibility flag — one flat list, no scope
+// groups.
 
 import { Button } from "@corbits/react-ui";
 import { Lightning } from "@corbits/icons";

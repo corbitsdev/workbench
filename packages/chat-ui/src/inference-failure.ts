@@ -1,4 +1,4 @@
-// Recognizes a classified inference failure's reply prose (CL-6092) — the
+// Recognizes a classified inference failure's reply prose — the
 // one place `chat-ui` matches against the exact preambles
 // `@intx/inference/src/default-director.ts`'s `formatInferenceError`
 // writes for `"credential_failure"` and `"quota_exhausted"`

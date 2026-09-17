@@ -1,3 +1,3 @@
 /* Reserved stylesheet entry for `@corbits/bench-ui/styles.css`. The
    switcher / create / members layout glue that lived here was deleted with
-   those unused components (CL-6844); apps/web still imports this path. */
+   those unused components; apps/web still imports this path. */

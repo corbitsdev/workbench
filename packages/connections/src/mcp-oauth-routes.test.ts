@@ -20,7 +20,7 @@ import type { McpProbeResult } from "./mcp-probe";
 
 /** Fixtures standing in for the real curated preset list a build's own
  * `templates/connectors.ts` carries — this package holds no concrete
- * preset list of its own (CL-7384). */
+ * preset list of its own. */
 const TEST_PRESETS: readonly McpPreset[] = [
   {
     slug: "exa",
@@ -115,7 +115,7 @@ function startStubAuthorizationServer(
   tokenGrant: {
     refreshToken?: string;
     expiresIn?: number;
-    /** CL-6371 red-path fixture: a provider that never echoes `state`
+    /** Red-path fixture: a provider that never echoes `state`
      * back on the authorize redirect, even though we sent one. */
     echoState?: boolean;
     /** RFC 7591 registration failure: `/register` returns this instead of
@@ -376,7 +376,7 @@ describe("MCP OAuth connect flow", () => {
       const params = new URL(location).searchParams;
       expect(params.get("code_challenge_method")).toBe("S256");
       expect(params.get("client_id")).not.toBeNull();
-      // CL-6371: the authorize URL must carry a CSRF-binding `state` --
+      // The authorize URL must carry a CSRF-binding `state` --
       // omitting it is what made PostHog's real MCP authorization server
       // reject the redirect with "Missing state parameter."
       expect(params.get("state")).not.toBeNull();
@@ -909,7 +909,7 @@ describe("MCP OAuth connect flow", () => {
     }
   });
 
-  test("CL-6371: a provider that echoes state back completes the round trip", async () => {
+  test("a provider that echoes state back completes the round trip", async () => {
     const as = startStubAuthorizationServer({ echoState: true });
     try {
       const hub = fakeHub();
@@ -936,7 +936,7 @@ describe("MCP OAuth connect flow", () => {
     }
   });
 
-  test("CL-6371: a provider that omits state we sent is rejected as a CSRF failure, not a raw error", async () => {
+  test("a provider that omits state we sent is rejected as a CSRF failure, not a raw error", async () => {
     const as = startStubAuthorizationServer({ echoState: false });
     try {
       const hub = fakeHub();
@@ -960,7 +960,7 @@ describe("MCP OAuth connect flow", () => {
       const location = callbackResponse.headers.get("location") ?? "";
       expect(location).toContain("outcome=error");
       expect(location).toContain("code=state_mismatch");
-      // The consumer envelope idiom (CL-6360): the redirect carries a
+      // The consumer envelope idiom: the redirect carries a
       // machine code the UI maps to copy, never the raw provider/SDK
       // error text.
       expect(location).not.toContain("Missing state parameter");

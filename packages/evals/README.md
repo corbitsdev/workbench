@@ -1,11 +1,11 @@
 # @corbits/evals
 
-Myra evals (CL-6143): `defineEval`/`runEval`, composable scorers, and a
+Myra evals: `defineEval`/`runEval`, composable scorers, and a
 persisted `evals.run` store that plays a hardcoded scripted scenario
 against a real Myra deployment and grades what she actually did — never
 what a prompt merely claims.
 
-## CL-6322 §8.2 factory eval: `github-pr-review-factory`
+## Factory eval: `github-pr-review-factory`
 
 `src/cases/github-pr-review-factory.ts` encodes the plan's §8.2 case —
 "connect this GitHub organization and put every PR through an automated
@@ -29,27 +29,27 @@ Two rulings from the owner are baked into the case's step 4:
 ruling in one scorer, so a case that accidentally gates reviews or
 accidentally frees merges fails loudly either way.
 
-### Scoreboard (CL-6405 pass: install deploys the block workflow, GitHub REST rides the seam)
+### Scoreboard (install deploys the block workflow, GitHub REST rides the seam)
 
 The install path now deploys the template's referenced `code-review`
 block workflow per tenant (`instantiateWorkbenchTemplate`'s
 `deployBlockWorkflow` port -> `POST /template-blocks/:assetName/deploy`),
 the eval boot stands up a fake GitHub REST origin and threads it through
-the hub's `GITHUB_API_BASE_URL` (CL-6403's seam), connects the PAT
+the hub's `GITHUB_API_BASE_URL`, connects the PAT
 through the real `/connections/github/complete` route, and drives the
 connect card's start-reviewing step after install — so the per-repo
 grant and `webhook_trigger` row mint for real and the fire-webhook step
 fires an actual trigger.
 
-| #   | Scorer                                     | Result on a scratch-hub run | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| --- | ------------------------------------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `githubConnectedViaConnectionsLayer`       | **PASS**                    | Both halves now: the MCP fake connects through the real `POST /mcp-servers` route, and the Plugins PAT proves against the fake REST origin through the real `/:connectorId/complete` (CL-6403's `probeBaseUrls`).                                                                                                                                                                                                                                                                   |
-| 2   | `agentDefinitionsHaveToolGrants`           | **PASS**                    | The three reviewer definitions materialize via the real install, and the install now also deploys the `code-review` block workflow carrying the `@corbits/github-tools` pin (CL-6405's product fix). The snapshot's `name` is the stable definition handle (`displayName` carries the label), so handle matching is exact.                                                                                                                                                          |
-| 3   | `triggerIsWebhookPerPr`                    | **PASS**                    | Install drives start-reviewing against the fake REST origin's repo list; one enabled `webhook_trigger` row mints per repo, bound to the deployed `code-review` definition.                                                                                                                                                                                                                                                                                                          |
-| 4   | `reviewCommentsAttributable`               | **SKIP** (product gap)      | `WorldSnapshot` has no `reviewComments` field — blocked on CL-6322 Phase 1 (`onTrigger` adoption giving each fired occurrence its own child run id).                                                                                                                                                                                                                                                                                                                                |
-| 5   | `suggestedFixesStructurallyValid`          | **FAIL** (gap 1 below)      | The launch itself now succeeds: the template-block deploy freezes its definition through the native `workflowDeployer.deploy` path (CL-6439, cut over to native deploy in CL-7364), so the fired trigger answers 202 with a real run instance instead of `DefinitionProjectionMissingError`. What remains is that a posted review needs genuine model tool calls, i.e. a live `EVAL_PROVIDER_API_KEY` run — plumbing mode's stub credential can never call `github_post_pr_review`. |
-| 6   | `outwardGitHubActionsRespectGrantBoundary` | **FAIL** (gap 1 below)      | Same blocker as #5.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| 7   | `wholeRunInspectable`                      | **SKIP** (product gap)      | `WorldSnapshot` has no `runs` field. Blocked on CL-6322 Phase 1.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| #   | Scorer                                     | Result on a scratch-hub run | Why                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --- | ------------------------------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `githubConnectedViaConnectionsLayer`       | **PASS**                    | Both halves now: the MCP fake connects through the real `POST /mcp-servers` route, and the Plugins PAT proves against the fake REST origin through the real `/:connectorId/complete` (`probeBaseUrls`).                                                                                                                                                                                                                         |
+| 2   | `agentDefinitionsHaveToolGrants`           | **PASS**                    | The three reviewer definitions materialize via the real install, and the install now also deploys the `code-review` block workflow carrying the `@corbits/github-tools` pin (product fix). The snapshot's `name` is the stable definition handle (`displayName` carries the label), so handle matching is exact.                                                                                                                |
+| 3   | `triggerIsWebhookPerPr`                    | **PASS**                    | Install drives start-reviewing against the fake REST origin's repo list; one enabled `webhook_trigger` row mints per repo, bound to the deployed `code-review` definition.                                                                                                                                                                                                                                                      |
+| 4   | `reviewCommentsAttributable`               | **SKIP** (product gap)      | `WorldSnapshot` has no `reviewComments` field — blocked on `onTrigger` adoption giving each fired occurrence its own child run id.                                                                                                                                                                                                                                                                                              |
+| 5   | `suggestedFixesStructurallyValid`          | **FAIL** (gap 1 below)      | The launch itself succeeds: the template-block deploy freezes its definition through the native `workflowDeployer.deploy` path, so the fired trigger answers 202 with a real run instance instead of `DefinitionProjectionMissingError`. What remains is that a posted review needs genuine model tool calls, i.e. a live `EVAL_PROVIDER_API_KEY` run — plumbing mode's stub credential can never call `github_post_pr_review`. |
+| 6   | `outwardGitHubActionsRespectGrantBoundary` | **FAIL** (gap 1 below)      | Same blocker as #5.                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 7   | `wholeRunInspectable`                      | **SKIP** (product gap)      | `WorldSnapshot` has no `runs` field. Blocked on the same `onTrigger` adoption as #4.                                                                                                                                                                                                                                                                                                                                            |
 
 ### Remaining gaps, precisely
 
@@ -57,25 +57,8 @@ fires an actual trigger.
    `github_post_pr_review` tool calls off the trace; a plumbing-mode
    stub credential produces a credential-error turn with no tool calls
    by design. Re-run with `EVAL_PROVIDER_API_KEY`.
-2. **CL-6322 Phase 1 (`onTrigger` adoption)** — unblocks #4/#7
+2. **`onTrigger` adoption** — unblocks #4/#7
    (per-comment and per-run ids in the snapshot). Unchanged.
-
-Closed in the CL-6439 pass: the block-workflow deploy used to record no
-frozen wire projection, so a webhook-fired launch
-(`launchWebhookTrigger` -> `readDefinitionProjection`) answered
-`DefinitionProjectionMissingError` ("No stored launch body for
-definition \"code-review\""). CL-7364 cut the hub's template-block
-deploy binding (`createTemplateBlockRoutes`'s `deployWorkflowSource`)
-over from the retired `@corbits/workflow-freeze` package to the native
-`workflowDeployer.deploy` path — the same install → sidecar probe →
-capability walk → gate → freeze `sessionService.deployWorkflowFromSource`
-call the agent-authored deploy path uses — and a plumbing-mode run
-confirms the fired trigger still answers 202 with a real run instance.
-
-Also closed in the CL-6405 pass: `workflows/code-review` pinned
-`@corbits/github-tools@0.0.3` while CL-6403 released 0.0.4 (the
-baseUrl seam), so closure resolution would have failed at wake; the pin
-now names 0.0.4.
 
 Run `bun test packages/evals` to see every scorer's current
 `skipped`/`fail` reason first-hand — each one names its own blocker in

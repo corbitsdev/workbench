@@ -5,7 +5,7 @@
 // Where onboarding resolves "the user's personal tenant" from scratch
 // (no tenant exists yet at first login), this caller already runs
 // inside the platform's tenant middleware — the same one
-// `createConnectionRoutes` and `createMcpOAuthRoutes` (#115) run
+// `createConnectionRoutes` and `createMcpOAuthRoutes` run
 // inside — so `c.get("tenant")`/`c.get("principal")` are already
 // resolved, typed by the factory's own `TenantEnv` parameter rather
 // than a cast.
@@ -32,10 +32,10 @@ export type CreateTenantConnectCredentialDeps = PersistConnectorCredentialFns & 
   readonly hubUrl: string;
   readonly log: (line: string) => void;
   /** The connector set this build ships — this package carries none
-   * of its own (CL-7384), so a caller always supplies one. */
+   * of its own, so a caller always supplies one. */
   readonly registry: Readonly<Record<string, ConnectorDescriptor>>;
   /** Cleared on a successful connect, same store `createConnectionRoutes`'
-   * `/complete` and `GET /provider-health` share (CL-6092). */
+   * `/complete` and `GET /provider-health` share. */
   readonly providerHealth?: ProviderHealthStore;
 };
 

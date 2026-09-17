@@ -5,7 +5,7 @@
 // listing itself is a hand-rolled fake `AssetService` (`routes.test.ts`'s
 // convention), never a real git substrate.
 //
-// Proves CL-7389: a runtime tool-package pin resolves to the HIGHEST
+// a runtime tool-package pin resolves to the HIGHEST
 // published version among the tenant's (possibly inherited)
 // `corbits-tools` registry tarballs, never `*` — and fails closed with
 // the same `CapabilityOutOfInventoryError` the guided-capability-add

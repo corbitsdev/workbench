@@ -3,7 +3,7 @@
 // which classes of activity should surface. No per-user preference store
 // is mounted yet — draft state only, with an honesty note on save.
 //
-// REMOVED FROM THE SETTINGS REGISTRY (see section-registry.tsx; CL-6843):
+// REMOVED FROM THE SETTINGS REGISTRY (see section-registry.tsx):
 // toggles that save nothing are fake controls, not a settings section —
 // honest absence beats that. Re-add the "chat" section to
 // `SETTINGS_SECTION_GROUPS`'s "account" group only once a per-user

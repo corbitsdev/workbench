@@ -1,4 +1,4 @@
-// The MCP-server connector's OAuth connect flow (CL-6152): the same
+// The MCP-server connector's OAuth connect flow: the same
 // `GET /:id/start` + `GET /:id/callback` shape `./oauth-routes.ts` runs
 // for the fixed-registry OAuth connectors (OpenRouter, Hugging Face), but
 // driven by the official `@modelcontextprotocol/sdk` client's own
@@ -138,7 +138,7 @@ async function fetchCapturingOAuthError(
       captured.code = code;
     }
   } catch {
-    // report-error-ignore: CL-7247 — malformed JSON on an error response;
+    // report-error-ignore: malformed JSON on an error response;
     // mcpOAuthStartErrorCode's own message-sniffing fallback classifies
     // the thrown error regardless, so this degrades to that path rather
     // than losing information worth reporting on its own.
@@ -152,7 +152,7 @@ export type CreateMcpOAuthRoutesDeps = {
   log: (line: string) => void;
   credentialCipher: CredentialCipher;
   /** The curated MCP preset list this build ships — this package
-   * carries none of its own (CL-7384), so a caller always supplies
+   * carries none of its own, so a caller always supplies
    * one. */
   presets: readonly McpPreset[];
   apiCall?: ApiCall;
@@ -483,7 +483,7 @@ export function createMcpOAuthRoutes(deps: CreateMcpOAuthRoutesDeps): Hono<Tenan
         },
         deps.log,
       );
-      // Stored as `oauth_token` (CL-6207), not `api_key` — an MCP server
+      // Stored as `oauth_token`, not `api_key` — an MCP server
       // that issued a refresh token gets one that actually refreshes at
       // expiry instead of dying; one that didn't (mirroring the
       // documented Hugging Face precedent) stores no refreshSecret/

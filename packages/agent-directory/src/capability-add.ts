@@ -1,7 +1,7 @@
 // Capability-add is a read-modify-write of the definition's asset: two
 // concurrent POSTs that both snapshot the same workflow.json and then
 // each write their own pin would last-write-wins clobber the other
-// (CL-7216). This module owns that mutation so both the tenant-session
+//. This module owns that mutation so both the tenant-session
 // route and the workflow-run route retry the loser against the latest
 // snapshot instead of silently dropping an add. The lock itself lives
 // in `./asset-write.ts` so sibling RMW routes share it.
@@ -108,7 +108,7 @@ async function prepareCapabilityAdd(
       // a no-op on the version, never a silent bump to whatever the
       // registry's newest tarball happens to be today. Only a name with
       // no existing pin resolves fresh against the registry. An explicit
-      // bump is a distinct, explicit input this does not add (CL-7389).
+      // bump is a distinct, explicit input this does not add.
       const packageName = args.body.name;
       const existingPin = readAgentCapabilities(workflowJson).toolPackagePins.find(
         (pin) => pin.name === packageName,

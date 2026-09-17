@@ -1,6 +1,6 @@
 // Same-asset definition edits are read-modify-write: two concurrent
 // routes that snapshot the same workflow.json and then each write their
-// own field would last-write-wins clobber the other (CL-7216). This
+// own field would last-write-wins clobber the other. This
 // module serializes those writers and retries the loser against the
 // latest snapshot.
 //

@@ -1,4 +1,4 @@
-// CL-6105: settings-ui's sections moved off the retry-less `LoadState` onto
+// Settings-ui's sections moved off the retry-less `LoadState` onto
 // `@corbits/api-query`'s `APIQuery` + `QueryView`, so a failed section load
 // now offers the same Retry affordance every other query in the app does.
 // One section (PeopleSection) stands in for every section here — each one

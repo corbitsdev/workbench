@@ -1,4 +1,4 @@
-// The Plugins gallery's one seam onto tenant inheritance (CL-6090): a
+// The Plugins gallery's one seam onto tenant inheritance: a
 // workbench (a bench tenant, or any of its workbench/sub-workbench children)
 // does not hold its own copy of every plugin connection — it inherits
 // whatever an ancestor tenant connected, unless it has connected (or
@@ -127,7 +127,7 @@ async function resolveOne(
  * the ancestor tenant chain: a connector a parent/root tenant connected
  * resolves `"inherited"` here unless `tenantId` holds its own credential of
  * the same name, which shadows it. This is the primitive a per-workbench
- * "inherited vs. yours, with a remove/override action" view (CL-6089) reads
+ * "inherited vs. yours, with a remove/override action" view reads
  * instead of re-deriving chain-walk logic of its own.
  */
 export function listPluginsForTenant(

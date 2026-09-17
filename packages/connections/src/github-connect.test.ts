@@ -120,7 +120,7 @@ describe("exchangeCodeForGithubToken", () => {
     report.mockRestore();
   });
 
-  // CL-7235: a GitHub token endpoint that never answers used to leave
+  // A GitHub token endpoint that never answers used to leave
   // this exchange awaiting `doFetch` forever. It now carries a bounded
   // `AbortSignal`, so a stalled provider is caught the same way any
   // other network failure already is instead of hanging the `/callback`

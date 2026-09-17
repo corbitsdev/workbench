@@ -2,7 +2,7 @@
 // time and arm backstop timers through, so a test can swap in a fake that
 // advances synchronously instead of sleeping on the real clock — real-timer
 // waits on these hooks' 30ms/60ms backstops are exactly what made them flake
-// under CI's sharded, CPU-contended `bun run test` (CL-7488).
+// under CI's sharded, CPU-contended `bun run test`.
 export type Clock = {
   readonly now: () => number;
   readonly setTimeout: (callback: () => void, ms: number) => unknown;

@@ -150,7 +150,7 @@ export function useWorkbenchStream(
       // "chat.message" is every message posted into the room;
       // "chat.agent" carries the agent-run events (inference progress,
       // turn lifecycle) that sit between them. "chat.presence"/
-      // "chat.presence.snapshot" are the who's-here roster (CL-6328), piggybacked
+      // "chat.presence.snapshot" are the who's-here roster, piggybacked
       // on this same connection rather than a second stream.
       // "chat.workbenches-mutated" tells the host sidebar the tenant's
       // workbench list changed (a specialist minted while this stream is

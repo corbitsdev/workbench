@@ -1,5 +1,5 @@
 // Tests for the credential + catalog planting now owned by this package
-// (CL-7585): `seedCatalog` plants one provider's curated catalog
+//: `seedCatalog` plants one provider's curated catalog
 // idempotently and refuses a placeholder credential for OAuth-only
 // providers. The hub HTTP API is an in-memory stub below — no network,
 // no database.

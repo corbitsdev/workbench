@@ -366,8 +366,7 @@ export async function runOneShotPrompt(
         // A run's session and event collector are ensured lazily now, at
         // the hub seams that actually see the run become mail-routable
         // (`apps/hub/src/mailbox-persist.ts`, the wrapped
-        // `eventCollectors` dispatch in `apps/hub/src/index.ts`) —
-        // CL-7480. Nothing here needs to record it.
+        // `eventCollectors` dispatch in `apps/hub/src/index.ts`).
       } catch (cause) {
         // The reply timer may have settled the run mid-wait; a late
         // failure is then a phantom for an already-torn-down run.

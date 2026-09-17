@@ -1,5 +1,5 @@
 // Closes a check-then-act race in the GitHub connect card's
-// start-reviewing step (CL-7242): `startReviewingRepos`
+// start-reviewing step: `startReviewingRepos`
 // (`@corbits/connections`) loops over selected repos doing
 // hasRepoGrant/mintRepoGrant then hasWebhookTrigger/createWebhookTrigger
 // per repo, each a plain read followed by a conditional write with no
@@ -11,7 +11,7 @@
 // A lease acquired before that per-repo body runs is the actual
 // backstop: only the caller that wins the lease proceeds into
 // hasRepoGrant/mintRepoGrant/hasWebhookTrigger/createWebhookTrigger,
-// which stay exactly as CL-7134 left them (a fast path for a
+// which stay a fast path for a
 // *sequential* retry after a mid-loop failure, safe now that they can
 // never run concurrently for the same repo). The lease is released as
 // soon as that body finishes (success or failure) so a legitimate
@@ -27,7 +27,7 @@
 // completely unchanged. The lease only ever asserts "someone claimed
 // responsibility for this repo's setup as of `leasedAt`" — never
 // "the grant/trigger exist" — so it can never assert something untrue
-// the way a stale "done" marker could (CL-7213's own precedent).
+// the way a stale "done" marker could (own precedent).
 import { and, eq, lt } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 

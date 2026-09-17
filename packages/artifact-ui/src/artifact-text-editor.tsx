@@ -5,12 +5,9 @@
 // ever mounts for a "doc"-kind artifact once the host has already decided
 // the viewer can edit — it never makes that call itself.
 //
-// CL-8189: co-edit presence (`@corbits/presence`, Y.Doc) is gone — this is
-// a plain controlled textarea, debounced-saved through `onSave` (the host
-// wires that to the artifacts HTTP route's PUT). Single-user editing only;
-// no live co-viewer cursors, no shared doc, no awareness. That capability
-// returns, if it does, on top of the preserved `@corbits/presence`
-// library, not this component.
+// This is a plain controlled textarea, debounced-saved through `onSave`
+// (the host wires that to the artifacts HTTP route's PUT). Single-user
+// editing only; no live co-viewer cursors, no shared doc, no awareness.
 import { useEffect, useRef, useState } from "react";
 
 import { formatSaveStateLine, type ArtifactSaveState } from "./save-state";

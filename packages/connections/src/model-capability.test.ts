@@ -45,7 +45,7 @@ describe("preferCompletionCapable", () => {
     expect(preferCompletionCapable(offerings, capabilitiesOf, nameOf)).toEqual([]);
   });
 
-  // CL-6477: "embeddinggemma" has no delimiter between "embedding" and
+  // "embeddinggemma" has no delimiter between "embedding" and
   // "gemma", unlike every other embedding model name this filter has seen
   // (nomic-embed-text, all-minilm, bge-m3, qwen3-embedding all delimit
   // with "-" or "_"). A regex that required a trailing delimiter after
@@ -85,10 +85,10 @@ describe("preferCompletionCapable", () => {
     ).toEqual(["embeddinggemma:300m"]);
   });
 
-  // CL-6744: Hugging Face Hub / GGUF path names never win a chat default
+  // Hugging Face Hub / GGUF path names never win a chat default
   // or appear in person-facing pickers, even when capability data says
   // plain-text (Ollama's hf.co pulls often report completion).
-  test("CL-6744: drops hf.co and huggingface.co paths even with plain-text capabilities", () => {
+  test("drops hf.co and huggingface.co paths even with plain-text capabilities", () => {
     const offerings = [
       completion("hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M"),
       completion("huggingface.co/mlabonne/Meta-Llama-3.1-8B-Instruct-abliterated-GGUF"),
@@ -99,7 +99,7 @@ describe("preferCompletionCapable", () => {
     ]);
   });
 
-  test("CL-6744: drops bare .gguf path/tag names", () => {
+  test("drops bare .gguf path/tag names", () => {
     const offerings = [noData("Llama-3.2-3B-Instruct-IQ3_M.gguf"), completion("qwen3:8b")];
     expect(preferCompletionCapable(offerings, capabilitiesOf, nameOf).map((o) => o.name)).toEqual([
       "qwen3:8b",
@@ -108,7 +108,7 @@ describe("preferCompletionCapable", () => {
 });
 
 describe("isChatPickerModelName / isGgufOrHuggingFacePath", () => {
-  test("CL-6744: name-only gate rejects embeddings, GGUF paths, and HF URIs", () => {
+  test("name-only gate rejects embeddings, GGUF paths, and HF URIs", () => {
     expect(isChatPickerModelName("qwen3:8b")).toBe(true);
     expect(isChatPickerModelName("anthropic/claude-sonnet-4")).toBe(true);
     expect(isChatPickerModelName("all-minilm")).toBe(false);
@@ -143,7 +143,7 @@ describe("hasCompletionCapableModel", () => {
     ).toBe(false);
   });
 
-  test("false when the only offering is an uncataloged embeddinggemma pull (CL-6477)", () => {
+  test("false when the only offering is an uncataloged embeddinggemma pull", () => {
     expect(hasCompletionCapableModel([noData("embeddinggemma:300m")], capabilitiesOf, nameOf)).toBe(
       false,
     );
@@ -155,7 +155,7 @@ describe("hasCompletionCapableModel", () => {
     expect(chatDefault?.name).toBe("qwen3:8b");
   });
 
-  test("CL-6744: prefers a local chat model over an alphabetically-earlier hf.co pull on refresh", () => {
+  test("prefers a local chat model over an alphabetically-earlier hf.co pull on refresh", () => {
     const offerings = [
       completion("hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF"),
       completion("qwen3:8b"),

@@ -194,7 +194,7 @@ export function createWorkflowAgentCreateRoutes(
     // tenant's own catalog doesn't offer can never resolve at launch,
     // so it is never baked in verbatim: fall back to the tenant's
     // catalog default and say so, rather than creating a dead agent
-    // (CL-6477). A name the catalog does offer is used exactly as
+    //. A name the catalog does offer is used exactly as
     // asked, no fallback consulted.
     let modelNote: string | null = null;
     if (body.model !== undefined) {
@@ -216,7 +216,7 @@ export function createWorkflowAgentCreateRoutes(
     } else {
       // No pins named: the specialist still gets the baseline set this
       // tenant can resolve, so a created "research agent" can actually
-      // search, remember, and ask (CL-6206).
+      // search, remember, and ask.
       const baseline = baselineAgentToolPins(inventory);
       if (baseline.length > 0) coreInput.toolPackagePins = baseline;
     }

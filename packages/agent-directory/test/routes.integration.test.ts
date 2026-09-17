@@ -1,15 +1,12 @@
 // Real-stack coverage for the create → skills round-trip. The bug this
-// guards against (CL-6135) only shows up through the real
+// guards against only shows up through the real
 // `AssetService`'s `populateAsset`, which runs
 // vendor/intx/hub-sessions' `workflow-kind.ts` tree validator against
 // an actual git commit — `routes.test.ts`'s hand-rolled fake
 // `AssetService` never exercises that validator, so it could not have
-// caught this. A definition created WITH skills used to write
-// `skills.json` into the asset tree beside its definition, which that
-// validator rejected. Pinned skills now live in the definition's own
-// entry-module stanza (read back out of the asset, never a side table —
-// CL-7592 cut the Workbench-owned `definition_skills` store), so the
-// asset tree only ever carries the source codebase
+// caught this. Pinned skills live in the definition's own
+// entry-module stanza (read back out of the asset, never a side table),
+// so the asset tree only ever carries the source codebase
 // `agentDefinitionSourceTree` renders — the one shape the validator now
 // accepts, the retired `workflow.json` envelope having been refused at
 // the push boundary.
@@ -239,7 +236,7 @@ describeIfDb("agent-directory routes against a real assetService", () => {
     expect(gotAfterBody.skills).toEqual([]);
   });
 
-  test("a created definition deploys its commit through the native source pipeline (CL-7363)", async () => {
+  test("a created definition deploys its commit through the native source pipeline", async () => {
     // `deployer.deploys` is shared across this describe block's tests, so
     // scope to what THIS test appends rather than the array's raw length —
     // earlier tests deploy their own definitions too.
@@ -257,7 +254,7 @@ describeIfDb("agent-directory routes against a real assetService", () => {
 
     // Create deploys exactly once, with the commit the asset write just
     // produced — the same sequence a launch depends on being launchable
-    // (CL-6447), now driven through the native install/probe/gate/freeze
+    //, now driven through the native install/probe/gate/freeze
     // pipeline instead of a bare freeze.
     expect(deploysSoFar()).toHaveLength(1);
     const [firstDeploy] = deploysSoFar();

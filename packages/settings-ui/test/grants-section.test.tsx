@@ -1,4 +1,4 @@
-// CL-6077: three related grants fixes, exercised together against the
+// Three related grants fixes, exercised together against the
 // same dialog —
 //   1. the target picker is kind-blind no longer: "A person" became "A
 //      person, agent, or workflow," and the specific-target select groups

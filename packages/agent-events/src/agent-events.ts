@@ -24,7 +24,7 @@ export function connectorReplyContent(event: unknown): string | undefined {
 }
 
 /** One block of a `connector.reply`-producing turn, narrowed to the two
- * kinds a reply's chat representation must tell apart (CL-6378): visible
+ * kinds a reply's chat representation must tell apart: visible
  * text, and a tool the model invoked. Every other `ContentBlock` variant
  * (thinking, citations, safety ratings, ...) carries no chat-part
  * equivalent yet and is left out rather than guessed at. */

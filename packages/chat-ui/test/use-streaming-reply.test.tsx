@@ -78,7 +78,7 @@ function delta(text: string) {
   };
 }
 
-describe("useStreamingReply (CL-6115: live wiring)", () => {
+describe("useStreamingReply (live wiring)", () => {
   test("start then deltas grow the reply text as events arrive", () => {
     const harness = mount("chan_a");
     harness.send("chat.agent", {
@@ -142,7 +142,7 @@ describe("useStreamingReply (CL-6115: live wiring)", () => {
   });
 });
 
-describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
+describe("useStreamingReply's reply-timeout backstop", () => {
   test("a pending reply with no tokens for the whole clearMs mints a timed-out ref id", async () => {
     const harness = mount("chan_a", 30);
     harness.awaitReply();
@@ -155,8 +155,8 @@ describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
     harness.unmount();
   });
 
-  // CL-6677: a cold-waking agent (a parked room re-deploying and
-  // re-deriving its inference source, PR #327's defer-to-wake path) never
+  // A cold-waking agent (a parked room re-deploying and
+  // re-deriving its inference source, the defer-to-wake path) never
   // emits a single `chat.agent` event until it either replies or the
   // sidecar gives up — from this hook's perspective that is
   // indistinguishable from any other silent turn, so it must hit the
@@ -190,7 +190,7 @@ describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
     harness.unmount();
   });
 
-  test("a token resets the backstop window instead of clearing it (CL-6486)", async () => {
+  test("a token resets the backstop window instead of clearing it", async () => {
     const harness = mount("chan_a", 30);
     harness.awaitReply();
     await harness.settle(20);
@@ -204,7 +204,7 @@ describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
     harness.unmount();
   });
 
-  test("silence after a token still times out a mid-stream stall (CL-6486)", async () => {
+  test("silence after a token still times out a mid-stream stall", async () => {
     const harness = mount("chan_a", 30);
     harness.awaitReply();
     harness.send("chat.agent", delta("Hi"));
@@ -307,7 +307,7 @@ describe("useStreamingReply (CL-false-no-reply: the notice must never fire once 
   });
 });
 
-describe("useStreamingReply.resumeFromTurn (CL-6380: catch-up on remount)", () => {
+describe("useStreamingReply.resumeFromTurn (catch-up on remount)", () => {
   test("hydrates the reply from a running turn's committed text on a fresh mount", () => {
     const harness = mount("chan_a");
     expect(harness.get()).toBeNull();

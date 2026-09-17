@@ -28,7 +28,7 @@ owns fetching data and passes it down.
   installed strip, and a Featured-then-category card grid.
 - `plugin-card.tsx` — one plugin's icon, name, outcome sentence, and a
   single action that reads honestly off the connector's real status.
-- `skill-card.tsx` — a skill given the same card treatment (CL-8086: no
+- `skill-card.tsx` — a skill given the same card treatment (no
   scope badge — the stock asset routes carry no scope/visibility flag).
 - `installed-strip.tsx` — the at-a-glance row of already-connected
   plugins above the search/category grid.

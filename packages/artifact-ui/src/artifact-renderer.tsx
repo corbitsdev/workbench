@@ -4,8 +4,8 @@
 // opened chat blob) renders through this one component so a kind's shape
 // only has one implementation.
 //
-// Read-only phase (CL-5938): no editing affordances here at all — the
-// multiplayer-editing half is CL-5958's substrate to build on top of this.
+// Read-only phase: no editing affordances here at all — the
+// multiplayer-editing half is substrate to build on top of this.
 
 import { CsvTable } from "@corbits/react-ui";
 import { FileDashed } from "@corbits/icons";

@@ -464,7 +464,7 @@
   }
 }
 
-/* Connections: rows over grid (CL-6258, DRAPER's earlier plugins-directory
+/* Connections: rows over grid (the plugins-directory
    rebuild is the reference pattern) — one row per connector, not a grid
    of bordered cards. Same brand rules: color-mix hairline dividers, the
    accent color only ever as text (needs-attention) or an inset edge,

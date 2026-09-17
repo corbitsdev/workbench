@@ -34,7 +34,7 @@ export function templateSettingsPatch(
 }
 
 /**
- * The `github` connect card's own settled state (CL-6345): once a
+ * The `github` connect card's own settled state: once a
  * person has picked which repos to review, `./connect-github-setup.ts`
  * writes both keys in the same patch — `pendingConnections` with
  * `"github"` removed (this template needs nothing else, so that leaves

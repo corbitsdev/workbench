@@ -1,4 +1,4 @@
-// A recorded MCP fake's fixture shape (CL-6338): what tools an
+// A recorded MCP fake's fixture shape: what tools an
 // external MCP server (GitHub, Attio, Sumble, ...) advertises, and the
 // canned `(tool, arguments) -> response` pairs a fake stood up from
 // `startMcpFake` (./mcp-fake-server.ts) replays. Checked into the repo

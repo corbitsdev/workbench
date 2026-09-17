@@ -1,5 +1,5 @@
-// CL-6772: join / system notice rows sit on the left message edge — never
-// the signed-in user's right edge — and keep the CL-6739 social-chrome gate.
+// Join / system notice rows sit on the left message edge — never
+// the signed-in user's right edge — and keep the social-chrome gate.
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -81,7 +81,7 @@ function joinItem(senderAddress: string): MessageItem {
   };
 }
 
-describe("CL-6772: join / system notices stay on the left edge", () => {
+describe("join / system notices stay on the left edge", () => {
   test("join row is never data-own, even when the viewer authored the post", async () => {
     const el = await mount([joinItem("sawyer@agents.example")], {
       principalId: "sawyer",

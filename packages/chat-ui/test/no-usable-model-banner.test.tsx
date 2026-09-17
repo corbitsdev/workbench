@@ -1,4 +1,4 @@
-// CL-6568: the pre-send banner a tenant with no usable model sees before
+// The pre-send banner a tenant with no usable model sees before
 // typing into a workbench with an agent in it — never a silently
 // disabled composer, always a visible, actionable "Connect a model".
 import { afterEach, describe, expect, test } from "bun:test";

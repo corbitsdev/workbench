@@ -1,4 +1,4 @@
-// CL-6370: every page/room-level wait renders the shared warm loader —
+// Every page/room-level wait renders the shared warm loader —
 // headline + rotating tip — never a bare skeleton/spinner slab, and a wait
 // that resolves inside the delay window never renders an intermediate
 // frame at all (flash prevention).
@@ -55,7 +55,7 @@ describe("WorkbenchLoadingState", () => {
   });
 
   test("a delayed loader that becomes immediate shows at once, never a blank page", () => {
-    // CL-6462: the land route mounts this while it is still reading (a
+    // The land route mounts this while it is still reading (a
     // delayed loader), then switches to an immediate one once it knows
     // it is waiting on something. React reconciles rather than remounts,
     // so the drop to 0 has to be honoured — a loader stuck invisible is

@@ -1,5 +1,5 @@
 // A workbench's live "who's here" roster, driven off the same `/stream`
-// connection as every other live update (CL-6328) — never a second
+// connection as every other live update — never a second
 // connection or an HTTP heartbeat poll. `chat.presence.snapshot` seeds the
 // roster the moment the stream opens; `chat.presence` deltas
 // (`packages/chat/src/workbench-presence.ts`) keep it current from there.

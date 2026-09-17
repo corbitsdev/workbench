@@ -1,4 +1,4 @@
-// The MCP-server connector's OAuth half (CL-6152): a real
+// The MCP-server connector's OAuth half: a real
 // `OAuthClientProvider` for the official `@modelcontextprotocol/sdk`
 // client's own `auth()` orchestrator, rather than a hand-rolled
 // authorize/token exchange. `auth()` already does everything the MCP
@@ -113,7 +113,7 @@ export type McpOAuthRefreshResult =
   | { readonly ok: false; readonly message: string };
 
 /**
- * CL-6207: re-invokes `auth()` with a session pre-loaded with the stored
+ * Re-invokes `auth()` with a session pre-loaded with the stored
  * token pair (and the client this workbench registered at connect time,
  * when known) so a stored `refresh_token` takes `auth()`'s own refresh
  * branch instead of falling through to a fresh interactive

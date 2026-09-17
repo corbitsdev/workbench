@@ -19,7 +19,7 @@ function message(
 
 const ROOT = "thr_root";
 
-describe("selectThreadFeed (CL-6313: one query, filtered by membership)", () => {
+describe("selectThreadFeed (one query, filtered by membership)", () => {
   test("root feed is root-thread membership only", () => {
     const items = [message("1", ROOT), message("2", "thr_reply"), message("3", ROOT)];
     const feed = selectThreadFeed(items, {
@@ -107,7 +107,7 @@ describe("selectThreadFeed (CL-6313: one query, filtered by membership)", () => 
   });
 });
 
-describe("threadAffordanceMeta (CL-6313: counts without a request per thread)", () => {
+describe("threadAffordanceMeta (counts without a request per thread)", () => {
   const rows: readonly ThreadActivityRow[] = [
     {
       id: "thr_reply",

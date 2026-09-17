@@ -4,7 +4,7 @@
 // message or a bug report. The raw failure — stack text, file paths,
 // upstream error prose — never crosses the wire; it belongs in the
 // hub's own logger, keyed by the same `refId`, so an operator can find
-// it without the client ever having seen it. See CL-6360.
+// it without the client ever having seen it.
 
 import { type } from "arktype";
 import { generateRefId } from "./ref-id";

@@ -1,4 +1,4 @@
-// The loopback-OAuth half of the Connections surface (CL-7508). Where
+// The loopback-OAuth half of the Connections surface. Where
 // `./oauth-routes.ts` drives the flows whose browser returns to the hub,
 // the `oauth-loopback` connectors (codex, xai-oauth) cannot: their
 // authorization servers only accept the fixed loopback redirect URIs the
@@ -16,8 +16,7 @@
 // runs detached: failures are reported, never silently dropped, and a
 // caller that needs the outcome re-checks the connection list.
 //
-// No caller ships yet: the S5 onboarding UI (apps/web) wires these POSTs;
-// tracked on CL-7511.
+// No caller ships yet: the S5 onboarding UI (apps/web) wires these POSTs.
 import { Hono } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 import { createHubAPI } from "@corbits/hub-api-client";
@@ -33,7 +32,7 @@ export type CreateOAuthLoopbackRoutesDeps = PersistConnectorCredentialFns & {
   readonly hubUrl: string;
   readonly log: (line: string) => void;
   /** The connector set this build ships — this package carries none of
-   * its own (CL-7384), so a caller always supplies one. */
+   * its own, so a caller always supplies one. */
   readonly registry: Readonly<Record<string, ConnectorDescriptor>>;
   /** The sidecar router's gated login starter; the hub wiring supplies
    * it bound to its locality policy. */
@@ -41,7 +40,7 @@ export type CreateOAuthLoopbackRoutesDeps = PersistConnectorCredentialFns & {
     connectorId: "codex" | "xai-oauth";
   }) => Promise<OAuthLoginRequestOutcome>;
   /** Cleared on a successful connect, same store the other connect
-   * surfaces share (CL-6092). */
+   * surfaces share. */
   readonly providerHealth?: {
     clear(tenantId: string, connectorId: string): void;
   };

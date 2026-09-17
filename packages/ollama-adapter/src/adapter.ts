@@ -37,7 +37,7 @@ function applyOverride(built: BuiltRequest, override: OllamaAdapterOverride): Bu
   const body = JSON.parse(built.body) as OllamaChatBody;
   // Without include_usage, Ollama's OpenAI-compat stream often ends with no
   // usage object; the harness then synthesizes zero token counts that Insights
-  // used to display as Cost $0.00 / 0/0 (CL-6659).
+  // used to display as Cost $0.00 / 0/0.
   body.stream_options = { include_usage: true };
   if (override.numCtx !== undefined) {
     body.options = { ...body.options, num_ctx: override.numCtx };

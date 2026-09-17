@@ -1,4 +1,4 @@
-// Strips obvious secrets before a report reaches any transport (CL-6496):
+// Strips obvious secrets before a report reaches any transport:
 // a key that looks like a credential is replaced outright, and every
 // string value -- messages, stack traces, anything nested in `extra` --
 // is scanned for bearer tokens and authorization-header fragments.

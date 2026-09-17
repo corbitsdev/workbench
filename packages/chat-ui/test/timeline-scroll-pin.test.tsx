@@ -1,4 +1,4 @@
-// CL-6252 #4: a sibling mounting or growing below the scroll container
+// #4: a sibling mounting or growing below the scroll container
 // (the turn-activity strip, a typing indicator) changes the container's
 // own available height without changing `items.length` — the effect that
 // re-anchors scrollTop on `items.length` never fires for it. This proves
@@ -85,7 +85,7 @@ async function mount() {
   return { container, scrollEl };
 }
 
-describe("WorkbenchTimeline re-anchors on container resize while pinned (CL-6252 #4)", () => {
+describe("WorkbenchTimeline re-anchors on container resize while pinned", () => {
   test("a resize while pinned scrolls back to the bottom", async () => {
     const { scrollEl } = await mount();
     scrollEl.scrollTop = 0;

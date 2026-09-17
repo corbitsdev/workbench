@@ -7,7 +7,7 @@
 // A 200 whose effect is not `allow` is an authenticated deny. A thrown
 // probe (network, 5xx) is `error`, never `denied` — collapsing those
 // together made the gated nav vanish as if the principal were
-// unauthorized (CL-6829).
+// unauthorized.
 
 import { useEffect, useState } from "react";
 
@@ -32,7 +32,7 @@ export async function probeSectionAccess(
     const result = await evaluate(tenantId, principalId, resource, "read");
     return result.effect === "allow" ? "allowed" : "denied";
   } catch {
-    // report-error-ignore: CL-6829 — a failed evaluate probe is the
+    // report-error-ignore: a failed evaluate probe is the
     // `error` nav state, not an unexpected exception to report.
     return "error";
   }

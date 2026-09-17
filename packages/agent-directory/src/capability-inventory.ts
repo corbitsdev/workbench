@@ -21,7 +21,7 @@ export type CapabilityModelEntry = { readonly canonicalName: string };
  * The pins every created specialist carries unless the caller names its
  * own: search (via the workbench's MCP connections), firm memory, and
  * the ask_user interaction card. A specialist without these is a name
- * with a prompt — a "research agent" that cannot search (CL-6206).
+ * with a prompt — a "research agent" that cannot search.
  */
 export const BASELINE_AGENT_TOOL_PINS = [
   "@corbits/mcp-tools",

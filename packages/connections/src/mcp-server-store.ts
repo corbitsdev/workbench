@@ -11,8 +11,8 @@
 // the way `@intx/db`'s own `resolveProviderByName`/`listAssetsForTenant`
 // (and the hub-api `GET /providers` route) already do: a child tenant sees
 // every MCP server an ancestor connected, and a same-slug connection made at
-// the child shadows the ancestor's (CL-6191, matching the inheritance fix
-// already shipped for `@corbits/skills`' asset listing). Mutating a
+// the child shadows the ancestor's, matching the inheritance behavior
+// `@corbits/skills`' asset listing already follows. Mutating a
 // connection — connect, disconnect — stays own-tenant only; see
 // `./mcp-server-routes.ts`.
 import { and, eq } from "drizzle-orm";

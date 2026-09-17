@@ -4,7 +4,7 @@
 // (or worse, a raw address/run id) reimplemented per call site.
 //
 // Lives in `@corbits/chat` rather than `@corbits/agent-directory` (which
-// originated this logic, CL-6413) because `@corbits/agent-directory`
+// originated this logic) because `@corbits/agent-directory`
 // itself depends on `@corbits/chat` (`workbench-host-naming`); a reverse
 // dependency would be circular. `@corbits/agent-directory/client.ts`
 // re-exports `deriveDisplayName`/`humanizeSlug` from here for its existing
@@ -45,7 +45,7 @@ export function humanizeSlug(slug: string): string {
  * `wfd_…`, …, see `./id-leak-guard`) — the product rule is that a person
  * never sees an internal identifier, so a caller that reaches this
  * function with a run id where a definition's slug belongs gets a loud
- * failure instead of a Title-Cased leak like "Run 737a058d…" (CL-6471).
+ * failure instead of a Title-Cased leak like "Run 737a058d…".
  */
 export function deriveDisplayName(definition: {
   readonly name: string;

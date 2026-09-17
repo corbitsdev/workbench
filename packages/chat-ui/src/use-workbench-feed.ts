@@ -1,10 +1,10 @@
 // One workbench's feed: the mailbox reads that make it up, every view the
 // timeline can derive from them, and the single refresh that keeps them
-// current (CL-6313; CL-8174 slice 2b).
+// current.
 //
 // The feed reads through `@corbits/mailbox`'s own thread routes rather than
 // `@corbits/chat`'s message/thread routes now: a workbench is a plain
-// tenant (CL-8083), and every message posted to it already lands in the
+// tenant, and every message posted to it already lands in the
 // mailbox via the same fan-out the Inbox reads (see
 // `packages/chat-ui/src/mailbox-timeline.ts`). Thread membership is a
 // property of a message, not a function of which endpoint was called, so
@@ -73,7 +73,7 @@ export function chatThreadsQueryKey(tenantId: string, workbenchId: string | null
 /**
  * The `GET /threads` cache shape — shared by the optimistic-send path that
  * seeds a just-created reply thread before `openThreadById` runs
- * (CL-6660).
+ *.
  */
 export type ThreadsQueryData = {
   readonly rootThreadId: string;
@@ -85,7 +85,7 @@ export type ThreadsQueryData = {
  * its activity. A first in-reply-to send uses this to seed the row with
  * `parentMessageId` before navigation opens the thread; a stream echo
  * uses it when the row is still missing so "N replies" and open-by-id
- * have something to hang onto without a refetch (CL-6660).
+ * have something to hang onto without a refetch.
  *
  * When the row already exists, `parentMessageId` fills in only if the
  * cached row still has `null` (a stream-seeded stub catching up to the
@@ -171,7 +171,7 @@ export function useWorkbenchFeed(args: {
   // not a bare timer handle — so a pending refresh for one workbench can
   // never make another workbench's `refreshFeed()` call early-return, and
   // never fires an invalidation against a query key that is no longer the
-  // active one (CL-7198).
+  // active one.
   const refreshTimerRef = useRef<
     | {
         readonly tenantId: string;

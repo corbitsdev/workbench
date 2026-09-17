@@ -1,4 +1,4 @@
-// CL-7198: the coalescing refresh timer was a single ref, neither scoped
+// The coalescing refresh timer was a single ref, neither scoped
 // to nor cleared on the active workbench id. A pending timer scheduled
 // for one workbench made a different workbench's `refreshFeed()` call
 // early-return, and the timer then invalidated the first workbench's own
@@ -26,8 +26,8 @@ function stubFetch() {
         status: 200,
         headers: { "content-type": "application/json" },
       });
-    // The feed now reads via `@corbits/mailbox`'s thread routes
-    // (CL-8174 slice 2b) — an empty thread list means neither query
+    // The feed reads via `@corbits/mailbox`'s thread routes —
+    // an empty thread list means neither query
     // ever needs to read a thread's own messages.
     if (/\/mailbox\/me\/threads/.test(path)) return json({ threads: [] });
     throw new Error(`unstubbed fetch: ${path}`);
@@ -82,7 +82,7 @@ function mount(tenantId: string, initialWorkbenchId: string) {
   };
 }
 
-describe("useWorkbenchFeed — refresh timer scoping across a workbench switch (CL-7198)", () => {
+describe("useWorkbenchFeed — refresh timer scoping across a workbench switch", () => {
   test("a refresh scheduled for bench A never fires, and bench B's own refresh fires once switching happens before the coalesce window closes", async () => {
     stubFetch();
     const harness = mount("ten_1", "ch_a");

@@ -1,4 +1,4 @@
-// CL-7389: `resolvePinnedVersion` must resolve to a concrete, reproducible
+// `resolvePinnedVersion` must resolve to a concrete, reproducible
 // version — semver-sorted (never string-sorted), matched to the exact
 // package name (never a prefix/suffix neighbor), and preferring the
 // highest STABLE version over a higher-sorting prerelease. These are

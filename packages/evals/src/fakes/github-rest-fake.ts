@@ -1,4 +1,4 @@
-// A fake GitHub REST origin for the CL-6403 seam: the hub, booted with
+// A fake GitHub REST origin for the `GITHUB_API_BASE_URL` seam: the hub, booted with
 // `GITHUB_API_BASE_URL` pointing here, runs its `github` connector PAT
 // probe (`GET /user`), the connect card's authenticated-login +
 // repo-listing reads (`GET /user`, `GET /user/repos`,

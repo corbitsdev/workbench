@@ -1,6 +1,6 @@
 // The sanctioned path for a workflow-process child to add itself a
-// capability (`@corbits/capability-tools`'s `request_capability`,
-// CL-6084) — the execution half of `POST /:definitionId/capabilities`
+// capability (`@corbits/capability-tools`'s `request_capability`)
+// — the execution half of `POST /:definitionId/capabilities`
 // / `GET /capabilities/inventory` in `./routes.ts`, mirroring
 // `@corbits/skills`' `createWorkflowSkillRoutes` and
 // `@corbits/artifacts-hub`'s workflow-artifacts routes: a workflow child
@@ -13,7 +13,7 @@
 // or path beyond the definitionId itself: the tenant and principal
 // every write is scoped to come from the authenticated run alone.
 //
-// Authorization decision (deliberate, see CL-6085 for the durable fix):
+// Authorization decision (deliberate):
 // the vendored grant-materialization path never seeds a `kind:
 // "workflow"` run's own principal a `workflow-definition: <its own
 // id>/update` grant — `requireGrant` would 403 every self-update call a
@@ -34,8 +34,8 @@
 // never touch another definition through this surface), and (3) the
 // addition must fail closed against the tenant's live capability
 // inventory (`assertCapabilityInInventory`, unchanged from the
-// tenant-session route). CL-6085 tracks seeding the real self-update
-// grant in vendor grant materialization, at which point this route can
+// tenant-session route). Once the real self-update grant is seeded in
+// vendor grant materialization, this route can
 // route through `requireGrant` like every other definition-mutating
 // surface instead of carrying this interim rule.
 import { type } from "arktype";

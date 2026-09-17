@@ -1,5 +1,5 @@
 // Person-facing display names for a workbench's agent participants
-// (CL-6424) — resolved once per workbench off
+// — resolved once per workbench off
 // `GET /workbenches/:id/agents`' `displayName`, keyed by participant
 // address. Every surface that names an agent (timeline headers, mention
 // picker, typing pulse, presence stack, empty states, join lines) reads

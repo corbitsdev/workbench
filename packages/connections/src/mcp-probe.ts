@@ -86,7 +86,7 @@ export async function probeMcpServer(
   try {
     parsedUrl = new URL(url);
   } catch {
-    // report-error-ignore: CL-7247 — a malformed URL here is a person's
+    // report-error-ignore: a malformed URL here is a person's
     // paste-in typo (the same "not a valid URL" outcome the UI already
     // surfaces to them), never a system fault; there is nothing to fix in
     // response to it.

@@ -1,6 +1,6 @@
 // The connect panel opens the right surface per connector kind: an OAuth
 // link for `oauth-pkce`/`oauth-code`, a single-action connect form for
-// `api-key` (CL-6377: no separate test step), and — for Granola
+// `api-key` (no separate test step), and — for Granola
 // specifically — both the api-key form and `GranolaWebhookCard` stacked
 // in the same panel, never a second dialog.
 
@@ -18,7 +18,7 @@ import { PLUGINS_STRINGS } from "../src/strings";
 
 const realFetch = globalThis.fetch;
 let mountedRoots: Root[] = [];
-// The panel fetches `/connections/oauth-configured` on open (CL-6386) —
+// The panel fetches `/connections/oauth-configured` on open —
 // every test that doesn't care about that response gets this quiet
 // default rather than a real network attempt; a test exercising a
 // different fetch behavior overrides `globalThis.fetch` itself before
@@ -104,7 +104,7 @@ describe("PluginConnectPanel", () => {
     expect(container.querySelector('input[type="password"]')).toBeNull();
   });
 
-  // CL-6377: one Connect action — no separate test step or "Test" copy.
+  // One Connect action — no separate test step or "Test" copy.
   test("an api-key connector shows the connect form", () => {
     const container = render(connectorSubject(notConnected(descriptor("exa", "Exa", "api-key"))));
 
@@ -227,7 +227,7 @@ describe("PluginConnectPanel", () => {
     expect(container.querySelector('input[type="password"]')).not.toBeNull();
   });
 
-  // CL-6830: a failed oauth-configured probe must not collapse into `{}`
+  // A failed oauth-configured probe must not collapse into `{}`
   // (which reads as "hosted app absent" and hides one-click connect).
   test("GitHub when the oauth-configured probe fails shows error and retry, not the not-configured token paste", async () => {
     globalThis.fetch = (() => Promise.reject(new Error("network down"))) as unknown as typeof fetch;

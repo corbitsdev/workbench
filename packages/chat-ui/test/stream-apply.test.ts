@@ -1,17 +1,13 @@
-// CL-6660: `ensureReplyThreadRow` is the pure fold `use-optimistic-sends.ts`
+// `ensureReplyThreadRow` is the pure fold `use-optimistic-sends.ts`
 // calls to seed (or bump) a reply-thread row in the threads cache before
-// navigation opens it. The `chat.message`/`chat.reaction`/`chat.pin` stream
-// cache-application this file used to cover was retired with CL-8174 slice
-// 2b — the feed now reads via `@corbits/mailbox`'s thread routes, and pins
-// and reactions have no mailbox equivalent, so `applyStreamMessage`,
-// `applyStreamReaction`, and `applyStreamPin` no longer exist.
+// navigation opens it.
 
 import { describe, expect, test } from "bun:test";
 
 import { ensureReplyThreadRow } from "../src/use-workbench-feed";
 import type { WorkbenchThreadRow } from "../src/api";
 
-describe("ensureReplyThreadRow (CL-6660)", () => {
+describe("ensureReplyThreadRow", () => {
   const empty: {
     readonly rootThreadId: string;
     readonly items: readonly WorkbenchThreadRow[];

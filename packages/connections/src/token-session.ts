@@ -1,8 +1,7 @@
-// Serving-time token session over a credential row (CL-7505).
+// Serving-time token session over a credential row.
 //
-// Inference `oauth_token` credentials go stale mid-use: the only refresh
-// the hub ran before CL-7505 was the background MCP expiry sweep, and a
-// still-valid-at-connect access token expires while a run is serving.
+// Inference `oauth_token` credentials go stale mid-use: a
+// still-valid-at-connect access token can expire while a run is serving.
 // This module adapts the `@corbits/oauth-core` token session
 // (`createTokenSession` — skew-aware expiry, in-process coalescing of
 // concurrent refreshes) onto the shape the hub actually stores: the

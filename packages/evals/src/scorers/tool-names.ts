@@ -16,8 +16,8 @@ export const REQUEST_CONNECTION_TOOL = "request_connection";
  * state — the ones an interview must precede. */
 export const BUILD_TOOLS = [CREATE_AGENT_TOOL] as const;
 
-// The shipped GitHub write path (CL-6340 Code Review MVP, PR #62):
-// one diff read and one aggregated comment-only review per PR, posted
+// The shipped GitHub write path: one diff read and one aggregated
+// comment-only review per PR, posted
 // by the code-review workflow run itself. Pinned against
 // `@corbits/github-tools`' own exports in tool-names.test.ts.
 export const GITHUB_PULL_REQUEST_DIFF_TOOL = "github_pull_request_diff";

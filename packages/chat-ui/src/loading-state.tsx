@@ -1,5 +1,5 @@
-// The one warm loader every page/room-level wait in this app renders
-// (CL-6370, following CL-6307's setup loader) — a bare skeleton/spinner/grey
+// The one warm loader every page/room-level wait in this app renders —
+// a bare skeleton/spinner/grey
 // slab is never the right answer for "we don't know how long this takes":
 // one honest headline plus a small rotating tip reads as useful rather than
 // stalled, and it's the same shape everywhere so a reader learns it once.
@@ -66,7 +66,7 @@ export function WorkbenchLoadingState({
     // (immediate) — reconciles onto this same element rather than
     // remounting it, so dropping to 0 has to show the loader outright.
     // Returning early here instead left the loader hidden for good and
-    // rendered the wait as a blank page (CL-6462).
+    // rendered the wait as a blank page.
     if (delayMs <= 0) {
       setVisible(true);
       return;

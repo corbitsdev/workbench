@@ -33,7 +33,7 @@ function awaiting(text: string) {
   return { phase: "awaiting", text } as const;
 }
 
-describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing reply)", () => {
+describe("nextStreamingReplyState (token deltas fold into a growing reply)", () => {
   test("a non chat.agent event never opens or changes the reply", () => {
     expect(nextStreamingReplyState(null, { eventType: "chat.typing", data: {} })).toBeNull();
     const current = awaiting("hi");
@@ -174,7 +174,7 @@ describe("nextStreamingReplyState (CL-6115: token deltas fold into a growing rep
   });
 });
 
-describe("nextStreamingReplyState (CL-6376: the typing pulse clears on a dispatch failure too)", () => {
+describe("nextStreamingReplyState (the typing pulse clears on a dispatch failure too)", () => {
   test("a chat.message carrying a turnFailed part clears a pending reply", () => {
     const state = awaiting("");
     expect(
@@ -208,10 +208,10 @@ describe("nextStreamingReplyState (CL-6376: the typing pulse clears on a dispatc
   });
 });
 
-// CL-7201: a user-cancelled turn clears the same pulse a failed one does
+// A user-cancelled turn clears the same pulse a failed one does
 // — `postCancelledNotice` carries `turnCancelled`, not `turnFailed`, so
 // this is its own case rather than reusing the failure fixture above.
-describe("nextStreamingReplyState (CL-7201: the typing pulse clears on a user cancellation too)", () => {
+describe("nextStreamingReplyState (the typing pulse clears on a user cancellation too)", () => {
   test("a chat.message carrying a turnCancelled part settles the turn as replied", () => {
     const state = awaiting("");
     expect(
@@ -312,7 +312,7 @@ describe("nextStreamingReplyState (CL-7201: the typing pulse clears on a user ca
   });
 });
 
-describe("isAwaitingReply (CL-7201: Stop stays up while tokens stream)", () => {
+describe("isAwaitingReply (Stop stays up while tokens stream)", () => {
   test("is true for the whole awaiting phase, including streamed text", () => {
     expect(isAwaitingReply(awaiting(""))).toBe(true);
     expect(isAwaitingReply(awaiting("Hello"))).toBe(true);
@@ -387,7 +387,7 @@ describe("nextStreamingReplyState (CL-false-no-reply: rendered content, not a li
   });
 });
 
-describe("nextStreamingReplyState (CL-6432 reopened: a folded run parks after the reply — post-reply tool rounds never re-open the pulse)", () => {
+describe("nextStreamingReplyState (a folded run parks after the reply — post-reply tool rounds never re-open the pulse)", () => {
   test("connector.reply moves the turn to the replied phase — the persisted message takes over the timeline", () => {
     expect(
       nextStreamingReplyState(
@@ -579,7 +579,7 @@ describe("typingAgentNames", () => {
     expect(typingAgentNames(awaiting(""), [HUMAN])).toEqual([]);
   });
 
-  test("a resolved display name wins over the slug-derived one (CL-6424)", () => {
+  test("a resolved display name wins over the slug-derived one", () => {
     expect(
       typingAgentNames(
         awaiting(""),
@@ -669,7 +669,7 @@ describe("lastHumanMessageParts", () => {
   });
 });
 
-describe("hydrateStreamingReplyFromTurn (CL-6380: reattach snapshot)", () => {
+describe("hydrateStreamingReplyFromTurn (reattach snapshot)", () => {
   test("no running turn resumes to nothing", () => {
     expect(hydrateStreamingReplyFromTurn(null)).toBeNull();
   });

@@ -2,11 +2,8 @@
 // caller needs to work with a registry built from it, and Workbench's
 // product-supplied connector set — every api-key connector this build
 // actually ships (inference providers plus tool-credential connectors).
-// CL-8156 folded the concrete set back in here from
-// `templates/connectors.ts` (CL-7384 had split it out) now that
-// `@workbench/templates` no longer exists to own it: a caller (the hub,
-// the web app) imports `CONNECTOR_REGISTRY` from this module and passes
-// it into the route factories that need one.
+// A caller (the hub, the web app) imports `CONNECTOR_REGISTRY` from this
+// module and passes it into the route factories that need one.
 //
 // The eight non-OAuth inference providers come straight from
 // `PROVIDER_TEST_CONFIG` — the one source of provider metadata,
@@ -42,9 +39,9 @@ import { exchangeCodeForGoogleToken, GMAIL_SCOPE, GOOGLE_AUTHORIZE_URL } from ".
 // registry actually has a listing for pulls in only those icons' data, not
 // the whole ~3000-brand package (CC0-1.0 licensed — see the package's own
 // LICENSE — so redistributing these marks needs no separate clearance).
-// Granola and ScrapeCreators have no simple-icons listing (CL-6215's
+// Granola and ScrapeCreators have no simple-icons listing (
 // plugins-directory rebuild); OpenAI, xAI, Groq, and Opencode Zen have none
-// either (CL-6258's connections logos) — those descriptors carry no `icon`,
+// either (connections logos) — those descriptors carry no `icon`,
 // so a caller renders their monochrome initial tile instead. Exa publishes
 // its own mark in its official brand kit, used below. Google's mark
 // here is Gemini's, not the generic Google "G" — the model brand a person
@@ -307,7 +304,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
       },
     },
   };
-  // The two loopback OAuth providers (CL-7510). Their authorization
+  // The two loopback OAuth providers. Their authorization
   // servers only accept the fixed `http://localhost:<port>` redirect URI
   // the provider's own CLI registers (`authKind: "oauth-loopback"`), so
   // `buildAuthorizeUrl` ignores the hub callback URL the generic
@@ -607,7 +604,7 @@ export const CONNECTOR_REGISTRY: ConnectorRegistry = createConnectorRegistry({
     // token. Absent entirely, github-tools degrades to a lower
     // unauthenticated rate limit rather than "not connected" — see its
     // tool.ts. `authKind` stays "api-key" (the PAT paste form is
-    // always available, CL-6386's guaranteed fallback); the `oauth`
+    // always available, guaranteed fallback); the `oauth`
     // config below is this connector's one exception to "oauth fields
     // are oauth-pkce/oauth-code only" — a caller checks
     // `GET /oauth-configured`'s `github` entry to decide whether to

@@ -1,6 +1,6 @@
 // The artifact chip is clickable exactly when the file part carries a
 // stable id to open — either a persisted blob (`blobId`) or a link back
-// to a Library artifact (`artifactId`, CL-6000) — and inert otherwise.
+// to a Library artifact (`artifactId`) — and inert otherwise.
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 

@@ -3,7 +3,7 @@
 // a single quiet action that reads honestly off `ResolvedPlugin`'s
 // status — never a generic "manage" button that hides what state the
 // connector is actually in. Density over cards: this is a directory to
-// scan, not a set of tiles to admire (CL-6272.1).
+// scan, not a set of tiles to admire.
 
 import { Button } from "@corbits/react-ui";
 import type { ResolvedPlugin } from "@corbits/connections/plugins";

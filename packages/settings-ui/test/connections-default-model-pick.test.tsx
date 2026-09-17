@@ -1,4 +1,4 @@
-// CL-6258 follow-up: "set default models" — the connected provider row's
+// Follow-up: "set default models" — the connected provider row's
 // default-model caption is a select of that provider's own resolved
 // models; picking one must PATCH the target offering's priority through
 // the existing `updateOwnOffering` route and re-render the new default
@@ -195,7 +195,7 @@ describe("Global model route", () => {
     }
   });
 
-  test("choosing a default model PATCHes offerings only, never agent capabilities (CL-6782)", async () => {
+  test("choosing a default model PATCHes offerings only, never agent capabilities", async () => {
     const calls: { url: string; method: string }[] = [];
     let patched = false;
 

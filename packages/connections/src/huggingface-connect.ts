@@ -8,7 +8,7 @@
 //
 // Unlike OpenRouter's exchange, HF's token endpoint hands back a
 // standard, expiring OAuth access token — no refresh grant is
-// documented for this flow (see the CL-5988 research note). The
+// documented for this flow. The
 // `expiresAt` this module computes from `expires_in` is what a caller
 // stores in the credential's `metadata` field, the extension point a
 // later expiry sweep reads.

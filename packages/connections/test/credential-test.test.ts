@@ -476,7 +476,7 @@ describe("fetchOllamaModelCapabilities", () => {
     ]);
   });
 
-  // The alphabetical-embedding trap (CL-6351/CL-6366) never recurs
+  // The alphabetical-embedding trap never recurs
   // because an embedding-only pull is never translated to "plain-text" —
   // there is no map entry for Ollama's own "embedding" capability.
   test("an embedding-only model earns no completion capability", async () => {
@@ -669,9 +669,9 @@ describe("testProviderCredential: opencode-zen", () => {
       model?: string;
       messages?: unknown[];
     };
-    // Never an empty or foreign model id — CL-6076: an absent `model`
-    // trips Zen's own error-message templating, which used to leak an
-    // unrendered `{{model}}` placeholder straight through to the user.
+    // Never an empty or foreign model id — an absent `model` trips Zen's
+    // own error-message templating, which can leak an unrendered
+    // `{{model}}` placeholder straight through to the user.
     expect(body.model).toBe("claude-sonnet-5");
     expect(body.messages).toEqual([]);
   });
@@ -692,7 +692,7 @@ describe("testProviderCredential: opencode-zen", () => {
     expect(seenHeaders["authorization"]).toContain("test-secret-key");
   });
 
-  // CL-6076 regression: a working key that hits some other problem must
+  // Regression: a working key that hits some other problem must
   // never surface the provider's raw, unrendered template syntax, and its
   // copy must say the key works rather than reading like a bad-credential
   // error.

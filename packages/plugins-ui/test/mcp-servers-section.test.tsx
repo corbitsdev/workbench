@@ -1,4 +1,4 @@
-// Custom MCP rows (CL-6794): already-connected hand-typed servers keep a
+// Custom MCP rows: already-connected hand-typed servers keep a
 // Disconnect affordance whose accessible name must name the server — the
 // same "verb + display name" pattern Connect/Manage use on registry and
 // preset rows. Visible label stays the single verb.
@@ -32,7 +32,7 @@ function mountSection() {
 }
 
 describe("McpServersSection", () => {
-  test("Disconnect's accessible name includes the custom server name (CL-6794)", async () => {
+  test("Disconnect's accessible name includes the custom server name", async () => {
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
