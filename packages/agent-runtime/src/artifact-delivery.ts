@@ -12,7 +12,7 @@ import {
   type PersistedArtifact,
 } from "@corbits/turn-artifacts";
 
-import type { FilePart } from "./parts";
+import type { FilePart } from "@corbits/chat/parts";
 
 function mediaTypeForArtifactKind(kind: string): string {
   return kind === "text" ? "text/plain" : "application/octet-stream";

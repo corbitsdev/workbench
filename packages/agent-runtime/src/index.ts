@@ -79,3 +79,8 @@ export type {
 } from "./turn-mail-correlation";
 export { AGENT_TURN_STALE_MS } from "./agent-turns";
 export { POSTED_APPROVAL_GUARD_TTL_MS } from "./chat-orchestrator";
+
+export {
+  artifactPartsForFinalizedTurn,
+  artifactPartsForToolCall,
+} from "./artifact-delivery";

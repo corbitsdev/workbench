@@ -329,11 +329,6 @@ export type {
   DefaultInferencePreferenceLister,
 } from "./inference-preferences";
 
-export {
-  artifactPartsForFinalizedTurn,
-  artifactPartsForToolCall,
-} from "./artifact-delivery";
-
 export { createWorkflowParticipantRoutes } from "./workflow-participant-routes";
 export type {
   CreateWorkflowParticipantRoutesDeps,

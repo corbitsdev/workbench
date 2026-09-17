@@ -30,8 +30,7 @@
     "./workbench-events": "./src/workbench-events.ts",
     "./agent-binding": "./src/agent-binding.ts",
     "./tools-unsupported": "./src/tools-unsupported.ts",
-    "./inference-preferences": "./src/inference-preferences.ts",
-    "./artifact-delivery": "./src/artifact-delivery.ts"
+    "./inference-preferences": "./src/inference-preferences.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

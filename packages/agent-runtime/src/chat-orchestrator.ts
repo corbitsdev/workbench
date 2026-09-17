@@ -49,7 +49,7 @@ import {
   parseMissingCredentialDetail,
   type ConnectorRegistry,
 } from "@corbits/connections/registry";
-import { artifactPartsForFinalizedTurn } from "@corbits/chat/artifact-delivery";
+import { artifactPartsForFinalizedTurn } from "./artifact-delivery";
 import type { ApproveBlockData } from "@corbits/chat/blocks";
 import { encodeParts } from "@corbits/chat/codec";
 import { mailMessageIdFor } from "@corbits/chat/mail-headers";
