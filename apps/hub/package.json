@@ -24,7 +24,6 @@
     "@corbits/connections": "workspace:*",
     "@corbits/credential-providers": "workspace:*",
     "@corbits/cron": "workspace:*",
-    "@corbits/diligence-brief-workflow": "workspace:*",
     "@corbits/docker-provisioner": "workspace:*",
     "@corbits/e2b-sandbox-sidecar": "workspace:*",
     "@corbits/echo-workflow": "workspace:*",
