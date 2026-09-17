@@ -1,4 +1,4 @@
-// Exercises `createTemplateBlockRoutes`' HTTP surface through the real
+// Exercises `createCatalogBlockRoutes`' HTTP surface through the real
 // `buildBlockWorkflowSource` builder, mounted the same way
 // `./connect-github-routes.test.ts` mounts its routes: a bare `Hono`
 // with a tenant-injecting middleware, every port a plain fake.
@@ -20,9 +20,9 @@ import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { makeErrorEnvelope } from "@corbits/error-sink";
 
 import {
-  createTemplateBlockRoutes,
-  type TemplateBlockRoutesDeps,
-} from "./template-block-routes";
+  createCatalogBlockRoutes,
+  type CatalogBlockRoutesDeps,
+} from "./catalog-block-routes";
 
 const TENANT = {
   id: "tnt_1",
@@ -62,12 +62,12 @@ function mountAs(routes: Hono<TenantEnv>): Hono<TenantEnv> {
 }
 
 type DeployedSource = Parameters<
-  TemplateBlockRoutesDeps["deployWorkflowSource"]
+  CatalogBlockRoutesDeps["deployWorkflowSource"]
 >[0];
 
-function buildApp(overrides: Partial<TemplateBlockRoutesDeps> = {}) {
+function buildApp(overrides: Partial<CatalogBlockRoutesDeps> = {}) {
   const deployed: DeployedSource[] = [];
-  const deps: TemplateBlockRoutesDeps = {
+  const deps: CatalogBlockRoutesDeps = {
     requireGrant: allowAll,
     log: () => {},
     inferencePreferences: async () => [
@@ -79,7 +79,7 @@ function buildApp(overrides: Partial<TemplateBlockRoutesDeps> = {}) {
     },
     ...overrides,
   };
-  return { app: mountAs(createTemplateBlockRoutes(deps)), deployed };
+  return { app: mountAs(createCatalogBlockRoutes(deps)), deployed };
 }
 
 describe("POST /:assetName/deploy", () => {

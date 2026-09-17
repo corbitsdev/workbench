@@ -1,5 +1,5 @@
 // The hub's native catalog-block adapter (CL-8113, hub-zero T2): the
-// deployable set `POST /template-blocks/:assetName/deploy` serves,
+// deployable set `POST /catalog-blocks/:assetName/deploy` serves,
 // composed directly from the `workflows/*` builder packages against
 // `@corbits/workflows` catalog metadata — the same composition
 // `@workbench/onboarding`'s `CATALOG_WORKFLOWS` table wraps, with zero
@@ -9,18 +9,16 @@
 // same as any name outside the catalog entirely.
 //
 // Display names come from the native `WORKFLOW_CATALOG` entry
-// (`@corbits/workflows`, which the legacy template package re-exports its
-// own catalog mirror from), so the labels served here
-// and the catalog's can never drift apart silently. Turn timeouts match
-// the seed table's per-workflow budgets one-for-one: a research turn
-// fans out and writes long-form, a call-transcript pass runs past the
-// shortest catalog steps, everything else runs the conversational
-// default.
+// (`@corbits/workflows`), so the labels served here and the catalog's
+// can never drift apart silently. Turn timeouts match the seed table's
+// per-workflow budgets one-for-one: a research turn fans out and writes
+// long-form, a call-transcript pass runs past the shortest catalog
+// steps, everything else runs the conversational default.
 //
 // Server-only, on purpose: each `buildJson` closure pulls in its
 // workflow package (e.g. `@corbits/granola-call-workflow`) and with it
 // `@intx/agent`/`@intx/workflow`. Only `./block-workflows.ts`
-// (mounted in `apps/hub` through `./template-block-routes.ts`) imports
+// (mounted in `apps/hub` through `./catalog-block-routes.ts`) imports
 // this; it is deliberately not re-exported from the package root.
 import { workflowCatalogEntry } from "@corbits/workflows";
 import {
@@ -103,7 +101,7 @@ export type CatalogBlock = {
   /**
    * Renders the definition's JSON given the tenant's mail domain and the
    * ordered provider/model preferences to deploy against. Takes the bare
-   * preference list so this same function serves the template-block
+   * preference list so this same function serves the catalog-block
    * route's in-process deploy path, which only ever has the tenant's
    * real inference preferences on hand.
    */
@@ -118,7 +116,7 @@ function catalogDisplayName(assetName: string): string {
 }
 
 /**
- * Workflows a tenant can deploy on demand through the template-block
+ * Workflows a tenant can deploy on demand through the catalog-block
  * route: every native catalog entry with a source package under
  * `workflows/<name>`, minus `assistant` (seeded already) and
  * `heartbeat` (test-only). Nothing here reaches a bench until
@@ -293,7 +291,7 @@ export const CATALOG_BLOCK_ASSET_NAMES: readonly string[] = CATALOG_BLOCKS.map(
 );
 
 /**
- * The deployable-through-the-template-block-route entry for one asset
+ * The deployable-through-the-catalog-block-route entry for one asset
  * name, or `undefined` if none exists. `CATALOG_BLOCKS` is the one
  * source of truth for "has a source package under `workflows/<name>`
  * and can be deployed on demand".
