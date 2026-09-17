@@ -419,7 +419,7 @@ export function MissionControlRoute({
               inFlightRows.length === 0 ? (
                 <RichEmptyState
                   title="Nothing running right now"
-                  description="Agent runs and routine fires will show up here while they're in progress."
+                  description="Agent runs will show up here while they're in progress."
                 />
               ) : null}
               {inFlightRows.length > 0 ? (

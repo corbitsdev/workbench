@@ -80,8 +80,8 @@ from wherever it gets them (`apps/web/src/agents-api.ts`'s
 `loadAgentDirectory`, for this repo) — this subpath issues no request and
 holds no state of its own. `excludeRunIds` is available for a host whose
 instance listing isn't already scoped server-side; this repo's own host
-gets that scoping for free from `listTopLevelRuns` (see
-`@corbits/run-scope`) and so never passes it. Every function is generic
+gets that scoping for free from the native `GET /workflows/runs` listing
+(already top-level-only) and so never passes it. Every function is generic
 over the host's concrete row type (constrained to the minimal shape it
 reads), so a host's richer types pass through untouched.
 

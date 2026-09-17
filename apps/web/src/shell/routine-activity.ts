@@ -1,23 +1,18 @@
-// The second column's "Running" section and Mission Control's active-run
-// count (CL-6595) both depend only on `RoutineActivityItem` and
-// `listRoutineActivity`, never on where the data actually comes from.
-// Filled from `./agents-api.ts`'s `listRoutineRunFires` — the `feed=fires`
-// listing, the one top-level-runs view that keeps a routine's fire despite
-// it not being a top-level run (see that function's own comment). The
-// plain `listTopLevelRuns` feed looks tempting here but is wrong: its
-// top-level-only filter drops every routine fire by construction,
-// so a routine genuinely running would never show up in this band or count
-// toward Mission Control's "Active runs" — exactly CL-6595's desync
-// between the Routines page's own "Running now" pill and Mission Control's
-// "0 / nothing running".
-import {
-  runOutcomeStatus,
-  withListingAbandoned,
-} from "@corbits/workflows/client";
+// CL-8087 deleted `@corbits/run-scope`'s `/top-level-runs?feed=fires`
+// route — the only listing that kept a routine's fire despite it not
+// being a top-level run — and the native `GET /workflows/runs` listing
+// has no equivalent: its top-level-only predicate drops every routine
+// fire by construction, and its rows carry no routine attribution to
+// compose client-side from (matching fires to routines by definition
+// name here would be exactly the slug guess the Insights feed refuses
+// to do). So `listRoutineActivity` resolves no items without fetching:
+// the shell's "Running" band and Mission Control's active-run count
+// (CL-6595) honestly report no routine activity until a native fires
+// equivalent exists, instead of deriving routine activity from
+// top-level deployment rows that are not routine fires. The
+// `RoutineActivityItem` shape is kept so both consumers keep compiling
+// against the seam in `./bench-activity.ts`.
 import type { ListingTurn } from "@corbits/workflows/client";
-
-import { listRoutineRunFires } from "../agents-api";
-import type { RunFire } from "../agents-api";
 
 export type RoutineActivityItem = {
   readonly id: string;
@@ -29,39 +24,6 @@ export type RoutineActivityItem = {
   readonly turns?: readonly ListingTurn[];
 };
 
-function toRoutineActivityItem(run: RunFire, now: number): RoutineActivityItem {
-  const listing = withListingAbandoned(
-    {
-      createdAt: run.createdAt,
-      status: run.status,
-      ...(run.endedAt !== undefined ? { endedAt: run.endedAt } : {}),
-      ...(run.hasInFlightTurn !== undefined
-        ? { hasInFlightTurn: run.hasInFlightTurn }
-        : {}),
-      ...(run.turns !== undefined ? { turns: run.turns } : {}),
-    },
-    now,
-  );
-  return {
-    id: run.id,
-    name: run.routineName ?? run.definitionName,
-    status: runOutcomeStatus(listing, now) ?? run.status,
-    startedAt: run.createdAt,
-    ...(run.endedAt !== undefined ? { endedAt: run.endedAt } : {}),
-    ...(run.hasInFlightTurn !== undefined
-      ? { hasInFlightTurn: run.hasInFlightTurn }
-      : {}),
-    ...(run.turns !== undefined ? { turns: run.turns } : {}),
-  };
-}
-
-export function listRoutineActivity(
-  tenantId: string,
-  now: number = Date.now(),
-): Promise<readonly RoutineActivityItem[]> {
-  return listRoutineRunFires(tenantId).then((runs) =>
-    runs
-      .filter((run) => run.routineId !== null)
-      .map((run) => toRoutineActivityItem(run, now)),
-  );
+export function listRoutineActivity(): Promise<readonly RoutineActivityItem[]> {
+  return Promise.resolve([]);
 }

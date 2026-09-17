@@ -10,7 +10,6 @@ import {
   draftAgentDefinition,
   getAgentDefinitionBySlug,
   listCatalogModels,
-  listRoutineRunFires,
   loadAgentDirectory,
   updateAgentSkills,
 } from "../src/agents-api";
@@ -149,7 +148,7 @@ describe("loadAgentDirectory", () => {
       if (path.includes("/workflows/definitions")) {
         return json({ data: [definitionFixture], nextCursor: null });
       }
-      if (path.includes("/top-level-runs")) {
+      if (path.includes("/workflows/runs")) {
         return json({ data: [instanceFixture], nextCursor: null });
       }
       if (path.includes("/catalog/models")) {
@@ -170,7 +169,7 @@ describe("loadAgentDirectory", () => {
       if (path.includes("/workflows/definitions")) {
         return json({ error: { message: "nope" } }, 500);
       }
-      if (path.includes("/top-level-runs")) {
+      if (path.includes("/workflows/runs")) {
         return json({ data: [instanceFixture], nextCursor: null });
       }
       if (path.includes("/catalog/models")) {
@@ -187,7 +186,7 @@ describe("loadAgentDirectory", () => {
       if (path.includes("/workflows/definitions")) {
         return json({ data: [definitionFixture], nextCursor: null });
       }
-      if (path.includes("/top-level-runs")) {
+      if (path.includes("/workflows/runs")) {
         return json({ data: [instanceFixture], nextCursor: null });
       }
       if (path.includes("/catalog/models")) {
@@ -206,7 +205,7 @@ describe("loadAgentDirectory", () => {
       if (path.includes("/workflows/definitions")) {
         return json({ data: [definitionFixture], nextCursor: null });
       }
-      if (path.includes("/top-level-runs")) {
+      if (path.includes("/workflows/runs")) {
         return json({ data: [instanceFixture], nextCursor: null });
       }
       if (path.includes("/catalog/models")) {
@@ -228,7 +227,7 @@ describe("loadAgentDirectory", () => {
       if (path.includes("/workflows/definitions")) {
         return json({ data: [definitionFixture], nextCursor: null });
       }
-      if (path.includes("/top-level-runs")) {
+      if (path.includes("/workflows/runs")) {
         return json({ data: [instanceFixture], nextCursor: null });
       }
       if (path.includes("/catalog/models")) {
@@ -247,12 +246,15 @@ describe("loadAgentDirectory", () => {
     expect(directory.skillsError).toMatch(/500|down/i);
   });
 
-  test("reads instances from the server-scoped top-level-runs endpoint, never /workflows/runs", async () => {
+  // CL-8087: instances come from the native tenant-scoped
+  // `GET /workflows/runs` top-level listing — the deleted `/top-level-runs`
+  // route (and its `feed=fires` variant) no longer exists.
+  test("reads instances from the native top-level GET /workflows/runs listing", async () => {
     const calls = stubFetch((path) => {
       if (path.includes("/workflows/definitions")) {
         return json({ data: [definitionFixture], nextCursor: null });
       }
-      if (path.includes("/top-level-runs")) {
+      if (path.includes("/workflows/runs")) {
         return json({ data: [instanceFixture], nextCursor: null });
       }
       if (path.includes("/catalog/models")) {
@@ -263,8 +265,8 @@ describe("loadAgentDirectory", () => {
 
     const directory = await loadAgentDirectory("tnt_1");
     expect(directory.instances).toEqual([instanceFixture]);
-    expect(calls.some((c) => c.path.includes("/top-level-runs"))).toBe(true);
-    expect(calls.some((c) => c.path.includes("/workflows/runs"))).toBe(false);
+    expect(calls.some((c) => c.path.includes("/workflows/runs"))).toBe(true);
+    expect(calls.some((c) => c.path.includes("/top-level-runs"))).toBe(false);
   });
 });
 
@@ -305,31 +307,6 @@ describe("getAgentDefinitionBySlug", () => {
     const definition = await getAgentDefinitionBySlug("tnt_1", "triage-bot");
     expect(definition.id).toBe("wfd_1");
     expect(calls.every((call) => !call.path.includes("limit="))).toBe(true);
-  });
-});
-
-describe("listRoutineRunFires", () => {
-  test("requests the fires feed of top-level-runs, not the plain feed", async () => {
-    const calls = stubFetch(() =>
-      json({
-        data: [
-          {
-            ...instanceFixture,
-            routineId: "rtn_1",
-            routineName: "Weekly digest",
-          },
-        ],
-        nextCursor: null,
-      }),
-    );
-
-    const fires = await listRoutineRunFires("tnt_1");
-
-    expect(calls[0]?.path).toContain("/api/tenants/tnt_1/top-level-runs");
-    expect(calls[0]?.path).toContain("feed=fires");
-    expect(fires).toEqual([
-      { ...instanceFixture, routineId: "rtn_1", routineName: "Weekly digest" },
-    ]);
   });
 });
 

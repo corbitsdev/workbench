@@ -31,25 +31,8 @@ export type AgentDefinition = typeof WorkflowDefinitionResponse.infer;
 export type AgentInstance = typeof WorkflowRunResponse.infer;
 export type CatalogModel = typeof ModelResponse.infer;
 
-const RunFireResponse = WorkflowRunResponse.and(
-  type({
-    routineId: "string | null",
-    routineName: "string | null",
-    "hasInFlightTurn?": "boolean",
-    "turns?": type({
-      status: "string",
-      "endedAt?": "string | null",
-    }).array(),
-  }),
-);
-/** A `feed=fires` row: every `AgentInstance` field plus the routine that
- * fired it (both `null` for a directly-triggered deployment with no
- * routine parent). */
-export type RunFire = typeof RunFireResponse.infer;
-
 const DefinitionsPage = paginatedSchema(WorkflowDefinitionResponse);
 const InstancesPage = paginatedSchema(WorkflowRunResponse);
-const RunFiresPage = paginatedSchema(RunFireResponse);
 const ModelsPage = paginatedSchema(ModelResponse);
 
 // The REST pagination ceiling (see `vendor/intx/hub-api/src/pagination.ts`).
@@ -153,41 +136,17 @@ export function listAgentInstances(
 
 /**
  * The tenant's genuine top-level deployment runs — every non-top-level
- * run (workbench host, invited agent, routine fire, task) excluded
- * server-side by the same predicate `isTopLevelRun` uses (see
- * `@corbits/run-scope`'s `scope-routes.ts`), not derived client-side
- * from a tenant's workbenches the way `foldedRunIdsFromWorkbenches` used
- * to. Used wherever a page needs "real deployments only" — the Agent
- * Directory. A routine fire is NOT top-level, so this feed structurally
- * never carries one; a caller that needs routine activity wants
- * `listRoutineRunFires` below instead.
+ * run (workbench host, invited agent, task) excluded server-side by the
+ * native `GET /workflows/runs` listing's own predicate (`address IS NOT
+ * NULL AND anchorRunId = id`), the same one `isTopLevelRun` uses. Used
+ * wherever a page needs "real deployments only" — the Agent Directory.
  */
 export function listTopLevelRuns(
   tenantId: string,
 ): Promise<readonly AgentInstance[]> {
   return getJSON(
-    `/api/tenants/${tenantId}/top-level-runs?limit=${PAGE_LIMIT}`,
+    `/api/tenants/${tenantId}/workflows/runs?limit=${PAGE_LIMIT}`,
     InstancesPage,
-  ).then((page) => page.data);
-}
-
-/**
- * `feed=fires` (CL-6249): the tenant's genuine *executed* runs — unlike
- * `listTopLevelRuns`, a routine's fire is kept even though it is not a
- * top-level run, tagged with the routine that fired it (see
- * `@corbits/run-scope`'s `scope-routes.ts`'s `listTopLevelRunFires`).
- * The shell's "Running" activity band (CL-6595) reads this, not
- * `listTopLevelRuns`, so a routine's own run is actually visible here —
- * `listTopLevelRuns`'s top-level-only filter drops every routine fire by
- * construction, which left Mission Control's active-run count
- * permanently desynced from the Routines page's own "Running now" pill.
- */
-export function listRoutineRunFires(
-  tenantId: string,
-): Promise<readonly RunFire[]> {
-  return getJSON(
-    `/api/tenants/${tenantId}/top-level-runs?limit=${PAGE_LIMIT}&feed=fires`,
-    RunFiresPage,
   ).then((page) => page.data);
 }
 
@@ -467,9 +426,9 @@ type SkillsOutcome =
  * so either failing alone never blanks the page. Failures surface as
  * `modelsError` / `skillsError` rather than silent empty collections.
  * `instances` comes from `listTopLevelRuns`, which already excludes every
- * non-top-level run (workbench host, invited agent) server-side — see
- * `@corbits/run-scope`'s `scope-routes.ts` — so this page never has to
- * derive that exclusion itself from a tenant's workbenches.
+ * non-top-level run (workbench host, invited agent) server-side — the
+ * native `GET /workflows/runs` listing's own predicate — so this page
+ * never has to derive that exclusion itself from a tenant's workbenches.
  */
 export async function loadAgentDirectory(
   tenantId: string,

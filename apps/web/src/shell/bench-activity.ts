@@ -83,7 +83,11 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
   const routinesQuery = useQuery({
     queryKey: tenantKeys.topLevelRuns(key),
     enabled,
-    queryFn: () => listRoutineActivity(key),
+    // CL-8087: `listRoutineActivity` resolves no items without fetching
+    // (the `feed=fires` route is deleted and the native listing has no
+    // fires equivalent), so this query never fires a request — the
+    // column keeps the key and renders the seam's honest empty state.
+    queryFn: () => listRoutineActivity(),
   });
   const agentsQuery = useQuery({
     queryKey: tenantKeys.visibleAgents(key),
