@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 
 import {
   authorWorkflow,
+  deployWorkflow,
+  orderedSourceOfferingIds,
   readWorkflowSource,
   republishWorkflow,
   WorkflowAuthoringRequestError,
@@ -22,6 +24,7 @@ function capture(respond: () => Response): {
   return {
     config: {
       hubWorkflowAuthoringUrl: "https://hub.example.com",
+      tenantId: "tenant_1",
       sidecarToken: "sc-token",
       address: "run_1@workflow",
       fetchImpl,
@@ -157,4 +160,115 @@ test("a success body of the wrong shape is rejected", async () => {
   await expect(
     authorWorkflow(config, { name: "x", files: FILES }),
   ).rejects.toThrow(/expected shape/);
+});
+
+// The deleted `/api/workflow-workflow-authoring/:assetId/deploy` mirror
+// resolved this chain server-side from `listVisibleOfferings`, sorted by
+// priority. The stock route takes it from the caller, and the stock
+// discovery route it is rebuilt from groups its offerings under each
+// model — so the flattening has to restore one global priority order
+// across models, not preserve the per-model grouping.
+test("orderedSourceOfferingIds flattens the discovery response into one priority order across models", () => {
+  expect(
+    orderedSourceOfferingIds([
+      {
+        offerings: [
+          { offeringId: "off_slow", priority: 30 },
+          { offeringId: "off_mid", priority: 20 },
+        ],
+      },
+      { offerings: [{ offeringId: "off_fast", priority: 10 }] },
+    ]),
+  ).toEqual(["off_fast", "off_mid", "off_slow"]);
+});
+
+test("deployWorkflow reads the stock catalog, then posts an asset/source deploy to the stock route", async () => {
+  const seen: { url: string; init: RequestInit | undefined }[] = [];
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    seen.push({ url: String(url), init });
+    return String(url).endsWith("/models")
+      ? new Response(
+          JSON.stringify([
+            { offerings: [{ offeringId: "off_2", priority: 20 }] },
+            { offerings: [{ offeringId: "off_1", priority: 10 }] },
+          ]),
+        )
+      : new Response(
+          JSON.stringify({
+            id: "run_1",
+            tenantId: "tenant_1",
+            definitionAssetId: "asset_1",
+            status: "pending",
+            createdAt: "2026-01-01T00:00:00.000Z",
+          }),
+          { status: 201 },
+        );
+  }) as unknown as typeof fetch;
+  const config: WorkflowAuthoringClientConfig = {
+    hubWorkflowAuthoringUrl: "https://hub.example.com",
+    tenantId: "tenant_1",
+    sidecarToken: "sc-token",
+    address: "run_1@workflow",
+    fetchImpl,
+  };
+
+  const result = await deployWorkflow(config, {
+    assetId: "asset_1",
+    commitSha: "sha_1",
+    entry: "./workflow.ts",
+  });
+
+  expect(result).toEqual({
+    deploymentId: "run_1",
+    definitionAssetId: "asset_1",
+    status: "pending",
+  });
+  expect(seen[0]?.url).toBe(
+    "https://hub.example.com/api/tenants/tenant_1/models",
+  );
+  expect(seen[1]?.url).toBe(
+    "https://hub.example.com/api/tenants/tenant_1/workflows/deployments",
+  );
+  expect(JSON.parse(String(seen[1]?.init?.body))).toEqual({
+    source: {
+      kind: "asset",
+      assetId: "asset_1",
+      package: { format: "source", commitSha: "sha_1" },
+    },
+    entry: "./workflow.ts",
+    sourceOfferingIds: ["off_1", "off_2"],
+    defaultSourceOfferingId: "off_1",
+  });
+  const headers = seen[1]?.init?.headers as Record<string, string>;
+  expect(headers["authorization"]).toBe("Bearer sc-token");
+  expect(headers["x-workflow-run-address"]).toBe("run_1@workflow");
+});
+
+test("deployWorkflow surfaces the stock error envelope's message", async () => {
+  const fetchImpl = (async (url: string | URL) =>
+    String(url).endsWith("/models")
+      ? new Response(
+          JSON.stringify([
+            { offerings: [{ offeringId: "off_1", priority: 1 }] },
+          ]),
+        )
+      : new Response(
+          JSON.stringify({
+            error: { code: "invalid_workflow", message: "entry not found" },
+          }),
+          { status: 409 },
+        )) as unknown as typeof fetch;
+  const err = await deployWorkflow(
+    {
+      hubWorkflowAuthoringUrl: "https://hub.example.com",
+      tenantId: "tenant_1",
+      sidecarToken: "sc-token",
+      address: "run_1@workflow",
+      fetchImpl,
+    },
+    { assetId: "asset_1", commitSha: "sha_1", entry: "./workflow.ts" },
+  ).catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(WorkflowAuthoringRequestError);
+  expect((err as WorkflowAuthoringRequestError).code).toBe("invalid_workflow");
+  expect((err as Error).message).toBe("entry not found");
 });

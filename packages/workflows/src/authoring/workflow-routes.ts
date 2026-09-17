@@ -11,10 +11,11 @@
 // never name a different tenant or write into another principal's
 // workflow asset.
 //
-// `POST /:assetId/deploy` (CL-7361) extends this surface to deployment: a
-// run-authenticated mirror of the native `/workflows/deployments` route,
-// authorized and gated exactly the same way — see `./registry.ts`'s doc
-// comment on `deploy`.
+// Deployment is NOT here: `@corbits/workflow-authoring-tools` calls stock
+// `POST /api/tenants/:tenantId/workflows/deployments` with the run bearer
+// instead. What remains is the git half — reading and writing the asset
+// repo's trees — which no run-bearer credential can do against stock git
+// smart-HTTP today (CL-8171).
 import { type } from "arktype";
 import { Hono } from "hono";
 import { makeErrorEnvelope } from "@corbits/error-sink";
@@ -48,11 +49,6 @@ const RepublishBody = type({
   files: FilesInput,
   "message?": "string",
   "expectedHeadSha?": "string",
-});
-
-const DeployBody = type({
-  commitSha: "string",
-  entry: "string",
 });
 
 const DeployPreviewBody = type({
@@ -188,26 +184,6 @@ export function createWorkflowAuthorRoutes(
       body,
     );
     return c.json({ data: result });
-  });
-
-  app.post("/:assetId/deploy", async (c) => {
-    const body = DeployBody(await c.req.json().catch(() => undefined));
-    if (body instanceof type.errors) {
-      return c.json(
-        makeErrorEnvelope({
-          code: "bad_request",
-          userMessage: body.summary,
-        }),
-        400,
-      );
-    }
-    const scope = c.get("workflowRunScope");
-    const result = await deps.registry.deploy(
-      scope,
-      c.req.param("assetId"),
-      body,
-    );
-    return c.json({ data: result }, 201);
   });
 
   return app;

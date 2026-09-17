@@ -9,9 +9,9 @@ export {
   type WorkflowAssetSummary,
   type WorkflowAuthorCaller,
   type WorkflowAuthorRegistry,
-  type WorkflowAuthorRepoReads,
   type WorkflowDeployer,
   type WorkflowDeployResult,
+  type WorkflowAuthorRepoReads,
   type WorkflowSourceSnapshot,
 } from "./registry";
 export {

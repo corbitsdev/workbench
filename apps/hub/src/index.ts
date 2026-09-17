@@ -1602,7 +1602,7 @@ export async function createHub(config: HubConfig) {
       // A row's Message-ID always addresses under the row's OWN tenant's
       // domain, never the acting caller's — see `mailbox-fanout.ts`'s
       // `MailboxFanoutDeps.resolveTenantDomain` doc comment. Same
-      // `tenant` lookup `workflowDeployer.deploy` above uses for the
+      // `tenant` lookup `workflowDeployer.deploy` below uses for the
       // identical reason (an instance's trigger address, minted against
       // its own tenant's domain).
       resolveTenantDomain: async (tenantId) => {
@@ -1777,16 +1777,18 @@ export async function createHub(config: HubConfig) {
     app.route(`${TENANT_PREFIX}/mailbox`, mailboxApp);
   }
 
-  // CL-7361: the `deploy` half of the run-authenticated deployer this
-  // route's registry calls — the SAME `prepareProvisionedDeployment` the
-  // native `POST /workflows/deployments` route drives. Inference sources
-  // ride as catalog offering ids (`listVisibleOfferings`); an agent never
+  // The hub-side deploy seam the on-demand catalog-block route below
+  // drives — the SAME `prepareProvisionedDeployment` the native `POST
+  // /workflows/deployments` route drives. Inference sources ride as
+  // catalog offering ids (`listVisibleOfferings`); the caller never
   // supplies or sees a provider secret. The tree is already on the asset
   // at `commitSha`, so this does not re-populate.
   //
-  // `wf_deploy_preview` (CL-7362) is NOT wired through this
-  // deployer. `registry.previewDeploy` does a static, read-only render of
-  // the already-committed source at `commitSha` straight off `RepoStore`.
+  // An agent deploying its own authored workflow does not come through
+  // here: `@corbits/workflow-authoring-tools` calls stock `POST
+  // /api/tenants/:tenantId/workflows/deployments` with the run bearer
+  // (CL-8171), resolving the same offering chain from the stock model
+  // discovery route.
   const workflowDeployer: WorkflowDeployer = {
     async deploy({ tenantId, principalId, assetId, commitSha, entry }) {
       const tenantRow = await db.query.tenant.findFirst({
@@ -1872,17 +1874,17 @@ export async function createHub(config: HubConfig) {
       }
     },
   };
-  // Agent-authored workflows (CL-7360, CL-7361): an agent publishes a
-  // workflow codebase as a native `kind:"workflow"` asset AND deploys it,
-  // both through this workflow-run-authenticated surface — `deploy`
-  // reaches the exact same `prepareProvisionedDeployment` the
-  // tenant-session `/workflows/deployments` route drives (`workflowDeployer`
-  // above), never a second gating path. Unlike `/api/workflow-skills`
-  // above, every write here also runs a real `chatGrantStore`
-  // authorization check (`asset:*`/create, `asset:<id>`/write,
-  // `workflow:*`/create) before reaching `RepoStore` or the deploy call,
-  // because authoring and deploying are side effects, not a markdown
-  // skill edit.
+  // Agent-authored workflows (CL-7360): an agent publishes a workflow
+  // codebase as a native `kind:"workflow"` asset through this
+  // workflow-run-authenticated surface, then deploys it through stock
+  // `POST /api/tenants/:tenantId/workflows/deployments` with the same run
+  // bearer. What is left mounted here is the git half alone — reading and
+  // writing the asset repo's trees — which no run-bearer credential can do
+  // against stock git smart-HTTP today (CL-8171). Unlike
+  // `/api/workflow-skills` above, every write here runs a real
+  // `chatGrantStore` authorization check (`asset:*`/create,
+  // `asset:<id>`/write, `workflow:*`/create) before reaching `RepoStore`,
+  // because authoring source is a side effect, not a markdown skill edit.
   app.route(
     "/api/workflow-workflow-authoring",
     createWorkflowAuthorRoutes({
@@ -1893,7 +1895,6 @@ export async function createHub(config: HubConfig) {
         repoStore: agentRepoStore.repoStore,
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
-        deployer: workflowDeployer,
       }),
     }),
   );
@@ -2185,9 +2186,8 @@ export async function createHub(config: HubConfig) {
           },
         });
 
-        // Native deploy, not a hub-local inert freeze: the same
-        // `workflowDeployer` the agent-authored deploy path above drives,
-        // so a catalog block's definition goes through the real
+        // Native deploy, not a hub-local inert freeze: `workflowDeployer`
+        // above, so a catalog block's definition goes through the real
         // bundle → sidecar probe → capability walk → gate → freeze
         // pipeline instead of a hub-side shortcut.
         const result = await workflowDeployer.deploy({

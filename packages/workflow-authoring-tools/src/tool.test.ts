@@ -14,6 +14,7 @@ import {
 function testEnv(): WorkflowAuthoringEnv {
   return {
     hubWorkflowAuthoringUrl: "https://hub.example.com",
+    tenantId: "tenant_1",
     sidecarToken: "sc-token",
     address: "run_1@workflow",
   } as unknown as WorkflowAuthoringEnv;
@@ -47,6 +48,7 @@ test("declares the four no-approval tools with workflow_deploy alone behind appr
   ]);
   expect(workflowAuthoringTools.requires).toEqual([
     "hubWorkflowAuthoringUrl",
+    "tenantId",
     "sidecarToken",
     "address",
   ]);
@@ -176,25 +178,32 @@ test("workflow_source_read returns the snapshot as JSON the model can parse", as
   expect(JSON.parse(String(result.content))).toEqual(snapshot);
 });
 
-test("workflow_deploy posts only assetId, commitSha, and entry to the deploy route — packageName/toolPackagePins stay client-side for the approval headline", async () => {
+test("workflow_deploy posts an asset/source deploy to the stock tenant route — packageName/toolPackagePins stay client-side for the approval headline", async () => {
   const bundle = workflowAuthoringTools(testEnv());
-  let seenUrl: string | undefined;
-  let seenBody: unknown;
+  const seen: { url: string; body: unknown }[] = [];
   const result = await withFetch(
     (url, init) => {
-      seenUrl = url;
-      seenBody =
-        init?.body !== undefined ? JSON.parse(String(init.body)) : undefined;
-      return new Response(
-        JSON.stringify({
-          data: {
-            deploymentId: "run_1",
-            definitionAssetId: "asset_1",
-            status: "deployed",
-          },
-        }),
-        { status: 201 },
-      );
+      seen.push({
+        url,
+        body:
+          init?.body !== undefined ? JSON.parse(String(init.body)) : undefined,
+      });
+      return url.endsWith("/models")
+        ? new Response(
+            JSON.stringify([
+              { offerings: [{ offeringId: "off_1", priority: 10 }] },
+            ]),
+          )
+        : new Response(
+            JSON.stringify({
+              id: "run_1",
+              tenantId: "tenant_1",
+              definitionAssetId: "asset_1",
+              status: "deployed",
+              createdAt: "2026-01-01T00:00:00.000Z",
+            }),
+            { status: 201 },
+          );
     },
     () =>
       bundle.run(
@@ -208,15 +217,22 @@ test("workflow_deploy posts only assetId, commitSha, and entry to the deploy rou
         new AbortController().signal,
       ),
   );
-  expect(seenUrl).toBe(
-    "https://hub.example.com/api/workflow-workflow-authoring/asset_1/deploy",
+  expect(seen[1]?.url).toBe(
+    "https://hub.example.com/api/tenants/tenant_1/workflows/deployments",
   );
   // `packageName`/`toolPackagePins` are carried on the approval card via
   // the tool call's own arguments (see @corbits/approvals' headline.ts),
-  // not re-sent to the hub — the deploy route only needs commitSha/entry.
-  expect(seenBody).toEqual({
-    commitSha: "sha_1",
+  // not re-sent to the hub — the stock deploy route names the commit
+  // through its `source` instead.
+  expect(seen[1]?.body).toEqual({
+    source: {
+      kind: "asset",
+      assetId: "asset_1",
+      package: { format: "source", commitSha: "sha_1" },
+    },
     entry: "./workflow.ts",
+    sourceOfferingIds: ["off_1"],
+    defaultSourceOfferingId: "off_1",
   });
   expect(result.isError).toBe(false);
   expect(result.content).toContain("run_1");

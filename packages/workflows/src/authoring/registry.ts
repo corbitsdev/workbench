@@ -6,13 +6,10 @@
 // grant-store authorization call (`asset:*`/create for a new asset,
 // `asset:<id>`/write for a republish, `asset:<id>`/read for a source read)
 // — and by `validateWorkflowSourceTree` before anything reaches
-// `RepoStore`. `deploy` (CL-7361) is a run-authenticated mirror of
-// `@intx/hub-api`'s existing source-based `POST .../workflows/deployments`
-// route: it checks `workflow:*`/`create` itself, then calls a
-// `WorkflowDeployer` apps/hub injects that wraps the SAME
-// `prepareProvisionedDeployment` call the native route makes, with
-// catalog offering ids resolved server-side, never supplied by the caller.
-// No install/probe/gate/freeze logic is reimplemented here.
+// `RepoStore`. Deploying is not this registry's job: an agent deploys a
+// committed workflow asset through stock `POST
+// /api/tenants/:tenantId/workflows/deployments` with the run bearer
+// (CL-8171).
 //
 // `populateAsset` is called with `principal: { kind: "hub" }`, the same
 // principal `@corbits/skills`' `writeSkillMd` uses. This is deliberate,
@@ -96,15 +93,35 @@ export type RepublishWorkflowInput = {
   readonly expectedHeadSha?: string;
 };
 
-export type DeployWorkflowInput = {
-  readonly commitSha: string;
-  readonly entry: string;
-};
-
 export type WorkflowDeployResult = {
   readonly deploymentId: string;
   readonly definitionAssetId: string;
   readonly status: "deployed" | "pending";
+};
+
+/**
+ * The apps/hub-supplied seam onto the same operation the native `POST
+ * /workflows/deployments` route drives (`prepareProvisionedDeployment`),
+ * with catalog offering ids resolved server-side. An agent authoring a
+ * workflow does not use it — it calls the stock route directly with the
+ * run bearer (CL-8171); the hub's own on-demand catalog-block deploy
+ * does.
+ */
+export type WorkflowDeployer = {
+  deploy(params: {
+    tenantId: string;
+    principalId: string;
+    assetId: string;
+    assetName: string;
+    commitSha: string;
+    entry: string;
+  }): Promise<WorkflowDeployResult>;
+};
+
+/** The commit a `previewDeploy` renders. */
+export type DeployWorkflowInput = {
+  readonly commitSha: string;
+  readonly entry: string;
 };
 
 export type WorkflowDeployPreviewResult = {
@@ -122,31 +139,6 @@ export type WorkflowDeployPreviewResult = {
   readonly packageName: string;
 };
 
-/**
- * The apps/hub-supplied seam onto the same operation the native
- * `POST /workflows/deployments` route drives
- * (`prepareProvisionedDeployment`), with catalog offering ids resolved
- * server-side. Thrown failures are `WorkflowAuthorError`s with a reason
- * this registry passes straight through: `not_found` (asset/commit
- * missing), `invalid` (rejected package/definition or empty catalog),
- * `unavailable` (sidecar unreachable).
- *
- * CL-7362: this seam carries no `previewDeploy` — the preview
- * (`registry.previewDeploy` below) never touches `sessionService` at all,
- * so it cannot freeze anything even by accident. It is a static read of
- * the already-committed source through `RepoStore` alone.
- */
-export type WorkflowDeployer = {
-  deploy(params: {
-    tenantId: string;
-    principalId: string;
-    assetId: string;
-    assetName: string;
-    commitSha: string;
-    entry: string;
-  }): Promise<WorkflowDeployResult>;
-};
-
 export type WorkflowAuthorRegistry = {
   author(
     caller: WorkflowAuthorCaller,
@@ -161,11 +153,6 @@ export type WorkflowAuthorRegistry = {
     caller: WorkflowAuthorCaller,
     assetId: string,
   ): Promise<WorkflowSourceSnapshot>;
-  deploy(
-    caller: WorkflowAuthorCaller,
-    assetId: string,
-    input: DeployWorkflowInput,
-  ): Promise<WorkflowDeployResult>;
   previewDeploy(
     caller: WorkflowAuthorCaller,
     assetId: string,
@@ -184,7 +171,6 @@ export type CreateWorkflowAuthorRegistryDeps = {
   repoStore: WorkflowAuthorRepoReads;
   grantStore: GrantStore;
   conditionRegistry: ConditionRegistry;
-  deployer: WorkflowDeployer;
 };
 
 async function requireAuthorized(
@@ -450,23 +436,6 @@ export function createWorkflowAuthorRegistry(
       return { assetId, name: row.name, headSha, files };
     },
 
-    async deploy(caller, assetId, input) {
-      // Own-tenant scoping resolved BEFORE the grant check, same as every
-      // other write here: an asset id from another tenant reads as
-      // not_found, never a 403 confirming the id exists.
-      const row = await requireOwnWorkflowAsset(caller, assetId);
-      await requireAuthorized(deps, caller, "workflow:*", "create");
-
-      return deps.deployer.deploy({
-        tenantId: caller.tenantId,
-        principalId: caller.principalId,
-        assetId,
-        assetName: row.name,
-        commitSha: input.commitSha,
-        entry: input.entry,
-      });
-    },
-
     async previewDeploy(caller, assetId, input) {
       // Own-tenant scoping and the same `workflow:*`/create authorization
       // as `deploy`: a preview shows exactly what `deploy` would name.
@@ -475,7 +444,7 @@ export function createWorkflowAuthorRegistry(
 
       // A STATIC read of the already-committed source at `commitSha` —
       // never install/probe/gate/freeze, so this truly cannot deploy
-      // anything. See `WorkflowDeployer`'s doc comment.
+      // anything.
       const reads = await repoStore.openCommittedReadsAtCommit(
         HUB_PRINCIPAL,
         { kind: WORKFLOW_ASSET_KIND, id: assetId },
