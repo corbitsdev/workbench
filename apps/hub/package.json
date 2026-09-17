@@ -32,7 +32,6 @@
     "@corbits/e2b-sandbox-sidecar": "workspace:*",
     "@corbits/echo-workflow": "workspace:*",
     "@corbits/error-sink": "workspace:*",
-    "@corbits/evals": "workspace:*",
     "@corbits/exa-topic-watch-workflow": "workspace:*",
     "@corbits/granola-call-workflow": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",

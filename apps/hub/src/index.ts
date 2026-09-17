@@ -106,11 +106,6 @@ import {
   withTurnPartPersistGuard,
 } from "@corbits/insights";
 import {
-  applyEvalsMigrations,
-  createEvalRunRoutes,
-  createPostgresEvalRunStore,
-} from "@corbits/evals";
-import {
   applyInferenceCatalogMigrations,
   createPostgresBenchModelPolicyStore,
   createWorkflowCatalogRoutes,
@@ -1723,21 +1718,6 @@ export async function createHub(config: HubConfig) {
   const benchModelPolicy = createPostgresBenchModelPolicyStore(
     config.databaseUrl,
   );
-  // Eval run history: read-only surface over the package-owned
-  // `evals.run` table, migrated at hub start like insights. Eval runs
-  // aren't tenant-owned, so the tenant prefix here is only the grant gate.
-  await applyEvalsMigrations(config.databaseUrl);
-  const evalRuns = createPostgresEvalRunStore(config.databaseUrl);
-  app.route(
-    `${TENANT_PREFIX}/eval-runs`,
-    createEvalRunRoutes({
-      store: evalRuns.store,
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: grantConditionRegistry,
-      }),
-    }),
-  );
   {
     const mailboxApp = new Hono<TenantEnv>();
     mountMailbox(mailboxApp, {
@@ -2367,7 +2347,6 @@ export async function createHub(config: HubConfig) {
       cronEmitter.stop();
       await insightsUsage.close();
       await insightsLatency.close();
-      await evalRuns.close();
       await closeMailbox();
       // The pool end waits on in-flight queries; a query whose socket
       // died with the process must never stall shutdown, so bound it.
