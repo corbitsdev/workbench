@@ -1,4 +1,4 @@
-import type { AgentTurnStore } from "./agent-turns";
+import type { AgentTurnStore } from "@corbits/agent-runtime";
 import type { RoomMessageStore } from "./room-messages";
 
 export type WorkbenchLiveState = "idle" | "working" | "reply-ready";

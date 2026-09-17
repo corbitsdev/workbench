@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 
 import { InferenceResolutionError } from "../src/model-unavailable";
 
-import { createInMemoryAgentTurnStore } from "../src/agent-turns";
+import { createInMemoryAgentTurnStore } from "@corbits/agent-runtime";
 import { createChatRoutes } from "../src/routes";
 import {
   buildDeps,

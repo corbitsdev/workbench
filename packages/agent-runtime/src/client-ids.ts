@@ -17,7 +17,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
-import { messageClientIds } from "./schema";
+import { messageClientIds } from "@corbits/chat/schema";
 
 export interface ClientIdRow {
   readonly tenantId: string;

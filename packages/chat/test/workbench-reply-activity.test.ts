@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   createInMemoryAgentTurnStore,
   AGENT_TURN_STALE_MS,
-} from "../src/agent-turns";
+} from "@corbits/agent-runtime";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import { listWorkbenchLiveState } from "../src/workbench-reply-activity";
 import { createChatRoutes } from "../src/routes";

@@ -7,8 +7,8 @@
 import { describe, expect, test } from "bun:test";
 
 import { createChatRoutes } from "../src/routes";
-import type { TurnClaimStore } from "../src/turn-claims";
-import { createWorkbenchTurnQueue } from "../src/turn-queue";
+import type { TurnClaimStore } from "@corbits/agent-runtime";
+import { createWorkbenchTurnQueue } from "@corbits/agent-runtime";
 import {
   buildDeps,
   createWorkbench,

@@ -19,7 +19,19 @@
     "./workbench-host-naming": "./src/workbench-host-naming.ts",
     "./display-name": "./src/display-name.ts",
     "./id-leak-guard": "./src/id-leak-guard.ts",
-    "./mailbox-fanout": "./src/mailbox-fanout.ts"
+    "./mailbox-fanout": "./src/mailbox-fanout.ts",
+    "./schema": "./src/schema.ts",
+    "./store": "./src/store.ts",
+    "./threads": "./src/threads.ts",
+    "./codec": "./src/codec.ts",
+    "./mail-headers": "./src/mail-headers.ts",
+    "./platform-port": "./src/platform-port.ts",
+    "./room-messages": "./src/room-messages.ts",
+    "./workbench-events": "./src/workbench-events.ts",
+    "./agent-binding": "./src/agent-binding.ts",
+    "./tools-unsupported": "./src/tools-unsupported.ts",
+    "./inference-preferences": "./src/inference-preferences.ts",
+    "./artifact-delivery": "./src/artifact-delivery.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

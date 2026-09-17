@@ -14,8 +14,8 @@
 import { and, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
-import { localPartOf } from "./agent-address";
-import { turnMailCorrelation } from "./schema";
+import { localPartOf } from "@corbits/chat/agent-address";
+import { turnMailCorrelation } from "@corbits/chat/schema";
 
 export type TurnMailSource = {
   readonly tenantId: string;

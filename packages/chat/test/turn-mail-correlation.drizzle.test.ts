@@ -16,7 +16,7 @@ import postgres from "postgres";
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { applyChatMigrations } from "../src/migrations";
-import { createDrizzleTurnMailCorrelationStore } from "../src/turn-mail-correlation";
+import { createDrizzleTurnMailCorrelationStore } from "@corbits/agent-runtime";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {

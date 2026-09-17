@@ -24,7 +24,7 @@ import {
   assembleTurnContext,
   type TurnContextThreadScope,
 } from "./turn-context";
-import type { AgentTurnStore } from "./agent-turns";
+import type { AgentTurnStore } from "@corbits/agent-runtime";
 import type { ThreadStore } from "./threads";
 import {
   TurnCancelledError,
@@ -64,10 +64,10 @@ import {
   mailboxSubjectOf,
   type MailboxFanoutDeps,
 } from "./mailbox-fanout";
-import type { TurnMailCorrelationStore } from "./turn-mail-correlation";
+import type { TurnMailCorrelationStore } from "@corbits/agent-runtime";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
-import type { QueuedTurn, WorkbenchTurnQueue } from "./turn-queue";
-import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
+import type { QueuedTurn, WorkbenchTurnQueue } from "@corbits/agent-runtime";
+import { CHAT_TURN_TIMEOUT_MS } from "@corbits/agent-runtime";
 import type { ChatStore } from "./store";
 import { withTimeout } from "./with-timeout";
 

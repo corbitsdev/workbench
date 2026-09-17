@@ -7,7 +7,7 @@
 // numbers those mechanics are configured with).
 import { describe, expect, test } from "bun:test";
 
-import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
+import { CHAT_TURN_TIMEOUT_MS } from "@corbits/agent-runtime";
 import {
   DEFAULT_TURN_DISPATCH_TIMEOUT_MS,
   DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS,

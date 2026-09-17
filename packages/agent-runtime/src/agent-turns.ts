@@ -17,8 +17,8 @@ import {
 } from "@corbits/agent-runtime";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
-import { agentTurns } from "./schema";
-import type { ChatDb } from "./store";
+import { agentTurns } from "@corbits/chat/schema";
+import type { ChatDb } from "@corbits/chat/store";
 import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
 
 export type AgentTurnStatus = "running" | "completed" | "failed" | "cancelled";

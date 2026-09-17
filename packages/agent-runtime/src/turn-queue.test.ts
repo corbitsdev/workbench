@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { createInMemoryTurnClaimStore } from "./turn-claims";
 import type { TurnClaimStore } from "./turn-claims";
 import type { QueuedTurn } from "./turn-queue";
-import type { ChatWorkbenchEvent } from "./platform-port";
+import type { ChatWorkbenchEvent } from "@corbits/chat/platform-port";
 
 // Stub the error sink: the queue reports dispatch/drain failures through
 // `reportError` and keeps draining — the keeper test below pins the refId

@@ -34,7 +34,7 @@ import {
   createInMemoryRoomMessageStore,
   postRoomMessage,
 } from "../src/room-messages";
-import { createInMemoryTurnMailCorrelationStore } from "../src/turn-mail-correlation";
+import { createInMemoryTurnMailCorrelationStore } from "@corbits/agent-runtime";
 import { createWorkbenchSubscriberRegistry } from "../src/workbench-events";
 import type { ChatWorkbenchEvent } from "../src/platform-port";
 

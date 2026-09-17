@@ -8,11 +8,11 @@
 // waking anyone.
 import { expect, test } from "bun:test";
 
-import { createInMemoryAgentTurnStore } from "../src/agent-turns";
+import { createInMemoryAgentTurnStore } from "@corbits/agent-runtime";
 import { createInMemoryChatStore } from "../src/store";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
-import { createInMemoryTurnClaimStore } from "../src/turn-claims";
-import { createWorkbenchTurnQueue } from "../src/turn-queue";
+import { createInMemoryTurnClaimStore } from "@corbits/agent-runtime";
+import { createWorkbenchTurnQueue } from "@corbits/agent-runtime";
 import {
   CONNECTION_CONNECTED_EVENT,
   settleConnectedService,
