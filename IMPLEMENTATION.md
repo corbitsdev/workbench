@@ -69,10 +69,10 @@ recorded per-package in each vendored package's own `VENDORED-FROM` file.
 | `bun run dev`      | Validates `.env`, verifies the database, applies pending migrations, builds the web UI if needed, starts the hub and one sidecar |
 | `bun run setup`    | Applies pending database migrations (`scripts/db-setup.ts`)                                                                      |
 | `bun run reset`    | Drops the platform database schema and clears on-disk asset directories (local `DATABASE_URL` only, unrecoverable)               |
-| `bun run check`    | The full gate: `typecheck && lint && test` — must pass before every commit                                                       |
+| `bun run check`    | The full gate: `typecheck && lint && fmt:check && check:structural && test` — must pass before every commit                     |
 | `bun run test`     | Workspace unit/integration tests                                                                                                 |
 | `bun run test:e2e` | End-to-end smoke tests (`scripts/e2e/*.test.ts`)                                                                                 |
-| `bun run format`   | `prettier --write .`                                                                                                             |
+| `bun run fmt`      | `oxfmt` write                                                                                                                    |
 
 `bun run dev` seeds the administrator account and ensures the root
 tenant; it does not insert agents, tools, workflows, or skills. An empty
