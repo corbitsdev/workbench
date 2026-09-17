@@ -4,10 +4,12 @@
 // and timestamp — back into the workbench, the same way a workbench
 // host's reply becomes a workbench mail post (see
 // `packages/chat/src/workbench-workflow.ts` and `platform-adapter.ts`'s
-// `connectorReplyContent` handling). Fired on a 09:00 UTC schedule
-// (`WORKBENCH_DIGEST_SCHEDULE_CRON`). This definition's only job is to
-// relay an already-deterministic digest line back out verbatim, so
-// nothing about the reply's content is left to the model.
+// `connectorReplyContent` handling). Fired by mail to the deployment's
+// own trigger address: `@corbits/cron` delivers a tick mail on the
+// digest's schedule, so this definition never declares `type:
+// "schedule"` itself. This definition's only job is to relay an
+// already-deterministic digest line back out verbatim, so nothing about
+// the reply's content is left to the model.
 //
 // No agent-free step primitive runs on the deployed host today (see
 // `@corbits/heartbeat-workflow`'s own header comment for why), so this
@@ -26,7 +28,6 @@ import type { WorkflowDefinition } from "@intx/workflow";
 
 export const WORKBENCH_DIGEST_WORKFLOW_ID = "wf_workbench_digest";
 export const WORKBENCH_DIGEST_STEP_ID = "workbench-digest";
-export const WORKBENCH_DIGEST_SCHEDULE_CRON = "0 9 * * *";
 
 export const WORKBENCH_DIGEST_SYSTEM_PROMPT =
   "You post a single deterministic summary line into a workbench. The " +
@@ -35,11 +36,13 @@ export const WORKBENCH_DIGEST_SYSTEM_PROMPT =
   "commentary, no formatting of your own.";
 
 /**
- * Everything the definition needs that is per-deployment data.
- * Inference preferences and the per-turn timeout are resolved at
- * deploy time; the schedule trigger is fixed on the definition.
+ * Everything the definition needs that is per-deployment data. The
+ * trigger address names a specific deployment's inbox, so a definition
+ * built here is per-deployment by construction.
  */
 export interface WorkbenchDigestWorkflowInput {
+  /** The deployment's mail address; each inbound mail is one run. */
+  readonly triggerAddress: string;
   /** Provider/model preferences, in order; resolved at deploy time. */
   readonly inferencePreferences: readonly InferencePreference[];
   /** Per-turn timeout in milliseconds, enforced on the single step. */
@@ -58,12 +61,15 @@ export interface WorkbenchDigestWorkflowInput {
 export function buildWorkbenchDigestWorkflow(
   input: WorkbenchDigestWorkflowInput,
 ): WorkflowDefinition {
+  if (input.triggerAddress === "") {
+    throw new Error("buildWorkbenchDigestWorkflow requires a non-empty triggerAddress");
+  }
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
     throw new Error("buildWorkbenchDigestWorkflow requires turnTimeoutMs to be a positive integer");
   }
   return defineWorkflow({
     id: WORKBENCH_DIGEST_WORKFLOW_ID,
-    trigger: { type: "schedule", cron: WORKBENCH_DIGEST_SCHEDULE_CRON },
+    trigger: { type: "mail", to: input.triggerAddress },
     steps: {
       "workbench-digest": step({
         agent: defineAgent({

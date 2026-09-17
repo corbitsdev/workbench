@@ -1,8 +1,9 @@
 # @corbits/credential-expiry-workflow
 
-A schedule-triggered workflow that checks this tenant's credentials once
-a day and mails a reconnect notice for any credential that is `active`
-but past its own `expiresAt`. Replaces the hub-owned periodic loop
+A mail-triggered workflow that checks this tenant's credentials on each
+trigger and mails a reconnect notice for any credential that is `active`
+but past its own `expiresAt`. `@corbits/cron` delivers a tick mail once
+a day. Replaces the hub-owned periodic loop
 `apps/hub/src/credential-expiry-sweep.ts` (CL-8181): the same decision
 runs as a deployed Routine instead of inside the hub process.
 
@@ -37,6 +38,7 @@ import {
 } from "@corbits/credential-expiry-workflow";
 
 const definition = buildCredentialExpiryWorkflow({
+  triggerAddress: "ins_dep000000000000@example.test",
   inferencePreferences: [{ provider: "anthropic", model: "claude-haiku" }],
   turnTimeoutMs: 60_000,
 });
