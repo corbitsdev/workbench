@@ -23,10 +23,7 @@ import {
 import { describe, expect, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
-import {
-  buildEchoWorkflow,
-  serializeEchoWorkflow,
-} from "../../workflows/echo/src/index.ts";
+import { buildEchoWorkflow, serializeEchoWorkflow } from "../../workflows/echo/src/index.ts";
 import { ensureNoopCatalogOffering, startNoopInferenceServer } from "./noop-inference-server.ts";
 import { publishCorbitsToolsRegistry } from "../../packages/tool-registry-publish/src/publish.ts";
 import { createHubAPI } from "../../packages/hub-api-client/src/index.ts";
