@@ -16,7 +16,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./prompt": "./src/prompt.ts"
+    "./prompt": "./src/system-prompt.ts"
   },
   "publishConfig": {
     "access": "public"

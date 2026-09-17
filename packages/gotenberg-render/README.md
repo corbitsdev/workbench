@@ -62,7 +62,7 @@ go artifact-in, PDF-artifact-out with no glue code:
 
 - The workflow-run artifact surface
   (`@corbits/artifacts-hub`'s `createWorkflowArtifactRoutes`, the one a
-  Scout run authenticates against) has `POST /` (create) and
+  workflow run authenticates against) has `POST /` (create) and
   `GET /recent` (list) but no `GET /:id` to fetch one artifact's content
   back — so a workflow run can't yet read the Markdown brief it just
   saved in order to hand it to this package.

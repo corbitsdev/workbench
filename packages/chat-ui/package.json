@@ -30,7 +30,6 @@
     "@corbits/error-sink": "workspace:*",
     "@corbits/icons": "workspace:*",
     "@corbits/inference-settings": "workspace:*",
-    "@corbits/jimmy-agent": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
     "@tanstack/react-query": "catalog:",
     "arktype": "catalog:",

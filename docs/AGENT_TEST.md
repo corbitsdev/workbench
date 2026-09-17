@@ -92,8 +92,7 @@ Agents extending what they can do.
       unconnected plugin, the agent recommends connecting it by name and
       the connect flow is one click away — credentials are collected
       BEFORE the capability is exercised, per the guided-join rule.
-- [ ] Agent-declared slash commands register on join and vanish on leave
-      (`/gif`, `/jimmy`).
+- [ ] Agent-declared slash commands register on join and vanish on leave.
 - [ ] **Auto-creating skills**: ask an agent to capture a working method
       as a skill; the skill exists, is versioned, pinned to the agent,
       and demonstrably changes behavior on next use.
