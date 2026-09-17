@@ -7,6 +7,12 @@
 // (`github`'s PAT test-and-store — already fully generic, no bespoke
 // GitHub route needed), `@corbits/github-tools`' `listRepos`, and
 // `@corbits/connections`'s `startReviewingRepos`.
+//
+// Hub-zero T3 (CL-8114): no host binds this port right now — the hub's
+// workbench-scoped state/start-reviewing routes are deleted and no native
+// equivalent exists yet, so the room card renders its no-port disabled
+// framing. The shape stays so a connections follow-up can rebind it
+// without redesigning the card.
 import type { ConnectGithubRepo } from "./connect-github-block";
 export type { ConnectGithubRepo };
 

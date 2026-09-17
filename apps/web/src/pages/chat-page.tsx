@@ -17,7 +17,6 @@ import { useCallback, useEffect, useMemo } from "react";
 import { fetchArtifactDetail } from "../api";
 import { createChatApprovalActions } from "../approval-actions";
 import { createChatBlockResponseActions } from "../block-response-actions";
-import { createChatConnectGithubActions } from "../connect-github-actions";
 import { createChatConnectServiceActions } from "../connect-service-actions";
 import { useBench } from "../bench-context";
 import { useSignOut, useSessionUser } from "../navigation";
@@ -124,13 +123,6 @@ export function ChatPage({
       tenantId === null || workbenchId === null
         ? undefined
         : createChatBlockResponseActions(tenantId, workbenchId),
-    [tenantId, workbenchId],
-  );
-  const connectGithubActions = useMemo(
-    () =>
-      tenantId === null || workbenchId === null
-        ? undefined
-        : createChatConnectGithubActions(tenantId, workbenchId),
     [tenantId, workbenchId],
   );
   const connectServiceActions = useMemo(
@@ -249,6 +241,11 @@ export function ChatPage({
     [navigate],
   );
 
+  // Hub-zero T3 (CL-8114): the room GitHub card is unbound on
+  // purpose — its state/start-reviewing routes are deleted and no native
+  // equivalent exists yet, so it renders its no-port disabled framing
+  // until a connections follow-up rebinds it. Connect/disconnect itself
+  // lives in Settings › Connections.
   const workspace = (
     <ChatWorkspace
       tenant={tenant}
@@ -295,7 +292,6 @@ export function ChatPage({
       onConnectModel={handleConnectModel}
       {...(approvalActions !== undefined ? { approvalActions } : {})}
       {...(blockResponses !== undefined ? { blockResponses } : {})}
-      {...(connectGithubActions !== undefined ? { connectGithubActions } : {})}
       {...(connectServiceActions !== undefined
         ? { connectServiceActions }
         : {})}

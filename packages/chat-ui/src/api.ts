@@ -1243,53 +1243,11 @@ export function patchWorkbenchSettings(
   );
 }
 
-// The room's GitHub connect card (CL-6344): the live read and the
-// start-reviewing write, backed by `@workbench/templates`'s
-// `createConnectGithubRoutes` (mounted at
-// `/api/tenants/:tenantId/workbenches/:workbenchId/github/*`). Connecting
-// the PAT itself is a separate, already-generic surface —
-// `@corbits/connections`' `POST /:connectorId/complete` — never
-// duplicated here.
-const ConnectGithubRepoResponse = type({
-  id: "string",
-  name: "string",
-  "lastPushedAt?": "string",
-});
-
-const ConnectGithubStateResponse = type({ kind: "'disconnected'" })
-  .or({
-    kind: "'connected'",
-    orgName: "string",
-    repos: ConnectGithubRepoResponse.array(),
-    selectedRepoIds: "string[]",
-  })
-  .or({ kind: "'error'", message: "string" });
-export type ConnectGithubStateResponse =
-  typeof ConnectGithubStateResponse.infer;
-
-export function getConnectGithubState(
-  tenantId: string,
-  workbenchId: string,
-): Promise<ConnectGithubStateResponse> {
-  return request(
-    `/api/tenants/${tenantId}/workbenches/${workbenchId}/github/state`,
-    ConnectGithubStateResponse,
-  );
-}
-
-const StartReviewingResponse = type({ startedTriggerCount: "number" });
-
-export function startReviewingGithubRepos(
-  tenantId: string,
-  workbenchId: string,
-  repoIds: readonly string[],
-): Promise<{ readonly startedTriggerCount: number }> {
-  return request(
-    `/api/tenants/${tenantId}/workbenches/${workbenchId}/github/start-reviewing`,
-    StartReviewingResponse,
-    { method: "POST", body: JSON.stringify({ repoIds }) },
-  );
-}
+// Hub-zero T3 (CL-8114): the room card's live state read and
+// start-reviewing write lived here, backed by the hub's now-deleted
+// workbench-scoped GitHub mount. GitHub connect/disconnect
+// itself stays native `connections/*` (`@corbits/settings-ui`); the card's
+// state/start rebind is a connections follow-up.
 
 // `GET`/`PATCH /bench/settings` (see `packages/chat/src/routes.ts`): the
 // bench-wide chat defaults every workbench inherits unless it sets its own

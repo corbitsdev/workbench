@@ -1,6 +1,7 @@
 // Builds the `ConnectServiceActions` port `ChatWorkspace` (`@corbits/chat-ui`)
-// calls for the generic in-room connect card (CL-6393) — the
-// `connect-github-actions.ts` shape generalized to every connector and
+// calls for the generic in-room connect card (CL-6393) — the room
+// connect-github binding's shape (hub-zero T3, CL-8114, deleted with the
+// workbench-scoped mount) generalized to every connector and
 // MCP preset. The block's data carries only agent-authored framing;
 // every live fact is resolved here: a curated preset reads the
 // tenant's MCP preset listing (connected flag + oauth/keyless mode), a

@@ -17,6 +17,7 @@ const EXPECTED_CHECK_NAMES = [
   "deletion",
   "error-envelope",
   "hub-git-safety",
+  "hub-workbench-routes",
   "killdates",
   "licenses",
   "no-product-tenancy",

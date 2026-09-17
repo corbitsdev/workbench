@@ -17,7 +17,6 @@ import {
   createWorkflowRunDispatchStore,
   listAssetsForTenant,
   listVisibleOfferings,
-  resolveCredentialByName,
   resolveCredentialRequirement,
 } from "@intx/db";
 import {
@@ -34,7 +33,6 @@ import {
 } from "@intx/crypto";
 import { timeWindowEvaluator } from "@intx/authz";
 import type { ConditionRegistry } from "@intx/types/authz";
-import { credentialAad } from "@intx/types";
 import type { CredentialCipher } from "@intx/types";
 import {
   createApp,
@@ -81,9 +79,6 @@ import {
   isWorkbenchHostDefinitionName,
   listConnectedProviders,
   listDefaultInferencePreferences,
-  localPartOf,
-  parseParticipants,
-  postRoomMessage,
   recordSourcesDigest,
   startWorkflowCommand,
   settleConnectedService,
@@ -160,19 +155,15 @@ import {
   createWorkflowCommandPlugin,
 } from "@corbits/commands";
 import {
-  createDrizzleRepoReviewLeaseStore,
   createDrizzleWebhookTriggerStore,
   createWebhookIngressRoutes,
   createWebhookTriggerRoutes,
-  generateWebhookSecret,
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
 import {
   deliveryWorkbenchRequiredForWorkflowName,
   isConversationalWorkflowName,
 } from "@workbench/templates";
-import { createConnectGithubRoutes } from "@corbits/connections/connect-github-routes";
-import { webhookTriggerName } from "@corbits/connections/connect-github-setup";
 import { createTemplateBlockRoutes } from "./templates/template-block-routes";
 import {
   createWorkflowDetailRoute,
@@ -241,7 +232,6 @@ import {
   createPresenceRoomRegistry,
   createPresenceRoutes,
 } from "@corbits/presence";
-import { createHubAPI } from "@corbits/hub-api-client";
 import {
   createConnectionRoutes,
   isInferenceProvider,
@@ -288,10 +278,6 @@ import {
 
 import { type } from "arktype";
 import { betterAuth } from "better-auth";
-import {
-  hasRepoGrantViaHttp,
-  mintRepoGrantViaHttp,
-} from "./native-repo-grants";
 import { createSignInAttemptLimiter } from "./sign-in-rate-limit";
 import { createSetupStatusRoutes } from "./setup-status";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -1357,7 +1343,6 @@ export async function createHub(config: HubConfig) {
         (await db.select({ n: count() }).from(tenantTable))[0]?.n ?? 0,
     }),
   );
-  const selfApi = createHubAPI(config.baseUrl);
   // The chat platform's invite-launch fallback: a definition with no
   // model requirements of its own resolves the tenant-catalog default.
   const chatHostInferencePreferencesResolver =
@@ -2079,12 +2064,6 @@ export async function createHub(config: HubConfig) {
     db,
     credentialCipher,
   );
-  // CL-7242: the sole concurrency backstop for the GitHub connect
-  // card's start-reviewing step -- see
-  // packages/webhook-triggers/src/repo-review-lease.ts for why this
-  // lives in our own schema rather than as any change to Interchange's
-  // `grant` table.
-  const repoReviewLeaseStore = createDrizzleRepoReviewLeaseStore(db);
   app.route(
     `${TENANT_PREFIX}/webhook-triggers`,
     createWebhookTriggerRoutes({
@@ -2272,166 +2251,6 @@ export async function createHub(config: HubConfig) {
       registry: CONNECTOR_REGISTRY,
       requestOAuthLogin: (args) => sidecarRouter.requestOAuthLogin(args),
       providerHealth: providerHealthStore,
-    }),
-  );
-  // GitHub connect card (CL-6344): the code-review template's inline
-  // room card reads its live state and starts reviews through here.
-  // Connecting the PAT itself stays on `connections` above (`github` is
-  // already registered in `CONNECTOR_REGISTRY`) — this route only owns
-  // what needs the decrypted secret, the live repo list, and a real
-  // grant/webhook-trigger/settings write.
-  //
-  // CL-6463: the credential row this card reads must be named by the
-  // exact same `displayName` `persistConnectorCredential` (`@workbench
-  // /connections`) stores it under for the `github` connector — a second,
-  // hardcoded "GitHub" literal here silently drifts the moment either side
-  // changes, which is exactly what left this card stuck disconnected after
-  // a successful PAT submit. Reading the descriptor's own field instead of
-  // repeating the literal makes that impossible.
-  const githubConnectorDescriptor = CONNECTOR_REGISTRY["github"];
-  if (githubConnectorDescriptor === undefined) {
-    throw new Error(
-      'CONNECTOR_REGISTRY has no "github" entry — the room GitHub connect card has nothing to read a credential name from',
-    );
-  }
-  app.route(
-    `${TENANT_PREFIX}/workbenches`,
-    createConnectGithubRoutes({
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
-      }),
-      log: (line) => log.info`${line}`,
-      resolveGithubConfig: async (tenantId) => {
-        const row = await resolveCredentialByName(
-          db,
-          tenantId,
-          githubConnectorDescriptor.displayName,
-        );
-        if (row === null) return undefined;
-        const apiKey = await credentialCipher.decrypt(
-          row.secret,
-          credentialAad(row.id, "secret"),
-        );
-        return config.githubApiBaseUrl !== undefined
-          ? { apiKey, baseUrl: config.githubApiBaseUrl }
-          : { apiKey };
-      },
-      resolveCodeReviewDefinitionId: async (tenantId) => {
-        const row = await db.query.workflowDefinition.findFirst({
-          where: and(
-            eq(workflowDefinition.tenantId, tenantId),
-            eq(workflowDefinition.name, "code-review"),
-            eq(workflowDefinition.status, "deployed"),
-          ),
-          columns: { id: true },
-        });
-        return row?.id;
-      },
-      acquireRepoReviewLease: (tenantId, repo) =>
-        repoReviewLeaseStore.acquire(tenantId, repo.name),
-      releaseRepoReviewLease: (tenantId, repo) =>
-        repoReviewLeaseStore.release(tenantId, repo.name),
-      // hasRepoGrant/mintRepoGrant go through Interchange's native
-      // grants HTTP surface (never a direct `grant` table write --
-      // see native-repo-grants.ts). That table carries no unique
-      // constraint over tenant/resource/action, so a bare read-then-
-      // POST here would itself be a duplicate-grant race; safe only
-      // because the caller in connect-github-routes.ts reaches this
-      // once `acquireRepoReviewLease` has already made this call-site
-      // single-flight per (tenant, repo) -- see
-      // packages/webhook-triggers/src/repo-review-lease.ts (CL-7242).
-      hasRepoGrant: (tenantId, repo, cookies) =>
-        hasRepoGrantViaHttp(selfApi, tenantId, repo, cookies),
-      mintRepoGrant: (tenantId, repo, cookies) =>
-        mintRepoGrantViaHttp(selfApi, tenantId, repo, cookies),
-      createWebhookTrigger: async (
-        tenantId,
-        principalId,
-        codeReviewDefinitionId,
-        repo,
-      ) => {
-        // `ensure`, not `create`: a concurrent "start reviewing" call
-        // for the same repo can race this one past `hasWebhookTrigger`
-        // above, and `webhook_trigger_tenant_definition_name_unique`
-        // (packages/webhook-triggers migration 0003, CL-7242) is what
-        // actually resolves that — the loser gets the winner's real
-        // row back instead of minting a second live trigger with a
-        // different secret.
-        const row = await webhookTriggerStore.ensure({
-          id: generateId("workflowRun"),
-          tenantId,
-          name: webhookTriggerName(repo),
-          workflowDefinitionId: codeReviewDefinitionId,
-          inputTemplate: `Review the pull request at {{pull_request.html_url}}`,
-          secret: generateWebhookSecret(),
-          createdBy: principalId,
-        });
-        return { id: row.id };
-      },
-      hasWebhookTrigger: async (tenantId, codeReviewDefinitionId, repo) => {
-        const triggers = await webhookTriggerStore.list(tenantId);
-        const triggerName = webhookTriggerName(repo);
-        return triggers.some(
-          (trigger) =>
-            trigger.workflowDefinitionId === codeReviewDefinitionId &&
-            trigger.name === triggerName,
-        );
-      },
-      getTemplateSettings: async (tenantId, chatId) => {
-        const row = await chatStore.getWorkbenchSettings(tenantId, chatId);
-        const settings = row?.settings ?? {};
-        const pendingConnections = settings["template/pendingConnections"];
-        const selectedRepos = settings["template/selectedRepos"];
-        return {
-          pendingConnections: Array.isArray(pendingConnections)
-            ? (pendingConnections as string[])
-            : [],
-          selectedRepos: Array.isArray(selectedRepos)
-            ? (selectedRepos as string[])
-            : [],
-        };
-      },
-      persistSelectedRepos: async (tenantId, chatId, principalId, patch) => {
-        const existing = await chatStore.getWorkbenchSettings(tenantId, chatId);
-        const row = await chatStore.updateWorkbenchSettings({
-          tenantId,
-          workbenchId: chatId,
-          settings: { ...(existing?.settings ?? {}), ...patch },
-          updatedBy: principalId,
-        });
-        chatSubscribers.publish(chatId, {
-          type: "chat.settings",
-          data: { updatedBy: principalId, settings: row.settings },
-        });
-      },
-      onReviewingStarted: async (
-        tenantId,
-        chatId,
-        _principalId,
-        introductions,
-      ) => {
-        const row = await chatStore.getWorkbenchSettings(tenantId, chatId);
-        const participants = parseParticipants(
-          row?.settings["chat/participants"],
-        );
-        for (const introduction of introductions) {
-          const participant = participants.find(
-            (candidate) => candidate.handle === introduction.handle,
-          );
-          if (participant === undefined) continue;
-          await postRoomMessage(
-            { roomMessages, publish: chatSubscribers.publish },
-            {
-              tenantId,
-              workbenchId: chatId,
-              sender: { name: null, address: participant.address },
-              runId: localPartOf(participant.address),
-              parts: [{ kind: "text", text: introduction.text }],
-            },
-          );
-        }
-      },
     }),
   );
   // Template block workflows (CL-6405, cut over to native deploy in
