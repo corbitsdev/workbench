@@ -346,8 +346,15 @@ const orchestrator = createSidecarOrchestrator({
             readyTimeoutMs: config.readyTimeoutMs,
           }
         : deployRouterConfigWithConsumedRetentionMs;
+    const deployRouterConfigWithIdleHibernateMs =
+      config.idleHibernateMs !== undefined
+        ? {
+            ...deployRouterConfigWithReadyTimeoutMs,
+            idleHibernateMs: config.idleHibernateMs,
+          }
+        : deployRouterConfigWithReadyTimeoutMs;
     const router = createSidecarDeployRouter(
-      deployRouterConfigWithReadyTimeoutMs,
+      deployRouterConfigWithIdleHibernateMs,
     );
     capturedRouter = router;
     return router;

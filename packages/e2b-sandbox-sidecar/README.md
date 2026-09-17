@@ -12,7 +12,7 @@ allowlist:
 
 - `apps/sidecar` — full source, the entrypoint (`src/index.ts`).
 - The workspace packages `apps/sidecar` transitively depends on — full
-  source (`packages/agent-lifecycle`, `packages/credential-providers`, and
+  source (`packages/credential-providers`, and
   the vendored Interchange packages under `vendor/intx/*` it uses).
 - Every other workspace member declared under the root `package.json`'s
   `workspaces` globs (`apps/*`, `packages/*`, `tools/*`, `vendor/intx/*`,

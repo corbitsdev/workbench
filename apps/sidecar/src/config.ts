@@ -92,6 +92,13 @@ const SidecarEnv = type({
   // `SIDECAR_CACHE_MAX_BYTES`-style numeric env keys.
   "CONSUMED_RETENTION_MS?": "string",
   "CHILD_READY_TIMEOUT_MS?": "string",
+  // CL-8187: how long a deployment may sit with no observed inbound mail
+  // before this sidecar's own idle-hibernate sweep tears it down with a
+  // state-preserving undeploy (deployment record, step-state, and slug
+  // survive so a later wake resumes the same run). Unset disables the
+  // sweep entirely -- nothing is tracked, no interval runs -- matching
+  // the behavior before this knob existed.
+  "CHAT_IDLE_HIBERNATE_MS?": "string",
 });
 
 /**
@@ -148,6 +155,12 @@ export type SidecarConfig = {
    * override it; the supervisor applies `DEFAULT_READY_TIMEOUT_MS` (30s).
    */
   readonly readyTimeoutMs: number | undefined;
+  /**
+   * How long a deployment may sit idle before this sidecar's own
+   * idle-hibernate sweep tears it down. `undefined` means the operator
+   * did not set `CHAT_IDLE_HIBERNATE_MS`; the sweep does not run at all.
+   */
+  readonly idleHibernateMs: number | undefined;
 };
 
 /**
@@ -218,6 +231,10 @@ export function readSidecarConfig(
     readyTimeoutMs: parsePositiveMsEnv(
       parsed.CHILD_READY_TIMEOUT_MS,
       "CHILD_READY_TIMEOUT_MS",
+    ),
+    idleHibernateMs: parsePositiveMsEnv(
+      parsed.CHAT_IDLE_HIBERNATE_MS,
+      "CHAT_IDLE_HIBERNATE_MS",
     ),
   };
 }

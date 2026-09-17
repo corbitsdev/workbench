@@ -11,9 +11,6 @@
   },
   "references": [
     {
-      "path": "../../packages/agent-lifecycle/tsconfig.src.json"
-    },
-    {
       "path": "../../packages/codex-provider/tsconfig.src.json"
     },
     {

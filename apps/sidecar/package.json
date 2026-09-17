@@ -15,7 +15,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/agent-lifecycle": "workspace:*",
     "@corbits/codex-provider": "workspace:*",
     "@corbits/credential-providers": "workspace:*",
     "@corbits/error-sink": "workspace:*",

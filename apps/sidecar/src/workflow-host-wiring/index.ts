@@ -29,7 +29,6 @@ import {
   type SuspensionRegistration,
 } from "@intx/workflow-host";
 import { hexEncode, isRunAddress } from "@intx/types";
-import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
 import {
   parseInferenceEvent,
   type CryptoProvider,
@@ -166,6 +165,21 @@ export const RESTORE_CONCURRENCY = 8;
  * in milliseconds instead of waiting out the real ceiling.
  */
 export const RESTORE_ATTEMPT_TIMEOUT_MS = 30_000;
+
+/**
+ * The `reason` this router's own idle-hibernate sweep passes to
+ * `teardownDeployment` for every idle eviction, and the reason
+ * `undeploy(frame)` matches on to choose the state-preserving teardown
+ * flavor (`reclaimDirs: false` — deployment record, step-state, and slug
+ * all survive) over the destructive default a caller-initiated undeploy
+ * gets. CL-8187: idle hibernation is this router's own decision now — it
+ * tracks per-deployment last activity itself (see `lastActivityMs`) and
+ * tears an idle run down directly, rather than waiting for a hub-driven
+ * `agent.undeploy` tagged with this reason. The tag stays a named export
+ * so a caller-initiated undeploy can still choose to hibernate rather
+ * than reclaim.
+ */
+export const IDLE_HIBERNATE_UNDEPLOY_REASON = "idle-hibernate";
 
 /**
  * Bounds a boot-restore attempt to `timeoutMs` -- so `restoreWorkflowDeployments`'s
@@ -319,12 +333,13 @@ export interface SidecarDeployRouter extends DeployRouter {
   /**
    * Shared teardown body. `undeploy` calls this itself, choosing
    * `reclaimDirs` from `frame.reason`: `IDLE_HIBERNATE_UNDEPLOY_REASON`
-   * (`@corbits/agent-lifecycle`, tagged by the hub's idle-reap sweep) gets
-   * `false` (a state-preserving "hibernate"); every other reason gets the
-   * destructive `true`. Also exposed directly on the router surface for a
-   * caller that wants to choose the flavor itself. See `reclaimDirs`'s doc
-   * comment on the internal `teardownDeployment` for the exact split
-   * between the two flavors.
+   * gets `false` (a state-preserving "hibernate"); every other reason
+   * gets the destructive `true`. This router's own idle-hibernate sweep
+   * calls it directly with `reclaimDirs: false`, the same flavor. Also
+   * exposed directly on the router surface for a caller that wants to
+   * choose the flavor itself. See `reclaimDirs`'s doc comment on the
+   * internal `teardownDeployment` for the exact split between the two
+   * flavors.
    */
   teardownDeployment(
     agentAddress: string,
@@ -602,6 +617,23 @@ export function createSidecarDeployRouter(deps: {
    * overrides it.
    */
   materializeDeploymentClosure?: typeof materializeDeploymentClosure;
+  /**
+   * How long a deployment may sit with no observed inbound mail before
+   * this router's own sweep hibernates it (`teardownDeployment` with
+   * `reclaimDirs: false`, tagged `IDLE_HIBERNATE_UNDEPLOY_REASON`).
+   * CL-8187: idle hibernation moved from a hub-driven decision to this
+   * router's own — the boot edge threads the operator's
+   * `CHAT_IDLE_HIBERNATE_MS` here. Undefined (the default) disables the
+   * sweep entirely: nothing is tracked, no interval runs, matching the
+   * behavior before this option existed.
+   */
+  idleHibernateMs?: number;
+  /**
+   * How often the idle-hibernate sweep runs. Defaults to half
+   * `idleHibernateMs`, floored at 5s. Ignored when `idleHibernateMs` is
+   * unset.
+   */
+  idleHibernateSweepIntervalMs?: number;
 }): SidecarDeployRouter {
   // Validate the signing seed at construction so a malformed key fails
   // sidecar boot rather than the first multi-step deploy, where the
@@ -651,6 +683,44 @@ export function createSidecarDeployRouter(deps: {
   // map to call `supervisor.shutdown()` so the child's lifetime ends
   // with the deployment.
   const activeSupervisors = new Map<string, SidecarWorkflowSupervisor>();
+
+  // CL-8187: per-deployment last-activity clock for the idle-hibernate
+  // sweep below. Stamped at spawn (a freshly deployed run starts
+  // "active") and on every inbound mail frame the multistep mail router
+  // dispatches -- the same choke point every triggered turn passes
+  // through. An address with no entry (never spawned by this process,
+  // or already torn down) is never swept.
+  const lastActivityMs = new Map<string, number>();
+
+  function recordActivity(agentAddress: string): void {
+    lastActivityMs.set(agentAddress, Date.now());
+  }
+
+  let idleHibernateInterval: ReturnType<typeof setInterval> | undefined;
+  if (deps.idleHibernateMs !== undefined) {
+    const idleHibernateMs = deps.idleHibernateMs;
+    const sweepIntervalMs =
+      deps.idleHibernateSweepIntervalMs ?? Math.max(idleHibernateMs / 2, 5_000);
+    idleHibernateInterval = setInterval(() => {
+      void (async () => {
+        const now = Date.now();
+        for (const agentAddress of [...activeSupervisors.keys()]) {
+          const last = lastActivityMs.get(agentAddress);
+          if (last === undefined || now - last < idleHibernateMs) continue;
+          try {
+            await teardownDeployment(agentAddress, { reclaimDirs: false });
+            logger.info`idle-hibernate sweep: torn down ${agentAddress} after ${String(idleHibernateMs)}ms of inactivity`;
+          } catch (cause) {
+            reportError(cause, {
+              operation: "workflow-host-wiring.idleHibernateSweep",
+              agentId: agentAddress,
+            });
+          }
+        }
+      })();
+    }, sweepIntervalMs);
+    idleHibernateInterval.unref?.();
+  }
 
   // CL-7215: per-deployment FIFO serialization for the boot-restore
   // failure record. Three independent writers can touch the same on-disk
@@ -756,6 +826,7 @@ export function createSidecarDeployRouter(deps: {
     deps.multistepSourcesRouter?.unregister(args.agentAddress);
     deps.multistepCredentialsRouter?.unregister(args.agentAddress);
     activeSupervisors.delete(args.agentAddress);
+    lastActivityMs.delete(args.agentAddress);
     deps.transport.unregister(args.agentAddress);
     releaseSlug(args.deploymentId, args.agentAddress);
   }
@@ -1141,6 +1212,7 @@ export function createSidecarDeployRouter(deps: {
       wiredForUnwind = wired;
       activeSupervisors.set(spec.agentAddress, wired);
       supervisorRegistered = true;
+      recordActivity(spec.agentAddress);
 
       // Bind the deployment's mail address to this supervisor's
       // `routeInbound` so the hub-link dispatches inbound mail into the
@@ -1148,6 +1220,7 @@ export function createSidecarDeployRouter(deps: {
       // `spawn` succeeds so a spawn-time rejection leaves the registry
       // untouched.
       deps.multistepMailRouter?.register(spec.agentAddress, async (message) => {
+        recordActivity(spec.agentAddress);
         return wired.routeInbound(message);
       });
       // Register the signal-delivery handler so a hub `signal.deliver` frame
@@ -1669,8 +1742,8 @@ export function createSidecarDeployRouter(deps: {
    * Returns `"deferred-to-wake"` instead of restoring for a single-step
    * ("warm-keep") deployment (CL-6648): that shape is exactly what a
    * chat launch deploys, and it already has a working lazy-wake port
-   * (`@corbits/agent-lifecycle`'s `ensureAwake` -> `@corbits/chat`'s
-   * `wakeByAddress` -> `prepareProvisionedDeployment`) that re-resolves
+   * (`@corbits/chat`'s `wakeByAddressBounded` -> `wakeByAddress` ->
+   * `prepareProvisionedDeployment`) that re-resolves
    * inference sources fresh against the tenant's LIVE catalog
    * on every wake -- `record.sources` is only ever a snapshot of what
    * resolved at the deployment's last deploy or rotation. Restoring one
@@ -2000,6 +2073,7 @@ export function createSidecarDeployRouter(deps: {
     deps.multistepSourcesRouter?.unregister(agentAddress);
     deps.multistepCredentialsRouter?.unregister(agentAddress);
 
+    lastActivityMs.delete(agentAddress);
     const wired = activeSupervisors.get(agentAddress);
     if (wired !== undefined) {
       activeSupervisors.delete(agentAddress);
@@ -2088,13 +2162,12 @@ export function createSidecarDeployRouter(deps: {
     },
     async undeploy(frame): Promise<void> {
       // `frame.reason` rides the wire from `sendAgentUndeploy(address,
-      // reason)` verbatim (`AgentUndeployFrame.reason`, `@intx/types`). The
-      // hub's idle-reap lifecycle (`@corbits/agent-lifecycle`'s sweep) tags
-      // its own reap-driven undeploys with `IDLE_HIBERNATE_UNDEPLOY_REASON`
-      // specifically so this router can tell "sleep it, a relaunch will
-      // resume it" apart from every other undeploy reason (channel
-      // deletion, member removal, ...), which still gets the destructive
-      // default.
+      // reason)` verbatim (`AgentUndeployFrame.reason`, `@intx/types`).
+      // `IDLE_HIBERNATE_UNDEPLOY_REASON` (this router's own tag, also
+      // used by its idle-hibernate sweep above) tells "sleep it, a
+      // relaunch will resume it" apart from every other undeploy reason
+      // (channel deletion, member removal, ...), which still gets the
+      // destructive default.
       const reclaimDirs = frame.reason !== IDLE_HIBERNATE_UNDEPLOY_REASON;
       await teardownDeployment(frame.agentAddress, { reclaimDirs });
     },
@@ -2240,6 +2313,9 @@ export function createSidecarDeployRouter(deps: {
       return [...activeSupervisors.keys()];
     },
     async shutdownAll(): Promise<void> {
+      if (idleHibernateInterval !== undefined) {
+        clearInterval(idleHibernateInterval);
+      }
       // Process-exit drain, NOT an undeploy: every live supervisor is shut
       // down so each workflow-process child, its IPC pipes, and its
       // event-channel fd are released before the host exits, but every

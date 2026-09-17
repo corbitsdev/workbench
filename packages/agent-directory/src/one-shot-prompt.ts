@@ -4,7 +4,6 @@
 // soon as the run starts; this module turns the event stream into an
 // awaitable promise for a caller that has no later-delivery surface.
 import { and, eq } from "drizzle-orm";
-import type { AgentLifecycle } from "@corbits/agent-lifecycle";
 import { connectorReplyContent, messageRunEnded } from "@corbits/agent-events";
 import { reportError } from "@corbits/error-sink";
 import {
@@ -50,10 +49,6 @@ export type OneShotRunnerDeps = {
   readonly events: SidecarEventEmitter;
   readonly cryptoProviders: CryptoProviderCache;
   readonly undeploy: (address: string, reason: string) => Promise<void>;
-  readonly lifecycle?: Pick<
-    AgentLifecycle,
-    "track" | "recordActivity" | "untrack"
-  >;
   readonly repoStore: Pick<RepoStore, "resolveRef">;
   readonly workflowAllocationService: Pick<
     WorkflowAllocationService,
@@ -265,9 +260,6 @@ export async function runOneShotPrompt(
         domain: tenantRow.domain,
       }));
 
-  deps.lifecycle?.track(launched.address);
-  deps.lifecycle?.recordActivity(launched.address);
-
   return new Promise<OneShotReply>((resolve, reject) => {
     let settled = false;
     let accumulated = "";
@@ -323,7 +315,6 @@ export async function runOneShotPrompt(
           extra: { address: launched.address, reason },
         });
       }
-      deps.lifecycle?.untrack(launched.address);
       finish();
     }
 

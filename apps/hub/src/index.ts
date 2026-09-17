@@ -281,20 +281,12 @@ const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
 const SIGN_IN_EMAIL_PATH = "/sign-in/email";
 const SignInEmailBody = type({ email: "string" });
-// Chat residents carry a real hub-driven idle-reap again (reversing
-// CL-5477's removal): the sidecar's own park/wake scheme it was meant to
-// replace has itself been retired in favor of a simpler reap-and-relaunch
-// model. `createHubChatPlatform`'s `lifecycle` binding below tags every
-// idle eviction with `@corbits/agent-lifecycle`'s
-// `IDLE_HIBERNATE_UNDEPLOY_REASON`, which the sidecar's `agent.undeploy`
-// handler matches to choose the state-preserving teardown flavor
-// (`reclaimDirs: false` — deployment record, step-state, and slug all
-// survive) rather than the destructive default a caller-initiated
-// undeploy gets. That is what makes this safe to re-enable where the old
-// bare `"idle"`-tagged undeploy this ticket's `CHAT_IDLE_SLEEP_MS`
-// emergency bump (8ca85543) band-aided around was genuinely lossy: a
-// later `wakeByAddress` relaunch resumes the same run rather than
-// starting a fresh one.
+// CL-8187: idle hibernation is the sidecar's own decision now — it tracks
+// per-run last activity itself and tears an idle run down with a
+// state-preserving teardown, keeping the deployment record, step-state,
+// and slug so a later `wakeByAddress` relaunch resumes the same run
+// rather than starting a fresh one. The hub no longer drives this at
+// all: `createHubChatPlatform` carries no idle-reap wiring.
 
 // Email+password signup stays available through better-auth; the hub
 // applies only coarse throttling around it, never an operator gate.
@@ -1301,13 +1293,6 @@ export async function createHub(config: HubConfig) {
       ),
       hubUrl: config.baseUrl,
     }),
-    // Chat residents are undeployed on idle again (see the comment above
-    // this function): `chatIdleReapMs` (env-overridable via
-    // `HUB_CHAT_IDLE_REAP_MS`, default 30 minutes) is
-    // state-preserving (`IDLE_HIBERNATE_UNDEPLOY_REASON`), unlike a
-    // destructive undeploy.
-    lifecycle: { idleSleepMs: config.chatIdleReapMs },
-    //
     // A hand-authored definition with no model requirements of its own
     // (see `@corbits/agent-directory`'s `createAgentDefinitionCore`
     // doc) still launches on invite by falling back to this same
@@ -1351,11 +1336,7 @@ export async function createHub(config: HubConfig) {
   // and a gate-blocked run's approval park into an in-chat approve
   // block, by subscribing to the sidecar's own event stream, replacing
   // the old per-agent reply-bridge machinery armed (and re-armed) from
-  // inside the routes. `chatPlatform.recordActivity` is the same
-  // idle-sleep lifecycle `chatPlatform` itself drives — wiring it here
-  // too is what keeps a replying agent's activity clock current even
-  // though the reply never goes through `chatPlatform.sendMail`'s own
-  // `recordActivity` call. `approvals` is the same `ApprovalStore` the
+  // inside the routes. `approvals` is the same `ApprovalStore` the
   // platform's own approve/reject routes read and write — this
   // orchestrator only ever reads it.
   const agentTurns = createDrizzleAgentTurnStore(db);
@@ -1368,7 +1349,6 @@ export async function createHub(config: HubConfig) {
     platform: chatPlatform,
     events: sidecarRouter.events,
     approvals: createApprovalStore(db),
-    recordActivity: chatPlatform.recordActivity,
     claims: writeClaims,
     threads: threadStore,
     turnMailCorrelation,
@@ -1554,12 +1534,10 @@ export async function createHub(config: HubConfig) {
       return userRow?.name ?? undefined;
     },
     commands: commandRegistry,
-    // The same native undeploy call the idle-sleep lifecycle uses to
-    // tear an invited agent's instance down (see `chatPlatform`'s own
-    // `lifecycle.undeploy` above) — wired here too so removing an agent
-    // from a chat's participants releases its running instance the
-    // same way, rather than leaving it deployed with nothing routing
-    // messages to it.
+    // The native undeploy call this hub uses to tear an invited agent's
+    // instance down when it is removed from a chat's participants,
+    // rather than leaving it deployed with nothing routing messages to
+    // it.
     releaseAgentInstance: (address, reason) =>
       sidecarRouter.sendAgentUndeploy(address, reason),
     // CL-7450: fans a sent human message into every human participant's

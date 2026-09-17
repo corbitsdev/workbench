@@ -38,7 +38,6 @@
   },
   "dependencies": {
     "@corbits/agent-events": "workspace:*",
-    "@corbits/agent-lifecycle": "workspace:*",
     "@corbits/agent-runtime": "workspace:*",
     "@corbits/approvals": "workspace:*",
     "@corbits/collections": "workspace:*",
