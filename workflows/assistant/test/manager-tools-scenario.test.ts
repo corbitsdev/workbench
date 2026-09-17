@@ -39,6 +39,14 @@ import {
   REQUEST_CONNECTION_TOOL,
   type WorkflowConnectionEnv,
 } from "@corbits/connections-tools";
+// `@corbits/connections-tools` carries no connector set of its own (it
+// takes one through its env, so any Interchange-backed hub can install
+// it with its own connector lineup) — this scenario plays back against
+// Workbench's actual shipped set, so it wires in the real thing.
+import {
+  CONNECTOR_REGISTRY,
+  MCP_PRESETS,
+} from "@workbench/templates/connectors";
 import {
   agentDirectoryTools,
   CREATE_AGENT_TOOL,
@@ -237,6 +245,8 @@ async function runScenario(
     hubConnectionsUrl: HUB,
     sidecarToken: "sc-token",
     address: "run_myra@workflow",
+    connectorRegistry: CONNECTOR_REGISTRY,
+    mcpPresets: MCP_PRESETS,
   } as unknown as WorkflowConnectionEnv;
   const agentDirectoryEnv: WorkflowAgentDirectoryEnv = {
     hubAgentDirectoryUrl: HUB,

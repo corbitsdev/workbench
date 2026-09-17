@@ -9,7 +9,7 @@ import {
   runBearerHeaders,
   runBearerFetch,
   type RunBearerClientConfig,
-} from "@corbits/workflows/client";
+} from "./run-bearer";
 
 export interface WorkflowAuthoringClientConfig extends RunBearerClientConfig {
   /** The hub's plain HTTP origin, the same value every other tool

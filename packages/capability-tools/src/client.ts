@@ -27,7 +27,7 @@ import {
   runBearerErrorMessage,
   runBearerFetch,
   type RunBearerClientConfig,
-} from "@corbits/workflows/client";
+} from "./run-bearer";
 
 export interface CapabilityToolClientConfig extends RunBearerClientConfig {
   /** The hub's plain HTTP origin — same value memory-tools' `hubMemoryUrl`

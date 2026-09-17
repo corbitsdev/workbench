@@ -48,15 +48,15 @@ export const ASSISTANT_STEP_ID = "assistant";
  */
 export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/memory-tools", version: "0.0.4" },
-  { name: "@corbits/capability-tools", version: "0.0.5" },
+  { name: "@corbits/capability-tools", version: "0.0.6" },
   { name: "@corbits/agent-directory-tools", version: "0.0.6" },
-  { name: "@corbits/connections-tools", version: "0.0.8" },
+  { name: "@corbits/connections-tools", version: "0.0.9" },
   { name: "@corbits/catalog-tools", version: "0.0.6" },
   { name: "@corbits/skills-tools", version: "0.0.7" },
   { name: "@corbits/mcp-tools", version: "0.0.11" },
   { name: "@corbits/interaction-tools", version: "0.0.8" },
   { name: "@corbits/manus-tools", version: "0.0.11" },
-  { name: "@corbits/workflow-authoring-tools", version: "0.0.5" },
+  { name: "@corbits/workflow-authoring-tools", version: "0.0.6" },
   { name: "@corbits/access-tools", version: "0.0.3" },
 ];
 

@@ -31,10 +31,8 @@ import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 import { mcpPresetByName } from "@corbits/connections/mcp-presets";
-import {
-  CONNECTOR_REGISTRY,
-  MCP_PRESETS,
-} from "@workbench/templates/connectors";
+import type { ConnectorRegistry } from "@corbits/connections/registry";
+import type { McpPreset } from "@corbits/connections/mcp-presets";
 import { type } from "arktype";
 
 import {
@@ -56,6 +54,14 @@ export interface WorkflowConnectionEnv extends BaseEnv {
   readonly hubConnectionsUrl: string;
   readonly sidecarToken: string;
   readonly address: string;
+  /** The deploying build's connector set — this package carries no
+   * default registry of its own (that would hardcode one product's
+   * connector lineup into a bundle any Interchange-backed hub should
+   * be able to install), so the caller wiring this env supplies its
+   * own, e.g. Workbench's `@workbench/templates`' `CONNECTOR_REGISTRY`. */
+  readonly connectorRegistry: ConnectorRegistry;
+  /** Same reasoning as `connectorRegistry`, for curated MCP presets. */
+  readonly mcpPresets: readonly McpPreset[];
 }
 
 const RequestConnectionInput = type({
@@ -107,12 +113,14 @@ function presetDeepLink(slug: string): string {
   return `/plugins?connect=mcp:${slug}`;
 }
 
-/** Every `CONNECTOR_REGISTRY` id a curated MCP preset now fronts —
- * excluded from the raw api-key connector tallies below so a service
- * with both an old api-key entry and a new preset (Granola, Exa,
- * Linear) is only ever reported once, under its preset's own connected/
- * not-connected state. */
-const PRESET_FRONTED_IDS = new Set(MCP_PRESETS.map((preset) => preset.slug));
+/** Every connector id a curated MCP preset now fronts — excluded from
+ * the raw api-key connector tallies below so a service with both an
+ * old api-key entry and a new preset (Granola, Exa, Linear) is only
+ * ever reported once, under its preset's own connected/not-connected
+ * state. */
+function presetFrontedIds(mcpPresets: readonly McpPreset[]): Set<string> {
+  return new Set(mcpPresets.map((preset) => preset.slug));
+}
 
 async function runListConnections(
   env: WorkflowConnectionEnv,
@@ -123,14 +131,15 @@ async function runListConnections(
       listConnections(clientConfig(env)),
       listMcpServerConnections(clientConfig(env)),
     ]);
+    const presetFronted = presetFrontedIds(env.mcpPresets);
     const connectedMcpSlugs = new Set(mcpServers.map((server) => server.slug));
     const registryEntries = connections.filter(
-      (entry) => !PRESET_FRONTED_IDS.has(entry.id),
+      (entry) => !presetFronted.has(entry.id),
     );
     const connected = registryEntries.filter((entry) => entry.connected);
     const notConnected = registryEntries.filter((entry) => !entry.connected);
     const otherMcpServers = mcpServers.filter(
-      (server) => !PRESET_FRONTED_IDS.has(server.slug),
+      (server) => !presetFronted.has(server.slug),
     );
     // A preset service counts as connected through EITHER door: its MCP
     // server, or a plain key stored under the same connector id — a
@@ -139,11 +148,11 @@ async function runListConnections(
     const keyConnectedIds = new Set(
       connections.filter((entry) => entry.connected).map((entry) => entry.id),
     );
-    const presetConnected = MCP_PRESETS.filter(
+    const presetConnected = env.mcpPresets.filter(
       (preset) =>
         connectedMcpSlugs.has(preset.slug) || keyConnectedIds.has(preset.slug),
     );
-    const presetNotConnected = MCP_PRESETS.filter(
+    const presetNotConnected = env.mcpPresets.filter(
       (preset) =>
         !connectedMcpSlugs.has(preset.slug) &&
         !keyConnectedIds.has(preset.slug),
@@ -153,7 +162,7 @@ async function runListConnections(
       connected.length === 0 &&
       notConnected.length === 0 &&
       otherMcpServers.length === 0 &&
-      MCP_PRESETS.length === 0
+      env.mcpPresets.length === 0
     ) {
       return {
         callId: call.id,
@@ -235,7 +244,7 @@ async function runRequestConnection(
   // to "connect Exa" should land on that MCP card, not the old api-key
   // one, which `settings-ui`/`plugins-ui` no longer render as a separate
   // card at all.
-  const preset = mcpPresetByName(MCP_PRESETS, parsed.connector);
+  const preset = mcpPresetByName(env.mcpPresets, parsed.connector);
   if (preset !== undefined) {
     try {
       const mcpServers = await listMcpServerConnections(clientConfig(env));
@@ -264,7 +273,7 @@ async function runRequestConnection(
     );
   }
 
-  const descriptor = CONNECTOR_REGISTRY[parsed.connector];
+  const descriptor = env.connectorRegistry[parsed.connector];
   if (descriptor !== undefined) {
     try {
       const connections = await listConnections(clientConfig(env));
