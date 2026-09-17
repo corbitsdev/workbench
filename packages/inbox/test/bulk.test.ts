@@ -37,7 +37,7 @@ describe("itemsEligibleForClearDone", () => {
     const items = [
       item({ id: "a", group: "action" }),
       item({ id: "m", group: "mention", status: "done" }),
-      item({ id: "d", group: "delivery", status: "snoozed" }),
+      item({ id: "d", group: "delivery", status: "open" }),
     ];
     expect(itemsEligibleForClearDone(items).map((i) => i.id)).toEqual(["m"]);
   });
