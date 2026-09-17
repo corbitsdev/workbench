@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
+import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";
 import {
   createWebhookTrigger,
   deleteWebhookTrigger,

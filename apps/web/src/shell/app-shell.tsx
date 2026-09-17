@@ -12,9 +12,9 @@
 // already uses.
 
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
-import type { ArtifactSaveState } from "@corbits/artifact-ui";
+import type { ArtifactSaveState } from "@/library";
 
-import { WorkbenchLoadingState } from "@corbits/chat-ui";
+import { WorkbenchLoadingState } from "@/chat";
 
 import { usePendingApprovalCount } from "../pending-approvals";
 import { useBench } from "../bench-context";
@@ -23,7 +23,7 @@ import { saveArtifactContent } from "./library-artifacts";
 import { APP_ROUTES, matchesRoute } from "../routes";
 import type { SessionUser } from "../session";
 import { StageTopBar } from "./stage-top-bar";
-import { useScrollReset } from "@corbits/shell-layout";
+import { useScrollReset } from "@/shell/layout";
 import {
   useCanvasColumnArtifact,
   useCanvasColumnAvailable,

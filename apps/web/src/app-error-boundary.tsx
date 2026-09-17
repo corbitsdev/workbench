@@ -5,7 +5,7 @@
 
 import { reportError } from "@corbits/error-sink";
 import { Button, EmptyState } from "@corbits/react-ui";
-import { BoldIconProvider, WarningCircle } from "@corbits/icons";
+import { BoldIconProvider, WarningCircle } from "@/lib/icons";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 export class AppErrorBoundary extends Component<

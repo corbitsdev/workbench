@@ -14,9 +14,9 @@
 // stock routes actually carry until one exists — see the PR body
 // for the gap.
 import { PageShell, RichEmptyState, Section, formatRelativeTime } from "@corbits/react-ui";
-import { Lightning } from "@corbits/icons";
-import { WorkbenchLoadingState } from "@corbits/chat-ui";
-import { ApiQueryError, describeApiError } from "@corbits/api-query";
+import { Lightning } from "@/lib/icons";
+import { WorkbenchLoadingState } from "@/chat";
+import { ApiQueryError, describeApiError } from "@/lib/api-query";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { useBench } from "../bench-context";

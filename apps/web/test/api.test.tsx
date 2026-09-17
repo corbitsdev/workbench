@@ -11,8 +11,8 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { type } from "arktype";
 
-import type { APIQuery } from "@corbits/api-query";
-import { ApiQueryError } from "@corbits/api-query";
+import type { APIQuery } from "@/lib/api-query";
+import { ApiQueryError } from "@/lib/api-query";
 
 import { approveApproval, rejectApproval, useAPIQuery } from "../src/api";
 import { TestQueryProvider } from "./test-query-provider";

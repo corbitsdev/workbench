@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 
 import { spyOnReactUiToast } from "../../../test/react-ui-toast-mock";
-import type { ContextMenuEntry } from "@corbits/context-menu";
-import { WORKBENCHES_MUTATED_EVENT } from "@corbits/chat-ui";
+import type { ContextMenuEntry } from "@/shell/context-menu/lib";
+import { WORKBENCHES_MUTATED_EVENT } from "@/chat";
 import * as errorSink from "@corbits/error-sink";
 
 const toastMock = spyOnReactUiToast();

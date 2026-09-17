@@ -4,7 +4,7 @@
 // Unopened agent definitions do not get a synthetic row — opening a DM is
 // a conversation act, not a standing nav item.
 
-import type { Workbench } from "@corbits/chat-ui";
+import type { Workbench } from "@/chat";
 
 export type SidebarRow = {
   readonly kind: "workbench";

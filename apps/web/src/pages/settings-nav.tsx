@@ -1,12 +1,12 @@
 // Settings section nav: the master list of the settings surface, rendered
 // inside the stage beside the active section (master-detail — the list is
 // never repeated in the section panel). Grouping, gating, and icons come
-// from `@corbits/settings-ui`'s section registry
+// from `@/settings`'s section registry
 // (`resolveSettingsSectionGroups`); this component only adapts the app's
 // scope context and router around it.
 
 import { SidebarItemRow } from "@corbits/react-ui";
-import { SETTINGS_STRINGS } from "@corbits/settings-ui";
+import { SETTINGS_STRINGS } from "@/settings";
 
 import { useBench } from "../bench-context";
 import { SETTINGS_PATH_PREFIX, settingsSectionIdFromPath } from "../path-ids";

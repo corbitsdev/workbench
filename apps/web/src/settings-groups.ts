@@ -7,8 +7,8 @@
 // directly, so the two can never drift if this app ever splices something
 // else in again.
 
-import { resolveSettingsSectionGroups } from "@corbits/settings-ui";
-import type { SettingsSectionGroup, TenancyAccess } from "@corbits/settings-ui";
+import { resolveSettingsSectionGroups } from "@/settings";
+import type { SettingsSectionGroup, TenancyAccess } from "@/settings";
 
 export function resolveAppSettingsSectionGroups(
   access: TenancyAccess,

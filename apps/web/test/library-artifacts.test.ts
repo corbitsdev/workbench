@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { UnauthenticatedError } from "@corbits/api-query";
+import { UnauthenticatedError } from "@/lib/api-query";
 import {
   artifactListRowToSummary,
   isArtifactsUnavailableStatus,

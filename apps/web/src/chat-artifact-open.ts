@@ -11,7 +11,7 @@ import {
   isTextDecodableMediaType,
   resolveArtifactRendererKind,
   resolveRendererKindFromMediaType,
-} from "@corbits/artifact-ui";
+} from "@/library";
 import { artifactPreviewPath, type ArtifactDetail } from "./api";
 import type { CanvasArtifactContent } from "./shell/canvas-availability";
 

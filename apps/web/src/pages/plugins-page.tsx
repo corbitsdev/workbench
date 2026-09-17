@@ -1,6 +1,6 @@
 // The Plugins gallery route — a thin composition, same shape as
 // `library-page.tsx`: page-level data fetching and wiring live here,
-// presentation lives in `@corbits/plugins-ui`. This page reads the
+// presentation lives in `@/tools`. This page reads the
 // currently selected bench tenant the same way every other Settings
 // surface does (`useBench().selectedTenantId`) — the owner's "PARENT
 // (account/root) tenant" framing maps onto whichever tenant that is: the
@@ -15,18 +15,18 @@
 // uses. Mutations live there; this gallery never mounts a twin editor.
 
 import { Button, PageShell, RichEmptyState } from "@corbits/react-ui";
-import { WorkbenchLoadingState } from "@corbits/chat-ui";
+import { WorkbenchLoadingState } from "@/chat";
 import {
   PluginsGallery,
   PluginConnectPanel,
   type PluginsGalleryTab,
   type PluginPanelSubject,
-} from "@corbits/plugins-ui";
+} from "@/tools";
 import type { ResolvedPlugin } from "@corbits/connections/plugins";
 import { listPluginsForTenant } from "@corbits/connections/plugins";
 import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 import { MCP_PRESETS } from "@corbits/connections/mcp-presets";
-import { Plus, SquaresFour, Warning } from "@corbits/icons";
+import { Plus, SquaresFour, Warning } from "@/lib/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useBench } from "../bench-context";

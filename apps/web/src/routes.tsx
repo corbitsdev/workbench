@@ -27,9 +27,9 @@ import {
   Robot,
   SlidersHorizontal,
   SquaresFour,
-} from "@corbits/icons";
-import { CHAT_STRINGS } from "@corbits/chat-ui";
-import type { Slug } from "@corbits/slug";
+} from "@/lib/icons";
+import { CHAT_STRINGS } from "@/chat";
+import type { Slug } from "@/lib/slug";
 import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
 
 import {

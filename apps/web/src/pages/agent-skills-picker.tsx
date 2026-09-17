@@ -7,7 +7,7 @@
 // yet", because attaching nothing because the read failed and attaching
 // nothing because there is nothing are very different outcomes.
 
-import { WorkbenchLoadingState } from "@corbits/chat-ui";
+import { WorkbenchLoadingState } from "@/chat";
 import { Button, Checkbox } from "@corbits/react-ui";
 import { useEffect, useState } from "react";
 

@@ -1,13 +1,13 @@
 // One diff renderer for every surface that shows "what changed": the
 // save-confirmation step and the version comparison on a detail page both
 // mount this, so a diff always reads the same way. The line script comes
-// from `@corbits/text-diff`; this file is only its presentation, and it
+// from `@/lib/text-diff`; this file is only its presentation, and it
 // computes the script exactly once per render — the change summary is read
 // off the same result the rows come from.
 
 import { Badge, Table, TableBody, TableCell, TableRow } from "@corbits/react-ui";
-import { diffText } from "@corbits/text-diff";
-import type { DiffLine } from "@corbits/text-diff";
+import { diffText } from "@/lib/text-diff";
+import type { DiffLine } from "@/lib/text-diff";
 import { useMemo } from "react";
 
 const MARKER: Record<DiffLine["kind"], string> = {

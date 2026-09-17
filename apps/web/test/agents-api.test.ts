@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { ApiQueryError } from "@corbits/api-query";
+import { ApiQueryError } from "@/lib/api-query";
 
 import {
   clearAgentModel,

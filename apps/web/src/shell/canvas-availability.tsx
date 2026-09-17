@@ -5,12 +5,12 @@
 // column is actually showing right now.
 
 import { createContext, useContext, type ReactNode } from "react";
-import type { ProfileSubject } from "@corbits/chat-ui";
-import type { ArtifactRendererKind } from "@corbits/artifact-ui";
-import type { CanvasColumnState } from "@corbits/shell-layout";
+import type { ProfileSubject } from "@/chat";
+import type { ArtifactRendererKind } from "@/library";
+import type { CanvasColumnState } from "@/shell/layout";
 
 /** The canvas's typed-artifact pane: a title, the already-resolved
- * renderer selection (see `@corbits/artifact-ui`'s `resolveArtifactRendererKind`
+ * renderer selection (see `@/library`'s `resolveArtifactRendererKind`
  * / `resolveRendererKindFromMediaType`), and the content string those
  * renderers read.
  *
@@ -74,7 +74,7 @@ export type RoutinePanelSubject = {
   readonly preselectedAssetId?: string;
 };
 
-/** Workbench's concrete instantiation of `@corbits/shell-layout`'s generic
+/** Workbench's concrete instantiation of `@/shell/layout`'s generic
  * canvas state — a `ProfileSubject` for the profile pane, this app's own
  * `CanvasArtifactContent` for the artifact pane, `RoutinePanelSubject` for
  * the routine pane. */

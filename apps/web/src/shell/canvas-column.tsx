@@ -5,7 +5,7 @@
 // conversation lives in the main stage, not here.
 //
 // co-edit presence is gone. A "doc"-kind, editable artifact
-// renders `@corbits/artifact-ui`'s `ArtifactTextEditor` as a plain
+// renders `@/library`'s `ArtifactTextEditor` as a plain
 // single-user controlled textarea, debounced-saved through the artifacts
 // HTTP route; every other kind stays the read-only `ArtifactRenderer`. No
 // co-viewer cursors, no shared doc — that capability returns, if it does,
@@ -29,9 +29,9 @@ import {
   // published from a separate repo, not part of this rename.
   type ProfileCardChannel,
 } from "@corbits/react-ui";
-import { ArtifactRenderer, ArtifactTextEditor, type ArtifactSaveState } from "@corbits/artifact-ui";
-import type { ProfileSubject, SharedWorkbenchSummary } from "@corbits/chat-ui";
-import { ArrowsIn, ArrowsOut, ArrowSquareOut, CaretLeft, UserCircle, X } from "@corbits/icons";
+import { ArtifactRenderer, ArtifactTextEditor, type ArtifactSaveState } from "@/library";
+import type { ProfileSubject, SharedWorkbenchSummary } from "@/chat";
+import { ArrowsIn, ArrowsOut, ArrowSquareOut, CaretLeft, UserCircle, X } from "@/lib/icons";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 

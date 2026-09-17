@@ -11,7 +11,7 @@ import { ApprovalResponse, WorkflowRunResponse } from "@intx/types";
 import { useQueries } from "@tanstack/react-query";
 import { type } from "arktype";
 
-import type { APIQuery } from "@corbits/api-query";
+import type { APIQuery } from "@/lib/api-query";
 import { headlineFor } from "@corbits/approvals/headline";
 
 import { TenantApprovalsSchema, useAPIQuery } from "./api";

@@ -2,7 +2,7 @@
 // wiring through `listPluginsForTenant` (chain-aware credential resolve,
 // not the tenant-local list route) and `../skills-api.ts`, rendered
 // through `PluginsGallery`. Card/search/tab behavior itself is covered in
-// `@corbits/plugins-ui`'s own tests — this proves the page composes real
+// `@/tools`'s own tests — this proves the page composes real
 // data into that component correctly.
 
 import { afterEach, describe, expect, spyOn, test } from "bun:test";

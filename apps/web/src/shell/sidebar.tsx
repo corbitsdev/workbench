@@ -43,9 +43,9 @@ import {
   Repeat,
   SlidersHorizontal,
   SquaresFour,
-} from "@corbits/icons";
+} from "@/lib/icons";
 
-import { CHAT_STRINGS, avatarClassForPrincipal } from "@corbits/chat-ui";
+import { CHAT_STRINGS, avatarClassForPrincipal } from "@/chat";
 
 import webPackage from "../../package.json";
 import { useAPIQuery } from "../api";

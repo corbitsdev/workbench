@@ -13,7 +13,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import type { APIQuery } from "@corbits/api-query";
+import type { APIQuery } from "@/lib/api-query";
 
 import { InsightsPage } from "./insights-page";
 import { BenchContext } from "../bench-context";

@@ -2,7 +2,7 @@
 // shell. New target types register a selector here and an item builder in
 // `items.tsx` — that's the whole surface for adding one.
 
-import type { TargetDefinition } from "@corbits/context-menu";
+import type { TargetDefinition } from "@/shell/context-menu/lib";
 
 export type ShellContextMenuTarget =
   | { readonly type: "shell" }

@@ -1,4 +1,4 @@
-// Thin mount of `@corbits/settings-ui`'s shell: the package owns the section
+// Thin mount of `@/settings`'s shell: the package owns the section
 // registry (Account / Everyone groups, icons, tenancy gates — see
 // `resolveSettingsSectionGroups`); this file only adapts the app's
 // bench-selection state (see ../bench-context.tsx) and the URL into the
@@ -7,7 +7,7 @@
 // renders here in the stage, beside the active section (`settings-nav.tsx`)
 // — master-detail, the list is never repeated in the section panel.
 
-import { flattenSettingsSections, resolveActiveSection, SettingsShell } from "@corbits/settings-ui";
+import { flattenSettingsSections, resolveActiveSection, SettingsShell } from "@/settings";
 import { PageShell } from "@corbits/react-ui";
 import { useEffect } from "react";
 

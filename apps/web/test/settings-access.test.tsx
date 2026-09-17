@@ -1,11 +1,11 @@
 // The app's cached settings-access probe must agree with
-// `@corbits/settings-ui`'s mapping: evaluate effect !== allow is deny;
+// `@/settings`'s mapping: evaluate effect !== allow is deny;
 // a thrown probe is error, not deny.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import type { TenancyAccess } from "@corbits/settings-ui";
+import type { TenancyAccess } from "@/settings";
 
 import { useSettingsAccess } from "../src/settings-access";
 import { createTestQueryClient, TestQueryProvider } from "./test-query-provider";

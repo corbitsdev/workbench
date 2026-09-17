@@ -17,7 +17,7 @@ import {
   patchWorkbenchSettings,
   sendInboxMessage,
   workbenchesQueryKeyPrefix,
-} from "@corbits/chat-ui";
+} from "@/chat";
 import { reportError } from "@corbits/error-sink";
 
 import { listAgentDefinitions } from "./agents-api";

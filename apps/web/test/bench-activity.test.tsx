@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { WORKBENCHES_MUTATED_EVENT } from "@corbits/chat-ui";
+import { WORKBENCHES_MUTATED_EVENT } from "@/chat";
 
 import { useBenchActivity } from "../src/shell/bench-activity";
 import type { BenchActivityQuery } from "../src/shell/bench-activity";

@@ -9,7 +9,7 @@ without a bespoke tool package per MCP server.
 Plugins → Add MCP server takes a full endpoint URL (stored as-is, not just
 its origin — see `packages/connections/src/mcp-server-routes.ts`) and an
 optional bearer credential. Granola, Exa, and Linear render as one-click
-preset cards (`packages/plugins-ui/src/mcp-preset-cards.tsx`) that connect
+preset cards (`apps/web/src/tools/mcp-preset-cards.tsx`) that connect
 via the same routes without the person typing a URL.
 
 ## Tools

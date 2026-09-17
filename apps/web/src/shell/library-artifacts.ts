@@ -7,8 +7,8 @@
 // This module owns pure mapping + upload helper so the page stays thin and
 // the shape contract has its own tests. The old asset-shim path is gone.
 
-import type { ArtifactSummary } from "@corbits/artifact-ui";
-import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
+import type { ArtifactSummary } from "@/library";
+import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";
 
 import { FILES_PATH_PREFIX } from "../path-ids";
 

@@ -15,7 +15,7 @@
 // needs nothing here: react-ui's stylesheet already collapses every
 // transition duration under `prefers-reduced-motion`.
 
-import { MagnifyingGlass } from "@corbits/icons";
+import { MagnifyingGlass } from "@/lib/icons";
 import { useEffect, useRef, useState } from "react";
 
 export type StageSearchProps = {

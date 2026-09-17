@@ -3,8 +3,7 @@
   "include": ["src", "package.json", "src/**/*.json"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "compilerOptions": {
-    "jsx": "react-jsx",
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "lib": ["ESNext"],
     "types": ["bun"],
     "composite": true,
     "emitDeclarationOnly": true,
@@ -12,9 +11,6 @@
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
   },
   "references": [
-    {
-      "path": "../icons/tsconfig.src.json"
-    },
     {
       "path": "../url-path/tsconfig.src.json"
     }

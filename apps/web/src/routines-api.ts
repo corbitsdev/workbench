@@ -20,8 +20,8 @@
 
 import { type } from "arktype";
 import { useQuery } from "@tanstack/react-query";
-import type { APIQuery } from "@corbits/api-query";
-import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@corbits/api-query";
+import type { APIQuery } from "@/lib/api-query";
+import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@/lib/api-query";
 
 import { setAgentDefinitionStatus } from "./agents-api";
 

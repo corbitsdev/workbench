@@ -45,7 +45,7 @@
       "excludeFiles": [
         "**/src/**/*.test.ts",
         "**/src/**/*.test.tsx",
-        "packages/client-log/src/index.ts"
+        "apps/web/src/lib/client-log/index.ts"
       ],
       "rules": {
         "no-console": "error"
@@ -53,7 +53,7 @@
     },
     {
       "files": ["**/*.ts", "**/*.tsx"],
-      "excludeFiles": ["packages/icons/src/**"],
+      "excludeFiles": ["apps/web/src/lib/icons/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -61,17 +61,17 @@
             "paths": [
               {
                 "name": "lucide-react",
-                "message": "lucide-react is retired — import from @corbits/icons instead."
+                "message": "lucide-react is retired — import from @/lib/icons instead."
               },
               {
                 "name": "@phosphor-icons/react",
-                "message": "Import icons from @corbits/icons, not @phosphor-icons/react directly."
+                "message": "Import icons from @/lib/icons, not @phosphor-icons/react directly."
               }
             ],
             "patterns": [
               {
                 "group": ["@phosphor-icons/react/*"],
-                "message": "Import icons from @corbits/icons, not @phosphor-icons/react directly."
+                "message": "Import icons from @/lib/icons, not @phosphor-icons/react directly."
               }
             ]
           }

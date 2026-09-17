@@ -4,7 +4,7 @@
 // below stop compiling.
 
 import { PrincipalSummary, paginatedSchema } from "@intx/types";
-import type { APIQuery } from "@corbits/api-query";
+import type { APIQuery } from "@/lib/api-query";
 import type { PrincipalsPage, Principal } from "../src/api";
 
 const _schema = paginatedSchema(PrincipalSummary);

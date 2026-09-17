@@ -1,14 +1,10 @@
 // A localStorage-backed Recents store per bench, built on
-// `@corbits/command-palette`'s generic `createRecentsStore`. Mirrors the
+// `@/command-palette`'s generic `createRecentsStore`. Mirrors the
 // defensive try/catch localStorage access `bench-context.tsx` already uses —
 // a private-browsing tab with storage disabled loses persistence, not
 // function.
 
-import {
-  createRecentsStore,
-  type RecentsStorage,
-  type RecentsStore,
-} from "@corbits/command-palette";
+import { createRecentsStore, type RecentsStorage, type RecentsStore } from "@/command-palette";
 
 const STORAGE_PREFIX = "workbench.cmdk-recents";
 

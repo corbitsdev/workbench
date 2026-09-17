@@ -3,7 +3,7 @@
 // `displayTitle` (or the native skill asset's `displayName`, which the
 // stock asset routes carry as of) or a Title Case reading of that
 // slug.
-import { humanizeSlug } from "@corbits/chat-ui/wire/display-name";
+import { humanizeSlug } from "@/chat/wire/display-name";
 
 export function skillDisplayName(skill: {
   readonly name: string;

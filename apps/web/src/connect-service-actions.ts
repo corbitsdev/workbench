@@ -1,4 +1,4 @@
-// Builds the `ConnectServiceActions` port `ChatWorkspace` (`@corbits/chat-ui`)
+// Builds the `ConnectServiceActions` port `ChatWorkspace` (`@/chat`)
 // calls for the generic in-room connect card — the room
 // connect-github binding's shape (hub-zero T3, deleted with the
 // workbench-scoped mount) generalized to every connector and
@@ -15,15 +15,15 @@
 // Plugins page) publishes `chat.settings`; ChatWorkspace parses that
 // event and calls `notifySettingsChanged` so a mounted card flips
 // without remounting.
-import type { ConnectServiceActions, ConnectServiceQuery } from "@corbits/chat-ui";
+import type { ConnectServiceActions, ConnectServiceQuery } from "@/chat";
 import {
   completeConnectorCredential,
   ConnectionsApiError,
   fetchOAuthConfigured,
   listProviders,
   oauthStartHref,
-} from "@corbits/settings-ui";
-import { connectMcpPreset, listMcpPresets, McpServersApiError } from "@corbits/plugins-ui";
+} from "@/settings";
+import { connectMcpPreset, listMcpPresets, McpServersApiError } from "@/tools";
 import { mcpPresetBySlug, MCP_PRESETS } from "@corbits/connections/mcp-presets";
 import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 

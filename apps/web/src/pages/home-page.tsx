@@ -25,11 +25,11 @@
 // the honest next step (connect a provider) instead of spinning forever.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
-import { Clock, WarningCircle } from "@corbits/icons";
+import { Clock, WarningCircle } from "@/lib/icons";
 import { useEffect, useState } from "react";
 
-import { listAllWorkbenches, WorkbenchLoadingState } from "@corbits/chat-ui";
-import { describeApiError } from "@corbits/api-query";
+import { listAllWorkbenches, WorkbenchLoadingState } from "@/chat";
+import { describeApiError } from "@/lib/api-query";
 
 import { hasActiveCredential } from "../onboarding";
 import { listAgentDefinitions } from "../agents-api";

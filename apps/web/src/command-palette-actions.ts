@@ -18,8 +18,8 @@
 // said and did the same thing was dropped. "New thread" is out
 // of scope (killed by owner decision).
 
-import { createPendingDialogRequest } from "@corbits/shell-layout";
-import { CHAT_STRINGS } from "@corbits/chat-ui";
+import { createPendingDialogRequest } from "@/shell/layout";
+import { CHAT_STRINGS } from "@/chat";
 import { WORKBENCH_PATH_PREFIX } from "./workbench-path";
 import { NEW_WORKBENCH_PATH } from "./routes";
 import { listAgentDefinitions } from "./agents-api";

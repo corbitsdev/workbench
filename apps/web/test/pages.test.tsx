@@ -4,7 +4,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { ArtifactSummary } from "@corbits/artifact-ui";
+import type { ArtifactSummary } from "@/library";
 
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";

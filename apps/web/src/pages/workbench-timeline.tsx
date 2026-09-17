@@ -6,8 +6,8 @@
 // `../workbench-timeline-merge.ts`'s pure merge, plus this render.
 
 import { Badge, RichEmptyState, Skeleton } from "@corbits/react-ui";
-import { listMessages, listThreads } from "@corbits/chat-ui";
-import { Clock } from "@corbits/icons";
+import { listMessages, listThreads } from "@/chat";
+import { Clock } from "@/lib/icons";
 import { useMemo, useState } from "react";
 
 import { usePendingApprovals } from "../pending-approvals";

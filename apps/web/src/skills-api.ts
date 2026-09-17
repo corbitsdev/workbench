@@ -14,7 +14,7 @@
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
-import { ApiQueryError } from "@corbits/api-query";
+import { ApiQueryError } from "@/lib/api-query";
 
 const SkillSummary = type({
   assetId: "string",

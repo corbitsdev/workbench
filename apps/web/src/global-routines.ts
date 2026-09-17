@@ -5,8 +5,8 @@ import { toast } from "@corbits/react-ui";
 import { reportError } from "@corbits/error-sink";
 import { useMemo } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { describeApiError } from "@corbits/api-query";
-import type { APIQuery } from "@corbits/api-query";
+import { describeApiError } from "@/lib/api-query";
+import type { APIQuery } from "@/lib/api-query";
 
 import type { Principal } from "./api";
 import { isBenchMembership, useBench } from "./bench-context";

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient } from "@tanstack/react-query";
-import { SETTINGS_STRINGS, type TenancyAccess } from "@corbits/settings-ui";
+import { SETTINGS_STRINGS, type TenancyAccess } from "@/settings";
 
 import type { PrincipalsPage } from "../src/api";
 import { BenchProvider } from "../src/bench-context";

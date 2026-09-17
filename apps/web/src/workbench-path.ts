@@ -8,7 +8,7 @@
 // `/settings/:section` and `settingsEntityIdFromPath` for the app-level
 // Settings page.
 
-import { isWorkbenchSettingsSectionId, type WorkbenchSettingsSectionId } from "@corbits/chat-ui";
+import { isWorkbenchSettingsSectionId, type WorkbenchSettingsSectionId } from "@/chat";
 import { decodedOrNull } from "@corbits/url-path";
 
 export const WORKBENCH_PATH_PREFIX = "/w";

@@ -1,6 +1,6 @@
 // A shell-level seam between two independent surfaces: the canvas column's
 // ProfileCard (this app) and the active workbench's composer (mounted deep
-// inside `@corbits/chat-ui`'s `ChatWorkspace`, a sibling tree). The profile
+// inside `@/chat`'s `ChatWorkspace`, a sibling tree). The profile
 // card's Mention action needs to land `@handle` in whatever
 // composer is on screen without either side importing the other — the same
 // "shell context exposing a callback hook" shape `canvas-availability.tsx`

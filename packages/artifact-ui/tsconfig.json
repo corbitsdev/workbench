@@ -10,12 +10,9 @@
     "tsBuildInfoFile": "tsconfig.tsbuildinfo",
     "rootDir": "../.."
   },
-  "include": ["src", "test"],
+  "include": ["src"],
   "exclude": [],
   "references": [
-    {
-      "path": "../icons/tsconfig.src.json"
-    },
     {
       "path": "../url-path/tsconfig.src.json"
     }

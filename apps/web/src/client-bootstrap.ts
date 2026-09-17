@@ -13,7 +13,7 @@
 
 import { WORKFLOW_CATALOG } from "@corbits/workflows/catalog";
 
-import type { ClientLogger } from "@corbits/client-log";
+import type { ClientLogger } from "@/lib/client-log";
 
 import {
   buildNeedsList,

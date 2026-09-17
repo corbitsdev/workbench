@@ -79,7 +79,7 @@ Out of scope for this unit, but the plan: migrate `apps/web`'s four
 `getLogger` call sites (`instant-agent-create.ts`, `auth-screen.tsx`,
 `main.tsx`, `app-error-boundary.tsx`) onto `@intx/log` directly, confirm
 LogTape's browser sink covers the same "visible in devtools" bar
-`client-log`'s console mirror does, then delete `packages/client-log`.
+`client-log`'s console mirror does, then delete `apps/web/src/lib/client-log`.
 Small enough for one follow-up PR; the only open question is whether
 `client-log`'s in-memory ring buffer (for a future devtools panel) has
 any real consumer yet, or can be dropped outright.

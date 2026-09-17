@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { QueryClient } from "@tanstack/react-query";
-import { CHAT_STRINGS } from "@corbits/chat-ui";
+import { CHAT_STRINGS } from "@/chat";
 
 import { createChatApprovalActions } from "./approval-actions";
 

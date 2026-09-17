@@ -28,11 +28,11 @@ import {
   toast,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
-import { ChatCircleDots, Plus, Robot } from "@corbits/icons";
+import { ChatCircleDots, Plus, Robot } from "@/lib/icons";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { CHAT_STRINGS, type Workbench } from "@corbits/chat-ui";
+import { CHAT_STRINGS, type Workbench } from "@/chat";
 import { runOutcomeStatus, runStatusLabel, withListingAbandoned } from "@corbits/workflows/client";
 
 import { approveApproval, rejectApproval } from "../api";

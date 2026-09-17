@@ -2,7 +2,7 @@
 // Chat mounts (main-pane fallback and canvas column) share this so they never
 // diverge on empty/loading/ready handling.
 
-import type { TenantResolution } from "@corbits/chat-ui";
+import type { TenantResolution } from "@/chat";
 
 import type { useBench } from "../bench-context";
 
