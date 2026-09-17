@@ -1,6 +1,5 @@
 {
   "name": "@corbits/morning-brief-workflow",
-  "private": true,
   "description": "Single-step, mail-triggered workflow that writes a daily brief from the sender's recent activity across connected sources",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
@@ -12,18 +11,36 @@
       "automatable": true
     }
   },
+  "interchange": {
+    "workflow": "./src/index.ts"
+  },
   "exports": {
     ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "workflows/morning-brief"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/agent": "workspace:*",
-    "@intx/types": "workspace:*",
-    "@intx/workflow": "workspace:*",
     "arktype": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0",
+    "@intx/workflow": "0.3.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

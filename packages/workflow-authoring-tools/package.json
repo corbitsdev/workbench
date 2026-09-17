@@ -1,6 +1,5 @@
 {
   "name": "@corbits/workflow-authoring-tools",
-  "private": true,
   "description": "Myra's workflow-authoring tool bundle (workflow_author, workflow_republish, workflow_source_read, workflow_deploy_preview, workflow_deploy): an @intx/agent tool bundle calling @corbits/workflows's `./authoring`'s workflow-run-authenticated routes so an agent can write a workflow code package into a kind:\"workflow\" hub asset, read it back, preview a deploy's grant surface, and deploy it through Interchange's native source pipeline behind a human approval",
   "version": "0.0.6",
   "license": "LGPL-2.1-or-later",
@@ -8,14 +7,29 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "packages/workflow-authoring-tools"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/agent": "workspace:*",
-    "@intx/types": "workspace:*",
     "arktype": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

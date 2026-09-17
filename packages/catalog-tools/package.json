@@ -1,6 +1,5 @@
 {
   "name": "@corbits/catalog-tools",
-  "private": true,
   "description": "The list_model_concepts, pick_models and estimate_run_cost tools as an @intx/agent bundle: an agent asks for a model by what the work needs and gets back an ordered, priced chain of what this bench can actually reach — never a model named by hand.",
   "version": "0.0.6",
   "license": "LGPL-2.1-or-later",
@@ -8,14 +7,29 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "packages/catalog-tools"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/agent": "workspace:*",
-    "@intx/types": "workspace:*",
     "arktype": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

@@ -126,3 +126,24 @@ the trigger payload:
 - `company` (required) — the company the brief is about.
 - `focus` (optional) — narrows which angle to dig into (e.g.
   "go-to-market" or "founder track record").
+
+## Deploy from the npm registry
+
+Once published, deploy this workflow definition to a tenant by name and
+version pin:
+
+```
+POST /api/tenants/:id/workflows/deployments
+{
+  "source": { "kind": "registry", "registry": "npm" },
+  "entry": "./src/index.ts",
+  "pin": "@corbits/diligence-brief-workflow@0.0.1",
+  "sourceOfferingIds": ["<catalog offering id>", ...],
+  "defaultSourceOfferingId": "<catalog offering id>"
+}
+```
+
+`entry` is the package's `interchange.workflow` module path; `pin` is
+`"@corbits/diligence-brief-workflow@0.0.1"` or a semver range on the same name. The hub
+installs, probes, gates, and freezes the definition from the registry
+tarball before creating the deployment.

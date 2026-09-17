@@ -1,6 +1,5 @@
 {
   "name": "@corbits/code-review-workflow",
-  "private": true,
   "description": "Pull-request review workflow: three reviewer lenses over one diff, one review posted back",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
@@ -12,18 +11,36 @@
       "automatable": false
     }
   },
+  "interchange": {
+    "workflow": "./src/index.ts"
+  },
   "exports": {
     ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "workflows/code-review"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/code-review": "workspace:*",
-    "@intx/agent": "workspace:*",
-    "@intx/types": "workspace:*",
-    "@intx/workflow": "workspace:*"
+    "@corbits/code-review": "0.0.1"
+  },
+  "peerDependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0",
+    "@intx/workflow": "0.3.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

@@ -1,6 +1,5 @@
 {
   "name": "@corbits/attio-task-agent-workflow",
-  "private": true,
   "description": "Works one Attio task end to end: grounds itself in the CRM and past calls read-only, drafts what the task needs, and writes back to Attio only once a human approves",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
@@ -12,18 +11,36 @@
       "automatable": false
     }
   },
+  "interchange": {
+    "workflow": "./src/index.ts"
+  },
   "exports": {
     ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "workflows/attio-task-agent"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/agent": "workspace:*",
-    "@intx/types": "workspace:*",
-    "@intx/workflow": "workspace:*",
     "arktype": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0",
+    "@intx/workflow": "0.3.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
