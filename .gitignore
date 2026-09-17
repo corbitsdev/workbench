@@ -26,15 +26,12 @@ tmp/
 # Local runtime state (hub and sidecar data dirs)
 .data/
 
-# Local agent scratch (not product source; breaks prettier --check .)
+# Local agent scratch (not product source)
 .mb-scratch/
 .corbits/
 
 # Browser walkthrough harness screenshots + run summary (CL-6072)
 scripts/e2e/browser/shots/
-
-# Lint caches — local only; CI installs fresh and rebuilds them.
-.eslintcache
 
 # `bun pm pack` / `bun run release` tarballs — built on demand, never
 # committed (CL-8167).

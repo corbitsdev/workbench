@@ -1,0 +1,41 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "unicorn",
+    "oxc"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/prefer-string-starts-ends-with": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/no-array-reverse": "off",
+    "unicorn/prefer-add-event-listener": "off",
+    "unicorn/no-useless-spread": "off",
+    "unicorn/no-useless-fallback-in-spread": "off",
+    "no-shadow": "off",
+    "no-underscore-dangle": "off",
+    "no-unmodified-loop-condition": "off",
+    "no-unused-expressions": ["error", { "allowTaggedTemplates": true }],
+    "no-unsafe-optional-chaining": "off",
+    "no-useless-concat": "off",
+    "unicorn/no-thenable": "off",
+    "unicorn/no-new-array": "off",
+    "unicorn/require-module-specifiers": "off"
+  },
+  "env": {
+    "builtin": true
+  },
+  "ignorePatterns": [
+    "vendor/**",
+    "node_modules/**",
+    "dist/**",
+    ".worktrees/**",
+    ".data/**",
+    "*.gen.*"
+  ]
+}
