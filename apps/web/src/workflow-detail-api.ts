@@ -1,7 +1,10 @@
-// The workflow detail page's one seam to the hub's read route
-// (`@corbits/workflows`'s `./detail/detail-route.ts`, mounted at
-// `${TENANT_PREFIX}/workflows/definitions/:definitionAssetId/detail` in
-// `apps/hub/src/index.ts`). Wire schema and pure display helpers live in
+// The workflow detail page's one seam to reading a definition. CL-8160:
+// the Workbench-composed hub route (`@corbits/workflows`'s former
+// `./detail/detail-route.ts`) is deleted — there is no `GET .../:id`
+// route at all, stock or otherwise (`vendor/intx/hub-api/src/routes/
+// workflow-definitions.ts` only lists, lists versions, and rolls back).
+// This walks the stock list a page at a time and stops at the matching
+// id. Wire schema and pure display helpers live in
 // `@corbits/workflows/client`, browser-safe like `routines-api.ts`'s own
 // definitions listing — this file is fetch composition only.
 import { type } from "arktype";
@@ -15,6 +18,21 @@ export {
   workflowDetailPath,
   workflowNotLaunchableReason,
 } from "@corbits/workflows/client";
+
+const StockWorkflowDefinition = type({
+  id: "string",
+  "description?": "string | null",
+  name: "string",
+  currentVersion: "string",
+  status: "'deployed' | 'stopped'",
+  createdAt: "string",
+  updatedAt: "string",
+});
+
+const StockWorkflowDefinitionsPage = type({
+  data: StockWorkflowDefinition.array(),
+  nextCursor: "string | null",
+});
 
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
@@ -60,12 +78,42 @@ async function request<T>(path: string, schema: Validator<T>): Promise<T> {
   return parsed;
 }
 
-export function getWorkflowDefinitionDetail(
+const MAX_PAGES_SCANNED = 20;
+
+export async function getWorkflowDefinitionDetail(
   tenantId: string,
-  definitionAssetId: string,
+  definitionId: string,
 ): Promise<WorkflowDefinitionDetailT> {
-  return request(
-    `/api/tenants/${tenantId}/workflows/definitions/${encodeURIComponent(definitionAssetId)}/detail`,
-    WorkflowDefinitionDetail,
-  );
+  let cursor: string | null | undefined;
+  for (let page = 0; page < MAX_PAGES_SCANNED; page += 1) {
+    const query = cursor != null ? `?cursor=${encodeURIComponent(cursor)}` : "";
+    const listPath = `/api/tenants/${tenantId}/workflows/definitions${query}`;
+    const body = await request(listPath, StockWorkflowDefinitionsPage);
+    const found = body.data.find((item) => item.id === definitionId);
+    if (found !== undefined) {
+      const detail: WorkflowDefinitionDetailT = {
+        definitionId: found.id,
+        name: found.name,
+        status: found.status,
+        currentVersion: found.currentVersion,
+        createdAt: found.createdAt,
+        updatedAt: found.updatedAt,
+        ...(found.description !== undefined && found.description !== null
+          ? { description: found.description }
+          : {}),
+      };
+      const parsed = WorkflowDefinitionDetail(detail);
+      if (parsed instanceof type.errors) {
+        throw new ApiQueryError(
+          `Unexpected response shape: ${parsed.summary}`,
+          undefined,
+          listPath,
+        );
+      }
+      return parsed;
+    }
+    if (body.nextCursor == null) break;
+    cursor = body.nextCursor;
+  }
+  throw new ApiQueryError("Workflow not found.", 404, definitionId);
 }

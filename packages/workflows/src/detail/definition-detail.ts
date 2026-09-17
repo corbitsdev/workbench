@@ -1,66 +1,48 @@
-// The wire shape for `GET /api/tenants/:tenantId/workflows/definitions/
-// :definitionAssetId/detail` (`./detail-route.ts`) — a definition's own
-// page reads this and nothing else. Pure/browser-safe: no `@intx/*`, no
-// `drizzle-orm`, no `hono` — the same promise `@corbits/workflows/client`
-// makes, so `apps/web` can import it directly.
+// The wire shape a workflow's own page (`apps/web/src/pages/
+// workflow-detail-page.tsx`) reads. Pure/browser-safe: no `@intx/*`, no
+// `drizzle-orm`, no `hono` — `@corbits/workflows/client` re-exports this
+// directly so `apps/web` can import it.
+//
+// CL-8160: the Workbench-composed detail read (former `./detail-route.ts`,
+// which joined `workflow_definition`/`workflow_definition_version`/`asset`
+// through native freeze reads for steps, grants, credential bindings, a
+// five-value lifecycle, and source commit info) is gone — the hub mounts
+// no route of its own for this any more. The client now renders directly
+// off `@intx/hub-api`'s stock `GET /api/tenants/:tenantId/workflows/
+// definitions` list (`vendor/intx/hub-api/src/routes/workflow-definitions.ts`,
+// `WorkflowDefinitionResponse` in `vendor/intx/types/src/workflows.ts`),
+// which exposes only `id`, `name`, `description`, `currentVersion`,
+// `status` (`deployed` | `stopped`), `createdAt`, `updatedAt` — no asset
+// display name, no manifest/package metadata, no wire projection (so no
+// steps, no schedule trigger), and no grant/credential-binding read. See
+// `docs/CL-8160-upstream-ask.md`-equivalent PR note: this is a real gap,
+// not a design choice made here.
 import { type } from "arktype";
 
-export const WorkflowDetailStep = type({
-  id: "string",
-  role: "string",
-  "director?": "string | null",
-  "model?": "string | null",
-  toolPins: "string[]",
-  grants: "string[]",
-});
-export type WorkflowDetailStep = typeof WorkflowDetailStep.infer;
-
-export const WorkflowDetailSource = type({
-  commitSha: "string",
-  entry: "string",
-  origin: "string",
-});
-export type WorkflowDetailSource = typeof WorkflowDetailSource.infer;
-
 export const WorkflowDefinitionDetail = type({
-  definitionAssetId: "string",
-  assetName: "string",
-  displayName: "string",
+  definitionId: "string",
+  name: "string",
   "description?": "string | null",
-  lifecycle:
-    "'source-only' | 'pending-approval' | 'deployed' | 'superseded' | 'build-failed'",
-  "currentDefinitionId?": "string | null",
-  "wireHash?": "string | null",
-  "source?": WorkflowDetailSource.or("null"),
-  steps: WorkflowDetailStep.array(),
-  grants: {
-    declared: "string[]",
-    approved: "string[]",
-  },
-  credentialBindings: "string[]",
+  status: "'deployed' | 'stopped'",
+  currentVersion: "string",
+  createdAt: "string",
+  updatedAt: "string",
 });
 export type WorkflowDefinitionDetail = typeof WorkflowDefinitionDetail.infer;
 
-/** Copy for the "why not launchable" strip — the next honest action for
- * every lifecycle short of `deployed`. `null` for `deployed`: nothing to
- * say, the strip does not render. */
+/** The next honest action for a definition that is not launchable right
+ * now. `null` for `deployed`: nothing to say, the strip does not render.
+ * Stock only distinguishes `deployed`/`stopped` — the richer
+ * source-only/pending-approval/superseded/build-failed vocabulary the
+ * native freeze read used to derive is gone with it. */
 export function workflowNotLaunchableReason(
-  lifecycle: WorkflowDefinitionDetail["lifecycle"],
+  status: WorkflowDefinitionDetail["status"],
 ): string | null {
-  switch (lifecycle) {
-    case "deployed":
-      return null;
-    case "source-only":
-      return "This workflow's source has never been deployed — deploy it to make it launchable.";
-    case "pending-approval":
-      return "A deploy is waiting on human approval before it can run.";
-    case "superseded":
-      return "A newer deploy replaced this one — redeploy or roll forward to make it launchable again.";
-    case "build-failed":
-      return "The last deploy attempt did not produce a runnable definition — check the deploy and try again.";
-  }
+  return status === "deployed"
+    ? null
+    : "This workflow is stopped — resume it to make it launchable.";
 }
 
-export function workflowDetailPath(definitionAssetId: string): string {
-  return `/workflows/${encodeURIComponent(definitionAssetId)}`;
+export function workflowDetailPath(definitionId: string): string {
+  return `/workflows/${encodeURIComponent(definitionId)}`;
 }

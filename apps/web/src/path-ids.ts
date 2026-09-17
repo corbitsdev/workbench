@@ -68,9 +68,13 @@ export function routineSegmentFromPath(path: string): string | null {
   return entityIdFromTopLevelPath(path, ROUTINES_PATH_PREFIX);
 }
 
-/** The definition asset id `/workflows/<id>` addresses — `null` for the
+/** The workflow definition id `/workflows/<id>` addresses — `null` for the
  * bare prefix or a path outside it. A workflow definition has no slug of
- * its own, so — like a routine — it is addressed by its opaque id. */
+ * its own, so — like a routine — it is addressed by its opaque id.
+ * CL-8160: since the detail page now reads stock's `workflow_definition`
+ * list directly, this is `workflowDefinition.id`, not `asset.id` (the
+ * former Workbench-composed detail route's own address space) — the
+ * export name is kept to limit the diff. */
 export function workflowDefinitionAssetIdFromPath(path: string): string | null {
   return entityIdFromTopLevelPath(path, WORKFLOWS_PATH_PREFIX);
 }

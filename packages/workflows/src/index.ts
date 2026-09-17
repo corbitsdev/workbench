@@ -1,6 +1,8 @@
 // @corbits/workflows server entry — everything: the source-tree
-// renderer/reader, the definition detail route, and
-// agent-authored-workflow authoring. Browser code imports
+// renderer/reader and agent-authored-workflow authoring. CL-8160: the
+// hub-mounted definition detail and scheduled-workflow routes are gone —
+// the client reads stock `@intx/hub-api` routes directly and this package
+// only exposes pure, browser-safe shaping. Browser code imports
 // `@corbits/workflows/client` instead (see ./client.ts).
 export * from "./source";
 export * from "./detail/index";
@@ -75,9 +77,3 @@ export {
   SCHEDULE_TICK_CONTENT,
   type DeployedCronDefinition,
 } from "./schedule/deployed-cron-deployments";
-export {
-  createScheduledWorkflowRoutes,
-  RUN_NOW_CONTENT,
-  type CreateScheduledWorkflowRoutesDeps,
-  type RunScheduledDefinition,
-} from "./schedule/scheduled-route";
