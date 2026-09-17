@@ -19,7 +19,6 @@ const baseConfig: HubConfig = {
   hubDataDir: ".data/hub",
   hubStaticDir: "apps/hub/public",
   signupRateLimit: { windowSeconds: 60, max: 5 },
-  signInRateLimit: { windowSeconds: 60, max: 10 },
   socialProviders: {},
   allowPlaintextSecrets: false,
   sidecarProvisioners: [],

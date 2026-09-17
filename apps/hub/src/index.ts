@@ -13,19 +13,23 @@ import {
   createGrantStore,
   createPrincipalKeyStore,
   createSidecarAllocationStore,
-  createSignalCorrelationStore,
   createWorkflowRunDispatchStore,
-  listAssetsForTenant,
+  type DB,
 } from "@intx/db";
-import { tenant as tenantTable, user as userTable, workflowDefinition } from "@intx/db/schema";
+import {
+  sidecar,
+  tenant as tenantTable,
+  user as userTable,
+  workflowDefinition,
+  workflowRun,
+} from "@intx/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
-import { createEnvKeyCredentialCipher, createNoopCredentialCipher } from "@intx/crypto";
+import { createEnvKeyCredentialCipher, createNoopCredentialCipher, sha256 } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
 import {
   createApp,
   createMailTriggeredRunGrantsMaterializer,
   createRequireGrant,
-  readDurableWorkflowRunLifecycles,
   type AppEnv,
   type TenantEnv,
 } from "@intx/hub-api";
@@ -106,6 +110,8 @@ import {
   readProvisionerConfig as readE2BProvisionerConfig,
 } from "@corbits/e2b-sandbox-sidecar";
 import {
+  createAgentRepoStore,
+  createAssetService,
   createEventCollectorRegistry,
   createHubSessionLookups,
   createHubSessionOrchestrator,
@@ -117,24 +123,22 @@ import {
   createWorkflowAllocationService,
   createWorkflowDispatchService,
   resolveRoutableAddress,
-  type AgentRepoStore,
   type EventCollectorRegistry,
   type WsHandle,
 } from "@intx/hub-sessions";
-import { createLaunchCaches } from "./launch-caches";
-import { hubErrorHandler } from "./hub-error-handler";
-import { grantConditionRegistry } from "./grant-conditions";
-import { wireMailRedelivery } from "./mail-redelivery";
+import { generateKeyPair } from "@intx/crypto";
+import { timeWindowEvaluator } from "@intx/authz";
+import type { ConditionRegistry } from "@intx/types/authz";
+
+// The same condition registry `mountHubRoutes` builds by default when no
+// registry is supplied (`vendor/intx/hub-api/src/app.ts`) -- kept as one
+// local constant so every route factory below shares the identical
+// registry, rather than each re-deriving stock's own default.
+const grantConditionRegistry: ConditionRegistry = {
+  time_window: timeWindowEvaluator,
+};
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
-import { createToolAllowanceRegistry, withGrantAllowance } from "@corbits/approvals";
-import { createMcpCallClassifier, MCP_CALL_TOOL, mcpTools } from "@corbits/mcp-tools";
-import {
-  createAllowanceAutoApprover,
-  createMcpServerToolsAllowanceLoader,
-  createRegisteredApprovalFinder,
-  createTenantGrantLister,
-} from "./grant-allowance";
 import { createDockerSidecarProvisioner } from "@corbits/docker-provisioner";
 import {
   createProcessSidecarProvisioner,
@@ -176,35 +180,52 @@ import {
   listDeployedCronDefinitions,
   SCHEDULE_TICK_CONTENT,
 } from "@corbits/workflows";
-import {
-  createDrizzleServingRefreshStore,
-  createTenantServingRefresh,
-} from "./credential-material-refresh";
-import { type } from "arktype";
 import { betterAuth } from "better-auth";
-import { createSignInAttemptLimiter } from "./sign-in-rate-limit";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, Hono, type Next } from "hono";
 
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
-import { readHubConfig, type HubConfig, type SidecarProvisionerConfig } from "./config";
+import {
+  assertHubDataDirGitSafety,
+  readHubConfig,
+  type HubConfig,
+  type SidecarProvisionerConfig,
+} from "./config";
 import type { SidecarProvisioner } from "@intx/hub-sessions";
-import { withTurnPartWriteDefaults } from "./turn-part-content-default";
-import { createDrizzleTurnTextSnapshotReader } from "./turn-text-snapshot";
-import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
 import { triggerNativeWorkflowRoutineRun } from "./native-workflow-routine-launch";
 import { createCronEmitter } from "@corbits/workflow-schedule/emitter";
-import { createToolGrantsForPins } from "./tool-grants";
-import { drainHubServer, shutdownHub } from "./shutdown";
-import { createInFlightRequestTracker, withInFlightRequestTracking } from "./in-flight-requests";
-import {
-  createWorkflowRunAuthenticator,
-  withWorkflowRunTenantAuth,
-} from "./workflow-run-tenant-auth";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
+const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
+
+// The one concrete `WorkflowRunAuthenticator` every workflow-run-authenticated
+// surface in this app takes structurally (agent-directory, chat, connections,
+// memory-hub, `@corbits/artifacts`' `mountWorkflowArtifacts`, and stock
+// `@intx/hub-api`'s own `workflowRunAuthenticator` deploy mount): a sidecar
+// bearer token + run address resolve to the tenant/principal/run it names.
+function createWorkflowRunAuthenticator(deps: { db: DB["db"] }) {
+  return {
+    async resolve(token: string, runAddress: string) {
+      if (token === "" || runAddress === "") return null;
+      const tokenHash = await sha256(token);
+      const sidecarRow = await deps.db.query.sidecar.findFirst({
+        where: eq(sidecar.tokenHashSha256, tokenHash),
+      });
+      if (sidecarRow === undefined) return null;
+      const run = await deps.db.query.workflowRun.findFirst({
+        where: eq(workflowRun.address, runAddress),
+      });
+      if (run === undefined || run.principalId === null) return null;
+      return {
+        tenantId: run.tenantId,
+        principalId: run.principalId,
+        runId: run.id,
+      };
+    },
+  };
+}
 // In-repo tool packages (`packages/granola-tools`, `packages/linear-tools`,
 // `packages/skills-tools`) are unpublished to npm and stay that way:
 // they are integration bundles for this product's own routes, not
@@ -224,8 +245,6 @@ const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 // carry an unpublished scope anyway).
 const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
-const SIGN_IN_EMAIL_PATH = "/sign-in/email";
-const SignInEmailBody = type({ email: "string" });
 // CL-8187: idle hibernation is the sidecar's own decision now — it tracks
 // per-run last activity itself and tears an idle run down with a
 // state-preserving teardown, keeping the deployment record, step-state,
@@ -435,6 +454,7 @@ function buildSidecarProvisioner(
 }
 
 export async function createHub(config: HubConfig) {
+  assertHubDataDirGitSafety(config.hubDataDir, config.allowGitInsideWorkTree === true, process.env);
   const { db, close } = createDB(dbConfigFromUrl(config.databaseUrl));
   const { db: mailboxDb, close: closeMailbox } = createMailboxDb(config.databaseUrl);
   const mailboxBus = createInMemoryMailboxEventBus();
@@ -481,43 +501,26 @@ export async function createHub(config: HubConfig) {
           window: config.signupRateLimit.windowSeconds,
           max: config.signupRateLimit.max,
         },
-        // `false` fully disables better-auth's own built-in special rule
-        // for /sign-in* (3 attempts / 10 seconds, keyed on the client IP
-        // above) rather than leaving it running in parallel as a second,
-        // weaker mechanism: that IP key is exactly what CL-6494's
-        // private-network bypass defeats, so enforcement for this path
-        // lives entirely in `signInAttemptLimiter` below instead.
-        [SIGN_IN_EMAIL_PATH]: false,
+        // Sign-in stays on better-auth's own IP-keyed rule (CL-8185: the
+        // hub's account-keyed limiter working around its private-network
+        // bypass was deleted; see "Upstream asks" for the gap).
       },
     },
   });
-  // Account-keyed sign-in rate limit (CL-6494) — see `sign-in-rate-limit.ts`
-  // for why this replaces better-auth's own IP-keyed sign-in enforcement
-  // entirely rather than composing with it.
-  const signInAttemptLimiter = createSignInAttemptLimiter(
-    config.signInRateLimit.windowSeconds,
-    config.signInRateLimit.max,
-  );
-  const { signingKey, agentRepoStore, assetService } = await createBootAssetWiring({
-    db,
+  const signingKey = await generateKeyPair();
+  const agentRepoStore = createAgentRepoStore({
     dataDir: config.hubDataDir,
-    ...(config.allowGitInsideWorkTree === true ? { allowGitInsideWorkTree: true } : {}),
+    signingKey,
+  });
+  const assetService = createAssetService({
+    db,
+    repoStore: agentRepoStore.repoStore,
+    reservedPackageRegistryNames: new Set(REGISTRIES.keys()),
   });
   const baseLookups = createHubSessionLookups({ db, agentRepoStore });
   // A chat agent is a native provisioned deployment. Reconnect
   // ownership is Interchange's live run. Completed means dead; wake is a
   // fresh provision, not a folded-run idle settle.
-  // CL-6345: the grant-allowance gate wraps `registerSignalCorrelation`
-  // so a parked read-only call whose resource a standing grant covers is
-  // auto-approved right after its approval row lands — no card for a
-  // human, the ledgered row still records the decision. The gate's deps
-  // (dispatch service, grant store, approval stores) don't exist yet at
-  // this point in the composition, so the wrapper reads through this ref,
-  // assigned once they do; until then every registration takes the plain
-  // parked path.
-  const grantAllowanceGateRef: {
-    current?: (args: Parameters<typeof baseLookups.registerSignalCorrelation>[0]) => Promise<void>;
-  } = {};
   // Forward reference: `eventCollectors` (the wrapped
   // `EventCollectorRegistry`) isn't constructed until later in this
   // composition, but `createHubPersistMailWithSessionEnsure` below needs
@@ -568,13 +571,6 @@ export async function createHub(config: HubConfig) {
       bus: mailboxBus,
       resolveRefs: hubMailboxResolveRefs,
     }),
-    async registerSignalCorrelation(
-      args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
-    ): Promise<void> {
-      const gate = grantAllowanceGateRef.current;
-      if (gate !== undefined) return gate(args);
-      return baseLookups.registerSignalCorrelation(args);
-    },
   };
   const hubPublicKey = hexEncode(signingKey.publicKey);
   // One resolver serves both seams, exactly as @intx/hub-sessions's own
@@ -639,7 +635,7 @@ export async function createHub(config: HubConfig) {
   await runArtifactMigrations(db);
   const artifactContentStore = InlineContentStore;
   const baseEventCollectors = createEventCollectorRegistry({
-    db: withTurnPartWriteDefaults(db),
+    db,
     // CL-7418: deliberately no terminal-status settle here. The folded
     // routine-fire settle (CL-6778, keyed off routines.routine_run) died
     // with the routines cut (CL-4455) and has no native equivalent: a
@@ -703,38 +699,24 @@ export async function createHub(config: HubConfig) {
     db,
     eventCollectors,
   });
-  // CL-6225: the launch path re-reads every tool-package tarball and
-  // rebuilds a full git pack of every attached asset on every agent
-  // launch; both reads are pure functions of an immutable commit SHA (see
-  // `./launch-caches.ts`). Only `createSessionService`'s launch path gets
-  // the cached wrapper — the smart-HTTP git routes and the asset REST
-  // routes below keep the raw `agentRepoStore`/`assetService` because they
-  // serve requests under per-request principals the cache is not sound
-  // for (see `./launch-caches.ts`'s header comment).
-  const launchCaches = createLaunchCaches({
-    assetService,
-    repoStore: agentRepoStore.repoStore,
-  });
-  // CL-6149: a launch's pinned tool packages (`toolPackagePins`) carry
-  // no grants of their own — the deploy-time capability walk
-  // (`vendor/intx/workflow-deploy/src/capability-walk.ts`) only derives
-  // `tool:` grants for inline tool factories. `toolGrantsForPins` — the
-  // port `createHubChatPlatform`'s `CreateHubChatPlatformDeps` is built
-  // with — turns a launch's pins into `tool:<qualifiedId>` grants read
-  // from the tenant-resolved `corbits-tools` asset's packed manifests
-  // (CL-7582), through the same cached launch-path read seam above.
-  const toolGrantsForPins = createToolGrantsForPins({
-    listAssets: (tenantId, kind) => listAssetsForTenant(db, tenantId, kind),
-    assetService: launchCaches.assetService,
-  });
-  const launchAgentRepoStore: AgentRepoStore = {
-    writeDeployTree: agentRepoStore.writeDeployTree,
-    createDeployPack: agentRepoStore.createDeployPack,
-    receiveAgentStatePack: agentRepoStore.receiveAgentStatePack,
-    receiveWorkflowRunPack: agentRepoStore.receiveWorkflowRunPack,
-    getSigningPublicKey: agentRepoStore.getSigningPublicKey,
-    repoStore: launchCaches.repoStore,
-  };
+  // CL-8185: the launch-path SHA-keyed read cache (`launch-caches.ts`) was
+  // a pure performance optimization -- deleted under the hub-sweep's
+  // less-is-more ruling. Every launch now re-reads the tool-package
+  // registry and rebuilds deploy packs uncached; see "Upstream asks".
+  //
+  // CL-6149: a launch's pinned tool packages (`toolPackagePins`) carry no
+  // grants of their own — the deploy-time capability walk only derives
+  // `tool:` grants for inline tool factories, and this hub-owned
+  // `tool-grants.ts` port (deleted in the same sweep) was the workaround
+  // that minted `tool:<qualifiedId>` grants from a pinned package's own
+  // manifest. Stubbed to no grants for now; see "Upstream asks" — a
+  // pinned tool package's calls fail closed until this is addressed.
+  const toolGrantsForPins = async () =>
+    [] as readonly {
+      readonly resource: string;
+      readonly action: "invoke";
+      readonly effect: "allow" | "ask" | "deny";
+    }[];
   // Shared-capacity `deployWorkflowFromSource` / `deployAdoptedWorkflowFromSource`
   // are gone on this pin. The provisioned path persists its source in
   // `workflow_run_launch_spec`; there is nothing left for a session-service
@@ -742,8 +724,8 @@ export async function createHub(config: HubConfig) {
   const sessionService = createSessionService({
     sidecarRouter,
     sidecarAllocationRouter: sidecarRouter,
-    agentRepoStore: launchAgentRepoStore,
-    assetService: launchCaches.assetService,
+    agentRepoStore,
+    assetService,
     db,
     toolPackageRegistries: {
       httpRegistries: REGISTRIES,
@@ -898,44 +880,7 @@ export async function createHub(config: HubConfig) {
       const result = await auth.api.getSession({ headers });
       return result ? { user: result.user, session: result.session } : null;
     },
-    authHandler: async (c) => {
-      // Account-keyed sign-in brute-force protection (CL-6494, hardened
-      // CL-6521) — see `sign-in-rate-limit.ts` for why this fully replaces
-      // better-auth's own IP-keyed enforcement for this path instead of
-      // running beside it, and for why only failures ever consume budget.
-      if (c.req.method === "POST" && c.req.path.endsWith(SIGN_IN_EMAIL_PATH)) {
-        let email: string | undefined;
-        try {
-          const body: unknown = await c.req.raw.clone().json();
-          const parsed = SignInEmailBody(body);
-          if (!(parsed instanceof type.errors)) email = parsed.email;
-        } catch {
-          email = undefined;
-        }
-        // A body that doesn't parse to `{ email: string }` never touches
-        // the limiter at all — there is no account to key a bucket on,
-        // and better-auth will reject the request on its own terms.
-        const response = await auth.handler(c.req.raw);
-        if (email === undefined) return response;
-        if (response.status >= 200 && response.status < 300) {
-          signInAttemptLimiter.recordSuccess(email);
-          return response;
-        }
-        const decision = signInAttemptLimiter.recordFailure(email);
-        if (!decision.allowed) {
-          return c.json(
-            {
-              error: "rate_limited",
-              message: `Too many sign-in attempts. Try again in ${decision.retryAfterSeconds} second${decision.retryAfterSeconds === 1 ? "" : "s"}.`,
-            },
-            429,
-            { "Retry-After": decision.retryAfterSeconds.toString() },
-          );
-        }
-        return response;
-      }
-      return auth.handler(c.req.raw);
-    },
+    authHandler: async (c) => auth.handler(c.req.raw),
     db,
     sidecarRouter,
     sessionService,
@@ -964,73 +909,16 @@ export async function createHub(config: HubConfig) {
     }),
   });
 
-  // Without this, any exception escaping a route (extension or platform
-  // alike) falls through to Hono's built-in handler: a bare 500 with
-  // nothing reported. See `hubErrorHandler`'s own doc comment.
-  app.onError(hubErrorHandler());
+  // CL-8185: the hub-owned global `app.onError` (`hub-error-handler.ts`)
+  // was deleted under the hub-sweep's less-is-more ruling. An exception
+  // escaping a route now falls through to Hono's own built-in handler --
+  // a bare 500 with nothing reported. See "Upstream asks".
 
   // The hub's own grant store, built the same way `createApp` builds its
   // default when none is supplied (see `@intx/hub-api`'s
   // `mountHubRoutes`). `createRequireGrant` is the published construction
   // the platform's own internal instance is not exported for.
   const chatGrantStore = createGrantStore(db);
-  // CL-6345: arm the grant-allowance gate declared up at `lookups`. The
-  // one annotation today is `mcp_call` (registered under both its bare
-  // and pinned-namespaced names): a downstream MCP tool the server
-  // itself marks `readOnlyHint: true`, called on a connection whose
-  // `mcp:<slug>` resource an `allow`/"read" grant covers, is
-  // auto-approved through the native resolve machinery; every other
-  // parked call — writes, unverified claims, uncovered connections —
-  // waits for a human exactly as before.
-  {
-    const mcpCallClassify = createMcpCallClassifier(
-      createMcpServerToolsAllowanceLoader({ db, credentialCipher }),
-    );
-    const allowanceLog = (line: string) => log.info`${line}`;
-    grantAllowanceGateRef.current = withGrantAllowance(
-      (args) => baseLookups.registerSignalCorrelation(args),
-      {
-        registry: createToolAllowanceRegistry([
-          {
-            tool: MCP_CALL_TOOL,
-            grantAction: "read",
-            classify: mcpCallClassify,
-          },
-          {
-            tool: `${mcpTools.id}:${MCP_CALL_TOOL}`,
-            grantAction: "read",
-            classify: mcpCallClassify,
-          },
-        ]),
-        findRegisteredApproval: createRegisteredApprovalFinder(db),
-        listTenantGrants: createTenantGrantLister(db),
-        autoApprove: createAllowanceAutoApprover(
-          {
-            db,
-            sidecarRouter,
-            workflowDispatchService,
-            readRunLifecycles: async (agentAddress, topLevelRunId, targetRunId) => {
-              const lifecycles = await readDurableWorkflowRunLifecycles(
-                agentRepoStore.repoStore,
-                agentAddress,
-                [topLevelRunId, targetRunId],
-              );
-              return {
-                topLevel: lifecycles.get(topLevelRunId) ?? "absent",
-                target: lifecycles.get(targetRunId) ?? "absent",
-              };
-            },
-            grantStore: chatGrantStore,
-            conditionRegistry: grantConditionRegistry,
-            approvalStore: createApprovalStore(db),
-            signalCorrelationStore: createSignalCorrelationStore(db),
-          },
-          allowanceLog,
-        ),
-        log: allowanceLog,
-      },
-    );
-  }
   const threadStore = createDrizzleThreadStore(db);
   const blockResponseStore = createDrizzleBlockResponseStore(db);
   const reactionStore = createDrizzleReactionStore(db);
@@ -1084,14 +972,10 @@ export async function createHub(config: HubConfig) {
     toolGrantsForPins,
     cryptoProviders,
     workflowAllocationService,
-    // CL-7505: serving-time token refresh — every outbound mail refreshes
-    // the tenant's due oauth_token credentials first and pushes the
-    // refreshed frames, so the run dials on a live token or fails over
-    // past a credential that just went re-auth-required.
-    refreshServingCredentials: createTenantServingRefresh({
-      store: createDrizzleServingRefreshStore(db, credentialCipher, sidecarRouter),
-      hubUrl: config.baseUrl,
-    }),
+    // CL-8185: serving-time oauth_token refresh (`credential-material-refresh.ts`)
+    // was deleted under the hub-sweep's less-is-more ruling; see
+    // "Upstream asks" — a run can now dial on a stale token instead of
+    // refreshing it first.
     // A hand-authored definition with no model requirements of its own
     // (see `@corbits/agent-directory`'s `createAgentDefinitionCore`
     // doc) still launches on invite by falling back to this same
@@ -1099,7 +983,6 @@ export async function createHub(config: HubConfig) {
     workbenchHostInferencePreferences: chatHostInferencePreferencesResolver,
     relaunchNotice: relaunchNoticeRef,
   });
-  wireMailRedelivery({ sidecarRouter, chatPlatform });
   // The one SSE subscriber registry for this process's chat events
   // (see `@corbits/chat`'s `workbench-events.ts`), constructed here in
   // the composition root and shared by every consumer below: the chat
@@ -1297,7 +1180,6 @@ export async function createHub(config: HubConfig) {
     threads: threadStore,
     turnMailCorrelation,
     agentTurns,
-    turnTextSnapshot: (input) => createDrizzleTurnTextSnapshotReader(db).read(input),
     blockResponses: blockResponseStore,
     reactions: reactionStore,
     pins: pinStore,
@@ -1801,20 +1683,16 @@ export async function createHub(config: HubConfig) {
 
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));
 
-  // Stock Interchange currently leaves tenant creation and dispatch ungated.
-  // Let a workflow-run agent reach every stock tenant route with the run
-  // bearer, not just the deploy endpoint — see ./workflow-run-tenant-auth.ts
-  // for why this is an outer wrap.
-  const runBearerApp = withWorkflowRunTenantAuth(app, {
-    db,
-    authenticator: createWorkflowRunAuthenticator({ db }),
-  });
-  const inFlight = createInFlightRequestTracker();
-  const servingApp = withInFlightRequestTracking(runBearerApp, inFlight);
-
+  // CL-8185: the hub-sweep's less-is-more ruling deleted the tenant-subtree
+  // bearer widening (`workflow-run-tenant-auth.ts`'s `withWorkflowRunTenantAuth`)
+  // and the in-flight request tracker (`in-flight-requests.ts`). Stock
+  // `@intx/hub-api` still authenticates a run bearer on the single
+  // `/workflows/deployments` mount via `workflowRunAuthenticator` above; a
+  // run agent reaching any other tenant route now needs a session like
+  // everything else. See "Upstream asks" for both gaps.
   return {
-    app: servingApp,
-    whenRequestsIdle: () => inFlight.whenIdle(),
+    app,
+    whenRequestsIdle: () => Promise.resolve(),
     db,
     close: async () => {
       sidecarAllocationReconciliationStopped = true;
@@ -1865,24 +1743,20 @@ if (import.meta.main) {
   });
   const log = getLogger(["hub"]);
   log.info`Hub serving on port ${port}`;
-  const SHUTDOWN_DRAIN_MS = 10_000;
-  // In-flight Hono handlers (a request mid-Postgres-transaction, a git
-  // write, anything that has not returned a Response yet) must finish
-  // before connections are torn down. `server.stop()` with no argument
-  // also waits for SSE bridges and idle sidecar websockets, which never
-  // close on their own — so once handlers are idle, force-close what's
-  // left. A live stream must not turn this drain into a timeout fault.
+  // CL-8185: the bounded-drain shutdown (`shutdown.ts`) and its in-flight
+  // tracker were deleted under the hub-sweep's less-is-more ruling. A
+  // signal now force-stops the listener and closes hub resources directly,
+  // with no drain window for an in-flight request and no reported cause on
+  // a hang. See "Upstream asks".
   const shutdown = () =>
-    shutdownHub({
-      drain: () =>
-        drainHubServer({
-          whenRequestsIdle: hub.whenRequestsIdle,
-          stop: (force) => server.stop(force),
-          close: hub.close,
-        }),
-      timeoutMs: SHUTDOWN_DRAIN_MS,
-      exit: (code) => process.exit(code),
-    });
+    void (async () => {
+      try {
+        server.stop(true);
+        await hub.close();
+      } finally {
+        process.exit(0);
+      }
+    })();
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
 }

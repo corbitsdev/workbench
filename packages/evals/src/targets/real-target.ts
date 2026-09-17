@@ -25,6 +25,9 @@ import { OLLAMA_PLACEHOLDER_SECRET } from "@corbits/connections/credential-test"
 import { createGitWorkflowPusher } from "./git-workflow-push";
 import { createHubAPI, type ApiCall } from "@corbits/hub-api-client";
 import { getLogger } from "@intx/log";
+import { generateKeyPair } from "@intx/crypto";
+import { createAgentRepoStore, createAssetService, type AssetService } from "@intx/hub-sessions";
+import type { DB } from "@intx/db";
 import { completeCredentialSetup } from "@workbench/onboarding";
 import {
   signPayload,
@@ -106,8 +109,8 @@ export interface MyraTargetInfra {
    * when the caller supplies this, the returned `Target` gains
    * `snapshotWorld`. `hubDataDir` is the booted hub's own data dir, so
    * the caller can stand up a read-equivalent `AssetService` over the
-   * same on-disk agent repos (see `apps/hub`'s
-   * `createBootAssetWiring`); `fakeReceipts` hands back every call the
+   * same on-disk agent repos (see `createEvalAssetService` below);
+   * `fakeReceipts` hands back every call the
    * target's connected MCP fakes received, so the snapshot's
    * `fakeReceipts` come from the fakes this target actually started. */
   captureWorldSnapshot?: (args: {
@@ -120,6 +123,24 @@ export interface MyraTargetInfra {
 /** Never sent anywhere for real in plumbing mode — see the module
  * comment. Only used when `EVAL_PROVIDER_API_KEY` is unset. */
 const log = getLogger(["evals", "real-target"]);
+
+/**
+ * A read-equivalent `AssetService` over a booted hub's own on-disk agent
+ * repos, for a world-scorer that reads real state (CL-6404). Built the
+ * same way hub boot builds one -- a fresh signing key only ever signs
+ * writes, which a snapshot reader never performs.
+ */
+export async function createEvalAssetService(args: {
+  db: DB["db"];
+  dataDir: string;
+}): Promise<AssetService> {
+  const signingKey = await generateKeyPair();
+  const { repoStore } = createAgentRepoStore({
+    dataDir: args.dataDir,
+    signingKey,
+  });
+  return createAssetService({ db: args.db, repoStore });
+}
 
 const STUB_API_KEY = "corbits-evals-stub-key-not-real";
 
