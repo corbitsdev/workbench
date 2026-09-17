@@ -23,7 +23,5 @@ export { ArtifactRenderer } from "./artifact-renderer";
 export type { ArtifactRenderProps } from "./artifact-renderer";
 export { ArtifactTextEditor } from "./artifact-text-editor";
 export type { ArtifactTextEditorProps } from "./artifact-text-editor";
-export { diffText, applyTextDiffToYText } from "./y-text-diff";
-export type { TextDiffOp } from "./y-text-diff";
 export { formatSavedLabel, formatSaveStateLine } from "./save-state";
 export type { ArtifactSaveState } from "./save-state";

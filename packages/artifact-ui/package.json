@@ -20,8 +20,7 @@
     "arktype": "catalog:",
     "@corbits/icons": "workspace:*",
     "@corbits/url-path": "workspace:*",
-    "react": "^19.2.0",
-    "yjs": "^13.6.32"
+    "react": "^19.2.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

@@ -4,16 +4,12 @@
 // from a chat artifact chip or the Library page. Primary workbench
 // conversation lives in the main stage, not here.
 //
-// CL-5958 phase 1 added a co-viewer cursor overlay on top of the
-// read-only renderer, driven by `@corbits/presence/client` in
-// `app-shell.tsx` and handed down here as plain `PresenceCursor` data.
-// Phase 2 adds real co-editing for text-kind artifacts: when the host
-// hands down a `doc` (a `Y.Doc` already synced over presence) alongside
-// `artifact.canEdit`, the pane renders `@corbits/artifact-ui`'s
-// `ArtifactTextEditor` instead of the read-only `ArtifactRenderer`. Every
-// other kind, and every artifact without a `doc`, stays exactly as
-// read-only as phase 1 left it — this module still never imports
-// `@corbits/presence` itself, only plain data and a `Y.Doc` handle.
+// CL-8189: co-edit presence is gone. A "doc"-kind, editable artifact
+// renders `@corbits/artifact-ui`'s `ArtifactTextEditor` as a plain
+// single-user controlled textarea, debounced-saved through the artifacts
+// HTTP route; every other kind stays the read-only `ArtifactRenderer`. No
+// co-viewer cursors, no shared doc — that capability returns, if it does,
+// on top of the preserved `@corbits/presence` library, not here.
 //
 // The collapse/expand motion lives entirely in `shell.css` as a CSS
 // transition on `transform`/`opacity` (plus width, so the main pane
@@ -49,10 +45,8 @@ import {
 } from "@corbits/icons";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type * as Y from "yjs";
 
 import { useBench } from "../bench-context";
-import type { PresenceConnection } from "../presence/use-presence-room";
 import { workbenchPath } from "../workbench-path";
 import { ensureProfileDm, loadSharedWorkbenches } from "../profile-relations";
 import type {
@@ -60,21 +54,6 @@ import type {
   RoutinePanelSubject,
 } from "./canvas-availability";
 import { useInsertIntoComposer } from "./composer-insertion";
-
-/**
- * One co-viewer's cursor, in the artifact pane's own fractional coordinate
- * space (`x`/`y` in `[0, 1]` of the pane's content box) so it survives a
- * pane resize between the moment it was published and the moment it
- * renders. Plain data — the same reasoning as `PresenceMember` in
- * `@corbits/chat-ui`: this module never depends on `@corbits/presence`.
- */
-export interface PresenceCursor {
-  readonly principalId: string;
-  readonly displayName: string;
-  readonly color: string;
-  readonly x: number;
-  readonly y: number;
-}
 
 export function CanvasColumn({
   open,
@@ -84,12 +63,8 @@ export function CanvasColumn({
   onClose,
   onToggleFocus,
   onNavigate,
-  presenceCursors,
-  onCursorMove,
-  artifactDoc,
   artifactSaveState,
-  onArtifactTyping,
-  presenceConnection = "ok",
+  onSaveArtifact,
 }: {
   readonly open: boolean;
   readonly profile: ProfileSubject | null;
@@ -99,26 +74,11 @@ export function CanvasColumn({
   readonly onClose: () => void;
   readonly onToggleFocus: () => void;
   readonly onNavigate: (path: string) => void;
-  /** Co-viewers currently looking at `artifact`, if any — see `PresenceCursor`. */
-  readonly presenceCursors?: readonly PresenceCursor[];
-  /** Fired with the pointer's fractional position over the artifact body
-   * (see `PresenceCursor`'s own doc) as it moves — the host publishes it
-   * through `@corbits/presence/client`. */
-  readonly onCursorMove?: (x: number, y: number) => void;
-  /** The shared `Y.Doc` for a "doc"-kind `artifact`, already synced over
-   * presence. Its presence alone decides whether the pane shows the
-   * live-updating `ArtifactTextEditor` at all (vs. the static
-   * `ArtifactRenderer`) — `artifact.canEdit` separately decides whether
-   * that editor accepts keystrokes or is itself read-only. Absent for
-   * every other renderer kind, and briefly absent for a "doc" artifact
-   * whose presence connection hasn't handed over a doc yet. */
-  readonly artifactDoc?: Y.Doc;
-  /** The honest save-state line for `artifactDoc` — see `ArtifactSaveState`. */
+  /** The honest save-state line for an editable "doc"-kind `artifact` — see `ArtifactSaveState`. */
   readonly artifactSaveState?: ArtifactSaveState;
-  /** Fired on local typing start/stop in the text editor, for the host to publish through presence's `typing` awareness field. */
-  readonly onArtifactTyping?: (typing: boolean) => void;
-  /** Quiet reconnecting caption when presence has failed more than once. */
-  readonly presenceConnection?: PresenceConnection;
+  /** Fired (debounced) with the editor's full current text — the host's
+   * one seam to the artifacts PUT route. Absent for a non-editable artifact. */
+  readonly onSaveArtifact?: (content: string) => void;
 }) {
   // `inert` rather than `aria-hidden`: a collapsed column has to be out of
   // both the accessibility tree and the tab order, and `aria-hidden` alone
@@ -147,12 +107,8 @@ export function CanvasColumn({
             focus={focus}
             onClose={onClose}
             onToggleFocus={onToggleFocus}
-            {...(presenceCursors !== undefined ? { presenceCursors } : {})}
-            {...(onCursorMove !== undefined ? { onCursorMove } : {})}
-            {...(artifactDoc !== undefined ? { artifactDoc } : {})}
             {...(artifactSaveState !== undefined ? { artifactSaveState } : {})}
-            {...(onArtifactTyping !== undefined ? { onArtifactTyping } : {})}
-            presenceConnection={presenceConnection}
+            {...(onSaveArtifact !== undefined ? { onSaveArtifact } : {})}
           />
         ) : (
           <EmptyState
@@ -483,23 +439,13 @@ function ProfileCanvasPane({
   );
 }
 
-/**
- * Whether this render shows `ArtifactTextEditor` instead of the static
- * `ArtifactRenderer`: the artifact has to be a text kind AND have an
- * actual synced `Y.Doc` — before the presence connection hands one over,
- * even a `canEdit` artifact renders through the static (but honestly
- * inert) renderer rather than an editor bound to nothing. Whether the
- * resulting pane is interactive is `artifact.canEdit`, checked
- * separately: a viewer without write access still gets the live-updating
- * `ArtifactTextEditor` in its own `readOnly` mode (requirement: read-only
- * viewers see live updates too, not just a stale fetch), just with
- * keystrokes ignored.
- */
-function showsTextEditor(
-  artifact: CanvasArtifactContent,
-  doc: Y.Doc | undefined,
-): doc is Y.Doc {
-  return artifact.rendererKind === "doc" && doc !== undefined;
+/** Whether this render shows `ArtifactTextEditor` instead of the static
+ * `ArtifactRenderer`: the artifact has to be a text kind. Whether the
+ * resulting pane is interactive is `artifact.canEdit`, checked separately:
+ * a viewer without write access still gets `ArtifactTextEditor` in its
+ * own `readOnly` mode, just with keystrokes ignored. */
+function showsTextEditor(artifact: CanvasArtifactContent): boolean {
+  return artifact.rendererKind === "doc";
 }
 
 function ArtifactCanvasPane({
@@ -507,25 +453,17 @@ function ArtifactCanvasPane({
   focus,
   onClose,
   onToggleFocus,
-  presenceCursors = [],
-  onCursorMove,
-  artifactDoc,
   artifactSaveState = { kind: "read-only" },
-  onArtifactTyping,
-  presenceConnection = "ok",
+  onSaveArtifact,
 }: {
   readonly artifact: CanvasArtifactContent;
   readonly focus: boolean;
   readonly onClose: () => void;
   readonly onToggleFocus: () => void;
-  readonly presenceCursors?: readonly PresenceCursor[];
-  readonly onCursorMove?: (x: number, y: number) => void;
-  readonly artifactDoc?: Y.Doc;
   readonly artifactSaveState?: ArtifactSaveState;
-  readonly onArtifactTyping?: (typing: boolean) => void;
-  readonly presenceConnection?: PresenceConnection;
+  readonly onSaveArtifact?: (content: string) => void;
 }) {
-  const showEditor = showsTextEditor(artifact, artifactDoc);
+  const showEditor = showsTextEditor(artifact);
   return (
     <div className="shell-artifact-pane">
       <CanvasPaneHeader
@@ -536,43 +474,16 @@ function ArtifactCanvasPane({
         {...(artifact.previewSrc !== undefined
           ? { previewSrc: artifact.previewSrc }
           : {})}
-        {...(presenceConnection === "degraded"
-          ? {
-              trailing: (
-                <span
-                  className="shell-artifact-presence-status"
-                  aria-live="polite"
-                >
-                  Reconnecting…
-                </span>
-              ),
-            }
-          : {})}
       />
-      <div
-        className="shell-artifact-pane-body"
-        onPointerMove={
-          onCursorMove === undefined
-            ? undefined
-            : (event) => {
-                const bounds = event.currentTarget.getBoundingClientRect();
-                if (bounds.width === 0 || bounds.height === 0) return;
-                onCursorMove(
-                  (event.clientX - bounds.left) / bounds.width,
-                  (event.clientY - bounds.top) / bounds.height,
-                );
-              }
-        }
-      >
+      <div className="shell-artifact-pane-body">
         {showEditor ? (
           <ArtifactTextEditor
-            doc={artifactDoc}
+            key={artifact.id}
+            content={artifact.content}
             title={artifact.title}
             readOnly={!artifact.canEdit}
             saveState={artifactSaveState}
-            {...(onArtifactTyping !== undefined
-              ? { onLocalTyping: onArtifactTyping }
-              : {})}
+            onSave={onSaveArtifact ?? (() => {})}
           />
         ) : (
           <ArtifactRenderer
@@ -587,26 +498,6 @@ function ArtifactCanvasPane({
               : {})}
           />
         )}
-        {presenceCursors.length > 0 ? (
-          <div className="shell-artifact-cursor-layer" aria-hidden="true">
-            {presenceCursors.map((cursor) => (
-              <div
-                key={cursor.principalId}
-                className="shell-artifact-cursor"
-                style={{
-                  left: `${cursor.x * 100}%`,
-                  top: `${cursor.y * 100}%`,
-                  color: cursor.color,
-                }}
-              >
-                <span className="shell-artifact-cursor-dot" />
-                <span className="shell-artifact-cursor-label">
-                  {cursor.displayName}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : null}
       </div>
     </div>
   );

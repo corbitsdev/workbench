@@ -18,6 +18,7 @@ import {
   serializeArtifact,
   serializeArtifactListItem,
   UnsupportedUploadTypeError,
+  writeArtifactVersion,
   type ArtifactDb,
   type ArtifactRow,
   type ContentStore,
@@ -86,6 +87,18 @@ export type ArtifactRoutesStore = {
     files: readonly ArtifactUploadInput[],
   ): Promise<readonly SerializedArtifact[]>;
   preview(tenantId: string, artifactId: string): Promise<ArtifactPreviewResult>;
+  /**
+   * Writes a new version of a document-kind artifact's content (CL-8189):
+   * the artifact editor's one save path now that co-edit presence is gone.
+   * Returns `null` for an artifact the tenant can't see, so the route can
+   * answer 404 the same way `get` does.
+   */
+  update(
+    tenantId: string,
+    principalId: string,
+    artifactId: string,
+    content: string,
+  ): Promise<SerializedArtifact | null>;
 };
 
 /** Bare MIME type, stripped of any `; charset=...` parameter. */
@@ -286,6 +299,18 @@ export function createArtifactDbStore(
           : new TextDecoder().decode(download.body);
       return { status: "ok", html };
     },
+    async update(tenantId, principalId, artifactId, content) {
+      const row = await getArtifact(db, artifactId);
+      if (row === null || row.tenantId !== tenantId) return null;
+      await writeArtifactVersion(db, {
+        scope: { tenantId, principalId },
+        artifactId,
+        content,
+      });
+      const written = await getArtifact(db, artifactId);
+      if (written === null) return null;
+      return { ...serializeArtifact(written), content: written.content };
+    },
   };
 }
 
@@ -480,6 +505,40 @@ export function createArtifactRoutes(
     return c.json(row);
   });
 
+  app.put("/:artifactId", deps.requireGrant("asset:*", "write"), async (c) => {
+    const tenant = c.get("tenant");
+    const principal = c.get("principal");
+    const artifactId = c.req.param("artifactId");
+    const body = (await c.req.json().catch(() => null)) as {
+      content?: unknown;
+    } | null;
+    if (body === null || typeof body.content !== "string") {
+      return c.json(
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: "Expected a JSON body with a string `content` field",
+        }),
+        400,
+      );
+    }
+    const updated = await deps.store.update(
+      tenant.id,
+      principal.id,
+      artifactId,
+      body.content,
+    );
+    if (updated === null) {
+      return c.json(
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: "Artifact not found",
+        }),
+        404,
+      );
+    }
+    return c.json(updated);
+  });
+
   return app;
 }
 
@@ -508,5 +567,6 @@ export function createUnavailableArtifactRoutes(
   app.get("/counts", requireGrant("asset:*", "read"), unavailable);
   app.get("/:artifactId/preview", requireGrant("asset:*", "read"), unavailable);
   app.get("/:artifactId", requireGrant("asset:*", "read"), unavailable);
+  app.put("/:artifactId", requireGrant("asset:*", "write"), unavailable);
   return app;
 }
