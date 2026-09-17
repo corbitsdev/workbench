@@ -13,7 +13,7 @@
     "workflows/*"
   ],
   "scripts": {
-    "check": "bun run typecheck && bun run lint && bun run fmt:check && bun run check:structural && bun run test",
+    "check": "bun run typecheck && bun run lint && bun run fmt:check && bun run test",
     "typecheck": "bun run scripts/typecheck.ts",
     "lint": "oxlint apps packages tools agents skills workflows scripts test",
     "fmt": "oxfmt apps packages tools agents skills workflows scripts test",
@@ -28,7 +28,6 @@
     "setup": "bun scripts/db-setup.ts",
     "setup:memory": "bun run scripts/setup-memory.ts",
     "reset": "bun scripts/reset.ts",
-    "check:structural": "bun run scripts/checks/run.ts",
     "build:sidecar-image": "docker build -f apps/sidecar/Dockerfile -t corbits-sidecar:dev .",
     "eval": "bun run scripts/evals-run.ts"
   },

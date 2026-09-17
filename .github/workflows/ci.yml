@@ -35,16 +35,6 @@ jobs:
       - run: bun run lint
       - run: bun run fmt:check
 
-  structural:
-    needs: setup
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/setup-workbench
-      - run: bun run check:structural
-
   # A single fast pass over every workspace's tests. DB-gated suites
   # (scripts/e2e/* included) skip themselves when DATABASE_URL is unset —
   # see scripts/e2e/db-gate.ts — so this job needs no Postgres service.

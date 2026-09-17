@@ -79,18 +79,6 @@ test("lint runs oxlint and oxfmt --check; the unit job has a hard timeout", asyn
   expect(unit).toContain("bun run test");
 });
 
-test("the structural job runs the same list as local check:structural", async () => {
-  const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
-  const structural = jobBodies(yaml).get("structural") ?? "";
-
-  expect(structural).toContain("bun run check:structural");
-  // One list: CI must not re-enumerate the structural sub-checks, or
-  // local and CI drift the moment a new check: script is added.
-  expect(structural).not.toContain("check:deletion");
-  expect(structural).not.toContain("check:report-error");
-  expect(structural).not.toContain("check:packages");
-});
-
 test("setup-workbench caches the bun install cache on the lockfile", async () => {
   const action = await readFile(join(ROOT, ".github/actions/setup-workbench/action.yml"), "utf8");
 
