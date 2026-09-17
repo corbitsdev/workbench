@@ -84,7 +84,7 @@ dialog. The sidebar `+` opens this route. First-run after credential
 does not: `/` hops to Myra's one DM (`openAgentDm` / find-or-reopen).
 There is no parallel Myra home route and no Describe door.
 
-**`/inbox` is gone as a page** (CL-6151). The path stays as a redirect
+**`/inbox` is gone as a page.** The path stays as a redirect
 home so old links still resolve; it is not a live groups inbox.
 
 ## Tables & Lists
@@ -207,7 +207,7 @@ Three named easings cover the system (all sourced from `@corbits/react-ui`'s
   that grows or shrinks _in place_ — the search bar's morph, a rail resizing,
   a composer height change — where overshoot would drag every neighbour in the
   row along with it. This supersedes the earlier reading of `spring` as the
-  search morph's curve (CL-6410 review).
+  search morph's curve.
 
 Named durations are also react-ui tokens: `--duration-micro` (150ms) for a
 hover/pressed state or icon swap, `--duration-standard` (200ms) for a toast or
@@ -313,9 +313,9 @@ Own messages align right; everyone and everything else — other people,
 agents, system notices — aligns left. This is evaluated per viewer, never
 baked into the message itself: a shared bench is multiplayer, so the exact
 same message renders right for the person who sent it and left for every
-other reader of that same bench (CL-6558, reversing an earlier reading of
+other reader of that same bench, reversing an earlier reading of
 the "Workbench UI Overhaul v1" mock that called for a single flat,
-never-mirrored layout).
+never-mirrored layout.
 
 Alignment is the only thing that changes. No chat bubble, no border, no
 background fill on the message itself, and no change to the avatar/name/
@@ -351,7 +351,7 @@ still says Connect.
 GitHub for Code review is PAT-first today: Connect opens a guided
 personal-access-token paste, then the same card flips to pick
 repositories. A GitHub App / hosted OAuth Connect as the welcome mat is
-CL-6343 (out of scope), not the shipped card.
+tracked separately (out of scope), not the shipped card.
 
 The room's own onboarding card renders as a scene, not a member's
 message: no author row, the job as its title with the promise beneath,
