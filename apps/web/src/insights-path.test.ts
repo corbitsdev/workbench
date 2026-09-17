@@ -33,9 +33,7 @@ describe("parseInsightsPath", () => {
   });
 
   test("a malformed escape on a workbench deep link falls back to landing, not a throw", () => {
-    expect(() =>
-      parseInsightsPath("/insights/workbench/%E0%A4%A"),
-    ).not.toThrow();
+    expect(() => parseInsightsPath("/insights/workbench/%E0%A4%A")).not.toThrow();
     expect(parseInsightsPath("/insights/workbench/%E0%A4%A")).toEqual({
       mode: "landing",
       runId: null,

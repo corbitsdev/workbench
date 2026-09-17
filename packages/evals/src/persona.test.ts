@@ -19,9 +19,7 @@ test("personaAnswer builds a prompt from only the brief and the last agent reply
     seenPrompt = prompt;
     return { text: "every weekday morning at 8am" };
   };
-  const history = [
-    { human: "set up my digest", agentReply: "Happy to help — what topic?" },
-  ];
+  const history = [{ human: "set up my digest", agentReply: "Happy to help — what topic?" }];
 
   await personaAnswer(brief, "What cadence works for you?", history, call);
 
@@ -35,12 +33,7 @@ test("personaAnswer builds a prompt from only the brief and the last agent reply
 
 test("personaAnswer returns the persona's reply text as a message", async () => {
   const call = async () => ({ text: "every weekday morning at 8am" });
-  const reply = await personaAnswer(
-    brief,
-    "What cadence works for you?",
-    [],
-    call,
-  );
+  const reply = await personaAnswer(brief, "What cadence works for you?", [], call);
   expect(reply).toEqual({
     kind: "message",
     text: "every weekday morning at 8am",
@@ -49,22 +42,12 @@ test("personaAnswer returns the persona's reply text as a message", async () => 
 
 test("personaAnswer maps an exact DONE response to a done reply", async () => {
   const call = async () => ({ text: "DONE" });
-  const reply = await personaAnswer(
-    brief,
-    "Great, I'll set that up now.",
-    [],
-    call,
-  );
+  const reply = await personaAnswer(brief, "Great, I'll set that up now.", [], call);
   expect(reply).toEqual({ kind: "done" });
 });
 
 test("personaAnswer maps a DONE response with surrounding whitespace to a done reply", async () => {
   const call = async () => ({ text: "  DONE\n" });
-  const reply = await personaAnswer(
-    brief,
-    "All set, running it now.",
-    [],
-    call,
-  );
+  const reply = await personaAnswer(brief, "All set, running it now.", [], call);
   expect(reply).toEqual({ kind: "done" });
 });

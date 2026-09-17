@@ -29,9 +29,7 @@ export function renderReviewPrompt(diff: PullRequestDiff): string {
     `Files changed: ${String(diff.files.length)}`,
     "",
     "Description:",
-    diff.description.trim().length === 0
-      ? "(none given)"
-      : diff.description.trim(),
+    diff.description.trim().length === 0 ? "(none given)" : diff.description.trim(),
     "",
   ].join("\n");
 
@@ -47,9 +45,7 @@ export function renderReviewPrompt(diff: PullRequestDiff): string {
       continue;
     }
     const body =
-      file.patch === undefined
-        ? "(no patch available for this file)"
-        : renderPatch(file.patch);
+      file.patch === undefined ? "(no patch available for this file)" : renderPatch(file.patch);
     spent += body.length;
     rendered.push(`${heading}\n${body}`);
   }

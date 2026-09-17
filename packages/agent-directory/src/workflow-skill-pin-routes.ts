@@ -73,11 +73,7 @@ function definitionNotFound(definitionId: string) {
 function hostGuardedRow(
   row: { readonly name: string; readonly assetId: string | null } | undefined,
 ): row is { readonly name: string; readonly assetId: string } {
-  return (
-    row !== undefined &&
-    row.assetId !== null &&
-    !isWorkbenchHostDefinitionName(row.name)
-  );
+  return row !== undefined && row.assetId !== null && !isWorkbenchHostDefinitionName(row.name);
 }
 
 const PinBody = type({
@@ -107,10 +103,7 @@ export function createWorkflowSkillPinRoutes(
   // conflict, never a server fault.
   app.onError((err, c) => {
     if (err instanceof RetiredWorkflowEnvelopeError) {
-      return c.json(
-        makeErrorEnvelope({ code: "conflict", userMessage: err.message }),
-        409,
-      );
+      return c.json(makeErrorEnvelope({ code: "conflict", userMessage: err.message }), 409);
     }
     if (err instanceof WorkflowAuthorError) {
       return c.json(
@@ -123,17 +116,14 @@ export function createWorkflowSkillPinRoutes(
 
   app.use("*", async (c, next) => {
     const authHeader = c.req.header("authorization") ?? "";
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length)
-      : "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
     const address = c.req.header("x-workflow-run-address") ?? "";
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
       return c.json(
         makeErrorEnvelope({
           code: "unauthorized",
-          userMessage:
-            "Missing or unrecognized sidecar bearer token / run address",
+          userMessage: "Missing or unrecognized sidecar bearer token / run address",
         }),
         401,
       );
@@ -174,17 +164,11 @@ export function createWorkflowSkillPinRoutes(
         // stanza is the source of truth, so a concurrent writer's pins
         // survive the retry instead of being clobbered by a stale read.
         const skills = readPinnedSkillNames(snapshot);
-        const nextSkills = skills.includes(body.skillName)
-          ? skills
-          : [...skills, body.skillName];
+        const nextSkills = skills.includes(body.skillName) ? skills : [...skills, body.skillName];
         return {
           workflowJson: reindexPinnedSkills(
             snapshot,
-            await deps.skillIndex.resolve(
-              scope.tenantId,
-              scope.principalId,
-              nextSkills,
-            ),
+            await deps.skillIndex.resolve(scope.tenantId, scope.principalId, nextSkills),
           ),
           message: `Pin ${body.skillName} skill to ${row.name}`,
           result: { skills: nextSkills },

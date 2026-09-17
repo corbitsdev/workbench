@@ -66,9 +66,7 @@ export class NativeWorkflowDeploymentMissingError extends Error {
       "This workflow has multiple steps and must be deployed " +
       "(POST /workflows/deployments) before a routine can launch it — " +
       "deploy it once, then run this routine again.";
-    super(
-      `definition ${definitionId} has no live native deployment (${guidance})`,
-    );
+    super(`definition ${definitionId} has no live native deployment (${guidance})`);
     this.name = "NativeWorkflowDeploymentMissingError";
     this.definitionId = definitionId;
     this.guidance = guidance;
@@ -132,11 +130,7 @@ export async function triggerNativeWorkflowRoutineRun(
     .orderBy(desc(workflowRun.createdAt))
     .limit(1);
 
-  if (
-    anchor === undefined ||
-    anchor.address === null ||
-    !isLiveWorkflowRunStatus(anchor.status)
-  ) {
+  if (anchor === undefined || anchor.address === null || !isLiveWorkflowRunStatus(anchor.status)) {
     throw new NativeWorkflowDeploymentMissingError(params.definitionId);
   }
   const address = anchor.address;
@@ -168,10 +162,7 @@ export async function triggerNativeWorkflowRoutineRun(
     kind: "conversation",
     text: params.content,
   });
-  const signature = await createDetachedSignatureFromProvider(
-    signedContent,
-    crypto,
-  );
+  const signature = await createDetachedSignatureFromProvider(signedContent, crypto);
   const rawMessage = assembleMessage(headers, signedContent, signature);
   const base64 = base64Encode(rawMessage);
 

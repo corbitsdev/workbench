@@ -49,9 +49,7 @@ describe("app default theme", () => {
       );
     });
 
-    expect(
-      container.querySelector('[data-testid="resolved-mode"]')?.textContent,
-    ).toBe("light");
+    expect(container.querySelector('[data-testid="resolved-mode"]')?.textContent).toBe("light");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     expect(document.documentElement.style.colorScheme).toBe("light");
 

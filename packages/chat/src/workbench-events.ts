@@ -155,9 +155,7 @@ export interface WorkbenchSubscriberRegistry {
  * upstream subscription is released only once the last local subscriber
  * for that workbench goes away.
  */
-export function createPlatformWorkbenchFanout(
-  platform: WorkbenchEvents,
-): WorkbenchEvents {
+export function createPlatformWorkbenchFanout(platform: WorkbenchEvents): WorkbenchEvents {
   interface Entry {
     subscribers: Set<WorkbenchSubscriber>;
     unsubscribeUpstream: () => void;
@@ -169,12 +167,9 @@ export function createPlatformWorkbenchFanout(
       let entry = entriesByWorkbench.get(workbenchId);
       if (entry === undefined) {
         const subscribers = new Set<WorkbenchSubscriber>();
-        const unsubscribeUpstream = platform.subscribeToWorkbench(
-          workbenchId,
-          (event) => {
-            for (const subscriber of subscribers) subscriber(event);
-          },
-        );
+        const unsubscribeUpstream = platform.subscribeToWorkbench(workbenchId, (event) => {
+          for (const subscriber of subscribers) subscriber(event);
+        });
         entry = { subscribers, unsubscribeUpstream };
         entriesByWorkbench.set(workbenchId, entry);
       }
@@ -437,12 +432,9 @@ export function bridgeWorkbenchStream(input: {
   // itself is still a failure worth knowing about, so it's reported
   // rather than swallowed.
   try {
-    unsubscribePlatform = input.platform.subscribeToWorkbench(
-      input.workbenchId,
-      (event) => {
-        enqueue(() => deliverEvent(event));
-      },
-    );
+    unsubscribePlatform = input.platform.subscribeToWorkbench(input.workbenchId, (event) => {
+      enqueue(() => deliverEvent(event));
+    });
   } catch (error) {
     reportError(error, {
       operation: "chat.workbenchStream.platformSubscribe",

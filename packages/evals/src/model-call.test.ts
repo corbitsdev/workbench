@@ -7,18 +7,12 @@ test("callEvalModel posts to the Anthropic Messages API and extracts the text bl
   const calls: { url: string; init: RequestInit }[] = [];
   const fetchImpl: FetchLike = async (url, init) => {
     calls.push({ url, init });
-    return new Response(
-      JSON.stringify({ content: [{ type: "text", text: "hello there" }] }),
-      { status: 200 },
-    );
+    return new Response(JSON.stringify({ content: [{ type: "text", text: "hello there" }] }), {
+      status: 200,
+    });
   };
 
-  const result = await callEvalModel(
-    "say hi",
-    "test-key",
-    undefined,
-    fetchImpl,
-  );
+  const result = await callEvalModel("say hi", "test-key", undefined, fetchImpl);
 
   expect(result.text).toBe("hello there");
   expect(calls).toHaveLength(1);
@@ -36,23 +30,13 @@ test("callEvalModel honors an explicit model override", async () => {
     new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), {
       status: 200,
     });
-  const result = await callEvalModel(
-    "prompt",
-    "test-key",
-    "claude-3-opus-20240229",
-    fetchImpl,
-  );
+  const result = await callEvalModel("prompt", "test-key", "claude-3-opus-20240229", fetchImpl);
   expect(result.text).toBe("ok");
 });
 
 test("callEvalModel returns empty text when no text block is present", async () => {
   const fetchImpl: FetchLike = async () =>
     new Response(JSON.stringify({ content: [] }), { status: 200 });
-  const result = await callEvalModel(
-    "prompt",
-    "test-key",
-    undefined,
-    fetchImpl,
-  );
+  const result = await callEvalModel("prompt", "test-key", undefined, fetchImpl);
   expect(result.text).toBe("");
 });

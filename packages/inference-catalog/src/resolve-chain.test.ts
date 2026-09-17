@@ -28,9 +28,9 @@ function policy(overrides: Partial<BenchModelPolicy>): BenchModelPolicy {
 
 describe("resolveModelChain: the need", () => {
   test("a concept nobody shipped is an error that names the real ones", () => {
-    expect(() =>
-      resolveModelChain(input({ need: { concept: "vibes-based" } })),
-    ).toThrow(UnknownConceptError);
+    expect(() => resolveModelChain(input({ need: { concept: "vibes-based" } }))).toThrow(
+      UnknownConceptError,
+    );
     try {
       resolveModelChain(input({ need: { concept: "vibes-based" } }));
     } catch (err) {
@@ -60,9 +60,7 @@ describe("resolveModelChain: the need", () => {
     );
     expect(chain.concept).toBeNull();
     expect(chain.entries.map((entry) => entry.offeringId)).toEqual(["o1"]);
-    expect(chain.excluded).toEqual([
-      { offeringId: "o2", reason: "missing-capabilities" },
-    ]);
+    expect(chain.excluded).toEqual([{ offeringId: "o2", reason: "missing-capabilities" }]);
   });
 });
 
@@ -82,9 +80,7 @@ describe("resolveModelChain: what qualifies", () => {
       }),
     );
     expect(chain.entries).toEqual([]);
-    expect(chain.excluded).toEqual([
-      { offeringId: "o1", reason: "missing-capabilities" },
-    ]);
+    expect(chain.excluded).toEqual([{ offeringId: "o1", reason: "missing-capabilities" }]);
   });
 });
 
@@ -105,9 +101,7 @@ describe("resolveModelChain: policy selectors", () => {
   ];
 
   test("deny by exact model name", () => {
-    const chain = resolveModelChain(
-      input({ offerings, policy: policy({ deny: ["alpha"] }) }),
-    );
+    const chain = resolveModelChain(input({ offerings, policy: policy({ deny: ["alpha"] }) }));
     expect(chain.entries.map((entry) => entry.canonicalName)).toEqual(["beta"]);
     expect(chain.policyApplied.deny).toBe(true);
   });
@@ -116,26 +110,18 @@ describe("resolveModelChain: policy selectors", () => {
     const chain = resolveModelChain(
       input({ offerings, policy: policy({ deny: ["provider:globex"] }) }),
     );
-    expect(chain.entries.map((entry) => entry.canonicalName)).toEqual([
-      "alpha",
-    ]);
+    expect(chain.entries.map((entry) => entry.canonicalName)).toEqual(["alpha"]);
   });
 
   test("deny one deployment of a model, by provider/model", () => {
-    const chain = resolveModelChain(
-      input({ offerings, policy: policy({ deny: ["acme/alpha"] }) }),
-    );
+    const chain = resolveModelChain(input({ offerings, policy: policy({ deny: ["acme/alpha"] }) }));
     expect(chain.entries.map((entry) => entry.offeringId)).toEqual(["o2"]);
   });
 
   test("a non-empty allow list is the whole world", () => {
-    const chain = resolveModelChain(
-      input({ offerings, policy: policy({ allow: ["beta"] }) }),
-    );
+    const chain = resolveModelChain(input({ offerings, policy: policy({ allow: ["beta"] }) }));
     expect(chain.entries.map((entry) => entry.canonicalName)).toEqual(["beta"]);
-    expect(chain.excluded).toEqual([
-      { offeringId: "o1", reason: "outside-policy-allow" },
-    ]);
+    expect(chain.excluded).toEqual([{ offeringId: "o1", reason: "outside-policy-allow" }]);
   });
 
   test("an empty allow list constrains nothing", () => {
@@ -177,22 +163,14 @@ describe("resolveModelChain: price and ordering", () => {
 
   test("cheapest first uses the concept's own token mix", () => {
     const chain = resolveModelChain(input({ offerings, pricing: prices }));
-    expect(chain.entries.map((entry) => entry.offeringId)).toEqual([
-      "cheap",
-      "expensive",
-    ]);
+    expect(chain.entries.map((entry) => entry.offeringId)).toEqual(["cheap", "expensive"]);
     expect(chain.entries[0]?.price.inputUsdPerMTok).toBeCloseTo(0.05, 8);
     expect(chain.entries[0]?.referenceCostUsd).toBeCloseTo(0.06, 8);
   });
 
   test("catalog order puts the catalog's own priority first", () => {
-    const chain = resolveModelChain(
-      input({ offerings, pricing: prices, order: "catalog" }),
-    );
-    expect(chain.entries.map((entry) => entry.offeringId)).toEqual([
-      "expensive",
-      "cheap",
-    ]);
+    const chain = resolveModelChain(input({ offerings, pricing: prices, order: "catalog" }));
+    expect(chain.entries.map((entry) => entry.offeringId)).toEqual(["expensive", "cheap"]);
   });
 
   test("an unpriced model sorts behind every priced one and is never called free", () => {
@@ -262,11 +240,7 @@ describe("resolveModelChain: price and ordering", () => {
         ],
       }),
     );
-    expect(chain.entries.map((entry) => entry.offeringId)).toEqual([
-      "m",
-      "a",
-      "z",
-    ]);
+    expect(chain.entries.map((entry) => entry.offeringId)).toEqual(["m", "a", "z"]);
   });
 });
 
@@ -300,18 +274,13 @@ describe("resolveModelChain: ceilings", () => {
     const chain = resolveModelChain(
       input({ offerings: [overCeiling, withinCeiling], pricing: prices }),
     );
-    expect(chain.entries.map((entry) => entry.offeringId)).toEqual([
-      "thrifty",
-      "lavish",
-    ]);
+    expect(chain.entries.map((entry) => entry.offeringId)).toEqual(["thrifty", "lavish"]);
     expect(chain.entries[0]?.overCeiling).toBe(false);
     expect(chain.entries[1]?.overCeiling).toBe(true);
   });
 
   test("a bench with only an over-ceiling model still gets a chain", () => {
-    const chain = resolveModelChain(
-      input({ offerings: [overCeiling], pricing: prices }),
-    );
+    const chain = resolveModelChain(input({ offerings: [overCeiling], pricing: prices }));
     expect(chain.entries.map((entry) => entry.offeringId)).toEqual(["lavish"]);
     expect(chain.entries[0]?.overCeiling).toBe(true);
   });
@@ -329,9 +298,7 @@ describe("resolveModelChain: ceilings", () => {
       }),
     );
     expect(chain.entries.map((entry) => entry.offeringId)).toEqual(["thrifty"]);
-    expect(chain.excluded).toEqual([
-      { offeringId: "lavish", reason: "over-bench-ceiling" },
-    ]);
+    expect(chain.excluded).toEqual([{ offeringId: "lavish", reason: "over-bench-ceiling" }]);
     expect(chain.policyApplied.ceiling).toBe("hard");
   });
 
@@ -394,9 +361,7 @@ describe("resolveModelChain: provider preference", () => {
         }),
       }),
     );
-    expect(chain.entries.map((entry) => entry.providerName)).toEqual([
-      "globex",
-    ]);
+    expect(chain.entries.map((entry) => entry.providerName)).toEqual(["globex"]);
     expect(chain.policyApplied.providerPreference).toBe("pin");
   });
 
@@ -409,10 +374,7 @@ describe("resolveModelChain: provider preference", () => {
         }),
       }),
     );
-    expect(chain.entries.map((entry) => entry.providerName)).toEqual([
-      "globex",
-      "acme",
-    ]);
+    expect(chain.entries.map((entry) => entry.providerName)).toEqual(["globex", "acme"]);
   });
 });
 
@@ -447,10 +409,7 @@ describe("resolveModelChain: the chain itself", () => {
       }),
     );
     expect(chain.diversified).toBe(true);
-    expect(chain.entries.map((entry) => entry.providerName)).toEqual([
-      "acme",
-      "globex",
-    ]);
+    expect(chain.entries.map((entry) => entry.providerName)).toEqual(["acme", "globex"]);
   });
 
   test("a single-provider bench is not falsely diversified", () => {
@@ -492,9 +451,7 @@ describe("resolveModelChain: the chain itself", () => {
       pricing: [],
       policy: EMPTY_POLICY,
     });
-    expect(chain.entries.map((entry) => entry.canonicalName)).toEqual([
-      "only-model",
-    ]);
+    expect(chain.entries.map((entry) => entry.canonicalName)).toEqual(["only-model"]);
     expect(chain.policyApplied).toEqual({
       allow: false,
       deny: false,
@@ -518,9 +475,7 @@ describe("resolveModelChain: the chain itself", () => {
       }),
     );
     expect(chain.entries).toEqual([]);
-    expect(chain.excluded).toEqual([
-      { offeringId: "o1", reason: "missing-capabilities" },
-    ]);
+    expect(chain.excluded).toEqual([{ offeringId: "o1", reason: "missing-capabilities" }]);
   });
 });
 
@@ -551,10 +506,7 @@ describe("chainToModelRequirements", () => {
       }),
     );
     const requirements = chainToModelRequirements(chain, null);
-    expect(requirements.map((requirement) => requirement.model)).toEqual([
-      "other",
-      "shared",
-    ]);
+    expect(requirements.map((requirement) => requirement.model)).toEqual(["other", "shared"]);
     expect(requirements[0]?.capabilities).toEqual(["plain-text"]);
   });
 

@@ -56,10 +56,7 @@ function runViewPath(tenantId: string, runId: string): string {
  * can hold the grant to resolve an approval without holding the read grant
  * on its run.
  */
-async function fetchAgentName(
-  tenantId: string,
-  runId: string,
-): Promise<string> {
+async function fetchAgentName(tenantId: string, runId: string): Promise<string> {
   const response = await fetch(runViewPath(tenantId, runId), {
     headers: { accept: "application/json" },
   });
@@ -85,9 +82,7 @@ function composeApproval(row: ApprovalRow, agentName: string): ApprovalDisplay {
  * them. One naming read per distinct run, cached by react-query, so a run
  * with several pending asks is named once.
  */
-export function usePendingApprovals(
-  tenantId: string | null,
-): APIQuery<readonly PendingApproval[]> {
+export function usePendingApprovals(tenantId: string | null): APIQuery<readonly PendingApproval[]> {
   const { memberships } = useBench();
   const list = useAPIQuery(
     tenantId === null ? "" : pendingApprovalsPath(tenantId),
@@ -111,10 +106,7 @@ export function usePendingApprovals(
   if (agentNames.some((name) => name.isPending)) return { kind: "loading" };
 
   const agentNameByRunId = new Map(
-    runIds.map((runId, index) => [
-      runId,
-      agentNames[index]?.data ?? UNNAMED_AGENT,
-    ]),
+    runIds.map((runId, index) => [runId, agentNames[index]?.data ?? UNNAMED_AGENT]),
   );
   const membership =
     memberships.kind === "ready"
@@ -137,9 +129,7 @@ export function usePendingApprovals(
  * (no bench selected yet, or the read hasn't resolved), so a caller never
  * mistakes "still loading" for "zero pending."
  */
-export function usePendingApprovalCount(
-  tenantId: string | null,
-): number | null {
+export function usePendingApprovalCount(tenantId: string | null): number | null {
   const list = useAPIQuery(
     tenantId === null ? "" : pendingApprovalsPath(tenantId),
     TenantApprovalsSchema,
@@ -163,10 +153,9 @@ export async function getApprovalDetail(
   tenantId: string,
   approvalId: string,
 ): Promise<ApprovalDetailResult> {
-  const response = await fetch(
-    `/api/tenants/${tenantId}/approvals/${approvalId}`,
-    { headers: { accept: "application/json" } },
-  );
+  const response = await fetch(`/api/tenants/${tenantId}/approvals/${approvalId}`, {
+    headers: { accept: "application/json" },
+  });
   if (response.status === 403) return { kind: "forbidden" };
   if (response.status === 404) return { kind: "not-found" };
   if (!response.ok) {

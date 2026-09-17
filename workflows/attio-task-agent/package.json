@@ -1,31 +1,21 @@
 {
   "name": "@corbits/attio-task-agent-workflow",
-  "description": "Works one Attio task end to end: grounds itself in the CRM and past calls read-only, drafts what the task needs, and writes back to Attio only once a human approves",
   "version": "0.0.1",
+  "description": "Works one Attio task end to end: grounds itself in the CRM and past calls read-only, drafts what the task needs, and writes back to Attio only once a human approves",
   "license": "LGPL-2.1-or-later",
-  "type": "module",
-  "corbits": {
-    "workflow": {
-      "assetName": "attio-task-agent",
-      "displayName": "Attio task agent",
-      "automatable": false
-    }
-  },
-  "interchange": {
-    "workflow": "./src/index.ts"
-  },
-  "exports": {
-    ".": "./src/index.ts"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "workflows/attio-task-agent"
   },
   "files": [
     "src",
     "LICENSE",
     "README.md"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "workflows/attio-task-agent"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -37,13 +27,23 @@
   "dependencies": {
     "arktype": "catalog:"
   },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
   "peerDependencies": {
     "@intx/agent": "0.3.0",
     "@intx/types": "0.3.0",
     "@intx/workflow": "0.3.0"
   },
-  "devDependencies": {
-    "@types/bun": "catalog:",
-    "typescript": "catalog:"
+  "corbits": {
+    "workflow": {
+      "assetName": "attio-task-agent",
+      "displayName": "Attio task agent",
+      "automatable": false
+    }
+  },
+  "interchange": {
+    "workflow": "./src/index.ts"
   }
 }

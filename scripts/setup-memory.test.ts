@@ -79,9 +79,7 @@ describe("localDevMemoryEmbedEnv", () => {
   });
 
   test("does not inject when native Ollama is absent", () => {
-    expect(
-      localDevMemoryEmbedEnv({}, { hasNativeOllama: false }),
-    ).toBeUndefined();
+    expect(localDevMemoryEmbedEnv({}, { hasNativeOllama: false })).toBeUndefined();
   });
 });
 
@@ -123,8 +121,7 @@ describe("embedEnvKeysForDotenv", () => {
 
 describe("applyEnvKeysToDotenvContents", () => {
   test("appends missing keys and ignores commented-out lines", () => {
-    const existing =
-      "# EMBED_BASE_URL=http://example\nDATABASE_URL=postgres://x\n";
+    const existing = "# EMBED_BASE_URL=http://example\nDATABASE_URL=postgres://x\n";
     const { next, added } = applyEnvKeysToDotenvContents(existing, {
       EMBED_BASE_URL: "http://localhost:11434",
       EMBED_MODEL: "nomic-embed-text",

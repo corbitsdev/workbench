@@ -38,18 +38,13 @@ export function mentionedParticipants(
   participants: readonly ParticipantRecord[],
 ): string[] {
   const texts = parts
-    .filter(
-      (part): part is Extract<PartType, { kind: "text" }> =>
-        part.kind === "text",
-    )
+    .filter((part): part is Extract<PartType, { kind: "text" }> => part.kind === "text")
     .map((part) => part.text);
   if (texts.length === 0) return [];
   return participants
     .filter((participant) => isAgentAddress(participant.address))
     .filter((participant) => {
-      const mentionPattern = new RegExp(
-        `@${escapeForRegExp(participant.handle)}\\b`,
-      );
+      const mentionPattern = new RegExp(`@${escapeForRegExp(participant.handle)}\\b`);
       return texts.some((text) => mentionPattern.test(text));
     })
     .map((participant) => participant.address);

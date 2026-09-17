@@ -23,8 +23,7 @@ type ToastFn = typeof actualReactUi.toast;
  * scope; `mockClear()` it between tests the way any other spy is cleared.
  */
 export function spyOnReactUiToast(): ReturnType<typeof mock<ToastFn>> {
-  const spy = mock(((...args: Parameters<ToastFn>) =>
-    realToast(...args)) as ToastFn);
+  const spy = mock(((...args: Parameters<ToastFn>) => realToast(...args)) as ToastFn);
   // `toast` carries its own variants (`toast.error` and friends); the spy
   // stands in for the whole callable, so it must carry them too.
   Object.assign(spy, realToast);

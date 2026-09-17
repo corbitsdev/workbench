@@ -70,19 +70,14 @@ function runsBody(count: number): unknown {
   };
 }
 
-function stubFetch(options?: {
-  readonly runCount?: number;
-  readonly failRuns?: boolean;
-}): void {
+function stubFetch(options?: { readonly runCount?: number; readonly failRuns?: boolean }): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
-    if (path.includes("/api/me/principals"))
-      return Promise.resolve(json(membership));
+    if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
     if (path.includes("/agent-definitions/visible"))
       return Promise.resolve(json({ definitions: [] }));
     if (path.includes("/workflows/runs")) {
-      if (options?.failRuns === true)
-        return Promise.resolve(json({ error: "unavailable" }, 500));
+      if (options?.failRuns === true) return Promise.resolve(json({ error: "unavailable" }, 500));
       return Promise.resolve(json(runsBody(options?.runCount ?? 0)));
     }
     return Promise.resolve(json({ items: [] }));
@@ -90,11 +85,9 @@ function stubFetch(options?: {
 }
 
 function footerRowLabelsFromMarkup(markup: string): string[] {
-  return [
-    ...markup.matchAll(
-      /shell-sidebar-footer-row[\s\S]*?<span>([^<]*)<\/span>/g,
-    ),
-  ].map((match) => match[1] ?? "");
+  return [...markup.matchAll(/shell-sidebar-footer-row[\s\S]*?<span>([^<]*)<\/span>/g)].map(
+    (match) => match[1] ?? "",
+  );
 }
 
 function footerRowLabelsFromDom(container: HTMLElement): string[] {
@@ -125,12 +118,7 @@ async function mountSidebar(
     root.render(
       <TestQueryProvider>
         <BenchProvider>
-          <Sidebar
-            path={path}
-            user={user}
-            onNavigate={onNavigate}
-            onSignOut={noop}
-          />
+          <Sidebar path={path} user={user} onNavigate={onNavigate} onSignOut={noop} />
         </BenchProvider>
       </TestQueryProvider>,
     );
@@ -173,9 +161,7 @@ describe("Sidebar", () => {
       );
     });
 
-    const newButton = container.querySelector<HTMLButtonElement>(
-      '[aria-label="New workbench"]',
-    );
+    const newButton = container.querySelector<HTMLButtonElement>('[aria-label="New workbench"]');
     await act(async () => {
       newButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
@@ -278,9 +264,9 @@ describe("Sidebar", () => {
       "Plugins",
       "Insights",
     ]);
-    const insights = [
-      ...container.querySelectorAll(".shell-sidebar-footer-row"),
-    ].find((row) => row.textContent?.includes("Insights") === true);
+    const insights = [...container.querySelectorAll(".shell-sidebar-footer-row")].find(
+      (row) => row.textContent?.includes("Insights") === true,
+    );
     expect(insights?.getAttribute("aria-current")).toBe("page");
     act(() => root.unmount());
     container.remove();
@@ -318,8 +304,7 @@ describe("Sidebar", () => {
     function stubWorkbenches(): void {
       globalThis.fetch = ((input: RequestInfo | URL) => {
         const path = typeof input === "string" ? input : String(input);
-        if (path.includes("/api/me/principals"))
-          return Promise.resolve(json(membership));
+        if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
         if (path.includes("/chat/workbenches?kind=workbench"))
           return Promise.resolve(json({ items: [workbench] }));
         if (path.includes("/chat/workbenches?kind=chat"))
@@ -347,12 +332,7 @@ describe("Sidebar", () => {
         root.render(
           <TestQueryProvider>
             <BenchProvider>
-              <Sidebar
-                path={path}
-                user={user}
-                onNavigate={onNavigate}
-                onSignOut={noop}
-              />
+              <Sidebar path={path} user={user} onNavigate={onNavigate} onSignOut={noop} />
             </BenchProvider>
           </TestQueryProvider>,
         );
@@ -370,15 +350,11 @@ describe("Sidebar", () => {
       test(`renders the same workbench rows on ${path} as on a chat route, with none active`, async () => {
         const { container, root } = await mountAt(path);
 
-        expect(
-          container.querySelector('[aria-label="Search agents and channels"]'),
-        ).not.toBeNull();
+        expect(container.querySelector('[aria-label="Search agents and channels"]')).not.toBeNull();
         const row = container.querySelector(".shell-ch-row");
         expect(row).not.toBeNull();
         expect(row?.textContent).toContain("Research brief");
-        expect(
-          container.querySelector('.shell-ch-row[data-active="true"]'),
-        ).toBeNull();
+        expect(container.querySelector('.shell-ch-row[data-active="true"]')).toBeNull();
 
         act(() => root.unmount());
         container.remove();
@@ -387,9 +363,7 @@ describe("Sidebar", () => {
 
     test("selecting a row from a global page navigates to that conversation", async () => {
       const navigated: string[] = [];
-      const { container, root } = await mountAt("/plugins", (to) =>
-        navigated.push(to),
-      );
+      const { container, root } = await mountAt("/plugins", (to) => navigated.push(to));
 
       const row = container.querySelector<HTMLButtonElement>(".shell-ch-row");
       await act(async () => {
@@ -431,25 +405,20 @@ describe("Sidebar", () => {
     function stubAgentSidebar(): void {
       globalThis.fetch = ((input: RequestInfo | URL, _init?: RequestInit) => {
         const path = typeof input === "string" ? input : String(input);
-        if (path.includes("/api/me/principals"))
-          return Promise.resolve(json(membership));
+        if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
         if (path.includes("/chat/workbenches?kind=workbench"))
           return Promise.resolve(json({ items: [workbench] }));
         if (path.includes("/chat/workbenches?kind=chat"))
           return Promise.resolve(json({ items: [] }));
         if (path.includes("/agent-definitions/visible"))
-          return Promise.resolve(
-            json({ definitions: [ownAgent, inheritedAgent] }),
-          );
+          return Promise.resolve(json({ definitions: [ownAgent, inheritedAgent] }));
         if (path.includes("/approvals"))
           return Promise.resolve(json({ data: [], nextCursor: null }));
         return Promise.resolve(json({ items: [] }));
       }) as typeof fetch;
     }
 
-    async function mountSidebar(
-      onNavigate: (to: string) => void = noop,
-    ): Promise<{
+    async function mountSidebar(onNavigate: (to: string) => void = noop): Promise<{
       container: HTMLDivElement;
       root: ReturnType<typeof createRoot>;
     }> {
@@ -460,12 +429,7 @@ describe("Sidebar", () => {
         root.render(
           <TestQueryProvider>
             <BenchProvider>
-              <Sidebar
-                path="/w"
-                user={user}
-                onNavigate={onNavigate}
-                onSignOut={noop}
-              />
+              <Sidebar path="/w" user={user} onNavigate={onNavigate} onSignOut={noop} />
             </BenchProvider>
           </TestQueryProvider>,
         );
@@ -486,9 +450,7 @@ describe("Sidebar", () => {
       const labels = [...container.querySelectorAll(".shell-ch-row")].map(
         (row) => row.textContent ?? "",
       );
-      expect(labels.some((label) => label.includes("Research brief"))).toBe(
-        true,
-      );
+      expect(labels.some((label) => label.includes("Research brief"))).toBe(true);
       expect(labels.some((label) => label.includes("Outreach"))).toBe(false);
       expect(labels.some((label) => label.includes("Researcher"))).toBe(false);
       expect(container.querySelector("[data-ctx-agent]")).toBeNull();
@@ -517,14 +479,12 @@ describe("Sidebar", () => {
     };
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
-      if (path.includes("/api/me/principals"))
-        return Promise.resolve(json(membership));
+      if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
       if (path.includes("/chat/workbenches?kind=workbench"))
         return Promise.resolve(json({ items: [channel] }));
       if (path.includes("/chat/workbenches?kind=chat"))
         return Promise.resolve(json({ items: [dm] }));
-      if (path.includes("/approvals"))
-        return Promise.resolve(json({ data: [], nextCursor: null }));
+      if (path.includes("/approvals")) return Promise.resolve(json({ data: [], nextCursor: null }));
       if (path.includes("/agent-definitions/visible"))
         return Promise.resolve(json({ definitions: [] }));
       return Promise.resolve(json({ items: [] }));
@@ -550,14 +510,10 @@ describe("Sidebar", () => {
     }
 
     const agentsHeading = container.querySelector("#sidebar-agents-heading");
-    const channelsHeading = container.querySelector(
-      "#sidebar-channels-heading",
-    );
+    const channelsHeading = container.querySelector("#sidebar-channels-heading");
     expect(agentsHeading).toBeNull();
     expect(channelsHeading).toBeNull();
-    expect(container.querySelectorAll(".shell-panel-list-label")).toHaveLength(
-      0,
-    );
+    expect(container.querySelectorAll(".shell-panel-list-label")).toHaveLength(0);
     const wraps = [...container.querySelectorAll(".shell-ch-row-wrap")];
     expect(wraps.map((row) => row.getAttribute("data-ctx-workbench"))).toEqual([
       "ch_room",
@@ -663,28 +619,19 @@ describe("Sidebar", () => {
         root.render(
           <TestQueryProvider>
             <BenchProvider>
-              <Sidebar
-                path="/w"
-                user={user}
-                onNavigate={noop}
-                onSignOut={onSignOut}
-              />
+              <Sidebar path="/w" user={user} onNavigate={noop} onSignOut={onSignOut} />
             </BenchProvider>
           </TestQueryProvider>,
         );
       });
 
-      const trigger = container.querySelector<HTMLButtonElement>(
-        ".shell-sidebar-account-btn",
-      );
+      const trigger = container.querySelector<HTMLButtonElement>(".shell-sidebar-account-btn");
       expect(trigger).not.toBeNull();
       expect(trigger?.textContent).toContain(user.name);
       await act(async () => {
         // Radix's dropdown-menu trigger opens on `pointerdown`, not
         // `click` — mirroring how a real mouse interaction reaches it.
-        trigger?.dispatchEvent(
-          new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
-        );
+        trigger?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
       });
       for (let i = 0; i < 5; i++) {
         await act(async () => {
@@ -747,9 +694,9 @@ describe("Sidebar", () => {
         signedOut = true;
       });
 
-      const logOutItem = [
-        ...document.querySelectorAll('[role="menuitem"]'),
-      ].find((item) => item.textContent?.includes("Log out") === true);
+      const logOutItem = [...document.querySelectorAll('[role="menuitem"]')].find(
+        (item) => item.textContent?.includes("Log out") === true,
+      );
       expect(logOutItem).not.toBeUndefined();
       expect(logOutItem?.className).toContain("text-destructive");
 
@@ -785,9 +732,7 @@ describe("Sidebar", () => {
       );
     });
 
-    const settingsButton = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Settings"]',
-    );
+    const settingsButton = container.querySelector<HTMLButtonElement>('[aria-label="Settings"]');
     expect(settingsButton).not.toBeNull();
     await act(async () => {
       settingsButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

@@ -109,9 +109,7 @@ function commonSuffixLengths(
     if (row === undefined || next === undefined) continue;
     for (let j = after.length - 1; j >= 0; j -= 1) {
       row[j] =
-        before[i] === after[j]
-          ? (next[j + 1] ?? 0) + 1
-          : Math.max(next[j] ?? 0, row[j + 1] ?? 0);
+        before[i] === after[j] ? (next[j + 1] ?? 0) + 1 : Math.max(next[j] ?? 0, row[j + 1] ?? 0);
     }
   }
   return table;
@@ -196,10 +194,7 @@ function contextRun(
 
 /** Collapses every run of unchanged lines longer than `2 * contextLines`
  * into the lines nearest the changes around it plus one "skipped" row. */
-function collapseContext(
-  lines: readonly DiffLine[],
-  contextLines: number,
-): readonly DiffLine[] {
+function collapseContext(lines: readonly DiffLine[], contextLines: number): readonly DiffLine[] {
   const out: DiffLine[] = [];
   let index = 0;
   while (index < lines.length) {
@@ -275,8 +270,7 @@ export function diffText(
   while (
     suffix < beforeLines.length - prefix &&
     suffix < afterLines.length - prefix &&
-    beforeLines[beforeLines.length - 1 - suffix] ===
-      afterLines[afterLines.length - 1 - suffix]
+    beforeLines[beforeLines.length - 1 - suffix] === afterLines[afterLines.length - 1 - suffix]
   ) {
     suffix += 1;
   }
@@ -287,8 +281,7 @@ export function diffText(
   if (
     changedBefore.length > limits.maxLines ||
     changedAfter.length > limits.maxLines ||
-    characterCount(changedBefore) + characterCount(changedAfter) >
-      limits.maxCharacters
+    characterCount(changedBefore) + characterCount(changedAfter) > limits.maxCharacters
   ) {
     return {
       status: "too-large",

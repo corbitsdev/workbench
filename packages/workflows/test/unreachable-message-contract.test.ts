@@ -9,10 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-const HELPER_SOURCE = path.join(
-  import.meta.dir,
-  "../src/deliver-when-routable.ts",
-);
+const HELPER_SOURCE = path.join(import.meta.dir, "../src/deliver-when-routable.ts");
 const VENDOR_SESSION_SERVICE = path.join(
   import.meta.dir,
   "../../../vendor/intx/hub-sessions/src/session-service.ts",

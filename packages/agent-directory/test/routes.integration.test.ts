@@ -80,9 +80,7 @@ const fakeCapabilityInventory: CapabilityInventoryProvider = {
 
 const fakeSkillIndex: PinnedSkillIndexResolver = {
   resolve: (_tenantId, _principalId, names) =>
-    Promise.resolve(
-      names.map((name) => ({ name, description: `What ${name} does.` })),
-    ),
+    Promise.resolve(names.map((name) => ({ name, description: `What ${name} does.` }))),
 };
 
 const fakeHistory: DefinitionAssetHistory = {
@@ -110,9 +108,7 @@ async function post(app: Hono<TenantEnv>, body: unknown): Promise<Response> {
  * the stub still projects a `workflow_definition` row directly (the one
  * piece of the real deploy every route's read-back depends on) rather
  * than faking the whole install/probe/gate/freeze pipeline. */
-function recordingAgentDefinitionDeployer(
-  db: ReturnType<typeof createDB>["db"],
-) {
+function recordingAgentDefinitionDeployer(db: ReturnType<typeof createDB>["db"]) {
   const deploys: {
     tenantId: string;
     principalId: string;

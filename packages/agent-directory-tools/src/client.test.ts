@@ -52,9 +52,7 @@ test("createAgentDefinition posts to the workflow-agent-directory definitions en
     systemPrompt: "You are a careful research assistant.",
   });
 
-  expect(seenUrl).toBe(
-    "https://hub.example.com/api/workflow-agent-directory/definitions",
-  );
+  expect(seenUrl).toBe("https://hub.example.com/api/workflow-agent-directory/definitions");
   expect(seenHeaders?.["authorization"]).toBe("Bearer sc-token");
   expect(seenHeaders?.["x-workflow-run-address"]).toBe("run_1@workflow");
   expect(seenBody).toEqual({
@@ -153,22 +151,16 @@ test("createAgentDefinition throws an honest error on a non-4xx HTTP failure", a
 
 test("listAgentDefinitions returns the definitions array", async () => {
   const fetchImpl = (async (url: string | URL) => {
-    expect(String(url)).toBe(
-      "https://hub.example.com/api/workflow-agent-directory/definitions",
-    );
+    expect(String(url)).toBe("https://hub.example.com/api/workflow-agent-directory/definitions");
     return new Response(
       JSON.stringify({
-        definitions: [
-          { id: "def_1", name: "Research Buddy", description: null },
-        ],
+        definitions: [{ id: "def_1", name: "Research Buddy", description: null }],
       }),
     );
   }) as unknown as typeof fetch;
 
   const definitions = await listAgentDefinitions(testConfig(fetchImpl));
-  expect(definitions).toEqual([
-    { id: "def_1", name: "Research Buddy", description: null },
-  ]);
+  expect(definitions).toEqual([{ id: "def_1", name: "Research Buddy", description: null }]);
 });
 
 test("inviteParticipant posts to the workflow-chat participants invite endpoint", async () => {
@@ -188,9 +180,7 @@ test("inviteParticipant posts to the workflow-chat participants invite endpoint"
   }) as unknown as typeof fetch;
 
   const result = await inviteParticipant(testConfig(fetchImpl), "def_1");
-  expect(seenUrl).toBe(
-    "https://hub.example.com/api/workflow-chat/participants/invite",
-  );
+  expect(seenUrl).toBe("https://hub.example.com/api/workflow-chat/participants/invite");
   expect(seenBody).toEqual({ definitionId: "def_1" });
   expect(result.address).toBe("ins_1@acme.example");
 });
@@ -208,9 +198,9 @@ test("inviteParticipant throws NoOwnChannelError on a 404", async () => {
       { status: 404 },
     )) as unknown as typeof fetch;
 
-  await expect(
-    inviteParticipant(testConfig(fetchImpl), "def_1"),
-  ).rejects.toBeInstanceOf(NoOwnChannelError);
+  await expect(inviteParticipant(testConfig(fetchImpl), "def_1")).rejects.toBeInstanceOf(
+    NoOwnChannelError,
+  );
 });
 
 test("mintAgentDm posts to the workflow-chat participants mint-dm endpoint", async () => {
@@ -231,9 +221,7 @@ test("mintAgentDm posts to the workflow-chat participants mint-dm endpoint", asy
   }) as unknown as typeof fetch;
 
   const result = await mintAgentDm(testConfig(fetchImpl), "def_1");
-  expect(seenUrl).toBe(
-    "https://hub.example.com/api/workflow-chat/participants/mint-dm",
-  );
+  expect(seenUrl).toBe("https://hub.example.com/api/workflow-chat/participants/mint-dm");
   expect(seenBody).toEqual({ definitionId: "def_1" });
   expect(result.workbenchId).toBe("wb_1");
   expect(result.address).toBe("ins_1@acme.example");
@@ -254,7 +242,7 @@ test("mintAgentDm throws NoOwnWorkbenchError on a 404", async () => {
       { status: 404 },
     )) as unknown as typeof fetch;
 
-  await expect(
-    mintAgentDm(testConfig(fetchImpl), "def_1"),
-  ).rejects.toBeInstanceOf(NoOwnWorkbenchError);
+  await expect(mintAgentDm(testConfig(fetchImpl), "def_1")).rejects.toBeInstanceOf(
+    NoOwnWorkbenchError,
+  );
 });

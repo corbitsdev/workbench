@@ -41,8 +41,7 @@ export function PluginCard({
       : STATUS_CAPTION[plugin.status];
   const isDirectOAuthConnect =
     plugin.status === "not_connected" &&
-    (plugin.descriptor.authKind === "oauth-pkce" ||
-      plugin.descriptor.authKind === "oauth-code");
+    (plugin.descriptor.authKind === "oauth-pkce" || plugin.descriptor.authKind === "oauth-code");
 
   return (
     <div
@@ -56,9 +55,7 @@ export function PluginCard({
         fallbackIcon={Icon}
       />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-sm font-medium">
-          {plugin.descriptor.displayName}
-        </span>
+        <span className="truncate text-sm font-medium">{plugin.descriptor.displayName}</span>
         <span className="truncate text-xs text-muted-foreground">
           {pluginOutcome(plugin.descriptor.id, plugin.descriptor.displayName)}
         </span>

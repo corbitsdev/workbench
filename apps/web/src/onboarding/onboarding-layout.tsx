@@ -10,11 +10,7 @@ import { DitherBackground } from "../auth/dither-background";
  * the auth form column — the credential step's provider picker and the
  * guidance cards need more room than a login form does.
  */
-export function OnboardingLayout({
-  children,
-}: {
-  readonly children: ReactNode;
-}) {
+export function OnboardingLayout({ children }: { readonly children: ReactNode }) {
   return (
     <div className="onboarding-shell">
       <main className="onboarding-form-col">
@@ -31,11 +27,7 @@ export function OnboardingLayout({
       </main>
 
       <div aria-hidden className="onboarding-panel">
-        <img
-          src="/images/hero-dither.png"
-          alt=""
-          className="onboarding-panel-fallback"
-        />
+        <img src="/images/hero-dither.png" alt="" className="onboarding-panel-fallback" />
         <DitherBackground className="onboarding-panel-dither" />
       </div>
     </div>

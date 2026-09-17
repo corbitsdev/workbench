@@ -45,11 +45,7 @@ function statusLabel(status: ApprovalLiveStatus): string {
 /** The platform's own account of the request -- always rendered first and
  * unmissable whenever it's available, so a human never decides against
  * only the agent's framing. */
-function PlatformDetail({
-  detail,
-}: {
-  readonly detail: PlatformApprovalDetail;
-}) {
+function PlatformDetail({ detail }: { readonly detail: PlatformApprovalDetail }) {
   const args = Object.entries(detail.arguments);
   return (
     <div className="chat-block-approve-platform">
@@ -62,9 +58,7 @@ function PlatformDetail({
           {args.map(([label, value]) => (
             <div key={label} className="chat-block-approve-arg">
               <dt>{label}</dt>
-              <dd>
-                {typeof value === "string" ? value : JSON.stringify(value)}
-              </dd>
+              <dd>{typeof value === "string" ? value : JSON.stringify(value)}</dd>
             </div>
           ))}
         </dl>
@@ -94,22 +88,10 @@ function ApproveButtons({
   return (
     <div className="chat-block-actions-group">
       <div className="chat-block-actions">
-        <Button
-          type="button"
-          variant="primary"
-          disabled={busy}
-          onClick={onApprove}
-        >
-          {deciding === "approve"
-            ? CHAT_STRINGS.blockApproveApproving
-            : actionLabel}
+        <Button type="button" variant="primary" disabled={busy} onClick={onApprove}>
+          {deciding === "approve" ? CHAT_STRINGS.blockApproveApproving : actionLabel}
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={busy}
-          onClick={onDeny}
-        >
+        <Button type="button" variant="outline" disabled={busy} onClick={onDeny}>
           {deciding === "reject"
             ? CHAT_STRINGS.blockApproveRejecting
             : CHAT_STRINGS.blockDenyAction}
@@ -220,9 +202,7 @@ export function ApproveBlockView({
   });
 
   const detail =
-    view.kind === "actionable" ||
-    view.kind === "spectator" ||
-    view.kind === "resolved"
+    view.kind === "actionable" || view.kind === "spectator" || view.kind === "resolved"
       ? view.detail
       : null;
 
@@ -230,15 +210,11 @@ export function ApproveBlockView({
     <BlockCard title={data.title}>
       {detail !== null && <PlatformDetail detail={detail} />}
       {detail?.consequence !== undefined && (
-        <p className="chat-block-text chat-block-consequence">
-          {detail.consequence}
-        </p>
+        <p className="chat-block-text chat-block-consequence">{detail.consequence}</p>
       )}
       {view.kind !== "undetermined" && data.body !== undefined && (
         <p className="chat-block-text chat-block-agent-note">
-          {detail !== null
-            ? `${CHAT_STRINGS.blockApproveAgentNoteLabel}: `
-            : ""}
+          {detail !== null ? `${CHAT_STRINGS.blockApproveAgentNoteLabel}: ` : ""}
           {data.body}
         </p>
       )}
@@ -272,9 +248,7 @@ export function ApproveBlockView({
           <p className="chat-block-approve-status" data-status={view.status}>
             {statusLabel(view.status)}
           </p>
-          <p className="chat-block-text">
-            {CHAT_STRINGS.blockApproveSpectatorNote}
-          </p>
+          <p className="chat-block-text">{CHAT_STRINGS.blockApproveSpectatorNote}</p>
         </>
       )}
       {view.kind === "resolved" && (
@@ -283,18 +257,14 @@ export function ApproveBlockView({
             {statusLabel(view.status)}
           </p>
           {view.resolvedElsewhere && (
-            <p className="chat-block-text">
-              {CHAT_STRINGS.blockApproveConflictNote}
-            </p>
+            <p className="chat-block-text">{CHAT_STRINGS.blockApproveConflictNote}</p>
           )}
         </>
       )}
       {(view.kind === "actionable" || view.kind === "undetermined") && (
         <>
           {view.kind === "undetermined" && (
-            <p className="chat-block-text">
-              {CHAT_STRINGS.blockApproveUndeterminedNote}
-            </p>
+            <p className="chat-block-text">{CHAT_STRINGS.blockApproveUndeterminedNote}</p>
           )}
           {view.error !== null && (
             <p className="chat-block-text" role="alert">
@@ -308,9 +278,7 @@ export function ApproveBlockView({
             onDeny={() => decide("reject")}
             standingConsent={detail?.standingConsent}
             allowingStanding={allowingStanding}
-            onAllowStanding={
-              actions?.allowStanding !== undefined ? allowStanding : null
-            }
+            onAllowStanding={actions?.allowStanding !== undefined ? allowStanding : null}
           />
         </>
       )}

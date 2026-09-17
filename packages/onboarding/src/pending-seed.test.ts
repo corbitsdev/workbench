@@ -165,13 +165,9 @@ describe("createInMemoryPendingSeedStore", () => {
     const due = await store.listDue({ now: () => clock });
 
     expect(due.truncated).toBe(false);
-    expect(due.seeds).toEqual([
-      { ...SEED, userId: "user_2", tenantId: "ten_2" },
-    ]);
+    expect(due.seeds).toEqual([{ ...SEED, userId: "user_2", tenantId: "ten_2" }]);
     // Swept, not merely skipped — the expired row is gone for good.
-    expect(
-      await store.read({ userId: "user_1", tenantId: "ten_1", now: () => 0 }),
-    ).toBeUndefined();
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1", now: () => 0 })).toBeUndefined();
   });
 
   test("listDue honors its limit so one drain tick can never scan the whole table", async () => {
@@ -210,10 +206,7 @@ describe("createInMemoryPendingSeedStore", () => {
     }
 
     const first = await store.listDue({ limit: 2, now: () => clock });
-    expect(first.seeds.map((seed) => seed.userId)).toEqual([
-      "user_4",
-      "user_3",
-    ]);
+    expect(first.seeds.map((seed) => seed.userId)).toEqual(["user_4", "user_3"]);
     expect(first.truncated).toBe(true);
 
     const second = await store.listDue({
@@ -221,10 +214,7 @@ describe("createInMemoryPendingSeedStore", () => {
       now: () => clock,
       ...(first.next !== undefined ? { after: first.next } : {}),
     });
-    expect(second.seeds.map((seed) => seed.userId)).toEqual([
-      "user_2",
-      "user_1",
-    ]);
+    expect(second.seeds.map((seed) => seed.userId)).toEqual(["user_2", "user_1"]);
     expect(second.truncated).toBe(true);
 
     const third = await store.listDue({
@@ -249,9 +239,7 @@ describe("createInMemoryPendingSeedStore", () => {
 
   test("clearing a row that was never written is a harmless no-op", async () => {
     const store = createInMemoryPendingSeedStore(testCipher());
-    await expect(
-      store.clear({ userId: "user_1", tenantId: "ten_1" }),
-    ).resolves.toBeUndefined();
+    await expect(store.clear({ userId: "user_1", tenantId: "ten_1" })).resolves.toBeUndefined();
   });
 
   test("round-trips baseURLOverride for an ollama-shaped seed — the drain needs the real instance URL, not a curated default", async () => {
@@ -289,14 +277,8 @@ describe("createInMemoryPendingSeedStore", () => {
 
   test("domain separation: a ciphertext sealed for one provider's AAD cannot decrypt under another's", async () => {
     const cipher = testCipher();
-    const openrouterAad = JSON.stringify([
-      "onboarding-pending-seed",
-      "openrouter",
-    ]);
-    const huggingfaceAad = JSON.stringify([
-      "onboarding-pending-seed",
-      "huggingface",
-    ]);
+    const openrouterAad = JSON.stringify(["onboarding-pending-seed", "openrouter"]);
+    const huggingfaceAad = JSON.stringify(["onboarding-pending-seed", "huggingface"]);
     const payload = await cipher.encrypt(
       JSON.stringify({
         principalId: SEED.principalId,

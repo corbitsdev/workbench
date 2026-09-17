@@ -121,10 +121,7 @@ describe("createWorkbenchTurnQueue", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(calls).toEqual([
-      [turn("msg_1", "one")],
-      [turn("msg_2", "two"), turn("msg_3", "three")],
-    ]);
+    expect(calls).toEqual([[turn("msg_1", "one")], [turn("msg_2", "two"), turn("msg_3", "three")]]);
 
     resolveNext(); // settle the batched turn so nothing is left hanging
     await firstRun;

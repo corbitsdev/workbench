@@ -28,12 +28,7 @@ export type StageSearchProps = {
   readonly placeholder?: string;
 };
 
-export function StageSearch({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: StageSearchProps) {
+export function StageSearch({ label, value, onChange, placeholder }: StageSearchProps) {
   const [open, setOpen] = useState(value.length > 0);
   const wasOpen = useRef(open);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -49,11 +44,7 @@ export function StageSearch({
   }, [open]);
 
   return (
-    <div
-      className="stage-search"
-      data-testid="stage-search"
-      data-expanded={expanded}
-    >
+    <div className="stage-search" data-testid="stage-search" data-expanded={expanded}>
       <button
         ref={buttonRef}
         type="button"

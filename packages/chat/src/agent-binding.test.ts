@@ -49,9 +49,7 @@ function fakeDb(rows: LaunchRow[]) {
         where: (predicate: unknown) => ({
           limit: async () => {
             const value = matchingValue(predicate);
-            return rows.filter(
-              (row) => row.instanceId === value || row.currentRunId === value,
-            );
+            return rows.filter((row) => row.instanceId === value || row.currentRunId === value);
           },
         }),
       }),
@@ -94,11 +92,7 @@ describe("readBindingByAddress", () => {
 
   test("is undefined for an address this package never launched", async () => {
     expect(
-      await readBindingByAddress(
-        fakeDb([relaunched]),
-        "echo_1@acme.example",
-        "ten_1",
-      ),
+      await readBindingByAddress(fakeDb([relaunched]), "echo_1@acme.example", "ten_1"),
     ).toBeUndefined();
   });
 });
@@ -138,32 +132,25 @@ describe("readBindingByAddress: tenant scoping (CL-7474)", () => {
   });
 
   test("a bench invite in tenant B never resolves tenant A's launch", async () => {
-    expect(
-      await readBindingByAddress(db, "run_a1@acme.example", "tnt_b"),
-    ).toBeUndefined();
-    expect(
-      await readBindingByAddress(db, "run_b1@acme.example", "tnt_a"),
-    ).toBeUndefined();
+    expect(await readBindingByAddress(db, "run_a1@acme.example", "tnt_b")).toBeUndefined();
+    expect(await readBindingByAddress(db, "run_b1@acme.example", "tnt_a")).toBeUndefined();
   });
 });
 
 describe("readBindingByAddressAnyTenant", () => {
   test("the address-only resolution event-stream discovery needs, with no tenant to check against", async () => {
-    const anyTenantDb = fakeDb([
-      { ...relaunched, instanceId: "run_a1", currentRunId: "run_a1" },
-    ]);
+    const anyTenantDb = fakeDb([{ ...relaunched, instanceId: "run_a1", currentRunId: "run_a1" }]);
     expect(
-      (await readBindingByAddressAnyTenant(anyTenantDb, "run_a1@acme.example"))
-        ?.tenantId,
+      (await readBindingByAddressAnyTenant(anyTenantDb, "run_a1@acme.example"))?.tenantId,
     ).toBe("ten_1");
   });
 });
 
 describe("resolveRoomAddress", () => {
   test("leaves a non-participant address alone", async () => {
-    expect(
-      await resolveRoomAddress(fakeDb([relaunched]), "echo_1@acme.example"),
-    ).toBe("echo_1@acme.example");
+    expect(await resolveRoomAddress(fakeDb([relaunched]), "echo_1@acme.example")).toBe(
+      "echo_1@acme.example",
+    );
   });
 });
 

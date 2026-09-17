@@ -67,18 +67,14 @@ describe("agentRosterStatus", () => {
 
   test("a deployed definition with a running instance reads Running", () => {
     expect(
-      agentRosterStatus(triage, [
-        instance({ definitionId: "wfd_1", status: "running" }),
-      ]),
+      agentRosterStatus(triage, [instance({ definitionId: "wfd_1", status: "running" })]),
     ).toBe("running");
   });
 
   test("a deployed definition with only an erroring instance reads Blocked", () => {
-    expect(
-      agentRosterStatus(triage, [
-        instance({ definitionId: "wfd_1", status: "error" }),
-      ]),
-    ).toBe("blocked");
+    expect(agentRosterStatus(triage, [instance({ definitionId: "wfd_1", status: "error" })])).toBe(
+      "blocked",
+    );
   });
 
   test("a deployed definition with no live instances reads Idle", () => {
@@ -112,8 +108,7 @@ describe("agentModelSettledContent (CL-6848)", () => {
       agentModelSettledContent(
         {
           status: "error",
-          message:
-            "Something went wrong loading this agent's model. Try again.",
+          message: "Something went wrong loading this agent's model. Try again.",
         },
         [],
       ),
@@ -212,8 +207,7 @@ describe("AgentModelCellView (CL-6848)", () => {
       <AgentModelCellView
         state={{
           status: "error",
-          message:
-            "Something went wrong loading this agent's model. Try again.",
+          message: "Something went wrong loading this agent's model. Try again.",
         }}
         catalog={[]}
       />,
@@ -246,9 +240,7 @@ describe("AgentModelCellView (CL-6848)", () => {
           status: "ready",
           data: { name: "triage-bot", model: "claude-sonnet-4" },
         }}
-        catalog={[
-          { canonicalName: "claude-sonnet-4", displayName: "Claude Sonnet 4" },
-        ]}
+        catalog={[{ canonicalName: "claude-sonnet-4", displayName: "Claude Sonnet 4" }]}
       />,
     );
     expect(markup).toContain("Claude Sonnet 4");
@@ -259,9 +251,7 @@ describe("AgentModelCellView (CL-6848)", () => {
 
 describe("agentRunsSettledContent (CL-6842)", () => {
   test("a runs fetch failure is not the same as an honest empty history", () => {
-    expect(
-      agentRunsSettledContent("wfd_1", [], NOW, "Couldn't load run history"),
-    ).toEqual({
+    expect(agentRunsSettledContent("wfd_1", [], NOW, "Couldn't load run history")).toEqual({
       kind: "error",
       message: "Couldn't load run history",
     });
@@ -290,21 +280,15 @@ describe("agentRunsSettledContent (CL-6842)", () => {
 
 describe("archiveDefinitions", () => {
   test("one id failing does not roll back or hide the ids that succeeded", async () => {
-    const result = await archiveDefinitions(
-      ["wfd_1", "wfd_2", "wfd_3"],
-      (id) =>
-        id === "wfd_2"
-          ? Promise.reject(new Error("504"))
-          : Promise.resolve(undefined),
+    const result = await archiveDefinitions(["wfd_1", "wfd_2", "wfd_3"], (id) =>
+      id === "wfd_2" ? Promise.reject(new Error("504")) : Promise.resolve(undefined),
     );
     expect(result.succeededIds).toEqual(["wfd_1", "wfd_3"]);
     expect(result.failedIds).toEqual(["wfd_2"]);
   });
 
   test("every id succeeding reports no failures", async () => {
-    const result = await archiveDefinitions(["wfd_1", "wfd_2"], () =>
-      Promise.resolve(undefined),
-    );
+    const result = await archiveDefinitions(["wfd_1", "wfd_2"], () => Promise.resolve(undefined));
     expect(result.succeededIds).toEqual(["wfd_1", "wfd_2"]);
     expect(result.failedIds).toEqual([]);
   });
@@ -329,21 +313,19 @@ describe("archiveResultToast", () => {
   });
 
   test("reports full success", () => {
-    expect(archiveResultToast({ succeededIds: ["a"], failedIds: [] })).toBe(
-      "Archived 1 agent",
+    expect(archiveResultToast({ succeededIds: ["a"], failedIds: [] })).toBe("Archived 1 agent");
+    expect(archiveResultToast({ succeededIds: ["a", "b"], failedIds: [] })).toBe(
+      "Archived 2 agents",
     );
-    expect(
-      archiveResultToast({ succeededIds: ["a", "b"], failedIds: [] }),
-    ).toBe("Archived 2 agents");
   });
 
   test("reports full failure", () => {
     expect(archiveResultToast({ succeededIds: [], failedIds: ["a"] })).toBe(
       "Couldn't archive that agent",
     );
-    expect(
-      archiveResultToast({ succeededIds: [], failedIds: ["a", "b"] }),
-    ).toBe("Couldn't archive those agents");
+    expect(archiveResultToast({ succeededIds: [], failedIds: ["a", "b"] })).toBe(
+      "Couldn't archive those agents",
+    );
   });
 });
 
@@ -627,9 +609,7 @@ describe("AgentsPage", () => {
     );
     expect(markup).toContain("text-destructive");
     expect(markup).toContain('role="alert"');
-    expect(markup).toContain(
-      "Something went wrong loading run history. Try again.",
-    );
+    expect(markup).toContain("Something went wrong loading run history. Try again.");
     // Must not claim an Idle status or a literal zero off fabricated empty
     // instances — that is the dishonest path `runsQuery.data ?? []` produced.
     expect(markup).not.toContain("Idle");

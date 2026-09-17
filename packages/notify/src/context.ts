@@ -97,11 +97,7 @@ export async function resolveNotifyContext(
     throw new NotifySinkNotConfiguredError(args.sinkName);
   }
   if (credential.kind !== args.credentialKind) {
-    throw new NotifySinkCredentialInvalidError(
-      args.sinkName,
-      args.credentialKind,
-      credential.kind,
-    );
+    throw new NotifySinkCredentialInvalidError(args.sinkName, args.credentialKind, credential.kind);
   }
   return {
     tenantId: args.tenantId,

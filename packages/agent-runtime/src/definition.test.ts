@@ -32,9 +32,7 @@ describe("buildAgentRuntimeWorkflow — step mode", () => {
     expect(definition.stepOrder).toEqual([AGENT_RUNTIME_STEP_ID]);
     const stepPrimitive = definition.steps[AGENT_RUNTIME_STEP_ID];
     expect(stepPrimitive?.kind).toBe("step");
-    expect(definition.triggers).toEqual([
-      { type: "mail", to: "run_a@bench.example" },
-    ]);
+    expect(definition.triggers).toEqual([{ type: "mail", to: "run_a@bench.example" }]);
   });
 
   test("the step's trigger budget is unbounded, so a run never goes silent after one reply", () => {
@@ -87,9 +85,7 @@ describe("buildAgentRuntimeWorkflow — step mode", () => {
   });
 
   test("omits credentialBindings entirely when the config declares none", () => {
-    expect(
-      buildAgentRuntimeWorkflow(baseConfig).credentialBindings,
-    ).toBeUndefined();
+    expect(buildAgentRuntimeWorkflow(baseConfig).credentialBindings).toBeUndefined();
   });
 
   test("pins the step's input to a literal when the config supplies one", () => {
@@ -104,8 +100,7 @@ describe("buildAgentRuntimeWorkflow — step mode", () => {
   });
 
   test("leaves the step reading its real trigger payload by default", () => {
-    const stepPrimitive =
-      buildAgentRuntimeWorkflow(baseConfig).steps[AGENT_RUNTIME_STEP_ID];
+    const stepPrimitive = buildAgentRuntimeWorkflow(baseConfig).steps[AGENT_RUNTIME_STEP_ID];
 
     expect(stepPrimitive).not.toMatchObject({ input: { literal: undefined } });
   });
@@ -128,8 +123,7 @@ describe("buildAgentRuntimeWorkflow — section mode", () => {
   });
 
   test("the section's body is one agent step carrying the per-turn timeout", () => {
-    const section =
-      buildAgentRuntimeWorkflow(sectionConfig).steps[AGENT_RUNTIME_SECTION_ID];
+    const section = buildAgentRuntimeWorkflow(sectionConfig).steps[AGENT_RUNTIME_SECTION_ID];
 
     expect(section).toMatchObject({
       body: {
@@ -148,16 +142,13 @@ describe("buildAgentRuntimeWorkflow — section mode", () => {
   });
 
   test("authors onBodyFailure 'continue' so a failed turn re-arms the section", () => {
-    const section =
-      buildAgentRuntimeWorkflow(sectionConfig).steps[AGENT_RUNTIME_SECTION_ID];
+    const section = buildAgentRuntimeWorkflow(sectionConfig).steps[AGENT_RUNTIME_SECTION_ID];
 
     expect(section).toMatchObject({ onBodyFailure: "tolerate" });
   });
 
   test("the section's failure policy survives the live→inert projection", () => {
-    const projected = projectLiveToInert(
-      buildAgentRuntimeWorkflow(sectionConfig),
-    );
+    const projected = projectLiveToInert(buildAgentRuntimeWorkflow(sectionConfig));
     const section = projected.steps[AGENT_RUNTIME_SECTION_ID];
 
     expect(section).toMatchObject({

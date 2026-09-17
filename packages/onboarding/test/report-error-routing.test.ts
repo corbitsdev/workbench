@@ -30,12 +30,9 @@ afterEach(() => {
 const { createOnboardingRoutes } = await import("../src/routes");
 const { createInMemoryPendingSeedStore } = await import("../src/pending-seed");
 const { createBenchProvisioner } = await import("../src/bench-provisioning");
-const { plantEnvProviderCredentials } =
-  await import("../src/plant-env-credentials");
+const { plantEnvProviderCredentials } = await import("../src/plant-env-credentials");
 
-const pendingSeedStore = createInMemoryPendingSeedStore(
-  createNoopCredentialCipher(),
-);
+const pendingSeedStore = createInMemoryPendingSeedStore(createNoopCredentialCipher());
 
 // These tests never exercise the genesis-or-join join path — the stub
 // satisfies the required tenancy wiring without standing up a DB.
@@ -79,10 +76,7 @@ describe("routes.ts routes caught errors through reportError", () => {
 
     expect(response.status).toBe(503);
     expect(reportErrorCalls).toHaveLength(1);
-    const [, context] = reportErrorCalls[0] as [
-      unknown,
-      Record<string, unknown>,
-    ];
+    const [, context] = reportErrorCalls[0] as [unknown, Record<string, unknown>];
     expect(context.operation).toBe("onboarding_provision");
     expect(context.tenantId).toBeUndefined();
     expect((context.extra as { userId: string }).userId).toBe("user_1");
@@ -123,9 +117,7 @@ describe("routes.ts routes caught errors through reportError", () => {
     );
     // Malformed on purpose: seededWorkflowNames' own parseAs rejects this,
     // throwing well after tenantId is already known.
-    hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) =>
-      c.json({ notAnArray: true }),
-    );
+    hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json({ notAnArray: true }));
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
@@ -141,16 +133,11 @@ describe("routes.ts routes caught errors through reportError", () => {
       });
       const app = mountAuthenticated(routes);
 
-      const response = await app.request(
-        `/provisioning-status?tenantId=${TENANT_ID}`,
-      );
+      const response = await app.request(`/provisioning-status?tenantId=${TENANT_ID}`);
 
       expect(response.status).toBe(500);
       expect(reportErrorCalls).toHaveLength(1);
-      const [, context] = reportErrorCalls[0] as [
-        unknown,
-        Record<string, unknown>,
-      ];
+      const [, context] = reportErrorCalls[0] as [unknown, Record<string, unknown>];
       expect(context.operation).toBe("onboarding_provisioning_status");
       expect(context.tenantId).toBe(TENANT_ID);
       expect((context.extra as { userId: string }).userId).toBe("user_1");
@@ -189,10 +176,7 @@ describe("bench-provisioning.ts's whole-drain failure reports through reportErro
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(reportErrorCalls).toHaveLength(1);
-    const [, context] = reportErrorCalls[0] as [
-      unknown,
-      Record<string, unknown>,
-    ];
+    const [, context] = reportErrorCalls[0] as [unknown, Record<string, unknown>];
     expect(context.operation).toBe("bench_provisioning_drain");
     expect(context.tenantId).toBeUndefined();
   });
@@ -203,9 +187,10 @@ describe("plant-env-credentials.ts catches report through reportError and never 
   // real network calls `findProviderId`/`findActiveCredential` make
   // aren't overridable test seams, so the fake `api` has to answer them
   // honestly (empty pages) to reach the seedCatalogFn override at all.
-  const noExistingProvidersApi: Parameters<
-    typeof plantEnvProviderCredentials
-  >[0]["api"] = async (_method, path) => {
+  const noExistingProvidersApi: Parameters<typeof plantEnvProviderCredentials>[0]["api"] = async (
+    _method,
+    path,
+  ) => {
     if (path.includes("/providers")) {
       return { status: 200, data: { data: [], nextCursor: null }, cookies: [] };
     }
@@ -235,10 +220,7 @@ describe("plant-env-credentials.ts catches report through reportError and never 
     expect(outcomes[0]?.message).not.toContain("sk-ant-real-secret-value");
 
     expect(reportErrorCalls).toHaveLength(1);
-    const [cause, context] = reportErrorCalls[0] as [
-      unknown,
-      Record<string, unknown>,
-    ];
+    const [cause, context] = reportErrorCalls[0] as [unknown, Record<string, unknown>];
     expect(context.operation).toBe("env_credential_plant");
     expect(context.tenantId).toBe("tnt_env");
     expect(context.extra).toEqual({ provider: "anthropic" });
@@ -291,36 +273,26 @@ describe("recentlyConnectedCredential reports through reportError and still find
       });
       const app = mountAuthenticated(routes);
 
-      const response = await app.request(
-        "/oauth/openrouter/callback?code=auth_code_1",
-        {
-          headers: {
-            cookie: "workbench_openrouter_connect=not-a-real-state",
-          },
+      const response = await app.request("/oauth/openrouter/callback?code=auth_code_1", {
+        headers: {
+          cookie: "workbench_openrouter_connect=not-a-real-state",
         },
-      );
+      });
 
       expect(response.status).toBe(302);
-      const redirect = new URL(
-        response.headers.get("location") ?? "",
-        "https://x",
-      );
+      const redirect = new URL(response.headers.get("location") ?? "", "https://x");
       expect(redirect.searchParams.get("outcome")).toBe("error");
       expect(redirect.searchParams.get("code")).toBe("state_expired");
 
       expect(reportErrorCalls).toHaveLength(1);
-      const [cause, context] = reportErrorCalls[0] as [
-        unknown,
-        Record<string, unknown>,
-      ];
+      const [cause, context] = reportErrorCalls[0] as [unknown, Record<string, unknown>];
       expect(context.operation).toBe("onboarding_duplicate_callback_recovery");
       expect(context.tenantId).toBeUndefined();
       expect((context.extra as { userId: string }).userId).toBe("user_1");
       // reportError is the one place the unredacted cause may travel —
       // error-sink redacts before anything reaches a log sink.
       expect(cause).toBeInstanceOf(Error);
-      const causeMessage =
-        cause instanceof Error ? cause.message : String(cause);
+      const causeMessage = cause instanceof Error ? cause.message : String(cause);
       expect(causeMessage).toContain(SECRET);
       expect(JSON.stringify({ logs, context })).not.toContain(SECRET);
     } finally {

@@ -128,8 +128,7 @@ function pickCdnUrl(item: GiphyItem): string | undefined {
   ];
   for (const rendition of renditions) {
     const url = rendition?.url?.trim();
-    if (url !== undefined && url !== "" && isAllowedGiphyHostURL(url))
-      return url;
+    if (url !== undefined && url !== "" && isAllowedGiphyHostURL(url)) return url;
   }
   return undefined;
 }
@@ -167,9 +166,7 @@ async function searchGiphy(
   });
 
   if (!response.ok) {
-    throw new Error(
-      `Giphy search failed: ${String(response.status)} ${response.statusText}`,
-    );
+    throw new Error(`Giphy search failed: ${String(response.status)} ${response.statusText}`);
   }
 
   const raw: unknown = await response.json();
@@ -182,9 +179,7 @@ async function searchGiphy(
   }
   const status = envelope.meta?.status;
   if (status !== undefined && status !== 200) {
-    throw new Error(
-      `Giphy rejected the request: ${envelope.meta?.msg ?? String(status)}`,
-    );
+    throw new Error(`Giphy rejected the request: ${envelope.meta?.msg ?? String(status)}`);
   }
   if (!Array.isArray(envelope.data)) {
     throw new Error("Giphy search failed: response has no data array");
@@ -201,9 +196,7 @@ async function searchGiphy(
     mapped.push({
       title: sanitizeGifTitle(item.title ?? ""),
       cdnUrl,
-      ...(pageUrl !== undefined &&
-      pageUrl !== "" &&
-      isAllowedGiphyHostURL(pageUrl)
+      ...(pageUrl !== undefined && pageUrl !== "" && isAllowedGiphyHostURL(pageUrl)
         ? { pageUrl }
         : {}),
     });
@@ -224,10 +217,7 @@ function formatResults(results: GifResult[]): string {
     .join("\n\n");
 }
 
-async function runGifSearch(
-  env: GifSearchEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runGifSearch(env: GifSearchEnv, call: ToolCall): Promise<ToolResult> {
   const credential = await resolveGiphyCredential(env);
   if (credential === null) {
     return notConnectedResult(call.id);
@@ -241,16 +231,10 @@ async function runGifSearch(
     };
   }
   const limit = clampLimit(
-    typeof call.arguments["limit"] === "number"
-      ? (call.arguments["limit"] as number)
-      : undefined,
+    typeof call.arguments["limit"] === "number" ? (call.arguments["limit"] as number) : undefined,
   );
   try {
-    const results = await searchGiphy(
-      credential.fetchImpl,
-      query.trim(),
-      limit,
-    );
+    const results = await searchGiphy(credential.fetchImpl, query.trim(), limit);
     return { callId: call.id, content: formatResults(results) };
   } catch (err) {
     return {

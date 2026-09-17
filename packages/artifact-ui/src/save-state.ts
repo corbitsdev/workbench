@@ -33,10 +33,7 @@ export function formatSavedLabel(savedAt: number, now: number): string {
 /** The one line the canvas artifact pane renders under an editable text
  * artifact — empty for a read-only viewer, since there is nothing to
  * report about a save state they can't affect. */
-export function formatSaveStateLine(
-  state: ArtifactSaveState,
-  now: number,
-): string {
+export function formatSaveStateLine(state: ArtifactSaveState, now: number): string {
   switch (state.kind) {
     case "read-only":
       return "";

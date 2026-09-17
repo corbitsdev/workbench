@@ -4,8 +4,7 @@
 // element worth focusing instead: the right-clicked row itself, or its
 // nearest focusable ancestor.
 
-const FOCUSABLE_SELECTOR =
-  "a[href], button, input, select, textarea, [tabindex]";
+const FOCUSABLE_SELECTOR = "a[href], button, input, select, textarea, [tabindex]";
 
 export function findFocusable(element: Element | null): HTMLElement | null {
   if (element === null) return null;

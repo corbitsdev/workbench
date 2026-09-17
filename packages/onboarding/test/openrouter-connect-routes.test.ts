@@ -11,18 +11,12 @@ import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import {
-  createEnvKeyCredentialCipher,
-  createNoopCredentialCipher,
-} from "@intx/crypto";
+import { createEnvKeyCredentialCipher, createNoopCredentialCipher } from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
 import type { CreateOnboardingRoutesDeps } from "../src/routes";
 import { testAndPersistCredential } from "../src/complete-credential";
 import { s256Challenge } from "../src/openrouter-connect";
-import {
-  createInMemoryPendingSeedStore,
-  type PendingSeedStore,
-} from "../src/pending-seed";
+import { createInMemoryPendingSeedStore, type PendingSeedStore } from "../src/pending-seed";
 
 const MOCK_TIMESTAMP = "2026-01-01T00:00:00.000Z";
 
@@ -122,9 +116,7 @@ function mockHub(args: { tenantSlug?: string } = {}) {
     credentials.push(row);
     return c.json(row, 201);
   });
-  hub.get("/api/tenants/ten_1/credentials", (c) =>
-    c.json({ data: credentials, nextCursor: null }),
-  );
+  hub.get("/api/tenants/ten_1/credentials", (c) => c.json({ data: credentials, nextCursor: null }));
   hub.post("/api/tenants/ten_1/catalog/providers", (c) =>
     c.json(
       {
@@ -159,9 +151,7 @@ function mockHub(args: { tenantSlug?: string } = {}) {
       201,
     ),
   );
-  hub.get("/api/tenants/ten_1/catalog/offerings", (c) =>
-    c.json({ data: [], nextCursor: null }),
-  );
+  hub.get("/api/tenants/ten_1/catalog/offerings", (c) => c.json({ data: [], nextCursor: null }));
   return hub;
 }
 
@@ -169,9 +159,7 @@ function mockHub(args: { tenantSlug?: string } = {}) {
  * need stubbing out here, so this now just forwards to the real
  * `testAndPersistCredential` unchanged. */
 const connectCredentialAgainstMockHub: NonNullable<
-  NonNullable<
-    CreateOnboardingRoutesDeps["openrouterConnect"]
-  >["connectCredential"]
+  NonNullable<CreateOnboardingRoutesDeps["openrouterConnect"]>["connectCredential"]
 > = (args) => testAndPersistCredential(args);
 
 // Stands in for a stable `CREDENTIAL_ENCRYPTION_KEY`: a fresh cipher
@@ -193,10 +181,7 @@ function asUser(session: { userId: string }): MiddlewareHandler<AppEnv> {
   };
 }
 
-function mountAuthenticated(
-  routes: Hono<AppEnv>,
-  session: { userId: string },
-): Hono<AppEnv> {
+function mountAuthenticated(routes: Hono<AppEnv>, session: { userId: string }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   app.use("*", asUser(session));
   app.route("/api/onboarding", routes);
@@ -225,13 +210,11 @@ function connectRoutes(
       (async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) })),
     log: overrides.log ?? (() => undefined),
     pendingSeedStore:
-      overrides.pendingSeedStore ??
-      createInMemoryPendingSeedStore(createNoopCredentialCipher()),
+      overrides.pendingSeedStore ?? createInMemoryPendingSeedStore(createNoopCredentialCipher()),
   };
   if (overrides.openrouterConnect !== undefined)
     deps.openrouterConnect = overrides.openrouterConnect;
-  if (overrides.credentialCipher !== undefined)
-    deps.credentialCipher = overrides.credentialCipher;
+  if (overrides.credentialCipher !== undefined) deps.credentialCipher = overrides.credentialCipher;
   return mountAuthenticated(createOnboardingRoutes(deps), session);
 }
 
@@ -258,9 +241,7 @@ describe("GET /oauth/openrouter/start", () => {
     expect(location.origin).toBe("https://openrouter.ai");
     expect(location.pathname).toBe("/auth");
     expect(location.searchParams.get("code_challenge_method")).toBe("S256");
-    expect(location.searchParams.get("code_challenge")).toMatch(
-      /^[A-Za-z0-9_-]{43}$/,
-    );
+    expect(location.searchParams.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(location.searchParams.get("callback_url")).toBe(
       "https://bench.example.com/api/onboarding/oauth/openrouter/callback",
     );
@@ -303,10 +284,7 @@ describe("GET /oauth/openrouter/start", () => {
     const second = await app.request("/api/onboarding/oauth/openrouter/start");
 
     expect(second.status).toBe(302);
-    const redirect = new URL(
-      second.headers.get("location") ?? "",
-      "https://bench.example.com",
-    );
+    const redirect = new URL(second.headers.get("location") ?? "", "https://bench.example.com");
     expect(redirect.pathname).toBe("/onboarding");
     expect(redirect.searchParams.get("outcome")).toBe("error");
     expect(redirect.searchParams.get("code")).toBe("rate_limited");
@@ -359,10 +337,7 @@ describe("GET /oauth/openrouter/callback", () => {
     );
 
     expect(response.status).toBe(302);
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://bench.example.com",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://bench.example.com");
     expect(redirect.pathname).toBe("/onboarding");
     expect(redirect.searchParams.get("connect")).toBe("openrouter");
     expect(redirect.searchParams.get("outcome")).toBe("connected");
@@ -374,9 +349,9 @@ describe("GET /oauth/openrouter/callback", () => {
     expect(exchanges[0]?.code).toBe("auth_code_1");
     // The verifier handed to the exchange is the one whose S256 was
     // sent to OpenRouter at /start — the round trip is real PKCE.
-    expect(
-      exchanges[0] && (await s256Challenge(exchanges[0].codeVerifier)),
-    ).toBe(location.searchParams.get("code_challenge") ?? "");
+    expect(exchanges[0] && (await s256Challenge(exchanges[0].codeVerifier))).toBe(
+      location.searchParams.get("code_challenge") ?? "",
+    );
 
     // The minted key connects as an ordinary openrouter credential —
     // the same generalized path a pasted key takes.
@@ -422,10 +397,7 @@ describe("GET /oauth/openrouter/callback", () => {
     );
 
     expect(response.status).toBe(302);
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://bench.example.com",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://bench.example.com");
     expect(redirect.searchParams.get("outcome")).toBe("error");
     expect(redirect.searchParams.get("code")).toBe("state_expired");
     expect(exchanged).toBe(0);
@@ -472,10 +444,7 @@ describe("GET /oauth/openrouter/callback", () => {
     );
 
     expect(response.status).toBe(302);
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("outcome")).toBe("error");
     expect(redirect.searchParams.get("code")).toBe("state_expired");
     expect(exchanged).toBe(0);
@@ -506,19 +475,11 @@ describe("GET /oauth/openrouter/callback", () => {
       const second = await app.request(path, { headers: { cookie } });
 
       expect(
-        new URL(
-          first.headers.get("location") ?? "",
-          "https://x",
-        ).searchParams.get("outcome"),
+        new URL(first.headers.get("location") ?? "", "https://x").searchParams.get("outcome"),
       ).toBe("connected");
-      const secondRedirect = new URL(
-        second.headers.get("location") ?? "",
-        "https://x",
-      );
+      const secondRedirect = new URL(second.headers.get("location") ?? "", "https://x");
       expect(secondRedirect.searchParams.get("outcome")).toBe("connected");
-      expect(secondRedirect.searchParams.get("tenantSlug")).toBe(
-        "user-1-user1",
-      );
+      expect(secondRedirect.searchParams.get("tenantSlug")).toBe("user-1-user1");
     } finally {
       server.stop(true);
     }
@@ -549,10 +510,7 @@ describe("GET /oauth/openrouter/callback", () => {
       await app.request(path, { headers: { cookie } });
       const second = await app.request(path, { headers: { cookie } });
 
-      const secondRedirect = new URL(
-        second.headers.get("location") ?? "",
-        "https://x",
-      );
+      const secondRedirect = new URL(second.headers.get("location") ?? "", "https://x");
       expect(secondRedirect.searchParams.get("outcome")).toBe("connected");
       expect(secondRedirect.searchParams.get("tenantSlug")).toBe("acme");
     } finally {
@@ -585,10 +543,7 @@ describe("GET /oauth/openrouter/callback", () => {
     });
 
     expect(
-      new URL(
-        replayed.headers.get("location") ?? "",
-        "https://x",
-      ).searchParams.get("code"),
+      new URL(replayed.headers.get("location") ?? "", "https://x").searchParams.get("code"),
     ).toBe("state_expired");
   });
 
@@ -618,10 +573,7 @@ describe("GET /oauth/openrouter/callback", () => {
 
       const first = await afterRestart.request(path, { headers: { cookie } });
       expect(
-        new URL(
-          first.headers.get("location") ?? "",
-          "https://x",
-        ).searchParams.get("outcome"),
+        new URL(first.headers.get("location") ?? "", "https://x").searchParams.get("outcome"),
       ).toBe("connected");
 
       // Replaying the same cookie against the post-restart app — no new
@@ -629,10 +581,7 @@ describe("GET /oauth/openrouter/callback", () => {
       // request's connect already persisted the credential.
       const replay = await afterRestart.request(path, { headers: { cookie } });
       expect(
-        new URL(
-          replay.headers.get("location") ?? "",
-          "https://x",
-        ).searchParams.get("outcome"),
+        new URL(replay.headers.get("location") ?? "", "https://x").searchParams.get("outcome"),
       ).toBe("connected");
     } finally {
       server.stop(true);
@@ -668,16 +617,11 @@ describe("GET /oauth/openrouter/callback", () => {
       { headers: { cookie: stateCookie(started) } },
     );
 
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("outcome")).toBe("error");
     expect(redirect.searchParams.get("code")).toBe("exchange_failed");
     expect(connected).toBe(0);
-    expect(lines.some((line) => line.includes("code exchange failed"))).toBe(
-      true,
-    );
+    expect(lines.some((line) => line.includes("code exchange failed"))).toBe(true);
   });
 
   test("a minted key that fails its probe is a key_rejected ending, not a success", async () => {
@@ -697,10 +641,7 @@ describe("GET /oauth/openrouter/callback", () => {
       { headers: { cookie: stateCookie(started) } },
     );
 
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("outcome")).toBe("error");
     expect(redirect.searchParams.get("code")).toBe("key_rejected");
   });
@@ -723,10 +664,7 @@ describe("GET /oauth/openrouter/callback", () => {
       { headers: { cookie: stateCookie(started) } },
     );
 
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("code")).toBe("setup_failed");
     expect(lines.join("\n")).not.toContain("sk-or-v1-minted");
   });
@@ -765,10 +703,7 @@ describe("GET /oauth/openrouter/callback", () => {
         { headers: { cookie: stateCookie(started) } },
       );
 
-      const redirect = new URL(
-        response.headers.get("location") ?? "",
-        "https://x",
-      );
+      const redirect = new URL(response.headers.get("location") ?? "", "https://x");
       expect(redirect.searchParams.get("outcome")).toBe("connected");
       expect(deployPosts).toBe(0);
     } finally {

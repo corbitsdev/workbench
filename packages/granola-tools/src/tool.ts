@@ -65,10 +65,7 @@ async function resolveGranolaCredential(
   }
 }
 
-async function runGranolaListRecentNotes(
-  env: GranolaEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runGranolaListRecentNotes(env: GranolaEnv, call: ToolCall): Promise<ToolResult> {
   const credential = await resolveGranolaCredential(env);
   if (credential === null) {
     return notConnectedResult(call.id);
@@ -89,10 +86,7 @@ async function runGranolaListRecentNotes(
   }
 }
 
-async function runGranolaGetNote(
-  env: GranolaEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runGranolaGetNote(env: GranolaEnv, call: ToolCall): Promise<ToolResult> {
   const credential = await resolveGranolaCredential(env);
   if (credential === null) {
     return notConnectedResult(call.id);
@@ -106,10 +100,7 @@ async function runGranolaGetNote(
     };
   }
   try {
-    const note = await getGranolaNote(
-      { fetchImpl: credential.fetchImpl },
-      { noteId },
-    );
+    const note = await getGranolaNote({ fetchImpl: credential.fetchImpl }, { noteId });
     return { callId: call.id, content: JSON.stringify({ note }) };
   } catch (err) {
     return {
@@ -132,10 +123,7 @@ async function runGranolaGetNote(
 export const granolaTools = defineTool<GranolaEnv>({
   id: "@corbits/granola-tools/gr",
   requires: ["credentials"],
-  definitions: [
-    { name: GRANOLA_LIST_RECENT_NOTES_TOOL },
-    { name: GRANOLA_GET_NOTE_TOOL },
-  ],
+  definitions: [{ name: GRANOLA_LIST_RECENT_NOTES_TOOL }, { name: GRANOLA_GET_NOTE_TOOL }],
   factory: (env) => ({
     definitions: [
       {
@@ -150,8 +138,7 @@ export const granolaTools = defineTool<GranolaEnv>({
           properties: {
             since: {
               type: "string",
-              description:
-                "ISO 8601 timestamp; only notes created after this are returned",
+              description: "ISO 8601 timestamp; only notes created after this are returned",
             },
           },
         },

@@ -68,10 +68,7 @@ export function resolveThreadAnchor(
   if (container.id === root.id) {
     return { parentThreadId: root.id, blocked: false };
   }
-  if (
-    container.parentThreadId === null ||
-    container.parentThreadId === root.id
-  ) {
+  if (container.parentThreadId === null || container.parentThreadId === root.id) {
     return { parentThreadId: container.id, blocked: false };
   }
   return { parentThreadId: container.parentThreadId, blocked: true };
@@ -104,13 +101,8 @@ export type AssignMessageInput = {
 };
 
 export interface ThreadStore {
-  ensureRootThread(
-    tenantId: string,
-    workbenchId: string,
-  ): Promise<WorkbenchThread>;
-  createDeliveryThread(
-    input: CreateDeliveryThreadInput,
-  ): Promise<WorkbenchThread>;
+  ensureRootThread(tenantId: string, workbenchId: string): Promise<WorkbenchThread>;
+  createDeliveryThread(input: CreateDeliveryThreadInput): Promise<WorkbenchThread>;
   /** Opens (or reuses) the depth-1 reply thread for a message. Throws
    * `ThreadDepthCapError` if the message already lives in a depth-2
    * sub-thread — a caller wanting the depth-cap-redirect behavior wants
@@ -121,19 +113,10 @@ export interface ThreadStore {
    * creates a sibling sub-thread under that sub-thread's parent rather
    * than a third level (CL-5948). Never throws for depth. */
   forkThread(input: ForkThreadInput): Promise<WorkbenchThread>;
-  getThread(
-    tenantId: string,
-    threadId: string,
-  ): Promise<WorkbenchThread | undefined>;
-  listThreads(
-    tenantId: string,
-    workbenchId: string,
-  ): Promise<readonly WorkbenchThread[]>;
+  getThread(tenantId: string, threadId: string): Promise<WorkbenchThread | undefined>;
+  listThreads(tenantId: string, workbenchId: string): Promise<readonly WorkbenchThread[]>;
   assignMessage(input: AssignMessageInput): Promise<void>;
-  listMessageIds(
-    tenantId: string,
-    threadId: string,
-  ): Promise<readonly string[]>;
+  listMessageIds(tenantId: string, threadId: string): Promise<readonly string[]>;
   /**
    * Every membership row this workbench has, as `messageId -> threadId`.
    * A message with no row is absent rather than defaulted to the root
@@ -218,11 +201,7 @@ export async function mailAncestryOf(
     if (thread === undefined || thread.parentMessageId === null) break;
     ancestors.unshift(thread.parentMessageId);
     current =
-      (await store.threadIdForMessage(
-        tenantId,
-        workbenchId,
-        thread.parentMessageId,
-      )) ?? null;
+      (await store.threadIdForMessage(tenantId, workbenchId, thread.parentMessageId)) ?? null;
   }
   return ancestors;
 }
@@ -233,18 +212,11 @@ export function createInMemoryThreadStore(): ThreadStore {
   const messageToThread = new Map<string, string>();
   const threadMessages = new Map<string, string[]>();
 
-  const workbenchKey = (tenantId: string, workbenchId: string) =>
-    `${tenantId}::${workbenchId}`;
-  const messageKey = (
-    tenantId: string,
-    workbenchId: string,
-    messageId: string,
-  ) => `${tenantId}::${workbenchId}::${messageId}`;
+  const workbenchKey = (tenantId: string, workbenchId: string) => `${tenantId}::${workbenchId}`;
+  const messageKey = (tenantId: string, workbenchId: string, messageId: string) =>
+    `${tenantId}::${workbenchId}::${messageId}`;
 
-  async function ensureRootThread(
-    tenantId: string,
-    workbenchId: string,
-  ): Promise<WorkbenchThread> {
+  async function ensureRootThread(tenantId: string, workbenchId: string): Promise<WorkbenchThread> {
     const key = workbenchKey(tenantId, workbenchId);
     const ids = byWorkbench.get(key) ?? [];
     for (const id of ids) {
@@ -274,9 +246,7 @@ export function createInMemoryThreadStore(): ThreadStore {
     parentMessageId: string,
     root: WorkbenchThread,
   ): Promise<WorkbenchThread> {
-    const containerId = messageToThread.get(
-      messageKey(tenantId, workbenchId, parentMessageId),
-    );
+    const containerId = messageToThread.get(messageKey(tenantId, workbenchId, parentMessageId));
     if (containerId === undefined) return root;
     return threads.get(containerId) ?? root;
   }
@@ -396,13 +366,10 @@ export function createInMemoryThreadStore(): ThreadStore {
   };
 }
 
-export type ThreadDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> = PostgresJsDatabase<TSchema>;
+export type ThreadDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+  PostgresJsDatabase<TSchema>;
 
-function mapThreadRow(
-  row: typeof workbenchThreads.$inferSelect,
-): WorkbenchThread {
+function mapThreadRow(row: typeof workbenchThreads.$inferSelect): WorkbenchThread {
   return {
     id: row.id,
     tenantId: row.tenantId,
@@ -416,9 +383,9 @@ function mapThreadRow(
   };
 }
 
-export function createDrizzleThreadStore<
-  TSchema extends Record<string, unknown>,
->(db: ThreadDb<TSchema>): ThreadStore {
+export function createDrizzleThreadStore<TSchema extends Record<string, unknown>>(
+  db: ThreadDb<TSchema>,
+): ThreadStore {
   async function selectRootThread(
     tenantId: string,
     workbenchId: string,
@@ -438,10 +405,7 @@ export function createDrizzleThreadStore<
     return rows[0] ? mapThreadRow(rows[0]) : undefined;
   }
 
-  async function ensureRootThread(
-    tenantId: string,
-    workbenchId: string,
-  ): Promise<WorkbenchThread> {
+  async function ensureRootThread(tenantId: string, workbenchId: string): Promise<WorkbenchThread> {
     const existing = await selectRootThread(tenantId, workbenchId);
     if (existing) return existing;
     // Insert-first, not select-then-insert: two concurrent first
@@ -499,12 +463,7 @@ export function createDrizzleThreadStore<
     const containerRows = await db
       .select()
       .from(workbenchThreads)
-      .where(
-        and(
-          eq(workbenchThreads.tenantId, tenantId),
-          eq(workbenchThreads.id, containerId),
-        ),
-      )
+      .where(and(eq(workbenchThreads.tenantId, tenantId), eq(workbenchThreads.id, containerId)))
       .limit(1);
     return containerRows[0] ? mapThreadRow(containerRows[0]) : root;
   }
@@ -654,9 +613,7 @@ export function createDrizzleThreadStore<
         input.runRef,
       );
       if (!reselected) {
-        throw new Error(
-          "expected delivery thread row after conflicting insert",
-        );
+        throw new Error("expected delivery thread row after conflicting insert");
       }
       return reselected;
     },
@@ -668,12 +625,7 @@ export function createDrizzleThreadStore<
       const rows = await db
         .select()
         .from(workbenchThreads)
-        .where(
-          and(
-            eq(workbenchThreads.tenantId, tenantId),
-            eq(workbenchThreads.id, threadId),
-          ),
-        )
+        .where(and(eq(workbenchThreads.tenantId, tenantId), eq(workbenchThreads.id, threadId)))
         .limit(1);
       return rows[0] ? mapThreadRow(rows[0]) : undefined;
     },

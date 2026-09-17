@@ -74,10 +74,7 @@ type Validator<T> = (data: unknown) => T | type.errors;
 // carries `"lib": ["DOM"]` — see `@corbits/config-profiles`' own
 // `index.ts` module doc for why a server-only package deliberately never
 // adds that lib.
-export type FetchImpl = (
-  input: string | URL | Request,
-  init?: RequestInit,
-) => Promise<Response>;
+export type FetchImpl = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 async function request<T>(
   path: string,
@@ -93,9 +90,7 @@ async function request<T>(
       headers: { "content-type": "application/json", ...init?.headers },
     });
   } catch (cause) {
-    throw new InferenceSettingsApiError(
-      cause instanceof Error ? cause.message : String(cause),
-    );
+    throw new InferenceSettingsApiError(cause instanceof Error ? cause.message : String(cause));
   }
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => undefined);
@@ -136,9 +131,7 @@ async function requestVoid(
       headers: { "content-type": "application/json", ...init?.headers },
     });
   } catch (cause) {
-    throw new InferenceSettingsApiError(
-      cause instanceof Error ? cause.message : String(cause),
-    );
+    throw new InferenceSettingsApiError(cause instanceof Error ? cause.message : String(cause));
   }
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => undefined);
@@ -300,13 +293,7 @@ export async function shadowOffering(
     fetchImpl,
   );
   try {
-    return await ensureOffering(
-      tenantId,
-      modelId,
-      providerId,
-      input.priority,
-      fetchImpl,
-    );
+    return await ensureOffering(tenantId, modelId, providerId, input.priority, fetchImpl);
   } catch (cause) {
     if (minted) {
       await requestVoid(
@@ -362,11 +349,7 @@ async function ensureCredential(
   input: ShadowOfferingInput,
   fetchImpl: FetchImpl,
 ): Promise<string> {
-  const providerRow = await ensureCredentialProvider(
-    tenantId,
-    input,
-    fetchImpl,
-  );
+  const providerRow = await ensureCredentialProvider(tenantId, input, fetchImpl);
   const credentialName = `${input.providerName}-workbench`;
   const created = await fetchImpl(`/api/tenants/${tenantId}/credentials`, {
     method: "POST",
@@ -467,21 +450,18 @@ async function ensureModelProvider(
   credentialId: string,
   fetchImpl: FetchImpl,
 ): Promise<EnsureModelProviderResult> {
-  const created = await fetchImpl(
-    `/api/tenants/${tenantId}/catalog/providers`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(
-        CreateModelProvider.assert({
-          name: input.providerName,
-          plugin: input.plugin,
-          baseURL: input.baseURL,
-          credentialId,
-        }),
-      ),
-    },
-  );
+  const created = await fetchImpl(`/api/tenants/${tenantId}/catalog/providers`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(
+      CreateModelProvider.assert({
+        name: input.providerName,
+        plugin: input.plugin,
+        baseURL: input.baseURL,
+        credentialId,
+      }),
+    ),
+  });
   if (created.status === 201) {
     const body: unknown = await created.json();
     return { providerId: ModelProviderResponse.assert(body).id, minted: true };
@@ -515,16 +495,11 @@ async function ensureOffering(
   priority: number,
   fetchImpl: FetchImpl,
 ): Promise<typeof ModelOfferingResponse.infer> {
-  const created = await fetchImpl(
-    `/api/tenants/${tenantId}/catalog/offerings`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(
-        CreateModelOffering.assert({ modelId, providerId, priority }),
-      ),
-    },
-  );
+  const created = await fetchImpl(`/api/tenants/${tenantId}/catalog/offerings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(CreateModelOffering.assert({ modelId, providerId, priority })),
+  });
   if (created.status === 201) {
     const body: unknown = await created.json();
     return ModelOfferingResponse.assert(body);

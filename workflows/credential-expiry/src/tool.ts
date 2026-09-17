@@ -32,53 +32,52 @@ export interface WorkflowCredentialExpiryEnv extends BaseEnv {
   readonly address: string;
 }
 
-export const CREDENTIAL_EXPIRY_CHECK_TOOL =
-  defineTool<WorkflowCredentialExpiryEnv>({
-    id: "@corbits/workflow-credential-expiry/check",
-    requires: ["hubConnectionsUrl", "tenantId", "sidecarToken", "address"],
-    definitions: [{ name: CREDENTIAL_EXPIRY_CHECK_TOOL_NAME }],
-    factory: (env) => ({
-      definitions: [
-        {
-          name: CREDENTIAL_EXPIRY_CHECK_TOOL_NAME,
-          description: CREDENTIAL_EXPIRY_CHECK_DESCRIPTION,
-          inputSchema: { type: "object", properties: {}, required: [] },
-        },
-      ],
-      run: async (call) => {
-        try {
-          const candidates = await fetchTenantCredentials({
-            hubConnectionsUrl: env.hubConnectionsUrl,
-            tenantId: env.tenantId,
-            sidecarToken: env.sidecarToken,
-            address: env.address,
-          });
-          const due = findDueCredentialExpiries(candidates, new Date());
-          return {
-            callId: call.id,
-            isError: false,
-            content: JSON.stringify({
-              due: due.map(({ credential }) => ({
-                credentialId: credential.credentialId,
-                name: credential.name,
-                providerLabel: credential.providerLabel,
-                expiresAt: credential.expiresAt,
-              })),
-            }),
-          };
-        } catch (err) {
-          // report-error-ignore: this failure is surfaced to the calling
-          // agent as an error tool result, which it reports plainly in
-          // its reply rather than silently retrying — nothing here is
-          // swallowed.
-          return {
-            callId: call.id,
-            isError: true,
-            content: `Failed to check credential expiry: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          };
-        }
+export const CREDENTIAL_EXPIRY_CHECK_TOOL = defineTool<WorkflowCredentialExpiryEnv>({
+  id: "@corbits/workflow-credential-expiry/check",
+  requires: ["hubConnectionsUrl", "tenantId", "sidecarToken", "address"],
+  definitions: [{ name: CREDENTIAL_EXPIRY_CHECK_TOOL_NAME }],
+  factory: (env) => ({
+    definitions: [
+      {
+        name: CREDENTIAL_EXPIRY_CHECK_TOOL_NAME,
+        description: CREDENTIAL_EXPIRY_CHECK_DESCRIPTION,
+        inputSchema: { type: "object", properties: {}, required: [] },
       },
-    }),
-  });
+    ],
+    run: async (call) => {
+      try {
+        const candidates = await fetchTenantCredentials({
+          hubConnectionsUrl: env.hubConnectionsUrl,
+          tenantId: env.tenantId,
+          sidecarToken: env.sidecarToken,
+          address: env.address,
+        });
+        const due = findDueCredentialExpiries(candidates, new Date());
+        return {
+          callId: call.id,
+          isError: false,
+          content: JSON.stringify({
+            due: due.map(({ credential }) => ({
+              credentialId: credential.credentialId,
+              name: credential.name,
+              providerLabel: credential.providerLabel,
+              expiresAt: credential.expiresAt,
+            })),
+          }),
+        };
+      } catch (err) {
+        // report-error-ignore: this failure is surfaced to the calling
+        // agent as an error tool result, which it reports plainly in
+        // its reply rather than silently retrying — nothing here is
+        // swallowed.
+        return {
+          callId: call.id,
+          isError: true,
+          content: `Failed to check credential expiry: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        };
+      }
+    },
+  }),
+});

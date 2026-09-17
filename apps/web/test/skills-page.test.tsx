@@ -42,15 +42,13 @@ function stubRoutes(routes: StubRoutes): void {
     requested.push({
       method,
       path,
-      body:
-        init?.body === undefined ? undefined : JSON.parse(String(init.body)),
+      body: init?.body === undefined ? undefined : JSON.parse(String(init.body)),
     });
     const key = `${method} ${path}`;
     if (!(key in routes)) {
-      return new Response(
-        JSON.stringify({ error: { message: `no stub for ${key}` } }),
-        { status: 404 },
-      );
+      return new Response(JSON.stringify({ error: { message: `no stub for ${key}` } }), {
+        status: 404,
+      });
     }
     return new Response(JSON.stringify(routes[key]), { status: 200 });
   }) as unknown as typeof fetch;
@@ -110,14 +108,11 @@ function nativeValueSetter(
 }
 
 function fillField(id: string, value: string, textarea = false) {
-  const el = document.getElementById(id) as
-    HTMLInputElement | HTMLTextAreaElement | null;
+  const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null;
   expect(el).not.toBeNull();
   if (el === null) return;
   const setter = nativeValueSetter(
-    textarea
-      ? window.HTMLTextAreaElement.prototype
-      : window.HTMLInputElement.prototype,
+    textarea ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
   );
   setter.call(el, value);
   el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -180,9 +175,7 @@ describe("SkillsPage", () => {
   test("an explicit displayName wins over the title-cased slug", async () => {
     stubRoutes({
       ...EMPTY_REGISTRY,
-      [`GET ${LIST_PATH}`]: [
-        { ...TRIAGE_ASSET, name: "summarize", displayName: "Summarize Now!" },
-      ],
+      [`GET ${LIST_PATH}`]: [{ ...TRIAGE_ASSET, name: "summarize", displayName: "Summarize Now!" }],
     });
     const el = await mount();
     const nameCell = Array.from(el.querySelectorAll("td")).find((cell) =>
@@ -226,9 +219,7 @@ describe("SkillsPage", () => {
       await Promise.resolve();
     });
 
-    const call = requested.find(
-      (entry) => entry.method === "POST" && entry.path === CREATE_PATH,
-    );
+    const call = requested.find((entry) => entry.method === "POST" && entry.path === CREATE_PATH);
     expect(call?.body).toEqual({
       kind: "skill",
       name: "summarize",
@@ -271,9 +262,7 @@ describe("SkillsPage", () => {
       await Promise.resolve();
     });
 
-    const call = requested.find(
-      (entry) => entry.method === "POST" && entry.path === CREATE_PATH,
-    );
+    const call = requested.find((entry) => entry.method === "POST" && entry.path === CREATE_PATH);
     expect(call?.body).toEqual({ kind: "skill", name: "summarize" });
     expect(navigated).toContain("/skills/summarize");
   });
@@ -291,8 +280,7 @@ describe("SkillsPage", () => {
       requested.push({
         method,
         path,
-        body:
-          init?.body === undefined ? undefined : JSON.parse(String(init.body)),
+        body: init?.body === undefined ? undefined : JSON.parse(String(init.body)),
       });
       if (method === "POST" && path === CREATE_PATH) {
         return new Response(
@@ -335,9 +323,7 @@ describe("SkillsPage", () => {
     // The dialog is still open with the typed values rather than closed.
     expect(document.body.textContent).toContain("Create skill");
     expect(
-      requested.filter(
-        (entry) => entry.method === "POST" && entry.path === CREATE_PATH,
-      ),
+      requested.filter((entry) => entry.method === "POST" && entry.path === CREATE_PATH),
     ).toHaveLength(1);
   });
 
@@ -378,9 +364,7 @@ describe("SkillsPage", () => {
 
 describe("CreateSkillDialog validation", () => {
   test("an empty form names every missing field in plain language", () => {
-    expect(validationIssues({ name: "", displayName: "" })).toEqual([
-      "Name is required.",
-    ]);
+    expect(validationIssues({ name: "", displayName: "" })).toEqual(["Name is required."]);
   });
 
   test("a slug the asset routes could never carry is rejected before submit", () => {
@@ -389,9 +373,7 @@ describe("CreateSkillDialog validation", () => {
         name: "Summarize Transcript",
         displayName: "",
       }),
-    ).toEqual([
-      "Name must be lowercase letters, digits, and hyphens — no whitespace or capitals.",
-    ]);
+    ).toEqual(["Name must be lowercase letters, digits, and hyphens — no whitespace or capitals."]);
   });
 
   test("a complete form has no validation issues", () => {
@@ -404,8 +386,6 @@ describe("CreateSkillDialog validation", () => {
   });
 
   test("displayName stays optional — a bare name is submittable", () => {
-    expect(validationIssues({ name: "summarize", displayName: "" })).toEqual(
-      [],
-    );
+    expect(validationIssues({ name: "summarize", displayName: "" })).toEqual([]);
   });
 });

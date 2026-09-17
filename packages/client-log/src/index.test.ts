@@ -53,8 +53,7 @@ describe("client log", () => {
     const originalError = console.error;
     console.log = (...args: unknown[]) => calls.push({ level: "log", args });
     console.warn = (...args: unknown[]) => calls.push({ level: "warn", args });
-    console.error = (...args: unknown[]) =>
-      calls.push({ level: "error", args });
+    console.error = (...args: unknown[]) => calls.push({ level: "error", args });
 
     try {
       const log = getLogger("test");

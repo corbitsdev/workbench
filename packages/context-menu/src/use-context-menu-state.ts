@@ -10,12 +10,7 @@ export type ContextMenuState = {
   /** The element that was right-clicked to open the current (or last-shown)
    * menu — where focus returns to once the menu closes. */
   readonly triggerElement: Element | null;
-  readonly show: (
-    x: number,
-    y: number,
-    menu: ContextMenu,
-    triggerElement?: Element | null,
-  ) => void;
+  readonly show: (x: number, y: number, menu: ContextMenu, triggerElement?: Element | null) => void;
   readonly hide: () => void;
 };
 
@@ -30,12 +25,7 @@ export function useContextMenuState(): ContextMenuState {
   const [triggerElement, setTriggerElement] = useState<Element | null>(null);
 
   const show = useCallback(
-    (
-      x: number,
-      y: number,
-      next: ContextMenu,
-      origin: Element | null = null,
-    ) => {
+    (x: number, y: number, next: ContextMenu, origin: Element | null = null) => {
       setPosition({ x, y });
       setMenu(next);
       setTriggerElement(origin);

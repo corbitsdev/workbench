@@ -12,18 +12,12 @@ import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import {
-  createEnvKeyCredentialCipher,
-  createNoopCredentialCipher,
-} from "@intx/crypto";
+import { createEnvKeyCredentialCipher, createNoopCredentialCipher } from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
 import type { CreateOnboardingRoutesDeps } from "../src/routes";
 import { testAndPersistCredential } from "../src/complete-credential";
 import { s256Challenge } from "@corbits/connections";
-import {
-  createInMemoryPendingSeedStore,
-  type PendingSeedStore,
-} from "../src/pending-seed";
+import { createInMemoryPendingSeedStore, type PendingSeedStore } from "../src/pending-seed";
 
 // Stands in for a stable `CREDENTIAL_ENCRYPTION_KEY`: a fresh cipher
 // built from these same bytes is indistinguishable, to the state store,
@@ -119,9 +113,7 @@ function mockHub() {
     credentials.push(row);
     return c.json(row, 201);
   });
-  hub.get("/api/tenants/ten_1/credentials", (c) =>
-    c.json({ data: credentials, nextCursor: null }),
-  );
+  hub.get("/api/tenants/ten_1/credentials", (c) => c.json({ data: credentials, nextCursor: null }));
   hub.post("/api/tenants/ten_1/catalog/providers", (c) =>
     c.json(
       {
@@ -156,9 +148,7 @@ function mockHub() {
       201,
     ),
   );
-  hub.get("/api/tenants/ten_1/catalog/offerings", (c) =>
-    c.json({ data: [], nextCursor: null }),
-  );
+  hub.get("/api/tenants/ten_1/catalog/offerings", (c) => c.json({ data: [], nextCursor: null }));
   return hub;
 }
 
@@ -166,9 +156,7 @@ function mockHub() {
  * need stubbing out here, so this now just forwards to the real
  * `testAndPersistCredential` unchanged. */
 const connectCredentialAgainstMockHub: NonNullable<
-  NonNullable<
-    CreateOnboardingRoutesDeps["huggingfaceConnect"]
-  >["connectCredential"]
+  NonNullable<CreateOnboardingRoutesDeps["huggingfaceConnect"]>["connectCredential"]
 > = (args) => testAndPersistCredential(args);
 
 function asUser(session: { userId: string }): MiddlewareHandler<AppEnv> {
@@ -181,10 +169,7 @@ function asUser(session: { userId: string }): MiddlewareHandler<AppEnv> {
   };
 }
 
-function mountAuthenticated(
-  routes: Hono<AppEnv>,
-  session: { userId: string },
-): Hono<AppEnv> {
+function mountAuthenticated(routes: Hono<AppEnv>, session: { userId: string }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   app.use("*", asUser(session));
   app.route("/api/onboarding", routes);
@@ -215,16 +200,14 @@ function connectRoutes(
       (async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) })),
     log: overrides.log ?? (() => undefined),
     pendingSeedStore:
-      overrides.pendingSeedStore ??
-      createInMemoryPendingSeedStore(createNoopCredentialCipher()),
+      overrides.pendingSeedStore ?? createInMemoryPendingSeedStore(createNoopCredentialCipher()),
   };
   if (overrides.omitClientId !== true) {
     deps.huggingfaceClientId = overrides.huggingfaceClientId ?? "hf_client_1";
   }
   if (overrides.huggingfaceConnect !== undefined)
     deps.huggingfaceConnect = overrides.huggingfaceConnect;
-  if (overrides.credentialCipher !== undefined)
-    deps.credentialCipher = overrides.credentialCipher;
+  if (overrides.credentialCipher !== undefined) deps.credentialCipher = overrides.credentialCipher;
   return mountAuthenticated(createOnboardingRoutes(deps), session);
 }
 
@@ -253,9 +236,7 @@ describe("GET /oauth/huggingface/start", () => {
     expect(location.searchParams.get("client_id")).toBe("hf_client_1");
     expect(location.searchParams.get("scope")).toBe("openid inference-api");
     expect(location.searchParams.get("code_challenge_method")).toBe("S256");
-    expect(location.searchParams.get("code_challenge")).toMatch(
-      /^[A-Za-z0-9_-]{43}$/,
-    );
+    expect(location.searchParams.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(location.searchParams.get("redirect_uri")).toBe(
       "https://bench.example.com/api/onboarding/oauth/huggingface/callback",
     );
@@ -266,26 +247,19 @@ describe("GET /oauth/huggingface/start", () => {
     // percent-encodes it in `Set-Cookie`, so compare decoded rather than
     // as a raw substring.
     const cookieMatch = /workbench_huggingface_connect=([^;]+)/.exec(setCookie);
-    expect(
-      cookieMatch?.[1] !== undefined
-        ? decodeURIComponent(cookieMatch[1])
-        : undefined,
-    ).toBe(state ?? undefined);
+    expect(cookieMatch?.[1] !== undefined ? decodeURIComponent(cookieMatch[1]) : undefined).toBe(
+      state ?? undefined,
+    );
     expect(setCookie).toContain("HttpOnly");
   });
 
   test("without a configured client id, the flow reports not_configured and parks nothing", async () => {
     const app = connectRoutes({ omitClientId: true });
 
-    const response = await app.request(
-      "/api/onboarding/oauth/huggingface/start",
-    );
+    const response = await app.request("/api/onboarding/oauth/huggingface/start");
 
     expect(response.status).toBe(302);
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("connect")).toBe("huggingface");
     expect(redirect.searchParams.get("outcome")).toBe("error");
     expect(redirect.searchParams.get("code")).toBe("not_configured");
@@ -299,10 +273,7 @@ describe("GET /oauth/huggingface/start", () => {
     const second = await app.request("/api/onboarding/oauth/huggingface/start");
 
     expect(second.status).toBe(302);
-    const redirect = new URL(
-      second.headers.get("location") ?? "",
-      "https://bench.example.com",
-    );
+    const redirect = new URL(second.headers.get("location") ?? "", "https://bench.example.com");
     expect(redirect.searchParams.get("outcome")).toBe("error");
     expect(redirect.searchParams.get("code")).toBe("rate_limited");
   });
@@ -342,9 +313,7 @@ describe("GET /oauth/huggingface/callback", () => {
             provider: args.provider,
             apiKey: args.apiKey,
             userId: args.userId,
-            ...(args.expiresAt !== undefined
-              ? { expiresAt: args.expiresAt }
-              : {}),
+            ...(args.expiresAt !== undefined ? { expiresAt: args.expiresAt } : {}),
           };
           connections.push(
             args.credentialMetadata !== undefined
@@ -372,10 +341,7 @@ describe("GET /oauth/huggingface/callback", () => {
     );
 
     expect(response.status).toBe(302);
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://bench.example.com",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://bench.example.com");
     expect(redirect.pathname).toBe("/onboarding");
     expect(redirect.searchParams.get("connect")).toBe("huggingface");
     expect(redirect.searchParams.get("outcome")).toBe("connected");
@@ -389,9 +355,9 @@ describe("GET /oauth/huggingface/callback", () => {
     expect(exchanges[0]?.redirectUri).toBe(
       "https://bench.example.com/api/onboarding/oauth/huggingface/callback",
     );
-    expect(
-      exchanges[0] && (await s256Challenge(exchanges[0].codeVerifier)),
-    ).toBe(location.searchParams.get("code_challenge") ?? "");
+    expect(exchanges[0] && (await s256Challenge(exchanges[0].codeVerifier))).toBe(
+      location.searchParams.get("code_challenge") ?? "",
+    );
 
     expect(connections).toEqual([
       {
@@ -445,10 +411,7 @@ describe("GET /oauth/huggingface/callback", () => {
       { headers: { cookie } },
     );
 
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("outcome")).toBe("error");
     expect(redirect.searchParams.get("code")).toBe("state_expired");
     expect(exchanged).toBe(0);
@@ -489,10 +452,7 @@ describe("GET /oauth/huggingface/callback", () => {
       { headers: { cookie } },
     );
 
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("outcome")).toBe("error");
     expect(redirect.searchParams.get("code")).toBe("state_expired");
     expect(exchanged).toBe(0);
@@ -521,19 +481,11 @@ describe("GET /oauth/huggingface/callback", () => {
       const second = await app.request(path, { headers: { cookie } });
 
       expect(
-        new URL(
-          first.headers.get("location") ?? "",
-          "https://x",
-        ).searchParams.get("outcome"),
+        new URL(first.headers.get("location") ?? "", "https://x").searchParams.get("outcome"),
       ).toBe("connected");
-      const secondRedirect = new URL(
-        second.headers.get("location") ?? "",
-        "https://x",
-      );
+      const secondRedirect = new URL(second.headers.get("location") ?? "", "https://x");
       expect(secondRedirect.searchParams.get("outcome")).toBe("connected");
-      expect(secondRedirect.searchParams.get("tenantSlug")).toBe(
-        "user-1-user1",
-      );
+      expect(secondRedirect.searchParams.get("tenantSlug")).toBe("user-1-user1");
     } finally {
       server.stop(true);
     }
@@ -566,10 +518,7 @@ describe("GET /oauth/huggingface/callback", () => {
 
       const first = await afterRestart.request(path, { headers: { cookie } });
       expect(
-        new URL(
-          first.headers.get("location") ?? "",
-          "https://x",
-        ).searchParams.get("outcome"),
+        new URL(first.headers.get("location") ?? "", "https://x").searchParams.get("outcome"),
       ).toBe("connected");
 
       // Replaying the same cookie and query state against the
@@ -578,10 +527,7 @@ describe("GET /oauth/huggingface/callback", () => {
       // credential.
       const replay = await afterRestart.request(path, { headers: { cookie } });
       expect(
-        new URL(
-          replay.headers.get("location") ?? "",
-          "https://x",
-        ).searchParams.get("outcome"),
+        new URL(replay.headers.get("location") ?? "", "https://x").searchParams.get("outcome"),
       ).toBe("connected");
     } finally {
       server.stop(true);
@@ -618,16 +564,11 @@ describe("GET /oauth/huggingface/callback", () => {
       { headers: { cookie: stateCookie(started) } },
     );
 
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("outcome")).toBe("error");
     expect(redirect.searchParams.get("code")).toBe("exchange_failed");
     expect(connected).toBe(0);
-    expect(lines.some((line) => line.includes("code exchange failed"))).toBe(
-      true,
-    );
+    expect(lines.some((line) => line.includes("code exchange failed"))).toBe(true);
   });
 
   test("a minted token that fails its probe is a key_rejected ending, not a success", async () => {
@@ -648,10 +589,7 @@ describe("GET /oauth/huggingface/callback", () => {
       { headers: { cookie: stateCookie(started) } },
     );
 
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("outcome")).toBe("error");
     expect(redirect.searchParams.get("code")).toBe("key_rejected");
   });
@@ -675,10 +613,7 @@ describe("GET /oauth/huggingface/callback", () => {
       { headers: { cookie: stateCookie(started) } },
     );
 
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("code")).toBe("setup_failed");
     expect(lines.join("\n")).not.toContain("hf_oauth_minted");
   });
@@ -711,10 +646,7 @@ describe("GET /oauth/huggingface/callback", () => {
         { headers: { cookie: stateCookie(started) } },
       );
 
-      const redirect = new URL(
-        response.headers.get("location") ?? "",
-        "https://x",
-      );
+      const redirect = new URL(response.headers.get("location") ?? "", "https://x");
       expect(redirect.searchParams.get("outcome")).toBe("connected");
       expect(deployPosts).toBe(0);
     } finally {

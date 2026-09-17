@@ -1,9 +1,37 @@
 {
   "name": "@corbits/heartbeat-workflow",
-  "description": "Minimal mail-triggered workflow that completes immediately, exercising Interchange's scheduling path at zero inference cost",
   "version": "0.0.1",
+  "description": "Minimal mail-triggered workflow that completes immediately, exercising Interchange's scheduling path at zero inference cost",
   "license": "LGPL-2.1-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "workflows/heartbeat"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/workflow": "0.3.0"
+  },
   "corbits": {
     "workflow": {
       "assetName": "heartbeat",
@@ -13,33 +41,5 @@
   },
   "interchange": {
     "workflow": "./src/index.ts"
-  },
-  "exports": {
-    ".": "./src/index.ts"
-  },
-  "files": [
-    "src",
-    "LICENSE",
-    "README.md"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "workflows/heartbeat"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "bun test"
-  },
-  "peerDependencies": {
-    "@intx/agent": "0.3.0",
-    "@intx/workflow": "0.3.0"
-  },
-  "devDependencies": {
-    "@types/bun": "catalog:",
-    "typescript": "catalog:"
   }
 }

@@ -12,9 +12,7 @@ import type { ExpiringCredential } from "./decide";
 
 const now = new Date("2026-08-13T12:00:00.000Z");
 
-function credential(
-  overrides: Partial<ExpiringCredential> = {},
-): ExpiringCredential {
+function credential(overrides: Partial<ExpiringCredential> = {}): ExpiringCredential {
   return {
     credentialId: "cred_1",
     name: "Hugging Face",
@@ -33,10 +31,7 @@ describe("findDueCredentialExpiries", () => {
   });
 
   test("a credential expiring exactly at now is due", () => {
-    const due = findDueCredentialExpiries(
-      [credential({ expiresAt: now.toISOString() })],
-      now,
-    );
+    const due = findDueCredentialExpiries([credential({ expiresAt: now.toISOString() })], now);
     expect(due).toHaveLength(1);
   });
 
@@ -49,26 +44,17 @@ describe("findDueCredentialExpiries", () => {
   });
 
   test("a durable credential with no expiry is never due", () => {
-    const due = findDueCredentialExpiries(
-      [credential({ expiresAt: undefined })],
-      now,
-    );
+    const due = findDueCredentialExpiries([credential({ expiresAt: undefined })], now);
     expect(due).toHaveLength(0);
   });
 
   test("a null expiresAt (the stock route's shape for 'none') is never due", () => {
-    const due = findDueCredentialExpiries(
-      [credential({ expiresAt: null })],
-      now,
-    );
+    const due = findDueCredentialExpiries([credential({ expiresAt: null })], now);
     expect(due).toHaveLength(0);
   });
 
   test("an already-expired credential is not re-decided", () => {
-    const due = findDueCredentialExpiries(
-      [credential({ status: "expired" })],
-      now,
-    );
+    const due = findDueCredentialExpiries([credential({ status: "expired" })], now);
     expect(due).toHaveLength(0);
   });
 
@@ -81,10 +67,7 @@ describe("findDueCredentialExpiries", () => {
   });
 
   test("an unparseable expiresAt is skipped rather than crashing", () => {
-    const due = findDueCredentialExpiries(
-      [credential({ expiresAt: "not-a-date" })],
-      now,
-    );
+    const due = findDueCredentialExpiries([credential({ expiresAt: "not-a-date" })], now);
     expect(due).toHaveLength(0);
   });
 
@@ -97,9 +80,6 @@ describe("findDueCredentialExpiries", () => {
       ],
       now,
     );
-    expect(due.map((d) => d.credential.credentialId)).toEqual([
-      "cred_a",
-      "cred_c",
-    ]);
+    expect(due.map((d) => d.credential.credentialId)).toEqual(["cred_a", "cred_c"]);
   });
 });

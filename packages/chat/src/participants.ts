@@ -72,10 +72,7 @@ export function handleFromName(name: string, fallbackAddress: string): string {
  * a workbench: "echo" becomes "echo-2", then "echo-3", etc. — the first
  * suffix not already taken.
  */
-export function dedupeHandle(
-  handle: string,
-  taken: ReadonlySet<string>,
-): string {
+export function dedupeHandle(handle: string, taken: ReadonlySet<string>): string {
   if (!taken.has(handle)) return handle;
   let suffix = 2;
   while (taken.has(`${handle}-${suffix}`)) suffix += 1;

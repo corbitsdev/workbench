@@ -101,8 +101,7 @@ function connectRoutes(
   const deps: Mutable<CreateOAuthConnectRoutesDeps> = {
     hubUrl: overrides.hubUrl ?? "https://bench.example.com",
     log: overrides.log ?? (() => undefined),
-    credentialCipher:
-      overrides.credentialCipher ?? createNoopCredentialCipher(),
+    credentialCipher: overrides.credentialCipher ?? createNoopCredentialCipher(),
     registry: overrides.registry ?? registry,
     connectCredential:
       overrides.connectCredential ??
@@ -115,12 +114,10 @@ function connectRoutes(
       })),
   };
   if (overrides.oauthEnv !== undefined) deps.oauthEnv = overrides.oauthEnv;
-  if (overrides.onConnected !== undefined)
-    deps.onConnected = overrides.onConnected;
+  if (overrides.onConnected !== undefined) deps.onConnected = overrides.onConnected;
   if (overrides.recentlyConnected !== undefined)
     deps.recentlyConnected = overrides.recentlyConnected;
-  if (overrides.afterConnected !== undefined)
-    deps.afterConnected = overrides.afterConnected;
+  if (overrides.afterConnected !== undefined) deps.afterConnected = overrides.afterConnected;
   if (overrides.defaultReturnPath !== undefined)
     deps.defaultReturnPath = overrides.defaultReturnPath;
   return mountAuthenticated(createOAuthConnectRoutes(deps));
@@ -137,9 +134,7 @@ function allCookies(startResponse: Response): string {
 }
 
 async function startConnect(app: Hono<AppEnv>, query = "") {
-  const response = await app.request(
-    `/api/connections/oauth/widget/start${query}`,
-  );
+  const response = await app.request(`/api/connections/oauth/widget/start${query}`);
   expect(response.status).toBe(302);
   const location = new URL(response.headers.get("location") ?? "");
   return { response, location };
@@ -150,45 +145,31 @@ describe("sanitizeReturnPath", () => {
   const allowlist = DEFAULT_RETURN_PATH_ALLOWLIST;
 
   test("falls back to the default when no value was given", () => {
-    expect(sanitizeReturnPath(undefined, defaultReturnPath, allowlist)).toBe(
-      defaultReturnPath,
-    );
-    expect(sanitizeReturnPath("", defaultReturnPath, allowlist)).toBe(
-      defaultReturnPath,
-    );
+    expect(sanitizeReturnPath(undefined, defaultReturnPath, allowlist)).toBe(defaultReturnPath);
+    expect(sanitizeReturnPath("", defaultReturnPath, allowlist)).toBe(defaultReturnPath);
   });
 
   test("passes through a legitimate, allowlisted path", () => {
-    expect(
-      sanitizeReturnPath("/settings/connections", defaultReturnPath, allowlist),
-    ).toBe("/settings/connections");
-    expect(
-      sanitizeReturnPath("/onboarding", defaultReturnPath, allowlist),
-    ).toBe("/onboarding");
+    expect(sanitizeReturnPath("/settings/connections", defaultReturnPath, allowlist)).toBe(
+      "/settings/connections",
+    );
+    expect(sanitizeReturnPath("/onboarding", defaultReturnPath, allowlist)).toBe("/onboarding");
   });
 
   for (const { name, value } of MALICIOUS_RETURN_PATHS) {
     test(`falls back to the default on ${name} (${JSON.stringify(value)})`, () => {
-      expect(sanitizeReturnPath(value, defaultReturnPath, allowlist)).toBe(
-        defaultReturnPath,
-      );
+      expect(sanitizeReturnPath(value, defaultReturnPath, allowlist)).toBe(defaultReturnPath);
     });
   }
 
   test("a value that only matches the allowlist after decoding is still honored", () => {
-    expect(
-      sanitizeReturnPath(
-        "%2Fsettings%2Fconnections",
-        defaultReturnPath,
-        allowlist,
-      ),
-    ).toBe("/settings/connections");
+    expect(sanitizeReturnPath("%2Fsettings%2Fconnections", defaultReturnPath, allowlist)).toBe(
+      "/settings/connections",
+    );
   });
 
   test("malformed percent-encoding falls back to the default silently", () => {
-    expect(sanitizeReturnPath("%", defaultReturnPath, allowlist)).toBe(
-      defaultReturnPath,
-    );
+    expect(sanitizeReturnPath("%", defaultReturnPath, allowlist)).toBe(defaultReturnPath);
   });
 });
 
@@ -204,9 +185,7 @@ describe("GET /:connectorId/start", () => {
     const { location, response } = await startConnect(app);
 
     expect(location.origin).toBe("https://widget.example.com");
-    expect(location.searchParams.get("code_challenge")).toMatch(
-      /^[A-Za-z0-9_-]{43}$/,
-    );
+    expect(location.searchParams.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(location.searchParams.get("redirect_uri")).toBe(
       "https://bench.example.com/api/connections/oauth/widget/callback",
     );
@@ -216,10 +195,7 @@ describe("GET /:connectorId/start", () => {
 
   test("carries the ?return= path across to the callback redirect via a second cookie", async () => {
     const app = connectRoutes();
-    const { response } = await startConnect(
-      app,
-      "?return=%2Fsettings%2Fconnections",
-    );
+    const { response } = await startConnect(app, "?return=%2Fsettings%2Fconnections");
 
     const setCookie = response.headers.getSetCookie().join("; ");
     expect(setCookie).toContain("workbench_widget_connect_return=");
@@ -246,10 +222,7 @@ describe("GET /:connectorId/start", () => {
 
     const response = await app.request("/api/connections/oauth/widget/start");
     expect(response.status).toBe(302);
-    const location = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const location = new URL(response.headers.get("location") ?? "", "https://x");
     expect(location.searchParams.get("code")).toBe("signed_out");
     expect(response.headers.get("set-cookie")).toBeNull();
   });
@@ -263,10 +236,7 @@ describe("GET /:connectorId/start", () => {
     );
 
     const response = await app.request("/api/connections/oauth/widget/start");
-    const location = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const location = new URL(response.headers.get("location") ?? "", "https://x");
     expect(location.searchParams.get("code")).toBe("not_configured");
     expect(response.headers.get("set-cookie")).toBeNull();
   });
@@ -394,28 +364,19 @@ describe("GET /:connectorId/callback", () => {
         };
       },
     });
-    const { response: started } = await startConnect(
-      app,
-      "?return=%2Fsettings%2Fconnections",
-    );
+    const { response: started } = await startConnect(app, "?return=%2Fsettings%2Fconnections");
     const cookie = allCookies(started);
 
-    const response = await app.request(
-      "/api/connections/oauth/widget/callback?code=abc123",
-      { headers: { cookie } },
-    );
+    const response = await app.request("/api/connections/oauth/widget/callback?code=abc123", {
+      headers: { cookie },
+    });
 
     expect(response.status).toBe(302);
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.pathname).toBe("/settings/connections");
     expect(redirect.searchParams.get("connect")).toBe("widget");
     expect(redirect.searchParams.get("outcome")).toBe("connected");
-    expect(stored).toEqual([
-      { apiKey: "key-for-abc123", connectorId: "widget" },
-    ]);
+    expect(stored).toEqual([{ apiKey: "key-for-abc123", connectorId: "widget" }]);
   });
 
   test("a redirect-flow exchange's expiry lands on the first-class expiresAt field", async () => {
@@ -451,10 +412,9 @@ describe("GET /:connectorId/callback", () => {
       },
     );
     const { response: started } = await startConnect(app);
-    const response = await app.request(
-      "/api/connections/oauth/widget/callback?code=abc123",
-      { headers: { cookie: allCookies(started) } },
-    );
+    const response = await app.request("/api/connections/oauth/widget/callback?code=abc123", {
+      headers: { cookie: allCookies(started) },
+    });
     expect(response.status).toBe(302);
     // The column is what serving-time refresh keys on; the metadata
     // presence stays, since it is what types the row `oauth_token`.
@@ -471,15 +431,11 @@ describe("GET /:connectorId/callback", () => {
     const { response: started } = await startConnect(app);
     const cookie = allCookies(started);
 
-    const response = await app.request(
-      "/api/connections/oauth/widget/callback?code=abc123",
-      { headers: { cookie } },
-    );
+    const response = await app.request("/api/connections/oauth/widget/callback?code=abc123", {
+      headers: { cookie },
+    });
 
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.pathname).toBe("/onboarding");
   });
 
@@ -497,13 +453,8 @@ describe("GET /:connectorId/callback", () => {
       },
     );
 
-    const response = await app.request(
-      "/api/connections/oauth/widget/callback?code=abc123",
-    );
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const response = await app.request("/api/connections/oauth/widget/callback?code=abc123");
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("code")).toBe("state_expired");
     expect(exchanged).toBe(0);
   });
@@ -529,10 +480,7 @@ describe("GET /:connectorId/callback", () => {
       "/api/connections/oauth/widget/callback?code=abc123&state=not-the-real-state",
       { headers: { cookie } },
     );
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("code")).toBe("state_expired");
     expect(exchanged).toBe(0);
   });
@@ -567,14 +515,10 @@ describe("GET /:connectorId/callback", () => {
     const cookie = allCookies(started);
 
     session.userId = "user_2";
-    const response = await app.request(
-      "/api/connections/oauth/widget/callback?code=abc123",
-      { headers: { cookie } },
-    );
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const response = await app.request("/api/connections/oauth/widget/callback?code=abc123", {
+      headers: { cookie },
+    });
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("code")).toBe("state_expired");
     expect(exchanged).toBe(0);
   });
@@ -595,16 +539,10 @@ describe("GET /:connectorId/callback", () => {
     const second = await app.request(path, { headers: { cookie } });
 
     expect(
-      new URL(
-        first.headers.get("location") ?? "",
-        "https://x",
-      ).searchParams.get("outcome"),
+      new URL(first.headers.get("location") ?? "", "https://x").searchParams.get("outcome"),
     ).toBe("connected");
     expect(
-      new URL(
-        second.headers.get("location") ?? "",
-        "https://x",
-      ).searchParams.get("outcome"),
+      new URL(second.headers.get("location") ?? "", "https://x").searchParams.get("outcome"),
     ).toBe("connected");
     expect(recoveryCalls).toBe(1);
   });
@@ -619,10 +557,7 @@ describe("GET /:connectorId/callback", () => {
     const second = await app.request(path, { headers: { cookie } });
 
     expect(
-      new URL(
-        second.headers.get("location") ?? "",
-        "https://x",
-      ).searchParams.get("code"),
+      new URL(second.headers.get("location") ?? "", "https://x").searchParams.get("code"),
     ).toBe("state_expired");
   });
 
@@ -650,14 +585,10 @@ describe("GET /:connectorId/callback", () => {
     const { response: started } = await startConnect(app);
     const cookie = allCookies(started);
 
-    const response = await app.request(
-      "/api/connections/oauth/widget/callback?code=abc123",
-      { headers: { cookie } },
-    );
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const response = await app.request("/api/connections/oauth/widget/callback?code=abc123", {
+      headers: { cookie },
+    });
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("code")).toBe("exchange_failed");
     expect(connected).toBe(0);
   });
@@ -672,14 +603,10 @@ describe("GET /:connectorId/callback", () => {
     const { response: started } = await startConnect(app);
     const cookie = allCookies(started);
 
-    const response = await app.request(
-      "/api/connections/oauth/widget/callback?code=abc123",
-      { headers: { cookie } },
-    );
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const response = await app.request("/api/connections/oauth/widget/callback?code=abc123", {
+      headers: { cookie },
+    });
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("code")).toBe("key_rejected");
   });
 
@@ -690,14 +617,10 @@ describe("GET /:connectorId/callback", () => {
     const { response: started } = await startConnect(app);
     const cookie = allCookies(started);
 
-    const response = await app.request(
-      "/api/connections/oauth/widget/callback?code=abc123",
-      { headers: { cookie } },
-    );
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const response = await app.request("/api/connections/oauth/widget/callback?code=abc123", {
+      headers: { cookie },
+    });
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("code")).toBe("no_bench");
   });
 
@@ -729,10 +652,9 @@ describe("GET /:connectorId/callback", () => {
     );
     const { response: deployStarted } = await startConnect(deployApp);
     const deployCookie = allCookies(deployStarted);
-    await deployApp.request(
-      "/api/connections/oauth/widget/callback?code=abc123",
-      { headers: { cookie: deployCookie } },
-    );
+    await deployApp.request("/api/connections/oauth/widget/callback?code=abc123", {
+      headers: { cookie: deployCookie },
+    });
     expect(calls).toBe(1);
   });
 
@@ -748,14 +670,10 @@ describe("GET /:connectorId/callback", () => {
     const { response: started } = await startConnect(app);
     const cookie = allCookies(started);
 
-    const response = await app.request(
-      "/api/connections/oauth/widget/callback?code=abc123",
-      { headers: { cookie } },
-    );
-    const redirect = new URL(
-      response.headers.get("location") ?? "",
-      "https://x",
-    );
+    const response = await app.request("/api/connections/oauth/widget/callback?code=abc123", {
+      headers: { cookie },
+    });
+    const redirect = new URL(response.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("code")).toBe("setup_failed");
     expect(lines.join("\n")).not.toContain("key-for-abc123");
     expect(report).toHaveBeenCalledTimes(1);
@@ -764,8 +682,7 @@ describe("GET /:connectorId/callback", () => {
       operation: "oauth_connect_setup",
       extra: { connectorId: "widget" },
     });
-    const extra = report.mock.calls[0]?.[1]?.extra as
-      Record<string, unknown> | undefined;
+    const extra = report.mock.calls[0]?.[1]?.extra as Record<string, unknown> | undefined;
     expect(JSON.stringify(extra)).not.toContain("key-for-abc123");
     report.mockRestore();
   });
@@ -784,10 +701,9 @@ describe("GET /:connectorId/callback", () => {
         const app = connectRoutes();
         const forgedCookie = `workbench_widget_connect_return=${encodeURIComponent(value)}`;
 
-        const response = await app.request(
-          "/api/connections/oauth/widget/callback?code=abc123",
-          { headers: { cookie: forgedCookie } },
-        );
+        const response = await app.request("/api/connections/oauth/widget/callback?code=abc123", {
+          headers: { cookie: forgedCookie },
+        });
 
         expect(response.status).toBe(302);
         const location = response.headers.get("location") ?? "";
@@ -807,10 +723,7 @@ describe("GET /:connectorId/callback", () => {
             tenantDomain: "widget-tenant.bench.local",
           }),
         });
-        const { response: started } = await startConnect(
-          app,
-          "?return=%2Fsettings%2Fconnections",
-        );
+        const { response: started } = await startConnect(app, "?return=%2Fsettings%2Fconnections");
         // The state cookie is untouched (a real, valid connect in
         // progress); only the return cookie is swapped for the forged
         // value, simulating an attacker who can write cookies on this
@@ -818,10 +731,9 @@ describe("GET /:connectorId/callback", () => {
         // control the OAuth round trip.
         const forgedCookie = `${stateCookieOnly(started)}; workbench_widget_connect_return=${encodeURIComponent(value)}`;
 
-        const response = await app.request(
-          "/api/connections/oauth/widget/callback?code=abc123",
-          { headers: { cookie: forgedCookie } },
-        );
+        const response = await app.request("/api/connections/oauth/widget/callback?code=abc123", {
+          headers: { cookie: forgedCookie },
+        });
 
         expect(response.status).toBe(302);
         const location = response.headers.get("location") ?? "";
@@ -844,14 +756,11 @@ describe("onConnected hook", () => {
     });
     const { response: started } = await startConnect(app);
     const cookie = allCookies(started);
-    const response = await app.request(
-      "/api/connections/oauth/widget/callback?code=abc123",
-      { headers: { cookie } },
-    );
+    const response = await app.request("/api/connections/oauth/widget/callback?code=abc123", {
+      headers: { cookie },
+    });
     expect(response.status).toBe(302);
-    expect(response.headers.get("location") ?? "").toContain(
-      "outcome=connected",
-    );
+    expect(response.headers.get("location") ?? "").toContain("outcome=connected");
     expect(events).toEqual([
       {
         tenantId: "ten_1",
@@ -870,14 +779,11 @@ describe("onConnected hook", () => {
     });
     const { response: started } = await startConnect(app);
     const cookie = allCookies(started);
-    const response = await app.request(
-      "/api/connections/oauth/widget/callback?code=abc123",
-      { headers: { cookie } },
-    );
+    const response = await app.request("/api/connections/oauth/widget/callback?code=abc123", {
+      headers: { cookie },
+    });
     expect(response.status).toBe(302);
-    expect(response.headers.get("location") ?? "").toContain(
-      "outcome=connected",
-    );
+    expect(response.headers.get("location") ?? "").toContain("outcome=connected");
   });
 });
 
@@ -895,9 +801,7 @@ describe("oauth-loopback descriptors", () => {
 
   test("the callback route refuses them too", async () => {
     const app = connectRoutes({}, { loopback: loopbackDescriptor() });
-    const response = await app.request(
-      "/api/connections/oauth/loopback/callback?code=abc",
-    );
+    const response = await app.request("/api/connections/oauth/loopback/callback?code=abc");
     expect(response.status).toBe(409);
     const body = (await response.json()) as {
       error: { code: string };

@@ -24,5 +24,4 @@ const _cursor: string | null = inferred.nextCursor;
 declare const principalsQuery: APIQuery<Inferred>;
 const _accepted: APIQuery<PrincipalsPage> = principalsQuery;
 // @ts-expect-error a drifted envelope (nextCursor: number) must be rejected
-const _rejected: APIQuery<{ data: Principal[]; nextCursor: number }> =
-  principalsQuery;
+const _rejected: APIQuery<{ data: Principal[]; nextCursor: number }> = principalsQuery;

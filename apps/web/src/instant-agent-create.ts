@@ -22,10 +22,7 @@ import {
 import { reportError } from "@corbits/error-sink";
 
 import { listAgentDefinitions } from "./agents-api";
-import {
-  autoNameFromFirstMessage,
-  NEW_WORKBENCH_TITLE,
-} from "./auto-workbench-title";
+import { autoNameFromFirstMessage, NEW_WORKBENCH_TITLE } from "./auto-workbench-title";
 import { findMyraDefinition } from "./myra-workbench";
 import { workbenchPath } from "./workbench-path";
 
@@ -120,10 +117,7 @@ export async function createWorkbench(
 ): Promise<void> {
   const definitions = await listAgentDefinitions(tenantId);
   if (findMyraDefinition(definitions) === undefined) {
-    throw new WorkbenchPreconditionError(
-      SETUP_AGENT_MISSING_MESSAGE,
-      "setup-agent-missing",
-    );
+    throw new WorkbenchPreconditionError(SETUP_AGENT_MISSING_MESSAGE, "setup-agent-missing");
   }
   const workbench = await createWorkbenchChannel(tenantId, {
     kind: "workbench",
@@ -131,26 +125,16 @@ export async function createWorkbench(
   });
 
   if (firstMessage !== undefined && firstMessage.trim() !== "") {
-    const selectedAgentInvites = [...new Set(selectedAgentDefinitionIds)].map(
-      (definitionId) => ({ kind: "agent" as const, definitionId }),
-    );
+    const selectedAgentInvites = [...new Set(selectedAgentDefinitionIds)].map((definitionId) => ({
+      kind: "agent" as const,
+      definitionId,
+    }));
     try {
-      await sendMessage(
-        tenantId,
-        workbench.id,
-        partsForSend(firstMessage, []),
-        {
-          ...(selectedAgentInvites.length > 0
-            ? { invite: selectedAgentInvites }
-            : {}),
-        },
-      );
+      await sendMessage(tenantId, workbench.id, partsForSend(firstMessage, []), {
+        ...(selectedAgentInvites.length > 0 ? { invite: selectedAgentInvites } : {}),
+      });
     } catch (cause) {
-      throw new WorkbenchPostCreateError(
-        workbench.id,
-        "opening-message",
-        cause,
-      );
+      throw new WorkbenchPostCreateError(workbench.id, "opening-message", cause);
     }
     // Blank / ad-hoc mints stay "New Workbench" until named. When the
     // prompt box already supplied the opening message, rename via the same

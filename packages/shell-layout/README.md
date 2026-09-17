@@ -14,17 +14,14 @@ TArtifact>` and its transition functions (`openProfileInCanvas`,
 generic over whatever a host's canvas renders:
 
 ```ts
-import {
-  initialCanvasColumnState,
-  type CanvasColumnState,
-} from "@corbits/shell-layout";
+import { initialCanvasColumnState, type CanvasColumnState } from "@corbits/shell-layout";
 
 type HostProfile = { id: string; displayName: string };
 type HostArtifact = { id: string; title: string; body: string };
 
-const [state, setState] = useState<
-  CanvasColumnState<HostProfile, HostArtifact>
->(initialCanvasColumnState<HostProfile, HostArtifact>);
+const [state, setState] = useState<CanvasColumnState<HostProfile, HostArtifact>>(
+  initialCanvasColumnState<HostProfile, HostArtifact>,
+);
 ```
 
 This package never imports the host's concrete subject or artifact

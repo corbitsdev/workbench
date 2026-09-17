@@ -29,9 +29,7 @@ export type ArtifactDetail = ArtifactListRow & {
 };
 
 /** One list row reshaped for the Library gallery. */
-export function artifactListRowToSummary(
-  row: ArtifactListRow,
-): ArtifactSummary {
+export function artifactListRowToSummary(row: ArtifactListRow): ArtifactSummary {
   return {
     id: row.id,
     title: row.title,
@@ -43,9 +41,7 @@ export function artifactListRowToSummary(
 }
 
 /** Map a full listing into gallery rows, preserving order and count. */
-export function mapArtifactListToSummaries(
-  rows: readonly ArtifactListRow[],
-): ArtifactSummary[] {
+export function mapArtifactListToSummaries(rows: readonly ArtifactListRow[]): ArtifactSummary[] {
   return rows.map(artifactListRowToSummary);
 }
 
@@ -74,9 +70,7 @@ export async function uploadArtifactFiles(
       body: form,
     });
   } catch (cause) {
-    throw new ApiQueryError(
-      cause instanceof Error ? cause.message : String(cause),
-    );
+    throw new ApiQueryError(cause instanceof Error ? cause.message : String(cause));
   }
   if (response.status === 401) {
     throw new UnauthenticatedError();
@@ -109,18 +103,13 @@ export async function saveArtifactContent(
 ): Promise<ArtifactDetail> {
   let response: Response;
   try {
-    response = await fetch(
-      `/api/tenants/${tenantId}/artifacts/${encodeURIComponent(artifactId)}`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
-      },
-    );
+    response = await fetch(`/api/tenants/${tenantId}/artifacts/${encodeURIComponent(artifactId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
   } catch (cause) {
-    throw new ApiQueryError(
-      cause instanceof Error ? cause.message : String(cause),
-    );
+    throw new ApiQueryError(cause instanceof Error ? cause.message : String(cause));
   }
   if (response.status === 401) {
     throw new UnauthenticatedError();
@@ -138,9 +127,7 @@ export async function saveArtifactContent(
  * read off the query's own status field, never string-matched out of a
  * rendered message (that copy is display-boundary plain by design and
  * carries no status text to match against). */
-export function isArtifactsUnavailableStatus(
-  status: number | undefined,
-): boolean {
+export function isArtifactsUnavailableStatus(status: number | undefined): boolean {
   return status === 503;
 }
 
@@ -173,9 +160,7 @@ export function libraryArtifactDeepLink(id: string): string {
  * clipboard — the same `copyLink` idiom already used for workbenches,
  * routines, and insight runs, extended to a whole selection. */
 export async function copyArtifactLinks(ids: readonly string[]): Promise<void> {
-  const urls = ids.map(
-    (id) => `${window.location.origin}${libraryArtifactDeepLink(id)}`,
-  );
+  const urls = ids.map((id) => `${window.location.origin}${libraryArtifactDeepLink(id)}`);
   await navigator.clipboard.writeText(urls.join("\n"));
 }
 
@@ -197,9 +182,7 @@ export function copyArtifactLinksActionLabel(count: number): string {
  * with no upload backing at all (e.g. a co-edited doc), which is the only
  * case where an empty `content` genuinely means "nothing here yet."
  */
-export function uploadMimeTypeFromSource(
-  source: Record<string, unknown>,
-): string | null {
+export function uploadMimeTypeFromSource(source: Record<string, unknown>): string | null {
   const upload = source.upload;
   if (typeof upload !== "object" || upload === null) return null;
   const mimeType = (upload as Record<string, unknown>).mimeType;

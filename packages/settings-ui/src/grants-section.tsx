@@ -31,21 +31,9 @@ import type { GrantEffect, GrantOrigin } from "@intx/types";
 import { useEffect, useMemo, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
-import {
-  QueryView,
-  UnauthenticatedError,
-  describeQueryError,
-} from "@corbits/api-query";
-import {
-  PRINCIPAL_KIND_LABEL,
-  PRINCIPAL_KIND_ORDER,
-  principalLabel,
-} from "./identity";
-import {
-  expiryIsoFromPreset,
-  expiryLabelFromPreset,
-  grantPreviewSentence,
-} from "./grant-preview";
+import { QueryView, UnauthenticatedError, describeQueryError } from "@corbits/api-query";
+import { PRINCIPAL_KIND_LABEL, PRINCIPAL_KIND_ORDER, principalLabel } from "./identity";
+import { expiryIsoFromPreset, expiryLabelFromPreset, grantPreviewSentence } from "./grant-preview";
 import { KindCards } from "./kind-cards";
 import {
   GRANT_ACTIONS,
@@ -95,11 +83,7 @@ type GrantsData = {
   readonly principals: readonly Principal[];
 };
 
-export function GrantsSection({
-  tenantId,
-}: {
-  readonly tenantId: string | null;
-}) {
+export function GrantsSection({ tenantId }: { readonly tenantId: string | null }) {
   const [filters, setFilters] = useState<GrantFilters>({});
   const [query, setQuery] = useState<APIQuery<GrantsData>>({
     kind: "loading",
@@ -119,14 +103,9 @@ export function GrantsSection({
     if (tenantId === null) return;
     let cancelled = false;
     setQuery({ kind: "loading" });
-    Promise.all([
-      listGrants(tenantId, filters),
-      listRoles(tenantId),
-      listPrincipals(tenantId),
-    ])
+    Promise.all([listGrants(tenantId, filters), listRoles(tenantId), listPrincipals(tenantId)])
       .then(([grants, roles, principals]) => {
-        if (!cancelled)
-          setQuery({ kind: "ready", data: { grants, roles, principals } });
+        if (!cancelled) setQuery({ kind: "ready", data: { grants, roles, principals } });
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -143,7 +122,6 @@ export function GrantsSection({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, reloadKey, filtersKey]);
 
   if (tenantId === null) {
@@ -179,9 +157,7 @@ export function GrantsSection({
         : { ...shared, principalId: input.targetId };
     createGrant(
       tenantId,
-      input.expiresAt !== null
-        ? { ...target, expiresAt: input.expiresAt }
-        : target,
+      input.expiresAt !== null ? { ...target, expiresAt: input.expiresAt } : target,
     )
       .then(() => {
         setCreateOpen(false);
@@ -335,24 +311,16 @@ export function GrantsTable({
       <TableBody>
         {grants.map((grant) => (
           <TableRow key={grant.id}>
+            <TableCell>{grant.roleName ?? grant.principalName ?? "—"}</TableCell>
             <TableCell>
-              {grant.roleName ?? grant.principalName ?? "—"}
-            </TableCell>
-            <TableCell>
-              <span title={grant.resource}>
-                {resourceLabel(grant.resource)}
-              </span>
+              <span title={grant.resource}>{resourceLabel(grant.resource)}</span>
             </TableCell>
             <TableCell>{grant.action}</TableCell>
             <TableCell>
-              <Badge tone={EFFECT_TONE[grant.effect]}>
-                {EFFECT_LABEL[grant.effect]}
-              </Badge>
+              <Badge tone={EFFECT_TONE[grant.effect]}>{EFFECT_LABEL[grant.effect]}</Badge>
             </TableCell>
             <TableCell>{grant.origin}</TableCell>
-            <TableCell>
-              {grant.expiresAt ?? SETTINGS_STRINGS.grantsNoExpiry}
-            </TableCell>
+            <TableCell>{grant.expiresAt ?? SETTINGS_STRINGS.grantsNoExpiry}</TableCell>
             <TableCell>
               <ConfirmButton
                 variant="destructive"
@@ -402,9 +370,7 @@ export function CreateGrantDialog({
   // Default to Require approval (ask) — the safer first choice for new grants.
   const [effect, setEffect] = useState<GrantEffect>("ask");
   const [origin, setOrigin] = useState<GrantOrigin>("role");
-  const [expiryPreset, setExpiryPreset] = useState<
-    "never" | "24h" | "7d" | "30d"
-  >("never");
+  const [expiryPreset, setExpiryPreset] = useState<"never" | "24h" | "7d" | "30d">("never");
 
   const targetOptions = useMemo(
     () =>
@@ -422,8 +388,7 @@ export function CreateGrantDialog({
     [targetType, roles, principals],
   );
 
-  const targetLabel =
-    targetOptions.find((option) => option.id === targetId)?.label ?? null;
+  const targetLabel = targetOptions.find((option) => option.id === targetId)?.label ?? null;
   const preview = grantPreviewSentence({
     targetLabel,
     resource: resourceLabel(resource),
@@ -455,9 +420,7 @@ export function CreateGrantDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{SETTINGS_STRINGS.grantsCreateDialogTitle}</DialogTitle>
-          <DialogDescription>
-            {SETTINGS_STRINGS.grantsCreateDialogDescription}
-          </DialogDescription>
+          <DialogDescription>{SETTINGS_STRINGS.grantsCreateDialogDescription}</DialogDescription>
         </DialogHeader>
         <DialogBody>
           <form
@@ -492,14 +455,12 @@ export function CreateGrantDialog({
                   {
                     id: "role",
                     title: SETTINGS_STRINGS.grantsTargetTypeRole,
-                    description:
-                      SETTINGS_STRINGS.grantsTargetTypeRoleDescription,
+                    description: SETTINGS_STRINGS.grantsTargetTypeRoleDescription,
                   },
                   {
                     id: "principal",
                     title: SETTINGS_STRINGS.grantsTargetTypePrincipal,
-                    description:
-                      SETTINGS_STRINGS.grantsTargetTypePrincipalDescription,
+                    description: SETTINGS_STRINGS.grantsTargetTypePrincipalDescription,
                   },
                 ]}
               />
@@ -520,9 +481,7 @@ export function CreateGrantDialog({
                       </option>
                     ))
                   : PRINCIPAL_KIND_ORDER.map((kind) => {
-                      const kindOptions = targetOptions.filter(
-                        (option) => option.kind === kind,
-                      );
+                      const kindOptions = targetOptions.filter((option) => option.kind === kind);
                       if (kindOptions.length === 0) return null;
                       return (
                         <optgroup key={kind} label={PRINCIPAL_KIND_LABEL[kind]}>
@@ -595,9 +554,7 @@ export function CreateGrantDialog({
               <select
                 className="settings-select"
                 value={origin}
-                onChange={(event) =>
-                  setOrigin(event.target.value as GrantOrigin)
-                }
+                onChange={(event) => setOrigin(event.target.value as GrantOrigin)}
               >
                 {grantOrigins.map((value) => (
                   <option key={value} value={value}>
@@ -612,9 +569,7 @@ export function CreateGrantDialog({
                 label={SETTINGS_STRINGS.grantsExpiresLabel}
                 columns={2}
                 value={expiryPreset}
-                onChange={(id) =>
-                  setExpiryPreset(id as "never" | "24h" | "7d" | "30d")
-                }
+                onChange={(id) => setExpiryPreset(id as "never" | "24h" | "7d" | "30d")}
                 options={[
                   { id: "never", title: "Never", description: "No expiry." },
                   { id: "24h", title: "24 hours" },

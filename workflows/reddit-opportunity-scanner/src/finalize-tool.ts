@@ -58,8 +58,7 @@ import { type } from "arktype";
 import { defineTool, type BaseEnv } from "@intx/agent";
 import { createWorkflowArtifact } from "./artifact-client";
 
-export const REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME =
-  "reddit_opportunity_scanner_finalize";
+export const REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME = "reddit_opportunity_scanner_finalize";
 
 export const REDDIT_OPPORTUNITY_SCANNER_FINALIZE_DESCRIPTION =
   "Finalizes the set of human-selected Reddit opportunities from one run, pending a single human approval, and persists each as a Library artifact.";
@@ -130,9 +129,7 @@ export type ArtifactPayload = {
  * `"reddit-opportunity-scan"` so every persisted opportunity from this
  * workflow is recognizable as one, regardless of subreddit or score.
  */
-export function buildArtifactPayloads(
-  args: FinalizeArgs,
-): readonly ArtifactPayload[] {
+export function buildArtifactPayloads(args: FinalizeArgs): readonly ArtifactPayload[] {
   return args.opportunities.map((opportunity) => ({
     title: opportunity.title,
     kind: ARTIFACT_KIND,
@@ -154,15 +151,10 @@ export function buildArtifactPayloads(
  * the sender should do next. Every line is drawn from `args` — nothing
  * here is invented sample data.
  */
-export function buildNoResultsArtifactPayload(
-  args: NoResultsReportArgs,
-): ArtifactPayload {
+export function buildNoResultsArtifactPayload(args: NoResultsReportArgs): ArtifactPayload {
   const searchesSection =
     args.attemptedSearches.length > 0
-      ? [
-          "Searches attempted:",
-          ...args.attemptedSearches.map((search) => `- ${search}`),
-        ].join("\n")
+      ? ["Searches attempted:", ...args.attemptedSearches.map((search) => `- ${search}`)].join("\n")
       : "No searches were reachable — this run could not reach Reddit before this point.";
   const connectorsSection =
     args.missingConnectors.length > 0
@@ -207,173 +199,152 @@ function artifactClientConfig(env: WorkflowArtifactEnv) {
  * `defineTool`'s env-DI factory shape. Needs the sanctioned
  * workflow-artifacts credential trio beyond `BaseEnv`.
  */
-export const REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL =
-  defineTool<WorkflowArtifactEnv>({
-    id: "@corbits/workflow-reddit-opportunity-scanner/finalize",
-    requires: ["hubArtifactsUrl", "sidecarToken", "address"],
+export const REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL = defineTool<WorkflowArtifactEnv>({
+  id: "@corbits/workflow-reddit-opportunity-scanner/finalize",
+  requires: ["hubArtifactsUrl", "sidecarToken", "address"],
+  definitions: [
+    { name: REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME, approval: "ask" },
+    { name: REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME },
+  ],
+  factory: (env) => ({
     definitions: [
-      { name: REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME, approval: "ask" },
-      { name: REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME },
-    ],
-    factory: (env) => ({
-      definitions: [
-        {
-          name: REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME,
-          description: REDDIT_OPPORTUNITY_SCANNER_FINALIZE_DESCRIPTION,
-          inputSchema: {
-            type: "object",
-            properties: {
-              opportunities: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    title: { type: "string" },
-                    subreddit: { type: "string" },
-                    url: { type: "string" },
-                    score: { type: "number" },
-                    whyItMatters: { type: "string" },
-                    content: { type: "string" },
-                  },
-                  required: [
-                    "title",
-                    "subreddit",
-                    "url",
-                    "score",
-                    "whyItMatters",
-                    "content",
-                  ],
+      {
+        name: REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME,
+        description: REDDIT_OPPORTUNITY_SCANNER_FINALIZE_DESCRIPTION,
+        inputSchema: {
+          type: "object",
+          properties: {
+            opportunities: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  title: { type: "string" },
+                  subreddit: { type: "string" },
+                  url: { type: "string" },
+                  score: { type: "number" },
+                  whyItMatters: { type: "string" },
+                  content: { type: "string" },
                 },
+                required: ["title", "subreddit", "url", "score", "whyItMatters", "content"],
               },
             },
-            required: ["opportunities"],
           },
+          required: ["opportunities"],
         },
-        {
-          name: REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME,
-          description: REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_DESCRIPTION,
-          inputSchema: {
-            type: "object",
-            properties: {
-              targetUrl: { type: "string" },
-              attemptedSearches: {
-                type: "array",
-                items: { type: "string" },
-              },
-              missingConnectors: {
-                type: "array",
-                items: { type: "string" },
-              },
-              nextSteps: { type: "string" },
+      },
+      {
+        name: REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME,
+        description: REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_DESCRIPTION,
+        inputSchema: {
+          type: "object",
+          properties: {
+            targetUrl: { type: "string" },
+            attemptedSearches: {
+              type: "array",
+              items: { type: "string" },
             },
-            required: [
-              "targetUrl",
-              "attemptedSearches",
-              "missingConnectors",
-              "nextSteps",
-            ],
+            missingConnectors: {
+              type: "array",
+              items: { type: "string" },
+            },
+            nextSteps: { type: "string" },
           },
+          required: ["targetUrl", "attemptedSearches", "missingConnectors", "nextSteps"],
         },
-      ],
-      run: async (call) => {
-        if (call.name === REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME) {
-          const parsed = FinalizeArgs(call.arguments);
-          if (parsed instanceof type.errors) {
-            return {
-              callId: call.id,
-              isError: true,
-              content: `Invalid arguments for ${REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME}: ${parsed.summary}`,
-            };
-          }
-          if (parsed.opportunities.length === 0) {
-            return {
-              callId: call.id,
-              isError: true,
-              content: `${REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME} requires at least one selected opportunity`,
-            };
-          }
-          const artifacts = buildArtifactPayloads(parsed);
-          const persisted: {
-            id: string;
-            version: number;
-            title: string;
-            kind: string;
-            persisted: true;
-          }[] = [];
-          for (const artifact of artifacts) {
-            try {
-              const created = await createWorkflowArtifact(
-                artifactClientConfig(env),
-                artifact,
-              );
-              persisted.push({
-                id: created.id,
-                version: created.version,
-                title: artifact.title,
-                kind: artifact.kind,
-                persisted: true,
-              });
-            } catch (err) {
-              return {
-                callId: call.id,
-                isError: true,
-                content: `Failed to persist "${artifact.title}" as a Library artifact after persisting ${persisted.length} of ${artifacts.length} opportunit${artifacts.length === 1 ? "y" : "ies"}: ${
-                  err instanceof Error ? err.message : String(err)
-                }`,
-              };
-            }
-          }
+      },
+    ],
+    run: async (call) => {
+      if (call.name === REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME) {
+        const parsed = FinalizeArgs(call.arguments);
+        if (parsed instanceof type.errors) {
           return {
             callId: call.id,
-            isError: false,
-            content: JSON.stringify({ artifacts: persisted }),
+            isError: true,
+            content: `Invalid arguments for ${REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME}: ${parsed.summary}`,
           };
         }
-
-        if (
-          call.name === REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME
-        ) {
-          const parsed = NoResultsReportArgs(call.arguments);
-          if (parsed instanceof type.errors) {
-            return {
-              callId: call.id,
-              isError: true,
-              content: `Invalid arguments for ${REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME}: ${parsed.summary}`,
-            };
-          }
-          const artifact = buildNoResultsArtifactPayload(parsed);
+        if (parsed.opportunities.length === 0) {
+          return {
+            callId: call.id,
+            isError: true,
+            content: `${REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME} requires at least one selected opportunity`,
+          };
+        }
+        const artifacts = buildArtifactPayloads(parsed);
+        const persisted: {
+          id: string;
+          version: number;
+          title: string;
+          kind: string;
+          persisted: true;
+        }[] = [];
+        for (const artifact of artifacts) {
           try {
-            const created = await createWorkflowArtifact(
-              artifactClientConfig(env),
-              artifact,
-            );
-            return {
-              callId: call.id,
-              isError: false,
-              content: JSON.stringify({
-                id: created.id,
-                version: created.version,
-                title: artifact.title,
-                kind: artifact.kind,
-                persisted: true,
-              }),
-            };
+            const created = await createWorkflowArtifact(artifactClientConfig(env), artifact);
+            persisted.push({
+              id: created.id,
+              version: created.version,
+              title: artifact.title,
+              kind: artifact.kind,
+              persisted: true,
+            });
           } catch (err) {
             return {
               callId: call.id,
               isError: true,
-              content: `Failed to persist "${artifact.title}" as a Library artifact: ${
+              content: `Failed to persist "${artifact.title}" as a Library artifact after persisting ${persisted.length} of ${artifacts.length} opportunit${artifacts.length === 1 ? "y" : "ies"}: ${
                 err instanceof Error ? err.message : String(err)
               }`,
             };
           }
         }
-
         return {
           callId: call.id,
-          isError: true,
-          content: `Unknown tool: ${call.name}`,
+          isError: false,
+          content: JSON.stringify({ artifacts: persisted }),
         };
-      },
-    }),
-  });
+      }
+
+      if (call.name === REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME) {
+        const parsed = NoResultsReportArgs(call.arguments);
+        if (parsed instanceof type.errors) {
+          return {
+            callId: call.id,
+            isError: true,
+            content: `Invalid arguments for ${REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME}: ${parsed.summary}`,
+          };
+        }
+        const artifact = buildNoResultsArtifactPayload(parsed);
+        try {
+          const created = await createWorkflowArtifact(artifactClientConfig(env), artifact);
+          return {
+            callId: call.id,
+            isError: false,
+            content: JSON.stringify({
+              id: created.id,
+              version: created.version,
+              title: artifact.title,
+              kind: artifact.kind,
+              persisted: true,
+            }),
+          };
+        } catch (err) {
+          return {
+            callId: call.id,
+            isError: true,
+            content: `Failed to persist "${artifact.title}" as a Library artifact: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          };
+        }
+      }
+
+      return {
+        callId: call.id,
+        isError: true,
+        content: `Unknown tool: ${call.name}`,
+      };
+    },
+  }),
+});

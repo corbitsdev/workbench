@@ -18,10 +18,7 @@ import { CLASSIFIED_INFERENCE_FAILURE_PREAMBLES } from "../src/inference-failure
 
 test("chat-ui's classified-failure preambles match the published director's exact strings", () => {
   const entry = fileURLToPath(import.meta.resolve("@intx/inference"));
-  const director = readFileSync(
-    join(dirname(entry), `default-director${extname(entry)}`),
-    "utf8",
-  );
+  const director = readFileSync(join(dirname(entry), `default-director${extname(entry)}`), "utf8");
   for (const preamble of CLASSIFIED_INFERENCE_FAILURE_PREAMBLES) {
     expect(director).toContain(`"${preamble}"`);
   }

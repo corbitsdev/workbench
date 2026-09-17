@@ -30,10 +30,7 @@ import {
   timelineOf,
   timelineTexts,
 } from "./test-support";
-import {
-  createInMemoryRoomMessageStore,
-  postRoomMessage,
-} from "../src/room-messages";
+import { createInMemoryRoomMessageStore, postRoomMessage } from "../src/room-messages";
 import { createInMemoryTurnMailCorrelationStore } from "@corbits/agent-runtime";
 import { createWorkbenchSubscriberRegistry } from "../src/workbench-events";
 import type { ChatWorkbenchEvent } from "../src/platform-port";
@@ -117,9 +114,7 @@ describe("postCannedGreeting (CL-6126)", () => {
   test("different chats reach every variation", () => {
     const seeds = Array.from({ length: 32 }, (_, i) => `chan_${i}`);
     const variations = new Set(
-      seeds.map((workbenchId) =>
-        cannedGreeting({ workbenchId, agentName: "Myra" }),
-      ),
+      seeds.map((workbenchId) => cannedGreeting({ workbenchId, agentName: "Myra" })),
     );
     expect(variations.size).toBe(4);
   });
@@ -130,9 +125,7 @@ describe("postCannedGreeting (CL-6126)", () => {
       const unnamed = cannedGreeting({ workbenchId, agentName: "Myra" });
       expect(unnamed).not.toContain("undefined");
       expect(unnamed).not.toContain("  ");
-      expect(unnamed).toBe(
-        cannedGreeting({ workbenchId, agentName: "Myra", senderName: "" }),
-      );
+      expect(unnamed).toBe(cannedGreeting({ workbenchId, agentName: "Myra", senderName: "" }));
     },
   );
 
@@ -167,14 +160,11 @@ describe("message fan-out", () => {
     });
 
     const parts: Part[] = [{ kind: "text", text: "hi @ins_echo1" }];
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts }),
+    });
 
     expect(response.status).toBe(201);
     await settleFanout();
@@ -187,9 +177,7 @@ describe("message fan-out", () => {
     const dispatch = platform.sentMail[0];
     expect(dispatch?.workbenchId).toBe("ins_echo1");
     expect(dispatch?.fromWorkbenchId).toBe(workbench.id);
-    expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual([
-      "hi @ins_echo1",
-    ]);
+    expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual(["hi @ins_echo1"]);
   });
 
   test("a turn dispatch stamps the row's Message-ID and records what it answers (CL-7104)", async () => {
@@ -209,16 +197,13 @@ describe("message fan-out", () => {
       participants: ["ins_echo1@acme.example"],
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "hi @ins_echo1" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hi @ins_echo1" }],
+      }),
+    });
 
     expect(response.status).toBe(201);
     const sentBody = (await response.json()) as { id: string };
@@ -273,21 +258,16 @@ describe("message fan-out", () => {
       participants: ["ins_echo1@acme.example"],
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "hi @ins_echo1" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hi @ins_echo1" }],
+      }),
+    });
 
     expect(response.status).toBe(201);
-    expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual([
-      "hi @ins_echo1",
-    ]);
+    expect(timelineTexts(await timelineOf(deps, workbench.id))).toEqual(["hi @ins_echo1"]);
     expect(platform.sentMail).toHaveLength(0);
 
     releaseDelivery();
@@ -312,16 +292,13 @@ describe("message fan-out", () => {
       participants: ["ins_echo1@acme.example"],
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "hi @ins_echo1" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hi @ins_echo1" }],
+      }),
+    });
 
     // The sender's own message still stands — only its delivery failed.
     expect(response.status).toBe(201);
@@ -331,9 +308,7 @@ describe("message fan-out", () => {
     // voice and under its own address — never as mail to the agent that
     // could not be reached in the first place.
     const timeline = await timelineOf(deps, workbench.id);
-    const notice = timeline.find(
-      (message) => message.sender.address === "ins_echo1@acme.example",
-    );
+    const notice = timeline.find((message) => message.sender.address === "ins_echo1@acme.example");
     expect(notice?.workbenchId).toBe(workbench.id);
     expect(notice?.runId).toBe("ins_echo1");
     expect(notice?.parts).toEqual([
@@ -352,9 +327,7 @@ describe("message fan-out", () => {
   // takes: `InferenceResolutionError` (launch-time, no resolvable
   // source) and a runtime 401 `credential_failure`.
   describe("the undelivered notice is cause-aware", () => {
-    async function noticeTextFor(
-      dispatchFailure: unknown,
-    ): Promise<TextPart | undefined> {
+    async function noticeTextFor(dispatchFailure: unknown): Promise<TextPart | undefined> {
       const platform = fakePlatform();
       const deliverMail = platform.sendMail.bind(platform);
       platform.sendMail = async (input) => {
@@ -439,14 +412,11 @@ describe("message fan-out", () => {
     expect(platform.sentMail).toHaveLength(0); // the mint asks no agent for anything
 
     const parts: Part[] = [{ kind: "text", text: "hello, no mention here" }];
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts }),
+    });
 
     expect(response.status).toBe(201);
     await settleFanout();
@@ -473,23 +443,18 @@ describe("message fan-out", () => {
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
 
     const parts: Part[] = [{ kind: "text", text: "hey Bob" }];
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts }),
+    });
 
     expect(response.status).toBe(201);
     await settleFanout();
     // Nobody to ask for a turn: the message is the whole event, and Bob
     // reads it off the chat's own timeline.
     expect(platform.sentMail).toHaveLength(0);
-    expect(timelineTexts(await timelineOf(deps, workbench.id))).toContain(
-      "hey Bob",
-    );
+    expect(timelineTexts(await timelineOf(deps, workbench.id))).toContain("hey Bob");
   });
 
   test("a no-mention message in a workbench routes to its host — the first agent participant", async () => {
@@ -503,14 +468,11 @@ describe("message fan-out", () => {
     });
 
     const parts: Part[] = [{ kind: "text", text: "no mention at all" }];
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts }),
+    });
 
     expect(response.status).toBe(201);
     await settleFanout();
@@ -534,16 +496,13 @@ describe("message fan-out", () => {
       participants: ["ins_echo1@acme.example", "ins_echo2@acme.example"],
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "no mention at all" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "no mention at all" }],
+      }),
+    });
 
     expect(response.status).toBe(201);
     await settleFanout();
@@ -583,23 +542,18 @@ describe("message fan-out", () => {
       },
     );
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "thanks, no mention here" }],
-          inReplyToMessageId: parent.id,
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "thanks, no mention here" }],
+        inReplyToMessageId: parent.id,
+      }),
+    });
 
     expect(response.status).toBe(201);
     await settleFanout();
-    expect(platform.sentMail.map((mail) => mail.workbenchId)).toEqual([
-      "ins_echo2",
-    ]);
+    expect(platform.sentMail.map((mail) => mail.workbenchId)).toEqual(["ins_echo2"]);
   });
 
   test("a mention fan-out carries the prior workbench conversation, excluding the just-sent message", async () => {
@@ -625,16 +579,13 @@ describe("message fan-out", () => {
         parts: [{ kind: "text", text: "second message" }],
       }),
     });
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "hi @ins_echo1" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hi @ins_echo1" }],
+      }),
+    });
     expect(response.status).toBe(201);
 
     await settleFanout();
@@ -669,16 +620,13 @@ describe("message fan-out", () => {
       participants: ["ins_echo1@acme.example"],
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "hi @ins_echo1" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hi @ins_echo1" }],
+      }),
+    });
     expect(response.status).toBe(201);
 
     await settleFanout();
@@ -743,9 +691,7 @@ describe("message fan-out", () => {
     await settleFanout();
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    const roomBMail = platform.sentMail.filter(
-      (mail) => mail.fromWorkbenchId === roomB.id,
-    );
+    const roomBMail = platform.sentMail.filter((mail) => mail.fromWorkbenchId === roomB.id);
     const copy = roomBMail[roomBMail.length - 1];
     const [contextPart] = decodeParts(copy?.content ?? { content: "" });
     const contextText = contextPart?.kind === "text" ? contextPart.text : "";
@@ -771,16 +717,13 @@ describe("message fan-out", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ parts: [{ kind: "text", text: "earlier turn" }] }),
     });
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "hello, no mention here" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hello, no mention here" }],
+      }),
+    });
     expect(response.status).toBe(201);
     await settleFanout();
 
@@ -810,16 +753,13 @@ describe("message fan-out", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ parts: [{ kind: "text", text: "one" }] }),
     });
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "hi @ins_echo1" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hi @ins_echo1" }],
+      }),
+    });
     expect(response.status).toBe(201);
     await settleFanout();
 
@@ -865,16 +805,13 @@ describe("message fan-out", () => {
       body: JSON.stringify({ parts: [{ kind: "text", text: "kept two" }] }),
     });
     await nextTimelineMoment();
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "hi @ins_echo1" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hi @ins_echo1" }],
+      }),
+    });
     expect(response.status).toBe(201);
     await settleFanout();
 
@@ -895,9 +832,7 @@ describe("message fan-out", () => {
     expect(contextText).toContain("user: kept two"); // still in-window
     // The recap line itself precedes the still-in-window items.
     const lines = contextText.split("\n");
-    const recapIndex = lines.findIndex((line) =>
-      line.includes("Earlier in this conversation"),
-    );
+    const recapIndex = lines.findIndex((line) => line.includes("Earlier in this conversation"));
     const keptIndex = lines.findIndex((line) => line === "user: kept two");
     expect(recapIndex).toBeGreaterThan(-1);
     expect(recapIndex).toBeLessThan(keptIndex);
@@ -929,9 +864,7 @@ describe("message fan-out", () => {
         workbenchId: workbench.id,
         sender: { name: null, address: "ins_echo2@acme.example" },
         runId: "ins_echo2",
-        parts: [
-          { kind: "text", text: "agent-only reply, no facts a human said" },
-        ],
+        parts: [{ kind: "text", text: "agent-only reply, no facts a human said" }],
       },
     );
     await nextTimelineMoment();
@@ -942,16 +875,13 @@ describe("message fan-out", () => {
     });
     await settleFanout();
     await nextTimelineMoment();
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "hi @ins_echo1" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hi @ins_echo1" }],
+      }),
+    });
     expect(response.status).toBe(201);
     await settleFanout();
 
@@ -980,16 +910,13 @@ describe("message fan-out", () => {
       participants: ["ins_echo1@acme.example"],
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ kind: "text", text: "hi @ins_echo1" }],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hi @ins_echo1" }],
+      }),
+    });
 
     expect(response.status).toBe(201);
     await settleFanout();
@@ -1045,23 +972,18 @@ describe("message fan-out", () => {
     });
 
     const parts: Part[] = [{ kind: "text", text: "hello?" }];
-    const response = await app.request(
-      `/workbenches/${workbench.id}/messages`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts }),
+    });
 
     expect(response.status).toBe(201);
     await settleFanout();
 
     const timeline = await timelineOf(deps, workbench.id);
     expect(timelineTexts(timeline)).toContain("hello?");
-    const notice = timeline.find(
-      (message) => message.sender.address === "ins_echo1@acme.example",
-    );
+    const notice = timeline.find((message) => message.sender.address === "ins_echo1@acme.example");
     expect(notice?.parts).toEqual([
       {
         kind: "text",
@@ -1107,10 +1029,7 @@ describe("POST /workbenches/:id/invite", () => {
       },
     ]);
 
-    const settingsRow = await deps.store.getWorkbenchSettings(
-      TENANT.id,
-      workbench.id,
-    );
+    const settingsRow = await deps.store.getWorkbenchSettings(TENANT.id, workbench.id);
     // The handle is derived from the definition's own name ("Echo" ->
     // "echo") — never the run's own address local part, which is what
     // it fell back to before CL-6471's fix.
@@ -1169,10 +1088,7 @@ describe("POST /workbenches/:id/invite", () => {
     expect((await invite()).status).toBe(201);
 
     expect(platform.launchInviteCalls).toHaveLength(1);
-    const settingsRow = await deps.store.getWorkbenchSettings(
-      TENANT.id,
-      workbench.id,
-    );
+    const settingsRow = await deps.store.getWorkbenchSettings(TENANT.id, workbench.id);
     expect(settingsRow?.settings["chat/participants"]).toEqual([
       { address: "ins_invited1@acme.example", handle: "echo" },
     ]);
@@ -1202,14 +1118,8 @@ describe("POST /workbenches/:id/invite", () => {
     expect((await invite(second.id)).status).toBe(201);
 
     expect(platform.launchInviteCalls).toHaveLength(2);
-    const firstSettings = await deps.store.getWorkbenchSettings(
-      TENANT.id,
-      first.id,
-    );
-    const secondSettings = await deps.store.getWorkbenchSettings(
-      TENANT.id,
-      second.id,
-    );
+    const firstSettings = await deps.store.getWorkbenchSettings(TENANT.id, first.id);
+    const secondSettings = await deps.store.getWorkbenchSettings(TENANT.id, second.id);
     expect(firstSettings?.settings["chat/participants"]).toEqual([
       { address: "ins_sales@acme.example", handle: "sales" },
     ]);
@@ -1234,10 +1144,7 @@ describe("POST /workbenches/:id/invite", () => {
       body: JSON.stringify({ definitionId: "wfd_echo" }),
     });
 
-    const settingsRow = await deps.store.getWorkbenchSettings(
-      TENANT.id,
-      workbench.id,
-    );
+    const settingsRow = await deps.store.getWorkbenchSettings(TENANT.id, workbench.id);
     expect(settingsRow?.settings["chat/participants"]).toEqual([
       { address: "existing@acme.example", handle: "existing" },
       { address: "ins_invited1@acme.example", handle: "echo" },
@@ -1262,10 +1169,7 @@ describe("POST /workbenches/:id/invite", () => {
       body: JSON.stringify({ definitionId: "wfd_echo" }),
     });
 
-    const settingsRow = await deps.store.getWorkbenchSettings(
-      TENANT.id,
-      workbench.id,
-    );
+    const settingsRow = await deps.store.getWorkbenchSettings(TENANT.id, workbench.id);
     expect(settingsRow?.settings["chat/participants"]).toEqual([
       { address: "echo@acme.example", handle: "echo" },
       { address: "ins_invited1@acme.example", handle: "echo-2" },
@@ -1275,9 +1179,7 @@ describe("POST /workbenches/:id/invite", () => {
   test("derives the mention handle from the invited definition's display name (description) over its asset name", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
-        invitable: [
-          { id: "wfd_assistant", name: "assistant", description: "Myra" },
-        ],
+        invitable: [{ id: "wfd_assistant", name: "assistant", description: "Myra" }],
       }),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
@@ -1291,10 +1193,7 @@ describe("POST /workbenches/:id/invite", () => {
       body: JSON.stringify({ definitionId: "wfd_assistant" }),
     });
 
-    const settingsRow = await deps.store.getWorkbenchSettings(
-      TENANT.id,
-      workbench.id,
-    );
+    const settingsRow = await deps.store.getWorkbenchSettings(TENANT.id, workbench.id);
     expect(settingsRow?.settings["chat/participants"]).toEqual([
       { address: "ins_invited1@acme.example", handle: "myra" },
     ]);
@@ -1329,10 +1228,7 @@ describe("POST /workbenches/:id/invite", () => {
     });
 
     expect(response.status).toBe(201);
-    const settingsRow = await deps.store.getWorkbenchSettings(
-      TENANT.id,
-      workbench.id,
-    );
+    const settingsRow = await deps.store.getWorkbenchSettings(TENANT.id, workbench.id);
     // Never "ins_invited1" (the raw address local part) and never
     // "run_..."/"ins_..." in any form — the real, humanized name.
     expect(settingsRow?.settings["chat/participants"]).toEqual([
@@ -1357,10 +1253,7 @@ describe("POST /workbenches/:id/invite", () => {
 
     // Never a 201 with a participant record carrying a leaked id.
     expect(response.status).not.toBe(201);
-    const settingsRow = await deps.store.getWorkbenchSettings(
-      TENANT.id,
-      workbench.id,
-    );
+    const settingsRow = await deps.store.getWorkbenchSettings(TENANT.id, workbench.id);
     expect(settingsRow?.settings["chat/participants"]).toEqual([]);
   });
 
@@ -1399,8 +1292,7 @@ describe("POST /workbenches/:id/invite", () => {
     const platform = fakePlatform();
     const deps = buildDeps({
       platform,
-      requireGrant: () => async (c) =>
-        c.json({ error: { code: "forbidden", message: "no" } }, 403),
+      requireGrant: () => async (c) => c.json({ error: { code: "forbidden", message: "no" } }, 403),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
@@ -1411,9 +1303,7 @@ describe("POST /workbenches/:id/invite", () => {
     });
 
     expect(response.status).toBe(403);
-    expect(
-      (platform as ReturnType<typeof fakePlatform>).launchInviteCalls,
-    ).toHaveLength(0);
+    expect((platform as ReturnType<typeof fakePlatform>).launchInviteCalls).toHaveLength(0);
   });
 
   test("re-inviting the same definition into a chat reuses the resident — no extra launch", async () => {
@@ -1501,9 +1391,7 @@ describe("launchAndJoinAgent 1:1 chats", () => {
           existingSettings: {
             "chat/kind": "chat",
             "chat/definitionId": "wfd_echo",
-            "chat/participants": [
-              { address: "ins_echo@acme.example", handle: "echo" },
-            ],
+            "chat/participants": [{ address: "ins_echo@acme.example", handle: "echo" }],
           },
           invitable,
         },
@@ -1533,9 +1421,7 @@ describe("launchAndJoinAgent 1:1 chats", () => {
         existingSettings: {
           "chat/kind": "chat",
           "chat/definitionId": "wfd_echo",
-          "chat/participants": [
-            { address: "ins_echo@acme.example", handle: "echo" },
-          ],
+          "chat/participants": [{ address: "ins_echo@acme.example", handle: "echo" }],
         },
         invitable,
       },
@@ -1571,9 +1457,7 @@ describe("joinHumanParticipant / removeWorkbenchParticipant (CL-7194)", () => {
     );
 
     expect(result.address).toBe("prn_bob");
-    expect(result.settings["chat/participants"]).toEqual([
-      { address: "prn_bob", handle: "bob" },
-    ]);
+    expect(result.settings["chat/participants"]).toEqual([{ address: "prn_bob", handle: "bob" }]);
   });
 
   // The in-memory store's mutateWorkbenchParticipants body has no
@@ -1615,9 +1499,7 @@ describe("joinHumanParticipant / removeWorkbenchParticipant (CL-7194)", () => {
     ]);
 
     const row = await store.getWorkbenchSettings(TENANT.id, "chan_1");
-    const addresses = (
-      row?.settings["chat/participants"] as { address: string }[]
-    )
+    const addresses = (row?.settings["chat/participants"] as { address: string }[])
       .map((participant) => participant.address)
       .sort();
     expect(addresses).toEqual(["prn_bob", "prn_carol"]);
@@ -1727,9 +1609,7 @@ describe("one in-flight turn per workbench (CL-6331)", () => {
     expect(testPlatform.sentMail).toHaveLength(0);
     expect(queuedEvents).toHaveLength(2);
     expect(
-      queuedEvents.map(
-        (event) => (event.data as { queueLength: number }).queueLength,
-      ),
+      queuedEvents.map((event) => (event.data as { queueLength: number }).queueLength),
     ).toEqual([1, 2]);
 
     releaseFirstDispatch();
@@ -1755,15 +1635,11 @@ describe("one in-flight turn per workbench (CL-6331)", () => {
         }
       ).attachments;
       const decoded = attachments
-        .map((attachment) =>
-          Buffer.from(attachment.data, "base64").toString("utf8"),
-        )
+        .map((attachment) => Buffer.from(attachment.data, "base64").toString("utf8"))
         .join("\n");
       expect(decoded).toContain("you too");
       expect(decoded).toContain("one more thing");
-      expect(
-        decoded.indexOf("you too") < decoded.indexOf("one more thing"),
-      ).toBe(true);
+      expect(decoded.indexOf("you too") < decoded.indexOf("one more thing")).toBe(true);
     }
   });
 });

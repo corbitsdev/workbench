@@ -95,9 +95,7 @@ afterEach(() => {
     container.remove();
     container = null;
   }
-  document
-    .querySelectorAll("[data-sonner-toaster]")
-    .forEach((node) => node.remove());
+  document.querySelectorAll("[data-sonner-toaster]").forEach((node) => node.remove());
 });
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -159,9 +157,7 @@ describe("the one toast system (CL-6372)", () => {
     await renderPickerWithToaster();
 
     await act(async () => {
-      emptyChannelButton()?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      emptyChannelButton()?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     for (let i = 0; i < 30; i++) {
       await settle();
@@ -173,9 +169,7 @@ describe("the one toast system (CL-6372)", () => {
     // The stub's setup agent is deployed, so this is a real create
     // failure (the workbench-create request itself 500s) — a
     // `ChatApiError`, described through `describeChatError`.
-    expect(shown[0]?.textContent).toBe(
-      "Something went wrong on our end. Try again in a moment.",
-    );
+    expect(shown[0]?.textContent).toBe("Something went wrong on our end. Try again in a moment.");
     await waitForClear();
   });
 
@@ -199,9 +193,7 @@ describe("the one toast system (CL-6372)", () => {
     await renderPickerWithToaster();
 
     await act(async () => {
-      emptyChannelButton()?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      emptyChannelButton()?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     for (let i = 0; i < 30; i++) {
       await settle();
@@ -217,9 +209,7 @@ describe("the one toast system (CL-6372)", () => {
     await renderPickerWithToaster();
 
     await act(async () => {
-      emptyChannelButton()?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      emptyChannelButton()?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     for (let i = 0; i < 30; i++) {
       await settle();
@@ -244,9 +234,7 @@ describe("the one toast system (CL-6372)", () => {
     act(() => toast("Second"));
     await settle();
 
-    const staying = document.body.querySelectorAll(
-      '[data-sonner-toast][data-removed="false"]',
-    );
+    const staying = document.body.querySelectorAll('[data-sonner-toast][data-removed="false"]');
     expect(staying.length).toBe(1);
     expect(staying[0]?.textContent).toBe("Second");
     await waitForClear();

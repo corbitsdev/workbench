@@ -43,16 +43,13 @@ const mergeAllowance: ToolAllowance = {
   classify: () => Promise.resolve({ readOnly: false }),
 };
 
-const registry = createToolAllowanceRegistry([
-  readDiffAllowance,
-  mergeAllowance,
-]);
+const registry = createToolAllowanceRegistry([readDiffAllowance, mergeAllowance]);
 
 describe("createToolAllowanceRegistry", () => {
   test("rejects duplicate tool annotations", () => {
-    expect(() =>
-      createToolAllowanceRegistry([readDiffAllowance, readDiffAllowance]),
-    ).toThrow(/duplicate allowance/);
+    expect(() => createToolAllowanceRegistry([readDiffAllowance, readDiffAllowance])).toThrow(
+      /duplicate allowance/,
+    );
   });
 });
 
@@ -141,10 +138,7 @@ describe("evaluateToolAllowance", () => {
 describe("withGrantAllowance", () => {
   type Registered = Parameters<ReturnType<typeof withGrantAllowance>>[0];
 
-  function gateHarness(overrides?: {
-    grants?: GrantRule[];
-    autoApproveResult?: boolean;
-  }) {
+  function gateHarness(overrides?: { grants?: GrantRule[]; autoApproveResult?: boolean }) {
     const calls = {
       base: [] as Registered[],
       autoApprove: [] as {
@@ -166,8 +160,7 @@ describe("withGrantAllowance", () => {
             approvalId: `apr_${correlationId}`,
             tenantId: TENANT,
           }),
-        listTenantGrants: () =>
-          Promise.resolve(overrides?.grants ?? [repoGrant()]),
+        listTenantGrants: () => Promise.resolve(overrides?.grants ?? [repoGrant()]),
         autoApprove: (args) => {
           calls.autoApprove.push(args);
           return Promise.resolve(overrides?.autoApproveResult ?? true);

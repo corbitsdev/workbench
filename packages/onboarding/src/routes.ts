@@ -7,11 +7,7 @@
 import type { AppEnv } from "@intx/hub-api";
 import { createExpiringMap } from "@corbits/collections";
 import { createNoopCredentialCipher } from "@intx/crypto";
-import {
-  CredentialResponse,
-  PrincipalSummary,
-  paginatedSchema,
-} from "@intx/types";
+import { CredentialResponse, PrincipalSummary, paginatedSchema } from "@intx/types";
 import type { CredentialCipher } from "@intx/types";
 import {
   supportedCredentialProviders,
@@ -20,25 +16,12 @@ import {
 import { inferenceCredentialName } from "@corbits/connections/seed-catalog";
 import { SETUP_AGENT_ASSET_NAME } from "./tenant-seed";
 import type { WorkflowPusher } from "@corbits/connections/workflow-push";
-import {
-  cookiesFromHeader,
-  createHubAPI,
-  parseAs,
-  type ApiCall,
-} from "@corbits/hub-api-client";
+import { cookiesFromHeader, createHubAPI, parseAs, type ApiCall } from "@corbits/hub-api-client";
 import { Hono } from "hono";
 import { type } from "arktype";
-import {
-  generateRefId,
-  makeErrorEnvelope,
-  reportError,
-} from "@corbits/error-sink";
+import { generateRefId, makeErrorEnvelope, reportError } from "@corbits/error-sink";
 
-import {
-  personalTenantSlug,
-  provisionPersonalTenantIfNeeded,
-  ProvisionError,
-} from "./provision";
+import { personalTenantSlug, provisionPersonalTenantIfNeeded, ProvisionError } from "./provision";
 import {
   desiredStateSteps,
   readTenantDesiredStateStatus,
@@ -103,8 +86,7 @@ function reportOnboardingError(
   },
 ): ReturnType<typeof makeErrorEnvelope> {
   const refId = generateRefId();
-  const detail =
-    args.cause instanceof Error ? args.cause.message : String(args.cause);
+  const detail = args.cause instanceof Error ? args.cause.message : String(args.cause);
   logError(`[${refId}] ${args.userAction} failed (${args.code}): ${detail}`);
   reportError(args.cause, {
     operation: args.operation,
@@ -320,20 +302,15 @@ async function recentlyConnectedCredential(
       operation: "onboarding_duplicate_callback_recovery",
       extra: { userId: args.userId },
     });
-    args.log(
-      `duplicate-callback recovery check failed for user ${args.userId} [${refId}]`,
-    );
+    args.log(`duplicate-callback recovery check failed for user ${args.userId} [${refId}]`);
     return undefined;
   }
 }
 
-export function createOnboardingRoutes(
-  deps: CreateOnboardingRoutesDeps,
-): Hono<AppEnv> {
+export function createOnboardingRoutes(deps: CreateOnboardingRoutesDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const api = createHubAPI(deps.hubUrl);
-  const credentialCipher =
-    deps.credentialCipher ?? createNoopCredentialCipher();
+  const credentialCipher = deps.credentialCipher ?? createNoopCredentialCipher();
 
   // A simple in-process per-user provision rate limiter. Provisioning is
   // idempotent and safe to retry, but a client stuck in a tight retry loop
@@ -362,11 +339,7 @@ export function createOnboardingRoutes(
     cookies: string[],
     tenant: Pick<PersonalTenant, "tenantId" | "tenantSlug">,
   ): Promise<ProvisioningStatusBody> {
-    const status = await readTenantDesiredStateStatus(
-      api,
-      cookies,
-      tenant.tenantId,
-    );
+    const status = await readTenantDesiredStateStatus(api, cookies, tenant.tenantId);
     const steps = desiredStateSteps(status);
     const deployed = TENANT_DESIRED_STATE.workflows
       .filter((pin) => status.workflows[pin.assetName] === "present")
@@ -451,8 +424,7 @@ export function createOnboardingRoutes(
             error: {
               ...makeErrorEnvelope({
                 code: "rate_limited",
-                userMessage:
-                  "Too many attempts. Wait a moment, then try again.",
+                userMessage: "Too many attempts. Wait a moment, then try again.",
               }).error,
               kind: "transient" as const,
             },
@@ -465,9 +437,7 @@ export function createOnboardingRoutes(
 
     const cookies = cookiesFromHeader(c.req.header("cookie"));
     try {
-      const provisionArgs: Parameters<
-        typeof provisionPersonalTenantIfNeeded
-      >[0] = {
+      const provisionArgs: Parameters<typeof provisionPersonalTenantIfNeeded>[0] = {
         api,
         cookies,
         userId: user.id,
@@ -542,11 +512,7 @@ export function createOnboardingRoutes(
       // reportOnboardingError, this package's reportError wrapper.
       if (cause instanceof ProvisionError) {
         const status =
-          cause.code === "signup_not_allowed"
-            ? 403
-            : cause.errorKind === "transient"
-              ? 503
-              : 500;
+          cause.code === "signup_not_allowed" ? 403 : cause.errorKind === "transient" ? 503 : 500;
         const userMessage =
           cause.code === "signup_not_allowed"
             ? "Sign-ups aren't open for this account yet. Contact your workspace admin for access."
@@ -573,15 +539,11 @@ export function createOnboardingRoutes(
         operation: "onboarding_provision",
         userAction: `first-login provisioning for user ${user.id}`,
         code: "provisioning_failed",
-        userMessage:
-          "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
+        userMessage: "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
         cause,
         extra: { userId: user.id },
       });
-      return c.json(
-        { error: { ...envelope.error, kind: "transient" as const } },
-        503,
-      );
+      return c.json({ error: { ...envelope.error, kind: "transient" as const } }, 503);
     }
   });
 
@@ -607,8 +569,7 @@ export function createOnboardingRoutes(
    * `ConnectorOAuthConfig.exchange`'s generalized shape.
    */
   function adaptOpenRouterExchange(
-    exchange: typeof exchangeCodeForKey = deps.openrouterConnect?.exchange ??
-      exchangeCodeForKey,
+    exchange: typeof exchangeCodeForKey = deps.openrouterConnect?.exchange ?? exchangeCodeForKey,
   ) {
     return async (args: {
       code: string;
@@ -625,8 +586,8 @@ export function createOnboardingRoutes(
   }
 
   function adaptHuggingFaceExchange(
-    exchange: typeof exchangeHuggingFaceCodeForToken = deps.huggingfaceConnect
-      ?.exchange ?? exchangeHuggingFaceCodeForToken,
+    exchange: typeof exchangeHuggingFaceCodeForToken = deps.huggingfaceConnect?.exchange ??
+      exchangeHuggingFaceCodeForToken,
   ) {
     return async (args: {
       code: string;
@@ -656,14 +617,10 @@ export function createOnboardingRoutes(
   const openrouterDescriptor = CONNECTOR_REGISTRY["openrouter"];
   const huggingfaceDescriptor = CONNECTOR_REGISTRY["huggingface"];
   if (openrouterDescriptor?.oauth === undefined) {
-    throw new Error(
-      "@corbits/connections' registry is missing the openrouter oauth-pkce entry",
-    );
+    throw new Error("@corbits/connections' registry is missing the openrouter oauth-pkce entry");
   }
   if (huggingfaceDescriptor?.oauth === undefined) {
-    throw new Error(
-      "@corbits/connections' registry is missing the huggingface oauth-pkce entry",
-    );
+    throw new Error("@corbits/connections' registry is missing the huggingface oauth-pkce entry");
   }
   // ONLY the two providers onboarding's own first-login flow offers.
   // Every other OAuth-capable connector (the GitHub App connect
@@ -693,9 +650,7 @@ export function createOnboardingRoutes(
    * even starting a flow here (a loud 404), and this narrowing refuses
    * one that somehow reached persistence anyway, instead of an `as`
    * cast letting it fall into inference-only seeding (CL-6394). */
-  function onboardingOAuthProvider(
-    connectorId: string,
-  ): "openrouter" | "huggingface" | undefined {
+  function onboardingOAuthProvider(connectorId: string): "openrouter" | "huggingface" | undefined {
     if (connectorId === "openrouter" || connectorId === "huggingface") {
       return connectorId;
     }
@@ -724,10 +679,8 @@ export function createOnboardingRoutes(
     }
     const impl =
       provider === "openrouter"
-        ? (deps.openrouterConnect?.connectCredential ??
-          testAndPersistCredential)
-        : (deps.huggingfaceConnect?.connectCredential ??
-          testAndPersistCredential);
+        ? (deps.openrouterConnect?.connectCredential ?? testAndPersistCredential)
+        : (deps.huggingfaceConnect?.connectCredential ?? testAndPersistCredential);
     const connectCredentialArgs = {
       api,
       cookies: args.cookies,
@@ -846,8 +799,7 @@ export function createOnboardingRoutes(
     }
 
     const cookies = cookiesFromHeader(c.req.header("cookie"));
-    const runTestAndPersistCredential =
-      deps.testAndPersistCredentialFn ?? testAndPersistCredential;
+    const runTestAndPersistCredential = deps.testAndPersistCredentialFn ?? testAndPersistCredential;
     const baseCompleteCredentialArgs = {
       api,
       cookies,
@@ -890,8 +842,7 @@ export function createOnboardingRoutes(
         return c.json(
           makeErrorEnvelope({
             code: "no_personal_bench",
-            userMessage:
-              "No personal bench was found for this account yet. Reload and try again.",
+            userMessage: "No personal bench was found for this account yet. Reload and try again.",
           }),
           409,
         );
@@ -923,9 +874,7 @@ export function createOnboardingRoutes(
         tenantDomain: result.tenantDomain,
         provider: parsed.provider,
         apiKey: parsed.apiKey,
-        ...(parsed.baseURL !== undefined
-          ? { baseURLOverride: parsed.baseURL }
-          : {}),
+        ...(parsed.baseURL !== undefined ? { baseURLOverride: parsed.baseURL } : {}),
       });
       deps.benchProvisioner?.wake();
       return c.json(status, 200);
@@ -985,8 +934,7 @@ export function createOnboardingRoutes(
         return c.json(
           makeErrorEnvelope({
             code: "no_personal_bench",
-            userMessage:
-              "No personal bench was found for this account yet. Reload and try again.",
+            userMessage: "No personal bench was found for this account yet. Reload and try again.",
           }),
           409,
         );
@@ -1062,28 +1010,20 @@ export function createOnboardingRoutes(
     // itself has no tenant yet.
     let tenantId: string | undefined;
     try {
-      const response = await api(
-        "GET",
-        "/api/me/principals",
-        undefined,
-        cookies,
-      );
+      const response = await api("GET", "/api/me/principals", undefined, cookies);
       const principals = parseAs(
         paginatedSchema(PrincipalSummary),
         response.data,
         "principals response",
       );
       const tenant = principals.data.find(
-        (principal) =>
-          principal.tenantId === query.tenantId &&
-          principal.status === "active",
+        (principal) => principal.tenantId === query.tenantId && principal.status === "active",
       );
       if (!tenant) {
         return c.json(
           makeErrorEnvelope({
             code: "bench_unavailable",
-            userMessage:
-              "You no longer have access to this workspace. Select another workspace.",
+            userMessage: "You no longer have access to this workspace. Select another workspace.",
           }),
           403,
         );
@@ -1098,8 +1038,7 @@ export function createOnboardingRoutes(
         operation: "onboarding_provisioning_status",
         userAction: `provisioning status for user ${user.id}`,
         code: "provisioning_status_failed",
-        userMessage:
-          "Checking on your agents hit a snag — we're on it. Try again in a moment.",
+        userMessage: "Checking on your agents hit a snag — we're on it. Try again in a moment.",
         cause,
         ...(tenantId !== undefined ? { tenantId } : {}),
         extra: { userId: user.id },

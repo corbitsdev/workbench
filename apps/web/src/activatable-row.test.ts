@@ -1,10 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import {
-  isAdditiveSelectClick,
-  isRowActivationKey,
-  rowActivationProps,
-} from "./activatable-row";
+import { isAdditiveSelectClick, isRowActivationKey, rowActivationProps } from "./activatable-row";
 
 // `isAdditiveSelectClick`'s Mac/non-Mac branch reads `navigator.platform`,
 // which happy-dom's `GlobalRegistrator` reports as whatever the *host* OS
@@ -33,9 +29,7 @@ describe("isAdditiveSelectClick", () => {
 
   test("ctrl-click is not additive on Mac (it's the context-menu gesture)", () => {
     stubPlatform("MacIntel");
-    expect(isAdditiveSelectClick({ metaKey: false, ctrlKey: true })).toBe(
-      false,
-    );
+    expect(isAdditiveSelectClick({ metaKey: false, ctrlKey: true })).toBe(false);
   });
 
   test("ctrl-click is additive on non-Mac", () => {
@@ -44,9 +38,7 @@ describe("isAdditiveSelectClick", () => {
   });
 
   test("a plain click is not additive", () => {
-    expect(isAdditiveSelectClick({ metaKey: false, ctrlKey: false })).toBe(
-      false,
-    );
+    expect(isAdditiveSelectClick({ metaKey: false, ctrlKey: false })).toBe(false);
   });
 });
 

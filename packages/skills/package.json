@@ -1,8 +1,8 @@
 {
   "name": "@corbits/skills",
+  "version": "0.0.2",
   "private": true,
   "description": "SKILL.md authoring (parse/build against native kind:\"skill\" hub assets) and the pinned-skills prompt index. Storage, listing, and access to skill assets themselves are native Interchange asset routes, not this package.",
-  "version": "0.0.2",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {

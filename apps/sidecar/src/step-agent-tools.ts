@@ -94,10 +94,7 @@ const STEP_TOOLS = Symbol("intx.sidecar.step-tools");
 // through `Reflect.get`/`Reflect.set` so neither site needs a type
 // assertion: `BaseEnv` is an interface without a symbol index
 // signature, so a structural cast would otherwise be required.
-function setStepToolSlot(
-  env: object,
-  materialization: StepToolMaterialization,
-): void {
+function setStepToolSlot(env: object, materialization: StepToolMaterialization): void {
   Reflect.set(env, STEP_TOOLS, materialization);
 }
 
@@ -112,9 +109,7 @@ function getStepToolSlot(env: object): StepToolMaterialization | undefined {
   return value;
 }
 
-function isStepToolMaterialization(
-  value: unknown,
-): value is StepToolMaterialization {
+function isStepToolMaterialization(value: unknown): value is StepToolMaterialization {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -142,15 +137,8 @@ export interface StepCredentialContext {
 
 const STEP_CREDENTIALS = Symbol("intx.sidecar.step-credentials");
 
-function isStepCredentialContext(
-  value: unknown,
-): value is StepCredentialContext {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "wiring" in value &&
-    "stepId" in value
-  );
+function isStepCredentialContext(value: unknown): value is StepCredentialContext {
+  return typeof value === "object" && value !== null && "wiring" in value && "stepId" in value;
 }
 
 /**
@@ -160,10 +148,7 @@ function isStepCredentialContext(
  * `buildEnv` once the `CredentialWiring` the child's runtime carries is
  * known.
  */
-export function attachStepCredentials(
-  env: object,
-  context: StepCredentialContext,
-): void {
+export function attachStepCredentials(env: object, context: StepCredentialContext): void {
   Reflect.set(env, STEP_CREDENTIALS, context);
 }
 
@@ -171,9 +156,7 @@ export function attachStepCredentials(
  * Read back the credential context `attachStepCredentials` set on the
  * per-step env.
  */
-export function getStepCredentialContext(
-  env: object,
-): StepCredentialContext | undefined {
+export function getStepCredentialContext(env: object): StepCredentialContext | undefined {
   const value: unknown = Reflect.get(env, STEP_CREDENTIALS);
   if (value === undefined) return undefined;
   if (!isStepCredentialContext(value)) {
@@ -374,10 +357,7 @@ export function attachStepTools(
  */
 export function createToolBearingAgentFactory(deps: {
   providers: CredentialProviderRegistry;
-}): <EnvReq extends BaseEnv>(
-  def: AgentDefinition<EnvReq>,
-  env: EnvReq,
-) => Promise<Agent> {
+}): <EnvReq extends BaseEnv>(def: AgentDefinition<EnvReq>, env: EnvReq) => Promise<Agent> {
   return async <EnvReq extends BaseEnv>(
     def: AgentDefinition<EnvReq>,
     env: EnvReq,
@@ -406,9 +386,7 @@ export function createToolBearingAgentFactory(deps: {
     // way.
     const credentialContext = getStepCredentialContext(env);
     const credentialCapabilities = new Map<string, HostCredentialCapability>();
-    function credentialCapabilityFor(
-      consumer: string,
-    ): HostCredentialCapability {
+    function credentialCapabilityFor(consumer: string): HostCredentialCapability {
       const existing = credentialCapabilities.get(consumer);
       if (existing !== undefined) return existing;
       const bindings = consumerBindings(credentialContext, consumer);
@@ -449,10 +427,7 @@ export function createToolBearingAgentFactory(deps: {
             : undefined;
           const scopedEnv: BaseEnv & {
             credentials?: HostCredentialCapability;
-          } =
-            credentials !== undefined
-              ? { ...factoryEnv, credentials }
-              : factoryEnv;
+          } = credentials !== undefined ? { ...factoryEnv, credentials } : factoryEnv;
           const bundle = annotated(scopedEnv);
           if (bundle.dispose !== undefined) {
             capturedDisposers.add(bundle.dispose);
@@ -531,8 +506,8 @@ export function createToolBearingAgentFactory(deps: {
     // directly, only overridden -- so the first credential-requiring
     // factory's capability satisfies the presence check for all of
     // them.
-    const credentialRequiringFactory = materialization.factories.find(
-      (factory) => factory.requires.includes("credentials"),
+    const credentialRequiringFactory = materialization.factories.find((factory) =>
+      factory.requires.includes("credentials"),
     );
     if (credentialRequiringFactory !== undefined) {
       chainEnv = {
@@ -678,9 +653,7 @@ export function stepInferenceMaterialResolver(
 ): CredentialMaterialResolver {
   return (credentialId) => {
     const current = context.wiring.materialRef.current;
-    const material = current?.materials.find(
-      (entry) => entry.credentialId === credentialId,
-    );
+    const material = current?.materials.find((entry) => entry.credentialId === credentialId);
     if (material === undefined) {
       throw new Error(
         `sidecar workflow-child step ${JSON.stringify(context.stepId)}: inference source credential ${credentialId} has no delivered material (revoked, rotated away, or never delivered)`,
@@ -719,10 +692,7 @@ function wrapAgentClose(agent: Agent, teardown: () => Promise<void>): Agent {
   };
 }
 
-async function disposeAll(
-  instances: readonly unknown[],
-  context: string,
-): Promise<unknown[]> {
+async function disposeAll(instances: readonly unknown[], context: string): Promise<unknown[]> {
   const failures: unknown[] = [];
   for (const instance of instances) {
     const dispose = pluginDispose(instance);

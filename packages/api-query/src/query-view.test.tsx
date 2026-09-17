@@ -27,9 +27,7 @@ describe("QueryView error state", () => {
     expect(markup).toContain("Couldn&#x27;t load your benches");
     expect(markup).not.toMatch(/\/api\//);
     expect(markup).not.toContain("abc-123");
-    expect(markup).toContain(
-      "Something went wrong loading your benches. Try again.",
-    );
+    expect(markup).toContain("Something went wrong loading your benches. Try again.");
   });
 
   test("404 reads as gone, not as a generic failure", () => {
@@ -72,11 +70,7 @@ describe("QueryView loading skeletons", () => {
 
   test('skeleton="rows" renders purpose-shaped list-row placeholders', () => {
     const markup = renderToStaticMarkup(
-      <QueryView<string>
-        query={{ kind: "loading" }}
-        label="items"
-        skeleton="rows"
-      >
+      <QueryView<string> query={{ kind: "loading" }} label="items" skeleton="rows">
         {(data) => <div>{data}</div>}
       </QueryView>,
     );
@@ -86,11 +80,7 @@ describe("QueryView loading skeletons", () => {
 
   test('skeleton="detail" renders a header-plus-lines placeholder', () => {
     const markup = renderToStaticMarkup(
-      <QueryView<string>
-        query={{ kind: "loading" }}
-        label="item"
-        skeleton="detail"
-      >
+      <QueryView<string> query={{ kind: "loading" }} label="item" skeleton="detail">
         {(data) => <div>{data}</div>}
       </QueryView>,
     );

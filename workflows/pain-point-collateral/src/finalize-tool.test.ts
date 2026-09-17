@@ -52,8 +52,7 @@ test("buildArtifactPayload marks a no-data teaching payload as status-note, not 
   expect(payload).toEqual({
     title: "No transcript available",
     kind: "status-note",
-    content:
-      "Targets: none found\n\nNeither the transcript nor noteId field carried content.",
+    content: "Targets: none found\n\nNeither the transcript nor noteId field carried content.",
   });
 });
 
@@ -145,8 +144,7 @@ test("run persists a teaching payload on the no-data path with a status-note kin
 
 test("run returns an honest error result when persistence fails, never fabricating persisted: true", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
 
   try {
     const bundle = PAIN_POINT_COLLATERAL_FINALIZE_TOOL(testEnv());

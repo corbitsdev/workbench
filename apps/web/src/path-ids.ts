@@ -35,10 +35,7 @@ export function detailSlugFromPath(path: string, prefix: string): Slug | null {
 
 /** The undecoded remainder of a flat top-level route (`/agents/:id`) —
  * `null` for the bare prefix or a path outside it. */
-function rawSegmentFromTopLevelPath(
-  path: string,
-  prefix: string,
-): string | null {
+function rawSegmentFromTopLevelPath(path: string, prefix: string): string | null {
   if (path === prefix) return null;
   if (!path.startsWith(`${prefix}/`)) return null;
   const rest = path.slice(prefix.length + 1);
@@ -92,10 +89,7 @@ export function settingsSectionIdFromPath(path: string): string | null {
 
 /** Extract a section's own sub-selection from `/settings/:sectionId/:entityId`
  * — `null` when the path isn't under that section, or carries no sub-id. */
-export function settingsEntityIdFromPath(
-  path: string,
-  sectionId: string,
-): string | null {
+export function settingsEntityIdFromPath(path: string, sectionId: string): string | null {
   const prefix = `${SETTINGS_PATH_PREFIX}/${sectionId}/`;
   if (!path.startsWith(prefix)) return null;
   const rest = path.slice(prefix.length);

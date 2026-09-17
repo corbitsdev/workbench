@@ -4,9 +4,7 @@ import { FIRE_RUNNING_WINDOW_MS } from "@corbits/workflows/client";
 import { elapsedLabel, isRunningNow } from "./insights-page";
 import type { InsightsRun } from "../insights-api";
 
-function run(
-  partial: Partial<InsightsRun> & Pick<InsightsRun, "id" | "createdAt">,
-): InsightsRun {
+function run(partial: Partial<InsightsRun> & Pick<InsightsRun, "id" | "createdAt">): InsightsRun {
   return {
     tenantId: "t1",
     definitionId: "wfd_a",
@@ -90,9 +88,7 @@ describe("isRunningNow", () => {
       isRunningNow(
         run({
           id: "stale",
-          createdAt: new Date(
-            Date.now() - FIRE_RUNNING_WINDOW_MS - 1,
-          ).toISOString(),
+          createdAt: new Date(Date.now() - FIRE_RUNNING_WINDOW_MS - 1).toISOString(),
           status: "running",
         }),
       ),

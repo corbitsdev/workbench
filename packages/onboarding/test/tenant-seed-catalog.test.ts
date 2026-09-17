@@ -32,9 +32,7 @@ describe("catalog workflow names", () => {
     // provisionPersonalTenantIfNeeded deploys DEFAULT_WORKFLOWS for
     // every real signup (CL-7074: Myra only). Everything else deploys
     // on demand (CL-7073) from CATALOG_WORKFLOWS, never automatically.
-    expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toEqual([
-      SETUP_AGENT_ASSET_NAME,
-    ]);
+    expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toEqual([SETUP_AGENT_ASSET_NAME]);
     expect([...CATALOG_WORKFLOW_ASSET_NAMES]).toEqual([
       "echo",
       "workbench-digest",
@@ -69,10 +67,7 @@ describe("deployableCatalogWorkflow", () => {
   test("every catalog entry answers with a builder rendering its own definition", () => {
     for (const workflow of CATALOG_WORKFLOWS) {
       const found = deployableCatalogWorkflow(workflow.assetName);
-      expect(
-        found,
-        `catalog workflow ${workflow.assetName} answers`,
-      ).toBeDefined();
+      expect(found, `catalog workflow ${workflow.assetName} answers`).toBeDefined();
       const json = found?.buildJson("acme.example", FAKE_INFERENCE_PREFERENCES);
       // A real rendered definition for THIS workflow: it parses, it
       // has steps to launch, and it names its own asset. (Not every

@@ -31,9 +31,7 @@ export const skillNameSchema = type(/^[a-z0-9]+(-[a-z0-9]+)*$/)
     return true;
   });
 
-export const skillDescriptionSchema = type("1 <= string <= 1024").and(
-  type(/^(?!.*<[^>]+>).*$/s),
-);
+export const skillDescriptionSchema = type("1 <= string <= 1024").and(type(/^(?!.*<[^>]+>).*$/s));
 
 /** Who may see a skill: `private` (only its creator) or `tenant` (every
  * principal in the owning workbench). Lives in the SKILL.md frontmatter —
@@ -85,9 +83,7 @@ export function buildSkillMd(input: {
     scope: input.scope,
   });
   if (frontmatter instanceof type.errors) {
-    throw new SkillContentError(
-      `skill frontmatter is invalid: ${frontmatter.summary}`,
-    );
+    throw new SkillContentError(`skill frontmatter is invalid: ${frontmatter.summary}`);
   }
   const body = input.body.trim();
   if (body === "") {
@@ -124,9 +120,7 @@ export function buildSkillMd(input: {
 export function parseSkillMd(text_: string): ParsedSkillMd {
   const lines = text_.split(/\r?\n/);
   if (lines[0] !== FRONTMATTER_DELIMITER) {
-    throw new SkillContentError(
-      `${SKILL_MD_FILENAME} is missing its YAML frontmatter delimiter`,
-    );
+    throw new SkillContentError(`${SKILL_MD_FILENAME} is missing its YAML frontmatter delimiter`);
   }
   let endIdx = -1;
   for (let i = 1; i < lines.length; i += 1) {
@@ -136,9 +130,7 @@ export function parseSkillMd(text_: string): ParsedSkillMd {
     }
   }
   if (endIdx === -1) {
-    throw new SkillContentError(
-      `${SKILL_MD_FILENAME} frontmatter has no closing delimiter`,
-    );
+    throw new SkillContentError(`${SKILL_MD_FILENAME} frontmatter has no closing delimiter`);
   }
   const yamlText = lines.slice(1, endIdx).join("\n");
   let rawFrontmatter: unknown;

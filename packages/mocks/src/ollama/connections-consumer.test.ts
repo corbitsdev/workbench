@@ -51,10 +51,7 @@ describe("OllamaMock as a real connections FetchLike consumer", () => {
 
     const catalog = await fetchOllamaModelCatalog(BASE_URL, ollama.fetch);
     expect(catalog).toBeDefined();
-    expect(catalog?.map((m) => m.canonicalName)).toEqual([
-      "embeddinggemma:300m",
-      "qwen3.8:27b",
-    ]);
+    expect(catalog?.map((m) => m.canonicalName)).toEqual(["embeddinggemma:300m", "qwen3.8:27b"]);
 
     const chatCapable = preferCompletionCapable(
       catalog ?? [],

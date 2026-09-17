@@ -90,10 +90,7 @@ describe("fencing edge cases", () => {
       }
       if (args[0] === "ps") {
         return {
-          stdout:
-            liveContainers.size > 0
-              ? `${Array.from(liveContainers).join("\n")}\n`
-              : "",
+          stdout: liveContainers.size > 0 ? `${Array.from(liveContainers).join("\n")}\n` : "",
           stderr: "",
           exitCode: 0,
         };

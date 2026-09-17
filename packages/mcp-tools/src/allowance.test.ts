@@ -24,27 +24,28 @@ const classify = createMcpCallClassifier((_tenantId, slug) =>
 
 describe("createMcpCallClassifier", () => {
   test("a server-verified read-only tool classifies with the connection resource", async () => {
-    expect(
-      await classify("tenant_1", { server: "attio", tool: "search_records" }),
-    ).toEqual({ readOnly: true, resource: mcpServerResource("attio") });
+    expect(await classify("tenant_1", { server: "attio", tool: "search_records" })).toEqual({
+      readOnly: true,
+      resource: mcpServerResource("attio"),
+    });
   });
 
   test("a write tool classifies not read-only", async () => {
-    expect(
-      await classify("tenant_1", { server: "attio", tool: "create_record" }),
-    ).toEqual({ readOnly: false });
+    expect(await classify("tenant_1", { server: "attio", tool: "create_record" })).toEqual({
+      readOnly: false,
+    });
   });
 
   test("an unknown downstream tool fails closed", async () => {
-    expect(
-      await classify("tenant_1", { server: "attio", tool: "drop_everything" }),
-    ).toEqual({ readOnly: false });
+    expect(await classify("tenant_1", { server: "attio", tool: "drop_everything" })).toEqual({
+      readOnly: false,
+    });
   });
 
   test("an unreachable or unconnected server fails closed", async () => {
-    expect(
-      await classify("tenant_1", { server: "ghost", tool: "search_records" }),
-    ).toEqual({ readOnly: false });
+    expect(await classify("tenant_1", { server: "ghost", tool: "search_records" })).toEqual({
+      readOnly: false,
+    });
   });
 
   test("malformed arguments fail closed", async () => {
@@ -96,22 +97,19 @@ describe("GitHub MCP server classification", () => {
   );
 
   test("server-annotated reads classify read-only on the github-mcp resource", async () => {
-    for (const tool of [
-      "search_code",
-      "get_file_contents",
-      "list_pull_requests",
-    ]) {
-      expect(
-        await classifyGithub("tenant_1", { server: "github-mcp", tool }),
-      ).toEqual({ readOnly: true, resource: mcpServerResource("github-mcp") });
+    for (const tool of ["search_code", "get_file_contents", "list_pull_requests"]) {
+      expect(await classifyGithub("tenant_1", { server: "github-mcp", tool })).toEqual({
+        readOnly: true,
+        resource: mcpServerResource("github-mcp"),
+      });
     }
   });
 
   test("writes and unannotated tools never classify read-only", async () => {
     for (const tool of ["create_issue", "merge_pull_request"]) {
-      expect(
-        await classifyGithub("tenant_1", { server: "github-mcp", tool }),
-      ).toEqual({ readOnly: false });
+      expect(await classifyGithub("tenant_1", { server: "github-mcp", tool })).toEqual({
+        readOnly: false,
+      });
     }
   });
 });

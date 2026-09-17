@@ -50,10 +50,7 @@ async function resolveGitHubCredential(
   }
 }
 
-async function runGitHubActivity(
-  env: GitHubEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runGitHubActivity(env: GitHubEnv, call: ToolCall): Promise<ToolResult> {
   const query = call.arguments["query"];
   if (typeof query !== "string" || query.trim().length === 0) {
     return {
@@ -66,11 +63,9 @@ async function runGitHubActivity(
   const days = call.arguments["days"];
   const limit = call.arguments["limit"];
   try {
-    const clientConfig =
-      credential !== null ? { fetchImpl: credential.fetchImpl } : {};
+    const clientConfig = credential !== null ? { fetchImpl: credential.fetchImpl } : {};
     const withDays = typeof days === "number" ? { query, days } : { query };
-    const params =
-      typeof limit === "number" ? { ...withDays, limit } : withDays;
+    const params = typeof limit === "number" ? { ...withDays, limit } : withDays;
     const items = await searchGitHubActivity(clientConfig, params);
     return { callId: call.id, content: JSON.stringify({ items }) };
   } catch (err) {

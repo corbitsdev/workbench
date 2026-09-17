@@ -16,12 +16,7 @@ import type { ArtifactSummary } from "./types";
 const LIBRARY_PATH = "/files";
 
 /** Kind nav segments in display order, excluding the implicit "all". */
-export const LIBRARY_KIND_SEGMENTS = [
-  "document",
-  "sheet",
-  "pdf",
-  "routine",
-] as const;
+export const LIBRARY_KIND_SEGMENTS = ["document", "sheet", "pdf", "routine"] as const;
 
 export type LibraryKindSegment = (typeof LIBRARY_KIND_SEGMENTS)[number];
 
@@ -76,9 +71,7 @@ export function artifactMatchesLibraryKindSegment(
   switch (segment) {
     case "document":
       if (kind === "document") return true;
-      return (
-        kind === "file" && (ext === "doc" || ext === "txt" || ext === "md")
-      );
+      return kind === "file" && (ext === "doc" || ext === "txt" || ext === "md");
     case "sheet":
       if (kind === "csv-export" || kind === "sheet") return true;
       return kind === "file" && (ext === "xls" || ext === "csv");

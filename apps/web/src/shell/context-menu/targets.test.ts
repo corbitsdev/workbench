@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { resolveTarget } from "@corbits/context-menu";
 
-import {
-  SHELL_CONTEXT_MENU_FALLBACK,
-  SHELL_CONTEXT_MENU_TARGETS,
-} from "./targets";
+import { SHELL_CONTEXT_MENU_FALLBACK, SHELL_CONTEXT_MENU_TARGETS } from "./targets";
 
 /** Parses `html`'s single root element and mounts it in the document, so
  * `origin.closest()` walks a real ancestor chain. */
@@ -18,11 +15,7 @@ function mount(html: string): Element {
 }
 
 function resolve(origin: Element | null) {
-  return resolveTarget(
-    origin,
-    SHELL_CONTEXT_MENU_TARGETS,
-    SHELL_CONTEXT_MENU_FALLBACK,
-  );
+  return resolveTarget(origin, SHELL_CONTEXT_MENU_TARGETS, SHELL_CONTEXT_MENU_FALLBACK);
 }
 
 describe("SHELL_CONTEXT_MENU_TARGETS", () => {
@@ -105,8 +98,6 @@ describe("SHELL_CONTEXT_MENU_TARGETS", () => {
 
   test("falls back to the shell target for anything unmatched", () => {
     const container = mount('<div><span id="plain"></span></div>');
-    expect(resolve(container.querySelector("#plain"))).toEqual(
-      SHELL_CONTEXT_MENU_FALLBACK,
-    );
+    expect(resolve(container.querySelector("#plain"))).toEqual(SHELL_CONTEXT_MENU_FALLBACK);
   });
 });

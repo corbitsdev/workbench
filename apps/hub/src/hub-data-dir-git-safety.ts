@@ -15,9 +15,7 @@ const GIT_DIR_VARS = new Set([
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
 ]);
 
-export function envWithoutGitDir(
-  env: NodeJS.ProcessEnv = process.env,
-): NodeJS.ProcessEnv {
+export function envWithoutGitDir(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const next: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined) continue;
@@ -75,8 +73,5 @@ export function assertHubDataDirGitSafety(
   if (opts?.allowInsideWorkTree === true) return;
   const enclosing = enclosingGitWorkTree(dir, opts?.env ?? process.env);
   if (enclosing === null) return;
-  throw new HubDataDirInsideGitWorkTreeError(
-    realpathSync(path.resolve(dir)),
-    enclosing,
-  );
+  throw new HubDataDirInsideGitWorkTreeError(realpathSync(path.resolve(dir)), enclosing);
 }

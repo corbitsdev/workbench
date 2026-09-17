@@ -11,11 +11,7 @@ type ApiStub = (
   path: string,
 ) => Promise<{ status: number; data: unknown; cookies: string[] }>;
 
-function principalsRow(tenant: {
-  id: string;
-  slug: string;
-  name: string;
-}): unknown {
+function principalsRow(tenant: { id: string; slug: string; name: string }): unknown {
   return {
     principalId: `principal_${tenant.id}`,
     tenantId: tenant.id,
@@ -98,10 +94,9 @@ function args(
         path: new URL(input).pathname,
       });
       return Promise.resolve(
-        new Response(
-          JSON.stringify({ commit: "sha_stub", integrity: "sha512-stub" }),
-          { status: 200 },
-        ),
+        new Response(JSON.stringify({ commit: "sha_stub", integrity: "sha512-stub" }), {
+          status: 200,
+        }),
       );
     },
     pack: () =>
@@ -128,16 +123,11 @@ describe("runPublishTools", () => {
     const result = await runPublishTools(args(api, undefined, puts));
     expect(result.success).toBe(true);
     expect(
-      calls.some(
-        (call) =>
-          call.method === "POST" && call.path === "/api/auth/sign-in/email",
-      ),
+      calls.some((call) => call.method === "POST" && call.path === "/api/auth/sign-in/email"),
     ).toBe(true);
     expect(
       calls.some(
-        (call) =>
-          call.method === "POST" &&
-          call.path === "/api/tenants/tenant_genesis/assets",
+        (call) => call.method === "POST" && call.path === "/api/tenants/tenant_genesis/assets",
       ),
     ).toBe(true);
     expect(
@@ -159,9 +149,7 @@ describe("runPublishTools", () => {
       }),
     ]);
     await runPublishTools(args(api, "genesis-root"));
-    expect(calls.some((call) => call.path.includes("tenant_genesis"))).toBe(
-      true,
-    );
+    expect(calls.some((call) => call.path.includes("tenant_genesis"))).toBe(true);
   });
 
   test("fails when --tenant matches no membership", async () => {
@@ -172,9 +160,7 @@ describe("runPublishTools", () => {
         name: "Genesis Root",
       }),
     ]);
-    await expect(runPublishTools(args(api, "nope"))).rejects.toThrow(
-      /no tenant matching "nope"/,
-    );
+    await expect(runPublishTools(args(api, "nope"))).rejects.toThrow(/no tenant matching "nope"/);
   });
 
   test("fails when the admin belongs to several tenants and no --tenant is given", async () => {
@@ -186,8 +172,6 @@ describe("runPublishTools", () => {
       }),
       principalsRow({ id: "tenant_other", slug: "other", name: "Other" }),
     ]);
-    await expect(runPublishTools(args(api))).rejects.toThrow(
-      /--tenant is required/,
-    );
+    await expect(runPublishTools(args(api))).rejects.toThrow(/--tenant is required/);
   });
 });

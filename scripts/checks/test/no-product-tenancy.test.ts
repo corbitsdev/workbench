@@ -29,8 +29,7 @@ test("a comment or string that merely mentions a table name is not a violation",
   const report = auditProductTenancy([
     {
       relPath: "packages/onboarding/src/provision.ts",
-      contents:
-        "// Tenants, memberships, and invites are native Interchange tables.",
+      contents: "// Tenants, memberships, and invites are native Interchange tables.",
     },
   ]);
   expect(report.violations).toEqual([]);
@@ -70,9 +69,7 @@ test("allowlisted product schema files pass at their max count", () => {
     },
   ]);
   expect(report.violations).toEqual([]);
-  expect(
-    report.notes.some((n) => n.includes("packages/chat/src/schema.ts")),
-  ).toBe(true);
+  expect(report.notes.some((n) => n.includes("packages/chat/src/schema.ts"))).toBe(true);
 });
 
 test("allowlisted files fail when they grow past their max", () => {
@@ -87,9 +84,7 @@ test("allowlisted files fail when they grow past their max", () => {
     },
   ]);
   expect(report.violations).toHaveLength(1);
-  expect(report.violations[0]).toContain(
-    "packages/webhook-triggers/src/schema.ts",
-  );
+  expect(report.violations[0]).toContain("packages/webhook-triggers/src/schema.ts");
   expect(report.violations[0]).toContain("3 pgTable");
 });
 

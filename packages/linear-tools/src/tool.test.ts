@@ -27,9 +27,7 @@ function fakeCredentials(secret: string | undefined): CredentialCapability {
   return {
     resolve(handle: string): Promise<MediatedCredential> {
       if (secret === undefined) {
-        return Promise.reject(
-          new Error(`no credential is bound to handle "${handle}"`),
-        );
+        return Promise.reject(new Error(`no credential is bound to handle "${handle}"`));
       }
       return Promise.resolve({
         kind: "http",
@@ -50,9 +48,7 @@ function fakeEnv(credentials: CredentialCapability | undefined): LinearEnv {
 
 test("declares the linear_list_recent_issues tool", () => {
   const bundle = linearTools(fakeEnv(fakeCredentials("key")));
-  expect(bundle.definitions.map((d) => d.name)).toEqual([
-    LINEAR_LIST_RECENT_ISSUES_TOOL,
-  ]);
+  expect(bundle.definitions.map((d) => d.name)).toEqual([LINEAR_LIST_RECENT_ISSUES_TOOL]);
 });
 
 test("degrades to a non-throwing 'not connected' error when no credential is bound", async () => {
@@ -72,9 +68,7 @@ test("degrades the same way when the step carries no credentials capability at a
 test("returns the issues as JSON content on a successful call", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
-    expect((init?.headers as Headers | undefined)?.get("authorization")).toBe(
-      "key",
-    );
+    expect((init?.headers as Headers | undefined)?.get("authorization")).toBe("key");
     return new Response(
       JSON.stringify({
         data: {
@@ -114,8 +108,7 @@ test("returns the issues as JSON content on a successful call", async () => {
 
 test("degrades to an error result (never throws) when the underlying call fails", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
   try {
     const bundle = linearTools(fakeEnv(fakeCredentials("key")));
     const result = await bundle.run(CALL, new AbortController().signal);

@@ -7,14 +7,7 @@
 // does not compose with an inline mention popover.
 
 import { Avatar, Button } from "@corbits/react-ui";
-import {
-  ArrowUp,
-  CircleNotch,
-  Microphone,
-  Paperclip,
-  Stop,
-  X,
-} from "@corbits/icons";
+import { ArrowUp, CircleNotch, Microphone, Paperclip, Stop, X } from "@corbits/icons";
 import { reportError } from "@corbits/error-sink";
 import {
   forwardRef,
@@ -43,11 +36,7 @@ import type {
   MentionOption,
   MentionQuery,
 } from "./mentions";
-import {
-  SLASH_COMMANDS,
-  activeSlashQuery,
-  filterSlashCommands,
-} from "./slash-commands";
+import { SLASH_COMMANDS, activeSlashQuery, filterSlashCommands } from "./slash-commands";
 import type { SlashCommandSpec, SlashQuery } from "./slash-commands";
 import { CHAT_STRINGS } from "./strings";
 
@@ -117,9 +106,7 @@ export type SpeechRecognitionLike = {
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
-function isSpeechRecognitionCtor(
-  value: unknown,
-): value is SpeechRecognitionCtor {
+function isSpeechRecognitionCtor(value: unknown): value is SpeechRecognitionCtor {
   return typeof value === "function";
 }
 
@@ -181,13 +168,9 @@ export function spliceDictationTranscript(
     return { text: `${prefix}${suffix}`, caret: prefix.length };
   }
   const head =
-    prefix.length === 0 || /\s$/u.test(prefix)
-      ? `${prefix}${trimmed}`
-      : `${prefix} ${trimmed}`;
+    prefix.length === 0 || /\s$/u.test(prefix) ? `${prefix}${trimmed}` : `${prefix} ${trimmed}`;
   const text =
-    suffix.length === 0 || /^\s/u.test(suffix)
-      ? `${head}${suffix}`
-      : `${head} ${suffix}`;
+    suffix.length === 0 || /^\s/u.test(suffix) ? `${head}${suffix}` : `${head} ${suffix}`;
   return { text, caret: head.length };
 }
 
@@ -195,10 +178,7 @@ export function spliceDictationTranscript(
  * The B2 fix, isolated as a pure rule: a successful send clears the draft;
  * a failed one keeps exactly what the user had typed so nothing is lost.
  */
-export function draftAfterSend(
-  previousValue: string,
-  succeeded: boolean,
-): string {
+export function draftAfterSend(previousValue: string, succeeded: boolean): string {
   return succeeded ? "" : previousValue;
 }
 
@@ -217,10 +197,7 @@ export function attachmentsAfterSend(
  * Build the wire `Part[]` for a composer send. Empty trimmed text is omitted;
  * each attachment becomes a `FilePart` carrying inline base64 `data`.
  */
-export function partsForSend(
-  text: string,
-  attachments: readonly ComposerAttachment[],
-): Part[] {
+export function partsForSend(text: string, attachments: readonly ComposerAttachment[]): Part[] {
   const parts: Part[] = [];
   const trimmed = text.trim();
   if (trimmed.length > 0) {
@@ -237,10 +214,7 @@ export function partsForSend(
   return parts;
 }
 
-export function canSendComposer(
-  text: string,
-  attachments: readonly ComposerAttachment[],
-): boolean {
+export function canSendComposer(text: string, attachments: readonly ComposerAttachment[]): boolean {
   return text.trim().length > 0 || attachments.length > 0;
 }
 
@@ -320,9 +294,7 @@ export function base64DecodedByteLength(data: string): number {
   return (data.length * 3) / 4 - padding;
 }
 
-export function attachmentBytesOnComposer(
-  attachments: readonly ComposerAttachment[],
-): number {
+export function attachmentBytesOnComposer(attachments: readonly ComposerAttachment[]): number {
   let total = 0;
   for (const file of attachments) {
     total += base64DecodedByteLength(file.data);
@@ -334,21 +306,14 @@ function formatLimitMiB(bytes: number): number {
   return Math.round(bytes / (1024 * 1024));
 }
 
-export function attachmentValidationMessage(
-  error: AttachmentValidationError,
-): string {
+export function attachmentValidationMessage(error: AttachmentValidationError): string {
   switch (error.kind) {
     case "count":
       return CHAT_STRINGS.composerAttachmentCountError(error.max);
     case "perFile":
-      return CHAT_STRINGS.composerAttachmentPerFileError(
-        error.name,
-        formatLimitMiB(error.max),
-      );
+      return CHAT_STRINGS.composerAttachmentPerFileError(error.name, formatLimitMiB(error.max));
     case "total":
-      return CHAT_STRINGS.composerAttachmentTotalError(
-        formatLimitMiB(error.max),
-      );
+      return CHAT_STRINGS.composerAttachmentTotalError(formatLimitMiB(error.max));
   }
 }
 
@@ -415,8 +380,7 @@ function readFileAsBase64(file: File): Promise<string> {
       const comma = result.indexOf(",");
       resolve(comma === -1 ? result : result.slice(comma + 1));
     };
-    reader.onerror = () =>
-      reject(reader.error ?? new Error("failed to read attachment"));
+    reader.onerror = () => reject(reader.error ?? new Error("failed to read attachment"));
     reader.readAsDataURL(file);
   });
 }
@@ -496,12 +460,8 @@ export const Composer = forwardRef<
   ref,
 ) {
   const [value, setValue] = useState("");
-  const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>(
-    [],
-  );
-  const [pendingInvites, setPendingInvites] = useState<
-    readonly MentionInviteIntent[]
-  >([]);
+  const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<readonly MentionInviteIntent[]>([]);
   const [mention, setMention] = useState<MentionQuery | null>(null);
   const [highlight, setHighlight] = useState(0);
   const [slash, setSlash] = useState<SlashQuery | null>(null);
@@ -531,9 +491,7 @@ export const Composer = forwardRef<
   const dictatePrefixRef = useRef("");
   const dictateSuffixRef = useRef("");
   const [listening, setListening] = useState(false);
-  const [dictateAvailable] = useState(
-    () => speechRecognitionConstructor() !== null,
-  );
+  const [dictateAvailable] = useState(() => speechRecognitionConstructor() !== null);
 
   function stopDictation() {
     const rec = recognitionRef.current;
@@ -694,17 +652,11 @@ export const Composer = forwardRef<
   const mentionOptions: readonly MentionOption[] =
     mention !== null
       ? filterMentionOptions(
-          mentionOptionsFromWorkbench(
-            participants,
-            members,
-            invitableAgents,
-            agentDisplayNames,
-          ),
+          mentionOptionsFromWorkbench(participants, members, invitableAgents, agentDisplayNames),
           mention.query,
         )
       : [];
-  const slashCandidates =
-    slash !== null ? filterSlashCommands(slash.query) : [];
+  const slashCandidates = slash !== null ? filterSlashCommands(slash.query) : [];
   const busy = { sending, preparing };
   const canSend = canSendComposerAction(value, attachments, busy);
   const canAttach = canAttachComposer(busy);
@@ -786,21 +738,14 @@ export const Composer = forwardRef<
     const textarea = textareaRef.current;
     if (mention === null || textarea === null) return;
     const caret = textarea.selectionStart;
-    const result = insertMention(
-      value,
-      caret,
-      mention,
-      option.candidate.handle,
-    );
+    const result = insertMention(value, caret, mention, option.candidate.handle);
     setValue(result.text);
     setMention(null);
     if (option.invite !== undefined) {
       const invite = option.invite;
       setPendingInvites((current) => {
         const key =
-          invite.kind === "agent"
-            ? `agent:${invite.definitionId}`
-            : `person:${invite.principalId}`;
+          invite.kind === "agent" ? `agent:${invite.definitionId}` : `person:${invite.principalId}`;
         const alreadyPending = current.some(
           (pending) =>
             (pending.kind === "agent"
@@ -848,8 +793,7 @@ export const Composer = forwardRef<
         next.push({
           id: nextAttachmentId(),
           name: file.name,
-          mediaType:
-            file.type.length > 0 ? file.type : "application/octet-stream",
+          mediaType: file.type.length > 0 ? file.type : "application/octet-stream",
           data,
         });
       }
@@ -909,10 +853,7 @@ export const Composer = forwardRef<
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setSlashHighlight(
-          (index) =>
-            (index - 1 + slashCandidates.length) % slashCandidates.length,
-        );
+        setSlashHighlight((index) => (index - 1 + slashCandidates.length) % slashCandidates.length);
         return;
       }
       if (event.key === "Enter" || event.key === "Tab") {
@@ -934,10 +875,7 @@ export const Composer = forwardRef<
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setHighlight(
-          (index) =>
-            (index - 1 + mentionOptions.length) % mentionOptions.length,
-        );
+        setHighlight((index) => (index - 1 + mentionOptions.length) % mentionOptions.length);
         return;
       }
       if (event.key === "Enter" || event.key === "Tab") {
@@ -978,9 +916,7 @@ export const Composer = forwardRef<
       {slash !== null && (
         <div className="chat-mention-popover chat-popover-enter" role="listbox">
           {slashCandidates.length === 0 ? (
-            <div className="chat-mention-empty">
-              {CHAT_STRINGS.composerSlashEmpty}
-            </div>
+            <div className="chat-mention-empty">{CHAT_STRINGS.composerSlashEmpty}</div>
           ) : (
             slashCandidates.map((command, index) => (
               <button
@@ -996,9 +932,7 @@ export const Composer = forwardRef<
                 }}
               >
                 <span className="chat-mention-handle">{command.name}</span>
-                <span className="chat-mention-label">
-                  {command.description}
-                </span>
+                <span className="chat-mention-label">{command.description}</span>
               </button>
             ))
           )}
@@ -1022,8 +956,7 @@ export const Composer = forwardRef<
               ) : null}
               {mentionOptions.map((option, index) => {
                 const prev = mentionOptions[index - 1];
-                const showSection =
-                  index === 0 || prev?.section !== option.section;
+                const showSection = index === 0 || prev?.section !== option.section;
                 const isAgent = option.section === "agents";
                 return (
                   <div key={`${option.section}:${option.candidate.id}`}>
@@ -1062,12 +995,8 @@ export const Composer = forwardRef<
                         />
                       )}
                       <span className="chat-mention-meta">
-                        <span className="chat-mention-name">
-                          {option.candidate.label}
-                        </span>
-                        <span className="chat-mention-handle">
-                          @{option.candidate.handle}
-                        </span>
+                        <span className="chat-mention-name">{option.candidate.label}</span>
+                        <span className="chat-mention-handle">@{option.candidate.handle}</span>
                       </span>
                     </button>
                   </div>
@@ -1078,13 +1007,8 @@ export const Composer = forwardRef<
         </div>
       )}
       {helpOpen && (
-        <div
-          className="chat-mention-popover chat-slash-help chat-popover-enter"
-          role="note"
-        >
-          <div className="chat-slash-help-title">
-            {CHAT_STRINGS.composerHelpTitle}
-          </div>
+        <div className="chat-mention-popover chat-slash-help chat-popover-enter" role="note">
+          <div className="chat-slash-help-title">{CHAT_STRINGS.composerHelpTitle}</div>
           {SLASH_COMMANDS.map((command) => (
             <div key={command.id} className="chat-mention-option">
               <span className="chat-mention-handle">{command.name}</span>
@@ -1092,9 +1016,7 @@ export const Composer = forwardRef<
             </div>
           ))}
           <div className="chat-slash-help-footer">
-            <span className="chat-slash-help-note">
-              {CHAT_STRINGS.composerHelpNote}
-            </span>
+            <span className="chat-slash-help-note">{CHAT_STRINGS.composerHelpNote}</span>
             <button
               type="button"
               className="chat-slash-help-close"
@@ -1125,9 +1047,7 @@ export const Composer = forwardRef<
           >
             {attachments.map((file) => (
               <li key={file.id} className="chat-composer-attachment">
-                <span className="chat-composer-attachment-name">
-                  {file.name}
-                </span>
+                <span className="chat-composer-attachment-name">{file.name}</span>
                 <button
                   type="button"
                   className="chat-composer-attachment-remove"
@@ -1189,15 +1109,9 @@ export const Composer = forwardRef<
                 disabled={sending || preparing}
                 onClick={toggleDictation}
                 aria-label={
-                  listening
-                    ? CHAT_STRINGS.composerDictateStop
-                    : CHAT_STRINGS.composerDictate
+                  listening ? CHAT_STRINGS.composerDictateStop : CHAT_STRINGS.composerDictate
                 }
-                title={
-                  listening
-                    ? CHAT_STRINGS.composerDictateStop
-                    : CHAT_STRINGS.composerDictate
-                }
+                title={listening ? CHAT_STRINGS.composerDictateStop : CHAT_STRINGS.composerDictate}
               >
                 <Microphone aria-hidden="true" />
               </Button>
@@ -1224,22 +1138,11 @@ export const Composer = forwardRef<
               disabled={!canSend}
               data-send-state={sendVisualState}
               onClick={() => void send()}
-              aria-label={
-                sending
-                  ? CHAT_STRINGS.composerSending
-                  : CHAT_STRINGS.composerSend
-              }
-              title={
-                sending
-                  ? CHAT_STRINGS.composerSending
-                  : CHAT_STRINGS.composerSend
-              }
+              aria-label={sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend}
+              title={sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend}
             >
               {sendVisualState === "sending" ? (
-                <CircleNotch
-                  className="chat-composer-send-spinner"
-                  aria-hidden="true"
-                />
+                <CircleNotch className="chat-composer-send-spinner" aria-hidden="true" />
               ) : (
                 <ArrowUp aria-hidden="true" />
               )}
@@ -1247,11 +1150,7 @@ export const Composer = forwardRef<
           </div>
         </div>
       </div>
-      <div
-        className="chat-composer-status"
-        aria-live="polite"
-        aria-atomic="true"
-      >
+      <div className="chat-composer-status" aria-live="polite" aria-atomic="true">
         {preparing ? CHAT_STRINGS.composerPreparing : null}
       </div>
       {errorMessage !== null && (

@@ -2,9 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { xaiUserIdFromAccessToken } from "./index";
 
 function jwtWithPayload(payload: unknown): string {
-  const header = Buffer.from(JSON.stringify({ alg: "none" })).toString(
-    "base64url",
-  );
+  const header = Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url");
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${header}.${body}.`;
 }
@@ -16,11 +14,7 @@ describe("xAI oauth — user id decoding", () => {
     // JWTs must not throw on the request path — a throw would abort a turn
     // that can still authenticate via Bearer.
     expect(xaiUserIdFromAccessToken("not-a-jwt")).toBeUndefined();
-    expect(
-      xaiUserIdFromAccessToken("header.%%%not-base64%%%.sig"),
-    ).toBeUndefined();
-    expect(
-      xaiUserIdFromAccessToken(jwtWithPayload({ sub: 123 })),
-    ).toBeUndefined();
+    expect(xaiUserIdFromAccessToken("header.%%%not-base64%%%.sig")).toBeUndefined();
+    expect(xaiUserIdFromAccessToken(jwtWithPayload({ sub: 123 }))).toBeUndefined();
   });
 });

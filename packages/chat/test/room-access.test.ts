@@ -9,13 +9,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { createChatRoutes } from "../src/routes";
-import {
-  buildDeps,
-  createWorkbench,
-  mountAs,
-  sendText,
-  TENANT,
-} from "./test-support";
+import { buildDeps, createWorkbench, mountAs, sendText, TENANT } from "./test-support";
 
 describe("room access", () => {
   test("a bench member opens a bench-visible workbench with no explicit invite", async () => {
@@ -88,12 +82,8 @@ describe("room access", () => {
     const response = await sendText(app, body.id, "hello room");
 
     expect(response.status).toBe(201);
-    expect(grantChecks).toEqual([
-      { resource: `room:${body.id}`, action: "write" },
-    ]);
-    expect(
-      grantChecks.some((check) => check.resource.startsWith("workflow-run")),
-    ).toBe(false);
+    expect(grantChecks).toEqual([{ resource: `room:${body.id}`, action: "write" }]);
+    expect(grantChecks.some((check) => check.resource.startsWith("workflow-run"))).toBe(false);
   });
 
   test("inviting a person records them as a human participant, unblocking a members-only flip", async () => {
@@ -140,15 +130,11 @@ describe("room access", () => {
 
     // `chat/participants` still carries only the mention handle — the
     // access decision above never consulted it.
-    const settingsResponse = await asAlice.request(
-      `/workbenches/${body.id}/settings`,
-    );
+    const settingsResponse = await asAlice.request(`/workbenches/${body.id}/settings`);
     const settingsBody = (await settingsResponse.json()) as {
       participants: { address: string; handle: string }[];
     };
-    expect(settingsBody.participants).toEqual([
-      { address: "prn_bob", handle: "bob" },
-    ]);
+    expect(settingsBody.participants).toEqual([{ address: "prn_bob", handle: "bob" }]);
   });
 
   test("a bench member never invited into a members-only workbench is still denied after another person's invite", async () => {

@@ -51,8 +51,7 @@ const GranolaWebhookTriggerWithSecret = type({
   ...WebhookTriggerFields,
   secret: "string",
 });
-export type GranolaWebhookTriggerWithSecret =
-  typeof GranolaWebhookTriggerWithSecret.infer;
+export type GranolaWebhookTriggerWithSecret = typeof GranolaWebhookTriggerWithSecret.infer;
 
 export function listGranolaWebhookTriggers(
   tenantId: string,
@@ -116,11 +115,7 @@ export function webhookTriggerUrl(triggerId: string): string {
  * `sampleWebhookPayload`. `@corbits/webhook-triggers` places no
  * constraint on payload shape beyond "valid JSON". */
 export function sampleGranolaWebhookPayload(): string {
-  return JSON.stringify(
-    { event: "call.completed", data: { callId: "call_123" } },
-    null,
-    2,
-  );
+  return JSON.stringify({ event: "call.completed", data: { callId: "call_123" } }, null, 2);
 }
 
 const WorkflowDefinitionSummary = type({

@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import type {
-  PullRequestDiff,
-  PullRequestFileDiff,
-} from "@corbits/github-tools";
+import type { PullRequestDiff, PullRequestFileDiff } from "@corbits/github-tools";
 
 import { renderReviewPrompt } from "./prompt";
 

@@ -25,9 +25,7 @@ export type ContextMenu = {
   readonly entries: readonly ContextMenuEntry[];
 };
 
-export function contextMenuItem(
-  item: Omit<ContextMenuItem, "kind">,
-): ContextMenuItem {
+export function contextMenuItem(item: Omit<ContextMenuItem, "kind">): ContextMenuItem {
   return { kind: "item", ...item };
 }
 
@@ -38,7 +36,5 @@ export const contextMenuSeparator: ContextMenuSeparator = {
 /** A menu with no items has nothing to show — the trigger hook uses this to
  * decide whether to intercept the native context menu at all. */
 export function isContextMenuEmpty(menu: ContextMenu | null): boolean {
-  return (
-    menu === null || menu.entries.every((entry) => entry.kind === "separator")
-  );
+  return menu === null || menu.entries.every((entry) => entry.kind === "separator");
 }

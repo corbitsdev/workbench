@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  agentDisplayNamesFromAgents,
-  displayNameForAddress,
-} from "../src/agent-display-names";
+import { agentDisplayNamesFromAgents, displayNameForAddress } from "../src/agent-display-names";
 
 describe("agentDisplayNamesFromAgents", () => {
   test("keys each agent's display name by its participant address", () => {
@@ -32,14 +29,10 @@ describe("displayNameForAddress", () => {
     const names = agentDisplayNamesFromAgents([
       { address: "ins_echo@acme.example", displayName: "Myra" },
     ]);
-    expect(
-      displayNameForAddress("ins_other@acme.example", names),
-    ).toBeUndefined();
+    expect(displayNameForAddress("ins_other@acme.example", names)).toBeUndefined();
   });
 
   test("is undefined without a snapshot so the caller falls back", () => {
-    expect(
-      displayNameForAddress("ins_echo@acme.example", undefined),
-    ).toBeUndefined();
+    expect(displayNameForAddress("ins_echo@acme.example", undefined)).toBeUndefined();
   });
 });

@@ -33,8 +33,7 @@ import { type } from "arktype";
 import { defineTool, type BaseEnv } from "@intx/agent";
 import { createWorkflowArtifact } from "./artifact-client";
 
-export const GRANOLA_CALL_REPORT_STATUS_TOOL_NAME =
-  "granola_call_report_status";
+export const GRANOLA_CALL_REPORT_STATUS_TOOL_NAME = "granola_call_report_status";
 
 export const GRANOLA_CALL_REPORT_STATUS_DESCRIPTION =
   "Persists one honest status artifact for a run that started no " +
@@ -70,9 +69,7 @@ export type ArtifactPayload = {
  * payload uses, so the Library's kind badge reads consistently across
  * the whole catalog.
  */
-export function buildStatusArtifactPayload(
-  args: StatusReportArgs,
-): ArtifactPayload {
+export function buildStatusArtifactPayload(args: StatusReportArgs): ArtifactPayload {
   return {
     title: "Granola call notes: nothing new to process",
     kind: "status-note",

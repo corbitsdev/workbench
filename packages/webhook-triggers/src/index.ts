@@ -34,10 +34,7 @@ export {
   type LaunchWebhookTriggerDeps,
   type LaunchedWebhookTrigger,
 } from "./launch";
-export {
-  createWebhookIngressRoutes,
-  type CreateWebhookIngressRoutesDeps,
-} from "./ingress-routes";
+export { createWebhookIngressRoutes, type CreateWebhookIngressRoutesDeps } from "./ingress-routes";
 export {
   createWebhookTriggerRoutes,
   type CreateWebhookTriggerRoutesDeps,

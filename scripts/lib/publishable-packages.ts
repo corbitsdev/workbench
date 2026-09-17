@@ -25,17 +25,13 @@ export interface WorkspacePackage {
   readonly deps: readonly string[];
 }
 
-export async function listWorkspacePackages(
-  root: string,
-): Promise<WorkspacePackage[]> {
+export async function listWorkspacePackages(root: string): Promise<WorkspacePackage[]> {
   const packages: WorkspacePackage[] = [];
   for (const pattern of WORKSPACE_GLOBS) {
     const glob = new Glob(pattern);
     for await (const manifestPath of glob.scan(root)) {
       const dir = path.dirname(manifestPath);
-      const raw = JSON.parse(
-        readFileSync(path.join(root, manifestPath), "utf8"),
-      );
+      const raw = JSON.parse(readFileSync(path.join(root, manifestPath), "utf8"));
       if (typeof raw.name !== "string") continue;
       const deps = {
         ...(raw.dependencies ?? {}),
@@ -60,14 +56,10 @@ export async function listWorkspacePackages(
  * fixpoint so the effect propagates, e.g. A depends on B depends on
  * private C: both A and B are unpublishable.
  */
-export async function listUnpublishablePackageNames(
-  root: string,
-): Promise<string[]> {
+export async function listUnpublishablePackageNames(root: string): Promise<string[]> {
   const packages = await listWorkspacePackages(root);
   const byName = new Map(packages.map((pkg) => [pkg.name, pkg]));
-  const unpublishable = new Set(
-    packages.filter((pkg) => pkg.private).map((pkg) => pkg.name),
-  );
+  const unpublishable = new Set(packages.filter((pkg) => pkg.private).map((pkg) => pkg.name));
   let changed = true;
   while (changed) {
     changed = false;
@@ -86,11 +78,7 @@ export async function listUnpublishablePackageNames(
   return [...unpublishable].sort();
 }
 
-export async function listPublishablePackages(
-  root: string,
-): Promise<WorkspacePackage[]> {
+export async function listPublishablePackages(root: string): Promise<WorkspacePackage[]> {
   const unpublishable = new Set(await listUnpublishablePackageNames(root));
-  return (await listWorkspacePackages(root)).filter(
-    (pkg) => !unpublishable.has(pkg.name),
-  );
+  return (await listWorkspacePackages(root)).filter((pkg) => !unpublishable.has(pkg.name));
 }

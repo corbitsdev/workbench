@@ -52,9 +52,7 @@ function modelResponse(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-function credentialProviderResponse(
-  overrides: Partial<Record<string, unknown>> = {},
-) {
+function credentialProviderResponse(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "provider_1",
     tenantId: TENANT_ID,
@@ -80,9 +78,7 @@ function credentialResponse(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-function modelProviderResponse(
-  overrides: Partial<Record<string, unknown>> = {},
-) {
+function modelProviderResponse(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "mp_1",
     tenantId: TENANT_ID,
@@ -121,10 +117,7 @@ function paginated(data: readonly unknown[]) {
 describe("shadowOffering mint chain", () => {
   test("mints model, credential-provider, credential, model-provider, offering, in that order", async () => {
     const calls: Call[] = [];
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = pathOf(input);
       const method = init?.method ?? "GET";
       calls.push({ method, path });
@@ -170,10 +163,7 @@ describe("shadowOffering mint chain", () => {
 
   test("shadows at the exact priority of the offering being shadowed, not a row count", async () => {
     let offeringBody: unknown;
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = pathOf(input);
       if (path === `/api/tenants/${TENANT_ID}/catalog/models`) {
         return Response.json(modelResponse(), { status: 201 });
@@ -188,8 +178,7 @@ describe("shadowOffering mint chain", () => {
         return Response.json(modelProviderResponse(), { status: 201 });
       }
       if (path === `/api/tenants/${TENANT_ID}/catalog/offerings`) {
-        offeringBody =
-          init?.body !== undefined ? JSON.parse(String(init.body)) : undefined;
+        offeringBody = init?.body !== undefined ? JSON.parse(String(init.body)) : undefined;
         return Response.json(offeringResponse(), { status: 201 });
       }
       throw new Error(`unexpected fetch: ${path}`);
@@ -202,10 +191,7 @@ describe("shadowOffering mint chain", () => {
 
   test("tolerates a 409 on every ensure* step, including the credential POST itself", async () => {
     const calls: Call[] = [];
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = pathOf(input);
       const method = init?.method ?? "GET";
       calls.push({ method, path });
@@ -229,9 +215,7 @@ describe("shadowOffering mint chain", () => {
       if (path === `/api/tenants/${TENANT_ID}/catalog/offerings`) {
         if (method === "POST") return new Response(null, { status: 409 });
         return Response.json(
-          paginated([
-            offeringResponse({ modelId: "model_1", providerId: "mp_1" }),
-          ]),
+          paginated([offeringResponse({ modelId: "model_1", providerId: "mp_1" })]),
         );
       }
       throw new Error(`unexpected fetch: ${method} ${path}`);
@@ -250,10 +234,7 @@ describe("shadowOffering mint chain", () => {
 
   test("rolls back a freshly-minted model-provider when the offering step then fails", async () => {
     const calls: Call[] = [];
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = pathOf(input);
       const method = init?.method ?? "GET";
       calls.push({ method, path });
@@ -275,10 +256,9 @@ describe("shadowOffering mint chain", () => {
         if (method === "DELETE") return new Response(null, { status: 204 });
       }
       if (path === `/api/tenants/${TENANT_ID}/catalog/offerings`) {
-        return new Response(
-          JSON.stringify({ error: { message: "server exploded" } }),
-          { status: 500 },
-        );
+        return new Response(JSON.stringify({ error: { message: "server exploded" } }), {
+          status: 500,
+        });
       }
       throw new Error(`unexpected fetch: ${method} ${path}`);
     }) as typeof fetch;
@@ -294,16 +274,11 @@ describe("shadowOffering mint chain", () => {
 
   test("threads an explicit fetchImpl through every call, including the rollback DELETE, never touching the global fetch", async () => {
     globalThis.fetch = (() => {
-      throw new Error(
-        "global fetch must not be called when fetchImpl is passed",
-      );
+      throw new Error("global fetch must not be called when fetchImpl is passed");
     }) as unknown as typeof fetch;
 
     const calls: Call[] = [];
-    const fakeFetch: typeof fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
+    const fakeFetch: typeof fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = pathOf(input);
       const method = init?.method ?? "GET";
       calls.push({ method, path });
@@ -324,10 +299,9 @@ describe("shadowOffering mint chain", () => {
         if (method === "DELETE") return new Response(null, { status: 204 });
       }
       if (path === `/api/tenants/${TENANT_ID}/catalog/offerings`) {
-        return new Response(
-          JSON.stringify({ error: { message: "server exploded" } }),
-          { status: 500 },
-        );
+        return new Response(JSON.stringify({ error: { message: "server exploded" } }), {
+          status: 500,
+        });
       }
       throw new Error(`unexpected fetch: ${method} ${path}`);
     }) as typeof fetch;
@@ -343,10 +317,7 @@ describe("shadowOffering mint chain", () => {
 
   test("does not roll back an already-existing model-provider (resolved via 409) when the offering step fails", async () => {
     const calls: Call[] = [];
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = pathOf(input);
       const method = init?.method ?? "GET";
       calls.push({ method, path });
@@ -365,10 +336,9 @@ describe("shadowOffering mint chain", () => {
         return Response.json(paginated([modelProviderResponse()]));
       }
       if (path === `/api/tenants/${TENANT_ID}/catalog/offerings`) {
-        return new Response(
-          JSON.stringify({ error: { message: "server exploded" } }),
-          { status: 500 },
-        );
+        return new Response(JSON.stringify({ error: { message: "server exploded" } }), {
+          status: 500,
+        });
       }
       throw new Error(`unexpected fetch: ${method} ${path}`);
     }) as typeof fetch;

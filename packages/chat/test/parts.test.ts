@@ -169,9 +169,7 @@ describe("Part schemas", () => {
   });
 
   test("parsePart throws a precise error for invalid data", () => {
-    expect(() => parsePart({ kind: "text", text: 42 })).toThrow(
-      /invalid chat part/,
-    );
+    expect(() => parsePart({ kind: "text", text: 42 })).toThrow(/invalid chat part/);
   });
 
   test("parsePart throws for completely malformed input", () => {

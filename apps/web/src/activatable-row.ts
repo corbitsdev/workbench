@@ -27,9 +27,7 @@ export function isAdditiveSelectClick(event: {
 function isMacPlatform(): boolean {
   // Browsers report "MacIntel"; happy-dom (our test DOM) reports
   // "X11; Darwin arm64" — both are the same Ctrl-click-is-context-menu OS.
-  return (
-    typeof navigator !== "undefined" && /mac|darwin/i.test(navigator.platform)
-  );
+  return typeof navigator !== "undefined" && /mac|darwin/i.test(navigator.platform);
 }
 
 export function rowActivationProps(onSelect: () => void) {

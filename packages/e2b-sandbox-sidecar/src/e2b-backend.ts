@@ -39,9 +39,7 @@ export function createE2BBackend(config: ProvisionerConfig): SidecarBackend {
     requestTimeoutMs: config.requestTimeoutMs,
   };
 
-  async function listAllocationSandboxIds(
-    allocationId: string,
-  ): Promise<readonly string[]> {
+  async function listAllocationSandboxIds(allocationId: string): Promise<readonly string[]> {
     const paginator = Sandbox.list({
       ...connection,
       query: {
@@ -125,11 +123,7 @@ export function createE2BBackend(config: ProvisionerConfig): SidecarBackend {
 
 function toBackendOperationError(error: unknown): BackendOperationError {
   const classified = classifyE2BError(error);
-  return new BackendOperationError(
-    classified.code,
-    classified.message,
-    classified.retryable,
-  );
+  return new BackendOperationError(classified.code, classified.message, classified.retryable);
 }
 
 export function classifyE2BError(error: unknown): SandboxOperationFailure {

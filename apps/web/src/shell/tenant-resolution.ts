@@ -6,10 +6,7 @@ import type { TenantResolution } from "@corbits/chat-ui";
 
 import type { useBench } from "../bench-context";
 
-type BenchSlice = Pick<
-  ReturnType<typeof useBench>,
-  "memberships" | "selectedTenantId"
->;
+type BenchSlice = Pick<ReturnType<typeof useBench>, "memberships" | "selectedTenantId">;
 
 export function tenantResolutionFromBench(bench: BenchSlice): TenantResolution {
   if (bench.memberships.kind !== "ready") {

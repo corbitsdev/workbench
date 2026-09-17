@@ -18,12 +18,7 @@ import { NotFoundPage } from "./pages/not-found-page";
 import { OnboardingPage } from "./pages/onboarding-page";
 import { ProvisioningErrorPage } from "./pages/provisioning-error-page";
 import { createAppQueryClient } from "./query-client";
-import {
-  APP_ROUTES,
-  LOGIN_PATH,
-  matchesRoute,
-  ONBOARDING_PATH,
-} from "./routes";
+import { APP_ROUTES, LOGIN_PATH, matchesRoute, ONBOARDING_PATH } from "./routes";
 import type { SessionState, SessionUser } from "./session";
 import { AppShell } from "./shell/app-shell";
 import { ComposerInsertionProvider } from "./shell/composer-insertion";
@@ -34,13 +29,7 @@ import { ShellChromeProvider } from "./shell/shell-chrome-provider";
  * there with `?next=` so a successful sign-in returns to where the visitor
  * meant to go — the URL is the source of truth for "where was I headed",
  * not an implicit conditional swap in `App`. */
-function LoginRedirect({
-  path,
-  navigate,
-}: {
-  readonly path: string;
-  readonly navigate: Navigate;
-}) {
+function LoginRedirect({ path, navigate }: { readonly path: string; readonly navigate: Navigate }) {
   useEffect(() => {
     navigate(buildLoginRedirect(path));
   }, [path, navigate]);
@@ -94,13 +83,8 @@ function Shell({
   // DB, a cookie for a deleted user, an expired session) routes the whole
   // shell back to login instead of leaving one panel stuck showing "sign
   // in required" beside chrome that still renders as if signed in.
-  const queryClient = useMemo(
-    () => createAppQueryClient(onSignOut),
-    [onSignOut],
-  );
-  const route = APP_ROUTES.find((candidate) =>
-    matchesRoute(candidate.path, path),
-  );
+  const queryClient = useMemo(() => createAppQueryClient(onSignOut), [onSignOut]);
+  const route = APP_ROUTES.find((candidate) => matchesRoute(candidate.path, path));
   return (
     <QueryClientProvider client={queryClient}>
       <NavigationProvider navigate={navigate} onSignOut={onSignOut} user={user}>
@@ -110,11 +94,7 @@ function Shell({
               <ShellChromeProvider path={path} navigate={navigate}>
                 <CommandPaletteProvider path={path} navigate={navigate}>
                   <AppShell path={path} user={user} onSignOut={onSignOut}>
-                    {route === undefined ? (
-                      <NotFoundPage />
-                    ) : (
-                      route.render(path, navigate)
-                    )}
+                    {route === undefined ? <NotFoundPage /> : route.render(path, navigate)}
                   </AppShell>
                 </CommandPaletteProvider>
               </ShellChromeProvider>
@@ -199,14 +179,7 @@ export function App({
         if (path === ONBOARDING_PATH) {
           return <OnboardingGate navigate={navigate} user={session.user} />;
         }
-        return (
-          <Shell
-            path={path}
-            navigate={navigate}
-            user={session.user}
-            onSignOut={onSignOut}
-          />
-        );
+        return <Shell path={path} navigate={navigate} user={session.user} onSignOut={onSignOut} />;
     }
   }
 }

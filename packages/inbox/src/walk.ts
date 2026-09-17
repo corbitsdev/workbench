@@ -27,9 +27,7 @@ import type { InboxItem } from "./project";
 // of forever.
 export const MAX_WALK_PAGES = 1000;
 
-export type ListPageFn = (opts: {
-  cursor?: MailboxListCursor;
-}) => Promise<MailboxPage>;
+export type ListPageFn = (opts: { cursor?: MailboxListCursor }) => Promise<MailboxPage>;
 
 /** The walk stopped before covering the whole inbox. `message` says why. */
 export class IncompleteWalkError extends Error {}
@@ -45,24 +43,16 @@ export async function walkAllOpen(
   for (;;) {
     pages += 1;
     if (pages > maxPages) {
-      throw new IncompleteWalkError(
-        `inbox walk exceeded ${maxPages} pages without finishing`,
-      );
+      throw new IncompleteWalkError(`inbox walk exceeded ${maxPages} pages without finishing`);
     }
     const page = await listPage(cursor !== undefined ? { cursor } : {});
     for (const message of page.items) out.push(projectInboxItem(message));
     if (page.nextCursor === undefined) break;
     const next = decodeMailboxListCursor(page.nextCursor);
     if (next === null) {
-      throw new IncompleteWalkError(
-        "inbox walk received an undecodable cursor mid-walk",
-      );
+      throw new IncompleteWalkError("inbox walk received an undecodable cursor mid-walk");
     }
-    if (
-      cursor !== undefined &&
-      next.createdAt === cursor.createdAt &&
-      next.id === cursor.id
-    ) {
+    if (cursor !== undefined && next.createdAt === cursor.createdAt && next.id === cursor.id) {
       throw new IncompleteWalkError("inbox walk cursor did not advance");
     }
     cursor = next;

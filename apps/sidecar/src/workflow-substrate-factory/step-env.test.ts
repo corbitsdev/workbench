@@ -11,24 +11,16 @@ import { afterEach, expect, test } from "bun:test";
 import type { AgentDefinition, BaseEnv } from "@intx/agent";
 import type { RepoId } from "@intx/hub-sessions/substrate";
 import type { StepInvokeRequest } from "@intx/workflow";
-import type {
-  ChildOutboundMailBridge,
-  SourcesSnapshotRef,
-} from "@intx/workflow-host";
+import type { ChildOutboundMailBridge, SourcesSnapshotRef } from "@intx/workflow-host";
 
-import {
-  SUMMARIZE_BUDGETED_TURNS_NAME,
-  SUMMARIZE_OLDER_TURNS_NAME,
-} from "./compactors";
+import { SUMMARIZE_BUDGETED_TURNS_NAME, SUMMARIZE_OLDER_TURNS_NAME } from "./compactors";
 import { createSidecarStepBuildEnv } from "./step-env";
 
 const tmpDirs: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    tmpDirs
-      .splice(0)
-      .map((dir) => fs.promises.rm(dir, { recursive: true, force: true })),
+    tmpDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })),
   );
 });
 
@@ -79,12 +71,10 @@ test("the built step env carries the deploying definition's own definitionId and
 
   const env = await buildEnv(stepInvokeRequest(), sourcesRef);
 
-  expect((env as unknown as { definitionId: string }).definitionId).toBe(
-    "wfd_capability_owner",
+  expect((env as unknown as { definitionId: string }).definitionId).toBe("wfd_capability_owner");
+  expect((env as unknown as { hubCapabilitiesUrl: string }).hubCapabilitiesUrl).toBe(
+    "https://hub.example.com",
   );
-  expect(
-    (env as unknown as { hubCapabilitiesUrl: string }).hubCapabilitiesUrl,
-  ).toBe("https://hub.example.com");
   // Same hub origin as the sibling artifacts/skills bindings — one
   // origin, one name per tool-bundle surface, never overloaded.
   expect((env as unknown as { hubArtifactsUrl: string }).hubArtifactsUrl).toBe(
@@ -93,12 +83,8 @@ test("the built step env carries the deploying definition's own definitionId and
   expect((env as unknown as { memoryBaseUrl: string }).memoryBaseUrl).toBe(
     "https://hub.example.com",
   );
-  expect((env as unknown as { memoryTenantId: string }).memoryTenantId).toBe(
-    "ten_test",
-  );
-  expect((env as unknown as { address: string }).address).toBe(
-    "run_1@example.com",
-  );
+  expect((env as unknown as { memoryTenantId: string }).memoryTenantId).toBe("ten_test");
+  expect((env as unknown as { address: string }).address).toBe("run_1@example.com");
 });
 
 test("a body-step env with no staged deploy tree still carries definitionId, so the binding is not tool-materialization-gated", async () => {
@@ -116,9 +102,7 @@ test("a body-step env with no staged deploy tree still carries definitionId, so 
   } as unknown as SourcesSnapshotRef;
 
   const env = await buildEnv(stepInvokeRequest(), sourcesRef);
-  expect((env as unknown as { definitionId: string }).definitionId).toBe(
-    "wfd_parent_definition",
-  );
+  expect((env as unknown as { definitionId: string }).definitionId).toBe("wfd_parent_definition");
 });
 
 // CL-6448: the body-turn history seam. A section body runs each message as
@@ -196,16 +180,11 @@ test("the built step env forwards the summarize-older-turns compactor (CL-6204) 
 
   const env = await buildEnv(stepInvokeRequest(), sourcesRef);
 
-  const compactors = (
-    env as unknown as { compactors: Record<string, { name: string }> }
-  ).compactors;
+  const compactors = (env as unknown as { compactors: Record<string, { name: string }> })
+    .compactors;
   expect(Object.keys(compactors).sort()).toEqual(
     [SUMMARIZE_OLDER_TURNS_NAME, SUMMARIZE_BUDGETED_TURNS_NAME].sort(),
   );
-  expect(compactors[SUMMARIZE_OLDER_TURNS_NAME]?.name).toBe(
-    SUMMARIZE_OLDER_TURNS_NAME,
-  );
-  expect(compactors[SUMMARIZE_BUDGETED_TURNS_NAME]?.name).toBe(
-    SUMMARIZE_BUDGETED_TURNS_NAME,
-  );
+  expect(compactors[SUMMARIZE_OLDER_TURNS_NAME]?.name).toBe(SUMMARIZE_OLDER_TURNS_NAME);
+  expect(compactors[SUMMARIZE_BUDGETED_TURNS_NAME]?.name).toBe(SUMMARIZE_BUDGETED_TURNS_NAME);
 });

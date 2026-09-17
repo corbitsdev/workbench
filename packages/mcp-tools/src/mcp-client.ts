@@ -11,10 +11,7 @@
 // a stale session across calls that may be minutes apart.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type {
-  FetchLike,
-  Transport,
-} from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { FetchLike, Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 export const MCP_CLIENT_NAME = "corbits-workbench";
 export const MCP_CLIENT_VERSION = "0.0.1";
@@ -79,9 +76,7 @@ export async function withMcpConnection<T>(
 
 /** `tools/list` against an already-open connection, normalized to the
  * shape `mcp_list_tools` reports. */
-export async function listMcpTools(
-  client: Client,
-): Promise<readonly McpToolInfo[]> {
+export async function listMcpTools(client: Client): Promise<readonly McpToolInfo[]> {
   const result = await client.listTools(undefined, MCP_REQUEST_OPTIONS);
   return result.tools.map((tool) => {
     const base: McpToolInfo = {
@@ -89,9 +84,7 @@ export async function listMcpTools(
       inputSchema: tool.inputSchema as Record<string, unknown>,
     };
     const withDescription =
-      tool.description !== undefined
-        ? { ...base, description: tool.description }
-        : base;
+      tool.description !== undefined ? { ...base, description: tool.description } : base;
     return tool.annotations !== undefined
       ? { ...withDescription, annotations: tool.annotations }
       : withDescription;

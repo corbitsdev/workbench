@@ -58,8 +58,7 @@ function Root() {
     message: string;
     refId?: string | undefined;
   } | null>(null);
-  const provisionedUserId =
-    session.kind === "signed-in" ? session.user.id : null;
+  const provisionedUserId = session.kind === "signed-in" ? session.user.id : null;
   const runProvisioning = useCallback(() => {
     if (provisionedUserId === null) return () => undefined;
     let cancelled = false;
@@ -83,9 +82,7 @@ function Root() {
 
   const handleSignOut = useCallback(() => {
     setSession({ kind: "signed-out" });
-    toast(
-      "Signed out. If you were on a shared computer, close the browser to be sure.",
-    );
+    toast("Signed out. If you were on a shared computer, close the browser to be sure.");
     void signOut().then((ok) => {
       if (ok) return;
       log.error("Sign-out request to the server failed");
@@ -99,9 +96,7 @@ function Root() {
   // exposes no onChange hook or externally-supplied initial value a host
   // could observe or override without forking the component.
   const themeStorageKey =
-    session.kind === "signed-in"
-      ? `corbits-theme:${session.user.id}`
-      : "corbits-theme";
+    session.kind === "signed-in" ? `corbits-theme:${session.user.id}` : "corbits-theme";
 
   return (
     <ThemeProvider storageKey={themeStorageKey} defaultMode="light">

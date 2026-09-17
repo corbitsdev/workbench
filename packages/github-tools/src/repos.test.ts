@@ -9,8 +9,7 @@ function jsonResponse(body: unknown): Response {
 }
 
 function fakeFetch(handler: (url: string) => Promise<Response>): typeof fetch {
-  return ((input: URL | string) =>
-    handler(String(input))) as unknown as typeof fetch;
+  return ((input: URL | string) => handler(String(input))) as unknown as typeof fetch;
 }
 
 test("listRepos reads the whole picker from one list call, never a per-repo search", async () => {
@@ -47,9 +46,7 @@ test("listRepos reads the whole picker from one list call, never a per-repo sear
 });
 
 test("listRepos throws when the repos response doesn't match the expected shape", async () => {
-  const fetchImpl = fakeFetch(() =>
-    Promise.resolve(jsonResponse([{ id: "not-a-number" }])),
-  );
+  const fetchImpl = fakeFetch(() => Promise.resolve(jsonResponse([{ id: "not-a-number" }])));
   await expect(listRepos({ baseUrl: BASE, fetchImpl })).rejects.toThrow(
     /did not match the expected shape/,
   );
@@ -57,13 +54,9 @@ test("listRepos throws when the repos response doesn't match the expected shape"
 
 test("listRepos names the status when GitHub rejects the list call", async () => {
   const fetchImpl = fakeFetch(() =>
-    Promise.resolve(
-      new Response("nope", { status: 403, statusText: "Forbidden" }),
-    ),
+    Promise.resolve(new Response("nope", { status: 403, statusText: "Forbidden" })),
   );
-  await expect(listRepos({ baseUrl: BASE, fetchImpl })).rejects.toThrow(
-    /403 Forbidden/,
-  );
+  await expect(listRepos({ baseUrl: BASE, fetchImpl })).rejects.toThrow(/403 Forbidden/);
 });
 
 test("fetchAuthenticatedLogin reads the PAT's own login", async () => {
@@ -71,7 +64,5 @@ test("fetchAuthenticatedLogin reads the PAT's own login", async () => {
     expect(url).toContain("/user");
     return Promise.resolve(jsonResponse({ login: "octocat" }));
   });
-  expect(await fetchAuthenticatedLogin({ baseUrl: BASE, fetchImpl })).toBe(
-    "octocat",
-  );
+  expect(await fetchAuthenticatedLogin({ baseUrl: BASE, fetchImpl })).toBe("octocat");
 });

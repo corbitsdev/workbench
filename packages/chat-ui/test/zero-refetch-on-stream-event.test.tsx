@@ -25,10 +25,7 @@ class StubEventSource {
     StubEventSource.instances.push(this);
   }
 
-  addEventListener(
-    eventType: string,
-    listener: (message: MessageEvent) => void,
-  ) {
+  addEventListener(eventType: string, listener: (message: MessageEvent) => void) {
     this.listeners.set(eventType, listener);
   }
 
@@ -87,8 +84,7 @@ function stubFetch() {
     if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
       return json({ items: [WORKBENCH_WIRE] });
     }
-    if (/\/chat\/workbenches\?kind=chat$/.test(path))
-      return json({ items: [] });
+    if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
     if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
       return json({ rootThreadId: "", items: [] });
     }
@@ -104,15 +100,10 @@ function stubFetch() {
       }
       return json({ items: [] });
     }
-    if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
-      return json({ items: [] });
+    if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path)) return json({ items: [] });
     if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
-    if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path))
-      return json({ items: [] });
-    if (
-      /\/chat\/workbenches\/[^/]+\/presence$/.test(path) &&
-      init?.method === "POST"
-    ) {
+    if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) return json({ items: [] });
+    if (/\/chat\/workbenches\/[^/]+\/presence$/.test(path) && init?.method === "POST") {
       return json({});
     }
     if (/\/mailbox\/me\/threads/.test(path)) {
@@ -179,9 +170,7 @@ describe("zero refetches on a stream event, post-hydration (CL-6328 §6/1.2)", (
     });
     await harness.settle();
 
-    const textarea = harness.container.querySelector(
-      ".chat-composer-input",
-    ) as HTMLTextAreaElement;
+    const textarea = harness.container.querySelector(".chat-composer-input") as HTMLTextAreaElement;
     const setter = Object.getOwnPropertyDescriptor(
       window.HTMLTextAreaElement.prototype,
       "value",
@@ -221,9 +210,7 @@ describe("zero refetches on a stream event, post-hydration (CL-6328 §6/1.2)", (
 
     // No refetch triggered by the echo, and no duplicate bubble.
     expect(feedRefetchCount).toBe(feedRefetchCountAfterSend);
-    const bubbles = harness.container.querySelectorAll(
-      '[data-own="true"] .chat-bubble',
-    );
+    const bubbles = harness.container.querySelectorAll('[data-own="true"] .chat-bubble');
     expect(bubbles).toHaveLength(1);
     harness.unmount();
   });

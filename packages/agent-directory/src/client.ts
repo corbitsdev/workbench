@@ -60,9 +60,7 @@ export function purposeAgentDefinitions<T extends UserFacingAgentDefinition>(
   definitions: readonly T[],
 ): readonly T[] {
   return definitions.filter(
-    (d) =>
-      !isWorkbenchHostDefinitionName(d.name) &&
-      isConversationalWorkflowName(d.name),
+    (d) => !isWorkbenchHostDefinitionName(d.name) && isConversationalWorkflowName(d.name),
   );
 }
 
@@ -79,8 +77,7 @@ export function purposeAgentInstances<T extends UserFacingAgentInstance>(
 ): readonly T[] {
   return instances.filter(
     (instance) =>
-      !isWorkbenchHostDefinitionName(instance.definitionName) &&
-      !excludeRunIds.has(instance.id),
+      !isWorkbenchHostDefinitionName(instance.definitionName) && !excludeRunIds.has(instance.id),
   );
 }
 
@@ -92,8 +89,7 @@ export function filterDefinitions<T extends UserFacingAgentDefinition>(
   if (needle === "") return definitions;
   return definitions.filter(
     (d) =>
-      d.name.toLowerCase().includes(needle) ||
-      (d.description ?? "").toLowerCase().includes(needle),
+      d.name.toLowerCase().includes(needle) || (d.description ?? "").toLowerCase().includes(needle),
   );
 }
 
@@ -103,9 +99,7 @@ export function filterInstances<T extends UserFacingAgentInstance>(
 ): readonly T[] {
   const needle = query.trim().toLowerCase();
   if (needle === "") return instances;
-  return instances.filter((i) =>
-    i.definitionName.toLowerCase().includes(needle),
-  );
+  return instances.filter((i) => i.definitionName.toLowerCase().includes(needle));
 }
 
 /**

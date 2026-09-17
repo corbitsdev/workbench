@@ -38,15 +38,12 @@ function quoteQualified(schema: string, name: string): string {
 export async function applyPackageMigrations(
   options: ApplyPackageMigrationsOptions,
 ): Promise<ApplyPackageMigrationsReport> {
-  const { databaseUrl, schema, ledgerTable, migrations, packageLabel } =
-    options;
+  const { databaseUrl, schema, ledgerTable, migrations, packageLabel } = options;
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   let holdsLock = false;
   try {
     log.info`waiting for the ${packageLabel} migration lock (${ledgerTable})`;
-    await sql.unsafe(`SELECT pg_advisory_lock(hashtext($1)::bigint)`, [
-      ledgerTable,
-    ]);
+    await sql.unsafe(`SELECT pg_advisory_lock(hashtext($1)::bigint)`, [ledgerTable]);
     holdsLock = true;
 
     await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(schema)}`);
@@ -70,18 +67,16 @@ export async function applyPackageMigrations(
       try {
         await sql.begin(async (tx) => {
           await tx.unsafe(migration.sql);
-          await tx.unsafe(
-            `INSERT INTO ${quoteQualified(schema, ledgerTable)} (name) VALUES ($1)`,
-            [migration.name],
-          );
+          await tx.unsafe(`INSERT INTO ${quoteQualified(schema, ledgerTable)} (name) VALUES ($1)`, [
+            migration.name,
+          ]);
         });
         applied.push(migration.name);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        throw new Error(
-          `${packageLabel} migration ${migration.name} failed: ${message}`,
-          { cause: err },
-        );
+        throw new Error(`${packageLabel} migration ${migration.name} failed: ${message}`, {
+          cause: err,
+        });
       }
     }
 
@@ -89,9 +84,7 @@ export async function applyPackageMigrations(
   } finally {
     try {
       if (holdsLock) {
-        await sql.unsafe(`SELECT pg_advisory_unlock(hashtext($1)::bigint)`, [
-          ledgerTable,
-        ]);
+        await sql.unsafe(`SELECT pg_advisory_unlock(hashtext($1)::bigint)`, [ledgerTable]);
       }
     } finally {
       await sql.end({ timeout: 5 });

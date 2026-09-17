@@ -27,26 +27,26 @@ describe("parseAgentRuntimeConfig", () => {
   });
 
   test("rejects an empty inference chain rather than building a modelless agent", () => {
-    expect(() =>
-      parseAgentRuntimeConfig({ ...stepConfig, inferencePreferences: [] }),
-    ).toThrow(/invalid agent-runtime config/);
+    expect(() => parseAgentRuntimeConfig({ ...stepConfig, inferencePreferences: [] })).toThrow(
+      /invalid agent-runtime config/,
+    );
   });
 
   test("rejects a section mode with no turn timeout", () => {
-    expect(() =>
-      parseAgentRuntimeConfig({ ...stepConfig, mode: { kind: "section" } }),
-    ).toThrow(/invalid agent-runtime config/);
+    expect(() => parseAgentRuntimeConfig({ ...stepConfig, mode: { kind: "section" } })).toThrow(
+      /invalid agent-runtime config/,
+    );
   });
 
   test("rejects an unknown mode", () => {
-    expect(() =>
-      parseAgentRuntimeConfig({ ...stepConfig, mode: { kind: "swarm" } }),
-    ).toThrow(/invalid agent-runtime config/);
+    expect(() => parseAgentRuntimeConfig({ ...stepConfig, mode: { kind: "swarm" } })).toThrow(
+      /invalid agent-runtime config/,
+    );
   });
 
   test("rejects an empty trigger address", () => {
-    expect(() =>
-      parseAgentRuntimeConfig({ ...stepConfig, triggerAddress: "" }),
-    ).toThrow(/invalid agent-runtime config/);
+    expect(() => parseAgentRuntimeConfig({ ...stepConfig, triggerAddress: "" })).toThrow(
+      /invalid agent-runtime config/,
+    );
   });
 });

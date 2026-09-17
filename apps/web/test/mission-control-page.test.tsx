@@ -101,9 +101,7 @@ describe("computeInFlightRows", () => {
       routine({
         id: "stale",
         status: "running",
-        startedAt: new Date(
-          Date.now() - FIRE_RUNNING_WINDOW_MS - 1,
-        ).toISOString(),
+        startedAt: new Date(Date.now() - FIRE_RUNNING_WINDOW_MS - 1).toISOString(),
       }),
     ]);
     expect(rows.map((row) => row.key)).toEqual(["routine:stale"]);

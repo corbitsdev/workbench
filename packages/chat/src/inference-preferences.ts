@@ -22,9 +22,7 @@ import { preferCompletionCapable } from "@corbits/connections/model-capability";
 
 /** Reads back the provider names a tenant (or an ancestor it inherits
  * catalog rows from) actually has a usable credential for. */
-export type ConnectedProviderLister = (
-  tenantId: string,
-) => Promise<readonly string[]>;
+export type ConnectedProviderLister = (tenantId: string) => Promise<readonly string[]>;
 
 export type DefaultInferencePreferenceLister = (
   tenantId: string,
@@ -83,9 +81,7 @@ export async function listConnectedProviders(
 export function selectDefaultInferencePreferences(
   offerings: readonly ResolvedOffering[],
 ): readonly InferencePreference[] {
-  const credentialed = offerings.filter(
-    (entry) => entry.provider.credentialId !== null,
-  );
+  const credentialed = offerings.filter((entry) => entry.provider.credentialId !== null);
   const completionCapable = preferCompletionCapable(
     credentialed,
     (entry) => entry.offering.capabilities,

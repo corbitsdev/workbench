@@ -10,15 +10,12 @@ export interface NativePrincipal {
 }
 
 export interface NativePrincipalStore {
-  getTenantPrincipal(
-    tenantId: string,
-    principalId: string,
-  ): Promise<NativePrincipal | undefined>;
+  getTenantPrincipal(tenantId: string, principalId: string): Promise<NativePrincipal | undefined>;
 }
 
-export function createDrizzleNativePrincipalStore<
-  TSchema extends Record<string, unknown>,
->(db: PostgresJsDatabase<TSchema>): NativePrincipalStore {
+export function createDrizzleNativePrincipalStore<TSchema extends Record<string, unknown>>(
+  db: PostgresJsDatabase<TSchema>,
+): NativePrincipalStore {
   return {
     async getTenantPrincipal(tenantId, principalId) {
       const [row] = await db
@@ -29,9 +26,7 @@ export function createDrizzleNativePrincipalStore<
           refId: principal.refId,
         })
         .from(principal)
-        .where(
-          and(eq(principal.tenantId, tenantId), eq(principal.id, principalId)),
-        )
+        .where(and(eq(principal.tenantId, tenantId), eq(principal.id, principalId)))
         .limit(1);
       return row;
     },
@@ -42,8 +37,7 @@ export function createInMemoryNativePrincipalStore(): NativePrincipalStore & {
   registerPrincipal(tenantId: string, value: NativePrincipal): void;
 } {
   const principals = new Map<string, NativePrincipal>();
-  const key = (tenantId: string, principalId: string) =>
-    `${tenantId}\u0000${principalId}`;
+  const key = (tenantId: string, principalId: string) => `${tenantId}\u0000${principalId}`;
 
   return {
     registerPrincipal(tenantId, value) {

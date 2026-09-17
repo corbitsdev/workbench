@@ -60,9 +60,7 @@ export async function hop<T>(name: string, run: () => Promise<T>): Promise<T> {
  * registered before it. The first failure still surfaces (rethrown after
  * the sweep).
  */
-export async function runCleanups(
-  cleanups: (() => Promise<void> | void)[],
-): Promise<void> {
+export async function runCleanups(cleanups: (() => Promise<void> | void)[]): Promise<void> {
   let firstFailure: unknown;
   for (const cleanup of cleanups.splice(0).reverse()) {
     try {
@@ -160,10 +158,7 @@ export async function provisionSidecar(
   sidecarId: string,
   token: string,
 ): Promise<void> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(token),
-  );
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   const sql = await connectE2eDb(databaseUrl);
   try {
     await sql.unsafe(
@@ -186,11 +181,7 @@ export interface SpawnedApp {
   stop(): Promise<void>;
 }
 
-function spawnApp(
-  label: string,
-  cwd: string,
-  env: Record<string, string>,
-): SpawnedApp {
+function spawnApp(label: string, cwd: string, env: Record<string, string>): SpawnedApp {
   const proc = Bun.spawn(["bun", "src/index.ts"], {
     cwd,
     env,
@@ -203,10 +194,7 @@ function spawnApp(
   // through the handle the suite still holds; teeing to a file makes a
   // crash-recovery run diagnosable after the fact.
   const logDir = process.env["E2E_LOG_DIR"];
-  const logPath =
-    logDir === undefined
-      ? undefined
-      : `${logDir}/${label}-${String(proc.pid)}.log`;
+  const logPath = logDir === undefined ? undefined : `${logDir}/${label}-${String(proc.pid)}.log`;
   const capture = async (stream: ReadableStream<Uint8Array>) => {
     const decoder = new TextDecoder();
     for await (const chunk of stream) {
@@ -319,9 +307,7 @@ export async function startHub(options: {
     }
     if (Date.now() > deadline) {
       await app.stop();
-      throw new Error(
-        `hub did not answer /status within 30s; output:\n${app.output()}`,
-      );
+      throw new Error(`hub did not answer /status within 30s; output:\n${app.output()}`);
     }
     await Bun.sleep(250);
   }
@@ -410,15 +396,10 @@ export async function api(
   return { status: res.status, data, cookies: nextCookies };
 }
 
-export function expectStatus(
-  what: string,
-  result: ApiResult,
-  expected: number,
-): void {
+export function expectStatus(what: string, result: ApiResult, expected: number): void {
   if (result.status !== expected) {
     throw new Error(
-      `${what}: expected HTTP ${expected}, got ${result.status}: ` +
-        JSON.stringify(result.data),
+      `${what}: expected HTTP ${expected}, got ${result.status}: ` + JSON.stringify(result.data),
     );
   }
 }

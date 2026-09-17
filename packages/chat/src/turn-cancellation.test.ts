@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  createTurnCancelRegistry,
-  TurnCancelledError,
-} from "./turn-cancellation";
+import { createTurnCancelRegistry, TurnCancelledError } from "./turn-cancellation";
 
 describe("createTurnCancelRegistry (CL-7201)", () => {
   test("cancel aborts every controller registered for that workbench", () => {

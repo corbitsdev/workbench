@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  generateWebhookSecret,
-  signPayload,
-  verifySignature,
-} from "../src/signature";
+import { generateWebhookSecret, signPayload, verifySignature } from "../src/signature";
 
 function nowSeconds(): string {
   return String(Math.floor(Date.now() / 1000));
@@ -30,23 +26,15 @@ describe("verifySignature", () => {
 
   test("rejects a payload signed with a different secret", () => {
     const timestamp = nowSeconds();
-    const wrongSignature = signPayload(
-      generateWebhookSecret(),
-      timestamp,
-      body,
-    );
-    expect(verifySignature(secret, timestamp, body, wrongSignature)).toBe(
-      false,
-    );
+    const wrongSignature = signPayload(generateWebhookSecret(), timestamp, body);
+    expect(verifySignature(secret, timestamp, body, wrongSignature)).toBe(false);
   });
 
   test("rejects a tampered body against the original signature", () => {
     const timestamp = nowSeconds();
     const signature = signPayload(secret, timestamp, body);
     const tamperedBody = JSON.stringify({ hello: "mallory" });
-    expect(verifySignature(secret, timestamp, tamperedBody, signature)).toBe(
-      false,
-    );
+    expect(verifySignature(secret, timestamp, tamperedBody, signature)).toBe(false);
   });
 
   test("rejects a missing signature header", () => {
@@ -57,9 +45,7 @@ describe("verifySignature", () => {
 
   test("rejects a non-hex signature without throwing", () => {
     const timestamp = nowSeconds();
-    expect(verifySignature(secret, timestamp, body, "not-hex-at-all!!")).toBe(
-      false,
-    );
+    expect(verifySignature(secret, timestamp, body, "not-hex-at-all!!")).toBe(false);
   });
 
   test("rejects a well-formed-but-wrong-length hex signature", () => {
@@ -71,17 +57,13 @@ describe("verifySignature", () => {
     const timestamp = nowSeconds();
     const signature = signPayload(secret, timestamp, body);
     const laterTimestamp = String(Number(timestamp) + 1);
-    expect(verifySignature(secret, laterTimestamp, body, signature)).toBe(
-      false,
-    );
+    expect(verifySignature(secret, laterTimestamp, body, signature)).toBe(false);
   });
 
   test("rejects a replayed delivery once its timestamp is outside the tolerance window", () => {
     const staleTimestamp = String(Math.floor(Date.now() / 1000) - 301);
     const signature = signPayload(secret, staleTimestamp, body);
-    expect(verifySignature(secret, staleTimestamp, body, signature)).toBe(
-      false,
-    );
+    expect(verifySignature(secret, staleTimestamp, body, signature)).toBe(false);
   });
 
   test("accepts a timestamp comfortably inside the tolerance window", () => {
@@ -95,9 +77,7 @@ describe("verifySignature", () => {
   test("rejects a timestamp forged too far into the future", () => {
     const futureTimestamp = String(Math.floor(Date.now() / 1000) + 301);
     const signature = signPayload(secret, futureTimestamp, body);
-    expect(verifySignature(secret, futureTimestamp, body, signature)).toBe(
-      false,
-    );
+    expect(verifySignature(secret, futureTimestamp, body, signature)).toBe(false);
   });
 
   test("rejects a missing timestamp header", () => {
@@ -108,8 +88,6 @@ describe("verifySignature", () => {
 
   test("rejects a non-numeric timestamp header without treating it as fresh", () => {
     const signature = signPayload(secret, "not-a-number", body);
-    expect(verifySignature(secret, "not-a-number", body, signature)).toBe(
-      false,
-    );
+    expect(verifySignature(secret, "not-a-number", body, signature)).toBe(false);
   });
 });

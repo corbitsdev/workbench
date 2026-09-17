@@ -60,9 +60,7 @@ describe.skipIf(databaseUrl === undefined || ghToken === undefined)(
         startHub({
           databaseUrl: url,
           port: freePort(),
-          sessionSecret: Buffer.from(
-            crypto.getRandomValues(new Uint8Array(32)),
-          ).toString("hex"),
+          sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
           dataDir: await tempDir("e2e-t3-proof-hub-data-"),
         }),
       );
@@ -98,9 +96,7 @@ describe.skipIf(databaseUrl === undefined || ghToken === undefined)(
               ? body.tenantId
               : undefined;
         if (id === undefined) {
-          throw new Error(
-            `create tenant answered no id: ${JSON.stringify(minted.data)}`,
-          );
+          throw new Error(`create tenant answered no id: ${JSON.stringify(minted.data)}`);
         }
         return id;
       });
@@ -117,17 +113,8 @@ describe.skipIf(databaseUrl === undefined || ghToken === undefined)(
       const disconnectPath = `/api/tenants/${tenantId}/connections/github/disconnect`;
       const credentialsPath = `/api/tenants/${tenantId}/credentials`;
 
-      async function credentialPresent(
-        what: string,
-        credentialId: string,
-      ): Promise<boolean> {
-        const res = await api(
-          hub.baseUrl,
-          "GET",
-          credentialsPath,
-          undefined,
-          signup,
-        );
+      async function credentialPresent(what: string, credentialId: string): Promise<boolean> {
+        const res = await api(hub.baseUrl, "GET", credentialsPath, undefined, signup);
         expectStatus(`credentials list (${what})`, res, 200);
         const rows = (res.data as { data: { id: string }[] }).data;
         console.log(
@@ -137,48 +124,30 @@ describe.skipIf(databaseUrl === undefined || ghToken === undefined)(
       }
 
       const credentialId = await hop("connect (POST complete)", async () => {
-        const res = await api(
-          hub.baseUrl,
-          "POST",
-          completePath,
-          { apiKey: token },
-          signup,
-        );
+        const res = await api(hub.baseUrl, "POST", completePath, { apiKey: token }, signup);
         expectStatus("github complete", res, 200);
         const body = res.data as { credentialId?: string; status?: string };
         console.log(
           `complete -> ${res.status} status=${body.status} credentialId=${body.credentialId}`,
         );
         if (body.credentialId === undefined || body.status !== "active") {
-          throw new Error(
-            `complete answered no active credential: ${JSON.stringify(res.data)}`,
-          );
+          throw new Error(`complete answered no active credential: ${JSON.stringify(res.data)}`);
         }
         return body.credentialId;
       });
 
       await hop("status reads connected", async () => {
-        expect(await credentialPresent("after connect", credentialId)).toBe(
-          true,
-        );
+        expect(await credentialPresent("after connect", credentialId)).toBe(true);
       });
 
       await hop("disconnect (DELETE)", async () => {
-        const res = await api(
-          hub.baseUrl,
-          "DELETE",
-          disconnectPath,
-          undefined,
-          signup,
-        );
+        const res = await api(hub.baseUrl, "DELETE", disconnectPath, undefined, signup);
         expectStatus("github disconnect", res, 204);
         console.log(`disconnect -> ${res.status}`);
       });
 
       await hop("status reads disconnected", async () => {
-        expect(await credentialPresent("after disconnect", credentialId)).toBe(
-          false,
-        );
+        expect(await credentialPresent("after disconnect", credentialId)).toBe(false);
       });
     }, 180_000);
   },

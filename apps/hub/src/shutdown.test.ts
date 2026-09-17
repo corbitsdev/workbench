@@ -7,10 +7,7 @@ test("drainWithTimeout resolves drained when the drain completes inside the boun
 });
 
 test("drainWithTimeout resolves timed-out when the drain outlives the bound", async () => {
-  const outcome = await drainWithTimeout(
-    () => new Promise<void>(() => undefined),
-    10,
-  );
+  const outcome = await drainWithTimeout(() => new Promise<void>(() => undefined), 10);
   expect(outcome).toEqual({ kind: "timed-out" });
 });
 

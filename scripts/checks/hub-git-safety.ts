@@ -4,12 +4,7 @@
 // have landed on the working branch and wiped checkouts; catching them
 // in CI is cheaper than reconstructing a deleted worktree.
 import { spawnSync } from "node:child_process";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 export const JUNK_COMMIT_SUBJECTS = [
   "initial @corbits/fake-tools@0.0.1",
@@ -17,16 +12,12 @@ export const JUNK_COMMIT_SUBJECTS = [
   "Deploy the default workflow definition",
 ] as const;
 
-export const JUNK_AUTHOR_EMAILS = [
-  "hub@interchange.local",
-  "seed@workbench.localhost",
-] as const;
+export const JUNK_AUTHOR_EMAILS = ["hub@interchange.local", "seed@workbench.localhost"] as const;
 
 /** A commit touching this many paths with no source-tree file is hub dump. */
 export const LARGE_COMMIT_FILE_THRESHOLD = 50;
 
-const SOURCE_PATH =
-  /^(apps|packages|scripts|workflows|docs|test|tools|\.github)\//;
+const SOURCE_PATH = /^(apps|packages|scripts|workflows|docs|test|tools|\.github)\//;
 
 export type InspectedCommit = {
   readonly hash: string;
@@ -39,9 +30,7 @@ export function isSourcePath(file: string): boolean {
   return SOURCE_PATH.test(file) && !file.includes(".data/");
 }
 
-export function auditHubJunkCommits(
-  commits: readonly InspectedCommit[],
-): CheckReport {
+export function auditHubJunkCommits(commits: readonly InspectedCommit[]): CheckReport {
   const report = emptyReport();
   for (const commit of commits) {
     const short = commit.hash.slice(0, 8);
@@ -53,18 +42,14 @@ export function auditHubJunkCommits(
           `this work tree (test/disposable-hub-data-dir.ts).`,
       );
     }
-    if (
-      (JUNK_AUTHOR_EMAILS as readonly string[]).includes(commit.authorEmail)
-    ) {
+    if ((JUNK_AUTHOR_EMAILS as readonly string[]).includes(commit.authorEmail)) {
       report.violations.push(
         `${short}: author ${commit.authorEmail} is hub/seed git identity ` +
           `(subject ${JSON.stringify(commit.subject)}). That commit is ` +
           `on-disk hub state, not a workbench change.`,
       );
     }
-    const dataFiles = commit.files.filter(
-      (file) => file === ".data" || file.startsWith(".data/"),
-    );
+    const dataFiles = commit.files.filter((file) => file === ".data" || file.startsWith(".data/"));
     if (dataFiles.length > 0) {
       report.violations.push(
         `${short}: commits hub data paths (${dataFiles.slice(0, 3).join(", ")}` +
@@ -72,10 +57,7 @@ export function auditHubJunkCommits(
           `HUB_DATA_DIR must not live inside this work tree.`,
       );
     }
-    if (
-      commit.files.length > LARGE_COMMIT_FILE_THRESHOLD &&
-      !commit.files.some(isSourcePath)
-    ) {
+    if (commit.files.length > LARGE_COMMIT_FILE_THRESHOLD && !commit.files.some(isSourcePath)) {
       report.violations.push(
         `${short}: touches ${commit.files.length} paths with no corresponding ` +
           `source-tree change — the shape of a hub git-on-disk dump onto the ` +
@@ -91,18 +73,12 @@ function git(root: string, args: readonly string[]): string | undefined {
   return result.status === 0 ? result.stdout.trim() : undefined;
 }
 
-export function resolveBaseRef(
-  root: string,
-  explicit: string | undefined,
-): string | undefined {
+export function resolveBaseRef(root: string, explicit: string | undefined): string | undefined {
   if (explicit !== undefined && explicit.length > 0) return explicit;
   return git(root, ["merge-base", "HEAD", "origin/main"]);
 }
 
-export function readCommitsSince(
-  root: string,
-  baseRef: string,
-): InspectedCommit[] {
+export function readCommitsSince(root: string, baseRef: string): InspectedCommit[] {
   const hashes = git(root, ["log", "--format=%H", `${baseRef}..HEAD`]);
   if (hashes === undefined || hashes === "") return [];
   const commits: InspectedCommit[] = [];
@@ -113,13 +89,7 @@ export function readCommitsSince(
     const newline = meta.indexOf("\n");
     const subject = newline === -1 ? meta : meta.slice(0, newline);
     const authorEmail = newline === -1 ? "" : meta.slice(newline + 1);
-    const names = git(root, [
-      "diff-tree",
-      "--no-commit-id",
-      "--name-only",
-      "-r",
-      hash,
-    ]);
+    const names = git(root, ["diff-tree", "--no-commit-id", "--name-only", "-r", hash]);
     commits.push({
       hash,
       subject,

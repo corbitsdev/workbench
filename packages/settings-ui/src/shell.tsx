@@ -100,17 +100,14 @@ export function SettingsShell({
     );
   }
 
-  const activeSection =
-    resolveActiveSection(sections, activeId) ?? firstSection;
+  const activeSection = resolveActiveSection(sections, activeId) ?? firstSection;
 
   return (
     <div className="settings-shell">
       {/* No repeated "Settings · Section" heading here — the host's stage
           top bar already carries it, and every section card names itself. */}
       <div className="settings-stage" key={activeSection.id}>
-        <div className="settings-stage-body">
-          {activeSection.render(context)}
-        </div>
+        <div className="settings-stage-body">{activeSection.render(context)}</div>
       </div>
     </div>
   );

@@ -14,11 +14,7 @@ import {
   type ModelChain,
 } from "@corbits/inference-catalog";
 
-import {
-  fetchCatalog,
-  fetchModelPolicy,
-  type CatalogToolClientConfig,
-} from "./client";
+import { fetchCatalog, fetchModelPolicy, type CatalogToolClientConfig } from "./client";
 
 /** What this bench can reach and what it is willing to spend, read once. */
 export type BenchCatalog = {
@@ -26,13 +22,8 @@ export type BenchCatalog = {
   readonly policy: BenchModelPolicy;
 };
 
-export async function readBenchCatalog(
-  config: CatalogToolClientConfig,
-): Promise<BenchCatalog> {
-  const [models, policy] = await Promise.all([
-    fetchCatalog(config),
-    fetchModelPolicy(config),
-  ]);
+export async function readBenchCatalog(config: CatalogToolClientConfig): Promise<BenchCatalog> {
+  const [models, policy] = await Promise.all([fetchCatalog(config), fetchModelPolicy(config)]);
   return { models, policy };
 }
 

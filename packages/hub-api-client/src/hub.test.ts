@@ -5,9 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { HubApiError } from "./errors";
 import { authenticate, signIn, type ApiCall, type ApiResult } from "./hub";
 
-function stubApi(
-  handler: (method: string, path: string) => ApiResult,
-): ApiCall {
+function stubApi(handler: (method: string, path: string) => ApiResult): ApiCall {
   return (method, path) => Promise.resolve(handler(method, path));
 }
 
@@ -38,8 +36,7 @@ describe("authenticate", () => {
 
   test("a missing account signs up after sign-in fails", async () => {
     const api = stubApi((_, path) => {
-      if (path === "/api/auth/sign-in/email")
-        return { status: 401, data: null, cookies: [] };
+      if (path === "/api/auth/sign-in/email") return { status: 401, data: null, cookies: [] };
       return {
         status: 200,
         data: { user: { id: "user_2" } },
@@ -56,8 +53,7 @@ describe("authenticate", () => {
 
   test("a 422 sign-up means the address exists with a different password", async () => {
     const api = stubApi((_, path) => {
-      if (path === "/api/auth/sign-in/email")
-        return { status: 401, data: null, cookies: [] };
+      if (path === "/api/auth/sign-in/email") return { status: 401, data: null, cookies: [] };
       return { status: 422, data: null, cookies: [] };
     });
     const error = await authenticate(api, {
@@ -70,8 +66,7 @@ describe("authenticate", () => {
 
   test("a rejected sign-up never prescribes a signup env key", async () => {
     const api = stubApi((_, path) => {
-      if (path === "/api/auth/sign-in/email")
-        return { status: 401, data: null, cookies: [] };
+      if (path === "/api/auth/sign-in/email") return { status: 401, data: null, cookies: [] };
       return {
         status: 403,
         data: { error: "signup_closed" },

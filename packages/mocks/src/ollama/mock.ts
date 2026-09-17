@@ -8,9 +8,7 @@ import {
   type OllamaToolCall,
 } from "./types";
 
-export type OllamaChatHandler = (
-  request: CapturedChatRequest,
-) => OllamaChatReply;
+export type OllamaChatHandler = (request: CapturedChatRequest) => OllamaChatReply;
 
 export type CreateOllamaMockOptions = {
   /** The `/api/tags` catalogue served before any `onChat` handler runs.
@@ -51,9 +49,7 @@ function replyMessage(reply: OllamaChatReply) {
 function finishReasonOf(reply: OllamaChatReply): string {
   return (
     reply.finishReason ??
-    (reply.toolCalls !== undefined && reply.toolCalls.length > 0
-      ? "tool_calls"
-      : "stop")
+    (reply.toolCalls !== undefined && reply.toolCalls.length > 0 ? "tool_calls" : "stop")
   );
 }
 
@@ -162,10 +158,7 @@ export class OllamaMock {
    * (`ollama.fetch(new Request(...))`) still works; the common case is a
    * URL string plus an init object, exactly what those functions build.
    */
-  fetch = async (
-    input: string | Request,
-    init?: RequestInit,
-  ): Promise<Response> => {
+  fetch = async (input: string | Request, init?: RequestInit): Promise<Response> => {
     const request =
       input instanceof Request
         ? init === undefined
@@ -218,10 +211,10 @@ export class OllamaMock {
       });
     }
     const entry = this.models.find((m) => m.name === parsed.model);
-    return new Response(
-      JSON.stringify({ capabilities: entry?.capabilities ?? [] }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ capabilities: entry?.capabilities ?? [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
   }
 
   private handleChatCompletions(rawBody: unknown): Response {
@@ -256,8 +249,6 @@ export class OllamaMock {
   }
 }
 
-export function createOllamaMock(
-  options?: CreateOllamaMockOptions,
-): OllamaMock {
+export function createOllamaMock(options?: CreateOllamaMockOptions): OllamaMock {
   return new OllamaMock(options);
 }

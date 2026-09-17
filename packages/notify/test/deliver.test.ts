@@ -43,8 +43,7 @@ function recordingMailbox(): {
 }
 
 function dedupingMailbox(): MailboxDelivery {
-  return async (items) =>
-    items.map((item) => ({ messageKey: item.externalId, id: null }));
+  return async (items) => items.map((item) => ({ messageKey: item.externalId, id: null }));
 }
 
 function depsWith(mail: MailboxDelivery): NotifyDeliveryDeps {
@@ -140,10 +139,7 @@ describe("deliverNotification", () => {
       deliver: async () => delivered,
     });
 
-    const report = await deliverNotification(
-      { mail, addressing, dispatch, sinks },
-      approval,
-    );
+    const report = await deliverNotification({ mail, addressing, dispatch, sinks }, approval);
 
     expect(report.queuedDispatchCount).toBe(1);
     const rows = await dispatch.listFor("mail-1");
@@ -197,9 +193,7 @@ describe("deliverNotification", () => {
       createdAt: "2026-08-13T09:00:00.000Z",
     });
 
-    expect(written[0]?.subject).toBe(
-      "Reconnect Hugging Face — your token expired",
-    );
+    expect(written[0]?.subject).toBe("Reconnect Hugging Face — your token expired");
     expect(written[0]?.body).toContain("personal access token");
     expect(written[0]?.externalId).toBe("cred_hf_1");
     expect(written[0]?.refs).toContainEqual({
@@ -266,8 +260,7 @@ describe("deliverNotification crash window (CL-7238)", () => {
     const mail: MailboxDelivery = async (items, opts) =>
       items.map((item) => {
         const existing = rows.get(keyOf(item));
-        if (existing !== undefined)
-          return { messageKey: item.externalId, id: null };
+        if (existing !== undefined) return { messageKey: item.externalId, id: null };
         next += 1;
         const id = `mail-${next}`;
         rows.set(keyOf(item), id);
@@ -290,9 +283,7 @@ describe("deliverNotification crash window (CL-7238)", () => {
       enqueue: async (inputs) => {
         if (crashNext) {
           crashNext = false;
-          throw new Error(
-            "boom: crash between the mail write and the dispatch enqueue",
-          );
+          throw new Error("boom: crash between the mail write and the dispatch enqueue");
         }
         await inner.enqueue(inputs);
       },
@@ -318,9 +309,7 @@ describe("deliverNotification crash window (CL-7238)", () => {
       deliver: async () => delivered,
     });
     const deps: NotifyDeliveryDeps = { mail, addressing, dispatch, sinks };
-    return resolveExistingMailIds === undefined
-      ? deps
-      : { ...deps, resolveExistingMailIds };
+    return resolveExistingMailIds === undefined ? deps : { ...deps, resolveExistingMailIds };
   }
 
   test("a redelivery repairs the crash window without double-queueing", async () => {

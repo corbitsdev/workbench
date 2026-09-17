@@ -6,12 +6,7 @@
 // The digest-handoff SQL assertion always runs.
 import { expect, test } from "bun:test";
 
-import {
-  dbTargetFromUrl,
-  DIGEST_HANDOFF_SQL,
-  loadPostgres,
-  setupDatabase,
-} from "./db-setup";
+import { dbTargetFromUrl, DIGEST_HANDOFF_SQL, loadPostgres, setupDatabase } from "./db-setup";
 import { dbGate } from "./e2e/db-gate";
 
 const databaseUrl = process.env["DATABASE_URL"] ?? "";
@@ -29,33 +24,30 @@ const OLD_NUMBERING_TAIL = [
   "0088_workflow_definition_version_tolerate_body_failure.sql",
 ];
 
-describeIfDb(
-  "setupDatabase against a schema migrated under the old numbering",
-  () => {
-    test("refuses to apply incrementally and names the reset", async () => {
-      const schema = `db_setup_test_${Date.now().toString(36)}`;
-      const target = dbTargetFromUrl(databaseUrl);
-      const sql = await loadPostgres().then((postgres) =>
-        postgres({ ...target, max: 1, onnotice: () => undefined }),
+describeIfDb("setupDatabase against a schema migrated under the old numbering", () => {
+  test("refuses to apply incrementally and names the reset", async () => {
+    const schema = `db_setup_test_${Date.now().toString(36)}`;
+    const target = dbTargetFromUrl(databaseUrl);
+    const sql = await loadPostgres().then((postgres) =>
+      postgres({ ...target, max: 1, onnotice: () => undefined }),
+    );
+    try {
+      await sql.unsafe(`CREATE SCHEMA "${schema}"`);
+      await sql.unsafe(
+        `CREATE TABLE "${schema}"."workbench_setup_migration" (filename text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
       );
-      try {
-        await sql.unsafe(`CREATE SCHEMA "${schema}"`);
+      for (const file of OLD_NUMBERING_TAIL) {
         await sql.unsafe(
-          `CREATE TABLE "${schema}"."workbench_setup_migration" (filename text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
+          `INSERT INTO "${schema}"."workbench_setup_migration" (filename) VALUES ($1)`,
+          [file],
         );
-        for (const file of OLD_NUMBERING_TAIL) {
-          await sql.unsafe(
-            `INSERT INTO "${schema}"."workbench_setup_migration" (filename) VALUES ($1)`,
-            [file],
-          );
-        }
-        await expect(setupDatabase(databaseUrl, { schema })).rejects.toThrow(
-          /different @intx\/db migration set[\s\S]*db-setup\.ts --reset/,
-        );
-      } finally {
-        await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-        await sql.end();
       }
-    });
-  },
-);
+      await expect(setupDatabase(databaseUrl, { schema })).rejects.toThrow(
+        /different @intx\/db migration set[\s\S]*db-setup\.ts --reset/,
+      );
+    } finally {
+      await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      await sql.end();
+    }
+  });
+});

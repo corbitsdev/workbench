@@ -28,11 +28,7 @@ import type { ConnectorDescriptor } from "@corbits/connections/registry";
 import { useEffect, useRef, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
-import {
-  QueryView,
-  UnauthenticatedError,
-  describeQueryError,
-} from "@corbits/api-query";
+import { QueryView, UnauthenticatedError, describeQueryError } from "@corbits/api-query";
 import {
   createGranolaWebhookTrigger,
   listGranolaWebhookTriggers,
@@ -58,17 +54,13 @@ type GranolaWebhookData = {
   readonly bindings: readonly GranolaBinding[];
 };
 
-function boundTriggers(
-  bindings: readonly GranolaBinding[],
-): readonly GranolaWebhookTrigger[] {
+function boundTriggers(bindings: readonly GranolaBinding[]): readonly GranolaWebhookTrigger[] {
   return bindings
     .map((binding) => binding.webhookTrigger)
     .filter((trigger): trigger is GranolaWebhookTrigger => trigger !== null);
 }
 
-function mostRecentFiredAt(
-  triggers: readonly GranolaWebhookTrigger[],
-): string | null {
+function mostRecentFiredAt(triggers: readonly GranolaWebhookTrigger[]): string | null {
   const fired = triggers
     .map((trigger) => trigger.lastFiredAt)
     .filter((value): value is string => value !== null)
@@ -76,9 +68,7 @@ function mostRecentFiredAt(
   return fired.length === 0 ? null : (fired[fired.length - 1] ?? null);
 }
 
-async function loadGranolaWebhookData(
-  tenantId: string,
-): Promise<GranolaWebhookData> {
+async function loadGranolaWebhookData(tenantId: string): Promise<GranolaWebhookData> {
   const [definitions, triggers] = await Promise.all([
     listGranolaWorkflowDefinitions(tenantId),
     listGranolaWebhookTriggers(tenantId),
@@ -89,9 +79,7 @@ async function loadGranolaWebhookData(
   const bindings = granolaDefinitions.map((definition) => ({
     definition,
     webhookTrigger:
-      triggers.find(
-        (trigger) => trigger.workflowDefinitionId === definition.id,
-      ) ?? null,
+      triggers.find((trigger) => trigger.workflowDefinitionId === definition.id) ?? null,
   }));
   return { bindings };
 }
@@ -146,14 +134,10 @@ export function GranolaWebhookCard({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, reloadKey]);
 
   return (
-    <QueryView
-      query={query}
-      label={SETTINGS_STRINGS.connectionsWebhookLoadError}
-    >
+    <QueryView query={query} label={SETTINGS_STRINGS.connectionsWebhookLoadError}>
       {({ bindings }) => {
         const triggers = boundTriggers(bindings);
         const connected = triggers.length > 0;
@@ -169,9 +153,7 @@ export function GranolaWebhookCard({
               </span>
               <div className="settings-connection-row-text">
                 <div className="settings-connection-row-name-row">
-                  <span className="settings-connection-row-name">
-                    {descriptor.displayName}
-                  </span>
+                  <span className="settings-connection-row-name">{descriptor.displayName}</span>
                   <span className="settings-connection-row-status">
                     {connected
                       ? SETTINGS_STRINGS.connectionsStatusConnected
@@ -180,10 +162,7 @@ export function GranolaWebhookCard({
                 </div>
                 {connected && (
                   <p className="settings-connection-row-caption">
-                    {SETTINGS_STRINGS.connectionsWebhookTriggerCount(
-                      triggers.length,
-                    )}{" "}
-                    ·{" "}
+                    {SETTINGS_STRINGS.connectionsWebhookTriggerCount(triggers.length)} ·{" "}
                     {lastFiredAt !== null
                       ? SETTINGS_STRINGS.connectionsWebhookLastDelivery(
                           formatRelativeTime(lastFiredAt),
@@ -296,35 +275,24 @@ function GranolaWebhookDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {SETTINGS_STRINGS.connectionsWebhookDialogTitle}
-          </DialogTitle>
+          <DialogTitle>{SETTINGS_STRINGS.connectionsWebhookDialogTitle}</DialogTitle>
           <DialogDescription>
             {SETTINGS_STRINGS.connectionsWebhookDialogDescription}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="settings-form-stack">
           {bindings.length === 0 ? (
-            <p className="settings-inline-hint">
-              {SETTINGS_STRINGS.connectionsWebhookNoRoutine}
-            </p>
+            <p className="settings-inline-hint">{SETTINGS_STRINGS.connectionsWebhookNoRoutine}</p>
           ) : (
             bindings.map((binding) => (
-              <div
-                key={binding.definition.id}
-                className="settings-webhook-routine-row"
-              >
+              <div key={binding.definition.id} className="settings-webhook-routine-row">
                 <div className="settings-webhook-routine-row-header">
-                  <span className="settings-connection-row-name">
-                    {binding.definition.name}
-                  </span>
+                  <span className="settings-connection-row-name">{binding.definition.name}</span>
                   {binding.webhookTrigger !== null && (
                     <span className="settings-connection-row-caption">
                       {binding.webhookTrigger.lastFiredAt !== null
                         ? SETTINGS_STRINGS.connectionsWebhookLastDelivery(
-                            formatRelativeTime(
-                              binding.webhookTrigger.lastFiredAt,
-                            ),
+                            formatRelativeTime(binding.webhookTrigger.lastFiredAt),
                           )
                         : SETTINGS_STRINGS.connectionsWebhookNoDeliveries}
                     </span>

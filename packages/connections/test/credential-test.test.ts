@@ -58,19 +58,16 @@ describe("providerModelSource", () => {
   });
 
   test("ollama's default baseURL resolves to the OpenAI-compatible /v1 form", () => {
-    expect(providerModelSource("ollama").baseURL).toBe(
-      "http://localhost:11434/v1",
-    );
+    expect(providerModelSource("ollama").baseURL).toBe("http://localhost:11434/v1");
   });
 
   test("ollama's baseURL override is normalized to the /v1 form regardless of shape", () => {
-    expect(
-      providerModelSource("ollama", "https://home-mac.example.ts.net").baseURL,
-    ).toBe("https://home-mac.example.ts.net/v1");
-    expect(
-      providerModelSource("ollama", "https://home-mac.example.ts.net/v1")
-        .baseURL,
-    ).toBe("https://home-mac.example.ts.net/v1");
+    expect(providerModelSource("ollama", "https://home-mac.example.ts.net").baseURL).toBe(
+      "https://home-mac.example.ts.net/v1",
+    );
+    expect(providerModelSource("ollama", "https://home-mac.example.ts.net/v1").baseURL).toBe(
+      "https://home-mac.example.ts.net/v1",
+    );
   });
 
   test("keeps anthropic, openai, and google-genai on their own adapters", () => {
@@ -82,13 +79,9 @@ describe("providerModelSource", () => {
   test("maps codex and xai-oauth to the openai-responses adapter", () => {
     expect(providerModelSource("codex").provider).toBe("openai-responses");
     expect(providerModelSource("codex").model).toBe("gpt-5.5");
-    expect(providerModelSource("codex").baseURL).toBe(
-      "https://chatgpt.com/backend-api",
-    );
+    expect(providerModelSource("codex").baseURL).toBe("https://chatgpt.com/backend-api");
     expect(providerModelSource("xai-oauth").provider).toBe("openai-responses");
-    expect(providerModelSource("xai-oauth").baseURL).toBe(
-      "https://cli-chat-proxy.grok.com/v1",
-    );
+    expect(providerModelSource("xai-oauth").baseURL).toBe("https://cli-chat-proxy.grok.com/v1");
   });
 });
 
@@ -113,9 +106,7 @@ describe("codex and xai-oauth probe posture", () => {
     let url = "";
     const fetchImpl: FetchLike = async (requested, init) => {
       url = requested;
-      expect((init.headers as Headers).get("authorization")).toBe(
-        "Bearer tok_1",
-      );
+      expect((init.headers as Headers).get("authorization")).toBe("Bearer tok_1");
       return new Response(JSON.stringify({ data: [] }), { status: 200 });
     };
     const accepted = await testProviderCredential({
@@ -129,8 +120,7 @@ describe("codex and xai-oauth probe posture", () => {
     const rejected = await testProviderCredential({
       provider: "xai-oauth",
       apiKey: "tok_stale",
-      fetchImpl: async () =>
-        new Response(JSON.stringify({ error: "expired" }), { status: 401 }),
+      fetchImpl: async () => new Response(JSON.stringify({ error: "expired" }), { status: 401 }),
     });
     expect(rejected.ok).toBe(false);
   });
@@ -153,9 +143,7 @@ describe("testProviderCredential", () => {
 
   // Google's list-models endpoint rejects a bad key with 400
   // INVALID_ARGUMENT rather than 401/403.
-  const rejectedKeyResponse = (
-    provider: SupportedCredentialProvider,
-  ): Response =>
+  const rejectedKeyResponse = (provider: SupportedCredentialProvider): Response =>
     provider === "google-genai"
       ? new Response(
           JSON.stringify({
@@ -167,10 +155,7 @@ describe("testProviderCredential", () => {
           }),
           { status: 400 },
         )
-      : new Response(
-          JSON.stringify({ error: { message: "invalid api key" } }),
-          { status: 401 },
-        );
+      : new Response(JSON.stringify({ error: { message: "invalid api key" } }), { status: 401 });
 
   for (const provider of providers) {
     test(`${provider}: reports ok when the key is accepted`, async () => {
@@ -205,10 +190,9 @@ describe("testProviderCredential", () => {
 
     test(`${provider}: distinguishes a non-auth provider error from a rejected key`, async () => {
       const fetchImpl: FetchLike = async () =>
-        new Response(
-          JSON.stringify({ error: { message: "internal server error" } }),
-          { status: 500 },
-        );
+        new Response(JSON.stringify({ error: { message: "internal server error" } }), {
+          status: 500,
+        });
 
       const result = await testProviderCredential({
         provider,
@@ -255,9 +239,7 @@ describe("testProviderCredential", () => {
 
       const carriesKey =
         seenUrl.includes("test-secret-key") ||
-        Object.values(seenHeaders).some((value) =>
-          value.includes("test-secret-key"),
-        );
+        Object.values(seenHeaders).some((value) => value.includes("test-secret-key"));
       expect(carriesKey).toBe(true);
     });
 
@@ -315,8 +297,7 @@ describe("testProviderCredential: xai", () => {
       new Response(
         JSON.stringify({
           code: "invalid-argument",
-          error:
-            "Incorrect API key provided. You can obtain an API key from https://console.x.ai.",
+          error: "Incorrect API key provided. You can obtain an API key from https://console.x.ai.",
         }),
         { status: 400 },
       );
@@ -337,10 +318,9 @@ describe("testProviderCredential: xai", () => {
 
   test("distinguishes a non-auth provider error from a rejected key", async () => {
     const fetchImpl: FetchLike = async () =>
-      new Response(
-        JSON.stringify({ code: "internal-error", error: "server exploded" }),
-        { status: 500 },
-      );
+      new Response(JSON.stringify({ code: "internal-error", error: "server exploded" }), {
+        status: 500,
+      });
 
     const result = await testProviderCredential({
       provider: "xai",
@@ -357,10 +337,9 @@ describe("testProviderCredential: xai", () => {
 
   test("a 400 that isn't the invalid-argument code is not treated as a rejected key", async () => {
     const fetchImpl: FetchLike = async () =>
-      new Response(
-        JSON.stringify({ code: "some-other-code", error: "unrelated" }),
-        { status: 400 },
-      );
+      new Response(JSON.stringify({ code: "some-other-code", error: "unrelated" }), {
+        status: 400,
+      });
 
     const result = await testProviderCredential({
       provider: "xai",
@@ -468,21 +447,13 @@ describe("testProviderCredential: ollama", () => {
 
 describe("ollamaApiRoot / ollamaOpenAICompatBaseURL", () => {
   test("strips a trailing /v1 to find the plain root", () => {
-    expect(ollamaApiRoot("http://localhost:11434/v1")).toBe(
-      "http://localhost:11434",
-    );
-    expect(ollamaApiRoot("http://localhost:11434")).toBe(
-      "http://localhost:11434",
-    );
-    expect(ollamaApiRoot("http://localhost:11434/")).toBe(
-      "http://localhost:11434",
-    );
+    expect(ollamaApiRoot("http://localhost:11434/v1")).toBe("http://localhost:11434");
+    expect(ollamaApiRoot("http://localhost:11434")).toBe("http://localhost:11434");
+    expect(ollamaApiRoot("http://localhost:11434/")).toBe("http://localhost:11434");
   });
 
   test("always appends exactly one /v1", () => {
-    expect(ollamaOpenAICompatBaseURL("http://localhost:11434")).toBe(
-      "http://localhost:11434/v1",
-    );
+    expect(ollamaOpenAICompatBaseURL("http://localhost:11434")).toBe("http://localhost:11434/v1");
     expect(ollamaOpenAICompatBaseURL("http://localhost:11434/v1")).toBe(
       "http://localhost:11434/v1",
     );
@@ -496,11 +467,7 @@ describe("fetchOllamaModelCapabilities", () => {
         status: 200,
       });
     expect(
-      await fetchOllamaModelCapabilities(
-        "http://localhost:11434",
-        "llama3.2",
-        fetchImpl,
-      ),
+      await fetchOllamaModelCapabilities("http://localhost:11434", "llama3.2", fetchImpl),
     ).toEqual([
       "plain-text",
       "plain-text-streaming",
@@ -518,11 +485,7 @@ describe("fetchOllamaModelCapabilities", () => {
         status: 200,
       });
     expect(
-      await fetchOllamaModelCapabilities(
-        "http://localhost:11434",
-        "all-minilm",
-        fetchImpl,
-      ),
+      await fetchOllamaModelCapabilities("http://localhost:11434", "all-minilm", fetchImpl),
     ).toEqual([]);
   });
 
@@ -531,23 +494,14 @@ describe("fetchOllamaModelCapabilities", () => {
       throw new Error("ECONNREFUSED");
     };
     expect(
-      await fetchOllamaModelCapabilities(
-        "http://localhost:11434",
-        "llama3.2",
-        fetchImpl,
-      ),
+      await fetchOllamaModelCapabilities("http://localhost:11434", "llama3.2", fetchImpl),
     ).toEqual([]);
   });
 
   test("returns an empty list when the instance predates the capabilities field", async () => {
-    const fetchImpl: FetchLike = async () =>
-      new Response(JSON.stringify({}), { status: 200 });
+    const fetchImpl: FetchLike = async () => new Response(JSON.stringify({}), { status: 200 });
     expect(
-      await fetchOllamaModelCapabilities(
-        "http://localhost:11434",
-        "llama3.2",
-        fetchImpl,
-      ),
+      await fetchOllamaModelCapabilities("http://localhost:11434", "llama3.2", fetchImpl),
     ).toEqual([]);
   });
 });
@@ -568,16 +522,12 @@ describe("fetchOllamaModelCatalog", () => {
         );
       }
       const body = JSON.parse(init.body as string) as { model: string };
-      return new Response(
-        JSON.stringify({ capabilities: showCapabilities[body.model] ?? [] }),
-        { status: 200 },
-      );
+      return new Response(JSON.stringify({ capabilities: showCapabilities[body.model] ?? [] }), {
+        status: 200,
+      });
     };
 
-    const models = await fetchOllamaModelCatalog(
-      "http://localhost:11434",
-      fetchImpl,
-    );
+    const models = await fetchOllamaModelCatalog("http://localhost:11434", fetchImpl);
     expect(models).toEqual([
       {
         canonicalName: "qwen3.8:27b",
@@ -616,47 +566,35 @@ describe("fetchOllamaModelCatalog", () => {
       });
     };
 
-    const models = await fetchOllamaModelCatalog(
-      "http://localhost:11434",
-      fetchImpl,
-    );
-    expect(models?.map((model) => model.canonicalName)).toEqual([
-      "gpt-oss:20b",
-    ]);
+    const models = await fetchOllamaModelCatalog("http://localhost:11434", fetchImpl);
+    expect(models?.map((model) => model.canonicalName)).toEqual(["gpt-oss:20b"]);
   });
 
   test("returns undefined when every model is a cloud-proxy model", async () => {
     const fetchImpl: FetchLike = async (url) => {
       if (url.toString().endsWith("/api/tags")) {
-        return new Response(
-          JSON.stringify({ models: [{ name: "minimax-m2:cloud" }] }),
-          { status: 200 },
-        );
+        return new Response(JSON.stringify({ models: [{ name: "minimax-m2:cloud" }] }), {
+          status: 200,
+        });
       }
       return new Response(JSON.stringify({ capabilities: ["completion"] }), {
         status: 200,
       });
     };
-    expect(
-      await fetchOllamaModelCatalog("http://localhost:11434", fetchImpl),
-    ).toBeUndefined();
+    expect(await fetchOllamaModelCatalog("http://localhost:11434", fetchImpl)).toBeUndefined();
   });
 
   test("returns undefined when the instance is unreachable", async () => {
     const fetchImpl: FetchLike = async () => {
       throw new Error("ECONNREFUSED");
     };
-    expect(
-      await fetchOllamaModelCatalog("http://localhost:11434", fetchImpl),
-    ).toBeUndefined();
+    expect(await fetchOllamaModelCatalog("http://localhost:11434", fetchImpl)).toBeUndefined();
   });
 
   test("returns undefined when the response carries zero models", async () => {
     const fetchImpl: FetchLike = async () =>
       new Response(JSON.stringify({ models: [] }), { status: 200 });
-    expect(
-      await fetchOllamaModelCatalog("http://localhost:11434", fetchImpl),
-    ).toBeUndefined();
+    expect(await fetchOllamaModelCatalog("http://localhost:11434", fetchImpl)).toBeUndefined();
   });
 });
 
@@ -714,10 +652,9 @@ describe("testProviderCredential: opencode-zen", () => {
       seenUrl = url;
       seenMethod = init.method;
       seenBody = init.body;
-      return new Response(
-        JSON.stringify({ error: { message: "messages is empty" } }),
-        { status: 400 },
-      );
+      return new Response(JSON.stringify({ error: { message: "messages is empty" } }), {
+        status: 400,
+      });
     };
 
     await testProviderCredential({
@@ -783,15 +720,13 @@ describe("testProviderCredential: opencode-zen", () => {
 
   test("tells a working key apart from a rejected one: same provider text, two different messages", async () => {
     const workingKeyOtherProblem: FetchLike = async () =>
-      new Response(
-        JSON.stringify({ error: { message: "temporarily unavailable" } }),
-        { status: 422 },
-      );
+      new Response(JSON.stringify({ error: { message: "temporarily unavailable" } }), {
+        status: 422,
+      });
     const rejectedKey: FetchLike = async () =>
-      new Response(
-        JSON.stringify({ error: { message: "temporarily unavailable" } }),
-        { status: 401 },
-      );
+      new Response(JSON.stringify({ error: { message: "temporarily unavailable" } }), {
+        status: 401,
+      });
 
     const workingResult = await testProviderCredential({
       provider: "opencode-zen",

@@ -37,9 +37,7 @@ describe("cronSentence", () => {
   });
 
   test("the named zone is the one the wall clock is read in", () => {
-    expect(cronSentence("30 14 * * *", "America/Los_Angeles")).toEndWith(
-      "(America/Los_Angeles)",
-    );
+    expect(cronSentence("30 14 * * *", "America/Los_Angeles")).toEndWith("(America/Los_Angeles)");
   });
 
   test("a pure cadence names no zone — it is the same in every zone", () => {

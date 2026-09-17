@@ -23,10 +23,7 @@ import {
 } from "./setup.ts";
 import { tenantSurfaces, type TenantSurface } from "./surfaces.ts";
 
-function surfaceInit(
-  surface: TenantSurface,
-  cookie?: string,
-): RequestInit | undefined {
+function surfaceInit(surface: TenantSurface, cookie?: string): RequestInit | undefined {
   const headers: Record<string, string> = {};
   if (cookie) headers["cookie"] = cookie;
   if (surface.contentType) headers["content-type"] = surface.contentType;
@@ -84,28 +81,10 @@ if (!databaseUrl) {
   // Unique suffix so the suite can rerun against a database that
   // already holds rows from a previous run.
   const nonce = Date.now().toString(36);
-  const cookieA = await signUpUser(
-    app,
-    `owner-a-${nonce}@isolation.test`,
-    "Owner A",
-  );
-  const cookieB = await signUpUser(
-    app,
-    `owner-b-${nonce}@isolation.test`,
-    "Owner B",
-  );
-  const tenantA: ProvisionedTenant = await provisionTenant(
-    app,
-    cookieA,
-    "a",
-    nonce,
-  );
-  const tenantB: ProvisionedTenant = await provisionTenant(
-    app,
-    cookieB,
-    "b",
-    nonce,
-  );
+  const cookieA = await signUpUser(app, `owner-a-${nonce}@isolation.test`, "Owner A");
+  const cookieB = await signUpUser(app, `owner-b-${nonce}@isolation.test`, "Owner B");
+  const tenantA: ProvisionedTenant = await provisionTenant(app, cookieA, "a", nonce);
+  const tenantB: ProvisionedTenant = await provisionTenant(app, cookieB, "b", nonce);
 
   const pairs: [string, ProvisionedTenant, ProvisionedTenant][] = [
     ["A against B", tenantA, tenantB],
@@ -127,16 +106,13 @@ if (!databaseUrl) {
 
     test("each tenant's reads return its own rows", async () => {
       for (const [, own, other] of pairs) {
-        const response = await app.request(
-          `/api/tenants/${own.tenantId}/credentials`,
-          { headers: { cookie: own.cookie } },
-        );
+        const response = await app.request(`/api/tenants/${own.tenantId}/credentials`, {
+          headers: { cookie: own.cookie },
+        });
         expect(response.status).toBe(200);
         const text = await response.text();
         expect(text).toContain(own.credentialId);
-        const ids = listItems(JSON.parse(text)).map(
-          (item) => (item as { id: string }).id,
-        );
+        const ids = listItems(JSON.parse(text)).map((item) => (item as { id: string }).id);
         expect(ids).not.toContain(other.credentialId);
         for (const marker of other.markers) {
           expect(text).not.toContain(marker);
@@ -160,27 +136,17 @@ if (!databaseUrl) {
   });
 
   describe("foreign resource ids under your own tenant path resolve as not found", () => {
-    const detailReads: [
-      string,
-      (own: string, foreign: ProvisionedTenant) => string,
-    ][] = [
-      [
-        "credential",
-        (own, f) => `/api/tenants/${own}/credentials/${f.credentialId}`,
-      ],
-      [
-        "principal",
-        (own, f) => `/api/tenants/${own}/principals/${f.principalId}`,
-      ],
+    const detailReads: [string, (own: string, foreign: ProvisionedTenant) => string][] = [
+      ["credential", (own, f) => `/api/tenants/${own}/credentials/${f.credentialId}`],
+      ["principal", (own, f) => `/api/tenants/${own}/principals/${f.principalId}`],
       ["grant", (own, f) => `/api/tenants/${own}/grants/${f.grantId}`],
     ];
     for (const [name, buildPath] of detailReads) {
       test(`${name} detail read never crosses the boundary`, async () => {
         for (const [, actor, victim] of pairs) {
-          const response = await app.request(
-            buildPath(actor.tenantId, victim),
-            { headers: { cookie: actor.cookie } },
-          );
+          const response = await app.request(buildPath(actor.tenantId, victim), {
+            headers: { cookie: actor.cookie },
+          });
           await expectRefusal(response, 404, "not_found", victim.markers);
         }
       });
@@ -190,19 +156,15 @@ if (!databaseUrl) {
   describe("unauthenticated and unknown-tenant requests", () => {
     for (const surface of tenantSurfaces) {
       test(`${surface.name}: anonymous request is unauthorized`, async () => {
-        const response = await app.request(
-          surface.path(tenantA.tenantId),
-          surfaceInit(surface),
-        );
+        const response = await app.request(surface.path(tenantA.tenantId), surfaceInit(surface));
         await expectRefusal(response, 401, "unauthorized", tenantA.markers);
       });
     }
 
     test("a tenant id that does not exist is not found", async () => {
-      const response = await app.request(
-        "/api/tenants/tnt_does_not_exist/principals",
-        { headers: { cookie: tenantA.cookie } },
-      );
+      const response = await app.request("/api/tenants/tnt_does_not_exist/principals", {
+        headers: { cookie: tenantA.cookie },
+      });
       await expectRefusal(response, 404, "not_found", tenantB.markers);
     });
   });

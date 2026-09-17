@@ -21,11 +21,7 @@
 import { type } from "arktype";
 import { useQuery } from "@tanstack/react-query";
 import type { APIQuery } from "@corbits/api-query";
-import {
-  ApiQueryError,
-  UnauthenticatedError,
-  toAPIQuery,
-} from "@corbits/api-query";
+import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@corbits/api-query";
 
 import { setAgentDefinitionStatus } from "./agents-api";
 
@@ -40,8 +36,7 @@ export const ScheduledWorkflowDefinition = type({
   updatedAt: "string",
 });
 
-export type ScheduledWorkflowDefinition =
-  typeof ScheduledWorkflowDefinition.infer;
+export type ScheduledWorkflowDefinition = typeof ScheduledWorkflowDefinition.infer;
 
 export const AvailableCatalogWorkflow = type({
   assetName: "string",
@@ -74,10 +69,7 @@ export function listAvailableCatalogWorkflows(
   return Promise.resolve([]);
 }
 
-export function scheduledWorkflowRunPath(
-  tenantId: string,
-  definitionId: string,
-): string {
+export function scheduledWorkflowRunPath(tenantId: string, definitionId: string): string {
   return `/api/tenants/${tenantId}/workflows/scheduled/${encodeURIComponent(definitionId)}/run`;
 }
 

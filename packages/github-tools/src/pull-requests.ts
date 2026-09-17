@@ -106,8 +106,7 @@ export interface PullRequestReviewCommentsPage {
   readonly truncated: boolean;
 }
 
-const PULL_REQUEST_URL =
-  /^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)(?:[/?#].*)?$/;
+const PULL_REQUEST_URL = /^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)(?:[/?#].*)?$/;
 
 /**
  * Reads a `PullRequestRef` out of a pull-request URL. The URL arrives
@@ -251,9 +250,7 @@ async function fetchAllPages(
       throw new Error(`GitHub GET ${url.pathname} returned a non-array page`);
     }
     items.push(...page);
-    url =
-      nextPageUrl(response.headers.get("link")) ??
-      fallbackNextPage(url, page.length);
+    url = nextPageUrl(response.headers.get("link")) ?? fallbackNextPage(url, page.length);
   }
 
   return { items, truncated };
@@ -267,9 +264,7 @@ function pullPath(ref: PullRequestRef): string {
   return `/repos/${ref.owner}/${ref.repo}/pulls/${String(ref.number)}`;
 }
 
-function toFileDiff(
-  file: typeof PullRequestFileResponse.infer,
-): PullRequestFileDiff {
+function toFileDiff(file: typeof PullRequestFileResponse.infer): PullRequestFileDiff {
   const patch = file.patch;
   return {
     path: file.filename,
@@ -385,9 +380,7 @@ export async function postPullRequestReview(
   });
   const posted = PostedReviewResponse(raw);
   if (posted instanceof type.errors) {
-    throw new Error(
-      `GitHub review response did not match the expected shape: ${posted.summary}`,
-    );
+    throw new Error(`GitHub review response did not match the expected shape: ${posted.summary}`);
   }
   return { id: posted.id, url: posted.html_url };
 }

@@ -123,15 +123,11 @@ describe("reportError never throws", () => {
       ],
     });
 
-    expect(() =>
-      reportError(new Error("boom"), { operation: "op" }),
-    ).not.toThrow();
+    expect(() => reportError(new Error("boom"), { operation: "op" })).not.toThrow();
   });
 
   test("survives a non-Error thrown value", () => {
-    expect(() =>
-      reportError("plain string failure", { operation: "op" }),
-    ).not.toThrow();
+    expect(() => reportError("plain string failure", { operation: "op" })).not.toThrow();
     expect(() => reportError(undefined, { operation: "op" })).not.toThrow();
   });
 });

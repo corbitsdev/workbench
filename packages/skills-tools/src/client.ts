@@ -86,10 +86,7 @@ async function postJson(
   return response.json();
 }
 
-function skillPinEndpoint(
-  config: SkillsToolClientConfig,
-  path: string,
-): string {
+function skillPinEndpoint(config: SkillsToolClientConfig, path: string): string {
   return `${config.hubAgentDirectoryUrl}/api/workflow-skill-pins${path}`;
 }
 
@@ -102,19 +99,14 @@ const NO_STOCK_SKILL_CONTENT_ROUTE =
  * body). No stock Interchange route serves this yet (CL-8086); fails
  * closed rather than reaching a dead route or reading as an empty
  * registry. */
-export function listSkills(
-  _config: SkillsToolClientConfig,
-): Promise<readonly SkillIndexEntry[]> {
+export function listSkills(_config: SkillsToolClientConfig): Promise<readonly SkillIndexEntry[]> {
   return Promise.reject(new Error(NO_STOCK_SKILL_CONTENT_ROUTE));
 }
 
 /** Loads one skill's full body by name. No stock Interchange route
  * serves this yet (CL-8086); fails closed rather than fabricating
  * content. */
-export function loadSkill(
-  _config: SkillsToolClientConfig,
-  _name: string,
-): Promise<SkillDetail> {
+export function loadSkill(_config: SkillsToolClientConfig, _name: string): Promise<SkillDetail> {
   return Promise.reject(new Error(NO_STOCK_SKILL_CONTENT_ROUTE));
 }
 
@@ -155,9 +147,7 @@ export async function pinSkill(
   const body = await postJson(config, skillPinEndpoint(config, "/pin"), input);
   const parsed = PinResponse(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `Pin-skill response did not match the expected shape: ${parsed.summary}`,
-    );
+    throw new Error(`Pin-skill response did not match the expected shape: ${parsed.summary}`);
   }
   return parsed.skills;
 }

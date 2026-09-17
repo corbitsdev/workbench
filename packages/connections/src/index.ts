@@ -19,11 +19,7 @@ export type {
   ConnectorOAuthConfig,
   OAuthExchangeResult,
 } from "./descriptor";
-export {
-  connectorDescriptors,
-  createConnectorRegistry,
-  type ConnectorRegistry,
-} from "./registry";
+export { connectorDescriptors, createConnectorRegistry, type ConnectorRegistry } from "./registry";
 export { MissingCredentialError } from "./credential-error";
 export {
   missingCredentialDetail,
@@ -38,10 +34,7 @@ export {
   testManusCredential,
   testScrapeCreatorsCredential,
 } from "./probes";
-export {
-  createConnectionRoutes,
-  type CreateConnectionRoutesDeps,
-} from "./routes";
+export { createConnectionRoutes, type CreateConnectionRoutesDeps } from "./routes";
 export {
   createMcpServerRoutes,
   providerName as mcpProviderName,
@@ -64,14 +57,8 @@ export {
   type McpOAuthRefreshResult,
   type McpOAuthSession,
 } from "./mcp-oauth";
-export {
-  createMcpOAuthRoutes,
-  type CreateMcpOAuthRoutesDeps,
-} from "./mcp-oauth-routes";
-export {
-  listMcpServerConnections,
-  type McpServerConnection,
-} from "./mcp-server-store";
+export { createMcpOAuthRoutes, type CreateMcpOAuthRoutesDeps } from "./mcp-oauth-routes";
+export { listMcpServerConnections, type McpServerConnection } from "./mcp-server-store";
 export {
   createWorkflowConnectionRoutes,
   type CreateWorkflowConnectionRoutesDeps,

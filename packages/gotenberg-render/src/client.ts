@@ -41,11 +41,7 @@ export async function renderMarkdownToPdf(
     new Blob([indexTemplateFor(input.title)], { type: "text/html" }),
     "index.html",
   );
-  form.append(
-    "files",
-    new Blob([input.markdown], { type: "text/markdown" }),
-    "body.md",
-  );
+  form.append("files", new Blob([input.markdown], { type: "text/markdown" }), "body.md");
 
   let response: Response;
   try {

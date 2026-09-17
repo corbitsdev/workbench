@@ -14,12 +14,8 @@ describe("readProcessProvisionerConfig", () => {
 
     expect(config.sidecarEntryPath).toEndWith("/apps/sidecar/src/index.ts");
     expect(config.runtimePath).toBe(process.execPath);
-    expect(config.allocationsDir).toBe(
-      "/srv/hub-data/process-provisioner/allocations",
-    );
-    expect(config.stateFilePath).toBe(
-      "/srv/hub-data/process-provisioner/state.json",
-    );
+    expect(config.allocationsDir).toBe("/srv/hub-data/process-provisioner/allocations");
+    expect(config.stateFilePath).toBe("/srv/hub-data/process-provisioner/state.json");
     expect(config.hubWebSocketUrl).toBe(HUB_WS_URL);
   });
 

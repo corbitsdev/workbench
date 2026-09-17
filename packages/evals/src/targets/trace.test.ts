@@ -1,10 +1,6 @@
 import { expect, test } from "bun:test";
 
-import {
-  newToolCallsSince,
-  readAllToolCalls,
-  type SqlClientLike,
-} from "./trace.ts";
+import { newToolCallsSince, readAllToolCalls, type SqlClientLike } from "./trace.ts";
 
 function fakeSql(rows: Record<string, unknown>[]): SqlClientLike {
   return { unsafe: async () => rows };
@@ -18,12 +14,7 @@ function callRow(ordinal: number, callId: string, name: string, args: unknown) {
   };
 }
 
-function resultRow(
-  ordinal: number,
-  callId: string,
-  content: unknown,
-  isError: boolean,
-) {
+function resultRow(ordinal: number, callId: string, content: unknown, isError: boolean) {
   return {
     metadata: { kind: "result", callId, content, isError },
     ordinal,
@@ -48,9 +39,7 @@ test("pairs a call with its result into one ToolCall", async () => {
 });
 
 test("omits a call with no result yet (turn still in flight)", async () => {
-  const sql = fakeSql([
-    callRow(0, "c1", "create_agent", { name: "Researcher" }),
-  ]);
+  const sql = fakeSql([callRow(0, "c1", "create_agent", { name: "Researcher" })]);
   const calls = await readAllToolCalls(sql, "tenant-1", "run-1");
   expect(calls).toEqual([]);
 });
@@ -63,10 +52,7 @@ test("preserves call order and marks a failed result", async () => {
     resultRow(3, "c2", "Connected: none.", false),
   ]);
   const calls = await readAllToolCalls(sql, "tenant-1", "run-1");
-  expect(calls.map((c) => c.name)).toEqual([
-    "request_connection",
-    "list_connections",
-  ]);
+  expect(calls.map((c) => c.name)).toEqual(["request_connection", "list_connections"]);
   expect(calls[0]?.isError).toBe(true);
   expect(calls[1]?.isError).toBe(false);
 });

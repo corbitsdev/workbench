@@ -14,10 +14,7 @@ import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
 import { DEFAULT_WORKFLOWS, SETUP_AGENT_ASSET_NAME } from "../src/tenant-seed";
 import { createOnboardingRoutes } from "../src/routes";
-import {
-  createInMemoryPendingSeedStore,
-  type PendingSeedStore,
-} from "../src/pending-seed";
+import { createInMemoryPendingSeedStore, type PendingSeedStore } from "../src/pending-seed";
 
 const TEST_KEY = Buffer.alloc(32, 44);
 function testCipher(): CredentialCipher {
@@ -40,9 +37,7 @@ function asUser(): MiddlewareHandler<AppEnv> {
 /** A hub that answers only the reads the fast half performs. Any deploy
  * traffic would have to go somewhere else entirely — and the deploy seam
  * below proves it never even starts. */
-function fakeHub(
-  args: { seededWorkflows?: string[]; tenantSlug?: string } = {},
-) {
+function fakeHub(args: { seededWorkflows?: string[]; tenantSlug?: string } = {}) {
   const seeded = args.seededWorkflows ?? [];
   const hub = new Hono();
   const requests: string[] = [];
@@ -118,9 +113,7 @@ function fakeHub(
       },
     ]),
   );
-  hub.get("/api/tenants/:id/skills/:name", (c) =>
-    c.json({ name: c.req.param("name") }),
-  );
+  hub.get("/api/tenants/:id/skills/:name", (c) => c.json({ name: c.req.param("name") }));
   hub.get("/api/tenants/:id/workflows/deployments", (c) =>
     c.json(
       seeded.map((_name, index) => ({
@@ -166,9 +159,7 @@ function routeDeps(args: {
     }),
     ensureSeededFn: async () => {
       args.onDeploy?.();
-      await new Promise((resolve) =>
-        setTimeout(resolve, args.deployDelayMs ?? 0),
-      );
+      await new Promise((resolve) => setTimeout(resolve, args.deployDelayMs ?? 0));
       return { kind: "seeded" as const, workflows: ALL_WORKFLOWS };
     },
   };
@@ -216,15 +207,12 @@ describe("POST /complete — connecting deploys nothing", () => {
       // And nothing deploy-shaped was even attempted against the hub.
       expect(
         requests.filter(
-          (line) =>
-            line.includes("/workflows/deployments") && line.startsWith("POST"),
+          (line) => line.includes("/workflows/deployments") && line.startsWith("POST"),
         ),
       ).toEqual([]);
-      expect(
-        requests.filter((line) =>
-          line.startsWith("POST /api/tenants/ten_1/assets"),
-        ),
-      ).toEqual([]);
+      expect(requests.filter((line) => line.startsWith("POST /api/tenants/ten_1/assets"))).toEqual(
+        [],
+      );
     } finally {
       server.stop(true);
     }
@@ -236,9 +224,7 @@ describe("POST /complete — connecting deploys nothing", () => {
     const store = createInMemoryPendingSeedStore(testCipher());
     try {
       const app = mountAuthenticated(
-        createOnboardingRoutes(
-          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
-        ),
+        createOnboardingRoutes(routeDeps({ hubUrl: `http://localhost:${server.port}`, store })),
       );
 
       const response = await app.request("/api/onboarding/complete", {
@@ -268,9 +254,7 @@ describe("POST /complete — connecting deploys nothing", () => {
     const store = createInMemoryPendingSeedStore(testCipher());
     try {
       const app = mountAuthenticated(
-        createOnboardingRoutes(
-          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
-        ),
+        createOnboardingRoutes(routeDeps({ hubUrl: `http://localhost:${server.port}`, store })),
       );
 
       await app.request("/api/onboarding/complete", {
@@ -279,9 +263,7 @@ describe("POST /complete — connecting deploys nothing", () => {
         headers: { "content-type": "application/json" },
       });
 
-      expect(
-        await store.read({ userId: "user_1", tenantId: TENANT_ID }),
-      ).toEqual({
+      expect(await store.read({ userId: "user_1", tenantId: TENANT_ID })).toEqual({
         userId: "user_1",
         tenantId: TENANT_ID,
         principalId: PRINCIPAL_ID,
@@ -300,9 +282,7 @@ describe("POST /complete — connecting deploys nothing", () => {
     const store = createInMemoryPendingSeedStore(testCipher());
     try {
       const app = mountAuthenticated(
-        createOnboardingRoutes(
-          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
-        ),
+        createOnboardingRoutes(routeDeps({ hubUrl: `http://localhost:${server.port}`, store })),
       );
 
       const response = await app.request("/api/onboarding/complete", {
@@ -328,30 +308,21 @@ describe("GET /provisioning-status", () => {
     ["", 400],
     ["?tenantId=", 400],
     ["?tenantId=someone-elses-bench", 403],
-  ])(
-    "rejects invalid or inaccessible selected benches: %s",
-    async (query, expectedStatus) => {
-      const { hub, requests } = fakeHub();
-      const server = Bun.serve({ port: 0, fetch: hub.fetch });
-      const store = createInMemoryPendingSeedStore(testCipher());
-      try {
-        const app = mountAuthenticated(
-          createOnboardingRoutes(
-            routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
-          ),
-        );
-        const response = await app.request(
-          `/api/onboarding/provisioning-status${query}`,
-        );
-        expect(response.status).toBe(expectedStatus);
-        expect(requests.some((request) => request.includes("/assets"))).toBe(
-          false,
-        );
-      } finally {
-        server.stop(true);
-      }
-    },
-  );
+  ])("rejects invalid or inaccessible selected benches: %s", async (query, expectedStatus) => {
+    const { hub, requests } = fakeHub();
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    const store = createInMemoryPendingSeedStore(testCipher());
+    try {
+      const app = mountAuthenticated(
+        createOnboardingRoutes(routeDeps({ hubUrl: `http://localhost:${server.port}`, store })),
+      );
+      const response = await app.request(`/api/onboarding/provisioning-status${query}`);
+      expect(response.status).toBe(expectedStatus);
+      expect(requests.some((request) => request.includes("/assets"))).toBe(false);
+    } finally {
+      server.stop(true);
+    }
+  });
 
   // CL-7074 narrowed DEFAULT_WORKFLOWS to just the setup agent, so the
   // "some deployed, some still pending" progress bar this route used to
@@ -368,9 +339,7 @@ describe("GET /provisioning-status", () => {
     const store = createInMemoryPendingSeedStore(testCipher());
     try {
       const app = mountAuthenticated(
-        createOnboardingRoutes(
-          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
-        ),
+        createOnboardingRoutes(routeDeps({ hubUrl: `http://localhost:${server.port}`, store })),
       );
 
       const response = await app.request(
@@ -394,17 +363,13 @@ describe("GET /provisioning-status", () => {
   });
 
   test("a bench whose other workflows landed first is not reported as chat-ready", async () => {
-    const others = ALL_WORKFLOWS.filter(
-      (name) => name !== SETUP_AGENT_ASSET_NAME,
-    );
+    const others = ALL_WORKFLOWS.filter((name) => name !== SETUP_AGENT_ASSET_NAME);
     const { hub } = fakeHub({ seededWorkflows: others });
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     const store = createInMemoryPendingSeedStore(testCipher());
     try {
       const app = mountAuthenticated(
-        createOnboardingRoutes(
-          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
-        ),
+        createOnboardingRoutes(routeDeps({ hubUrl: `http://localhost:${server.port}`, store })),
       );
 
       const response = await app.request(
@@ -427,9 +392,7 @@ describe("GET /provisioning-status", () => {
     const store = createInMemoryPendingSeedStore(testCipher());
     try {
       const app = mountAuthenticated(
-        createOnboardingRoutes(
-          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
-        ),
+        createOnboardingRoutes(routeDeps({ hubUrl: `http://localhost:${server.port}`, store })),
       );
 
       const response = await app.request(
@@ -484,9 +447,7 @@ describe("POST /complete-setup — no longer deploys inline either", () => {
       expect(deployStarted).toBe(false);
       expect(body.kind).toBe("provisioning");
       // The row stays: it is the drain's work item, not a spent token.
-      expect(
-        await store.read({ userId: "user_1", tenantId: TENANT_ID }),
-      ).toBeDefined();
+      expect(await store.read({ userId: "user_1", tenantId: TENANT_ID })).toBeDefined();
     } finally {
       server.stop(true);
     }
@@ -498,9 +459,7 @@ describe("POST /complete-setup — no longer deploys inline either", () => {
     const store = createInMemoryPendingSeedStore(testCipher());
     try {
       const app = mountAuthenticated(
-        createOnboardingRoutes(
-          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
-        ),
+        createOnboardingRoutes(routeDeps({ hubUrl: `http://localhost:${server.port}`, store })),
       );
 
       const response = await app.request("/api/onboarding/complete-setup", {

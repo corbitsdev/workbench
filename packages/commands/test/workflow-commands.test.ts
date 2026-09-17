@@ -35,9 +35,7 @@ describe("createWorkflowCommandPlugin", () => {
     const startCalls: unknown[] = [];
     registry.registerCommandPlugin(
       createWorkflowCommandPlugin({
-        listInvitableDefinitions: async () => [
-          { id: "def-echo", name: "echo" },
-        ],
+        listInvitableDefinitions: async () => [{ id: "def-echo", name: "echo" }],
         startWorkflow: async (input) => {
           startCalls.push(input);
           return { handle: "echo", address: "ins_1@tenant.test" };
@@ -45,11 +43,7 @@ describe("createWorkflowCommandPlugin", () => {
       }),
     );
 
-    const result = await dispatchSlashCommand(
-      registry,
-      "/echo summarize the thread",
-      CTX,
-    );
+    const result = await dispatchSlashCommand(registry, "/echo summarize the thread", CTX);
 
     expect(startCalls).toEqual([
       {
@@ -93,9 +87,7 @@ describe("createWorkflowCommandPlugin", () => {
     const startCalls: unknown[] = [];
     registry.registerCommandPlugin(
       createWorkflowCommandPlugin({
-        listInvitableDefinitions: async () => [
-          { id: "def-jimmy", name: "jimmy" },
-        ],
+        listInvitableDefinitions: async () => [{ id: "def-jimmy", name: "jimmy" }],
         startWorkflow: async (input) => {
           startCalls.push(input);
           return { handle: "jimmy", address: "ins_jimmy@tenant.test" };

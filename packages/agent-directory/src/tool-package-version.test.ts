@@ -12,10 +12,7 @@ import type { AssetService } from "@intx/hub-sessions";
 import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
 
 import { CapabilityOutOfInventoryError } from "./capability-inventory";
-import {
-  createPinnedVersionResolver,
-  resolvePinnedVersion,
-} from "./tool-package-version";
+import { createPinnedVersionResolver, resolvePinnedVersion } from "./tool-package-version";
 
 const TENANT_ID = "tnt_1";
 
@@ -49,10 +46,7 @@ function registryDb(counters: { tenant: number; asset: number }): DB["db"] {
   } as unknown as DB["db"];
 }
 
-function assetServiceWith(
-  tarballs: string[],
-  counters: { list: number },
-): AssetService {
+function assetServiceWith(tarballs: string[], counters: { list: number }): AssetService {
   return {
     createAsset: () => {
       throw new Error("not used");
@@ -76,10 +70,7 @@ test("a stable version wins over a higher-sorting prerelease", async () => {
     {
       db: registryDb(c),
       assetService: assetServiceWith(
-        [
-          "corbits-memory-tools-1.9.0.tgz",
-          "corbits-memory-tools-2.0.0-rc.1.tgz",
-        ],
+        ["corbits-memory-tools-1.9.0.tgz", "corbits-memory-tools-2.0.0-rc.1.tgz"],
         c,
       ),
     },
@@ -95,10 +86,7 @@ test("a prerelease wins only when the registry carries no stable version", async
     {
       db: registryDb(c),
       assetService: assetServiceWith(
-        [
-          "corbits-memory-tools-2.0.0-rc.1.tgz",
-          "corbits-memory-tools-2.0.0-rc.2.tgz",
-        ],
+        ["corbits-memory-tools-2.0.0-rc.1.tgz", "corbits-memory-tools-2.0.0-rc.2.tgz"],
         c,
       ),
     },
@@ -172,11 +160,7 @@ test("createPinnedVersionResolver loads the registry and its listing at most onc
     {
       db: registryDb(c),
       assetService: assetServiceWith(
-        [
-          "corbits-a-tools-1.0.0.tgz",
-          "corbits-b-tools-2.0.0.tgz",
-          "corbits-c-tools-3.0.0.tgz",
-        ],
+        ["corbits-a-tools-1.0.0.tgz", "corbits-b-tools-2.0.0.tgz", "corbits-c-tools-3.0.0.tgz"],
         c,
       ),
     },

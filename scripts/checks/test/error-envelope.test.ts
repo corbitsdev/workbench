@@ -54,8 +54,7 @@ test("a comment that mentions the old envelope is not a violation", () => {
   const report = auditLocalErrorEnvelopeFactories([
     {
       relPath: "packages/onboarding/src/provision.ts",
-      contents:
-        "// the same `{ error: { code, message } }` envelope every other hub route uses",
+      contents: "// the same `{ error: { code, message } }` envelope every other hub route uses",
     },
   ]);
   expect(report.violations).toEqual([]);
@@ -111,7 +110,5 @@ test("allowlisted files that wrap makeErrorEnvelope pass", () => {
     },
   ]);
   expect(report.violations).toEqual([]);
-  expect(
-    report.notes.some((n) => n.includes("packages/onboarding/src/routes.ts")),
-  ).toBe(true);
+  expect(report.notes.some((n) => n.includes("packages/onboarding/src/routes.ts"))).toBe(true);
 });

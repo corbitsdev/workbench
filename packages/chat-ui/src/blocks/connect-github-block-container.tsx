@@ -25,10 +25,7 @@ import type { ConnectGithubBlockData } from "../wire/blocks";
 import { reportError } from "@corbits/error-sink";
 
 import { CHAT_STRINGS } from "../strings";
-import type {
-  ConnectGithubActions,
-  ConnectGithubQuery,
-} from "./connect-github-actions";
+import type { ConnectGithubActions, ConnectGithubQuery } from "./connect-github-actions";
 import type { OnboardingScene } from "./connect-github-block";
 import { ConnectGithubBlockView } from "./connect-github-block";
 
@@ -79,10 +76,7 @@ async function readConnectState(
   }
 }
 
-function displayQueryOf(
-  messageId: string,
-  query: ConnectGithubQuery,
-): ConnectGithubQuery {
+function displayQueryOf(messageId: string, query: ConnectGithubQuery): ConnectGithubQuery {
   if (query.kind === "connected" || query.kind === "disconnected") {
     return query;
   }
@@ -109,9 +103,7 @@ export function ConnectGithubBlockContainer({
    * picker back without the server's recorded selection changing — only
    * pressing "Start reviewing" again writes anything. */
   const [repickRequested, setRepickRequested] = useState(false);
-  const [startReviewingError, setStartReviewingError] = useState<
-    string | undefined
-  >(undefined);
+  const [startReviewingError, setStartReviewingError] = useState<string | undefined>(undefined);
   const mountedRef = useRef(true);
   const hadPickerRef = useRef(false);
   const hadConnectRef = useRef(false);
@@ -164,8 +156,7 @@ export function ConnectGithubBlockContainer({
   );
 
   const displayQuery = displayQueryOf(messageId, query);
-  const recordedRepoIds =
-    displayQuery.kind === "connected" ? displayQuery.selectedRepoIds : [];
+  const recordedRepoIds = displayQuery.kind === "connected" ? displayQuery.selectedRepoIds : [];
   const currentStepIndex =
     displayQuery.kind !== "connected"
       ? STEP_CONNECT
@@ -222,9 +213,7 @@ export function ConnectGithubBlockContainer({
 
   function toggleRepo(repoId: string) {
     setSelectedRepoIds((current) =>
-      current.includes(repoId)
-        ? current.filter((id) => id !== repoId)
-        : [...current, repoId],
+      current.includes(repoId) ? current.filter((id) => id !== repoId) : [...current, repoId],
     );
   }
 
@@ -236,9 +225,7 @@ export function ConnectGithubBlockContainer({
     } catch (cause) {
       reportError(cause, { operation: "connect-github.startReviewing" });
       if (mountedRef.current) {
-        setStartReviewingError(
-          CHAT_STRINGS.blockConnectGithubStartReviewingError,
-        );
+        setStartReviewingError(CHAT_STRINGS.blockConnectGithubStartReviewingError);
       }
     }
   }
@@ -251,9 +238,7 @@ export function ConnectGithubBlockContainer({
       repos={displayQuery.repos}
       selectedRepoIds={selectedRepoIds}
       onToggleRepo={toggleRepo}
-      onSelectAll={() =>
-        setSelectedRepoIds(displayQuery.repos.map((repo) => repo.id))
-      }
+      onSelectAll={() => setSelectedRepoIds(displayQuery.repos.map((repo) => repo.id))}
       onChangeConnection={connectedActions.requestConnect}
       onStartReviewing={(repoIds) => {
         void startReviewing(repoIds);
@@ -261,9 +246,7 @@ export function ConnectGithubBlockContainer({
       onSkip={() => {
         void connectedActions.skip();
       }}
-      {...(startReviewingError !== undefined
-        ? { error: startReviewingError }
-        : {})}
+      {...(startReviewingError !== undefined ? { error: startReviewingError } : {})}
       {...(hadConnectRef.current ? { autoFocus: true } : {})}
     />
   );

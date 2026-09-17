@@ -141,10 +141,7 @@ describe("the room GitHub connect card reads what its own submit writes", () => 
     const routes = createConnectGithubRoutes({
       requireGrant: allowAll,
       log: () => {},
-      resolveGithubConfig: buildResolveGithubConfig(
-        store,
-        githubDescriptor.displayName,
-      ),
+      resolveGithubConfig: buildResolveGithubConfig(store, githubDescriptor.displayName),
       resolveCodeReviewDefinitionId: async () => "wfd_code_review",
       acquireRepoReviewLease: async () => true,
       releaseRepoReviewLease: async () => {},

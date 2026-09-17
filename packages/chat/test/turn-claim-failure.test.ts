@@ -9,13 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { createChatRoutes } from "../src/routes";
 import type { TurnClaimStore } from "@corbits/agent-runtime";
 import { createWorkbenchTurnQueue } from "@corbits/agent-runtime";
-import {
-  buildDeps,
-  createWorkbench,
-  fakePlatform,
-  mountAs,
-  sendText,
-} from "./test-support";
+import { buildDeps, createWorkbench, fakePlatform, mountAs, sendText } from "./test-support";
 
 /** Healthy for the first turn, then a transient failure on every later
  * opening claim — the durable-I/O hiccup the in-memory store never
@@ -69,11 +63,7 @@ describe("CL-6167 sequential turn drops", () => {
 
     // Turn-2 meets the transient claim failure. It must still reach the
     // agent — pre-fix this send persisted fine but dispatched nothing.
-    const second = await sendText(
-      app,
-      workbench.id,
-      "are you there @ins_echo1",
-    );
+    const second = await sendText(app, workbench.id, "are you there @ins_echo1");
     expect(second.status).toBe(201);
     expect(sentMail).toHaveLength(2);
     expect(sentMail[1]?.workbenchId).toBe("ins_echo1");

@@ -15,12 +15,7 @@
 // partial bump fail loudly instead of silently forking the library.
 import { Glob } from "bun";
 import path from "node:path";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 const REACT_UI = "@corbits/react-ui";
 
@@ -36,9 +31,7 @@ export interface PinnedManifest {
  * separately under bun's lockfile, so "same commit, different specifier" is
  * the very drift this exists to catch, not an exception to it.
  */
-export function auditReactUiPins(
-  manifests: readonly PinnedManifest[],
-): CheckReport {
+export function auditReactUiPins(manifests: readonly PinnedManifest[]): CheckReport {
   const report = emptyReport();
   if (manifests.length === 0) {
     report.notes.push(`no ${REACT_UI} consumer found`);
@@ -54,9 +47,7 @@ export function auditReactUiPins(
 
   if (byPin.size === 1) {
     const [pin] = [...byPin.keys()];
-    report.notes.push(
-      `${manifests.length} consumer(s) share one pin: ${pin ?? ""}`,
-    );
+    report.notes.push(`${manifests.length} consumer(s) share one pin: ${pin ?? ""}`);
     return report;
   }
 
@@ -80,8 +71,7 @@ async function scanPins(root: string): Promise<PinnedManifest[]> {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };
-    const pin =
-      parsed.dependencies?.[REACT_UI] ?? parsed.devDependencies?.[REACT_UI];
+    const pin = parsed.dependencies?.[REACT_UI] ?? parsed.devDependencies?.[REACT_UI];
     if (pin !== undefined) manifests.push({ relPath, pin });
   }
   return manifests;

@@ -66,11 +66,7 @@ export async function ensureProvider(
     cookies,
   );
   if (created.status === 201) {
-    const provider = parseAs(
-      ProviderResponse,
-      created.data,
-      "provider response",
-    );
+    const provider = parseAs(ProviderResponse, created.data, "provider response");
     log(`created provider ${args.name}`);
     return provider.id;
   }
@@ -170,11 +166,7 @@ export async function ensureCredential(
     cookies,
   );
   if (created.status === 201) {
-    const credential = parseAs(
-      CredentialResponse,
-      created.data,
-      "credential response",
-    );
+    const credential = parseAs(CredentialResponse, created.data, "credential response");
     log(`created credential ${args.name}`);
     return credential.id;
   }
@@ -185,12 +177,7 @@ export async function ensureCredential(
     );
   }
 
-  const listed = await api(
-    "GET",
-    `/api/tenants/${args.tenantId}/credentials`,
-    undefined,
-    cookies,
-  );
+  const listed = await api("GET", `/api/tenants/${args.tenantId}/credentials`, undefined, cookies);
   const credentials = parseAs(
     paginatedSchema(CredentialResponse),
     listed.data,
@@ -262,20 +249,12 @@ export async function ensureCredential(
         "check the hub logs for the underlying failure, then re-run: workbench seed",
       );
     }
-    const credential = parseAs(
-      CredentialResponse,
-      rotated.data,
-      "credential response",
-    );
-    log(
-      `rotated credential ${args.name} (reconnect refreshed the stored secret)`,
-    );
+    const credential = parseAs(CredentialResponse, rotated.data, "credential response");
+    log(`rotated credential ${args.name} (reconnect refreshed the stored secret)`);
     return credential.id;
   }
 
-  log(
-    `credential ${args.name} already exists (skipped; its secret is not updated by seeding)`,
-  );
+  log(`credential ${args.name} already exists (skipped; its secret is not updated by seeding)`);
   return existing.id;
 }
 
@@ -292,11 +271,7 @@ export async function ensureCatalogModel(
     cookies,
   );
   if (created.status === 201) {
-    const model = parseAs(
-      ModelResponse,
-      created.data,
-      "catalog model response",
-    );
+    const model = parseAs(ModelResponse, created.data, "catalog model response");
     log(`created catalog model ${args.canonicalName}`);
     return model.id;
   }
@@ -353,11 +328,7 @@ export async function ensureCatalogProvider(
     cookies,
   );
   if (created.status === 201) {
-    const provider = parseAs(
-      ModelProviderResponse,
-      created.data,
-      "catalog provider response",
-    );
+    const provider = parseAs(ModelProviderResponse, created.data, "catalog provider response");
     log(`created catalog provider ${args.name}`);
     return provider.id;
   }
@@ -417,11 +388,7 @@ export async function ensureCatalogOffering(
     cookies,
   );
   if (created.status === 201) {
-    const offering = parseAs(
-      ModelOfferingResponse,
-      created.data,
-      "catalog offering response",
-    );
+    const offering = parseAs(ModelOfferingResponse, created.data, "catalog offering response");
     log("created catalog offering");
     return offering.id;
   }
@@ -441,9 +408,7 @@ export async function ensureCatalogOffering(
         "catalog offerings response",
       );
       existing = page.data.find(
-        (offering) =>
-          offering.modelId === args.modelId &&
-          offering.providerId === args.providerId,
+        (offering) => offering.modelId === args.modelId && offering.providerId === args.providerId,
       );
       cursor = page.nextCursor;
     } while (existing === undefined && cursor !== null);
@@ -470,11 +435,7 @@ export async function ensureCatalogOffering(
         "check the hub logs for the underlying failure, then re-run: workbench seed",
       );
     }
-    const offering = parseAs(
-      ModelOfferingResponse,
-      updated.data,
-      "catalog offering response",
-    );
+    const offering = parseAs(ModelOfferingResponse, updated.data, "catalog offering response");
     log("updated catalog offering priority");
     return offering.id;
   }
@@ -504,8 +465,10 @@ export class PlaceholderCredentialError extends Error {
 /** Providers whose only credential is a real OAuth token —
  * `placeholderCredential: true` is a `PlaceholderCredentialError` for
  * these, never a planted fake. */
-const OAUTH_ONLY_CATALOG_PROVIDERS: ReadonlySet<SupportedCredentialProvider> =
-  new Set(["codex", "xai-oauth"]);
+const OAUTH_ONLY_CATALOG_PROVIDERS: ReadonlySet<SupportedCredentialProvider> = new Set([
+  "codex",
+  "xai-oauth",
+]);
 
 export type SeedCatalogArgs = {
   api: ApiCall;
@@ -613,16 +576,11 @@ export type SeedCatalogResult = {
  * so. Idempotent: an already seeded chain is detected by name and
  * skipped, never duplicated.
  */
-export async function seedCatalog(
-  args: SeedCatalogArgs,
-): Promise<SeedCatalogResult> {
+export async function seedCatalog(args: SeedCatalogArgs): Promise<SeedCatalogResult> {
   const { api, cookies, tenantId, log, provider = "anthropic" } = args;
   const seed = CATALOG_SEEDS[provider];
 
-  if (
-    args.placeholderCredential === true &&
-    OAUTH_ONLY_CATALOG_PROVIDERS.has(provider)
-  ) {
+  if (args.placeholderCredential === true && OAUTH_ONLY_CATALOG_PROVIDERS.has(provider)) {
     throw new PlaceholderCredentialError(
       `provider "${provider}" has no API-key credential path — a placeholder ` +
         `secret could never authenticate. Connect it through its OAuth login ` +
@@ -640,9 +598,7 @@ export async function seedCatalog(
   // hand) is only the fallback for an unreachable instance. Every other
   // provider's model list is fixed, so this never runs for them.
   const dynamicModels: readonly CatalogModelSpec[] | undefined =
-    provider === "ollama"
-      ? await fetchOllamaModelCatalog(providerBaseURL)
-      : undefined;
+    provider === "ollama" ? await fetchOllamaModelCatalog(providerBaseURL) : undefined;
   const models = dynamicModels ?? seed.models;
 
   const seededModels: {
@@ -669,10 +625,7 @@ export async function seedCatalog(
   }
 
   const credentialSecret =
-    args.apiKey ??
-    (args.placeholderCredential === true
-      ? PLACEHOLDER_CATALOG_API_KEY
-      : undefined);
+    args.apiKey ?? (args.placeholderCredential === true ? PLACEHOLDER_CATALOG_API_KEY : undefined);
 
   const providerArgs = {
     tenantId,
@@ -809,9 +762,7 @@ export async function seedCatalog(
     );
   }
 
-  log(
-    `catalog ready: ${seed.provider.name}/${models.map((m) => m.canonicalName).join(", ")}`,
-  );
+  log(`catalog ready: ${seed.provider.name}/${models.map((m) => m.canonicalName).join(", ")}`);
   return {
     hasCompletionCapableModel: hasCompletionCapableModel(
       offeredCapabilities,

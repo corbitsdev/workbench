@@ -10,11 +10,7 @@
 // this package's README for what that leaves deferred.
 import type { AgentDefinition, InferencePreference } from "@intx/agent";
 
-import {
-  JIMMY_AGENT_ID,
-  JIMMY_SYSTEM_PROMPT,
-  JIMMY_TOOL_PACKAGE_PINS,
-} from "./metadata";
+import { JIMMY_AGENT_ID, JIMMY_SYSTEM_PROMPT, JIMMY_TOOL_PACKAGE_PINS } from "./metadata";
 
 export interface BuildJimmyAgentInput {
   /** Provider/model preferences, in order; resolved at deploy time. */

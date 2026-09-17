@@ -62,9 +62,7 @@ describe("dbGate", () => {
   test("returns describe when a database URL is configured", () => {
     process.env["CI"] = "true";
     unset("GITHUB_JOB");
-    expect(dbGate("postgres://localhost:5432/workbench", "example")).toBe(
-      describe,
-    );
+    expect(dbGate("postgres://localhost:5432/workbench", "example")).toBe(describe);
   });
 
   test("returns describe.skip when no database is configured and CI is unset", () => {
@@ -96,9 +94,7 @@ describe("dbGate", () => {
   test("does not throw under CI=true once a database is configured", () => {
     process.env["CI"] = "true";
     unset("GITHUB_JOB");
-    expect(dbGate("postgres://localhost:5432/workbench", "example")).toBe(
-      describe,
-    );
+    expect(dbGate("postgres://localhost:5432/workbench", "example")).toBe(describe);
   });
 
   test("skips on the GitHub unit job even when CI=true", () => {

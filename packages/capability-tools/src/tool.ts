@@ -70,9 +70,7 @@ function clientConfig(env: WorkflowCapabilityEnv) {
   };
 }
 
-function toAddCapabilityRequest(
-  input: RequestCapabilityInput,
-): AddCapabilityRequest {
+function toAddCapabilityRequest(input: RequestCapabilityInput): AddCapabilityRequest {
   switch (input.kind) {
     case "tool-package":
       return { kind: "toolPackage", name: input.name };
@@ -135,10 +133,7 @@ async function runRequestCapability(
     if (err instanceof CapabilityOutOfInventoryError) {
       try {
         const inventory = await fetchCapabilityInventory(clientConfig(env));
-        return errorResult(
-          call.id,
-          new Error(outOfInventoryMessage(parsed, inventory)),
-        );
+        return errorResult(call.id, new Error(outOfInventoryMessage(parsed, inventory)));
       } catch {
         return errorResult(call.id, err);
       }
@@ -214,9 +209,7 @@ export const capabilityTools = defineTool<WorkflowCapabilityEnv>({
           return Promise.resolve(
             errorResult(
               call.id,
-              new Error(
-                `@corbits/capability-tools: unknown tool "${call.name}"`,
-              ),
+              new Error(`@corbits/capability-tools: unknown tool "${call.name}"`),
             ),
           );
       }

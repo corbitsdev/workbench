@@ -24,8 +24,7 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 const STAMP = "2026-01-01T00:00:00.000Z";
 
@@ -96,14 +95,10 @@ describe("Connections disconnect", () => {
     globalThis.fetch = ((url: string, init?: RequestInit) => {
       calls.push({ url, method: init?.method ?? "GET" });
       if (url === "/api/tenants/ten_1/credentials") {
-        return Promise.resolve(
-          json({ data: [ANTHROPIC_CREDENTIAL], nextCursor: null }),
-        );
+        return Promise.resolve(json({ data: [ANTHROPIC_CREDENTIAL], nextCursor: null }));
       }
       if (url === "/api/tenants/ten_1/providers") {
-        return Promise.resolve(
-          json({ data: [ANTHROPIC_PROVIDER], nextCursor: null }),
-        );
+        return Promise.resolve(json({ data: [ANTHROPIC_PROVIDER], nextCursor: null }));
       }
       if (url === "/api/tenants/ten_1/connections/oauth-configured") {
         return Promise.resolve(json({}));
@@ -130,9 +125,7 @@ describe("Connections disconnect", () => {
       expect(defaultModel?.value).toBe("claude-sonnet-5");
 
       const rows = [...container.querySelectorAll(".settings-connection-row")];
-      const anthropicRow = rows.find((row) =>
-        row.textContent?.includes("Anthropic"),
-      );
+      const anthropicRow = rows.find((row) => row.textContent?.includes("Anthropic"));
       expect(anthropicRow).not.toBeUndefined();
       const disconnectButton = anthropicRow?.querySelector(
         ".settings-connection-row-disconnect-action",
@@ -141,28 +134,20 @@ describe("Connections disconnect", () => {
 
       // ConfirmButton: arm, then confirm.
       act(() => {
-        disconnectButton?.dispatchEvent(
-          new MouseEvent("click", { bubbles: true }),
-        );
+        disconnectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       });
       act(() => {
-        disconnectButton?.dispatchEvent(
-          new MouseEvent("click", { bubbles: true }),
-        );
+        disconnectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       });
       await settle();
 
-      const disconnectCall = calls.find((call) =>
-        call.url.includes("/disconnect"),
-      );
+      const disconnectCall = calls.find((call) => call.url.includes("/disconnect"));
       expect(disconnectCall).toEqual({
         url: "/api/tenants/ten_1/connections/anthropic/disconnect",
         method: "DELETE",
       });
       expect(
-        calls.some(
-          (call) => call.url === "/api/tenants/ten_1/credentials/crd_anthropic",
-        ),
+        calls.some((call) => call.url === "/api/tenants/ten_1/credentials/crd_anthropic"),
       ).toBe(false);
     } finally {
       act(() => root.unmount());
@@ -203,22 +188,16 @@ describe("Connections disconnect", () => {
     try {
       await settle();
       const rows = [...container.querySelectorAll(".settings-connection-row")];
-      const anthropicRow = rows.find((row) =>
-        row.textContent?.includes("Anthropic"),
-      );
+      const anthropicRow = rows.find((row) => row.textContent?.includes("Anthropic"));
       const disconnectButton = anthropicRow?.querySelector(
         ".settings-connection-row-disconnect-action",
       ) as HTMLButtonElement | null;
 
       act(() => {
-        disconnectButton?.dispatchEvent(
-          new MouseEvent("click", { bubbles: true }),
-        );
+        disconnectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       });
       act(() => {
-        disconnectButton?.dispatchEvent(
-          new MouseEvent("click", { bubbles: true }),
-        );
+        disconnectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       });
       await settle();
 

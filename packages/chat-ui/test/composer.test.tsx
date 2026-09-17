@@ -23,8 +23,7 @@ afterEach(() => {
   }
 });
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
 function mount(onSend: () => Promise<boolean>) {
   container = document.createElement("div");
@@ -47,9 +46,7 @@ function mount(onSend: () => Promise<boolean>) {
 }
 
 function sendButton(): HTMLButtonElement {
-  const button = container?.querySelector<HTMLButtonElement>(
-    '[aria-label^="Send"]',
-  );
+  const button = container?.querySelector<HTMLButtonElement>('[aria-label^="Send"]');
   if (button === null || button === undefined) {
     throw new Error("send button not found");
   }
@@ -106,9 +103,7 @@ describe("Composer send button", () => {
 test("labels the icon-only attachment action in the composer rail", () => {
   mount(() => Promise.resolve(true));
 
-  expect(
-    container?.querySelector('[aria-label="Attach files"]')?.textContent,
-  ).toBe("");
+  expect(container?.querySelector('[aria-label="Attach files"]')?.textContent).toBe("");
 });
 
 function textarea(): HTMLTextAreaElement {
@@ -130,9 +125,7 @@ function typeInto(element: HTMLTextAreaElement, text: string) {
   });
 }
 
-function mountWithMentions(
-  onSend: (payload: ComposerSendPayload) => Promise<boolean>,
-) {
+function mountWithMentions(onSend: (payload: ComposerSendPayload) => Promise<boolean>) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -142,13 +135,9 @@ function mountWithMentions(
       createElement(Composer, {
         ref,
         agents: [],
-        participants: [
-          { address: "researcher@agents.example", handle: "researcher" },
-        ],
+        participants: [{ address: "researcher@agents.example", handle: "researcher" }],
         members: [{ id: "prn_bob", displayName: "Bob" }],
-        invitableAgents: [
-          { id: "wfd_echo", name: "echo", description: "Echo" },
-        ],
+        invitableAgents: [{ id: "wfd_echo", name: "echo", description: "Echo" }],
         onSend,
         onInviteAgent: () => undefined,
         onOpenAgentsSettings: () => undefined,
@@ -165,9 +154,7 @@ describe("Composer mention popover — Agents and People (CL-5879)", () => {
     typeInto(textarea(), "@");
     await settle();
 
-    const options = Array.from(
-      container?.querySelectorAll(".chat-mention-option") ?? [],
-    );
+    const options = Array.from(container?.querySelectorAll(".chat-mention-option") ?? []);
     const rows = options.map((option) => ({
       name: option.querySelector(".chat-mention-name")?.textContent,
       handle: option.querySelector(".chat-mention-handle")?.textContent,
@@ -195,18 +182,14 @@ describe("Composer mention popover — Agents and People (CL-5879)", () => {
     await settle();
 
     const options = Array.from(
-      container?.querySelectorAll<HTMLButtonElement>(".chat-mention-option") ??
-        [],
+      container?.querySelectorAll<HTMLButtonElement>(".chat-mention-option") ?? [],
     );
     const bobOption = options.find(
-      (option) =>
-        option.querySelector(".chat-mention-handle")?.textContent === "@bob",
+      (option) => option.querySelector(".chat-mention-handle")?.textContent === "@bob",
     );
     if (bobOption === undefined) throw new Error("bob option not found");
     act(() => {
-      bobOption.dispatchEvent(
-        new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
-      );
+      bobOption.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
     });
     await settle();
 
@@ -218,9 +201,7 @@ describe("Composer mention popover — Agents and People (CL-5879)", () => {
     await settle();
 
     if (sent.payload === null) throw new Error("payload not sent");
-    expect(sent.payload.invite).toEqual([
-      { kind: "person", principalId: "prn_bob", name: "Bob" },
-    ]);
+    expect(sent.payload.invite).toEqual([{ kind: "person", principalId: "prn_bob", name: "Bob" }]);
   });
 
   test("picking an existing-participant candidate marks no invite intent", async () => {
@@ -233,13 +214,10 @@ describe("Composer mention popover — Agents and People (CL-5879)", () => {
     await settle();
 
     const options = Array.from(
-      container?.querySelectorAll<HTMLButtonElement>(".chat-mention-option") ??
-        [],
+      container?.querySelectorAll<HTMLButtonElement>(".chat-mention-option") ?? [],
     );
     const researcherOption = options.find(
-      (option) =>
-        option.querySelector(".chat-mention-handle")?.textContent ===
-        "@researcher",
+      (option) => option.querySelector(".chat-mention-handle")?.textContent === "@researcher",
     );
     if (researcherOption === undefined) {
       throw new Error("researcher option not found");
@@ -277,12 +255,8 @@ describe("Composer keyboard hint", () => {
     expect(keyboardHint()?.getAttribute("data-visible")).toBe("true");
     expect(keyboardHint()?.getAttribute("aria-hidden")).toBe("false");
     expect(keyboardHint()?.textContent).toBe("Enter to send");
-    expect(
-      container?.querySelectorAll(".chat-composer-actions button").length,
-    ).toBe(2);
-    expect(container?.querySelector(".chat-composer-row > textarea")).toBe(
-      textarea(),
-    );
+    expect(container?.querySelectorAll(".chat-composer-actions button").length).toBe(2);
+    expect(container?.querySelector(".chat-composer-row > textarea")).toBe(textarea());
   });
 
   test("hides when the focused draft is cleared", async () => {
@@ -370,9 +344,7 @@ describe("Composer mention bring-in load error (CL-6839)", () => {
 
     const empty = container?.querySelector(".chat-mention-empty");
     expect(empty?.getAttribute("role")).toBe("alert");
-    expect(empty?.textContent).toBe(
-      "Couldn't load people and agents to bring in",
-    );
+    expect(empty?.textContent).toBe("Couldn't load people and agents to bring in");
     expect(container?.textContent).not.toContain("No matches");
   });
 
@@ -384,9 +356,7 @@ describe("Composer mention bring-in load error (CL-6839)", () => {
       root?.render(
         createElement(Composer, {
           agents: [],
-          participants: [
-            { address: "researcher@agents.example", handle: "researcher" },
-          ],
+          participants: [{ address: "researcher@agents.example", handle: "researcher" }],
           members: [],
           invitableAgents: [],
           bringInLoadError: "Couldn't load agents to bring in",
@@ -402,9 +372,9 @@ describe("Composer mention bring-in load error (CL-6839)", () => {
 
     const alert = container?.querySelector('.chat-mention-empty[role="alert"]');
     expect(alert?.textContent).toBe("Couldn't load agents to bring in");
-    const handles = Array.from(
-      container?.querySelectorAll(".chat-mention-handle") ?? [],
-    ).map((node) => node.textContent);
+    const handles = Array.from(container?.querySelectorAll(".chat-mention-handle") ?? []).map(
+      (node) => node.textContent,
+    );
     expect(handles).toEqual(["@researcher"]);
   });
 });
@@ -511,9 +481,7 @@ describe("ComposerHandle.setText", () => {
         createElement(Composer, {
           ref,
           agents: [],
-          participants: [
-            { address: "researcher@agents.example", handle: "researcher" },
-          ],
+          participants: [{ address: "researcher@agents.example", handle: "researcher" }],
           onSend: (payload) => {
             sent.push(payload);
             return Promise.resolve(true);
@@ -560,13 +528,9 @@ describe("ComposerHandle.setText", () => {
         createElement(Composer, {
           ref,
           agents: [],
-          participants: [
-            { address: "researcher@agents.example", handle: "researcher" },
-          ],
+          participants: [{ address: "researcher@agents.example", handle: "researcher" }],
           members: [{ id: "prn_bob", displayName: "Bob" }],
-          invitableAgents: [
-            { id: "wfd_echo", name: "echo", description: "Echo" },
-          ],
+          invitableAgents: [{ id: "wfd_echo", name: "echo", description: "Echo" }],
           onSend: (payload) => {
             sent.payload = payload;
             return Promise.resolve(true);
@@ -581,18 +545,14 @@ describe("ComposerHandle.setText", () => {
     typeInto(textarea(), "@bo");
     await settle();
     const options = Array.from(
-      container?.querySelectorAll<HTMLButtonElement>(".chat-mention-option") ??
-        [],
+      container?.querySelectorAll<HTMLButtonElement>(".chat-mention-option") ?? [],
     );
     const bobOption = options.find(
-      (option) =>
-        option.querySelector(".chat-mention-handle")?.textContent === "@bob",
+      (option) => option.querySelector(".chat-mention-handle")?.textContent === "@bob",
     );
     if (bobOption === undefined) throw new Error("bob option not found");
     act(() => {
-      bobOption.dispatchEvent(
-        new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
-      );
+      bobOption.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
     });
     await settle();
     expect(textarea().value).toBe("@bob ");
@@ -637,9 +597,7 @@ describe("ComposerHandle.setText", () => {
       );
     });
 
-    const fileInput = container.querySelector<HTMLInputElement>(
-      ".chat-composer-file-input",
-    );
+    const fileInput = container.querySelector<HTMLInputElement>(".chat-composer-file-input");
     if (fileInput === null) throw new Error("file input not found");
 
     const file = new File(["hello"], "notes.txt", { type: "text/plain" });
@@ -659,9 +617,7 @@ describe("ComposerHandle.setText", () => {
     });
     await settle();
     await settle();
-    expect(
-      container.querySelector(".chat-composer-attachments"),
-    ).not.toBeNull();
+    expect(container.querySelector(".chat-composer-attachments")).not.toBeNull();
 
     await act(async () => {
       ref.current?.setText("copied prompt");
@@ -689,9 +645,7 @@ describe("ComposerHandle.setText", () => {
 // with a permanently disabled button and no way to retry for the rest
 // of that turn's life (Critique finding, CL-7201).
 function stopButton(): HTMLButtonElement {
-  const button = container?.querySelector<HTMLButtonElement>(
-    '[aria-label="Stop"]',
-  );
+  const button = container?.querySelector<HTMLButtonElement>('[aria-label="Stop"]');
   if (button === null || button === undefined) {
     throw new Error("stop button not found");
   }
@@ -701,8 +655,7 @@ function stopButton(): HTMLButtonElement {
 function mountStoppable(
   running: boolean,
   onStop: () => void | Promise<unknown>,
-  onSend: (payload: ComposerSendPayload) => Promise<boolean> = () =>
-    Promise.resolve(true),
+  onSend: (payload: ComposerSendPayload) => Promise<boolean> = () => Promise.resolve(true),
 ) {
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -747,9 +700,7 @@ describe("Composer stop affordance (CL-7201)", () => {
     const actions = container?.querySelector(".chat-composer-actions");
     const submitActions = stopButton().parentElement;
     expect(actions?.children).toHaveLength(3);
-    expect(
-      submitActions?.classList.contains("chat-composer-submit-actions"),
-    ).toBe(true);
+    expect(submitActions?.classList.contains("chat-composer-submit-actions")).toBe(true);
     expect(submitActions?.children).toHaveLength(2);
     expect(submitActions?.lastElementChild).toBe(sendButton());
     expect(actions?.lastElementChild).toBe(submitActions);
@@ -862,8 +813,7 @@ describe("Composer dictate", () => {
     onerror: ((event: unknown) => void) | null = null;
     onend: (() => void) | null = null;
     started = false;
-    resultOnStop: readonly { isFinal: boolean; transcript: string }[] | null =
-      null;
+    resultOnStop: readonly { isFinal: boolean; transcript: string }[] | null = null;
 
     constructor() {
       recognitions.push(this);
@@ -928,9 +878,7 @@ describe("Composer dictate", () => {
     textarea().setSelectionRange(5, 5);
     await settle();
 
-    const dictate = container?.querySelector<HTMLButtonElement>(
-      '[aria-label="Dictate"]',
-    );
+    const dictate = container?.querySelector<HTMLButtonElement>('[aria-label="Dictate"]');
     if (dictate === null || dictate === undefined) {
       throw new Error("dictate button not found");
     }
@@ -960,9 +908,7 @@ describe("Composer dictate", () => {
     await settle();
 
     expect(recognitions.at(-1)?.started).toBe(false);
-    const idle = container?.querySelector<HTMLButtonElement>(
-      '[aria-label="Dictate"]',
-    );
+    const idle = container?.querySelector<HTMLButtonElement>('[aria-label="Dictate"]');
     expect(idle?.getAttribute("aria-pressed")).toBe("false");
     expect(idle?.getAttribute("data-listening")).toBe("false");
   });
@@ -974,9 +920,7 @@ describe("Composer dictate", () => {
     textarea().setSelectionRange(5, 5);
     await settle();
 
-    const dictate = container?.querySelector<HTMLButtonElement>(
-      '[aria-label="Dictate"]',
-    );
+    const dictate = container?.querySelector<HTMLButtonElement>('[aria-label="Dictate"]');
     if (dictate === null || dictate === undefined) {
       throw new Error("dictate button not found");
     }
@@ -1025,9 +969,7 @@ describe("Composer dictate", () => {
     textarea().setSelectionRange(5, 5);
     await settle();
 
-    const dictate = container?.querySelector<HTMLButtonElement>(
-      '[aria-label="Dictate"]',
-    );
+    const dictate = container?.querySelector<HTMLButtonElement>('[aria-label="Dictate"]');
     if (dictate === null || dictate === undefined) {
       throw new Error("dictate button not found");
     }
@@ -1081,9 +1023,7 @@ describe("Composer dictate", () => {
     textarea().setSelectionRange(5, 5);
     await settle();
 
-    const dictate = container?.querySelector<HTMLButtonElement>(
-      '[aria-label="Dictate"]',
-    );
+    const dictate = container?.querySelector<HTMLButtonElement>('[aria-label="Dictate"]');
     if (dictate === null || dictate === undefined) {
       throw new Error("dictate button not found");
     }
@@ -1143,9 +1083,7 @@ describe("Composer dictate", () => {
     textarea().setSelectionRange(5, 5);
     await settle();
 
-    const dictate = container?.querySelector<HTMLButtonElement>(
-      '[aria-label="Dictate"]',
-    );
+    const dictate = container?.querySelector<HTMLButtonElement>('[aria-label="Dictate"]');
     if (dictate === null || dictate === undefined) {
       throw new Error("dictate button not found");
     }
@@ -1186,9 +1124,7 @@ describe("Composer dictate", () => {
     const report = spyOn(errorSink, "reportError");
     mount(() => Promise.resolve(true));
 
-    const dictate = container?.querySelector<HTMLButtonElement>(
-      '[aria-label="Dictate"]',
-    );
+    const dictate = container?.querySelector<HTMLButtonElement>('[aria-label="Dictate"]');
     if (dictate === null || dictate === undefined) {
       throw new Error("dictate button not found");
     }

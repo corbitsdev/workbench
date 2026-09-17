@@ -4,11 +4,7 @@ import path from "node:path";
 
 import { afterEach, expect, spyOn, test } from "bun:test";
 
-import type {
-  Principal,
-  RepoId,
-  RepoStore,
-} from "@intx/hub-sessions/substrate";
+import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions/substrate";
 import type { ConversationTurn, PendingOperation } from "@intx/types/runtime";
 
 import {
@@ -24,9 +20,7 @@ const tmpDirs: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    tmpDirs
-      .splice(0)
-      .map((dir) => fs.promises.rm(dir, { recursive: true, force: true })),
+    tmpDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })),
   );
 });
 
@@ -61,21 +55,21 @@ function fsBackedSubstrate(repoDir: string): RepoStore {
     ) => {
       const prefixDir = path.join(
         repoDir,
-        ...args.preservePrefix
-          .split("/")
-          .filter((seg: string) => seg.length > 0),
+        ...args.preservePrefix.split("/").filter((seg: string) => seg.length > 0),
       );
       const existing = new Map<string, Uint8Array>();
       let names: string[] = [];
       try {
         names = await fs.promises.readdir(prefixDir);
       } catch (cause) {
-        if (!(
-          typeof cause === "object" &&
-          cause !== null &&
-          "code" in cause &&
-          cause.code === "ENOENT"
-        )) {
+        if (
+          !(
+            typeof cause === "object" &&
+            cause !== null &&
+            "code" in cause &&
+            cause.code === "ENOENT"
+          )
+        ) {
           throw cause;
         }
       }
@@ -83,19 +77,13 @@ function fsBackedSubstrate(repoDir: string): RepoStore {
         const full = path.join(prefixDir, name);
         const st = await fs.promises.stat(full);
         if (st.isFile()) {
-          existing.set(
-            `${args.preservePrefix}${name}`,
-            await fs.promises.readFile(full),
-          );
+          existing.set(`${args.preservePrefix}${name}`, await fs.promises.readFile(full));
         }
       }
       const files = await args.merge(existing);
       await fs.promises.rm(prefixDir, { recursive: true, force: true });
       for (const [rel, content] of Object.entries(files)) {
-        const dest = path.join(
-          repoDir,
-          ...rel.split("/").filter((seg: string) => seg.length > 0),
-        );
+        const dest = path.join(repoDir, ...rel.split("/").filter((seg: string) => seg.length > 0));
         await fs.promises.mkdir(path.dirname(dest), { recursive: true });
         await fs.promises.writeFile(dest, content);
       }
@@ -135,26 +123,14 @@ test("two rooms of one agent keep isolated turns; a new room starts empty", asyn
   await store.storage.writeTurns([userTurn("room A tool result")]);
   await store.mirrorToSubstrate();
 
-  const roomADir = durableConversationAgentStateDir(
-    repoDir,
-    "default",
-    "chan_a",
-  );
-  const reconstructedA = await reconstructDurableConversation(
-    roomADir,
-    "default/chan_a",
-  );
+  const roomADir = durableConversationAgentStateDir(repoDir, "default", "chan_a");
+  const reconstructedA = await reconstructDurableConversation(roomADir, "default/chan_a");
   expect(reconstructedA?.turns).toHaveLength(1);
 
   expect(await store.bindOriginatingWorkbench("chan_b")).toBe(true);
   expect(peekTurns(store)).toEqual([]);
 
-  const mixedLegacy = path.join(
-    repoDir,
-    "agent-state",
-    "default",
-    "checkpoint.json",
-  );
+  const mixedLegacy = path.join(repoDir, "agent-state", "default", "checkpoint.json");
   expect(fs.existsSync(mixedLegacy)).toBe(false);
 
   await store.storage.writeTurns([userTurn("room B first infer")]);
@@ -215,10 +191,7 @@ test("a retired signal-kind pending op is dropped on restore, not thrown on", as
     }),
   );
 
-  const reconstructed = await reconstructDurableConversation(
-    agentStateDir,
-    "default/chan_a",
-  );
+  const reconstructed = await reconstructDurableConversation(agentStateDir, "default/chan_a");
 
   expect(reconstructed?.pendingOperations).toEqual([survivingOp]);
 });
@@ -240,12 +213,8 @@ test("two queued mails bind and mirror under each message's From not a later ori
   });
   // Both inbound mails exist (enqueued) before the first invokeStep. A
   // latest-wins origin file would now name chan_b for both binds.
-  const fromA = originatingWorkbenchIdFromRequest(
-    mailRequest("chan_a@alice.localhost"),
-  );
-  const fromB = originatingWorkbenchIdFromRequest(
-    mailRequest("chan_b@alice.localhost"),
-  );
+  const fromA = originatingWorkbenchIdFromRequest(mailRequest("chan_a@alice.localhost"));
+  const fromB = originatingWorkbenchIdFromRequest(mailRequest("chan_b@alice.localhost"));
   expect(fromA).toBe("chan_a");
   expect(fromB).toBe("chan_b");
 

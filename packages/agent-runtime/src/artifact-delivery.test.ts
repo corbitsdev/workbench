@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  artifactPartsForFinalizedTurn,
-  artifactPartsForToolCall,
-} from "./artifact-delivery";
+import { artifactPartsForFinalizedTurn, artifactPartsForToolCall } from "./artifact-delivery";
 
 describe("artifactPartsForToolCall", () => {
   test("returns a FilePart for a single persisted-artifact result", () => {
@@ -81,9 +78,7 @@ describe("artifactPartsForToolCall", () => {
   });
 
   test("returns no parts for unparseable JSON", () => {
-    expect(
-      artifactPartsForToolCall({ isError: false, result: "not json" }),
-    ).toEqual([]);
+    expect(artifactPartsForToolCall({ isError: false, result: "not json" })).toEqual([]);
   });
 
   test("returns no parts for a result that isn't the recognized shape", () => {
@@ -130,8 +125,6 @@ describe("artifactPartsForFinalizedTurn", () => {
   });
 
   test("returns an empty array when no tool call names a persisted artifact", () => {
-    expect(
-      artifactPartsForFinalizedTurn([{ isError: false, result: "{}" }]),
-    ).toEqual([]);
+    expect(artifactPartsForFinalizedTurn([{ isError: false, result: "{}" }])).toEqual([]);
   });
 });

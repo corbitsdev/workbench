@@ -29,30 +29,16 @@ import {
   // published from a separate repo, not part of this rename.
   type ProfileCardChannel,
 } from "@corbits/react-ui";
-import {
-  ArtifactRenderer,
-  ArtifactTextEditor,
-  type ArtifactSaveState,
-} from "@corbits/artifact-ui";
+import { ArtifactRenderer, ArtifactTextEditor, type ArtifactSaveState } from "@corbits/artifact-ui";
 import type { ProfileSubject, SharedWorkbenchSummary } from "@corbits/chat-ui";
-import {
-  ArrowsIn,
-  ArrowsOut,
-  ArrowSquareOut,
-  CaretLeft,
-  UserCircle,
-  X,
-} from "@corbits/icons";
+import { ArrowsIn, ArrowsOut, ArrowSquareOut, CaretLeft, UserCircle, X } from "@corbits/icons";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import { useBench } from "../bench-context";
 import { workbenchPath } from "../workbench-path";
 import { ensureProfileDm, loadSharedWorkbenches } from "../profile-relations";
-import type {
-  CanvasArtifactContent,
-  RoutinePanelSubject,
-} from "./canvas-availability";
+import type { CanvasArtifactContent, RoutinePanelSubject } from "./canvas-availability";
 import { useInsertIntoComposer } from "./composer-insertion";
 
 export function CanvasColumn({
@@ -86,12 +72,7 @@ export function CanvasColumn({
   // subtree is an ARIA violation, and the browser moves focus out of an
   // `inert` subtree for us when it closes.
   return (
-    <div
-      className="shell-canvas-column"
-      data-open={open}
-      data-focus={focus}
-      inert={!open}
-    >
+    <div className="shell-canvas-column" data-open={open} data-focus={focus} inert={!open}>
       <div className="shell-canvas-inner">
         {profile !== null ? (
           <ProfileCanvasPane
@@ -215,19 +196,11 @@ export function CanvasPaneHeader({
     >
       <div className="shell-canvas-pane-heading">
         {onBack !== undefined ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onBack}
-            aria-label="Back"
-            title="Back"
-          >
+          <Button variant="ghost" size="sm" onClick={onBack} aria-label="Back" title="Back">
             <CaretLeft />
           </Button>
         ) : null}
-        {title !== undefined ? (
-          <span className="shell-canvas-pane-title">{title}</span>
-        ) : null}
+        {title !== undefined ? <span className="shell-canvas-pane-title">{title}</span> : null}
       </div>
       <div className="shell-canvas-pane-actions">
         {trailing}
@@ -251,12 +224,7 @@ export function CanvasPaneHeader({
           </Button>
         ) : null}
         {onClose !== undefined ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            aria-label="Close"
-          >
+          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">
             <X />
           </Button>
         ) : null}
@@ -278,13 +246,7 @@ function profileActions(
     id: "message",
     label: messagePending ? "Messaging…" : "Message",
     tone: "primary",
-    onClick: messageAction(
-      tenantId,
-      profile,
-      onNavigate,
-      onClose,
-      setMessagePending,
-    ),
+    onClick: messageAction(tenantId, profile, onNavigate, onClose, setMessagePending),
   };
   const mention: ProfileCardAction = {
     id: "mention",
@@ -361,9 +323,7 @@ function useSharedWorkbenches(
   viewerPrincipalId: string | null,
   profile: ProfileSubject,
 ): readonly SharedWorkbenchSummary[] {
-  const [workbenches, setWorkbenches] = useState<
-    readonly SharedWorkbenchSummary[]
-  >([]);
+  const [workbenches, setWorkbenches] = useState<readonly SharedWorkbenchSummary[]>([]);
 
   useEffect(() => {
     setWorkbenches([]);
@@ -405,19 +365,11 @@ function ProfileCanvasPane({
   useEffect(() => {
     setMessagePending(false);
   }, [profile.address]);
-  const sharedWorkbenches = useSharedWorkbenches(
-    selectedTenantId,
-    selectedPrincipalId,
-    profile,
-  );
+  const sharedWorkbenches = useSharedWorkbenches(selectedTenantId, selectedPrincipalId, profile);
 
   return (
     <div className="shell-profile-pane">
-      <CanvasPaneHeader
-        focus={focus}
-        onClose={onClose}
-        onToggleFocus={onToggleFocus}
-      />
+      <CanvasPaneHeader focus={focus} onClose={onClose} onToggleFocus={onToggleFocus} />
       <ProfileCard
         name={profile.displayName}
         subtitle={`@${profile.handle}`}
@@ -471,9 +423,7 @@ function ArtifactCanvasPane({
         focus={focus}
         onClose={onClose}
         onToggleFocus={onToggleFocus}
-        {...(artifact.previewSrc !== undefined
-          ? { previewSrc: artifact.previewSrc }
-          : {})}
+        {...(artifact.previewSrc !== undefined ? { previewSrc: artifact.previewSrc } : {})}
       />
       <div className="shell-artifact-pane-body">
         {showEditor ? (
@@ -493,9 +443,7 @@ function ArtifactCanvasPane({
             {...(artifact.unavailableReason !== undefined
               ? { unavailableReason: artifact.unavailableReason }
               : {})}
-            {...(artifact.previewSrc !== undefined
-              ? { previewSrc: artifact.previewSrc }
-              : {})}
+            {...(artifact.previewSrc !== undefined ? { previewSrc: artifact.previewSrc } : {})}
           />
         )}
       </div>

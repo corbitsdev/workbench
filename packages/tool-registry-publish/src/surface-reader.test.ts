@@ -27,9 +27,7 @@ async function legacyTarball(): Promise<Uint8Array> {
 function memorySource(files: Map<string, Uint8Array>) {
   return {
     listBlobs: (dir: string) =>
-      Promise.resolve(
-        [...files.keys()].filter((path) => path.startsWith(`${dir}/`)),
-      ),
+      Promise.resolve([...files.keys()].filter((path) => path.startsWith(`${dir}/`))),
     readBlob: (path: string) => {
       const bytes = files.get(path);
       if (bytes === undefined) return Promise.reject(new Error(`no ${path}`));
@@ -43,9 +41,7 @@ describe("readToolSurfaceManifests", () => {
     const tarball = await packToolPackageTarball(
       new URL("../../capability-tools", import.meta.url).pathname,
     );
-    const source = memorySource(
-      new Map([[`tarballs/${tarball.filename}`, tarball.bytes]]),
-    );
+    const source = memorySource(new Map([[`tarballs/${tarball.filename}`, tarball.bytes]]));
     const manifests = await readToolSurfaceManifests({
       ...source,
       rootDir: "tarballs",
@@ -55,18 +51,12 @@ describe("readToolSurfaceManifests", () => {
     expect(manifests[0]?.surface.map((entry) => entry.qualifiedId)).toContain(
       "@corbits/capability-tools/cap:request_capability",
     );
-    expect(manifests[0]?.surface.every((entry) => entry.kind === "tool")).toBe(
-      true,
-    );
+    expect(manifests[0]?.surface.every((entry) => entry.kind === "tool")).toBe(true);
   });
 
   test("ignores non-tarball blobs and reports none when the registry is empty", async () => {
-    const source = memorySource(
-      new Map([["tarballs/README.md", new TextEncoder().encode("hi")]]),
-    );
-    expect(
-      await readToolSurfaceManifests({ ...source, rootDir: "tarballs" }),
-    ).toEqual([]);
+    const source = memorySource(new Map([["tarballs/README.md", new TextEncoder().encode("hi")]]));
+    expect(await readToolSurfaceManifests({ ...source, rootDir: "tarballs" })).toEqual([]);
   });
 
   test("skips a tarball whose package.json is not a valid manifest", async () => {
@@ -80,9 +70,7 @@ describe("readToolSurfaceManifests", () => {
     // never re-uploads an existing name@version to heal them.
     const truncated = tarball.bytes.slice(0, 64);
     const source = memorySource(new Map([["tarballs/broken.tgz", truncated]]));
-    expect(
-      await readToolSurfaceManifests({ ...source, rootDir: "tarballs" }),
-    ).toEqual([]);
+    expect(await readToolSurfaceManifests({ ...source, rootDir: "tarballs" })).toEqual([]);
   });
 
   test("returns the valid manifests and skips the manifest-less legacy ones", async () => {

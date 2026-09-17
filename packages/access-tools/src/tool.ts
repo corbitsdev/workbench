@@ -75,18 +75,13 @@ function clientConfig(env: WorkflowAccessEnv): AccessToolClientConfig {
   };
 }
 
-async function runListPrincipals(
-  env: WorkflowAccessEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runListPrincipals(env: WorkflowAccessEnv, call: ToolCall): Promise<ToolResult> {
   try {
     const principals = await listPrincipals(clientConfig(env));
     const content =
       principals.length === 0
         ? "No principals in this tenant."
-        : principals
-            .map((p) => `${p.kind} ${p.refId} — ${p.status} (id: ${p.id})`)
-            .join("\n");
+        : principals.map((p) => `${p.kind} ${p.refId} — ${p.status} (id: ${p.id})`).join("\n");
     return { callId: call.id, isError: false, content };
   } catch (err) {
     reportError(err, {
@@ -97,22 +92,14 @@ async function runListPrincipals(
   }
 }
 
-async function runListGrants(
-  env: WorkflowAccessEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runListGrants(env: WorkflowAccessEnv, call: ToolCall): Promise<ToolResult> {
   const parsed = ListGrantsInput(call.arguments);
   if (parsed instanceof type.errors) {
-    return errorResult(
-      call.id,
-      new Error(`list_grants received invalid input: ${parsed.summary}`),
-    );
+    return errorResult(call.id, new Error(`list_grants received invalid input: ${parsed.summary}`));
   }
   try {
     const grants = await listGrants(clientConfig(env), {
-      ...(parsed.principalId !== undefined
-        ? { principalId: parsed.principalId }
-        : {}),
+      ...(parsed.principalId !== undefined ? { principalId: parsed.principalId } : {}),
       ...(parsed.resource !== undefined ? { resource: parsed.resource } : {}),
     });
     const content =
@@ -131,10 +118,7 @@ async function runListGrants(
   }
 }
 
-async function runGrantAccess(
-  env: WorkflowAccessEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runGrantAccess(env: WorkflowAccessEnv, call: ToolCall): Promise<ToolResult> {
   const parsed = GrantAccessInput(call.arguments);
   if (parsed instanceof type.errors) {
     return errorResult(
@@ -159,10 +143,7 @@ async function runGrantAccess(
   }
 }
 
-async function runRevokeAccess(
-  env: WorkflowAccessEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runRevokeAccess(env: WorkflowAccessEnv, call: ToolCall): Promise<ToolResult> {
   const parsed = RevokeAccessInput(call.arguments);
   if (parsed instanceof type.errors) {
     return errorResult(
@@ -191,13 +172,7 @@ async function runRevokeAccess(
  */
 export const accessTools = defineTool<WorkflowAccessEnv>({
   id: "@corbits/access-tools/access",
-  requires: [
-    "hubAccessUrl",
-    "sidecarToken",
-    "address",
-    "tenantId",
-    "principalId",
-  ],
+  requires: ["hubAccessUrl", "sidecarToken", "address", "tenantId", "principalId"],
   definitions: [
     { name: LIST_PRINCIPALS_TOOL },
     { name: LIST_GRANTS_TOOL },
@@ -230,8 +205,7 @@ export const accessTools = defineTool<WorkflowAccessEnv>({
             },
             resource: {
               type: "string",
-              description:
-                'Only grants for this exact resource string (e.g. "workflow-run:*").',
+              description: 'Only grants for this exact resource string (e.g. "workflow-run:*").',
             },
           },
         },
@@ -250,21 +224,18 @@ export const accessTools = defineTool<WorkflowAccessEnv>({
           properties: {
             principalId: {
               type: "string",
-              description:
-                "The principal id to grant access to (from list_principals).",
+              description: "The principal id to grant access to (from list_principals).",
             },
             resource: {
               type: "string",
               description:
-                'The resource string to grant, e.g. "workflow-run:*" or ' +
-                '"asset:ast_123".',
+                'The resource string to grant, e.g. "workflow-run:*" or ' + '"asset:ast_123".',
             },
             actions: {
               type: "array",
               items: { type: "string" },
               description:
-                'Actions to grant on that resource, e.g. ["read"] or ' +
-                '["read", "write"].',
+                'Actions to grant on that resource, e.g. ["read"] or ' + '["read", "write"].',
             },
             why: {
               type: "string",
@@ -306,10 +277,7 @@ export const accessTools = defineTool<WorkflowAccessEnv>({
           return runRevokeAccess(env, call);
         default:
           return Promise.resolve(
-            errorResult(
-              call.id,
-              new Error(`@corbits/access-tools: unknown tool "${call.name}"`),
-            ),
+            errorResult(call.id, new Error(`@corbits/access-tools: unknown tool "${call.name}"`)),
           );
       }
     },

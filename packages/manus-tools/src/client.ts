@@ -122,16 +122,10 @@ function jsonHeaders(): Record<string, string> {
   return { "content-type": "application/json" };
 }
 
-function throwManusFailure(
-  status: number,
-  statusText: string,
-  body: unknown,
-): never {
+function throwManusFailure(status: number, statusText: string, body: unknown): never {
   const parsed = ManusErrorEnvelope(body);
   if (!(parsed instanceof type.errors)) {
-    throw new Error(
-      `Manus request failed: ${parsed.error.code}: ${parsed.error.message}`,
-    );
+    throw new Error(`Manus request failed: ${parsed.error.code}: ${parsed.error.message}`);
   }
   throw new Error(`Manus request failed: ${status} ${statusText}`);
 }
@@ -139,20 +133,14 @@ function throwManusFailure(
 function parseOkBody(body: unknown): Record<string, unknown> {
   const error = ManusErrorEnvelope(body);
   if (!(error instanceof type.errors)) {
-    throw new Error(
-      `Manus request failed: ${error.error.code}: ${error.error.message}`,
-    );
+    throw new Error(`Manus request failed: ${error.error.code}: ${error.error.message}`);
   }
   const parsed = ManusOkEnvelope(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `Manus response did not match the expected shape: ${parsed.summary}`,
-    );
+    throw new Error(`Manus response did not match the expected shape: ${parsed.summary}`);
   }
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    throw new Error(
-      "Manus response did not match the expected shape: not an object",
-    );
+    throw new Error("Manus response did not match the expected shape: not an object");
   }
   return body as Record<string, unknown>;
 }
@@ -161,11 +149,7 @@ function queryString(params: Readonly<Record<string, unknown>>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null) continue;
-    if (
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "boolean"
-    ) {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       search.set(key, String(value));
     }
   }
@@ -190,9 +174,7 @@ export async function manusRequest(
   const base = config.baseUrl ?? DEFAULT_MANUS_BASE_URL;
   const params = args.params ?? {};
   const url =
-    args.method === "GET"
-      ? `${base}${args.path}${queryString(params)}`
-      : `${base}${args.path}`;
+    args.method === "GET" ? `${base}${args.path}${queryString(params)}` : `${base}${args.path}`;
   const response =
     args.method === "GET"
       ? await doFetch(url, { method: "GET" })
@@ -205,10 +187,7 @@ export async function manusRequest(
   try {
     body = await response.json();
   } catch (cause) {
-    throw new Error(
-      `Manus request failed: ${response.status} ${response.statusText}`,
-      { cause },
-    );
+    throw new Error(`Manus request failed: ${response.status} ${response.statusText}`, { cause });
   }
   if (!response.ok) {
     throwManusFailure(response.status, response.statusText, body);
@@ -373,9 +352,7 @@ export async function listTaskMessages(
   return parsed;
 }
 
-export function latestAgentStatus(
-  messages: readonly TaskEvent[] | undefined,
-): string | undefined {
+export function latestAgentStatus(messages: readonly TaskEvent[] | undefined): string | undefined {
   if (messages === undefined) return undefined;
   // task.listMessages defaults to desc (newest first). The first
   // status_update is the current agent_status; walking to the last
@@ -409,8 +386,7 @@ export function extractOutputFiles(
         type?: string;
         content_type?: string;
       } = {};
-      if (attachment.filename !== undefined)
-        file.filename = attachment.filename;
+      if (attachment.filename !== undefined) file.filename = attachment.filename;
       if (attachment.url !== undefined) file.url = attachment.url;
       if (attachment.id !== undefined) file.id = attachment.id;
       if (attachment.type !== undefined) file.type = attachment.type;
@@ -504,9 +480,7 @@ export async function createSlideDeck(
     ...taskParams,
     content: `${SLIDE_DECK_PROMPT_PREFIX}${taskParams.content}`,
     agent_profile:
-      taskParams.agent_profile !== undefined
-        ? taskParams.agent_profile
-        : SLIDE_DECK_AGENT_PROFILE,
+      taskParams.agent_profile !== undefined ? taskParams.agent_profile : SLIDE_DECK_AGENT_PROFILE,
   });
   const intervalMs = pollIntervalMs ?? DEFAULT_SLIDE_POLL_INTERVAL_MS;
   const polls = maxPolls ?? DEFAULT_SLIDE_MAX_POLLS;

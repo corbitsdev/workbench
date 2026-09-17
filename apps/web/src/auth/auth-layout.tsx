@@ -34,11 +34,7 @@ export function AuthLayout({ children }: { readonly children: ReactNode }) {
           quote card. The <img> is the no-JS fallback; the 2D-canvas dither
           (ambient + cursor warp) paints over it. */}
       <div aria-hidden className="auth-panel">
-        <img
-          src="/images/hero-dither.png"
-          alt=""
-          className="auth-panel-fallback"
-        />
+        <img src="/images/hero-dither.png" alt="" className="auth-panel-fallback" />
         <DitherBackground className="auth-panel-dither" />
         <QuoteCard />
       </div>

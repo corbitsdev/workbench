@@ -8,9 +8,7 @@ import { InsightsRunsHistory } from "../src/pages/insights-page";
 import { TestQueryProvider } from "./test-query-provider";
 
 globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
-  Promise.reject(
-    new Error("no network in insights row-activation tests"),
-  )) as typeof fetch;
+  Promise.reject(new Error("no network in insights row-activation tests"))) as typeof fetch;
 
 function insightsRun(
   partial: Partial<InsightsRun> & Pick<InsightsRun, "id" | "status">,
@@ -91,9 +89,7 @@ describe("Insights row activation (hand-rolled onRowActivate helper)", () => {
 
     const row = el.querySelector('[data-ctx-insights-run="run_2"]');
     act(() => {
-      row?.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-      );
+      row?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     });
     expect(opened).toEqual(["run_2"]);
   });
@@ -113,9 +109,7 @@ describe("Insights row activation (hand-rolled onRowActivate helper)", () => {
 
     const row = el.querySelector('[data-ctx-insights-run="run_3"]');
     act(() => {
-      row?.dispatchEvent(
-        new KeyboardEvent("keydown", { key: " ", bubbles: true }),
-      );
+      row?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
     });
     expect(opened).toEqual(["run_3"]);
   });
@@ -135,9 +129,7 @@ describe("Insights row activation (hand-rolled onRowActivate helper)", () => {
 
     const row = el.querySelector('[data-ctx-insights-run="run_4"]');
     act(() => {
-      row?.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
-      );
+      row?.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
     });
     expect(opened).toEqual([]);
   });

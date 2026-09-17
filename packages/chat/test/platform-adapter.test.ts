@@ -21,10 +21,7 @@
 // exercised without a real Postgres.
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import {
-  DefinitionProjectionMissingError,
-  WORKFLOW_SOURCE_ENTRY,
-} from "@corbits/workflows";
+import { DefinitionProjectionMissingError, WORKFLOW_SOURCE_ENTRY } from "@corbits/workflows";
 import type { DefinitionSourceResolution } from "@intx/hub-api";
 import {
   agentSession,
@@ -40,14 +37,8 @@ import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
 import { workbenchLaunch } from "../src/schema";
 import type { CreateHubChatPlatformDeps } from "../src/platform-adapter";
 import { MODEL_UNAVAILABLE_CONSUMER_MESSAGE } from "../src/model-unavailable";
-import type {
-  RunTriggerClient,
-  TriggerWorkflowRunMailInput,
-} from "../src/run-trigger-client";
-import {
-  createCryptoProviderCache,
-  type CryptoProviderCache,
-} from "../src/crypto-cache";
+import type { RunTriggerClient, TriggerWorkflowRunMailInput } from "../src/run-trigger-client";
+import { createCryptoProviderCache, type CryptoProviderCache } from "../src/crypto-cache";
 
 const actualHubApi = await import("@intx/hub-api");
 
@@ -77,9 +68,7 @@ mock.module("@intx/hub-api", () => ({
 
 const actualDb = await import("@intx/db");
 
-type BuildCredentialDeliveryResult = Awaited<
-  ReturnType<typeof actualDb.buildCredentialDelivery>
->;
+type BuildCredentialDeliveryResult = Awaited<ReturnType<typeof actualDb.buildCredentialDelivery>>;
 
 let buildCredentialDeliveryResult: BuildCredentialDeliveryResult = {
   ok: true,
@@ -98,9 +87,7 @@ const DEFAULT_VISIBLE_OFFERINGS = [
     provider: { name: "anthropic" },
   },
 ];
-let visibleOfferings: typeof DEFAULT_VISIBLE_OFFERINGS = [
-  ...DEFAULT_VISIBLE_OFFERINGS,
-];
+let visibleOfferings: typeof DEFAULT_VISIBLE_OFFERINGS = [...DEFAULT_VISIBLE_OFFERINGS];
 const listVisibleOfferingsCalls: unknown[] = [];
 
 mock.module("@intx/db", () => ({
@@ -120,8 +107,7 @@ beforeEach(() => {
   listVisibleOfferingsCalls.length = 0;
 });
 
-const { createHubChatPlatform: buildHubChatPlatform } =
-  await import("../src/platform-adapter");
+const { createHubChatPlatform: buildHubChatPlatform } = await import("../src/platform-adapter");
 
 const PASSTHROUGH_CIPHER = {
   encrypt: async (plaintext: string) => plaintext,
@@ -143,10 +129,7 @@ function createFakeWorkflowAllocationService(): {
   const prepareCalls: unknown[] = [];
   return {
     prepareCalls,
-    async prepareProvisionedDeployment(args: {
-      anchorRunId: string;
-      deploymentDomain: string;
-    }) {
+    async prepareProvisionedDeployment(args: { anchorRunId: string; deploymentDomain: string }) {
       prepareCalls.push(args);
       return {
         anchorRunId: args.anchorRunId,
@@ -158,12 +141,9 @@ function createFakeWorkflowAllocationService(): {
   };
 }
 
-type FakeWorkflowAllocationService = ReturnType<
-  typeof createFakeWorkflowAllocationService
->;
+type FakeWorkflowAllocationService = ReturnType<typeof createFakeWorkflowAllocationService>;
 
-let lastAllocationService: FakeWorkflowAllocationService =
-  createFakeWorkflowAllocationService();
+let lastAllocationService: FakeWorkflowAllocationService = createFakeWorkflowAllocationService();
 
 function createFakeRepoStore(sha: string | null = "sha_test") {
   const resolveRefCalls: unknown[] = [];
@@ -196,17 +176,11 @@ function createHubChatPlatform(
 }
 
 function createPlatform(
-  deps: Omit<
-    Parameters<typeof createHubChatPlatform>[0],
-    "credentialCipher"
-  > & {
-    credentialCipher?: Parameters<
-      typeof createHubChatPlatform
-    >[0]["credentialCipher"];
+  deps: Omit<Parameters<typeof createHubChatPlatform>[0], "credentialCipher"> & {
+    credentialCipher?: Parameters<typeof createHubChatPlatform>[0]["credentialCipher"];
   },
 ) {
-  lastAllocationService =
-    deps.workflowAllocationService ?? createFakeWorkflowAllocationService();
+  lastAllocationService = deps.workflowAllocationService ?? createFakeWorkflowAllocationService();
   return createHubChatPlatform({
     ...deps,
     credentialCipher: deps.credentialCipher ?? PASSTHROUGH_CIPHER,
@@ -326,9 +300,7 @@ function createFakeDb(opts: {
    * `listInvitableDefinitions` performs. A row whose `parentId` is null
    * (or absent from this record) ends the chain.
    */
-  tenantRowsById?:
-    | Record<string, { id: string; parentId: string | null } | undefined>
-    | undefined;
+  tenantRowsById?: Record<string, { id: string; parentId: string | null } | undefined> | undefined;
   workbenchLaunchRow?:
     | {
         tenantId: string;
@@ -365,8 +337,7 @@ function createFakeDb(opts: {
    * fallback below derives one from that instead of touching every
    * call site.
    */
-  workflowRunLaunchSpecRow?:
-    { anchorRunId: string; sessionId: string } | undefined;
+  workflowRunLaunchSpecRow?: { anchorRunId: string; sessionId: string } | undefined;
 }) {
   const inserted: { table: unknown; values: unknown }[] = [];
   const updated: { table: unknown; values: unknown }[] = [];
@@ -382,10 +353,7 @@ function createFakeDb(opts: {
         // by reference (see below) — mutating it in place here is what lets a
         // test prove a write is actually visible to a later read, not just that
         // `update` was called with the right shape.
-        if (
-          table === workbenchLaunch &&
-          opts.workbenchLaunchRow !== undefined
-        ) {
+        if (table === workbenchLaunch && opts.workbenchLaunchRow !== undefined) {
           Object.assign(opts.workbenchLaunchRow, values as object);
         }
         return { where: async () => undefined };
@@ -413,21 +381,18 @@ function createFakeDb(opts: {
     query: {
       workflowRun: {
         findFirst: async (query?: { where?: unknown }) => {
-          const [id] =
-            query?.where !== undefined ? boundStringValues(query.where) : [];
+          const [id] = query?.where !== undefined ? boundStringValues(query.where) : [];
           if (
             opts.workflowRunRow !== undefined &&
             (id === undefined || id === opts.workflowRunRow.id)
           ) {
             return {
               ...opts.workflowRunRow,
-              definitionId:
-                opts.workflowRunRow.definitionId ?? opts.definitionId,
+              definitionId: opts.workflowRunRow.definitionId ?? opts.definitionId,
             };
           }
-          const insertedLaunch = inserted.findLast(
-            (row) => row.table === workbenchLaunch,
-          )?.values as
+          const insertedLaunch = inserted.findLast((row) => row.table === workbenchLaunch)
+            ?.values as
             | { currentRunId?: string; instanceId?: string; tenantId?: string }
             | undefined;
           const launch = (opts.workbenchLaunchRow ?? insertedLaunch) as
@@ -451,9 +416,9 @@ function createFakeDb(opts: {
               status: "pending",
             };
           }
-          const insertedRow = inserted.findLast(
-            (row) => row.table === workflowRun,
-          )?.values as typeof opts.workflowRunRow | undefined;
+          const insertedRow = inserted.findLast((row) => row.table === workflowRun)?.values as
+            | typeof opts.workflowRunRow
+            | undefined;
           if (insertedRow !== undefined) return insertedRow;
           // A run this fixture never configured: the freshly minted
           // `anchorRunId` a fake `prepareProvisionedDeployment` just
@@ -482,8 +447,7 @@ function createFakeDb(opts: {
       },
       agentSession: {
         findFirst: async (query?: { where?: unknown }) => {
-          const [id] =
-            query?.where !== undefined ? boundStringValues(query.where) : [];
+          const [id] = query?.where !== undefined ? boundStringValues(query.where) : [];
           return inserted.findLast(
             (row) =>
               row.table === agentSession &&
@@ -493,17 +457,15 @@ function createFakeDb(opts: {
       },
       workflowRunLaunchSpec: {
         findFirst: async (query?: { where?: unknown }) => {
-          const [id] =
-            query?.where !== undefined ? boundStringValues(query.where) : [];
+          const [id] = query?.where !== undefined ? boundStringValues(query.where) : [];
           if (opts.workflowRunLaunchSpecRow !== undefined) {
-            return id === undefined ||
-              id === opts.workflowRunLaunchSpecRow.anchorRunId
+            return id === undefined || id === opts.workflowRunLaunchSpecRow.anchorRunId
               ? opts.workflowRunLaunchSpecRow
               : undefined;
           }
-          const seededSession = inserted.find(
-            (row) => row.table === agentSession,
-          )?.values as { id: string } | undefined;
+          const seededSession = inserted.find((row) => row.table === agentSession)?.values as
+            | { id: string }
+            | undefined;
           if (seededSession === undefined) return undefined;
           return { anchorRunId: id, sessionId: seededSession.id };
         },
@@ -528,9 +490,7 @@ function createFakeDb(opts: {
         // least it — the single-row default mirrors that.
         findMany: async () =>
           opts.workflowDefinitionRows ??
-          (opts.workflowDefinitionRow !== undefined
-            ? [opts.workflowDefinitionRow]
-            : []),
+          (opts.workflowDefinitionRow !== undefined ? [opts.workflowDefinitionRow] : []),
       },
       tenant: {
         // `getAncestorChain` walks parent by parent, so a test that seeds
@@ -540,9 +500,7 @@ function createFakeDb(opts: {
         findFirst: async (args?: { where?: unknown }) => {
           if (opts.tenantRowsById === undefined) return opts.tenantRow;
           const [queriedId] = boundStringValues(args?.where);
-          return queriedId === undefined
-            ? undefined
-            : opts.tenantRowsById[queriedId];
+          return queriedId === undefined ? undefined : opts.tenantRowsById[queriedId];
         },
       },
     },
@@ -569,8 +527,7 @@ function createFakeDb(opts: {
           if (table === workflowDefinition) {
             return selectChain([
               {
-                assetId:
-                  opts.workflowDefinitionRow?.assetId ?? "ast_definition1",
+                assetId: opts.workflowDefinitionRow?.assetId ?? "ast_definition1",
               },
             ]);
           }
@@ -583,8 +540,7 @@ function createFakeDb(opts: {
                 const [definitionId] = boundStringValues(expression);
                 if (definitionId === undefined) return selectChain([]);
                 wireProjectionCalls.push(definitionId);
-                const projection =
-                  opts.wireProjectionsByDefinitionId?.[definitionId] ?? null;
+                const projection = opts.wireProjectionsByDefinitionId?.[definitionId] ?? null;
                 return selectChain([{ wireProjection: projection }]);
               },
             };
@@ -626,8 +582,7 @@ function createFakeDb(opts: {
             return selectChain([
               {
                 ...withCurrent,
-                currentRunId:
-                  withCurrent.currentRunId ?? withCurrent.instanceId,
+                currentRunId: withCurrent.currentRunId ?? withCurrent.instanceId,
                 priorRunIds: withCurrent.priorRunIds ?? [],
               },
             ]);
@@ -699,8 +654,7 @@ function createFakeEventCollectors(
     has: () => false,
     getStatus: () => undefined,
     getAccumulatedText: () => undefined,
-    getCurrentTurnId: (address: string) =>
-      busyAddresses.has(address) ? "turn_1" : null,
+    getCurrentTurnId: (address: string) => (busyAddresses.has(address) ? "turn_1" : null),
     getLastTurnId: () => undefined,
     dispatch: () => undefined,
   } as unknown as EventCollectorRegistry & {
@@ -740,9 +694,7 @@ function createFakeRunTrigger(): FakeRunTrigger {
   return fake;
 }
 
-function createFakeSidecarRouter(
-  opts: { routableAddresses?: string[] } = {},
-): SidecarRouter & {
+function createFakeSidecarRouter(opts: { routableAddresses?: string[] } = {}): SidecarRouter & {
   subscribeAgentCalls: { address: string }[];
   dispatchAgentEventCalls: { address: string; event: unknown }[];
   sendAgentUndeployCalls: { address: string; reason: string }[];
@@ -792,9 +744,7 @@ function createFakeSidecarRouter(
       if (index !== -1) routableAddresses.splice(index, 1);
     },
     getRoutableAddresses() {
-      return routableAll
-        ? ({ includes: () => true } as unknown as string[])
-        : routableAddresses;
+      return routableAll ? ({ includes: () => true } as unknown as string[]) : routableAddresses;
     },
     // Every launch and wake produces the run's `run.grants` frame before its
     // first mail. Always routable: the frame is sent after the deploy the
@@ -852,8 +802,7 @@ function inertProjection(
         agent: {
           systemPrompt,
           toolPackagePins,
-          modelSources:
-            model === null ? [] : [{ provider: "anthropic", model }],
+          modelSources: model === null ? [] : [{ provider: "anthropic", model }],
         },
       },
     },
@@ -930,9 +879,9 @@ describe("createHubChatPlatform", () => {
       workflowAllocationService: allocationService,
     });
 
-    await expect(
-      platform.ensureAwake("ins_workbench1@ten1.workbench.test"),
-    ).rejects.toThrow(deployError);
+    await expect(platform.ensureAwake("ins_workbench1@ten1.workbench.test")).rejects.toThrow(
+      deployError,
+    );
 
     // Interchange provisions on invite. The collector is Interchange's;
     // a failed prepare never opens one in chat.
@@ -1009,9 +958,9 @@ describe("createHubChatPlatform", () => {
       workflowAllocationService: allocationService,
     });
 
-    await expect(
-      platform.ensureAwake("ins_workbench1@ten1.workbench.test"),
-    ).rejects.toThrow(SessionLaunchError);
+    await expect(platform.ensureAwake("ins_workbench1@ten1.workbench.test")).rejects.toThrow(
+      SessionLaunchError,
+    );
 
     expect(db.deleted.some((row) => row.table === workflowRun)).toBe(false);
     const runUpdate = db.updated.find((row) => row.table === workflowRun);
@@ -1367,9 +1316,7 @@ describe("createHubChatPlatform", () => {
       deploymentDomain: string;
     };
     expect(prepared.anchorRunId).toBe(launched.instanceId);
-    expect(`${prepared.anchorRunId}@${prepared.deploymentDomain}`).toBe(
-      launched.address,
-    );
+    expect(`${prepared.anchorRunId}@${prepared.deploymentDomain}`).toBe(launched.address);
     expect(lastAllocationService.prepareCalls[0]).toMatchObject({
       entry: WORKFLOW_SOURCE_ENTRY,
       source: {
@@ -1379,12 +1326,8 @@ describe("createHubChatPlatform", () => {
       },
     });
 
-    expect(
-      db.inserted.find((row) => row.table === workflowRun),
-    ).toBeUndefined();
-    const launchInsert = db.inserted.find(
-      (row) => row.table === workbenchLaunch,
-    );
+    expect(db.inserted.find((row) => row.table === workflowRun)).toBeUndefined();
+    const launchInsert = db.inserted.find((row) => row.table === workbenchLaunch);
     expect(launchInsert?.values).toMatchObject({
       instanceId: launched.instanceId,
       currentRunId: launched.instanceId,
@@ -1429,9 +1372,7 @@ describe("createHubChatPlatform", () => {
     const launchInsertsAfterFirst = db.inserted.filter(
       (row) => row.table === workbenchLaunch,
     ).length;
-    const runInsertsAfterFirst = db.inserted.filter(
-      (row) => row.table === workflowRun,
-    ).length;
+    const runInsertsAfterFirst = db.inserted.filter((row) => row.table === workflowRun).length;
     expect(launchInsertsAfterFirst).toBe(1);
     expect(runInsertsAfterFirst).toBe(0);
 
@@ -1443,9 +1384,9 @@ describe("createHubChatPlatform", () => {
 
     expect(second.instanceId).toBe(first.instanceId);
     expect(second.address).toBe(first.address);
-    expect(
-      db.inserted.filter((row) => row.table === workbenchLaunch),
-    ).toHaveLength(launchInsertsAfterFirst);
+    expect(db.inserted.filter((row) => row.table === workbenchLaunch)).toHaveLength(
+      launchInsertsAfterFirst,
+    );
     expect(db.inserted.filter((row) => row.table === workflowRun)).toHaveLength(
       runInsertsAfterFirst,
     );
@@ -1712,12 +1653,9 @@ describe("createHubChatPlatform", () => {
       definitionId: "wfd_authored",
     });
 
-    const launchInsert = db.inserted.find(
-      (row) => row.table === workbenchLaunch,
-    );
+    const launchInsert = db.inserted.find((row) => row.table === workbenchLaunch);
     expect(
-      (launchInsert?.values as { foldedBody: { systemPrompt: string } })
-        .foldedBody.systemPrompt,
+      (launchInsert?.values as { foldedBody: { systemPrompt: string } }).foldedBody.systemPrompt,
     ).toBe("post-pin instructions");
   });
 
@@ -1990,9 +1928,7 @@ describe("createHubChatPlatform", () => {
     });
 
     const items = await platform.listInvitableDefinitions("ten_1");
-    expect(items).toEqual([
-      { id: "wfd_echo", name: "echo", description: "Echo" },
-    ]);
+    expect(items).toEqual([{ id: "wfd_echo", name: "echo", description: "Echo" }]);
   });
 
   test("listInvitableDefinitions walks the tenant ancestors, and a workbench's own definition shadows its parent's of the same name", async () => {
@@ -2087,12 +2023,9 @@ describe("createHubChatPlatform", () => {
     });
 
     const events: unknown[] = [];
-    const unsubscribe = platform.subscribeToWorkbench(
-      "ins_workbench1",
-      (event) => {
-        events.push(event);
-      },
-    );
+    const unsubscribe = platform.subscribeToWorkbench("ins_workbench1", (event) => {
+      events.push(event);
+    });
 
     // The lookup is async (`findFirst` resolves, then `.then` runs);
     // yield past both hops of the microtask queue.
@@ -2432,9 +2365,7 @@ describe("createHubChatPlatform", () => {
         eventCollectors: createFakeEventCollectors(),
       });
 
-      await expect(
-        platform.ensureAwake("ins_unknown@ten1.workbench.test"),
-      ).rejects.toThrow();
+      await expect(platform.ensureAwake("ins_unknown@ten1.workbench.test")).rejects.toThrow();
     });
   });
 
@@ -2623,9 +2554,7 @@ describe("createHubChatPlatform", () => {
           address: "agent1@ten1.workbench.test",
           principalId: "prin_agent1",
           definitionId: "wfd_agent1",
-          ...(workflowRunStatus !== undefined
-            ? { status: workflowRunStatus }
-            : {}),
+          ...(workflowRunStatus !== undefined ? { status: workflowRunStatus } : {}),
         },
         workflowDefinitionRow: {
           id: "wfd_agent1",
@@ -2665,12 +2594,9 @@ describe("createHubChatPlatform", () => {
         "agent1@ten1.workbench.test",
       );
 
-      const launchUpdate = db.updated.find(
-        (row) => row.table === workbenchLaunch,
-      );
+      const launchUpdate = db.updated.find((row) => row.table === workbenchLaunch);
       expect(
-        (launchUpdate?.values as { foldedBody: { systemPrompt: string } })
-          .foldedBody.systemPrompt,
+        (launchUpdate?.values as { foldedBody: { systemPrompt: string } }).foldedBody.systemPrompt,
       ).toBe("You are now a blunt, no-nonsense assistant.");
     });
 
@@ -2811,12 +2737,9 @@ describe("createHubChatPlatform", () => {
         "agent1@ten1.workbench.test",
       );
 
-      const launchUpdate = db.updated.find(
-        (row) => row.table === workbenchLaunch,
-      );
+      const launchUpdate = db.updated.find((row) => row.table === workbenchLaunch);
       expect(
-        (launchUpdate?.values as { foldedBody: { systemPrompt: string } })
-          .foldedBody.systemPrompt,
+        (launchUpdate?.values as { foldedBody: { systemPrompt: string } }).foldedBody.systemPrompt,
       ).toBe("You are now a blunt, no-nonsense assistant.");
     });
   });
@@ -2832,8 +2755,7 @@ describe("createHubChatPlatform", () => {
 // prove the automatic reconciliation added ahead of `wakeByAddress`'s
 // already-routable return and `sendMail`'s choke point.
 describe("createHubChatPlatform stale-definition reconciliation", () => {
-  const STALE_SYSTEM_PROMPT =
-    "the openai adapter: invalid quirks: default must be removed";
+  const STALE_SYSTEM_PROMPT = "the openai adapter: invalid quirks: default must be removed";
   const FIXED_SYSTEM_PROMPT = "I am working in this workbench.";
 
   // CL-6452: every deploy freezes a per-run clone of the agent's
@@ -3098,9 +3020,7 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
 
     await platform.ensureAwake("run_standalone@ten1.workbench.test");
 
-    expect(
-      db.updated.find((row) => row.table === workbenchLaunch),
-    ).toBeUndefined();
+    expect(db.updated.find((row) => row.table === workbenchLaunch)).toBeUndefined();
   });
 });
 
@@ -3346,9 +3266,7 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
         currentRunId: "run_live",
         foldedBody: FOLDED_BODY,
         sourcesDigest:
-          opts.deployedOfferingIds === null
-            ? null
-            : opts.deployedOfferingIds.join("\0"),
+          opts.deployedOfferingIds === null ? null : opts.deployedOfferingIds.join("\0"),
       },
       wireProjectionsByDefinitionId: {
         wfd_run_clone: inertProjection({
@@ -3377,7 +3295,8 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
 
   function repointedLaunch(db: ReturnType<typeof createFakeDb>) {
     return db.updated.find((row) => row.table === workbenchLaunch)?.values as
-      { currentRunId: string; sourcesDigest: string } | undefined;
+      | { currentRunId: string; sourcesDigest: string }
+      | undefined;
   }
 
   test("a routable run deployed with offerings the catalog has since rotated is relaunched on the new chain", async () => {
@@ -3413,9 +3332,7 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
 
     await platform.ensureAwake("run_live@ten1.workbench.test");
 
-    const launchWrites = db.updated.filter(
-      (row) => row.table === workbenchLaunch,
-    );
+    const launchWrites = db.updated.filter((row) => row.table === workbenchLaunch);
     expect(launchWrites).toHaveLength(1);
     expect(launchWrites[0]?.values).toEqual({
       sourcesDigest: "off_fresh",
@@ -3493,9 +3410,7 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
     defaultSource: "off_1",
   };
 
-  function createManusPinFixture(opts: {
-    toolPackagePins: { name: string; version: string }[];
-  }) {
+  function createManusPinFixture(opts: { toolPackagePins: { name: string; version: string }[] }) {
     resolveDefinitionSourcesResult = {
       ok: true,
       materials: [],
@@ -3606,7 +3521,8 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
 
   function repointedLaunch(db: ReturnType<typeof createFakeDb>) {
     return db.updated.find((row) => row.table === workbenchLaunch)?.values as
-      { currentRunId: string } | undefined;
+      | { currentRunId: string }
+      | undefined;
   }
 
   test("connecting manus after a live launch relaunches with the pin", async () => {
@@ -3618,9 +3534,7 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
     expect(repointedLaunch(db)).toBeUndefined();
     expect(lastAllocationService.prepareCalls).toHaveLength(0);
 
-    const swept = await platform.reconcilePinnedToolPackages("ten_1", [
-      "@corbits/manus-tools",
-    ]);
+    const swept = await platform.reconcilePinnedToolPackages("ten_1", ["@corbits/manus-tools"]);
 
     // Persist-only (stamp a pin onto the launch row and leave
     // `currentRunId` as `run_live`) is the bug: the sidecar keeps the
@@ -3645,9 +3559,7 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
       toolPackagePins: [],
     });
 
-    const swept = await platform.reconcilePinnedToolPackages("ten_1", [
-      "@corbits/manus-tools",
-    ]);
+    const swept = await platform.reconcilePinnedToolPackages("ten_1", ["@corbits/manus-tools"]);
 
     expect(swept).toEqual({ scanned: 1, relaunched: 0 });
     expect(repointedLaunch(db)).toBeUndefined();

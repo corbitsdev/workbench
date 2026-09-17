@@ -13,19 +13,13 @@ import {
 import { hashDirectory } from "../lib/tree-hash";
 
 test("parseKillDates reads rows and skips comments", () => {
-  const parsed = parseKillDates(
-    "# header\nvendor/thing | ada | 2026-12-31\n\n",
-  );
+  const parsed = parseKillDates("# header\nvendor/thing | ada | 2026-12-31\n\n");
   expect(parsed.problems).toEqual([]);
-  expect(parsed.entries).toEqual([
-    { path: "vendor/thing", owner: "ada", killDate: "2026-12-31" },
-  ]);
+  expect(parsed.entries).toEqual([{ path: "vendor/thing", owner: "ada", killDate: "2026-12-31" }]);
 });
 
 test("parseKillDates rejects malformed rows and bad dates", () => {
-  const parsed = parseKillDates(
-    "vendor/thing | ada\nvendor/other | ada | soon\n",
-  );
+  const parsed = parseKillDates("vendor/thing | ada\nvendor/other | ada | soon\n");
   expect(parsed.entries).toEqual([]);
   expect(parsed.problems).toHaveLength(2);
   expect(parsed.problems[0]).toContain("path | owner | YYYY-MM-DD");
@@ -124,9 +118,7 @@ test("a registered vendored directory passes coverage", () => {
 });
 
 test("parseKillDates reads an optional hash column", () => {
-  const parsed = parseKillDates(
-    "vendor/thing | ada | 2026-12-31 | " + "a".repeat(64) + "\n",
-  );
+  const parsed = parseKillDates("vendor/thing | ada | 2026-12-31 | " + "a".repeat(64) + "\n");
   expect(parsed.problems).toEqual([]);
   expect(parsed.entries[0]?.hash).toBe("a".repeat(64));
 });
@@ -153,10 +145,7 @@ test("a tsc-generated tsbuildinfo does not change a vendored tree's hash", () =>
     mkdirSync(path.join(root, "vendor", "intx", "log"), { recursive: true });
     writeFileSync(path.join(root, "vendor", "intx", "log", "index.ts"), "hi");
     const hash = hashDirectory(path.join(root, "vendor", "intx", "log"));
-    writeFileSync(
-      path.join(root, "vendor", "intx", "log", "tsconfig.tsbuildinfo"),
-      "{}",
-    );
+    writeFileSync(path.join(root, "vendor", "intx", "log", "tsconfig.tsbuildinfo"), "{}");
     expect(hashDirectory(path.join(root, "vendor", "intx", "log"))).toBe(hash);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -176,10 +165,7 @@ test("a tsc --build dist/ output directory does not change a vendored tree's has
       path.join(root, "vendor", "intx", "log", "dist", "index.d.ts"),
       "export declare const hi: string;",
     );
-    writeFileSync(
-      path.join(root, "vendor", "intx", "log", "dist", "tsconfig.tsbuildinfo"),
-      "{}",
-    );
+    writeFileSync(path.join(root, "vendor", "intx", "log", "dist", "tsconfig.tsbuildinfo"), "{}");
     expect(hashDirectory(path.join(root, "vendor", "intx", "log"))).toBe(hash);
   } finally {
     rmSync(root, { recursive: true, force: true });

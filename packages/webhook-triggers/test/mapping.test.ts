@@ -3,9 +3,7 @@ import { renderInputTemplate } from "../src/mapping";
 
 describe("renderInputTemplate", () => {
   test("substitutes a top-level field", () => {
-    expect(renderInputTemplate("hello {{name}}", { name: "granola" })).toBe(
-      "hello granola",
-    );
+    expect(renderInputTemplate("hello {{name}}", { name: "granola" })).toBe("hello granola");
   });
 
   test("substitutes a nested dotted path", () => {
@@ -32,14 +30,10 @@ describe("renderInputTemplate", () => {
   });
 
   test("renders an object leaf as JSON", () => {
-    expect(renderInputTemplate("data={{payload}}", { payload: { a: 1 } })).toBe(
-      'data={"a":1}',
-    );
+    expect(renderInputTemplate("data={{payload}}", { payload: { a: 1 } })).toBe('data={"a":1}');
   });
 
   test("leaves a template with no placeholders untouched", () => {
-    expect(renderInputTemplate("no placeholders here", { a: 1 })).toBe(
-      "no placeholders here",
-    );
+    expect(renderInputTemplate("no placeholders here", { a: 1 })).toBe("no placeholders here");
   });
 });

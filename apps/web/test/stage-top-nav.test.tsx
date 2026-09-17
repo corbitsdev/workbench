@@ -68,12 +68,7 @@ describe("stage breadcrumbs", () => {
   test("intermediate crumbs are links to their own route; the last crumb is the page title", () => {
     const markup = renderToStaticMarkup(
       <NavigationProvider navigate={noop}>
-        <StageTopBar
-          crumbs={[
-            { label: "Skills", href: "/skills" },
-            { label: "weekly-digest" },
-          ]}
-        />
+        <StageTopBar crumbs={[{ label: "Skills", href: "/skills" }, { label: "weekly-digest" }]} />
       </NavigationProvider>,
     );
     expect(markup).toContain('aria-label="Breadcrumb"');
@@ -106,18 +101,10 @@ describe("stage breadcrumbs", () => {
   test("every class the trail renders is truncation-capped by the stylesheet", () => {
     const markup = renderToStaticMarkup(
       <NavigationProvider navigate={noop}>
-        <StageTopBar
-          crumbs={[
-            { label: "Files", href: "/files" },
-            { label: "a".repeat(200) },
-          ]}
-        />
+        <StageTopBar crumbs={[{ label: "Files", href: "/files" }, { label: "a".repeat(200) }]} />
       </NavigationProvider>,
     );
-    const css = readFileSync(
-      new URL("../src/app.css", import.meta.url),
-      "utf8",
-    );
+    const css = readFileSync(new URL("../src/app.css", import.meta.url), "utf8");
     for (const className of ["stage-crumb-link", "stage-crumb-current"]) {
       expect(markup).toContain(`class="${className}"`);
       const rule = ruleFor(css, className);
@@ -135,19 +122,14 @@ describe("stage breadcrumbs", () => {
     const el = await render(
       <NavigationProvider navigate={(to) => navigated.push(to)}>
         <StageTopBar
-          crumbs={[
-            { label: "Insights", href: "/insights" },
-            { label: "Run history" },
-          ]}
+          crumbs={[{ label: "Insights", href: "/insights" }, { label: "Run history" }]}
         />
       </NavigationProvider>,
     );
     const link = el.querySelector<HTMLAnchorElement>("a.stage-crumb-link");
     expect(link).not.toBeNull();
     await act(async () => {
-      link?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true }),
-      );
+      link?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
     expect(navigated).toEqual(["/insights"]);
   });
@@ -207,9 +189,7 @@ describe("Skills declares its nav through the top-bar contract", () => {
 
     const bar = el.querySelector('[data-testid="stage-top-bar"]');
     expect(bar).not.toBeNull();
-    expect(bar?.querySelector('[aria-current="page"]')?.textContent).toBe(
-      "Skills",
-    );
+    expect(bar?.querySelector('[aria-current="page"]')?.textContent).toBe("Skills");
     const actions = el.querySelector('[data-testid="stage-top-bar-actions"]');
     expect(actions?.textContent).toContain("New skill");
     expect(el.querySelector(".page-toolbar")).toBeNull();
@@ -235,9 +215,7 @@ describe("Skills declares its nav through the top-bar contract", () => {
 
     const trail = el.querySelector('nav[aria-label="Breadcrumb"]');
     expect(trail?.querySelector("a")?.getAttribute("href")).toBe("/skills");
-    expect(trail?.querySelector('[aria-current="page"]')?.textContent).toBe(
-      "weekly-digest",
-    );
+    expect(trail?.querySelector('[aria-current="page"]')?.textContent).toBe("weekly-digest");
     expect(el.querySelector('table[aria-label="Skills"]')).toBeNull();
   });
 
@@ -259,9 +237,7 @@ describe("Skills declares its nav through the top-bar contract", () => {
 
     const parent = el.querySelector<HTMLAnchorElement>("a.stage-crumb-link");
     await act(async () => {
-      parent?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true }),
-      );
+      parent?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
     expect(navigated).toContain("/skills");
   });
@@ -289,11 +265,8 @@ describe("Plugins declares its nav through the top-bar contract", () => {
           }),
         );
       if (path.includes("/connections/provider-health"))
-        return Promise.resolve(
-          json({ providers: {}, connectedProviderCount: 0 }),
-        );
-      if (path.includes("/credentials/resolve/"))
-        return Promise.resolve(json(null, 404));
+        return Promise.resolve(json({ providers: {}, connectedProviderCount: 0 }));
+      if (path.includes("/credentials/resolve/")) return Promise.resolve(json(null, 404));
       if (path.includes(`/api/tenants/${TENANT}/assets`))
         return Promise.resolve(json([SKILL_ASSET]));
       return Promise.resolve(json({ data: [], nextCursor: null }));
@@ -312,9 +285,7 @@ describe("Plugins declares its nav through the top-bar contract", () => {
     );
 
     const bar = el.querySelector('[data-testid="stage-top-bar"]');
-    expect(bar?.querySelector('[aria-current="page"]')?.textContent).toBe(
-      "Plugins",
-    );
+    expect(bar?.querySelector('[aria-current="page"]')?.textContent).toBe("Plugins");
 
     const skillsTab = [...el.querySelectorAll("button")].find(
       (button) => button.textContent?.includes("Skills") === true,

@@ -6,10 +6,7 @@ import type { AssetService } from "@intx/hub-sessions";
 import { agentDefinitionSourceTree } from "@corbits/agent-directory";
 import { webhookTrigger as webhookTriggerTable } from "@corbits/webhook-triggers";
 
-import {
-  captureWorldSnapshot,
-  type WorldSnapshotInfra,
-} from "./world-snapshot.ts";
+import { captureWorldSnapshot, type WorldSnapshotInfra } from "./world-snapshot.ts";
 
 type FakeTables = {
   workflowDefinitions: {
@@ -59,8 +56,7 @@ function fakeDb(tables: FakeTables): DB["db"] {
     },
     select: () => ({
       from: (table: unknown) => ({
-        where: async () =>
-          table === webhookTriggerTable ? tables.webhookTriggers : [],
+        where: async () => (table === webhookTriggerTable ? tables.webhookTriggers : []),
       }),
     }),
   } as unknown as DB["db"];
@@ -71,22 +67,14 @@ function fakeDb(tables: FakeTables): DB["db"] {
 function fakeResolveCredentialByName(tables: FakeTables) {
   return (async (_db: unknown, _tenantId: string, name: string) =>
     tables.credentials.find((credential) => credential.name === name) ??
-    null) as unknown as NonNullable<
-    WorldSnapshotInfra["resolveCredentialByNameFn"]
-  >;
+    null) as unknown as NonNullable<WorldSnapshotInfra["resolveCredentialByNameFn"]>;
 }
 
 /** Answers each asset's entry module out of the source tree its
  * definition renders into — the shape the snapshot reads through. */
 function fakeAssetService(blobs: Record<string, string>): AssetService {
   return {
-    readAssetBlob: async ({
-      assetId,
-      path,
-    }: {
-      assetId: string;
-      path: string;
-    }) =>
+    readAssetBlob: async ({ assetId, path }: { assetId: string; path: string }) =>
       new TextEncoder().encode(
         agentDefinitionSourceTree({
           handle: assetId,
@@ -96,10 +84,7 @@ function fakeAssetService(blobs: Record<string, string>): AssetService {
   } as unknown as AssetService;
 }
 
-function workflowJsonWith(
-  toolPackagePins: { name: string; version: string }[],
-  model?: string,
-) {
+function workflowJsonWith(toolPackagePins: { name: string; version: string }[], model?: string) {
   return JSON.stringify({
     steps: {
       agent: {
@@ -160,9 +145,7 @@ test("captureWorldSnapshot reads agent definitions with their capabilities", asy
 
 test("captureWorldSnapshot skips a definition with no materialized asset", async () => {
   const tables = emptyTables();
-  tables.workflowDefinitions = [
-    { id: "def-1", name: "draft", description: null, assetId: null },
-  ];
+  tables.workflowDefinitions = [{ id: "def-1", name: "draft", description: null, assetId: null }];
   const infra: WorldSnapshotInfra = {
     db: fakeDb(tables),
     resolveCredentialByNameFn: fakeResolveCredentialByName(tables),
@@ -219,9 +202,7 @@ test("captureWorldSnapshot reads a connector credential (a GitHub PAT) as a live
     assetService: fakeAssetService({}),
   };
   const world = await captureWorldSnapshot(infra, "tenant-1");
-  expect(world.connections).toEqual([
-    { slug: "github", name: "GitHub", url: "", live: true },
-  ]);
+  expect(world.connections).toEqual([{ slug: "github", name: "GitHub", url: "", live: true }]);
 });
 
 test("captureWorldSnapshot reads webhook trigger rows", async () => {
@@ -257,9 +238,7 @@ test("captureWorldSnapshot folds in fake receipts from the injected reader", asy
     db: fakeDb(tables),
     resolveCredentialByNameFn: fakeResolveCredentialByName(tables),
     assetService: fakeAssetService({}),
-    fakeReceiptsReader: () => [
-      { server: "github", toolName: "list_pull_requests", arguments: {} },
-    ],
+    fakeReceiptsReader: () => [{ server: "github", toolName: "list_pull_requests", arguments: {} }],
   };
   const world = await captureWorldSnapshot(infra, "tenant-1");
   expect(world.fakeReceipts).toEqual([

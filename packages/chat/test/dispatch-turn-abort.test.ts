@@ -49,9 +49,7 @@ describe("dispatchTurn with an already-aborted signal (CL-7201)", () => {
       workbenchId: "wb_1",
     });
     const notice = messages.items.find((message) =>
-      message.parts.some(
-        (part) => part.kind === "text" && part.turnCancelled === true,
-      ),
+      message.parts.some((part) => part.kind === "text" && part.turnCancelled === true),
     );
     expect(notice).toBeDefined();
   });

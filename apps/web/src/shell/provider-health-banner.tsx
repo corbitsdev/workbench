@@ -35,10 +35,7 @@ const PLUGINS_PATH = "/plugins";
 
 // CL-6734: recovery on Settings and the room only — never a stalker toast.
 export function isProviderHealthRecoverySurface(path: string): boolean {
-  return (
-    matchesRoute(SETTINGS_PATH, path) ||
-    matchesRoute(WORKBENCH_PATH_PREFIX, path)
-  );
+  return matchesRoute(SETTINGS_PATH, path) || matchesRoute(WORKBENCH_PATH_PREFIX, path);
 }
 
 // How long the collapse/fade-out below takes to play before the banner's
@@ -58,9 +55,7 @@ const POLL_ERROR_COPY = "Couldn't check provider health. Try again shortly.";
 // expected in practice, but a caller should still see something rather
 // than nothing).
 function providerDisplayName(provider: string): string {
-  const descriptor = connectorDescriptors(CONNECTOR_REGISTRY).find(
-    (d) => d.id === provider,
-  );
+  const descriptor = connectorDescriptors(CONNECTOR_REGISTRY).find((d) => d.id === provider);
   return descriptor?.displayName ?? provider;
 }
 
@@ -68,9 +63,7 @@ function providerDisplayName(provider: string): string {
 // place a `ProviderHealthRecord.category` becomes a sentence. Never a
 // provider's own error text: see `provider-health.ts`'s module header for
 // why only a closed enum ever reaches this far.
-const CATEGORY_COPY: Readonly<
-  Record<ClassifiedInferenceFailureCategory, string>
-> = {
+const CATEGORY_COPY: Readonly<Record<ClassifiedInferenceFailureCategory, string>> = {
   credential_failure: "turned down your key.",
   quota_exhausted: "says this key is out of credit.",
 };
@@ -108,9 +101,7 @@ export function ProviderHealthBanner({ path }: { readonly path: string }) {
   // instantly — see the module comment on hard-shoving the stage this
   // replaces. The `role="alert"` below still comes off the LIVE chrome,
   // not this cache, so a screen reader never sees a stale alert linger.
-  const [cachedVisible, setCachedVisible] = useState<VisibleChrome | null>(
-    visible,
-  );
+  const [cachedVisible, setCachedVisible] = useState<VisibleChrome | null>(visible);
   useEffect(() => {
     if (visibleKind === "error") {
       setCachedVisible({ kind: "error" });
@@ -120,10 +111,7 @@ export function ProviderHealthBanner({ path }: { readonly path: string }) {
       setCachedVisible({ kind: "unhealthy", banner: unhealthyBanner });
       return;
     }
-    const timeout = setTimeout(
-      () => setCachedVisible(null),
-      COLLAPSE_TRANSITION_MS,
-    );
+    const timeout = setTimeout(() => setCachedVisible(null), COLLAPSE_TRANSITION_MS);
     return () => clearTimeout(timeout);
   }, [visibleKind, unhealthyBanner]);
 
@@ -161,10 +149,7 @@ export function ProviderHealthBanner({ path }: { readonly path: string }) {
     >
       <div className="provider-health-banner-collapse-inner">
         {cachedVisible !== null ? (
-          <div
-            className="provider-health-banner"
-            role={isOpen ? "alert" : undefined}
-          >
+          <div className="provider-health-banner" role={isOpen ? "alert" : undefined}>
             <Warning className="provider-health-banner-icon" aria-hidden />
             <p className="provider-health-banner-text">
               {cachedVisible.kind === "error"
@@ -176,12 +161,7 @@ export function ProviderHealthBanner({ path }: { readonly path: string }) {
                 <Button size="sm" variant="primary" onClick={handleFix}>
                   Fix it
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={dismiss}
-                  aria-label="Dismiss"
-                >
+                <Button variant="ghost" size="sm" onClick={dismiss} aria-label="Dismiss">
                   <X aria-hidden />
                 </Button>
               </>

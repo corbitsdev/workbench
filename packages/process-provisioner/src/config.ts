@@ -66,14 +66,11 @@ export function readProcessProvisionerConfig(
 ): ProcessProvisionerConfig {
   const parsed = Environment(args.env);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `invalid process provisioner environment: ${parsed.summary}`,
-    );
+    throw new Error(`invalid process provisioner environment: ${parsed.summary}`);
   }
   if (!isAbsolute(args.dataDir)) {
     throw new Error(
-      "process provisioner data dir must be an absolute path; got " +
-        JSON.stringify(args.dataDir),
+      "process provisioner data dir must be an absolute path; got " + JSON.stringify(args.dataDir),
     );
   }
   const sidecarEntryPath = resolve(

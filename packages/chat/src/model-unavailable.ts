@@ -25,8 +25,7 @@ export class InferenceResolutionError extends Error {
   }
 }
 
-export const MODEL_UNAVAILABLE_CONSUMER_MESSAGE =
-  "This agent's model isn't available here.";
+export const MODEL_UNAVAILABLE_CONSUMER_MESSAGE = "This agent's model isn't available here.";
 
 /**
  * Thrown at wake (`wakeByAddress` / `ensureAwake`) in place of a raw
@@ -49,9 +48,7 @@ export class ModelUnavailableError extends Error {
 export function isModelUnavailableCause(cause: unknown): boolean {
   if (cause instanceof ModelUnavailableError) return true;
   if (cause instanceof InferenceResolutionError) return true;
-  return (
-    cause instanceof Error && cause.cause instanceof InferenceResolutionError
-  );
+  return cause instanceof Error && cause.cause instanceof InferenceResolutionError;
 }
 
 /** Turn-row `error` text: never a raw `InferenceResolutionError.message`. */

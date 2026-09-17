@@ -241,10 +241,7 @@ function blobToText(blob: string | Uint8Array): string {
  * fetching its bytes, so large files are never pulled into memory just
  * to decode a message list.
  */
-export async function decodeMail(
-  mail: unknown,
-  opts: { fetchBlob: FetchBlob },
-): Promise<Part[]> {
+export async function decodeMail(mail: unknown, opts: { fetchBlob: FetchBlob }): Promise<Part[]> {
   const parsed = MailReadContent(mail);
   if (parsed instanceof type.errors) {
     throw new Error(`invalid mail read content: ${parsed.summary}`);
@@ -282,10 +279,7 @@ export async function decodeMail(
     const head = text.slice(0, separator);
     const headerShaped = head
       .split("\r\n")
-      .every(
-        (line) =>
-          /^[\x21-\x39\x3b-\x7e]+:\s?.*$/.test(line) || /^[ \t]/.test(line),
-      );
+      .every((line) => /^[\x21-\x39\x3b-\x7e]+:\s?.*$/.test(line) || /^[ \t]/.test(line));
     if (!headerShaped || !/^content-/im.test(head)) return text;
     const body = text.slice(separator + 4);
     // The raw slice was never transfer-decoded either; honor the encoding
@@ -300,9 +294,7 @@ export async function decodeMail(
     const label = attachment.name ?? attachment.blobId;
 
     if (attachment.type === "application/json") {
-      const text = stripLeafMimeHeaders(
-        blobToText(await opts.fetchBlob(attachment.blobId)),
-      );
+      const text = stripLeafMimeHeaders(blobToText(await opts.fetchBlob(attachment.blobId)));
       let json: unknown;
       try {
         json = JSON.parse(text);
@@ -319,9 +311,7 @@ export async function decodeMail(
     }
 
     if (attachment.type === "text/plain") {
-      const text = stripLeafMimeHeaders(
-        blobToText(await opts.fetchBlob(attachment.blobId)),
-      );
+      const text = stripLeafMimeHeaders(blobToText(await opts.fetchBlob(attachment.blobId)));
       parts.push({ kind: "text", text });
       continue;
     }

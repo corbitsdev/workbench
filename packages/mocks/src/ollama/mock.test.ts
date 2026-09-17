@@ -23,25 +23,18 @@ describe("createOllamaMock: model catalogue", () => {
       ],
     });
 
-    const response = await ollama.fetch(
-      new Request("http://mock-ollama/api/tags"),
-    );
+    const response = await ollama.fetch(new Request("http://mock-ollama/api/tags"));
     const body = (await response.json()) as { models: { name: string }[] };
 
     expect(response.status).toBe(200);
-    expect(body.models.map((m) => m.name)).toEqual([
-      "qwen3.8:27b",
-      "embeddinggemma:300m",
-    ]);
+    expect(body.models.map((m) => m.name)).toEqual(["qwen3.8:27b", "embeddinggemma:300m"]);
   });
 
   test("setModels updates the catalogue a test connects against mid-run", async () => {
     const ollama = createOllamaMock({ models: [] });
     ollama.setModels([{ name: "qwen3.8:27b" }]);
 
-    const response = await ollama.fetch(
-      new Request("http://mock-ollama/api/tags"),
-    );
+    const response = await ollama.fetch(new Request("http://mock-ollama/api/tags"));
     const body = (await response.json()) as { models: { name: string }[] };
     expect(body.models).toHaveLength(1);
   });
@@ -99,9 +92,7 @@ describe("createOllamaMock: chat completions", () => {
 
   test("tool-call reply carries function name and JSON-encoded arguments", async () => {
     const ollama = createOllamaMock();
-    ollama.onChat(() =>
-      ollama.reply.toolCall("create_agent", { name: "researcher" }),
-    );
+    ollama.onChat(() => ollama.reply.toolCall("create_agent", { name: "researcher" }));
 
     const response = await chat(ollama.fetch, {
       model: "qwen3.8:27b",
@@ -167,12 +158,8 @@ describe("CapturedChatRequest assertions", () => {
       messages: [{ role: "user", content: "hi" }],
     });
 
-    expect(() =>
-      ollama.requests.last().expectModel("qwen3.8:27b"),
-    ).not.toThrow();
-    expect(() => ollama.requests.last().expectModel("other-model")).toThrow(
-      /qwen3\.8:27b/,
-    );
+    expect(() => ollama.requests.last().expectModel("qwen3.8:27b")).not.toThrow();
+    expect(() => ollama.requests.last().expectModel("other-model")).toThrow(/qwen3\.8:27b/);
   });
 
   test("expectToolsDeclared(names) enforces the exact declared set", async () => {
@@ -203,9 +190,7 @@ describe("CapturedChatRequest assertions", () => {
     });
 
     const request = ollama.requests.last();
-    expect(() =>
-      request.expectMessageRoles(["system", "user", "assistant", "user"]),
-    ).not.toThrow();
+    expect(() => request.expectMessageRoles(["system", "user", "assistant", "user"])).not.toThrow();
     expect(() => request.expectMessageRoles(["system", "user"])).toThrow();
   });
 

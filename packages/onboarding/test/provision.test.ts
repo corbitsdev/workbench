@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ApiCall } from "@corbits/hub-api-client";
 import type { HubSignupTenancy } from "../src/genesis";
-import {
-  personalTenantSlug,
-  provisionPersonalTenantIfNeeded,
-} from "../src/provision";
+import { personalTenantSlug, provisionPersonalTenantIfNeeded } from "../src/provision";
 
 const TENANT_ID = "ten_new";
 const PRINCIPAL_ID = "prn_new";
@@ -80,9 +77,7 @@ function argsFor(partial: {
 
 describe("personalTenantSlug", () => {
   test("derives a lowercase-kebab slug from the email and a user-id fragment", () => {
-    expect(personalTenantSlug("Alice.Smith@example.com", "user_id_1")).toBe(
-      "alice-smith-userid1",
-    );
+    expect(personalTenantSlug("Alice.Smith@example.com", "user_id_1")).toBe("alice-smith-userid1");
   });
 
   test("never produces an empty component", () => {
@@ -213,9 +208,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }),
     );
 
-    expect(joins).toEqual([
-      { tenantId: TENANT_ID, userId: "user_1", roleName: "member" },
-    ]);
+    expect(joins).toEqual([{ tenantId: TENANT_ID, userId: "user_1", roleName: "member" }]);
     expect(result).toEqual({
       kind: "existing-member",
       tenantId: TENANT_ID,

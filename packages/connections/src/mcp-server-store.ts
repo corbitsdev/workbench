@@ -38,18 +38,14 @@ export async function listMcpServerConnections(
     const providers = await db.query.provider.findMany({
       where: and(eq(schema.provider.tenantId, tid)),
     });
-    const mcpProviders = providers.filter((row) =>
-      row.name.startsWith(MCP_PROVIDER_PREFIX),
-    );
+    const mcpProviders = providers.filter((row) => row.name.startsWith(MCP_PROVIDER_PREFIX));
     if (mcpProviders.length === 0) continue;
 
     const credentials = await db.query.credential.findMany({
       where: eq(schema.credential.tenantId, tid),
     });
     const credentialByProviderId = new Map(
-      credentials
-        .filter((row) => row.status === "active")
-        .map((row) => [row.providerId, row]),
+      credentials.filter((row) => row.status === "active").map((row) => [row.providerId, row]),
     );
 
     for (const provider of mcpProviders) {

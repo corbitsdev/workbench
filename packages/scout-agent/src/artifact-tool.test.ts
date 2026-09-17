@@ -14,10 +14,7 @@ function testEnv(): ScoutArtifactEnv {
   } as unknown as ScoutArtifactEnv;
 }
 
-async function withMockFetch<T>(
-  response: () => Response,
-  run: () => Promise<T>,
-): Promise<T> {
+async function withMockFetch<T>(response: () => Response, run: () => Promise<T>): Promise<T> {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => response()) as unknown as typeof fetch;
   try {
@@ -29,9 +26,7 @@ async function withMockFetch<T>(
 
 describe("scoutArtifactTools", () => {
   test("declares the save tool with approval: ask", () => {
-    const saveDef = scoutArtifactTools.definitions.find(
-      (d) => d.name === SCOUT_ARTIFACT_SAVE_TOOL,
-    );
+    const saveDef = scoutArtifactTools.definitions.find((d) => d.name === SCOUT_ARTIFACT_SAVE_TOOL);
     expect(saveDef?.approval).toBe("ask");
   });
 

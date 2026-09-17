@@ -50,10 +50,7 @@ function filterItems(
 ): readonly PaletteResultItem[] {
   if (query === "") return items;
   return items.filter((item) =>
-    matchesQuery(
-      item.searchText ?? `${item.title} ${item.subtitle ?? ""}`,
-      query,
-    ),
+    matchesQuery(item.searchText ?? `${item.title} ${item.subtitle ?? ""}`, query),
   );
 }
 

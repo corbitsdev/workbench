@@ -38,11 +38,7 @@ export type CreateWebhookTriggerInput = {
 
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
-async function request<T>(
-  path: string,
-  schema: Validator<T>,
-  init?: RequestInit,
-): Promise<T> {
+async function request<T>(path: string, schema: Validator<T>, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, {
@@ -50,9 +46,7 @@ async function request<T>(
       headers: { "content-type": "application/json", ...init?.headers },
     });
   } catch (cause) {
-    throw new ApiQueryError(
-      cause instanceof Error ? cause.message : String(cause),
-    );
+    throw new ApiQueryError(cause instanceof Error ? cause.message : String(cause));
   }
   if (response.status === 401) {
     throw new UnauthenticatedError();
@@ -60,9 +54,7 @@ async function request<T>(
   if (!response.ok) {
     const detail = await response
       .json()
-      .then(
-        (body: { error?: { message?: string } }) => body.error?.message ?? "",
-      )
+      .then((body: { error?: { message?: string } }) => body.error?.message ?? "")
       .catch(() => "");
     throw new ApiQueryError(
       `The server answered ${response.status} for ${path}.${detail === "" ? "" : ` ${detail}`}`,
@@ -73,30 +65,20 @@ async function request<T>(
   const body: unknown = await response.json().catch(() => undefined);
   const parsed = schema(body);
   if (parsed instanceof type.errors) {
-    throw new ApiQueryError(
-      `Unexpected response shape from ${path}: ${parsed.summary}`,
-    );
+    throw new ApiQueryError(`Unexpected response shape from ${path}: ${parsed.summary}`);
   }
   return parsed;
 }
 
-export function listWebhookTriggers(
-  tenantId: string,
-): Promise<readonly WebhookTrigger[]> {
+export function listWebhookTriggers(tenantId: string): Promise<readonly WebhookTrigger[]> {
   return request(
     `/api/tenants/${tenantId}/webhook-triggers`,
     type({ items: WebhookTrigger.array() }),
   ).then((page) => page.items);
 }
 
-export function getWebhookTrigger(
-  tenantId: string,
-  id: string,
-): Promise<WebhookTrigger> {
-  return request(
-    `/api/tenants/${tenantId}/webhook-triggers/${id}`,
-    WebhookTrigger,
-  );
+export function getWebhookTrigger(tenantId: string, id: string): Promise<WebhookTrigger> {
+  return request(`/api/tenants/${tenantId}/webhook-triggers/${id}`, WebhookTrigger);
 }
 
 /**
@@ -113,11 +95,10 @@ export function createWebhookTrigger(
   tenantId: string,
   input: CreateWebhookTriggerInput,
 ): Promise<WebhookTriggerWithSecret> {
-  return request(
-    `/api/tenants/${tenantId}/webhook-triggers`,
-    WebhookTriggerWithSecret,
-    { method: "POST", body: JSON.stringify(input) },
-  );
+  return request(`/api/tenants/${tenantId}/webhook-triggers`, WebhookTriggerWithSecret, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function rotateWebhookTriggerSecret(
@@ -136,22 +117,16 @@ export function setWebhookTriggerEnabled(
   id: string,
   enabled: boolean,
 ): Promise<WebhookTrigger> {
-  return request(
-    `/api/tenants/${tenantId}/webhook-triggers/${id}/enabled`,
-    WebhookTrigger,
-    { method: "POST", body: JSON.stringify({ enabled }) },
-  );
+  return request(`/api/tenants/${tenantId}/webhook-triggers/${id}/enabled`, WebhookTrigger, {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
 }
 
-export function deleteWebhookTrigger(
-  tenantId: string,
-  id: string,
-): Promise<void> {
-  return request(
-    `/api/tenants/${tenantId}/webhook-triggers/${id}`,
-    type("unknown"),
-    { method: "DELETE" },
-  ).then(() => undefined);
+export function deleteWebhookTrigger(tenantId: string, id: string): Promise<void> {
+  return request(`/api/tenants/${tenantId}/webhook-triggers/${id}`, type("unknown"), {
+    method: "DELETE",
+  }).then(() => undefined);
 }
 
 /** The URL a sender posts deliveries to — built client-side (no route

@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ScorerContext, WorldSnapshot } from "../types.ts";
-import {
-  agentHasTools,
-  connectionIsLive,
-  fakeReceived,
-} from "./world-scorers.ts";
+import { agentHasTools, connectionIsLive, fakeReceived } from "./world-scorers.ts";
 
 function worldCtx(world: Partial<WorldSnapshot>): ScorerContext {
   return {
@@ -36,9 +32,7 @@ describe("agentHasTools", () => {
         },
       ],
     });
-    const r = agentHasTools("AI Daily researcher", [
-      "@corbits/web-search-tools",
-    ])(ctx);
+    const r = agentHasTools("AI Daily researcher", ["@corbits/web-search-tools"])(ctx);
     expect(r.pass).toBe(true);
   });
 
@@ -55,9 +49,7 @@ describe("agentHasTools", () => {
         },
       ],
     });
-    const r = agentHasTools("AI Daily researcher", [
-      "@corbits/web-search-tools",
-    ])(ctx);
+    const r = agentHasTools("AI Daily researcher", ["@corbits/web-search-tools"])(ctx);
     expect(r.pass).toBe(false);
     expect(r.reason).toContain("@corbits/web-search-tools");
   });
@@ -71,9 +63,7 @@ describe("agentHasTools", () => {
 describe("connectionIsLive", () => {
   test("passes for a live connection, fails for none found", () => {
     const ctx = worldCtx({
-      connections: [
-        { slug: "github", name: "GitHub", url: "https://x", live: true },
-      ],
+      connections: [{ slug: "github", name: "GitHub", url: "https://x", live: true }],
     });
     expect(connectionIsLive("github")(ctx).pass).toBe(true);
     expect(connectionIsLive("attio")(ctx).pass).toBe(false);
@@ -81,9 +71,7 @@ describe("connectionIsLive", () => {
 
   test("fails for a connection that exists but isn't live", () => {
     const ctx = worldCtx({
-      connections: [
-        { slug: "github", name: "GitHub", url: "https://x", live: false },
-      ],
+      connections: [{ slug: "github", name: "GitHub", url: "https://x", live: false }],
     });
     expect(connectionIsLive("github")(ctx).pass).toBe(false);
   });
@@ -114,19 +102,11 @@ describe("fakeReceived", () => {
         },
       ],
     });
-    expect(
-      fakeReceived(
-        "github",
-        "create_issue",
-        (args) => args["repo"] === "b",
-      )(ctx).pass,
-    ).toBe(false);
-    expect(
-      fakeReceived(
-        "github",
-        "create_issue",
-        (args) => args["repo"] === "a",
-      )(ctx).pass,
-    ).toBe(true);
+    expect(fakeReceived("github", "create_issue", (args) => args["repo"] === "b")(ctx).pass).toBe(
+      false,
+    );
+    expect(fakeReceived("github", "create_issue", (args) => args["repo"] === "a")(ctx).pass).toBe(
+      true,
+    );
   });
 });

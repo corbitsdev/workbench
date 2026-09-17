@@ -10,28 +10,16 @@
 // CL-6357's asset-drift walk: a pre-cutover sibling carrying no stored
 // projection must never win over a healthy newer one, and exhausting
 // every candidate raises the named `DefinitionProjectionMissingError`.
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  spyOn,
-  test,
-} from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import * as intxDb from "@intx/db";
 import { WorkflowProjectionDefinition } from "@intx/types/sidecar";
 
 const projectionsById: Record<string, unknown> = {};
 beforeEach(() => {
-  spyOn(intxDb, "loadFrozenWireProjection").mockImplementation(
-    async (_db, definitionId) => {
-      const projection = projectionsById[definitionId];
-      return projection === undefined
-        ? null
-        : WorkflowProjectionDefinition.assert(projection);
-    },
-  );
+  spyOn(intxDb, "loadFrozenWireProjection").mockImplementation(async (_db, definitionId) => {
+    const projection = projectionsById[definitionId];
+    return projection === undefined ? null : WorkflowProjectionDefinition.assert(projection);
+  });
 });
 afterEach(() => mock.restore());
 
@@ -145,9 +133,9 @@ describe("readFoldedBody", () => {
   });
 
   test("fails loud on a multi-step projection", () => {
-    expect(() =>
-      readFoldedBody(inertProjection({ stepOrder: ["host", "second"] }), []),
-    ).toThrow(/not single-step/);
+    expect(() => readFoldedBody(inertProjection({ stepOrder: ["host", "second"] }), [])).toThrow(
+      /not single-step/,
+    );
   });
 
   // The launch target (`@corbits/agent-runtime`'s
@@ -171,17 +159,12 @@ describe("readFoldedBody", () => {
 
   test("fails loud when the named step is not a step primitive", () => {
     expect(() =>
-      readFoldedBody(
-        inertProjection({ steps: { host: { kind: "not-a-step" } } }),
-        [],
-      ),
+      readFoldedBody(inertProjection({ steps: { host: { kind: "not-a-step" } } }), []),
     ).toThrow(/is not a step primitive/);
   });
 
   test("rejects a LIVE definition, whose inference chain the projection flattens away", () => {
-    expect(() => readFoldedBody(liveDefinition(), [])).toThrow(
-      /is not a step primitive/,
-    );
+    expect(() => readFoldedBody(liveDefinition(), [])).toThrow(/is not a step primitive/);
   });
 
   test("extracts the launch body from a section-shaped (CL-6329 onTrigger) projection", () => {
@@ -303,9 +286,9 @@ describe("resolveNewestProjectedDefinition", () => {
   });
 
   test("raises with consumer-language recovery guidance when there are no candidates at all", async () => {
-    await expect(
-      resolveNewestProjectedDefinition({} as never, []),
-    ).rejects.toThrow(/save its instructions/);
+    await expect(resolveNewestProjectedDefinition({} as never, [])).rejects.toThrow(
+      /save its instructions/,
+    );
   });
 });
 

@@ -26,18 +26,16 @@ describe("deriveDisplayName", () => {
   });
 
   test("humanizes the slug when description is absent or blank", () => {
-    expect(deriveDisplayName({ name: "architecture-reviewer" })).toBe(
+    expect(deriveDisplayName({ name: "architecture-reviewer" })).toBe("Architecture Reviewer");
+    expect(deriveDisplayName({ name: "architecture-reviewer", description: "   " })).toBe(
       "Architecture Reviewer",
     );
-    expect(
-      deriveDisplayName({ name: "architecture-reviewer", description: "   " }),
-    ).toBe("Architecture Reviewer");
   });
 
   test("throws rather than humanizing an internal run id into a fake name (CL-6471)", () => {
-    expect(() =>
-      deriveDisplayName({ name: "run_737a058d48006e2bde12559576f422e0" }),
-    ).toThrow(/internal identifier/);
+    expect(() => deriveDisplayName({ name: "run_737a058d48006e2bde12559576f422e0" })).toThrow(
+      /internal identifier/,
+    );
   });
 
   test("throws when the description itself is an internal id", () => {

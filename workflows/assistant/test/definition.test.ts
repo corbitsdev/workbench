@@ -24,9 +24,7 @@ const INPUT = {
 function assistantStep(definition: WorkflowDefinition): StepPrimitive {
   const primitive = definition.steps[ASSISTANT_STEP_ID];
   if (primitive === undefined || primitive.kind !== "step") {
-    throw new Error(
-      `definition has no step primitive named ${ASSISTANT_STEP_ID}`,
-    );
+    throw new Error(`definition has no step primitive named ${ASSISTANT_STEP_ID}`);
   }
   return primitive;
 }
@@ -50,17 +48,13 @@ test("the step is unbounded: it re-arms after every reply instead of completing 
   // conversation is the long-lived interactive agent that must never
   // self-complete — without this, the run ends after the greeting and
   // every later message is rejected as sent to a terminal run.
-  expect(assistantStep(buildAssistantWorkflow(INPUT)).triggers).toBe(
-    "unbounded",
-  );
+  expect(assistantStep(buildAssistantWorkflow(INPUT)).triggers).toBe("unbounded");
 });
 
 test("the workflow is triggered by mail to the given deployment address", () => {
   const definition = buildAssistantWorkflow(INPUT);
   expect(definition.id).toBe(ASSISTANT_WORKFLOW_ID);
-  expect(definition.triggers).toEqual([
-    { type: "mail", to: INPUT.triggerAddress },
-  ]);
+  expect(definition.triggers).toEqual([{ type: "mail", to: INPUT.triggerAddress }]);
 });
 
 test("the agent carries the assistant prompt, the preferences, and inlines no tools", () => {
@@ -74,9 +68,7 @@ test("the agent carries the assistant prompt, the preferences, and inlines no to
 
 test("the workflow pins manus-tools and does not require a Manus credential binding", () => {
   const definition = buildAssistantWorkflow(INPUT);
-  expect(ASSISTANT_TOOL_PACKAGE_PINS.map((pin) => pin.name)).toContain(
-    "@corbits/manus-tools",
-  );
+  expect(ASSISTANT_TOOL_PACKAGE_PINS.map((pin) => pin.name)).toContain("@corbits/manus-tools");
   expect(definition.credentialBindings ?? []).toEqual([]);
 });
 
@@ -112,16 +104,10 @@ test("serialization fails loud on a function-valued field, naming its path", () 
 });
 
 test("an empty trigger address is rejected", () => {
-  expect(() =>
-    buildAssistantWorkflow({ ...INPUT, triggerAddress: "" }),
-  ).toThrow(/triggerAddress/);
+  expect(() => buildAssistantWorkflow({ ...INPUT, triggerAddress: "" })).toThrow(/triggerAddress/);
 });
 
 test("a non-positive or fractional turn timeout is rejected", () => {
-  expect(() => buildAssistantWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(
-    /turnTimeoutMs/,
-  );
-  expect(() =>
-    buildAssistantWorkflow({ ...INPUT, turnTimeoutMs: 0.5 }),
-  ).toThrow(/turnTimeoutMs/);
+  expect(() => buildAssistantWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(/turnTimeoutMs/);
+  expect(() => buildAssistantWorkflow({ ...INPUT, turnTimeoutMs: 0.5 })).toThrow(/turnTimeoutMs/);
 });

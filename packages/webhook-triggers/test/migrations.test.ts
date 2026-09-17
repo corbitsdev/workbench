@@ -29,9 +29,7 @@ const migrationNames = [
 ];
 
 describeIfDb("applyWebhookTriggersMigrations", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchTarget = new URL(scratchUrl);
   const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
 
@@ -78,9 +76,7 @@ describeIfDb("applyWebhookTriggersMigrations", () => {
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'webhook_triggers' AND table_name = 'webhook_trigger'`,
       );
-      expect(tables.map((row) => String(row["table_name"]))).toEqual([
-        "webhook_trigger",
-      ]);
+      expect(tables.map((row) => String(row["table_name"]))).toEqual(["webhook_trigger"]);
 
       const inPublic = await sql.unsafe(
         `SELECT 1 FROM information_schema.tables ` +
@@ -98,9 +94,7 @@ describeIfDb("applyWebhookTriggersMigrations", () => {
 // rows, and must start from a schema that has never seen this migration
 // set before.
 describeIfDb("applyWebhookTriggersMigrations concurrency", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  ).replace(
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused").replace(
     "_webhook_triggers_migrations_test",
     "_webhook_triggers_migrations_concurrent_test",
   );
@@ -143,22 +137,16 @@ describeIfDb("applyWebhookTriggersMigrations concurrency", () => {
 
     const appliedNames = [...first.applied, ...second.applied].sort();
     expect(new Set(appliedNames).size).toBe(appliedNames.length);
-    expect(
-      [
-        ...appliedNames,
-        ...first.alreadyApplied,
-        ...second.alreadyApplied,
-      ].sort(),
-    ).toEqual(migrationNames.flatMap((name) => [name, name]).sort());
+    expect([...appliedNames, ...first.alreadyApplied, ...second.alreadyApplied].sort()).toEqual(
+      migrationNames.flatMap((name) => [name, name]).sort(),
+    );
 
     const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
     try {
       const ledgerRows = await sql.unsafe(
         `SELECT name FROM "webhook_triggers"."webhook_triggers_migrations" ORDER BY name`,
       );
-      expect(ledgerRows.map((row) => String(row["name"]))).toEqual(
-        migrationNames,
-      );
+      expect(ledgerRows.map((row) => String(row["name"]))).toEqual(migrationNames);
     } finally {
       await sql.end();
     }

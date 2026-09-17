@@ -36,11 +36,7 @@ import type { ResolvedPlugin } from "@corbits/connections/plugins";
 import { useEffect, useState } from "react";
 
 import { pluginOutcome } from "./plugin-meta";
-import {
-  connectMcpPreset,
-  disconnectMcpServer,
-  type McpPreset,
-} from "./mcp-servers-api";
+import { connectMcpPreset, disconnectMcpServer, type McpPreset } from "./mcp-servers-api";
 import { PLUGINS_STRINGS } from "./strings";
 
 const PLUGINS_RETURN_PATH = "/plugins";
@@ -98,9 +94,7 @@ function ApiKeyConnectForm({
         setValue(isUrl ? (fieldPlaceholder ?? "") : "");
         onConnected();
       })
-      .catch((cause: unknown) =>
-        setError(cause instanceof Error ? cause.message : String(cause)),
-      )
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setSubmitting(false));
   }
 
@@ -142,10 +136,7 @@ function ConnectedSummary({
   onChanged,
 }: {
   readonly tenantId: string;
-  readonly plugin: Extract<
-    ResolvedPlugin,
-    { readonly status: "connected" | "needs_attention" }
-  >;
+  readonly plugin: Extract<ResolvedPlugin, { readonly status: "connected" | "needs_attention" }>;
   readonly onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -166,20 +157,15 @@ function ConnectedSummary({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
-        <Badge
-          className="self-start"
-          tone={plugin.status === "connected" ? "success" : "danger"}
-        >
+        <Badge className="self-start" tone={plugin.status === "connected" ? "success" : "danger"}>
           {plugin.status === "connected" ? "Connected" : "Needs attention"}
         </Badge>
-        <span className="text-sm text-muted-foreground">
-          {plugin.credentialName}
-        </span>
+        <span className="text-sm text-muted-foreground">{plugin.credentialName}</span>
       </div>
       {plugin.provenance === "inherited" ? (
         <p className="text-sm text-muted-foreground">
-          Connected by a parent workbench — reconnecting or disconnecting here
-          creates a connection of your own instead of changing theirs.
+          Connected by a parent workbench — reconnecting or disconnecting here creates a connection
+          of your own instead of changing theirs.
         </p>
       ) : null}
       {plugin.provenance === "this-workbench" ? (
@@ -263,9 +249,7 @@ function McpPresetPanelContent({
     return (
       <div className="flex flex-col gap-4">
         <Badge className="self-start" tone="success">
-          {toolCount === undefined
-            ? "Connected"
-            : `${toolCount} tool${toolCount === 1 ? "" : "s"}`}
+          {toolCount === undefined ? "Connected" : `${toolCount} tool${toolCount === 1 ? "" : "s"}`}
         </Badge>
         <div className="flex flex-col gap-3 border-t border-border pt-4">
           <p className="text-sm text-muted-foreground">
@@ -308,10 +292,7 @@ function McpPresetPanelContent({
       >
         Create your token
       </a>
-      <label
-        className="flex flex-col gap-1.5 text-sm font-medium"
-        htmlFor={tokenFieldId}
-      >
+      <label className="flex flex-col gap-1.5 text-sm font-medium" htmlFor={tokenFieldId}>
         Personal access token
         <Input
           id={tokenFieldId}
@@ -357,8 +338,7 @@ export function PluginConnectPanel({
   const open = subject !== null;
   const plugin = subject?.kind === "connector" ? subject.plugin : null;
   const preset = subject?.kind === "mcp-preset" ? subject.preset : null;
-  const toolCount =
-    subject?.kind === "mcp-preset" ? subject.toolCount : undefined;
+  const toolCount = subject?.kind === "mcp-preset" ? subject.toolCount : undefined;
   // CL-6830: probe is tri-state — never fold a failure into `{}`, which
   // reads as "hosted app absent" and hides one-click connect behind the
   // not-configured token paste.
@@ -406,37 +386,22 @@ export function PluginConnectPanel({
         key={plugin?.descriptor.id ?? preset?.slug}
       >
         <DialogHeader>
-          <DialogTitle>
-            {plugin?.descriptor.displayName ?? preset?.displayName ?? ""}
-          </DialogTitle>
+          <DialogTitle>{plugin?.descriptor.displayName ?? preset?.displayName ?? ""}</DialogTitle>
           <DialogDescription>
             {plugin !== null
-              ? pluginOutcome(
-                  plugin.descriptor.id,
-                  plugin.descriptor.displayName,
-                )
+              ? pluginOutcome(plugin.descriptor.id, plugin.descriptor.displayName)
               : (preset?.description ?? "")}
           </DialogDescription>
         </DialogHeader>
         {plugin !== null ? (
           <DialogBody className="max-h-[calc(100dvh-8rem)] flex-none flex flex-col gap-5">
             {plugin.status !== "not_connected" ? (
-              <ConnectedSummary
-                tenantId={tenantId}
-                plugin={plugin}
-                onChanged={onChanged}
-              />
+              <ConnectedSummary tenantId={tenantId} plugin={plugin} onChanged={onChanged} />
             ) : plugin.descriptor.authKind === "oauth-pkce" ||
               plugin.descriptor.authKind === "oauth-code" ||
               hostedAppAvailable ? (
               <Button variant="primary" asChild>
-                <a
-                  href={oauthStartHref(
-                    tenantId,
-                    plugin.descriptor.id,
-                    PLUGINS_RETURN_PATH,
-                  )}
-                >
+                <a href={oauthStartHref(tenantId, plugin.descriptor.id, PLUGINS_RETURN_PATH)}>
                   Connect with {plugin.descriptor.displayName}
                 </a>
               </Button>
@@ -457,9 +422,9 @@ export function PluginConnectPanel({
               ) : oauthProbe.status === "loading" ? null : (
                 <div className="flex flex-col gap-3">
                   <p className="text-sm text-muted-foreground">
-                    This workbench isn&apos;t set up with the one-click GitHub
-                    app, so connect with a token instead. Create a token with{" "}
-                    <code className="text-xs">repo</code> scope at{" "}
+                    This workbench isn&apos;t set up with the one-click GitHub app, so connect with
+                    a token instead. Create a token with <code className="text-xs">repo</code> scope
+                    at{" "}
                     <a
                       className="underline"
                       href={plugin.descriptor.docsUrl}
@@ -499,8 +464,8 @@ export function PluginConnectPanel({
               <div className="flex flex-col gap-2 border-t border-border pt-4">
                 <p className="text-sm font-medium">Inbound webhook</p>
                 <p className="text-sm text-muted-foreground">
-                  Granola posts finished call notes here — set up or manage the
-                  webhook without leaving this panel.
+                  Granola posts finished call notes here — set up or manage the webhook without
+                  leaving this panel.
                 </p>
                 {CONNECTOR_REGISTRY["granola-webhook"] !== undefined ? (
                   <GranolaWebhookCard

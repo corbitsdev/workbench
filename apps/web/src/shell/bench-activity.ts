@@ -66,8 +66,7 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
       });
     };
     window.addEventListener(WORKBENCHES_MUTATED_EVENT, onMutated);
-    return () =>
-      window.removeEventListener(WORKBENCHES_MUTATED_EVENT, onMutated);
+    return () => window.removeEventListener(WORKBENCHES_MUTATED_EVENT, onMutated);
   }, [queryClient]);
 
   const workbenchesQuery = useQuery({
@@ -99,14 +98,8 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
 
   if (tenantId === null) return { kind: "empty" };
 
-  for (const query of [
-    workbenchesQuery,
-    chatsQuery,
-    routinesQuery,
-    agentsQuery,
-  ]) {
-    if (query.isError)
-      return { kind: "error", message: errorMessage(query.error) };
+  for (const query of [workbenchesQuery, chatsQuery, routinesQuery, agentsQuery]) {
+    if (query.isError) return { kind: "error", message: errorMessage(query.error) };
   }
   if (
     workbenchesQuery.data === undefined ||

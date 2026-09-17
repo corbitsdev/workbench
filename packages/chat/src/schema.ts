@@ -34,9 +34,7 @@ export const workbenchSettings = chatSchema.table(
     workbenchId: text("workbench_id").notNull(),
     settings: jsonb("settings").notNull(),
     updatedBy: text("updated_by").notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.tenantId, table.workbenchId] })],
 );
@@ -53,9 +51,7 @@ export const chatBenchSettings = chatSchema.table("chat_bench_settings", {
   tenantId: text("tenant_id").primaryKey(),
   settings: jsonb("settings").notNull(),
   updatedBy: text("updated_by").notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 /**
@@ -126,9 +122,7 @@ export const workbenchLaunch = chatSchema.table("workbench_launch", {
    * deploy, and for rows that predate the column.
    */
   sourcesDigest: text("sources_digest"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 /**
@@ -170,16 +164,10 @@ export const workbenchMessages = chatSchema.table(
     // cursor` tie-break could never match and a message sharing a
     // millisecond with the cursor row would fall out of the timeline
     // between pages.
-    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
   },
   (table) => [
-    index("workbench_messages_feed_idx").on(
-      table.tenantId,
-      table.workbenchId,
-      table.createdAt,
-    ),
+    index("workbench_messages_feed_idx").on(table.tenantId, table.workbenchId, table.createdAt),
   ],
 );
 
@@ -210,15 +198,10 @@ export const workbenchThreads = chatSchema.table(
     /** Routine/run reference for delivery threads; null otherwise. */
     runRef: text("run_ref"),
     title: text("title"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index("workbench_threads_workbench_idx").on(
-      table.tenantId,
-      table.workbenchId,
-    ),
+    index("workbench_threads_workbench_idx").on(table.tenantId, table.workbenchId),
     uniqueIndex("workbench_threads_root_key")
       .on(table.tenantId, table.workbenchId)
       .where(sql`${table.kind} = 'root'`),
@@ -246,18 +229,13 @@ export const workbenchThreadMessages = chatSchema.table(
     workbenchId: text("workbench_id").notNull(),
     threadId: text("thread_id").notNull(),
     messageId: text("message_id").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({
       columns: [table.tenantId, table.workbenchId, table.messageId],
     }),
-    index("workbench_thread_messages_thread_idx").on(
-      table.tenantId,
-      table.threadId,
-    ),
+    index("workbench_thread_messages_thread_idx").on(table.tenantId, table.threadId),
   ],
 );
 
@@ -280,9 +258,7 @@ export const workbenchShare = chatSchema.table(
     workbenchId: text("workbench_id").notNull(),
     projectedTenantId: text("projected_tenant_id").notNull(),
     createdBy: text("created_by").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.workbenchId, table.projectedTenantId] }),
@@ -307,9 +283,7 @@ export const workbenchShareMember = chatSchema.table(
     workbenchId: text("workbench_id").notNull(),
     principalId: text("principal_id").notNull(),
     addedBy: text("added_by").notNull(),
-    addedAt: timestamp("added_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({
@@ -334,12 +308,8 @@ export const blockResponses = chatSchema.table(
     blockId: text("block_id").notNull(),
     principalId: text("principal_id").notNull(),
     payload: jsonb("payload").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     // Question-only claim flag: null until a question's answer has been
     // sent into the workbench and its turn dispatched. See
     // `claimBlockResponseNotification` in `./block-responses.ts`.
@@ -387,25 +357,13 @@ export const messageReactions = chatSchema.table(
     messageId: text("message_id").notNull(),
     emoji: text("emoji").notNull(),
     principalId: text("principal_id").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({
-      columns: [
-        table.tenantId,
-        table.workbenchId,
-        table.messageId,
-        table.emoji,
-        table.principalId,
-      ],
+      columns: [table.tenantId, table.workbenchId, table.messageId, table.emoji, table.principalId],
     }),
-    index("message_reactions_message_idx").on(
-      table.tenantId,
-      table.workbenchId,
-      table.messageId,
-    ),
+    index("message_reactions_message_idx").on(table.tenantId, table.workbenchId, table.messageId),
   ],
 );
 
@@ -425,18 +383,13 @@ export const pinnedMessages = chatSchema.table(
     workbenchId: text("workbench_id").notNull(),
     messageId: text("message_id").notNull(),
     pinnedBy: text("pinned_by").notNull(),
-    pinnedAt: timestamp("pinned_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    pinnedAt: timestamp("pinned_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({
       columns: [table.tenantId, table.workbenchId, table.messageId],
     }),
-    index("pinned_messages_workbench_idx").on(
-      table.tenantId,
-      table.workbenchId,
-    ),
+    index("pinned_messages_workbench_idx").on(table.tenantId, table.workbenchId),
   ],
 );
 
@@ -485,9 +438,7 @@ export const finalizedTurnWriteClaim = chatSchema.table(
     tenantId: text("tenant_id").notNull(),
     surface: text("surface").notNull(),
     claimKey: text("claim_key").notNull(),
-    claimedAt: timestamp("claimed_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({
@@ -511,9 +462,7 @@ export const turnMailCorrelation = chatSchema.table(
     mailId: text("mail_id").notNull(),
     workbenchId: text("workbench_id").notNull(),
     sourceMessageId: text("source_message_id").notNull(),
-    recordedAt: timestamp("recorded_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({
@@ -550,21 +499,11 @@ export const agentTurns = chatSchema.table(
     /** running | completed | failed */
     status: text("status").notNull(),
     error: text("error"),
-    startedAt: timestamp("started_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
   },
   (table) => [
-    index("agent_turns_workbench_idx").on(
-      table.tenantId,
-      table.workbenchId,
-      table.startedAt,
-    ),
-    unique("agent_turns_occurrence_key").on(
-      table.tenantId,
-      table.agentAddress,
-      table.occurrence,
-    ),
+    index("agent_turns_workbench_idx").on(table.tenantId, table.workbenchId, table.startedAt),
+    unique("agent_turns_occurrence_key").on(table.tenantId, table.agentAddress, table.occurrence),
   ],
 );

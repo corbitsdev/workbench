@@ -52,10 +52,7 @@ function threeCallFetch(bodies: readonly unknown[]) {
 
 test("merges repos, issues, and PRs into one normalized list", async () => {
   const { fetchImpl } = threeCallFetch([REPOS, ISSUES, PRS]);
-  const items = await searchGitHubActivity(
-    { fetchImpl },
-    { query: "agent workflows" },
-  );
+  const items = await searchGitHubActivity({ fetchImpl }, { query: "agent workflows" });
   expect(items).toEqual([
     {
       url: "https://github.com/acme/agentkit",
@@ -102,25 +99,15 @@ test("sends a bearer authorization header when an apiKey is given", async () => 
     return new Response(JSON.stringify({ items: [] }), { status: 200 });
   }) as unknown as typeof fetch;
 
-  await searchGitHubActivity(
-    { apiKey: "ghp_test", fetchImpl },
-    { query: "topic" },
-  );
+  await searchGitHubActivity({ apiKey: "ghp_test", fetchImpl }, { query: "topic" });
   for (const headers of captured) {
     expect(headers?.authorization).toBe("Bearer ghp_test");
   }
 });
 
 test("scopes each query with the days cutoff and per_page limit", async () => {
-  const { fetchImpl, captured } = threeCallFetch([
-    { items: [] },
-    { items: [] },
-    { items: [] },
-  ]);
-  await searchGitHubActivity(
-    { fetchImpl },
-    { query: "vector db", days: 7, limit: 3 },
-  );
+  const { fetchImpl, captured } = threeCallFetch([{ items: [] }, { items: [] }, { items: [] }]);
+  await searchGitHubActivity({ fetchImpl }, { query: "vector db", days: 7, limit: 3 });
   expect(captured[0]).toContain("search/repositories");
   expect(captured[0]).toContain("per_page=3");
   expect(captured[1]).toContain("is%3Aissue");
@@ -128,20 +115,13 @@ test("scopes each query with the days cutoff and per_page limit", async () => {
 });
 
 test("throws on a non-ok HTTP response from any of the three calls", async () => {
-  const fetchImpl = (async () =>
-    new Response("nope", { status: 403 })) as unknown as typeof fetch;
-  await expect(
-    searchGitHubActivity({ fetchImpl }, { query: "topic" }),
-  ).rejects.toThrow(/403/);
+  const fetchImpl = (async () => new Response("nope", { status: 403 })) as unknown as typeof fetch;
+  await expect(searchGitHubActivity({ fetchImpl }, { query: "topic" })).rejects.toThrow(/403/);
 });
 
 test("throws when a response body does not match the expected shape", async () => {
-  const { fetchImpl } = threeCallFetch([
-    { items: [{ bad: true }] },
-    ISSUES,
-    PRS,
-  ]);
-  await expect(
-    searchGitHubActivity({ fetchImpl }, { query: "topic" }),
-  ).rejects.toThrow(/did not match the expected shape/);
+  const { fetchImpl } = threeCallFetch([{ items: [{ bad: true }] }, ISSUES, PRS]);
+  await expect(searchGitHubActivity({ fetchImpl }, { query: "topic" })).rejects.toThrow(
+    /did not match the expected shape/,
+  );
 });

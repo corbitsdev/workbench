@@ -34,9 +34,7 @@ export type OllamaAdapterConfig = typeof OllamaAdapterConfig.infer;
 export function parseOllamaAdapterConfig(raw: unknown): OllamaAdapterConfig {
   const validated = OllamaAdapterConfig(raw ?? {});
   if (validated instanceof type.errors) {
-    throw new Error(
-      `@corbits/ollama-adapter: invalid adapter config: ${validated.summary}`,
-    );
+    throw new Error(`@corbits/ollama-adapter: invalid adapter config: ${validated.summary}`);
   }
   return validated;
 }
@@ -46,10 +44,7 @@ export function parseOllamaAdapterConfig(raw: unknown): OllamaAdapterConfig {
  * field-by-field over the general `default`, and an unconfigured field
  * resolves to `undefined` (no override, built-in adapter behavior).
  */
-export function resolveOverride(
-  config: OllamaAdapterConfig,
-  model: string,
-): OllamaAdapterOverride {
+export function resolveOverride(config: OllamaAdapterConfig, model: string): OllamaAdapterOverride {
   const base = config.default ?? {};
   const perModel = config.perModel?.[model] ?? {};
   const resolved: OllamaAdapterOverride = {};

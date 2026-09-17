@@ -32,9 +32,8 @@ import {
  * host hands in its own `drizzle(sql, { schema })` instance unchanged —
  * whatever its schema — and no cast is ever needed at the call site.
  */
-export type ChatDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> = PostgresJsDatabase<TSchema>;
+export type ChatDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+  PostgresJsDatabase<TSchema>;
 
 export interface WorkbenchSettingsRow {
   readonly tenantId: string;
@@ -71,9 +70,7 @@ export interface MutateWorkbenchParticipantsInput {
    * latest committed list, never a snapshot a concurrent writer has
    * since moved past.
    */
-  readonly mutate: (
-    participants: readonly ParticipantRecord[],
-  ) => ParticipantRecord[];
+  readonly mutate: (participants: readonly ParticipantRecord[]) => ParticipantRecord[];
 }
 
 export interface PatchWorkbenchSettingsInput {
@@ -121,9 +118,7 @@ export interface WorkbenchByParticipantAddress {
 }
 
 export interface ChatStore {
-  createWorkbenchSettings(
-    input: CreateWorkbenchSettingsInput,
-  ): Promise<WorkbenchSettingsRow>;
+  createWorkbenchSettings(input: CreateWorkbenchSettingsInput): Promise<WorkbenchSettingsRow>;
   getWorkbenchSettings(
     tenantId: string,
     workbenchId: string,
@@ -136,13 +131,8 @@ export interface ChatStore {
    * each of them in turn (see `routes.ts`'s create handler).
    */
   deleteWorkbenchSettings(tenantId: string, workbenchId: string): Promise<void>;
-  listWorkbenchSettings(
-    tenantId: string,
-    kind?: string,
-  ): Promise<WorkbenchSettingsRow[]>;
-  updateWorkbenchSettings(
-    input: UpdateWorkbenchSettingsInput,
-  ): Promise<WorkbenchSettingsRow>;
+  listWorkbenchSettings(tenantId: string, kind?: string): Promise<WorkbenchSettingsRow[]>;
+  updateWorkbenchSettings(input: UpdateWorkbenchSettingsInput): Promise<WorkbenchSettingsRow>;
   /**
    * The targeted counterpart to `updateWorkbenchSettings` for the one
    * key every join/remove path actually changes: `chat/participants`.
@@ -162,13 +152,9 @@ export interface ChatStore {
    * are written; omitted keys keep the locked snapshot's values, so a
    * concurrent PATCH of a different key cannot be reverted.
    */
-  patchWorkbenchSettings(
-    input: PatchWorkbenchSettingsInput,
-  ): Promise<WorkbenchSettingsRow>;
+  patchWorkbenchSettings(input: PatchWorkbenchSettingsInput): Promise<WorkbenchSettingsRow>;
   getBenchSettings(tenantId: string): Promise<ChatBenchSettingsRow | undefined>;
-  upsertBenchSettings(
-    input: UpsertBenchSettingsInput,
-  ): Promise<ChatBenchSettingsRow>;
+  upsertBenchSettings(input: UpsertBenchSettingsInput): Promise<ChatBenchSettingsRow>;
   getReadState(
     tenantId: string,
     workbenchId: string,
@@ -226,10 +212,7 @@ export interface ChatStore {
    * to tell "exactly one" from "several" needs the full list, not a first
    * pick.
    */
-  findWorkbenchIdsByParticipantAddress(
-    tenantId: string,
-    address: string,
-  ): Promise<string[]>;
+  findWorkbenchIdsByParticipantAddress(tenantId: string, address: string): Promise<string[]>;
 }
 
 /** Top-level JSONB merge: only keys present in `patch` overwrite. */
@@ -356,9 +339,7 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
           );
         }
         const currentRow = current as WorkbenchSettingsRow;
-        const nextParticipants = input.mutate(
-          participantsOf(currentRow.settings),
-        );
+        const nextParticipants = input.mutate(participantsOf(currentRow.settings));
         const [row] = await tx
           .update(workbenchSettings)
           .set({
@@ -515,10 +496,7 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
         .select({ instanceId: workbenchLaunch.instanceId })
         .from(workbenchLaunch)
         .where(
-          and(
-            eq(workbenchLaunch.tenantId, tenantId),
-            eq(workbenchLaunch.instanceId, instanceId),
-          ),
+          and(eq(workbenchLaunch.tenantId, tenantId), eq(workbenchLaunch.instanceId, instanceId)),
         )
         .limit(1);
       return row !== undefined;
@@ -530,11 +508,7 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
         .from(workbenchSettings)
         .where(eq(workbenchSettings.tenantId, tenantId));
       for (const row of rows as WorkbenchSettingsRow[]) {
-        if (
-          participantsOf(row.settings).some(
-            (participant) => participant.address === address,
-          )
-        ) {
+        if (participantsOf(row.settings).some((participant) => participant.address === address)) {
           return { workbenchId: row.workbenchId, settings: row.settings };
         }
       }
@@ -548,9 +522,7 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
         .where(eq(workbenchSettings.tenantId, tenantId));
       return (rows as WorkbenchSettingsRow[])
         .filter((row) =>
-          participantsOf(row.settings).some(
-            (participant) => participant.address === address,
-          ),
+          participantsOf(row.settings).some((participant) => participant.address === address),
         )
         .map((row) => row.workbenchId);
     },
@@ -570,18 +542,11 @@ export function createInMemoryChatStore(): ChatStore {
   const launchedByKey = new Set<string>();
   const rowLocks = new Map<string, Promise<void>>();
 
-  const settingsKey = (tenantId: string, workbenchId: string) =>
-    `${tenantId}:${workbenchId}`;
-  const readStateKey = (
-    tenantId: string,
-    workbenchId: string,
-    principalId: string,
-  ) => `${tenantId}:${workbenchId}:${principalId}`;
+  const settingsKey = (tenantId: string, workbenchId: string) => `${tenantId}:${workbenchId}`;
+  const readStateKey = (tenantId: string, workbenchId: string, principalId: string) =>
+    `${tenantId}:${workbenchId}:${principalId}`;
 
-  const withRowLock = async <T>(
-    key: string,
-    fn: () => Promise<T>,
-  ): Promise<T> => {
+  const withRowLock = async <T>(key: string, fn: () => Promise<T>): Promise<T> => {
     const previous = rowLocks.get(key) ?? Promise.resolve();
     let release: () => void = () => undefined;
     const held = new Promise<void>((resolve) => {
@@ -621,9 +586,7 @@ export function createInMemoryChatStore(): ChatStore {
     },
 
     async listWorkbenchSettings(tenantId, kind) {
-      const rows = [...settingsByKey.values()].filter(
-        (row) => row.tenantId === tenantId,
-      );
+      const rows = [...settingsByKey.values()].filter((row) => row.tenantId === tenantId);
       if (kind === undefined) return rows;
       return rows.filter((row) => row.settings["chat/kind"] === kind);
     },
@@ -707,22 +670,13 @@ export function createInMemoryChatStore(): ChatStore {
     },
 
     async getReadState(tenantId, workbenchId, principalId) {
-      return readStateByKey.get(
-        readStateKey(tenantId, workbenchId, principalId),
-      );
+      return readStateByKey.get(readStateKey(tenantId, workbenchId, principalId));
     },
 
     async putReadState(input) {
-      const key = readStateKey(
-        input.tenantId,
-        input.workbenchId,
-        input.principalId,
-      );
+      const key = readStateKey(input.tenantId, input.workbenchId, input.principalId);
       const existing = readStateByKey.get(key);
-      if (
-        existing !== undefined &&
-        existing.lastSeenCreatedAt > input.lastSeenCreatedAt
-      ) {
+      if (existing !== undefined && existing.lastSeenCreatedAt > input.lastSeenCreatedAt) {
         return existing;
       }
       const row: ReadStateRow = { ...input };
@@ -732,9 +686,7 @@ export function createInMemoryChatStore(): ChatStore {
 
     async listReadStates(tenantId, workbenchIds, principalId) {
       return workbenchIds.flatMap((workbenchId) => {
-        const row = readStateByKey.get(
-          readStateKey(tenantId, workbenchId, principalId),
-        );
+        const row = readStateByKey.get(readStateKey(tenantId, workbenchId, principalId));
         return row === undefined ? [] : [row];
       });
     },
@@ -746,11 +698,7 @@ export function createInMemoryChatStore(): ChatStore {
     async findWorkbenchByParticipantAddress(tenantId, address) {
       for (const row of settingsByKey.values()) {
         if (row.tenantId !== tenantId) continue;
-        if (
-          participantsOf(row.settings).some(
-            (participant) => participant.address === address,
-          )
-        ) {
+        if (participantsOf(row.settings).some((participant) => participant.address === address)) {
           return { workbenchId: row.workbenchId, settings: row.settings };
         }
       }
@@ -761,11 +709,7 @@ export function createInMemoryChatStore(): ChatStore {
       const ids: string[] = [];
       for (const row of settingsByKey.values()) {
         if (row.tenantId !== tenantId) continue;
-        if (
-          participantsOf(row.settings).some(
-            (participant) => participant.address === address,
-          )
-        ) {
+        if (participantsOf(row.settings).some((participant) => participant.address === address)) {
           ids.push(row.workbenchId);
         }
       }

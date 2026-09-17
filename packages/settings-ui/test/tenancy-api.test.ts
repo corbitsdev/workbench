@@ -31,8 +31,7 @@ type RecordedCall = { readonly path: string; readonly init?: RequestInit };
 function stubFetch(respond: (path: string) => Response): RecordedCall[] {
   const calls: RecordedCall[] = [];
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const path =
-      typeof input === "string" ? input : new URL(String(input)).pathname;
+    const path = typeof input === "string" ? input : new URL(String(input)).pathname;
     calls.push(init === undefined ? { path } : { path, init });
     return Promise.resolve(respond(path));
   }) as typeof fetch;
@@ -76,16 +75,12 @@ describe("listPrincipals", () => {
 
   test("throws an UnauthenticatedError on 401", async () => {
     stubFetch(() => json(undefined, 401));
-    await expect(listPrincipals("tnt_1")).rejects.toBeInstanceOf(
-      UnauthenticatedError,
-    );
+    await expect(listPrincipals("tnt_1")).rejects.toBeInstanceOf(UnauthenticatedError);
   });
 
   test("throws a TenancyApiError on 403", async () => {
     stubFetch(() => json(undefined, 403));
-    await expect(listPrincipals("tnt_1")).rejects.toBeInstanceOf(
-      TenancyApiError,
-    );
+    await expect(listPrincipals("tnt_1")).rejects.toBeInstanceOf(TenancyApiError);
   });
 });
 
@@ -140,9 +135,7 @@ describe("roles", () => {
     const calls = stubFetch(() => json(undefined, 204));
     await assignRole("tnt_1", "prn_1", "role_1");
     await unassignRole("tnt_1", "prn_1", "role_1");
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tnt_1/principals/prn_1/roles/role_1",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tnt_1/principals/prn_1/roles/role_1");
     expect(calls[0]?.init?.method).toBe("POST");
     expect(calls[1]?.init?.method).toBe("DELETE");
   });
@@ -201,9 +194,7 @@ describe("grants", () => {
 
 describe("evaluate", () => {
   test("POSTs resource/action and returns the resolved effect", async () => {
-    const calls = stubFetch(() =>
-      json({ effect: "allow", matchingGrants: [] }),
-    );
+    const calls = stubFetch(() => json({ effect: "allow", matchingGrants: [] }));
     const result = await evaluate("tnt_1", "prn_1", "principal", "read");
     expect(calls[0]?.path).toBe("/api/tenants/tnt_1/principals/prn_1/evaluate");
     expect(result.effect).toBe("allow");

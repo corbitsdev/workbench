@@ -129,10 +129,7 @@ function startStubAuthorizationServer(
   issuedCodes: Map<string, { codeChallenge: string; clientId: string }>;
   registrationBodies: unknown[];
 } {
-  const issuedCodes = new Map<
-    string,
-    { codeChallenge: string; clientId: string }
-  >();
+  const issuedCodes = new Map<string, { codeChallenge: string; clientId: string }>();
   const registrationBodies: unknown[] = [];
   let nextClientId = 1;
   const clients = new Map<string, { redirectUris: string[] }>();
@@ -169,8 +166,7 @@ function startStubAuthorizationServer(
             status: tokenGrant.registrationError.status,
           });
         }
-        const redirectUris = (body as { redirect_uris: string[] })
-          .redirect_uris;
+        const redirectUris = (body as { redirect_uris: string[] }).redirect_uris;
         const clientId = `client_${nextClientId++}`;
         clients.set(clientId, { redirectUris });
         return Response.json({
@@ -221,9 +217,7 @@ function startStubAuthorizationServer(
           ...(tokenGrant.refreshToken !== undefined
             ? { refresh_token: tokenGrant.refreshToken }
             : {}),
-          ...(tokenGrant.expiresIn !== undefined
-            ? { expires_in: tokenGrant.expiresIn }
-            : {}),
+          ...(tokenGrant.expiresIn !== undefined ? { expires_in: tokenGrant.expiresIn } : {}),
         });
       }
       return new Response("not found", { status: 404 });
@@ -290,9 +284,7 @@ function fakeHub() {
         tenantId: TENANT.id,
         name: input.name,
         plugin: input.plugin,
-        ...(input.apiBaseUrl !== undefined
-          ? { apiBaseUrl: input.apiBaseUrl }
-          : {}),
+        ...(input.apiBaseUrl !== undefined ? { apiBaseUrl: input.apiBaseUrl } : {}),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -315,12 +307,8 @@ function fakeHub() {
         name: input.name,
         type: input.type,
         secret: input.secret,
-        ...(input.refreshSecret !== undefined
-          ? { refreshSecret: input.refreshSecret }
-          : {}),
-        ...(input.expiresAt !== undefined
-          ? { expiresAt: input.expiresAt }
-          : {}),
+        ...(input.refreshSecret !== undefined ? { refreshSecret: input.refreshSecret } : {}),
+        ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
         status: "active" as const,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -393,14 +381,10 @@ describe("MCP OAuth connect flow", () => {
       // reject the redirect with "Missing state parameter."
       expect(params.get("state")).not.toBeNull();
       expect(params.get("state")).not.toBe("");
-      expect(response.headers.get("set-cookie") ?? "").toContain(
-        "workbench_mcp_oauth_exa=",
-      );
+      expect(response.headers.get("set-cookie") ?? "").toContain("workbench_mcp_oauth_exa=");
       expect(as.registrationBodies).toHaveLength(1);
       const dcrBody = as.registrationBodies[0];
-      expect(
-        dcrBody !== null && typeof dcrBody === "object" && "scope" in dcrBody,
-      ).toBe(false);
+      expect(dcrBody !== null && typeof dcrBody === "object" && "scope" in dcrBody).toBe(false);
     } finally {
       as.stop();
     }
@@ -414,34 +398,27 @@ describe("MCP OAuth connect flow", () => {
     // that host onto the stub AS (and rewrite advertised origins back) so
     // this stays a loopback test while still exercising the no-override
     // path that actually joins `preset.oauthScopes`.
-    globalThis.fetch = Object.assign(
-      async (input: string | URL | Request, init?: RequestInit) => {
-        const href =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        if (!href.startsWith(canvaOrigin)) {
-          return originalFetch(input, init);
-        }
-        const rewritten = href.replace(canvaOrigin, as.origin);
-        const response =
-          input instanceof Request
-            ? await originalFetch(new Request(rewritten, input), init)
-            : await originalFetch(rewritten, init);
-        const contentType = response.headers.get("content-type") ?? "";
-        if (!contentType.includes("json")) {
-          return response;
-        }
-        const body = (await response.text()).replaceAll(as.origin, canvaOrigin);
-        return new Response(body, {
-          status: response.status,
-          headers: response.headers,
-        });
-      },
-      originalFetch,
-    );
+    globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+      const href =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!href.startsWith(canvaOrigin)) {
+        return originalFetch(input, init);
+      }
+      const rewritten = href.replace(canvaOrigin, as.origin);
+      const response =
+        input instanceof Request
+          ? await originalFetch(new Request(rewritten, input), init)
+          : await originalFetch(rewritten, init);
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!contentType.includes("json")) {
+        return response;
+      }
+      const body = (await response.text()).replaceAll(as.origin, canvaOrigin);
+      return new Response(body, {
+        status: response.status,
+        headers: response.headers,
+      });
+    }, originalFetch);
     try {
       const hub = fakeHub();
       const routes = createMcpOAuthRoutes({
@@ -488,34 +465,27 @@ describe("MCP OAuth connect flow", () => {
     });
     const originalFetch = globalThis.fetch;
     const canvaOrigin = "https://mcp.canva.com";
-    globalThis.fetch = Object.assign(
-      async (input: string | URL | Request, init?: RequestInit) => {
-        const href =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        if (!href.startsWith(canvaOrigin)) {
-          return originalFetch(input, init);
-        }
-        const rewritten = href.replace(canvaOrigin, as.origin);
-        const response =
-          input instanceof Request
-            ? await originalFetch(new Request(rewritten, input), init)
-            : await originalFetch(rewritten, init);
-        const contentType = response.headers.get("content-type") ?? "";
-        if (!contentType.includes("json")) {
-          return response;
-        }
-        const body = (await response.text()).replaceAll(as.origin, canvaOrigin);
-        return new Response(body, {
-          status: response.status,
-          headers: response.headers,
-        });
-      },
-      originalFetch,
-    );
+    globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+      const href =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!href.startsWith(canvaOrigin)) {
+        return originalFetch(input, init);
+      }
+      const rewritten = href.replace(canvaOrigin, as.origin);
+      const response =
+        input instanceof Request
+          ? await originalFetch(new Request(rewritten, input), init)
+          : await originalFetch(rewritten, init);
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!contentType.includes("json")) {
+        return response;
+      }
+      const body = (await response.text()).replaceAll(as.origin, canvaOrigin);
+      return new Response(body, {
+        status: response.status,
+        headers: response.headers,
+      });
+    }, originalFetch);
     try {
       const hub = fakeHub();
       const routes = createMcpOAuthRoutes({
@@ -555,34 +525,27 @@ describe("MCP OAuth connect flow", () => {
     });
     const originalFetch = globalThis.fetch;
     const canvaOrigin = "https://mcp.canva.com";
-    globalThis.fetch = Object.assign(
-      async (input: string | URL | Request, init?: RequestInit) => {
-        const href =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        if (!href.startsWith(canvaOrigin)) {
-          return originalFetch(input, init);
-        }
-        const rewritten = href.replace(canvaOrigin, as.origin);
-        const response =
-          input instanceof Request
-            ? await originalFetch(new Request(rewritten, input), init)
-            : await originalFetch(rewritten, init);
-        const contentType = response.headers.get("content-type") ?? "";
-        if (!contentType.includes("json")) {
-          return response;
-        }
-        const body = (await response.text()).replaceAll(as.origin, canvaOrigin);
-        return new Response(body, {
-          status: response.status,
-          headers: response.headers,
-        });
-      },
-      originalFetch,
-    );
+    globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+      const href =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!href.startsWith(canvaOrigin)) {
+        return originalFetch(input, init);
+      }
+      const rewritten = href.replace(canvaOrigin, as.origin);
+      const response =
+        input instanceof Request
+          ? await originalFetch(new Request(rewritten, input), init)
+          : await originalFetch(rewritten, init);
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!contentType.includes("json")) {
+        return response;
+      }
+      const body = (await response.text()).replaceAll(as.origin, canvaOrigin);
+      return new Response(body, {
+        status: response.status,
+        headers: response.headers,
+      });
+    }, originalFetch);
     try {
       const hub = fakeHub();
       const routes = createMcpOAuthRoutes({
@@ -621,34 +584,27 @@ describe("MCP OAuth connect flow", () => {
     });
     const originalFetch = globalThis.fetch;
     const canvaOrigin = "https://mcp.canva.com";
-    globalThis.fetch = Object.assign(
-      async (input: string | URL | Request, init?: RequestInit) => {
-        const href =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        if (!href.startsWith(canvaOrigin)) {
-          return originalFetch(input, init);
-        }
-        const rewritten = href.replace(canvaOrigin, as.origin);
-        const response =
-          input instanceof Request
-            ? await originalFetch(new Request(rewritten, input), init)
-            : await originalFetch(rewritten, init);
-        const contentType = response.headers.get("content-type") ?? "";
-        if (!contentType.includes("json")) {
-          return response;
-        }
-        const body = (await response.text()).replaceAll(as.origin, canvaOrigin);
-        return new Response(body, {
-          status: response.status,
-          headers: response.headers,
-        });
-      },
-      originalFetch,
-    );
+    globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+      const href =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!href.startsWith(canvaOrigin)) {
+        return originalFetch(input, init);
+      }
+      const rewritten = href.replace(canvaOrigin, as.origin);
+      const response =
+        input instanceof Request
+          ? await originalFetch(new Request(rewritten, input), init)
+          : await originalFetch(rewritten, init);
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!contentType.includes("json")) {
+        return response;
+      }
+      const body = (await response.text()).replaceAll(as.origin, canvaOrigin);
+      return new Response(body, {
+        status: response.status,
+        headers: response.headers,
+      });
+    }, originalFetch);
     try {
       const hub = fakeHub();
       const routes = createMcpOAuthRoutes({
@@ -768,21 +724,18 @@ describe("MCP OAuth connect flow", () => {
       const authorizeResponse = await fetch(authorizeLocation, {
         redirect: "manual",
       });
-      const redirectToCallback =
-        authorizeResponse.headers.get("location") ?? "";
+      const redirectToCallback = authorizeResponse.headers.get("location") ?? "";
       const callbackUrl = new URL(redirectToCallback);
       // A code the stub server never issued: its /token endpoint 400s
       // with invalid_grant, which auth() surfaces as a throw.
       callbackUrl.searchParams.set("code", "code_never_issued");
 
-      const callbackResponse = await app.request(
-        `${callbackUrl.pathname}${callbackUrl.search}`,
-        { headers: { cookie }, redirect: "manual" },
-      );
+      const callbackResponse = await app.request(`${callbackUrl.pathname}${callbackUrl.search}`, {
+        headers: { cookie },
+        redirect: "manual",
+      });
 
-      expect(callbackResponse.headers.get("location") ?? "").toContain(
-        "code=exchange_failed",
-      );
+      expect(callbackResponse.headers.get("location") ?? "").toContain("code=exchange_failed");
       expect(report).toHaveBeenCalledTimes(1);
       expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
       expect(report.mock.calls[0]?.[1]).toMatchObject({
@@ -826,9 +779,7 @@ describe("MCP OAuth connect flow", () => {
 
       const callbackResponse = await runConnectFlow(app, as);
 
-      expect(callbackResponse.headers.get("location") ?? "").toContain(
-        "code=setup_failed",
-      );
+      expect(callbackResponse.headers.get("location") ?? "").toContain("code=setup_failed");
       expect(report).toHaveBeenCalledTimes(1);
       expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
       expect(report.mock.calls[0]?.[1]).toMatchObject({
@@ -836,8 +787,7 @@ describe("MCP OAuth connect flow", () => {
         tenantId: TENANT.id,
         extra: { slug: "exa" },
       });
-      const extra = report.mock.calls[0]?.[1]?.extra as
-        Record<string, unknown> | undefined;
+      const extra = report.mock.calls[0]?.[1]?.extra as Record<string, unknown> | undefined;
       expect(JSON.stringify(extra)).not.toContain("token_for_");
       report.mockRestore();
     } finally {
@@ -870,9 +820,7 @@ describe("MCP OAuth connect flow", () => {
       const callbackResponse = await runConnectFlow(app, as);
       const after = Date.now();
 
-      expect(callbackResponse.headers.get("location") ?? "").toContain(
-        "outcome=connected",
-      );
+      expect(callbackResponse.headers.get("location") ?? "").toContain("outcome=connected");
       expect(hub.credentials).toHaveLength(1);
       const stored = hub.credentials[0];
       expect(stored?.type).toBe("oauth_token");
@@ -906,9 +854,7 @@ describe("MCP OAuth connect flow", () => {
 
       const callbackResponse = await runConnectFlow(app, as);
 
-      expect(callbackResponse.headers.get("location") ?? "").toContain(
-        "outcome=connected",
-      );
+      expect(callbackResponse.headers.get("location") ?? "").toContain("outcome=connected");
       expect(hub.credentials).toHaveLength(1);
       const stored = hub.credentials[0];
       expect(stored?.type).toBe("oauth_token");
@@ -984,9 +930,7 @@ describe("MCP OAuth connect flow", () => {
       const callbackResponse = await runConnectFlow(app, as);
 
       expect(callbackResponse.status).toBe(302);
-      expect(callbackResponse.headers.get("location") ?? "").toContain(
-        "outcome=connected",
-      );
+      expect(callbackResponse.headers.get("location") ?? "").toContain("outcome=connected");
     } finally {
       as.stop();
     }
@@ -1050,22 +994,17 @@ describe("MCP OAuth connect flow", () => {
       );
       const cookieHeader = startResponse.headers.get("set-cookie") ?? "";
       const cookie = cookieHeader.split(";")[0] ?? "";
-      const authorizeResponse = await fetch(
-        startResponse.headers.get("location") ?? "",
-        { redirect: "manual" },
-      );
-      const callbackUrl = new URL(
-        authorizeResponse.headers.get("location") ?? "",
-      );
+      const authorizeResponse = await fetch(startResponse.headers.get("location") ?? "", {
+        redirect: "manual",
+      });
+      const callbackUrl = new URL(authorizeResponse.headers.get("location") ?? "");
       const replayableCallback = `${callbackUrl.pathname}${callbackUrl.search}`;
 
       const firstResponse = await app.request(replayableCallback, {
         headers: { cookie },
         redirect: "manual",
       });
-      expect(firstResponse.headers.get("location") ?? "").toContain(
-        "outcome=connected",
-      );
+      expect(firstResponse.headers.get("location") ?? "").toContain("outcome=connected");
 
       // A browser (or an attacker holding a stolen state cookie)
       // presenting the exact same callback again: the sealed state was
@@ -1076,9 +1015,7 @@ describe("MCP OAuth connect flow", () => {
         redirect: "manual",
       });
       expect(replayResponse.status).toBe(302);
-      expect(replayResponse.headers.get("location") ?? "").toContain(
-        "code=state_expired",
-      );
+      expect(replayResponse.headers.get("location") ?? "").toContain("code=state_expired");
       expect(hub.credentials).toHaveLength(1);
     } finally {
       as.stop();
@@ -1100,9 +1037,7 @@ describe("MCP OAuth connect flow", () => {
       redirect: "manual",
     });
     expect(response.status).toBe(302);
-    expect(response.headers.get("location") ?? "").toContain(
-      "code=state_expired",
-    );
+    expect(response.headers.get("location") ?? "").toContain("code=state_expired");
   });
 });
 
@@ -1131,9 +1066,7 @@ describe("onConnected hook", () => {
 
       const callbackResponse = await runConnectFlow(app, as);
 
-      expect(callbackResponse.headers.get("location") ?? "").toContain(
-        "outcome=connected",
-      );
+      expect(callbackResponse.headers.get("location") ?? "").toContain("outcome=connected");
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({
         tenantId: TENANT.id,

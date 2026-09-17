@@ -85,8 +85,7 @@ export function AgentsSection({
 }) {
   const [state, setState] = useState<ListState>({ kind: "loading" });
   const [localEntityId, setLocalEntityId] = useState<string | null>(null);
-  const selectedId =
-    onEntityIdChange !== undefined ? (entityId ?? null) : localEntityId;
+  const selectedId = onEntityIdChange !== undefined ? (entityId ?? null) : localEntityId;
 
   useEffect(() => {
     let cancelled = false;
@@ -145,25 +144,16 @@ export function AgentsSection({
   const selected =
     selectedId === null
       ? null
-      : (state.agents.find((agent) => agent.definitionId === selectedId) ??
-        null);
+      : (state.agents.find((agent) => agent.definitionId === selectedId) ?? null);
 
   if (selected !== null) {
     return (
       <div className="workbench-settings-pane">
-        <button
-          type="button"
-          className="chat-settings-agent-back"
-          onClick={() => select(null)}
-        >
+        <button type="button" className="chat-settings-agent-back" onClick={() => select(null)}>
           <ArrowLeft aria-hidden="true" />
           {CHAT_STRINGS.workbenchSettingsAgentsBackAction}
         </button>
-        <AgentDetailEditor
-          tenantId={tenantId}
-          workbenchId={workbenchId}
-          agent={selected}
-        />
+        <AgentDetailEditor tenantId={tenantId} workbenchId={workbenchId} agent={selected} />
       </div>
     );
   }
@@ -172,13 +162,9 @@ export function AgentsSection({
     <div className="workbench-settings-pane">
       <div className="chat-settings-field">
         <span>{CHAT_STRINGS.workbenchSettingsAgentsLabel}</span>
-        <p className="chat-settings-field-hint">
-          {CHAT_STRINGS.workbenchSettingsAgentsInviteHint}
-        </p>
+        <p className="chat-settings-field-hint">{CHAT_STRINGS.workbenchSettingsAgentsInviteHint}</p>
         {state.agents.length === 0 ? (
-          <p className="chat-settings-field-hint">
-            {CHAT_STRINGS.workbenchSettingsNoAgents}
-          </p>
+          <p className="chat-settings-field-hint">{CHAT_STRINGS.workbenchSettingsNoAgents}</p>
         ) : (
           <ul className="chat-settings-participants-list">
             {state.agents.map((agent) => (
@@ -198,11 +184,7 @@ export function AgentsSection({
             ))}
           </ul>
         )}
-        <button
-          type="button"
-          className="chat-settings-invite-agent-action"
-          onClick={onInvite}
-        >
+        <button type="button" className="chat-settings-invite-agent-action" onClick={onInvite}>
           <UserPlus aria-hidden="true" />
           {CHAT_STRINGS.inviteAgentAction}
         </button>
@@ -252,10 +234,7 @@ function AgentDetailEditor({
         if (cancelled) return;
         setCatalogState({
           kind: "error",
-          message: describeChatError(
-            cause,
-            CHAT_STRINGS.workbenchSettingsAgentDetailCatalogError,
-          ),
+          message: describeChatError(cause, CHAT_STRINGS.workbenchSettingsAgentDetailCatalogError),
         });
       });
     return () => {
@@ -305,8 +284,7 @@ function AgentDetailEditor({
     );
   }
 
-  const dirty =
-    name !== state.detail.name || instructions !== state.detail.systemPrompt;
+  const dirty = name !== state.detail.name || instructions !== state.detail.systemPrompt;
 
   function handleCancel() {
     if (state.kind !== "ready") return;
@@ -324,9 +302,7 @@ function AgentDetailEditor({
       systemPrompt: instructions,
     })
       .then((saved) =>
-        refreshWorkbenchAgent(tenantId, workbenchId, agent.address).then(
-          () => saved,
-        ),
+        refreshWorkbenchAgent(tenantId, workbenchId, agent.address).then(() => saved),
       )
       .then((saved) => {
         toast(CHAT_STRINGS.workbenchSettingsAgentDetailSavedToast);
@@ -339,9 +315,7 @@ function AgentDetailEditor({
             : prev,
         );
       })
-      .catch(() =>
-        setSaveError(CHAT_STRINGS.workbenchSettingsAgentDetailSaveError),
-      )
+      .catch(() => setSaveError(CHAT_STRINGS.workbenchSettingsAgentDetailSaveError))
       .finally(() => setSaving(false));
   }
 
@@ -367,9 +341,7 @@ function AgentDetailEditor({
         <Input value={name} onChange={(event) => setName(event.target.value)} />
       </label>
       <label className="chat-settings-field">
-        <span>
-          {CHAT_STRINGS.workbenchSettingsAgentDetailInstructionsLabel}
-        </span>
+        <span>{CHAT_STRINGS.workbenchSettingsAgentDetailInstructionsLabel}</span>
         <textarea
           className="chat-textarea"
           value={instructions}
@@ -386,20 +358,10 @@ function AgentDetailEditor({
         </p>
       ) : null}
       <div className="chat-settings-field-actions">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleCancel}
-          disabled={!dirty || saving}
-        >
+        <Button type="button" variant="outline" onClick={handleCancel} disabled={!dirty || saving}>
           {CHAT_STRINGS.workbenchSettingsAgentDetailCancel}
         </Button>
-        <Button
-          type="button"
-          variant="primary"
-          onClick={handleSave}
-          disabled={!dirty || saving}
-        >
+        <Button type="button" variant="primary" onClick={handleSave} disabled={!dirty || saving}>
           {saving
             ? CHAT_STRINGS.workbenchSettingsAgentDetailSaving
             : CHAT_STRINGS.workbenchSettingsAgentDetailSave}
@@ -459,19 +421,14 @@ function connectedModelOptions(
   alreadySet: string | undefined,
 ): readonly ModelOption[] {
   return chatCapableModels(models)
-    .filter(
-      (model) =>
-        model.offerings.length > 0 && model.canonicalName !== alreadySet,
-    )
+    .filter((model) => model.offerings.length > 0 && model.canonicalName !== alreadySet)
     .map((model) => {
       const topOffering = model.offerings[0];
       return {
         canonicalName: model.canonicalName,
         label: CHAT_STRINGS.workbenchSettingsAgentDetailModelOption(
           model.displayName ?? model.canonicalName,
-          topOffering === undefined
-            ? ""
-            : providerDisplayName(topOffering.providerName),
+          topOffering === undefined ? "" : providerDisplayName(topOffering.providerName),
         ),
       };
     });
@@ -508,16 +465,13 @@ function ModelSelect({
   const [error, setError] = useState<string | null>(null);
 
   const options =
-    catalogState.kind === "ready"
-      ? connectedModelOptions(catalogState.models, undefined)
-      : [];
+    catalogState.kind === "ready" ? connectedModelOptions(catalogState.models, undefined) : [];
 
   // The currently-set model may no longer carry a connected offering
   // (its provider was disconnected) — still list it, disabled, rather
   // than silently drop the value the select is showing.
   const currentOptions =
-    detail.model !== undefined &&
-    !options.some((option) => option.canonicalName === detail.model)
+    detail.model !== undefined && !options.some((option) => option.canonicalName === detail.model)
       ? [{ canonicalName: detail.model, label: detail.model }, ...options]
       : options;
 
@@ -530,17 +484,13 @@ function ModelSelect({
       canonicalName,
     })
       .then((capabilities) =>
-        refreshWorkbenchAgent(tenantId, workbenchId, agent.address).then(
-          () => capabilities,
-        ),
+        refreshWorkbenchAgent(tenantId, workbenchId, agent.address).then(() => capabilities),
       )
       .then((capabilities) => {
         toast(CHAT_STRINGS.workbenchSettingsAgentDetailSavedToast);
         onChanged({ ...detail, ...capabilities });
       })
-      .catch(() =>
-        setError(CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityError),
-      )
+      .catch(() => setError(CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityError))
       .finally(() => setSaving(false));
   }
 
@@ -550,16 +500,10 @@ function ModelSelect({
       <select
         value={detail.model ?? ""}
         onChange={(event) => handleChange(event.target.value)}
-        disabled={
-          saving ||
-          catalogState.kind === "loading" ||
-          catalogState.kind === "error"
-        }
+        disabled={saving || catalogState.kind === "loading" || catalogState.kind === "error"}
       >
         {detail.model === undefined ? (
-          <option value="">
-            {CHAT_STRINGS.workbenchSettingsAgentDetailModelUnset}
-          </option>
+          <option value="">{CHAT_STRINGS.workbenchSettingsAgentDetailModelUnset}</option>
         ) : null}
         {currentOptions.map((option) => (
           <option key={option.canonicalName} value={option.canonicalName}>
@@ -583,12 +527,7 @@ function ModelSelect({
             {catalogState.message}
           </p>
           <div className="chat-settings-field-actions">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onRetryCatalog}
-            >
+            <Button type="button" variant="outline" size="sm" onClick={onRetryCatalog}>
               {CHAT_STRINGS.workbenchSettingsAgentDetailCatalogRetryAction}
             </Button>
             <a href="/settings/connections">
@@ -644,19 +583,14 @@ function CapabilitiesBlock({
   }, [tenantId]);
 
   const modelOptions =
-    catalogState.kind === "ready"
-      ? connectedModelOptions(catalogState.models, detail.model)
-      : [];
+    catalogState.kind === "ready" ? connectedModelOptions(catalogState.models, detail.model) : [];
 
   const options =
     kind === "toolPackage"
       ? inventoryState.kind === "ready"
         ? inventoryState.inventory.toolPackages
             .map((entry) => entry.name)
-            .filter(
-              (name) =>
-                !detail.toolPackagePins.some((pin) => pin.name === name),
-            )
+            .filter((name) => !detail.toolPackagePins.some((pin) => pin.name === name))
         : []
       : kind === "skill"
         ? inventoryState.kind === "ready"
@@ -667,9 +601,7 @@ function CapabilitiesBlock({
         : modelOptions.map((option) => option.canonicalName);
 
   const optionsLoading =
-    kind === "model"
-      ? catalogState.kind === "loading"
-      : inventoryState.kind === "loading";
+    kind === "model" ? catalogState.kind === "loading" : inventoryState.kind === "loading";
 
   function addition(): CapabilityAddition | undefined {
     if (choice === "") return undefined;
@@ -684,27 +616,19 @@ function CapabilitiesBlock({
     setAddError(null);
     addAgentCapability(tenantId, agent.definitionId, next)
       .then((capabilities) =>
-        refreshWorkbenchAgent(tenantId, workbenchId, agent.address).then(
-          () => capabilities,
-        ),
+        refreshWorkbenchAgent(tenantId, workbenchId, agent.address).then(() => capabilities),
       )
       .then((capabilities) => {
         toast(CHAT_STRINGS.workbenchSettingsAgentDetailSavedToast);
         onChanged({ ...detail, ...capabilities });
         setChoice("");
       })
-      .catch(() =>
-        setAddError(
-          CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityError,
-        ),
-      )
+      .catch(() => setAddError(CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityError))
       .finally(() => setAdding(false));
   }
 
   const hasCapabilities =
-    detail.toolPackagePins.length > 0 ||
-    detail.skills.length > 0 ||
-    detail.model !== undefined;
+    detail.toolPackagePins.length > 0 || detail.skills.length > 0 || detail.model !== undefined;
 
   return (
     <div className="chat-settings-agent-block-section">
@@ -728,8 +652,7 @@ function CapabilitiesBlock({
           {detail.model !== undefined ? (
             <li key="model">
               <span className="chat-settings-capability-chip">
-                {CHAT_STRINGS.workbenchSettingsAgentDetailModelLabel}:{" "}
-                {detail.model}
+                {CHAT_STRINGS.workbenchSettingsAgentDetailModelLabel}: {detail.model}
               </span>
             </li>
           ) : null}
@@ -747,9 +670,7 @@ function CapabilitiesBlock({
       ) : (
         <div className="chat-settings-capability-add">
           <label className="chat-settings-field">
-            <span>
-              {CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityLabel}
-            </span>
+            <span>{CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityLabel}</span>
             <select
               value={kind}
               onChange={(event) => {
@@ -761,39 +682,26 @@ function CapabilitiesBlock({
                 {CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityKindTool}
               </option>
               <option value="skill">
-                {
-                  CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityKindSkill
-                }
+                {CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityKindSkill}
               </option>
               <option value="model">
-                {
-                  CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityKindModel
-                }
+                {CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityKindModel}
               </option>
             </select>
           </label>
           <label className="chat-settings-field">
-            <span>
-              {
-                CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityChoiceLabel
-              }
-            </span>
+            <span>{CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityChoiceLabel}</span>
             <select
               value={choice}
               onChange={(event) => setChoice(event.target.value)}
               disabled={optionsLoading || options.length === 0}
             >
               <option value="">
-                {CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityChoicePlaceholder(
-                  kind,
-                )}
+                {CHAT_STRINGS.workbenchSettingsAgentDetailAddCapabilityChoicePlaceholder(kind)}
               </option>
               {kind === "model"
                 ? modelOptions.map((option) => (
-                    <option
-                      key={option.canonicalName}
-                      value={option.canonicalName}
-                    >
+                    <option key={option.canonicalName} value={option.canonicalName}>
                       {option.label}
                     </option>
                   ))
@@ -816,9 +724,7 @@ function CapabilitiesBlock({
           </Button>
         </div>
       )}
-      {kind === "model" &&
-      catalogState.kind === "ready" &&
-      modelOptions.length === 0 ? (
+      {kind === "model" && catalogState.kind === "ready" && modelOptions.length === 0 ? (
         <p className="chat-settings-field-hint">
           {CHAT_STRINGS.workbenchSettingsAgentDetailNoConnectedModels}
         </p>
@@ -955,20 +861,14 @@ function HistoryBlock({
     setRestoreError(null);
     restoreAgentVersion(tenantId, agent.definitionId, commitSha)
       .then((detail) =>
-        refreshWorkbenchAgent(tenantId, workbenchId, agent.address).then(
-          () => detail,
-        ),
+        refreshWorkbenchAgent(tenantId, workbenchId, agent.address).then(() => detail),
       )
       .then((detail) => {
         toast(CHAT_STRINGS.workbenchSettingsAgentDetailSavedToast);
         onRestored(detail);
         reload();
       })
-      .catch(() =>
-        setRestoreError(
-          CHAT_STRINGS.workbenchSettingsAgentDetailHistoryRestoreError,
-        ),
-      )
+      .catch(() => setRestoreError(CHAT_STRINGS.workbenchSettingsAgentDetailHistoryRestoreError))
       .finally(() => setRestoring(null));
   }
 
@@ -1003,16 +903,12 @@ function HistoryBlock({
             {collapseHistoryVersions(state.versions).map((row) => (
               <TableRow
                 key={row.commitSha}
-                className={
-                  row.current ? "chat-settings-history-row-current" : undefined
-                }
+                className={row.current ? "chat-settings-history-row-current" : undefined}
               >
                 <TableCell className="text-sm" title={row.commitSha}>
                   {row.summary}
                   {row.repeatCount > 1 ? (
-                    <span className="chat-settings-history-repeat-count">
-                      ×{row.repeatCount}
-                    </span>
+                    <span className="chat-settings-history-repeat-count">×{row.repeatCount}</span>
                   ) : null}
                   {row.current ? (
                     <span className="chat-settings-history-current-label">
@@ -1020,9 +916,7 @@ function HistoryBlock({
                     </span>
                   ) : null}
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {row.author}
-                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">{row.author}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {formatRelativeTime(row.committedAtIso, Date.now())}
                 </TableCell>

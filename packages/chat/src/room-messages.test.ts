@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { CONSUMER_INFERENCE_FAILURE_NOTICE } from "./consumer-inference-text";
-import {
-  createInMemoryRoomMessageStore,
-  postRoomMessage,
-  previewOf,
-} from "./room-messages";
+import { createInMemoryRoomMessageStore, postRoomMessage, previewOf } from "./room-messages";
 
 const TENANT = "tnt_1";
 const WORKBENCH = "run_room";
@@ -92,9 +88,7 @@ describe("postRoomMessage", () => {
     });
     expect(listed.items[0]?.parts).toEqual(posted.parts);
     expect(JSON.stringify(publisher.published)).not.toMatch(/\[HTTP/);
-    expect(JSON.stringify(publisher.published)).not.toContain(
-      "API key is invalid",
-    );
+    expect(JSON.stringify(publisher.published)).not.toContain("API key is invalid");
   });
 
   test("an agent's message carries its run, a human's carries its principal", async () => {
@@ -291,9 +285,7 @@ describe("listActivity", () => {
       workbenches: [{ workbenchId: WORKBENCH }],
     });
 
-    expect(activity[WORKBENCH]?.preview).toBe(
-      CONSUMER_INFERENCE_FAILURE_NOTICE,
-    );
+    expect(activity[WORKBENCH]?.preview).toBe(CONSUMER_INFERENCE_FAILURE_NOTICE);
     expect(activity[WORKBENCH]?.preview).not.toMatch(/model key/i);
     expect(activity[WORKBENCH]?.preview).not.toMatch(/ref /i);
   });
@@ -311,9 +303,7 @@ describe("listActivity", () => {
         workbenchId: WORKBENCH,
         sender: { name: "Myra", address: "run_myra@acme.example" },
         runId: "run_myra",
-        parts: [
-          { kind: "text", text: "Hi — I'm Myra. What are we working on?" },
-        ],
+        parts: [{ kind: "text", text: "Hi — I'm Myra. What are we working on?" }],
       },
     );
     await Bun.sleep(2);
@@ -379,9 +369,7 @@ describe("listActivity", () => {
 
 describe("previewOf", () => {
   test("collapses whitespace and truncates long text", () => {
-    expect(previewOf([{ kind: "text", text: " hello   there \n" }])).toBe(
-      "hello there",
-    );
+    expect(previewOf([{ kind: "text", text: " hello   there \n" }])).toBe("hello there");
     expect(previewOf([{ kind: "text", text: "x".repeat(120) }])).toEndWith("…");
   });
 

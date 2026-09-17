@@ -34,9 +34,7 @@ const TENANT = "tnt_1";
 const WORKBENCH = "run_workbench1";
 
 describeIfDb("createDrizzleReactionStore: concurrent toggleReaction", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchTarget = new URL(scratchUrl);
   const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
 
@@ -97,9 +95,7 @@ describeIfDb("createDrizzleReactionStore: concurrent toggleReaction", () => {
       const outcomes = [first.added, second.added].sort();
       expect(outcomes).toEqual([false, true]);
 
-      const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, [
-        "m_race",
-      ]);
+      const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, ["m_race"]);
       expect(rows).toHaveLength(0);
     } finally {
       await sql.end();
@@ -125,9 +121,7 @@ describeIfDb("createDrizzleReactionStore: concurrent toggleReaction", () => {
       );
       expect(results.every((result) => result.added)).toBe(true);
 
-      const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, [
-        "m_race_multi",
-      ]);
+      const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, ["m_race_multi"]);
       expect(rows).toHaveLength(5);
     } finally {
       await sql.end();

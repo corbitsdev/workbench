@@ -44,21 +44,14 @@ function errorMessageFrom(body: unknown): string | undefined {
     return undefined;
   }
   const error = (body as { error: unknown }).error;
-  if (
-    error === null ||
-    typeof error !== "object" ||
-    !("userMessage" in error)
-  ) {
+  if (error === null || typeof error !== "object" || !("userMessage" in error)) {
     return undefined;
   }
   const userMessage = (error as { userMessage: unknown }).userMessage;
   return typeof userMessage === "string" ? userMessage : undefined;
 }
 
-async function readErrorMessage(
-  response: Response,
-  fallback: string,
-): Promise<string> {
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
   const body: unknown = await response.json().catch(() => undefined);
   return errorMessageFrom(body) ?? fallback;
 }
@@ -103,42 +96,33 @@ export async function postQuestion(
   question: AskUserQuestion,
 ): Promise<{ readonly messageId: string; readonly questionId: string }> {
   const doFetch = config.fetchImpl ?? fetch;
-  const questionId =
-    question.questionId ?? `q_${crypto.randomUUID().replace(/-/g, "")}`;
-  const response = await doFetch(
-    `${config.hubChatUrl}/api/workflow-chat/participants/messages`,
-    {
-      method: "POST",
-      headers: { ...authHeaders(config), "content-type": "application/json" },
-      body: JSON.stringify({
-        parts: [
-          {
-            kind: "block",
-            block: {
-              type: "question",
-              data: {
-                questionId,
-                question: question.question,
-                ...(question.subtitle !== undefined
-                  ? { subtitle: question.subtitle }
-                  : {}),
-                options: question.options,
-                ...(question.allowFreeText !== undefined
-                  ? { allowFreeText: question.allowFreeText }
-                  : {}),
-              },
+  const questionId = question.questionId ?? `q_${crypto.randomUUID().replace(/-/g, "")}`;
+  const response = await doFetch(`${config.hubChatUrl}/api/workflow-chat/participants/messages`, {
+    method: "POST",
+    headers: { ...authHeaders(config), "content-type": "application/json" },
+    body: JSON.stringify({
+      parts: [
+        {
+          kind: "block",
+          block: {
+            type: "question",
+            data: {
+              questionId,
+              question: question.question,
+              ...(question.subtitle !== undefined ? { subtitle: question.subtitle } : {}),
+              options: question.options,
+              ...(question.allowFreeText !== undefined
+                ? { allowFreeText: question.allowFreeText }
+                : {}),
             },
           },
-        ],
-      }),
-    },
-  );
+        },
+      ],
+    }),
+  });
   if (response.status === 404) {
     throw new NoOwnChannelError(
-      await readErrorMessage(
-        response,
-        "The caller has no channel of its own to post into",
-      ),
+      await readErrorMessage(response, "The caller has no channel of its own to post into"),
     );
   }
   if (!response.ok) {
@@ -152,9 +136,7 @@ export async function postQuestion(
   const body: unknown = await response.json();
   const parsed = PostedMessageResponse(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `Post-message response did not match the expected shape: ${parsed.summary}`,
-    );
+    throw new Error(`Post-message response did not match the expected shape: ${parsed.summary}`);
   }
   return { messageId: parsed.id, questionId };
 }

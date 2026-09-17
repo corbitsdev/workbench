@@ -16,15 +16,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-const HUB_SRC = path.join(
-  import.meta.dir,
-  "..",
-  "..",
-  "..",
-  "apps",
-  "hub",
-  "src",
-);
+const HUB_SRC = path.join(import.meta.dir, "..", "..", "..", "apps", "hub", "src");
 
 function readHub(rel: string): string {
   return readFileSync(path.join(HUB_SRC, rel), "utf8");
@@ -46,10 +38,7 @@ describe("hub-zero T4: no legacy template import in the hub", () => {
     "native-workflow-routine-launch.ts",
   ]) {
     test(`${rel} imports no legacy template package`, () => {
-      expect(
-        readHub(rel).includes(LEGACY_PKG),
-        `${rel} still imports ${LEGACY_PKG}`,
-      ).toBe(false);
+      expect(readHub(rel).includes(LEGACY_PKG), `${rel} still imports ${LEGACY_PKG}`).toBe(false);
     });
   }
 });
@@ -57,10 +46,9 @@ describe("hub-zero T4: no legacy template import in the hub", () => {
 describe("hub-zero T4: the scheduled delivery join is cut", () => {
   test("no settings-row list read survives in the hub", () => {
     for (const rel of ["index.ts", "native-workflow-routine-launch.ts"]) {
-      expect(
-        readHub(rel).includes(LIST_SETTINGS),
-        `${rel} still reads ${LIST_SETTINGS}`,
-      ).toBe(false);
+      expect(readHub(rel).includes(LIST_SETTINGS), `${rel} still reads ${LIST_SETTINGS}`).toBe(
+        false,
+      );
     }
   });
 
@@ -77,9 +65,7 @@ describe("hub-zero T4: the scheduled delivery join is cut", () => {
   test("no delivery-join seam survives in index.ts", () => {
     const source = readHub("index.ts");
     for (const needle of [JOIN_DEPS, JOIN_FN, JOIN_PORT]) {
-      expect(source.includes(needle), `index.ts still contains ${needle}`).toBe(
-        false,
-      );
+      expect(source.includes(needle), `index.ts still contains ${needle}`).toBe(false);
     }
   });
 
@@ -119,9 +105,7 @@ describe("hub-zero T4: the native connector registry", () => {
       "gmail",
       "github",
     ]) {
-      expect(ids.has(id), `native registry is missing connector ${id}`).toBe(
-        true,
-      );
+      expect(ids.has(id), `native registry is missing connector ${id}`).toBe(true);
     }
   });
 
@@ -129,12 +113,8 @@ describe("hub-zero T4: the native connector registry", () => {
     const { CONNECTOR_REGISTRY } = await import("./native-connector-registry");
     for (const [key, descriptor] of Object.entries(CONNECTOR_REGISTRY)) {
       expect(descriptor.id, `${key} id`).toBe(key);
-      expect(descriptor.displayName.length > 0, `${key} displayName`).toBe(
-        true,
-      );
-      expect(Array.isArray(descriptor.feedsTools), `${key} feedsTools`).toBe(
-        true,
-      );
+      expect(descriptor.displayName.length > 0, `${key} displayName`).toBe(true);
+      expect(Array.isArray(descriptor.feedsTools), `${key} feedsTools`).toBe(true);
     }
   });
 
@@ -169,9 +149,7 @@ describe("hub-zero T4: the native connector registry", () => {
     }
     for (const preset of MCP_PRESETS) {
       expect(preset.url.length > 0, `${preset.slug} url`).toBe(true);
-      expect(preset.connectionMode.length > 0, `${preset.slug} mode`).toBe(
-        true,
-      );
+      expect(preset.connectionMode.length > 0, `${preset.slug} mode`).toBe(true);
     }
   });
 });

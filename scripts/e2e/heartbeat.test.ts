@@ -19,10 +19,7 @@ import {
   buildHeartbeatWorkflow,
   serializeHeartbeatWorkflow,
 } from "../../workflows/heartbeat/src/index.ts";
-import {
-  ensureNoopCatalogOffering,
-  startNoopInferenceServer,
-} from "./noop-inference-server.ts";
+import { ensureNoopCatalogOffering, startNoopInferenceServer } from "./noop-inference-server.ts";
 import {
   api,
   createCleanupHarness,
@@ -52,9 +49,7 @@ function stringField(data: unknown, field: string, what: string): string {
     const value = (data as Record<string, unknown>)[field];
     if (typeof value === "string" && value !== "") return value;
   }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing string field "${field}": ${JSON.stringify(data)}`);
 }
 
 function runIds(data: unknown): string[] {
@@ -99,9 +94,7 @@ describe.skipIf(databaseUrl === undefined)("heartbeat workflow", () => {
       const handle = await startHub({
         databaseUrl: url,
         port: freePort(),
-        sessionSecret: Buffer.from(
-          crypto.getRandomValues(new Uint8Array(32)),
-        ).toString("hex"),
+        sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
         dataDir: await tempDir("e2e-heartbeat-hub-data-"),
       });
       track(handle);
@@ -135,49 +128,46 @@ describe.skipIf(databaseUrl === undefined)("heartbeat workflow", () => {
     });
 
     const assetName = "heartbeat";
-    const { assetId, commitSha } = await hop(
-      "workflow asset publication",
-      async () => {
-        const created = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/assets`,
-          { kind: "workflow", name: assetName },
-          user.cookies,
-        );
-        expectStatus("create workflow asset", created, 201);
-        const id = stringField(created.data, "id", "create workflow asset");
+    const { assetId, commitSha } = await hop("workflow asset publication", async () => {
+      const created = await api(
+        hub.baseUrl,
+        "POST",
+        `/api/tenants/${tenantId}/assets`,
+        { kind: "workflow", name: assetName },
+        user.cookies,
+      );
+      expectStatus("create workflow asset", created, 201);
+      const id = stringField(created.data, "id", "create workflow asset");
 
-        const minted = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/git-tokens`,
-          {
-            name: "e2e-heartbeat-push",
-            resource: "asset:*",
-            refPattern: "**",
-            actions: ["can_read", "can_push"],
-            expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
-          },
-          user.cookies,
-        );
-        expectStatus("mint git token", minted, 201);
+      const minted = await api(
+        hub.baseUrl,
+        "POST",
+        `/api/tenants/${tenantId}/git-tokens`,
+        {
+          name: "e2e-heartbeat-push",
+          resource: "asset:*",
+          refPattern: "**",
+          actions: ["can_read", "can_push"],
+          expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+        },
+        user.cookies,
+      );
+      expectStatus("mint git token", minted, 201);
 
-        const definition = buildHeartbeatWorkflow({
-          triggerAddress: `heartbeat@${slug}.localhost`,
-          inferencePreferences: [{ provider: "anthropic", model: "noop" }],
-          turnTimeoutMs: 30_000,
-        });
-        const pushed = await pushWorkflowSource({
-          baseUrl: hub.baseUrl,
-          tenantId,
-          assetName,
-          tokenSecret: stringField(minted.data, "secret", "mint git token"),
-          workflowJson: serializeHeartbeatWorkflow(definition),
-        });
-        return { assetId: id, commitSha: pushed.commitSha };
-      },
-    );
+      const definition = buildHeartbeatWorkflow({
+        triggerAddress: `heartbeat@${slug}.localhost`,
+        inferencePreferences: [{ provider: "anthropic", model: "noop" }],
+        turnTimeoutMs: 30_000,
+      });
+      const pushed = await pushWorkflowSource({
+        baseUrl: hub.baseUrl,
+        tenantId,
+        assetName,
+        tokenSecret: stringField(minted.data, "secret", "mint git token"),
+        workflowJson: serializeHeartbeatWorkflow(definition),
+      });
+      return { assetId: id, commitSha: pushed.commitSha };
+    });
 
     // The deploy's source is this suite's own, really-reachable noop
     // inference server — not a placeholder like the walking skeleton's
@@ -195,8 +185,7 @@ describe.skipIf(databaseUrl === undefined)("heartbeat workflow", () => {
     });
     const offeringId = await hop("noop catalog seeding", () =>
       ensureNoopCatalogOffering(
-        (method, path, body, cookies) =>
-          api(hub.baseUrl, method, path, body, cookies),
+        (method, path, body, cookies) => api(hub.baseUrl, method, path, body, cookies),
         user.cookies,
         tenantId,
         noopServer.baseUrl,
@@ -237,52 +226,47 @@ describe.skipIf(databaseUrl === undefined)("heartbeat workflow", () => {
       return stringField(res.data, "id", "deploy heartbeat workflow");
     });
 
-    const startedRunId = await hop(
-      "heartbeat run starts against noop-inference",
-      async () => {
-        const before = new Set(
-          runIds(
-            (
-              await api(
-                hub.baseUrl,
-                "GET",
-                `/api/tenants/${tenantId}/workflows/${deploymentId}/runs`,
-                undefined,
-                user.cookies,
-              )
-            ).data,
-          ),
-        );
+    const startedRunId = await hop("heartbeat run starts against noop-inference", async () => {
+      const before = new Set(
+        runIds(
+          (
+            await api(
+              hub.baseUrl,
+              "GET",
+              `/api/tenants/${tenantId}/workflows/${deploymentId}/runs`,
+              undefined,
+              user.cookies,
+            )
+          ).data,
+        ),
+      );
 
-        const triggered = await api(
+      const triggered = await api(
+        hub.baseUrl,
+        "POST",
+        `/api/tenants/${tenantId}/workflows/${deploymentId}/mail`,
+        { content: "heartbeat" },
+        user.cookies,
+      );
+      expectStatus("trigger heartbeat mail", triggered, 202);
+
+      const deadline = Date.now() + 30_000;
+      for (;;) {
+        const listed = await api(
           hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/workflows/${deploymentId}/mail`,
-          { content: "heartbeat" },
+          "GET",
+          `/api/tenants/${tenantId}/workflows/${deploymentId}/runs`,
+          undefined,
           user.cookies,
         );
-        expectStatus("trigger heartbeat mail", triggered, 202);
-
-        const deadline = Date.now() + 30_000;
-        for (;;) {
-          const listed = await api(
-            hub.baseUrl,
-            "GET",
-            `/api/tenants/${tenantId}/workflows/${deploymentId}/runs`,
-            undefined,
-            user.cookies,
-          );
-          const started = runIds(listed.data).find((id) => !before.has(id));
-          if (started !== undefined) return started;
-          if (Date.now() > deadline) {
-            throw new Error(
-              "heartbeat trigger was accepted but no run started within 30s",
-            );
-          }
-          await Bun.sleep(200);
+        const started = runIds(listed.data).find((id) => !before.has(id));
+        if (started !== undefined) return started;
+        if (Date.now() > deadline) {
+          throw new Error("heartbeat trigger was accepted but no run started within 30s");
         }
-      },
-    );
+        await Bun.sleep(200);
+      }
+    });
 
     // The real gate: a run id proves only that the mail route accepted
     // the trigger. Whether the deployment actually resolves — the
@@ -293,14 +277,7 @@ describe.skipIf(databaseUrl === undefined)("heartbeat workflow", () => {
     // terminal event at all), failing this loudly instead of a
     // "started" run standing in for a working platform.
     const events = await hop("heartbeat run completes", () =>
-      waitForRunCompletion(
-        hub.baseUrl,
-        tenantId,
-        deploymentId,
-        startedRunId,
-        user.cookies,
-        30_000,
-      ),
+      waitForRunCompletion(hub.baseUrl, tenantId, deploymentId, startedRunId, user.cookies, 30_000),
     );
     expectStepCompleted(events, HEARTBEAT_STEP_ID);
 

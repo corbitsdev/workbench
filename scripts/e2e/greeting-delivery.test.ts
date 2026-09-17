@@ -21,14 +21,8 @@ import { describe, expect, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import { createGitWorkflowPusher } from "../../packages/connections/src/workflow-push.ts";
-import {
-  DEFAULT_WORKFLOWS,
-  seedTenant,
-} from "../../packages/onboarding/src/tenant-seed.ts";
-import {
-  createHubAPI,
-  type ApiCall,
-} from "../../packages/hub-api-client/src/index.ts";
+import { DEFAULT_WORKFLOWS, seedTenant } from "../../packages/onboarding/src/tenant-seed.ts";
+import { createHubAPI, type ApiCall } from "../../packages/hub-api-client/src/index.ts";
 import {
   findPersonalTenant,
   testAndPersistCredential,
@@ -72,11 +66,8 @@ const STUB_API_KEY = "e2e-greeting-delivery-stub-key-not-real";
 // inference. The opening greeting itself is canned either way — it
 // never dials a model.
 const OLLAMA_BASE_URL = process.env["OLLAMA_BASE_URL"];
-const USE_OLLAMA =
-  process.env["E2E_PROVIDER"] === "ollama" && OLLAMA_BASE_URL !== undefined;
-const CONNECT_PROVIDER = USE_OLLAMA
-  ? ("ollama" as const)
-  : ("anthropic" as const);
+const USE_OLLAMA = process.env["E2E_PROVIDER"] === "ollama" && OLLAMA_BASE_URL !== undefined;
+const CONNECT_PROVIDER = USE_OLLAMA ? ("ollama" as const) : ("anthropic" as const);
 const CONNECT_API_KEY = USE_OLLAMA ? OLLAMA_PLACEHOLDER_SECRET : STUB_API_KEY;
 
 function stringField(data: unknown, field: string, what: string): string {
@@ -84,9 +75,7 @@ function stringField(data: unknown, field: string, what: string): string {
     const value = (data as Record<string, unknown>)[field];
     if (typeof value === "string" && value !== "") return value;
   }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing string field "${field}": ${JSON.stringify(data)}`);
 }
 
 function arrayField(data: unknown, field: string, what: string): unknown[] {
@@ -94,9 +83,7 @@ function arrayField(data: unknown, field: string, what: string): unknown[] {
     const value = (data as Record<string, unknown>)[field];
     if (Array.isArray(value)) return value;
   }
-  throw new Error(
-    `${what}: missing array field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing array field "${field}": ${JSON.stringify(data)}`);
 }
 
 async function signUp(
@@ -139,9 +126,7 @@ describe.skipIf(databaseUrl === undefined)(
         startHub({
           databaseUrl: url,
           port: freePort(),
-          sessionSecret: Buffer.from(
-            crypto.getRandomValues(new Uint8Array(32)),
-          ).toString("hex"),
+          sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
           dataDir: await tempDir("e2e-greeting-delivery-hub-data-"),
         }),
       );
@@ -169,13 +154,7 @@ describe.skipIf(databaseUrl === undefined)(
         // ordinary `POST /api/tenants` with a caller-chosen slug, and
         // its creator is the native owner (same shape `local-rip`
         // proves).
-        const probe = await api(
-          hub.baseUrl,
-          "GET",
-          "/api/me/principals",
-          undefined,
-          res.cookies,
-        );
+        const probe = await api(hub.baseUrl, "GET", "/api/me/principals", undefined, res.cookies);
         expectStatus("alice genesis probe", probe, 200);
         expect((probe.data as { data: unknown[] }).data).toEqual([]);
         const minted = await api(
@@ -189,16 +168,12 @@ describe.skipIf(databaseUrl === undefined)(
         const mintedBody = minted.data as { id?: string };
         const tenantId = mintedBody.id;
         if (tenantId === undefined) {
-          throw new Error(
-            `create tenant answered no id: ${JSON.stringify(minted.data)}`,
-          );
+          throw new Error(`create tenant answered no id: ${JSON.stringify(minted.data)}`);
         }
         return { cookies: res.cookies, userId, tenantId };
       });
 
-      const user = await hop("sign-up", () =>
-        signUp(hub.baseUrl, "Greeting Delivery Tester"),
-      );
+      const user = await hop("sign-up", () => signUp(hub.baseUrl, "Greeting Delivery Tester"));
 
       // Stock composition auto-joins nobody: a second signup only
       // registers an account. Alice brings the tester onto the root
@@ -216,13 +191,11 @@ describe.skipIf(databaseUrl === undefined)(
             admin.cookies,
           );
           expectStatus("list root roles", roles, 200);
-          const memberRole = (
-            roles.data as { data: { id: string; name: string }[] }
-          ).data.find((role) => role.name === "member");
+          const memberRole = (roles.data as { data: { id: string; name: string }[] }).data.find(
+            (role) => role.name === "member",
+          );
           if (memberRole === undefined) {
-            throw new Error(
-              `no member role on the root tenant: ${JSON.stringify(roles.data)}`,
-            );
+            throw new Error(`no member role on the root tenant: ${JSON.stringify(roles.data)}`);
           }
           const invited = await api(
             hub.baseUrl,
@@ -248,22 +221,13 @@ describe.skipIf(databaseUrl === undefined)(
       // A joined member is read-only by design, so every owner-level
       // leg below — seeding, chat mint, turns — runs as alice, the
       // genesis owner.
-      const tenant = await hop(
-        "the joined root resolves through findPersonalTenant",
-        async () => {
-          const found = await findPersonalTenant(
-            hubApi,
-            admin.cookies,
-            provisioned.tenantSlug,
-          );
-          if (found === undefined) {
-            throw new Error(
-              `findPersonalTenant found nothing for slug ${provisioned.tenantSlug}`,
-            );
-          }
-          return found;
-        },
-      );
+      const tenant = await hop("the joined root resolves through findPersonalTenant", async () => {
+        const found = await findPersonalTenant(hubApi, admin.cookies, provisioned.tenantSlug);
+        if (found === undefined) {
+          throw new Error(`findPersonalTenant found nothing for slug ${provisioned.tenantSlug}`);
+        }
+        return found;
+      });
 
       const pushWorkflow = createGitWorkflowPusher();
 
@@ -301,9 +265,7 @@ describe.skipIf(databaseUrl === undefined)(
           const deadline = Date.now() + 60_000;
           for (;;) {
             if (hub.exited()) {
-              throw new Error(
-                `hub exited before ensureSeeded could run; output:\n${hub.output()}`,
-              );
+              throw new Error(`hub exited before ensureSeeded could run; output:\n${hub.output()}`);
             }
             try {
               const seedArgs = {
@@ -368,12 +330,7 @@ describe.skipIf(databaseUrl === undefined)(
                 principalId: tenant.principalId,
                 domain: tenant.tenantDomain,
               },
-              model: await modelSourceFor(
-                hubApi,
-                admin.cookies,
-                tenant.tenantId,
-                CONNECT_PROVIDER,
-              ),
+              model: await modelSourceFor(hubApi, admin.cookies, tenant.tenantId, CONNECT_PROVIDER),
               pushWorkflow,
               log: () => undefined,
               workflows: DEFAULT_WORKFLOWS,
@@ -387,10 +344,7 @@ describe.skipIf(databaseUrl === undefined)(
         }
       }
 
-      await hop(
-        "every default workflow deploys and goes live",
-        deploySeededWorkflows,
-      );
+      await hop("every default workflow deploys and goes live", deploySeededWorkflows);
 
       const assistantDefinitionId = await hop(
         "the 'assistant' default workflow is invitable tenant-wide",
@@ -405,11 +359,10 @@ describe.skipIf(databaseUrl === undefined)(
               admin.cookies,
             );
             if (res.status === 200) {
-              const items = arrayField(
-                res.data,
-                "items",
-                "list invitable definitions",
-              ) as { id: string; name: string }[];
+              const items = arrayField(res.data, "items", "list invitable definitions") as {
+                id: string;
+                name: string;
+              }[];
               const assistant = items.find((item) => item.name === "assistant");
               if (assistant !== undefined) return assistant.id;
             }
@@ -430,9 +383,7 @@ describe.skipIf(databaseUrl === undefined)(
           let res: ApiResult;
           for (;;) {
             if (hub.exited()) {
-              throw new Error(
-                `hub exited before chat creation; output:\n${hub.output()}`,
-              );
+              throw new Error(`hub exited before chat creation; output:\n${hub.output()}`);
             }
             res = await api(
               hub.baseUrl,
@@ -452,11 +403,10 @@ describe.skipIf(databaseUrl === undefined)(
           }
           expectStatus("create chat", res, 201);
           const id = stringField(res.data, "id", "create chat");
-          const participants = arrayField(
-            res.data,
-            "participants",
-            "create chat",
-          ) as { address: string; handle: string }[];
+          const participants = arrayField(res.data, "participants", "create chat") as {
+            address: string;
+            handle: string;
+          }[];
           const agent = participants.find((p) => p.handle === "myra");
           if (agent === undefined) {
             throw new Error(
@@ -486,18 +436,13 @@ describe.skipIf(databaseUrl === undefined)(
               admin.cookies,
             );
             expectStatus("list chat messages", res, 200);
-            const items = arrayField(
-              res.data,
-              "items",
-              "list chat messages",
-            ) as {
+            const items = arrayField(res.data, "items", "list chat messages") as {
               sender: { address: string };
               parts: { kind: string; text?: string }[];
             }[];
             const agentMessage = items.find(
               (item) =>
-                item.sender.address === agentAddress &&
-                item.parts.some((p) => p.kind === "text"),
+                item.sender.address === agentAddress && item.parts.some((p) => p.kind === "text"),
             );
             if (agentMessage !== undefined) {
               const text = agentMessage.parts
@@ -573,11 +518,7 @@ describe.skipIf(databaseUrl === undefined)(
                 undefined,
                 admin.cookies,
               );
-              const items = arrayField(
-                res.data,
-                "items",
-                "list chat messages",
-              ) as {
+              const items = arrayField(res.data, "items", "list chat messages") as {
                 sender: { address: string };
                 createdAt: string;
                 parts: { kind: string; text?: string }[];

@@ -39,22 +39,17 @@ export async function createWorkflowArtifact(
   input: CreateWorkflowArtifactInput,
 ): Promise<CreatedWorkflowArtifact> {
   const doFetch = config.fetchImpl ?? fetch;
-  const response = await doFetch(
-    `${config.hubArtifactsUrl}/api/workflow-artifacts/artifacts`,
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${config.sidecarToken}`,
-        "x-workflow-run-address": config.runAddress,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(input),
+  const response = await doFetch(`${config.hubArtifactsUrl}/api/workflow-artifacts/artifacts`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${config.sidecarToken}`,
+      "x-workflow-run-address": config.runAddress,
+      "content-type": "application/json",
     },
-  );
+    body: JSON.stringify(input),
+  });
   if (!response.ok) {
-    throw new Error(
-      `Workflow artifact create failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Workflow artifact create failed: ${response.status} ${response.statusText}`);
   }
   const body: unknown = await response.json();
   const parsed = CreatedWorkflowArtifactResponse(body);

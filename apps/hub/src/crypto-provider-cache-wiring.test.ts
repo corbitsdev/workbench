@@ -23,9 +23,7 @@ function productionTsFilesUnder(dir: string): string[] {
       if (entry.name === "node_modules") return [];
       return productionTsFilesUnder(full);
     }
-    return entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")
-      ? [full]
-      : [];
+    return entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts") ? [full] : [];
   });
 }
 
@@ -34,9 +32,7 @@ function firstCall(source: string, callee: string): string {
   const token = `${callee}(`;
   const start = source.indexOf(token);
   if (start < 0) {
-    throw new Error(
-      `expected ${callee}(...) in ${path.relative(HUB_DIR, HUB_INDEX)}`,
-    );
+    throw new Error(`expected ${callee}(...) in ${path.relative(HUB_DIR, HUB_INDEX)}`);
   }
   let depth = 1;
   let i = start + token.length;
@@ -52,28 +48,19 @@ function firstCall(source: string, callee: string): string {
 describe("hub crypto-provider cache wiring", () => {
   test("createHub constructs one cache and passes it to every mail sender", () => {
     const sites = productionTsFilesUnder(HUB_DIR).flatMap((file) => {
-      const matches = readFileSync(file, "utf8").match(
-        /createCryptoProviderCache\s*\(/g,
-      );
+      const matches = readFileSync(file, "utf8").match(/createCryptoProviderCache\s*\(/g);
       return matches === null ? [] : matches.map(() => file);
     });
     expect(sites).toEqual([HUB_INDEX]);
 
     const source = readFileSync(HUB_INDEX, "utf8");
-    const assigned =
-      /const\s+(\w+)\s*=\s*createCryptoProviderCache\s*\(\s*\)/.exec(
-        source,
-      )?.[1];
+    const assigned = /const\s+(\w+)\s*=\s*createCryptoProviderCache\s*\(\s*\)/.exec(source)?.[1];
     if (assigned === undefined) {
-      throw new Error(
-        "createHub must assign createCryptoProviderCache() to a const",
-      );
+      throw new Error("createHub must assign createCryptoProviderCache() to a const");
     }
 
     expect(firstCall(source, "createHubChatPlatform")).toContain(assigned);
-    expect(firstCall(source, "launchWebhookTrigger")).toContain(
-      `cryptoProviderCache: ${assigned}`,
-    );
+    expect(firstCall(source, "launchWebhookTrigger")).toContain(`cryptoProviderCache: ${assigned}`);
     // The planner draft route's `runOneShotPrompt` mail sender was cut
     // with the stock-hub cutover (its inventory read through the deleted
     // memory/skills mounts), so only the two senders above remain pinned.

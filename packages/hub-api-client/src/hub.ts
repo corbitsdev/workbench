@@ -25,10 +25,7 @@ export type ApiCall = (
  * network-level failure is a fresh-user failure, so it is reported as
  * one: the hub is not running, and the fix is to start it.
  */
-export function createHubAPI(
-  baseUrl: string,
-  fetchImpl: typeof fetch = fetch,
-): ApiCall {
+export function createHubAPI(baseUrl: string, fetchImpl: typeof fetch = fetch): ApiCall {
   return async (method, path, body, cookies = []) => {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -75,11 +72,7 @@ export function createHubAPI(
  * the fix is to bring them back in sync — never to limp on with data
  * of an unknown shape.
  */
-export function parseAs<T extends Type>(
-  schema: T,
-  data: unknown,
-  label: string,
-): T["infer"] {
+export function parseAs<T extends Type>(schema: T, data: unknown, label: string): T["infer"] {
   const result = schema(data);
   if (result instanceof type.errors) {
     throw new HubApiError(

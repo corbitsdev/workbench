@@ -39,9 +39,9 @@ describe("readErrorEnvelope", () => {
   });
 
   test("falls back when the body has no usable envelope shape", () => {
-    expect(
-      readErrorEnvelope(500, { error: "boom" }, "saving that connection"),
-    ).toBe("The server answered 500 while saving that connection.");
+    expect(readErrorEnvelope(500, { error: "boom" }, "saving that connection")).toBe(
+      "The server answered 500 while saving that connection.",
+    );
   });
 });
 

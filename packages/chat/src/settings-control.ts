@@ -44,9 +44,7 @@ export function isControlMessage(parts: readonly Part[]): boolean {
   if (parts.length !== 1) return false;
   const [part] = parts;
   return (
-    part !== undefined &&
-    part.kind === "block" &&
-    part.block.type === WORKBENCH_CONTROL_NAMESPACE
+    part !== undefined && part.kind === "block" && part.block.type === WORKBENCH_CONTROL_NAMESPACE
   );
 }
 
@@ -55,13 +53,9 @@ export function isControlMessage(parts: readonly Part[]): boolean {
  * loudly rather than silently ignoring it. Callers must have already
  * confirmed `isControlMessage(parts)`.
  */
-export function parseControlPayload(
-  parts: readonly Part[],
-): WorkbenchControlPayload {
+export function parseControlPayload(parts: readonly Part[]): WorkbenchControlPayload {
   if (!isControlMessage(parts)) {
-    throw new Error(
-      "parseControlPayload requires a message that isControlMessage accepts",
-    );
+    throw new Error("parseControlPayload requires a message that isControlMessage accepts");
   }
   const [part] = parts;
   // isControlMessage already narrowed this to a single BlockPart.

@@ -37,10 +37,7 @@ export type WorkflowConnectionRunScope = {
 };
 
 export type WorkflowRunAuthenticator = {
-  resolve(
-    token: string,
-    runAddress: string,
-  ): Promise<WorkflowConnectionRunScope | null>;
+  resolve(token: string, runAddress: string): Promise<WorkflowConnectionRunScope | null>;
 };
 
 export type WorkflowConnectionsEnv = {
@@ -55,9 +52,7 @@ export type CreateWorkflowConnectionRoutesDeps = {
    * (`mcp-server-store.ts`) — a direct DB read, since this route has no
    * tenant-session cookies to reuse `./mcp-server-routes.ts`'s hub-HTTP
    * listing. */
-  readonly listMcpServers: (
-    tenantId: string,
-  ) => Promise<readonly McpServerConnection[]>;
+  readonly listMcpServers: (tenantId: string) => Promise<readonly McpServerConnection[]>;
 };
 
 export function createWorkflowConnectionRoutes(
@@ -67,9 +62,7 @@ export function createWorkflowConnectionRoutes(
 
   app.use("*", async (c, next) => {
     const authHeader = c.req.header("authorization") ?? "";
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length)
-      : "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
     const address = c.req.header("x-workflow-run-address") ?? "";
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
@@ -77,8 +70,7 @@ export function createWorkflowConnectionRoutes(
         {
           error: {
             code: "unauthorized",
-            message:
-              "Missing or unrecognized sidecar bearer token / run address",
+            message: "Missing or unrecognized sidecar bearer token / run address",
           },
         },
         401,

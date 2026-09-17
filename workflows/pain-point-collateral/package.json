@@ -1,31 +1,21 @@
 {
   "name": "@corbits/pain-point-collateral-workflow",
-  "description": "Turns one sales call transcript into one piece of targeted collateral, gated behind a single human approval before anything is finalized",
   "version": "0.0.1",
+  "description": "Turns one sales call transcript into one piece of targeted collateral, gated behind a single human approval before anything is finalized",
   "license": "LGPL-2.1-or-later",
-  "type": "module",
-  "corbits": {
-    "workflow": {
-      "assetName": "pain-point-collateral",
-      "displayName": "Pain-point collateral",
-      "automatable": false
-    }
-  },
-  "interchange": {
-    "workflow": "./src/index.ts"
-  },
-  "exports": {
-    ".": "./src/index.ts"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "workflows/pain-point-collateral"
   },
   "files": [
     "src",
     "LICENSE",
     "README.md"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "workflows/pain-point-collateral"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -37,13 +27,23 @@
   "dependencies": {
     "arktype": "catalog:"
   },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
   "peerDependencies": {
     "@intx/agent": "0.3.0",
     "@intx/types": "0.3.0",
     "@intx/workflow": "0.3.0"
   },
-  "devDependencies": {
-    "@types/bun": "catalog:",
-    "typescript": "catalog:"
+  "corbits": {
+    "workflow": {
+      "assetName": "pain-point-collateral",
+      "displayName": "Pain-point collateral",
+      "automatable": false
+    }
+  },
+  "interchange": {
+    "workflow": "./src/index.ts"
   }
 }

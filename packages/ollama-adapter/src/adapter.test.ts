@@ -32,8 +32,7 @@ const memorySearchTool: ToolDefinition = {
   inputSchema: { type: "object" },
 };
 
-const CL_7186_PAYLOAD =
-  '{"name":"memory_search","parameters":{"query":"this person"}}';
+const CL_7186_PAYLOAD = '{"name":"memory_search","parameters":{"query":"this person"}}';
 
 function bodyOf(built: { body: string }): Record<string, unknown> {
   return JSON.parse(built.body) as Record<string, unknown>;
@@ -50,9 +49,7 @@ function textDeltas(events: readonly InferenceEvent[]): InferenceEvent[] {
 function argumentFragments(events: readonly InferenceEvent[]): string {
   return events
     .filter((event) => event.type === "inference.tool_call.delta")
-    .map(
-      (event) => (event.data as { argumentFragment: string }).argumentFragment,
-    )
+    .map((event) => (event.data as { argumentFragment: string }).argumentFragment)
     .join("");
 }
 
@@ -60,8 +57,7 @@ function expectSharedToolCallId(events: readonly InferenceEvent[]): void {
   const ids = events
     .filter(
       (event) =>
-        event.type === "inference.tool_call.start" ||
-        event.type === "inference.tool_call.delta",
+        event.type === "inference.tool_call.start" || event.type === "inference.tool_call.delta",
     )
     .map((event) => (event.data as { callId: string }).callId);
   expect(ids.length).toBeGreaterThan(0);
@@ -104,12 +100,8 @@ describe("createOllamaAdapter", () => {
       default: { numCtx: 8192 },
       perModel: { "gpt-oss:20b": { numCtx: 65536 } },
     });
-    const forOverriddenModel = bodyOf(
-      wrapped.buildRequest(messages, "gpt-oss:20b", options),
-    );
-    const forOtherModel = bodyOf(
-      wrapped.buildRequest(messages, "qwen3.8:27b", options),
-    );
+    const forOverriddenModel = bodyOf(wrapped.buildRequest(messages, "gpt-oss:20b", options));
+    const forOtherModel = bodyOf(wrapped.buildRequest(messages, "qwen3.8:27b", options));
     expect(forOverriddenModel["options"]).toEqual({ num_ctx: 65536 });
     expect(forOtherModel["options"]).toEqual({ num_ctx: 8192 });
   });
@@ -148,9 +140,7 @@ describe("createOllamaAdapter", () => {
       ),
     ];
     expect(textDeltas(events)).toEqual([]);
-    expect((toolStarts(events)[0]?.data as { name: string }).name).toBe(
-      "memory_search",
-    );
+    expect((toolStarts(events)[0]?.data as { name: string }).name).toBe("memory_search");
     expectSharedToolCallId(events);
     expect(JSON.parse(argumentFragments(events))).toEqual({
       query: "this person",
@@ -174,9 +164,7 @@ describe("createOllamaAdapter", () => {
       }),
     );
     expect(textDeltas(events)).toEqual([]);
-    expect((toolStarts(events)[0]?.data as { name: string }).name).toBe(
-      "memory_search",
-    );
+    expect((toolStarts(events)[0]?.data as { name: string }).name).toBe("memory_search");
     expectSharedToolCallId(events);
     expect(JSON.parse(argumentFragments(events))).toEqual({
       query: "this person",

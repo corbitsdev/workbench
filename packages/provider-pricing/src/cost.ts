@@ -6,10 +6,7 @@ import type { CostBreakdown, TokenClasses, TokenRates } from "./types";
  * that class — and therefore the total — absent (null). Never invents
  * a zero cost for an unknown rate.
  */
-export function computeCost(
-  tokens: TokenClasses,
-  rates: TokenRates,
-): CostBreakdown {
+export function computeCost(tokens: TokenClasses, rates: TokenRates): CostBreakdown {
   const input = classCost(tokens.input, rates.inputPerMTok);
   const cacheRead = classCost(tokens.cacheRead, rates.cacheReadPerMTok);
   const cacheWrite = classCost(tokens.cacheWrite, rates.cacheWritePerMTok);
@@ -35,13 +32,7 @@ function classCost(tokens: number, ratePerMTok: number | null): number | null {
 
 /** Sum token classes from a row-shaped object. */
 export function totalTokens(tokens: TokenClasses): number {
-  return (
-    tokens.input +
-    tokens.cacheRead +
-    tokens.cacheWrite +
-    tokens.output +
-    tokens.thinking
-  );
+  return tokens.input + tokens.cacheRead + tokens.cacheWrite + tokens.output + tokens.thinking;
 }
 
 /** Prompt-side tokens used to pick a context-size rate tier. */

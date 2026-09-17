@@ -34,9 +34,9 @@ test("listSkills fails closed naming the missing stock route", async () => {
 });
 
 test("loadSkill fails closed naming the missing stock route", async () => {
-  await expect(
-    loadSkill(testConfig(unreachableFetch), "triage"),
-  ).rejects.toThrow(/no stock Interchange HTTP route/);
+  await expect(loadSkill(testConfig(unreachableFetch), "triage")).rejects.toThrow(
+    /no stock Interchange HTTP route/,
+  );
 });
 
 test("createSkill fails closed naming the missing stock route", async () => {
@@ -76,9 +76,7 @@ test("pinSkill posts to the agent-directory workflow-skill-pins surface", async 
 
 test("pinSkill throws on a response that doesn't match the expected shape", async () => {
   const fetchImpl = (async () =>
-    new Response(
-      JSON.stringify({ nonsense: true }),
-    )) as unknown as typeof fetch;
+    new Response(JSON.stringify({ nonsense: true }))) as unknown as typeof fetch;
 
   await expect(
     pinSkill(testConfig(fetchImpl), {

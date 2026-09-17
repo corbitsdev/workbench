@@ -29,8 +29,7 @@
 import { catalogProviders } from "@intx/inference-catalog";
 import { WIRE_CAPABILITIES, type Capability } from "@intx/types";
 
-export type CapabilityProvenance =
-  "exact-deployment" | "same-model-wire" | "unknown";
+export type CapabilityProvenance = "exact-deployment" | "same-model-wire" | "unknown";
 
 export type OfferingCapabilities = {
   readonly capabilities: readonly Capability[];
@@ -50,9 +49,7 @@ export type DeploymentIdentity = {
  * over the OpenAI wire genuinely offers less than the native adapter does, so
  * their probes never carry across. */
 function wireFamily(plugin: string): string {
-  return plugin === "openai" || plugin === "openai-compatible"
-    ? "openai-wire"
-    : plugin;
+  return plugin === "openai" || plugin === "openai-compatible" ? "openai-wire" : plugin;
 }
 
 /** Relays namespace a model by its originating vendor (`openai/gpt-5.6-sol`,
@@ -66,17 +63,13 @@ function relayModelName(canonicalName: string): string {
 function intersect(lists: readonly (readonly string[])[]): readonly string[] {
   const [first, ...rest] = lists;
   if (first === undefined) return [];
-  return first.filter((capability) =>
-    rest.every((list) => list.includes(capability)),
-  );
+  return first.filter((capability) => rest.every((list) => list.includes(capability)));
 }
 
 const STORABLE = new Set<string>(WIRE_CAPABILITIES);
 
 function storable(capabilities: readonly string[]): readonly Capability[] {
-  return capabilities.filter((capability): capability is Capability =>
-    STORABLE.has(capability),
-  );
+  return capabilities.filter((capability): capability is Capability => STORABLE.has(capability));
 }
 
 /**
@@ -84,9 +77,7 @@ function storable(capabilities: readonly string[]): readonly Capability[] {
  * dependency-free: it reads the pinned catalog literals only, never a
  * network probe.
  */
-export function capabilitiesForDeployment(
-  deployment: DeploymentIdentity,
-): OfferingCapabilities {
+export function capabilitiesForDeployment(deployment: DeploymentIdentity): OfferingCapabilities {
   for (const provider of catalogProviders) {
     if (provider.baseURL !== deployment.baseURL) continue;
     const offering = provider.offerings.find(

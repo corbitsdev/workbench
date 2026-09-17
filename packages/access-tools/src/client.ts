@@ -78,10 +78,7 @@ function errorMessageFrom(body: unknown): string | undefined {
   return undefined;
 }
 
-async function readErrorMessage(
-  response: Response,
-  fallback: string,
-): Promise<string> {
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
   const body: unknown = await response.json().catch(() => undefined);
   return errorMessageFrom(body) ?? fallback;
 }
@@ -108,19 +105,13 @@ async function doRequest(
     headers: { ...authHeaders(config), ...(init.headers ?? {}) },
   });
   if (response.status === 403) {
-    throw new AccessForbiddenError(
-      await readErrorMessage(response, `${failureLabel}: forbidden`),
-    );
+    throw new AccessForbiddenError(await readErrorMessage(response, `${failureLabel}: forbidden`));
   }
   if (response.status === 404) {
-    throw new AccessNotFoundError(
-      await readErrorMessage(response, `${failureLabel}: not found`),
-    );
+    throw new AccessNotFoundError(await readErrorMessage(response, `${failureLabel}: not found`));
   }
   if (!response.ok) {
-    throw new Error(
-      `${failureLabel}: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`${failureLabel}: ${response.status} ${response.statusText}`);
   }
   return response;
 }
@@ -172,9 +163,7 @@ async function readAllPages<T>(
   failureLabel: string,
   parse: (
     body: unknown,
-  ) =>
-    | { data: readonly T[]; nextCursor?: string | null | undefined }
-    | type.errors,
+  ) => { data: readonly T[]; nextCursor?: string | null | undefined } | type.errors,
 ): Promise<readonly T[]> {
   const items: T[] = [];
   let cursor: string | undefined;
@@ -182,12 +171,7 @@ async function readAllPages<T>(
     const params = new URLSearchParams(query);
     params.set("limit", String(PAGE_LIMIT));
     if (cursor !== undefined) params.set("cursor", cursor);
-    const response = await doRequest(
-      config,
-      `${path}?${params.toString()}`,
-      {},
-      failureLabel,
-    );
+    const response = await doRequest(config, `${path}?${params.toString()}`, {}, failureLabel);
     const parsed = parse(await response.json());
     if (parsed instanceof type.errors) {
       throw new Error(
@@ -227,12 +211,8 @@ async function listGrantRows(
     params.set("principalId", filter.principalId);
   }
   if (filter?.resource !== undefined) params.set("resource", filter.resource);
-  return await readAllPages(
-    config,
-    "/grants",
-    params,
-    "Listing grants failed",
-    (body) => GrantsPage(body),
+  return await readAllPages(config, "/grants", params, "Listing grants failed", (body) =>
+    GrantsPage(body),
   );
 }
 
@@ -259,9 +239,7 @@ function toGrantRule(row: GrantRow): GrantRule {
     origin: row.origin,
     conditions: row.conditions ?? null,
     expiresAt:
-      row.expiresAt === undefined || row.expiresAt === null
-        ? null
-        : new Date(row.expiresAt),
+      row.expiresAt === undefined || row.expiresAt === null ? null : new Date(row.expiresAt),
     roleId: row.roleId ?? null,
     principalId: row.principalId,
   };
@@ -313,11 +291,7 @@ export async function grantAccess(
   config: AccessToolClientConfig,
   input: GrantAccessRequest,
 ): Promise<readonly ListedGrant[]> {
-  const outside = await firstActionOutsideCeiling(
-    config,
-    input.resource,
-    input.actions,
-  );
+  const outside = await firstActionOutsideCeiling(config, input.resource, input.actions);
   if (outside !== null) {
     throw new DelegationCeilingError(
       `Cannot grant "${input.resource}" "${outside}": exceeds the caller's own authority`,
@@ -351,9 +325,7 @@ export async function grantAccess(
     );
     const parsed = CreatedGrant(await response.json());
     if (parsed instanceof type.errors) {
-      throw new Error(
-        `Grant-access response did not match the expected shape: ${parsed.summary}`,
-      );
+      throw new Error(`Grant-access response did not match the expected shape: ${parsed.summary}`);
     }
     created.push({
       id: parsed.id,
@@ -366,10 +338,7 @@ export async function grantAccess(
   return created;
 }
 
-export async function revokeAccess(
-  config: AccessToolClientConfig,
-  grantId: string,
-): Promise<void> {
+export async function revokeAccess(config: AccessToolClientConfig, grantId: string): Promise<void> {
   const response = await doRequest(
     config,
     `/grants/${encodeURIComponent(grantId)}`,
@@ -378,13 +347,9 @@ export async function revokeAccess(
   );
   const target = CreatedGrant(await response.json());
   if (target instanceof type.errors) {
-    throw new Error(
-      `Grant lookup response did not match the expected shape: ${target.summary}`,
-    );
+    throw new Error(`Grant lookup response did not match the expected shape: ${target.summary}`);
   }
-  const outside = await firstActionOutsideCeiling(config, target.resource, [
-    target.action,
-  ]);
+  const outside = await firstActionOutsideCeiling(config, target.resource, [target.action]);
   if (outside !== null) {
     throw new DelegationCeilingError(
       `Cannot revoke "${target.resource}" "${target.action}": exceeds the caller's own authority`,

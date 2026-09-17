@@ -69,9 +69,7 @@ describe("portable needs-list", () => {
       account: { id: "usr_1", email: "ada@example.com", name: "Ada" },
       myraDefinitionRefId: "assistant",
     });
-    expect(
-      parseNeedsList({ ...manifest, version: 2 }) instanceof type.errors,
-    ).toBe(true);
+    expect(parseNeedsList({ ...manifest, version: 2 }) instanceof type.errors).toBe(true);
   });
 });
 
@@ -80,11 +78,7 @@ describe("account and hub scoped child-tenant store", () => {
     const storage = memoryStorage();
     const ada = childTenantStore(storage, "https://one.example", "usr_ada");
     const bea = childTenantStore(storage, "https://one.example", "usr_bea");
-    const otherHub = childTenantStore(
-      storage,
-      "https://two.example",
-      "usr_ada",
-    );
+    const otherHub = childTenantStore(storage, "https://two.example", "usr_ada");
 
     ada.record({
       localId: "atlas",
@@ -118,34 +112,29 @@ describe("account and hub scoped child-tenant store", () => {
     const storage = memoryStorage({
       "workbench.child-tenants:https%3A%2F%2Fone.example:usr_ada": "not json",
     });
-    expect(
-      childTenantStore(storage, "https://one.example", "usr_ada").load(),
-    ).toEqual([]);
+    expect(childTenantStore(storage, "https://one.example", "usr_ada").load()).toEqual([]);
   });
 
   test("keeps valid rows when one row is corrupt, and drops legacy DM rows", () => {
     const storage = memoryStorage({
-      "workbench.child-tenants:https%3A%2F%2Fone.example:usr_ada":
-        JSON.stringify([
-          {
-            localId: "atlas",
-            tenantId: "tnt_atlas",
-            kind: "workbench",
-            primaryThreadMessageId: "<primary@example>",
-          },
-          { localId: "", tenantId: "tnt_bad", kind: "workbench" },
-          {
-            localId: "dm:run_myra",
-            tenantId: "tnt_dm",
-            kind: "chat",
-            principalRefId: "run_myra",
-          },
-          null,
-        ]),
+      "workbench.child-tenants:https%3A%2F%2Fone.example:usr_ada": JSON.stringify([
+        {
+          localId: "atlas",
+          tenantId: "tnt_atlas",
+          kind: "workbench",
+          primaryThreadMessageId: "<primary@example>",
+        },
+        { localId: "", tenantId: "tnt_bad", kind: "workbench" },
+        {
+          localId: "dm:run_myra",
+          tenantId: "tnt_dm",
+          kind: "chat",
+          principalRefId: "run_myra",
+        },
+        null,
+      ]),
     });
-    expect(
-      childTenantStore(storage, "https://one.example", "usr_ada").load(),
-    ).toEqual([
+    expect(childTenantStore(storage, "https://one.example", "usr_ada").load()).toEqual([
       {
         localId: "atlas",
         tenantId: "tnt_atlas",
@@ -188,21 +177,19 @@ describe("account and hub scoped thread-link store", () => {
 
   test("treats corrupt client state as empty and skips bad rows", () => {
     const storage = memoryStorage({
-      "workbench.thread-links:https%3A%2F%2Fone.example:usr_ada":
-        JSON.stringify([
-          { workbenchLocalId: "atlas", messageId: "<sub@example>" },
-          { workbenchLocalId: "", messageId: "<bad@example>" },
-          null,
-        ]),
+      "workbench.thread-links:https%3A%2F%2Fone.example:usr_ada": JSON.stringify([
+        { workbenchLocalId: "atlas", messageId: "<sub@example>" },
+        { workbenchLocalId: "", messageId: "<bad@example>" },
+        null,
+      ]),
     });
-    expect(
-      threadLinkStore(storage, "https://one.example", "usr_ada").load(),
-    ).toEqual([{ workbenchLocalId: "atlas", messageId: "<sub@example>" }]);
+    expect(threadLinkStore(storage, "https://one.example", "usr_ada").load()).toEqual([
+      { workbenchLocalId: "atlas", messageId: "<sub@example>" },
+    ]);
     expect(
       threadLinkStore(
         memoryStorage({
-          "workbench.thread-links:https%3A%2F%2Fone.example:usr_ada":
-            "not json",
+          "workbench.thread-links:https%3A%2F%2Fone.example:usr_ada": "not json",
         }),
         "https://one.example",
         "usr_ada",

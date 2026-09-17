@@ -64,7 +64,8 @@ export type AdapterPluginId =
   | "openai-responses";
 
 export type CredentialTestResult =
-  { readonly ok: true } | { readonly ok: false; readonly message: string };
+  | { readonly ok: true }
+  | { readonly ok: false; readonly message: string };
 
 export type FetchLike = (
   url: string,
@@ -122,10 +123,7 @@ export type ProviderTestConfig = CommonProviderTestConfig &
          * `baseURL` is the resolved origin for this probe — `config.baseURL`
          * for every provider except `ollama`, which threads a caller-supplied
          * override through here (see `TestProviderCredentialArgs.baseURL`). */
-        readonly buildProbeRequest: (
-          apiKey: string,
-          baseURL: string,
-        ) => ProbeRequest;
+        readonly buildProbeRequest: (apiKey: string, baseURL: string) => ProbeRequest;
         /** Whether this status/body pair means "the provider rejected the key,"
          * as opposed to a network problem or some other failure — each
          * provider maps auth failures to its own status code. Only probed
@@ -194,9 +192,7 @@ function stripTrailingSlash(url: string): string {
  */
 export function ollamaApiRoot(baseURL: string): string {
   const trimmed = stripTrailingSlash(baseURL);
-  return trimmed.endsWith("/v1")
-    ? stripTrailingSlash(trimmed.slice(0, -"/v1".length))
-    : trimmed;
+  return trimmed.endsWith("/v1") ? stripTrailingSlash(trimmed.slice(0, -"/v1".length)) : trimmed;
 }
 
 /**
@@ -468,10 +464,7 @@ export function supportedCredentialProviders(): readonly {
   readonly displayName: string;
 }[] {
   return (
-    Object.entries(PROVIDER_TEST_CONFIG) as [
-      SupportedCredentialProvider,
-      ProviderTestConfig,
-    ][]
+    Object.entries(PROVIDER_TEST_CONFIG) as [SupportedCredentialProvider, ProviderTestConfig][]
   ).map(([id, config]) => ({ id, displayName: config.displayName }));
 }
 
@@ -496,11 +489,7 @@ function sanitizeProviderText(displayName: string, text: string): string {
     : text;
 }
 
-function providerErrorMessage(
-  displayName: string,
-  status: number,
-  body: string,
-): string {
+function providerErrorMessage(displayName: string, status: number, body: string): string {
   try {
     const parsedJson: unknown = JSON.parse(body);
     const nested = ErrorBody(parsedJson);
@@ -538,10 +527,7 @@ export async function testProviderCredential(
     return { ok: false, message: config.probeless };
   }
 
-  const probe = config.buildProbeRequest(
-    args.apiKey,
-    args.baseURL ?? config.baseURL,
-  );
+  const probe = config.buildProbeRequest(args.apiKey, args.baseURL ?? config.baseURL);
 
   const requestInitBase = {
     method: probe.method ?? "GET",
@@ -553,9 +539,7 @@ export async function testProviderCredential(
   try {
     response = await doFetch(
       probe.url,
-      probe.body !== undefined
-        ? { ...requestInitBase, body: probe.body }
-        : requestInitBase,
+      probe.body !== undefined ? { ...requestInitBase, body: probe.body } : requestInitBase,
     );
   } catch (cause) {
     return {
@@ -567,9 +551,7 @@ export async function testProviderCredential(
     };
   }
 
-  const accepted = config.isKeyAccepted
-    ? config.isKeyAccepted(response.status)
-    : response.ok;
+  const accepted = config.isKeyAccepted ? config.isKeyAccepted(response.status) : response.ok;
   if (accepted) return { ok: true };
 
   const body = await response.text();
@@ -628,9 +610,7 @@ const OLLAMA_CAPABILITY_MAP: Readonly<Record<string, readonly string[]>> = {
   vision: ["vision-input"],
 };
 
-function translateOllamaCapabilities(
-  ollamaCapabilities: readonly string[],
-): readonly string[] {
+function translateOllamaCapabilities(ollamaCapabilities: readonly string[]): readonly string[] {
   const translated = new Set<string>();
   for (const capability of ollamaCapabilities) {
     for (const wireCapability of OLLAMA_CAPABILITY_MAP[capability] ?? []) {
@@ -718,19 +698,13 @@ export async function fetchOllamaModelCatalog(
     if (parsed instanceof type.errors || parsed.models.length === 0) {
       return undefined;
     }
-    const localModels = parsed.models.filter(
-      (model) => !isCloudProxyModel(model.name),
-    );
+    const localModels = parsed.models.filter((model) => !isCloudProxyModel(model.name));
     if (localModels.length === 0) return undefined;
     return await Promise.all(
       localModels.map(async (model) => ({
         canonicalName: model.name,
         displayName: model.name,
-        capabilities: await fetchOllamaModelCapabilities(
-          baseURL,
-          model.name,
-          fetchImpl,
-        ),
+        capabilities: await fetchOllamaModelCapabilities(baseURL, model.name, fetchImpl),
       })),
     );
   } catch {

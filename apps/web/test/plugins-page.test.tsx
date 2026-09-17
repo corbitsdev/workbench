@@ -72,14 +72,11 @@ function nativeValueSetter(
 }
 
 function fillField(id: string, value: string, textarea = false) {
-  const el = document.getElementById(id) as
-    HTMLInputElement | HTMLTextAreaElement | null;
+  const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null;
   expect(el).not.toBeNull();
   if (el === null) return;
   const setter = nativeValueSetter(
-    textarea
-      ? window.HTMLTextAreaElement.prototype
-      : window.HTMLInputElement.prototype,
+    textarea ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
   );
   setter.call(el, value);
   el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -92,10 +89,8 @@ function stubFetch(
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const path = typeof input === "string" ? input : String(input);
     const method = (init?.method ?? "GET").toUpperCase();
-    if (path.includes("/mcp-servers/presets"))
-      return Promise.resolve(json({ data: mcpPresets }));
-    if (path.includes("/api/me/principals"))
-      return Promise.resolve(json(membership));
+    if (path.includes("/mcp-servers/presets")) return Promise.resolve(json({ data: mcpPresets }));
+    if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
     if (path.includes("/credentials/resolve/GitHub")) {
       return Promise.resolve(
         json({
@@ -117,11 +112,8 @@ function stubFetch(
       );
     }
     if (path.includes("/connections/provider-health"))
-      return Promise.resolve(
-        json({ providers: {}, connectedProviderCount: 1 }),
-      );
-    if (path.includes("/credentials/resolve/"))
-      return Promise.resolve(json(null, 404));
+      return Promise.resolve(json({ providers: {}, connectedProviderCount: 1 }));
+    if (path.includes("/credentials/resolve/")) return Promise.resolve(json(null, 404));
     if (path.includes("/api/tenants/tnt_1/assets")) {
       if (method === "POST") {
         const parsed =
@@ -174,10 +166,7 @@ async function mount(props: { readonly navigate?: (to: string) => void } = {}) {
         <NavigationProvider navigate={() => undefined}>
           <BenchProvider>
             <ProviderHealthProvider>
-              <PluginsRoute
-                path="/plugins"
-                navigate={props.navigate ?? (() => undefined)}
-              />
+              <PluginsRoute path="/plugins" navigate={props.navigate ?? (() => undefined)} />
             </ProviderHealthProvider>
           </BenchProvider>
         </NavigationProvider>
@@ -248,9 +237,7 @@ describe("PluginsRoute", () => {
     stubFetch();
     const el = await mount();
 
-    expect(
-      el.querySelector('button[aria-label="Filter plugins"]'),
-    ).not.toBeNull();
+    expect(el.querySelector('button[aria-label="Filter plugins"]')).not.toBeNull();
     expect(el.textContent).not.toContain("New skill");
 
     const skillsTab = [...el.querySelectorAll("button")].find(
@@ -261,9 +248,7 @@ describe("PluginsRoute", () => {
       skillsTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(
-      el.querySelector('button[aria-label="Filter skills"]'),
-    ).not.toBeNull();
+    expect(el.querySelector('button[aria-label="Filter skills"]')).not.toBeNull();
     expect(el.textContent).toContain("New skill");
     expect(el.textContent).toContain("weekly-digest");
   });
@@ -303,8 +288,7 @@ describe("PluginsRoute", () => {
   test("a fresh mount never shows a provider connector, even one resolved as connected", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
-      if (path.includes("/api/me/principals"))
-        return Promise.resolve(json(membership));
+      if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
       if (path.includes("/credentials/resolve/OpenRouter")) {
         return Promise.resolve(
           json({
@@ -316,13 +300,9 @@ describe("PluginsRoute", () => {
         );
       }
       if (path.includes("/connections/provider-health"))
-        return Promise.resolve(
-          json({ providers: {}, connectedProviderCount: 1 }),
-        );
-      if (path.includes("/credentials/resolve/"))
-        return Promise.resolve(json(null, 404));
-      if (path.includes("/api/tenants/tnt_1/assets"))
-        return Promise.resolve(json([]));
+        return Promise.resolve(json({ providers: {}, connectedProviderCount: 1 }));
+      if (path.includes("/credentials/resolve/")) return Promise.resolve(json(null, 404));
+      if (path.includes("/api/tenants/tnt_1/assets")) return Promise.resolve(json([]));
       return Promise.resolve(json({ data: [], nextCursor: null }));
     }) as typeof fetch;
 
@@ -353,9 +333,7 @@ describe("PluginsRoute", () => {
     }
 
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(el.textContent).toContain(
-      "Couldn't find that connection — pick it below.",
-    );
+    expect(el.textContent).toContain("Couldn't find that connection — pick it below.");
   });
 
   test("clicking a skill card navigates to that skill's page", async () => {
@@ -430,29 +408,20 @@ describe("PluginsRoute", () => {
       return { promise, resolve };
     }
 
-    const skillsDeferred: Record<
-      string,
-      ReturnType<typeof deferredResponse>
-    > = {
+    const skillsDeferred: Record<string, ReturnType<typeof deferredResponse>> = {
       tnt_a: deferredResponse(),
       tnt_b: deferredResponse(),
     };
 
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
-      if (path.includes("/credentials/resolve/"))
-        return Promise.resolve(json(null, 404));
+      if (path.includes("/credentials/resolve/")) return Promise.resolve(json(null, 404));
       if (path.includes("/connections/provider-health"))
-        return Promise.resolve(
-          json({ providers: {}, connectedProviderCount: 0 }),
-        );
+        return Promise.resolve(json({ providers: {}, connectedProviderCount: 0 }));
       const skillsMatch = /\/api\/tenants\/(tnt_[ab])\/assets/.exec(path);
       if (skillsMatch) {
         const tenantId = skillsMatch[1] as string;
-        return (
-          skillsDeferred[tenantId]?.promise ??
-          Promise.resolve(json({ skills: [] }))
-        );
+        return skillsDeferred[tenantId]?.promise ?? Promise.resolve(json({ skills: [] }));
       }
       return Promise.resolve(json({ data: [], nextCursor: null }));
     }) as typeof fetch;
@@ -469,9 +438,7 @@ describe("PluginsRoute", () => {
         selectTenant: setTenantId,
         onBenchCreated: () => undefined,
       };
-      return (
-        <BenchContext.Provider value={value}>{children}</BenchContext.Provider>
-      );
+      return <BenchContext.Provider value={value}>{children}</BenchContext.Provider>;
     }
 
     container = document.createElement("div");
@@ -585,8 +552,7 @@ describe("PluginsRoute", () => {
       const method = (init?.method ?? "GET").toUpperCase();
       if (method === "DELETE" && path.includes("/credentials/cred_1"))
         return Promise.resolve(new Response(null, { status: 204 }));
-      if (path.includes("/api/me/principals"))
-        return Promise.resolve(json(membership));
+      if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
       if (path.includes("/credentials/resolve/GitHub")) {
         if (deferCredentialResolves) {
           return new Promise<Response>((resolve) => {
@@ -596,22 +562,16 @@ describe("PluginsRoute", () => {
         return Promise.resolve(json(githubCredential));
       }
       if (path.includes("/connections/provider-health"))
-        return Promise.resolve(
-          json({ providers: {}, connectedProviderCount: 1 }),
-        );
-      if (path.includes("/credentials/resolve/"))
-        return Promise.resolve(json(null, 404));
-      if (path.includes("/api/tenants/tnt_1/assets"))
-        return Promise.resolve(json([]));
+        return Promise.resolve(json({ providers: {}, connectedProviderCount: 1 }));
+      if (path.includes("/credentials/resolve/")) return Promise.resolve(json(null, 404));
+      if (path.includes("/api/tenants/tnt_1/assets")) return Promise.resolve(json([]));
       return Promise.resolve(json({ data: [], nextCursor: null }));
     }) as typeof fetch;
 
     const el = await mount();
     expect(el.textContent).toContain("Connected here");
 
-    const manageButton = el.querySelector<HTMLButtonElement>(
-      'button[aria-label="Manage GitHub"]',
-    );
+    const manageButton = el.querySelector<HTMLButtonElement>('button[aria-label="Manage GitHub"]');
     await act(async () => {
       manageButton?.click();
     });
@@ -633,14 +593,10 @@ describe("PluginsRoute", () => {
 
     // First click arms the confirm button, second click fires the delete.
     await act(async () => {
-      disconnectButton()?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      disconnectButton()?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await act(async () => {
-      disconnectButton()?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      disconnectButton()?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     for (let i = 0; i < 5; i++) {
       await act(async () => {
@@ -689,9 +645,7 @@ describe("PluginsRoute", () => {
     const el = await mount();
 
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(el.textContent).not.toContain(
-      "Couldn't find that connection — pick it below.",
-    );
+    expect(el.textContent).not.toContain("Couldn't find that connection — pick it below.");
     expect(window.location.search).toBe("");
   });
 
@@ -748,9 +702,7 @@ describe("PluginsRoute", () => {
     const el = await mount();
 
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(el.textContent).not.toContain(
-      "Couldn't find that connection — pick it below.",
-    );
+    expect(el.textContent).not.toContain("Couldn't find that connection — pick it below.");
     expect(window.location.search).toBe("");
   });
 });
@@ -764,22 +716,16 @@ describe("PluginsRoute refresh-on-visibility effect", () => {
     let resolveGithubCalls = 0;
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
-      if (path.includes("/mcp-servers/presets"))
-        return Promise.resolve(json({ data: [] }));
-      if (path.includes("/api/me/principals"))
-        return Promise.resolve(json(membership));
+      if (path.includes("/mcp-servers/presets")) return Promise.resolve(json({ data: [] }));
+      if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
       if (path.includes("/credentials/resolve/GitHub")) {
         resolveGithubCalls += 1;
         return Promise.resolve(json(null, 404));
       }
-      if (path.includes("/credentials/resolve/"))
-        return Promise.resolve(json(null, 404));
+      if (path.includes("/credentials/resolve/")) return Promise.resolve(json(null, 404));
       if (path.includes("/connections/provider-health"))
-        return Promise.resolve(
-          json({ providers: {}, connectedProviderCount: 0 }),
-        );
-      if (path.includes("/api/tenants/tnt_1/assets"))
-        return Promise.resolve(json([]));
+        return Promise.resolve(json({ providers: {}, connectedProviderCount: 0 }));
+      if (path.includes("/api/tenants/tnt_1/assets")) return Promise.resolve(json([]));
       return Promise.resolve(json({ data: [], nextCursor: null }));
     }) as typeof fetch;
 
@@ -826,10 +772,7 @@ describe("PluginsRoute refresh-on-visibility effect", () => {
     act(() => root?.unmount());
     root = null;
 
-    expect(documentRemoveSpy).toHaveBeenCalledWith(
-      "visibilitychange",
-      visibilityHandler,
-    );
+    expect(documentRemoveSpy).toHaveBeenCalledWith("visibilitychange", visibilityHandler);
     expect(windowRemoveSpy).toHaveBeenCalledWith("focus", focusHandler);
 
     documentAddSpy.mockRestore();
@@ -852,9 +795,7 @@ describe("PluginsRoute refresh-on-visibility effect", () => {
         selectTenant: () => undefined,
         onBenchCreated: () => undefined,
       };
-      return (
-        <BenchContext.Provider value={value}>{children}</BenchContext.Provider>
-      );
+      return <BenchContext.Provider value={value}>{children}</BenchContext.Provider>;
     }
 
     container = document.createElement("div");
@@ -879,12 +820,8 @@ describe("PluginsRoute refresh-on-visibility effect", () => {
       });
     }
 
-    expect(
-      documentAddSpy.mock.calls.some((call) => call[0] === "visibilitychange"),
-    ).toBe(false);
-    expect(windowAddSpy.mock.calls.some((call) => call[0] === "focus")).toBe(
-      false,
-    );
+    expect(documentAddSpy.mock.calls.some((call) => call[0] === "visibilitychange")).toBe(false);
+    expect(windowAddSpy.mock.calls.some((call) => call[0] === "focus")).toBe(false);
 
     documentAddSpy.mockRestore();
     windowAddSpy.mockRestore();

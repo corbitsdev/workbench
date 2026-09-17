@@ -1,31 +1,21 @@
 {
   "name": "@corbits/collateral-generation-workflow",
-  "description": "Drafts marketing collateral from one or more picked sources and content types, with a per-piece swipe review and one human approval on the final assembled set",
   "version": "0.0.1",
+  "description": "Drafts marketing collateral from one or more picked sources and content types, with a per-piece swipe review and one human approval on the final assembled set",
   "license": "LGPL-2.1-or-later",
-  "type": "module",
-  "corbits": {
-    "workflow": {
-      "assetName": "collateral-generation",
-      "displayName": "Collateral generation",
-      "automatable": false
-    }
-  },
-  "interchange": {
-    "workflow": "./src/index.ts"
-  },
-  "exports": {
-    ".": "./src/index.ts"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "workflows/collateral-generation"
   },
   "files": [
     "src",
     "LICENSE",
     "README.md"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "workflows/collateral-generation"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -37,13 +27,23 @@
   "dependencies": {
     "arktype": "catalog:"
   },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
   "peerDependencies": {
     "@intx/agent": "0.3.0",
     "@intx/types": "0.3.0",
     "@intx/workflow": "0.3.0"
   },
-  "devDependencies": {
-    "@types/bun": "catalog:",
-    "typescript": "catalog:"
+  "corbits": {
+    "workflow": {
+      "assetName": "collateral-generation",
+      "displayName": "Collateral generation",
+      "automatable": false
+    }
+  },
+  "interchange": {
+    "workflow": "./src/index.ts"
   }
 }

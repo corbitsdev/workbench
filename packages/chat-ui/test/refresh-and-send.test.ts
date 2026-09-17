@@ -124,9 +124,7 @@ describe("validateAttachmentPick (count / per-file / total limits)", () => {
 
   test("rejects a single file over the per-file limit before any read", () => {
     expect(
-      validateAttachmentPick(0, 0, [
-        { name: "huge.bin", size: limits.maxPerFileBytes + 1 },
-      ]),
+      validateAttachmentPick(0, 0, [{ name: "huge.bin", size: limits.maxPerFileBytes + 1 }]),
     ).toEqual({
       kind: "perFile",
       name: "huge.bin",
@@ -139,9 +137,7 @@ describe("validateAttachmentPick (count / per-file / total limits)", () => {
     // Stay under the per-file ceiling so the total rule is what fires.
     const chunk = limits.maxPerFileBytes;
     const existing = limits.maxTotalBytes - chunk + 1;
-    expect(
-      validateAttachmentPick(1, existing, [{ name: "more.bin", size: chunk }]),
-    ).toEqual({
+    expect(validateAttachmentPick(1, existing, [{ name: "more.bin", size: chunk }])).toEqual({
       kind: "total",
       total: existing + chunk,
       max: limits.maxTotalBytes,
@@ -205,15 +201,11 @@ describe("composer busy state rules (preparing blocks send and attach)", () => {
   });
 
   test("canSendComposerAction blocks while sending", () => {
-    expect(
-      canSendComposerAction("hi", [], { sending: true, preparing: false }),
-    ).toBe(false);
+    expect(canSendComposerAction("hi", [], { sending: true, preparing: false })).toBe(false);
   });
 
   test("canSendComposerAction allows a ready draft", () => {
-    expect(
-      canSendComposerAction("hi", [], { sending: false, preparing: false }),
-    ).toBe(true);
+    expect(canSendComposerAction("hi", [], { sending: false, preparing: false })).toBe(true);
   });
 
   test("canAttachComposer is false while preparing or sending", () => {
@@ -298,9 +290,7 @@ describe("composerPlaceholderFor (CL-6070 / CL-6740: names the open recipient; n
     expect(composerPlaceholderFor({ kind: "chat", title: "Scout" })).toBe(
       `${CHAT_STRINGS.composerPlaceholderChat("Scout")} / for commands`,
     );
-    expect(
-      composerPlaceholderFor({ kind: "chat", title: "Scout" }),
-    ).not.toContain("Myra");
+    expect(composerPlaceholderFor({ kind: "chat", title: "Scout" })).not.toContain("Myra");
   });
 
   test("names the counterpart for a person chat too — a chat's title is always its counterpart's name", () => {
@@ -310,9 +300,9 @@ describe("composerPlaceholderFor (CL-6070 / CL-6740: names the open recipient; n
   });
 
   test("keeps the generic workbench copy for a workbench", () => {
-    expect(
-      composerPlaceholderFor({ kind: "workbench", title: "General" }),
-    ).toBe(`${CHAT_STRINGS.composerPlaceholder}, / for commands`);
+    expect(composerPlaceholderFor({ kind: "workbench", title: "General" })).toBe(
+      `${CHAT_STRINGS.composerPlaceholder}, / for commands`,
+    );
   });
 
   test("keeps the generic copy with no workbench resolved yet", () => {
@@ -329,21 +319,15 @@ describe("composerPlaceholderFor (CL-6070 / CL-6740: names the open recipient; n
 
   test("advertises / for commands only when the slash catalog is non-empty", () => {
     expect(SLASH_COMMANDS.length).toBeGreaterThan(0);
+    expect(composerPlaceholderFor({ kind: "workbench", title: "General" })).toContain(
+      "/ for commands",
+    );
     expect(
-      composerPlaceholderFor({ kind: "workbench", title: "General" }),
-    ).toContain("/ for commands");
-    expect(
-      composerPlaceholderFor(
-        { kind: "workbench", title: "General" },
-        { slashCommandCount: 0 },
-      ),
+      composerPlaceholderFor({ kind: "workbench", title: "General" }, { slashCommandCount: 0 }),
     ).not.toContain("/ for commands");
-    expect(
-      composerPlaceholderFor(
-        { kind: "chat", title: "Priya" },
-        { slashCommandCount: 0 },
-      ),
-    ).toBe("Message Priya…");
+    expect(composerPlaceholderFor({ kind: "chat", title: "Priya" }, { slashCommandCount: 0 })).toBe(
+      "Message Priya…",
+    );
   });
 });
 
@@ -365,17 +349,11 @@ describe("appendReplyTimedOutNotice (CL-6677: same ref+Retry backstop as the ser
   const participants = [{ address: "myra@agents.example", handle: "myra" }];
 
   test("no timeout leaves the timeline untouched", () => {
-    expect(appendReplyTimedOutNotice(serverItems, null, participants)).toBe(
-      serverItems,
-    );
+    expect(appendReplyTimedOutNotice(serverItems, null, participants)).toBe(serverItems);
   });
 
   test("a timed-out turn appends a turnFailed text part carrying the ref id, attributed to the agent", () => {
-    const withNotice = appendReplyTimedOutNotice(
-      serverItems,
-      "mt4ewrje-zvbmti",
-      participants,
-    );
+    const withNotice = appendReplyTimedOutNotice(serverItems, "mt4ewrje-zvbmti", participants);
     expect(withNotice).toHaveLength(2);
     expect(withNotice[1]?.parts).toEqual([
       {
@@ -469,9 +447,7 @@ describe("shouldConnect (S3: an empty workbench url opens no connection)", () =>
   });
 
   test("is true once a real stream url is known", () => {
-    expect(shouldConnect("/api/tenants/tnt_1/chat/workbenches/c1/stream")).toBe(
-      true,
-    );
+    expect(shouldConnect("/api/tenants/tnt_1/chat/workbenches/c1/stream")).toBe(true);
   });
 });
 
@@ -486,15 +462,11 @@ describe("composerSendVisualState (CL-6103: the send button reflects state)", ()
 
   test("a send in flight always wins, even over an emptied draft", () => {
     expect(composerSendVisualState("", [], { sending: true })).toBe("sending");
-    expect(composerSendVisualState("hi", [], { sending: true })).toBe(
-      "sending",
-    );
+    expect(composerSendVisualState("hi", [], { sending: true })).toBe("sending");
   });
 
   test("an attachment with no text still counts as something to send", () => {
-    expect(
-      composerSendVisualState("", [sampleAttachment], { sending: false }),
-    ).toBe("ready");
+    expect(composerSendVisualState("", [sampleAttachment], { sending: false })).toBe("ready");
   });
 });
 
@@ -595,15 +567,9 @@ describe("mergePendingSends (CL-6251: clientId reconciliation never double-rende
         clientId: "pending_1",
       },
     ];
-    const merged = mergePendingSends(
-      itemsWithConfirmedCopy,
-      pending,
-      "prn_alice",
-    );
+    const merged = mergePendingSends(itemsWithConfirmedCopy, pending, "prn_alice");
     expect(merged).toHaveLength(2);
-    expect(
-      merged.filter((item) => item.pendingStatus !== undefined),
-    ).toHaveLength(0);
+    expect(merged.filter((item) => item.pendingStatus !== undefined)).toHaveLength(0);
   });
 
   test("POST-first: the pending entry is still present when the confirmed item hasn't loaded yet — renders once, as pending", () => {
@@ -622,11 +588,7 @@ describe("mergePendingSends (CL-6251: clientId reconciliation never double-rende
         clientId: "pending_other",
       },
     ];
-    const merged = mergePendingSends(
-      itemsWithUnrelatedClientId,
-      pending,
-      "prn_alice",
-    );
+    const merged = mergePendingSends(itemsWithUnrelatedClientId, pending, "prn_alice");
     expect(merged).toHaveLength(2);
     expect(merged[1]?.pendingStatus).toBe("sending");
   });
@@ -650,11 +612,7 @@ describe("mergePendingSends (CL-6251: clientId reconciliation never double-rende
         clientId: "pending_1",
       },
     ];
-    const merged = mergePendingSends(
-      itemsWithConfirmedCopy,
-      failedPending,
-      "prn_alice",
-    );
+    const merged = mergePendingSends(itemsWithConfirmedCopy, failedPending, "prn_alice");
     expect(merged).toHaveLength(1);
     expect(merged[0]?.pendingStatus).toBeUndefined();
   });
@@ -676,11 +634,9 @@ describe("mergeStreamingReply (CL-6115: the in-progress agent reply folds into t
   });
 
   test("a growing reply appends a streaming item attributed to the workbench's agent", () => {
-    const merged = mergeStreamingReply(
-      serverItems,
-      { phase: "awaiting", text: "Working on it" },
-      [agent],
-    );
+    const merged = mergeStreamingReply(serverItems, { phase: "awaiting", text: "Working on it" }, [
+      agent,
+    ]);
     expect(merged).toHaveLength(2);
     expect(merged[1]).toMatchObject({
       streaming: true,
@@ -690,20 +646,12 @@ describe("mergeStreamingReply (CL-6115: the in-progress agent reply folds into t
   });
 
   test("no agent participant to attribute the reply to means no synthetic item", () => {
-    const merged = mergeStreamingReply(
-      serverItems,
-      { phase: "awaiting", text: "hi" },
-      [],
-    );
+    const merged = mergeStreamingReply(serverItems, { phase: "awaiting", text: "hi" }, []);
     expect(merged).toBe(serverItems);
   });
 
   test("a pending reply with no tokens yet renders no ghost bubble — the typing line owns that phase", () => {
-    const merged = mergeStreamingReply(
-      serverItems,
-      { phase: "awaiting", text: "" },
-      [agent],
-    );
+    const merged = mergeStreamingReply(serverItems, { phase: "awaiting", text: "" }, [agent]);
     expect(merged).toBe(serverItems);
   });
 });

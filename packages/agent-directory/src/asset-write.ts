@@ -16,10 +16,7 @@ const MAX_STALE_SNAPSHOT_RETRIES = 8;
 
 const writeChains = new Map<string, Promise<void>>();
 
-async function withAssetWriteLock<T>(
-  assetId: string,
-  fn: () => Promise<T>,
-): Promise<T> {
+async function withAssetWriteLock<T>(assetId: string, fn: () => Promise<T>): Promise<T> {
   const previous = writeChains.get(assetId) ?? Promise.resolve();
   let release: () => void = () => undefined;
   const held = new Promise<void>((resolve) => {
@@ -60,21 +57,11 @@ export type CommitLatestAgentAssetSnapshotArgs<T> = {
 export async function commitLatestAgentAssetSnapshot<T>(
   args: CommitLatestAgentAssetSnapshotArgs<T>,
 ): Promise<T> {
-  for (
-    let remaining = MAX_STALE_SNAPSHOT_RETRIES;
-    remaining > 0;
-    remaining -= 1
-  ) {
-    const snapshot = await readAgentDefinitionWorkflowJson(
-      args.assetService,
-      args.assetId,
-    );
+  for (let remaining = MAX_STALE_SNAPSHOT_RETRIES; remaining > 0; remaining -= 1) {
+    const snapshot = await readAgentDefinitionWorkflowJson(args.assetService, args.assetId);
     const prepared = await args.prepare(snapshot);
     const wrote = await withAssetWriteLock(args.assetId, async () => {
-      const latest = await readAgentDefinitionWorkflowJson(
-        args.assetService,
-        args.assetId,
-      );
+      const latest = await readAgentDefinitionWorkflowJson(args.assetService, args.assetId);
       if (latest !== snapshot) return false;
       await args.write({
         workflowJson: prepared.workflowJson,

@@ -30,9 +30,7 @@ export function KindCards({
     <div
       role="group"
       aria-label={label}
-      className={
-        columns === 3 ? "settings-kind-grid cols-3" : "settings-kind-grid"
-      }
+      className={columns === 3 ? "settings-kind-grid cols-3" : "settings-kind-grid"}
     >
       {options.map((option) => {
         const selected = value === option.id;
@@ -52,9 +50,7 @@ export function KindCards({
             )}
             <span className="settings-kind-card-title">{option.title}</span>
             {option.description === undefined ? null : (
-              <span className="settings-kind-card-desc">
-                {option.description}
-              </span>
+              <span className="settings-kind-card-desc">{option.description}</span>
             )}
           </button>
         );

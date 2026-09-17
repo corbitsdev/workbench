@@ -59,13 +59,9 @@ function stubFetch(overrides: {
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const body =
-      init?.body !== undefined
-        ? (JSON.parse(String(init.body)) as Record<string, unknown>)
-        : {};
+      init?.body !== undefined ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
     if (url.includes("/catalog/models")) {
-      return Promise.resolve(
-        json({ data: overrides.models ?? [], nextCursor: null }),
-      );
+      return Promise.resolve(json({ data: overrides.models ?? [], nextCursor: null }));
     }
     if (url.endsWith("/skills")) {
       return Promise.resolve(json({ skills: [] }));
@@ -77,9 +73,7 @@ function stubFetch(overrides: {
       );
     }
     if (url.endsWith("/agent-definitions")) {
-      return Promise.resolve(
-        overrides.create?.(body) ?? json(CREATED_DEFINITION, 201),
-      );
+      return Promise.resolve(overrides.create?.(body) ?? json(CREATED_DEFINITION, 201));
     }
     return Promise.resolve(json({}, 200));
   }) as typeof fetch;
@@ -102,20 +96,13 @@ afterEach(() => {
   container = null;
 });
 
-async function mount(
-  onCreated: (definition: { id: string }) => void = () => {},
-) {
+async function mount(onCreated: (definition: { id: string }) => void = () => {}) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      <CreateAgentPanel
-        open
-        onOpenChange={() => {}}
-        tenantId="tenant_1"
-        onCreated={onCreated}
-      />,
+      <CreateAgentPanel open onOpenChange={() => {}} tenantId="tenant_1" onCreated={onCreated} />,
     );
   });
   await act(async () => {
@@ -135,14 +122,11 @@ function nativeValueSetter(
 }
 
 function fillField(id: string, value: string, textarea = false) {
-  const el = document.getElementById(id) as
-    HTMLInputElement | HTMLTextAreaElement | null;
+  const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null;
   expect(el).not.toBeNull();
   if (el === null) return;
   const setter = nativeValueSetter(
-    textarea
-      ? window.HTMLTextAreaElement.prototype
-      : window.HTMLInputElement.prototype,
+    textarea ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
   );
   act(() => {
     setter.call(el, value);
@@ -174,9 +158,7 @@ describe("CreateAgentPanel happy path", () => {
 
   test("Advanced is collapsed by default", async () => {
     await mount();
-    const details = document.querySelector(
-      ".create-agent-advanced",
-    ) as HTMLDetailsElement | null;
+    const details = document.querySelector(".create-agent-advanced") as HTMLDetailsElement | null;
     expect(details).not.toBeNull();
     expect(details?.open).toBe(false);
   });
@@ -185,9 +167,9 @@ describe("CreateAgentPanel happy path", () => {
   // workbench mint — title and CTA must use the agent noun.
   test("dialog title and primary CTA use the agent noun, not workbench", async () => {
     await mount();
-    const heading = [
-      ...document.body.querySelectorAll("h2, [role='heading']"),
-    ].find((el) => (el.textContent ?? "").trim() === "New agent");
+    const heading = [...document.body.querySelectorAll("h2, [role='heading']")].find(
+      (el) => (el.textContent ?? "").trim() === "New agent",
+    );
     expect(heading).toBeDefined();
     expect(document.body.textContent).not.toContain("New workbench");
     fillField("create-agent-name", "Research Buddy");
@@ -206,9 +188,7 @@ describe("CreateAgentPanel happy path", () => {
     expect(findButton("Get started")?.hasAttribute("disabled")).toBe(false);
     // No purpose was typed — still enabled, no "describe what it does"
     // requirement anywhere in the disabled-reason copy.
-    expect(document.body.textContent).not.toContain(
-      "Describe what this agent should do.",
-    );
+    expect(document.body.textContent).not.toContain("Describe what this agent should do.");
   });
 
   test("submitting with just a name still runs the drafting flow, then deploys with it", async () => {
@@ -219,10 +199,7 @@ describe("CreateAgentPanel happy path", () => {
     stubFetch({
       draft: (body) => {
         captured.draftBody = body;
-        return json(
-          { draft: { systemPrompt: "You are a friendly, capable assistant." } },
-          201,
-        );
+        return json({ draft: { systemPrompt: "You are a friendly, capable assistant." } }, 201);
       },
       create: (body) => {
         captured.createBody = body;
@@ -245,9 +222,7 @@ describe("CreateAgentPanel happy path", () => {
     await settle();
 
     expect(captured.draftBody).toEqual({ name: "Research Buddy" });
-    expect(captured.createBody?.systemPrompt).toBe(
-      "You are a friendly, capable assistant.",
-    );
+    expect(captured.createBody?.systemPrompt).toBe("You are a friendly, capable assistant.");
     expect(captured.createBody?.handle).toBe("research-buddy");
     expect((created as { id: string } | null)?.id).toBe("wfd_new");
   });
@@ -259,10 +234,7 @@ describe("CreateAgentPanel happy path", () => {
     stubFetch({
       draft: (body) => {
         captured.draftBody = body;
-        return json(
-          { draft: { systemPrompt: "You help with research." } },
-          201,
-        );
+        return json({ draft: { systemPrompt: "You help with research." } }, 201);
       },
     });
 
@@ -290,10 +262,7 @@ describe("CreateAgentPanel Suggestions", () => {
     stubFetch({
       draft: (body) => {
         captured.draftBody = body;
-        return json(
-          { draft: { systemPrompt: "You prep a morning digest." } },
-          201,
-        );
+        return json({ draft: { systemPrompt: "You prep a morning digest." } }, 201);
       },
     });
 
@@ -350,18 +319,12 @@ describe("CreateAgentPanel drafting failure — fails closed", () => {
     await settle();
 
     expect(createCalled).toBe(false);
-    const details = document.querySelector(
-      ".create-agent-advanced",
-    ) as HTMLDetailsElement | null;
+    const details = document.querySelector(".create-agent-advanced") as HTMLDetailsElement | null;
     expect(details?.open).toBe(false);
-    expect(document.body.textContent).toContain(
-      "Myra couldn't draft a starting prompt for that.",
-    );
+    expect(document.body.textContent).toContain("Myra couldn't draft a starting prompt for that.");
     expect(document.body.textContent).toContain("Reference: ref_1");
     expect(findButton("Get started")).toBeUndefined();
-    const blockedCta = findButton(
-      "Open Advanced and write a system prompt to continue.",
-    );
+    const blockedCta = findButton("Open Advanced and write a system prompt to continue.");
     expect(blockedCta).toBeDefined();
     expect(blockedCta?.hasAttribute("disabled")).toBe(true);
     expect(document.body.textContent).not.toContain("Myra picks one");
@@ -369,9 +332,7 @@ describe("CreateAgentPanel drafting failure — fails closed", () => {
       "Left unset, the agent uses the workbench default.",
     );
 
-    const manualField = document.getElementById(
-      "create-agent-advanced-manualSystemPrompt",
-    );
+    const manualField = document.getElementById("create-agent-advanced-manualSystemPrompt");
     expect(manualField).not.toBeNull();
 
     fillField(
@@ -409,15 +370,11 @@ describe("CreateAgentPanel drafting failure — fails closed", () => {
     });
     await settle();
 
-    expect(document.body.textContent).toContain(
-      "Something went wrong. Please try again.",
-    );
+    expect(document.body.textContent).toContain("Something went wrong. Please try again.");
     expect(document.body.textContent).toContain("Reference: ref_sink_1");
     expect(document.body.textContent).not.toContain("The server answered 500.");
     expect(document.body.textContent).not.toContain("at draft");
-    const details = document.querySelector(
-      ".create-agent-advanced",
-    ) as HTMLDetailsElement | null;
+    const details = document.querySelector(".create-agent-advanced") as HTMLDetailsElement | null;
     expect(details?.open).toBe(false);
   });
 });

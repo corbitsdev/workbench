@@ -22,10 +22,7 @@ test("resolves drained when the drain completes inside the bound", async () => {
 });
 
 test("resolves timed-out when the drain outlives the bound", async () => {
-  const outcome = await drainWithTimeout(
-    () => new Promise<void>(() => undefined),
-    10,
-  );
+  const outcome = await drainWithTimeout(() => new Promise<void>(() => undefined), 10);
   expect(outcome).toEqual({ kind: "timed-out" });
 });
 
@@ -113,12 +110,9 @@ test("a rejected shutdown promise is caught by the signal handler binding", asyn
   process.on("unhandledRejection", onUnhandled);
   const reported: unknown[] = [];
   try {
-    attachShutdownRejectionHandler(
-      Promise.reject(new Error("escaped")),
-      (error) => {
-        reported.push(error);
-      },
-    );
+    attachShutdownRejectionHandler(Promise.reject(new Error("escaped")), (error) => {
+      reported.push(error);
+    });
     await Bun.sleep(20);
     expect(reported).toHaveLength(1);
     expect(unhandled).toEqual([]);

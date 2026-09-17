@@ -1,8 +1,5 @@
 export { WorkbenchSettingsSurface } from "./surface";
-export {
-  contextWindowControlState,
-  contextWindowPatchValue,
-} from "./context-window";
+export { contextWindowControlState, contextWindowPatchValue } from "./context-window";
 export type { ContextWindowMode } from "./context-window";
 export {
   workbenchSettingsSections,

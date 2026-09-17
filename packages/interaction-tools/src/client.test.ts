@@ -37,9 +37,7 @@ test("postQuestion posts a question block to the workflow-chat participants/mess
     allowFreeText: true,
   });
 
-  expect(seenUrl).toBe(
-    "https://hub.example.com/api/workflow-chat/participants/messages",
-  );
+  expect(seenUrl).toBe("https://hub.example.com/api/workflow-chat/participants/messages");
   expect(seenHeaders?.["authorization"]).toBe("Bearer sc-token");
   expect(seenHeaders?.["x-workflow-run-address"]).toBe("run_1@workflow");
   const body = seenBody as {
@@ -53,16 +51,11 @@ test("postQuestion posts a question block to the workflow-chat participants/mess
   expect(body.parts[0]?.block.type).toBe("question");
   expect(body.parts[0]?.block.data["question"]).toBe("Which environment?");
   expect(body.parts[0]?.block.data["subtitle"]).toBe("Pick the closest match.");
-  expect(body.parts[0]?.block.data["options"]).toEqual([
-    "Staging",
-    "Production",
-  ]);
+  expect(body.parts[0]?.block.data["options"]).toEqual(["Staging", "Production"]);
   expect(body.parts[0]?.block.data["allowFreeText"]).toBe(true);
   expect(typeof body.parts[0]?.block.data["questionId"]).toBe("string");
   expect(result.messageId).toBe("msg_1");
-  expect(result.questionId).toBe(
-    body.parts[0]?.block.data["questionId"] as string,
-  );
+  expect(result.questionId).toBe(body.parts[0]?.block.data["questionId"] as string);
 });
 
 test("postQuestion stamps a caller-supplied questionId on the card instead of minting", async () => {
@@ -91,9 +84,7 @@ test("postQuestion stamps a caller-supplied questionId on the card instead of mi
       block: { type: string; data: Record<string, unknown> };
     }[];
   };
-  expect(body.parts[0]?.block.data["questionId"]).toBe(
-    "q_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  );
+  expect(body.parts[0]?.block.data["questionId"]).toBe("q_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
   expect(result.questionId).toBe("q_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
   expect(result.messageId).toBe("msg_1");
 });
@@ -165,9 +156,7 @@ test("reads userMessage even when a legacy message field is also present", async
     });
     throw new Error("expected postQuestion to throw");
   } catch (error) {
-    expect((error as Error).message).toBe(
-      "Posting the question failed: canonical",
-    );
+    expect((error as Error).message).toBe("Posting the question failed: canonical");
   }
 });
 
@@ -188,9 +177,7 @@ test("a 404 envelope with only error.message falls back, never the legacy field"
     throw new Error("expected NoOwnChannelError");
   } catch (error) {
     expect(error).toBeInstanceOf(NoOwnChannelError);
-    expect((error as Error).message).toBe(
-      "The caller has no channel of its own to post into",
-    );
+    expect((error as Error).message).toBe("The caller has no channel of its own to post into");
   }
 });
 
@@ -208,8 +195,6 @@ test("a non-ok, non-envelope response falls back to status text", async () => {
     });
     throw new Error("expected postQuestion to throw");
   } catch (error) {
-    expect((error as Error).message).toBe(
-      "Posting the question failed: 500 Internal Server Error",
-    );
+    expect((error as Error).message).toBe("Posting the question failed: 500 Internal Server Error");
   }
 });

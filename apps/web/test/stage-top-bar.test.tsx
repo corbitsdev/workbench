@@ -43,31 +43,22 @@ describe("StageTopBar", () => {
   });
 
   test("omits the dot when there is no subtitle", () => {
-    const markup = renderToStaticMarkup(
-      <StageTopBar crumbs={[{ label: "Skills" }]} />,
-    );
+    const markup = renderToStaticMarkup(<StageTopBar crumbs={[{ label: "Skills" }]} />);
     expect(markup).not.toContain("stage-top-bar-dot");
     expect(markup).not.toContain("stage-top-bar-sub");
   });
 
   test("carries no sidebar toggle of its own", () => {
-    const markup = renderToStaticMarkup(
-      <StageTopBar crumbs={[{ label: "Library" }]} />,
-    );
+    const markup = renderToStaticMarkup(<StageTopBar crumbs={[{ label: "Library" }]} />);
     expect(markup).not.toContain('aria-label="Toggle sidebar"');
     expect(markup).not.toContain('aria-label="Collapse sidebar"');
   });
 
   test("an interactive subtitle is not clipped by overflow hidden", () => {
-    const css = readFileSync(
-      new URL("../src/app.css", import.meta.url),
-      "utf8",
-    );
+    const css = readFileSync(new URL("../src/app.css", import.meta.url), "utf8");
     const interactive = css
       .split("}")
-      .find((candidate) =>
-        candidate.includes(".stage-top-bar-sub:has(button)"),
-      );
+      .find((candidate) => candidate.includes(".stage-top-bar-sub:has(button)"));
     expect(interactive).toBeDefined();
     expect(interactive).toContain("overflow: visible");
     expect(interactive).toContain("flex-shrink: 0");
@@ -142,15 +133,9 @@ describe("shell frame", () => {
       root.render(<ShellHarness />);
     });
 
-    expect(
-      container.querySelector('[data-testid="shell-sidebar"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('button[aria-label="Collapse sidebar"]'),
-    ).toBeNull();
-    expect(
-      container.querySelector('button[aria-label="Expand sidebar"]'),
-    ).toBeNull();
+    expect(container.querySelector('[data-testid="shell-sidebar"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Collapse sidebar"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Expand sidebar"]')).toBeNull();
   });
 
   test("the sidebar stays across navigation", async () => {
@@ -161,8 +146,6 @@ describe("shell frame", () => {
     await act(async () => {
       root.render(<ShellHarness path="/routines" />);
     });
-    expect(
-      container.querySelector('[data-testid="shell-sidebar"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('[data-testid="shell-sidebar"]')).not.toBeNull();
   });
 });

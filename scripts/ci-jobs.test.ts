@@ -31,11 +31,7 @@ const DB_JOBS = ["e2e-suite", "isolation", "db-suites"] as const;
 // matrix (see ci.yml) — the matrix job is the one that actually checks
 // out the repo and needs full history for tool-package-freshness's
 // merge-base diff.
-const MERGE_BASE_JOBS = [
-  "typecheck",
-  "build-test-shard",
-  "structural",
-] as const;
+const MERGE_BASE_JOBS = ["typecheck", "build-test-shard", "structural"] as const;
 
 test("CI splits e2e, isolation, and db-suites onto their own Postgres jobs", async () => {
   const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
@@ -162,10 +158,7 @@ test("lint cache keys on tool and config versions, not an OS-wide restore", asyn
 });
 
 test("setup-workbench caches bun install and node_modules on the lockfile", async () => {
-  const action = await readFile(
-    join(ROOT, ".github/actions/setup-workbench/action.yml"),
-    "utf8",
-  );
+  const action = await readFile(join(ROOT, ".github/actions/setup-workbench/action.yml"), "utf8");
 
   expect(action).toContain("using: composite");
   expect(action).not.toContain("actions/checkout");

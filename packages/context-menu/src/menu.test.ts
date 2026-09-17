@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  contextMenuItem,
-  contextMenuSeparator,
-  isContextMenuEmpty,
-} from "./menu";
+import { contextMenuItem, contextMenuSeparator, isContextMenuEmpty } from "./menu";
 
 describe("contextMenuItem", () => {
   test("stamps the item kind", () => {

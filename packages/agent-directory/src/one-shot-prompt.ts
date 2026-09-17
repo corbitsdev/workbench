@@ -150,15 +150,13 @@ async function provisionOnAsset(
     readonly domain: string;
   },
 ): Promise<ProvisionedOneShot> {
-  const offerings = [
-    ...(await listVisibleOfferings(deps.db, input.tenantId)),
-  ].sort((a, b) => a.offering.priority - b.offering.priority);
+  const offerings = [...(await listVisibleOfferings(deps.db, input.tenantId))].sort(
+    (a, b) => a.offering.priority - b.offering.priority,
+  );
   const sourceOfferingIds = offerings.map((o) => o.offering.id);
   const defaultSourceOfferingId = sourceOfferingIds[0];
   if (defaultSourceOfferingId === undefined) {
-    throw new Error(
-      `no catalog offerings visible to tenant "${input.tenantId}"`,
-    );
+    throw new Error(`no catalog offerings visible to tenant "${input.tenantId}"`);
   }
   const commitSha = await deps.repoStore.resolveRef(
     { kind: "hub" },
@@ -166,33 +164,30 @@ async function provisionOnAsset(
     DEFAULT_ASSET_REF,
   );
   if (commitSha === null) {
-    throw new Error(
-      `definition asset "${input.definitionAssetId}" has no HEAD`,
-    );
+    throw new Error(`definition asset "${input.definitionAssetId}" has no HEAD`);
   }
   const anchorRunId = generateId("workflowRun");
   const sessionId = generateId("session");
-  const prepared =
-    await deps.workflowAllocationService.prepareProvisionedDeployment({
-      tenantId: input.tenantId,
-      anchorRunId,
-      sessionId,
-      deploymentDomain: input.domain,
-      source: {
-        kind: "asset",
-        assetId: input.definitionAssetId,
-        package: { format: "source", commitSha },
-      },
-      entry: WORKFLOW_SOURCE_ENTRY,
-      definitionAssetId: input.definitionAssetId,
-      sourceAuthorityPrincipalId: input.principalId,
-      sourceOfferingIds,
-      defaultSourceOfferingId,
-      deployContent: { systemPrompt: "" },
-      ...(input.foldedBody.toolPackagePins.length > 0
-        ? { toolPackagePins: input.foldedBody.toolPackagePins }
-        : {}),
-    });
+  const prepared = await deps.workflowAllocationService.prepareProvisionedDeployment({
+    tenantId: input.tenantId,
+    anchorRunId,
+    sessionId,
+    deploymentDomain: input.domain,
+    source: {
+      kind: "asset",
+      assetId: input.definitionAssetId,
+      package: { format: "source", commitSha },
+    },
+    entry: WORKFLOW_SOURCE_ENTRY,
+    definitionAssetId: input.definitionAssetId,
+    sourceAuthorityPrincipalId: input.principalId,
+    sourceOfferingIds,
+    defaultSourceOfferingId,
+    deployContent: { systemPrompt: "" },
+    ...(input.foldedBody.toolPackagePins.length > 0
+      ? { toolPackagePins: input.foldedBody.toolPackagePins }
+      : {}),
+  });
   await recordAgentSessionAtProvision({
     db: deps.db,
     eventCollectors: deps.eventCollectors,
@@ -239,10 +234,7 @@ export async function runOneShotPrompt(
   }
 
   const projection = await readDefinitionProjection(deps.db, definitionRow);
-  const foldedBody = readFoldedBody(
-    projection,
-    definitionRow.grantRequirements,
-  );
+  const foldedBody = readFoldedBody(projection, definitionRow.grantRequirements);
 
   const launched = await (deps.provision !== undefined
     ? deps.provision({
@@ -264,31 +256,28 @@ export async function runOneShotPrompt(
     let settled = false;
     let accumulated = "";
 
-    const unsubscribe = deps.events.on(
-      "agent.event",
-      ({ agentAddress, event }) => {
-        if (agentAddress !== launched.address || settled) return;
+    const unsubscribe = deps.events.on("agent.event", ({ agentAddress, event }) => {
+      if (agentAddress !== launched.address || settled) return;
 
-        const content = connectorReplyContent(event);
-        if (content !== undefined) {
-          accumulated += content;
-          return;
-        }
+      const content = connectorReplyContent(event);
+      if (content !== undefined) {
+        accumulated += content;
+        return;
+      }
 
-        const ended = messageRunEnded(event);
-        if (ended === undefined) return;
+      const ended = messageRunEnded(event);
+      if (ended === undefined) return;
 
-        if (ended.status === "failed") {
-          void settle("planning-run-failed", () => {
-            reject(new OneShotRunFailedError(ended.errorMessage));
-          });
-          return;
-        }
-        void settle("planning-run-complete", () => {
-          resolve({ content: accumulated, runId: launched.runId });
+      if (ended.status === "failed") {
+        void settle("planning-run-failed", () => {
+          reject(new OneShotRunFailedError(ended.errorMessage));
         });
-      },
-    );
+        return;
+      }
+      void settle("planning-run-complete", () => {
+        resolve({ content: accumulated, runId: launched.runId });
+      });
+    });
 
     async function settle(reason: string, finish: () => void): Promise<void> {
       if (settled) return;
@@ -296,11 +285,7 @@ export async function runOneShotPrompt(
       clearTimeout(timer);
       unsubscribe();
       try {
-        await endAgentSessionForRun(
-          deps.db,
-          launched.runId,
-          deps.eventCollectors,
-        );
+        await endAgentSessionForRun(deps.db, launched.runId, deps.eventCollectors);
       } catch (err) {
         reportError(err, {
           operation: "agent-directory.one-shot.end-session",

@@ -44,10 +44,7 @@ function clientConfig(env: WorkflowSkillsToolEnv) {
   };
 }
 
-async function runSkillsList(
-  env: WorkflowSkillsToolEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runSkillsList(env: WorkflowSkillsToolEnv, call: ToolCall): Promise<ToolResult> {
   try {
     const skills = await listSkills(clientConfig(env));
     return {
@@ -60,10 +57,7 @@ async function runSkillsList(
   }
 }
 
-async function runSkillsSearch(
-  env: WorkflowSkillsToolEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runSkillsSearch(env: WorkflowSkillsToolEnv, call: ToolCall): Promise<ToolResult> {
   const query = call.arguments["query"];
   if (typeof query !== "string" || query === "") {
     return errorResult(call.id, new Error("skills_search requires a query"));
@@ -80,10 +74,7 @@ async function runSkillsSearch(
   }
 }
 
-async function runSkillsLoad(
-  env: WorkflowSkillsToolEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runSkillsLoad(env: WorkflowSkillsToolEnv, call: ToolCall): Promise<ToolResult> {
   const name = call.arguments["name"];
   if (typeof name !== "string" || name === "") {
     return errorResult(call.id, new Error("skills_load requires a skill name"));
@@ -158,10 +149,7 @@ export const skillsTools = defineTool<WorkflowSkillsToolEnv>({
           return runSkillsLoad(env, call);
         default:
           return Promise.resolve(
-            errorResult(
-              call.id,
-              new Error(`@corbits/tools-skills: unknown tool "${call.name}"`),
-            ),
+            errorResult(call.id, new Error(`@corbits/tools-skills: unknown tool "${call.name}"`)),
           );
       }
     },

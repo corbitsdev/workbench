@@ -22,8 +22,7 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 const STAMP = "2026-01-01T00:00:00.000Z";
 
@@ -137,22 +136,16 @@ describe("Global model route", () => {
         ...(init?.body !== undefined ? { body: String(init.body) } : {}),
       });
       if (url === "/api/tenants/ten_1/credentials") {
-        return Promise.resolve(
-          json({ data: [ANTHROPIC_CREDENTIAL], nextCursor: null }),
-        );
+        return Promise.resolve(json({ data: [ANTHROPIC_CREDENTIAL], nextCursor: null }));
       }
       if (url === "/api/tenants/ten_1/providers") {
-        return Promise.resolve(
-          json({ data: [ANTHROPIC_PROVIDER], nextCursor: null }),
-        );
+        return Promise.resolve(json({ data: [ANTHROPIC_PROVIDER], nextCursor: null }));
       }
       if (url === "/api/tenants/ten_1/connections/oauth-configured") {
         return Promise.resolve(json({}));
       }
       if (url === "/api/tenants/ten_1/models") {
-        return Promise.resolve(
-          json(resolvedModels(patched ? 0 : 0, patched ? -1 : 1)),
-        );
+        return Promise.resolve(json(resolvedModels(patched ? 0 : 0, patched ? -1 : 1)));
       }
       if (url === "/api/tenants/ten_1/catalog/offerings") {
         return Promise.resolve(json({ data: OWN_OFFERINGS, nextCursor: null }));
@@ -187,8 +180,7 @@ describe("Global model route", () => {
       await settle();
 
       const patchCall = calls.find(
-        (call) =>
-          call.url === "/api/tenants/ten_1/catalog/offerings/offering_haiku",
+        (call) => call.url === "/api/tenants/ten_1/catalog/offerings/offering_haiku",
       );
       expect(patchCall?.method).toBe("PATCH");
       expect(JSON.parse(patchCall?.body ?? "{}")).toEqual({ priority: -1 });
@@ -213,22 +205,16 @@ describe("Global model route", () => {
         method: init?.method ?? "GET",
       });
       if (url === "/api/tenants/ten_1/credentials") {
-        return Promise.resolve(
-          json({ data: [ANTHROPIC_CREDENTIAL], nextCursor: null }),
-        );
+        return Promise.resolve(json({ data: [ANTHROPIC_CREDENTIAL], nextCursor: null }));
       }
       if (url === "/api/tenants/ten_1/providers") {
-        return Promise.resolve(
-          json({ data: [ANTHROPIC_PROVIDER], nextCursor: null }),
-        );
+        return Promise.resolve(json({ data: [ANTHROPIC_PROVIDER], nextCursor: null }));
       }
       if (url === "/api/tenants/ten_1/connections/oauth-configured") {
         return Promise.resolve(json({}));
       }
       if (url === "/api/tenants/ten_1/models") {
-        return Promise.resolve(
-          json(resolvedModels(patched ? 0 : 0, patched ? -1 : 1)),
-        );
+        return Promise.resolve(json(resolvedModels(patched ? 0 : 0, patched ? -1 : 1)));
       }
       if (url === "/api/tenants/ten_1/catalog/offerings") {
         return Promise.resolve(json({ data: OWN_OFFERINGS, nextCursor: null }));
@@ -259,18 +245,12 @@ describe("Global model route", () => {
       });
       await settle();
 
-      const writes = calls.filter(
-        (call) => call.method !== "GET" && call.method !== "HEAD",
-      );
+      const writes = calls.filter((call) => call.method !== "GET" && call.method !== "HEAD");
       expect(writes.length).toBeGreaterThan(0);
       expect(
-        writes.every((call) =>
-          call.url.startsWith("/api/tenants/ten_1/catalog/offerings/"),
-        ),
+        writes.every((call) => call.url.startsWith("/api/tenants/ten_1/catalog/offerings/")),
       ).toBe(true);
-      expect(
-        calls.some((call) => call.url.includes("/agent-definitions")),
-      ).toBe(false);
+      expect(calls.some((call) => call.url.includes("/agent-definitions"))).toBe(false);
     } finally {
       act(() => root.unmount());
       container.remove();

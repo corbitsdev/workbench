@@ -5,13 +5,7 @@
 // computes the script exactly once per render — the change summary is read
 // off the same result the rows come from.
 
-import {
-  Badge,
-  Table,
-  TableBody,
-  TableCell,
-  TableRow,
-} from "@corbits/react-ui";
+import { Badge, Table, TableBody, TableCell, TableRow } from "@corbits/react-ui";
 import { diffText } from "@corbits/text-diff";
 import type { DiffLine } from "@corbits/text-diff";
 import { useMemo } from "react";
@@ -57,8 +51,7 @@ export function DiffView({
     return (
       <div className="flex flex-col gap-1" data-testid="diff-too-large">
         <p className="text-sm text-foreground">
-          This change is too large to show line by line — showing a summary
-          only.
+          This change is too large to show line by line — showing a summary only.
         </p>
         <p className="font-mono text-xs tabular-nums text-muted-foreground">
           {`${String(diff.beforeLines)} lines before, ${String(
@@ -74,9 +67,7 @@ export function DiffView({
   return (
     <div className="flex flex-col gap-2" data-testid="diff-view">
       <p className="font-mono text-xs tabular-nums text-muted-foreground">
-        {`+${String(diff.totals.added)} added, −${String(
-          diff.totals.removed,
-        )} removed`}
+        {`+${String(diff.totals.added)} added, −${String(diff.totals.removed)} removed`}
       </p>
       <div className="max-h-96 overflow-auto rounded-md border border-border bg-muted/30">
         <Table className="w-full border-collapse font-mono text-xs leading-relaxed">

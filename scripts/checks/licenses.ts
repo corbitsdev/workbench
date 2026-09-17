@@ -8,12 +8,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Glob } from "bun";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 export const LIBRARY_LICENSE = "LGPL-2.1-or-later";
 export const APP_LICENSE = "SEE LICENSE IN ../../LICENSE.md";
@@ -29,18 +24,13 @@ export interface WorkspacePackage {
   packageJson: PackageJson;
 }
 
-async function listPackages(
-  root: string,
-  pattern: string,
-): Promise<WorkspacePackage[]> {
+async function listPackages(root: string, pattern: string): Promise<WorkspacePackage[]> {
   const glob = new Glob(pattern);
   const packages: WorkspacePackage[] = [];
   for await (const manifestPath of glob.scan(root)) {
     packages.push({
       dir: path.dirname(manifestPath),
-      packageJson: (await Bun.file(
-        path.join(root, manifestPath),
-      ).json()) as PackageJson,
+      packageJson: (await Bun.file(path.join(root, manifestPath)).json()) as PackageJson,
     });
   }
   return packages.sort((a, b) => a.dir.localeCompare(b.dir));
@@ -89,9 +79,7 @@ export function auditLibraryLicenses(
 }
 
 /** Every application defers to the root GPLv2-with-AI-Exception license. */
-export function auditAppLicenses(
-  apps: readonly WorkspacePackage[],
-): CheckReport {
+export function auditAppLicenses(apps: readonly WorkspacePackage[]): CheckReport {
   const report = emptyReport();
   for (const app of apps) {
     if (app.packageJson.license !== APP_LICENSE) {
@@ -111,19 +99,12 @@ async function main(): Promise<void> {
   const canonicalText = existsSync(canonicalTextFile)
     ? readFileSync(canonicalTextFile, "utf8")
     : "";
-  const [libraries, apps] = await Promise.all([
-    listLibraryPackages(root),
-    listAppPackages(root),
-  ]);
+  const [libraries, apps] = await Promise.all([listLibraryPackages(root), listAppPackages(root)]);
   const report = emptyReport();
-  const libraryReport = auditLibraryLicenses(
-    libraries,
-    canonicalText,
-    (dir) => {
-      const licenseFile = path.join(root, dir, "LICENSE");
-      return existsSync(licenseFile) ? readFileSync(licenseFile, "utf8") : null;
-    },
-  );
+  const libraryReport = auditLibraryLicenses(libraries, canonicalText, (dir) => {
+    const licenseFile = path.join(root, dir, "LICENSE");
+    return existsSync(licenseFile) ? readFileSync(licenseFile, "utf8") : null;
+  });
   report.violations.push(...libraryReport.violations);
   report.violations.push(...auditAppLicenses(apps).violations);
   if (libraries.length === 0 && apps.length === 0) {

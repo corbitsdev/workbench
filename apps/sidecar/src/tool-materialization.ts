@@ -80,9 +80,7 @@ export const DEFAULT_TOOL_REGISTRIES_JSON = JSON.stringify([
  * on malformed JSON, on a wrong-shape payload, and on duplicate
  * registry names.
  */
-export function parseToolRegistries(
-  raw: string,
-): ReadonlyMap<string, RegistryConfig> {
+export function parseToolRegistries(raw: string): ReadonlyMap<string, RegistryConfig> {
   if (raw.trim() === "") {
     throw new Error(
       "SIDECAR_TOOL_REGISTRIES is set but empty — unset the variable to use the default npmjs registry",
@@ -99,9 +97,7 @@ export function parseToolRegistries(
   }
   const validated = RegistryConfigEnvArray(parsed);
   if (validated instanceof type.errors) {
-    throw new Error(
-      `SIDECAR_TOOL_REGISTRIES failed validation: ${validated.summary}`,
-    );
+    throw new Error(`SIDECAR_TOOL_REGISTRIES failed validation: ${validated.summary}`);
   }
   const out = new Map<string, RegistryConfig>();
   for (const entry of validated) {
@@ -111,9 +107,7 @@ export function parseToolRegistries(
       );
     }
     const config: RegistryConfig =
-      entry.auth !== undefined
-        ? { url: entry.url, auth: entry.auth }
-        : { url: entry.url };
+      entry.auth !== undefined ? { url: entry.url, auth: entry.auth } : { url: entry.url };
     out.set(entry.name, config);
   }
   return out;
@@ -280,9 +274,7 @@ export async function materializeToolPackages(args: {
   // committed deploy to "fresh instance".
   let previousDeployId = NO_PRIOR_DEPLOY_ID;
   try {
-    const dirtyRaw = (
-      await fs.promises.readFile(activeIdDirtyFile, "utf-8")
-    ).trim();
+    const dirtyRaw = (await fs.promises.readFile(activeIdDirtyFile, "utf-8")).trim();
     const dirtyId = parseActiveDeployId(dirtyRaw, activeIdDirtyFile);
     logger.warn`active-deploy-id dirty marker present at ${activeIdDirtyFile}; the prior apply could not durably record the committed deploy id and the boot is reconciling from ${dirtyId}`;
     previousDeployId = dirtyId;
@@ -328,9 +320,7 @@ export async function materializeToolPackages(args: {
         occurredAt,
       },
     });
-    return new Error(
-      `tool-package apply rejected (manifest.invalid): ${reason}`,
-    );
+    return new Error(`tool-package apply rejected (manifest.invalid): ${reason}`);
   };
 
   let parsedManifest: unknown;
@@ -343,9 +333,7 @@ export async function materializeToolPackages(args: {
   }
   const validated = ToolPackageManifest(parsedManifest);
   if (validated instanceof type.errors) {
-    throw await rejectManifestInvalid(
-      `schema validation failed: ${validated.summary}`,
-    );
+    throw await rejectManifestInvalid(`schema validation failed: ${validated.summary}`);
   }
 
   const cache = createTarballCache({
@@ -391,9 +379,7 @@ export async function materializeToolPackages(args: {
       manifestBytes: rawManifestBytes,
       failure: result,
     });
-    throw new Error(
-      `tool-package apply rejected (${result.category}): ${result.message}`,
-    );
+    throw new Error(`tool-package apply rejected (${result.category}): ${result.message}`);
   }
 
   // Apply staged: the loader built the new deploy at
@@ -432,10 +418,9 @@ export async function materializeToolPackages(args: {
         occurredAt,
       },
     });
-    throw new Error(
-      `tool-package apply rejected (apply.previous-rotation.failed): ${message}`,
-      { cause: err },
-    );
+    throw new Error(`tool-package apply rejected (apply.previous-rotation.failed): ${message}`, {
+      cause: err,
+    });
   }
   return {
     factories: collectFactories(result.loaded),
@@ -555,10 +540,7 @@ async function persistActiveDeployId(
  *
  * Exported for direct unit testing of the cleanup contract.
  */
-export async function clearDirtyMarker(
-  activeIdFile: string,
-  reason: string,
-): Promise<void> {
+export async function clearDirtyMarker(activeIdFile: string, reason: string): Promise<void> {
   try {
     await fs.promises.unlink(`${activeIdFile}.dirty`);
   } catch (err) {
@@ -652,12 +634,7 @@ async function writeRejectedApplyAudit(args: {
     occurredAt: string;
   };
 }): Promise<void> {
-  const dir = path.join(
-    args.storeDir,
-    "audit",
-    "rejected-applies",
-    args.attemptId,
-  );
+  const dir = path.join(args.storeDir, "audit", "rejected-applies", args.attemptId);
   await fs.promises.mkdir(dir, { recursive: true });
   // fsync the files and their parent directory before returning so the
   // rejection's evidence is durable before the caller throws and tears
@@ -669,10 +646,7 @@ async function writeRejectedApplyAudit(args: {
   // should not turn into a second cascading failure on an already-
   // failing apply.
   await fsyncWriteFile(path.join(dir, "manifest.json"), args.manifestBytes);
-  await fsyncWriteFile(
-    path.join(dir, "error.json"),
-    JSON.stringify(args.failure, null, 2),
-  );
+  await fsyncWriteFile(path.join(dir, "error.json"), JSON.stringify(args.failure, null, 2));
   try {
     const dirHandle = await fs.promises.open(dir, "r");
     try {
@@ -685,10 +659,7 @@ async function writeRejectedApplyAudit(args: {
   }
 }
 
-async function fsyncWriteFile(
-  filePath: string,
-  contents: string,
-): Promise<void> {
+async function fsyncWriteFile(filePath: string, contents: string): Promise<void> {
   const handle = await fs.promises.open(filePath, "w");
   try {
     await handle.writeFile(contents);
@@ -702,9 +673,7 @@ async function fsyncWriteFile(
   }
 }
 
-function collectFactories(
-  loaded: readonly LoadedToolPackage[],
-): readonly LoadedToolFactory[] {
+function collectFactories(loaded: readonly LoadedToolPackage[]): readonly LoadedToolFactory[] {
   const out: LoadedToolFactory[] = [];
   for (const pkg of loaded) {
     for (const f of pkg.factories) out.push(f);

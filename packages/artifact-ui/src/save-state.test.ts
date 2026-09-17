@@ -29,9 +29,9 @@ describe("formatSaveStateLine", () => {
   });
 
   test("saved combines the relative-time label with the version, never claiming a version that wasn't confirmed", () => {
-    expect(
-      formatSaveStateLine({ kind: "saved", version: 12, savedAt: 0 }, 30_000),
-    ).toBe("Saved just now · v12");
+    expect(formatSaveStateLine({ kind: "saved", version: 12, savedAt: 0 }, 30_000)).toBe(
+      "Saved just now · v12",
+    );
   });
 
   test("unsaved is honest about not having confirmed a write yet", () => {

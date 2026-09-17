@@ -37,9 +37,7 @@ const RECORD_FILENAME = "deployment.json";
 /** True for a `node:fs` rejection whose `code` is `ENOENT`. */
 function isENOENT(cause: unknown): boolean {
   return (
-    cause instanceof Error &&
-    "code" in cause &&
-    (cause as { code: unknown }).code === "ENOENT"
+    cause instanceof Error && "code" in cause && (cause as { code: unknown }).code === "ENOENT"
   );
 }
 
@@ -119,10 +117,7 @@ export async function writeWorkflowRunRecord(
  * torn-down or never-completed run is not restored on the next boot. A
  * missing record is not an error (`force`).
  */
-export async function deleteWorkflowRunRecord(
-  dataDir: string,
-  runId: string,
-): Promise<void> {
+export async function deleteWorkflowRunRecord(dataDir: string, runId: string): Promise<void> {
   await rm(recordPath(dataDir, runId), { force: true });
 }
 
@@ -145,9 +140,7 @@ export interface ScannedWorkflowRun {
  * The returned `runId` is the directory name; the caller cross-checks it
  * against the record's own address before trusting it.
  */
-export async function scanWorkflowRunRecords(
-  dataDir: string,
-): Promise<ScannedWorkflowRun[]> {
+export async function scanWorkflowRunRecords(dataDir: string): Promise<ScannedWorkflowRun[]> {
   const runsDir = pathJoin(dataDir, "workflow-runs");
   let entries;
   try {

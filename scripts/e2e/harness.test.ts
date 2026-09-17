@@ -104,15 +104,11 @@ describe("parseEnvFileDatabaseUrl", () => {
 
   test("strips surrounding quotes and trims", () => {
     expect(
-      parseEnvFileDatabaseUrl(
-        `  DATABASE_URL="postgres://localhost:5432/workbench"  \n`,
-      ),
+      parseEnvFileDatabaseUrl(`  DATABASE_URL="postgres://localhost:5432/workbench"  \n`),
     ).toBe("postgres://localhost:5432/workbench");
-    expect(
-      parseEnvFileDatabaseUrl(
-        `DATABASE_URL='postgres://localhost:5432/workbench'\n`,
-      ),
-    ).toBe("postgres://localhost:5432/workbench");
+    expect(parseEnvFileDatabaseUrl(`DATABASE_URL='postgres://localhost:5432/workbench'\n`)).toBe(
+      "postgres://localhost:5432/workbench",
+    );
   });
 
   test("ignores a commented DATABASE_URL and returns undefined when none is set", () => {
@@ -168,9 +164,7 @@ describe("provisionSidecar", () => {
       const dbModule = (await import(Bun.resolveSync("@intx/db", HUB_DIR))) as {
         createDB: (raw: unknown) => { db: unknown; close: () => Promise<void> };
       };
-      const hubSessionsModule = (await import(
-        Bun.resolveSync("@intx/hub-sessions", HUB_DIR)
-      )) as {
+      const hubSessionsModule = (await import(Bun.resolveSync("@intx/hub-sessions", HUB_DIR))) as {
         createSidecarCredentialResolver: (deps: { db: unknown }) => {
           resolve: (token: string) => Promise<unknown>;
         };

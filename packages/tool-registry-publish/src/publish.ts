@@ -49,11 +49,7 @@ export type PublishSummary = {
   integrity: string;
 };
 
-function parseSchema<T extends Type>(
-  schema: T,
-  data: unknown,
-  label: string,
-): T["infer"] {
+function parseSchema<T extends Type>(schema: T, data: unknown, label: string): T["infer"] {
   const result = schema(data);
   if (result instanceof type.errors) {
     throw new Error(
@@ -75,15 +71,9 @@ async function listRegistryAsset(
     cookies,
   );
   if (listed.status !== 200) {
-    throw new Error(
-      `publishCorbitsToolsRegistry: failed to list assets: ${String(listed.status)}`,
-    );
+    throw new Error(`publishCorbitsToolsRegistry: failed to list assets: ${String(listed.status)}`);
   }
-  const rows = parseSchema(
-    AssetWithOriginResponse.array(),
-    listed.data,
-    "list assets response",
-  );
+  const rows = parseSchema(AssetWithOriginResponse.array(), listed.data, "list assets response");
   return rows.find((row) => row.name === CORBITS_TOOLS_REGISTRY)?.id;
 }
 
@@ -120,8 +110,7 @@ async function ensureRegistryAsset(
   // generic 500 instead, so the loser still resolves the winner's row
   // rather than throwing on a race this ensure is meant to tolerate.
   const isNameCollision =
-    created.status === 409 ||
-    JSON.stringify(created.data).includes("asset_tenant_kind_name");
+    created.status === 409 || JSON.stringify(created.data).includes("asset_tenant_kind_name");
   if (!isNameCollision) {
     throw new Error(
       `publishCorbitsToolsRegistry: failed to create the ${CORBITS_TOOLS_REGISTRY} asset: ${String(created.status)}`,
@@ -153,14 +142,9 @@ const TarballListResponse = TarballSummary.array();
  */
 export class EmptyRegistryPublishError extends Error {
   readonly success = false as const;
-  constructor(detail: {
-    uploaded: readonly string[];
-    missing: readonly string[];
-  }) {
+  constructor(detail: { uploaded: readonly string[]; missing: readonly string[] }) {
     const uploadedBit =
-      detail.uploaded.length === 0
-        ? "uploaded none"
-        : `uploaded ${detail.uploaded.join(", ")}`;
+      detail.uploaded.length === 0 ? "uploaded none" : `uploaded ${detail.uploaded.join(", ")}`;
     super(
       `publishCorbitsToolsRegistry: the ${CORBITS_TOOLS_REGISTRY} registry is missing the expected tool-package tarballs (${uploadedBit}; still missing ${detail.missing.join(", ")})`,
     );
@@ -209,11 +193,7 @@ async function listExistingTarballs(
       `publishCorbitsToolsRegistry: failed to list existing tarballs: ${String(listed.status)}`,
     );
   }
-  const rows = parseSchema(
-    TarballListResponse,
-    listed.data,
-    "list tarballs response",
-  );
+  const rows = parseSchema(TarballListResponse, listed.data, "list tarballs response");
   return new Map(rows.map((row) => [row.filename, row.integrity]));
 }
 
@@ -235,18 +215,10 @@ export async function isCorbitsToolsRegistrySeeded(
     cookies,
   );
   if (listed.status !== 200) {
-    throw new Error(
-      `publishCorbitsToolsRegistry: failed to list assets: ${String(listed.status)}`,
-    );
+    throw new Error(`publishCorbitsToolsRegistry: failed to list assets: ${String(listed.status)}`);
   }
-  const rows = parseSchema(
-    AssetWithOriginResponse.array(),
-    listed.data,
-    "list assets response",
-  );
-  const local = rows.find(
-    (row) => row.name === CORBITS_TOOLS_REGISTRY && row.origin.direct,
-  );
+  const rows = parseSchema(AssetWithOriginResponse.array(), listed.data, "list assets response");
+  const local = rows.find((row) => row.name === CORBITS_TOOLS_REGISTRY && row.origin.direct);
   const inherited = rows.find((row) => row.name === CORBITS_TOOLS_REGISTRY);
   const asset = local ?? inherited;
   if (asset === undefined) return false;
@@ -258,20 +230,11 @@ export async function isCorbitsToolsRegistrySeeded(
     cookies,
   );
   if (tarballs.status !== 200) return false;
-  const tarballRows = parseSchema(
-    TarballListResponse,
-    tarballs.data,
-    "list tarballs response",
-  );
-  return tarballsCoverRequiredSeedPackages(
-    tarballRows.map((row) => row.filename),
-  );
+  const tarballRows = parseSchema(TarballListResponse, tarballs.data, "list tarballs response");
+  return tarballsCoverRequiredSeedPackages(tarballRows.map((row) => row.filename));
 }
 
-export type FetchTarballPut = (
-  input: string,
-  init: RequestInit,
-) => Promise<Response>;
+export type FetchTarballPut = (input: string, init: RequestInit) => Promise<Response>;
 
 async function putTarball(
   hubUrl: string,
@@ -300,11 +263,7 @@ async function putTarball(
       `publishCorbitsToolsRegistry: upload failed for ${tarball.filename}: ${String(response.status)} ${text}`,
     );
   }
-  const parsed = parseSchema(
-    TarballPutResponse,
-    await response.json(),
-    `PUT ${tarball.filename}`,
-  );
+  const parsed = parseSchema(TarballPutResponse, await response.json(), `PUT ${tarball.filename}`);
   return { filename: tarball.filename, ...parsed };
 }
 
@@ -323,10 +282,7 @@ export type PublishCorbitsToolsRegistryArgs = {
   pack?: (packageDir: string) => Promise<PackedTarball>;
 };
 
-export type FetchTarballSource = (
-  url: string,
-  init?: RequestInit,
-) => Promise<Response>;
+export type FetchTarballSource = (url: string, init?: RequestInit) => Promise<Response>;
 
 /**
  * Fetches a prebuilt tarball from a `tarball-url` pin's URL and verifies
@@ -343,9 +299,7 @@ export async function fetchRegistryTarballSource(args: {
   const fetchImpl = args.fetchImpl ?? fetch;
   const response = await fetchImpl(args.url, { redirect: "follow" });
   if (!response.ok) {
-    throw new Error(
-      `fetchRegistryTarballSource: ${args.url} responded ${String(response.status)}`,
-    );
+    throw new Error(`fetchRegistryTarballSource: ${args.url} responded ${String(response.status)}`);
   }
   const bytes = new Uint8Array(await response.arrayBuffer());
   const actual = sha512Integrity(bytes);
@@ -380,17 +334,8 @@ export async function installRegistryTarball(args: {
   log?: (line: string) => void;
 }): Promise<"installed" | "present"> {
   const filename = `${args.name.replace(/^@/, "").replace("/", "-")}-${args.version}.tgz`;
-  const assetId = await ensureRegistryAsset(
-    args.api,
-    args.cookies,
-    args.tenantId,
-  );
-  const existing = await listExistingTarballs(
-    args.api,
-    args.cookies,
-    args.tenantId,
-    assetId,
-  );
+  const assetId = await ensureRegistryAsset(args.api, args.cookies, args.tenantId);
+  const existing = await listExistingTarballs(args.api, args.cookies, args.tenantId, assetId);
   if (!shouldPublishTarball(filename, existing.get(filename))) {
     args.log?.(`${filename} already published (skipped)`);
     return "present";
@@ -410,8 +355,7 @@ export async function installRegistryTarball(args: {
 
 function missingRequiredSeedPackages(filenames: readonly string[]): string[] {
   return REQUIRED_SEED_TOOL_PACKAGES.filter(
-    (name) =>
-      !filenames.some((filename) => tarballCoversPackage(filename, name)),
+    (name) => !filenames.some((filename) => tarballCoversPackage(filename, name)),
   );
 }
 
@@ -443,19 +387,10 @@ export async function publishCorbitsToolsRegistry(
   // bump would otherwise ship nothing and leave running agents on old tools.
   await checkFreshness();
 
-  const existingId = await listRegistryAsset(
-    args.api,
-    args.cookies,
-    args.tenantId,
-  );
+  const existingId = await listRegistryAsset(args.api, args.cookies, args.tenantId);
   const existingIntegrityByFilename =
     existingId !== undefined
-      ? await listExistingTarballs(
-          args.api,
-          args.cookies,
-          args.tenantId,
-          existingId,
-        )
+      ? await listExistingTarballs(args.api, args.cookies, args.tenantId, existingId)
       : new Map<string, string>();
 
   // Packs are independent; PUTs stay serial because they mutate one
@@ -471,10 +406,7 @@ export async function publishCorbitsToolsRegistry(
     if (item.status !== "ok") continue;
     const tarball = item.value;
     if (
-      !shouldPublishTarball(
-        tarball.filename,
-        existingIntegrityByFilename.get(tarball.filename),
-      )
+      !shouldPublishTarball(tarball.filename, existingIntegrityByFilename.get(tarball.filename))
     ) {
       args.log?.(
         `${tarball.filename} already published — versions are immutable; bump the version to ship changes (skipped)`,
@@ -495,9 +427,7 @@ export async function publishCorbitsToolsRegistry(
     return { success: true, summaries: [] };
   }
 
-  const assetId =
-    existingId ??
-    (await ensureRegistryAsset(args.api, args.cookies, args.tenantId));
+  const assetId = existingId ?? (await ensureRegistryAsset(args.api, args.cookies, args.tenantId));
 
   const summaries: PublishSummary[] = [];
   for (const tarball of toUpload) {

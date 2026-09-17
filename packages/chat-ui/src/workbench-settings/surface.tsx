@@ -13,33 +13,19 @@ import { isAgentAddress } from "../wire/mentions";
 import { useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
-import {
-  QueryView,
-  UnauthenticatedError,
-  describeQueryError,
-} from "@corbits/api-query";
-import {
-  getBenchChatSettings,
-  getWorkbenchSettings,
-  patchWorkbenchSettings,
-} from "../api";
+import { QueryView, UnauthenticatedError, describeQueryError } from "@corbits/api-query";
+import { getBenchChatSettings, getWorkbenchSettings, patchWorkbenchSettings } from "../api";
 import type { WorkbenchSettings } from "../api";
 import { WorkbenchLoadingState } from "../loading-state";
 import { CHAT_STRINGS } from "../strings";
 import { AgentsSection } from "./agents-section";
-import {
-  contextWindowControlState,
-  contextWindowPatchValue,
-} from "./context-window";
+import { contextWindowControlState, contextWindowPatchValue } from "./context-window";
 import type { ContextWindowMode } from "./context-window";
 import { DangerSection } from "./danger-section";
 import { GeneralSection } from "./general-section";
 import { MembersSection } from "./members-section";
 import { workbenchSettingsSections } from "./model";
-import type {
-  WorkbenchSettingsSection,
-  WorkbenchSettingsSectionId,
-} from "./model";
+import type { WorkbenchSettingsSection, WorkbenchSettingsSectionId } from "./model";
 
 type WorkbenchSettingsData = {
   readonly data: WorkbenchSettings;
@@ -104,8 +90,7 @@ export function WorkbenchSettingsSurface({
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [pinned, setPinned] = useState(false);
-  const [contextWindowMode, setContextWindowMode] =
-    useState<ContextWindowMode>("inherit");
+  const [contextWindowMode, setContextWindowMode] = useState<ContextWindowMode>("inherit");
   const [contextWindowInput, setContextWindowInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -115,10 +100,7 @@ export function WorkbenchSettingsSurface({
   useEffect(() => {
     let cancelled = false;
     setQuery({ kind: "loading" });
-    Promise.all([
-      getWorkbenchSettings(tenantId, workbenchId),
-      getBenchChatSettings(tenantId),
-    ])
+    Promise.all([getWorkbenchSettings(tenantId, workbenchId), getBenchChatSettings(tenantId)])
       .then(([settings, bench]) => {
         if (cancelled) return;
         const control = contextWindowControlState(settings.contextWindow);
@@ -151,7 +133,6 @@ export function WorkbenchSettingsSurface({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, workbenchId, reloadKey]);
 
   const ready = query.kind === "ready" ? query.data : undefined;
@@ -163,9 +144,7 @@ export function WorkbenchSettingsSurface({
   // without a second signal to keep in sync.
   const hasAgent =
     ready !== undefined &&
-    ready.data.participants.some((participant) =>
-      isAgentAddress(participant.address),
-    );
+    ready.data.participants.some((participant) => isAgentAddress(participant.address));
   const isDm = ready !== undefined && !hasAgent;
   const sections = workbenchSettingsSections(
     ready !== undefined ? ready.data.kind : "workbench",
@@ -180,8 +159,7 @@ export function WorkbenchSettingsSurface({
 
   const overrideValue = Number.parseInt(contextWindowInput, 10);
   const overrideValid =
-    contextWindowMode === "inherit" ||
-    (Number.isFinite(overrideValue) && overrideValue >= 0);
+    contextWindowMode === "inherit" || (Number.isFinite(overrideValue) && overrideValue >= 0);
   const saveDisabled = ready === undefined || !overrideValid || saving;
 
   function handleSave() {
@@ -216,10 +194,7 @@ export function WorkbenchSettingsSurface({
             <button type="button" onClick={onBack}>
               {workbenchTitle}
             </button>
-            <span
-              className="workbench-settings-breadcrumb-sep"
-              aria-hidden="true"
-            >
+            <span className="workbench-settings-breadcrumb-sep" aria-hidden="true">
               /
             </span>
             <span className="workbench-settings-breadcrumb-current">
@@ -227,9 +202,7 @@ export function WorkbenchSettingsSurface({
             </span>
           </nav>
           <span className="workbench-settings-section-dot" aria-hidden="true" />
-          <span className="workbench-settings-section-label">
-            {activeSection.label}
-          </span>
+          <span className="workbench-settings-section-label">{activeSection.label}</span>
         </div>
         {/* One primary action visible per view where possible (CL-6215
             EMIL #4): the Agents section has its own scoped "Save
@@ -244,9 +217,7 @@ export function WorkbenchSettingsSurface({
             disabled={saveDisabled}
             onClick={handleSave}
           >
-            {saving
-              ? CHAT_STRINGS.workbenchSettingsSaving
-              : CHAT_STRINGS.workbenchSettingsSave}
+            {saving ? CHAT_STRINGS.workbenchSettingsSaving : CHAT_STRINGS.workbenchSettingsSave}
           </Button>
         ) : null}
       </div>
@@ -254,9 +225,7 @@ export function WorkbenchSettingsSurface({
       <QueryView
         query={query}
         label={CHAT_STRINGS.workbenchSettingsLoadError}
-        loadingContent={
-          <WorkbenchLoadingState title="Loading workbench settings…" />
-        }
+        loadingContent={<WorkbenchLoadingState title="Loading workbench settings…" />}
       >
         {({ data, benchDefault }) => (
           <div className="workbench-settings-shell">
@@ -278,18 +247,14 @@ export function WorkbenchSettingsSurface({
                     }
                   >
                     {label !== "" ? (
-                      <div className="workbench-settings-nav-group-label">
-                        {label}
-                      </div>
+                      <div className="workbench-settings-nav-group-label">{label}</div>
                     ) : null}
                     {groupSections.map((s) => (
                       <button
                         key={s.id}
                         type="button"
                         className="workbench-settings-nav-item"
-                        aria-current={
-                          s.id === activeSection.id ? "page" : undefined
-                        }
+                        aria-current={s.id === activeSection.id ? "page" : undefined}
                         onClick={() => onSectionChange?.(s.id)}
                       >
                         {s.label}
@@ -329,9 +294,7 @@ export function WorkbenchSettingsSurface({
                   tenantId={tenantId}
                   workbenchId={workbenchId}
                   participants={data.participants}
-                  {...(currentUserPrincipalId !== undefined
-                    ? { currentUserPrincipalId }
-                    : {})}
+                  {...(currentUserPrincipalId !== undefined ? { currentUserPrincipalId } : {})}
                   onInvite={onInviteParticipant}
                   onParticipantsChanged={reload}
                 />
@@ -343,9 +306,7 @@ export function WorkbenchSettingsSurface({
                   workbenchId={workbenchId}
                   onInvite={onInviteParticipant}
                   entityId={entityId}
-                  {...(onEntityIdChange !== undefined
-                    ? { onEntityIdChange }
-                    : {})}
+                  {...(onEntityIdChange !== undefined ? { onEntityIdChange } : {})}
                 />
               ) : null}
 

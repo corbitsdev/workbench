@@ -61,9 +61,7 @@ describe("ollama.reply adversarial scenarios", () => {
 
   test("textlessToolCall carries no text, only a tool call -- a tool-only round, not an empty reply", async () => {
     const ollama = createOllamaMock();
-    ollama.onChat(() =>
-      ollama.reply.textlessToolCall("create_agent", { name: "researcher" }),
-    );
+    ollama.onChat(() => ollama.reply.textlessToolCall("create_agent", { name: "researcher" }));
 
     const response = await chat(ollama.fetch, {
       model: "qwen3.8:27b",
@@ -90,8 +88,7 @@ describe("ollama.reply adversarial scenarios", () => {
       messages: [{ role: "user", content: "book me a flight" }],
     });
     const body = (await response.json()) as ChatCompletionBody;
-    const rawArgs =
-      body.choices[0]?.message.tool_calls?.[0]?.function.arguments;
+    const rawArgs = body.choices[0]?.message.tool_calls?.[0]?.function.arguments;
 
     expect(() => JSON.parse(rawArgs ?? "")).not.toThrow();
     expect(JSON.parse(rawArgs ?? "{}")).toEqual({
@@ -102,17 +99,14 @@ describe("ollama.reply adversarial scenarios", () => {
 
   test("truncatedToolArgs reaches the wire byte-for-byte and is NOT valid JSON", async () => {
     const ollama = createOllamaMock();
-    ollama.onChat(() =>
-      ollama.reply.truncatedToolArgs("search_flights", '{"origin": "SFO"'),
-    );
+    ollama.onChat(() => ollama.reply.truncatedToolArgs("search_flights", '{"origin": "SFO"'));
 
     const response = await chat(ollama.fetch, {
       model: "qwen3.8:27b",
       messages: [{ role: "user", content: "book me a flight" }],
     });
     const body = (await response.json()) as ChatCompletionBody;
-    const rawArgs =
-      body.choices[0]?.message.tool_calls?.[0]?.function.arguments;
+    const rawArgs = body.choices[0]?.message.tool_calls?.[0]?.function.arguments;
 
     expect(rawArgs).toBe('{"origin": "SFO"');
     expect(() => JSON.parse(rawArgs ?? "")).toThrow();
@@ -166,9 +160,7 @@ describe("ollama.reply adversarial scenarios", () => {
 describe("sequence", () => {
   test("scripts one reply per turn, then repeats the last one", async () => {
     const ollama = createOllamaMock();
-    ollama.onChat(
-      sequence([ollama.reply.malformedToolName(), ollama.reply.text("turn 2")]),
-    );
+    ollama.onChat(sequence([ollama.reply.malformedToolName(), ollama.reply.text("turn 2")]));
 
     const turn1 = (await (
       await chat(ollama.fetch, {
@@ -189,9 +181,7 @@ describe("sequence", () => {
       })
     ).json()) as ChatCompletionBody;
 
-    expect(turn1.choices[0]?.message.tool_calls?.[0]?.function.name).toContain(
-      "\n</parameter",
-    );
+    expect(turn1.choices[0]?.message.tool_calls?.[0]?.function.name).toContain("\n</parameter");
     expect(turn2.choices[0]?.message.content).toBe("turn 2");
     // sequence exhausted -- turn 3 repeats the last scripted reply rather
     // than throwing or falling back to a default.

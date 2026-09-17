@@ -30,10 +30,7 @@ import type { CredentialCipher } from "@intx/types";
 function base64url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary)
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/, "");
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
 /** 43 base64url chars from 32 random bytes — the entropy grade shared
@@ -57,10 +54,7 @@ export async function generatePKCEPair(): Promise<PKCEPair> {
 }
 
 export async function s256Challenge(codeVerifier: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(codeVerifier),
-  );
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(codeVerifier));
   return base64url(new Uint8Array(digest));
 }
 
@@ -84,10 +78,7 @@ export type ConnectStateStore<Payload> = {
   /** Returns the payload exactly once; a second consume, a wrong user,
    * an expired state, a state sealed for a different provider, or a
    * payload `parsePayload` refuses all come back undefined. */
-  consume(args: {
-    state: string;
-    userId: string;
-  }): Promise<Payload | undefined>;
+  consume(args: { state: string; userId: string }): Promise<Payload | undefined>;
 };
 
 export function createConnectStateStore<Payload>(args: {

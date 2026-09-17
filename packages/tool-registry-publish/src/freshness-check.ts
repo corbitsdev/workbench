@@ -44,9 +44,7 @@ export type CheckToolPackageFreshnessArgs = {
  * clears the finding — that is the only supported way to ship new
  * tool-package bytes.
  */
-export function staleToolPackages(
-  snapshots: readonly ToolPackageSnapshot[],
-): StaleToolPackage[] {
+export function staleToolPackages(snapshots: readonly ToolPackageSnapshot[]): StaleToolPackage[] {
   const stale: StaleToolPackage[] = [];
   for (const snapshot of snapshots) {
     if (snapshot.publishedVersion === undefined) continue;
@@ -78,9 +76,7 @@ export class StaleToolPackageError extends Error {
   }
 }
 
-export function assertToolPackagesFresh(
-  snapshots: readonly ToolPackageSnapshot[],
-): void {
+export function assertToolPackagesFresh(snapshots: readonly ToolPackageSnapshot[]): void {
   const stale = staleToolPackages(snapshots);
   if (stale.length > 0) throw new StaleToolPackageError(stale);
 }
@@ -100,9 +96,7 @@ export async function snapshotToolPackages(
 export async function checkToolPackageFreshness(
   args: CheckToolPackageFreshnessArgs = {},
 ): Promise<void> {
-  const snapshots = await snapshotToolPackages(
-    args.packageDirs ?? CORBITS_TOOL_PACKAGE_DIRS,
-  );
+  const snapshots = await snapshotToolPackages(args.packageDirs ?? CORBITS_TOOL_PACKAGE_DIRS);
   assertToolPackagesFresh(snapshots);
 }
 
@@ -118,10 +112,7 @@ async function snapshotOnePackage(dir: string): Promise<ToolPackageSnapshot> {
   }
 
   const resolvedRoot = await realpath(root);
-  const relManifest = gitPath(
-    resolvedRoot,
-    path.join(resolvedDir, "package.json"),
-  );
+  const relManifest = gitPath(resolvedRoot, path.join(resolvedDir, "package.json"));
   const relSrc = gitPath(resolvedRoot, path.join(resolvedDir, "src"));
   const publishedVersion = await committedVersion(root, relManifest);
   const srcChangedSincePublished =
@@ -138,38 +129,27 @@ async function snapshotOnePackage(dir: string): Promise<ToolPackageSnapshot> {
   };
 }
 
-async function readManifest(
-  manifestPath: string,
-): Promise<{ name: string; version: string }> {
+async function readManifest(manifestPath: string): Promise<{ name: string; version: string }> {
   return parseManifest(await readFile(manifestPath, "utf8"), manifestPath);
 }
 
-function parseManifest(
-  jsonText: string,
-  label: string,
-): { name: string; version: string } {
+function parseManifest(jsonText: string, label: string): { name: string; version: string } {
   let raw: unknown;
   try {
     raw = JSON.parse(jsonText);
   } catch (err) {
-    throw new Error(
-      `tool-package freshness: ${label} is not valid JSON: ${String(err)}`,
-      { cause: err },
-    );
+    throw new Error(`tool-package freshness: ${label} is not valid JSON: ${String(err)}`, {
+      cause: err,
+    });
   }
   const parsed = PackageManifest(raw);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `tool-package freshness: ${label} failed validation: ${parsed.summary}`,
-    );
+    throw new Error(`tool-package freshness: ${label} failed validation: ${parsed.summary}`);
   }
   return parsed;
 }
 
-async function committedVersion(
-  root: string,
-  relManifest: string,
-): Promise<string | undefined> {
+async function committedVersion(root: string, relManifest: string): Promise<string | undefined> {
   const shown = await git(root, ["show", `HEAD:${relManifest}`]);
   if (shown.code !== 0) return undefined;
   return parseManifest(shown.stdout, `HEAD:${relManifest}`).version;
@@ -192,13 +172,7 @@ async function srcChangedSinceVersion(
   if (since === undefined) return false;
   const diff = await git(root, ["diff", "--name-only", since, "--", relSrc]);
   if (diff.stdout.trim() !== "") return true;
-  const untracked = await git(root, [
-    "ls-files",
-    "--others",
-    "--exclude-standard",
-    "--",
-    relSrc,
-  ]);
+  const untracked = await git(root, ["ls-files", "--others", "--exclude-standard", "--", relSrc]);
   return untracked.stdout.trim() !== "";
 }
 

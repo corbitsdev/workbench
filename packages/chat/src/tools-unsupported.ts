@@ -4,8 +4,7 @@
  * catalog/registry capability strings never belong on the timeline.
  */
 
-export const TOOLS_UNSUPPORTED_CONSUMER_MESSAGE =
-  "This agent's model can't use tools.";
+export const TOOLS_UNSUPPORTED_CONSUMER_MESSAGE = "This agent's model can't use tools.";
 
 /**
  * Conservative match: provider/inference errors about tools /

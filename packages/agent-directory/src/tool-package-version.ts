@@ -22,10 +22,7 @@ import type { DB } from "@intx/db";
 import { resolveAssetByName } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
 
-import {
-  CORBITS_TOOLS_REGISTRY,
-  tarballCoversPackage,
-} from "@corbits/tool-registry-publish";
+import { CORBITS_TOOLS_REGISTRY, tarballCoversPackage } from "@corbits/tool-registry-publish";
 
 import { CapabilityOutOfInventoryError } from "./capability-inventory";
 
@@ -49,10 +46,7 @@ export type ResolvePinnedVersionDeps = {
  * for a filename that does not cover `packageName` or does not parse as
  * a valid semver version — a defensively-shaped filename is treated as
  * absent rather than crashing the resolution. */
-function versionFromTarballFilename(
-  filename: string,
-  packageName: string,
-): string | null {
+function versionFromTarballFilename(filename: string, packageName: string): string | null {
   if (!tarballCoversPackage(filename, packageName)) return null;
   const prefix = `${packageName.replace(/^@/, "").replace("/", "-")}-`;
   const version = filename.slice(prefix.length, -".tgz".length);
@@ -66,12 +60,8 @@ function versionFromTarballFilename(
  * because prerelease identifiers still sort after a lower release under
  * plain semver comparison for a higher major/minor/patch, silently
  * pinning a pre-release build a person never asked for. */
-function highestPreferringStable(
-  versions: readonly string[],
-): string | undefined {
-  const stable = versions.filter(
-    (version) => semver.prerelease(version) === null,
-  );
+function highestPreferringStable(versions: readonly string[]): string | undefined {
+  const stable = versions.filter((version) => semver.prerelease(version) === null);
   const candidates = stable.length > 0 ? stable : versions;
   return candidates.slice().sort(semver.compare).at(-1);
 }

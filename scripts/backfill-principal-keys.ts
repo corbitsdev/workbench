@@ -19,11 +19,7 @@
 // uses. The key is required: the seeds must be sealed under the same cipher
 // the hub decrypts with, so there is no noop fallback.
 
-import {
-  backfillPrincipalKeys,
-  createDB,
-  createPrincipalKeyStore,
-} from "@intx/db";
+import { backfillPrincipalKeys, createDB, createPrincipalKeyStore } from "@intx/db";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import { getLogger, setup } from "@intx/log";
 
@@ -32,9 +28,7 @@ const log = getLogger(["backfill-principal-keys"]);
 
 const keyHex = process.env["PRINCIPAL_KEY_ENCRYPTION_KEY"];
 if (keyHex === undefined || keyHex.trim() === "") {
-  throw new Error(
-    "PRINCIPAL_KEY_ENCRYPTION_KEY environment variable is required",
-  );
+  throw new Error("PRINCIPAL_KEY_ENCRYPTION_KEY environment variable is required");
 }
 const cipher = createEnvKeyCredentialCipher(Buffer.from(keyHex, "hex"));
 

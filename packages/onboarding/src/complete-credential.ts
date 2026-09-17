@@ -70,11 +70,7 @@ import {
   type SeedTenantArgs,
 } from "./tenant-seed";
 import type { WorkflowPusher } from "@corbits/connections/workflow-push";
-import {
-  isSidecarUnavailableError,
-  parseAs,
-  type ApiCall,
-} from "@corbits/hub-api-client";
+import { isSidecarUnavailableError, parseAs, type ApiCall } from "@corbits/hub-api-client";
 import {
   persistConnectorCredential,
   type PersistConnectorCredentialFns,
@@ -89,8 +85,7 @@ import { personalTenantSlug } from "./provision";
  * account's onboarding page reads `POST /complete-setup` — see
  * `ensureSeeded`'s own doc comment below for the sidecar-unavailable
  * class this covers. */
-export const AGENTS_PENDING_MESSAGE =
-  "Your workbench is ready — agents will come online shortly.";
+export const AGENTS_PENDING_MESSAGE = "Your workbench is ready — agents will come online shortly.";
 
 export type PersonalTenant = {
   readonly tenantId: string;
@@ -237,27 +232,14 @@ export async function findPersonalTenant(
   opts: { fallbackToFirstPrincipal?: boolean } = {},
 ): Promise<PersonalTenant | undefined> {
   const response = await api("GET", "/api/me/principals", undefined, cookies);
-  const summary = parseAs(
-    paginatedSchema(PrincipalSummary),
-    response.data,
-    "principals response",
-  );
+  const summary = parseAs(paginatedSchema(PrincipalSummary), response.data, "principals response");
   const own =
     summary.data.find((p) => p.tenantSlug === expectedSlug) ??
     (opts.fallbackToFirstPrincipal ? summary.data[0] : undefined);
   if (!own) return undefined;
 
-  const tenantResponse = await api(
-    "GET",
-    `/api/tenants/${own.tenantId}`,
-    undefined,
-    cookies,
-  );
-  const tenant = parseAs(
-    TenantResponse,
-    tenantResponse.data,
-    "tenant response",
-  );
+  const tenantResponse = await api("GET", `/api/tenants/${own.tenantId}`, undefined, cookies);
+  const tenant = parseAs(TenantResponse, tenantResponse.data, "tenant response");
   return {
     tenantId: own.tenantId,
     tenantSlug: own.tenantSlug,
@@ -315,17 +297,8 @@ async function resolveOllamaModelSource(
 ): Promise<ModelSource> {
   const catalogSeed = CATALOG_SEEDS.ollama;
 
-  const response = await api(
-    "GET",
-    `/api/tenants/${tenantId}/models`,
-    undefined,
-    cookies,
-  );
-  const models = parseAs(
-    ModelInfo.array(),
-    response.data,
-    "resolved catalog response",
-  );
+  const response = await api("GET", `/api/tenants/${tenantId}/models`, undefined, cookies);
+  const models = parseAs(ModelInfo.array(), response.data, "resolved catalog response");
   const candidates: CatalogOfferingCandidate[] = [];
   for (const model of models) {
     for (const offering of model.offerings) {
@@ -353,9 +326,7 @@ async function resolveOllamaModelSource(
   let pool = completionCapable;
   if (
     curatedName !== undefined &&
-    completionCapable.some(
-      (candidate) => candidate.canonicalName === curatedName,
-    )
+    completionCapable.some((candidate) => candidate.canonicalName === curatedName)
   ) {
     const ownedResponse = await api(
       "GET",
@@ -370,9 +341,7 @@ async function resolveOllamaModelSource(
     ).data;
     if (owned.length > 0) {
       const ownedNames = new Set(owned.map((model) => model.canonicalName));
-      pool = completionCapable.filter((candidate) =>
-        ownedNames.has(candidate.canonicalName),
-      );
+      pool = completionCapable.filter((candidate) => ownedNames.has(candidate.canonicalName));
     }
   }
   const preferred =
@@ -383,13 +352,10 @@ async function resolveOllamaModelSource(
     preferred ??
     [...pool].sort(
       (left, right) =>
-        left.priority - right.priority ||
-        left.canonicalName.localeCompare(right.canonicalName),
+        left.priority - right.priority || left.canonicalName.localeCompare(right.canonicalName),
     )[0];
   if (winner === undefined) {
-    throw new Error(
-      `tenant ${tenantId}'s seeded ollama catalog resolved to no candidate model`,
-    );
+    throw new Error(`tenant ${tenantId}'s seeded ollama catalog resolved to no candidate model`);
   }
 
   return {
@@ -421,9 +387,7 @@ export async function modelSourceFor(
   const catalogSeed = CATALOG_SEEDS[provider];
   const defaultModel = catalogSeed.models[0];
   if (defaultModel === undefined) {
-    throw new Error(
-      `catalog seed for provider ${provider} has no default model`,
-    );
+    throw new Error(`catalog seed for provider ${provider} has no default model`);
   }
   return {
     provider: catalogSeed.provider.plugin,
@@ -443,21 +407,14 @@ export async function testAndPersistCredential(
   args: TestAndPersistCredentialArgs,
 ): Promise<TestAndPersistCredentialResult> {
   const expectedSlug = personalTenantSlug(args.userEmail, args.userId);
-  const tenant = await findPersonalTenant(
-    args.api,
-    args.cookies,
-    expectedSlug,
-    {
-      fallbackToFirstPrincipal: true,
-    },
-  );
+  const tenant = await findPersonalTenant(args.api, args.cookies, expectedSlug, {
+    fallbackToFirstPrincipal: true,
+  });
   if (!tenant) return { kind: "no-personal-bench" };
 
   const descriptor = CONNECTOR_REGISTRY[args.provider];
   if (descriptor === undefined) {
-    throw new Error(
-      `no connector descriptor registered for provider ${args.provider}`,
-    );
+    throw new Error(`no connector descriptor registered for provider ${args.provider}`);
   }
 
   // The one shared persist-and-seed sequence (CL-6394): provider +
@@ -479,18 +436,12 @@ export async function testAndPersistCredential(
     ...(args.credentialMetadata !== undefined
       ? { credentialMetadata: args.credentialMetadata }
       : {}),
-    ...(args.baseURLOverride !== undefined
-      ? { baseURLOverride: args.baseURLOverride }
-      : {}),
-    ...(args.ensureProviderFn !== undefined
-      ? { ensureProviderFn: args.ensureProviderFn }
-      : {}),
+    ...(args.baseURLOverride !== undefined ? { baseURLOverride: args.baseURLOverride } : {}),
+    ...(args.ensureProviderFn !== undefined ? { ensureProviderFn: args.ensureProviderFn } : {}),
     ...(args.ensureCredentialFn !== undefined
       ? { ensureCredentialFn: args.ensureCredentialFn }
       : {}),
-    ...(args.seedCatalogFn !== undefined
-      ? { seedCatalogFn: args.seedCatalogFn }
-      : {}),
+    ...(args.seedCatalogFn !== undefined ? { seedCatalogFn: args.seedCatalogFn } : {}),
   });
 
   return { kind: "connected", ...tenant };
@@ -515,9 +466,7 @@ export async function testAndPersistCredential(
  * default workflows made it live and which are still pending. Any other
  * error out of `seedTenant` still throws, unchanged.
  */
-export async function ensureSeeded(
-  args: EnsureSeededArgs,
-): Promise<EnsureSeededResult> {
+export async function ensureSeeded(args: EnsureSeededArgs): Promise<EnsureSeededResult> {
   const runSeedTenant = args.seedTenantFn ?? seedTenant;
 
   const seedTenantArgs = {
@@ -529,12 +478,7 @@ export async function ensureSeeded(
       principalId: args.tenant.principalId,
       domain: args.tenant.tenantDomain,
     },
-    model: await modelSourceFor(
-      args.api,
-      args.cookies,
-      args.tenant.tenantId,
-      args.provider,
-    ),
+    model: await modelSourceFor(args.api, args.cookies, args.tenant.tenantId, args.provider),
     pushWorkflow: args.pushWorkflow,
     log: args.log,
     workflows: DEFAULT_WORKFLOWS,

@@ -14,10 +14,7 @@ const FRESH = new Date(NOW - 1_000).toISOString();
 describe("warm-kept scheduled fire settling (CL-7418)", () => {
   test("a fire with no in-flight turn past the window reads completed", () => {
     expect(
-      runOutcomeStatus(
-        { createdAt: OLD, status: "running", endedAt: null, turns: [] },
-        NOW,
-      ),
+      runOutcomeStatus({ createdAt: OLD, status: "running", endedAt: null, turns: [] }, NOW),
     ).toBe("completed");
   });
 
@@ -37,10 +34,7 @@ describe("warm-kept scheduled fire settling (CL-7418)", () => {
 
   test("a fresh scheduled tick inside the window stays running", () => {
     expect(
-      runOutcomeStatus(
-        { createdAt: FRESH, status: "running", endedAt: null, turns: [] },
-        NOW,
-      ),
+      runOutcomeStatus({ createdAt: FRESH, status: "running", endedAt: null, turns: [] }, NOW),
     ).toBe("running");
   });
 
@@ -60,19 +54,13 @@ describe("warm-kept scheduled fire settling (CL-7418)", () => {
 
   test("an endedAt stamp reads completed even inside the window", () => {
     expect(
-      runOutcomeStatus(
-        { createdAt: FRESH, status: "running", endedAt: FRESH, turns: [] },
-        NOW,
-      ),
+      runOutcomeStatus({ createdAt: FRESH, status: "running", endedAt: FRESH, turns: [] }, NOW),
     ).toBe("completed");
   });
 
   test("non-running statuses pass through untouched", () => {
     expect(
-      runOutcomeStatus(
-        { createdAt: OLD, status: "failed", endedAt: null, turns: [] },
-        NOW,
-      ),
+      runOutcomeStatus({ createdAt: OLD, status: "failed", endedAt: null, turns: [] }, NOW),
     ).toBe("failed");
   });
 });

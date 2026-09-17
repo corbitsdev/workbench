@@ -1,9 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  auditUiVocabulary,
-  findViolations,
-  stripNonUserFacing,
-} from "../ui-vocabulary";
+import { auditUiVocabulary, findViolations, stripNonUserFacing } from "../ui-vocabulary";
 
 test("clean prose passes with no violations", () => {
   const report = auditUiVocabulary([
@@ -23,9 +19,7 @@ test("a banned term inside natural-language JSX copy is a violation", () => {
     },
   ]);
   expect(report.violations).toHaveLength(1);
-  expect(report.violations[0]).toContain(
-    "apps/web/src/pages/agents-settings-section.tsx",
-  );
+  expect(report.violations[0]).toContain("apps/web/src/pages/agents-settings-section.tsx");
   expect(report.violations[0]).toContain("bench");
 });
 

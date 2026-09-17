@@ -33,9 +33,7 @@ const BUN_IMAGE_VERSION = "1.3.9";
 /** The workspace whose dependency closure is the only one this image needs. */
 const SIDECAR_PACKAGE_NAME = "@workbench/sidecar";
 
-export function createSidecarTemplate(
-  repositoryRootValue = resolve(import.meta.dir, "../../.."),
-) {
+export function createSidecarTemplate(repositoryRootValue = resolve(import.meta.dir, "../../..")) {
   const repositoryRoot = resolve(repositoryRootValue);
   const packageTemplateDir = resolve(import.meta.dir);
 

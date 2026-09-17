@@ -19,12 +19,9 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 
-function stubFetch(
-  respond: (path: string) => Response | Promise<Response>,
-): void {
+function stubFetch(respond: (path: string) => Response | Promise<Response>): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
-    const path =
-      typeof input === "string" ? input : new URL(String(input)).pathname;
+    const path = typeof input === "string" ? input : new URL(String(input)).pathname;
     return Promise.resolve(respond(path));
   }) as typeof fetch;
 }
@@ -32,40 +29,28 @@ function stubFetch(
 describe("probeSectionAccess", () => {
   test("an allow effect is allowed", async () => {
     stubFetch(() => json({ effect: "allow", matchingGrants: [] }));
-    await expect(
-      probeSectionAccess("tnt_1", "prn_1", "principal"),
-    ).resolves.toBe("allowed");
+    await expect(probeSectionAccess("tnt_1", "prn_1", "principal")).resolves.toBe("allowed");
   });
 
   test("a deny effect is denied", async () => {
     stubFetch(() => json({ effect: "deny", matchingGrants: [] }));
-    await expect(
-      probeSectionAccess("tnt_1", "prn_1", "principal"),
-    ).resolves.toBe("denied");
+    await expect(probeSectionAccess("tnt_1", "prn_1", "principal")).resolves.toBe("denied");
   });
 
   test("an ask effect is denied — only allow is allowed", async () => {
     stubFetch(() => json({ effect: "ask", matchingGrants: [] }));
-    await expect(probeSectionAccess("tnt_1", "prn_1", "role")).resolves.toBe(
-      "denied",
-    );
+    await expect(probeSectionAccess("tnt_1", "prn_1", "role")).resolves.toBe("denied");
   });
 
   test("a 5xx is error, not denied", async () => {
     stubFetch(() => json({}, 500));
-    await expect(probeSectionAccess("tnt_1", "prn_1", "grant")).resolves.toBe(
-      "error",
-    );
+    await expect(probeSectionAccess("tnt_1", "prn_1", "grant")).resolves.toBe("error");
   });
 
   test("a network failure is error, not denied", async () => {
     globalThis.fetch = (() =>
-      Promise.reject(
-        new TypeError("Failed to fetch"),
-      )) as unknown as typeof fetch;
-    await expect(
-      probeSectionAccess("tnt_1", "prn_1", "credential"),
-    ).resolves.toBe("error");
+      Promise.reject(new TypeError("Failed to fetch"))) as unknown as typeof fetch;
+    await expect(probeSectionAccess("tnt_1", "prn_1", "credential")).resolves.toBe("error");
   });
 });
 

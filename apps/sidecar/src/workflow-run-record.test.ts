@@ -154,8 +154,7 @@ describe("workflow run record store", () => {
     // all-missing rejecting while silently admitting a partial record). The
     // `SourceRefPin` co-requires its `source` + `closure`, so a half-populated
     // pin must be rejected too, not just an absent one.
-    const rejects = (r: unknown): boolean =>
-      WorkflowRunRecord(r) instanceof type.errors;
+    const rejects = (r: unknown): boolean => WorkflowRunRecord(r) instanceof type.errors;
 
     const base = {
       version: 1,
@@ -177,12 +176,8 @@ describe("workflow run record store", () => {
     expect(rejects({ ...base, approvedWireHash })).toBe(true);
     // A half-populated pin (only one of source/closure) is rejected by the
     // pin's own co-requirement, even alongside a valid hash.
-    expect(rejects({ ...base, sourceRef: { source }, approvedWireHash })).toBe(
-      true,
-    );
-    expect(rejects({ ...base, sourceRef: { closure }, approvedWireHash })).toBe(
-      true,
-    );
+    expect(rejects({ ...base, sourceRef: { source }, approvedWireHash })).toBe(true);
+    expect(rejects({ ...base, sourceRef: { closure }, approvedWireHash })).toBe(true);
     // Full pin + hash -> accepted.
     expect(rejects({ ...base, sourceRef, approvedWireHash })).toBe(false);
   });
@@ -295,10 +290,7 @@ describe("scanWorkflowRunRecords", () => {
     // A directory whose record parses but fails the schema (missing fields).
     const invalidDir = path.join(dataDir, "workflow-runs", "dep-invalid");
     await fs.mkdir(invalidDir, { recursive: true });
-    await fs.writeFile(
-      path.join(invalidDir, "deployment.json"),
-      JSON.stringify({ version: 1 }),
-    );
+    await fs.writeFile(path.join(invalidDir, "deployment.json"), JSON.stringify({ version: 1 }));
 
     // A bare run directory with no record at all.
     await fs.mkdir(path.join(dataDir, "workflow-runs", "dep-empty"), {

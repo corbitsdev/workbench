@@ -40,19 +40,13 @@ export interface CommandDefinition {
   /** Registered but never listed or offered by name-prefix completion
    * — still resolvable and dispatchable directly. Defaults to false. */
   readonly hidden?: boolean;
-  readonly handler: (
-    args: string,
-    ctx: CommandContext,
-  ) => Promise<CommandResult> | CommandResult;
+  readonly handler: (args: string, ctx: CommandContext) => Promise<CommandResult> | CommandResult;
 }
 
 /** The autocomplete-facing projection of a command: no handler, since
  * a dropdown never calls one — see the package doc comment on why this
  * package stays UI-free. */
-export type CommandListing = Pick<
-  CommandDefinition,
-  "name" | "description" | "argumentHint"
->;
+export type CommandListing = Pick<CommandDefinition, "name" | "description" | "argumentHint">;
 
 export type CommandPlugin = (ctx: {
   readonly tenantId: string;
@@ -64,10 +58,7 @@ export interface CommandRegistry {
   /** Every non-hidden command available to `tenantId`, sorted by name. */
   listCommands(tenantId: string): Promise<readonly CommandDefinition[]>;
   /** A command by name, hidden or not, available to `tenantId`. */
-  getCommand(
-    name: string,
-    tenantId: string,
-  ): Promise<CommandDefinition | undefined>;
+  getCommand(name: string, tenantId: string): Promise<CommandDefinition | undefined>;
 }
 
 export function createCommandRegistry(): CommandRegistry {

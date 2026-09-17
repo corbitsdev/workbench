@@ -6,9 +6,7 @@ import { describe, expect, test } from "bun:test";
 
 import { ArtifactSummary, filterArtifacts, sortArtifacts } from "../src/index";
 
-function artifact(
-  overrides: Partial<ArtifactSummary> & { readonly id: string },
-): ArtifactSummary {
+function artifact(overrides: Partial<ArtifactSummary> & { readonly id: string }): ArtifactSummary {
   return {
     title: "Untitled",
     kind: "document",
@@ -32,9 +30,7 @@ describe("ArtifactSummary", () => {
 
   test("rejects a row missing a required field", () => {
     const parsed = ArtifactSummary({ id: "art_1" });
-    expect(
-      parsed instanceof Error || "id" in Object(parsed) === false,
-    ).toBeTruthy();
+    expect(parsed instanceof Error || "id" in Object(parsed) === false).toBeTruthy();
   });
 });
 
@@ -43,17 +39,11 @@ describe("sortArtifacts", () => {
   const newer = artifact({ id: "b", createdAt: "2026-02-01T00:00:00.000Z" });
 
   test("newest first by default ordering", () => {
-    expect(sortArtifacts([older, newer], "newest").map((a) => a.id)).toEqual([
-      "b",
-      "a",
-    ]);
+    expect(sortArtifacts([older, newer], "newest").map((a) => a.id)).toEqual(["b", "a"]);
   });
 
   test("oldest first when asked", () => {
-    expect(sortArtifacts([newer, older], "oldest").map((a) => a.id)).toEqual([
-      "a",
-      "b",
-    ]);
+    expect(sortArtifacts([newer, older], "oldest").map((a) => a.id)).toEqual(["a", "b"]);
   });
 
   test("does not mutate the input array", () => {
@@ -72,15 +62,11 @@ describe("filterArtifacts", () => {
   });
 
   test("matches on title, case-insensitively", () => {
-    expect(filterArtifacts([report, csv], "q3").map((a) => a.id)).toEqual([
-      "a",
-    ]);
+    expect(filterArtifacts([report, csv], "q3").map((a) => a.id)).toEqual(["a"]);
   });
 
   test("matches on kind too", () => {
-    expect(filterArtifacts([report, csv], "csv").map((a) => a.id)).toEqual([
-      "b",
-    ]);
+    expect(filterArtifacts([report, csv], "csv").map((a) => a.id)).toEqual(["b"]);
   });
 
   test("no match empties the result rather than falling back to all", () => {

@@ -28,9 +28,7 @@ function filePartFor(artifact: PersistedArtifact): FilePart {
 }
 
 /** One tool call's persisted artifacts as `FilePart`s. */
-export function artifactPartsForToolCall(
-  toolCall: FinalizedTurnToolCall,
-): readonly FilePart[] {
+export function artifactPartsForToolCall(toolCall: FinalizedTurnToolCall): readonly FilePart[] {
   return persistedArtifactsForToolCall(toolCall).map(filePartFor);
 }
 

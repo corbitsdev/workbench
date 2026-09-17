@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  createInMemoryAgentTurnStore,
-  AGENT_TURN_STALE_MS,
-} from "@corbits/agent-runtime";
+import { createInMemoryAgentTurnStore, AGENT_TURN_STALE_MS } from "@corbits/agent-runtime";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import { listWorkbenchLiveState } from "../src/workbench-reply-activity";
 import { createChatRoutes } from "../src/routes";
@@ -171,8 +168,7 @@ describe("sidebar reply activity", () => {
       ...f.start,
       workbenchId: workbench.id,
     });
-    const readList = async () =>
-      (await app.request("/workbenches?kind=workbench")).json();
+    const readList = async () => (await app.request("/workbenches?kind=workbench")).json();
     expect(await readList()).toEqual({
       items: [expect.objectContaining({ id: workbench.id, live: "working" })],
     });
@@ -191,17 +187,14 @@ describe("sidebar reply activity", () => {
         }),
       ],
     });
-    const response = await app.request(
-      `/workbenches/${workbench.id}/read-state`,
-      {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          lastSeenCreatedAt: reply.createdAt,
-          lastSeenId: reply.id,
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/read-state`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        lastSeenCreatedAt: reply.createdAt,
+        lastSeenId: reply.id,
+      }),
+    });
     expect(response.status).toBe(200);
     expect(await readList()).toEqual({
       items: [expect.objectContaining({ live: "idle" })],

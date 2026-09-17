@@ -66,9 +66,7 @@ export function contextItemFor(
   participants: readonly ParticipantRecord[],
 ): WorkbenchContextItem | undefined {
   const texts = message.parts
-    .filter(
-      (part): part is Extract<Part, { kind: "text" }> => part.kind === "text",
-    )
+    .filter((part): part is Extract<Part, { kind: "text" }> => part.kind === "text")
     .map((part) => part.text);
   if (texts.length === 0) return undefined;
   return {
@@ -113,8 +111,7 @@ export async function assembleTurnContext(
     const fetchCap = input.contextWindow + DROPPED_RECAP_LOOKBACK;
     const inScope = (message: RoomMessage): boolean =>
       message.id !== input.excludeMessageId &&
-      (input.thread === undefined ||
-        input.thread.threadIdOf(message.id) === input.thread.threadId);
+      (input.thread === undefined || input.thread.threadIdOf(message.id) === input.thread.threadId);
 
     const newestFirst: RoomMessage[] = [];
     let cursor: string | undefined;

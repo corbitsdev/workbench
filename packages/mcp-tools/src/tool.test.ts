@@ -53,9 +53,7 @@ test("readOnlyGate allows a tool the live tools/list marks readOnlyHint: true", 
 });
 
 test("readOnlyGate refuses a tool without readOnlyHint, pointing to mcp_call", () => {
-  const tools: readonly McpToolInfo[] = [
-    { name: "delete_row", inputSchema: {} },
-  ];
+  const tools: readonly McpToolInfo[] = [{ name: "delete_row", inputSchema: {} }];
   const gate = readOnlyGate(tools, "delete_row");
   expect(gate.allowed).toBe(false);
   if (!gate.allowed) {
@@ -70,8 +68,7 @@ test("readOnlyGate never trusts a model's claim about a tool it can't find", () 
 
 test("mcp_list_servers degrades to an honest error when the hub is unreachable, never a fabricated empty list", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (() =>
-    Promise.reject(new Error("network down"))) as unknown as typeof fetch;
+  globalThis.fetch = (() => Promise.reject(new Error("network down"))) as unknown as typeof fetch;
   try {
     const bundle = mcpTools(fakeEnv());
     const result = await bundle.run(
@@ -174,9 +171,7 @@ test("mcp_call against a server with no bound credential degrades honestly", asy
     Promise.resolve(
       new Response(
         JSON.stringify({
-          data: [
-            { slug: "notion", name: "Notion", url: "https://example.test/mcp" },
-          ],
+          data: [{ slug: "notion", name: "Notion", url: "https://example.test/mcp" }],
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       ),
@@ -219,9 +214,7 @@ test("mcp_list_tools {server} surfaces the credential resolve reason instead of 
     Promise.resolve(
       new Response(
         JSON.stringify({
-          data: [
-            { slug: "notion", name: "Notion", url: "https://example.test/mcp" },
-          ],
+          data: [{ slug: "notion", name: "Notion", url: "https://example.test/mcp" }],
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       ),
@@ -285,9 +278,7 @@ test("mint -> bind -> resolve round trip: mcp_call resolves credentials by the e
       resolve(handle: string): Promise<MediatedCredential> {
         resolvedWithHandle = handle;
         if (handle !== boundHandle) {
-          return Promise.reject(
-            new Error(`no credential is bound to handle "${handle}"`),
-          );
+          return Promise.reject(new Error(`no credential is bound to handle "${handle}"`));
         }
         return Promise.reject(new Error("server not reachable in this fake"));
       },

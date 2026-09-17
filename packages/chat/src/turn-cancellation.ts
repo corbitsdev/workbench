@@ -51,8 +51,7 @@ export function createTurnCancelRegistry(): TurnCancelRegistry {
   return {
     register(workbenchId) {
       const controller = new AbortController();
-      const controllers =
-        controllersByWorkbench.get(workbenchId) ?? new Set<AbortController>();
+      const controllers = controllersByWorkbench.get(workbenchId) ?? new Set<AbortController>();
       controllers.add(controller);
       controllersByWorkbench.set(workbenchId, controllers);
       return controller;

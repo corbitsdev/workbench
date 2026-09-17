@@ -30,18 +30,14 @@ const PULL_BODY = {
   html_url: "https://github.com/acme/widgets/pull/7",
 };
 
-const PATCH = [
-  "@@ -1,3 +1,4 @@",
-  " context",
-  "-removed",
-  "+added",
-  "+also added",
-].join("\n");
+const PATCH = ["@@ -1,3 +1,4 @@", " context", "-removed", "+added", "+also added"].join("\n");
 
 test("parsePullRequestUrl reads owner, repo, and number", () => {
-  expect(
-    parsePullRequestUrl("https://github.com/acme/widgets/pull/42"),
-  ).toEqual({ owner: "acme", repo: "widgets", number: 42 });
+  expect(parsePullRequestUrl("https://github.com/acme/widgets/pull/42")).toEqual({
+    owner: "acme",
+    repo: "widgets",
+    number: 42,
+  });
 });
 
 test("parsePullRequestUrl rejects a URL that is not a pull request", () => {
@@ -101,9 +97,7 @@ test("fetchPullRequestDiff sends a bearer header only when given a token", async
       fetchImpl: fakeFetch((input, init) => {
         sent.push(init?.headers as Record<string, string> | undefined);
         return Promise.resolve(
-          String(input).includes("/files")
-            ? jsonResponse([])
-            : jsonResponse(PULL_BODY),
+          String(input).includes("/files") ? jsonResponse([]) : jsonResponse(PULL_BODY),
         );
       }),
     },
@@ -169,9 +163,7 @@ test("postPullRequestReview posts one comment-only review at the head sha", asyn
     commit_id: "headsha",
     body: "One review.",
     event: "COMMENT",
-    comments: [
-      { path: "src/loop.ts", line: 2, side: "RIGHT", body: "This breaks." },
-    ],
+    comments: [{ path: "src/loop.ts", line: 2, side: "RIGHT", body: "This breaks." }],
   });
 });
 
@@ -217,9 +209,7 @@ test('fetchPullRequestReviewComments follows a Link: rel="next" header across pa
         if (url.includes("page=2")) {
           return Promise.resolve(shortPage(["third", "fourth"]));
         }
-        return Promise.resolve(
-          shortPage(["first", "second"], `<${BASE}/next?page=2>; rel="next"`),
-        );
+        return Promise.resolve(shortPage(["first", "second"], `<${BASE}/next?page=2>; rel="next"`));
       }),
     },
     { owner: "acme", repo: "widgets", number: 7 },
@@ -239,9 +229,7 @@ test("fetchPullRequestReviewComments falls back to page= when no Link header is 
       baseUrl: BASE,
       fetchImpl: fakeFetch(() => {
         calls += 1;
-        return Promise.resolve(
-          calls === 1 ? fullPage("p1") : shortPage(["last"]),
-        );
+        return Promise.resolve(calls === 1 ? fullPage("p1") : shortPage(["last"]));
       }),
     },
     { owner: "acme", repo: "widgets", number: 7 },
@@ -311,9 +299,7 @@ test("fetchPullRequestDiff merges every page of changed files", async () => {
       fetchImpl: fakeFetch((input) => {
         const url = String(input);
         if (url.includes("page=2")) {
-          return Promise.resolve(
-            new Response(JSON.stringify([fileAt(100)]), { status: 200 }),
-          );
+          return Promise.resolve(new Response(JSON.stringify([fileAt(100)]), { status: 200 }));
         }
         if (url.includes("/files")) {
           const files = Array.from({ length: 100 }, (_, i) => fileAt(i));

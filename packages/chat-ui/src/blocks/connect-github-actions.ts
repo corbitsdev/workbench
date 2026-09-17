@@ -83,9 +83,7 @@ export type ConnectGithubActions = {
    */
   readonly submitAccessToken: (
     token: string,
-  ) => Promise<
-    { readonly ok: true } | { readonly ok: false; readonly message: string }
-  >;
+  ) => Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }>;
   /** Mints a grant and a live webhook trigger per repo id, then
    * records the selection through the host's own `startReviewingRepos`
    * binding. */

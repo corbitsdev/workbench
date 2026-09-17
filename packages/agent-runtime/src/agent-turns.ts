@@ -11,10 +11,7 @@
 // assigns `n` sequentially per section run; an agent's warm section run
 // can serve more than one workbench, so this store allocates the same
 // sequence per agent rather than restarting it in every room.
-import {
-  AGENT_RUNTIME_SECTION_ID,
-  agentRuntimeTurnRunId,
-} from "@corbits/agent-runtime";
+import { AGENT_RUNTIME_SECTION_ID, agentRuntimeTurnRunId } from "@corbits/agent-runtime";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
 import { agentTurns } from "@corbits/chat/schema";
@@ -205,10 +202,7 @@ function newTurnId(): string {
   return `turn_${crypto.randomUUID().replace(/-/g, "")}`;
 }
 
-function agentKey(input: {
-  readonly tenantId: string;
-  readonly agentAddress: string;
-}): string {
+function agentKey(input: { readonly tenantId: string; readonly agentAddress: string }): string {
   return `${input.tenantId} ${input.agentAddress}`;
 }
 
@@ -307,9 +301,7 @@ export function createTurnFreedSignal(): {
   };
 }
 
-export function createInMemoryAgentTurnStore(
-  options: AgentTurnStoreOptions = {},
-): AgentTurnStore {
+export function createInMemoryAgentTurnStore(options: AgentTurnStoreOptions = {}): AgentTurnStore {
   const rows = new Map<string, AgentTurn>();
   const nextOccurrence = new Map<string, number>();
   const now = options.now ?? Date.now;
@@ -344,8 +336,7 @@ export function createInMemoryAgentTurnStore(
           turn.workbenchId === input.workbenchId &&
           turn.agentAddress === input.agentAddress &&
           turn.status === "running" &&
-          (input.childRunId === undefined ||
-            turn.childRunId === input.childRunId),
+          (input.childRunId === undefined || turn.childRunId === input.childRunId),
       )
       .sort(compareTurnsNewestFirst)[0];
   }
@@ -427,11 +418,7 @@ export function createInMemoryAgentTurnStore(
       expireStaleTurns();
       const workbenchIds = new Set(input.workbenchIds);
       const ordered = [...rows.values()]
-        .filter(
-          (turn) =>
-            turn.tenantId === input.tenantId &&
-            workbenchIds.has(turn.workbenchId),
-        )
+        .filter((turn) => turn.tenantId === input.tenantId && workbenchIds.has(turn.workbenchId))
         .sort(
           (a, b) =>
             Number(b.status === "running") - Number(a.status === "running") ||
@@ -439,8 +426,7 @@ export function createInMemoryAgentTurnStore(
         );
       const byWorkbench = new Map<string, AgentTurn>();
       for (const turn of ordered) {
-        if (!byWorkbench.has(turn.workbenchId))
-          byWorkbench.set(turn.workbenchId, turn);
+        if (!byWorkbench.has(turn.workbenchId)) byWorkbench.set(turn.workbenchId, turn);
       }
       return [...byWorkbench.values()];
     },
@@ -470,9 +456,7 @@ export function createInMemoryAgentTurnStore(
       expireStaleTurns();
       return [...rows.values()]
         .filter(
-          (turn) =>
-            turn.tenantId === input.tenantId &&
-            turn.workbenchId === input.workbenchId,
+          (turn) => turn.tenantId === input.tenantId && turn.workbenchId === input.workbenchId,
         )
         .sort(compareTurnsNewestFirst)
         .slice(0, input.limit ?? AGENT_TURNS_PAGE_SIZE);
@@ -480,9 +464,7 @@ export function createInMemoryAgentTurnStore(
 
     async getTurn(input) {
       const found = rows.get(input.turnId);
-      return found !== undefined && found.tenantId === input.tenantId
-        ? found
-        : undefined;
+      return found !== undefined && found.tenantId === input.tenantId ? found : undefined;
     },
   };
 }
@@ -505,14 +487,10 @@ type AgentTurnRow = {
 
 function toAgentTurn(row: AgentTurnRow): AgentTurn {
   const requested = Array.isArray(row.requestMessageIds)
-    ? row.requestMessageIds.filter(
-        (value): value is string => typeof value === "string",
-      )
+    ? row.requestMessageIds.filter((value): value is string => typeof value === "string")
     : [];
   const status: AgentTurnStatus =
-    row.status === "completed" ||
-    row.status === "failed" ||
-    row.status === "cancelled"
+    row.status === "completed" || row.status === "failed" || row.status === "cancelled"
       ? row.status
       : "running";
   return {
@@ -539,9 +517,10 @@ function toAgentTurn(row: AgentTurnRow): AgentTurn {
  * cannot both claim the same child run id — one of them fails loudly
  * rather than two turns quietly sharing a run id.
  */
-export function createDrizzleAgentTurnStore<
-  TSchema extends Record<string, unknown>,
->(db: ChatDb<TSchema>, options: AgentTurnStoreOptions = {}): AgentTurnStore {
+export function createDrizzleAgentTurnStore<TSchema extends Record<string, unknown>>(
+  db: ChatDb<TSchema>,
+  options: AgentTurnStoreOptions = {},
+): AgentTurnStore {
   const now = options.now ?? Date.now;
   const freed = createTurnFreedSignal();
 
@@ -589,9 +568,7 @@ export function createDrizzleAgentTurnStore<
           eq(agentTurns.workbenchId, input.workbenchId),
           eq(agentTurns.agentAddress, input.agentAddress),
           eq(agentTurns.status, "running"),
-          ...(input.childRunId !== undefined
-            ? [eq(agentTurns.childRunId, input.childRunId)]
-            : []),
+          ...(input.childRunId !== undefined ? [eq(agentTurns.childRunId, input.childRunId)] : []),
         ),
       )
       .orderBy(desc(agentTurns.startedAt), desc(agentTurns.occurrence))
@@ -663,15 +640,9 @@ export function createDrizzleAgentTurnStore<
         .set({
           status: input.status,
           endedAt: new Date(),
-          ...(input.sectionRunId !== undefined
-            ? { sectionRunId: input.sectionRunId }
-            : {}),
-          ...(input.childRunId !== undefined
-            ? { childRunId: input.childRunId }
-            : {}),
-          ...(input.replyMessageId !== undefined
-            ? { replyMessageId: input.replyMessageId }
-            : {}),
+          ...(input.sectionRunId !== undefined ? { sectionRunId: input.sectionRunId } : {}),
+          ...(input.childRunId !== undefined ? { childRunId: input.childRunId } : {}),
+          ...(input.replyMessageId !== undefined ? { replyMessageId: input.replyMessageId } : {}),
           ...(input.error !== undefined ? { error: input.error } : {}),
         })
         .where(
@@ -682,8 +653,7 @@ export function createDrizzleAgentTurnStore<
           ),
         )
         .returning();
-      const finished =
-        row === undefined ? undefined : toAgentTurn(row as AgentTurnRow);
+      const finished = row === undefined ? undefined : toAgentTurn(row as AgentTurnRow);
       if (finished !== undefined) freed.notify(sectionKey(finished));
       return finished;
     },
@@ -763,12 +733,7 @@ export function createDrizzleAgentTurnStore<
       const [row] = await db
         .select()
         .from(agentTurns)
-        .where(
-          and(
-            eq(agentTurns.id, input.turnId),
-            eq(agentTurns.tenantId, input.tenantId),
-          ),
-        )
+        .where(and(eq(agentTurns.id, input.turnId), eq(agentTurns.tenantId, input.tenantId)))
         .limit(1);
       return row === undefined ? undefined : toAgentTurn(row as AgentTurnRow);
     },

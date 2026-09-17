@@ -3,10 +3,7 @@
 // existing endpoints.
 
 import { isWorkbenchHostDefinitionName } from "@corbits/chat-ui/wire/workbench-host-naming";
-import {
-  runOutcomeStatus,
-  withListingAbandoned,
-} from "@corbits/workflows/client";
+import { runOutcomeStatus, withListingAbandoned } from "@corbits/workflows/client";
 
 import type { InsightsRun } from "./insights-api";
 import type { ScheduledWorkflowDefinition } from "./routines-api";
@@ -54,12 +51,8 @@ export const INSIGHTS_RECENT_LIMIT = 12;
  * creation) with a scoped feed; CL-8087 repointed that scoped feed from
  * the deleted `feed=fires` route to the native listing.
  */
-export function purposeRunsForInsights(
-  runs: readonly InsightsRun[],
-): readonly InsightsRun[] {
-  return runs.filter(
-    (run) => !isWorkbenchHostDefinitionName(run.definitionName),
-  );
+export function purposeRunsForInsights(runs: readonly InsightsRun[]): readonly InsightsRun[] {
+  return runs.filter((run) => !isWorkbenchHostDefinitionName(run.definitionName));
 }
 
 /**
@@ -102,9 +95,7 @@ export type DefinitionRunGroup = {
  * fires equivalent exists. Group order follows each group's own newest
  * run, newest overall first.
  */
-export function groupRunsByDefinition(
-  runs: readonly InsightsRun[],
-): readonly DefinitionRunGroup[] {
+export function groupRunsByDefinition(runs: readonly InsightsRun[]): readonly DefinitionRunGroup[] {
   const byGroupKey = new Map<string, InsightsRun[]>();
   for (const run of runs) {
     const groupKey = run.routineId ?? run.definitionId;
@@ -116,9 +107,7 @@ export function groupRunsByDefinition(
     }
   }
   const groups = [...byGroupKey.entries()].map(([groupKey, group]) => {
-    const runs = [...group].sort((a, b) =>
-      b.createdAt.localeCompare(a.createdAt),
-    );
+    const runs = [...group].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     // Name from the newest run, after sorting — a routine or definition
     // rename must show the current name in the group header, not
     // whatever name its oldest fetched run happened to carry.
@@ -145,8 +134,7 @@ export function computeInsightsStats(
   let stopped = 0;
   let deployed = 0;
   for (const run of purposeful) {
-    const outcome =
-      runOutcomeStatus(withListingAbandoned(run, now), now) ?? run.status;
+    const outcome = runOutcomeStatus(withListingAbandoned(run, now), now) ?? run.status;
     switch (outcome) {
       case "running":
       case "updating":

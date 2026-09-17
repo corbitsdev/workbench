@@ -24,12 +24,8 @@ describe("workbenchHostAssetName", () => {
       const name = workbenchHostAssetName(id);
       expect(name).toMatch(ASSET_NAME_GRAMMAR);
     }
-    expect(workbenchHostAssetName(RUN_ID)).toBe(
-      "run-682bf127e22124c01b4b0996aabaab5f",
-    );
-    expect(workbenchHostAssetName(INSTANCE_ID)).toBe(
-      "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
-    );
+    expect(workbenchHostAssetName(RUN_ID)).toBe("run-682bf127e22124c01b4b0996aabaab5f");
+    expect(workbenchHostAssetName(INSTANCE_ID)).toBe("ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0");
   });
 
   test("collapses runs of non-alphanumerics and trims edge dashes", () => {
@@ -39,12 +35,8 @@ describe("workbenchHostAssetName", () => {
 
 describe("isWorkbenchHostDefinitionName", () => {
   test("recognizes the slug of every generated workbench id shape", () => {
-    expect(isWorkbenchHostDefinitionName(workbenchHostAssetName(RUN_ID))).toBe(
-      true,
-    );
-    expect(
-      isWorkbenchHostDefinitionName(workbenchHostAssetName(INSTANCE_ID)),
-    ).toBe(true);
+    expect(isWorkbenchHostDefinitionName(workbenchHostAssetName(RUN_ID))).toBe(true);
+    expect(isWorkbenchHostDefinitionName(workbenchHostAssetName(INSTANCE_ID))).toBe(true);
   });
 
   test("leaves purpose-run and agent definition names alone", () => {

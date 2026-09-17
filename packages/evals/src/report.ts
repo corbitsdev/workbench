@@ -32,9 +32,7 @@ export function renderResultsMarkdown(
   const header = `| Eval | ${configNames.join(" | ")} |`;
   const divider = `| --- | ${configNames.map(() => "---").join(" | ")} |`;
   const rows = evalNames.map((evalName) => {
-    const cells = configNames.map((configName) =>
-      cell(byKey.get(`${evalName} ${configName}`)),
-    );
+    const cells = configNames.map((configName) => cell(byKey.get(`${evalName} ${configName}`)));
     return `| ${evalName} | ${cells.join(" | ")} |`;
   });
   return [header, divider, ...rows].join("\n") + "\n";

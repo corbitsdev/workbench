@@ -35,9 +35,7 @@ function isInFlightTurn(turn: unknown): boolean {
   return endedAt === undefined || endedAt === null || endedAt === "";
 }
 
-function nestedTurns(
-  run: Record<string, unknown> | undefined,
-): readonly unknown[] | undefined {
+function nestedTurns(run: Record<string, unknown> | undefined): readonly unknown[] | undefined {
   const turns = run?.turns;
   return Array.isArray(turns) ? turns : undefined;
 }
@@ -59,9 +57,7 @@ function runHasInFlightTurn(run: Record<string, unknown> | undefined): boolean {
   return run?.hasInFlightTurn === true;
 }
 
-function runHasNoInFlightTurn(
-  run: Record<string, unknown> | undefined,
-): boolean {
+function runHasNoInFlightTurn(run: Record<string, unknown> | undefined): boolean {
   return run?.hasInFlightTurn === false;
 }
 
@@ -109,10 +105,7 @@ export function listingAbandoned(listing: ListingRun, now: number): boolean {
 }
 
 /** Pass `abandoned: true` into outcome helpers when the listing is abandoned. */
-export function withListingAbandoned<T extends ListingRun>(
-  listing: T,
-  now: number,
-): T {
+export function withListingAbandoned<T extends ListingRun>(listing: T, now: number): T {
   if (!listingAbandoned(listing, now)) return listing;
   return { ...listing, abandoned: true };
 }

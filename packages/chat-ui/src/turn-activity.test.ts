@@ -8,9 +8,7 @@ function agentEvent(inner: unknown) {
 
 describe("nextTurnActivityState (CL-6196: live tool-call and thinking states)", () => {
   test("a non chat.agent event never opens or changes the activity", () => {
-    expect(
-      nextTurnActivityState(null, { eventType: "chat.typing", data: {} }, 0),
-    ).toBeNull();
+    expect(nextTurnActivityState(null, { eventType: "chat.typing", data: {} }, 0)).toBeNull();
   });
 
   test("reactor.start opens an empty activity, clearing any leftover from a previous turn", () => {
@@ -38,12 +36,7 @@ describe("nextTurnActivityState (CL-6196: live tool-call and thinking states)", 
   });
 
   test("reactor.done, reactor.error, inference.done, and inference.error finalize the turn to null", () => {
-    for (const type of [
-      "reactor.done",
-      "reactor.error",
-      "inference.done",
-      "inference.error",
-    ]) {
+    for (const type of ["reactor.done", "reactor.error", "inference.done", "inference.error"]) {
       const state = nextTurnActivityState(
         {
           toolCalls: [],
@@ -301,11 +294,7 @@ describe("nextTurnActivityState (CL-6196: live tool-call and thinking states)", 
       retryCount: 0,
     });
     expect(
-      nextTurnActivityState(
-        null,
-        agentEvent({ type: "tool.start", seq: 1, data: {} }),
-        0,
-      ),
+      nextTurnActivityState(null, agentEvent({ type: "tool.start", seq: 1, data: {} }), 0),
     ).toEqual({
       toolCalls: [],
       thinking: { active: false, charCount: 0 },

@@ -161,9 +161,7 @@ export function createSpawnTestRepoStore(tempBase: string): RepoStore {
       const value = Reflect.get(target, prop, receiver);
       if (value !== undefined) return value;
       return () => {
-        throw new Error(
-          `stub RepoStore: ${String(prop)} not implemented for this test`,
-        );
+        throw new Error(`stub RepoStore: ${String(prop)} not implemented for this test`);
       };
     },
   });
@@ -286,12 +284,9 @@ export async function makeLifecycleFixture(opts?: {
 
   const transport = createInMemoryTransport();
   const keyPair = await generateKeyPair();
-  const tempBase = await fs.mkdtemp(
-    path.join(os.tmpdir(), "sidecar-lifecycle-repos-"),
-  );
+  const tempBase = await fs.mkdtemp(path.join(os.tmpdir(), "sidecar-lifecycle-repos-"));
   const dataDir =
-    opts?.dataDir ??
-    (await fs.mkdtemp(path.join(os.tmpdir(), "sidecar-lifecycle-data-")));
+    opts?.dataDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), "sidecar-lifecycle-data-")));
   const repoStore = createSpawnTestRepoStore(tempBase);
 
   const multistepMailRouter = createMultistepMailRouter();
@@ -307,9 +302,7 @@ export async function makeLifecycleFixture(opts?: {
         throw new Error("single-step branch must not invoke provisionAgent");
       },
       persistHubPublicKey: async () => {
-        throw new Error(
-          "single-step branch must not invoke persistHubPublicKey",
-        );
+        throw new Error("single-step branch must not invoke persistHubPublicKey");
       },
       initRepo: async () => undefined,
     } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["sessions"],
@@ -327,9 +320,7 @@ export async function makeLifecycleFixture(opts?: {
           await fs.mkdir(agentDir(dataDir, address), { recursive: true });
           return { keyPair: await generateKeyPair(), isNew: false };
         },
-      } as unknown as Parameters<
-        typeof createSidecarDeployRouter
-      >[0]["keyStore"]),
+      } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["keyStore"]),
     transport,
     repoStore,
     signingKeySeed: keyPair.privateKey,

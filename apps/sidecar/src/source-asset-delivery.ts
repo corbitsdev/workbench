@@ -59,12 +59,7 @@ export async function indexAssetPackIntoGitDir(args: {
   };
 
   try {
-    await indexPackIntoGitDir(
-      tempDir,
-      pack,
-      commitSha,
-      DEFAULT_PACK_MATERIALIZATION_LIMITS,
-    );
+    await indexPackIntoGitDir(tempDir, pack, commitSha, DEFAULT_PACK_MATERIALIZATION_LIMITS);
   } catch (err) {
     await cleanupTemp();
     throw err;
@@ -130,9 +125,7 @@ export function sourceAssetGitDir(gitDirRoot: string, assetId: string): string {
   // resolve to the shared root itself. Mirrors `applyAssetPack`'s all-dots
   // segment guard.
   if (!SAFE_ASSET_ID.test(assetId) || /^\.+$/.test(assetId)) {
-    throw new Error(
-      `source-asset delivery: unsafe assetId ${JSON.stringify(assetId)}`,
-    );
+    throw new Error(`source-asset delivery: unsafe assetId ${JSON.stringify(assetId)}`);
   }
   return path.join(gitDirRoot, assetId);
 }

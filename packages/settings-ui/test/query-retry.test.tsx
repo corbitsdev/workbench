@@ -23,8 +23,7 @@ const json = (status: number, body: unknown) =>
     headers: { "content-type": "application/json" },
   });
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 function mount(): { container: HTMLDivElement; root: Root } {
   const container = document.createElement("div");

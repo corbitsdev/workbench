@@ -66,10 +66,7 @@ export function useGlobalRoutines(): APIQuery<readonly GlobalRoutineRow[]> {
   if (failed !== undefined) {
     return {
       kind: "error",
-      message:
-        failed.error instanceof Error
-          ? failed.error.message
-          : "Couldn't load routines.",
+      message: failed.error instanceof Error ? failed.error.message : "Couldn't load routines.",
       retry: () => {
         for (const result of results) void result.refetch();
       },
@@ -102,10 +99,7 @@ export function useInvalidateRoutines(): (tenantId: string) => void {
 
 export type RoutineActions = {
   readonly runNow: (row: GlobalRoutineRow) => Promise<void>;
-  readonly setEnabled: (
-    row: GlobalRoutineRow,
-    enabled: boolean,
-  ) => Promise<void>;
+  readonly setEnabled: (row: GlobalRoutineRow, enabled: boolean) => Promise<void>;
 };
 
 export function useRoutineActions(): RoutineActions {
@@ -113,10 +107,7 @@ export function useRoutineActions(): RoutineActions {
   return {
     runNow: async (row) => {
       try {
-        await runScheduledWorkflowNow(
-          row.tenantId,
-          row.definition.definitionId,
-        );
+        await runScheduledWorkflowNow(row.tenantId, row.definition.definitionId);
         invalidate(row.tenantId);
         toast(`${row.definition.name} started`);
       } catch (cause) {

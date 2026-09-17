@@ -165,9 +165,7 @@ export const CONCEPTS: readonly ConceptSpec[] = [
   },
 ];
 
-export const CONCEPT_IDS: readonly string[] = CONCEPTS.map(
-  (concept) => concept.id,
-);
+export const CONCEPT_IDS: readonly string[] = CONCEPTS.map((concept) => concept.id);
 
 export function conceptById(id: string): ConceptSpec | undefined {
   return CONCEPTS.find((concept) => concept.id === id);

@@ -35,11 +35,7 @@ import {
   type RunStatus,
 } from "@corbits/react-ui";
 import { ChartBar } from "@corbits/icons";
-import {
-  runOutcomeStatus,
-  runStatusLabel,
-  withListingAbandoned,
-} from "@corbits/workflows/client";
+import { runOutcomeStatus, runStatusLabel, withListingAbandoned } from "@corbits/workflows/client";
 import type * as React from "react";
 import { useEffect, useState } from "react";
 
@@ -50,11 +46,7 @@ import { workbenchesQueryKey, listWorkbenches } from "@corbits/chat-ui";
 import { useBench } from "../bench-context";
 import { resolveWorkbenchInsightsScope } from "../insights-workbench-scope";
 import { parseInsightsPath } from "../insights-path";
-import {
-  insightsTopLevelRunsPath,
-  TopLevelRunsSchema,
-  type InsightsRun,
-} from "../insights-api";
+import { insightsTopLevelRunsPath, TopLevelRunsSchema, type InsightsRun } from "../insights-api";
 import {
   computeInsightsStats,
   durationLabel,
@@ -91,9 +83,7 @@ export function formatWhen(iso: string): string {
  * so the badge tone always comes from `RUN_STATUS_TONE`, the one source
  * every run-status tone reads from, rather than a second opinion invented
  * on this page. */
-const WORKFLOW_RUN_STATUS_ALIAS: Readonly<
-  Record<WorkflowRunStatus, RunStatus>
-> = {
+const WORKFLOW_RUN_STATUS_ALIAS: Readonly<Record<WorkflowRunStatus, RunStatus>> = {
   deployed: "completed",
   running: "running",
   updating: "running",
@@ -174,10 +164,7 @@ function onRowActivate(onActivate: () => void) {
   };
 }
 
-function runsDetailLabel(stats: {
-  readonly running: number;
-  readonly errored: number;
-}): string {
+function runsDetailLabel(stats: { readonly running: number; readonly errored: number }): string {
   if (stats.running > 0) {
     return `${formatCount(stats.running)} running`;
   }
@@ -210,10 +197,7 @@ function useTickingNow(enabled: boolean): number {
  * with an in-flight turn stays in flight however old it is; without an
  * explicit no-in-flight signal, missing `turns` is not abandonment.
  */
-export function isRunningNow(
-  run: InsightsRun,
-  now: number = Date.now(),
-): boolean {
+export function isRunningNow(run: InsightsRun, now: number = Date.now()): boolean {
   const outcome = runOutcomeStatus(withListingAbandoned(run, now), now);
   return outcome === "running" || outcome === "updating";
 }
@@ -245,9 +229,7 @@ function RunningNowStrip({
   readonly runs: readonly InsightsRun[];
   readonly onOpenRun: (id: string) => void;
 }) {
-  const maybeLive = runs.some(
-    (run) => run.status === "running" || run.status === "updating",
-  );
+  const maybeLive = runs.some((run) => run.status === "running" || run.status === "updating");
   const now = useTickingNow(maybeLive);
   const running = runs.filter((run) => isRunningNow(run, now));
   if (running.length === 0) return null;
@@ -263,25 +245,15 @@ function RunningNowStrip({
       <ul className="insights-running-now-strip">
         {running.map((run) => (
           <li key={run.id}>
-            <button
-              type="button"
-              className="insights-flight"
-              onClick={() => onOpenRun(run.id)}
-            >
+            <button type="button" className="insights-flight" onClick={() => onOpenRun(run.id)}>
               <StatusDot
                 label={runStatusLabel("running")}
                 tone={RUN_STATUS_DOT_TONE.running}
                 live
               />
-              <span className="insights-flight-name">
-                {runDisplayName(run)}
-              </span>
-              <span className="insights-flight-elapsed">
-                {elapsedLabel(run.createdAt, now)}
-              </span>
-              <Badge tone={RUN_STATUS_TONE.running}>
-                {runStatusLabel("running")}
-              </Badge>
+              <span className="insights-flight-name">{runDisplayName(run)}</span>
+              <span className="insights-flight-elapsed">{elapsedLabel(run.createdAt, now)}</span>
+              <Badge tone={RUN_STATUS_TONE.running}>{runStatusLabel("running")}</Badge>
             </button>
           </li>
         ))}
@@ -310,9 +282,7 @@ function RecentRunRows({
           >
             <TableCell>
               <div className="flex min-w-0 flex-col gap-0.5">
-                <strong className="truncate text-sm font-semibold">
-                  {runDisplayName(row)}
-                </strong>
+                <strong className="truncate text-sm font-semibold">{runDisplayName(row)}</strong>
                 <span className="truncate text-xs text-muted-foreground">
                   {formatWhen(row.createdAt)}
                 </span>
@@ -326,10 +296,7 @@ function RecentRunRows({
           </TableRow>
         ))}
         <TableRow {...onRowActivate(onOpenRuns)}>
-          <TableCell
-            colSpan={2}
-            className="font-semibold text-primary-emphasis"
-          >
+          <TableCell colSpan={2} className="font-semibold text-primary-emphasis">
             All runs →
           </TableCell>
         </TableRow>
@@ -415,11 +382,7 @@ function InsightsLanding({
           <h2>Recent runs</h2>
         </div>
         {recent.length > 0 ? (
-          <RecentRunRows
-            runs={recent}
-            onOpenRun={onOpenRun}
-            onOpenRuns={onOpenRuns}
-          />
+          <RecentRunRows runs={recent} onOpenRun={onOpenRun} onOpenRuns={onOpenRuns} />
         ) : (
           <RichEmptyState
             icon={<ChartBar />}
@@ -503,10 +466,7 @@ export function InsightsRunsHistory({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        crumbs={[
-          { label: "Insights", href: INSIGHTS_PATH_PREFIX },
-          { label: "Run history" },
-        ]}
+        crumbs={[{ label: "Insights", href: INSIGHTS_PATH_PREFIX }, { label: "Run history" }]}
         subtitle={`${purpose.length} runs`}
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -534,9 +494,7 @@ export function InsightsRunsHistory({
                   ))}
                 </div>
                 {nextCursor !== null ? (
-                  <p className="insights-note">
-                    Showing the 100 most recent runs.
-                  </p>
+                  <p className="insights-note">Showing the 100 most recent runs.</p>
                 ) : null}
               </>
             )}
@@ -547,11 +505,7 @@ export function InsightsRunsHistory({
   );
 }
 
-export function InsightsRunDetail({
-  run,
-}: {
-  readonly run: InsightsRun | null;
-}) {
+export function InsightsRunDetail({ run }: { readonly run: InsightsRun | null }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
@@ -567,18 +521,13 @@ export function InsightsRunDetail({
             <StatGrid columns={3}>
               <InsightsStat
                 label="Status"
-                value={
-                  run !== null ? runStatusLabel(insightsRunStatus(run)) : "—"
-                }
+                value={run !== null ? runStatusLabel(insightsRunStatus(run)) : "—"}
               />
               <InsightsStat
                 label="Started"
                 value={run !== null ? formatWhen(run.createdAt) : "—"}
               />
-              <InsightsStat
-                label="Duration"
-                value={run !== null ? runDurationLabel(run) : "—"}
-              />
+              <InsightsStat label="Duration" value={run !== null ? runDurationLabel(run) : "—"} />
             </StatGrid>
             {run === null ? (
               <RichEmptyState
@@ -608,8 +557,7 @@ export function InsightsPage({
   const navigate = useNavigate();
   const { mode, runId } = parseInsightsPath(path);
 
-  const unauth =
-    runs.kind === "unauthenticated" || routines.kind === "unauthenticated";
+  const unauth = runs.kind === "unauthenticated" || routines.kind === "unauthenticated";
 
   if (unauth) {
     return (
@@ -639,9 +587,7 @@ export function InsightsPage({
         runs={runsData}
         loading={runs.kind === "loading"}
         nextCursor={runsNextCursor}
-        onOpenRun={(id) =>
-          navigate(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`)
-        }
+        onOpenRun={(id) => navigate(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`)}
       />
     );
   }
@@ -672,9 +618,7 @@ export function InsightsPage({
             runsNextCursor={runsNextCursor}
             routines={routinesData}
             loading={loading}
-            onOpenRun={(id) =>
-              navigate(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`)
-            }
+            onOpenRun={(id) => navigate(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`)}
             onOpenRuns={() => navigate(INSIGHTS_RUNS_PATH)}
           />
         </PageShell>
@@ -747,10 +691,7 @@ function InsightsWorkbenchPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        crumbs={[
-          { label: "Insights", href: INSIGHTS_PATH_PREFIX },
-          { label: resolution.title },
-        ]}
+        crumbs={[{ label: "Insights", href: INSIGHTS_PATH_PREFIX }, { label: resolution.title }]}
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageShell width="full" className="page-fill">
@@ -769,10 +710,7 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
   const { selectedTenantId } = useBench();
   const navigate = useNavigate();
   const currentPath =
-    path ??
-    (typeof window !== "undefined"
-      ? window.location.pathname
-      : INSIGHTS_PATH_PREFIX);
+    path ?? (typeof window !== "undefined" ? window.location.pathname : INSIGHTS_PATH_PREFIX);
   const { mode, workbenchId } = parseInsightsPath(currentPath);
 
   const runs = useAPIQuery(
@@ -793,30 +731,19 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
   const runsForPage: APIQuery<{
     data: readonly InsightsRun[];
     nextCursor: string | null;
-  }> =
-    selectedTenantId === null
-      ? { kind: "ready", data: { data: [], nextCursor: null } }
-      : runs;
+  }> = selectedTenantId === null ? { kind: "ready", data: { data: [], nextCursor: null } } : runs;
 
   if (mode === "workbench" && workbenchId !== null) {
     return (
       <InsightsWorkbenchPageRoute
         workbenchId={workbenchId}
         benchTenantId={selectedTenantId}
-        onOpenRun={(id) =>
-          navigate(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`)
-        }
+        onOpenRun={(id) => navigate(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`)}
       />
     );
   }
 
-  return (
-    <InsightsPage
-      path={currentPath}
-      runs={runsForPage}
-      routines={routinesForPage}
-    />
-  );
+  return <InsightsPage path={currentPath} runs={runsForPage} routines={routinesForPage} />;
 }
 
 /** Resolves the workbench-scoped route's own workbench list — split out of
@@ -831,12 +758,8 @@ function InsightsWorkbenchPageRoute({
   readonly benchTenantId: string | null;
   readonly onOpenRun: (id: string) => void;
 }) {
-  const { workbenches, chats, isLoading } =
-    useWorkbenchAndChatLists(benchTenantId);
-  const resolution = resolveWorkbenchInsightsScope(
-    [...workbenches, ...chats],
-    workbenchId,
-  );
+  const { workbenches, chats, isLoading } = useWorkbenchAndChatLists(benchTenantId);
+  const resolution = resolveWorkbenchInsightsScope([...workbenches, ...chats], workbenchId);
   return (
     <InsightsWorkbenchPage
       workbenchId={workbenchId}
@@ -864,10 +787,8 @@ function useWorkbenchAndChatLists(tenantId: string | null) {
     () => listWorkbenches(tenantId as string, "chat"),
   );
   return {
-    workbenches:
-      workbenchesOfKind.kind === "ready" ? workbenchesOfKind.data : [],
+    workbenches: workbenchesOfKind.kind === "ready" ? workbenchesOfKind.data : [],
     chats: chatsOfKind.kind === "ready" ? chatsOfKind.data : [],
-    isLoading:
-      workbenchesOfKind.kind === "loading" || chatsOfKind.kind === "loading",
+    isLoading: workbenchesOfKind.kind === "loading" || chatsOfKind.kind === "loading",
   };
 }

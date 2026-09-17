@@ -202,9 +202,7 @@ export function useOpenProfileInCanvas(): (subject: ProfileSubject) => void {
 
 /** Opens (or replaces) the canvas's typed artifact pane — the seam a chat
  * artifact chip or the Library page's "open in canvas" affordance calls. */
-export function useOpenArtifactInCanvas(): (
-  artifact: CanvasArtifactContent,
-) => void {
+export function useOpenArtifactInCanvas(): (artifact: CanvasArtifactContent) => void {
   return useContext(CanvasHostContext).openArtifact;
 }
 
@@ -212,9 +210,7 @@ export function useOpenArtifactInCanvas(): (
  * "New routine" action, the `/routines` page's own create button, and an
  * existing routine's own "Edit" hop all call this. `routineId: null` starts
  * a brand-new routine; a real id opens that routine for editing. */
-export function useOpenRoutineInCanvas(): (
-  subject: RoutinePanelSubject,
-) => void {
+export function useOpenRoutineInCanvas(): (subject: RoutinePanelSubject) => void {
   return useContext(CanvasHostContext).openRoutine;
 }
 

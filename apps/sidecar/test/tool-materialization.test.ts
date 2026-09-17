@@ -16,18 +16,14 @@ import { SIDECAR_SUBSTRATE_CONFIG_KEYS } from "../src/workflow-substrate-factory
 const tempDirs: string[] = [];
 
 async function tempDir(): Promise<string> {
-  const d = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), "default-harness-test-"),
-  );
+  const d = await fs.promises.mkdtemp(path.join(os.tmpdir(), "default-harness-test-"));
   tempDirs.push(d);
   return d;
 }
 
 afterEach(async () => {
   const dirs = tempDirs.splice(0);
-  await Promise.all(
-    dirs.map((d) => fs.promises.rm(d, { recursive: true, force: true })),
-  );
+  await Promise.all(dirs.map((d) => fs.promises.rm(d, { recursive: true, force: true })));
 });
 
 describe("materializeToolPackages — manifest.invalid gate", () => {
@@ -83,10 +79,7 @@ describe("materializeToolPackages — manifest.invalid gate", () => {
     // writer must not push the bytes through JSON.stringify, which
     // would double-encode the string and erase the original-input
     // evidence the audit file exists to preserve.
-    const persisted = await fs.promises.readFile(
-      path.join(attemptDir, "manifest.json"),
-      "utf-8",
-    );
+    const persisted = await fs.promises.readFile(path.join(attemptDir, "manifest.json"), "utf-8");
     expect(persisted).toBe(corrupt);
 
     const errorJson = JSON.parse(
@@ -134,10 +127,7 @@ describe("materializeToolPackages — manifest.invalid gate", () => {
     // The audit trail records the bytes-as-supplied for both
     // failure modes, so a future investigator can replay the
     // same input against a newer validator.
-    const persisted = await fs.promises.readFile(
-      path.join(attemptDir, "manifest.json"),
-      "utf-8",
-    );
+    const persisted = await fs.promises.readFile(path.join(attemptDir, "manifest.json"), "utf-8");
     expect(persisted).toBe(wrongShape);
 
     const errorJson = JSON.parse(
@@ -152,21 +142,15 @@ describe("materializeToolPackages — manifest.invalid gate", () => {
     });
 
     test("accepts a bare id for backward compatibility with pre-versioned files", () => {
-      expect(parseActiveDeployId("legacy-deploy-id", "/dummy")).toBe(
-        "legacy-deploy-id",
-      );
+      expect(parseActiveDeployId("legacy-deploy-id", "/dummy")).toBe("legacy-deploy-id");
     });
 
     test("rejects an unknown version prefix loudly", () => {
-      expect(() => parseActiveDeployId("v2:abc", "/dummy")).toThrow(
-        /unknown version prefix/,
-      );
+      expect(() => parseActiveDeployId("v2:abc", "/dummy")).toThrow(/unknown version prefix/);
     });
 
     test("rejects a v1-prefixed but empty id", () => {
-      expect(() => parseActiveDeployId("v1:", "/dummy")).toThrow(
-        /carries the v1 prefix but no id/,
-      );
+      expect(() => parseActiveDeployId("v1:", "/dummy")).toThrow(/carries the v1 prefix but no id/);
     });
 
     test("rejects an empty file", () => {
@@ -256,10 +240,7 @@ describe("materializeToolPackages — manifest.invalid gate", () => {
       expect(outcome.degraded).toBe(true);
       expect(outcome.error).toBeInstanceOf(Error);
 
-      const dirtyContents = await fs.promises.readFile(
-        `${activeIdFile}.dirty`,
-        "utf-8",
-      );
+      const dirtyContents = await fs.promises.readFile(`${activeIdFile}.dirty`, "utf-8");
       expect(dirtyContents).toBe("v1:new-id-42");
     });
   });
@@ -273,10 +254,7 @@ describe("materializeToolPackages — manifest.invalid gate", () => {
     const storeDir = await tempDir();
     const instanceDir = path.join(storeDir, "tool-packages");
     await fs.promises.mkdir(instanceDir, { recursive: true });
-    await fs.promises.writeFile(
-      path.join(instanceDir, "active-deploy-id"),
-      "v1:stale-recorded",
-    );
+    await fs.promises.writeFile(path.join(instanceDir, "active-deploy-id"), "v1:stale-recorded");
     await fs.promises.writeFile(
       path.join(instanceDir, "active-deploy-id.dirty"),
       "v1:truth-from-marker",
@@ -307,10 +285,7 @@ describe("materializeToolPackages — manifest.invalid gate", () => {
       throw new Error("no attempt dir was created");
     }
     const errorJson = JSON.parse(
-      await fs.promises.readFile(
-        path.join(auditRoot, attemptDirName, "error.json"),
-        "utf-8",
-      ),
+      await fs.promises.readFile(path.join(auditRoot, attemptDirName, "error.json"), "utf-8"),
     );
     expect(errorJson.previousDeployId).toBe("truth-from-marker");
   });
@@ -348,9 +323,7 @@ describe("tool-registry threading", () => {
 
   test("the default payload the boot edge serializes parses to the public npmjs registry", () => {
     const registries = parseToolRegistries(DEFAULT_TOOL_REGISTRIES_JSON);
-    expect([...registries.entries()]).toEqual([
-      ["npmjs", { url: "https://registry.npmjs.org" }],
-    ]);
+    expect([...registries.entries()]).toEqual([["npmjs", { url: "https://registry.npmjs.org" }]]);
   });
 
   test("parseToolRegistries collapses the wire array into a map keyed by name", () => {
@@ -379,9 +352,7 @@ describe("tool-registry threading", () => {
 
   test("malformed JSON, wrong shapes, and duplicate names fail loud", () => {
     expect(() => parseToolRegistries("{not json")).toThrow(/not valid JSON/);
-    expect(() => parseToolRegistries(JSON.stringify({ npmjs: {} }))).toThrow(
-      /failed validation/,
-    );
+    expect(() => parseToolRegistries(JSON.stringify({ npmjs: {} }))).toThrow(/failed validation/);
     expect(() =>
       parseToolRegistries(
         JSON.stringify([

@@ -154,9 +154,7 @@ function fakeHub(seed: {
         tenantId: TENANT.id,
         name: input.name,
         plugin: input.plugin,
-        ...(input.apiBaseUrl !== undefined
-          ? { apiBaseUrl: input.apiBaseUrl }
-          : {}),
+        ...(input.apiBaseUrl !== undefined ? { apiBaseUrl: input.apiBaseUrl } : {}),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -227,9 +225,7 @@ function buildApp(opts: {
     presets: TEST_PRESETS,
     apiCall: opts.apiCall,
     probe: opts.probe ?? (async () => ({ ok: true, toolCount: 3 })),
-    ...(opts.onConnected !== undefined
-      ? { onConnected: opts.onConnected }
-      : {}),
+    ...(opts.onConnected !== undefined ? { onConnected: opts.onConnected } : {}),
   });
   return mountAs(routes);
 }
@@ -324,8 +320,7 @@ describe("POST /", () => {
       operation: "persist_mcp_server_connection",
       tenantId: TENANT.id,
     });
-    const extra = report.mock.calls[0]?.[1]?.extra as
-      Record<string, unknown> | undefined;
+    const extra = report.mock.calls[0]?.[1]?.extra as Record<string, unknown> | undefined;
     expect(JSON.stringify(extra)).not.toContain("secret-token");
     report.mockRestore();
   });

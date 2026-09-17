@@ -10,8 +10,7 @@
 
 /** The platform's own status vocabulary for an approval (`ApprovalResponse.status`
  * in `@intx/types/src/approvals.ts`) -- never invented here. */
-export type ApprovalLiveStatus =
-  "pending" | "approved" | "rejected" | "timeout" | "expired";
+export type ApprovalLiveStatus = "pending" | "approved" | "rejected" | "timeout" | "expired";
 
 /**
  * A standing-consent offer the platform is willing to take for this
@@ -107,7 +106,5 @@ export type ApprovalActions = {
    * capture tool identity). Omit this until a host can wire it to something
    * real; the card never shows the standing-consent link without it.
    */
-  readonly allowStanding?: (
-    approvalId: string,
-  ) => Promise<ApprovalDecisionResult>;
+  readonly allowStanding?: (approvalId: string) => Promise<ApprovalDecisionResult>;
 };

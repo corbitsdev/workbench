@@ -51,8 +51,7 @@ export function hubErrorHandler() {
     });
 
     if (hasGuidance(err)) {
-      const userMessage =
-        err.name === "InferenceResolutionError" ? err.guidance : err.message;
+      const userMessage = err.name === "InferenceResolutionError" ? err.guidance : err.message;
       return c.json(
         makeErrorEnvelope({
           code: err.name,

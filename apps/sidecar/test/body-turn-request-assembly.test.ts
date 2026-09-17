@@ -14,12 +14,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import {
-  createAgent,
-  createDefaultDirectorRegistry,
-  defineAgent,
-  defineTool,
-} from "@intx/agent";
+import { createAgent, createDefaultDirectorRegistry, defineAgent, defineTool } from "@intx/agent";
 import { createDependencies } from "@intx/inference";
 import { createBuiltinRegistry } from "@intx/inference/providers";
 
@@ -163,9 +158,7 @@ test("an openai-compatible turn's wire request carries the restored history and 
     await agent.close();
   }
 
-  expect(captured.url).toBe(
-    "http://inference.stub.invalid/v1/chat/completions",
-  );
+  expect(captured.url).toBe("http://inference.stub.invalid/v1/chat/completions");
   const request = captured.body as {
     messages: { role: string; content: unknown }[];
     tools?: { function: { name: string } }[];

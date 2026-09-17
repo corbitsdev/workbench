@@ -21,17 +21,12 @@ import {
   writeWorkflowDeploymentRecord,
   type WorkflowDeploymentRecord,
 } from "../src/workflow-deployment-record";
-import {
-  answerReadyHandshake,
-  makeLifecycleFixture,
-} from "./support/workflow-lifecycle-fixture";
+import { answerReadyHandshake, makeLifecycleFixture } from "./support/workflow-lifecycle-fixture";
 
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(
-    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
 async function makeDataDir(): Promise<string> {
@@ -121,10 +116,7 @@ test("a restore that outlasts its timeout corrects its record once the spawn act
   const restorePromise = router.restoreWorkflowDeployments();
   await restorePromise;
 
-  const afterTimeout = await readWorkflowDeploymentRecord(
-    dataDir,
-    deploymentId,
-  );
+  const afterTimeout = await readWorkflowDeploymentRecord(dataDir, deploymentId);
   expect(afterTimeout?.restoreFailure).toBeDefined();
   expect(router.activeAddresses()).toEqual([]);
 
@@ -142,10 +134,7 @@ test("a restore that outlasts its timeout corrects its record once the spawn act
   let afterLateRestore: WorkflowDeploymentRecord | undefined;
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
-    afterLateRestore = await readWorkflowDeploymentRecord(
-      dataDir,
-      deploymentId,
-    );
+    afterLateRestore = await readWorkflowDeploymentRecord(dataDir, deploymentId);
     if (afterLateRestore?.restoreFailure === undefined) break;
     await new Promise((r) => setTimeout(r, 5));
   }
@@ -238,10 +227,7 @@ test("a reclaiming teardown racing a dangling restore's boot-failure write is no
   // Poll for the unwind: it is a background continuation of the restore
   // attempt, not something `restoreWorkflowDeployments()` awaits.
   const deadline = Date.now() + 10_000;
-  while (
-    Date.now() < deadline &&
-    router.activeAddresses().includes(agentAddress)
-  ) {
+  while (Date.now() < deadline && router.activeAddresses().includes(agentAddress)) {
     await new Promise((r) => setTimeout(r, 5));
   }
 

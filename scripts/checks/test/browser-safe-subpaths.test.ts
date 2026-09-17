@@ -40,9 +40,7 @@ test("a clean subpath graph passes with a note, no violations", () => {
   );
 
   expect(report.violations).toEqual([]);
-  expect(
-    report.notes.some((note) => note.includes("@corbits/pkg-a/client")),
-  ).toBe(true);
+  expect(report.notes.some((note) => note.includes("@corbits/pkg-a/client"))).toBe(true);
 });
 
 test("a direct server-only import is a violation naming the entry and the import", () => {
@@ -76,10 +74,7 @@ test("a transitive server-only import through a relative file is a violation", (
   ];
   const files = new Map<string, string>([
     ["packages/pkg-a/src/client.ts", `export { thing } from "./inner";`],
-    [
-      "packages/pkg-a/src/inner.ts",
-      `import postgres from "postgres";\nexport const thing = 1;`,
-    ],
+    ["packages/pkg-a/src/inner.ts", `import postgres from "postgres";\nexport const thing = 1;`],
   ]);
 
   const report = auditBrowserSafeSubpaths(
@@ -106,10 +101,7 @@ test("a transitive server-only import through a workspace package subpath is a v
     },
   ];
   const files = new Map<string, string>([
-    [
-      "packages/pkg-a/src/client.ts",
-      `export { widget } from "@corbits/pkg-b/widget";`,
-    ],
+    ["packages/pkg-a/src/client.ts", `export { widget } from "@corbits/pkg-b/widget";`],
     [
       "packages/pkg-b/src/widget.ts",
       `import { drizzle } from "drizzle-orm";\nexport const widget = 1;`,
@@ -134,10 +126,7 @@ test("@intx/* is denylisted by prefix regardless of subpath", () => {
     },
   ];
   const files = new Map<string, string>([
-    [
-      "packages/pkg-a/src/client.ts",
-      `import { createRoutes } from "@intx/hub-api";`,
-    ],
+    ["packages/pkg-a/src/client.ts", `import { createRoutes } from "@intx/hub-api";`],
   ]);
 
   const report = auditBrowserSafeSubpaths(
@@ -158,10 +147,7 @@ test("a type-only import of a server-only module is not a violation", () => {
     },
   ];
   const files = new Map<string, string>([
-    [
-      "packages/pkg-a/src/client.ts",
-      `import type { Row } from "postgres";\nexport type { Row };`,
-    ],
+    ["packages/pkg-a/src/client.ts", `import type { Row } from "postgres";\nexport type { Row };`],
   ]);
 
   const report = auditBrowserSafeSubpaths(
@@ -204,10 +190,7 @@ test("an unresolvable relative import is reported, not silently skipped", () => 
     },
   ];
   const files = new Map<string, string>([
-    [
-      "packages/pkg-a/src/client.ts",
-      `export { missing } from "./does-not-exist";`,
-    ],
+    ["packages/pkg-a/src/client.ts", `export { missing } from "./does-not-exist";`],
   ]);
 
   const report = auditBrowserSafeSubpaths(
@@ -246,9 +229,7 @@ test("parseImportSpecifiers treats a mixed import as a value import", () => {
 });
 
 test("parseImportSpecifiers handles multi-line export-from lists", () => {
-  const specs = parseImportSpecifiers(
-    ["export {", "  a,", "  b,", '} from "./group";'].join("\n"),
-  );
+  const specs = parseImportSpecifiers(["export {", "  a,", "  b,", '} from "./group";'].join("\n"));
   expect(specs).toEqual([{ specifier: "./group", typeOnly: false }]);
 });
 
@@ -261,9 +242,7 @@ test("a comment mentioning import does not swallow a later type-only import", ()
       'import type { ToolPackagePin } from "@intx/types/tool-packages";',
     ].join("\n"),
   );
-  expect(parsed).toEqual([
-    { specifier: "@intx/types/tool-packages", typeOnly: true },
-  ]);
+  expect(parsed).toEqual([{ specifier: "@intx/types/tool-packages", typeOnly: true }]);
 });
 
 test("a node: import is denylisted regardless of subpath", () => {
@@ -294,9 +273,7 @@ test("a declared ./client export with no ENTRIES ruling is a violation naming th
       exports: { "./client": "packages/pkg-a/src/client.ts" },
     },
   ];
-  const files = new Map<string, string>([
-    ["packages/pkg-a/src/client.ts", `export const x = 1;`],
-  ]);
+  const files = new Map<string, string>([["packages/pkg-a/src/client.ts", `export const x = 1;`]]);
 
   const report = auditBrowserSafeSubpaths([], packages, files);
 
@@ -313,9 +290,7 @@ test("a declared ./client export with a matching ENTRIES ruling is not a violati
       exports: { "./client": "packages/pkg-a/src/client.ts" },
     },
   ];
-  const files = new Map<string, string>([
-    ["packages/pkg-a/src/client.ts", `export const x = 1;`],
-  ]);
+  const files = new Map<string, string>([["packages/pkg-a/src/client.ts", `export const x = 1;`]]);
 
   const report = auditBrowserSafeSubpaths(
     [{ package: "@corbits/pkg-a", subpath: "./client" }],
@@ -328,9 +303,7 @@ test("a declared ./client export with a matching ENTRIES ruling is not a violati
 
 test("a block comment cannot hide a real value import", () => {
   const parsed = parseImportSpecifiers(
-    ['/* import x from "commented-out"; */', 'import y from "real";'].join(
-      "\n",
-    ),
+    ['/* import x from "commented-out"; */', 'import y from "real";'].join("\n"),
   );
   expect(parsed).toEqual([{ specifier: "real", typeOnly: false }]);
 });

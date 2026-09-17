@@ -78,17 +78,11 @@ export async function listScheduledWorkflowDefinitions(
       workflowDefinitionVersion,
       and(
         eq(workflowDefinitionVersion.definitionId, workflowDefinition.id),
-        eq(
-          workflowDefinitionVersion.version,
-          workflowDefinition.currentVersion,
-        ),
+        eq(workflowDefinitionVersion.version, workflowDefinition.currentVersion),
       ),
     )
     .where(
-      and(
-        eq(workflowDefinition.tenantId, tenantId),
-        eq(workflowDefinition.origin, "authored"),
-      ),
+      and(eq(workflowDefinition.tenantId, tenantId), eq(workflowDefinition.origin, "authored")),
     );
 
   return scheduledDefinitionsFromRows(rows);

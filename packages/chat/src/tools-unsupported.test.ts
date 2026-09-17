@@ -42,44 +42,30 @@ describe("isToolsUnsupportedInferenceText", () => {
   });
 
   test("does not classify embedding/chat-capability failures", () => {
-    expect(
-      isToolsUnsupportedInferenceText("this model does not support generate"),
-    ).toBe(false);
-    expect(
-      isToolsUnsupportedInferenceText("this model does not support chat"),
-    ).toBe(false);
+    expect(isToolsUnsupportedInferenceText("this model does not support generate")).toBe(false);
+    expect(isToolsUnsupportedInferenceText("this model does not support chat")).toBe(false);
   });
 
   test("does not classify ordinary replies that mention tools", () => {
-    expect(
-      isToolsUnsupportedInferenceText(
-        "I can use tools to look that up if you want.",
-      ),
-    ).toBe(false);
+    expect(isToolsUnsupportedInferenceText("I can use tools to look that up if you want.")).toBe(
+      false,
+    );
   });
 
   test("does not classify ordinary tool-not-supported connector prose", () => {
+    expect(isToolsUnsupportedInferenceText("The grep tool is not supported in this sandbox.")).toBe(
+      false,
+    );
     expect(
-      isToolsUnsupportedInferenceText(
-        "The grep tool is not supported in this sandbox.",
-      ),
-    ).toBe(false);
-    expect(
-      isToolsUnsupportedInferenceText(
-        "The search tool is not supported in this environment.",
-      ),
+      isToolsUnsupportedInferenceText("The search tool is not supported in this environment."),
     ).toBe(false);
   });
 });
 
 describe("TOOLS_UNSUPPORTED_CONSUMER_MESSAGE", () => {
   test("is one honest sentence with no HTTP, registry, or provider dump", () => {
-    expect(TOOLS_UNSUPPORTED_CONSUMER_MESSAGE).toBe(
-      "This agent's model can't use tools.",
-    );
+    expect(TOOLS_UNSUPPORTED_CONSUMER_MESSAGE).toBe("This agent's model can't use tools.");
     expect(TOOLS_UNSUPPORTED_CONSUMER_MESSAGE).not.toMatch(/HTTP/i);
-    expect(TOOLS_UNSUPPORTED_CONSUMER_MESSAGE.toLowerCase()).not.toContain(
-      "function-calling",
-    );
+    expect(TOOLS_UNSUPPORTED_CONSUMER_MESSAGE.toLowerCase()).not.toContain("function-calling");
   });
 });

@@ -20,10 +20,7 @@ export interface ParsedCommand {
 // ordinary message and answer it with a command error instead.
 const NAME_PATTERN = /^[\w-]+$/;
 
-function parseWithPrefix(
-  text: string,
-  prefix: string,
-): ParsedCommand | undefined {
+function parseWithPrefix(text: string, prefix: string): ParsedCommand | undefined {
   if (!text.startsWith(prefix)) return undefined;
   const rest = text.slice(prefix.length);
   const spaceIndex = rest.indexOf(" ");

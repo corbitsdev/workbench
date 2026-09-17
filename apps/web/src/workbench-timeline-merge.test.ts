@@ -52,9 +52,7 @@ function approval(overrides: Partial<PendingApproval> = {}): PendingApproval {
 describe("toMessageEvents", () => {
   test("joins text parts and truncates the excerpt at 120 chars", () => {
     const long = "a".repeat(200);
-    const [event] = toMessageEvents([
-      message({ parts: [{ kind: "text", text: long }] }),
-    ]);
+    const [event] = toMessageEvents([message({ parts: [{ kind: "text", text: long }] })]);
     expect(event?.excerpt.length).toBe(121);
     expect(event?.excerpt.endsWith("…")).toBe(true);
   });
@@ -119,24 +117,18 @@ describe("toApprovalEvents", () => {
 describe("mergeTimelineEvents", () => {
   test("sorts every kind onto one oldest-first spine", () => {
     const merged = mergeTimelineEvents({
-      messages: toMessageEvents([
-        message({ id: "m1", createdAt: "2026-08-17T10:00:00.000Z" }),
-      ]),
+      messages: toMessageEvents([message({ id: "m1", createdAt: "2026-08-17T10:00:00.000Z" })]),
       threadForks: toThreadForkEvents([
         thread({ id: "f1", createdAt: "2026-08-17T09:30:00.000Z" }),
       ]),
-      approvals: toApprovalEvents([
-        approval({ id: "a1", createdAt: "2026-08-17T12:00:00.000Z" }),
-      ]),
+      approvals: toApprovalEvents([approval({ id: "a1", createdAt: "2026-08-17T12:00:00.000Z" })]),
     });
     expect(merged.map((e) => e.id)).toEqual(["f1", "m1", "a1"]);
   });
 
   test("drops an event with an unparseable timestamp instead of sorting it arbitrarily", () => {
     const merged = mergeTimelineEvents({
-      messages: toMessageEvents([
-        message({ id: "m1", createdAt: "not-a-date" }),
-      ]),
+      messages: toMessageEvents([message({ id: "m1", createdAt: "not-a-date" })]),
       threadForks: [],
       approvals: [],
     });
@@ -255,15 +247,10 @@ describe("filterTimelineEvents", () => {
   });
 
   test("messages keeps messages and thread forks", () => {
-    expect(filterTimelineEvents(events, "messages").map((e) => e.id)).toEqual([
-      "m1",
-      "f1",
-    ]);
+    expect(filterTimelineEvents(events, "messages").map((e) => e.id)).toEqual(["m1", "f1"]);
   });
 
   test("approvals keeps only approvals", () => {
-    expect(filterTimelineEvents(events, "approvals").map((e) => e.id)).toEqual([
-      "a1",
-    ]);
+    expect(filterTimelineEvents(events, "approvals").map((e) => e.id)).toEqual(["a1"]);
   });
 });

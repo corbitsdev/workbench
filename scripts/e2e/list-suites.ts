@@ -6,12 +6,7 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 
-export const UNIT_SUITE_FILES = [
-  "harness",
-  "db-gate",
-  "db-setup",
-  "list-suites",
-] as const;
+export const UNIT_SUITE_FILES = ["harness", "db-gate", "db-setup", "list-suites"] as const;
 
 export async function listSuites(e2eDir: string): Promise<string[]> {
   const entries = await readdir(e2eDir, { withFileTypes: true });

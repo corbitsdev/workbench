@@ -2,9 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { assembleInventory, type InventorySources } from "./inventory";
 
-function buildSources(
-  overrides: Partial<InventorySources> = {},
-): InventorySources {
+function buildSources(overrides: Partial<InventorySources> = {}): InventorySources {
   return {
     async listConversationalAgents() {
       return [];

@@ -1,31 +1,21 @@
 {
   "name": "@corbits/diligence-brief-workflow",
-  "description": "Single-step, mail-triggered workflow that researches a company and writes a cited diligence brief, held for approval",
   "version": "0.0.1",
+  "description": "Single-step, mail-triggered workflow that researches a company and writes a cited diligence brief, held for approval",
   "license": "LGPL-2.1-or-later",
-  "type": "module",
-  "corbits": {
-    "workflow": {
-      "assetName": "diligence-brief",
-      "displayName": "Diligence brief",
-      "automatable": false
-    }
-  },
-  "interchange": {
-    "workflow": "./src/index.ts"
-  },
-  "exports": {
-    ".": "./src/index.ts"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "workflows/diligence-brief"
   },
   "files": [
     "src",
     "LICENSE",
     "README.md"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "workflows/diligence-brief"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -38,13 +28,23 @@
     "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
     "arktype": "catalog:"
   },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
   "peerDependencies": {
     "@intx/agent": "0.3.0",
     "@intx/types": "0.3.0",
     "@intx/workflow": "0.3.0"
   },
-  "devDependencies": {
-    "@types/bun": "catalog:",
-    "typescript": "catalog:"
+  "corbits": {
+    "workflow": {
+      "assetName": "diligence-brief",
+      "displayName": "Diligence brief",
+      "automatable": false
+    }
+  },
+  "interchange": {
+    "workflow": "./src/index.ts"
   }
 }

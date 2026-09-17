@@ -31,13 +31,10 @@ const LOG_PREFIX = "[docker-sidecar-smoke]";
 
 async function dockerAvailable(): Promise<boolean> {
   try {
-    const proc = Bun.spawn(
-      ["docker", "version", "--format", "{{.Server.Version}}"],
-      {
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
+    const proc = Bun.spawn(["docker", "version", "--format", "{{.Server.Version}}"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     const exitCode = await proc.exited;
     return exitCode === 0;
   } catch {
@@ -68,14 +65,8 @@ async function containerLabeled(
   return stdout.trim().length > 0;
 }
 
-async function containerRunning(
-  allocationId: string,
-  sidecarId: string,
-): Promise<boolean> {
-  return containerLabeled(allocationId, sidecarId, [
-    "--filter",
-    "status=running",
-  ]);
+async function containerRunning(allocationId: string, sidecarId: string): Promise<boolean> {
+  return containerLabeled(allocationId, sidecarId, ["--filter", "status=running"]);
 }
 
 async function main(): Promise<void> {
@@ -113,14 +104,10 @@ async function main(): Promise<void> {
   };
 
   try {
-    console.log(
-      `${LOG_PREFIX} create: requesting a sidecar container from ${image}`,
-    );
+    console.log(`${LOG_PREFIX} create: requesting a sidecar container from ${image}`);
     const ensureResult = await provisioner.ensure(request);
     if (ensureResult.kind !== "accepted") {
-      throw new Error(
-        `ensure was rejected: ${ensureResult.code}: ${ensureResult.message}`,
-      );
+      throw new Error(`ensure was rejected: ${ensureResult.code}: ${ensureResult.message}`);
     }
     console.log(
       `${LOG_PREFIX} exclusive-run: accepted, externalRef=${ensureResult.externalRef ?? "(none)"}`,
@@ -134,9 +121,7 @@ async function main(): Promise<void> {
     console.log(`${LOG_PREFIX} container-appears: confirmed via docker ps -a`);
 
     if (realImage !== undefined) {
-      const stayUpSeconds = Number(
-        process.env["DOCKER_SIDECAR_SMOKE_STAY_UP_SECONDS"] ?? "5",
-      );
+      const stayUpSeconds = Number(process.env["DOCKER_SIDECAR_SMOKE_STAY_UP_SECONDS"] ?? "5");
       console.log(
         `${LOG_PREFIX} real-image mode: asserting the container stays up for ${String(stayUpSeconds)}s`,
       );
@@ -155,14 +140,10 @@ async function main(): Promise<void> {
       allocationId,
       generation: request.generation,
       sidecarId,
-      ...(ensureResult.externalRef !== undefined
-        ? { externalRef: ensureResult.externalRef }
-        : {}),
+      ...(ensureResult.externalRef !== undefined ? { externalRef: ensureResult.externalRef } : {}),
     });
     if (destroyResult.kind !== "destroyed") {
-      throw new Error(
-        `release failed: ${destroyResult.code}: ${destroyResult.message}`,
-      );
+      throw new Error(`release failed: ${destroyResult.code}: ${destroyResult.message}`);
     }
     console.log(`${LOG_PREFIX} release: destroy() reported destroyed`);
 
@@ -171,9 +152,7 @@ async function main(): Promise<void> {
         "container-gone check failed: a container with these labels is still present",
       );
     }
-    console.log(
-      `${LOG_PREFIX} container-gone: confirmed — full lifecycle proof passed`,
-    );
+    console.log(`${LOG_PREFIX} container-gone: confirmed — full lifecycle proof passed`);
   } finally {
     await rm(stateDir, { recursive: true, force: true });
   }

@@ -72,24 +72,18 @@ function harness() {
     turnCancellation: createTurnCancelRegistry(),
     mailbox: {
       writer,
-      resolveKnownPrincipalIds: async (
-        _tenantId: string,
-        candidateIds: readonly string[],
-      ) => new Set(candidateIds.filter((id) => known.has(id))),
+      resolveKnownPrincipalIds: async (_tenantId: string, candidateIds: readonly string[]) =>
+        new Set(candidateIds.filter((id) => known.has(id))),
       resolveTenantDomain: async (_tenantId: string) => DOMAIN,
     },
   };
   return { deps, store, roomMessages, threads, events };
 }
 
-async function messageEventOf(
-  h: ReturnType<typeof harness>,
-  id: string,
-): Promise<unknown> {
+async function messageEventOf(h: ReturnType<typeof harness>, id: string): Promise<unknown> {
   const event = h.events.find(
     (candidate) =>
-      candidate.type === "chat.message" &&
-      (candidate.data as { id?: string }).id === id,
+      candidate.type === "chat.message" && (candidate.data as { id?: string }).id === id,
   );
   expect(event).toBeDefined();
   return event?.data;
@@ -103,11 +97,7 @@ describe("chat.message SSE event mail headers (CL-7448)", () => {
       workbenchId: WORKBENCH_ID,
       updatedBy: SENDER,
       settings: {
-        "chat/participants": participantsOf(
-          SENDER,
-          OTHER_HUMANS,
-          AGENT_ADDRESS,
-        ),
+        "chat/participants": participantsOf(SENDER, OTHER_HUMANS, AGENT_ADDRESS),
       },
     });
 
@@ -120,9 +110,7 @@ describe("chat.message SSE event mail headers (CL-7448)", () => {
     });
     await result.fanoutDelivered;
 
-    const parsed = ChatMessageEventData.assert(
-      await messageEventOf(h, result.id),
-    );
+    const parsed = ChatMessageEventData.assert(await messageEventOf(h, result.id));
     const headers = parsed as unknown as Record<string, unknown>;
     expect(headers["ref"]).toEqual({ kind: "workbench", id: WORKBENCH_ID });
     expect(headers["messageId"]).toBe(`<${result.id}@${DOMAIN}>`);
@@ -137,11 +125,7 @@ describe("chat.message SSE event mail headers (CL-7448)", () => {
       workbenchId: WORKBENCH_ID,
       updatedBy: SENDER,
       settings: {
-        "chat/participants": participantsOf(
-          SENDER,
-          OTHER_HUMANS,
-          AGENT_ADDRESS,
-        ),
+        "chat/participants": participantsOf(SENDER, OTHER_HUMANS, AGENT_ADDRESS),
       },
     });
 
@@ -175,9 +159,7 @@ describe("chat.message SSE event mail headers (CL-7448)", () => {
       messageId: reply.id,
     });
 
-    const parsed = ChatMessageEventData.assert(
-      await messageEventOf(h, reply.id),
-    );
+    const parsed = ChatMessageEventData.assert(await messageEventOf(h, reply.id));
     const headers = parsed as unknown as Record<string, unknown>;
     expect(headers["ref"]).toEqual({ kind: "workbench", id: WORKBENCH_ID });
     expect(headers["messageId"]).toBe(`<${reply.id}@${DOMAIN}>`);
@@ -199,9 +181,7 @@ describe("chat.message SSE event mail headers (CL-7448)", () => {
       },
     );
 
-    const parsed = ChatMessageEventData.assert(
-      await messageEventOf(h, posted.id),
-    );
+    const parsed = ChatMessageEventData.assert(await messageEventOf(h, posted.id));
     const headers = parsed as unknown as Record<string, unknown>;
     expect(headers["ref"]).toEqual({ kind: "workbench", id: WORKBENCH_ID });
     expect(headers["messageId"]).toBeUndefined();

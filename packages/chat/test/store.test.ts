@@ -92,9 +92,7 @@ test("mutateWorkbenchParticipants folds `mutate` over the current list and write
     mutate: (participants) => addParticipant(participants, "prn_bob", "bob"),
   });
 
-  expect(row.settings["chat/participants"]).toEqual([
-    { address: "prn_bob", handle: "bob" },
-  ]);
+  expect(row.settings["chat/participants"]).toEqual([{ address: "prn_bob", handle: "bob" }]);
   // Untouched keys survive exactly as they were — this is the targeted
   // merge the whole-blob `updateWorkbenchSettings` never gave.
   expect(row.settings["chat/kind"]).toBe("workbench");
@@ -123,9 +121,7 @@ test("mutateWorkbenchParticipants removing a participant leaves the rest untouch
     mutate: (participants) => removeParticipant(participants, "prn_bob"),
   });
 
-  expect(row.settings["chat/participants"]).toEqual([
-    { address: "prn_carol", handle: "carol" },
-  ]);
+  expect(row.settings["chat/participants"]).toEqual([{ address: "prn_carol", handle: "carol" }]);
 });
 
 test("mutateWorkbenchParticipants rejects a missing workbench", async () => {
@@ -274,9 +270,7 @@ test("putReadState never moves the cursor backward when a stale write lands afte
   });
 
   expect(result.lastSeenId).toBe("mail_2");
-  expect(result.lastSeenCreatedAt).toEqual(
-    new Date("2026-01-02T00:00:00.000Z"),
-  );
+  expect(result.lastSeenCreatedAt).toEqual(new Date("2026-01-02T00:00:00.000Z"));
 
   const alice = await store.getReadState("tnt_1", "chn_1", "prn_alice");
   expect(alice?.lastSeenId).toBe("mail_2");

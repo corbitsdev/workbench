@@ -34,14 +34,8 @@ import { join as pathJoin } from "node:path";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import { createGitWorkflowPusher } from "../../packages/connections/src/workflow-push.ts";
-import {
-  DEFAULT_WORKFLOWS,
-  seedTenant,
-} from "../../packages/onboarding/src/tenant-seed.ts";
-import {
-  createHubAPI,
-  type ApiCall,
-} from "../../packages/hub-api-client/src/index.ts";
+import { DEFAULT_WORKFLOWS, seedTenant } from "../../packages/onboarding/src/tenant-seed.ts";
+import { createHubAPI, type ApiCall } from "../../packages/hub-api-client/src/index.ts";
 import {
   findPersonalTenant,
   testAndPersistCredential,
@@ -118,9 +112,7 @@ function stringField(data: unknown, field: string, what: string): string {
     const value = (data as Record<string, unknown>)[field];
     if (typeof value === "string" && value !== "") return value;
   }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing string field "${field}": ${JSON.stringify(data)}`);
 }
 
 function arrayField(data: unknown, field: string, what: string): unknown[] {
@@ -128,9 +120,7 @@ function arrayField(data: unknown, field: string, what: string): unknown[] {
     const value = (data as Record<string, unknown>)[field];
     if (Array.isArray(value)) return value;
   }
-  throw new Error(
-    `${what}: missing array field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing array field "${field}": ${JSON.stringify(data)}`);
 }
 
 async function signUp(
@@ -173,9 +163,7 @@ async function main(): Promise<void> {
     startHub({
       databaseUrl: url,
       port: freePort(),
-      sessionSecret: Buffer.from(
-        crypto.getRandomValues(new Uint8Array(32)),
-      ).toString("hex"),
+      sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
       dataDir: await tempDir("cl6451-hub-data-"),
     }),
   );
@@ -229,39 +217,28 @@ async function main(): Promise<void> {
     return { cookies: res.cookies, userId };
   });
 
-  const user = await hop("sign up", async () =>
-    signUp(hub.baseUrl, "CL-6451 Proof"),
-  );
+  const user = await hop("sign up", async () => signUp(hub.baseUrl, "CL-6451 Proof"));
 
-  const provisioned = await hop(
-    "a membership probe joins the genesis root",
-    async () => {
-      const res = await api(
-        hub.baseUrl,
-        "POST",
-        "/api/onboarding/provision",
-        undefined,
-        user.cookies,
-      );
-      expectStatus("provision probe", res, 200);
-      const data = res.data as { kind: string; tenantSlug: string };
-      expect(data.kind).toBe("existing-member");
-      return data;
-    },
-  );
+  const provisioned = await hop("a membership probe joins the genesis root", async () => {
+    const res = await api(
+      hub.baseUrl,
+      "POST",
+      "/api/onboarding/provision",
+      undefined,
+      user.cookies,
+    );
+    expectStatus("provision probe", res, 200);
+    const data = res.data as { kind: string; tenantSlug: string };
+    expect(data.kind).toBe("existing-member");
+    return data;
+  });
 
   // A joined member is read-only by design, so every owner-level leg
   // below runs as alice, the genesis owner.
   const tenant = await hop("joined root resolves", async () => {
-    const found = await findPersonalTenant(
-      hubApi,
-      admin.cookies,
-      provisioned.tenantSlug,
-    );
+    const found = await findPersonalTenant(hubApi, admin.cookies, provisioned.tenantSlug);
     if (found === undefined) {
-      throw new Error(
-        `findPersonalTenant found nothing for slug ${provisioned.tenantSlug}`,
-      );
+      throw new Error(`findPersonalTenant found nothing for slug ${provisioned.tenantSlug}`);
     }
     return found;
   });
@@ -280,9 +257,7 @@ async function main(): Promise<void> {
       log: () => undefined,
     });
     if (result.kind !== "connected") {
-      throw new Error(
-        `expected the key-path connect to succeed, got: ${JSON.stringify(result)}`,
-      );
+      throw new Error(`expected the key-path connect to succeed, got: ${JSON.stringify(result)}`);
     }
     return result;
   });
@@ -310,40 +285,35 @@ async function main(): Promise<void> {
     }
   });
 
-  await hop(
-    "SETUP — every default workflow deploys by source-ref",
-    async () => {
-      const deadline = Date.now() + 180_000;
-      for (;;) {
-        if (sidecar.exited()) {
-          throw new Error(
-            `sidecar exited before the seed finished; output:\n${sidecar.output()}`,
-          );
-        }
-        try {
-          await seedTenant({
-            api: hubApi,
-            cookies: admin.cookies,
-            hubUrl: hub.baseUrl,
-            tenant: {
-              tenantId: tenant.tenantId,
-              principalId: tenant.principalId,
-              domain: tenant.tenantDomain,
-            },
-            model: proofModelSource,
-            pushWorkflow,
-            log: () => undefined,
-            workflows: DEFAULT_WORKFLOWS,
-            confirmDeployments: false,
-          });
-          return;
-        } catch (cause) {
-          if (Date.now() > deadline) throw cause;
-          await Bun.sleep(1000);
-        }
+  await hop("SETUP — every default workflow deploys by source-ref", async () => {
+    const deadline = Date.now() + 180_000;
+    for (;;) {
+      if (sidecar.exited()) {
+        throw new Error(`sidecar exited before the seed finished; output:\n${sidecar.output()}`);
       }
-    },
-  );
+      try {
+        await seedTenant({
+          api: hubApi,
+          cookies: admin.cookies,
+          hubUrl: hub.baseUrl,
+          tenant: {
+            tenantId: tenant.tenantId,
+            principalId: tenant.principalId,
+            domain: tenant.tenantDomain,
+          },
+          model: proofModelSource,
+          pushWorkflow,
+          log: () => undefined,
+          workflows: DEFAULT_WORKFLOWS,
+          confirmDeployments: false,
+        });
+        return;
+      } catch (cause) {
+        if (Date.now() > deadline) throw cause;
+        await Bun.sleep(1000);
+      }
+    }
+  });
 
   // No catalog narrowing here, unlike the CL-6329 proof: the seeded
   // `assistant` definition pins its own model (the connect flow's
@@ -351,35 +321,30 @@ async function main(): Promise<void> {
   // model that pin names — this proof is about run identity, not model
   // selection, so every seeded offering stays launchable.
 
-  const assistant = await hop(
-    "SETUP — 'assistant' is invitable tenant-wide",
-    async () => {
-      const deadline = Date.now() + 60_000;
-      for (;;) {
-        const res = await api(
-          hub.baseUrl,
-          "GET",
-          `/api/tenants/${tenant.tenantId}/chat/invitable-definitions`,
-          undefined,
-          admin.cookies,
-        );
-        if (res.status === 200) {
-          const items = arrayField(res.data, "items", "invitable") as {
-            id: string;
-            name: string;
-          }[];
-          const found = items.find((item) => item.name === "assistant");
-          if (found !== undefined) return found;
-        }
-        if (Date.now() > deadline) {
-          throw new Error(
-            `"assistant" never became invitable: ${JSON.stringify(res.data)}`,
-          );
-        }
-        await Bun.sleep(1000);
+  const assistant = await hop("SETUP — 'assistant' is invitable tenant-wide", async () => {
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+      const res = await api(
+        hub.baseUrl,
+        "GET",
+        `/api/tenants/${tenant.tenantId}/chat/invitable-definitions`,
+        undefined,
+        admin.cookies,
+      );
+      if (res.status === 200) {
+        const items = arrayField(res.data, "items", "invitable") as {
+          id: string;
+          name: string;
+        }[];
+        const found = items.find((item) => item.name === "assistant");
+        if (found !== undefined) return found;
       }
-    },
-  );
+      if (Date.now() > deadline) {
+        throw new Error(`"assistant" never became invitable: ${JSON.stringify(res.data)}`);
+      }
+      await Bun.sleep(1000);
+    }
+  });
 
   // A WORKBENCH, not a chat: the live bug fired in a room whose agent
   // arrived through the invite affordance and was then @named by its
@@ -411,28 +376,25 @@ async function main(): Promise<void> {
     }[];
   }
 
-  const agentAddress = await hop(
-    "SETUP — invite `assistant` (run A)",
-    async () => {
-      const deadline = Date.now() + 120_000;
-      for (;;) {
-        const res = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenant.tenantId}/chat/workbenches/${workbenchId}/invite`,
-          { definitionId: assistant.id },
-          admin.cookies,
-        );
-        if (res.status === 201) {
-          return stringField(res.data, "address", "invite");
-        }
-        if (Date.now() > deadline) {
-          throw new Error(`invite never landed: ${JSON.stringify(res.data)}`);
-        }
-        await Bun.sleep(1000);
+  const agentAddress = await hop("SETUP — invite `assistant` (run A)", async () => {
+    const deadline = Date.now() + 120_000;
+    for (;;) {
+      const res = await api(
+        hub.baseUrl,
+        "POST",
+        `/api/tenants/${tenant.tenantId}/chat/workbenches/${workbenchId}/invite`,
+        { definitionId: assistant.id },
+        admin.cookies,
+      );
+      if (res.status === 201) {
+        return stringField(res.data, "address", "invite");
       }
-    },
-  );
+      if (Date.now() > deadline) {
+        throw new Error(`invite never landed: ${JSON.stringify(res.data)}`);
+      }
+      await Bun.sleep(1000);
+    }
+  });
   const [agentRunId] = agentAddress.split("@");
   if (agentRunId === undefined) {
     throw new Error(`agent address is not a run address: ${agentAddress}`);
@@ -441,9 +403,7 @@ async function main(): Promise<void> {
   // The precondition that made the bug reachable: the participant's
   // handle is NOT the definition's wire name, so the known-handle guard
   // alone cannot recognize `@assistant` as this participant.
-  const handle = (await listAgents()).find(
-    (p) => p.address === agentAddress,
-  )?.handle;
+  const handle = (await listAgents()).find((p) => p.address === agentAddress)?.handle;
   if (handle === undefined) {
     throw new Error(`the invited agent is not on the room's participant list`);
   }
@@ -479,9 +439,7 @@ async function main(): Promise<void> {
     return arrayField(res.data, "items", "list turns") as Turn[];
   }
 
-  async function listRoomMessages(): Promise<
-    { id: string; address: string; text: string }[]
-  > {
+  async function listRoomMessages(): Promise<{ id: string; address: string; text: string }[]> {
     const res = await api(
       hub.baseUrl,
       "GET",
@@ -516,11 +474,7 @@ async function main(): Promise<void> {
     expectStatus(`send "${text.slice(0, 40)}"`, res, 201);
     // The heart of CL-6451: the `@assistant` message must NOT have been
     // intercepted as a workflow command.
-    if (
-      typeof res.data === "object" &&
-      res.data !== null &&
-      "command" in res.data
-    ) {
+    if (typeof res.data === "object" && res.data !== null && "command" in res.data) {
       throw new Error(
         `the @${assistant.name} message was dispatched as a command — a ` +
           `second run was started: ${JSON.stringify(res.data)}`,
@@ -538,13 +492,9 @@ async function main(): Promise<void> {
       );
       if (settled !== undefined) {
         expect(settled.agentAddress).toBe(agentAddress);
-        const reply = (await listRoomMessages()).find(
-          (m) => m.id === settled.replyMessageId,
-        );
+        const reply = (await listRoomMessages()).find((m) => m.id === settled.replyMessageId);
         const replyText = reply?.text ?? "";
-        console.log(
-          `  TRANSCRIPT — ${settled.childRunId}: ${replyText.slice(0, 160)}`,
-        );
+        console.log(`  TRANSCRIPT — ${settled.childRunId}: ${replyText.slice(0, 160)}`);
         return { replyText };
       }
       const failed = turns.find((t) => t.status === "failed");
@@ -564,43 +514,33 @@ async function main(): Promise<void> {
     }
   }
 
-  await hop(
-    "PROOF 1 — @assistant routes into run A, never a second run",
-    async () => {
-      await sendAndAwaitTurn(
-        `@${assistant.name} My favorite color is teal. ` +
-          `Acknowledge in one short sentence.`,
-        "turn__0",
-      );
-      const agents = await listAgents();
-      if (agents.length !== 1) {
-        throw new Error(
-          `the room grew a second agent participant: ` + JSON.stringify(agents),
-        );
-      }
-      expect(agents[0]?.address).toBe(agentAddress);
-    },
-  );
+  await hop("PROOF 1 — @assistant routes into run A, never a second run", async () => {
+    await sendAndAwaitTurn(
+      `@${assistant.name} My favorite color is teal. ` + `Acknowledge in one short sentence.`,
+      "turn__0",
+    );
+    const agents = await listAgents();
+    if (agents.length !== 1) {
+      throw new Error(`the room grew a second agent participant: ` + JSON.stringify(agents));
+    }
+    expect(agents[0]?.address).toBe(agentAddress);
+  });
 
-  await hop(
-    "PROOF 2 (CL-6453) — turn__1 rides the same run and remembers turn__0",
-    async () => {
-      const { replyText } = await sendAndAwaitTurn(
-        `@${assistant.name} What is my favorite color? ` +
-          `Answer with just the color name.`,
-        "turn__1",
+  await hop("PROOF 2 (CL-6453) — turn__1 rides the same run and remembers turn__0", async () => {
+    const { replyText } = await sendAndAwaitTurn(
+      `@${assistant.name} What is my favorite color? ` + `Answer with just the color name.`,
+      "turn__1",
+    );
+    if (!/teal/i.test(replyText)) {
+      throw new Error(
+        `turn__1's reply does not recall turn__0's fact ("teal"): ` +
+          `"${replyText}" — the bootstrap exchange is missing from the ` +
+          `durable history`,
       );
-      if (!/teal/i.test(replyText)) {
-        throw new Error(
-          `turn__1's reply does not recall turn__0's fact ("teal"): ` +
-            `"${replyText}" — the bootstrap exchange is missing from the ` +
-            `durable history`,
-        );
-      }
-      const agents = await listAgents();
-      expect(agents).toHaveLength(1);
-    },
-  );
+    }
+    const agents = await listAgents();
+    expect(agents).toHaveLength(1);
+  });
 
   console.log("\nBoth CL-6451/CL-6453 proofs passed.");
 }

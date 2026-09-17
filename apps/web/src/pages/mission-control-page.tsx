@@ -33,18 +33,11 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { CHAT_STRINGS, type Workbench } from "@corbits/chat-ui";
-import {
-  runOutcomeStatus,
-  runStatusLabel,
-  withListingAbandoned,
-} from "@corbits/workflows/client";
+import { runOutcomeStatus, runStatusLabel, withListingAbandoned } from "@corbits/workflows/client";
 
 import { approveApproval, rejectApproval } from "../api";
 import { useBench } from "../bench-context";
-import {
-  usePendingApprovals,
-  type PendingApproval,
-} from "../pending-approvals";
+import { usePendingApprovals, type PendingApproval } from "../pending-approvals";
 import { tenantKeys } from "../query-client";
 import { NEW_WORKBENCH_PATH } from "../routes";
 import { useBenchActivity } from "../shell/bench-activity";
@@ -82,12 +75,8 @@ function listingFromRoutine(routine: RoutineActivityItem, now: number) {
   );
 }
 
-function routineInFlightRow(
-  routine: RoutineActivityItem,
-  now: number,
-): InFlightRow {
-  const status =
-    runOutcomeStatus(listingFromRoutine(routine, now), now) ?? routine.status;
+function routineInFlightRow(routine: RoutineActivityItem, now: number): InFlightRow {
+  const status = runOutcomeStatus(listingFromRoutine(routine, now), now) ?? routine.status;
   return {
     key: `routine:${routine.id}`,
     label: routine.name,
@@ -106,10 +95,7 @@ export function computeInFlightRows(
   now: number = Date.now(),
 ): readonly InFlightRow[] {
   const rows = routines
-    .filter(
-      (routine) =>
-        runOutcomeStatus(listingFromRoutine(routine, now), now) === "running",
-    )
+    .filter((routine) => runOutcomeStatus(listingFromRoutine(routine, now), now) === "running")
     .map((routine) => routineInFlightRow(routine, now));
   return rows.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
@@ -194,9 +180,7 @@ function ApprovalRow({
         <span className="mission-control-cell-primary">{item.headline}</span>
       </TableCell>
       <TableCell className="mission-control-opt">{item.agentName}</TableCell>
-      <TableCell className="mission-control-opt">
-        {formatRelativeTime(item.createdAt)}
-      </TableCell>
+      <TableCell className="mission-control-opt">{formatRelativeTime(item.createdAt)}</TableCell>
       <TableCell className="mission-control-num">
         <div className="mission-control-row-actions">
           <Button
@@ -221,39 +205,25 @@ function ApprovalRow({
   );
 }
 
-export function MissionControlRoute({
-  navigate,
-}: {
-  readonly navigate: (to: string) => void;
-}) {
+export function MissionControlRoute({ navigate }: { readonly navigate: (to: string) => void }) {
   const { selectedTenantId: tenantId } = useBench();
   const approvalsQuery = usePendingApprovals(tenantId);
   const activity = useBenchActivity(tenantId);
 
-  const pendingApprovals =
-    approvalsQuery.kind === "ready" ? approvalsQuery.data : null;
+  const pendingApprovals = approvalsQuery.kind === "ready" ? approvalsQuery.data : null;
   const oldestWaitingAt =
     pendingApprovals !== null && pendingApprovals.length > 0
       ? pendingApprovals.reduce((oldest, item) =>
-          Date.parse(item.createdAt) < Date.parse(oldest.createdAt)
-            ? item
-            : oldest,
+          Date.parse(item.createdAt) < Date.parse(oldest.createdAt) ? item : oldest,
         ).createdAt
       : null;
 
-  const inFlightRows =
-    activity.kind === "ready" ? computeInFlightRows(activity.routines) : [];
-  const activeRunsCount =
-    activity.kind === "ready" ? inFlightRows.length : null;
+  const inFlightRows = activity.kind === "ready" ? computeInFlightRows(activity.routines) : [];
+  const activeRunsCount = activity.kind === "ready" ? inFlightRows.length : null;
 
   const jumpBackRows =
     activity.kind === "ready"
-      ? computeJumpBackRows(
-          activity.workbenches,
-          activity.chats,
-          activity.agents,
-          navigate,
-        )
+      ? computeJumpBackRows(activity.workbenches, activity.chats, activity.agents, navigate)
       : [];
 
   return (
@@ -261,11 +231,7 @@ export function MissionControlRoute({
       <StageTopBar
         crumbs={[{ label: "Mission Control" }]}
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => navigate(NEW_WORKBENCH_PATH)}
-          >
+          <Button variant="primary" size="sm" onClick={() => navigate(NEW_WORKBENCH_PATH)}>
             <Plus /> {CHAT_STRINGS.newWorkbenchAction}
           </Button>
         }
@@ -278,17 +244,13 @@ export function MissionControlRoute({
                 label="Active runs"
                 value={dash(activeRunsCount)}
                 sub={
-                  activeRunsCount !== null && activeRunsCount > 0
-                    ? "live now"
-                    : "nothing running"
+                  activeRunsCount !== null && activeRunsCount > 0 ? "live now" : "nothing running"
                 }
               />
               <StatGridItem
                 label="Waiting on you"
                 value={dash(pendingApprovals?.length ?? null)}
-                danger={
-                  pendingApprovals !== null && pendingApprovals.length > 0
-                }
+                danger={pendingApprovals !== null && pendingApprovals.length > 0}
                 sub={
                   oldestWaitingAt !== null
                     ? `oldest ${formatRelativeTime(oldestWaitingAt)}`
@@ -300,13 +262,9 @@ export function MissionControlRoute({
             <section className="mission-control-panel">
               <div className="mission-control-panel-header">
                 <h2>Needs you</h2>
-                <span className="mission-control-hint">
-                  approvals block agents until you act
-                </span>
+                <span className="mission-control-hint">approvals block agents until you act</span>
               </div>
-              {approvalsQuery.kind === "loading" ? (
-                <Skeleton className="h-24 w-full" />
-              ) : null}
+              {approvalsQuery.kind === "loading" ? <Skeleton className="h-24 w-full" /> : null}
               {approvalsQuery.kind === "error" ? (
                 <RichEmptyState
                   title="Couldn't load approvals"
@@ -330,23 +288,15 @@ export function MissionControlRoute({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Request</TableHead>
-                      <TableHead className="mission-control-opt">
-                        From
-                      </TableHead>
-                      <TableHead className="mission-control-opt">
-                        Waiting
-                      </TableHead>
+                      <TableHead className="mission-control-opt">From</TableHead>
+                      <TableHead className="mission-control-opt">Waiting</TableHead>
                       <TableHead className="mission-control-num" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {tenantId !== null &&
                       pendingApprovals.map((item) => (
-                        <ApprovalRow
-                          key={item.id}
-                          item={item}
-                          tenantId={tenantId}
-                        />
+                        <ApprovalRow key={item.id} item={item} tenantId={tenantId} />
                       ))}
                   </TableBody>
                 </Table>
@@ -358,14 +308,9 @@ export function MissionControlRoute({
                 <h2>In flight</h2>
                 <span className="mission-control-hint">live</span>
               </div>
-              {activity.kind === "loading" ? (
-                <Skeleton className="h-24 w-full" />
-              ) : null}
+              {activity.kind === "loading" ? <Skeleton className="h-24 w-full" /> : null}
               {activity.kind === "error" ? (
-                <RichEmptyState
-                  title="Couldn't load activity"
-                  description={activity.message}
-                />
+                <RichEmptyState title="Couldn't load activity" description={activity.message} />
               ) : null}
               {activity.kind !== "loading" &&
               activity.kind !== "error" &&
@@ -380,12 +325,8 @@ export function MissionControlRoute({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Run</TableHead>
-                      <TableHead className="mission-control-opt">
-                        Elapsed
-                      </TableHead>
-                      <TableHead className="mission-control-num">
-                        Steps
-                      </TableHead>
+                      <TableHead className="mission-control-opt">Elapsed</TableHead>
+                      <TableHead className="mission-control-num">Steps</TableHead>
                       <TableHead />
                     </TableRow>
                   </TableHeader>
@@ -393,20 +334,14 @@ export function MissionControlRoute({
                     {inFlightRows.map((row) => (
                       <TableRow key={row.key}>
                         <TableCell>
-                          <span className="mission-control-cell-primary">
-                            {row.label}
-                          </span>
+                          <span className="mission-control-cell-primary">{row.label}</span>
                           <br />
-                          <span className="mission-control-cell-context">
-                            {row.context}
-                          </span>
+                          <span className="mission-control-cell-context">{row.context}</span>
                         </TableCell>
                         <TableCell className="mission-control-opt">
                           {formatRelativeTime(row.createdAt)}
                         </TableCell>
-                        <TableCell className="mission-control-num">
-                          {row.steps}
-                        </TableCell>
+                        <TableCell className="mission-control-num">{row.steps}</TableCell>
                         <TableCell className="mission-control-num">
                           <Badge tone={row.statusTone}>{row.statusLabel}</Badge>
                         </TableCell>
@@ -422,13 +357,9 @@ export function MissionControlRoute({
                 <div className="mission-control-panel-header">
                   <h2>Jump back in</h2>
                 </div>
-                {activity.kind === "loading" ? (
-                  <Skeleton className="h-24 w-full" />
-                ) : null}
+                {activity.kind === "loading" ? <Skeleton className="h-24 w-full" /> : null}
                 {activity.kind !== "loading" && jumpBackRows.length === 0 ? (
-                  <p className="mission-control-empty-note">
-                    Nothing recent yet.
-                  </p>
+                  <p className="mission-control-empty-note">Nothing recent yet.</p>
                 ) : null}
                 {jumpBackRows.length > 0 ? (
                   <div className="mission-control-rows">
@@ -442,12 +373,8 @@ export function MissionControlRoute({
                         >
                           {row.icon === "chat" ? <ChatCircleDots /> : <Robot />}
                           <span className="mission-control-jump-body">
-                            <span className="mission-control-cell-primary">
-                              {row.label}
-                            </span>
-                            <span className="mission-control-cell-context">
-                              {row.context}
-                            </span>
+                            <span className="mission-control-cell-primary">{row.label}</span>
+                            <span className="mission-control-cell-context">{row.context}</span>
                           </span>
                           <span className="mission-control-jump-when">
                             {formatRelativeTime(row.when)}
@@ -457,12 +384,8 @@ export function MissionControlRoute({
                         <div key={row.key} className="mission-control-jump-row">
                           <Robot />
                           <span className="mission-control-jump-body">
-                            <span className="mission-control-cell-primary">
-                              {row.label}
-                            </span>
-                            <span className="mission-control-cell-context">
-                              {row.context}
-                            </span>
+                            <span className="mission-control-cell-primary">{row.label}</span>
+                            <span className="mission-control-cell-context">{row.context}</span>
                           </span>
                           <span className="mission-control-jump-when">
                             {formatRelativeTime(row.when)}

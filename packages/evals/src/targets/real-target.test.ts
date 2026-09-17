@@ -7,10 +7,7 @@ function textMessage(id: string, address: string, text: string) {
 }
 
 test("finds a fresh agent-authored text message not yet seen", () => {
-  const items = [
-    textMessage("m1", "user:1", "hello"),
-    textMessage("m2", "agent:myra", "hi there"),
-  ];
+  const items = [textMessage("m1", "user:1", "hello"), textMessage("m2", "agent:myra", "hi there")];
   const found = findNewAgentReply(items, "agent:myra", new Set());
   expect(found?.id).toBe("m2");
 });

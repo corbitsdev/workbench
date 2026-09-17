@@ -19,11 +19,7 @@ import path from "node:path";
 
 import { generateKeyPair } from "@intx/crypto";
 import type { AuthzCallResult } from "@intx/inference";
-import type {
-  ApprovalSnapshot,
-  KeyPair,
-  MailPartReader,
-} from "@intx/types/runtime";
+import type { ApprovalSnapshot, KeyPair, MailPartReader } from "@intx/types/runtime";
 import { defineAgent } from "@intx/agent";
 import {
   createRepoStore,
@@ -31,10 +27,7 @@ import {
   WORKFLOW_RUN_GITIGNORE_PATH,
 } from "@intx/hub-sessions";
 import type { AuthorizeFn } from "@intx/hub-sessions";
-import type {
-  RepoId,
-  WorkflowRunWorkflowProcessPrincipal,
-} from "@intx/hub-sessions/substrate";
+import type { RepoId, WorkflowRunWorkflowProcessPrincipal } from "@intx/hub-sessions/substrate";
 import {
   createInMemoryRepoStore,
   createInMemoryScheduler,
@@ -116,9 +109,7 @@ function bodyDefinition(id: string): WorkflowDefinition {
   });
 }
 
-async function makeSubstrate(
-  prefix: string,
-): Promise<ReturnType<typeof createRepoStore>> {
+async function makeSubstrate(prefix: string): Promise<ReturnType<typeof createRepoStore>> {
   const dataDir = await makeTempDir(prefix);
   const substrate = createRepoStore({
     dataDir,
@@ -135,9 +126,7 @@ async function makeSubstrate(
 
 // An invoker that suspends as an approval on its first invocation and, on
 // the resume re-invocation, records the delivered decision and completes.
-function suspendThenComplete(record: {
-  resumeDecision?: unknown;
-}): StepInvoker {
+function suspendThenComplete(record: { resumeDecision?: unknown }): StepInvoker {
   return async (req) => {
     if (req.resume === undefined) {
       return {
@@ -234,17 +223,10 @@ describe("createSidecarSpawnSuspendableChild", () => {
     const dataDir = await makeTempDir("suspendable-body-datadir-");
     const sourcesDir = path.join(dataDir, "assets", "workflow", "body-wf-real");
     await fs.promises.mkdir(sourcesDir, { recursive: true });
-    await fs.promises.writeFile(
-      path.join(sourcesDir, "sources.json"),
-      JSON.stringify(bodySources),
-    );
+    await fs.promises.writeFile(path.join(sourcesDir, "sources.json"), JSON.stringify(bodySources));
 
     const seen: { sources?: unknown; agentId?: string } = {};
-    const bodyInvokeStep: SidecarBodyStepInvoker = async (
-      req,
-      _authorize,
-      sourcesRef,
-    ) => {
+    const bodyInvokeStep: SidecarBodyStepInvoker = async (req, _authorize, sourcesRef) => {
       seen.sources = sourcesRef.current;
       seen.agentId = req.agent.id;
       return { output: { done: true } };
@@ -299,12 +281,7 @@ describe("createSidecarSpawnSuspendableChild", () => {
   test("the body invoker receives spawn-input authorize, credentialWiring, and mailPartReader", async () => {
     const substrate = await makeSubstrate("suspendable-body-authorize-");
     const dataDir = await makeTempDir("suspendable-body-authz-datadir-");
-    const sourcesDir = path.join(
-      dataDir,
-      "assets",
-      "workflow",
-      "body-wf-authz",
-    );
+    const sourcesDir = path.join(dataDir, "assets", "workflow", "body-wf-authz");
     await fs.promises.mkdir(sourcesDir, { recursive: true });
     await fs.promises.writeFile(
       path.join(sourcesDir, "sources.json"),

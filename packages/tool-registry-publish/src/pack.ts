@@ -72,19 +72,15 @@ const packCache = new Map<string, Promise<PackedTarball>>();
  * matching the layout `extractTarballPackageJSON` and npm itself
  * expect.
  */
-export async function packToolPackageTarball(
-  packageDir: string,
-): Promise<PackedTarball> {
+export async function packToolPackageTarball(packageDir: string): Promise<PackedTarball> {
   const cached = packCache.get(packageDir);
   if (cached !== undefined) return cached;
-  const pending = packToolPackageTarballUncached(packageDir).catch(
-    (err: unknown) => {
-      // A failed build must not poison future calls — only a
-      // successful, reusable result stays cached.
-      packCache.delete(packageDir);
-      throw err;
-    },
-  );
+  const pending = packToolPackageTarballUncached(packageDir).catch((err: unknown) => {
+    // A failed build must not poison future calls — only a
+    // successful, reusable result stays cached.
+    packCache.delete(packageDir);
+    throw err;
+  });
   packCache.set(packageDir, pending);
   return pending;
 }
@@ -106,20 +102,10 @@ async function runBunBuild(
   packageName: string,
 ): Promise<void> {
   const proc = Bun.spawn(
-    [
-      "bun",
-      "build",
-      entrypoint,
-      "--target=bun",
-      "--format=esm",
-      `--outfile=${outfile}`,
-    ],
+    ["bun", "build", entrypoint, "--target=bun", "--format=esm", `--outfile=${outfile}`],
     { stdout: "pipe", stderr: "pipe" },
   );
-  const [exitCode, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stderr).text(),
-  ]);
+  const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
   if (exitCode !== 0) {
     throw new Error(
       `packToolPackageTarball: "bun build" failed for ${packageName} (exit ${String(exitCode)}): ${stderr}`,
@@ -147,10 +133,7 @@ function isBundle(value: unknown): value is Bundle {
   );
 }
 
-async function surfaceFor(
-  entryFile: string,
-  packageName: string,
-): Promise<ToolSurfaceEntry[]> {
+async function surfaceFor(entryFile: string, packageName: string): Promise<ToolSurfaceEntry[]> {
   const mod = (await import(entryFile)) as Record<string, unknown>;
   const surface: ToolSurfaceEntry[] = [];
   for (const value of Object.values(mod)) {
@@ -159,9 +142,7 @@ async function surfaceFor(
       surface.push({
         qualifiedId: `${value.id}:${definition.name}`,
         kind: "tool",
-        ...(definition.approval !== undefined
-          ? { approval: definition.approval }
-          : {}),
+        ...(definition.approval !== undefined ? { approval: definition.approval } : {}),
       });
     }
   }
@@ -178,9 +159,7 @@ async function surfaceFor(
   return manifest.surface;
 }
 
-async function packToolPackageTarballUncached(
-  packageDir: string,
-): Promise<PackedTarball> {
+async function packToolPackageTarballUncached(packageDir: string): Promise<PackedTarball> {
   const manifestJson: unknown = JSON.parse(
     await readFile(path.join(packageDir, "package.json"), "utf8"),
   );
@@ -194,9 +173,7 @@ async function packToolPackageTarballUncached(
   const entryFile = entryFileFor(manifest, packageDir);
   const surface = await surfaceFor(entryFile, manifest.name);
 
-  const bundleStagingDir = await mkdtemp(
-    path.join(tmpdir(), "corbits-tools-bundle-"),
-  );
+  const bundleStagingDir = await mkdtemp(path.join(tmpdir(), "corbits-tools-bundle-"));
   let bundleBytes: Uint8Array;
   try {
     const outfile = path.join(bundleStagingDir, BUNDLE_ENTRY_FILENAME);
@@ -221,15 +198,10 @@ async function packToolPackageTarballUncached(
       path.join(packageStagingDir, "package.json"),
       JSON.stringify(tarballPackageJSON, null, 2),
     );
-    await writeFile(
-      path.join(packageStagingDir, BUNDLE_ENTRY_FILENAME),
-      bundleBytes,
-    );
+    await writeFile(path.join(packageStagingDir, BUNDLE_ENTRY_FILENAME), bundleBytes);
 
     const tarballPath = path.join(stagingRoot, "out.tgz");
-    await tar.create({ cwd: stagingRoot, gzip: true, file: tarballPath }, [
-      "package",
-    ]);
+    await tar.create({ cwd: stagingRoot, gzip: true, file: tarballPath }, ["package"]);
     const bytes = new Uint8Array(await readFile(tarballPath));
     return {
       name: manifest.name,

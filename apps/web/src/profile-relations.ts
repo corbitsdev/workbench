@@ -26,11 +26,7 @@ export async function loadSharedWorkbenches(
     listWorkbenches(tenantId, "workbench"),
     listWorkbenches(tenantId, "chat"),
   ]);
-  return sharedWorkbenchesWith(
-    [...workbenches, ...chats],
-    viewerPrincipalId,
-    subject.address,
-  );
+  return sharedWorkbenchesWith([...workbenches, ...chats], viewerPrincipalId, subject.address);
 }
 
 /**
@@ -89,9 +85,7 @@ export async function ensureProfileDm(
     let agentDefinitionId: string | null = null;
     if (subject.kind === "agent") {
       const instances = await listAgentInstances(tenantId);
-      const instance = instances.find(
-        (candidate) => candidate.address === subject.address,
-      );
+      const instance = instances.find((candidate) => candidate.address === subject.address);
       agentDefinitionId = instance?.definitionId ?? null;
     }
     const input = dmCreateInputFor(subject, agentDefinitionId);

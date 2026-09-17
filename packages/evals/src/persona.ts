@@ -65,9 +65,7 @@ export function personaAnswer(
 async function defaultCall(prompt: string): Promise<{ text: string }> {
   const key = process.env["EVAL_PROVIDER_API_KEY"];
   if (key === undefined || key === "") {
-    throw new Error(
-      "personaAnswer: EVAL_PROVIDER_API_KEY not set and no call() was injected",
-    );
+    throw new Error("personaAnswer: EVAL_PROVIDER_API_KEY not set and no call() was injected");
   }
   return callEvalModel(prompt, key);
 }

@@ -43,9 +43,7 @@ test('role="dialog" hard-fails even when the ratchet count is under the snapshot
     [],
     1000,
   );
-  expect(report.violations.some((v) => v.includes("zero-tolerance"))).toBe(
-    true,
-  );
+  expect(report.violations.some((v) => v.includes("zero-tolerance"))).toBe(true);
 });
 
 test("aria-modal hard-fails even when the ratchet count is under the snapshot", () => {
@@ -59,9 +57,7 @@ test("aria-modal hard-fails even when the ratchet count is under the snapshot", 
     [],
     1000,
   );
-  expect(report.violations.some((v) => v.includes("zero-tolerance"))).toBe(
-    true,
-  );
+  expect(report.violations.some((v) => v.includes("zero-tolerance"))).toBe(true);
 });
 
 test("a raw <select>/<textarea>/radio/checkbox is flagged as raw-form-control", () => {
@@ -76,9 +72,7 @@ test("a raw <select>/<textarea>/radio/checkbox is flagged as raw-form-control", 
       ].join("\n"),
     },
   ]);
-  expect(
-    violations.filter((v) => v.driftClass === "raw-form-control"),
-  ).toHaveLength(4);
+  expect(violations.filter((v) => v.driftClass === "raw-form-control")).toHaveLength(4);
 });
 
 test("an allowlisted file's raw-form-control and raw-button hits don't count toward the ratchet", () => {

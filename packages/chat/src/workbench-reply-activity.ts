@@ -10,17 +10,13 @@ export async function listWorkbenchLiveState(input: {
   readonly agentTurns: AgentTurnStore | undefined;
   readonly roomMessages: RoomMessageStore;
 }): Promise<ReadonlyMap<string, WorkbenchLiveState>> {
-  const live = new Map<string, WorkbenchLiveState>(
-    input.workbenchIds.map((id) => [id, "idle"]),
-  );
+  const live = new Map<string, WorkbenchLiveState>(input.workbenchIds.map((id) => [id, "idle"]));
   if (input.agentTurns === undefined) return live;
   const turns = await input.agentTurns.listWorkbenchTurns(input);
   const replies = await input.roomMessages.getMessages({
     tenantId: input.tenantId,
     messageIds: turns.flatMap((turn) =>
-      turn.status === "completed" && turn.replyMessageId !== null
-        ? [turn.replyMessageId]
-        : [],
+      turn.status === "completed" && turn.replyMessageId !== null ? [turn.replyMessageId] : [],
     ),
   });
   const byId = new Map(replies.map((reply) => [reply.id, reply]));

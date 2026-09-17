@@ -100,9 +100,7 @@ describe.skipIf(databaseUrl === undefined)(
         const other = await store.recent("docs-on-sdk-change", 5);
         expect(other).toHaveLength(0);
 
-        const second = await store.save(
-          fixtureResult({ evalName: "docs-on-sdk-change" }),
-        );
+        const second = await store.save(fixtureResult({ evalName: "docs-on-sdk-change" }));
         const across = await store.recentAcrossEvals(10);
         expect(across.map((r) => r.id).sort()).toEqual([id, second].sort());
 

@@ -25,17 +25,13 @@ function main(): void {
   }
 
   const root = toplevel.stdout.toString().trim();
-  const result = Bun.spawnSync(
-    ["git", "config", "--local", "core.hooksPath", HOOKS_PATH],
-    {
-      cwd: root,
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
+  const result = Bun.spawnSync(["git", "config", "--local", "core.hooksPath", HOOKS_PATH], {
+    cwd: root,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   if (result.exitCode !== 0) {
-    const detail =
-      `${result.stdout.toString()}${result.stderr.toString()}`.trim();
+    const detail = `${result.stdout.toString()}${result.stderr.toString()}`.trim();
     console.error(
       detail.length > 0
         ? `hooks:install failed: ${detail}`

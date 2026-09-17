@@ -8,15 +8,9 @@ import { join } from "node:path";
 const HOOK = join(import.meta.dir, "git-hooks", "pre-push");
 const INSTALLER = join(import.meta.dir, "hooks-install.ts");
 
-const HEAVY_SUITE_MARKERS = [
-  "test:e2e",
-  "walking-skeleton",
-  "check:structural",
-] as const;
+const HEAVY_SUITE_MARKERS = ["test:e2e", "walking-skeleton", "check:structural"] as const;
 
-function ambientEnv(
-  overrides: Record<string, string> = {},
-): Record<string, string> {
+function ambientEnv(overrides: Record<string, string> = {}): Record<string, string> {
   const {
     CI: _ci,
     GITHUB_ACTIONS: _gha,
@@ -54,11 +48,7 @@ async function spawnCapture(
 
 async function writeBunStub(dir: string, logPath: string): Promise<void> {
   const bunPath = join(dir, "bun");
-  await writeFile(
-    bunPath,
-    `#!/bin/sh\nprintf '%s\\n' "$*" >> "${logPath}"\n`,
-    "utf-8",
-  );
+  await writeFile(bunPath, `#!/bin/sh\nprintf '%s\\n' "$*" >> "${logPath}"\n`, "utf-8");
   await chmod(bunPath, 0o755);
 }
 

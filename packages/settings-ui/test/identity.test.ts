@@ -3,11 +3,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import {
-  PRINCIPAL_KIND_LABEL,
-  PRINCIPAL_KIND_ORDER,
-  principalLabel,
-} from "../src/identity";
+import { PRINCIPAL_KIND_LABEL, PRINCIPAL_KIND_ORDER, principalLabel } from "../src/identity";
 
 describe("principalLabel", () => {
   test("passes through an already-humane display name unchanged", () => {
@@ -39,9 +35,7 @@ describe("principalLabel", () => {
   // scheme/host down to the last segment, which drags the wrapper's
   // trailing ")" along for the ride unless parens are stripped too.
   test("strips a trailing paren from a workflow principal's wrapped address", () => {
-    const result = principalLabel(
-      "Workflow (run_9f3a7c2e@alice-0ufqkxuy.localhost)",
-    );
+    const result = principalLabel("Workflow (run_9f3a7c2e@alice-0ufqkxuy.localhost)");
     expect(result.label).not.toContain("(");
     expect(result.label).not.toContain(")");
     expect(result.label).toBe("Alice 0ufqkxuy Localhost");
@@ -54,9 +48,7 @@ describe("principalLabel", () => {
 describe("PRINCIPAL_KIND_LABEL", () => {
   test("covers every kind in PRINCIPAL_KIND_ORDER with a distinct, honest label", () => {
     expect(PRINCIPAL_KIND_ORDER).toEqual(["user", "agent", "workflow"]);
-    const labels = PRINCIPAL_KIND_ORDER.map(
-      (kind) => PRINCIPAL_KIND_LABEL[kind],
-    );
+    const labels = PRINCIPAL_KIND_ORDER.map((kind) => PRINCIPAL_KIND_LABEL[kind]);
     expect(labels).toHaveLength(PRINCIPAL_KIND_ORDER.length);
     expect(new Set(labels).size).toBe(labels.length);
     expect(labels).toEqual(["Person", "Agent", "Workflow"]);

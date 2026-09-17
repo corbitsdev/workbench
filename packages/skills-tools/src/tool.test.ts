@@ -24,10 +24,7 @@ function callFor(name: string, args: Record<string, unknown>): ToolCall {
   return { id: "call_1", name, arguments: args };
 }
 
-async function withFetch<T>(
-  impl: typeof fetch,
-  run: () => Promise<T>,
-): Promise<T> {
+async function withFetch<T>(impl: typeof fetch, run: () => Promise<T>): Promise<T> {
   const original = globalThis.fetch;
   globalThis.fetch = impl;
   try {
@@ -69,10 +66,7 @@ test('the two reads and the two grant-free writes (create_skill, update_skill) c
 
 test("read_skill rejects a call missing the name without calling out", async () => {
   const bundle = skillsTools(testEnv());
-  const result = await bundle.run(
-    callFor(READ_SKILL_TOOL, {}),
-    new AbortController().signal,
-  );
+  const result = await bundle.run(callFor(READ_SKILL_TOOL, {}), new AbortController().signal);
   expect(result.isError).toBe(true);
   expect(result.content).toMatch(/invalid input/);
 });
@@ -93,10 +87,7 @@ test("read_skill surfaces the missing stock route as an honest tool error", asyn
 
 test("list_skills surfaces the missing stock route as an honest tool error, never an empty list", async () => {
   const bundle = skillsTools(testEnv());
-  const result = await bundle.run(
-    callFor(LIST_SKILLS_TOOL, {}),
-    new AbortController().signal,
-  );
+  const result = await bundle.run(callFor(LIST_SKILLS_TOOL, {}), new AbortController().signal);
   expect(result.isError).toBe(true);
   expect(result.content).toMatch(/no stock Interchange HTTP route/);
 });
@@ -157,9 +148,7 @@ test("pin_skill reports the definition's full pinned-skill list after the pin", 
   expect(seenUrl).toBe("https://hub.example.com/api/workflow-skill-pins/pin");
   expect(seenBody).toEqual({ definitionId: "def_1", skillName: "research" });
   expect(result.isError).toBeFalsy();
-  expect(result.content).toBe(
-    'Pinned "research" — this definition now carries: triage, research.',
-  );
+  expect(result.content).toBe('Pinned "research" — this definition now carries: triage, research.');
 });
 
 test("pin_skill rejects a call missing skillName without calling out", async () => {

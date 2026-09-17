@@ -23,93 +23,84 @@ const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const SCHEMA = "workflows_available_catalog_test";
 
-describeIfDb(
-  "listAvailableCatalogWorkflows: ancestor-chain connection satisfaction",
-  () => {
-    const target = dbTargetFromUrl(
-      databaseUrl ?? "postgres://localhost:5432/unused",
-    );
+describeIfDb("listAvailableCatalogWorkflows: ancestor-chain connection satisfaction", () => {
+  const target = dbTargetFromUrl(databaseUrl ?? "postgres://localhost:5432/unused");
 
-    beforeAll(async () => {
-      await runMigrations(target, { schema: SCHEMA });
-    });
+  beforeAll(async () => {
+    await runMigrations(target, { schema: SCHEMA });
+  });
 
-    afterAll(async () => {
-      await dropSchema(target, { schema: SCHEMA });
-    });
+  afterAll(async () => {
+    await dropSchema(target, { schema: SCHEMA });
+  });
 
-    test("a child workbench sees code-review as connected via its parent bench's github connection", async () => {
-      const { db, close } = createDB({ ...target, schema: SCHEMA });
-      try {
-        await db.insert(schema.tenant).values({
-          id: "tnt_parent_bench",
-          name: "Parent Bench",
-          slug: "parent-bench",
-          domain: "parent-bench.workbench.test",
-        });
-        await db.insert(schema.tenant).values({
-          id: "tnt_child_workbench",
-          name: "Child Workbench",
-          slug: "child-workbench",
-          domain: "child-workbench.workbench.test",
-          parentId: "tnt_parent_bench",
-        });
-        await db.insert(schema.provider).values({
-          id: "prov_parent_github",
-          tenantId: "tnt_parent_bench",
-          name: "github",
-          plugin: "github",
-        });
-        await db.insert(schema.credential).values({
-          id: "cred_parent_github",
-          tenantId: "tnt_parent_bench",
-          providerId: "prov_parent_github",
-          name: "github-default",
-          type: "oauth_token",
-          secret: "encrypted-not-decrypted-by-this-path",
-          status: "active",
-        });
+  test("a child workbench sees code-review as connected via its parent bench's github connection", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      await db.insert(schema.tenant).values({
+        id: "tnt_parent_bench",
+        name: "Parent Bench",
+        slug: "parent-bench",
+        domain: "parent-bench.workbench.test",
+      });
+      await db.insert(schema.tenant).values({
+        id: "tnt_child_workbench",
+        name: "Child Workbench",
+        slug: "child-workbench",
+        domain: "child-workbench.workbench.test",
+        parentId: "tnt_parent_bench",
+      });
+      await db.insert(schema.provider).values({
+        id: "prov_parent_github",
+        tenantId: "tnt_parent_bench",
+        name: "github",
+        plugin: "github",
+      });
+      await db.insert(schema.credential).values({
+        id: "cred_parent_github",
+        tenantId: "tnt_parent_bench",
+        providerId: "prov_parent_github",
+        name: "github-default",
+        type: "oauth_token",
+        secret: "encrypted-not-decrypted-by-this-path",
+        status: "active",
+      });
 
-        const result = await listAvailableCatalogWorkflows({
-          db,
-          tenantId: "tnt_child_workbench",
-          catalogAssetNames: ["code-review"],
-        });
+      const result = await listAvailableCatalogWorkflows({
+        db,
+        tenantId: "tnt_child_workbench",
+        catalogAssetNames: ["code-review"],
+      });
 
-        const codeReview = result.find(
-          (entry) => entry.assetName === "code-review",
-        );
-        expect(codeReview?.connectionsSatisfied).toBe(true);
-        expect(codeReview?.missingConnections).toEqual([]);
-      } finally {
-        await close();
-      }
-    });
+      const codeReview = result.find((entry) => entry.assetName === "code-review");
+      expect(codeReview?.connectionsSatisfied).toBe(true);
+      expect(codeReview?.missingConnections).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
 
-    test("a bench with no ancestor connection sees code-review as not yet connected", async () => {
-      const { db, close } = createDB({ ...target, schema: SCHEMA });
-      try {
-        await db.insert(schema.tenant).values({
-          id: "tnt_unconnected_bench",
-          name: "Unconnected Bench",
-          slug: "unconnected-bench",
-          domain: "unconnected-bench.workbench.test",
-        });
+  test("a bench with no ancestor connection sees code-review as not yet connected", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      await db.insert(schema.tenant).values({
+        id: "tnt_unconnected_bench",
+        name: "Unconnected Bench",
+        slug: "unconnected-bench",
+        domain: "unconnected-bench.workbench.test",
+      });
 
-        const result = await listAvailableCatalogWorkflows({
-          db,
-          tenantId: "tnt_unconnected_bench",
-          catalogAssetNames: ["code-review"],
-        });
+      const result = await listAvailableCatalogWorkflows({
+        db,
+        tenantId: "tnt_unconnected_bench",
+        catalogAssetNames: ["code-review"],
+      });
 
-        const codeReview = result.find(
-          (entry) => entry.assetName === "code-review",
-        );
-        expect(codeReview?.connectionsSatisfied).toBe(false);
-        expect(codeReview?.missingConnections).toEqual(["github"]);
-      } finally {
-        await close();
-      }
-    });
-  },
-);
+      const codeReview = result.find((entry) => entry.assetName === "code-review");
+      expect(codeReview?.connectionsSatisfied).toBe(false);
+      expect(codeReview?.missingConnections).toEqual(["github"]);
+    } finally {
+      await close();
+    }
+  });
+});

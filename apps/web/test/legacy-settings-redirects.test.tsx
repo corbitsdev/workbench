@@ -88,22 +88,14 @@ describe("LegacySettingsSkillsRedirect", () => {
 describe("LegacyLibraryRedirect", () => {
   test("bare /library redirects to /files", async () => {
     const navigated: string[] = [];
-    await mount(
-      <LegacyLibraryRedirect
-        path="/library"
-        navigate={(to) => navigated.push(to)}
-      />,
-    );
+    await mount(<LegacyLibraryRedirect path="/library" navigate={(to) => navigated.push(to)} />);
     expect(navigated).toEqual(["/files"]);
   });
 
   test("/library/:id preserves the id at its new home", async () => {
     const navigated: string[] = [];
     await mount(
-      <LegacyLibraryRedirect
-        path="/library/art_1"
-        navigate={(to) => navigated.push(to)}
-      />,
+      <LegacyLibraryRedirect path="/library/art_1" navigate={(to) => navigated.push(to)} />,
     );
     expect(navigated).toEqual(["/files/art_1"]);
   });

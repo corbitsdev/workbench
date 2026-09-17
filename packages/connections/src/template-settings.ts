@@ -49,8 +49,7 @@ export const TemplateReposSettingsPatch = type({
   "template/pendingConnections": "string[]",
   "template/selectedRepos": "string[]",
 });
-export type TemplateReposSettingsPatch =
-  typeof TemplateReposSettingsPatch.infer;
+export type TemplateReposSettingsPatch = typeof TemplateReposSettingsPatch.infer;
 
 /** Builds and validates the settings patch that records which repos a
  * room's GitHub connect card started reviewing. Throws on a malformed

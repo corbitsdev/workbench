@@ -33,8 +33,7 @@ function boundedNonBlankString(max: number) {
 const SkillNameArray = skillNameSchema.array().narrow((skills, ctx) => {
   const seen = new Set<string>();
   for (const name of skills) {
-    if (seen.has(name))
-      return ctx.mustBe(`a list without duplicate skill "${name}"`);
+    if (seen.has(name)) return ctx.mustBe(`a list without duplicate skill "${name}"`);
     seen.add(name);
   }
   return true;
@@ -43,17 +42,14 @@ const SkillNameArray = skillNameSchema.array().narrow((skills, ctx) => {
 // A pinned tool package names a `@corbits/*` workspace package, the only
 // namespace this catalog ever resolves a pin against.
 const ToolPackageNamePattern = type(/^@corbits\/[a-z0-9-]+$/);
-const ToolPackagePinArray = ToolPackageNamePattern.array().narrow(
-  (pins, ctx) => {
-    const seen = new Set<string>();
-    for (const name of pins) {
-      if (seen.has(name))
-        return ctx.mustBe(`a list without duplicate tool package "${name}"`);
-      seen.add(name);
-    }
-    return true;
-  },
-);
+const ToolPackagePinArray = ToolPackageNamePattern.array().narrow((pins, ctx) => {
+  const seen = new Set<string>();
+  for (const name of pins) {
+    if (seen.has(name)) return ctx.mustBe(`a list without duplicate tool package "${name}"`);
+    seen.add(name);
+  }
+  return true;
+});
 
 export const CreateAgentDefinitionInput = type({
   name: boundedNonBlankString(100),
@@ -73,8 +69,7 @@ export const CreateAgentDefinitionInput = type({
   // agent-directory create, Scout, Jimmy).
   "toolPackagePins?": ToolPackagePinArray,
 });
-export type CreateAgentDefinitionInput =
-  typeof CreateAgentDefinitionInput.infer;
+export type CreateAgentDefinitionInput = typeof CreateAgentDefinitionInput.infer;
 
 /** The body of a request that replaces a definition's attached skills
  * wholesale — an empty array clears every attachment, never a partial
@@ -92,8 +87,7 @@ export const UpdateAgentInstructionsInput = type({
   name: boundedNonBlankString(100),
   systemPrompt: boundedNonBlankString(8000),
 });
-export type UpdateAgentInstructionsInput =
-  typeof UpdateAgentInstructionsInput.infer;
+export type UpdateAgentInstructionsInput = typeof UpdateAgentInstructionsInput.infer;
 
 /** The body of a request that moves a definition between the two
  * lifecycle states the schema knows: `deployed` (launchable, listed
@@ -104,8 +98,7 @@ export type UpdateAgentInstructionsInput =
 export const UpdateDefinitionStatusInput = type({
   status: "'deployed' | 'stopped'",
 });
-export type UpdateDefinitionStatusInput =
-  typeof UpdateDefinitionStatusInput.infer;
+export type UpdateDefinitionStatusInput = typeof UpdateDefinitionStatusInput.infer;
 
 /** The body of a request that restores a definition to an earlier
  * commit on its own asset history — the same `commitSha` shape

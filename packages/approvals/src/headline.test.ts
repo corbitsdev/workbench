@@ -42,9 +42,7 @@ test("folds in the live call's title argument, when present, as the specific ask
 });
 
 test("ignores a blank or non-string title rather than rendering an empty quote", () => {
-  expect(headlineFor({ name: "send_email" }, { title: "   " })).toBe(
-    "send_email",
-  );
+  expect(headlineFor({ name: "send_email" }, { title: "   " })).toBe("send_email");
   expect(headlineFor({ name: "send_email" }, { title: 42 })).toBe("send_email");
 });
 

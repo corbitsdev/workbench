@@ -8,7 +8,5 @@ const BOT_LOGIN_INDICATORS = ["bot_", "bot-", "_bot", "-bot", "[bot]"];
 /** Whether a pull-request author's login reads as a bot, not a person. */
 export function isBotAuthor(login: string): boolean {
   const normalized = login.toLowerCase();
-  return BOT_LOGIN_INDICATORS.some((indicator) =>
-    normalized.includes(indicator),
-  );
+  return BOT_LOGIN_INDICATORS.some((indicator) => normalized.includes(indicator));
 }

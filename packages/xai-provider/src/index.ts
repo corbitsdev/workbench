@@ -19,7 +19,4 @@ export {
   type XaiTokens,
 } from "./oauth";
 
-export {
-  createXaiResponsesAdapter,
-  xaiResponsesQuirks,
-} from "./responses-adapter";
+export { createXaiResponsesAdapter, xaiResponsesQuirks } from "./responses-adapter";

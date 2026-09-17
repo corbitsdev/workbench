@@ -31,10 +31,7 @@ test("a stylesheet import with no matching @source entry is a violation", () => 
 });
 
 test("every import matched by a @source entry passes", () => {
-  const report = auditTailwindSource(
-    ["chat-ui", "plugins-ui"],
-    ["chat-ui", "plugins-ui"],
-  );
+  const report = auditTailwindSource(["chat-ui", "plugins-ui"], ["chat-ui", "plugins-ui"]);
   expect(report.violations).toEqual([]);
 });
 

@@ -46,9 +46,8 @@ export type TurnMailCorrelationStore = {
   }): Promise<TurnMailSource | undefined>;
 };
 
-export type TurnMailCorrelationDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> = PostgresJsDatabase<TSchema>;
+export type TurnMailCorrelationDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+  PostgresJsDatabase<TSchema>;
 
 /**
  * Production store over `turnMailCorrelation`. One atomic
@@ -58,9 +57,9 @@ export type TurnMailCorrelationDb<
  * source rather than throwing a PK-violation — the same fix
  * `createDrizzleWriteClaimStore` (`./write-claims.ts`) uses.
  */
-export function createDrizzleTurnMailCorrelationStore<
-  TSchema extends Record<string, unknown>,
->(db: TurnMailCorrelationDb<TSchema>): TurnMailCorrelationStore {
+export function createDrizzleTurnMailCorrelationStore<TSchema extends Record<string, unknown>>(
+  db: TurnMailCorrelationDb<TSchema>,
+): TurnMailCorrelationStore {
   return {
     async recordTurnMail(input) {
       await db

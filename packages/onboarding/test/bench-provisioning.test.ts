@@ -11,10 +11,7 @@ import { describe, expect, test } from "bun:test";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
 import { DEFAULT_WORKFLOWS } from "../src/tenant-seed";
-import {
-  createBenchProvisioner,
-  type BenchProvisionerDeps,
-} from "../src/bench-provisioning";
+import { createBenchProvisioner, type BenchProvisionerDeps } from "../src/bench-provisioning";
 import {
   createInMemoryPendingSeedStore,
   PENDING_SEED_SCAN_LIMIT,
@@ -22,9 +19,7 @@ import {
   type PendingSeedStore,
 } from "../src/pending-seed";
 
-type ReconcileArgsLike = Parameters<
-  NonNullable<BenchProvisionerDeps["reconcileFn"]>
->[0];
+type ReconcileArgsLike = Parameters<NonNullable<BenchProvisionerDeps["reconcileFn"]>>[0];
 
 const TEST_KEY = Buffer.alloc(32, 33);
 function testCipher(): CredentialCipher {
@@ -86,9 +81,7 @@ function failedReport(tenantId: string) {
  * push. `deployedByTenant` is the fake bench state the reconcile seam
  * reads and writes, so idempotence and convergence are observable as
  * call counts rather than asserted by inspection. */
-function harness(
-  overrides: Partial<BenchProvisionerDeps> & { store?: PendingSeedStore } = {},
-) {
+function harness(overrides: Partial<BenchProvisionerDeps> & { store?: PendingSeedStore } = {}) {
   const store = overrides.store ?? createInMemoryPendingSeedStore(testCipher());
   const deployedByTenant = new Map<string, string[]>();
   const calls = {
@@ -139,9 +132,7 @@ describe("createBenchProvisioner", () => {
     expect(calls.reconcile).toBe(1);
     expect(deployedByTenant.get("ten_1")).toEqual(ALL_WORKFLOWS);
     expect(report).toMatchObject({ converged: 1, truncated: false });
-    expect(
-      await store.read({ userId: "user_1", tenantId: "ten_1" }),
-    ).toBeUndefined();
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toBeUndefined();
   });
 
   test("is idempotent: a second drain over an already-seeded bench installs nothing", async () => {
@@ -164,9 +155,7 @@ describe("createBenchProvisioner", () => {
     const report = await provisioner.drainOnce();
 
     expect(report).toMatchObject({ converged: 1, truncated: false });
-    expect(
-      await store.read({ userId: "user_1", tenantId: "ten_1" }),
-    ).toBeUndefined();
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toBeUndefined();
   });
 
   test("a blocked bench keeps its row and converges on a later pass", async () => {
@@ -185,15 +174,11 @@ describe("createBenchProvisioner", () => {
     const first = await provisioner.drainOnce();
     expect(first).toMatchObject({ pending: 1 });
     // The row survives precisely so the next pass can finish the job.
-    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(
-      SEED,
-    );
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(SEED);
 
     const second = await provisioner.drainOnce({ ignoreBackoff: true });
     expect(second).toMatchObject({ converged: 1 });
-    expect(
-      await store.read({ userId: "user_1", tenantId: "ten_1" }),
-    ).toBeUndefined();
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toBeUndefined();
   });
 
   test("a reconcile failure leaves the row for the next pass rather than losing the bench", async () => {
@@ -209,9 +194,7 @@ describe("createBenchProvisioner", () => {
 
     const first = await provisioner.drainOnce();
     expect(first).toMatchObject({ failed: 1 });
-    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(
-      SEED,
-    );
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(SEED);
     expect(logged.some((line) => line.includes("sidecar exploded"))).toBe(true);
 
     const second = await provisioner.drainOnce({ ignoreBackoff: true });
@@ -228,9 +211,7 @@ describe("createBenchProvisioner", () => {
     const held = await provisioner.drainOnce();
 
     expect(held).toMatchObject({ deferred: 1 });
-    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(
-      SEED,
-    );
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(SEED);
   });
 
   test("restart-resume: a fresh provisioner with empty memory finishes what a crashed one left behind", async () => {
@@ -280,9 +261,7 @@ describe("createBenchProvisioner", () => {
     const report = await provisioner.drainOnce();
 
     expect(report).toMatchObject({ pending: 1, failed: 0 });
-    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(
-      SEED,
-    );
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(SEED);
   });
 
   test("a bench whose user has no mintable session is left alone, not dropped", async () => {
@@ -295,9 +274,7 @@ describe("createBenchProvisioner", () => {
 
     expect(calls.reconcile).toBe(0);
     expect(report).toMatchObject({ failed: 1 });
-    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(
-      SEED,
-    );
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(SEED);
   });
 
   test("a permanently-failing bench's backoff is reclaimed once its row is gone, not only on success", async () => {

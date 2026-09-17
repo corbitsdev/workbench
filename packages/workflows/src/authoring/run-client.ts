@@ -22,9 +22,7 @@ export interface RunBearerClientConfig {
 
 /** The two headers every run-authenticated route resolves tenant and
  * principal from — identity never rides in a request body. */
-export function runBearerHeaders(
-  config: RunBearerClientConfig,
-): Record<string, string> {
+export function runBearerHeaders(config: RunBearerClientConfig): Record<string, string> {
   return {
     authorization: `Bearer ${config.sidecarToken}`,
     "x-workflow-run-address": config.address,

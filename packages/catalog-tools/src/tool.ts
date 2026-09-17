@@ -108,10 +108,7 @@ function clientConfig(env: WorkflowCatalogEnv): CatalogToolClientConfig {
 
 /** The need, as exactly one of the two forms chain resolution accepts. The
  * input schema has already rejected both-at-once and neither. */
-function needOf(input: {
-  concept?: string;
-  capabilities?: Capability[];
-}): ChainNeed {
+function needOf(input: { concept?: string; capabilities?: Capability[] }): ChainNeed {
   return input.concept !== undefined
     ? { concept: input.concept }
     : { capabilities: input.capabilities ?? [] };
@@ -135,9 +132,7 @@ export function describeChain(chain: ModelChain): string {
   if (chain.entries.length === 0) {
     return note ?? "Nothing on this bench can do that kind of work right now.";
   }
-  const lines = chain.entries.map((entry, index) =>
-    describeEntry(entry, index + 1),
-  );
+  const lines = chain.entries.map((entry, index) => describeEntry(entry, index + 1));
   const head =
     chain.entries.length === 1
       ? "One model here fits:"
@@ -145,10 +140,7 @@ export function describeChain(chain: ModelChain): string {
   return [head, ...lines, note].filter(Boolean).join("\n");
 }
 
-async function runListModelConcepts(
-  env: WorkflowCatalogEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runListModelConcepts(env: WorkflowCatalogEnv, call: ToolCall): Promise<ToolResult> {
   try {
     const bench = await readBenchCatalog(clientConfig(env));
     const lines = CONCEPTS.map((concept) => {
@@ -164,10 +156,9 @@ async function runListModelConcepts(
     return {
       callId: call.id,
       isError: false,
-      content: [
-        "Ask for a model by the kind of work, using one of these ids:",
-        ...lines,
-      ].join("\n"),
+      content: ["Ask for a model by the kind of work, using one of these ids:", ...lines].join(
+        "\n",
+      ),
     };
   } catch (err) {
     return errorResult(call.id, err);
@@ -303,9 +294,7 @@ export const catalogTools = defineTool<WorkflowCatalogEnv>({
             return Promise.resolve(
               errorResult(
                 call.id,
-                new Error(
-                  `pick_models received invalid input: ${parsed.summary}`,
-                ),
+                new Error(`pick_models received invalid input: ${parsed.summary}`),
               ),
             );
           }
@@ -317,9 +306,7 @@ export const catalogTools = defineTool<WorkflowCatalogEnv>({
             return Promise.resolve(
               errorResult(
                 call.id,
-                new Error(
-                  `estimate_run_cost received invalid input: ${parsed.summary}`,
-                ),
+                new Error(`estimate_run_cost received invalid input: ${parsed.summary}`),
               ),
             );
           }
@@ -327,10 +314,7 @@ export const catalogTools = defineTool<WorkflowCatalogEnv>({
         }
         default:
           return Promise.resolve(
-            errorResult(
-              call.id,
-              new Error(`@corbits/catalog-tools: unknown tool "${call.name}"`),
-            ),
+            errorResult(call.id, new Error(`@corbits/catalog-tools: unknown tool "${call.name}"`)),
           );
       }
     },

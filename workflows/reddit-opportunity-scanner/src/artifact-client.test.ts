@@ -31,17 +31,14 @@ test("posts to the workflow-artifacts endpoint and returns id/version", async ()
   );
 
   expect(result).toEqual({ id: "art_1", version: 1 });
-  expect(captured.url).toBe(
-    "https://hub.example.com/api/workflow-artifacts/artifacts",
-  );
+  expect(captured.url).toBe("https://hub.example.com/api/workflow-artifacts/artifacts");
   const headers = captured.init?.headers as Record<string, string>;
   expect(headers["authorization"]).toBe("Bearer sc-token");
   expect(headers["x-workflow-run-address"]).toBe("run_1@workflow");
 });
 
 test("throws on a non-ok HTTP response", async () => {
-  const fetchImpl = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  const fetchImpl = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
 
   await expect(
     createWorkflowArtifact(

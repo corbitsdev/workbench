@@ -1,8 +1,8 @@
 {
   "name": "@corbits/evals",
+  "version": "0.0.1",
   "private": true,
   "description": "Myra evals (CL-6143): a first-class eval library — defineEval/runEval, composable scorers, and a persisted evals.run store — that plays a hardcoded scripted scenario against a real Myra deployment (real hub + sidecar) and grades what she actually did, not what a prompt merely claims.",
-  "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
@@ -15,9 +15,12 @@
   "dependencies": {
     "@corbits/agent-directory": "workspace:*",
     "@corbits/assistant-workflow": "workspace:*",
+    "@corbits/connections": "workspace:*",
     "@corbits/error-sink": "workspace:*",
+    "@corbits/hub-api-client": "workspace:*",
     "@corbits/migration-runner": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
+    "@corbits/workflows": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
@@ -25,9 +28,6 @@
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",
-    "@corbits/connections": "workspace:*",
-    "@corbits/hub-api-client": "workspace:*",
-    "@corbits/workflows": "workspace:*",
     "@workbench/onboarding": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",

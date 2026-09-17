@@ -31,10 +31,7 @@ async function mount(items: readonly MessageItem[], currentUser?: CurrentUser) {
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      <WorkbenchTimeline
-        items={items}
-        {...(currentUser !== undefined ? { currentUser } : {})}
-      />,
+      <WorkbenchTimeline items={items} {...(currentUser !== undefined ? { currentUser } : {})} />,
     );
   });
   return container;
@@ -98,9 +95,7 @@ describe("own-message alignment is per viewer, not per message", () => {
     // System notices align left for every viewer (CL-6772 / DESIGN.md) —
     // even when this reader caused the event. Marking the group as own
     // would put them on the signed-in user's right edge.
-    expect(
-      el.querySelector(".chat-message-group")?.getAttribute("data-own"),
-    ).toBe("false");
+    expect(el.querySelector(".chat-message-group")?.getAttribute("data-own")).toBe("false");
     expect(el.querySelector(".chat-event-line")).not.toBeNull();
     expect(el.querySelector(".chat-bubble-row")).toBeNull();
   });
@@ -121,18 +116,14 @@ describe("own-message alignment is per viewer, not per message", () => {
       },
     ];
     const el = await mount(items, { principalId: "sawyer" });
-    expect(
-      el.querySelector(".chat-message-group")?.getAttribute("data-own"),
-    ).toBe("false");
+    expect(el.querySelector(".chat-message-group")?.getAttribute("data-own")).toBe("false");
     expect(el.querySelector(".chat-event-line")).not.toBeNull();
     expect(el.querySelector(".chat-bubble-row")).toBeNull();
   });
 
   test("no signed-in currentUser means nothing renders as own", async () => {
     const el = await mount(messageFrom("sawyer@agents.example"));
-    expect(
-      el.querySelector(".chat-message-group")?.getAttribute("data-own"),
-    ).toBe("false");
+    expect(el.querySelector(".chat-message-group")?.getAttribute("data-own")).toBe("false");
   });
 
   test("own-authored text plus tool activity plus a gen-UI block keeps tools and the block outside the bubble", async () => {

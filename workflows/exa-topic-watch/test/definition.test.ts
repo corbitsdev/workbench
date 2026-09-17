@@ -26,9 +26,7 @@ const INPUT = {
 function digestStep(definition: WorkflowDefinition): StepPrimitive {
   const primitive = definition.steps[EXA_TOPIC_WATCH_STEP_ID];
   if (primitive === undefined || primitive.kind !== "step") {
-    throw new Error(
-      `definition has no step primitive named ${EXA_TOPIC_WATCH_STEP_ID}`,
-    );
+    throw new Error(`definition has no step primitive named ${EXA_TOPIC_WATCH_STEP_ID}`);
   }
   return primitive;
 }
@@ -41,9 +39,7 @@ test("the definition folds the OG six-step pipeline into exactly one step", () =
 
 test("the definition uses no action primitive, which this host cannot dispatch", () => {
   const definition = buildExaTopicWatchWorkflow(INPUT);
-  const kinds = Object.values(definition.steps).map(
-    (primitive) => primitive.kind,
-  );
+  const kinds = Object.values(definition.steps).map((primitive) => primitive.kind);
   expect(kinds).toEqual(["step"]);
 });
 
@@ -55,9 +51,7 @@ test("the step carries an explicit per-turn timeout", () => {
 test("the workflow is triggered by mail to the given deployment address", () => {
   const definition = buildExaTopicWatchWorkflow(INPUT);
   expect(definition.id).toBe(EXA_TOPIC_WATCH_WORKFLOW_ID);
-  expect(definition.triggers).toEqual([
-    { type: "mail", to: INPUT.triggerAddress },
-  ]);
+  expect(definition.triggers).toEqual([{ type: "mail", to: INPUT.triggerAddress }]);
 });
 
 test("the agent carries the fixed prompt and the caller's preferences, and inlines no tools", () => {
@@ -94,17 +88,13 @@ test("the prompt names every digest section and both finalize outcomes", () => {
   for (const section of EXA_TOPIC_WATCH_SECTIONS) {
     expect(EXA_TOPIC_WATCH_SYSTEM_PROMPT).toContain(section);
   }
-  expect(EXA_TOPIC_WATCH_SYSTEM_PROMPT).toContain(
-    EXA_TOPIC_WATCH_FINALIZE_TOOL_NAME,
-  );
+  expect(EXA_TOPIC_WATCH_SYSTEM_PROMPT).toContain(EXA_TOPIC_WATCH_FINALIZE_TOOL_NAME);
   expect(EXA_TOPIC_WATCH_SYSTEM_PROMPT).toContain('outcome "digest"');
   expect(EXA_TOPIC_WATCH_SYSTEM_PROMPT).toContain('outcome "status-note"');
 });
 
 test("a quiet run still finalizes rather than ending silently", () => {
-  expect(EXA_TOPIC_WATCH_SYSTEM_PROMPT).toContain(
-    "Never end a run without finalizing",
-  );
+  expect(EXA_TOPIC_WATCH_SYSTEM_PROMPT).toContain("Never end a run without finalizing");
 });
 
 test("the definition survives the workflow-asset JSON round trip unchanged", () => {
@@ -126,13 +116,13 @@ test("serializing a definition JSON would mangle fails loudly, naming the path",
 });
 
 test("an empty trigger address is rejected at build time", () => {
-  expect(() =>
-    buildExaTopicWatchWorkflow({ ...INPUT, triggerAddress: "" }),
-  ).toThrow(/non-empty triggerAddress/);
+  expect(() => buildExaTopicWatchWorkflow({ ...INPUT, triggerAddress: "" })).toThrow(
+    /non-empty triggerAddress/,
+  );
 });
 
 test("a non-positive turn timeout is rejected at build time", () => {
-  expect(() =>
-    buildExaTopicWatchWorkflow({ ...INPUT, turnTimeoutMs: 0 }),
-  ).toThrow(/positive integer/);
+  expect(() => buildExaTopicWatchWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(
+    /positive integer/,
+  );
 });

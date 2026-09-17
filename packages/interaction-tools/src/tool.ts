@@ -61,10 +61,7 @@ function clientConfig(env: AskUserEnv): AskUserClientConfig {
  * crash-retry of the same call re-posts the same id and the write path
  * returns the existing card rather than a duplicate (CL-7248).
  */
-async function runAskUser(
-  env: AskUserEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runAskUser(env: AskUserEnv, call: ToolCall): Promise<ToolResult> {
   const parsed = AskUserInput(call.arguments);
   if (parsed instanceof type.errors) {
     return errorResult(
@@ -140,8 +137,7 @@ export const interactionTools = defineTool<AskUserEnv>({
             allowFreeText: {
               type: "boolean",
               description:
-                'Whether to also show a "Type your own answer" field. ' +
-                "Defaults to false.",
+                'Whether to also show a "Type your own answer" field. ' + "Defaults to false.",
             },
           },
           required: ["question", "options"],
@@ -153,10 +149,7 @@ export const interactionTools = defineTool<AskUserEnv>({
         return runAskUser(env, call);
       }
       return Promise.resolve(
-        errorResult(
-          call.id,
-          new Error(`@corbits/interaction-tools: unknown tool "${call.name}"`),
-        ),
+        errorResult(call.id, new Error(`@corbits/interaction-tools: unknown tool "${call.name}"`)),
       );
     },
   }),

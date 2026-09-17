@@ -24,13 +24,9 @@ export function readDockerProvisionerConfig(
 ): DockerProvisionerConfig {
   const parsed = Environment(env);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `invalid docker provisioner environment: ${parsed.summary}`,
-    );
+    throw new Error(`invalid docker provisioner environment: ${parsed.summary}`);
   }
-  const dataDir = resolve(
-    parsed.DOCKER_PROVISIONER_DATA_DIR ?? DEFAULT_DATA_DIR,
-  );
+  const dataDir = resolve(parsed.DOCKER_PROVISIONER_DATA_DIR ?? DEFAULT_DATA_DIR);
   return {
     image: parsed.DOCKER_PROVISIONER_IMAGE,
     stateFilePath: resolve(dataDir, "state.json"),

@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  classificationFromRefs,
-  inboxGroupOf,
-  isInboxGroup,
-} from "../src/group";
+import { classificationFromRefs, inboxGroupOf, isInboxGroup } from "../src/group";
 
 describe("inboxGroupOf", () => {
   test("honors an explicit classification", () => {

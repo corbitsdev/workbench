@@ -59,9 +59,7 @@ export function buildWorkbenchDigestWorkflow(
   input: WorkbenchDigestWorkflowInput,
 ): WorkflowDefinition {
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
-    throw new Error(
-      "buildWorkbenchDigestWorkflow requires turnTimeoutMs to be a positive integer",
-    );
+    throw new Error("buildWorkbenchDigestWorkflow requires turnTimeoutMs to be a positive integer");
   }
   return defineWorkflow({
     id: WORKBENCH_DIGEST_WORKFLOW_ID,
@@ -91,9 +89,7 @@ export function buildWorkbenchDigestWorkflow(
  * symbols, bigints, non-finite numbers, class instances — is a loud
  * error naming the offending path instead of a corrupted asset.
  */
-export function serializeWorkbenchDigestWorkflow(
-  definition: WorkflowDefinition,
-): string {
+export function serializeWorkbenchDigestWorkflow(definition: WorkflowDefinition): string {
   assertJsonPortable(definition, "definition");
   return JSON.stringify(definition);
 }
@@ -113,8 +109,7 @@ function assertJsonPortable(value: unknown, path: string): void {
       break;
     default:
       throw new Error(
-        `${path} is a ${typeof value}, which does not survive JSON ` +
-          "serialization",
+        `${path} is a ${typeof value}, which does not survive JSON ` + "serialization",
       );
   }
   if (Array.isArray(value)) {
@@ -125,9 +120,7 @@ function assertJsonPortable(value: unknown, path: string): void {
   }
   const proto: unknown = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) {
-    throw new Error(
-      `${path} is a non-plain object; JSON would flatten it lossily`,
-    );
+    throw new Error(`${path} is a non-plain object; JSON would flatten it lossily`);
   }
   for (const [key, entry] of Object.entries(value)) {
     assertJsonPortable(entry, `${path}.${key}`);

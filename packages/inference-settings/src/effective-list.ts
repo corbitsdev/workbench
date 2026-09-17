@@ -19,9 +19,9 @@ import { preferCompletionCapable } from "@corbits/connections/model-capability";
  * than nothing.
  */
 export function providerDisplayName(providerName: string): string {
-  const config = (
-    PROVIDER_TEST_CONFIG as Readonly<Record<string, { displayName: string }>>
-  )[providerName];
+  const config = (PROVIDER_TEST_CONFIG as Readonly<Record<string, { displayName: string }>>)[
+    providerName
+  ];
   return config?.displayName ?? providerName;
 }
 
@@ -121,9 +121,7 @@ export function buildEffectiveInferenceRows(
         providerName: offering.providerName,
         plugin: offering.plugin,
         priority: offering.priority,
-        provenance: ownOfferingIds.has(offering.offeringId)
-          ? "set-here"
-          : "inherited",
+        provenance: ownOfferingIds.has(offering.offeringId) ? "set-here" : "inherited",
       });
     }
   }
@@ -137,9 +135,7 @@ export function buildEffectiveInferenceRows(
  * Hugging Face Hub paths (`hf.co/...`), and bare `.gguf` names drop out.
  * When every offering on a model is excluded the model itself is omitted.
  */
-export function chatCapableModels(
-  models: readonly ModelInfo[],
-): readonly ModelInfo[] {
+export function chatCapableModels(models: readonly ModelInfo[]): readonly ModelInfo[] {
   const kept: ModelInfo[] = [];
   for (const model of models) {
     const offerings = preferCompletionCapable(
@@ -208,16 +204,10 @@ export function computeGlobalRoutePatches(
   const ordered = orderedGlobalInferenceRows(rows);
   if (ordered.some((row) => row.provenance !== "set-here")) return null;
   if (new Set(ordered.map((row) => row.canonicalName)).size > 1) return null;
-  const currentIndex = ordered.findIndex(
-    (row) => row.offeringId === targetOfferingId,
-  );
+  const currentIndex = ordered.findIndex((row) => row.offeringId === targetOfferingId);
   if (currentIndex < 0) return null;
   const destination =
-    direction === "first"
-      ? 0
-      : direction === "up"
-        ? currentIndex - 1
-        : currentIndex + 1;
+    direction === "first" ? 0 : direction === "up" ? currentIndex - 1 : currentIndex + 1;
   if (destination < 0 || destination >= ordered.length) return [];
 
   const next = [...ordered];
@@ -269,8 +259,7 @@ export function computeReorderPatches(
 
   // After the swap, whichever row now sits in the earlier position needs
   // the smaller priority; the other, the larger one.
-  const [earlier, later] =
-    direction === "up" ? [moved, neighbor] : [neighbor, moved];
+  const [earlier, later] = direction === "up" ? [moved, neighbor] : [neighbor, moved];
 
   let earlierPriority: number;
   let laterPriority: number;
@@ -330,14 +319,10 @@ export function computeMakeDefaultPatches(
   providerOfferings: readonly EffectiveInferenceRow[],
   targetOfferingId: string,
 ): readonly PriorityPatch[] | null {
-  const target = providerOfferings.find(
-    (row) => row.offeringId === targetOfferingId,
-  );
+  const target = providerOfferings.find((row) => row.offeringId === targetOfferingId);
   if (target === undefined || target.provenance !== "set-here") return null;
 
-  const others = providerOfferings.filter(
-    (row) => row.offeringId !== targetOfferingId,
-  );
+  const others = providerOfferings.filter((row) => row.offeringId !== targetOfferingId);
   if (others.length === 0) return [];
 
   const minOtherPriority = Math.min(...others.map((row) => row.priority));

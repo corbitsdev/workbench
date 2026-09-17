@@ -47,11 +47,7 @@ export {
   triggerIsWebhookPerPr,
   wholeRunInspectable,
 } from "./scorers/scorers.ts";
-export {
-  agentHasTools,
-  connectionIsLive,
-  fakeReceived,
-} from "./scorers/world-scorers.ts";
+export { agentHasTools, connectionIsLive, fakeReceived } from "./scorers/world-scorers.ts";
 export {
   parseMcpFakeRecording,
   type McpFakeRecording,

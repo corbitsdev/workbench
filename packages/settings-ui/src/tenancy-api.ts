@@ -37,11 +37,7 @@ export class TenancyApiError extends Error {
 
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
-async function request<T>(
-  path: string,
-  schema: Validator<T>,
-  init?: RequestInit,
-): Promise<T> {
+async function request<T>(path: string, schema: Validator<T>, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, {
@@ -49,9 +45,7 @@ async function request<T>(
       headers: { "content-type": "application/json", ...init?.headers },
     });
   } catch (cause) {
-    throw new TenancyApiError(
-      cause instanceof Error ? cause.message : String(cause),
-    );
+    throw new TenancyApiError(cause instanceof Error ? cause.message : String(cause));
   }
   if (response.status === 401) {
     throw new UnauthenticatedError();
@@ -60,30 +54,21 @@ async function request<T>(
     throw new TenancyApiError(`Not permitted to view ${path}.`, 403);
   }
   if (!response.ok) {
-    throw new TenancyApiError(
-      `The hub answered ${response.status} for ${path}.`,
-      response.status,
-    );
+    throw new TenancyApiError(`The hub answered ${response.status} for ${path}.`, response.status);
   }
   if (response.status === 204) return undefined as T;
   const body: unknown = await response.json().catch(() => undefined);
   const parsed = schema(body);
   if (parsed instanceof type.errors) {
-    throw new TenancyApiError(
-      `Unexpected response shape from ${path}: ${parsed.summary}`,
-    );
+    throw new TenancyApiError(`Unexpected response shape from ${path}: ${parsed.summary}`);
   }
   return parsed;
 }
 
 // -- Principals --------------------------------------------------------
 
-export function listPrincipals(
-  tenantId: string,
-): Promise<readonly Principal[]> {
-  return request(`/api/tenants/${tenantId}/principals`, PrincipalsPage).then(
-    (page) => page.data,
-  );
+export function listPrincipals(tenantId: string): Promise<readonly Principal[]> {
+  return request(`/api/tenants/${tenantId}/principals`, PrincipalsPage).then((page) => page.data);
 }
 
 export function updatePrincipalStatus(
@@ -91,17 +76,13 @@ export function updatePrincipalStatus(
   principalId: string,
   status: UpdatablePrincipalStatus,
 ): Promise<Principal> {
-  return request(
-    `/api/tenants/${tenantId}/principals/${principalId}`,
-    PrincipalResponse,
-    { method: "PATCH", body: JSON.stringify({ status }) },
-  );
+  return request(`/api/tenants/${tenantId}/principals/${principalId}`, PrincipalResponse, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
 }
 
-export function removePrincipal(
-  tenantId: string,
-  principalId: string,
-): Promise<void> {
+export function removePrincipal(tenantId: string, principalId: string): Promise<void> {
   return request<void>(
     `/api/tenants/${tenantId}/principals/${principalId}`,
     (data) => data as void,
@@ -112,9 +93,7 @@ export function removePrincipal(
 // -- Roles ---------------------------------------------------------------
 
 export function listRoles(tenantId: string): Promise<readonly Role[]> {
-  return request(`/api/tenants/${tenantId}/roles`, RolesPage).then(
-    (page) => page.data,
-  );
+  return request(`/api/tenants/${tenantId}/roles`, RolesPage).then((page) => page.data);
 }
 
 export function createRole(
@@ -139,18 +118,12 @@ export function renameRole(
 }
 
 export function deleteRole(tenantId: string, roleId: string): Promise<void> {
-  return request<void>(
-    `/api/tenants/${tenantId}/roles/${roleId}`,
-    (data) => data as void,
-    { method: "DELETE" },
-  );
+  return request<void>(`/api/tenants/${tenantId}/roles/${roleId}`, (data) => data as void, {
+    method: "DELETE",
+  });
 }
 
-export function assignRole(
-  tenantId: string,
-  principalId: string,
-  roleId: string,
-): Promise<void> {
+export function assignRole(tenantId: string, principalId: string, roleId: string): Promise<void> {
   return request<void>(
     `/api/tenants/${tenantId}/principals/${principalId}/roles/${roleId}`,
     (data) => data as void,
@@ -158,11 +131,7 @@ export function assignRole(
   );
 }
 
-export function unassignRole(
-  tenantId: string,
-  principalId: string,
-  roleId: string,
-): Promise<void> {
+export function unassignRole(tenantId: string, principalId: string, roleId: string): Promise<void> {
   return request<void>(
     `/api/tenants/${tenantId}/principals/${principalId}/roles/${roleId}`,
     (data) => data as void,
@@ -181,8 +150,7 @@ export type GrantFilters = {
 
 function grantQuery(filters: GrantFilters): string {
   const params = new URLSearchParams();
-  if (filters.principalId !== undefined)
-    params.set("principalId", filters.principalId);
+  if (filters.principalId !== undefined) params.set("principalId", filters.principalId);
   if (filters.roleId !== undefined) params.set("roleId", filters.roleId);
   if (filters.resource !== undefined) params.set("resource", filters.resource);
   if (filters.effect !== undefined) params.set("effect", filters.effect);
@@ -194,10 +162,9 @@ export function listGrants(
   tenantId: string,
   filters: GrantFilters = {},
 ): Promise<readonly Grant[]> {
-  return request(
-    `/api/tenants/${tenantId}/grants${grantQuery(filters)}`,
-    GrantsPage,
-  ).then((page) => page.data);
+  return request(`/api/tenants/${tenantId}/grants${grantQuery(filters)}`, GrantsPage).then(
+    (page) => page.data,
+  );
 }
 
 export type CreateGrantInput = {
@@ -210,10 +177,7 @@ export type CreateGrantInput = {
   readonly expiresAt?: string;
 };
 
-export function createGrant(
-  tenantId: string,
-  input: CreateGrantInput,
-): Promise<Grant> {
+export function createGrant(tenantId: string, input: CreateGrantInput): Promise<Grant> {
   return request(`/api/tenants/${tenantId}/grants`, GrantResponse, {
     method: "POST",
     body: JSON.stringify(input),
@@ -221,11 +185,9 @@ export function createGrant(
 }
 
 export function revokeGrant(tenantId: string, grantId: string): Promise<void> {
-  return request<void>(
-    `/api/tenants/${tenantId}/grants/${grantId}`,
-    (data) => data as void,
-    { method: "DELETE" },
-  );
+  return request<void>(`/api/tenants/${tenantId}/grants/${grantId}`, (data) => data as void, {
+    method: "DELETE",
+  });
 }
 
 /**
@@ -240,9 +202,8 @@ export function evaluate(
   resource: string,
   action: string,
 ): Promise<typeof EvaluateResult.infer> {
-  return request(
-    `/api/tenants/${tenantId}/principals/${principalId}/evaluate`,
-    EvaluateResult,
-    { method: "POST", body: JSON.stringify({ resource, action }) },
-  );
+  return request(`/api/tenants/${tenantId}/principals/${principalId}/evaluate`, EvaluateResult, {
+    method: "POST",
+    body: JSON.stringify({ resource, action }),
+  });
 }

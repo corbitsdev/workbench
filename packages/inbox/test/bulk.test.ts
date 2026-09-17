@@ -1,15 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  itemsEligibleForClearDone,
-  itemsEligibleForMarkAllRead,
-} from "../src/bulk";
+import { itemsEligibleForClearDone, itemsEligibleForMarkAllRead } from "../src/bulk";
 import { runBulkOperation } from "../src/bulk-run";
 import type { InboxItem } from "../src/project";
 
-function item(
-  over: Partial<InboxItem> & Pick<InboxItem, "id" | "group">,
-): InboxItem {
+function item(over: Partial<InboxItem> & Pick<InboxItem, "id" | "group">): InboxItem {
   return {
     from: "agent:ops",
     date: "2026-08-10T12:00:00.000Z",
@@ -62,9 +57,7 @@ describe("runBulkOperation", () => {
     expect(result).toEqual({ succeeded: 2, failed: 1 });
     expect(failures).toHaveLength(1);
     expect(failures[0]?.id).toBe("b");
-    expect((failures[0]?.error as Error).message).toBe(
-      "transient write failure",
-    );
+    expect((failures[0]?.error as Error).message).toBe("transient write failure");
   });
 
   test("every item succeeding reports zero failures", async () => {

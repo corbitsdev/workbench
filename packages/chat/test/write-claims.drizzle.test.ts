@@ -30,9 +30,7 @@ const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 describeIfDb("createDrizzleWriteClaimStore: concurrent tryClaim", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchTarget = new URL(scratchUrl);
   const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
 
@@ -79,10 +77,7 @@ describeIfDb("createDrizzleWriteClaimStore: concurrent tryClaim", () => {
         claimKey: "turn_race_1",
       };
 
-      const [first, second] = await Promise.all([
-        store.tryClaim(claim),
-        store.tryClaim(claim),
-      ]);
+      const [first, second] = await Promise.all([store.tryClaim(claim), store.tryClaim(claim)]);
 
       expect([first, second].sort()).toEqual([false, true]);
 

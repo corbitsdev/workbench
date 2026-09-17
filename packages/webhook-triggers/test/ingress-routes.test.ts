@@ -8,11 +8,7 @@
 // can't tell them apart.
 import { describe, expect, test } from "bun:test";
 import { createWebhookIngressRoutes } from "../src/ingress-routes";
-import {
-  signPayload,
-  WEBHOOK_SIGNATURE_HEADER,
-  WEBHOOK_TIMESTAMP_HEADER,
-} from "../src/signature";
+import { signPayload, WEBHOOK_SIGNATURE_HEADER, WEBHOOK_TIMESTAMP_HEADER } from "../src/signature";
 import { createInMemoryWebhookTriggerStore } from "./test-support";
 
 function nowSeconds(): string {
@@ -39,9 +35,7 @@ async function seedTrigger(
 }
 
 function buildApp(
-  launch: Parameters<
-    typeof createWebhookIngressRoutes
-  >[0]["launch"] = async () => ({
+  launch: Parameters<typeof createWebhookIngressRoutes>[0]["launch"] = async () => ({
     instanceId: "ins_x",
     triggerAddress: "ins_x@acme.example",
   }),
@@ -154,11 +148,7 @@ describe("POST /:triggerId", () => {
       headers: {
         "content-type": "application/json",
         [WEBHOOK_TIMESTAMP_HEADER]: timestamp,
-        [WEBHOOK_SIGNATURE_HEADER]: signPayload(
-          "wrong-secret",
-          timestamp,
-          body,
-        ),
+        [WEBHOOK_SIGNATURE_HEADER]: signPayload("wrong-secret", timestamp, body),
       },
       body,
     });

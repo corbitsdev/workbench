@@ -31,9 +31,7 @@ export function resolveConcurrency(
   }
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error(
-      `${CONCURRENCY_ENV} must be a positive integer, got "${raw}"`,
-    );
+    throw new Error(`${CONCURRENCY_ENV} must be a positive integer, got "${raw}"`);
   }
   return parsed;
 }
@@ -112,18 +110,14 @@ async function runJob(job: Job, script: string): Promise<number> {
 
   const body = `${stdout}${stderr}`;
   const trailingNewline = body.endsWith("\n") || body.length === 0 ? "" : "\n";
-  process.stdout.write(
-    `--- ${job.name}: ${script} ---\n${body}${trailingNewline}`,
-  );
+  process.stdout.write(`--- ${job.name}: ${script} ---\n${body}${trailingNewline}`);
   return code;
 }
 
 if (import.meta.main) {
   const scriptArg = process.argv[2];
   if (!scriptArg) {
-    console.error(
-      "usage: bun run scripts/run-all.ts <script-name> [--shard i/n]",
-    );
+    console.error("usage: bun run scripts/run-all.ts <script-name> [--shard i/n]");
     process.exit(1);
   }
   const script: string = scriptArg;
@@ -179,14 +173,10 @@ if (import.meta.main) {
     }
   }
 
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, jobs.length) }, () => worker()),
-  );
+  await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, () => worker()));
 
   if (failures.length > 0) {
-    console.error(
-      `${script} failed in ${failures.length} package(s): ${failures.join(", ")}`,
-    );
+    console.error(`${script} failed in ${failures.length} package(s): ${failures.join(", ")}`);
     process.exit(1);
   }
 }

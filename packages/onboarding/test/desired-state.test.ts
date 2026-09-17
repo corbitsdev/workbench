@@ -46,16 +46,11 @@ function stubApi(state: StubState): ApiCall & { calls: [string, string][] } {
     ) {
       return {
         status: 200,
-        data: state.workflowAssets
-          ? [assetRow(TENANT_ID, "workflow", SETUP_AGENT_ASSET_NAME)]
-          : [],
+        data: state.workflowAssets ? [assetRow(TENANT_ID, "workflow", SETUP_AGENT_ASSET_NAME)] : [],
         cookies: [],
       };
     }
-    if (
-      method === "GET" &&
-      path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-    ) {
+    if (method === "GET" && path === `/api/tenants/${TENANT_ID}/workflows/deployments`) {
       return {
         status: 200,
         data:
@@ -72,8 +67,7 @@ function stubApi(state: StubState): ApiCall & { calls: [string, string][] } {
     }
     if (
       method === "GET" &&
-      path ===
-        `/api/tenants/${TENANT_ID}/assets?kind=package-registry&inherited=true`
+      path === `/api/tenants/${TENANT_ID}/assets?kind=package-registry&inherited=true`
     ) {
       return {
         status: 200,
@@ -112,9 +106,7 @@ function stubApi(state: StubState): ApiCall & { calls: [string, string][] } {
         status: 200,
         data:
           state.skills === true
-            ? TENANT_DESIRED_STATE.skills.map((skill) =>
-                assetRow(TENANT_ID, "skill", skill.name),
-              )
+            ? TENANT_DESIRED_STATE.skills.map((skill) => assetRow(TENANT_ID, "skill", skill.name))
             : [],
         cookies: [],
       };
@@ -128,9 +120,7 @@ function stubApi(state: StubState): ApiCall & { calls: [string, string][] } {
 describe("TENANT_DESIRED_STATE", () => {
   test("is a plain const composed by reference: Myra first, no DB in sight", () => {
     expect(TENANT_DESIRED_STATE.workflows.length).toBeGreaterThan(0);
-    expect(TENANT_DESIRED_STATE.workflows[0]?.assetName).toBe(
-      SETUP_AGENT_ASSET_NAME,
-    );
+    expect(TENANT_DESIRED_STATE.workflows[0]?.assetName).toBe(SETUP_AGENT_ASSET_NAME);
     for (const pin of TENANT_DESIRED_STATE.workflows) {
       expect(typeof pin.assetName).toBe("string");
       expect(typeof pin.version).toBe("string");
@@ -203,8 +193,6 @@ describe("desiredStateSteps", () => {
     expect(steps[0]?.name).toBe(SETUP_AGENT_ASSET_NAME);
     expect(steps[0]?.status).toBe("pending");
     expect(typeof steps[0]?.label).toBe("string");
-    expect(
-      steps.every((s) => ["present", "pending", "blocked"].includes(s.status)),
-    ).toBe(true);
+    expect(steps.every((s) => ["present", "pending", "blocked"].includes(s.status))).toBe(true);
   });
 });

@@ -9,8 +9,7 @@ import type { OllamaChatReply } from "./types";
 // (sanitizeToolNameForPersistence, MALFORMED_TOOL_NAME) -- this is the
 // exact shape it guards against, reproducible here with no GPU. See
 // cl-6478-demo.test.ts for the regression-guard shape.
-const CL_6478_MALFORMED_TOOL_NAME =
-  "@intx/tools-posix/sidecar-bundle:run_shell\n</parameter";
+const CL_6478_MALFORMED_TOOL_NAME = "@intx/tools-posix/sidecar-bundle:run_shell\n</parameter";
 
 // A model calling the tool by its old, retired name instead of the
 // canonical `skills_load` (packages/tools-skills/src/tool.ts). `load_skill`

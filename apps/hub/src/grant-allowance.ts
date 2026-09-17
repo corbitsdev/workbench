@@ -22,11 +22,7 @@ import { credentialAad } from "@intx/types";
 import { resolveApproval, type CreateApprovalRoutesDeps } from "@intx/hub-api";
 import type { GrantRule } from "@intx/types/authz";
 import type { GrantAllowanceGateDeps } from "@corbits/approvals";
-import {
-  listMcpTools,
-  withMcpConnection,
-  type McpServerToolsLoader,
-} from "@corbits/mcp-tools";
+import { listMcpTools, withMcpConnection, type McpServerToolsLoader } from "@corbits/mcp-tools";
 import { listMcpServerConnections } from "@corbits/connections";
 import { MCP_NO_TOKEN_SENTINEL } from "@corbits/credential-providers";
 
@@ -48,11 +44,7 @@ export function createMcpServerToolsAllowanceLoader(deps: {
     const connection = connections.find((c) => c.slug === serverSlug);
     if (connection === undefined || connection.url.length === 0) return null;
 
-    const provider = await resolveProviderByName(
-      deps.db,
-      tenantId,
-      `mcp:${serverSlug}`,
-    );
+    const provider = await resolveProviderByName(deps.db, tenantId, `mcp:${serverSlug}`);
     if (provider === null) return null;
     const credential = await deps.db.query.credential.findFirst({
       where: and(
@@ -77,9 +69,7 @@ export function createMcpServerToolsAllowanceLoader(deps: {
   };
 }
 
-export function createTenantGrantLister(
-  db: DB["db"],
-): GrantAllowanceGateDeps["listTenantGrants"] {
+export function createTenantGrantLister(db: DB["db"]): GrantAllowanceGateDeps["listTenantGrants"] {
   return async (tenantId) => {
     const rows = await db.query.grant.findMany({
       where: eq(schema.grant.tenantId, tenantId),
@@ -120,9 +110,7 @@ export function createAllowanceAutoApprover(
       },
     });
     if (result.kind !== "resolved") {
-      log(
-        `grant-allowance: approval ${approvalId} auto-resolve returned "${result.kind}"`,
-      );
+      log(`grant-allowance: approval ${approvalId} auto-resolve returned "${result.kind}"`);
       return false;
     }
     return true;

@@ -8,11 +8,7 @@
 // independently testable.
 import { type, type Type } from "arktype";
 import { presetForKind } from "./kinds";
-import {
-  parseParticipants,
-  ParticipantsSetting,
-  type ParticipantRecord,
-} from "./participants";
+import { parseParticipants, ParticipantsSetting, type ParticipantRecord } from "./participants";
 import { definitionIdOfSettings } from "./agent-dm-mode";
 
 const PatchSettingsBody = type("Record<string, unknown>");
@@ -37,9 +33,7 @@ export const ChatNamespaceSchemas: Readonly<Record<string, Type<unknown>>> = {
 // Kept as its own schema table (rather than folded into
 // `ChatNamespaceSchemas`) because a bench default is never nullable — there
 // is nothing beneath it to inherit from.
-export const ChatBenchNamespaceSchemas: Readonly<
-  Record<string, Type<unknown>>
-> = {
+export const ChatBenchNamespaceSchemas: Readonly<Record<string, Type<unknown>>> = {
   "chat/contextWindow": type("number"),
 };
 
@@ -52,9 +46,7 @@ function validatePatchAgainst(
 ): Record<string, unknown> {
   const parsed = PatchSettingsBody(body);
   if (parsed instanceof type.errors) {
-    throw new SettingsValidationError(
-      `settings patch must be an object: ${parsed.summary}`,
-    );
+    throw new SettingsValidationError(`settings patch must be an object: ${parsed.summary}`);
   }
   const validated: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(parsed)) {
@@ -65,9 +57,7 @@ function validatePatchAgainst(
       }
       const result = schema(value);
       if (result instanceof type.errors) {
-        throw new SettingsValidationError(
-          `invalid value for "${key}": ${result.summary}`,
-        );
+        throw new SettingsValidationError(`invalid value for "${key}": ${result.summary}`);
       }
       validated[key] = value;
     } else {
@@ -95,9 +85,7 @@ export function validateSettingsPatch(body: unknown): Record<string, unknown> {
  * its own, so every `chat/*` key here is required to be its real type,
  * never `null`.
  */
-export function validateBenchSettingsPatch(
-  body: unknown,
-): Record<string, unknown> {
+export function validateBenchSettingsPatch(body: unknown): Record<string, unknown> {
   return validatePatchAgainst(body, ChatBenchNamespaceSchemas, "chat/");
 }
 
@@ -153,9 +141,7 @@ export function contextWindowOf(settings: Record<string, unknown>): number {
  * there is nothing beneath it — so this never returns a null/override
  * distinction, only a plain number.
  */
-export function benchContextWindowOf(
-  settings: Record<string, unknown>,
-): number {
+export function benchContextWindowOf(settings: Record<string, unknown>): number {
   return clampWindow(settings["chat/contextWindow"]) ?? DEFAULT_CONTEXT_WINDOW;
 }
 
@@ -193,9 +179,7 @@ export function resolveContextWindow(
 ): ResolvedContextWindow {
   const validatedDefault = BenchDefaultInput(benchDefault);
   if (validatedDefault instanceof type.errors) {
-    throw new Error(
-      `resolveContextWindow: invalid bench default: ${validatedDefault.summary}`,
-    );
+    throw new Error(`resolveContextWindow: invalid bench default: ${validatedDefault.summary}`);
   }
   const clampedDefault = Math.min(validatedDefault, MAX_CONTEXT_WINDOW);
 
@@ -220,15 +204,11 @@ export type WorkbenchVisibility = "bench" | "members";
  * participants may. Defaults to `"bench"` for any other or absent
  * value, never fails closed to `"members"` from a malformed setting.
  */
-export function visibilityOf(
-  settings: Record<string, unknown>,
-): WorkbenchVisibility {
+export function visibilityOf(settings: Record<string, unknown>): WorkbenchVisibility {
   return settings["chat/visibility"] === "members" ? "members" : "bench";
 }
 
-export function participantsOf(
-  settings: Record<string, unknown>,
-): ParticipantRecord[] {
+export function participantsOf(settings: Record<string, unknown>): ParticipantRecord[] {
   return parseParticipants(settings["chat/participants"]);
 }
 

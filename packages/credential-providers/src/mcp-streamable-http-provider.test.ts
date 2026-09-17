@@ -24,9 +24,7 @@ function contextWith(
   } as CredentialShapeContext;
 }
 
-function capturingFetch(
-  respond?: (input: string | URL | Request, init?: RequestInit) => Response,
-) {
+function capturingFetch(respond?: (input: string | URL | Request, init?: RequestInit) => Response) {
   const seen: { url: string; headers: Headers; redirect?: string }[] = [];
   const fetchImpl = async (
     input: string | URL | Request,
@@ -81,9 +79,7 @@ describe(MCP_STREAMABLE_HTTP_PROVIDER_KEY, () => {
     });
     const shaped = provider.shape(contextWith("tok-123"));
     if (shaped.kind !== "http") throw new Error("expected http");
-    await expect(shaped.fetch("https://evil.example/steal")).rejects.toThrow(
-      /pinned to/,
-    );
+    await expect(shaped.fetch("https://evil.example/steal")).rejects.toThrow(/pinned to/);
     expect(seen).toHaveLength(0);
   });
 
@@ -108,9 +104,7 @@ describe(MCP_STREAMABLE_HTTP_PROVIDER_KEY, () => {
     const provider = createMcpStreamableHttpCredentialProvider({
       fetch: fetchImpl,
     });
-    const shaped = provider.shape(
-      contextWith("tok-canva", "https://mcp.canva.com/mcp"),
-    );
+    const shaped = provider.shape(contextWith("tok-canva", "https://mcp.canva.com/mcp"));
     if (shaped.kind !== "http") throw new Error("expected http");
     await shaped.fetch("https://canva.ai/mcp");
     expect(seen).toHaveLength(1);
@@ -124,9 +118,7 @@ describe(MCP_STREAMABLE_HTTP_PROVIDER_KEY, () => {
     const provider = createMcpStreamableHttpCredentialProvider({
       fetch: fetchImpl,
     });
-    const shaped = provider.shape(
-      contextWith("tok-canva", "https://mcp.canva.com/mcp"),
-    );
+    const shaped = provider.shape(contextWith("tok-canva", "https://mcp.canva.com/mcp"));
     if (shaped.kind !== "http") throw new Error("expected http");
     await expect(shaped.fetch("https://evil.example/steal")).rejects.toThrow(
       "mcp-streamable-http credential is pinned to https://mcp.canva.com; refusing cross-origin request to https://evil.example",
@@ -139,9 +131,7 @@ describe(MCP_STREAMABLE_HTTP_PROVIDER_KEY, () => {
     const provider = createMcpStreamableHttpCredentialProvider({
       fetch: fetchImpl,
     });
-    const shaped = provider.shape(
-      contextWith("tok-canva", "https://mcp.canva.com/mcp"),
-    );
+    const shaped = provider.shape(contextWith("tok-canva", "https://mcp.canva.com/mcp"));
     if (shaped.kind !== "http") throw new Error("expected http");
     await expect(shaped.fetch("https://notcanva.com/mcp")).rejects.toThrow(
       "mcp-streamable-http credential is pinned to https://mcp.canva.com; refusing cross-origin request to https://notcanva.com",
@@ -154,9 +144,7 @@ describe(MCP_STREAMABLE_HTTP_PROVIDER_KEY, () => {
     const provider = createMcpStreamableHttpCredentialProvider({
       fetch: fetchImpl,
     });
-    const shaped = provider.shape(
-      contextWith("tok-canva", "https://mcp.canva.com/mcp"),
-    );
+    const shaped = provider.shape(contextWith("tok-canva", "https://mcp.canva.com/mcp"));
     if (shaped.kind !== "http") throw new Error("expected http");
     await expect(shaped.fetch("https://media.canva.com/mcp")).rejects.toThrow(
       "mcp-streamable-http credential is pinned to https://mcp.canva.com; refusing cross-origin request to https://media.canva.com",
@@ -175,9 +163,7 @@ describe(MCP_STREAMABLE_HTTP_PROVIDER_KEY, () => {
     const provider = createMcpStreamableHttpCredentialProvider({
       fetch: fetchImpl,
     });
-    const shaped = provider.shape(
-      contextWith("tok-canva", "https://mcp.canva.com/mcp"),
-    );
+    const shaped = provider.shape(contextWith("tok-canva", "https://mcp.canva.com/mcp"));
     if (shaped.kind !== "http") throw new Error("expected http");
     const response = await shaped.fetch("https://mcp.canva.com/mcp");
     expect(response.status).toBe(302);
@@ -197,9 +183,7 @@ describe(MCP_STREAMABLE_HTTP_PROVIDER_KEY, () => {
     const provider = createMcpStreamableHttpCredentialProvider({
       fetch: fetchImpl,
     });
-    const shaped = provider.shape(
-      contextWith("tok-canva", "https://mcp.canva.com/mcp"),
-    );
+    const shaped = provider.shape(contextWith("tok-canva", "https://mcp.canva.com/mcp"));
     if (shaped.kind !== "http") throw new Error("expected http");
     const response = await shaped.fetch("https://mcp.canva.com/mcp");
     expect(response.status).toBe(302);

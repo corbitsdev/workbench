@@ -125,8 +125,7 @@ const FAKE_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> = {
       echoesState: true,
       deploysDefaultWorkflows: true,
       clientId: () => "public-client-id",
-      buildAuthorizeUrl: ({ state }) =>
-        new URL(`https://example.test/authorize?state=${state}`),
+      buildAuthorizeUrl: ({ state }) => new URL(`https://example.test/authorize?state=${state}`),
       exchange: async () => ({ ok: true, apiKey: "unused" }),
     },
   },
@@ -148,32 +147,18 @@ function mountAs(routes: Hono<TenantEnv>): Hono<TenantEnv> {
 function buildApp(
   overrides: {
     requireGrant?: RequireGrant;
-    ensureProviderFn?: Parameters<
-      typeof createConnectionRoutes
-    >[0]["ensureProviderFn"];
-    ensureCredentialFn?: Parameters<
-      typeof createConnectionRoutes
-    >[0]["ensureCredentialFn"];
-    seedCatalogFn?: Parameters<
-      typeof createConnectionRoutes
-    >[0]["seedCatalogFn"];
-    disconnectConnectorFn?: Parameters<
-      typeof createConnectionRoutes
-    >[0]["disconnectConnectorFn"];
+    ensureProviderFn?: Parameters<typeof createConnectionRoutes>[0]["ensureProviderFn"];
+    ensureCredentialFn?: Parameters<typeof createConnectionRoutes>[0]["ensureCredentialFn"];
+    seedCatalogFn?: Parameters<typeof createConnectionRoutes>[0]["seedCatalogFn"];
+    disconnectConnectorFn?: Parameters<typeof createConnectionRoutes>[0]["disconnectConnectorFn"];
     oauthEnv?: Readonly<Record<string, string | undefined>>;
-    providerHealth?: Parameters<
-      typeof createConnectionRoutes
-    >[0]["providerHealth"];
-    listConnectedProviders?: Parameters<
-      typeof createConnectionRoutes
-    >[0]["listConnectedProviders"];
+    providerHealth?: Parameters<typeof createConnectionRoutes>[0]["providerHealth"];
+    listConnectedProviders?: Parameters<typeof createConnectionRoutes>[0]["listConnectedProviders"];
     onConnected?: Parameters<typeof createConnectionRoutes>[0]["onConnected"];
     onInferenceCredentialUsable?: Parameters<
       typeof createConnectionRoutes
     >[0]["onInferenceCredentialUsable"];
-    getResolvedCatalogFn?: Parameters<
-      typeof createConnectionRoutes
-    >[0]["getResolvedCatalogFn"];
+    getResolvedCatalogFn?: Parameters<typeof createConnectionRoutes>[0]["getResolvedCatalogFn"];
   } = {},
 ) {
   const routeArgs: Parameters<typeof createConnectionRoutes>[0] = {
@@ -186,20 +171,16 @@ function buildApp(
     routeArgs.ensureProviderFn = overrides.ensureProviderFn;
   if (overrides.ensureCredentialFn !== undefined)
     routeArgs.ensureCredentialFn = overrides.ensureCredentialFn;
-  if (overrides.seedCatalogFn !== undefined)
-    routeArgs.seedCatalogFn = overrides.seedCatalogFn;
+  if (overrides.seedCatalogFn !== undefined) routeArgs.seedCatalogFn = overrides.seedCatalogFn;
   if (overrides.disconnectConnectorFn !== undefined)
     routeArgs.disconnectConnectorFn = overrides.disconnectConnectorFn;
   if (overrides.oauthEnv !== undefined) routeArgs.oauthEnv = overrides.oauthEnv;
-  if (overrides.providerHealth !== undefined)
-    routeArgs.providerHealth = overrides.providerHealth;
+  if (overrides.providerHealth !== undefined) routeArgs.providerHealth = overrides.providerHealth;
   if (overrides.listConnectedProviders !== undefined)
     routeArgs.listConnectedProviders = overrides.listConnectedProviders;
-  if (overrides.onConnected !== undefined)
-    routeArgs.onConnected = overrides.onConnected;
+  if (overrides.onConnected !== undefined) routeArgs.onConnected = overrides.onConnected;
   if (overrides.onInferenceCredentialUsable !== undefined)
-    routeArgs.onInferenceCredentialUsable =
-      overrides.onInferenceCredentialUsable;
+    routeArgs.onInferenceCredentialUsable = overrides.onInferenceCredentialUsable;
   if (overrides.getResolvedCatalogFn !== undefined)
     routeArgs.getResolvedCatalogFn = overrides.getResolvedCatalogFn;
   const routes = createConnectionRoutes(routeArgs);
@@ -504,9 +485,7 @@ describe("POST /:connectorId/complete", () => {
       baseURLOverride?: string;
     };
     expect(args.provider).toBe("ollama");
-    expect(args.baseURLOverride).toBe(
-      "https://home-mac-studio.tail87f5aa.ts.net",
-    );
+    expect(args.baseURLOverride).toBe("https://home-mac-studio.tail87f5aa.ts.net");
     // Ollama has no auth layer of its own -- the fixed placeholder
     // secret is what gets stored/seeded, never the URL itself.
     expect(args.apiKey).toBe("ollama");
@@ -669,8 +648,7 @@ describe("POST /:connectorId/complete", () => {
       operation: "persist_api_key_connection",
       extra: { connectorId: "accepting-connector" },
     });
-    const extra = report.mock.calls[0]?.[1]?.extra as
-      Record<string, unknown> | undefined;
+    const extra = report.mock.calls[0]?.[1]?.extra as Record<string, unknown> | undefined;
     expect(JSON.stringify(extra)).not.toContain("good-key");
     report.mockRestore();
   });
@@ -739,11 +717,7 @@ describe("POST /:connectorId/complete", () => {
 
   test("a passing probe clears any needs_attention record for that connector", async () => {
     const providerHealth = createProviderHealthStore();
-    providerHealth.report(
-      TENANT.id,
-      "accepting-connector",
-      "credential_failure",
-    );
+    providerHealth.report(TENANT.id, "accepting-connector", "credential_failure");
     const app = buildApp({
       providerHealth,
       ensureProviderFn: async () => "prv_1",
@@ -754,9 +728,7 @@ describe("POST /:connectorId/complete", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ apiKey: "good-key" }),
     });
-    expect(
-      providerHealth.get(TENANT.id, "accepting-connector"),
-    ).toBeUndefined();
+    expect(providerHealth.get(TENANT.id, "accepting-connector")).toBeUndefined();
   });
 
   // CL-6092: a storage failure after a passing probe must never clear a
@@ -764,11 +736,7 @@ describe("POST /:connectorId/complete", () => {
   // durable, so the record should survive for the next attempt to see.
   test("a storage failure after a passing probe leaves a prior needs_attention record standing", async () => {
     const providerHealth = createProviderHealthStore();
-    providerHealth.report(
-      TENANT.id,
-      "accepting-connector",
-      "credential_failure",
-    );
+    providerHealth.report(TENANT.id, "accepting-connector", "credential_failure");
     const app = buildApp({
       providerHealth,
       ensureProviderFn: async () => {
@@ -781,26 +749,19 @@ describe("POST /:connectorId/complete", () => {
       body: JSON.stringify({ apiKey: "good-key" }),
     });
     expect(response.status).toBe(500);
-    expect(providerHealth.get(TENANT.id, "accepting-connector")?.status).toBe(
-      "needs_attention",
-    );
+    expect(providerHealth.get(TENANT.id, "accepting-connector")?.status).toBe("needs_attention");
   });
 });
 
 describe("GET /provider-health", () => {
   test("reports every provider this tenant has marked needs_attention", async () => {
-    const providerHealth = createProviderHealthStore(
-      () => new Date("2026-08-15T00:00:00.000Z"),
-    );
+    const providerHealth = createProviderHealthStore(() => new Date("2026-08-15T00:00:00.000Z"));
     providerHealth.report(TENANT.id, "anthropic", "credential_failure");
     const app = buildApp({ providerHealth });
     const response = await app.request("/provider-health");
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
-      providers: Record<
-        string,
-        { status: string; category: string; at: string }
-      >;
+      providers: Record<string, { status: string; category: string; at: string }>;
       connectedProviderCount?: number;
     };
     expect(body.providers["anthropic"]).toEqual({
@@ -903,28 +864,16 @@ describe("disconnectConnector", () => {
 
   test("an inference connector (catalog provider present) deletes the catalog provider before the credential provider, cascading offerings", async () => {
     const { api, calls } = fakeDisconnectAPI(({ method, path }) => {
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/providers`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/catalog/providers`) {
         return page([catalogProviderRow("mprv_1", "anthropic")]);
       }
-      if (
-        method === "DELETE" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/providers/mprv_1`
-      ) {
+      if (method === "DELETE" && path === `/api/tenants/${TENANT_ID}/catalog/providers/mprv_1`) {
         return { status: 204, data: null };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/providers?inherited=false`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/providers?inherited=false`) {
         return page([providerRow("prv_1", "anthropic")]);
       }
-      if (
-        method === "DELETE" &&
-        path === `/api/tenants/${TENANT_ID}/providers/prv_1`
-      ) {
+      if (method === "DELETE" && path === `/api/tenants/${TENANT_ID}/providers/prv_1`) {
         return { status: 204, data: null };
       }
       return undefined;
@@ -939,8 +888,7 @@ describe("disconnectConnector", () => {
 
     expect(result.disconnected).toBe(true);
     const catalogDeleteIndex = calls.findIndex(
-      (call) =>
-        call.path === `/api/tenants/${TENANT_ID}/catalog/providers/mprv_1`,
+      (call) => call.path === `/api/tenants/${TENANT_ID}/catalog/providers/mprv_1`,
     );
     const providerDeleteIndex = calls.findIndex(
       (call) => call.path === `/api/tenants/${TENANT_ID}/providers/prv_1`,
@@ -951,22 +899,13 @@ describe("disconnectConnector", () => {
 
   test("a non-inference (MCP-style) connector with no catalog provider still removes its provider row", async () => {
     const { api } = fakeDisconnectAPI(({ method, path }) => {
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/providers`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/catalog/providers`) {
         return page([]);
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/providers?inherited=false`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/providers?inherited=false`) {
         return page([providerRow("prv_exa", "exa")]);
       }
-      if (
-        method === "DELETE" &&
-        path === `/api/tenants/${TENANT_ID}/providers/prv_exa`
-      ) {
+      if (method === "DELETE" && path === `/api/tenants/${TENANT_ID}/providers/prv_exa`) {
         return { status: 204, data: null };
       }
       return undefined;
@@ -984,16 +923,10 @@ describe("disconnectConnector", () => {
 
   test("a connector with no provider row at all reports not disconnected, without attempting a delete", async () => {
     const { api, calls } = fakeDisconnectAPI(({ method, path }) => {
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/providers`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/catalog/providers`) {
         return page([]);
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/providers?inherited=false`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/providers?inherited=false`) {
         return page([]);
       }
       return undefined;
@@ -1012,22 +945,13 @@ describe("disconnectConnector", () => {
 
   test("a concurrent disconnect (catalog provider DELETE 404s because a first call already removed it) resolves instead of throwing", async () => {
     const { api } = fakeDisconnectAPI(({ method, path }) => {
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/providers`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/catalog/providers`) {
         return page([catalogProviderRow("mprv_1", "anthropic")]);
       }
-      if (
-        method === "DELETE" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/providers/mprv_1`
-      ) {
+      if (method === "DELETE" && path === `/api/tenants/${TENANT_ID}/catalog/providers/mprv_1`) {
         return { status: 404, data: { error: { code: "not_found" } } };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/providers?inherited=false`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/providers?inherited=false`) {
         return page([]);
       }
       return undefined;
@@ -1045,22 +969,13 @@ describe("disconnectConnector", () => {
 
   test("a concurrent disconnect (provider DELETE 404s because a first call already removed it) resolves instead of throwing", async () => {
     const { api } = fakeDisconnectAPI(({ method, path }) => {
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/providers`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/catalog/providers`) {
         return page([]);
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/providers?inherited=false`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/providers?inherited=false`) {
         return page([providerRow("prv_1", "anthropic")]);
       }
-      if (
-        method === "DELETE" &&
-        path === `/api/tenants/${TENANT_ID}/providers/prv_1`
-      ) {
+      if (method === "DELETE" && path === `/api/tenants/${TENANT_ID}/providers/prv_1`) {
         return { status: 404, data: { error: { code: "not_found" } } };
       }
       return undefined;

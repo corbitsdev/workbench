@@ -40,13 +40,9 @@ describe("hub sidecar routability wiring", () => {
     expect(assigned).not.toBeNull();
 
     // Exactly one definition: no second, diverging routability source.
-    const definitionCount = source.match(
-      /getRoutableAddresses\(\)\.includes\(/g,
-    );
+    const definitionCount = source.match(/getRoutableAddresses\(\)\.includes\(/g);
     expect(definitionCount).toHaveLength(1);
 
-    expect(firstCall(source, "launchWebhookTrigger")).toContain(
-      "isRoutable: isSidecarRoutable",
-    );
+    expect(firstCall(source, "launchWebhookTrigger")).toContain("isRoutable: isSidecarRoutable");
   });
 });

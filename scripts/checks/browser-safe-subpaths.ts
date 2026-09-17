@@ -24,12 +24,7 @@
 // still needs to be added to ENTRIES by hand.
 import { Glob } from "bun";
 import path from "node:path";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 const SCAN_GLOB = "packages/**/*.{ts,tsx}";
 
@@ -123,8 +118,7 @@ export function parseImportSpecifiers(source: string): ImportSpecifier[] {
   const contents = stripComments(source);
   const results: ImportSpecifier[] = [];
 
-  const fromPattern =
-    /\b(import|export)\s+(type\s+)?[^;]*?\bfrom\s+["']([^"']+)["']/g;
+  const fromPattern = /\b(import|export)\s+(type\s+)?[^;]*?\bfrom\s+["']([^"']+)["']/g;
   for (const match of contents.matchAll(fromPattern)) {
     const specifier = match[3];
     if (specifier === undefined) continue;
@@ -155,13 +149,7 @@ function resolveRelative(
 ): string | undefined {
   const dir = path.posix.dirname(fromRelPath);
   const base = path.posix.normalize(path.posix.join(dir, specifier));
-  const candidates = [
-    base,
-    `${base}.ts`,
-    `${base}.tsx`,
-    `${base}/index.ts`,
-    `${base}/index.tsx`,
-  ];
+  const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`];
   return candidates.find((candidate) => files.has(candidate));
 }
 
@@ -189,9 +177,7 @@ function findUnruledClientExports(
   entries: readonly BrowserSafeEntry[],
   packages: readonly PackageManifest[],
 ): string[] {
-  const ruled = new Set(
-    entries.map((entry) => `${entry.package}${entry.subpath}`),
-  );
+  const ruled = new Set(entries.map((entry) => `${entry.package}${entry.subpath}`));
   const violations: string[] = [];
   for (const pkg of packages) {
     if (pkg.exports[CONVENTIONAL_SUBPATH] === undefined) continue;
@@ -226,16 +212,12 @@ export function auditBrowserSafeSubpaths(
     const label = entryLabel(entry);
     const manifest = packages.find((pkg) => pkg.name === entry.package);
     if (manifest === undefined) {
-      report.violations.push(
-        `${label}: no package named "${entry.package}" found.`,
-      );
+      report.violations.push(`${label}: no package named "${entry.package}" found.`);
       continue;
     }
     const entryRelPath = manifest.exports[entry.subpath];
     if (entryRelPath === undefined) {
-      report.violations.push(
-        `${label}: "${entry.package}" declares no "${entry.subpath}" export.`,
-      );
+      report.violations.push(`${label}: "${entry.package}" declares no "${entry.subpath}" export.`);
       continue;
     }
 
@@ -306,9 +288,7 @@ export function auditBrowserSafeSubpaths(
       }
     }
 
-    report.notes.push(
-      `${label}: ${reached} file(s) in its import graph, clean.`,
-    );
+    report.notes.push(`${label}: ${reached} file(s) in its import graph, clean.`);
   }
 
   return report;
@@ -328,18 +308,14 @@ async function scanPackageManifests(root: string): Promise<PackageManifest[]> {
       continue;
     }
     const exportsField =
-      "exports" in raw &&
-      typeof raw.exports === "object" &&
-      raw.exports !== null
+      "exports" in raw && typeof raw.exports === "object" && raw.exports !== null
         ? (raw.exports as Record<string, unknown>)
         : {};
     const packageDir = path.posix.dirname(relPath);
     const exportsMap: Record<string, string> = {};
     for (const [key, value] of Object.entries(exportsField)) {
       if (typeof value !== "string") continue;
-      exportsMap[key] = path.posix.normalize(
-        path.posix.join(packageDir, value),
-      );
+      exportsMap[key] = path.posix.normalize(path.posix.join(packageDir, value));
     }
     manifests.push({ name: raw.name, exports: exportsMap });
   }
@@ -360,10 +336,7 @@ async function scanSourceFiles(root: string): Promise<Map<string, string>> {
 async function main(): Promise<void> {
   const args = Bun.argv.slice(2);
   const root = rootFromArgs(args);
-  const [packages, files] = await Promise.all([
-    scanPackageManifests(root),
-    scanSourceFiles(root),
-  ]);
+  const [packages, files] = await Promise.all([scanPackageManifests(root), scanSourceFiles(root)]);
   const report = auditBrowserSafeSubpaths(ENTRIES, packages, files);
   reportAndExit("check:browser-safe-subpaths", report);
 }

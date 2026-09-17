@@ -23,11 +23,7 @@ import {
 import { useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
-import {
-  QueryView,
-  UnauthenticatedError,
-  describeQueryError,
-} from "@corbits/api-query";
+import { QueryView, UnauthenticatedError, describeQueryError } from "@corbits/api-query";
 import { reportError } from "@corbits/error-sink";
 import { PRINCIPAL_KIND_LABEL, principalLabel } from "./identity";
 
@@ -43,21 +39,17 @@ import {
   type Role,
 } from "./tenancy-api";
 
-const STATUS_TONE: Record<Principal["status"], "success" | "info" | "neutral"> =
-  {
-    active: "success",
-    invited: "info",
-    suspended: "neutral",
-    deactivated: "neutral",
-  };
+const STATUS_TONE: Record<Principal["status"], "success" | "info" | "neutral"> = {
+  active: "success",
+  invited: "info",
+  suspended: "neutral",
+  deactivated: "neutral",
+};
 
 /** The two system roles this section's simplified role picker maps onto —
  * discovered by name from this tenant's actual roles rather than assumed,
  * since role ids are minted per tenant. */
-function findSystemRole(
-  roles: readonly Role[],
-  name: "owner" | "member",
-): Role | undefined {
+function findSystemRole(roles: readonly Role[], name: "owner" | "member"): Role | undefined {
   return roles.find((role) => role.name.toLowerCase() === name);
 }
 
@@ -66,11 +58,7 @@ type PeopleData = {
   readonly roles: readonly Role[];
 };
 
-export function PeopleSection({
-  tenantId,
-}: {
-  readonly tenantId: string | null;
-}) {
+export function PeopleSection({ tenantId }: { readonly tenantId: string | null }) {
   const [query, setQuery] = useState<APIQuery<PeopleData>>({
     kind: "loading",
   });
@@ -111,7 +99,6 @@ export function PeopleSection({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, reloadKey]);
 
   if (tenantId === null) {
@@ -123,10 +110,7 @@ export function PeopleSection({
     );
   }
 
-  function handleStatusChange(
-    principal: Principal,
-    status: "active" | "suspended",
-  ) {
+  function handleStatusChange(principal: Principal, status: "active" | "suspended") {
     if (tenantId === null) return;
     setRowError(null);
     updatePrincipalStatus(tenantId, principal.id, status)
@@ -173,12 +157,8 @@ export function PeopleSection({
       return;
     }
 
-    const toUnassign = principal.roles.filter((r) =>
-      roles.some((role) => role.id === r.id),
-    );
-    Promise.all(
-      toUnassign.map((r) => unassignRole(tenantId, principal.id, r.id)),
-    )
+    const toUnassign = principal.roles.filter((r) => roles.some((role) => role.id === r.id));
+    Promise.all(toUnassign.map((r) => unassignRole(tenantId, principal.id, r.id)))
       .then(() => assignRole(tenantId, principal.id, newRoleId))
       .then(reload)
       .catch((cause: unknown) => {
@@ -208,9 +188,7 @@ export function PeopleSection({
             onSuspend={(p) => handleStatusChange(p, "suspended")}
             onReactivate={(p) => handleStatusChange(p, "active")}
             onRemove={handleRemove}
-            onRoleChange={(p, roleId) =>
-              handleRoleChange(p, roleId, people, roles)
-            }
+            onRoleChange={(p, roleId) => handleRoleChange(p, roleId, people, roles)}
           />
         </SettingsPanel>
       )}
@@ -218,10 +196,7 @@ export function PeopleSection({
   );
 }
 
-function countHoldingRole(
-  people: readonly Principal[],
-  roleId: string,
-): number {
+function countHoldingRole(people: readonly Principal[], roleId: string): number {
   return people.filter((p) => p.roles.some((r) => r.id === roleId)).length;
 }
 
@@ -265,13 +240,10 @@ export function PeopleTable({
       <TableBody>
         {people.map((person) => {
           const identity = principalLabel(person.displayName);
-          const selectableRoles = [ownerRole, memberRole].filter(
-            (r): r is Role => r !== undefined,
-          );
+          const selectableRoles = [ownerRole, memberRole].filter((r): r is Role => r !== undefined);
           const currentRoleId =
-            person.roles.find((r) =>
-              selectableRoles.some((role) => role.id === r.id),
-            )?.id ?? memberRole?.id;
+            person.roles.find((r) => selectableRoles.some((role) => role.id === r.id))?.id ??
+            memberRole?.id;
 
           return (
             <TableRow key={person.id}>
@@ -291,9 +263,7 @@ export function PeopleTable({
                     className="settings-select"
                     aria-label={`${SETTINGS_STRINGS.peopleInviteRoleLabel} — ${identity.label}`}
                     value={currentRoleId}
-                    onChange={(event) =>
-                      onRoleChange(person, event.target.value)
-                    }
+                    onChange={(event) => onRoleChange(person, event.target.value)}
                   >
                     {selectableRoles.map((role) => (
                       <option key={role.id} value={role.id}>
@@ -316,19 +286,11 @@ export function PeopleTable({
               <TableCell className="settings-actions-cell">
                 <div className="settings-row-actions">
                   {person.status === "suspended" ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onReactivate(person)}
-                    >
+                    <Button variant="outline" size="sm" onClick={() => onReactivate(person)}>
                       {SETTINGS_STRINGS.peopleReactivate}
                     </Button>
                   ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onSuspend(person)}
-                    >
+                    <Button variant="outline" size="sm" onClick={() => onSuspend(person)}>
                       {SETTINGS_STRINGS.peopleSuspend}
                     </Button>
                   )}

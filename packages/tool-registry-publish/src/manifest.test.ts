@@ -45,20 +45,16 @@ describe("ToolSurfaceManifest", () => {
         surface: [{ qualifiedId: "x", kind: "widget" }],
       }),
     ).toBeInstanceOf(type.errors);
-    expect(
-      ToolSurfaceManifest({ ...valid, surface: [{ kind: "tool" }] }),
-    ).toBeInstanceOf(type.errors);
-    expect(ToolSurfaceManifest({ ...valid, surface: "nope" })).toBeInstanceOf(
+    expect(ToolSurfaceManifest({ ...valid, surface: [{ kind: "tool" }] })).toBeInstanceOf(
       type.errors,
     );
+    expect(ToolSurfaceManifest({ ...valid, surface: "nope" })).toBeInstanceOf(type.errors);
   });
 
   test("accepts a skill-kind entry (manifest headroom)", () => {
     const manifest = ToolSurfaceManifest({
       ...valid,
-      surface: [
-        { qualifiedId: "@corbits/skills/s:skills_load", kind: "skill" },
-      ],
+      surface: [{ qualifiedId: "@corbits/skills/s:skills_load", kind: "skill" }],
     });
     expect(manifest).not.toBeInstanceOf(type.errors);
   });

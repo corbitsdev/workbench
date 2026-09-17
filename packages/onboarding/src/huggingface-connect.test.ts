@@ -22,26 +22,22 @@ describe("exchangeCodeForToken", () => {
     }[] = [];
     const fetchImpl: ExchangeFetch = async (url, init) => {
       requests.push({ url, body: init.body, headers: init.headers });
-      return new Response(
-        JSON.stringify({ access_token: "hf_oauth_minted", expires_in: 28800 }),
-        { status: 200 },
-      );
+      return new Response(JSON.stringify({ access_token: "hf_oauth_minted", expires_in: 28800 }), {
+        status: 200,
+      });
     };
 
     const result = await exchangeCodeForToken({
       code: "auth_code_1",
       codeVerifier: "verifier_1",
-      redirectUri:
-        "https://bench.example.com/api/onboarding/oauth/huggingface/callback",
+      redirectUri: "https://bench.example.com/api/onboarding/oauth/huggingface/callback",
       clientId: "client_1",
       fetchImpl,
       now: () => Date.parse("2026-08-13T12:00:00.000Z"),
     });
 
     expect(requests[0]?.url).toBe(HUGGINGFACE_TOKEN_URL);
-    expect(requests[0]?.headers["content-type"]).toBe(
-      "application/x-www-form-urlencoded",
-    );
+    expect(requests[0]?.headers["content-type"]).toBe("application/x-www-form-urlencoded");
     const body = new URLSearchParams(requests[0]?.body ?? "");
     expect(body.get("grant_type")).toBe("authorization_code");
     expect(body.get("code")).toBe("auth_code_1");
@@ -106,8 +102,7 @@ describe("exchangeCodeForToken", () => {
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok)
-      expect(result.message).toContain("did not carry an access token");
+    if (!result.ok) expect(result.message).toContain("did not carry an access token");
   });
 
   test("a transport failure is reported honestly", async () => {
@@ -142,7 +137,6 @@ describe("exchangeCodeForToken", () => {
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok)
-      expect(result.message).not.toContain("hf_oauth_super_secret");
+    if (!result.ok) expect(result.message).not.toContain("hf_oauth_super_secret");
   });
 });

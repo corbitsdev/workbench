@@ -13,26 +13,17 @@
 //   the retired path in order to reject it.
 import { Glob } from "bun";
 import path from "node:path";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 const TARGET_INFERENCE_SCAN_DIRS = ["apps/web", "packages/chat-ui"];
 const WORKFLOW_JSON_SCAN_DIRS = ["apps", "packages", "workflows"];
 
-const AGENTS_ZERO_DEFINITION_ID_PATTERN =
-  /\bagents\[0\](?:\?\.|\.)\s*definitionId\b/g;
+const AGENTS_ZERO_DEFINITION_ID_PATTERN = /\bagents\[0\](?:\?\.|\.)\s*definitionId\b/g;
 const WORKFLOW_JSON_LITERAL_PATTERN = /(["'`])workflow\.json\1/g;
 
 const WORKFLOW_JSON_ALLOWED_FILE = "packages/workflows/src/source.ts";
 
-export async function scanFiles(
-  root: string,
-  dirs: readonly string[],
-): Promise<string[]> {
+export async function scanFiles(root: string, dirs: readonly string[]): Promise<string[]> {
   const files: string[] = [];
   for (const dir of dirs) {
     const glob = new Glob(`${dir}/**/*.{ts,tsx}`);
@@ -73,11 +64,7 @@ function stripCommentLines(contents: string): string {
     .split("\n")
     .map((line) => {
       const trimmed = line.trimStart();
-      if (
-        trimmed.startsWith("//") ||
-        trimmed.startsWith("*") ||
-        trimmed.startsWith("/*")
-      ) {
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
         return "";
       }
       return line;
@@ -124,18 +111,12 @@ async function main(): Promise<void> {
     root,
     await scanFiles(root, TARGET_INFERENCE_SCAN_DIRS),
   );
-  const workflowJsonFiles = await readAll(
-    root,
-    await scanFiles(root, WORKFLOW_JSON_SCAN_DIRS),
-  );
+  const workflowJsonFiles = await readAll(root, await scanFiles(root, WORKFLOW_JSON_SCAN_DIRS));
 
   const report = emptyReport();
   const targetReport = auditRoutineTargetInference(targetInferenceFiles);
   const workflowJsonReport = auditWorkflowJsonLiteral(workflowJsonFiles);
-  report.violations.push(
-    ...targetReport.violations,
-    ...workflowJsonReport.violations,
-  );
+  report.violations.push(...targetReport.violations, ...workflowJsonReport.violations);
   report.notes.push(
     `scanned ${targetInferenceFiles.length} file(s) under ${TARGET_INFERENCE_SCAN_DIRS.join(", ")} for agents[0] target inference`,
     `scanned ${workflowJsonFiles.length} file(s) under ${WORKFLOW_JSON_SCAN_DIRS.join(", ")} for the retired workflow.json path`,

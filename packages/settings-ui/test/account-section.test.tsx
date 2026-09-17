@@ -81,9 +81,7 @@ describe("AccountSectionView", () => {
         emailVerified={true}
       />,
     );
-    expect(el.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(
-      "Ada Lovelace",
-    );
+    expect(el.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe("Ada Lovelace");
     expect(el.textContent).toContain("Ada Lovelace");
     expect(el.textContent).toContain("Account details");
     expect(el.textContent).toContain("verified");
@@ -135,9 +133,7 @@ describe("AppearanceSection", () => {
     );
     const select = el.querySelector("select") as HTMLSelectElement | null;
     expect(select?.value).toBe("system");
-    const optionValues = [...(select?.options ?? [])].map(
-      (option) => option.value,
-    );
+    const optionValues = [...(select?.options ?? [])].map((option) => option.value);
     expect(optionValues).toEqual(["system", "light", "dark"]);
   });
 

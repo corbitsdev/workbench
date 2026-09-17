@@ -27,10 +27,8 @@ export function ArtifactChip({
   readonly onOpenInLibrary?: (part: Part & { kind: "file" }) => void;
 }) {
   const openable =
-    (part.blobId !== undefined || part.artifactId !== undefined) &&
-    onOpen !== undefined;
-  const libraryOpenable =
-    part.artifactId !== undefined && onOpenInLibrary !== undefined;
+    (part.blobId !== undefined || part.artifactId !== undefined) && onOpen !== undefined;
+  const libraryOpenable = part.artifactId !== undefined && onOpenInLibrary !== undefined;
 
   return (
     <div className="chat-artifact-chip">
@@ -38,9 +36,7 @@ export function ArtifactChip({
         type="button"
         className="chat-artifact-chip-open"
         disabled={!openable}
-        {...(openable && onOpen !== undefined
-          ? { onClick: () => onOpen(part) }
-          : {})}
+        {...(openable && onOpen !== undefined ? { onClick: () => onOpen(part) } : {})}
       >
         <span className="chat-artifact-chip-icon" aria-hidden="true">
           <FileText />

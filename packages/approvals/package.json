@@ -1,8 +1,8 @@
 {
   "name": "@corbits/approvals",
+  "version": "0.0.1",
   "private": true,
   "description": "The grant-allowance gate that decides when a tenant's standing grants already authorize a tool call, plus the pure headline builder that names an approval for a human",
-  "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {

@@ -61,9 +61,7 @@ describe("resolveTarget", () => {
   });
 
   test("falls through when resolve opts out with null", () => {
-    const container = mountHTML(
-      '<div data-ctx-channel=""><span id="empty"></span></div>',
-    );
+    const container = mountHTML('<div data-ctx-channel=""><span id="empty"></span></div>');
     const empty = container.querySelector("#empty");
     // The attribute is present but empty; resolve() sees a real string ("")
     // and this fixture's resolver still builds a target from it — swap in a

@@ -147,9 +147,7 @@ describe("palette actions reach the real shell state (CL-5936 sibling-context re
   });
 
   function click(testId: string): void {
-    const button = container.querySelector<HTMLButtonElement>(
-      `[data-testid="${testId}"]`,
-    );
+    const button = container.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`);
     if (button === null) throw new Error(`${testId} not rendered`);
     button.click();
   }
@@ -164,16 +162,12 @@ describe("palette actions reach the real shell state (CL-5936 sibling-context re
     await act(async () => {
       click("probe-open-profile");
     });
-    expect(
-      container.querySelector('.shell-canvas-column[data-open="true"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('.shell-canvas-column[data-open="true"]')).not.toBeNull();
 
     await act(async () => {
       click("probe-close-canvas");
     });
-    expect(
-      container.querySelector('.shell-canvas-column[data-open="true"]'),
-    ).toBeNull();
+    expect(container.querySelector('.shell-canvas-column[data-open="true"]')).toBeNull();
   });
 });
 
@@ -219,15 +213,9 @@ function CanvasSlotsProbe() {
       >
         Open routine
       </button>
-      <span data-testid="canvas-profile">
-        {profile === null ? "null" : "set"}
-      </span>
-      <span data-testid="canvas-artifact">
-        {artifact === null ? "null" : "set"}
-      </span>
-      <span data-testid="canvas-routine">
-        {routine === null ? "null" : "set"}
-      </span>
+      <span data-testid="canvas-profile">{profile === null ? "null" : "set"}</span>
+      <span data-testid="canvas-artifact">{artifact === null ? "null" : "set"}</span>
+      <span data-testid="canvas-routine">{routine === null ? "null" : "set"}</span>
     </div>
   );
 }
@@ -267,9 +255,7 @@ describe("canvas dismisses when in-app nav leaves a rail surface (CL-6819)", () 
   });
 
   function click(testId: string): void {
-    const button = container.querySelector<HTMLButtonElement>(
-      `[data-testid="${testId}"]`,
-    );
+    const button = container.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`);
     if (button === null) throw new Error(`${testId} not rendered`);
     button.click();
   }

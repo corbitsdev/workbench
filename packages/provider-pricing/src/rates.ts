@@ -110,37 +110,23 @@ export const PROVIDER_PRICES: readonly ModelPrice[] = [
     { minContextTokens: 200_000, rates: usd(4, 12, 0.4, 5) },
   ]),
 
-  unpriced(
-    "openrouter",
-    "qwen/qwen3.8-27b",
-    NOT_IN_PINNED_CATALOG,
-    usd(0.09, 0.29, 0.018, 0.1125),
-  ),
+  unpriced("openrouter", "qwen/qwen3.8-27b", NOT_IN_PINNED_CATALOG, usd(0.09, 0.29, 0.018, 0.1125)),
   unpriced(
     "openrouter",
     "anthropic/claude-sonnet-5",
     OPENROUTER_NAMESPACED,
     usd(2, 10, 0.2, 3.125),
   ),
-  unpriced(
-    "openrouter",
-    "openai/gpt-5.6-sol",
-    OPENROUTER_NAMESPACED,
-    usd(2, 12, 0.2, 2.5),
-    [{ minContextTokens: 272_000, rates: usd(4, 18, 0.4, 5) }],
-  ),
+  unpriced("openrouter", "openai/gpt-5.6-sol", OPENROUTER_NAMESPACED, usd(2, 12, 0.2, 2.5), [
+    { minContextTokens: 272_000, rates: usd(4, 18, 0.4, 5) },
+  ]),
   unpriced(
     "openrouter",
     "meta-llama/llama-3.3-70b-instruct",
     NOT_IN_PINNED_CATALOG,
     usd(0.1, 0.32, 0.02, 0.125),
   ),
-  unpriced(
-    "openrouter",
-    "google/gemma-4-26b-a4b-it:free",
-    NOT_IN_PINNED_CATALOG,
-    FREE,
-  ),
+  unpriced("openrouter", "google/gemma-4-26b-a4b-it:free", NOT_IN_PINNED_CATALOG, FREE),
 
   priced("opencode-zen", "qwen3.7-plus", usd(0.32, 1.28, 0.064, 0.4), [
     { minContextTokens: 256_000, rates: usd(0.96, 3.84, 0.192, 1.2) },
@@ -150,46 +136,16 @@ export const PROVIDER_PRICES: readonly ModelPrice[] = [
   priced("opencode-zen", "deepseek-v4-flash", usd(0.14, 0.28, 0.028, 0.175)),
   priced("opencode-zen", "kimi-k2.6", usd(0.5, 2.8, 0.1, 0.625)),
 
-  unpriced(
-    "groq",
-    "llama-3.3-70b-versatile",
-    NOT_IN_PINNED_CATALOG,
-    usd(0.59, 0.79, null, null),
-  ),
-  unpriced(
-    "groq",
-    "llama-3.1-8b-instant",
-    NOT_IN_PINNED_CATALOG,
-    usd(0.05, 0.08, null, null),
-  ),
-  unpriced(
-    "groq",
-    "openai/gpt-oss-120b",
-    NOT_IN_PINNED_CATALOG,
-    usd(0.15, 0.6, 0.075, null),
-  ),
+  unpriced("groq", "llama-3.3-70b-versatile", NOT_IN_PINNED_CATALOG, usd(0.59, 0.79, null, null)),
+  unpriced("groq", "llama-3.1-8b-instant", NOT_IN_PINNED_CATALOG, usd(0.05, 0.08, null, null)),
+  unpriced("groq", "openai/gpt-oss-120b", NOT_IN_PINNED_CATALOG, usd(0.15, 0.6, 0.075, null)),
 
   priced("deepseek", "deepseek-v4-flash", usd(0.14, 0.28, 0.028, 0.175)),
   priced("deepseek", "deepseek-v4-pro", usd(1.74, 3.48, 0.145, 2.175)),
 
-  unpriced(
-    "mistral",
-    "mistral-small-2603",
-    NOT_IN_PINNED_CATALOG,
-    usd(0.15, 0.6, 0.03, 0.1875),
-  ),
-  unpriced(
-    "mistral",
-    "mistral-large-2512",
-    NOT_IN_PINNED_CATALOG,
-    usd(0.5, 1.5, 0.05, 0.625, 1.5),
-  ),
-  unpriced(
-    "mistral",
-    "codestral-2508",
-    NOT_IN_PINNED_CATALOG,
-    usd(0.3, 0.9, null, null),
-  ),
+  unpriced("mistral", "mistral-small-2603", NOT_IN_PINNED_CATALOG, usd(0.15, 0.6, 0.03, 0.1875)),
+  unpriced("mistral", "mistral-large-2512", NOT_IN_PINNED_CATALOG, usd(0.5, 1.5, 0.05, 0.625, 1.5)),
+  unpriced("mistral", "codestral-2508", NOT_IN_PINNED_CATALOG, usd(0.3, 0.9, null, null)),
 
   unpriced(
     "huggingface",

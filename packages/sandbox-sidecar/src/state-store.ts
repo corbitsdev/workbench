@@ -29,8 +29,7 @@ type ObserveEnsureResult =
   | { readonly kind: "observed"; readonly record: AllocationRecord }
   | {
       readonly kind: "rejected";
-      readonly code:
-        "stale_generation" | "generation_destroyed" | "request_conflict";
+      readonly code: "stale_generation" | "generation_destroyed" | "request_conflict";
       readonly message: string;
     };
 
@@ -129,18 +128,14 @@ export function createAllocationStateStore(
     }
     for (const record of parsed.records) {
       if (records.has(record.allocationId)) {
-        throw new Error(
-          `Duplicate sidecar allocation state for ${record.allocationId}`,
-        );
+        throw new Error(`Duplicate sidecar allocation state for ${record.allocationId}`);
       }
       records.set(record.allocationId, record);
     }
     initialized = true;
   }
 
-  async function persist(
-    nextRecords: ReadonlyMap<string, AllocationRecord>,
-  ): Promise<void> {
+  async function persist(nextRecords: ReadonlyMap<string, AllocationRecord>): Promise<void> {
     const contents = `${JSON.stringify(
       { version: 1, records: Array.from(nextRecords.values()) },
       null,
@@ -215,10 +210,7 @@ export function createAllocationStateStore(
               message: `Generation ${String(args.generation)} is older than ${String(existing.generation)}`,
             };
           }
-          if (
-            existing.generation === args.generation &&
-            existing.desiredState === "destroyed"
-          ) {
+          if (existing.generation === args.generation && existing.desiredState === "destroyed") {
             return { kind: "observed", record: existing };
           }
         }

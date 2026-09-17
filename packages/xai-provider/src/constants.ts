@@ -29,11 +29,7 @@ export const XAI_API_KEY_BASE_URL = "https://api.x.ai/v1";
 
 // Grok-cli OAuth credentials only accept model ids the CLI chat proxy serves;
 // keep the catalog aligned with the CLI's own listing.
-export const XAI_DEFAULT_MODELS = [
-  "grok-4.5",
-  "grok-4.6",
-  "grok-composer-2.5-fast",
-] as const;
+export const XAI_DEFAULT_MODELS = ["grok-4.5", "grok-4.6", "grok-composer-2.5-fast"] as const;
 
 export const XAI_RESPONSES_PATH = "/responses";
 

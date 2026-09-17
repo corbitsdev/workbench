@@ -9,10 +9,7 @@ import type { MiddlewareHandler } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 import type { ChatPlatform, CreateChatRoutesDeps } from "../src/routes";
 import { createInMemoryChatStore } from "../src/store";
-import {
-  createInMemoryRoomMessageStore,
-  type RoomMessage,
-} from "../src/room-messages";
+import { createInMemoryRoomMessageStore, type RoomMessage } from "../src/room-messages";
 import { createInMemoryNativePrincipalStore } from "../src/native-principal";
 import type { MailContent } from "../src/codec";
 import type { MailboxFanoutDeps } from "../src/mailbox-fanout";
@@ -57,21 +54,12 @@ export function fakePlatform(
       definitionId: string;
     }) => Promise<{ instanceId: string; address: string }>;
     ensureAwake?: (address: string) => Promise<void>;
-    fetchBlob?: (
-      workbenchId: string,
-      blobId: string,
-    ) => Promise<string | Uint8Array>;
-    resolveDefinitionAssetId?: (
-      definitionId: string,
-    ) => Promise<string | undefined>;
-    resolveDefinitionIdByAddress?: (
-      address: string,
-    ) => Promise<string | undefined>;
+    fetchBlob?: (workbenchId: string, blobId: string) => Promise<string | Uint8Array>;
+    resolveDefinitionAssetId?: (definitionId: string) => Promise<string | undefined>;
+    resolveDefinitionIdByAddress?: (address: string) => Promise<string | undefined>;
     resolveDefinitionNameSource?: (
       definitionId: string,
-    ) => Promise<
-      { readonly name: string; readonly description?: string } | undefined
-    >;
+    ) => Promise<{ readonly name: string; readonly description?: string } | undefined>;
     refreshAgentInstanceFromDefinition?: (
       tenantId: string,
       workbenchId: string,
@@ -112,10 +100,7 @@ export function fakePlatform(
     definitionId: string;
   }[] = [];
   const ensureAwakeCalls: string[] = [];
-  const mailByWorkbench = new Map<
-    string,
-    { id: string; createdAt: string; mail: unknown }[]
-  >();
+  const mailByWorkbench = new Map<string, { id: string; createdAt: string; mail: unknown }[]>();
   let mailCounter = 0;
   const refreshCalls: {
     tenantId: string;
@@ -164,11 +149,7 @@ export function fakePlatform(
     async refreshAgentInstanceFromDefinition(tenantId, workbenchId, address) {
       refreshCalls.push({ tenantId, workbenchId, address });
       if (opts.refreshAgentInstanceFromDefinition !== undefined) {
-        return opts.refreshAgentInstanceFromDefinition(
-          tenantId,
-          workbenchId,
-          address,
-        );
+        return opts.refreshAgentInstanceFromDefinition(tenantId, workbenchId, address);
       }
     },
     async sendMail(input) {
@@ -204,8 +185,7 @@ export function fakePlatform(
       return { id, createdAt };
     },
     async fetchBlob(workbenchId, blobId) {
-      if (opts.fetchBlob !== undefined)
-        return opts.fetchBlob(workbenchId, blobId);
+      if (opts.fetchBlob !== undefined) return opts.fetchBlob(workbenchId, blobId);
       return "";
     },
     subscribeToWorkbench() {
@@ -246,8 +226,7 @@ export function stubMailbox(domain: string = TENANT.domain): MailboxFanoutDeps {
         }));
       },
     },
-    resolveKnownPrincipalIds: async (_tenantId, candidateIds) =>
-      new Set(candidateIds),
+    resolveKnownPrincipalIds: async (_tenantId, candidateIds) => new Set(candidateIds),
     resolveTenantDomain: async () => domain,
   };
 }
@@ -256,9 +235,7 @@ export type TestDeps = Omit<CreateChatRoutesDeps, "principals"> & {
   principals: ReturnType<typeof createInMemoryNativePrincipalStore>;
 };
 
-export function buildDeps(
-  overrides: Partial<CreateChatRoutesDeps> = {},
-): TestDeps {
+export function buildDeps(overrides: Partial<CreateChatRoutesDeps> = {}): TestDeps {
   const deps: CreateChatRoutesDeps = {
     store: createInMemoryChatStore(),
     roomMessages: createInMemoryRoomMessageStore(),
@@ -320,9 +297,7 @@ export function timelineEvents(
   event: string,
 ): { kind: "event"; event: string; data: unknown }[] {
   return messages.flatMap((message) =>
-    message.parts.flatMap((part) =>
-      part.kind === "event" && part.event === event ? [part] : [],
-    ),
+    message.parts.flatMap((part) => (part.kind === "event" && part.event === event ? [part] : [])),
   );
 }
 

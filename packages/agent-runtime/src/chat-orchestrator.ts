@@ -57,25 +57,13 @@ import { consumerFacingInferenceText } from "@corbits/chat/consumer-inference-te
 import type { ConnectedProviderLister } from "@corbits/chat/inference-preferences";
 import { mentionedParticipants } from "@corbits/chat/mentions";
 import { domainOf, localPartOf } from "@corbits/chat/agent-address";
-import {
-  readBindingByAddressAnyTenant,
-  resolveLiveAgent,
-} from "@corbits/chat/agent-binding";
-import {
-  parseParticipants,
-  type ParticipantRecord,
-} from "@corbits/chat/participants";
+import { readBindingByAddressAnyTenant, resolveLiveAgent } from "@corbits/chat/agent-binding";
+import { parseParticipants, type ParticipantRecord } from "@corbits/chat/participants";
 import type { Part, TextPart } from "@corbits/chat/parts";
 import type { ChatPlatform } from "@corbits/chat/platform-port";
-import {
-  postRoomMessage,
-  type RoomMessageStore,
-} from "@corbits/chat/room-messages";
+import { postRoomMessage, type RoomMessageStore } from "@corbits/chat/room-messages";
 import type { AgentTurn, AgentTurnStore } from "./agent-turns";
-import {
-  mailIdFromBracketMessageId,
-  type TurnMailCorrelationStore,
-} from "./turn-mail-correlation";
+import { mailIdFromBracketMessageId, type TurnMailCorrelationStore } from "./turn-mail-correlation";
 import type { ChatStore } from "@corbits/chat/store";
 import type { ThreadStore } from "@corbits/chat/threads";
 import {
@@ -124,11 +112,7 @@ export type ChatOrchestratorDeps = {
    */
   agentTurns?: Pick<
     AgentTurnStore,
-    | "findRunningTurn"
-    | "findTurnByChildRun"
-    | "finishTurn"
-    | "listTurns"
-    | "getTurn"
+    "findRunningTurn" | "findTurnByChildRun" | "finishTurn" | "listTurns" | "getTurn"
   >;
   /**
    * Resolves a gate-blocked event's `correlationId` to the approval row the
@@ -198,10 +182,7 @@ export type ChatOrchestratorDeps = {
    * threads keeps every post on the root feed exactly as before this
    * landed.
    */
-  threads?: Pick<
-    ThreadStore,
-    "ensureRootThread" | "threadIdForMessage" | "assignMessage"
-  >;
+  threads?: Pick<ThreadStore, "ensureRootThread" | "threadIdForMessage" | "assignMessage">;
   /**
    * Durable dispatch-mail -> source-message correlation (CL-6314): what
    * lets a reply find the message that woke its turn, whether a human
@@ -244,13 +225,9 @@ function gateBlockedCorrelationId(event: unknown): string | undefined {
   ) {
     return undefined;
   }
-  const data = (
-    event as { data?: { reason?: unknown; correlationId?: unknown } }
-  ).data;
+  const data = (event as { data?: { reason?: unknown; correlationId?: unknown } }).data;
   if (data?.reason !== "approval") return undefined;
-  return typeof data.correlationId === "string"
-    ? data.correlationId
-    : undefined;
+  return typeof data.correlationId === "string" ? data.correlationId : undefined;
 }
 
 /**
@@ -266,11 +243,7 @@ function gateBlockedCorrelationId(event: unknown): string | undefined {
  * session and must not share this key. An old sidecar omits `childRunId`
  * and today's session id remains the key.
  */
-function turnKeyFor(
-  agentAddress: string,
-  sessionId: string,
-  childRunId?: string,
-): string {
+function turnKeyFor(agentAddress: string, sessionId: string, childRunId?: string): string {
   return `${agentAddress}:${childRunId ?? sessionId}`;
 }
 
@@ -286,9 +259,7 @@ function turnKeyFor(
  * turn (see `turnKeyFor` below): reset the moment a turn's
  * `connector.reply` or turn-drop notice consumes it.
  */
-export function createReplyPartsAccumulator(
-  connectorRegistry?: ConnectorRegistry,
-): {
+export function createReplyPartsAccumulator(connectorRegistry?: ConnectorRegistry): {
   onInferenceDone(turnKey: string, blocks: ReplyContentBlock[]): void;
   onToolDone(
     turnKey: string,
@@ -309,8 +280,7 @@ export function createReplyPartsAccumulator(
   return {
     onInferenceDone(turnKey, blocks) {
       const parts = partsByTurn.get(turnKey) ?? [];
-      const toolTraceIndex =
-        toolTraceIndexByTurn.get(turnKey) ?? new Map<string, number>();
+      const toolTraceIndex = toolTraceIndexByTurn.get(turnKey) ?? new Map<string, number>();
       for (const block of blocks) {
         if (block.kind === "text") {
           parts.push({ kind: "text", text: block.text });
@@ -414,9 +384,7 @@ function failedTurnNoticeParts(errorMessage: string): TextPart[] {
   ];
 }
 
-function rewriteToolsUnsupportedReply(
-  parts: readonly Part[],
-): readonly Part[] | undefined {
+function rewriteToolsUnsupportedReply(parts: readonly Part[]): readonly Part[] | undefined {
   if (!isToolsUnsupportedInferenceText(flattenReplyText(parts))) {
     return undefined;
   }
@@ -527,21 +495,14 @@ type OpenBracket = {
  * unthreaded, exactly as before this landed.
  */
 async function threadForSourceMessage(
-  threads:
-    Pick<ThreadStore, "ensureRootThread" | "threadIdForMessage"> | undefined,
+  threads: Pick<ThreadStore, "ensureRootThread" | "threadIdForMessage"> | undefined,
   tenantId: string,
   workbenchId: string,
   sourceMessageId: string,
 ): Promise<string | undefined> {
   if (threads === undefined) return undefined;
   const root = await threads.ensureRootThread(tenantId, workbenchId);
-  return (
-    (await threads.threadIdForMessage(
-      tenantId,
-      workbenchId,
-      sourceMessageId,
-    )) ?? root.id
-  );
+  return (await threads.threadIdForMessage(tenantId, workbenchId, sourceMessageId)) ?? root.id;
 }
 
 /**
@@ -566,12 +527,7 @@ async function threadForBracketMail(
   if (source === undefined || source.workbenchId !== workbenchId) {
     return undefined;
   }
-  return threadForSourceMessage(
-    deps.threads,
-    tenantId,
-    workbenchId,
-    source.sourceMessageId,
-  );
+  return threadForSourceMessage(deps.threads, tenantId, workbenchId, source.sourceMessageId);
 }
 
 /**
@@ -598,29 +554,16 @@ async function threadForTurnPost(
   turn: Pick<AgentTurn, "requestMessageIds"> | undefined,
 ): Promise<string | undefined> {
   if (mailId !== undefined) {
-    const fromMail = await threadForBracketMail(
-      deps,
-      tenantId,
-      workbenchId,
-      mailId,
-    );
+    const fromMail = await threadForBracketMail(deps, tenantId, workbenchId, mailId);
     if (fromMail !== undefined) return fromMail;
   }
-  const sourceMessageId =
-    turn?.requestMessageIds[turn.requestMessageIds.length - 1];
+  const sourceMessageId = turn?.requestMessageIds[turn.requestMessageIds.length - 1];
   if (sourceMessageId !== undefined) {
-    return threadForSourceMessage(
-      deps.threads,
-      tenantId,
-      workbenchId,
-      sourceMessageId,
-    );
+    return threadForSourceMessage(deps.threads, tenantId, workbenchId, sourceMessageId);
   }
   if (deps.threads === undefined) return undefined;
   reportError(
-    new Error(
-      `${agentAddress}'s reply names no parent message — appending it to the root thread`,
-    ),
+    new Error(`${agentAddress}'s reply names no parent message — appending it to the root thread`),
     {
       operation: "chat.threadForTurnPost",
       tenantId,
@@ -752,8 +695,7 @@ async function latestTurnForAgent(
 }
 
 async function runningTurnForReply(
-  agentTurns:
-    Pick<AgentTurnStore, "findRunningTurn" | "findTurnByChildRun"> | undefined,
+  agentTurns: Pick<AgentTurnStore, "findRunningTurn" | "findTurnByChildRun"> | undefined,
   input: {
     readonly tenantId: string;
     readonly workbenchId: string;
@@ -859,18 +801,15 @@ async function postReply(
   }
 
   if (targetIds.length === 0) {
-    reportError(
-      new Error(`dropping ${agentAddress}'s reply: no originating workbench`),
-      {
-        operation: "chat.postReply",
-        tenantId: resolved.tenantId,
-        agentId: agentAddress,
-        extra: {
-          workbenchIds: resolved.workbenchIds,
-          runningWorkbenchIds: runningIds,
-        },
+    reportError(new Error(`dropping ${agentAddress}'s reply: no originating workbench`), {
+      operation: "chat.postReply",
+      tenantId: resolved.tenantId,
+      agentId: agentAddress,
+      extra: {
+        workbenchIds: resolved.workbenchIds,
+        runningWorkbenchIds: runningIds,
       },
-    );
+    });
     log.error`chat orchestrator: dropping ${agentAddress}'s reply — no originating workbench among ${String(resolved.workbenchIds.length)} membership(s) (${String(runningIds.length)} running)`;
     return;
   }
@@ -921,8 +860,7 @@ async function postReply(
     // teammates, they must receive it exactly as they would a human's
     // @mention — otherwise a handoff only reaches the human side of
     // the workbench and the mentioned specialist never wakes up.
-    const participants =
-      resolved.participantsByWorkbenchId.get(workbenchId) ?? [];
+    const participants = resolved.participantsByWorkbenchId.get(workbenchId) ?? [];
     const mentioned = mentionedParticipants(parts, participants).filter(
       (address) => localPartOf(address) !== localPartOf(resolved.roomAddress),
     );
@@ -935,9 +873,7 @@ async function postReply(
       const domain = domainOf(recipient);
       if (domain === undefined) {
         reportError(
-          new Error(
-            `cannot delegate to "${recipient}": address carries no mail domain`,
-          ),
+          new Error(`cannot delegate to "${recipient}": address carries no mail domain`),
           {
             operation: "chat.postReply.delegate",
             tenantId: resolved.tenantId,
@@ -1130,12 +1066,7 @@ async function postFinalizedTurnArtifacts(
     if (!claimed) continue;
 
     try {
-      const threadId = await threadForFinalizedTurn(
-        deps,
-        resolved.tenantId,
-        workbenchId,
-        turnId,
-      );
+      const threadId = await threadForFinalizedTurn(deps, resolved.tenantId, workbenchId, turnId);
       const posted = await postRoomMessage(deps, {
         tenantId: resolved.tenantId,
         workbenchId,
@@ -1178,15 +1109,9 @@ async function threadForFinalizedTurn(
   if (turn === undefined || turn.workbenchId !== workbenchId) {
     return undefined;
   }
-  const sourceMessageId =
-    turn.requestMessageIds[turn.requestMessageIds.length - 1];
+  const sourceMessageId = turn.requestMessageIds[turn.requestMessageIds.length - 1];
   if (sourceMessageId === undefined) return undefined;
-  return threadForSourceMessage(
-    deps.threads,
-    tenantId,
-    workbenchId,
-    sourceMessageId,
-  );
+  return threadForSourceMessage(deps.threads, tenantId, workbenchId, sourceMessageId);
 }
 
 /**
@@ -1416,33 +1341,25 @@ export function createArtifactDeliveryHandler(deps: ChatOrchestratorDeps): (
   },
 ) => void {
   return (agentAddress, turn) => {
-    void postFinalizedTurnArtifacts(
-      deps,
-      agentAddress,
-      turn.turnId,
-      turn.toolCalls,
-    ).catch((cause: unknown) => {
-      log.error`chat orchestrator: failed to post ${agentAddress}'s finalized-turn artifacts: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`;
-    });
-    void postFinalizedTurnMemoryEntries(
-      deps,
-      agentAddress,
-      turn.turnId,
-      turn.toolCalls,
-    ).catch((cause: unknown) => {
-      log.error`chat orchestrator: failed to record ${agentAddress}'s finalized-turn memory entries: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`;
-    });
-    void postProviderHealthSignal(deps, agentAddress, turn.errors).catch(
+    void postFinalizedTurnArtifacts(deps, agentAddress, turn.turnId, turn.toolCalls).catch(
       (cause: unknown) => {
-        log.error`chat orchestrator: failed to report ${agentAddress}'s provider health signal: ${
+        log.error`chat orchestrator: failed to post ${agentAddress}'s finalized-turn artifacts: ${
           cause instanceof Error ? cause.message : String(cause)
         }`;
       },
     );
+    void postFinalizedTurnMemoryEntries(deps, agentAddress, turn.turnId, turn.toolCalls).catch(
+      (cause: unknown) => {
+        log.error`chat orchestrator: failed to record ${agentAddress}'s finalized-turn memory entries: ${
+          cause instanceof Error ? cause.message : String(cause)
+        }`;
+      },
+    );
+    void postProviderHealthSignal(deps, agentAddress, turn.errors).catch((cause: unknown) => {
+      log.error`chat orchestrator: failed to report ${agentAddress}'s provider health signal: ${
+        cause instanceof Error ? cause.message : String(cause)
+      }`;
+    });
   };
 }
 
@@ -1575,15 +1492,13 @@ export function createChatOrchestrator(
             cause instanceof Error ? cause.message : String(cause)
           }`;
         });
-        void postDailyTranscriptDigest(
-          deps,
-          agentAddress,
-          flattenReplyText(parts),
-        ).catch((cause: unknown) => {
-          log.error`chat orchestrator: failed to record ${agentAddress}'s daily transcript digest: ${
-            cause instanceof Error ? cause.message : String(cause)
-          }`;
-        });
+        void postDailyTranscriptDigest(deps, agentAddress, flattenReplyText(parts)).catch(
+          (cause: unknown) => {
+            log.error`chat orchestrator: failed to record ${agentAddress}'s daily transcript digest: ${
+              cause instanceof Error ? cause.message : String(cause)
+            }`;
+          },
+        );
         return;
       }
 
@@ -1623,9 +1538,7 @@ export function createChatOrchestrator(
           openBrackets.delete(turnKey);
         }
         const endedMailId =
-          bracket !== undefined
-            ? mailIdFromBracketMessageId(bracket.messageId)
-            : undefined;
+          bracket !== undefined ? mailIdFromBracketMessageId(bracket.messageId) : undefined;
 
         const hadReply = repliedTurns.delete(turnKey);
         if (!hadReply) {

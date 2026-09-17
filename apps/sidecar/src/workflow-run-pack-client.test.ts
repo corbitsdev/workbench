@@ -81,15 +81,12 @@ function createRecordingUnderlyingRepoStore(): {
       packedTipCommits.push({ repoId, ref, commitSha });
     },
   };
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- in-test stub; the unused RepoStore methods are guarded by the Proxy below
   const store = new Proxy(stub as RepoStore, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
       if (value !== undefined) return value;
       return () => {
-        throw new Error(
-          `stub RepoStore: ${String(prop)} not implemented for this test`,
-        );
+        throw new Error(`stub RepoStore: ${String(prop)} not implemented for this test`);
       };
     },
   });
@@ -98,8 +95,7 @@ function createRecordingUnderlyingRepoStore(): {
 
 describe("createWorkflowRunPackClient", () => {
   test("push builds a pack under the supervisor principal, forwards it to the hub link, and commits the packed tip on the ack", async () => {
-    const { store, packs, packedTipCommits } =
-      createRecordingUnderlyingRepoStore();
+    const { store, packs, packedTipCommits } = createRecordingUnderlyingRepoStore();
     const sent: {
       agentAddress: string;
       repoId: RepoId;
@@ -142,8 +138,7 @@ describe("createWorkflowRunPackClient", () => {
     const client = createWorkflowRunPackClient({
       substrate: store,
       hubLink: {
-        pushWorkflowRunPack: () =>
-          Promise.reject(new Error("transfer cancelled: Connection lost")),
+        pushWorkflowRunPack: () => Promise.reject(new Error("transfer cancelled: Connection lost")),
       },
     });
 
@@ -248,16 +243,11 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
     });
 
     const repoId: RepoId = { kind: "workflow-run", id: "dep-pipeline" };
-    await facade.writeTreePreservingPrefix(
-      { kind: "supervisor" },
-      repoId,
-      "refs/heads/main",
-      {
-        preservePrefix: "runs/r-1/events/",
-        merge: async () => ({ "runs/r-1/events/0.json": "{}" }),
-        message: "first",
-      },
-    );
+    await facade.writeTreePreservingPrefix({ kind: "supervisor" }, repoId, "refs/heads/main", {
+      preservePrefix: "runs/r-1/events/",
+      merge: async () => ({ "runs/r-1/events/0.json": "{}" }),
+      message: "first",
+    });
     // Yield to the microtask queue so the push's `enter` log lands.
     // With a serialised wrap the write would not resolve until
     // `exit`; pipelining is the property under test, so we assert
@@ -307,18 +297,13 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
     // slot's `dirty` flag, but only one coalesced follow-up push
     // runs after the first exits.
     for (let i = 0; i < 5; i += 1) {
-      await facade.writeTreePreservingPrefix(
-        { kind: "supervisor" },
-        repoId,
-        "refs/heads/main",
-        {
-          preservePrefix: "runs/r-1/events/",
-          merge: async () => ({
-            [`runs/r-1/events/${String(i)}.json`]: "{}",
-          }),
-          message: `write-${String(i)}`,
-        },
-      );
+      await facade.writeTreePreservingPrefix({ kind: "supervisor" }, repoId, "refs/heads/main", {
+        preservePrefix: "runs/r-1/events/",
+        merge: async () => ({
+          [`runs/r-1/events/${String(i)}.json`]: "{}",
+        }),
+        message: `write-${String(i)}`,
+      });
     }
     expect(pushCount).toBe(1);
     resolveFirst();
@@ -353,16 +338,11 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
       registry,
     });
     const repoId: RepoId = { kind: "workflow-run", id: "dep-fail" };
-    await facade.writeTreePreservingPrefix(
-      { kind: "supervisor" },
-      repoId,
-      "refs/heads/main",
-      {
-        preservePrefix: "runs/r/events/",
-        merge: async () => ({ "runs/r/events/0.json": "{}" }),
-        message: "first",
-      },
-    );
+    await facade.writeTreePreservingPrefix({ kind: "supervisor" }, repoId, "refs/heads/main", {
+      preservePrefix: "runs/r/events/",
+      merge: async () => ({ "runs/r/events/0.json": "{}" }),
+      message: "first",
+    });
     // Wait for the failed push to settle on the chain without
     // consuming the latched error; flush would also surface the
     // error, but the contract being pinned here is that the NEXT
@@ -370,16 +350,11 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
     // code does not call flush between writes.
     await new Promise((resolve) => setTimeout(resolve, 10));
     await expect(
-      facade.writeTreePreservingPrefix(
-        { kind: "supervisor" },
-        repoId,
-        "refs/heads/main",
-        {
-          preservePrefix: "runs/r/events/",
-          merge: async () => ({ "runs/r/events/1.json": "{}" }),
-          message: "second",
-        },
-      ),
+      facade.writeTreePreservingPrefix({ kind: "supervisor" }, repoId, "refs/heads/main", {
+        preservePrefix: "runs/r/events/",
+        merge: async () => ({ "runs/r/events/1.json": "{}" }),
+        message: "second",
+      }),
     ).rejects.toThrow(/non_fast_forward/);
   });
 
@@ -475,16 +450,11 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
     const repoId: RepoId = { kind: "workflow-run", id: "dep-blocked" };
 
     facade.markAddressUnroutable("agent-blocked@example.com");
-    await facade.writeTreePreservingPrefix(
-      { kind: "supervisor" },
-      repoId,
-      "refs/heads/main",
-      {
-        preservePrefix: "runs/r/events/",
-        merge: async () => ({ "runs/r/events/0.json": "{}" }),
-        message: "append while blocked",
-      },
-    );
+    await facade.writeTreePreservingPrefix({ kind: "supervisor" }, repoId, "refs/heads/main", {
+      preservePrefix: "runs/r/events/",
+      merge: async () => ({ "runs/r/events/0.json": "{}" }),
+      message: "append while blocked",
+    });
     // Yield: a wire push would have run by now if the block were not held.
     await new Promise((r) => setTimeout(r, 0));
     expect(pushCount).toBe(0);
@@ -520,16 +490,11 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
     });
     const repoId: RepoId = { kind: "workflow-run", id: "dep-cancelled" };
 
-    await facade.writeTreePreservingPrefix(
-      { kind: "supervisor" },
-      repoId,
-      "refs/heads/main",
-      {
-        preservePrefix: "runs/r/events/",
-        merge: async () => ({ "runs/r/events/0.json": "{}" }),
-        message: "single batch",
-      },
-    );
+    await facade.writeTreePreservingPrefix({ kind: "supervisor" }, repoId, "refs/heads/main", {
+      preservePrefix: "runs/r/events/",
+      merge: async () => ({ "runs/r/events/0.json": "{}" }),
+      message: "single batch",
+    });
     // Let the first push settle and latch "Connection lost" without a
     // second write to re-arm the loop.
     await new Promise((r) => setTimeout(r, 10));
@@ -564,16 +529,11 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
     });
     const repoId: RepoId = { kind: "workflow-run", id: "dep-clean" };
 
-    await facade.writeTreePreservingPrefix(
-      { kind: "supervisor" },
-      repoId,
-      "refs/heads/main",
-      {
-        preservePrefix: "runs/r/events/",
-        merge: async () => ({ "runs/r/events/0.json": "{}" }),
-        message: "append",
-      },
-    );
+    await facade.writeTreePreservingPrefix({ kind: "supervisor" }, repoId, "refs/heads/main", {
+      preservePrefix: "runs/r/events/",
+      merge: async () => ({ "runs/r/events/0.json": "{}" }),
+      message: "append",
+    });
     await facade.flushWorkflowRunPushes(repoId, "refs/heads/main");
     expect(pushCount).toBe(1);
 
@@ -586,9 +546,7 @@ describe("createWorkflowRunPackPushingRepoStore", () => {
 describe("createMultistepMailRouter", () => {
   test("tryRoute returns null when no handler is registered", () => {
     const router = createMultistepMailRouter();
-    expect(
-      router.tryRoute("dep@integration.interchange", new Uint8Array([1])),
-    ).toBeNull();
+    expect(router.tryRoute("dep@integration.interchange", new Uint8Array([1]))).toBeNull();
   });
 
   test("a registered handler receives the inbound message and tryRoute returns its settlement", async () => {
@@ -610,10 +568,7 @@ describe("createMultistepMailRouter", () => {
     router.register("dep@integration.interchange", async () => {
       throw new Error("durable write failed");
     });
-    const durable = router.tryRoute(
-      "dep@integration.interchange",
-      new Uint8Array([1]),
-    );
+    const durable = router.tryRoute("dep@integration.interchange", new Uint8Array([1]));
     expect(durable).not.toBeNull();
     await expect(durable).rejects.toThrow(/durable write failed/);
   });
@@ -624,9 +579,7 @@ describe("createMultistepMailRouter", () => {
     router.register("dep-a@integration.interchange", async (msg) => {
       received.push(msg);
     });
-    expect(
-      router.tryRoute("dep-b@integration.interchange", new Uint8Array([9])),
-    ).toBeNull();
+    expect(router.tryRoute("dep-b@integration.interchange", new Uint8Array([9]))).toBeNull();
     expect(received).toHaveLength(0);
   });
 
@@ -637,9 +590,7 @@ describe("createMultistepMailRouter", () => {
       received.push(msg);
     });
     router.unregister("dep@integration.interchange");
-    expect(
-      router.tryRoute("dep@integration.interchange", new Uint8Array([1])),
-    ).toBeNull();
+    expect(router.tryRoute("dep@integration.interchange", new Uint8Array([1]))).toBeNull();
     expect(received).toHaveLength(0);
   });
 
@@ -737,9 +688,7 @@ describe("createMultistepCredentialsRouter", () => {
     router.register("dep@integration.interchange", async () => {
       throw new Error("deliverCredentials failed in a recycling phase");
     });
-    await expect(router.tryRoute(frame)).rejects.toThrow(
-      /deliverCredentials failed/,
-    );
+    await expect(router.tryRoute(frame)).rejects.toThrow(/deliverCredentials failed/);
   });
 });
 
@@ -765,8 +714,7 @@ describe("createMultistepSourcesRouter", () => {
 
   test("a registered handler receives the rotation and tryRoute returns true", async () => {
     const router = createMultistepSourcesRouter();
-    const received: { sources: InferenceSource[]; defaultSource: string }[] =
-      [];
+    const received: { sources: InferenceSource[]; defaultSource: string }[] = [];
     router.register("dep@integration.interchange", async (args) => {
       received.push(args);
     });
@@ -802,9 +750,9 @@ describe("createMultistepSourcesRouter", () => {
     });
     // Duplicate ids would crash the child's control-channel receiver on
     // its narrow, so the router rejects before dispatch.
-    await expect(
-      router.tryRoute({ ...frame, sources: [source, { ...source }] }),
-    ).rejects.toThrow(/unique ids/);
+    await expect(router.tryRoute({ ...frame, sources: [source, { ...source }] })).rejects.toThrow(
+      /unique ids/,
+    );
     expect(called).toBe(false);
   });
 

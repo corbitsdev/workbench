@@ -73,9 +73,7 @@ export interface WorkbenchLauncher {
    * "invite agent" affordance can offer — never including a workbench's
    * own host definition.
    */
-  listInvitableDefinitions(
-    tenantId: string,
-  ): Promise<readonly InvitableDefinition[]>;
+  listInvitableDefinitions(tenantId: string): Promise<readonly InvitableDefinition[]>;
 
   /**
    * Resolves an already-joined participant's address back to the
@@ -110,9 +108,7 @@ export interface WorkbenchLauncher {
    */
   resolveDefinitionNameSource(
     definitionId: string,
-  ): Promise<
-    { readonly name: string; readonly description?: string } | undefined
-  >;
+  ): Promise<{ readonly name: string; readonly description?: string } | undefined>;
 
   /**
    * Recomputes an already-invited instance's folded launch body from

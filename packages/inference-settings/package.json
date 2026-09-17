@@ -1,8 +1,8 @@
 {
   "name": "@corbits/inference-settings",
+  "version": "0.0.1",
   "private": true,
   "description": "Per-workbench inference settings: the effective ordered model/provider catalog with inherited-vs-set-here provenance, and the native catalog writes (priority reorder, restrict, bring-your-own-key shadowing) a workbench tenant can make against it.",
-  "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
@@ -15,8 +15,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/types": "workspace:*",
     "@corbits/connections": "workspace:*",
+    "@intx/types": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {

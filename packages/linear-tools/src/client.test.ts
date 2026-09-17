@@ -37,9 +37,7 @@ test("posts the api key as the authorization header", async () => {
   const captured: { auth: string | null } = { auth: null };
   const fetchImpl = (async (_input: URL | string, init?: RequestInit) => {
     captured.auth =
-      (init?.headers as Record<string, string> | undefined)?.[
-        "authorization"
-      ] ?? null;
+      (init?.headers as Record<string, string> | undefined)?.["authorization"] ?? null;
     return new Response(JSON.stringify({ data: { issues: { nodes: [] } } }), {
       status: 200,
     });
@@ -50,34 +48,29 @@ test("posts the api key as the authorization header", async () => {
 });
 
 test("throws on a non-ok HTTP response", async () => {
-  const fetchImpl = (async () =>
-    new Response("nope", { status: 401 })) as unknown as typeof fetch;
+  const fetchImpl = (async () => new Response("nope", { status: 401 })) as unknown as typeof fetch;
 
-  await expect(
-    listRecentLinearIssues({ apiKey: "bad", fetchImpl }),
-  ).rejects.toThrow(/401/);
+  await expect(listRecentLinearIssues({ apiKey: "bad", fetchImpl })).rejects.toThrow(/401/);
 });
 
 test("throws on a GraphQL error envelope", async () => {
   const fetchImpl = (async () =>
-    new Response(
-      JSON.stringify({ errors: [{ message: "not authenticated" }] }),
-      { status: 200 },
-    )) as unknown as typeof fetch;
+    new Response(JSON.stringify({ errors: [{ message: "not authenticated" }] }), {
+      status: 200,
+    })) as unknown as typeof fetch;
 
-  await expect(
-    listRecentLinearIssues({ apiKey: "bad", fetchImpl }),
-  ).rejects.toThrow(/GraphQL errors/);
+  await expect(listRecentLinearIssues({ apiKey: "bad", fetchImpl })).rejects.toThrow(
+    /GraphQL errors/,
+  );
 });
 
 test("throws when a node does not match the expected issue shape", async () => {
   const fetchImpl = (async () =>
-    new Response(
-      JSON.stringify({ data: { issues: { nodes: [{ id: "issue_1" }] } } }),
-      { status: 200 },
-    )) as unknown as typeof fetch;
+    new Response(JSON.stringify({ data: { issues: { nodes: [{ id: "issue_1" }] } } }), {
+      status: 200,
+    })) as unknown as typeof fetch;
 
-  await expect(
-    listRecentLinearIssues({ apiKey: "test-key", fetchImpl }),
-  ).rejects.toThrow(/did not match the expected shape/);
+  await expect(listRecentLinearIssues({ apiKey: "test-key", fetchImpl })).rejects.toThrow(
+    /did not match the expected shape/,
+  );
 });

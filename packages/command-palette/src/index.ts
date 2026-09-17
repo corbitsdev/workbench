@@ -29,11 +29,7 @@ export type {
 } from "./use-entity-search";
 
 export { isBareScopeQuery, parsePaletteQuery, PALETTE_SCOPES } from "./scope";
-export type {
-  ParsedPaletteQuery,
-  PaletteScope,
-  PaletteScopeKind,
-} from "./scope";
+export type { ParsedPaletteQuery, PaletteScope, PaletteScopeKind } from "./scope";
 
 export { buildCommandPaletteGroups } from "./command-groups";
 export type {
@@ -46,9 +42,5 @@ export type {
 export { detailPath } from "./detail-paths";
 export type { DetailAddressable } from "./detail-paths";
 
-export {
-  addRecentEntry,
-  createRecentsStore,
-  removeRecentEntry,
-} from "./recents";
+export { addRecentEntry, createRecentsStore, removeRecentEntry } from "./recents";
 export type { RecentEntry, RecentsStorage, RecentsStore } from "./recents";

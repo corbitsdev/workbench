@@ -35,22 +35,15 @@ afterEach(() => {
 describe("WebhookSecretPanel", () => {
   test("shows the hook URL, the secret, and a shown-once warning", () => {
     mounted = mount(
-      <WebhookSecretPanel
-        url="https://bench.example.com/api/webhooks/wht_1"
-        secret="sec_abc123"
-      />,
+      <WebhookSecretPanel url="https://bench.example.com/api/webhooks/wht_1" secret="sec_abc123" />,
     );
-    expect(document.body.textContent).toContain(
-      "https://bench.example.com/api/webhooks/wht_1",
-    );
+    expect(document.body.textContent).toContain("https://bench.example.com/api/webhooks/wht_1");
     expect(document.body.textContent).toContain("sec_abc123");
     expect(document.body.textContent).toContain("shown once");
   });
 
   test("omits the sample payload block when none is given", () => {
-    mounted = mount(
-      <WebhookSecretPanel url="https://x/api/webhooks/wht_1" secret="s" />,
-    );
+    mounted = mount(<WebhookSecretPanel url="https://x/api/webhooks/wht_1" secret="s" />);
     expect(document.body.textContent).not.toContain("Example payload");
   });
 
@@ -79,14 +72,9 @@ describe("WebhookSecretPanel", () => {
       },
     });
     try {
-      mounted = mount(
-        <WebhookSecretPanel
-          url="https://x/api/webhooks/wht_1"
-          secret="sec_xyz"
-        />,
-      );
-      const copyButtons = [...document.body.querySelectorAll("button")].filter(
-        (button) => button.textContent?.includes("Copy"),
+      mounted = mount(<WebhookSecretPanel url="https://x/api/webhooks/wht_1" secret="sec_xyz" />);
+      const copyButtons = [...document.body.querySelectorAll("button")].filter((button) =>
+        button.textContent?.includes("Copy"),
       );
       expect(copyButtons.length).toBe(2);
       act(() => copyButtons[0]?.click());

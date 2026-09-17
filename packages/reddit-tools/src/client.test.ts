@@ -28,10 +28,7 @@ test("searchReddit returns parsed posts, tolerating the epoch created_utc shape"
       status: 200,
     })) as unknown as typeof fetch;
 
-  const posts = await searchReddit(
-    { apiKey: "test-key", fetchImpl },
-    { query: "workflow tool" },
-  );
+  const posts = await searchReddit({ apiKey: "test-key", fetchImpl }, { query: "workflow tool" });
   expect(posts).toEqual([
     {
       title: "Anyone using a tool for this?",
@@ -71,9 +68,7 @@ test("searchSubreddit returns parsed posts, tolerating the ISO created_at shape"
 test("posts the api key as the x-api-key header", async () => {
   const captured: { key: string | null } = { key: null };
   const fetchImpl = (async (_input: URL | string, init?: RequestInit) => {
-    captured.key =
-      (init?.headers as Record<string, string> | undefined)?.["x-api-key"] ??
-      null;
+    captured.key = (init?.headers as Record<string, string> | undefined)?.["x-api-key"] ?? null;
     return new Response(JSON.stringify({ posts: [] }), { status: 200 });
   }) as unknown as typeof fetch;
 
@@ -82,12 +77,11 @@ test("posts the api key as the x-api-key header", async () => {
 });
 
 test("throws on a non-ok HTTP response", async () => {
-  const fetchImpl = (async () =>
-    new Response("nope", { status: 401 })) as unknown as typeof fetch;
+  const fetchImpl = (async () => new Response("nope", { status: 401 })) as unknown as typeof fetch;
 
-  await expect(
-    searchReddit({ apiKey: "bad", fetchImpl }, { query: "anything" }),
-  ).rejects.toThrow(/401/);
+  await expect(searchReddit({ apiKey: "bad", fetchImpl }, { query: "anything" })).rejects.toThrow(
+    /401/,
+  );
 });
 
 test("drops posts that do not match the expected shape rather than throwing", async () => {
@@ -96,10 +90,7 @@ test("drops posts that do not match the expected shape rather than throwing", as
       status: 200,
     })) as unknown as typeof fetch;
 
-  const posts = await searchReddit(
-    { apiKey: "test-key", fetchImpl },
-    { query: "anything" },
-  );
+  const posts = await searchReddit({ apiKey: "test-key", fetchImpl }, { query: "anything" });
   expect(posts).toEqual([]);
 });
 

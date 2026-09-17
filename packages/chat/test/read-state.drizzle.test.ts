@@ -31,9 +31,7 @@ const WORKBENCH = "run_workbench1";
 const PRINCIPAL = "prn_alice";
 
 describeIfDb("createDrizzleChatStore: putReadState monotonicity", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchTarget = new URL(scratchUrl);
   const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
 
@@ -89,9 +87,7 @@ describeIfDb("createDrizzleChatStore: putReadState monotonicity", () => {
       });
 
       expect(result.lastSeenId).toBe("mail_2");
-      expect(result.lastSeenCreatedAt).toEqual(
-        new Date("2026-01-02T00:00:00.000Z"),
-      );
+      expect(result.lastSeenCreatedAt).toEqual(new Date("2026-01-02T00:00:00.000Z"));
 
       const stored = await store.getReadState(TENANT, WORKBENCH, PRINCIPAL);
       expect(stored?.lastSeenId).toBe("mail_2");

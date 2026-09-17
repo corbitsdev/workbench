@@ -5,10 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { createChatRoutes } from "../src/routes";
 import { decodeParts } from "../src/codec";
-import {
-  benchContextWindowOf,
-  resolveContextWindow,
-} from "../src/workbench-settings";
+import { benchContextWindowOf, resolveContextWindow } from "../src/workbench-settings";
 import {
   buildDeps,
   createWorkbench,
@@ -169,20 +166,14 @@ describe("chat/contextWindow", () => {
       kind: "workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ "chat/contextWindow": 5 }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": 5 }),
+    });
     expect(response.status).toBe(200);
 
-    const stored = await deps.store.getWorkbenchSettings(
-      TENANT.id,
-      workbench.id,
-    );
+    const stored = await deps.store.getWorkbenchSettings(TENANT.id, workbench.id);
     expect(stored?.settings["chat/contextWindow"]).toBe(5);
   });
 
@@ -193,14 +184,11 @@ describe("chat/contextWindow", () => {
       kind: "workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ "chat/contextWindow": "lots" }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": "lots" }),
+    });
     expect(response.status).toBe(400);
   });
 });
@@ -280,17 +268,14 @@ describe("PATCH /workbenches/:id/settings", () => {
       kind: "workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          "chat/pinned": false,
-          "acme-widget/color": "blue",
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        "chat/pinned": false,
+        "acme-widget/color": "blue",
+      }),
+    });
 
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
@@ -305,9 +290,7 @@ describe("PATCH /workbenches/:id/settings", () => {
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     expect(platform.sentMail).toHaveLength(0);
     const timeline = await timelineOf(deps, workbench.id);
-    expect(timelineEvents(timeline, "workbench.settings-changed")).toHaveLength(
-      1,
-    );
+    expect(timelineEvents(timeline, "workbench.settings-changed")).toHaveLength(1);
     expect(timeline[0]?.senderPrincipalId).toBe("prn_alice");
   });
 
@@ -318,14 +301,11 @@ describe("PATCH /workbenches/:id/settings", () => {
       kind: "workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ "chat/nonexistent-field": true }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/nonexistent-field": true }),
+    });
 
     expect(response.status).toBe(400);
   });
@@ -337,14 +317,11 @@ describe("PATCH /workbenches/:id/settings", () => {
       kind: "workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ "chat/pinned": "not-a-boolean" }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/pinned": "not-a-boolean" }),
+    });
 
     expect(response.status).toBe(400);
   });
@@ -359,18 +336,13 @@ describe("PATCH /workbenches/:id/settings", () => {
       definitionId: "wfd_echo",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          "chat/participants": [
-            { address: "ins_extra@acme.example", handle: "extra" },
-          ],
-        }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        "chat/participants": [{ address: "ins_extra@acme.example", handle: "extra" }],
+      }),
+    });
 
     expect(response.status).toBe(409);
     const body = (await response.json()) as { error: { code: string } };
@@ -384,24 +356,18 @@ describe("PATCH /workbenches/:id/settings", () => {
       kind: "workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ "chat/purpose": "Launch planning" }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/purpose": "Launch planning" }),
+    });
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       settings: Record<string, unknown>;
     };
     expect(body.settings["chat/purpose"]).toBe("Launch planning");
 
-    const stored = await deps.store.getWorkbenchSettings(
-      TENANT.id,
-      workbench.id,
-    );
+    const stored = await deps.store.getWorkbenchSettings(TENANT.id, workbench.id);
     expect(stored?.settings["chat/purpose"]).toBe("Launch planning");
   });
 
@@ -412,14 +378,11 @@ describe("PATCH /workbenches/:id/settings", () => {
       kind: "workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ "chat/purpose": 123 }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/purpose": 123 }),
+    });
     expect(response.status).toBe(400);
   });
 
@@ -444,14 +407,11 @@ describe("PATCH /workbenches/:id/settings", () => {
       kind: "workbench",
     });
 
-    const response = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ "chat/contextWindow": 7 }),
-      },
-    );
+    const response = await app.request(`/workbenches/${workbench.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": 7 }),
+    });
     const body = (await response.json()) as {
       contextWindow: { value: number; source: string };
     };
@@ -471,27 +431,21 @@ describe("PATCH /workbenches/:id/settings", () => {
       body: JSON.stringify({ "chat/contextWindow": 7 }),
     });
 
-    const omittedResponse = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ "chat/pinned": true }),
-      },
-    );
+    const omittedResponse = await app.request(`/workbenches/${workbench.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/pinned": true }),
+    });
     const omittedBody = (await omittedResponse.json()) as {
       contextWindow: { value: number; source: string };
     };
     expect(omittedBody.contextWindow).toEqual({ value: 7, source: "override" });
 
-    const clearedResponse = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ "chat/contextWindow": null }),
-      },
-    );
+    const clearedResponse = await app.request(`/workbenches/${workbench.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": null }),
+    });
     const clearedBody = (await clearedResponse.json()) as {
       contextWindow: { value: number; source: string };
       settings: Record<string, unknown>;
@@ -507,10 +461,7 @@ describe("PATCH /workbenches/:id/settings", () => {
       kind: "workbench",
     });
 
-    const before = await deps.store.getWorkbenchSettings(
-      TENANT.id,
-      workbench.id,
-    );
+    const before = await deps.store.getWorkbenchSettings(TENANT.id, workbench.id);
     const existingParticipants = before?.settings["chat/participants"];
     const extra = {
       address: "ins_extra@acme.example",
@@ -528,9 +479,7 @@ describe("PATCH /workbenches/:id/settings", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           "chat/participants": [
-            ...(Array.isArray(existingParticipants)
-              ? existingParticipants
-              : []),
+            ...(Array.isArray(existingParticipants) ? existingParticipants : []),
             extra,
           ],
         }),
@@ -540,10 +489,7 @@ describe("PATCH /workbenches/:id/settings", () => {
     expect(pinnedResponse.status).toBe(200);
     expect(participantsResponse.status).toBe(200);
 
-    const stored = await deps.store.getWorkbenchSettings(
-      TENANT.id,
-      workbench.id,
-    );
+    const stored = await deps.store.getWorkbenchSettings(TENANT.id, workbench.id);
     expect(stored?.settings["chat/pinned"]).toBe(true);
     const participants = stored?.settings["chat/participants"];
     expect(Array.isArray(participants)).toBe(true);
@@ -577,9 +523,7 @@ describe("GET/PATCH /bench/settings", () => {
     const { body: workbench } = await createWorkbench(app, {
       kind: "workbench",
     });
-    const workbenchResponse = await app.request(
-      `/workbenches/${workbench.id}/settings`,
-    );
+    const workbenchResponse = await app.request(`/workbenches/${workbench.id}/settings`);
     const workbenchBody = (await workbenchResponse.json()) as {
       contextWindow: { value: number; source: string };
     };

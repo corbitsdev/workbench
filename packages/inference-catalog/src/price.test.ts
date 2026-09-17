@@ -1,12 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { pricing } from "../test/fixtures";
-import {
-  groupPricingByOffering,
-  perMTok,
-  priceForOffering,
-  referenceCostUsd,
-} from "./price";
+import { groupPricingByOffering, perMTok, priceForOffering, referenceCostUsd } from "./price";
 
 describe("perMTok", () => {
   test("scales a per-token decimal string to USD per million tokens", () => {
@@ -80,9 +75,7 @@ describe("referenceCostUsd", () => {
       [pricing({ offeringId: "o1", inputUsdPerMTok: 3, outputUsdPerMTok: 15 })],
       "USD",
     );
-    expect(
-      referenceCostUsd(price, { inputMTok: 2, outputMTok: 0.5 }),
-    ).toBeCloseTo(13.5, 6);
+    expect(referenceCostUsd(price, { inputMTok: 2, outputMTok: 0.5 })).toBeCloseTo(13.5, 6);
   });
 
   test("an unknown price has no reference cost", () => {

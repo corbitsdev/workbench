@@ -20,8 +20,7 @@ export const SETTINGS_STRINGS = {
   notificationsApprovals: "Approvals",
   notificationsRoutineFail: "Failed deliveries",
   notificationsSaveAction: "Save",
-  notificationsSaveHonesty:
-    "Draft only — notification choices aren't saved yet.",
+  notificationsSaveHonesty: "Draft only — notification choices aren't saved yet.",
 
   settingsSavedToast: "Settings saved",
 
@@ -75,15 +74,13 @@ export const SETTINGS_STRINGS = {
     "This workbench needs at least one owner — make someone else an owner first.",
 
   rolesSectionTitle: "Roles",
-  rolesSectionDescription:
-    "This workbench's roles and who they're assigned to.",
+  rolesSectionDescription: "This workbench's roles and who they're assigned to.",
   rolesLoadError: "this workbench's roles",
   rolesEmptyTitle: "No roles yet",
   rolesEmptyDescription: "Create a custom role to get started.",
   rolesCreateAction: "New role",
   rolesCreateDialogTitle: "New role",
-  rolesCreateDialogDescription:
-    "Custom roles start with no grants of their own.",
+  rolesCreateDialogDescription: "Custom roles start with no grants of their own.",
   rolesNameLabel: "Name",
   rolesNamePlaceholder: "e.g. Billing",
   rolesDescriptionLabel: "Description",
@@ -91,8 +88,7 @@ export const SETTINGS_STRINGS = {
   rolesCreateCancel: "Cancel",
   rolesCreateError: "Couldn't create that role — try again.",
   rolesRenameError: "Couldn't rename that role — try again.",
-  rolesDeleteError:
-    "Couldn't delete that role — it may still be assigned to someone.",
+  rolesDeleteError: "Couldn't delete that role — it may still be assigned to someone.",
   rolesSystemBadge: "system",
   rolesSystemImmutableNote: "System roles can't be renamed or deleted.",
   rolesRenameAction: "Rename",
@@ -118,14 +114,12 @@ export const SETTINGS_STRINGS = {
   grantsEmptyDescription: "Try clearing a filter, or create a new rule.",
   grantsCreateAction: "New rule",
   grantsCreateDialogTitle: "New rule",
-  grantsCreateDialogDescription:
-    "Set exactly one role or one person a resource and action.",
+  grantsCreateDialogDescription: "Set exactly one role or one person a resource and action.",
   grantsTargetTypeLabel: "Applies to",
   grantsTargetTypeRole: "A role",
   grantsTargetTypeRoleDescription: "Everyone assigned this role.",
   grantsTargetTypePrincipal: "A person, agent, or workflow",
-  grantsTargetTypePrincipalDescription:
-    "One specific account — human or machine.",
+  grantsTargetTypePrincipalDescription: "One specific account — human or machine.",
   grantsTargetLabel: "Target",
   grantsResourceLabel: "Resource",
   grantsActionLabel: "Action",
@@ -166,8 +160,7 @@ export const SETTINGS_STRINGS = {
   connectionsDisconnectError: "Couldn't disconnect — try again.",
   connectionsDefaultModelLine: (model: string) => `Default model: ${model}`,
   connectionsDefaultModelLabel: "Default model:",
-  connectionsSetDefaultModelError:
-    "Couldn't set the default model — try again.",
+  connectionsSetDefaultModelError: "Couldn't set the default model — try again.",
   connectionsPinnedByPrefix: "Used by: ",
   connectionsPinnedByNone: "Not pinned by any workflow",
   connectionsPinnedByApproximationNote:
@@ -185,8 +178,7 @@ export const SETTINGS_STRINGS = {
   connectionsSaving: "Saving…",
   connectionsCancel: "Cancel",
   connectionsConnectedToast: (name: string) => `${name} connected`,
-  connectionsAdvancedSummary:
-    "All credentials — including certificates and other types",
+  connectionsAdvancedSummary: "All credentials — including certificates and other types",
   connectionsWebhookLoadError: "Couldn't load the Granola webhook",
   connectionsWebhookNotSetUp: "Not set up",
   connectionsWebhookSetUpAction: "Set up",
@@ -195,8 +187,7 @@ export const SETTINGS_STRINGS = {
     `${count} webhook${count === 1 ? "" : "s"} wired`,
   connectionsWebhookLastDelivery: (when: string) => `Last delivery ${when}`,
   connectionsWebhookNoDeliveries: "No deliveries yet",
-  connectionsWebhookDirectionNote:
-    "Workbench gives you a signed webhook address Granola calls.",
+  connectionsWebhookDirectionNote: "Workbench gives you a signed webhook address Granola calls.",
   connectionsWebhookDialogTitle: "Granola inbound webhook",
   connectionsWebhookDialogDescription:
     "This address is yours to give to Granola — nothing to paste from Granola's side. The signing secret proves a delivery really came from Granola; it's shown once, right after you create or rotate it.",

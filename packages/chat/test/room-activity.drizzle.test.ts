@@ -35,14 +35,10 @@ const QUIET = "run_quiet";
 const EMPTY = "run_empty";
 
 describeIfDb("createDrizzleRoomMessageStore: listActivity", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchDatabase = new URL(scratchUrl).pathname.replace(/^\//, "");
 
-  async function withMaintenance(
-    run: (sql: postgres.Sql) => Promise<void>,
-  ): Promise<void> {
+  async function withMaintenance(run: (sql: postgres.Sql) => Promise<void>): Promise<void> {
     const maintenanceUrl = new URL(scratchUrl);
     maintenanceUrl.pathname = "/postgres";
     const maintenance = postgres(maintenanceUrl.toString(), {
@@ -74,12 +70,7 @@ describeIfDb("createDrizzleRoomMessageStore: listActivity", () => {
     const sql = postgres(scratchUrl, { max: 5, onnotice: () => undefined });
     try {
       const store = createDrizzleRoomMessageStore(drizzle(sql));
-      const post = (
-        tenantId: string,
-        workbenchId: string,
-        id: string,
-        text: string,
-      ) =>
+      const post = (tenantId: string, workbenchId: string, id: string, text: string) =>
         store.insertMessage({
           id,
           tenantId,

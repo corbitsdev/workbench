@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  withCodexContentTypeRepair,
-  CODEX_RESPONSES_PATH,
-  type FetchLike,
-} from "./index";
+import { withCodexContentTypeRepair, CODEX_RESPONSES_PATH, type FetchLike } from "./index";
 
 const url = `https://chatgpt.com/backend-api${CODEX_RESPONSES_PATH}`;
 
@@ -37,13 +33,9 @@ describe("Codex content-type repair — missing content-type on 2xx SSE response
     const declaredResponse = await declared(url, {
       headers: { accept: "text/event-stream" },
     });
-    expect(declaredResponse.headers.get("content-type")).toBe(
-      "application/json",
-    );
+    expect(declaredResponse.headers.get("content-type")).toBe("application/json");
 
-    const non2xx = withCodexContentTypeRepair(
-      fetchReturning(new Response("bad", { status: 400 })),
-    );
+    const non2xx = withCodexContentTypeRepair(fetchReturning(new Response("bad", { status: 400 })));
     const non2xxResponse = await non2xx(url, {
       headers: { accept: "text/event-stream" },
     });
@@ -60,12 +52,9 @@ describe("Codex content-type repair — missing content-type on 2xx SSE response
     const otherUrl = withCodexContentTypeRepair(
       fetchReturning(new Response("data: {}\n\n", { status: 200 })),
     );
-    const otherUrlResponse = await otherUrl(
-      "https://chatgpt.com/backend-api/other",
-      {
-        headers: { accept: "text/event-stream" },
-      },
-    );
+    const otherUrlResponse = await otherUrl("https://chatgpt.com/backend-api/other", {
+      headers: { accept: "text/event-stream" },
+    });
     expect(otherUrlResponse.headers.get("content-type")).toBeNull();
   });
 });

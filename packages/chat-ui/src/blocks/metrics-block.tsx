@@ -2,11 +2,7 @@ import type { MetricsBlockData } from "../wire/blocks";
 
 import { BlockCard } from "./block-card";
 
-export function MetricsBlockView({
-  data,
-}: {
-  readonly data: MetricsBlockData;
-}) {
+export function MetricsBlockView({ data }: { readonly data: MetricsBlockData }) {
   return (
     <BlockCard title={data.title}>
       <div className="chat-block-metrics">
@@ -15,10 +11,7 @@ export function MetricsBlockView({
             <div className="chat-block-metric-label">{metric.label}</div>
             <div className="chat-block-metric-value">{metric.value}</div>
             {metric.detail !== undefined && (
-              <div
-                className="chat-block-metric-detail"
-                data-trend={metric.trend}
-              >
+              <div className="chat-block-metric-detail" data-trend={metric.trend}>
                 {metric.detail}
               </div>
             )}
@@ -31,10 +24,7 @@ export function MetricsBlockView({
             <div key={`${index}-${bar.label}`} className="chat-block-bar-row">
               <span>{bar.label}</span>
               <span className="chat-block-bar" aria-hidden="true">
-                <span
-                  className="chat-block-bar-fill"
-                  style={{ width: `${bar.percent}%` }}
-                />
+                <span className="chat-block-bar-fill" style={{ width: `${bar.percent}%` }} />
               </span>
               <span>{bar.percent}%</span>
             </div>

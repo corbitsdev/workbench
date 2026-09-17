@@ -125,10 +125,7 @@ export const LAST_30_DAYS_RESEARCH_SECTIONS = [
   "Citations",
 ] as const;
 
-export const LAST_30_DAYS_RESEARCH_WIRED_SOURCES = [
-  "Web search",
-  "GitHub",
-] as const;
+export const LAST_30_DAYS_RESEARCH_WIRED_SOURCES = ["Web search", "GitHub"] as const;
 export const LAST_30_DAYS_RESEARCH_PENDING_SOURCES = [
   "Hacker News",
   "Reddit",
@@ -143,11 +140,10 @@ export const LAST_30_DAYS_RESEARCH_PENDING_SOURCES = [
  * arrive as pinned packages on the deploy, keeping the definition pure
  * data.
  */
-export const LAST_30_DAYS_RESEARCH_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] =
-  [
-    { name: "@corbits/web-search-tools", version: "0.0.3" },
-    { name: "@corbits/github-tools", version: "0.0.10" },
-  ];
+export const LAST_30_DAYS_RESEARCH_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
+  { name: "@corbits/web-search-tools", version: "0.0.3" },
+  { name: "@corbits/github-tools", version: "0.0.10" },
+];
 
 const SYSTEM_PROMPT = [
   buildLast30DaysResearchSystemPrompt(LAST_30_DAYS_RESEARCH_SECTIONS),
@@ -184,9 +180,7 @@ export function buildLast30DaysResearchWorkflow(
   input: Last30DaysResearchWorkflowInput,
 ): WorkflowDefinition {
   if (input.triggerAddress === "") {
-    throw new Error(
-      "buildLast30DaysResearchWorkflow requires a non-empty triggerAddress",
-    );
+    throw new Error("buildLast30DaysResearchWorkflow requires a non-empty triggerAddress");
   }
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
     throw new Error(
@@ -223,9 +217,7 @@ export function buildLast30DaysResearchWorkflow(
  * symbols, bigints, non-finite numbers, class instances — is a loud
  * error naming the offending path instead of a corrupted asset.
  */
-export function serializeLast30DaysResearchWorkflow(
-  definition: WorkflowDefinition,
-): string {
+export function serializeLast30DaysResearchWorkflow(definition: WorkflowDefinition): string {
   assertJsonPortable(definition, "definition");
   return JSON.stringify(definition);
 }
@@ -245,8 +237,7 @@ function assertJsonPortable(value: unknown, path: string): void {
       break;
     default:
       throw new Error(
-        `${path} is a ${typeof value}, which does not survive JSON ` +
-          "serialization",
+        `${path} is a ${typeof value}, which does not survive JSON ` + "serialization",
       );
   }
   if (Array.isArray(value)) {
@@ -257,9 +248,7 @@ function assertJsonPortable(value: unknown, path: string): void {
   }
   const proto: unknown = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) {
-    throw new Error(
-      `${path} is a non-plain object; JSON would flatten it lossily`,
-    );
+    throw new Error(`${path} is a non-plain object; JSON would flatten it lossily`);
   }
   for (const [key, entry] of Object.entries(value)) {
     assertJsonPortable(entry, `${path}.${key}`);

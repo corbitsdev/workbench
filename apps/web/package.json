@@ -1,8 +1,8 @@
 {
   "name": "@workbench/web",
+  "version": "0.0.1",
   "private": true,
   "description": "Single-page interface for the workbench: every page and route lives here, composed from the published component library, and builds to a static bundle the hub serves from its own origin (point HUB_STATIC_DIR at apps/web/dist)",
-  "version": "0.0.1",
   "license": "SEE LICENSE IN ../../LICENSE.md",
   "repository": {
     "type": "git",
@@ -26,8 +26,10 @@
     "@corbits/chat-ui": "workspace:*",
     "@corbits/client-log": "workspace:*",
     "@corbits/command-palette": "workspace:*",
+    "@corbits/connections": "workspace:*",
     "@corbits/context-menu": "workspace:*",
     "@corbits/error-sink": "workspace:*",
+    "@corbits/icons": "workspace:*",
     "@corbits/inbox": "workspace:*",
     "@corbits/inference-settings": "workspace:*",
     "@corbits/plugins-ui": "workspace:*",
@@ -38,12 +40,10 @@
     "@corbits/text-diff": "workspace:*",
     "@corbits/url-path": "workspace:*",
     "@corbits/workflows": "workspace:*",
-    "@corbits/icons": "workspace:*",
     "@intx/types": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.3",
     "@tanstack/react-query": "catalog:",
-    "@corbits/connections": "workspace:*",
     "arktype": "catalog:",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"

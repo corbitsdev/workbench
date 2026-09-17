@@ -140,13 +140,10 @@ describe("group workbench creation sequence", () => {
       listRunMail: (input) => {
         calls.push(`listRunMail:${input.tenantId}`);
         return Promise.resolve([
-          mailMessage("<primary@example>", "ada@example.com", [
-            "bea@example.com",
-          ]),
+          mailMessage("<primary@example>", "ada@example.com", ["bea@example.com"]),
         ]);
       },
-      searchAgentMailbox: () =>
-        Promise.reject(new Error("unexpected mailbox search")),
+      searchAgentMailbox: () => Promise.reject(new Error("unexpected mailbox search")),
       readMailThread: () => Promise.reject(new Error("unexpected thread read")),
     };
 
@@ -231,15 +228,10 @@ describe("group workbench creation sequence", () => {
       },
       listRunMail: () =>
         Promise.resolve([
-          mailMessage("<primary@example>", "ada@example.com", [
-            "bea@example.com",
-          ]),
-          mailMessage("<reply@example>", "bea@example.com", [
-            "ada@example.com",
-          ]),
+          mailMessage("<primary@example>", "ada@example.com", ["bea@example.com"]),
+          mailMessage("<reply@example>", "bea@example.com", ["ada@example.com"]),
         ]),
-      searchAgentMailbox: () =>
-        Promise.reject(new Error("unexpected mailbox search")),
+      searchAgentMailbox: () => Promise.reject(new Error("unexpected mailbox search")),
       readMailThread: () => Promise.reject(new Error("unexpected thread read")),
     };
 
@@ -264,12 +256,7 @@ describe("group workbench creation sequence", () => {
       ],
     });
 
-    const report = await convergeNeedsList(
-      manifest,
-      hub,
-      store,
-      snapshotWithChild("tnt_atlas"),
-    );
+    const report = await convergeNeedsList(manifest, hub, store, snapshotWithChild("tnt_atlas"));
 
     // No resend: the recorded native Message-ID is the idempotency proof.
     // The reply carries no In-Reply-To, so it groups as a sub-thread.
@@ -314,8 +301,7 @@ describe("group workbench creation sequence", () => {
       deployWorkflow: () => Promise.reject(new Error("unexpected deploy")),
       sendRunMail: () => Promise.resolve({ messageId: "<primary@example>" }),
       listRunMail: () => Promise.resolve([]),
-      searchAgentMailbox: () =>
-        Promise.reject(new Error("unexpected mailbox search")),
+      searchAgentMailbox: () => Promise.reject(new Error("unexpected mailbox search")),
       readMailThread: () => Promise.reject(new Error("unexpected thread read")),
     };
 
@@ -325,20 +311,13 @@ describe("group workbench creation sequence", () => {
       workbenches: [{ localId: "atlas", slug: "ada-atlas", name: "Atlas" }],
     });
 
-    const report = await convergeNeedsList(
-      manifest,
-      hub,
-      store,
-      snapshotWithMyra(),
-    );
+    const report = await convergeNeedsList(manifest, hub, store, snapshotWithMyra());
 
     // No initialMessage supplied, so no primary-thread send — and no mail
     // to read means no primary thread entry either.
     expect(report.createdTenantIds).toEqual(["tnt_atlas"]);
     expect(report.primaryThreads).toEqual([]);
-    expect(store.load()).toEqual([
-      { localId: "atlas", tenantId: "tnt_atlas", kind: "workbench" },
-    ]);
+    expect(store.load()).toEqual([{ localId: "atlas", tenantId: "tnt_atlas", kind: "workbench" }]);
   });
 });
 
@@ -365,8 +344,7 @@ describe("writes after gap checks", () => {
         return Promise.resolve({ messageId: "<late@example>" });
       },
       listRunMail: () => Promise.resolve([]),
-      searchAgentMailbox: () =>
-        Promise.reject(new Error("unexpected mailbox search")),
+      searchAgentMailbox: () => Promise.reject(new Error("unexpected mailbox search")),
       readMailThread: () => Promise.reject(new Error("unexpected thread read")),
     };
   }
@@ -395,9 +373,7 @@ describe("writes after gap checks", () => {
       (error: unknown) => error,
     );
     expect(failure).toBeInstanceOf(StockHubCapabilityError);
-    expect((failure as StockHubCapabilityError).capability).toBe(
-      "deploy-workflow-inputs",
-    );
+    expect((failure as StockHubCapabilityError).capability).toBe("deploy-workflow-inputs");
     expect(calls).toEqual([]);
   });
 
@@ -471,9 +447,7 @@ describe("writes after gap checks", () => {
           localId: "bot",
           slug: "ada-bot",
           name: "Bot",
-          principals: [
-            { kind: "workflow", refId: "run_bot", roles: ["member"] },
-          ],
+          principals: [{ kind: "workflow", refId: "run_bot", roles: ["member"] }],
         },
         {
           localId: "bossy",
@@ -501,9 +475,7 @@ describe("writes after gap checks", () => {
       (error: unknown) => error,
     );
     expect(failure).toBeInstanceOf(StockHubCapabilityError);
-    expect((failure as StockHubCapabilityError).capability).toBe(
-      "project-workflow-principal",
-    );
+    expect((failure as StockHubCapabilityError).capability).toBe("project-workflow-principal");
     expect(calls).toEqual([]);
   });
 });
@@ -530,8 +502,7 @@ describe("thread-native DM derivation", () => {
       deployWorkflow: () => Promise.reject(new Error("unexpected deploy")),
       sendRunMail: () => Promise.reject(new Error("unexpected send")),
       listRunMail: () => Promise.resolve([]),
-      searchAgentMailbox: () =>
-        Promise.reject(new Error("unexpected mailbox search")),
+      searchAgentMailbox: () => Promise.reject(new Error("unexpected mailbox search")),
       readMailThread: () => Promise.reject(new Error("unexpected thread read")),
     };
 
@@ -552,10 +523,7 @@ describe("thread-native DM derivation", () => {
         mailMessage("<two@example>", "ada@example.com", ["myra@example.com"], {
           subject: "Myra daily",
         }),
-        mailMessage("<group@example>", "myra@example.com", [
-          "ada@example.com",
-          "bea@example.com",
-        ]),
+        mailMessage("<group@example>", "myra@example.com", ["ada@example.com", "bea@example.com"]),
       ],
     );
 
@@ -585,8 +553,7 @@ describe("sub-thread forking", () => {
         return Promise.resolve({ messageId: "<sub@example>" });
       },
       listRunMail: () => Promise.resolve([]),
-      searchAgentMailbox: () =>
-        Promise.reject(new Error("unexpected mailbox search")),
+      searchAgentMailbox: () => Promise.reject(new Error("unexpected mailbox search")),
       readMailThread: () => Promise.reject(new Error("unexpected thread read")),
     };
 
@@ -596,30 +563,16 @@ describe("sub-thread forking", () => {
       messageId: "<primary@example>",
       references: [] as readonly string[],
     };
-    const first = await forkSubThread(
-      storage,
-      hub,
-      HUB_SCOPE,
-      ACCOUNT_ID,
-      parent,
-      {
-        to: ["bea@example.com"],
-        subject: "Atlas delivery",
-        body: "First delivery update.",
-      },
-    );
-    const replay = await forkSubThread(
-      storage,
-      hub,
-      HUB_SCOPE,
-      ACCOUNT_ID,
-      parent,
-      {
-        to: ["bea@example.com"],
-        subject: "Atlas delivery",
-        body: "First delivery update.",
-      },
-    );
+    const first = await forkSubThread(storage, hub, HUB_SCOPE, ACCOUNT_ID, parent, {
+      to: ["bea@example.com"],
+      subject: "Atlas delivery",
+      body: "First delivery update.",
+    });
+    const replay = await forkSubThread(storage, hub, HUB_SCOPE, ACCOUNT_ID, parent, {
+      to: ["bea@example.com"],
+      subject: "Atlas delivery",
+      body: "First delivery update.",
+    });
 
     expect(first).toBe("<sub@example>");
     // Same parent + subject replays the recorded id instead of resending.
@@ -652,8 +605,7 @@ describe("sub-thread forking", () => {
         return Promise.resolve({ messageId: `<sub${next}@example>` });
       },
       listRunMail: () => Promise.resolve([]),
-      searchAgentMailbox: () =>
-        Promise.reject(new Error("unexpected mailbox search")),
+      searchAgentMailbox: () => Promise.reject(new Error("unexpected mailbox search")),
       readMailThread: () => Promise.reject(new Error("unexpected thread read")),
     };
 
@@ -663,30 +615,16 @@ describe("sub-thread forking", () => {
       messageId: "<primary@example>",
       references: [] as readonly string[],
     };
-    const first = await forkSubThread(
-      storage,
-      hub,
-      HUB_SCOPE,
-      ACCOUNT_ID,
-      parent,
-      {
-        to: ["bea@example.com"],
-        subject: "Atlas delivery",
-        body: "First delivery update.",
-      },
-    );
-    const edited = await forkSubThread(
-      storage,
-      hub,
-      HUB_SCOPE,
-      ACCOUNT_ID,
-      parent,
-      {
-        to: ["bea@example.com"],
-        subject: "Atlas delivery",
-        body: "Edited delivery update.",
-      },
-    );
+    const first = await forkSubThread(storage, hub, HUB_SCOPE, ACCOUNT_ID, parent, {
+      to: ["bea@example.com"],
+      subject: "Atlas delivery",
+      body: "First delivery update.",
+    });
+    const edited = await forkSubThread(storage, hub, HUB_SCOPE, ACCOUNT_ID, parent, {
+      to: ["bea@example.com"],
+      subject: "Atlas delivery",
+      body: "Edited delivery update.",
+    });
 
     // An edited body is a new send, never a replay of the recorded id.
     expect(first).toBe("<sub1@example>");
@@ -714,8 +652,7 @@ describe("sub-thread forking", () => {
         return Promise.resolve({ messageId: `<sub${next}@example>` });
       },
       listRunMail: () => Promise.resolve([]),
-      searchAgentMailbox: () =>
-        Promise.reject(new Error("unexpected mailbox search")),
+      searchAgentMailbox: () => Promise.reject(new Error("unexpected mailbox search")),
       readMailThread: () => Promise.reject(new Error("unexpected thread read")),
     };
 
@@ -725,30 +662,16 @@ describe("sub-thread forking", () => {
       messageId: "<primary@example>",
       references: [] as readonly string[],
     };
-    const first = await forkSubThread(
-      storage,
-      hub,
-      HUB_SCOPE,
-      ACCOUNT_ID,
-      parent,
-      {
-        to: ["bea@example.com"],
-        subject: "Atlas delivery",
-        body: "First delivery update.",
-      },
-    );
-    const retargeted = await forkSubThread(
-      storage,
-      hub,
-      HUB_SCOPE,
-      ACCOUNT_ID,
-      parent,
-      {
-        to: ["bea@example.com", "cal@example.com"],
-        subject: "Atlas delivery",
-        body: "First delivery update.",
-      },
-    );
+    const first = await forkSubThread(storage, hub, HUB_SCOPE, ACCOUNT_ID, parent, {
+      to: ["bea@example.com"],
+      subject: "Atlas delivery",
+      body: "First delivery update.",
+    });
+    const retargeted = await forkSubThread(storage, hub, HUB_SCOPE, ACCOUNT_ID, parent, {
+      to: ["bea@example.com", "cal@example.com"],
+      subject: "Atlas delivery",
+      body: "First delivery update.",
+    });
 
     expect(first).toBe("<sub1@example>");
     expect(retargeted).toBe("<sub2@example>");
@@ -767,8 +690,7 @@ describe("stock-only fetch hub", () => {
     return (async (url: unknown, init?: { method?: string; body?: string }) => {
       const method = init?.method ?? "GET";
       const path = String(url).split("?")[0] ?? String(url);
-      const body =
-        init?.body === undefined ? undefined : JSON.parse(init.body as string);
+      const body = init?.body === undefined ? undefined : JSON.parse(init.body as string);
       seen.push({ method, url: String(url), body });
       const key = `${method} ${path}`;
       const payload = key in routes ? routes[key] : routes[path];
@@ -782,25 +704,19 @@ describe("stock-only fetch hub", () => {
   test("mailbox search and thread reads stay typed upstream gaps", async () => {
     const hub = createFetchStockHub(stubFetch([], {}));
 
-    const search = await hub
-      .searchAgentMailbox({ address: "myra@example.com" })
-      .then(
-        () => null,
-        (error: unknown) => error,
-      );
-    expect(search).toBeInstanceOf(StockHubCapabilityError);
-    expect((search as StockHubCapabilityError).capability).toBe(
-      "agent-mailbox-reads",
+    const search = await hub.searchAgentMailbox({ address: "myra@example.com" }).then(
+      () => null,
+      (error: unknown) => error,
     );
+    expect(search).toBeInstanceOf(StockHubCapabilityError);
+    expect((search as StockHubCapabilityError).capability).toBe("agent-mailbox-reads");
 
     const thread = await hub.readMailThread({ messageId: "<a@example>" }).then(
       () => null,
       (error: unknown) => error,
     );
     expect(thread).toBeInstanceOf(StockHubCapabilityError);
-    expect((thread as StockHubCapabilityError).capability).toBe(
-      "thread-fork-context",
-    );
+    expect((thread as StockHubCapabilityError).capability).toBe("thread-fork-context");
   });
 
   test("every request stays on stock routes with no custom idempotency keys", async () => {

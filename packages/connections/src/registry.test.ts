@@ -80,9 +80,7 @@ describe("CONNECTOR_REGISTRY", () => {
 
   test("only Hugging Face requires a configured client id", () => {
     expect(CONNECTOR_REGISTRY["openrouter"]?.oauth?.clientId).toBeUndefined();
-    expect(
-      CONNECTOR_REGISTRY["huggingface"]?.oauth?.clientId?.({}),
-    ).toBeUndefined();
+    expect(CONNECTOR_REGISTRY["huggingface"]?.oauth?.clientId?.({})).toBeUndefined();
     expect(
       CONNECTOR_REGISTRY["huggingface"]?.oauth?.clientId?.({
         huggingfaceClientId: "hf_1",
@@ -142,18 +140,14 @@ describe("CONNECTOR_REGISTRY", () => {
       clientId: "app_1",
     });
     expect(codexUrl?.origin).toBe("https://auth.openai.com");
-    expect(codexUrl?.searchParams.get("redirect_uri")).toBe(
-      "http://localhost:1455/auth/callback",
-    );
+    expect(codexUrl?.searchParams.get("redirect_uri")).toBe("http://localhost:1455/auth/callback");
     expect(codexUrl?.searchParams.get("originator")).toBe("codex_cli_rs");
     // Pinned against the upstream Codex CLI's scope grant — the
     // api.connectors.* scopes are what let the backend serve connector
     // tools to this client, and the authorization server issues them only
     // to the Codex client id. Asserted against the exported constant so
     // the descriptor cannot drift from the adapter's refresh path.
-    expect(codexUrl?.searchParams.get("scope")?.split(" ")).toEqual([
-      ...CODEX_SCOPES,
-    ]);
+    expect(codexUrl?.searchParams.get("scope")?.split(" ")).toEqual([...CODEX_SCOPES]);
 
     const xaiUrl = CONNECTOR_REGISTRY["xai-oauth"]?.oauth?.buildAuthorizeUrl({
       callbackUrl: "https://bench.example.com/ignored",
@@ -162,9 +156,7 @@ describe("CONNECTOR_REGISTRY", () => {
       clientId: "client_1",
     });
     expect(xaiUrl?.origin).toBe("https://auth.x.ai");
-    expect(xaiUrl?.searchParams.get("redirect_uri")).toBe(
-      "http://127.0.0.1:1456/callback",
-    );
+    expect(xaiUrl?.searchParams.get("redirect_uri")).toBe("http://127.0.0.1:1456/callback");
     expect(xaiUrl?.searchParams.get("scope")).toContain("grok-cli:access");
   });
 
@@ -219,32 +211,16 @@ describe("CONNECTOR_REGISTRY", () => {
   });
 
   test("includes the tool connectors with the right feedsTools", () => {
-    expect(CONNECTOR_REGISTRY["granola"]?.feedsTools).toEqual([
-      "@corbits/granola-tools",
-    ]);
-    expect(CONNECTOR_REGISTRY["manus"]?.feedsTools).toEqual([
-      "@corbits/manus-tools",
-    ]);
-    expect(CONNECTOR_REGISTRY["manus"]?.credentialPlugin).toBe(
-      "http-x-manus-api-key",
-    );
+    expect(CONNECTOR_REGISTRY["granola"]?.feedsTools).toEqual(["@corbits/granola-tools"]);
+    expect(CONNECTOR_REGISTRY["manus"]?.feedsTools).toEqual(["@corbits/manus-tools"]);
+    expect(CONNECTOR_REGISTRY["manus"]?.credentialPlugin).toBe("http-x-manus-api-key");
     expect(CONNECTOR_REGISTRY["manus"]?.authKind).toBe("api-key");
     expect(CONNECTOR_REGISTRY["manus"]?.icon).toBeUndefined();
-    expect(CONNECTOR_REGISTRY["exa"]?.feedsTools).toEqual([
-      "@corbits/web-search-tools",
-    ]);
-    expect(CONNECTOR_REGISTRY["scrapecreators"]?.feedsTools).toEqual([
-      "@corbits/reddit-tools",
-    ]);
-    expect(CONNECTOR_REGISTRY["scrapecreators"]?.displayName).toBe(
-      "ScrapeCreators",
-    );
-    expect(CONNECTOR_REGISTRY["linear"]?.feedsTools).toEqual([
-      "@corbits/linear-tools",
-    ]);
-    expect(CONNECTOR_REGISTRY["github"]?.feedsTools).toEqual([
-      "@corbits/github-tools",
-    ]);
+    expect(CONNECTOR_REGISTRY["exa"]?.feedsTools).toEqual(["@corbits/web-search-tools"]);
+    expect(CONNECTOR_REGISTRY["scrapecreators"]?.feedsTools).toEqual(["@corbits/reddit-tools"]);
+    expect(CONNECTOR_REGISTRY["scrapecreators"]?.displayName).toBe("ScrapeCreators");
+    expect(CONNECTOR_REGISTRY["linear"]?.feedsTools).toEqual(["@corbits/linear-tools"]);
+    expect(CONNECTOR_REGISTRY["github"]?.feedsTools).toEqual(["@corbits/github-tools"]);
   });
 });
 
@@ -267,16 +243,10 @@ describe("connectorDescriptors", () => {
   });
 
   test("each connector mediates through the header plugin its API actually expects", () => {
-    expect(CONNECTOR_REGISTRY["linear"]?.credentialPlugin).toBe(
-      "http-raw-authorization",
-    );
+    expect(CONNECTOR_REGISTRY["linear"]?.credentialPlugin).toBe("http-raw-authorization");
     expect(CONNECTOR_REGISTRY["exa"]?.credentialPlugin).toBe("http-x-api-key");
-    expect(CONNECTOR_REGISTRY["scrapecreators"]?.credentialPlugin).toBe(
-      "http-x-api-key",
-    );
-    expect(CONNECTOR_REGISTRY["manus"]?.credentialPlugin).toBe(
-      "http-x-manus-api-key",
-    );
+    expect(CONNECTOR_REGISTRY["scrapecreators"]?.credentialPlugin).toBe("http-x-api-key");
+    expect(CONNECTOR_REGISTRY["manus"]?.credentialPlugin).toBe("http-x-manus-api-key");
     const nonBearer = new Set(["linear", "exa", "scrapecreators", "manus"]);
     for (const [id, descriptor] of Object.entries(CONNECTOR_REGISTRY)) {
       if (nonBearer.has(id)) continue;
@@ -291,12 +261,8 @@ describe("gmail connector", () => {
     expect(descriptor?.authKind).toBe("oauth-code");
     expect(descriptor?.credentialPlugin).toBe("http");
     expect(descriptor?.oauth).toBeDefined();
-    expect(descriptor?.oauth?.clientId?.({ gmailClientId: "client-1" })).toBe(
-      "client-1",
-    );
-    expect(
-      descriptor?.oauth?.clientSecret?.({ gmailClientSecret: "secret-1" }),
-    ).toBe("secret-1");
+    expect(descriptor?.oauth?.clientId?.({ gmailClientId: "client-1" })).toBe("client-1");
+    expect(descriptor?.oauth?.clientSecret?.({ gmailClientSecret: "secret-1" })).toBe("secret-1");
     expect(descriptor?.oauth?.clientId?.({})).toBeUndefined();
   });
 
@@ -311,9 +277,7 @@ describe("gmail connector", () => {
     if (url === undefined) throw new Error("no authorize url");
     expect(url.origin).toBe("https://accounts.google.com");
     expect(url.searchParams.get("client_id")).toBe("client-1");
-    expect(url.searchParams.get("redirect_uri")).toBe(
-      "https://bench.example.com/callback",
-    );
+    expect(url.searchParams.get("redirect_uri")).toBe("https://bench.example.com/callback");
     expect(url.searchParams.get("response_type")).toBe("code");
     expect(url.searchParams.get("scope")).toContain("gmail");
     expect(url.searchParams.get("state")).toBe("state-1");
@@ -349,9 +313,7 @@ describe("MCP_PRESETS", () => {
 
   test("Exa is keyless, GitHub MCP is token, every other preset uses OAuth", () => {
     expect(mcpPresetBySlug(MCP_PRESETS, "exa")?.connectionMode).toBe("keyless");
-    expect(mcpPresetBySlug(MCP_PRESETS, "github-mcp")?.connectionMode).toBe(
-      "token",
-    );
+    expect(mcpPresetBySlug(MCP_PRESETS, "github-mcp")?.connectionMode).toBe("token");
     for (const preset of MCP_PRESETS) {
       if (preset.slug === "exa" || preset.slug === "github-mcp") continue;
       expect(preset.connectionMode).toBe("oauth");
@@ -378,20 +340,12 @@ describe("MCP_PRESETS", () => {
   });
 
   test("uses Sumble's OAuth MCP host, not its product-page URL", () => {
-    expect(mcpPresetBySlug(MCP_PRESETS, "sumble")?.url).toBe(
-      "https://mcp.sumble.com/",
-    );
-    expect(mcpPresetBySlug(MCP_PRESETS, "sumble")?.connectionMode).toBe(
-      "oauth",
-    );
+    expect(mcpPresetBySlug(MCP_PRESETS, "sumble")?.url).toBe("https://mcp.sumble.com/");
+    expect(mcpPresetBySlug(MCP_PRESETS, "sumble")?.connectionMode).toBe("oauth");
   });
 
   test("keeps every verified endpoint exact", () => {
-    expect(
-      Object.fromEntries(
-        MCP_PRESETS.map((preset) => [preset.slug, preset.url]),
-      ),
-    ).toEqual({
+    expect(Object.fromEntries(MCP_PRESETS.map((preset) => [preset.slug, preset.url]))).toEqual({
       granola: "https://mcp.granola.ai/mcp",
       exa: "https://mcp.exa.ai/mcp",
       "github-mcp": "https://api.githubcopilot.com/mcp/",
@@ -414,9 +368,7 @@ describe("MCP_PRESETS", () => {
   });
 
   test("MCP_PRESET_CONNECTOR_IDS matches the presets' native ids", () => {
-    expect(new Set(MCP_PRESET_CONNECTOR_IDS)).toEqual(
-      new Set(["granola", "exa", "linear"]),
-    );
+    expect(new Set(MCP_PRESET_CONNECTOR_IDS)).toEqual(new Set(["granola", "exa", "linear"]));
   });
 
   test("mcpPresetByName resolves by slug or display name, case-insensitively", () => {

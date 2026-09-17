@@ -7,11 +7,7 @@
 // renders here in the stage, beside the active section (`settings-nav.tsx`)
 // — master-detail, the list is never repeated in the section panel.
 
-import {
-  flattenSettingsSections,
-  resolveActiveSection,
-  SettingsShell,
-} from "@corbits/settings-ui";
+import { flattenSettingsSections, resolveActiveSection, SettingsShell } from "@corbits/settings-ui";
 import { PageShell } from "@corbits/react-ui";
 import { useEffect } from "react";
 
@@ -42,12 +38,9 @@ export function SettingsRoute({
   const requestedId = settingsSectionIdFromPath(path);
   const activeSection = resolveActiveSection(sections, requestedId);
   const entityId =
-    activeSection === undefined
-      ? null
-      : settingsEntityIdFromPath(path, activeSection.id);
+    activeSection === undefined ? null : settingsEntityIdFromPath(path, activeSection.id);
   const requestedSectionExists =
-    requestedId !== null &&
-    sections.some((section) => section.id === requestedId);
+    requestedId !== null && sections.some((section) => section.id === requestedId);
   // A gated section (People/Roles/Grants/Credentials) is absent from
   // `sections` while its probe is still resolving, same as when it's
   // genuinely denied — wait for every gate to settle before treating a
@@ -75,13 +68,7 @@ export function SettingsRoute({
     if (requestedId !== null && requestedSectionExists) return;
     if (requestedId !== null && !accessSettled) return;
     navigate(`${SETTINGS_PATH_PREFIX}/${activeSectionId}`);
-  }, [
-    requestedId,
-    requestedSectionExists,
-    accessSettled,
-    activeSectionId,
-    navigate,
-  ]);
+  }, [requestedId, requestedSectionExists, accessSettled, activeSectionId, navigate]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -89,10 +76,7 @@ export function SettingsRoute({
         crumbs={
           activeSection === undefined
             ? [{ label: "Settings" }]
-            : [
-                { label: "Settings", href: SETTINGS_PATH_PREFIX },
-                { label: activeSection.title },
-              ]
+            : [{ label: "Settings", href: SETTINGS_PATH_PREFIX }, { label: activeSection.title }]
         }
       />
       <div className="settings-layout min-h-0 flex-1">

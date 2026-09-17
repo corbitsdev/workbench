@@ -22,9 +22,7 @@ const describeIfDb = dbGate(databaseUrl, import.meta.path);
 const migrationNames = ["0001_pending_seed"];
 
 describeIfDb("applyOnboardingMigrations", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchDatabase = new URL(scratchUrl).pathname.replace(/^\//, "");
 
   beforeAll(async () => {
@@ -70,9 +68,7 @@ describeIfDb("applyOnboardingMigrations", () => {
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'onboarding' AND table_name = 'pending_seed'`,
       );
-      expect(tables.map((row) => String(row["table_name"]))).toEqual([
-        "pending_seed",
-      ]);
+      expect(tables.map((row) => String(row["table_name"]))).toEqual(["pending_seed"]);
 
       const inPublic = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
@@ -85,9 +81,10 @@ describeIfDb("applyOnboardingMigrations", () => {
           `JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) ` +
           `WHERE i.indrelid = 'onboarding.pending_seed'::regclass AND i.indisprimary`,
       );
-      expect(
-        primaryKeyColumns.map((row) => String(row["attname"])).sort(),
-      ).toEqual(["tenant_id", "user_id"]);
+      expect(primaryKeyColumns.map((row) => String(row["attname"])).sort()).toEqual([
+        "tenant_id",
+        "user_id",
+      ]);
     } finally {
       await sql.end();
     }

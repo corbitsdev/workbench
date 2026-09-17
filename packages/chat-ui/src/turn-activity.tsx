@@ -46,9 +46,7 @@ const EMPTY_ACTIVITY: NonNullable<TurnActivityState> = {
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null
-    ? (value as Record<string, unknown>)
-    : null;
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 }
 
 /** The bare `type` discriminant of a `chat.agent` payload — mirrors
@@ -66,9 +64,7 @@ function innerData(data: unknown): Record<string, unknown> | null {
   return record === null ? null : asRecord(record.data);
 }
 
-function parseToolCallStart(
-  data: unknown,
-): { callId: string; name: string } | null {
+function parseToolCallStart(data: unknown): { callId: string; name: string } | null {
   const inner = innerData(data);
   if (inner === null) return null;
   const { callId, name } = inner;
@@ -105,9 +101,7 @@ function parseToolStart(data: unknown): {
 /** A settled tool call, with the one thing the old reading dropped: whether
  * it actually worked. A failed call used to land in the strip as a quiet
  * check mark, indistinguishable from a success. */
-function parseToolDone(
-  data: unknown,
-): { callId: string; isError: boolean } | null {
+function parseToolDone(data: unknown): { callId: string; isError: boolean } | null {
   const inner = innerData(data);
   const result = inner === null ? null : asRecord(inner.result);
   if (result === null) return null;
@@ -240,9 +234,7 @@ export function nextTurnActivityState(
     const parsed = parseThinkingDelta(event.data);
     if (parsed === null) return base;
     const charCount =
-      parsed.kind === "cumulative"
-        ? parsed.charCount
-        : base.thinking.charCount + parsed.charCount;
+      parsed.kind === "cumulative" ? parsed.charCount : base.thinking.charCount + parsed.charCount;
     return { ...base, thinking: { active: true, charCount } };
   }
   const thinking = base.thinking.active
@@ -302,12 +294,7 @@ export function nextTurnActivityState(
     return {
       ...base,
       thinking,
-      toolCalls: settleToolCall(
-        base.toolCalls,
-        parsed.callId,
-        parsed.isError,
-        nowMs,
-      ),
+      toolCalls: settleToolCall(base.toolCalls, parsed.callId, parsed.isError, nowMs),
     };
   }
   if (innerType === "inference.retry") {
@@ -369,9 +356,7 @@ export function useTurnActivity(
   }, [activity, staleMs, clock]);
 
   function handleStreamEvent(eventType: string, data: unknown) {
-    setActivity((current) =>
-      nextTurnActivityState(current, { eventType, data }, clock.now()),
-    );
+    setActivity((current) => nextTurnActivityState(current, { eventType, data }, clock.now()));
   }
 
   return { activity, handleStreamEvent };
@@ -399,11 +384,7 @@ export function toolActivityRows(
       toolName: identity.toolName,
       glyph: toolActivityGlyph(identity.words),
       provider: identity.provider,
-      phrase: describeToolCall(
-        call.name,
-        call.input,
-        isRunning ? "present" : "past",
-      ),
+      phrase: describeToolCall(call.name, call.input, isRunning ? "present" : "past"),
       detail: undefined,
       status: call.status,
     };
@@ -418,13 +399,8 @@ export function toolActivityRows(
  * needed one. Renders nothing once the turn ends — the persisted message
  * takes over from there, in the same row idiom.
  */
-export function TurnActivityStrip({
-  activity,
-}: {
-  readonly activity: TurnActivityState;
-}) {
-  const hasRunningToolCall =
-    activity?.toolCalls.some((call) => call.status === "running") ?? false;
+export function TurnActivityStrip({ activity }: { readonly activity: TurnActivityState }) {
+  const hasRunningToolCall = activity?.toolCalls.some((call) => call.status === "running") ?? false;
   const [, forceTick] = useState(0);
 
   useEffect(() => {

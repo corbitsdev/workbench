@@ -13,9 +13,7 @@ const KEY: BlockResponseKey = {
 describe("createInMemoryBlockResponseStore — notification claim/release", () => {
   test("claiming before any response is upserted for the key fails", async () => {
     const store = createInMemoryBlockResponseStore();
-    await expect(store.claimBlockResponseNotification(KEY)).resolves.toBe(
-      false,
-    );
+    await expect(store.claimBlockResponseNotification(KEY)).resolves.toBe(false);
   });
 
   test("the first claim after an upsert wins, returning a token", async () => {
@@ -35,9 +33,7 @@ describe("createInMemoryBlockResponseStore — notification claim/release", () =
       payload: { kind: "question", answer: "Staging" },
     });
     await store.claimBlockResponseNotification(KEY);
-    await expect(store.claimBlockResponseNotification(KEY)).resolves.toBe(
-      false,
-    );
+    await expect(store.claimBlockResponseNotification(KEY)).resolves.toBe(false);
   });
 
   test("release with the holder's own token frees the claim for a fresh claim", async () => {
@@ -48,9 +44,7 @@ describe("createInMemoryBlockResponseStore — notification claim/release", () =
     });
     const token = await store.claimBlockResponseNotification(KEY);
     await store.releaseBlockResponseNotification(KEY, token as string);
-    await expect(store.claimBlockResponseNotification(KEY)).resolves.not.toBe(
-      false,
-    );
+    await expect(store.claimBlockResponseNotification(KEY)).resolves.not.toBe(false);
   });
 
   test("release with a stale token — one a second claim already replaced — never evicts the live claim", async () => {
@@ -73,9 +67,7 @@ describe("createInMemoryBlockResponseStore — notification claim/release", () =
     // A caller presenting the first (now stale) token must never release
     // the second claim it does not hold.
     await store.releaseBlockResponseNotification(KEY, firstToken as string);
-    await expect(store.claimBlockResponseNotification(KEY)).resolves.toBe(
-      false,
-    );
+    await expect(store.claimBlockResponseNotification(KEY)).resolves.toBe(false);
   });
 
   test("releasing with a token nobody ever held is a harmless no-op", async () => {
@@ -87,9 +79,7 @@ describe("createInMemoryBlockResponseStore — notification claim/release", () =
     await store.claimBlockResponseNotification(KEY);
     await store.releaseBlockResponseNotification(KEY, "some_other_token");
     // The real claim is still held -- a fresh claim attempt still loses.
-    await expect(store.claimBlockResponseNotification(KEY)).resolves.toBe(
-      false,
-    );
+    await expect(store.claimBlockResponseNotification(KEY)).resolves.toBe(false);
   });
 
   test("changing the answer keeps the row unclaimable-again once already notified", async () => {
@@ -107,8 +97,6 @@ describe("createInMemoryBlockResponseStore — notification claim/release", () =
       ...KEY,
       payload: { kind: "question", answer: "Production" },
     });
-    await expect(store.claimBlockResponseNotification(KEY)).resolves.toBe(
-      false,
-    );
+    await expect(store.claimBlockResponseNotification(KEY)).resolves.toBe(false);
   });
 });

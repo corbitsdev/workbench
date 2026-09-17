@@ -114,9 +114,7 @@ test("workflow_author posts to the authoring route and reports asset id and comm
         new AbortController().signal,
       ),
   );
-  expect(seenUrl).toBe(
-    "https://hub.example.com/api/workflow-workflow-authoring/author",
-  );
+  expect(seenUrl).toBe("https://hub.example.com/api/workflow-workflow-authoring/author");
   expect(result.isError).toBe(false);
   expect(result.content).toContain("asset_1");
   expect(result.content).toContain("sha_1");
@@ -164,9 +162,7 @@ test("workflow_source_read returns the snapshot as JSON the model can parse", as
   };
   const result = await withFetch(
     (url) => {
-      expect(url).toBe(
-        "https://hub.example.com/api/workflow-workflow-authoring/asset_1/source",
-      );
+      expect(url).toBe("https://hub.example.com/api/workflow-workflow-authoring/asset_1/source");
       return new Response(JSON.stringify({ data: snapshot }));
     },
     () =>
@@ -185,15 +181,10 @@ test("workflow_deploy posts an asset/source deploy to the stock tenant route —
     (url, init) => {
       seen.push({
         url,
-        body:
-          init?.body !== undefined ? JSON.parse(String(init.body)) : undefined,
+        body: init?.body !== undefined ? JSON.parse(String(init.body)) : undefined,
       });
       return url.endsWith("/models")
-        ? new Response(
-            JSON.stringify([
-              { offerings: [{ offeringId: "off_1", priority: 10 }] },
-            ]),
-          )
+        ? new Response(JSON.stringify([{ offerings: [{ offeringId: "off_1", priority: 10 }] }]))
         : new Response(
             JSON.stringify({
               id: "run_1",
@@ -217,9 +208,7 @@ test("workflow_deploy posts an asset/source deploy to the stock tenant route —
         new AbortController().signal,
       ),
   );
-  expect(seen[1]?.url).toBe(
-    "https://hub.example.com/api/tenants/tenant_1/workflows/deployments",
-  );
+  expect(seen[1]?.url).toBe("https://hub.example.com/api/tenants/tenant_1/workflows/deployments");
   // `packageName`/`toolPackagePins` are carried on the approval card via
   // the tool call's own arguments (see @corbits/approvals' headline.ts),
   // not re-sent to the hub — the stock deploy route names the commit
@@ -299,9 +288,8 @@ test("wf_deploy_preview posts assetId, commitSha, and entry to the preview route
     packageName: "daily-digest",
   });
   expect(
-    workflowAuthoringTools.definitions.find(
-      (d) => d.name === WORKFLOW_DEPLOY_PREVIEW_TOOL,
-    )?.approval,
+    workflowAuthoringTools.definitions.find((d) => d.name === WORKFLOW_DEPLOY_PREVIEW_TOOL)
+      ?.approval,
   ).toBeUndefined();
 });
 

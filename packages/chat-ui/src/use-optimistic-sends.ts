@@ -69,9 +69,7 @@ function nextPendingSendNonce(): string {
  * item not being server-issued yet. Shared with `sendPending`'s own
  * synchronous insert (`chat-workspace.tsx`) so a message never changes
  * sender identity mid-flight. */
-export function pendingSenderAddress(
-  currentUserPrincipalId: string | undefined,
-): string {
+export function pendingSenderAddress(currentUserPrincipalId: string | undefined): string {
   return `${currentUserPrincipalId ?? "you"}@pending.local`;
 }
 
@@ -110,22 +108,18 @@ export function mergePendingSends(
       .map((item) => item.clientId)
       .filter((clientId): clientId is string => clientId !== undefined),
   );
-  const unresolvedSends = pendingSends.filter(
-    (pending) => !confirmedClientIds.has(pending.nonce),
-  );
+  const unresolvedSends = pendingSends.filter((pending) => !confirmedClientIds.has(pending.nonce));
   if (unresolvedSends.length === 0) return items;
   const senderAddress = pendingSenderAddress(currentUserPrincipalId);
-  const pendingItems: TimelineMessageItem[] = unresolvedSends.map(
-    (pending) => ({
-      id: pending.nonce,
-      createdAt: pending.createdAt,
-      parts: partsForSend(pending.text, pending.attachments),
-      sender: { name: null, address: senderAddress },
-      clientId: pending.nonce,
-      pendingStatus: pending.status,
-      pendingNonce: pending.nonce,
-    }),
-  );
+  const pendingItems: TimelineMessageItem[] = unresolvedSends.map((pending) => ({
+    id: pending.nonce,
+    createdAt: pending.createdAt,
+    parts: partsForSend(pending.text, pending.attachments),
+    sender: { name: null, address: senderAddress },
+    clientId: pending.nonce,
+    pendingStatus: pending.status,
+    pendingNonce: pending.nonce,
+  }));
   return [...items, ...pendingItems];
 }
 
@@ -260,16 +254,12 @@ export function useOptimisticSends(args: {
         (current: MessagesResponse | undefined) => {
           if (current === undefined) return current;
           const matchIndex = current.items.findIndex(
-            (item) =>
-              item.id === confirmed.id || item.clientId === confirmed.clientId,
+            (item) => item.id === confirmed.id || item.clientId === confirmed.clientId,
           );
           if (matchIndex >= 0) {
             const existing = current.items[matchIndex];
             if (existing === undefined) return current;
-            if (
-              confirmed.threadId !== undefined &&
-              existing.threadId !== confirmed.threadId
-            ) {
+            if (confirmed.threadId !== undefined && existing.threadId !== confirmed.threadId) {
               const items = current.items.slice();
               items[matchIndex] = {
                 ...existing,
@@ -304,10 +294,7 @@ export function useOptimisticSends(args: {
         // different workbench must not drag them back into this one's
         // thread — `useThreadNavigation` already reset the open thread on
         // that switch; re-opening it here would undo that reset (CL-7198).
-        if (
-          pendingParentMessageId !== null &&
-          activeWorkbenchIdRef.current === activeWorkbenchId
-        ) {
+        if (pendingParentMessageId !== null && activeWorkbenchIdRef.current === activeWorkbenchId) {
           openThreadById(threadId);
         }
       }
@@ -327,9 +314,7 @@ export function useOptimisticSends(args: {
         toast(CHAT_STRINGS.mentionForbidden);
       }
       setPendingSends((current) =>
-        current.map((p) =>
-          p.nonce === nonce ? { ...p, status: "failed" } : p,
-        ),
+        current.map((p) => (p.nonce === nonce ? { ...p, status: "failed" } : p)),
       );
     }
   }

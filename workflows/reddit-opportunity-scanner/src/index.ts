@@ -69,8 +69,7 @@ import {
   REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME,
 } from "./finalize-tool";
 
-export const REDDIT_OPPORTUNITY_SCANNER_WORKFLOW_ID =
-  "wf_reddit_opportunity_scanner";
+export const REDDIT_OPPORTUNITY_SCANNER_WORKFLOW_ID = "wf_reddit_opportunity_scanner";
 export const REDDIT_OPPORTUNITY_SCANNER_STEP_ID = "reddit-opportunity-scanner";
 
 export const REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT = [
@@ -173,9 +172,7 @@ export function buildRedditOpportunityScannerWorkflow(
   input: RedditOpportunityScannerWorkflowInput,
 ): WorkflowDefinition {
   if (input.triggerAddress === "") {
-    throw new Error(
-      "buildRedditOpportunityScannerWorkflow requires a non-empty triggerAddress",
-    );
+    throw new Error("buildRedditOpportunityScannerWorkflow requires a non-empty triggerAddress");
   }
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
     throw new Error(
@@ -211,9 +208,7 @@ export function buildRedditOpportunityScannerWorkflow(
  * symbols, bigints, non-finite numbers, class instances — is a loud
  * error naming the offending path instead of a corrupted asset.
  */
-export function serializeRedditOpportunityScannerWorkflow(
-  definition: WorkflowDefinition,
-): string {
+export function serializeRedditOpportunityScannerWorkflow(definition: WorkflowDefinition): string {
   assertJsonPortable(definition, "definition");
   return JSON.stringify(definition);
 }
@@ -233,8 +228,7 @@ function assertJsonPortable(value: unknown, path: string): void {
       break;
     default:
       throw new Error(
-        `${path} is a ${typeof value}, which does not survive JSON ` +
-          "serialization",
+        `${path} is a ${typeof value}, which does not survive JSON ` + "serialization",
       );
   }
   if (Array.isArray(value)) {
@@ -245,9 +239,7 @@ function assertJsonPortable(value: unknown, path: string): void {
   }
   const proto: unknown = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) {
-    throw new Error(
-      `${path} is a non-plain object; JSON would flatten it lossily`,
-    );
+    throw new Error(`${path} is a non-plain object; JSON would flatten it lossily`);
   }
   for (const [key, entry] of Object.entries(value)) {
     assertJsonPortable(entry, `${path}.${key}`);

@@ -58,13 +58,8 @@ export function discoverCheckFiles(
 ): string[] {
   return readdir(checksDir)
     .filter((entry) => entry.endsWith(".ts") && !entry.endsWith(".test.ts"))
-    .filter(
-      (entry) =>
-        resolveRealPath(path.join(checksDir, entry)) !== runnerRealPath,
-    )
-    .filter((entry) =>
-      MAIN_ENTRY_POINT.test(readFile(path.join(checksDir, entry))),
-    )
+    .filter((entry) => resolveRealPath(path.join(checksDir, entry)) !== runnerRealPath)
+    .filter((entry) => MAIN_ENTRY_POINT.test(readFile(path.join(checksDir, entry))))
     .sort();
 }
 

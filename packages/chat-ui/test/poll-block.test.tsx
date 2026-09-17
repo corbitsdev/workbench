@@ -70,11 +70,7 @@ function fakeBackend() {
         own: own === undefined ? null : { kind: "poll", choiceIds: own },
       };
     },
-    submitPoll: async (
-      _messageId,
-      _blockId,
-      choiceIds,
-    ): Promise<BlockResponseSubmitResult> => {
+    submitPoll: async (_messageId, _blockId, choiceIds): Promise<BlockResponseSubmitResult> => {
       submitCalls.push({ choiceIds });
       votesByPrincipal.set("me", choiceIds);
       return { kind: "submitted" };
@@ -101,12 +97,7 @@ async function mount(actions: BlockResponseActions) {
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root?.render(
-      <WorkbenchTimeline
-        items={messageWithPollBlock()}
-        blockResponses={actions}
-      />,
-    );
+    root?.render(<WorkbenchTimeline items={messageWithPollBlock()} blockResponses={actions} />);
   });
   return container;
 }
@@ -132,8 +123,8 @@ describe("poll card round-trip", () => {
     const backend = fakeBackend();
     const el = await mount(backend.actions);
 
-    const tuesday = [...el.querySelectorAll(".chat-block-poll-choice")].find(
-      (button) => button.textContent?.includes("Tuesday"),
+    const tuesday = [...el.querySelectorAll(".chat-block-poll-choice")].find((button) =>
+      button.textContent?.includes("Tuesday"),
     ) as HTMLButtonElement;
 
     await act(async () => {
@@ -152,10 +143,11 @@ describe("poll card round-trip", () => {
 
     const choices = [...el.querySelectorAll(".chat-block-poll-choice")];
     const tuesday = choices.find((b) => b.textContent?.includes("Tuesday")) as
-      HTMLButtonElement | undefined;
-    const thursday = choices.find((b) =>
-      b.textContent?.includes("Thursday"),
-    ) as HTMLButtonElement | undefined;
+      | HTMLButtonElement
+      | undefined;
+    const thursday = choices.find((b) => b.textContent?.includes("Thursday")) as
+      | HTMLButtonElement
+      | undefined;
     if (tuesday === undefined || thursday === undefined) {
       throw new Error("expected both choices to render");
     }
@@ -171,9 +163,9 @@ describe("poll card round-trip", () => {
     // Total respondents stays 1 — the same principal changed their vote,
     // never counted twice.
     expect(el.textContent).toContain("1 vote");
-    const refreshedThursday = [
-      ...el.querySelectorAll(".chat-block-poll-choice"),
-    ].find((b) => b.textContent?.includes("Thursday")) as HTMLButtonElement;
+    const refreshedThursday = [...el.querySelectorAll(".chat-block-poll-choice")].find((b) =>
+      b.textContent?.includes("Thursday"),
+    ) as HTMLButtonElement;
     expect(refreshedThursday.dataset["selected"]).toBe("true");
   });
 

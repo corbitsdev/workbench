@@ -41,11 +41,7 @@ async function mount(actions: ConnectGithubActions, messageId = "m1") {
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      <ConnectGithubBlockContainer
-        data={DATA}
-        messageId={messageId}
-        actions={actions}
-      />,
+      <ConnectGithubBlockContainer data={DATA} messageId={messageId} actions={actions} />,
     );
   });
   return container;
@@ -67,8 +63,7 @@ function typeInto(element: HTMLInputElement, text: string) {
  * connected fact, mirroring the real `/github/state` route reading the
  * just-written credential. */
 function buildNeverNotifiesHarness(options?: {
-  readonly submitResult?:
-    { readonly ok: true } | { readonly ok: false; readonly message: string };
+  readonly submitResult?: { readonly ok: true } | { readonly ok: false; readonly message: string };
 }) {
   let connected = false;
   return {
@@ -105,9 +100,7 @@ async function openFieldAndSubmit(el: HTMLElement, token: string) {
   await act(async () => {
     connectButton.click();
   });
-  const tokenField = el.querySelector(
-    "#connect-github-token",
-  ) as HTMLInputElement;
+  const tokenField = el.querySelector("#connect-github-token") as HTMLInputElement;
   await act(async () => {
     typeInto(tokenField, token);
   });
@@ -132,9 +125,7 @@ describe("ConnectGithubBlockContainer post-submit refresh (CL-6463)", () => {
     await openFieldAndSubmit(el, "ghp_test123");
 
     expect(el.textContent).toContain("Connected to GitHub as octocat");
-    expect(el.querySelectorAll(".chat-block-connect-repo-row")).toHaveLength(
-      REPOS.length,
-    );
+    expect(el.querySelectorAll(".chat-block-connect-repo-row")).toHaveLength(REPOS.length);
   });
 
   test("a successful PAT submit moves focus onto the pick-repos heading", async () => {
@@ -147,9 +138,7 @@ describe("ConnectGithubBlockContainer post-submit refresh (CL-6463)", () => {
     await act(async () => {
       connectButton.click();
     });
-    const tokenField = el.querySelector(
-      "#connect-github-token",
-    ) as HTMLInputElement;
+    const tokenField = el.querySelector("#connect-github-token") as HTMLInputElement;
     await act(async () => {
       typeInto(tokenField, "ghp_test123");
     });
@@ -188,9 +177,7 @@ describe("ConnectGithubBlockContainer post-submit refresh (CL-6463)", () => {
     ) as HTMLButtonElement;
     expect(submitButton.disabled).toBe(false);
 
-    const tokenField = el.querySelector(
-      "#connect-github-token",
-    ) as HTMLInputElement;
+    const tokenField = el.querySelector("#connect-github-token") as HTMLInputElement;
     expect(tokenField.disabled).toBe(false);
   });
 });
@@ -234,9 +221,7 @@ describe("ConnectGithubBlockContainer keeps connected across loading (CL-6741)",
     });
     expect(el.textContent).toContain("Connected to GitHub as octocat");
     expect(el.textContent).not.toContain("Connect GitHub");
-    expect(el.querySelectorAll(".chat-block-connect-repo-row")).toHaveLength(
-      REPOS.length,
-    );
+    expect(el.querySelectorAll(".chat-block-connect-repo-row")).toHaveLength(REPOS.length);
 
     // Remount while the host still reports loading — the last connected
     // snapshot must survive so Connect never flashes.

@@ -30,9 +30,7 @@ test("host dials in against a stub hub and exits cleanly on SIGTERM", async () =
     websocket: {
       open() {},
       message(_ws, message) {
-        registered.resolve(
-          typeof message === "string" ? message : message.toString(),
-        );
+        registered.resolve(typeof message === "string" ? message : message.toString());
       },
     },
   });

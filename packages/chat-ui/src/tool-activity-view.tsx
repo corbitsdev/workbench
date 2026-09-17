@@ -42,20 +42,14 @@ function StatusMarker({ status }: { readonly status: ToolActivityStatus }) {
       <Check />
     );
   return (
-    <span
-      className="chat-tool-activity-marker"
-      data-status={status}
-      aria-hidden="true"
-    >
+    <span className="chat-tool-activity-marker" data-status={status} aria-hidden="true">
       {icon}
     </span>
   );
 }
 
 function chipAccessibleName(row: ToolActivityRow): string {
-  return row.status === "failed"
-    ? `${CHAT_STRINGS.toolActivityFailed}. ${row.phrase}`
-    : row.phrase;
+  return row.status === "failed" ? `${CHAT_STRINGS.toolActivityFailed}. ${row.phrase}` : row.phrase;
 }
 
 function ActionGlyph({ glyph }: { readonly glyph: ToolActivityGlyph }) {
@@ -84,18 +78,14 @@ function ActionGlyph({ glyph }: { readonly glyph: ToolActivityGlyph }) {
       break;
   }
   return (
-    <span
-      className="chat-tool-activity-tile chat-tool-activity-glyph"
-      aria-hidden="true"
-    >
+    <span className="chat-tool-activity-tile chat-tool-activity-glyph" aria-hidden="true">
       {icon}
     </span>
   );
 }
 
 function LeadingMark({ row }: { readonly row: ToolActivityRow }) {
-  const tile =
-    row.provider === undefined ? undefined : providerTile(row.provider);
+  const tile = row.provider === undefined ? undefined : providerTile(row.provider);
   if (tile !== undefined) {
     return (
       <span
@@ -110,20 +100,12 @@ function LeadingMark({ row }: { readonly row: ToolActivityRow }) {
   return <ActionGlyph glyph={row.glyph} />;
 }
 
-function ChipBody({
-  row,
-  open,
-}: {
-  readonly row: ToolActivityRow;
-  readonly open: boolean;
-}) {
+function ChipBody({ row, open }: { readonly row: ToolActivityRow; readonly open: boolean }) {
   return (
     <>
       <LeadingMark row={row} />
       {row.status === "failed" ? (
-        <span className="chat-tool-activity-status-word">
-          {CHAT_STRINGS.toolActivityFailed}.{" "}
-        </span>
+        <span className="chat-tool-activity-status-word">{CHAT_STRINGS.toolActivityFailed}. </span>
       ) : null}
       <span className="chat-tool-activity-phrase">{row.phrase}</span>
       {row.meta === undefined ? null : (
@@ -133,11 +115,7 @@ function ChipBody({
       )}
       <StatusMarker status={row.status} />
       {row.detail === undefined ? null : (
-        <CaretRight
-          className="chat-tool-activity-caret"
-          data-open={open}
-          aria-hidden="true"
-        />
+        <CaretRight className="chat-tool-activity-caret" data-open={open} aria-hidden="true" />
       )}
     </>
   );
@@ -155,11 +133,7 @@ function ToolActivityLine({
 
   if (!hasDetail) {
     return (
-      <div
-        className="chat-tool-activity-row"
-        data-status={row.status}
-        data-indented={indented}
-      >
+      <div className="chat-tool-activity-row" data-status={row.status} data-indented={indented}>
         <div className="chat-tool-activity-chip" title={row.toolName}>
           <ChipBody row={row} open={false} />
         </div>
@@ -168,11 +142,7 @@ function ToolActivityLine({
   }
 
   return (
-    <div
-      className="chat-tool-activity-row"
-      data-status={row.status}
-      data-indented={indented}
-    >
+    <div className="chat-tool-activity-row" data-status={row.status} data-indented={indented}>
       <button
         type="button"
         className="chat-tool-activity-chip chat-tool-activity-trigger"
@@ -194,11 +164,7 @@ function ToolActivityLine({
  * chip keeps its own disclosure onto its detail; there is no group-level
  * trigger and no count of how many calls happened.
  */
-export function ToolActivityGroup({
-  rows,
-}: {
-  readonly rows: readonly ToolActivityRow[];
-}) {
+export function ToolActivityGroup({ rows }: { readonly rows: readonly ToolActivityRow[] }) {
   if (rows.length === 0) return null;
   return (
     <div className="chat-tool-activity" data-slot="tool-activity">
@@ -224,10 +190,7 @@ export function LiveToolActivity({
 }) {
   if (rows.length === 0 && !thinking && retryCount === 0) return null;
   return (
-    <div
-      className="chat-tool-activity chat-tool-activity-live"
-      data-slot="tool-activity"
-    >
+    <div className="chat-tool-activity chat-tool-activity-live" data-slot="tool-activity">
       {rows.map((row) => (
         <ToolActivityLine key={row.key} row={row} indented={false} />
       ))}

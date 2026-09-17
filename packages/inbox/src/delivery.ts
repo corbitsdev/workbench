@@ -93,9 +93,7 @@ export function createWorkbenchMailboxDelivery(
  * exists; the dispatch store dedupes by (mail row, sink), so a benign
  * redelivery's repair never double-queues.
  */
-export function createResolveExistingMailIds(
-  db: MailboxDb,
-): ResolveExistingMailIds {
+export function createResolveExistingMailIds(db: MailboxDb): ResolveExistingMailIds {
   return async (items) => {
     if (items.length === 0) return [];
     const keyed = items.map((item) => ({
@@ -123,16 +121,10 @@ export function createResolveExistingMailIds(
         ),
       );
     const idsByKey = new Map(
-      rows.map((row) => [
-        `${row.tenantId}\n${row.principalId}\n${row.messageKey}`,
-        row.id,
-      ]),
+      rows.map((row) => [`${row.tenantId}\n${row.principalId}\n${row.messageKey}`, row.id]),
     );
     return keyed.map(
-      (key) =>
-        idsByKey.get(
-          `${key.tenantId}\n${key.principalId}\n${key.messageKey}`,
-        ) ?? null,
+      (key) => idsByKey.get(`${key.tenantId}\n${key.principalId}\n${key.messageKey}`) ?? null,
     );
   };
 }

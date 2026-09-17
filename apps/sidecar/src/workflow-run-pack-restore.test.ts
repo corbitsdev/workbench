@@ -90,9 +90,7 @@ test("restored refs survive replacement and the next sidecar commit fast-forward
     for (const ref of ["refs/heads/main", "refs/heads/events"] as const) {
       const pack = await source.repoStore.createPack(hubPrincipal, repoId, ref);
       await restore({ agentAddress, repoId, ...pack });
-      expect(await target.repoStore.resolveRef(hubPrincipal, repoId, ref)).toBe(
-        pack.commitSha,
-      );
+      expect(await target.repoStore.resolveRef(hubPrincipal, repoId, ref)).toBe(pack.commitSha);
     }
     const restoredInbox = path.join(
       target.repoStore.getRepoDir(repoId),
@@ -141,18 +139,8 @@ test("restored refs survive replacement and the next sidecar commit fast-forward
     });
 
     expect(pushed).toHaveLength(1);
-    expect(
-      await source.repoStore.resolveRef(
-        hubPrincipal,
-        repoId,
-        "refs/heads/events",
-      ),
-    ).toBe(
-      await target.repoStore.resolveRef(
-        hubPrincipal,
-        repoId,
-        "refs/heads/events",
-      ),
+    expect(await source.repoStore.resolveRef(hubPrincipal, repoId, "refs/heads/events")).toBe(
+      await target.repoStore.resolveRef(hubPrincipal, repoId, "refs/heads/events"),
     );
   } finally {
     await fs.rm(root, { recursive: true, force: true });

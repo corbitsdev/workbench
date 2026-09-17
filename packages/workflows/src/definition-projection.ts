@@ -38,9 +38,7 @@ export class DefinitionProjectionMissingError extends Error {
     const guidance =
       "This agent isn't finished setting up. Open it in Agents, save " +
       "its instructions, and try again — or recreate it.";
-    super(
-      `No stored launch body for definition "${definitionName}" (${guidance})`,
-    );
+    super(`No stored launch body for definition "${definitionName}" (${guidance})`);
     this.name = "DefinitionProjectionMissingError";
     this.definitionName = definitionName;
     this.guidance = guidance;
@@ -77,9 +75,9 @@ export type DefinitionCandidate = {
  * wire hash — a frozen deploy record carrying whatever projection was
  * current at that deploy, which must never resolve a launch (CL-6452).
  */
-export function authoredDefinitionCandidates<
-  T extends { readonly origin: "authored" | "run" },
->(rows: readonly T[]): T[] {
+export function authoredDefinitionCandidates<T extends { readonly origin: "authored" | "run" }>(
+  rows: readonly T[],
+): T[] {
   return rows.filter((row) => row.origin === "authored");
 }
 
@@ -106,9 +104,7 @@ export class MultiStepFoldUnsupportedError extends Error {
       "does not yet support — only its first step would run. Reduce it " +
       "to a single step, or wait for multi-step routine launch support.";
     super(
-      `definition ${definitionId} is not single-step (${String(
-        stepCount,
-      )} steps) (${guidance})`,
+      `definition ${definitionId} is not single-step (${String(stepCount)} steps) (${guidance})`,
     );
     this.name = "MultiStepFoldUnsupportedError";
     this.definitionId = definitionId;
@@ -239,26 +235,16 @@ export const FoldedBodySchema = type({
  * the definition row because the projector drops it (see the module
  * header).
  */
-export function readFoldedBody(
-  projection: unknown,
-  grantRequirements: unknown,
-): FoldedBody {
+export function readFoldedBody(projection: unknown, grantRequirements: unknown): FoldedBody {
   const definition = InertWorkflowDefinitionSchema(projection);
   if (definition instanceof type.errors) {
     throw new Error(`inert projection is malformed: ${definition.summary}`);
   }
   const [stepId, ...rest] = definition.stepOrder;
   if (stepId === undefined || rest.length > 0) {
-    throw new MultiStepFoldUnsupportedError(
-      definition.id,
-      definition.stepOrder.length,
-    );
+    throw new MultiStepFoldUnsupportedError(definition.id, definition.stepOrder.length);
   }
-  const step = extractAgentBearingStep(
-    definition.steps[stepId],
-    definition.id,
-    stepId,
-  );
+  const step = extractAgentBearingStep(definition.steps[stepId], definition.id, stepId);
   const foldedBody = FoldedBodySchema({
     systemPrompt: step.agent.systemPrompt,
     toolPackagePins: step.agent.toolPackagePins ?? [],

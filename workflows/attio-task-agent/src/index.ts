@@ -117,14 +117,10 @@ export function buildAttioTaskAgentWorkflow(
   input: AttioTaskAgentWorkflowInput,
 ): WorkflowDefinition {
   if (input.triggerAddress === "") {
-    throw new Error(
-      "buildAttioTaskAgentWorkflow requires a non-empty triggerAddress",
-    );
+    throw new Error("buildAttioTaskAgentWorkflow requires a non-empty triggerAddress");
   }
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
-    throw new Error(
-      "buildAttioTaskAgentWorkflow requires turnTimeoutMs to be a positive integer",
-    );
+    throw new Error("buildAttioTaskAgentWorkflow requires turnTimeoutMs to be a positive integer");
   }
   return defineWorkflow({
     id: ATTIO_TASK_AGENT_WORKFLOW_ID,
@@ -154,9 +150,7 @@ export function buildAttioTaskAgentWorkflow(
  * anything JSON would silently drop or mangle is a loud error naming the
  * offending path instead of a corrupted asset.
  */
-export function serializeAttioTaskAgentWorkflow(
-  definition: WorkflowDefinition,
-): string {
+export function serializeAttioTaskAgentWorkflow(definition: WorkflowDefinition): string {
   assertJsonPortable(definition, "definition");
   return JSON.stringify(definition);
 }
@@ -176,8 +170,7 @@ function assertJsonPortable(value: unknown, path: string): void {
       break;
     default:
       throw new Error(
-        `${path} is a ${typeof value}, which does not survive JSON ` +
-          "serialization",
+        `${path} is a ${typeof value}, which does not survive JSON ` + "serialization",
       );
   }
   if (Array.isArray(value)) {
@@ -188,9 +181,7 @@ function assertJsonPortable(value: unknown, path: string): void {
   }
   const proto: unknown = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) {
-    throw new Error(
-      `${path} is a non-plain object; JSON would flatten it lossily`,
-    );
+    throw new Error(`${path} is a non-plain object; JSON would flatten it lossily`);
   }
   for (const [key, entry] of Object.entries(value)) {
     assertJsonPortable(entry, `${path}.${key}`);

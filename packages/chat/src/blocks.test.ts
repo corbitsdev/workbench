@@ -253,11 +253,7 @@ describe("parseBlock hostile inputs", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok || result.block.type !== "poll") throw new Error("shape");
-    expect(Object.keys(result.block.data).sort()).toEqual([
-      "choices",
-      "pollId",
-      "title",
-    ]);
+    expect(Object.keys(result.block.data).sort()).toEqual(["choices", "pollId", "title"]);
     const choice = result.block.data.choices[0];
     if (choice === undefined) throw new Error("missing choice");
     expect(Object.keys(choice).sort()).toEqual(["id", "label"]);
@@ -274,15 +270,7 @@ describe("parseBlock hostile inputs", () => {
   });
 
   test("non-object data for every known type fails cleanly", () => {
-    for (const t of [
-      "approve",
-      "steps",
-      "metrics",
-      "poll",
-      "form",
-      "stream",
-      "question",
-    ]) {
+    for (const t of ["approve", "steps", "metrics", "poll", "form", "stream", "question"]) {
       for (const data of [null, undefined, 0, "s", [], () => {}]) {
         const result = parseBlock({ type: t, data });
         expect(result.ok).toBe(false);
@@ -306,11 +294,7 @@ describe("parseBlock — question", () => {
     if (!result.ok) throw new Error(result.summary);
     expect(result.block.type).toBe("question");
     if (result.block.type !== "question") throw new Error("wrong type");
-    expect(result.block.data.options).toEqual([
-      "Staging",
-      "Production",
-      "Canary",
-    ]);
+    expect(result.block.data.options).toEqual(["Staging", "Production", "Canary"]);
     expect(result.block.data.allowFreeText).toBeUndefined();
   });
 
@@ -363,9 +347,7 @@ describe("parseBlock — question", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.summary);
     if (result.block.type !== "question") throw new Error("wrong type");
-    expect(
-      (result.block.data as Record<string, unknown>)["tally"],
-    ).toBeUndefined();
+    expect((result.block.data as Record<string, unknown>)["tally"]).toBeUndefined();
   });
 });
 
@@ -419,9 +401,7 @@ describe("parseBlock connect-github", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.summary);
-    expect(
-      (result.block.data as Record<string, unknown>)["repos"],
-    ).toBeUndefined();
+    expect((result.block.data as Record<string, unknown>)["repos"]).toBeUndefined();
   });
 });
 
@@ -489,8 +469,6 @@ describe("parseBlock connect-service", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.summary);
-    expect(
-      (result.block.data as Record<string, unknown>)["state"],
-    ).toBeUndefined();
+    expect((result.block.data as Record<string, unknown>)["state"]).toBeUndefined();
   });
 });

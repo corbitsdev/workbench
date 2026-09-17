@@ -1,11 +1,7 @@
 import { expect, test } from "bun:test";
 import type { ToolCall } from "@intx/types/runtime";
 
-import {
-  capabilityTools,
-  REQUEST_CAPABILITY_TOOL,
-  type WorkflowCapabilityEnv,
-} from "./tool";
+import { capabilityTools, REQUEST_CAPABILITY_TOOL, type WorkflowCapabilityEnv } from "./tool";
 
 function testEnv(): WorkflowCapabilityEnv {
   return {
@@ -22,9 +18,7 @@ function callFor(args: Record<string, unknown>): ToolCall {
 
 test("declares exactly the request_capability tool", () => {
   const bundle = capabilityTools(testEnv());
-  expect(bundle.definitions.map((d) => d.name)).toEqual([
-    REQUEST_CAPABILITY_TOOL,
-  ]);
+  expect(bundle.definitions.map((d) => d.name)).toEqual([REQUEST_CAPABILITY_TOOL]);
 });
 
 test("requires the sanctioned workflow-capability env keys, including the calling agent's own definitionId", () => {
@@ -37,9 +31,7 @@ test("requires the sanctioned workflow-capability env keys, including the callin
 });
 
 test("declares approval: \"ask\" — Interchange's native per-invocation gate — so a human must approve before this bundle's run() ever executes", () => {
-  expect(capabilityTools.definitions).toEqual([
-    { name: REQUEST_CAPABILITY_TOOL, approval: "ask" },
-  ]);
+  expect(capabilityTools.definitions).toEqual([{ name: REQUEST_CAPABILITY_TOOL, approval: "ask" }]);
 });
 
 test("the tool's input schema requires kind, name, and why, and offers an optional title for the approval card", () => {
@@ -101,13 +93,9 @@ test("on approval, calls the capabilities route with the calling agent's own def
       }),
       new AbortController().signal,
     );
-    expect(seenUrl).toBe(
-      "https://hub.example.com/api/workflow-capabilities/def_1/capabilities",
-    );
+    expect(seenUrl).toBe("https://hub.example.com/api/workflow-capabilities/def_1/capabilities");
     expect(result.isError).toBeFalsy();
-    expect(result.content).toBe(
-      "Added @corbits/github-tools — I can use it from my next reply.",
-    );
+    expect(result.content).toBe("Added @corbits/github-tools — I can use it from my next reply.");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -156,9 +144,7 @@ test("an out-of-inventory request reports what's actually available, never a fab
         { status: 400 },
       );
     }
-    expect(String(url)).toBe(
-      "https://hub.example.com/api/workflow-capabilities/inventory",
-    );
+    expect(String(url)).toBe("https://hub.example.com/api/workflow-capabilities/inventory");
     return new Response(
       JSON.stringify({
         toolPackages: [{ name: "@corbits/memory-tools" }],

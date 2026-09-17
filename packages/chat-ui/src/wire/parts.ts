@@ -88,9 +88,7 @@ export const FilePart = type({
     return true;
   }
   if (hasBlobId === hasData) {
-    return ctx.reject(
-      "exactly one of `blobId` or `data` must be set on a FilePart",
-    );
+    return ctx.reject("exactly one of `blobId` or `data` must be set on a FilePart");
   }
   return true;
 });

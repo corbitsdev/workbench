@@ -53,9 +53,7 @@ export function deriveDisplayName(definition: {
 }): string {
   const parsed = DisplayNameSource(definition);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `deriveDisplayName: invalid agent definition: ${parsed.summary}`,
-    );
+    throw new Error(`deriveDisplayName: invalid agent definition: ${parsed.summary}`);
   }
   const description = parsed.description?.trim();
   if (description !== undefined && description !== "") {

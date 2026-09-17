@@ -14,8 +14,7 @@ describe("openAgentDmChat", () => {
   function stubFetch(respond: (path: string) => Response): RecordedCall[] {
     const calls: RecordedCall[] = [];
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-      const path =
-        typeof input === "string" ? input : new URL(String(input)).pathname;
+      const path = typeof input === "string" ? input : new URL(String(input)).pathname;
       calls.push(init === undefined ? { path } : { path, init });
       return Promise.resolve(respond(path));
     }) as typeof fetch;
@@ -43,9 +42,7 @@ describe("openAgentDmChat", () => {
       throw new Error(`unexpected fetch: ${path}`);
     });
 
-    await openAgentDmChat("tnt_root", "wfd_outreach", (to) =>
-      navigated.push(to),
-    );
+    await openAgentDmChat("tnt_root", "wfd_outreach", (to) => navigated.push(to));
 
     const call = calls.find((c) => c.path.endsWith("/chat/workbenches"));
     expect(call?.path).toBe("/api/tenants/tnt_root/chat/workbenches");

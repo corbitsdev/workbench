@@ -42,15 +42,12 @@ function workflowDeployHeadline(toolArguments: object): string | undefined {
   const commitSha = stringField(toolArguments, "commitSha");
   if (commitSha === undefined) return undefined;
   const packageName =
-    stringField(toolArguments, "packageName") ??
-    stringField(toolArguments, "assetId");
+    stringField(toolArguments, "packageName") ?? stringField(toolArguments, "assetId");
   if (packageName === undefined) return undefined;
   const sha7 = commitSha.slice(0, 7);
   const pins = toolPackagePinsField(toolArguments, "toolPackagePins");
   const toolsText =
-    pins.length > 0
-      ? pins.map((pin) => `${pin.name}@${pin.version}`).join(", ")
-      : "none declared";
+    pins.length > 0 ? pins.map((pin) => `${pin.name}@${pin.version}`).join(", ") : "none declared";
   return `Deploy workflow ${packageName} @ ${sha7} — tools: ${toolsText}`;
 }
 
@@ -79,29 +76,20 @@ const TOOL_HEADLINE_RENDERERS: Readonly<
  * appended so the headline reflects what THIS approval is actually
  * about, not just which tool is asking.
  */
-export function headlineFor(
-  toolDefinition: unknown,
-  toolArguments: unknown,
-): string {
+export function headlineFor(toolDefinition: unknown, toolArguments: unknown): string {
   const toolName =
     typeof toolDefinition === "object" && toolDefinition !== null
       ? stringField(toolDefinition, "name")
       : undefined;
-  const renderer =
-    toolName !== undefined ? TOOL_HEADLINE_RENDERERS[toolName] : undefined;
-  if (
-    renderer !== undefined &&
-    typeof toolArguments === "object" &&
-    toolArguments !== null
-  ) {
+  const renderer = toolName !== undefined ? TOOL_HEADLINE_RENDERERS[toolName] : undefined;
+  if (renderer !== undefined && typeof toolArguments === "object" && toolArguments !== null) {
     const rendered = renderer(toolArguments);
     if (rendered !== undefined) return rendered;
   }
 
   const base =
     typeof toolDefinition === "object" && toolDefinition !== null
-      ? (stringField(toolDefinition, "description") ??
-        stringField(toolDefinition, "name"))
+      ? (stringField(toolDefinition, "description") ?? stringField(toolDefinition, "name"))
       : undefined;
   const headline = base ?? "Run a tool";
   const title =

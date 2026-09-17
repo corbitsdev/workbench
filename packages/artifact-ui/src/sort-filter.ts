@@ -25,7 +25,6 @@ export function filterArtifacts(
   if (needle === "") return [...artifacts];
   return artifacts.filter(
     (artifact) =>
-      artifact.title.toLowerCase().includes(needle) ||
-      artifact.kind.toLowerCase().includes(needle),
+      artifact.title.toLowerCase().includes(needle) || artifact.kind.toLowerCase().includes(needle),
   );
 }

@@ -49,10 +49,7 @@ import {
   startHub,
   startSidecar,
 } from "./e2e/harness.ts";
-import {
-  assertDatabaseConfigured,
-  skippedDatabaseWarning,
-} from "./e2e/db-gate.ts";
+import { assertDatabaseConfigured, skippedDatabaseWarning } from "./e2e/db-gate.ts";
 
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
@@ -125,9 +122,7 @@ function assertPlumbingOnly(results: readonly EvalRunResult[]): void {
   for (const result of results) {
     for (const step of result.steps) {
       if (step.turn.replyText.trim() === "") {
-        problems.push(
-          `${result.evalName} step ${String(step.stepIndex)}: empty reply text`,
-        );
+        problems.push(`${result.evalName} step ${String(step.stepIndex)}: empty reply text`);
       }
       if (!Array.isArray(step.turn.toolCalls)) {
         problems.push(
@@ -151,12 +146,9 @@ async function main(): Promise<void> {
   const live =
     (process.env["EVAL_PROVIDER_API_KEY"] !== undefined &&
       process.env["EVAL_PROVIDER_API_KEY"] !== "") ||
-    (process.env["EVAL_PROVIDER"] === "ollama" &&
-      process.env["OLLAMA_BASE_URL"] !== undefined);
+    (process.env["EVAL_PROVIDER"] === "ollama" && process.env["OLLAMA_BASE_URL"] !== undefined);
 
-  const configs: readonly RunConfig[] = [
-    { name: live ? "live" : "plumbing-only" },
-  ];
+  const configs: readonly RunConfig[] = [{ name: live ? "live" : "plumbing-only" }];
   const configByName = new Map(configs.map((config) => [config.name, config]));
 
   // The recorded GitHub MCP fake (CL-6338) rides every run: connected
@@ -192,8 +184,7 @@ async function main(): Promise<void> {
         // failed delivery's status and body are readable off the run.
         if (step.turn.human.startsWith("(harness)")) {
           process.stdout.write(
-            `  ${result.evalName} step ${String(step.stepIndex)}: ` +
-              `${step.turn.replyText}\n`,
+            `  ${result.evalName} step ${String(step.stepIndex)}: ` + `${step.turn.replyText}\n`,
           );
         }
         for (const report of step.scorerReports) {
@@ -212,13 +203,7 @@ async function main(): Promise<void> {
   const markdown = renderResultsMarkdown(evalNames, configNames, results);
   process.stdout.write(`${markdown}\n`);
 
-  const reportPath = path.join(
-    import.meta.dir,
-    "..",
-    "packages",
-    "evals",
-    "eval-report.md",
-  );
+  const reportPath = path.join(import.meta.dir, "..", "packages", "evals", "eval-report.md");
   await mkdir(path.dirname(reportPath), { recursive: true });
   await writeFile(reportPath, markdown);
 
@@ -235,17 +220,13 @@ async function main(): Promise<void> {
 
     const failed = results.flatMap((result) =>
       result.steps.flatMap((step) =>
-        step.scorerReports.filter(
-          (report) => !report.pass && report.skipped !== true,
-        ),
+        step.scorerReports.filter((report) => !report.pass && report.skipped !== true),
       ),
     );
     if (failed.length > 0) {
       console.error(
         `bun run eval: ${String(failed.length)} scorer(s) failed:\n` +
-          failed
-            .map((report) => `  - ${report.name}: ${report.reason}`)
-            .join("\n"),
+          failed.map((report) => `  - ${report.name}: ${report.reason}`).join("\n"),
       );
       process.exitCode = 1;
     }

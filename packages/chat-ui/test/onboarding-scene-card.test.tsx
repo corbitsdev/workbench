@@ -74,28 +74,18 @@ function stepRows(el: HTMLElement) {
 
 function stepTitles(el: HTMLElement) {
   return stepRows(el).map(
-    (row) =>
-      row.querySelector(".chat-block-scene-step-title")?.textContent ?? "",
+    (row) => row.querySelector(".chat-block-scene-step-title")?.textContent ?? "",
   );
 }
 
 function currentStepTitle(el: HTMLElement): string | undefined {
-  const current = stepRows(el).find(
-    (row) => row.getAttribute("data-state") === "current",
-  );
-  return (
-    current?.querySelector(".chat-block-scene-step-title")?.textContent ??
-    undefined
-  );
+  const current = stepRows(el).find((row) => row.getAttribute("data-state") === "current");
+  return current?.querySelector(".chat-block-scene-step-title")?.textContent ?? undefined;
 }
 
 function currentStepAria(el: HTMLElement): string | null {
-  const current = stepRows(el).find(
-    (row) => row.getAttribute("aria-current") === "step",
-  );
-  return (
-    current?.querySelector(".chat-block-scene-step-title")?.textContent ?? null
-  );
+  const current = stepRows(el).find((row) => row.getAttribute("aria-current") === "step");
+  return current?.querySelector(".chat-block-scene-step-title")?.textContent ?? null;
 }
 
 /** A host whose live state is whatever the test says it is, pushed once
@@ -132,9 +122,7 @@ describe("the room's onboarding card is a scene, not a member's message", () => 
     expect(el.querySelector(".chat-bubble-row")).toBeNull();
     expect(el.textContent).not.toContain("Member");
     expect(el.textContent).not.toContain("system");
-    expect(
-      el.querySelector(".chat-message-group")?.getAttribute("data-own"),
-    ).toBe("false");
+    expect(el.querySelector(".chat-message-group")?.getAttribute("data-own")).toBe("false");
   });
 
   test("the card names the job, promises the outcome, and lists the room's own step labels in order", async () => {
@@ -148,12 +136,8 @@ describe("the room's onboarding card is a scene, not a member's message", () => 
         })}
       />,
     );
-    expect(el.querySelector(".chat-block-title")?.textContent).toBe(
-      "Code review",
-    );
-    expect(el.querySelector(".chat-block-scene-promise")?.textContent).toBe(
-      PROMISE,
-    );
+    expect(el.querySelector(".chat-block-title")?.textContent).toBe("Code review");
+    expect(el.querySelector(".chat-block-scene-promise")?.textContent).toBe(PROMISE);
     expect(stepTitles(el)).toEqual([
       "Connect GitHub",
       "Choose what gets reviewed",
@@ -170,9 +154,7 @@ describe("the room's onboarding card is a scene, not a member's message", () => 
         })}
       />,
     );
-    expect(el.querySelector(".chat-block-title")?.textContent).toBe(
-      "Code review",
-    );
+    expect(el.querySelector(".chat-block-title")?.textContent).toBe("Code review");
     expect(el.querySelector(".chat-block-scene-promise")).toBeNull();
     expect(el.querySelector(".chat-block-scene-steps")).toBeNull();
     expect(el.querySelector(".chat-block-scene-why")).toBeNull();
@@ -189,9 +171,7 @@ describe("the room's onboarding card is a scene, not a member's message", () => 
         })}
       />,
     );
-    expect(el.querySelector(".chat-block-scene-promise")?.textContent).toBe(
-      PROMISE,
-    );
+    expect(el.querySelector(".chat-block-scene-promise")?.textContent).toBe(PROMISE);
     expect(el.querySelector(".chat-block-scene-steps")).toBeNull();
   });
 
@@ -206,10 +186,7 @@ describe("the room's onboarding card is a scene, not a member's message", () => 
         })}
       />,
     );
-    expect(stepTitles(el)).toEqual([
-      "Connect GitHub",
-      "Choose what gets reviewed",
-    ]);
+    expect(stepTitles(el)).toEqual(["Connect GitHub", "Choose what gets reviewed"]);
     expect(currentStepTitle(el)).toBeUndefined();
     expect(el.querySelector(".chat-block-scene-why")).toBeNull();
   });
@@ -237,18 +214,12 @@ describe("the walkthrough marker follows the live connect state", () => {
     const el = await mountAt("m_step1", { kind: "disconnected" });
     expect(currentStepTitle(el)).toBe("Connect GitHub");
     expect(currentStepAria(el)).toBe("Connect GitHub");
-    expect(el.querySelector(".chat-block-scene-why")?.textContent).toBe(
-      STEPS[0]?.why,
-    );
+    expect(el.querySelector(".chat-block-scene-why")?.textContent).toBe(STEPS[0]?.why);
     const status = el.querySelector(".chat-block-scene-status");
     expect(status?.getAttribute("aria-live")).toBe("polite");
     expect(status?.textContent).toBe("Connect GitHub");
-    expect(
-      el.querySelector(".chat-block-scene-body")?.getAttribute("aria-live"),
-    ).toBeNull();
-    expect(el.querySelector(".chat-block-scene-body")?.contains(status)).toBe(
-      false,
-    );
+    expect(el.querySelector(".chat-block-scene-body")?.getAttribute("aria-live")).toBeNull();
+    expect(el.querySelector(".chat-block-scene-body")?.contains(status)).toBe(false);
   });
 
   test("connected with nothing recorded yet marks Pick your repos", async () => {
@@ -260,9 +231,7 @@ describe("the walkthrough marker follows the live connect state", () => {
     });
     expect(currentStepTitle(el)).toBe("Choose what gets reviewed");
     expect(currentStepAria(el)).toBe("Choose what gets reviewed");
-    expect(el.querySelector(".chat-block-scene-why")?.textContent).toBe(
-      STEPS[1]?.why,
-    );
+    expect(el.querySelector(".chat-block-scene-why")?.textContent).toBe(STEPS[1]?.why);
     expect(el.textContent).toContain("acme/checkout");
   });
 
@@ -277,9 +246,9 @@ describe("the walkthrough marker follows the live connect state", () => {
     expect(currentStepAria(el)).toBe("Start reviewing");
     const done = el.querySelector(".chat-block-scene-reviewing");
     expect(done?.textContent).toContain("Reviewing");
-    const names = [
-      ...el.querySelectorAll(".chat-block-scene-repo-names li"),
-    ].map((item) => item.textContent);
+    const names = [...el.querySelectorAll(".chat-block-scene-repo-names li")].map(
+      (item) => item.textContent,
+    );
     expect(names).toEqual(["acme/checkout", "acme/web"]);
     expect(done?.textContent).toContain("change repos");
     // The done state never re-offers connecting — the card is past it.
@@ -301,13 +270,9 @@ describe("the walkthrough marker follows the live connect state", () => {
       changeRepos?.click();
     });
     expect(el.textContent).toContain("2 repos your token can reach · 1 picked");
-    expect(el.querySelector(".chat-block-title")?.textContent).toBe(
-      "Code review",
-    );
+    expect(el.querySelector(".chat-block-title")?.textContent).toBe("Code review");
     expect(currentStepTitle(el)).toBe("Choose what gets reviewed");
-    expect(el.querySelector(".chat-block-scene-why")?.textContent).toBe(
-      STEPS[1]?.why,
-    );
+    expect(el.querySelector(".chat-block-scene-why")?.textContent).toBe(STEPS[1]?.why);
   });
 
   test("a rejected start reviewing after change repos keeps the picker and reports the error", async () => {
@@ -322,11 +287,7 @@ describe("the walkthrough marker follows the live connect state", () => {
       startReviewing: () => Promise.reject(new Error("could not start")),
     };
     const el = await mount(
-      <ConnectGithubBlockContainer
-        data={DATA}
-        messageId="m_step_reject"
-        actions={actions}
-      />,
+      <ConnectGithubBlockContainer data={DATA} messageId="m_step_reject" actions={actions} />,
     );
     const changeRepos = [...el.querySelectorAll("button")].find(
       (button) => button.textContent === "change repos",

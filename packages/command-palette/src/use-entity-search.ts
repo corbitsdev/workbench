@@ -57,10 +57,9 @@ export function useEntitySearch({
 }: UseEntitySearchOptions): UseEntitySearchResult {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [offset, setOffset] = useState(0);
-  const [fetched, setFetched] = useState<ReadonlyMap<
-    string,
-    readonly SearchableEntity[]
-  > | null>(null);
+  const [fetched, setFetched] = useState<ReadonlyMap<string, readonly SearchableEntity[]> | null>(
+    null,
+  );
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState(false);
   const fetchToken = useRef(0);
@@ -73,8 +72,7 @@ export function useEntitySearch({
   // True the instant a keystroke outruns the debounce and stays true until
   // that query's fetch resolves — derived here so the spinner shows on the
   // render the keystroke caused, before any passive effect runs.
-  const pending =
-    enabled && query.trim().length > 0 && debouncedQuery !== query;
+  const pending = enabled && query.trim().length > 0 && debouncedQuery !== query;
 
   useEffect(() => {
     setOffset(0);

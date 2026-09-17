@@ -12,10 +12,7 @@ import type { Root } from "react-dom/client";
 import type { ConnectorDescriptor } from "@corbits/connections/registry";
 import type { ResolvedPlugin } from "@corbits/connections/plugins";
 
-import {
-  PluginConnectPanel,
-  type PluginPanelSubject,
-} from "../src/plugin-connect-panel";
+import { PluginConnectPanel, type PluginPanelSubject } from "../src/plugin-connect-panel";
 import type { McpPreset } from "../src/mcp-servers-api";
 import { PLUGINS_STRINGS } from "../src/strings";
 
@@ -64,8 +61,7 @@ function notConnected(d: ConnectorDescriptor): ResolvedPlugin {
   };
 }
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 // Dialog content renders through a Radix portal appended to
 // `document.body`, not inside the mount container — every assertion below
@@ -98,9 +94,7 @@ function render(
 describe("PluginConnectPanel", () => {
   test("an oauth-pkce connector shows an OAuth connect link, not a key form", () => {
     const container = render(
-      connectorSubject(
-        notConnected(descriptor("huggingface", "Hugging Face", "oauth-pkce")),
-      ),
+      connectorSubject(notConnected(descriptor("huggingface", "Hugging Face", "oauth-pkce"))),
     );
 
     const link = container.querySelector("a");
@@ -112,9 +106,7 @@ describe("PluginConnectPanel", () => {
 
   // CL-6377: one Connect action — no separate test step or "Test" copy.
   test("an api-key connector shows the connect form", () => {
-    const container = render(
-      connectorSubject(notConnected(descriptor("exa", "Exa", "api-key"))),
-    );
+    const container = render(connectorSubject(notConnected(descriptor("exa", "Exa", "api-key"))));
 
     expect(container.querySelector('input[type="password"]')).not.toBeNull();
     expect(container.textContent).toContain("Connect");
@@ -146,9 +138,7 @@ describe("PluginConnectPanel", () => {
     }) as unknown as typeof fetch;
 
     const container = render(
-      connectorSubject(
-        notConnected(descriptor("granola", "Granola", "api-key")),
-      ),
+      connectorSubject(notConnected(descriptor("granola", "Granola", "api-key"))),
     );
     await settle();
 
@@ -181,14 +171,10 @@ describe("PluginConnectPanel", () => {
     expect(container.textContent).not.toContain("Close");
 
     act(() => {
-      disconnectButton?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      disconnectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     act(() => {
-      disconnectButton?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      disconnectButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await settle();
 
@@ -217,9 +203,7 @@ describe("PluginConnectPanel", () => {
         headers: { "content-type": "application/json" },
       })) as unknown as typeof fetch;
 
-    const container = render(
-      connectorSubject(notConnected(githubDescriptor())),
-    );
+    const container = render(connectorSubject(notConnected(githubDescriptor())));
     await settle();
 
     const link = container.querySelector("a");
@@ -234,9 +218,7 @@ describe("PluginConnectPanel", () => {
         headers: { "content-type": "application/json" },
       })) as unknown as typeof fetch;
 
-    const container = render(
-      connectorSubject(notConnected(githubDescriptor())),
-    );
+    const container = render(connectorSubject(notConnected(githubDescriptor())));
     await settle();
 
     expect(container.textContent).toContain(
@@ -248,12 +230,9 @@ describe("PluginConnectPanel", () => {
   // CL-6830: a failed oauth-configured probe must not collapse into `{}`
   // (which reads as "hosted app absent" and hides one-click connect).
   test("GitHub when the oauth-configured probe fails shows error and retry, not the not-configured token paste", async () => {
-    globalThis.fetch = (() =>
-      Promise.reject(new Error("network down"))) as unknown as typeof fetch;
+    globalThis.fetch = (() => Promise.reject(new Error("network down"))) as unknown as typeof fetch;
 
-    const container = render(
-      connectorSubject(notConnected(githubDescriptor())),
-    );
+    const container = render(connectorSubject(notConnected(githubDescriptor())));
     await settle();
 
     expect(container.textContent).toContain("Couldn't check");
@@ -277,9 +256,7 @@ describe("PluginConnectPanel", () => {
       });
     }) as unknown as typeof fetch;
 
-    const container = render(
-      connectorSubject(notConnected(githubDescriptor())),
-    );
+    const container = render(connectorSubject(notConnected(githubDescriptor())));
     await settle();
 
     const retry = [...container.querySelectorAll("button")].find(
@@ -328,23 +305,15 @@ describe("PluginConnectPanel", () => {
     }) as unknown as typeof fetch;
 
     const changed: number[] = [];
-    const container = render(
-      { kind: "mcp-preset", preset, toolCount: undefined },
-      (toolCount) => {
-        if (toolCount !== undefined) changed.push(toolCount);
-      },
+    const container = render({ kind: "mcp-preset", preset, toolCount: undefined }, (toolCount) => {
+      if (toolCount !== undefined) changed.push(toolCount);
+    });
+    const field = container.querySelector("#mcp-preset-token-github-mcp") as HTMLInputElement;
+    expect(container.querySelector(`label[for="${field.id}"]`)?.textContent).toContain(
+      "Personal access token",
     );
-    const field = container.querySelector(
-      "#mcp-preset-token-github-mcp",
-    ) as HTMLInputElement;
-    expect(
-      container.querySelector(`label[for="${field.id}"]`)?.textContent,
-    ).toContain("Personal access token");
     expect(field.autocomplete).toBe("new-password");
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value",
-    )?.set;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
     await act(async () => {
       setter?.call(field, "ghp_pasted");
       field.dispatchEvent(new Event("input", { bubbles: true }));

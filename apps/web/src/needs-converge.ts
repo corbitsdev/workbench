@@ -93,11 +93,7 @@ export type StockHub = {
    * owner — the stock route the first-signup installer step uses to
    * create the primary tenant; a workbench child tenant always supplies
    * it. */
-  createTenant(input: {
-    name: string;
-    slug: string;
-    parentId?: string;
-  }): Promise<HubTenant>;
+  createTenant(input: { name: string; slug: string; parentId?: string }): Promise<HubTenant>;
   /**
    * Invites by email and assigns `role` (a system role name, e.g.
    * "member") in the same op — the stock invite route's `roleId` is the
@@ -105,10 +101,7 @@ export type StockHub = {
    * principal lands with zero roles and every subsequent read 403s
    * (CL-8085/CL-8131 fix).
    */
-  inviteMember(
-    tenantId: string,
-    input: { email: string; role: string },
-  ): Promise<void>;
+  inviteMember(tenantId: string, input: { email: string; role: string }): Promise<void>;
   deployWorkflow(tenantId: string, input: WorkflowDeployInput): Promise<void>;
   sendRunMail(input: SendRunMailInput): Promise<{ messageId: string }>;
   listRunMail(input: { tenantId: string }): Promise<MailMessage[]>;
@@ -179,17 +172,13 @@ export async function findOwnedTenants(hub: StockHub): Promise<HubTenant[]> {
       membership.roles.some((role) => role.name === "owner"),
   );
   return (
-    await Promise.all(
-      activeOwned.map((membership) => hub.getTenant(membership.tenantId)),
-    )
+    await Promise.all(activeOwned.map((membership) => hub.getTenant(membership.tenantId)))
   ).filter((tenant): tenant is HubTenant => tenant !== null);
 }
 
 export async function readHubSnapshot(hub: StockHub): Promise<HubSnapshot> {
   const tenants = await findOwnedTenants(hub);
-  const primaryCandidates = tenants.filter(
-    (tenant) => tenant.parentId === null,
-  );
+  const primaryCandidates = tenants.filter((tenant) => tenant.parentId === null);
   const [primaryTenant] = primaryCandidates;
   if (primaryCandidates.length !== 1 || primaryTenant === undefined) {
     throw new StockHubCapabilityError(
@@ -197,16 +186,11 @@ export async function readHubSnapshot(hub: StockHub): Promise<HubSnapshot> {
       `Sign-in must leave exactly one owned top-level home; found ${primaryCandidates.length}.`,
     );
   }
-  const childTenants = tenants.filter(
-    (tenant) => tenant.parentId === primaryTenant.id,
-  );
+  const childTenants = tenants.filter((tenant) => tenant.parentId === primaryTenant.id);
   const [primaryPrincipals, childRows] = await Promise.all([
     hub.listPrincipals(primaryTenant.id),
     Promise.all(
-      childTenants.map(
-        async (tenant) =>
-          [tenant.id, await hub.listPrincipals(tenant.id)] as const,
-      ),
+      childTenants.map(async (tenant) => [tenant.id, await hub.listPrincipals(tenant.id)] as const),
     ),
   ]);
   return {
@@ -248,9 +232,7 @@ async function convergeWorkbenchTenant(
   workbench: NeedsList["workbenches"][number],
 ): Promise<{ tenantId: string; created: boolean }> {
   const stored = store.load().find((row) => row.localId === workbench.localId);
-  const existing = snapshot.childTenants.find(
-    (tenant) => tenant.id === stored?.tenantId,
-  );
+  const existing = snapshot.childTenants.find((tenant) => tenant.id === stored?.tenantId);
   if (existing !== undefined && stored !== undefined) {
     return { tenantId: existing.id, created: false };
   }
@@ -355,12 +337,7 @@ export async function convergeNeedsList(
   // primary-thread first message.
   const createdTenantIds: string[] = [];
   for (const workbench of manifest.workbenches) {
-    const converged = await convergeWorkbenchTenant(
-      hub,
-      store,
-      snapshot,
-      workbench,
-    );
+    const converged = await convergeWorkbenchTenant(hub, store, snapshot, workbench);
     if (converged.created) createdTenantIds.push(converged.tenantId);
     await convergePrimaryThread(hub, store, workbench, converged.tenantId);
   }
@@ -370,9 +347,7 @@ export async function convergeNeedsList(
   // recorded primary id) plus forked sub-threads.
   const primaryThreads: PrimaryThread[] = [];
   for (const workbench of manifest.workbenches) {
-    const stored = store
-      .load()
-      .find((row) => row.localId === workbench.localId);
+    const stored = store.load().find((row) => row.localId === workbench.localId);
     if (stored === undefined) continue;
     const mail = await hub.listRunMail({ tenantId: stored.tenantId });
     const grouped = deriveThreads(mail);
@@ -388,9 +363,7 @@ export async function convergeNeedsList(
     primaryThreads.push({
       tenantId: stored.tenantId,
       rootMessageId,
-      subThreads: grouped.filter(
-        (thread) => thread.rootMessageId !== rootMessageId,
-      ),
+      subThreads: grouped.filter((thread) => thread.rootMessageId !== rootMessageId),
     });
   }
 
@@ -548,10 +521,7 @@ async function resolveRoleId(
   return found.id;
 }
 
-async function readJson(
-  response: Response,
-  operation: string,
-): Promise<unknown> {
+async function readJson(response: Response, operation: string): Promise<unknown> {
   if (!response.ok) {
     throw new StockHubRequestError(
       operation,
@@ -608,23 +578,14 @@ async function fetchAllPages<T>(
 export function createFetchStockHub(fetchImpl: typeof fetch = fetch): StockHub {
   return {
     async listMyPrincipals() {
-      return fetchAllPages(
-        fetchImpl,
-        "/api/me/principals",
-        "listMyPrincipals",
-        (body) => parseBoundary(MembershipPageShape, body, "listMyPrincipals"),
+      return fetchAllPages(fetchImpl, "/api/me/principals", "listMyPrincipals", (body) =>
+        parseBoundary(MembershipPageShape, body, "listMyPrincipals"),
       );
     },
     async getTenant(id) {
-      const response = await fetchImpl(
-        `/api/tenants/${encodeURIComponent(id)}`,
-      );
+      const response = await fetchImpl(`/api/tenants/${encodeURIComponent(id)}`);
       if (response.status === 404) return null;
-      const parsed = parseBoundary(
-        TenantShape,
-        await readJson(response, "getTenant"),
-        "getTenant",
-      );
+      const parsed = parseBoundary(TenantShape, await readJson(response, "getTenant"), "getTenant");
       return { ...parsed, parentId: parsed.parentId ?? null };
     },
     async listPrincipals(tenantId) {
@@ -650,41 +611,32 @@ export function createFetchStockHub(fetchImpl: typeof fetch = fetch): StockHub {
     async inviteMember(tenantId, input) {
       const roleId = await resolveRoleId(fetchImpl, tenantId, input.role);
       await readJson(
-        await fetchImpl(
-          `/api/tenants/${encodeURIComponent(tenantId)}/members/invite`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ email: input.email, roleId }),
-          },
-        ),
+        await fetchImpl(`/api/tenants/${encodeURIComponent(tenantId)}/members/invite`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email: input.email, roleId }),
+        }),
         "inviteMember",
       );
     },
     async deployWorkflow(tenantId, input) {
       await readJson(
-        await fetchImpl(
-          `/api/tenants/${encodeURIComponent(tenantId)}/workflows/deployments`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(input),
-          },
-        ),
+        await fetchImpl(`/api/tenants/${encodeURIComponent(tenantId)}/workflows/deployments`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        }),
         "deployWorkflow",
       );
     },
     async sendRunMail(input) {
       const { tenantId, ...message } = input;
       const body = await readJson(
-        await fetchImpl(
-          `/api/tenants/${encodeURIComponent(tenantId)}/mailbox/messages`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(message),
-          },
-        ),
+        await fetchImpl(`/api/tenants/${encodeURIComponent(tenantId)}/mailbox/messages`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(message),
+        }),
         "sendRunMail",
       );
       return parseBoundary(SentMailShape, body, "sendRunMail");

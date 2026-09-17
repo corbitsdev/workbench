@@ -12,9 +12,7 @@ function materialSource(secret: string): { current: string } {
 }
 
 test("key is http-x-manus-api-key", () => {
-  expect(createHttpXManusApiKeyCredentialProvider().key).toBe(
-    HTTP_X_MANUS_API_KEY_PROVIDER_KEY,
-  );
+  expect(createHttpXManusApiKeyCredentialProvider().key).toBe(HTTP_X_MANUS_API_KEY_PROVIDER_KEY);
 });
 
 test("sends the secret in x-manus-api-key, not authorization or x-api-key", async () => {
@@ -53,9 +51,7 @@ test("re-reads the material source per call, reflecting a rotation", async () =>
   const material = materialSource("original-key");
   const provider = createHttpXManusApiKeyCredentialProvider({
     fetch: async (_input, init) => {
-      manusKeys.push(
-        (init?.headers as Headers | undefined)?.get("x-manus-api-key") ?? "",
-      );
+      manusKeys.push((init?.headers as Headers | undefined)?.get("x-manus-api-key") ?? "");
       return new Response("{}", { status: 200 });
     },
   });
@@ -80,9 +76,9 @@ test("refuses a cross-origin request rather than leaking the secret off the pinn
     readCurrentMaterial: () => ({ secret: "manus_real_key" }),
   });
 
-  await expect(
-    mediated.fetch("https://evil.example.com/v2/skill.list"),
-  ).rejects.toThrow(/refusing cross-origin request/);
+  await expect(mediated.fetch("https://evil.example.com/v2/skill.list")).rejects.toThrow(
+    /refusing cross-origin request/,
+  );
 });
 
 test("forces redirect: manual so a same-origin 3xx never auto-follows off the handle", async () => {
@@ -116,9 +112,7 @@ test("also mediates a Request input, preserving its own headers", async () => {
     readCurrentMaterial: () => ({ secret: "manus_real_key" }),
   });
 
-  await mediated.fetch(
-    new Request(`${ORIGIN}/v2/task.create`, { method: "POST" }),
-  );
+  await mediated.fetch(new Request(`${ORIGIN}/v2/task.create`, { method: "POST" }));
 
   expect(captured.manusKey).toBe("manus_real_key");
 });

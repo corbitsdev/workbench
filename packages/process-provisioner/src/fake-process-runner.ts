@@ -1,7 +1,4 @@
-import type {
-  SidecarProcessRunner,
-  SpawnSidecarProcessArgs,
-} from "./process-runner";
+import type { SidecarProcessRunner, SpawnSidecarProcessArgs } from "./process-runner";
 
 export type FakeSidecarProcessRunner = SidecarProcessRunner & {
   readonly spawns: SpawnSidecarProcessArgs[];

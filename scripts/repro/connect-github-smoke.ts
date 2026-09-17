@@ -53,10 +53,11 @@ async function main() {
   };
 
   console.log("== connect (native connections route) ==");
-  const connectRes = await fetch(
-    `${hubUrl}/api/tenants/${tenantId}/connections/github/complete`,
-    { method: "POST", headers, body: JSON.stringify({ apiKey: token }) },
-  );
+  const connectRes = await fetch(`${hubUrl}/api/tenants/${tenantId}/connections/github/complete`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ apiKey: token }),
+  });
   console.log(connectRes.status, await connectRes.text());
   if (!connectRes.ok) {
     throw new Error("connect failed — see status above");
@@ -64,9 +65,7 @@ async function main() {
   // Hub-zero T3 (CL-8114) stops here: `github/state` and
   // `github/start-reviewing` no longer exist, so there is nothing further
   // to smoke until the connections follow-up lands the native rebind.
-  console.log(
-    "connected — state/start-reviewing walkthrough deleted (CL-8114)",
-  );
+  console.log("connected — state/start-reviewing walkthrough deleted (CL-8114)");
 }
 
 main().catch((err: unknown) => {

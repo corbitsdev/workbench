@@ -69,8 +69,7 @@ function probeFetch(url: string, token: string | undefined): typeof fetch {
   const pinnedOrigin = new URL(url).origin;
   return mcpOriginPinnedFetch({
     pinnedOrigin,
-    readToken: () =>
-      token === undefined || token.length === 0 ? undefined : token,
+    readToken: () => (token === undefined || token.length === 0 ? undefined : token),
   }) as typeof fetch;
 }
 
@@ -98,9 +97,8 @@ export async function probeMcpServer(
   }
 
   try {
-    const tools = await withMcpConnection(
-      { url, fetchImpl: probeFetch(url, token) },
-      (client) => listMcpTools(client),
+    const tools = await withMcpConnection({ url, fetchImpl: probeFetch(url, token) }, (client) =>
+      listMcpTools(client),
     );
     return { ok: true, toolCount: tools.length };
   } catch (cause) {
@@ -117,8 +115,7 @@ export async function probeMcpServer(
       if (discovered !== undefined) {
         return {
           ok: false,
-          message:
-            "This MCP server requires signing in via OAuth before it can be connected.",
+          message: "This MCP server requires signing in via OAuth before it can be connected.",
           requiresOAuth: true,
           authorizationServerUrl: discovered.authorizationServerUrl,
         };

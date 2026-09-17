@@ -92,9 +92,7 @@ export async function listRecentLinearIssues(
     }),
   });
   if (!response.ok) {
-    throw new Error(
-      `Linear list-issues request failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Linear list-issues request failed: ${response.status} ${response.statusText}`);
   }
   const body: unknown = await response.json();
   const parsed = LinearGraphQlResponse(body);
@@ -104,9 +102,7 @@ export async function listRecentLinearIssues(
     );
   }
   if (parsed.errors !== undefined && parsed.errors.length > 0) {
-    throw new Error(
-      `Linear list-issues returned GraphQL errors: ${JSON.stringify(parsed.errors)}`,
-    );
+    throw new Error(`Linear list-issues returned GraphQL errors: ${JSON.stringify(parsed.errors)}`);
   }
   const nodes = (parsed.data?.issues?.nodes ?? []) as LinearGraphQlIssueNode[];
   return nodes.map((node) => {

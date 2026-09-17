@@ -13,10 +13,7 @@
 // see this package's README for the gap.
 import { type } from "arktype";
 import { defineTool, type BaseEnv } from "@intx/agent";
-import {
-  createScoutArtifact,
-  listRecentScoutArtifacts,
-} from "./artifact-client";
+import { createScoutArtifact, listRecentScoutArtifacts } from "./artifact-client";
 
 export const SCOUT_ARTIFACT_SAVE_TOOL = "save_artifact";
 export const SCOUT_ARTIFACT_LIST_TOOL = "list_artifacts";
@@ -75,8 +72,7 @@ export const scoutArtifactTools = defineTool<ScoutArtifactEnv>({
       {
         name: SCOUT_ARTIFACT_LIST_TOOL,
         description:
-          "Lists the tenant's most recently saved Library artifacts, " +
-          "most recent first.",
+          "Lists the tenant's most recently saved Library artifacts, " + "most recent first.",
         inputSchema: {
           type: "object",
           properties: {

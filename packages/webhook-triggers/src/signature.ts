@@ -48,11 +48,7 @@ function signedMaterial(timestamp: string, rawBody: string): string {
 }
 
 /** The HMAC-SHA256 hex digest of `timestamp.rawBody` under `secret`. */
-export function signPayload(
-  secret: string,
-  timestamp: string,
-  rawBody: string,
-): string {
+export function signPayload(secret: string, timestamp: string, rawBody: string): string {
   return createHmac("sha256", secret)
     .update(signedMaterial(timestamp, rawBody), "utf8")
     .digest("hex");
@@ -63,9 +59,7 @@ export function signPayload(
  * for a rejected delivery than "bad signature" — the HTTP response
  * stays the same generic 401 either way (see the module doc comment).
  */
-export function isFreshTimestamp(
-  timestampHeader: string | undefined,
-): timestampHeader is string {
+export function isFreshTimestamp(timestampHeader: string | undefined): timestampHeader is string {
   if (timestampHeader === undefined || timestampHeader === "") return false;
   const seconds = Number(timestampHeader);
   if (!Number.isFinite(seconds)) return false;
@@ -103,10 +97,7 @@ export function verifySignature(
   } catch {
     return false;
   }
-  if (
-    expectedBuffer.length !== providedBuffer.length ||
-    expectedBuffer.length === 0
-  ) {
+  if (expectedBuffer.length !== providedBuffer.length || expectedBuffer.length === 0) {
     return false;
   }
   return timingSafeEqual(expectedBuffer, providedBuffer);

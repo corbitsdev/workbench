@@ -55,9 +55,7 @@ describe("createCommandRegistry", () => {
 
     const listed = await registry.listCommands(TENANT_A);
     expect(listed.map((c) => c.name)).toEqual(["visible"]);
-    expect((await registry.getCommand("secret", TENANT_A))?.name).toBe(
-      "secret",
-    );
+    expect((await registry.getCommand("secret", TENANT_A))?.name).toBe("secret");
   });
 
   test("a plugin's commands are scoped per tenant", async () => {
@@ -103,9 +101,6 @@ describe("createCommandRegistry", () => {
       description: "a",
       handler: noopHandler,
     });
-    expect((await registry.listCommands(TENANT_A)).map((c) => c.name)).toEqual([
-      "alpha",
-      "zeta",
-    ]);
+    expect((await registry.listCommands(TENANT_A)).map((c) => c.name)).toEqual(["alpha", "zeta"]);
   });
 });

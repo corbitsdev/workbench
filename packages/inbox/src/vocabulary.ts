@@ -5,12 +5,7 @@
 
 import type { MailboxVocabulary } from "@corbits/mailbox";
 
-export const WORKBENCH_INBOX_PRIORITIES = [
-  "urgent",
-  "high",
-  "normal",
-  "low",
-] as const;
+export const WORKBENCH_INBOX_PRIORITIES = ["urgent", "high", "normal", "low"] as const;
 
 export const WORKBENCH_INBOX_STATUSES = ["open", "done"] as const;
 

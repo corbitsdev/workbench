@@ -2,12 +2,7 @@ import { expect, test } from "bun:test";
 import type { ToolCall } from "@intx/types/runtime";
 import type { CredentialCapability, MediatedCredential } from "@intx/types";
 
-import {
-  CREATE_SLIDES_TOOL,
-  MANUS_ENDPOINTS,
-  MANUS_NOT_CONNECTED,
-  manusTools,
-} from "./tool";
+import { CREATE_SLIDES_TOOL, MANUS_ENDPOINTS, MANUS_NOT_CONNECTED, manusTools } from "./tool";
 import type { ManusEnv } from "./tool";
 
 const CREATE_SLIDES_CALL: ToolCall = {
@@ -20,9 +15,7 @@ function fakeCredentials(secret: string | undefined): CredentialCapability {
   return {
     resolve(handle: string): Promise<MediatedCredential> {
       if (secret === undefined) {
-        return Promise.reject(
-          new Error(`no credential is bound to handle "${handle}"`),
-        );
+        return Promise.reject(new Error(`no credential is bound to handle "${handle}"`));
       }
       return Promise.resolve({
         kind: "http",
@@ -103,32 +96,22 @@ test("mutating admin tools declare approval ask; create_slides and read-ish tool
 });
 
 test("task_list_msgs describes slides_format as pptx or html, never pdf", () => {
-  const listMsgs = MANUS_ENDPOINTS.find(
-    (spec) => spec.name === "task_list_msgs",
-  );
+  const listMsgs = MANUS_ENDPOINTS.find((spec) => spec.name === "task_list_msgs");
   expect(listMsgs?.properties["slides_format"]?.description).toContain("pptx");
   expect(listMsgs?.properties["slides_format"]?.description).toContain("html");
-  expect(listMsgs?.properties["slides_format"]?.description).not.toMatch(
-    /pdf/i,
-  );
+  expect(listMsgs?.properties["slides_format"]?.description).not.toMatch(/pdf/i);
 });
 
 test("degrades to a non-throwing 'not connected' error when no credential is bound", async () => {
   const bundle = manusTools(fakeEnv(fakeCredentials(undefined)));
-  const result = await bundle.run(
-    CREATE_SLIDES_CALL,
-    new AbortController().signal,
-  );
+  const result = await bundle.run(CREATE_SLIDES_CALL, new AbortController().signal);
   expect(result.isError).toBe(true);
   expect(result.content).toBe(MANUS_NOT_CONNECTED);
 });
 
 test("degrades the same way when the step carries no credentials capability at all", async () => {
   const bundle = manusTools(fakeEnv(undefined));
-  const result = await bundle.run(
-    CREATE_SLIDES_CALL,
-    new AbortController().signal,
-  );
+  const result = await bundle.run(CREATE_SLIDES_CALL, new AbortController().signal);
   expect(result.isError).toBe(true);
   expect(result.content).toBe(MANUS_NOT_CONNECTED);
 });
@@ -149,9 +132,7 @@ test("create_slides creates a task, polls messages, and surfaces the presentatio
       ]);
       expect(body.message.content[0].text).toContain("slide presentation");
       expect(body.message.content[0].text).toContain("pptx");
-      expect(body.message.content[0].text).toContain(
-        "Make a five-slide deck about onboarding",
-      );
+      expect(body.message.content[0].text).toContain("Make a five-slide deck about onboarding");
       expect(body.message.enable_skills).toBeUndefined();
       expect(body.message.force_skills).toBeUndefined();
       expect(body.agent_profile).toBe("manus-1.6-lite");
@@ -174,10 +155,7 @@ test("create_slides creates a task, polls messages, and surfaces the presentatio
   }) as unknown as typeof fetch;
   try {
     const bundle = manusTools(fakeEnv(fakeCredentials("key")));
-    const result = await bundle.run(
-      CREATE_SLIDES_CALL,
-      new AbortController().signal,
-    );
+    const result = await bundle.run(CREATE_SLIDES_CALL, new AbortController().signal);
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content as string) as {
       task_id: string;
@@ -198,14 +176,11 @@ test("create_slides creates a task, polls messages, and surfaces the presentatio
         url: "https://files.manus.ai/onboarding.pptx",
         id: "file_deck_1",
         type: "slides",
-        content_type:
-          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        content_type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       },
     ]);
     expect(urls.some((url) => url.includes("/v2/task.create"))).toBe(true);
-    expect(urls.some((url) => url.includes("/v2/task.listMessages"))).toBe(
-      true,
-    );
+    expect(urls.some((url) => url.includes("/v2/task.listMessages"))).toBe(true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -236,10 +211,7 @@ test("create_slides returns isError when the agent is waiting", async () => {
   }) as unknown as typeof fetch;
   try {
     const bundle = manusTools(fakeEnv(fakeCredentials("key")));
-    const result = await bundle.run(
-      CREATE_SLIDES_CALL,
-      new AbortController().signal,
-    );
+    const result = await bundle.run(CREATE_SLIDES_CALL, new AbortController().signal);
     expect(result.isError).toBe(true);
     expect(result.content).toMatch(/waiting for confirmation/);
   } finally {
@@ -272,10 +244,7 @@ test("create_slides returns isError when the agent_status is error", async () =>
   }) as unknown as typeof fetch;
   try {
     const bundle = manusTools(fakeEnv(fakeCredentials("key")));
-    const result = await bundle.run(
-      CREATE_SLIDES_CALL,
-      new AbortController().signal,
-    );
+    const result = await bundle.run(CREATE_SLIDES_CALL, new AbortController().signal);
     expect(result.isError).toBe(true);
     expect(result.content).toMatch(/agent_status error/);
   } finally {
@@ -285,14 +254,10 @@ test("create_slides returns isError when the agent_status is error", async () =>
 
 test("degrades to an error result (never throws) when the underlying call fails", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
   try {
     const bundle = manusTools(fakeEnv(fakeCredentials("key")));
-    const result = await bundle.run(
-      CREATE_SLIDES_CALL,
-      new AbortController().signal,
-    );
+    const result = await bundle.run(CREATE_SLIDES_CALL, new AbortController().signal);
     expect(result.isError).toBe(true);
   } finally {
     globalThis.fetch = originalFetch;
@@ -310,9 +275,7 @@ test("task_create and task_send_msg expose skill and connector fields", () => {
   }
   expect(create?.properties["structured_output_schema"]?.type).toBe("object");
   expect(send?.properties["structured_output_schema"]).toBeUndefined();
-  expect(create?.properties["agent_profile"]?.description).toContain(
-    "manus-1.6-lite",
-  );
+  expect(create?.properties["agent_profile"]?.description).toContain("manus-1.6-lite");
   expect(create?.properties["agent_profile"]?.description).toMatch(/default/i);
 });
 
@@ -348,14 +311,9 @@ test("task_create result feeds task_detail through the validated GET boundary", 
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
     const url = String(input);
     if (url === "https://api.manus.ai/v2/task.create") {
-      return new Response(
-        JSON.stringify({ ok: true, task_id: createdTaskId }),
-        { status: 200 },
-      );
+      return new Response(JSON.stringify({ ok: true, task_id: createdTaskId }), { status: 200 });
     }
-    expect(url).toBe(
-      `https://api.manus.ai/v2/task.detail?task_id=${createdTaskId}`,
-    );
+    expect(url).toBe(`https://api.manus.ai/v2/task.detail?task_id=${createdTaskId}`);
     expect(init?.method).toBe("GET");
     return new Response(
       JSON.stringify({

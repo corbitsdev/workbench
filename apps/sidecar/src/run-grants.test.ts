@@ -9,9 +9,7 @@ import { readRunGrants, runGrantsPath } from "./run-grants";
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(
-    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
 async function makeRepoStore(): Promise<{ store: RepoStore; dir: string }> {

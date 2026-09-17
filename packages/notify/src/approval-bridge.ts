@@ -22,18 +22,12 @@ export interface ParkedApproval {
 
 export interface ApprovalNotificationBridgeDeps {
   readonly delivery: NotifyDeliveryDeps;
-  readonly findParkedApproval: (
-    correlationId: string,
-  ) => Promise<ParkedApproval | null>;
+  readonly findParkedApproval: (correlationId: string) => Promise<ParkedApproval | null>;
   /** Who may resolve this approval, and therefore who should hear about it. */
-  readonly listApprovers: (
-    approval: ParkedApproval,
-  ) => Promise<readonly NotifyRecipient[]>;
+  readonly listApprovers: (approval: ParkedApproval) => Promise<readonly NotifyRecipient[]>;
 }
 
-export type ApprovalNotificationBridge = (
-  correlationId: string,
-) => Promise<void>;
+export type ApprovalNotificationBridge = (correlationId: string) => Promise<void>;
 
 /**
  * Build the "an approval was created, so mail it" step. A correlation with no

@@ -77,9 +77,7 @@ describe("getWebhookTrigger", () => {
 
 describe("createWebhookTrigger", () => {
   test("POSTs the input and returns the one-time secret", async () => {
-    const calls = stubFetch(() =>
-      json({ ...triggerFixture, secret: "generated-secret" }, 201),
-    );
+    const calls = stubFetch(() => json({ ...triggerFixture, secret: "generated-secret" }, 201));
     const result = await createWebhookTrigger("tnt_1", {
       name: "Support digest",
       workflowDefinitionId: "wfd_1",
@@ -108,14 +106,10 @@ describe("createWebhookTrigger", () => {
 
 describe("rotateWebhookTriggerSecret", () => {
   test("POSTs to the rotate route and returns the new one-time secret", async () => {
-    const calls = stubFetch(() =>
-      json({ ...triggerFixture, secret: "rotated-secret" }),
-    );
+    const calls = stubFetch(() => json({ ...triggerFixture, secret: "rotated-secret" }));
     const result = await rotateWebhookTriggerSecret("tnt_1", "wht_1");
     expect(result.secret).toBe("rotated-secret");
-    expect(calls[0]?.path).toBe(
-      "/api/tenants/tnt_1/webhook-triggers/wht_1/rotate-secret",
-    );
+    expect(calls[0]?.path).toBe("/api/tenants/tnt_1/webhook-triggers/wht_1/rotate-secret");
     expect(calls[0]?.init?.method).toBe("POST");
   });
 });
@@ -141,19 +135,13 @@ describe("deleteWebhookTrigger", () => {
 
 describe("error handling", () => {
   test("a 404 surfaces the hub's error message", async () => {
-    stubFetch(() =>
-      json({ error: { code: "not_found", message: "trigger not found" } }, 404),
-    );
-    await expect(getWebhookTrigger("tnt_1", "missing")).rejects.toThrow(
-      /trigger not found/,
-    );
+    stubFetch(() => json({ error: { code: "not_found", message: "trigger not found" } }, 404));
+    await expect(getWebhookTrigger("tnt_1", "missing")).rejects.toThrow(/trigger not found/);
   });
 
   test("a 401 throws an UnauthenticatedError", async () => {
     stubFetch(() => new Response(null, { status: 401 }));
-    await expect(listWebhookTriggers("tnt_1")).rejects.toBeInstanceOf(
-      UnauthenticatedError,
-    );
+    await expect(listWebhookTriggers("tnt_1")).rejects.toBeInstanceOf(UnauthenticatedError);
   });
 });
 

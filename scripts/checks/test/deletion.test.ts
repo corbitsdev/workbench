@@ -57,10 +57,7 @@ const DELETED_HUSK_PACKAGES = [
 test("deleted husk packages stay on the replacement ledger and are gone", () => {
   const repoRoot = path.resolve(import.meta.dir, "../../..");
   const ledger = parseLedger(
-    readFileSync(
-      path.join(repoRoot, "scripts/checks/replaced-paths.txt"),
-      "utf8",
-    ),
+    readFileSync(path.join(repoRoot, "scripts/checks/replaced-paths.txt"), "utf8"),
   );
   for (const husk of DELETED_HUSK_PACKAGES) {
     expect(ledger).toContain(husk);

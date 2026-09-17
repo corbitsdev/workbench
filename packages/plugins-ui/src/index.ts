@@ -5,10 +5,7 @@ export { PluginCard } from "./plugin-card";
 export { SkillCard } from "./skill-card";
 export type { SkillCardData } from "./skill-card";
 export { InstalledStrip } from "./installed-strip";
-export {
-  PluginConnectPanel,
-  type PluginPanelSubject,
-} from "./plugin-connect-panel";
+export { PluginConnectPanel, type PluginPanelSubject } from "./plugin-connect-panel";
 export { McpServersSection } from "./mcp-servers-section";
 
 export { PLUGINS_STRINGS } from "./strings";
@@ -22,16 +19,7 @@ export {
   connectMcpPreset,
   mcpOAuthStartPath,
 } from "./mcp-servers-api";
-export type {
-  McpServer,
-  McpServerConnected,
-  McpPreset,
-} from "./mcp-servers-api";
+export type { McpServer, McpServerConnected, McpPreset } from "./mcp-servers-api";
 
-export {
-  PLUGIN_CATEGORY_ORDER,
-  pluginCategory,
-  pluginIcon,
-  pluginOutcome,
-} from "./plugin-meta";
+export { PLUGIN_CATEGORY_ORDER, pluginCategory, pluginIcon, pluginOutcome } from "./plugin-meta";
 export type { PluginCategory } from "./plugin-meta";

@@ -13,22 +13,10 @@
 // same `reasoning_effort` field Ollama already recognizes for gpt-oss
 // models on this endpoint.
 import { createOpenAIAdapter } from "@intx/inference/providers";
-import type {
-  AdapterFactory,
-  BuiltRequest,
-  ProviderAdapter,
-} from "@intx/inference";
-import type {
-  InferenceEvent,
-  LastCycleSource,
-  TokenUsage,
-} from "@intx/types/runtime";
+import type { AdapterFactory, BuiltRequest, ProviderAdapter } from "@intx/inference";
+import type { InferenceEvent, LastCycleSource, TokenUsage } from "@intx/types/runtime";
 
-import {
-  parseOllamaAdapterConfig,
-  resolveOverride,
-  type OllamaAdapterOverride,
-} from "./overrides";
+import { parseOllamaAdapterConfig, resolveOverride, type OllamaAdapterOverride } from "./overrides";
 import { createThinkSplitState, reclassifyThinkingEvents } from "./think-tags";
 import {
   createInlineToolJsonState,
@@ -45,10 +33,7 @@ type OllamaChatBody = {
   stream_options?: { include_usage: boolean };
 };
 
-function applyOverride(
-  built: BuiltRequest,
-  override: OllamaAdapterOverride,
-): BuiltRequest {
+function applyOverride(built: BuiltRequest, override: OllamaAdapterOverride): BuiltRequest {
   const body = JSON.parse(built.body) as OllamaChatBody;
   // Without include_usage, Ollama's OpenAI-compat stream often ends with no
   // usage object; the harness then synthesizes zero token counts that Insights
@@ -78,9 +63,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function asNonNegativeInt(value: unknown): number | null {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0
-    ? value
-    : null;
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 function openaiShapedUsage(value: unknown): TokenUsage | null {
@@ -90,9 +73,7 @@ function openaiShapedUsage(value: unknown): TokenUsage | null {
   if (input === null && output === null) return null;
   const details = value["prompt_tokens_details"];
   const completionDetails = value["completion_tokens_details"];
-  const cacheRead = isPlainObject(details)
-    ? asNonNegativeInt(details["cached_tokens"])
-    : null;
+  const cacheRead = isPlainObject(details) ? asNonNegativeInt(details["cached_tokens"]) : null;
   const thinking = isPlainObject(completionDetails)
     ? asNonNegativeInt(completionDetails["reasoning_tokens"])
     : null;
@@ -183,10 +164,7 @@ export const createOllamaAdapter: AdapterFactory = (
     parseResponse: (sseData) =>
       withOllamaUsage(
         reclassifyInlineToolJsonEvents(
-          reclassifyThinkingEvents(
-            inner.parseResponse(sseData),
-            streamThinkState,
-          ),
+          reclassifyThinkingEvents(inner.parseResponse(sseData), streamThinkState),
           streamInlineState,
           { flush: responseChunkIsTerminal(sseData) },
         ),
@@ -196,10 +174,7 @@ export const createOllamaAdapter: AdapterFactory = (
     parseJSONResponse: (body) =>
       withOllamaUsage(
         reclassifyInlineToolJsonEvents(
-          reclassifyThinkingEvents(
-            inner.parseJSONResponse(body),
-            jsonThinkState,
-          ),
+          reclassifyThinkingEvents(inner.parseJSONResponse(body), jsonThinkState),
           jsonInlineState,
           { flush: true },
         ),

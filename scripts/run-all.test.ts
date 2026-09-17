@@ -119,10 +119,7 @@ describe("run-all", () => {
         probe: "bun run probe.ts",
         [TEST_SCRIPT]: "bun run probe.ts",
       });
-      await writeFile(
-        join(workspace, "packages", name, "probe.ts"),
-        PROBE_SOURCE,
-      );
+      await writeFile(join(workspace, "packages", name, "probe.ts"), PROBE_SOURCE);
     }
     await writePackage(workspace, WITHOUT_PROBE, { other: "true" });
 
@@ -176,10 +173,7 @@ describe("run-all", () => {
   });
 
   test("runs the test script concurrently like any other script", async () => {
-    const result = await runProbe(
-      { WORKBENCH_CHECK_CONCURRENCY: "4" },
-      TEST_SCRIPT,
-    );
+    const result = await runProbe({ WORKBENCH_CHECK_CONCURRENCY: "4" }, TEST_SCRIPT);
 
     expect(peakOverlap(result.log)).toBeGreaterThan(1);
     for (const name of WITH_PROBE) {
@@ -188,10 +182,7 @@ describe("run-all", () => {
   });
 
   test("honours an explicit concurrency for the test script", async () => {
-    const result = await runProbe(
-      { WORKBENCH_CHECK_CONCURRENCY: "3" },
-      TEST_SCRIPT,
-    );
+    const result = await runProbe({ WORKBENCH_CHECK_CONCURRENCY: "3" }, TEST_SCRIPT);
 
     expect(peakOverlap(result.log)).toBeGreaterThan(1);
   });
@@ -205,9 +196,7 @@ describe("run-all", () => {
 
   test("uses every core in GitHub Actions and leaves two free locally", () => {
     expect(resolveConcurrency("typecheck", {}, 8)).toBe(6);
-    expect(resolveConcurrency("typecheck", { GITHUB_ACTIONS: "true" }, 8)).toBe(
-      8,
-    );
+    expect(resolveConcurrency("typecheck", { GITHUB_ACTIONS: "true" }, 8)).toBe(8);
     expect(
       resolveConcurrency(
         "typecheck",
@@ -251,10 +240,7 @@ describe("run-all", () => {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const [stdout, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      child.exited,
-    ]);
+    const [stdout, exitCode] = await Promise.all([new Response(child.stdout).text(), child.exited]);
 
     expect(exitCode).toBe(0);
     expect(stdout).toContain("no workspace packages define it");
@@ -291,9 +277,7 @@ describe("run-all", () => {
       name: `pkg-${i}`,
       dir: `packages/pkg-${i}`,
     }));
-    const shards = [1, 2, 3].map((i) =>
-      selectShard(jobs, parseShardArg(`${i}/3`)),
-    );
+    const shards = [1, 2, 3].map((i) => selectShard(jobs, parseShardArg(`${i}/3`)));
 
     const combined = shards.flatMap((s) => s.map((j) => j.name)).sort();
     expect(combined).toEqual(jobs.map((j) => j.name).sort());

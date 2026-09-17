@@ -12,9 +12,7 @@ import {
 import type { InsightsRun } from "./insights-api";
 import type { ScheduledWorkflowDefinition } from "./routines-api";
 
-function run(
-  partial: Partial<InsightsRun> & Pick<InsightsRun, "id" | "status">,
-): InsightsRun {
+function run(partial: Partial<InsightsRun> & Pick<InsightsRun, "id" | "status">): InsightsRun {
   return {
     tenantId: "t1",
     definitionId: "def",
@@ -92,9 +90,7 @@ describe("computeInsightsStats", () => {
         run({
           id: "stale",
           status: "running",
-          createdAt: new Date(
-            Date.now() - FIRE_RUNNING_WINDOW_MS - 1,
-          ).toISOString(),
+          createdAt: new Date(Date.now() - FIRE_RUNNING_WINDOW_MS - 1).toISOString(),
         }),
       ],
       [],
@@ -140,9 +136,7 @@ describe("purposeRunsForInsights", () => {
   const deployment = run({ id: "ins_deployed", status: "running" });
 
   test("drops a workbench-host run by its definition-name pattern", () => {
-    expect(purposeRunsForInsights([deployment, workbenchHost])).toEqual([
-      deployment,
-    ]);
+    expect(purposeRunsForInsights([deployment, workbenchHost])).toEqual([deployment]);
   });
 
   test("leaves an ordinary top-level deployment run alone", () => {

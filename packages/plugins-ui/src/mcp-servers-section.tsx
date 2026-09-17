@@ -13,11 +13,7 @@ import { MCP_PRESETS } from "@corbits/connections/mcp-presets";
 import { PuzzlePiece } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
-import {
-  disconnectMcpServer,
-  listMcpServers,
-  type McpServer,
-} from "./mcp-servers-api";
+import { disconnectMcpServer, listMcpServers, type McpServer } from "./mcp-servers-api";
 import { PLUGINS_STRINGS } from "./strings";
 
 function messageOf(cause: unknown): string {
@@ -100,9 +96,7 @@ export function McpServersSection({ tenantId }: { readonly tenantId: string }) {
   }, [tenantId]);
 
   const presetSlugs = new Set(MCP_PRESETS.map((preset) => preset.slug));
-  const customServers = servers.filter(
-    (server) => !presetSlugs.has(server.slug),
-  );
+  const customServers = servers.filter((server) => !presetSlugs.has(server.slug));
 
   if (customServers.length === 0 && loadError === null) return null;
 

@@ -64,10 +64,7 @@ export function StageTopBar({
           <div className="stage-top-bar-sub">{subtitle}</div>
         </>
       ) : null}
-      <div
-        className="stage-top-bar-actions"
-        data-testid="stage-top-bar-actions"
-      >
+      <div className="stage-top-bar-actions" data-testid="stage-top-bar-actions">
         {filter !== undefined ? <StageSearch {...filter} /> : null}
         {chip !== undefined ? <Chip tone={chip.tone}>{chip.label}</Chip> : null}
         {actions}
@@ -76,11 +73,7 @@ export function StageTopBar({
   );
 }
 
-function StageCrumbTrail({
-  crumbs,
-}: {
-  readonly crumbs: readonly StageCrumb[];
-}) {
+function StageCrumbTrail({ crumbs }: { readonly crumbs: readonly StageCrumb[] }) {
   const lastIndex = crumbs.length - 1;
   const trail = crumbs.map((crumb, index) => (
     <Fragment key={`${String(index)}-${crumb.label}`}>

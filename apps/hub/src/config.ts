@@ -43,9 +43,7 @@ const HubEnv = type({
   DATABASE_URL: type(/^postgres(ql)?:\/\/.+$/).describe(
     "a Postgres connection URL, e.g. postgres://hub:hub@localhost:5432/hub",
   ),
-  BASE_URL: type(HTTP_URL).describe(
-    "an http(s) origin, e.g. http://localhost:3000",
-  ),
+  BASE_URL: type(HTTP_URL).describe("an http(s) origin, e.g. http://localhost:3000"),
   "PORT?": type(/^\d{1,5}$/).describe(
     "the local port to listen on when it differs from BASE_URL's — set this when a reverse proxy (Tailscale serve, nginx) fronts the hub and BASE_URL is the public https origin",
   ),
@@ -228,9 +226,7 @@ export type HubConfig = {
     readonly windowSeconds: number;
     readonly max: number;
   };
-  readonly socialProviders: Readonly<
-    Partial<Record<SocialProviderId, SocialProviderCredential>>
-  >;
+  readonly socialProviders: Readonly<Partial<Record<SocialProviderId, SocialProviderCredential>>>;
   readonly huggingfaceOAuthClientId?: string;
   readonly githubAppClientId?: string;
   readonly githubAppClientSecret?: string;
@@ -282,8 +278,7 @@ const SOCIAL_PROVIDER_ENV_KEYS: Record<
 function socialProvidersFrom(
   parsed: ParsedHubEnv,
 ): Readonly<Partial<Record<SocialProviderId, SocialProviderCredential>>> {
-  const providers: Partial<Record<SocialProviderId, SocialProviderCredential>> =
-    {};
+  const providers: Partial<Record<SocialProviderId, SocialProviderCredential>> = {};
   const errors: string[] = [];
   for (const [providerId, keys] of Object.entries(SOCIAL_PROVIDER_ENV_KEYS) as [
     SocialProviderId,
@@ -330,9 +325,7 @@ type SidecarProvisionersConfig = {
  * one variable — `SIDECAR_PROVISIONERS` — and listing it explicitly
  * (including `process`) behaves exactly as any other explicit list.
  */
-function sidecarProvisionersFrom(
-  parsed: ParsedHubEnv,
-): SidecarProvisionersConfig {
+function sidecarProvisionersFrom(parsed: ParsedHubEnv): SidecarProvisionersConfig {
   const ids = (parsed.SIDECAR_PROVISIONERS ?? "")
     .split(",")
     .map((id) => id.trim())
@@ -357,9 +350,7 @@ function sidecarProvisionersFrom(
   const provisioners: SidecarProvisionerConfig[] = [];
   for (const id of ids) {
     if (seen.has(id)) {
-      throw new Error(
-        `invalid hub environment: SIDECAR_PROVISIONERS lists ${id} more than once`,
-      );
+      throw new Error(`invalid hub environment: SIDECAR_PROVISIONERS lists ${id} more than once`);
     }
     seen.add(id);
     if (!isSidecarProvisionerId(id)) {
@@ -384,9 +375,7 @@ function sidecarProvisionersFrom(
       );
     }
     const onlyId = provisioners[0]?.id;
-    return onlyId === undefined
-      ? { provisioners }
-      : { provisioners, defaultProvisionerId: onlyId };
+    return onlyId === undefined ? { provisioners } : { provisioners, defaultProvisionerId: onlyId };
   }
   if (!seen.has(defaultProvisionerId)) {
     throw new Error(
@@ -426,10 +415,7 @@ function sidecarProvisionerConfigFor(
       return { id: "docker", image: parsed.DOCKER_PROVISIONER_IMAGE };
     }
     case "e2b": {
-      if (
-        parsed.E2B_API_KEY === undefined ||
-        parsed.E2B_TEMPLATE === undefined
-      ) {
+      if (parsed.E2B_API_KEY === undefined || parsed.E2B_TEMPLATE === undefined) {
         throw new Error(
           [
             "invalid hub environment: E2B_API_KEY and E2B_TEMPLATE must both be set when SIDECAR_PROVISIONERS includes e2b",
@@ -460,9 +446,7 @@ function sidecarProvisionerConfigFor(
  * have, so a misconfigured process dies at boot instead of failing at
  * first use.
  */
-export function readHubConfig(
-  env: Record<string, string | undefined>,
-): HubConfig {
+export function readHubConfig(env: Record<string, string | undefined>): HubConfig {
   const parsed = HubEnv(env);
   if (parsed instanceof type.errors) {
     throw new Error(
@@ -502,8 +486,7 @@ export function readHubConfig(
         : DEFAULT_SIGNIN_RATE_LIMIT_MAX,
     },
   };
-  if (parsed.HUB_ALLOW_GIT_INSIDE_WORK_TREE !== undefined)
-    hubConfig.allowGitInsideWorkTree = true;
+  if (parsed.HUB_ALLOW_GIT_INSIDE_WORK_TREE !== undefined) hubConfig.allowGitInsideWorkTree = true;
   if (parsed.PORT !== undefined) hubConfig.listenPort = Number(parsed.PORT);
   if (parsed.HUGGINGFACE_OAUTH_CLIENT_ID !== undefined)
     hubConfig.huggingfaceOAuthClientId = parsed.HUGGINGFACE_OAUTH_CLIENT_ID;
@@ -511,8 +494,7 @@ export function readHubConfig(
     hubConfig.githubAppClientId = parsed.GITHUB_APP_CLIENT_ID;
   if (parsed.GITHUB_APP_CLIENT_SECRET !== undefined)
     hubConfig.githubAppClientSecret = parsed.GITHUB_APP_CLIENT_SECRET;
-  if (parsed.GMAIL_CLIENT_ID !== undefined)
-    hubConfig.gmailClientId = parsed.GMAIL_CLIENT_ID;
+  if (parsed.GMAIL_CLIENT_ID !== undefined) hubConfig.gmailClientId = parsed.GMAIL_CLIENT_ID;
   if (parsed.GMAIL_CLIENT_SECRET !== undefined)
     hubConfig.gmailClientSecret = parsed.GMAIL_CLIENT_SECRET;
   if (parsed.GITHUB_API_BASE_URL !== undefined)
@@ -520,18 +502,13 @@ export function readHubConfig(
   if (parsed.CREDENTIAL_ENCRYPTION_KEY !== undefined)
     hubConfig.credentialEncryptionKeyHex = parsed.CREDENTIAL_ENCRYPTION_KEY;
   if (parsed.PRINCIPAL_KEY_ENCRYPTION_KEY !== undefined)
-    hubConfig.principalKeyEncryptionKeyHex =
-      parsed.PRINCIPAL_KEY_ENCRYPTION_KEY;
+    hubConfig.principalKeyEncryptionKeyHex = parsed.PRINCIPAL_KEY_ENCRYPTION_KEY;
   if (parsed.HUB_SIDECAR_WEBSOCKET_URL !== undefined)
     hubConfig.sidecarWebSocketUrl = parsed.HUB_SIDECAR_WEBSOCKET_URL;
   if (sidecarProvisioners.defaultProvisionerId !== undefined)
-    hubConfig.defaultSidecarProvisionerId =
-      sidecarProvisioners.defaultProvisionerId;
+    hubConfig.defaultSidecarProvisionerId = sidecarProvisioners.defaultProvisionerId;
 
-  if (
-    hubConfig.allowPlaintextSecrets &&
-    !isLoopbackBaseUrl(hubConfig.baseUrl)
-  ) {
+  if (hubConfig.allowPlaintextSecrets && !isLoopbackBaseUrl(hubConfig.baseUrl)) {
     throw new Error(
       [
         `ALLOW_PLAINTEXT_SECRETS is set, but BASE_URL (${hubConfig.baseUrl}) is not a loopback address.`,

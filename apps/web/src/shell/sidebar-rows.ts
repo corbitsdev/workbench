@@ -29,9 +29,7 @@ function isPinned(row: SidebarRow): boolean {
  * the kind:chat and kind:workbench fetches, then sort here — do not split
  * by kind.
  */
-export function buildSidebarRows(
-  items: readonly Workbench[],
-): readonly SidebarRow[] {
+export function buildSidebarRows(items: readonly Workbench[]): readonly SidebarRow[] {
   // Every row a person can see in Postgres appears here. An earlier
   // heuristic (CL-6271) collapsed same-agent chats onto the newest
   // definitionId to hide stale cross-tenant DM siblings; once creation
@@ -41,11 +39,8 @@ export function buildSidebarRows(
   // Hiding real workbenches reads as data loss; a duplicate stale DM is
   // merely untidy. If stale siblings resurface, fix them server-side at
   // list time, not with a client-side identity guess.
-  const rows: SidebarRow[] = items.map(
-    (workbench) => ({ kind: "workbench", workbench }) as const,
-  );
-  const byRecency = (a: SidebarRow, b: SidebarRow) =>
-    recencyOf(b) - recencyOf(a);
+  const rows: SidebarRow[] = items.map((workbench) => ({ kind: "workbench", workbench }) as const);
+  const byRecency = (a: SidebarRow, b: SidebarRow) => recencyOf(b) - recencyOf(a);
   return [
     ...rows.filter(isPinned).sort(byRecency),
     ...rows.filter((row) => !isPinned(row)).sort(byRecency),

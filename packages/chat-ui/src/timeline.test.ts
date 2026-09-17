@@ -17,24 +17,18 @@ describe("friendlyEventText — workbench.agent-joined (CL-6594)", () => {
     const participants: readonly ParticipantRecord[] = [
       { address: "run_scout@dana.localhost", handle: "scout" },
     ];
-    expect(
-      friendlyEventText(
-        agentJoinedPart("run_scout@dana.localhost"),
-        participants,
-      ),
-    ).toBe("Scout joined");
+    expect(friendlyEventText(agentJoinedPart("run_scout@dana.localhost"), participants)).toBe(
+      "Scout joined",
+    );
   });
 
   test("falls back to the address's own local part, never a generic noun, when the roster hasn't caught up with this address yet", () => {
     const participants: readonly ParticipantRecord[] = [
       { address: "run_myra@dana.localhost", handle: "myra" },
     ];
-    expect(
-      friendlyEventText(
-        agentJoinedPart("run_scout@dana.localhost"),
-        participants,
-      ),
-    ).toBe("Run Scout joined");
+    expect(friendlyEventText(agentJoinedPart("run_scout@dana.localhost"), participants)).toBe(
+      "Run Scout joined",
+    );
   });
 
   test("falls back to the generic line only when the event itself carries no address at all", () => {
@@ -67,8 +61,6 @@ describe("friendlyEventText — connection.connected (CL-6741)", () => {
       event: "connection.connected",
       data: { connectorId: "github", displayName: "GitHub" },
     };
-    expect(friendlyEventText(part, [])).toBe(
-      "GitHub connected successfully. Manage in Plugins",
-    );
+    expect(friendlyEventText(part, [])).toBe("GitHub connected successfully. Manage in Plugins");
   });
 });

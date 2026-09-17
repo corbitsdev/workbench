@@ -77,10 +77,7 @@ function fakeRoom(options?: { failPostOnCall: number }) {
     listActivity: store.listActivity,
     deleteMessage: store.deleteMessage,
   };
-  const publish: WorkbenchSubscriberRegistry["publish"] = (
-    workbenchId,
-    event,
-  ) => {
+  const publish: WorkbenchSubscriberRegistry["publish"] = (workbenchId, event) => {
     published.push({ workbenchId, event });
   };
   return { roomMessages, publish, posted, published };
@@ -160,25 +157,18 @@ function launchRowFor(runId: string, tenantId: string) {
 // returns the configured run regardless of which address was queried
 // — the same convention `platform-adapter.test.ts`'s own fake `db`
 // uses.
-function createFakeDb(run?: {
-  id: string;
-  tenantId: string;
-  principalId?: string | null;
-}) {
+function createFakeDb(run?: { id: string; tenantId: string; principalId?: string | null }) {
   return {
     query: {
       workflowRun: {
         findFirst: async () =>
-          run === undefined
-            ? undefined
-            : { ...run, principalId: run.principalId ?? null },
+          run === undefined ? undefined : { ...run, principalId: run.principalId ?? null },
       },
     },
     select: () => ({
       from: () => ({
         where: () => ({
-          limit: async () =>
-            run === undefined ? [] : [launchRowFor(run.id, run.tenantId)],
+          limit: async () => (run === undefined ? [] : [launchRowFor(run.id, run.tenantId)]),
         }),
       }),
     }),
@@ -198,10 +188,7 @@ function fakeMemory() {
   };
 }
 
-function workbenchRow(
-  workbenchId: string,
-  participantAddresses: string[],
-): WorkbenchSettingsRow {
+function workbenchRow(workbenchId: string, participantAddresses: string[]): WorkbenchSettingsRow {
   return {
     tenantId: "ten_1",
     workbenchId,
@@ -236,9 +223,7 @@ describe("createChatOrchestrator", () => {
       store: {
         listWorkbenchSettings: async (tenantId) => {
           listWorkbenchSettingsCalls.push(tenantId);
-          return [
-            workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
-          ];
+          return [workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"])];
         },
       },
       roomMessages: room.roomMessages,
@@ -317,9 +302,7 @@ describe("createChatOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(room.posted.map((message) => message.workbenchId)).toEqual([
-      "ins_room_b",
-    ]);
+    expect(room.posted.map((message) => message.workbenchId)).toEqual(["ins_room_b"]);
     expect(room.posted[0]).toMatchObject({
       workbenchId: "ins_room_b",
       parts: [{ kind: "text", text: "reply for room B" }],
@@ -390,9 +373,7 @@ describe("createChatOrchestrator", () => {
 
     // Two running turns and no event hint: the single-running fallback
     // cannot fire, so only the bracket mail's header names room A.
-    expect(room.posted.map((message) => message.workbenchId)).toEqual([
-      "ins_room_a",
-    ]);
+    expect(room.posted.map((message) => message.workbenchId)).toEqual(["ins_room_a"]);
 
     orchestrator.dispose();
   });
@@ -508,9 +489,7 @@ describe("createChatOrchestrator", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(room.posted.map((message) => message.workbenchId)).toEqual([
-      "ins_room_a",
-    ]);
+    expect(room.posted.map((message) => message.workbenchId)).toEqual(["ins_room_a"]);
 
     orchestrator.dispose();
   });
@@ -558,9 +537,10 @@ describe("createChatOrchestrator", () => {
       runId: "turn__9",
       parts: [{ kind: "text", text: "reconciled" }],
     });
-    expect(
-      await agentTurns.getTurn({ tenantId: "ten_1", turnId: turn.id }),
-    ).toMatchObject({ status: "completed", childRunId: "turn__9" });
+    expect(await agentTurns.getTurn({ tenantId: "ten_1", turnId: turn.id })).toMatchObject({
+      status: "completed",
+      childRunId: "turn__9",
+    });
 
     orchestrator.dispose();
   });
@@ -614,9 +594,10 @@ describe("createChatOrchestrator", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(room.posted).toHaveLength(0);
-    expect(
-      await agentTurns.getTurn({ tenantId: "ten_1", turnId: current.id }),
-    ).toMatchObject({ status: "running", childRunId: "turn__1" });
+    expect(await agentTurns.getTurn({ tenantId: "ten_1", turnId: current.id })).toMatchObject({
+      status: "running",
+      childRunId: "turn__1",
+    });
 
     orchestrator.dispose();
   });
@@ -667,14 +648,12 @@ describe("createChatOrchestrator", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(room.posted.map((message) => message.workbenchId)).toEqual([]);
-    expect(
-      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: turnA.id }))
-        ?.status,
-    ).toBe("running");
-    expect(
-      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: turnB.id }))
-        ?.status,
-    ).toBe("running");
+    expect((await agentTurns.getTurn({ tenantId: "ten_1", turnId: turnA.id }))?.status).toBe(
+      "running",
+    );
+    expect((await agentTurns.getTurn({ tenantId: "ten_1", turnId: turnB.id }))?.status).toBe(
+      "running",
+    );
 
     orchestrator.dispose();
   });
@@ -741,9 +720,7 @@ describe("createChatOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(room.posted.map((message) => message.workbenchId)).toEqual([
-      "ins_workbench1",
-    ]);
+    expect(room.posted.map((message) => message.workbenchId)).toEqual(["ins_workbench1"]);
     expect(room.posted[0]).toMatchObject({
       workbenchId: "ins_workbench1",
       parts: [{ kind: "text", text: "solo fallback" }],
@@ -772,9 +749,7 @@ describe("createChatOrchestrator", () => {
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listWorkbenchSettings: async () => [
-          workbenchRow("ins_workbench1", [agentAddress]),
-        ],
+        listWorkbenchSettings: async () => [workbenchRow("ins_workbench1", [agentAddress])],
       },
       roomMessages: room.roomMessages,
       publish: room.publish,
@@ -846,13 +821,10 @@ describe("createChatOrchestrator", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(room.posted.map((message) => message.workbenchId)).toEqual([
-      "ins_room_b",
-    ]);
-    expect(
-      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: turnA.id }))
-        ?.status,
-    ).toBe("running");
+    expect(room.posted.map((message) => message.workbenchId)).toEqual(["ins_room_b"]);
+    expect((await agentTurns.getTurn({ tenantId: "ten_1", turnId: turnA.id }))?.status).toBe(
+      "running",
+    );
     expect(
       (
         await agentTurns.findRunningTurn({
@@ -994,20 +966,14 @@ describe("createChatOrchestrator", () => {
 
     // Room A's own reply carries only its own text — never room B's
     // "Let me check that." text or its tool-trace.
-    const postedInA = room.posted.filter(
-      (message) => message.workbenchId === "ins_room_a",
-    );
+    const postedInA = room.posted.filter((message) => message.workbenchId === "ins_room_a");
     expect(postedInA).toHaveLength(1);
-    expect(postedInA[0]?.parts).toEqual([
-      { kind: "text", text: "Sure, one sec." },
-    ]);
+    expect(postedInA[0]?.parts).toEqual([{ kind: "text", text: "Sure, one sec." }]);
 
     // Room B's own reply keeps its full accumulated [text, tool-trace] —
     // never swallowed by room A's bracket close, and never replaced by
     // just the flattened `content` string.
-    const postedInB = room.posted.filter(
-      (message) => message.workbenchId === "ins_room_b",
-    );
+    const postedInB = room.posted.filter((message) => message.workbenchId === "ins_room_b");
     expect(postedInB).toHaveLength(1);
     expect(postedInB[0]?.parts).toEqual([
       { kind: "text", text: "Let me check that." },
@@ -1052,9 +1018,7 @@ describe("createChatOrchestrator", () => {
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listWorkbenchSettings: async () => [
-          workbenchRow("ins_workbench1", [agentAddress]),
-        ],
+        listWorkbenchSettings: async () => [workbenchRow("ins_workbench1", [agentAddress])],
       },
       roomMessages: room.roomMessages,
       publish: room.publish,
@@ -1078,14 +1042,12 @@ describe("createChatOrchestrator", () => {
       runId: "turn__0",
       parts: [{ kind: "text", text: "first reply" }],
     });
-    expect(
-      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: first.id }))
-        ?.status,
-    ).toBe("completed");
-    expect(
-      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: second.id }))
-        ?.status,
-    ).toBe("running");
+    expect((await agentTurns.getTurn({ tenantId: "ten_1", turnId: first.id }))?.status).toBe(
+      "completed",
+    );
+    expect((await agentTurns.getTurn({ tenantId: "ten_1", turnId: second.id }))?.status).toBe(
+      "running",
+    );
 
     orchestrator.dispose();
   });
@@ -1116,9 +1078,7 @@ describe("createChatOrchestrator", () => {
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listWorkbenchSettings: async () => [
-          workbenchRow("ins_workbench1", [agentAddress]),
-        ],
+        listWorkbenchSettings: async () => [workbenchRow("ins_workbench1", [agentAddress])],
       },
       roomMessages: room.roomMessages,
       publish: room.publish,
@@ -1145,14 +1105,12 @@ describe("createChatOrchestrator", () => {
       runId: "turn__0",
       parts: [{ kind: "text", text: "provider timed out" }],
     });
-    expect(
-      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: first.id }))
-        ?.status,
-    ).toBe("failed");
-    expect(
-      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: second.id }))
-        ?.status,
-    ).toBe("running");
+    expect((await agentTurns.getTurn({ tenantId: "ten_1", turnId: first.id }))?.status).toBe(
+      "failed",
+    );
+    expect((await agentTurns.getTurn({ tenantId: "ten_1", turnId: second.id }))?.status).toBe(
+      "running",
+    );
 
     orchestrator.dispose();
   });
@@ -1180,9 +1138,7 @@ describe("createChatOrchestrator", () => {
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listWorkbenchSettings: async () => [
-          workbenchRow("ins_workbench1", [agentAddress]),
-        ],
+        listWorkbenchSettings: async () => [workbenchRow("ins_workbench1", [agentAddress])],
       },
       roomMessages: room.roomMessages,
       publish: room.publish,
@@ -1202,14 +1158,12 @@ describe("createChatOrchestrator", () => {
 
     expect(room.posted).toHaveLength(1);
     expect(room.posted[0]?.runId).toBe("turn__1");
-    expect(
-      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: first.id }))
-        ?.status,
-    ).toBe("running");
-    expect(
-      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: second.id }))
-        ?.status,
-    ).toBe("completed");
+    expect((await agentTurns.getTurn({ tenantId: "ten_1", turnId: first.id }))?.status).toBe(
+      "running",
+    );
+    expect((await agentTurns.getTurn({ tenantId: "ten_1", turnId: second.id }))?.status).toBe(
+      "completed",
+    );
 
     orchestrator.dispose();
   });
@@ -1232,9 +1186,7 @@ describe("createChatOrchestrator", () => {
     const orchestrator = createChatOrchestrator({
       db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
       store: {
-        listWorkbenchSettings: async () => [
-          workbenchRow("ins_workbench1", [agentAddress]),
-        ],
+        listWorkbenchSettings: async () => [workbenchRow("ins_workbench1", [agentAddress])],
       },
       roomMessages: room.roomMessages,
       publish: room.publish,
@@ -1265,10 +1217,9 @@ describe("createChatOrchestrator", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(
-      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: first.id }))
-        ?.status,
-    ).toBe("completed");
+    expect((await agentTurns.getTurn({ tenantId: "ten_1", turnId: first.id }))?.status).toBe(
+      "completed",
+    );
 
     const second = await agentTurns.startTurn({
       tenantId: "ten_1",
@@ -1346,9 +1297,7 @@ describe("createChatOrchestrator", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(room.posted).toHaveLength(2);
-    expect(room.posted[0]?.parts).toEqual([
-      { kind: "text", text: "first thought" },
-    ]);
+    expect(room.posted[0]?.parts).toEqual([{ kind: "text", text: "first thought" }]);
     expect(room.posted[1]?.parts).toEqual([
       { kind: "text", text: "Let me check that." },
       {
@@ -1361,10 +1310,9 @@ describe("createChatOrchestrator", () => {
       { kind: "text", text: "second thought" },
     ]);
     expect(room.posted[1]?.runId).toBe("turn__1");
-    expect(
-      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: second.id }))
-        ?.status,
-    ).toBe("completed");
+    expect((await agentTurns.getTurn({ tenantId: "ten_1", turnId: second.id }))?.status).toBe(
+      "completed",
+    );
 
     orchestrator.dispose();
   });
@@ -1547,9 +1495,7 @@ describe("createChatOrchestrator", () => {
           findFirst: async () => {
             const run = runs[runCallIndex];
             runCallIndex += 1;
-            return run === undefined
-              ? undefined
-              : { ...run, principalId: null };
+            return run === undefined ? undefined : { ...run, principalId: null };
           },
         },
       },
@@ -1559,9 +1505,7 @@ describe("createChatOrchestrator", () => {
             limit: async () => {
               const run = runs[launchCallIndex];
               launchCallIndex += 1;
-              return run === undefined
-                ? []
-                : [launchRowFor(run.id, run.tenantId)];
+              return run === undefined ? [] : [launchRowFor(run.id, run.tenantId)];
             },
           }),
         }),
@@ -1569,11 +1513,7 @@ describe("createChatOrchestrator", () => {
     };
   }
 
-  function bracketed(
-    mailId: string,
-    messageRunId: string,
-    domain: string = "ten1.workbench.test",
-  ) {
+  function bracketed(mailId: string, messageRunId: string, domain: string = "ten1.workbench.test") {
     return {
       started: {
         type: "message.run.started",
@@ -1689,13 +1629,9 @@ describe("createChatOrchestrator", () => {
     // The reply's own row carries the thread, and so does its
     // membership — the read model sees it in the thread either way.
     expect(reply?.threadId).toBe(thread.id);
-    expect(
-      await threads.threadIdForMessage(
-        "ten_1",
-        "ins_workbench1",
-        reply?.id ?? "",
-      ),
-    ).toBe(thread.id);
+    expect(await threads.threadIdForMessage("ten_1", "ins_workbench1", reply?.id ?? "")).toBe(
+      thread.id,
+    );
 
     orchestrator.dispose();
   });
@@ -1779,13 +1715,9 @@ describe("createChatOrchestrator", () => {
       (message) => message.sender.address === "ins_echo1@ten1.workbench.test",
     );
     expect(reply?.threadId).toBe(thread.id);
-    expect(
-      await threads.threadIdForMessage(
-        "ten_1",
-        "ins_workbench1",
-        reply?.id ?? "",
-      ),
-    ).toBe(thread.id);
+    expect(await threads.threadIdForMessage("ten_1", "ins_workbench1", reply?.id ?? "")).toBe(
+      thread.id,
+    );
 
     orchestrator.dispose();
   });
@@ -1851,13 +1783,9 @@ describe("createChatOrchestrator", () => {
       (message) => message.sender.address === "ins_echo1@ten1.workbench.test",
     );
     expect(reply?.threadId).toBe(root.id);
-    expect(
-      await threads.threadIdForMessage(
-        "ten_1",
-        "ins_workbench1",
-        reply?.id ?? "",
-      ),
-    ).toBe(root.id);
+    expect(await threads.threadIdForMessage("ten_1", "ins_workbench1", reply?.id ?? "")).toBe(
+      root.id,
+    );
 
     orchestrator.dispose();
   });
@@ -2090,9 +2018,7 @@ describe("createChatOrchestrator", () => {
     if (delegatingMessage?.id === undefined) {
       throw new Error("expected the host's delegating message to be posted");
     }
-    expect(delegationHeaders).toEqual([
-      `<${delegatingMessage.id}@ten1.workbench.test>`,
-    ]);
+    expect(delegationHeaders).toEqual([`<${delegatingMessage.id}@ten1.workbench.test>`]);
     const delegationMailId = delegatingMessage.id;
     expect(
       await turnMail.findTurnMailSource({
@@ -2131,11 +2057,7 @@ describe("createChatOrchestrator", () => {
     expect(specialistReply).toMatchObject({ workbenchId: "ins_workbench1" });
     expect(specialistReply?.threadId).toBe(thread.id);
     expect(
-      await threads.threadIdForMessage(
-        "ten_1",
-        "ins_workbench1",
-        specialistReply?.id ?? "",
-      ),
+      await threads.threadIdForMessage("ten_1", "ins_workbench1", specialistReply?.id ?? ""),
     ).toBe(thread.id);
     const listed = await threads.listThreads("ten_1", "ins_workbench1");
     expect(listed.map((entry) => entry.kind).sort()).toEqual(["reply", "root"]);
@@ -2184,13 +2106,9 @@ describe("createChatOrchestrator", () => {
     expect(reply).toMatchObject({ workbenchId: "ins_workbench1" });
     const root = await threads.ensureRootThread("ten_1", "ins_workbench1");
     expect(reply?.threadId).toBe(root.id);
-    expect(
-      await threads.threadIdForMessage(
-        "ten_1",
-        "ins_workbench1",
-        reply?.id ?? "",
-      ),
-    ).toBe(root.id);
+    expect(await threads.threadIdForMessage("ten_1", "ins_workbench1", reply?.id ?? "")).toBe(
+      root.id,
+    );
 
     orchestrator.dispose();
   });
@@ -2817,13 +2735,9 @@ describe("createChatOrchestrator", () => {
     expect(parts).toHaveLength(1);
     expect(parts[0]?.kind).toBe("block");
     expect(card?.threadId).toBe(thread.id);
-    expect(
-      await threads.threadIdForMessage(
-        "ten_1",
-        "ins_workbench1",
-        card?.id ?? "",
-      ),
-    ).toBe(thread.id);
+    expect(await threads.threadIdForMessage("ten_1", "ins_workbench1", card?.id ?? "")).toBe(
+      thread.id,
+    );
 
     orchestrator.dispose();
   });
@@ -2900,17 +2814,11 @@ describe("createChatOrchestrator", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const card = room.posted.find((message) =>
-      message.parts.some((part) => part.kind === "block"),
-    );
+    const card = room.posted.find((message) => message.parts.some((part) => part.kind === "block"));
     expect(card?.threadId).toBe(thread.id);
-    expect(
-      await threads.threadIdForMessage(
-        "ten_1",
-        "ins_workbench1",
-        card?.id ?? "",
-      ),
-    ).toBe(thread.id);
+    expect(await threads.threadIdForMessage("ten_1", "ins_workbench1", card?.id ?? "")).toBe(
+      thread.id,
+    );
 
     orchestrator.dispose();
   });
@@ -3240,13 +3148,9 @@ describe("createArtifactDeliveryHandler", () => {
       },
     ]);
     expect(delivery?.threadId).toBe(thread.id);
-    expect(
-      await threads.threadIdForMessage(
-        "ten_1",
-        "ins_workbench1",
-        delivery?.id ?? "",
-      ),
-    ).toBe(thread.id);
+    expect(await threads.threadIdForMessage("ten_1", "ins_workbench1", delivery?.id ?? "")).toBe(
+      thread.id,
+    );
   });
 
   test("sends nothing when the turn's tool calls name no persisted artifact", async () => {
@@ -3560,10 +3464,9 @@ describe("createArtifactDeliveryHandler", () => {
 
     // art_1 recorded; art_2's add threw, releasing its claim.
     expect(added).toHaveLength(1);
-    expect(
-      (added[0] as { attributes: { artifactId: string } }).attributes
-        .artifactId,
-    ).toBe("art_1");
+    expect((added[0] as { attributes: { artifactId: string } }).attributes.artifactId).toBe(
+      "art_1",
+    );
 
     // Redelivery: art_1's claim is still held (skipped, not re-added);
     // art_2's claim was released, so it is retried and this time
@@ -3574,11 +3477,7 @@ describe("createArtifactDeliveryHandler", () => {
     expect(added).toHaveLength(2);
     expect(
       added
-        .map(
-          (entry) =>
-            (entry as { attributes: { artifactId: string } }).attributes
-              .artifactId,
-        )
+        .map((entry) => (entry as { attributes: { artifactId: string } }).attributes.artifactId)
         .sort(),
     ).toEqual(["art_1", "art_2"]);
   });

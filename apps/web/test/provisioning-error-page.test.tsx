@@ -23,11 +23,7 @@ afterEach(() => {
   container = null;
 });
 
-function renderPage(props: {
-  message: string;
-  refId?: string;
-  onRetry: () => void;
-}) {
+function renderPage(props: { message: string; refId?: string; onRetry: () => void }) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -38,8 +34,7 @@ function renderPage(props: {
 describe("ProvisioningErrorPage", () => {
   test("renders the consumer-language card, not a raw error string", () => {
     const el = renderPage({
-      message:
-        "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
+      message: "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
       refId: "1a2b3c-9z",
       onRetry: () => undefined,
     });
@@ -73,9 +68,7 @@ describe("ProvisioningErrorPage", () => {
 
     const button = el.querySelector("button");
     expect(button).not.toBeNull();
-    act(() =>
-      button?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
-    );
+    act(() => button?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     expect(retried).toBe(true);
   });
 });

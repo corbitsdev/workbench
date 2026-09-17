@@ -62,9 +62,7 @@ describe("markWorkflowDeploymentRecordParked", () => {
 
     await markWorkflowDeploymentRecordParked(dataDir, "dep_missing");
 
-    await expect(
-      readWorkflowDeploymentRecord(dataDir, "dep_missing"),
-    ).resolves.toBeUndefined();
+    await expect(readWorkflowDeploymentRecord(dataDir, "dep_missing")).resolves.toBeUndefined();
   });
 });
 
@@ -128,9 +126,7 @@ describe("scanWorkflowDeploymentRecords reaps pre-cutover records", () => {
 
     expect(scanned).toHaveLength(1);
     expect(scanned[0]?.deploymentId).toBe("dep_live");
-    await expect(
-      readWorkflowDeploymentRecord(dataDir, "dep_live"),
-    ).resolves.toBeDefined();
+    await expect(readWorkflowDeploymentRecord(dataDir, "dep_live")).resolves.toBeDefined();
   });
 
   test("a record invalid for a reason other than the old-format shape is warned about, not reaped", async () => {
@@ -185,11 +181,10 @@ describe("recordWorkflowDeploymentRestoreFailure", () => {
     const dataDir = await makeDataDir();
     await writeWorkflowDeploymentRecord(dataDir, "dep_1", baseRecord);
 
-    const updated = await recordWorkflowDeploymentRestoreFailure(
-      dataDir,
-      "dep_1",
-      { kind: "permanent", reason: "address derives a different slug" },
-    );
+    const updated = await recordWorkflowDeploymentRestoreFailure(dataDir, "dep_1", {
+      kind: "permanent",
+      reason: "address derives a different slug",
+    });
 
     expect(updated?.restoreFailure).toEqual({
       kind: "permanent",
@@ -225,14 +220,10 @@ describe("recordWorkflowDeploymentRestoreFailure", () => {
       kind: "permanent",
       reason: "malformed",
     });
-    let record = await recordWorkflowDeploymentRestoreFailure(
-      dataDir,
-      "dep_1",
-      {
-        kind: "permanent",
-        reason: "still malformed",
-      },
-    );
+    let record = await recordWorkflowDeploymentRestoreFailure(dataDir, "dep_1", {
+      kind: "permanent",
+      reason: "still malformed",
+    });
     expect(record?.restoreFailure?.attempts).toBe(2);
 
     record = await recordWorkflowDeploymentRestoreFailure(dataDir, "dep_1", {
@@ -249,11 +240,10 @@ describe("recordWorkflowDeploymentRestoreFailure", () => {
     // Deliberately never written: simulates a teardown deleting the record
     // before the boot loop's failure-recording catch acquires the lock.
 
-    const updated = await recordWorkflowDeploymentRestoreFailure(
-      dataDir,
-      "dep_missing",
-      { kind: "transient", reason: "provider not registered" },
-    );
+    const updated = await recordWorkflowDeploymentRestoreFailure(dataDir, "dep_missing", {
+      kind: "transient",
+      reason: "provider not registered",
+    });
 
     expect(updated).toBeUndefined();
     const onDisk = await readWorkflowDeploymentRecord(dataDir, "dep_missing");
@@ -265,11 +255,10 @@ describe("clearWorkflowDeploymentRestoreFailure", () => {
   test("drops restoreFailure after a successful restore", async () => {
     const dataDir = await makeDataDir();
     await writeWorkflowDeploymentRecord(dataDir, "dep_1", baseRecord);
-    const failed = await recordWorkflowDeploymentRestoreFailure(
-      dataDir,
-      "dep_1",
-      { kind: "transient", reason: "provider not registered" },
-    );
+    const failed = await recordWorkflowDeploymentRestoreFailure(dataDir, "dep_1", {
+      kind: "transient",
+      reason: "provider not registered",
+    });
 
     await clearWorkflowDeploymentRestoreFailure(
       dataDir,
@@ -328,8 +317,6 @@ describe("isWorkflowDeploymentRestoreQuarantined", () => {
     // A transient failure never quarantines, no matter how high its own
     // counter climbs -- it is tracked on a separate counter from the
     // permanent one.
-    expect(isWorkflowDeploymentRestoreQuarantined(transientAtSameCount)).toBe(
-      false,
-    );
+    expect(isWorkflowDeploymentRestoreQuarantined(transientAtSameCount)).toBe(false);
   });
 });

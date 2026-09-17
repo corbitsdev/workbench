@@ -118,17 +118,14 @@ export function InviteAgentDialog({
   }
 
   const jimmyMissing =
-    state.kind === "ready" &&
-    !state.items.some((item) => item.name === JIMMY_QUICK_CREATE.handle);
+    state.kind === "ready" && !state.items.some((item) => item.name === JIMMY_QUICK_CREATE.handle);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent side="right">
         <DialogHeader>
           <DialogTitle>{CHAT_STRINGS.inviteAgentDialogTitle}</DialogTitle>
-          <DialogDescription>
-            {CHAT_STRINGS.inviteAgentDialogDescription}
-          </DialogDescription>
+          <DialogDescription>{CHAT_STRINGS.inviteAgentDialogDescription}</DialogDescription>
         </DialogHeader>
         <DialogBody>
           {inviteError !== null && (
@@ -171,9 +168,7 @@ export function InviteAgentDialog({
                     className="chat-invitable-item"
                     data-testid="invitable-definition"
                   >
-                    <span className="chat-invitable-item-name">
-                      {displayName}
-                    </span>
+                    <span className="chat-invitable-item-name">{displayName}</span>
                     <Button
                       variant="outline"
                       size="sm"
@@ -188,10 +183,7 @@ export function InviteAgentDialog({
                 );
               })}
               {jimmyMissing && (
-                <li
-                  className="chat-invitable-item"
-                  data-testid="quick-create-jimmy"
-                >
+                <li className="chat-invitable-item" data-testid="quick-create-jimmy">
                   <span className="chat-invitable-item-info">
                     <span className="chat-invitable-item-name">
                       {JIMMY_QUICK_CREATE.name}

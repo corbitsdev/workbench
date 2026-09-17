@@ -14,9 +14,7 @@ export type ServiceConnectedInfo = {
   readonly displayName: string;
 };
 
-export type ServiceConnectedHook = (
-  info: ServiceConnectedInfo,
-) => Promise<void>;
+export type ServiceConnectedHook = (info: ServiceConnectedInfo) => Promise<void>;
 
 export async function fireConnectedHook(
   hook: ServiceConnectedHook | undefined,
@@ -28,9 +26,7 @@ export async function fireConnectedHook(
     await hook(info);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    log(
-      `onConnected hook failed for ${info.connectorId} on tenant ${info.tenantId}: ${message}`,
-    );
+    log(`onConnected hook failed for ${info.connectorId} on tenant ${info.tenantId}: ${message}`);
     reportError(cause, {
       operation: "fire_connected_hook",
       tenantId: info.tenantId,

@@ -108,9 +108,7 @@ export type DrainReport = {
 export type BenchProvisioner = {
   /** One bench, start to finish. Exposed so a connect can kick its own
    * bench immediately instead of waiting out a poll interval. */
-  provisionBench(
-    seed: PendingSeed,
-  ): Promise<BenchProvisionOutcome | "deferred">;
+  provisionBench(seed: PendingSeed): Promise<BenchProvisionOutcome | "deferred">;
   drainOnce(args?: { ignoreBackoff?: boolean }): Promise<DrainReport>;
   /** Fire-and-forget drain for callers that must not wait on it — a
    * route that just wrote a pending row, or hub boot. Never rejects. */
@@ -123,9 +121,7 @@ function benchKey(seed: { userId: string; tenantId: string }): string {
   return `${seed.userId}:${seed.tenantId}`;
 }
 
-export function createBenchProvisioner(
-  deps: BenchProvisionerDeps,
-): BenchProvisioner {
+export function createBenchProvisioner(deps: BenchProvisionerDeps): BenchProvisioner {
   const now = deps.now ?? Date.now;
   const logError = deps.logError ?? deps.log;
 
@@ -172,10 +168,7 @@ export function createBenchProvisioner(
   function holdOff(seed: { userId: string; tenantId: string }): void {
     const key = benchKey(seed);
     const failures = (holds.get(key)?.failureCount ?? 0) + 1;
-    const backoff = Math.min(
-      RETRY_BACKOFF_BASE_MS * 2 ** (failures - 1),
-      RETRY_BACKOFF_CEILING_MS,
-    );
+    const backoff = Math.min(RETRY_BACKOFF_BASE_MS * 2 ** (failures - 1), RETRY_BACKOFF_CEILING_MS);
     holds.set(key, {
       retryAfter: now() + backoff,
       failureCount: failures,
@@ -198,9 +191,7 @@ export function createBenchProvisioner(
    * is read past its TTL, so `undefined` here means the row is truly
    * gone, not just off this tick's page.
    */
-  async function pruneOrphanedHolds(
-    due: readonly PendingSeed[],
-  ): Promise<void> {
+  async function pruneOrphanedHolds(due: readonly PendingSeed[]): Promise<void> {
     const dueKeys = new Set(due.map(benchKey));
     for (const [key, hold] of holds) {
       if (dueKeys.has(key)) continue;
@@ -255,9 +246,7 @@ export function createBenchProvisioner(
 
     if (report.ready) {
       await deps.store.clear({ userId: seed.userId, tenantId: seed.tenantId });
-      deps.log(
-        `bench ${seed.tenantId} finished provisioning (${report.pins.length} pins present)`,
-      );
+      deps.log(`bench ${seed.tenantId} finished provisioning (${report.pins.length} pins present)`);
       return "converged";
     }
 
@@ -274,9 +263,7 @@ export function createBenchProvisioner(
     return "pending";
   }
 
-  async function provisionBench(
-    seed: PendingSeed,
-  ): Promise<BenchProvisionOutcome | "deferred"> {
+  async function provisionBench(seed: PendingSeed): Promise<BenchProvisionOutcome | "deferred"> {
     const key = benchKey(seed);
     const running = inFlight.get(key);
     if (running !== undefined) return "deferred";
@@ -307,9 +294,7 @@ export function createBenchProvisioner(
     }
   }
 
-  async function drainOnce(
-    args: { ignoreBackoff?: boolean } = {},
-  ): Promise<DrainReport> {
+  async function drainOnce(args: { ignoreBackoff?: boolean } = {}): Promise<DrainReport> {
     const page = await deps.store.listDue({
       limit: PENDING_SEED_SCAN_LIMIT,
       ...(scanAfter !== undefined ? { after: scanAfter } : {}),
@@ -322,11 +307,7 @@ export function createBenchProvisioner(
     for (const seed of page.seeds) {
       const key = benchKey(seed);
       const heldUntil = holds.get(key)?.retryAfter;
-      if (
-        args.ignoreBackoff !== true &&
-        heldUntil !== undefined &&
-        heldUntil > now()
-      ) {
+      if (args.ignoreBackoff !== true && heldUntil !== undefined && heldUntil > now()) {
         deferred += 1;
         continue;
       }
@@ -374,10 +355,7 @@ export function createBenchProvisioner(
     wake,
     start(args = {}) {
       if (timer !== undefined) return;
-      timer = setInterval(
-        wake,
-        args.intervalMs ?? PROVISIONING_POLL_INTERVAL_MS,
-      );
+      timer = setInterval(wake, args.intervalMs ?? PROVISIONING_POLL_INTERVAL_MS);
       timer.unref?.();
       wake();
     },

@@ -14,7 +14,10 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  * name that cannot name a URL.
  */
 export function slugify(name: string): string {
-  const ascii = name.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const ascii = name
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
   const hyphenated = ascii.replace(/[^a-z0-9]+/g, "-");
   return hyphenated.slice(0, SLUG_MAX_LENGTH).replace(/^-+|-+$/g, "");
 }

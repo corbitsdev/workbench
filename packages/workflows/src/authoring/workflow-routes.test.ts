@@ -8,15 +8,11 @@ import {
 import { WorkflowAuthorError } from "./errors";
 import type { WorkflowAuthorRegistry } from "./registry";
 
-function fakeAuthenticator(
-  scope: WorkflowRunScope | null,
-): WorkflowRunAuthenticator {
+function fakeAuthenticator(scope: WorkflowRunScope | null): WorkflowRunAuthenticator {
   return { resolve: async () => scope };
 }
 
-function fakeRegistry(
-  overrides: Partial<WorkflowAuthorRegistry> = {},
-): WorkflowAuthorRegistry {
+function fakeRegistry(overrides: Partial<WorkflowAuthorRegistry> = {}): WorkflowAuthorRegistry {
   return {
     author: async () => {
       throw new Error("author not stubbed");

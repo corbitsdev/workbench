@@ -53,9 +53,7 @@ const IdTokenClaims = type({
  * throwing on any malformed input — a caller without an account id can
  * still function for flows that do not require the header.
  */
-export function accountIdFromIdToken(
-  idToken: string | undefined,
-): string | undefined {
+export function accountIdFromIdToken(idToken: string | undefined): string | undefined {
   if (idToken === undefined) return undefined;
   const payload = idToken.split(".")[1];
   if (payload === undefined) return undefined;
@@ -70,10 +68,7 @@ export function accountIdFromIdToken(
   }
   const parsed = IdTokenClaims(claims);
   if (parsed instanceof type.errors) return undefined;
-  return (
-    parsed.chatgpt_account_id ??
-    parsed["https://api.openai.com/auth"]?.chatgpt_account_id
-  );
+  return parsed.chatgpt_account_id ?? parsed["https://api.openai.com/auth"]?.chatgpt_account_id;
 }
 
 /** Maps a raw token endpoint response onto {@link CodexTokens}, decoding the account id from `id_token`. */

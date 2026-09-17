@@ -14,24 +14,18 @@ const CONFIG = {
 // empty registry.
 describe("listSkills", () => {
   test("fails closed naming the missing stock route", () => {
-    expect(listSkills(CONFIG)).rejects.toThrow(
-      /no stock Interchange HTTP route/,
-    );
+    expect(listSkills(CONFIG)).rejects.toThrow(/no stock Interchange HTTP route/);
   });
 });
 
 describe("searchSkills", () => {
   test("fails closed naming the missing stock route", () => {
-    expect(searchSkills(CONFIG, "issues")).rejects.toThrow(
-      /no stock Interchange HTTP route/,
-    );
+    expect(searchSkills(CONFIG, "issues")).rejects.toThrow(/no stock Interchange HTTP route/);
   });
 });
 
 describe("loadSkill", () => {
   test("fails closed naming the missing stock route", () => {
-    expect(loadSkill(CONFIG, "triage")).rejects.toThrow(
-      /no stock Interchange HTTP route/,
-    );
+    expect(loadSkill(CONFIG, "triage")).rejects.toThrow(/no stock Interchange HTTP route/);
   });
 });

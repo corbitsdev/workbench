@@ -35,11 +35,7 @@ function call(
   };
 }
 
-function turn(
-  human: string,
-  replyText: string,
-  toolCalls: ToolCall[] = [],
-): Turn {
+function turn(human: string, replyText: string, toolCalls: ToolCall[] = []): Turn {
   return { human, replyText, toolCalls };
 }
 
@@ -65,9 +61,7 @@ function ctxWithSnapshot(
 
 describe("asksQuestions", () => {
   test("passes at or under the max", () => {
-    const transcript = [
-      turn("hi", "What topics? What cadence? What delivery channel?"),
-    ];
+    const transcript = [turn("hi", "What topics? What cadence? What delivery channel?")];
     const r = asksQuestions({ max: 4 })(ctxAt(transcript, 0));
     expect(r.pass).toBe(true);
   });
@@ -88,17 +82,13 @@ describe("asksQuestions", () => {
 describe("noToolCalls", () => {
   test("passes when none of the listed tools ran this step", () => {
     const transcript = [turn("do research", "A few questions first...")];
-    const r = noToolCalls(["create_agent", "routine_create"])(
-      ctxAt(transcript, 0),
-    );
+    const r = noToolCalls(["create_agent", "routine_create"])(ctxAt(transcript, 0));
     expect(r.pass).toBe(true);
   });
 
   test("fails when a listed tool ran this step", () => {
     const transcript = [turn("do research", "Done.", [call("create_agent")])];
-    const r = noToolCalls(["create_agent", "routine_create"])(
-      ctxAt(transcript, 0),
-    );
+    const r = noToolCalls(["create_agent", "routine_create"])(ctxAt(transcript, 0));
     expect(r.pass).toBe(false);
   });
 });
@@ -107,9 +97,7 @@ describe("noBuildBeforeAnswers", () => {
   test("passes when no build tool ran before the interview step", () => {
     const transcript = [
       turn("build me a research bot", "Sure — a few questions first..."),
-      turn("topics: AI, daily", "Great, standing that up now.", [
-        call("create_agent"),
-      ]),
+      turn("topics: AI, daily", "Great, standing that up now.", [call("create_agent")]),
     ];
     const r = noBuildBeforeAnswers(1)(ctxAt(transcript, 1));
     expect(r.pass).toBe(true);
@@ -128,20 +116,14 @@ describe("noBuildBeforeAnswers", () => {
 
 describe("namesRequiredTools", () => {
   test("passes once every named tool has been called", () => {
-    const transcript = [
-      turn("go", "ok", [call("list_connections"), call("create_agent")]),
-    ];
-    const r = namesRequiredTools(["list_connections", "create_agent"])(
-      ctxAt(transcript, 0),
-    );
+    const transcript = [turn("go", "ok", [call("list_connections"), call("create_agent")])];
+    const r = namesRequiredTools(["list_connections", "create_agent"])(ctxAt(transcript, 0));
     expect(r.pass).toBe(true);
   });
 
   test("fails when a required tool never ran", () => {
     const transcript = [turn("go", "ok", [call("list_connections")])];
-    const r = namesRequiredTools(["list_connections", "create_agent"])(
-      ctxAt(transcript, 0),
-    );
+    const r = namesRequiredTools(["list_connections", "create_agent"])(ctxAt(transcript, 0));
     expect(r.pass).toBe(false);
     expect(r.reason).toContain("create_agent");
   });
@@ -159,17 +141,13 @@ describe("memoryWritten", () => {
   });
 
   test("fails when no memory_add call happened", () => {
-    const r = memoryWritten(["example.com"])(
-      ctxAt([turn("remember this", "ok")], 0),
-    );
+    const r = memoryWritten(["example.com"])(ctxAt([turn("remember this", "ok")], 0));
     expect(r.pass).toBe(false);
   });
 
   test("fails when memory_add ran but missed the expected content", () => {
     const transcript = [
-      turn("remember this", "ok", [
-        call("memory_add", { content: "unrelated" }),
-      ]),
+      turn("remember this", "ok", [call("memory_add", { content: "unrelated" })]),
     ];
     const r = memoryWritten(["example.com"])(ctxAt(transcript, 0));
     expect(r.pass).toBe(false);
@@ -222,9 +200,7 @@ describe("agentCreatedInWorkbench", () => {
 
   test("fails when create_agent succeeded but its result shows no own chat", () => {
     const transcript = [
-      turn("make a researcher", "Done.", [
-        call("create_agent", {}, { result: "created" }),
-      ]),
+      turn("make a researcher", "Done.", [call("create_agent", {}, { result: "created" })]),
     ];
     const r = agentCreatedInWorkbench()(ctxAt(transcript, 0));
     expect(r.pass).toBe(false);
@@ -275,9 +251,7 @@ describe("routineCreated", () => {
   });
 
   test("fails when routine_create never ran", () => {
-    const r = routineCreated({ trigger: "daily" })(
-      ctxAt([turn("hi", "hi")], 0),
-    );
+    const r = routineCreated({ trigger: "daily" })(ctxAt([turn("hi", "hi")], 0));
     expect(r.pass).toBe(false);
   });
 });
@@ -313,9 +287,7 @@ describe("approvalGated", () => {
   });
 
   test("fails when the gated tool runs with no prior approval", () => {
-    const transcript = [
-      turn("update docs on SDK change", "Wired up.", [call("routine_create")]),
-    ];
+    const transcript = [turn("update docs on SDK change", "Wired up.", [call("routine_create")])];
     const r = approvalGated(["routine_create"])(ctxAt(transcript, 0));
     expect(r.pass).toBe(false);
   });
@@ -323,9 +295,7 @@ describe("approvalGated", () => {
 
 describe("githubConnectedViaConnectionsLayer", () => {
   test("fails when the world snapshot has no github connection", () => {
-    const r = githubConnectedViaConnectionsLayer()(
-      ctxAt([turn("connect github", "ok")], 0),
-    );
+    const r = githubConnectedViaConnectionsLayer()(ctxAt([turn("connect github", "ok")], 0));
     expect(r.pass).toBe(false);
     expect(r.skipped).toBeUndefined();
   });
@@ -366,9 +336,7 @@ describe("githubConnectedViaConnectionsLayer", () => {
 
 describe("agentDefinitionsHaveToolGrants", () => {
   test("fails when the world snapshot has no agent definitions", () => {
-    const r = agentDefinitionsHaveToolGrants(["greybeard"])(
-      ctxAt([turn("go", "ok")], 0),
-    );
+    const r = agentDefinitionsHaveToolGrants(["greybeard"])(ctxAt([turn("go", "ok")], 0));
     expect(r.pass).toBe(false);
   });
 
@@ -459,9 +427,7 @@ describe("triggerIsWebhookPerPr", () => {
 
 describe("reviewCommentsAttributable", () => {
   test("skips — WorldSnapshot has no reviewComments field", () => {
-    const r = reviewCommentsAttributable(["greybeard"])(
-      ctxAt([turn("pr fired", "ok")], 0),
-    );
+    const r = reviewCommentsAttributable(["greybeard"])(ctxAt([turn("pr fired", "ok")], 0));
     expect(r.skipped).toBe(true);
     expect(r.reason).toContain("reviewComments");
   });
@@ -469,9 +435,7 @@ describe("reviewCommentsAttributable", () => {
 
 describe("suggestedFixesStructurallyValid", () => {
   test("fails when the posting tool never ran", () => {
-    const r = suggestedFixesStructurallyValid()(
-      ctxAt([turn("pr fired", "ok")], 0),
-    );
+    const r = suggestedFixesStructurallyValid()(ctxAt([turn("pr fired", "ok")], 0));
     expect(r.pass).toBe(false);
     expect(r.reason).toContain("github_post_pr_review");
   });
@@ -530,11 +494,10 @@ describe("suggestedFixesStructurallyValid", () => {
 
 describe("outwardGitHubActionsRespectGrantBoundary", () => {
   const scorer = () =>
-    outwardGitHubActionsRespectGrantBoundary(
-      "abklabs/workbench",
-      "github_merge_pull_request",
-      ["Architecture reviewer", "Correctness reviewer"],
-    );
+    outwardGitHubActionsRespectGrantBoundary("abklabs/workbench", "github_merge_pull_request", [
+      "Architecture reviewer",
+      "Correctness reviewer",
+    ]);
   const attributedPost = () =>
     call("github_post_pr_review", {
       pullRequestUrl: "https://github.com/abklabs/workbench/pull/101",
@@ -584,10 +547,7 @@ describe("outwardGitHubActionsRespectGrantBoundary", () => {
 
   test("fails when the merge tool ran with no prior approval phrase", () => {
     const transcript = [
-      turn("pr fired", "ok", [
-        attributedPost(),
-        call("github_merge_pull_request"),
-      ]),
+      turn("pr fired", "ok", [attributedPost(), call("github_merge_pull_request")]),
     ];
     const r = scorer()(ctxAt(transcript, 0));
     expect(r.pass).toBe(false);
@@ -596,9 +556,7 @@ describe("outwardGitHubActionsRespectGrantBoundary", () => {
   test("passes when the merge tool only ran after an approval phrase", () => {
     const transcript = [
       turn("pr fired", "ok", [attributedPost()]),
-      turn("yes go ahead and merge it", "merged.", [
-        call("github_merge_pull_request"),
-      ]),
+      turn("yes go ahead and merge it", "merged.", [call("github_merge_pull_request")]),
     ];
     const r = scorer()(ctxAt(transcript, 1));
     expect(r.pass).toBe(true);

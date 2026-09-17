@@ -21,8 +21,6 @@ describe("oauthStartHref", () => {
   });
 
   test("never targets the onboarding mount", () => {
-    expect(oauthStartHref("tnt_1", "huggingface")).not.toContain(
-      "/api/onboarding/",
-    );
+    expect(oauthStartHref("tnt_1", "huggingface")).not.toContain("/api/onboarding/");
   });
 });

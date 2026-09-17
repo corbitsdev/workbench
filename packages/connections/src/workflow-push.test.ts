@@ -7,15 +7,7 @@
 // re-seed force-repoints `main` to the canonical content rather than
 // dying on divergent history it never asked to reconcile.
 import { describe, expect, test } from "bun:test";
-import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  readFile,
-  realpath,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { installDisposableHubDataDir } from "../../../test/disposable-hub-data-dir";
@@ -71,15 +63,12 @@ async function git(args: string[], cwd: string): Promise<string> {
   delete env["GIT_DIR"];
   delete env["GIT_WORK_TREE"];
   delete env["GIT_INDEX_FILE"];
-  const child = Bun.spawn(
-    ["git", "-c", "core.hooksPath=", "-c", "commit.gpgsign=false", ...args],
-    {
-      cwd,
-      env,
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
+  const child = Bun.spawn(["git", "-c", "core.hooksPath=", "-c", "commit.gpgsign=false", ...args], {
+    cwd,
+    env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const [stdout, stderr, code] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -110,15 +99,7 @@ describe("createGitWorkflowPusher", () => {
       await Bun.write(join(seeder, "workflow.js"), "export default {};\n");
       await git(["add", "workflow.js"], seeder);
       await git(
-        [
-          "-c",
-          "user.email=seed@test",
-          "-c",
-          "user.name=seed",
-          "commit",
-          "-m",
-          "seed v1",
-        ],
+        ["-c", "user.email=seed@test", "-c", "user.name=seed", "commit", "-m", "seed v1"],
         seeder,
       );
       await git(["push", remoteDir, "HEAD:refs/heads/main"], seeder);
@@ -202,11 +183,7 @@ describe("createGitWorkflowPusher", () => {
       );
       await chmod(hook, 0o755);
       const globalConfig = join(work, "gitconfig");
-      await writeFile(
-        globalConfig,
-        `[core]\nhooksPath = ${hooksDir}\n`,
-        "utf-8",
-      );
+      await writeFile(globalConfig, `[core]\nhooksPath = ${hooksDir}\n`, "utf-8");
       process.env.GIT_CONFIG_GLOBAL = globalConfig;
 
       const remoteDir = join(work, "remote.git");
@@ -281,15 +258,7 @@ describe("createGitWorkflowPusher", () => {
       await Bun.write(join(victim, "keep.txt"), "keep\n");
       await git(["add", "keep.txt"], victim);
       await git(
-        [
-          "-c",
-          "user.email=keep@test",
-          "-c",
-          "user.name=keep",
-          "commit",
-          "-m",
-          "keep",
-        ],
+        ["-c", "user.email=keep@test", "-c", "user.name=keep", "commit", "-m", "keep"],
         victim,
       );
 

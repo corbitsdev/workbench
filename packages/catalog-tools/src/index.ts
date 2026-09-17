@@ -1,14 +1,5 @@
-export {
-  chainFor,
-  chainNote,
-  readBenchCatalog,
-  type BenchCatalog,
-} from "./chain";
-export {
-  fetchCatalog,
-  fetchModelPolicy,
-  type CatalogToolClientConfig,
-} from "./client";
+export { chainFor, chainNote, readBenchCatalog, type BenchCatalog } from "./chain";
+export { fetchCatalog, fetchModelPolicy, type CatalogToolClientConfig } from "./client";
 export {
   catalogTools,
   describeChain,

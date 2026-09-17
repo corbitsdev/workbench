@@ -8,13 +8,7 @@
 // plus the shell-only read (`useCanvasColumnOpen`) it needs for its own
 // render.
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { ProfileSubject } from "@corbits/chat-ui";
 import {
@@ -30,11 +24,7 @@ import {
   useShellLayoutMode,
 } from "@corbits/shell-layout";
 import { useBench } from "../bench-context";
-import {
-  workbenchIdFromPath,
-  workbenchPath,
-  isWorkbenchPath,
-} from "../workbench-path";
+import { workbenchIdFromPath, workbenchPath, isWorkbenchPath } from "../workbench-path";
 import {
   CanvasAvailabilityProvider,
   type AppCanvasColumnState,
@@ -66,11 +56,7 @@ export function ShellChromeProvider({
   const canvasAllowed = canvasColumnAllowed(layoutMode);
 
   const [canvasState, setCanvasState] = useState<AppCanvasColumnState>(
-    initialCanvasColumnState<
-      ProfileSubject,
-      CanvasArtifactContent,
-      RoutinePanelSubject
-    >,
+    initialCanvasColumnState<ProfileSubject, CanvasArtifactContent, RoutinePanelSubject>,
   );
 
   // Tracks the last workbench scope we applied so a real switch (A→B) can
@@ -118,10 +104,7 @@ export function ShellChromeProvider({
     setCanvasState((state) => openArtifactInCanvas(state, artifact));
   }, []);
 
-  const openRoutine = useCallback(
-    (_subject: RoutinePanelSubject) => undefined,
-    [],
-  );
+  const openRoutine = useCallback((_subject: RoutinePanelSubject) => undefined, []);
 
   const closeCanvas = useCallback(() => {
     setCanvasState((state) => closeCanvasContent(state));

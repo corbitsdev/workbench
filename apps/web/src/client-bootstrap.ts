@@ -67,8 +67,7 @@ export async function ensurePrimaryTenant(
  * "Myra" display name. Resolved from the catalog at runtime, never
  * hardcoded at the call site. */
 export function resolveMyraDefinitionRefId(): string | undefined {
-  return WORKFLOW_CATALOG.find((entry) => entry.displayName === "Myra")
-    ?.assetName;
+  return WORKFLOW_CATALOG.find((entry) => entry.displayName === "Myra")?.assetName;
 }
 
 export type ClientBootstrapAccount = {
@@ -127,8 +126,7 @@ export const UPSTREAM_GAP_NOTES: Record<StockHubCapability, string> = {
     "Myra is absent and the client was not given the exact stock source and offering ids — supply myraDeploy from client config.",
   "project-workflow-principal":
     "Stock Interchange cannot carry a workflow identity into a child room by refId, so workbench member setup waits on an upstream capability.",
-  "principal-roles":
-    "The stock member invite route cannot assign the requested child-room roles.",
+  "principal-roles": "The stock member invite route cannot assign the requested child-room roles.",
   "agent-mailbox-reads":
     "Stock Interchange exposes no per-agent mailbox search, so participant-filtered thread derivation waits on a stock search route.",
   "thread-fork-context":
@@ -139,8 +137,7 @@ export async function bootstrapClientSession(
   account: ClientBootstrapAccount,
   deps: ClientBootstrapDeps,
 ): Promise<ClientBootstrapResult> {
-  const myraDefinitionRefId =
-    deps.myraDefinitionRefId ?? resolveMyraDefinitionRefId();
+  const myraDefinitionRefId = deps.myraDefinitionRefId ?? resolveMyraDefinitionRefId();
   if (myraDefinitionRefId === undefined) {
     return {
       kind: "error",
@@ -205,10 +202,7 @@ export async function bootstrapClientSession(
  * (first-open in main, signup in the onboarding page): a converged lane
  * logs at info, a stock gap or any other failure logs at warn — never
  * shown, never gating the shell. */
-export function logBootstrapResult(
-  log: ClientLogger,
-  result: ClientBootstrapResult,
-): void {
+export function logBootstrapResult(log: ClientLogger, result: ClientBootstrapResult): void {
   if (result.kind === "ready") {
     log.info("Portable client bootstrap converged", {
       primaryTenantId: result.primaryTenantId,
@@ -252,8 +246,6 @@ export function runPortableClientBootstrap(
     ...(overrides?.myraDefinitionRefId === undefined
       ? {}
       : { myraDefinitionRefId: overrides.myraDefinitionRefId }),
-    ...(overrides?.myraDeploy === undefined
-      ? {}
-      : { myraDeploy: overrides.myraDeploy }),
+    ...(overrides?.myraDeploy === undefined ? {} : { myraDeploy: overrides.myraDeploy }),
   });
 }

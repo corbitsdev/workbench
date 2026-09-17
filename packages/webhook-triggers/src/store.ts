@@ -21,9 +21,8 @@ import { credentialAad, type CredentialCipher } from "@intx/types";
 
 import { webhookTrigger, type WebhookTriggerRow } from "./schema";
 
-export type WebhookTriggersDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> = PostgresJsDatabase<TSchema>;
+export type WebhookTriggersDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+  PostgresJsDatabase<TSchema>;
 
 export interface CreateWebhookTriggerInput {
   readonly id: string;
@@ -57,10 +56,7 @@ export interface WebhookTriggerStore {
    * trigger.
    */
   ensure(input: CreateWebhookTriggerInput): Promise<WebhookTriggerRow>;
-  get(
-    tenantId: string,
-    triggerId: string,
-  ): Promise<WebhookTriggerRow | undefined>;
+  get(tenantId: string, triggerId: string): Promise<WebhookTriggerRow | undefined>;
   /** Looked up by the ingress route, which has no tenant scope of its own. */
   getById(triggerId: string): Promise<WebhookTriggerRow | undefined>;
   list(tenantId: string): Promise<WebhookTriggerRow[]>;
@@ -78,17 +74,12 @@ export interface WebhookTriggerStore {
   remove(tenantId: string, triggerId: string): Promise<boolean>;
 }
 
-export function createDrizzleWebhookTriggerStore<
-  TSchema extends Record<string, unknown>,
->(
+export function createDrizzleWebhookTriggerStore<TSchema extends Record<string, unknown>>(
   db: WebhookTriggersDb<TSchema>,
   credentialCipher: CredentialCipher,
 ): WebhookTriggerStore {
   async function decrypted(row: WebhookTriggerRow): Promise<WebhookTriggerRow> {
-    const secret = await credentialCipher.decrypt(
-      row.secret,
-      credentialAad(row.id, "secret"),
-    );
+    const secret = await credentialCipher.decrypt(row.secret, credentialAad(row.id, "secret"));
     return { ...row, secret };
   }
 
@@ -168,9 +159,7 @@ export function createDrizzleWebhookTriggerStore<
         )
         .limit(1);
       if (existing === undefined) {
-        throw new Error(
-          "expected webhook trigger row after conflicting insert",
-        );
+        throw new Error("expected webhook trigger row after conflicting insert");
       }
       // The winner's real, already-persisted secret — never the
       // freshly generated plaintext this call never actually stored.
@@ -181,20 +170,12 @@ export function createDrizzleWebhookTriggerStore<
       const [row] = await db
         .select()
         .from(webhookTrigger)
-        .where(
-          and(
-            eq(webhookTrigger.id, triggerId),
-            eq(webhookTrigger.tenantId, tenantId),
-          ),
-        );
+        .where(and(eq(webhookTrigger.id, triggerId), eq(webhookTrigger.tenantId, tenantId)));
       return row !== undefined ? decrypted(row) : undefined;
     },
 
     async getById(triggerId) {
-      const [row] = await db
-        .select()
-        .from(webhookTrigger)
-        .where(eq(webhookTrigger.id, triggerId));
+      const [row] = await db.select().from(webhookTrigger).where(eq(webhookTrigger.id, triggerId));
       return row !== undefined ? decrypted(row) : undefined;
     },
 
@@ -202,10 +183,7 @@ export function createDrizzleWebhookTriggerStore<
       // Never decrypted: `publicView` (management-routes.ts) never reads
       // `secret` off a listed row, so paying for N decrypts here would be
       // pure waste.
-      return db
-        .select()
-        .from(webhookTrigger)
-        .where(eq(webhookTrigger.tenantId, tenantId));
+      return db.select().from(webhookTrigger).where(eq(webhookTrigger.tenantId, tenantId));
     },
 
     async rotateSecret(tenantId, triggerId, secret) {
@@ -216,12 +194,7 @@ export function createDrizzleWebhookTriggerStore<
       const [row] = await db
         .update(webhookTrigger)
         .set({ secret: encryptedSecret })
-        .where(
-          and(
-            eq(webhookTrigger.id, triggerId),
-            eq(webhookTrigger.tenantId, tenantId),
-          ),
-        )
+        .where(and(eq(webhookTrigger.id, triggerId), eq(webhookTrigger.tenantId, tenantId)))
         .returning();
       // As in `create`, the plaintext is already known — return it
       // directly instead of decrypting what was just encrypted.
@@ -232,12 +205,7 @@ export function createDrizzleWebhookTriggerStore<
       const [row] = await db
         .update(webhookTrigger)
         .set({ enabled })
-        .where(
-          and(
-            eq(webhookTrigger.id, triggerId),
-            eq(webhookTrigger.tenantId, tenantId),
-          ),
-        )
+        .where(and(eq(webhookTrigger.id, triggerId), eq(webhookTrigger.tenantId, tenantId)))
         .returning();
       return row;
     },
@@ -252,12 +220,7 @@ export function createDrizzleWebhookTriggerStore<
     async remove(tenantId, triggerId) {
       const deleted = await db
         .delete(webhookTrigger)
-        .where(
-          and(
-            eq(webhookTrigger.id, triggerId),
-            eq(webhookTrigger.tenantId, tenantId),
-          ),
-        )
+        .where(and(eq(webhookTrigger.id, triggerId), eq(webhookTrigger.tenantId, tenantId)))
         .returning({ id: webhookTrigger.id });
       return deleted.length > 0;
     },

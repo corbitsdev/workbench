@@ -47,11 +47,7 @@ function providerRow(providerKey: string) {
   };
 }
 
-function credentialRow(
-  fixture: CredentialFixture,
-  status: "active" | "revoked",
-  idPrefix: string,
-) {
+function credentialRow(fixture: CredentialFixture, status: "active" | "revoked", idPrefix: string) {
   const providerKey = fixture.providerKey ?? providerKeyOf(fixture.name);
   return {
     id: `${idPrefix}${fixture.name}`,
@@ -73,35 +69,23 @@ function credentialRow(
  * itself (the plant/probe indirections are always passed as fakes in
  * these tests). */
 function credentialsApi(
-  active:
-    ReadonlySet<string | CredentialFixture> | readonly CredentialFixture[],
-  revoked:
-    ReadonlySet<string | CredentialFixture> | readonly CredentialFixture[] = [],
+  active: ReadonlySet<string | CredentialFixture> | readonly CredentialFixture[],
+  revoked: ReadonlySet<string | CredentialFixture> | readonly CredentialFixture[] = [],
 ): ApiCall {
   // Read `active`/`revoked` fresh on every call rather than snapshotting
   // once: several tests mutate the `Set` they passed in (mirroring a
   // real `seedCatalog`'s side effect) after the fake is built, and rely
   // on the next call seeing that mutation.
   function currentFixtures(
-    entries:
-      ReadonlySet<string | CredentialFixture> | readonly CredentialFixture[],
+    entries: ReadonlySet<string | CredentialFixture> | readonly CredentialFixture[],
   ): CredentialFixture[] {
-    return [...entries].map((entry) =>
-      typeof entry === "string" ? fixture(entry) : entry,
-    );
+    return [...entries].map((entry) => (typeof entry === "string" ? fixture(entry) : entry));
   }
   return async (method, path) => {
-    if (
-      method === "GET" &&
-      path.startsWith(`/api/tenants/${TENANT_ID}/credentials`)
-    ) {
+    if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/credentials`)) {
       const rows = [
-        ...currentFixtures(active).map((f) =>
-          credentialRow(f, "active", "cred_"),
-        ),
-        ...currentFixtures(revoked).map((f) =>
-          credentialRow(f, "revoked", "cred_revoked_"),
-        ),
+        ...currentFixtures(active).map((f) => credentialRow(f, "active", "cred_")),
+        ...currentFixtures(revoked).map((f) => credentialRow(f, "revoked", "cred_revoked_")),
       ];
       return {
         status: 200,
@@ -109,10 +93,7 @@ function credentialsApi(
         cookies: [],
       };
     }
-    if (
-      method === "GET" &&
-      path.startsWith(`/api/tenants/${TENANT_ID}/providers`)
-    ) {
+    if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/providers`)) {
       const providerKeys = new Set(
         [...currentFixtures(active), ...currentFixtures(revoked)].map(
           (f) => f.providerKey ?? providerKeyOf(f.name),
@@ -137,10 +118,7 @@ function credentialsApi(
 function paginatedCredentialsApi(pages: string[][]): ApiCall {
   const providerKeys = new Set(pages.flat().map(providerKeyOf));
   return async (method, path) => {
-    if (
-      method === "GET" &&
-      path.startsWith(`/api/tenants/${TENANT_ID}/providers`)
-    ) {
+    if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/providers`)) {
       return {
         status: 200,
         data: {
@@ -150,24 +128,18 @@ function paginatedCredentialsApi(pages: string[][]): ApiCall {
         cookies: [],
       };
     }
-    if (!(
-      method === "GET" &&
-      path.startsWith(`/api/tenants/${TENANT_ID}/credentials`)
-    )) {
+    if (!(method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/credentials`))) {
       throw new Error(`unexpected call: ${method} ${path}`);
     }
     const url = new URL(path, "http://hub.test");
     const cursor = url.searchParams.get("cursor");
     const pageIndex = cursor === null ? 0 : Number(cursor);
     const names = pages[pageIndex] ?? [];
-    const nextCursor =
-      pageIndex + 1 < pages.length ? String(pageIndex + 1) : null;
+    const nextCursor = pageIndex + 1 < pages.length ? String(pageIndex + 1) : null;
     return {
       status: 200,
       data: {
-        data: names.map((name) =>
-          credentialRow(fixture(name), "active", "cred_"),
-        ),
+        data: names.map((name) => credentialRow(fixture(name), "active", "cred_")),
         nextCursor,
       },
       cookies: [],
@@ -179,21 +151,14 @@ function paginatedCredentialsApi(pages: string[][]): ApiCall {
  * follow-nextCursor test: the target provider row lives on page two,
  * paired with a single active credential already sitting on that
  * provider so the test can assert the plant is recognized. */
-function paginatedProvidersApi(
-  pages: string[][],
-  activeCredentialName: string,
-): ApiCall {
+function paginatedProvidersApi(pages: string[][], activeCredentialName: string): ApiCall {
   return async (method, path) => {
-    if (
-      method === "GET" &&
-      path.startsWith(`/api/tenants/${TENANT_ID}/providers`)
-    ) {
+    if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/providers`)) {
       const url = new URL(path, "http://hub.test");
       const cursor = url.searchParams.get("cursor");
       const pageIndex = cursor === null ? 0 : Number(cursor);
       const names = pages[pageIndex] ?? [];
-      const nextCursor =
-        pageIndex + 1 < pages.length ? String(pageIndex + 1) : null;
+      const nextCursor = pageIndex + 1 < pages.length ? String(pageIndex + 1) : null;
       return {
         status: 200,
         data: {
@@ -203,16 +168,11 @@ function paginatedProvidersApi(
         cookies: [],
       };
     }
-    if (
-      method === "GET" &&
-      path.startsWith(`/api/tenants/${TENANT_ID}/credentials`)
-    ) {
+    if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/credentials`)) {
       return {
         status: 200,
         data: {
-          data: [
-            credentialRow(fixture(activeCredentialName), "active", "cred_"),
-          ],
+          data: [credentialRow(fixture(activeCredentialName), "active", "cred_")],
           nextCursor: null,
         },
         cookies: [],
@@ -358,9 +318,7 @@ describe("plantEnvProviderCredentials", () => {
     expect(outcomes).toEqual([{ provider: "anthropic", status: "skipped" }]);
     expect(probed).toBe(false);
     expect(seedCatalogCalls).toHaveLength(1);
-    expect(seedCatalogCalls[0]?.existingCredentialId).toBe(
-      "cred_anthropic-default",
-    );
+    expect(seedCatalogCalls[0]?.existingCredentialId).toBe("cred_anthropic-default");
     expect(seedCatalogCalls[0]?.apiKey).toBeUndefined();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("skipped");
@@ -489,9 +447,7 @@ describe("plantEnvProviderCredentials", () => {
     });
 
     expect(outcomes).toEqual([{ provider: "ollama", status: "planted" }]);
-    expect(seedCatalogCalls[0]?.baseURLOverride).toBe(
-      "https://home-mac.example.ts.net",
-    );
+    expect(seedCatalogCalls[0]?.baseURLOverride).toBe("https://home-mac.example.ts.net");
   });
 
   test("an already-active ollama credential still threads its base URL into the catalog backfill", async () => {
@@ -514,13 +470,9 @@ describe("plantEnvProviderCredentials", () => {
     });
 
     expect(outcomes).toEqual([{ provider: "ollama", status: "skipped" }]);
-    expect(seedCatalogCalls[0]?.existingCredentialId).toBe(
-      "cred_ollama-default",
-    );
+    expect(seedCatalogCalls[0]?.existingCredentialId).toBe("cred_ollama-default");
     expect(seedCatalogCalls[0]?.apiKey).toBeUndefined();
-    expect(seedCatalogCalls[0]?.baseURLOverride).toBe(
-      "https://home-mac.example.ts.net",
-    );
+    expect(seedCatalogCalls[0]?.baseURLOverride).toBe("https://home-mac.example.ts.net");
   });
 
   test("one provider's failed probe never blocks another provider's plant", async () => {
@@ -629,8 +581,7 @@ describe("plantEnvProviderCredentials", () => {
       log,
       testCredential: async () => ({
         ok: false,
-        message:
-          "OpenAI rejected key sk-oai-real-secret-value-echoed-back: invalid_api_key",
+        message: "OpenAI rejected key sk-oai-real-secret-value-echoed-back: invalid_api_key",
       }),
     });
 
@@ -648,10 +599,7 @@ describe("plantEnvProviderCredentials", () => {
     const seedCatalogCalls: SeedCatalogArgs[] = [];
     const outcomes = await plantEnvProviderCredentials({
       // The active "anthropic-default" row lives on page two only.
-      api: paginatedCredentialsApi([
-        ["other-provider-default"],
-        ["anthropic-default"],
-      ]),
+      api: paginatedCredentialsApi([["other-provider-default"], ["anthropic-default"]]),
       cookies: [],
       tenantId: TENANT_ID,
       envProviderKeys: { anthropic: "sk-ant-real" },
@@ -668,9 +616,7 @@ describe("plantEnvProviderCredentials", () => {
 
     expect(outcomes).toEqual([{ provider: "anthropic", status: "skipped" }]);
     expect(probed).toBe(false);
-    expect(seedCatalogCalls[0]?.existingCredentialId).toBe(
-      "cred_anthropic-default",
-    );
+    expect(seedCatalogCalls[0]?.existingCredentialId).toBe("cred_anthropic-default");
   });
 
   test("findProviderId follows nextCursor instead of reading only page one", async () => {
@@ -679,10 +625,7 @@ describe("plantEnvProviderCredentials", () => {
     const seedCatalogCalls: SeedCatalogArgs[] = [];
     const outcomes = await plantEnvProviderCredentials({
       // The "anthropic" provider row lives on page two only.
-      api: paginatedProvidersApi(
-        [["other-provider"], ["anthropic"]],
-        "anthropic-default",
-      ),
+      api: paginatedProvidersApi([["other-provider"], ["anthropic"]], "anthropic-default"),
       cookies: [],
       tenantId: TENANT_ID,
       envProviderKeys: { anthropic: "sk-ant-real" },
@@ -699,9 +642,7 @@ describe("plantEnvProviderCredentials", () => {
 
     expect(outcomes).toEqual([{ provider: "anthropic", status: "skipped" }]);
     expect(probed).toBe(false);
-    expect(seedCatalogCalls[0]?.existingCredentialId).toBe(
-      "cred_anthropic-default",
-    );
+    expect(seedCatalogCalls[0]?.existingCredentialId).toBe("cred_anthropic-default");
   });
 
   test("a non-inference credential type on the same provider is not recognized as the plant", async () => {

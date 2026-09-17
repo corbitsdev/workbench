@@ -148,10 +148,7 @@ describe("in-memory ThreadStore", () => {
       threadId: root.id,
       messageId: "msg_b",
     });
-    expect(await store.listMessageIds("t1", root.id)).toEqual([
-      "msg_a",
-      "msg_b",
-    ]);
+    expect(await store.listMessageIds("t1", root.id)).toEqual(["msg_a", "msg_b"]);
     expect(await store.threadIdForMessage("t1", "c1", "msg_a")).toBe(root.id);
   });
 
@@ -209,11 +206,7 @@ describe("in-memory ThreadStore", () => {
       parentMessageId: "msg_1",
     });
     const list = await store.listThreads("t1", "c1");
-    expect(list.map((t) => t.kind).sort()).toEqual([
-      "delivery",
-      "reply",
-      "root",
-    ]);
+    expect(list.map((t) => t.kind).sort()).toEqual(["delivery", "reply", "root"]);
   });
 
   test("openReplyThread on a root message opens a depth-1 thread parented on root", async () => {

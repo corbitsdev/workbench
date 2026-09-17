@@ -33,9 +33,7 @@ export function createChatApprovalActions(
         const key = query.queryKey;
         if (!Array.isArray(key)) return false;
         return key.some(
-          (part) =>
-            typeof part === "string" &&
-            part.includes(`/api/tenants/${tenantId}/inbox`),
+          (part) => typeof part === "string" && part.includes(`/api/tenants/${tenantId}/inbox`),
         );
       },
     });

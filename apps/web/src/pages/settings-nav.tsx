@@ -26,24 +26,15 @@ export function SettingsNav({
   const activeId = settingsSectionIdFromPath(path);
 
   return (
-    <nav
-      className="settings-nav"
-      aria-label={SETTINGS_STRINGS.sectionsNavLabel}
-    >
+    <nav className="settings-nav" aria-label={SETTINGS_STRINGS.sectionsNavLabel}>
       {groups.map((group) => {
-        const primary = group.sections.filter(
-          (section) => section.advanced !== true,
-        );
-        const advanced = group.sections.filter(
-          (section) => section.advanced === true,
-        );
+        const primary = group.sections.filter((section) => section.advanced !== true);
+        const advanced = group.sections.filter((section) => section.advanced === true);
         return (
           <div key={group.id} className="settings-nav-group">
             <p className="settings-nav-heading">{group.label}</p>
             {group.accessProbeFailed === true && (
-              <p className="settings-nav-access-error">
-                {SETTINGS_STRINGS.accessProbeFailedHint}
-              </p>
+              <p className="settings-nav-access-error">{SETTINGS_STRINGS.accessProbeFailedHint}</p>
             )}
             {primary.map((section) => {
               const Icon = section.icon;
@@ -53,9 +44,7 @@ export function SettingsNav({
                   name={section.title}
                   leading={<Icon aria-hidden="true" />}
                   selected={section.id === activeId}
-                  onSelect={() =>
-                    onNavigate(`${SETTINGS_PATH_PREFIX}/${section.id}`)
-                  }
+                  onSelect={() => onNavigate(`${SETTINGS_PATH_PREFIX}/${section.id}`)}
                 />
               );
             })}
@@ -76,9 +65,7 @@ export function SettingsNav({
                       name={section.title}
                       leading={<Icon aria-hidden="true" />}
                       selected={section.id === activeId}
-                      onSelect={() =>
-                        onNavigate(`${SETTINGS_PATH_PREFIX}/${section.id}`)
-                      }
+                      onSelect={() => onNavigate(`${SETTINGS_PATH_PREFIX}/${section.id}`)}
                     />
                   );
                 })}

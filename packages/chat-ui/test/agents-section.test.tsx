@@ -80,10 +80,7 @@ function stubFetch(options: {
   readonly catalogFailUntil?: number;
   readonly addCapabilityFails?: boolean;
   readonly restoreFails?: boolean;
-  readonly onSave?: (
-    definitionId: string,
-    body: { name: string; systemPrompt: string },
-  ) => void;
+  readonly onSave?: (definitionId: string, body: { name: string; systemPrompt: string }) => void;
   readonly onRefresh?: (address: string) => void;
   readonly onAddCapability?: (definitionId: string, body: unknown) => void;
   readonly onRestore?: (definitionId: string, commitSha: string) => void;
@@ -141,8 +138,7 @@ function stubFetch(options: {
         options.catalogFails === true ||
         options.catalogNetworkFails === true ||
         options.catalogFailStatus !== undefined ||
-        (options.catalogFailUntil !== undefined &&
-          catalogCalls <= options.catalogFailUntil);
+        (options.catalogFailUntil !== undefined && catalogCalls <= options.catalogFailUntil);
       if (catalogShouldFail) {
         if (options.catalogNetworkFails === true) {
           throw new TypeError("Failed to fetch");
@@ -206,10 +202,7 @@ function stubFetch(options: {
       const definitionId = restoreMatch[1] as string;
       const agent = agents.find((a) => a.definitionId === definitionId);
       if (agent === undefined) {
-        return json(
-          { error: { code: "not_found", message: "no such agent" } },
-          404,
-        );
+        return json({ error: { code: "not_found", message: "no such agent" } }, 404);
       }
       if (options.restoreFails === true) {
         return json({ error: { code: "internal", message: "boom" } }, 500);
@@ -224,16 +217,12 @@ function stubFetch(options: {
         model: agent.model,
       });
     }
-    const capabilitiesMatch =
-      /\/agent-definitions\/([^/]+)\/capabilities$/.exec(path);
+    const capabilitiesMatch = /\/agent-definitions\/([^/]+)\/capabilities$/.exec(path);
     if (capabilitiesMatch !== null) {
       const definitionId = capabilitiesMatch[1] as string;
       const agent = agents.find((a) => a.definitionId === definitionId);
       if (agent === undefined) {
-        return json(
-          { error: { code: "not_found", message: "no such agent" } },
-          404,
-        );
+        return json({ error: { code: "not_found", message: "no such agent" } }, 404);
       }
       if (options.addCapabilityFails === true) {
         return json({ error: { code: "bad_request", message: "boom" } }, 400);
@@ -244,10 +233,7 @@ function stubFetch(options: {
         | { kind: "model"; canonicalName: string };
       options.onAddCapability?.(definitionId, body);
       if (body.kind === "toolPackage") {
-        agent.toolPackagePins = [
-          ...agent.toolPackagePins,
-          { name: body.name, version: "*" },
-        ];
+        agent.toolPackagePins = [...agent.toolPackagePins, { name: body.name, version: "*" }];
       } else if (body.kind === "skill") {
         agent.skills = [...agent.skills, body.name];
       } else {
@@ -264,10 +250,7 @@ function stubFetch(options: {
       const definitionId = definitionMatch[1];
       const agent = agents.find((a) => a.definitionId === definitionId);
       if (agent === undefined) {
-        return json(
-          { error: { code: "not_found", message: "no such agent" } },
-          404,
-        );
+        return json({ error: { code: "not_found", message: "no such agent" } }, 404);
       }
       if (init?.method === "PUT") {
         if (options.saveFails === true) {
@@ -323,9 +306,7 @@ afterEach(() => {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const settle = () => act(() => sleep(10));
 
-function baseProps(
-  overrides: Partial<Parameters<typeof WorkbenchSettingsSurface>[0]> = {},
-) {
+function baseProps(overrides: Partial<Parameters<typeof WorkbenchSettingsSurface>[0]> = {}) {
   return {
     tenantId: "tnt_1",
     workbenchId: "ch_1",
@@ -338,10 +319,7 @@ function baseProps(
 }
 
 function setTextareaValue(textarea: HTMLTextAreaElement | null, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLTextAreaElement.prototype,
-    "value",
-  )?.set;
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
   act(() => {
     setter?.call(textarea, value);
     textarea?.dispatchEvent(new Event("input", { bubbles: true }));
@@ -349,17 +327,15 @@ function setTextareaValue(textarea: HTMLTextAreaElement | null, value: string) {
 }
 
 function findButton(el: HTMLElement, text: string) {
-  return Array.from(
-    el.querySelectorAll(".workbench-settings-panel-area button"),
-  ).find((button) => button.textContent === text) as
-    HTMLButtonElement | undefined;
+  return Array.from(el.querySelectorAll(".workbench-settings-panel-area button")).find(
+    (button) => button.textContent === text,
+  ) as HTMLButtonElement | undefined;
 }
 
 function openAgent(el: HTMLElement, handle: string) {
-  const row = Array.from(
-    el.querySelectorAll(".chat-settings-agent-picker-row"),
-  ).find((button) => button.textContent === `@${handle}`) as
-    HTMLButtonElement | undefined;
+  const row = Array.from(el.querySelectorAll(".chat-settings-agent-picker-row")).find(
+    (button) => button.textContent === `@${handle}`,
+  ) as HTMLButtonElement | undefined;
   act(() => {
     row?.click();
   });
@@ -380,9 +356,9 @@ describe("Agents section — list", () => {
     const el = mount(baseProps());
     await settle();
 
-    const rows = Array.from(
-      el.querySelectorAll(".chat-settings-agent-picker-row"),
-    ).map((row) => row.textContent);
+    const rows = Array.from(el.querySelectorAll(".chat-settings-agent-picker-row")).map(
+      (row) => row.textContent,
+    );
     expect(rows.sort()).toEqual(["@myra", "@researcher"]);
     expect(findButton(el, "Invite agent")).toBeDefined();
     expect(el.textContent).toContain("Autonomy");
@@ -394,9 +370,7 @@ describe("Agents section — list", () => {
     await settle();
 
     const row = el.querySelector(".chat-settings-agent-picker-row");
-    expect(
-      row?.querySelector(".chat-settings-agent-picker-row-chevron"),
-    ).not.toBeNull();
+    expect(row?.querySelector(".chat-settings-agent-picker-row-chevron")).not.toBeNull();
   });
 
   test("no agents invited yet reads honestly, not as an empty list", async () => {
@@ -426,9 +400,9 @@ describe("Agents section — list", () => {
     openAgent(el, "researcher");
     await settle();
 
-    const titles = Array.from(
-      el.querySelectorAll(".chat-settings-agent-block-title"),
-    ).map((node) => node.textContent);
+    const titles = Array.from(el.querySelectorAll(".chat-settings-agent-block-title")).map(
+      (node) => node.textContent,
+    );
     expect(titles).toEqual(["Researcher"]);
     expect(el.querySelector(".chat-settings-agent-back")).not.toBeNull();
   });
@@ -443,9 +417,9 @@ describe("Agents section — list", () => {
     );
     await settle();
 
-    const titles = Array.from(
-      el.querySelectorAll(".chat-settings-agent-block-title"),
-    ).map((node) => node.textContent);
+    const titles = Array.from(el.querySelectorAll(".chat-settings-agent-block-title")).map(
+      (node) => node.textContent,
+    );
     expect(titles).toEqual(["Myra"]);
     expect(el.querySelector(".chat-settings-agent-picker-row")).toBeNull();
   });
@@ -482,11 +456,7 @@ describe("Agents section — list", () => {
     await settle();
 
     act(() => {
-      (
-        el.querySelector(
-          ".chat-settings-agent-back",
-        ) as HTMLButtonElement | null
-      )?.click();
+      (el.querySelector(".chat-settings-agent-back") as HTMLButtonElement | null)?.click();
     });
     expect(changes).toEqual(["wfd_myra", null]);
   });
@@ -589,9 +559,7 @@ describe("Agents section — detail", () => {
 
     openAgent(el, "myra");
     await settle();
-    const back = el.querySelector(
-      ".chat-settings-agent-back",
-    ) as HTMLButtonElement | null;
+    const back = el.querySelector(".chat-settings-agent-back") as HTMLButtonElement | null;
     act(() => {
       back?.click();
     });
@@ -622,10 +590,7 @@ describe("Agents section — Capabilities", () => {
     stubFetch({
       agents: [withCapabilities],
       capabilityInventory: {
-        toolPackages: [
-          { name: "@corbits/github-tools" },
-          { name: "@corbits/granola-tools" },
-        ],
+        toolPackages: [{ name: "@corbits/github-tools" }, { name: "@corbits/granola-tools" }],
         skills: [{ name: "research" }, { name: "writing" }],
         models: [{ canonicalName: "anthropic/claude-sonnet" }],
       },
@@ -635,18 +600,14 @@ describe("Agents section — Capabilities", () => {
     openAgent(el, "myra");
     await settle();
 
-    const listText = el.querySelector(
-      ".chat-settings-capability-list",
-    )?.textContent;
+    const listText = el.querySelector(".chat-settings-capability-list")?.textContent;
     expect(listText).toContain("@corbits/github-tools");
     expect(listText).toContain("research");
 
     const choiceSelect = el.querySelectorAll(
       ".chat-settings-capability-add select",
     )[1] as HTMLSelectElement | null;
-    const toolOptions = Array.from(choiceSelect?.options ?? []).map(
-      (option) => option.value,
-    );
+    const toolOptions = Array.from(choiceSelect?.options ?? []).map((option) => option.value);
     // The already-pinned tool package is not offered again; the
     // not-yet-pinned one is.
     expect(toolOptions).not.toContain("@corbits/github-tools");
@@ -755,9 +716,8 @@ describe("Agents section — Capabilities", () => {
       name: "@corbits/github-tools",
     });
     expect(refreshCalls).toEqual(["myra@acme.example"]);
-    const badges = Array.from(
-      el.querySelectorAll(".chat-settings-capability-list"),
-    )[0]?.textContent;
+    const badges = Array.from(el.querySelectorAll(".chat-settings-capability-list"))[0]
+      ?.textContent;
     expect(badges).toContain("@corbits/github-tools");
   });
 
@@ -798,9 +758,7 @@ describe("Agents section — Capabilities", () => {
 
 describe("Agents section — Model select (CL-6272.3)", () => {
   function modelSelect(el: HTMLElement) {
-    return el.querySelector(
-      ".chat-settings-agent-model-select select",
-    ) as HTMLSelectElement | null;
+    return el.querySelector(".chat-settings-agent-model-select select") as HTMLSelectElement | null;
   }
 
   test("shows the current model and options labeled 'Model · Provider'", async () => {
@@ -826,9 +784,7 @@ describe("Agents section — Model select (CL-6272.3)", () => {
 
     const select = modelSelect(el);
     expect(select?.value).toBe("anthropic/claude-sonnet");
-    const labels = Array.from(select?.options ?? []).map(
-      (option) => option.textContent,
-    );
+    const labels = Array.from(select?.options ?? []).map((option) => option.textContent);
     expect(labels).toEqual(["Claude Sonnet · Anthropic", "GPT · Opencode Zen"]);
   });
 
@@ -940,9 +896,7 @@ describe("Agents section — Model select (CL-6272.3)", () => {
     await settle();
 
     const alert = el.querySelector(".chat-dialog-error")?.textContent;
-    expect(alert).toBe(
-      "Couldn't reach the server. Check your connection and try again.",
-    );
+    expect(alert).toBe("Couldn't reach the server. Check your connection and try again.");
     expect(alert).not.toBe("Couldn't load the models.");
   });
 
@@ -963,9 +917,7 @@ describe("Agents section — Model select (CL-6272.3)", () => {
     await settle();
 
     expect(modelSelect(el)?.disabled).toBe(true);
-    expect(el.querySelector(".chat-dialog-error")?.textContent).toBe(
-      "catalog boom",
-    );
+    expect(el.querySelector(".chat-dialog-error")?.textContent).toBe("catalog boom");
 
     act(() => {
       findButton(el, "Retry")?.click();
@@ -975,9 +927,9 @@ describe("Agents section — Model select (CL-6272.3)", () => {
     expect(el.querySelector(".chat-dialog-error")).toBeNull();
     const select = modelSelect(el);
     expect(select?.disabled).toBe(false);
-    expect(
-      Array.from(select?.options ?? []).map((option) => option.textContent),
-    ).toContain("Claude Sonnet · Anthropic");
+    expect(Array.from(select?.options ?? []).map((option) => option.textContent)).toContain(
+      "Claude Sonnet · Anthropic",
+    );
   });
 });
 

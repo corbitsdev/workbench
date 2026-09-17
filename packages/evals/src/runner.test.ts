@@ -215,9 +215,7 @@ test("runEval throws rather than record a corrupted step if a persona sub-loop y
     async close() {},
   };
 
-  await expect(runEval(evalDef, target)).rejects.toThrow(
-    "runEval: step 0 produced no turns",
-  );
+  await expect(runEval(evalDef, target)).rejects.toThrow("runEval: step 0 produced no turns");
 });
 
 test("runMatrix still closes the target when a run throws", async () => {
@@ -293,9 +291,7 @@ test("runEval fires a fire-webhook step against the snapshot's enabled trigger",
   };
 
   const result = await runEval(evalDef, target);
-  expect(fired).toEqual([
-    { triggerId: "wt_live", payload: { action: "opened" } },
-  ]);
+  expect(fired).toEqual([{ triggerId: "wt_live", payload: { action: "opened" } }]);
   expect(result.steps[0]?.turn.replyText).toContain("accepted");
 });
 
@@ -316,7 +312,5 @@ test("runEval records an honest miss when a fire-webhook step finds no enabled t
     async close() {},
   };
   const result = await runEval(evalDef, target);
-  expect(result.steps[0]?.turn.replyText).toContain(
-    "no enabled webhook_trigger",
-  );
+  expect(result.steps[0]?.turn.replyText).toContain("no enabled webhook_trigger");
 });

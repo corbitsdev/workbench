@@ -17,7 +17,5 @@ const RUN_ID_SHAPE = /^(?:run|ins)_[0-9a-f]{32}$/;
  * keep applying their own empty-title fallback on top of this.
  */
 export function displayWorkbenchTitle(title: string, id: string): string {
-  return title === id || RUN_ID_SHAPE.test(title)
-    ? CHAT_STRINGS.newWorkbenchTitle
-    : title;
+  return title === id || RUN_ID_SHAPE.test(title) ? CHAT_STRINGS.newWorkbenchTitle : title;
 }

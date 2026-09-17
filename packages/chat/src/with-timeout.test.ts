@@ -24,11 +24,7 @@ describe("withTimeout", () => {
 
   test("rejects with the timeout message when work never settles", async () => {
     await expect(
-      withTimeout(
-        () => new Promise<never>(() => {}),
-        10,
-        "did not settle within 10ms",
-      ),
+      withTimeout(() => new Promise<never>(() => {}), 10, "did not settle within 10ms"),
     ).rejects.toThrow("did not settle within 10ms");
   });
 
@@ -142,12 +138,7 @@ describe("withTimeout", () => {
 
     test("work settling on its own is unaffected by an external signal that never fires", async () => {
       const external = new AbortController();
-      const result = await withTimeout(
-        async () => "ok",
-        50,
-        "timed out",
-        external.signal,
-      );
+      const result = await withTimeout(async () => "ok", 50, "timed out", external.signal);
       expect(result).toBe("ok");
     });
 

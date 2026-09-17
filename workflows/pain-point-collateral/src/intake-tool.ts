@@ -20,8 +20,7 @@
 import { type } from "arktype";
 import { defineTool, type BaseEnv } from "@intx/agent";
 
-export const PAIN_POINT_COLLATERAL_INTAKE_TOOL_NAME =
-  "pain_point_collateral_intake";
+export const PAIN_POINT_COLLATERAL_INTAKE_TOOL_NAME = "pain_point_collateral_intake";
 
 export const PAIN_POINT_COLLATERAL_INTAKE_DESCRIPTION =
   "Validates and normalizes the trigger's named intake fields (a pasted transcript or a Granola note id), reporting which one, if either, was actually given.";

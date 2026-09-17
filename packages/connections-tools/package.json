@@ -1,21 +1,21 @@
 {
   "name": "@corbits/connections-tools",
-  "description": "The list_connections and request_connection tools as an @intx/agent tool bundle: an agent sees which third-party connections this workbench already has live and hands the human a deep link to connect one that isn't, reusing the existing connections plane and never inventing new state or completing OAuth itself",
   "version": "0.0.11",
+  "description": "The list_connections and request_connection tools as an @intx/agent tool bundle: an agent sees which third-party connections this workbench already has live and hands the human a deep link to connect one that isn't, reusing the existing connections plane and never inventing new state or completing OAuth itself",
   "license": "LGPL-2.1-or-later",
-  "type": "module",
-  "exports": {
-    ".": "./src/index.ts"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "packages/connections-tools"
   },
   "files": [
     "src",
     "LICENSE",
     "README.md"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "packages/connections-tools"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -27,12 +27,12 @@
   "dependencies": {
     "arktype": "catalog:"
   },
-  "peerDependencies": {
-    "@intx/agent": "0.3.0",
-    "@intx/types": "0.3.0"
-  },
   "devDependencies": {
     "@types/bun": "catalog:",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0"
   }
 }

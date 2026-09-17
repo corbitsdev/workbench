@@ -50,10 +50,7 @@ function normalizeSubject(subject: string): string {
     .toLowerCase();
 }
 
-function parentIdOf(
-  message: ThreadMessage,
-  knownIds: Set<string>,
-): string | undefined {
+function parentIdOf(message: ThreadMessage, knownIds: Set<string>): string | undefined {
   if (message.inReplyTo !== undefined && knownIds.has(message.inReplyTo)) {
     return message.inReplyTo;
   }
@@ -92,8 +89,7 @@ export function deriveThreads(messages: readonly ThreadMessage[]): Thread[] {
   const participantKeyOf = (group: Group): string => {
     const members = new Set<string>();
     for (const member of group.members) {
-      for (const participant of participantsOf(member))
-        members.add(participant);
+      for (const participant of participantsOf(member)) members.add(participant);
     }
     return JSON.stringify([...members].sort());
   };
@@ -124,8 +120,7 @@ export function deriveThreads(messages: readonly ThreadMessage[]): Thread[] {
       else existing.members.push(...group.members);
       continue;
     }
-    const subject =
-      group.subject === undefined ? "" : normalizeSubject(group.subject);
+    const subject = group.subject === undefined ? "" : normalizeSubject(group.subject);
     if (subject === "") {
       solo.push(group);
       continue;
@@ -136,14 +131,13 @@ export function deriveThreads(messages: readonly ThreadMessage[]): Thread[] {
     else existing.members.push(...group.members);
   }
 
-  return [
-    ...merged.entries(),
-    ...solo.map((group) => ["", group] as const),
-  ].map(([key, group]) => ({
-    key: key === "" ? `message:${group.members[0]?.messageId}` : key,
-    rootMessageId: group.members[0]?.messageId ?? "",
-    messageIds: group.members.map((message) => message.messageId),
-  }));
+  return [...merged.entries(), ...solo.map((group) => ["", group] as const)].map(
+    ([key, group]) => ({
+      key: key === "" ? `message:${group.members[0]?.messageId}` : key,
+      rootMessageId: group.members[0]?.messageId ?? "",
+      messageIds: group.members.map((message) => message.messageId),
+    }),
+  );
 }
 
 /** Derives DMs: threads whose participant set is the user's principal
@@ -156,9 +150,7 @@ export function deriveDmThreads(
   const users = new Set(userAddresses.map(normalizeAddress));
   const derived: DmThread[] = [];
   for (const thread of deriveThreads(messages)) {
-    const byId = new Map(
-      messages.map((message) => [message.messageId, message]),
-    );
+    const byId = new Map(messages.map((message) => [message.messageId, message]));
     const members = new Set<string>();
     for (const messageId of thread.messageIds) {
       const message = byId.get(messageId);

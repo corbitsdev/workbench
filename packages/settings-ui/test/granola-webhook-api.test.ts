@@ -75,16 +75,13 @@ describe("listGranolaWebhookTriggers", () => {
   });
 
   test("falls back to a path-free message when the body has no envelope", async () => {
-    globalThis.fetch = (async () =>
-      jsonResponse(401, {})) as unknown as typeof fetch;
+    globalThis.fetch = (async () => jsonResponse(401, {})) as unknown as typeof fetch;
     try {
       await listGranolaWebhookTriggers("ten_1");
       throw new Error("expected listGranolaWebhookTriggers to reject");
     } catch (cause) {
       expect(cause).toBeInstanceOf(GranolaWebhookApiError);
-      expect((cause as Error).message).toBe(
-        "The server answered 401 while loading webhooks.",
-      );
+      expect((cause as Error).message).toBe("The server answered 401 while loading webhooks.");
       expect((cause as Error).message).not.toContain("/api/");
     }
   });
@@ -94,13 +91,9 @@ describe("createGranolaWebhookTrigger", () => {
   test("posts name + workflowDefinitionId and returns the once-shown secret", async () => {
     let requestedPath = "";
     let requestedBody: unknown;
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requestedPath = String(input);
-      requestedBody =
-        init?.body !== undefined ? JSON.parse(String(init.body)) : undefined;
+      requestedBody = init?.body !== undefined ? JSON.parse(String(init.body)) : undefined;
       return jsonResponse(201, {
         id: "wht_2",
         tenantId: "ten_1",
@@ -115,11 +108,7 @@ describe("createGranolaWebhookTrigger", () => {
       });
     }) as unknown as typeof fetch;
 
-    const created = await createGranolaWebhookTrigger(
-      "ten_1",
-      "def_1",
-      "granola-call webhook",
-    );
+    const created = await createGranolaWebhookTrigger("ten_1", "def_1", "granola-call webhook");
     expect(requestedPath).toBe("/api/tenants/ten_1/webhook-triggers");
     expect(requestedBody).toEqual({
       name: "granola-call webhook",
@@ -151,9 +140,7 @@ describe("rotateGranolaWebhookTriggerSecret", () => {
     }) as unknown as typeof fetch;
 
     const rotated = await rotateGranolaWebhookTriggerSecret("ten_1", "wht_2");
-    expect(requestedPath).toBe(
-      "/api/tenants/ten_1/webhook-triggers/wht_2/rotate-secret",
-    );
+    expect(requestedPath).toBe("/api/tenants/ten_1/webhook-triggers/wht_2/rotate-secret");
     expect(rotated.secret).toBe("sec_rotated");
   });
 });

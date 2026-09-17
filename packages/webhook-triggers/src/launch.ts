@@ -44,10 +44,7 @@ export type CryptoProviderCache = {
 export type LaunchWebhookTriggerDeps = {
   db: DB["db"];
   repoStore: Pick<RepoStore, "resolveRef">;
-  workflowAllocationService: Pick<
-    WorkflowAllocationService,
-    "prepareProvisionedDeployment"
-  >;
+  workflowAllocationService: Pick<WorkflowAllocationService, "prepareProvisionedDeployment">;
   sessionService: Pick<SessionService, "sendUserMessage">;
   /**
    * The same wrapped `EventCollectorRegistry` every native launcher
@@ -112,8 +109,7 @@ export async function launchWebhookTrigger(
   }
   if (definitionRow.assetId === null) {
     throw new Error(
-      `workflow definition "${trigger.workflowDefinitionId}" has not been ` +
-        "materialized",
+      `workflow definition "${trigger.workflowDefinitionId}" has not been ` + "materialized",
     );
   }
 
@@ -125,10 +121,7 @@ export async function launchWebhookTrigger(
   }
 
   const projection = await readDefinitionProjection(deps.db, definitionRow);
-  const foldedBody = readFoldedBody(
-    projection,
-    definitionRow.grantRequirements,
-  );
+  const foldedBody = readFoldedBody(projection, definitionRow.grantRequirements);
   if (foldedBody.systemPrompt === "") {
     throw new Error(
       `workflow definition "${trigger.workflowDefinitionId}" cannot be ` +
@@ -136,15 +129,13 @@ export async function launchWebhookTrigger(
     );
   }
 
-  const offerings = [
-    ...(await listVisibleOfferings(deps.db, trigger.tenantId)),
-  ].sort((a, b) => a.offering.priority - b.offering.priority);
+  const offerings = [...(await listVisibleOfferings(deps.db, trigger.tenantId))].sort(
+    (a, b) => a.offering.priority - b.offering.priority,
+  );
   const sourceOfferingIds = offerings.map((o) => o.offering.id);
   const defaultSourceOfferingId = sourceOfferingIds[0];
   if (defaultSourceOfferingId === undefined) {
-    throw new Error(
-      `no catalog offerings visible to tenant "${trigger.tenantId}"`,
-    );
+    throw new Error(`no catalog offerings visible to tenant "${trigger.tenantId}"`);
   }
 
   const assetId = definitionRow.assetId;
@@ -159,27 +150,26 @@ export async function launchWebhookTrigger(
   const anchorRunId = generateId("workflowRun");
   const sessionId = generateId("session");
 
-  const prepared =
-    await deps.workflowAllocationService.prepareProvisionedDeployment({
-      tenantId: trigger.tenantId,
-      anchorRunId,
-      sessionId,
-      deploymentDomain: tenantRow.domain,
-      source: {
-        kind: "asset",
-        assetId,
-        package: { format: "source", commitSha },
-      },
-      entry: WORKFLOW_SOURCE_ENTRY,
-      definitionAssetId: assetId,
-      sourceAuthorityPrincipalId: trigger.createdBy,
-      sourceOfferingIds,
-      defaultSourceOfferingId,
-      deployContent: { systemPrompt: "" },
-      ...(foldedBody.toolPackagePins.length > 0
-        ? { toolPackagePins: foldedBody.toolPackagePins }
-        : {}),
-    });
+  const prepared = await deps.workflowAllocationService.prepareProvisionedDeployment({
+    tenantId: trigger.tenantId,
+    anchorRunId,
+    sessionId,
+    deploymentDomain: tenantRow.domain,
+    source: {
+      kind: "asset",
+      assetId,
+      package: { format: "source", commitSha },
+    },
+    entry: WORKFLOW_SOURCE_ENTRY,
+    definitionAssetId: assetId,
+    sourceAuthorityPrincipalId: trigger.createdBy,
+    sourceOfferingIds,
+    defaultSourceOfferingId,
+    deployContent: { systemPrompt: "" },
+    ...(foldedBody.toolPackagePins.length > 0
+      ? { toolPackagePins: foldedBody.toolPackagePins }
+      : {}),
+  });
 
   await recordAgentSessionAtProvision({
     db: deps.db,
@@ -190,9 +180,7 @@ export async function launchWebhookTrigger(
   });
 
   const content = renderInputTemplate(trigger.inputTemplate, payload);
-  const cryptoProvider = await deps.cryptoProviderCache.get(
-    prepared.anchorRunId,
-  );
+  const cryptoProvider = await deps.cryptoProviderCache.get(prepared.anchorRunId);
   try {
     await deliverWhenRoutable({
       send: () =>

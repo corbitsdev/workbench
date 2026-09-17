@@ -11,11 +11,7 @@ import path from "node:path";
 
 import { createDefaultDirectorRegistry } from "@intx/agent";
 import type { DirectorRegistry } from "@intx/agent";
-import type {
-  Principal,
-  RepoId,
-  RepoStore,
-} from "@intx/hub-sessions/substrate";
+import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions/substrate";
 import { signalName } from "@intx/types";
 import type { InferenceEvent } from "@intx/types/runtime";
 import {
@@ -46,10 +42,7 @@ import {
 import type { MailPartReader } from "@intx/types/runtime";
 import { reportError } from "@corbits/error-sink";
 
-import {
-  parseStepInferenceSources,
-  type StepInferenceSourceTable,
-} from "./config";
+import { parseStepInferenceSources, type StepInferenceSourceTable } from "./config";
 
 function fireAndForget(
   work: Promise<unknown>,
@@ -215,9 +208,7 @@ export interface SidecarRunChildDeps {
  * either per-call (no handle to dispose) or shared with the parent
  * (the scheduler).
  */
-export function createSidecarRunChild(
-  deps: SidecarRunChildDeps,
-): RunChildWorkflow {
+export function createSidecarRunChild(deps: SidecarRunChildDeps): RunChildWorkflow {
   const directors = deps.directors ?? createDefaultDirectorRegistry();
   const clock = deps.clock ?? defaultClock;
   const newId = deps.newId ?? defaultNewId;
@@ -342,9 +333,7 @@ export function createSidecarRunChild(
  * `handle.cancel` exactly as `createSidecarRunChild` does; the child
  * runtime takes no abort signal of its own.
  */
-export function createSidecarSpawnSuspendableChild(
-  deps: SidecarRunChildDeps,
-): RunSuspendableChild {
+export function createSidecarSpawnSuspendableChild(deps: SidecarRunChildDeps): RunSuspendableChild {
   const directors = deps.directors ?? createDefaultDirectorRegistry();
   const clock = deps.clock ?? defaultClock;
   const newId = deps.newId ?? defaultNewId;
@@ -421,22 +410,12 @@ export function createSidecarSpawnSuspendableChild(
         );
       }
       const bodySourcesRef: SourcesSnapshotRef = {
-        current: await readBodyStepInferenceSources(
-          deps.dataDir,
-          rewrittenDefinition.id,
-        ),
+        current: await readBodyStepInferenceSources(deps.dataDir, rewrittenDefinition.id),
       };
       const bodyInvokeStep = deps.bodyInvokeStep;
       const authorize = inputAuthorize ?? baseEnv.authorize;
       invokeStep = (req) =>
-        bodyInvokeStep(
-          req,
-          authorize,
-          bodySourcesRef,
-          onEvent,
-          credentialWiring,
-          mailPartReader,
-        );
+        bodyInvokeStep(req, authorize, bodySourcesRef, onEvent, credentialWiring, mailPartReader);
     }
 
     // FIFO the caller drains via `next()`: each entry is either an approval
@@ -629,8 +608,7 @@ function buildChildRunEnv(args: {
   signalChannel: ReturnType<typeof createWorkflowHostSignalChannel>;
   definition: WorkflowDefinition;
 } {
-  const { deps, directors, clock, newId, repoStore, runChild, definition } =
-    args;
+  const { deps, directors, clock, newId, repoStore, runChild, definition } = args;
   const childRunId = args.childRunId;
   // A rung may itself embed a grandchild as an inline `childWorkflow`. Lift
   // each to an internal `{ ref }` and run the rewritten definition whose
@@ -639,9 +617,7 @@ function buildChildRunEnv(args: {
   // from, so a grandchild spawns with no on-disk read at any depth.
   const { workflow: rewrittenDefinition, bodies: grandchildBodies } =
     rewriteInlineChildWorkflowBodies(definition);
-  const grandchildMap = new Map(
-    grandchildBodies.map((body) => [body.ref, body.definition]),
-  );
+  const grandchildMap = new Map(grandchildBodies.map((body) => [body.ref, body.definition]));
   const blobs = createWorkflowRunBlobSubstrate({
     substrate: deps.substrate,
     repoId: deps.workflowRunRepoId,
@@ -649,8 +625,7 @@ function buildChildRunEnv(args: {
     runId: childRunId,
     ref: deps.workflowRunRef,
   });
-  const startChannel =
-    deps.createSignalChannel ?? createWorkflowHostSignalChannel;
+  const startChannel = deps.createSignalChannel ?? createWorkflowHostSignalChannel;
   const signalChannel = startChannel({
     repoStore: deps.substrate,
     principal: deps.principal,
@@ -688,8 +663,7 @@ function buildChildRunEnv(args: {
     bodies: grandchildMap,
     runChild,
   });
-  const spawnChild: SpawnChildWorkflow = (spawnInput) =>
-    hostSpawnChild(spawnInput, args.onEvent);
+  const spawnChild: SpawnChildWorkflow = (spawnInput) => hostSpawnChild(spawnInput, args.onEvent);
   const env: WorkflowRuntimeEnv = {
     repoStore,
     scheduler: deps.scheduler,
@@ -720,13 +694,7 @@ async function readBodyStepInferenceSources(
   dataDir: string,
   bodyRef: string,
 ): Promise<StepInferenceSourceTable> {
-  const sourcesPath = path.join(
-    dataDir,
-    "assets",
-    "workflow",
-    bodyRef,
-    "sources.json",
-  );
+  const sourcesPath = path.join(dataDir, "assets", "workflow", bodyRef, "sources.json");
   let raw: string;
   try {
     raw = await fs.promises.readFile(sourcesPath, "utf8");

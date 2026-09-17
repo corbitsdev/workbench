@@ -21,10 +21,7 @@ import {
   type WorkflowCapabilityRunScope,
   type WorkflowRunAuthenticator,
 } from "../src/workflow-capability-routes";
-import {
-  agentDefinitionSourceTree,
-  AGENT_DEFINITION_ENTRY_PATH,
-} from "../src/definition-asset";
+import { agentDefinitionSourceTree, AGENT_DEFINITION_ENTRY_PATH } from "../src/definition-asset";
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import { definitionFrom, SOURCE_TREE_PATHS } from "./source-tree";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
@@ -48,9 +45,7 @@ const fakeCapabilityInventory: CapabilityInventoryProvider = {
 
 const fakeSkillIndex: PinnedSkillIndexResolver = {
   resolve: (_tenantId, _principalId, names) =>
-    Promise.resolve(
-      names.map((name) => ({ name, description: `What ${name} does.` })),
-    ),
+    Promise.resolve(names.map((name) => ({ name, description: `What ${name} does.` }))),
 };
 
 function storedDefinitionBytes(): Uint8Array {
@@ -72,9 +67,7 @@ function storedDefinitionBytes(): Uint8Array {
  * with `workflowBytes` — pins live in the asset's own stanza, so a test
  * that needs a definition's skills reads them back out of the written
  * tree instead of seeding side state. */
-function readAssetBlobFor(
-  workflowBytes: Uint8Array,
-): AssetService["readAssetBlob"] {
+function readAssetBlobFor(workflowBytes: Uint8Array): AssetService["readAssetBlob"] {
   return () => Promise.resolve(workflowBytes);
 }
 
@@ -266,8 +259,7 @@ test("a run may add a capability to its own definition without any grant check",
         writtenMessage = params.tree.message;
         return Promise.resolve({ commitSha: "deadbeef" });
       },
-      listAssetBlobs: () =>
-        Promise.resolve(["corbits-capability-tools-0.0.2.tgz"]),
+      listAssetBlobs: () => Promise.resolve(["corbits-capability-tools-0.0.2.tgz"]),
     }),
     deployer,
   });
@@ -282,15 +274,11 @@ test("a run may add a capability to its own definition without any grant check",
   expect(deployer.deploys).toHaveLength(1);
   expect(deployer.deploys[0]?.commitSha).toBe("deadbeef");
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
-  expect(writtenMessage).toBe(
-    "Add @corbits/capability-tools to research-buddy",
-  );
+  expect(writtenMessage).toBe("Add @corbits/capability-tools to research-buddy");
   const body = (await response.json()) as {
     toolPackagePins: { name: string; version: string }[];
   };
-  expect(body.toolPackagePins).toEqual([
-    { name: "@corbits/capability-tools", version: "0.0.2" },
-  ]);
+  expect(body.toolPackagePins).toEqual([{ name: "@corbits/capability-tools", version: "0.0.2" }]);
 });
 
 test("adding a capability the tenant's inventory doesn't offer is a 400, never written", async () => {
@@ -330,9 +318,7 @@ test("adding a skill merges it additively into the definition stanza and re-inde
   expect(response.status).toBe(200);
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   // The written tree's stanza is the pins — no side table to consult.
-  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual([
-    "research",
-  ]);
+  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual(["research"]);
   const body = (await response.json()) as { skills: string[] };
   expect(body.skills).toEqual(["research"]);
 });
@@ -353,9 +339,7 @@ test("setting a model in the tenant's catalog writes a single named commit", asy
     canonicalName: "anthropic/claude-sonnet",
   });
   expect(response.status).toBe(200);
-  expect(writtenMessage).toBe(
-    "Set research-buddy's model to anthropic/claude-sonnet",
-  );
+  expect(writtenMessage).toBe("Set research-buddy's model to anthropic/claude-sonnet");
   const body = (await response.json()) as { model?: string };
   expect(body.model).toBe("anthropic/claude-sonnet");
 });

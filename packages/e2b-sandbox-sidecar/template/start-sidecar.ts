@@ -15,16 +15,13 @@ function requireEnv(name: string): string {
 const dataDir = requireEnv("SIDECAR_DATA_DIR");
 await mkdir(dataDir, { recursive: true, mode: 0o700 });
 
-const child = Bun.spawn(
-  [process.execPath, "run", "/repo/apps/sidecar/src/index.ts"],
-  {
-    cwd: "/repo",
-    env: process.env,
-    stdin: "ignore",
-    stdout: "inherit",
-    stderr: "inherit",
-  },
-);
+const child = Bun.spawn([process.execPath, "run", "/repo/apps/sidecar/src/index.ts"], {
+  cwd: "/repo",
+  env: process.env,
+  stdin: "ignore",
+  stdout: "inherit",
+  stderr: "inherit",
+});
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => child.kill(signal));

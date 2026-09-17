@@ -62,17 +62,14 @@ function TimelineRowBody({ event }: { readonly event: TimelineEvent }) {
       return (
         <div className="workbench-timeline-entry-body">
           <strong>{event.senderName}</strong>
-          <span className="workbench-timeline-entry-excerpt">
-            {event.excerpt}
-          </span>
+          <span className="workbench-timeline-entry-excerpt">{event.excerpt}</span>
         </div>
       );
     case "thread-fork":
       return (
         <div className="workbench-timeline-entry-body">
           <span>
-            Forked {event.threadKind === "delivery" ? "delivery" : "reply"}{" "}
-            thread · {event.title}
+            Forked {event.threadKind === "delivery" ? "delivery" : "reply"} thread · {event.title}
           </span>
         </div>
       );
@@ -96,23 +93,14 @@ function TimelineRow({ event }: { readonly event: TimelineEvent }) {
       data-indented={indented}
       data-ctx-timeline-event={event.id}
     >
-      <span
-        className={`workbench-timeline-marker ${markerClass(event)}`}
-        aria-hidden="true"
-      />
-      <span className="workbench-timeline-entry-time">
-        {timeOfDay(event.at)}
-      </span>
+      <span className={`workbench-timeline-marker ${markerClass(event)}`} aria-hidden="true" />
+      <span className="workbench-timeline-entry-time">{timeOfDay(event.at)}</span>
       <TimelineRowBody event={event} />
     </li>
   );
 }
 
-function DayKpiRow({
-  kpi,
-}: {
-  readonly kpi: ReturnType<typeof computeTimelineDayKpis>[number];
-}) {
+function DayKpiRow({ kpi }: { readonly kpi: ReturnType<typeof computeTimelineDayKpis>[number] }) {
   return (
     <div className="workbench-timeline-kpi-day">
       <h4>{kpi.label}</h4>
@@ -142,10 +130,7 @@ export function WorkbenchTimelineView({
   readonly loading: boolean;
 }) {
   const [filter, setFilter] = useState<TimelineFilter>("all");
-  const filtered = useMemo(
-    () => filterTimelineEvents(events, filter),
-    [events, filter],
-  );
+  const filtered = useMemo(() => filterTimelineEvents(events, filter), [events, filter]);
   const dayGroups = useMemo(() => groupTimelineByDay(filtered), [filtered]);
   const kpis = useMemo(() => computeTimelineDayKpis(events), [events]);
 
@@ -165,11 +150,7 @@ export function WorkbenchTimelineView({
 
   return (
     <div className="workbench-timeline">
-      <div
-        className="workbench-timeline-filters"
-        role="group"
-        aria-label="Timeline filter"
-      >
+      <div className="workbench-timeline-filters" role="group" aria-label="Timeline filter">
         {FILTERS.map((option) => (
           <button
             key={option.id}
@@ -195,10 +176,7 @@ export function WorkbenchTimelineView({
                 </div>
                 <ol className="workbench-timeline-rail">
                   {day.events.map((event) => (
-                    <TimelineRow
-                      key={`${event.kind}-${event.id}`}
-                      event={event}
-                    />
+                    <TimelineRow key={`${event.kind}-${event.id}`} event={event} />
                   ))}
                 </ol>
               </section>
@@ -239,20 +217,14 @@ export function WorkbenchTimelineRoute({
       ? ["tenant", "none", "chat", "workbenches", workbenchId, "messages"]
       : tenantKeys.workbenchMessages(benchTenantId, workbenchId),
     benchTenantId !== null,
-    () =>
-      listMessages(benchTenantId as string, workbenchId).then(
-        (page) => page.items,
-      ),
+    () => listMessages(benchTenantId as string, workbenchId).then((page) => page.items),
   );
   const threadsQuery = useTenantQuery(
     benchTenantId === null
       ? ["tenant", "none", "chat", "workbenches", workbenchId, "threads"]
       : tenantKeys.workbenchThreads(benchTenantId, workbenchId),
     benchTenantId !== null,
-    () =>
-      listThreads(benchTenantId as string, workbenchId).then(
-        (page) => page.items,
-      ),
+    () => listThreads(benchTenantId as string, workbenchId).then((page) => page.items),
   );
   const approvalsQuery = usePendingApprovals(benchTenantId);
 

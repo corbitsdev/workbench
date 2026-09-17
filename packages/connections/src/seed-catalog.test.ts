@@ -25,11 +25,7 @@ function stubHub() {
   const catalogProviders: { id: string; name: string }[] = [];
   const offerings: { id: string; modelId: string; providerId: string }[] = [];
 
-  const api = (async (
-    method: string,
-    path: string,
-    body: Record<string, unknown> | undefined,
-  ) => {
+  const api = (async (method: string, path: string, body: Record<string, unknown> | undefined) => {
     calls.push({ method, path });
     const row = (id: string, extra: Record<string, unknown> = {}) => ({
       id,
@@ -67,9 +63,7 @@ function stubHub() {
     if (method === "POST" && path.endsWith("/catalog/offerings")) {
       const modelId = body?.["modelId"] as string;
       const providerId = body?.["providerId"] as string;
-      const found = offerings.find(
-        (o) => o.modelId === modelId && o.providerId === providerId,
-      );
+      const found = offerings.find((o) => o.modelId === modelId && o.providerId === providerId);
       if (found) return { status: 409, data: {} };
       const created = {
         id: `off_${modelId}_${providerId}`,
@@ -83,10 +77,7 @@ function stubHub() {
       offerings.push(created);
       return { status: 201, data: row(created.id, created) };
     }
-    if (
-      method === "GET" &&
-      path.startsWith("/api/tenants/tnt_1/catalog/offerings")
-    ) {
+    if (method === "GET" && path.startsWith("/api/tenants/tnt_1/catalog/offerings")) {
       return {
         status: 200,
         data: { data: offerings.map((o) => row(o.id, o)), nextCursor: null },
@@ -174,9 +165,7 @@ describe("seedCatalog", () => {
     );
     expect(credentials.map((c) => c.name)).toEqual(["openai-default"]);
     expect(offerings).toHaveLength(CATALOG_SEEDS.openai.models.length);
-    expect(lines.join("\n")).toContain(
-      "catalog ready: openai/gpt-5.6-terra, gpt-4o-mini",
-    );
+    expect(lines.join("\n")).toContain("catalog ready: openai/gpt-5.6-terra, gpt-4o-mini");
     expect(result.hasCompletionCapableModel).toBe(true);
   });
 
@@ -193,10 +182,7 @@ describe("seedCatalog", () => {
       placeholderCredential: true,
     });
     const rows = () =>
-      stub.providers.length +
-      stub.credentials.length +
-      stub.models.length +
-      stub.offerings.length;
+      stub.providers.length + stub.credentials.length + stub.models.length + stub.offerings.length;
 
     const before = rows();
     const second: string[] = [];

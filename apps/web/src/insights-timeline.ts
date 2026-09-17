@@ -16,20 +16,7 @@ export type DayBucket = {
 /** Default window for the timeline strip. */
 export const INSIGHTS_TIMELINE_DAYS = 14;
 
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /**
  * Buckets `runs` into the last `days` UTC days ending on `now`'s day, oldest
@@ -43,11 +30,7 @@ export function bucketRunsByDay(
 ): readonly DayBucket[] {
   // Start of the current UTC day, then walk back `days - 1` days so the
   // window includes today.
-  const todayUTC = Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate(),
-  );
+  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const dayMs = 86_400_000;
 
   const counts = new Map<string, number>();

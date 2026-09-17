@@ -38,9 +38,7 @@ const CredentialsPage = type({
 
 const PAGE_LIMIT = 100;
 
-function authHeaders(
-  config: CredentialExpiryClientConfig,
-): Record<string, string> {
+function authHeaders(config: CredentialExpiryClientConfig): Record<string, string> {
   return {
     authorization: `Bearer ${config.sidecarToken}`,
     "x-workflow-run-address": config.address,
@@ -59,9 +57,7 @@ async function readAllPages<T>(
   what: string,
   parse: (
     body: unknown,
-  ) =>
-    | { data: readonly T[]; nextCursor?: string | null | undefined }
-    | type.errors,
+  ) => { data: readonly T[]; nextCursor?: string | null | undefined } | type.errors,
 ): Promise<readonly T[]> {
   const doFetch = config.fetchImpl ?? fetch;
   const items: T[] = [];
@@ -69,20 +65,15 @@ async function readAllPages<T>(
   for (;;) {
     const params = new URLSearchParams({ limit: String(PAGE_LIMIT) });
     if (cursor !== undefined) params.set("cursor", cursor);
-    const response = await doFetch(
-      `${tenantBase(config)}${path}?${params.toString()}`,
-      { headers: authHeaders(config) },
-    );
+    const response = await doFetch(`${tenantBase(config)}${path}?${params.toString()}`, {
+      headers: authHeaders(config),
+    });
     if (!response.ok) {
-      throw new Error(
-        `${what} failed: ${response.status} ${response.statusText}`,
-      );
+      throw new Error(`${what} failed: ${response.status} ${response.statusText}`);
     }
     const parsed = parse(await response.json());
     if (parsed instanceof type.errors) {
-      throw new Error(
-        `${what} came back in an unexpected shape: ${parsed.summary}`,
-      );
+      throw new Error(`${what} came back in an unexpected shape: ${parsed.summary}`);
     }
     items.push(...parsed.data);
     const next = parsed.nextCursor;
@@ -100,16 +91,10 @@ export async function fetchTenantCredentials(
   config: CredentialExpiryClientConfig,
 ): Promise<readonly ExpiringCredential[]> {
   const [providers, credentials] = await Promise.all([
-    readAllPages(config, "/providers", "Listing providers", (body) =>
-      ProvidersPage(body),
-    ),
-    readAllPages(config, "/credentials", "Listing credentials", (body) =>
-      CredentialsPage(body),
-    ),
+    readAllPages(config, "/providers", "Listing providers", (body) => ProvidersPage(body)),
+    readAllPages(config, "/credentials", "Listing credentials", (body) => CredentialsPage(body)),
   ]);
-  const providerNameById = new Map(
-    providers.map((provider) => [provider.id, provider.name]),
-  );
+  const providerNameById = new Map(providers.map((provider) => [provider.id, provider.name]));
   return credentials.map((row) => ({
     credentialId: row.id,
     name: row.name,

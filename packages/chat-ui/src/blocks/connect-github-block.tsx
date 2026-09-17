@@ -72,9 +72,7 @@ export type ConnectGithubCardBody =
        * modal. */
       readonly onSubmitAccessToken: (
         token: string,
-      ) => Promise<
-        { readonly ok: true } | { readonly ok: false; readonly message: string }
-      >;
+      ) => Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }>;
     }
   | {
       readonly kind: "error";
@@ -82,9 +80,7 @@ export type ConnectGithubCardBody =
       readonly onConnect: () => void;
       readonly onSubmitAccessToken: (
         token: string,
-      ) => Promise<
-        { readonly ok: true } | { readonly ok: false; readonly message: string }
-      >;
+      ) => Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }>;
     }
   | {
       readonly kind: "connected";
@@ -162,13 +158,9 @@ function SceneHeader({ scene }: { readonly scene: OnboardingScene }) {
                 key={step.title}
                 className="chat-block-scene-step"
                 {...(marked ? { "data-state": state } : {})}
-                aria-current={
-                  marked && state === "current" ? "step" : undefined
-                }
+                aria-current={marked && state === "current" ? "step" : undefined}
               >
-                <span className="chat-block-scene-step-title">
-                  {step.title}
-                </span>
+                <span className="chat-block-scene-step-title">{step.title}</span>
                 {mark !== undefined ? (
                   <span className="chat-block-scene-step-mark">{mark}</span>
                 ) : null}
@@ -238,9 +230,7 @@ function DisconnectedBody({
   readonly onConnect: () => void;
   readonly onSubmitAccessToken: (
     token: string,
-  ) => Promise<
-    { readonly ok: true } | { readonly ok: false; readonly message: string }
-  >;
+  ) => Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }>;
   readonly error?: string;
   readonly actionLabel?: string;
 }) {
@@ -271,9 +261,7 @@ function DisconnectedBody({
   if (fieldOpen) {
     return (
       <>
-        <p className="chat-block-text">
-          {CHAT_STRINGS.blockConnectGithubIntro}
-        </p>
+        <p className="chat-block-text">{CHAT_STRINGS.blockConnectGithubIntro}</p>
         <ol className="chat-block-text chat-block-connect-steps">
           {CHAT_STRINGS.blockConnectGithubTokenSteps.map((step) => (
             <li key={step}>{step}</li>
@@ -306,10 +294,7 @@ function DisconnectedBody({
           {...(error !== undefined ? { "aria-invalid": true } : {})}
         />
         {error !== undefined ? (
-          <p
-            className="chat-block-text chat-block-connect-token-error"
-            role="alert"
-          >
+          <p className="chat-block-text chat-block-connect-token-error" role="alert">
             {error}
           </p>
         ) : null}
@@ -343,10 +328,7 @@ function DisconnectedBody({
   return (
     <>
       {error !== undefined ? (
-        <p
-          className="chat-block-text chat-block-connect-token-error"
-          role="alert"
-        >
+        <p className="chat-block-text chat-block-connect-token-error" role="alert">
           {error}
         </p>
       ) : null}
@@ -401,9 +383,7 @@ function ConnectedBody({
       </p>
 
       <div className="chat-block-connect-count-row">
-        <span>
-          {CHAT_STRINGS.blockConnectGithubRepoCount(repos.length, pickedCount)}
-        </span>
+        <span>{CHAT_STRINGS.blockConnectGithubRepoCount(repos.length, pickedCount)}</span>
         <Button type="button" variant="link" onClick={onSelectAll}>
           {CHAT_STRINGS.blockConnectGithubSelectAll}
         </Button>
@@ -424,13 +404,8 @@ function ConnectedBody({
                 checked={selected}
                 onCheckedChange={() => onToggleRepo(repo.id)}
               />
-              <label
-                htmlFor={checkboxId}
-                className="chat-block-connect-repo-label"
-              >
-                <span className="chat-block-connect-repo-name">
-                  {repo.name}
-                </span>
+              <label htmlFor={checkboxId} className="chat-block-connect-repo-label">
+                <span className="chat-block-connect-repo-name">{repo.name}</span>
                 <span className="chat-block-connect-repo-meta">
                   {repoMetaLabel(repo.lastPushedAt)}
                 </span>
@@ -468,16 +443,11 @@ function ConnectedBody({
 }
 
 export function ConnectGithubBlockView(props: ConnectGithubCardProps) {
-  const currentStepTitle =
-    props.scene.steps?.[props.scene.currentStepIndex]?.title;
+  const currentStepTitle = props.scene.steps?.[props.scene.currentStepIndex]?.title;
   return (
     <BlockCard title={props.scene.title}>
       <SceneHeader scene={props.scene} />
-      <div
-        className="chat-block-scene-status"
-        aria-live="polite"
-        aria-atomic="true"
-      >
+      <div className="chat-block-scene-status" aria-live="polite" aria-atomic="true">
         {currentStepTitle ?? null}
       </div>
       <div className="chat-block-scene-body">

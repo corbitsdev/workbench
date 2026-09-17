@@ -26,9 +26,7 @@ const INPUT = {
 function agentStep(definition: WorkflowDefinition): StepPrimitive {
   const primitive = definition.steps[AGENT_DEFINITION_STEP_ID];
   if (primitive === undefined || primitive.kind !== "step") {
-    throw new Error(
-      `definition has no step primitive named ${AGENT_DEFINITION_STEP_ID}`,
-    );
+    throw new Error(`definition has no step primitive named ${AGENT_DEFINITION_STEP_ID}`);
   }
   return primitive;
 }
@@ -81,21 +79,17 @@ test("a supplied toolPackagePins lands on the step's agent verbatim", () => {
 
 test("the trigger address is derived from the handle and tenant domain", () => {
   const definition = buildAgentDefinitionWorkflow(INPUT);
-  expect(definition.triggers).toEqual([
-    { type: "mail", to: "research-buddy@example.test" },
-  ]);
+  expect(definition.triggers).toEqual([{ type: "mail", to: "research-buddy@example.test" }]);
 });
 
 test("an empty handle is rejected", () => {
-  expect(() => buildAgentDefinitionWorkflow({ ...INPUT, handle: "" })).toThrow(
-    /non-empty handle/,
-  );
+  expect(() => buildAgentDefinitionWorkflow({ ...INPUT, handle: "" })).toThrow(/non-empty handle/);
 });
 
 test("an empty system prompt is rejected", () => {
-  expect(() =>
-    buildAgentDefinitionWorkflow({ ...INPUT, systemPrompt: "" }),
-  ).toThrow(/non-empty systemPrompt/);
+  expect(() => buildAgentDefinitionWorkflow({ ...INPUT, systemPrompt: "" })).toThrow(
+    /non-empty systemPrompt/,
+  );
 });
 
 test("serialization round-trips through JSON byte-faithfully", () => {
@@ -120,8 +114,6 @@ test("a pinned model can be un-pinned, leaving the prompt and pins untouched", (
 });
 
 test("un-pinning a model on a definition that never had one is a no-op", () => {
-  const json = serializeAgentDefinitionWorkflow(
-    buildAgentDefinitionWorkflow(INPUT),
-  );
+  const json = serializeAgentDefinitionWorkflow(buildAgentDefinitionWorkflow(INPUT));
   expect(readAgentCapabilities(withoutAgentModel(json)).model).toBeUndefined();
 });

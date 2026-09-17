@@ -11,11 +11,7 @@ import {
   type ExchangeFetch,
 } from "./gmail-connect";
 
-function stubFetch(
-  status: number,
-  body: unknown,
-  captured: { url?: string; body?: string },
-) {
+function stubFetch(status: number, body: unknown, captured: { url?: string; body?: string }) {
   return async (url: string, init: { body: string }) => {
     captured.url = url;
     captured.body = init.body;

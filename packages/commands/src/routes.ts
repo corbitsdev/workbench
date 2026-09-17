@@ -25,10 +25,7 @@ export type CreateCommandRoutesDeps = {
    * principal with a tenant-wide grant could run commands against
    * another tenant's workbench.
    */
-  workbenchBelongsToTenant: (
-    tenantId: string,
-    workbenchId: string,
-  ) => Promise<boolean>;
+  workbenchBelongsToTenant: (tenantId: string, workbenchId: string) => Promise<boolean>;
 };
 
 const ExecuteCommandBody = type({
@@ -37,78 +34,63 @@ const ExecuteCommandBody = type({
   workbenchId: "string",
 });
 
-export function createCommandRoutes(
-  deps: CreateCommandRoutesDeps,
-): Hono<TenantEnv> {
+export function createCommandRoutes(deps: CreateCommandRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
 
-  app.get(
-    "/commands",
-    deps.requireGrant("workflow-run:*", "read"),
-    async (c) => {
-      const tenant = c.get("tenant");
-      const commands = await deps.registry.listCommands(tenant.id);
-      const items: CommandListing[] = commands.map((command) => {
-        const listing = {
-          name: command.name,
-          description: command.description,
-        };
-        return command.argumentHint !== undefined
-          ? { ...listing, argumentHint: command.argumentHint }
-          : listing;
-      });
-      return c.json({ items });
-    },
-  );
+  app.get("/commands", deps.requireGrant("workflow-run:*", "read"), async (c) => {
+    const tenant = c.get("tenant");
+    const commands = await deps.registry.listCommands(tenant.id);
+    const items: CommandListing[] = commands.map((command) => {
+      const listing = {
+        name: command.name,
+        description: command.description,
+      };
+      return command.argumentHint !== undefined
+        ? { ...listing, argumentHint: command.argumentHint }
+        : listing;
+    });
+    return c.json({ items });
+  });
 
-  app.post(
-    "/commands/execute",
-    deps.requireGrant("workflow-run:*", "create"),
-    async (c) => {
-      const body = ExecuteCommandBody(
-        await c.req.json().catch(() => undefined),
+  app.post("/commands/execute", deps.requireGrant("workflow-run:*", "create"), async (c) => {
+    const body = ExecuteCommandBody(await c.req.json().catch(() => undefined));
+    if (body instanceof type.errors) {
+      return c.json(
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid command body: ${body.summary}`,
+        }),
+        400,
       );
-      if (body instanceof type.errors) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: `invalid command body: ${body.summary}`,
-          }),
-          400,
-        );
-      }
+    }
 
-      const tenant = c.get("tenant");
-      const principal = c.get("principal");
-      const belongs = await deps.workbenchBelongsToTenant(
-        tenant.id,
-        body.workbenchId,
+    const tenant = c.get("tenant");
+    const principal = c.get("principal");
+    const belongs = await deps.workbenchBelongsToTenant(tenant.id, body.workbenchId);
+    if (!belongs) {
+      return c.json(
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: "workbench not found",
+        }),
+        404,
       );
-      if (!belongs) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_found",
-            userMessage: "workbench not found",
-          }),
-          404,
-        );
-      }
+    }
 
-      const result = await dispatchSlashCommand(
-        deps.registry,
-        `/${body.name} ${body.args ?? ""}`.trimEnd(),
-        {
-          tenantId: tenant.id,
-          principalId: principal.id,
-          workbenchId: body.workbenchId,
-        },
-      );
-      // `dispatchSlashCommand` only returns `undefined` when its input
-      // is not slash-shaped, which is unreachable here since the text
-      // it is given is always synthesized with a leading "/" above.
-      return c.json(result ?? { type: "noop" }, 200);
-    },
-  );
+    const result = await dispatchSlashCommand(
+      deps.registry,
+      `/${body.name} ${body.args ?? ""}`.trimEnd(),
+      {
+        tenantId: tenant.id,
+        principalId: principal.id,
+        workbenchId: body.workbenchId,
+      },
+    );
+    // `dispatchSlashCommand` only returns `undefined` when its input
+    // is not slash-shaped, which is unreachable here since the text
+    // it is given is always synthesized with a leading "/" above.
+    return c.json(result ?? { type: "noop" }, 200);
+  });
 
   return app;
 }

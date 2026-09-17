@@ -35,7 +35,5 @@ export {
 } from "./wire/consumer-inference-text";
 
 export function isClassifiedInferenceFailureText(text: string): boolean {
-  return CLASSIFIED_INFERENCE_FAILURE_PREAMBLES.some((preamble) =>
-    text.startsWith(preamble),
-  );
+  return CLASSIFIED_INFERENCE_FAILURE_PREAMBLES.some((preamble) => text.startsWith(preamble));
 }

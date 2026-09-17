@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ModelInfo } from "@corbits/inference-settings";
 
-import {
-  failedTurnModelChoices,
-  failedTurnToolCapableModelChoices,
-} from "./failed-turn-models";
+import { failedTurnModelChoices, failedTurnToolCapableModelChoices } from "./failed-turn-models";
 
 function model(
   canonicalName: string,
@@ -40,11 +37,7 @@ const UNCATALOGED = model("qwen3:8b", [], "qwen3:8b");
 
 describe("failedTurnModelChoices", () => {
   test("keeps chat-capable models, including ones without tools", () => {
-    const choices = failedTurnModelChoices([
-      CHAT_ONLY,
-      TOOL_CAPABLE,
-      UNCATALOGED,
-    ]);
+    const choices = failedTurnModelChoices([CHAT_ONLY, TOOL_CAPABLE, UNCATALOGED]);
     expect(choices.map((choice) => choice.canonicalName)).toEqual([
       "google/gemini-2.5-flash",
       "anthropic/claude-sonnet",
@@ -55,13 +48,7 @@ describe("failedTurnModelChoices", () => {
 
 describe("failedTurnToolCapableModelChoices", () => {
   test("keeps only models whose offerings advertise function-calling", () => {
-    const choices = failedTurnToolCapableModelChoices([
-      CHAT_ONLY,
-      TOOL_CAPABLE,
-      UNCATALOGED,
-    ]);
-    expect(choices.map((choice) => choice.canonicalName)).toEqual([
-      "anthropic/claude-sonnet",
-    ]);
+    const choices = failedTurnToolCapableModelChoices([CHAT_ONLY, TOOL_CAPABLE, UNCATALOGED]);
+    expect(choices.map((choice) => choice.canonicalName)).toEqual(["anthropic/claude-sonnet"]);
   });
 });

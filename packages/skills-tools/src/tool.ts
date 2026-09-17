@@ -90,16 +90,10 @@ const ReadSkillInput = type({
   name: "string > 0",
 });
 
-async function runReadSkill(
-  env: WorkflowSkillsWriteEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runReadSkill(env: WorkflowSkillsWriteEnv, call: ToolCall): Promise<ToolResult> {
   const parsed = ReadSkillInput(call.arguments);
   if (parsed instanceof type.errors) {
-    return errorResult(
-      call.id,
-      new Error(`read_skill received invalid input: ${parsed.summary}`),
-    );
+    return errorResult(call.id, new Error(`read_skill received invalid input: ${parsed.summary}`));
   }
   try {
     const skill = await loadSkill(clientConfig(env), parsed.name);
@@ -113,10 +107,7 @@ async function runReadSkill(
   }
 }
 
-async function runListSkills(
-  env: WorkflowSkillsWriteEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runListSkills(env: WorkflowSkillsWriteEnv, call: ToolCall): Promise<ToolResult> {
   try {
     const skills = await listSkills(clientConfig(env));
     return {
@@ -125,19 +116,14 @@ async function runListSkills(
       content:
         skills.length === 0
           ? "No skills exist in this workbench yet."
-          : skills
-              .map((skill) => `${skill.name}: ${skill.description}`)
-              .join("\n"),
+          : skills.map((skill) => `${skill.name}: ${skill.description}`).join("\n"),
     };
   } catch (err) {
     return errorResult(call.id, err);
   }
 }
 
-async function runCreateSkill(
-  env: WorkflowSkillsWriteEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runCreateSkill(env: WorkflowSkillsWriteEnv, call: ToolCall): Promise<ToolResult> {
   const parsed = CreateSkillInput(call.arguments);
   if (parsed instanceof type.errors) {
     return errorResult(
@@ -157,10 +143,7 @@ async function runCreateSkill(
   }
 }
 
-async function runUpdateSkill(
-  env: WorkflowSkillsWriteEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runUpdateSkill(env: WorkflowSkillsWriteEnv, call: ToolCall): Promise<ToolResult> {
   const parsed = UpdateSkillInput(call.arguments);
   if (parsed instanceof type.errors) {
     return errorResult(
@@ -180,16 +163,10 @@ async function runUpdateSkill(
   }
 }
 
-async function runPinSkill(
-  env: WorkflowSkillsWriteEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runPinSkill(env: WorkflowSkillsWriteEnv, call: ToolCall): Promise<ToolResult> {
   const parsed = PinSkillInput(call.arguments);
   if (parsed instanceof type.errors) {
-    return errorResult(
-      call.id,
-      new Error(`pin_skill received invalid input: ${parsed.summary}`),
-    );
+    return errorResult(call.id, new Error(`pin_skill received invalid input: ${parsed.summary}`));
   }
   try {
     const skills = await pinSkill(clientConfig(env), parsed);
@@ -255,13 +232,11 @@ export const skillsTools = defineTool<WorkflowSkillsWriteEnv>({
           properties: {
             name: {
               type: "string",
-              description:
-                'A lowercase, hyphenated skill name (e.g. "triage-bugs").',
+              description: 'A lowercase, hyphenated skill name (e.g. "triage-bugs").',
             },
             description: {
               type: "string",
-              description:
-                "One sentence on what the skill does and when to use it.",
+              description: "One sentence on what the skill does and when to use it.",
             },
             body: {
               type: "string",
@@ -286,8 +261,7 @@ export const skillsTools = defineTool<WorkflowSkillsWriteEnv>({
             },
             body: {
               type: "string",
-              description:
-                "The skill's full, replacement instructions, in Markdown.",
+              description: "The skill's full, replacement instructions, in Markdown.",
             },
             description: {
               type: "string",
@@ -312,8 +286,7 @@ export const skillsTools = defineTool<WorkflowSkillsWriteEnv>({
           properties: {
             definitionId: {
               type: "string",
-              description:
-                "The id of the agent definition to pin the skill onto.",
+              description: "The id of the agent definition to pin the skill onto.",
             },
             skillName: {
               type: "string",
@@ -338,10 +311,7 @@ export const skillsTools = defineTool<WorkflowSkillsWriteEnv>({
           return runPinSkill(env, call);
         default:
           return Promise.resolve(
-            errorResult(
-              call.id,
-              new Error(`@corbits/skills-tools: unknown tool "${call.name}"`),
-            ),
+            errorResult(call.id, new Error(`@corbits/skills-tools: unknown tool "${call.name}"`)),
           );
       }
     },

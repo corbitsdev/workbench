@@ -14,12 +14,7 @@
 // display-only in this ticket), is a 404.
 import { Hono, type Context } from "hono";
 import { type } from "arktype";
-import {
-  ModelInfo,
-  ModelProviderResponse,
-  ProviderResponse,
-  paginatedSchema,
-} from "@intx/types";
+import { ModelInfo, ModelProviderResponse, ProviderResponse, paginatedSchema } from "@intx/types";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { hasUsableModel } from "@corbits/inference-settings";
 import { makeErrorEnvelope, reportError } from "@corbits/error-sink";
@@ -32,12 +27,7 @@ import {
   type EnsureProviderArgs,
   type SeedCatalogArgs,
 } from "./seed-catalog";
-import {
-  cookiesFromHeader,
-  createHubAPI,
-  parseAs,
-  type ApiCall,
-} from "@corbits/hub-api-client";
+import { cookiesFromHeader, createHubAPI, parseAs, type ApiCall } from "@corbits/hub-api-client";
 import type { ConnectorDescriptor } from "./descriptor";
 import {
   fireConnectedHook,
@@ -45,10 +35,7 @@ import {
   type InferenceCredentialSeedableHook,
   type ServiceConnectedHook,
 } from "./connected-hook";
-import {
-  isInferenceProvider,
-  persistConnectorCredential,
-} from "./persist-credential";
+import { isInferenceProvider, persistConnectorCredential } from "./persist-credential";
 import type { ProviderHealthStore } from "./provider-health";
 
 export type DisconnectConnectorArgs = {
@@ -105,9 +92,7 @@ export async function disconnectConnector(
     catalogProviders.data,
     "catalog providers response",
   ).data;
-  const catalogProvider = catalogProviderRows.find(
-    (row) => row.name === args.connectorId,
-  );
+  const catalogProvider = catalogProviderRows.find((row) => row.name === args.connectorId);
   if (catalogProvider !== undefined) {
     const deletedCatalogProvider = await api(
       "DELETE",
@@ -121,9 +106,7 @@ export async function disconnectConnector(
           `couldn't remove the catalog provider for ${args.connectorId} (status ${String(deletedCatalogProvider.status)})`,
         );
       }
-      log(
-        `catalog provider ${args.connectorId} was already removed (concurrent disconnect)`,
-      );
+      log(`catalog provider ${args.connectorId} was already removed (concurrent disconnect)`);
     } else {
       log(`removed catalog provider ${args.connectorId} and its offerings`);
     }
@@ -157,9 +140,7 @@ export async function disconnectConnector(
         `couldn't remove the provider row for ${args.connectorId} (status ${String(deletedProvider.status)})`,
       );
     }
-    log(
-      `provider ${args.connectorId} was already removed (concurrent disconnect)`,
-    );
+    log(`provider ${args.connectorId} was already removed (concurrent disconnect)`);
     return { disconnected: false };
   }
   log(`removed provider ${args.connectorId} and its credentials`);
@@ -296,14 +277,11 @@ export type CreateConnectionRoutesDeps = {
   onInferenceCredentialUsable?: InferenceCredentialSeedableHook;
 };
 
-export function createConnectionRoutes(
-  deps: CreateConnectionRoutesDeps,
-): Hono<TenantEnv> {
+export function createConnectionRoutes(deps: CreateConnectionRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
   const api = createHubAPI(deps.hubUrl);
   const registry = deps.registry;
-  const runDisconnectConnector =
-    deps.disconnectConnectorFn ?? disconnectConnector;
+  const runDisconnectConnector = deps.disconnectConnectorFn ?? disconnectConnector;
   const runGetResolvedCatalog =
     deps.getResolvedCatalogFn ??
     (async (resolveApi: ApiCall, cookies: string[], tenantId: string) => {
@@ -313,11 +291,7 @@ export function createConnectionRoutes(
         undefined,
         cookies,
       );
-      return parseAs(
-        ModelInfo.array(),
-        response.data,
-        "resolved catalog response",
-      );
+      return parseAs(ModelInfo.array(), response.data, "resolved catalog response");
     });
 
   // Lets a settings-ui OAuth card tell "not configured" (an operator
@@ -326,29 +300,25 @@ export function createConnectionRoutes(
   // ever rendering a Connect button — see this route's own header. Read
   // access only; no `apiKey`/state to leak, so it needs no stronger a
   // grant than the rest of this tenant-scoped surface already requires.
-  app.get(
-    "/oauth-configured",
-    deps.requireGrant("credential:*", "create"),
-    (c) => {
-      const oauthEnv = deps.oauthEnv ?? {};
-      const configured: Record<string, boolean> = {};
-      for (const [id, descriptor] of Object.entries(registry)) {
-        if (descriptor.oauth === undefined) continue;
-        // A loopback connector is never reachable through this web flow
-        // (its start/callback routes refuse it), so it is never reported
-        // as configured here either.
-        if (descriptor.authKind === "oauth-loopback") continue;
-        const hasClientId =
-          descriptor.oauth.clientId === undefined ||
-          descriptor.oauth.clientId(oauthEnv) !== undefined;
-        const hasClientSecret =
-          descriptor.oauth.clientSecret === undefined ||
-          descriptor.oauth.clientSecret(oauthEnv) !== undefined;
-        configured[id] = hasClientId && hasClientSecret;
-      }
-      return c.json(configured, 200);
-    },
-  );
+  app.get("/oauth-configured", deps.requireGrant("credential:*", "create"), (c) => {
+    const oauthEnv = deps.oauthEnv ?? {};
+    const configured: Record<string, boolean> = {};
+    for (const [id, descriptor] of Object.entries(registry)) {
+      if (descriptor.oauth === undefined) continue;
+      // A loopback connector is never reachable through this web flow
+      // (its start/callback routes refuse it), so it is never reported
+      // as configured here either.
+      if (descriptor.authKind === "oauth-loopback") continue;
+      const hasClientId =
+        descriptor.oauth.clientId === undefined ||
+        descriptor.oauth.clientId(oauthEnv) !== undefined;
+      const hasClientSecret =
+        descriptor.oauth.clientSecret === undefined ||
+        descriptor.oauth.clientSecret(oauthEnv) !== undefined;
+      configured[id] = hasClientId && hasClientSecret;
+    }
+    return c.json(configured, 200);
+  });
 
   // The shell banner's read (CL-6092): every provider this tenant has
   // marked needs-attention, from either write path (`/complete`'s failing
@@ -356,19 +326,15 @@ export function createConnectionRoutes(
   // through `ProviderHealthPort` elsewhere in the hub process). Read-only,
   // so it asks for the grant's `"read"` action rather than the `"create"`
   // this file's other routes require.
-  app.get(
-    "/provider-health",
-    deps.requireGrant("credential:*", "read"),
-    async (c) => {
-      const tenant = c.get("tenant");
-      const providers = deps.providerHealth?.listForTenant(tenant.id) ?? {};
-      const connectedProviderCount =
-        deps.listConnectedProviders === undefined
-          ? undefined
-          : (await deps.listConnectedProviders(tenant.id)).length;
-      return c.json({ providers, connectedProviderCount }, 200);
-    },
-  );
+  app.get("/provider-health", deps.requireGrant("credential:*", "read"), async (c) => {
+    const tenant = c.get("tenant");
+    const providers = deps.providerHealth?.listForTenant(tenant.id) ?? {};
+    const connectedProviderCount =
+      deps.listConnectedProviders === undefined
+        ? undefined
+        : (await deps.listConnectedProviders(tenant.id)).length;
+    return c.json({ providers, connectedProviderCount }, 200);
+  });
 
   function findApiKeyDescriptor(connectorId: string) {
     const descriptor = registry[connectorId];
@@ -393,252 +359,225 @@ export function createConnectionRoutes(
   // inference provider here creates a second row rather than updating
   // the seeded one — accepted for this ticket, not silently papered
   // over.
-  app.post(
-    "/:connectorId/complete",
-    deps.requireGrant("credential:*", "create"),
-    async (c) => {
-      const connectorId = c.req.param("connectorId");
-      const descriptor = findApiKeyDescriptor(connectorId);
-      if (descriptor === undefined || descriptor.probe === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_found",
-            userMessage: `Unknown connector: ${connectorId}`,
-          }),
-          404,
-        );
-      }
-
-      const parsed = await parseApiKeyBody(c);
-      if (parsed instanceof type.errors) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: `An API key is required: ${parsed.summary}`,
-          }),
-          400,
-        );
-      }
-
-      const tenant = c.get("tenant");
-      const probeBaseUrl = deps.probeBaseUrls?.[connectorId];
-      const test = await descriptor.probe(
-        parsed.apiKey,
-        probeBaseUrl !== undefined ? { baseUrl: probeBaseUrl } : undefined,
+  app.post("/:connectorId/complete", deps.requireGrant("credential:*", "create"), async (c) => {
+    const connectorId = c.req.param("connectorId");
+    const descriptor = findApiKeyDescriptor(connectorId);
+    if (descriptor === undefined || descriptor.probe === undefined) {
+      return c.json(
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: `Unknown connector: ${connectorId}`,
+        }),
+        404,
       );
-      if (!test.ok) {
-        deps.providerHealth?.report(
-          tenant.id,
-          descriptor.id,
-          CREDENTIAL_TEST_FAILURE_CATEGORY,
-        );
-        return c.json(
-          makeErrorEnvelope({
-            code: "invalid_credential",
-            userMessage: test.message,
-          }),
-          422,
-        );
-      }
+    }
 
-      const cookies = cookiesFromHeader(c.req.header("cookie"));
-      // A `credentialInputKind: "url"` connector (Ollama) collects a URL
-      // in the same wire field every other connector uses for a secret —
-      // it stores the fixed placeholder secret instead, and the URL
-      // itself as the provider row's `apiBaseUrl` (the same seam MCP
-      // servers use). The persist-and-seed sequence itself is the one
-      // shared `persistConnectorCredential` every connect surface runs
-      // (CL-6394).
-      const isUrlCredential = descriptor.credentialInputKind === "url";
-      try {
-        const { credentialId, seedResult } = await persistConnectorCredential({
-          api,
-          cookies,
-          tenantId: tenant.id,
-          descriptor,
-          // `test` above already proved `parsed.apiKey` against
-          // `descriptor.probe`, so a name conflict on the credential row
-          // (a regenerated key, or a retry after a bad paste) is safe to
-          // rotate rather than silently keeping the stale secret.
-          secret: isUrlCredential ? OLLAMA_PLACEHOLDER_SECRET : parsed.apiKey,
-          log: deps.log,
-          ...(isUrlCredential
-            ? { baseURLOverride: parsed.apiKey }
-            : probeBaseUrl !== undefined
-              ? { baseURLOverride: probeBaseUrl }
-              : {}),
-          ...(deps.ensureProviderFn !== undefined
-            ? { ensureProviderFn: deps.ensureProviderFn }
+    const parsed = await parseApiKeyBody(c);
+    if (parsed instanceof type.errors) {
+      return c.json(
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `An API key is required: ${parsed.summary}`,
+        }),
+        400,
+      );
+    }
+
+    const tenant = c.get("tenant");
+    const probeBaseUrl = deps.probeBaseUrls?.[connectorId];
+    const test = await descriptor.probe(
+      parsed.apiKey,
+      probeBaseUrl !== undefined ? { baseUrl: probeBaseUrl } : undefined,
+    );
+    if (!test.ok) {
+      deps.providerHealth?.report(tenant.id, descriptor.id, CREDENTIAL_TEST_FAILURE_CATEGORY);
+      return c.json(
+        makeErrorEnvelope({
+          code: "invalid_credential",
+          userMessage: test.message,
+        }),
+        422,
+      );
+    }
+
+    const cookies = cookiesFromHeader(c.req.header("cookie"));
+    // A `credentialInputKind: "url"` connector (Ollama) collects a URL
+    // in the same wire field every other connector uses for a secret —
+    // it stores the fixed placeholder secret instead, and the URL
+    // itself as the provider row's `apiBaseUrl` (the same seam MCP
+    // servers use). The persist-and-seed sequence itself is the one
+    // shared `persistConnectorCredential` every connect surface runs
+    // (CL-6394).
+    const isUrlCredential = descriptor.credentialInputKind === "url";
+    try {
+      const { credentialId, seedResult } = await persistConnectorCredential({
+        api,
+        cookies,
+        tenantId: tenant.id,
+        descriptor,
+        // `test` above already proved `parsed.apiKey` against
+        // `descriptor.probe`, so a name conflict on the credential row
+        // (a regenerated key, or a retry after a bad paste) is safe to
+        // rotate rather than silently keeping the stale secret.
+        secret: isUrlCredential ? OLLAMA_PLACEHOLDER_SECRET : parsed.apiKey,
+        log: deps.log,
+        ...(isUrlCredential
+          ? { baseURLOverride: parsed.apiKey }
+          : probeBaseUrl !== undefined
+            ? { baseURLOverride: probeBaseUrl }
             : {}),
-          ...(deps.ensureCredentialFn !== undefined
-            ? { ensureCredentialFn: deps.ensureCredentialFn }
-            : {}),
-          ...(deps.seedCatalogFn !== undefined
-            ? { seedCatalogFn: deps.seedCatalogFn }
-            : {}),
-        });
-        // CL-6351: a fresh Ollama connect whose instance serves no
-        // completion-capable model gets guided copy, not a silent dead
-        // end — read off the catalog seed the shared persist sequence
-        // just ran.
-        const modelGuidance =
-          descriptor.id === "ollama" &&
-          seedResult !== undefined &&
-          !seedResult.hasCompletionCapableModel
-            ? OLLAMA_NO_CHAT_MODEL_GUIDANCE
-            : undefined;
-        // Only clear once the credential is actually durable — a storage
-        // failure below (the `catch`) must leave a prior needs-attention
-        // record standing rather than clearing it on a test pass whose
-        // save then failed (CL-6092).
-        deps.providerHealth?.clear(tenant.id, descriptor.id);
-        await fireConnectedHook(deps.onConnected, deps.log, {
-          tenantId: tenant.id,
-          principalId: c.get("principal").id,
-          connectorId: descriptor.id,
-          displayName: descriptor.displayName,
-        });
-        // A tenant that just connected its own inference provider is an
-        // equally valid seed source as an operator-configured hub key —
-        // it must not sit unseeded forever waiting on one (CL-6568). Ask
-        // the same resolved-catalog question launch itself asks
-        // (`hasUsableModel`, `@corbits/inference-settings`) rather than
-        // trusting the credential row's mere presence, then hand the
-        // provisioning drain this connector's own provider and key —
-        // best-effort: a failure here never turns a stored, working
-        // credential into a failed connect response.
-        if (isInferenceProvider(descriptor.id) && seedResult !== undefined) {
-          const user = c.get("user");
-          if (user) {
-            try {
-              const models = await runGetResolvedCatalog(
-                api,
-                cookies,
-                tenant.id,
+        ...(deps.ensureProviderFn !== undefined ? { ensureProviderFn: deps.ensureProviderFn } : {}),
+        ...(deps.ensureCredentialFn !== undefined
+          ? { ensureCredentialFn: deps.ensureCredentialFn }
+          : {}),
+        ...(deps.seedCatalogFn !== undefined ? { seedCatalogFn: deps.seedCatalogFn } : {}),
+      });
+      // CL-6351: a fresh Ollama connect whose instance serves no
+      // completion-capable model gets guided copy, not a silent dead
+      // end — read off the catalog seed the shared persist sequence
+      // just ran.
+      const modelGuidance =
+        descriptor.id === "ollama" &&
+        seedResult !== undefined &&
+        !seedResult.hasCompletionCapableModel
+          ? OLLAMA_NO_CHAT_MODEL_GUIDANCE
+          : undefined;
+      // Only clear once the credential is actually durable — a storage
+      // failure below (the `catch`) must leave a prior needs-attention
+      // record standing rather than clearing it on a test pass whose
+      // save then failed (CL-6092).
+      deps.providerHealth?.clear(tenant.id, descriptor.id);
+      await fireConnectedHook(deps.onConnected, deps.log, {
+        tenantId: tenant.id,
+        principalId: c.get("principal").id,
+        connectorId: descriptor.id,
+        displayName: descriptor.displayName,
+      });
+      // A tenant that just connected its own inference provider is an
+      // equally valid seed source as an operator-configured hub key —
+      // it must not sit unseeded forever waiting on one (CL-6568). Ask
+      // the same resolved-catalog question launch itself asks
+      // (`hasUsableModel`, `@corbits/inference-settings`) rather than
+      // trusting the credential row's mere presence, then hand the
+      // provisioning drain this connector's own provider and key —
+      // best-effort: a failure here never turns a stored, working
+      // credential into a failed connect response.
+      if (isInferenceProvider(descriptor.id) && seedResult !== undefined) {
+        const user = c.get("user");
+        if (user) {
+          try {
+            const models = await runGetResolvedCatalog(api, cookies, tenant.id);
+            if (hasUsableModel(models)) {
+              await fireInferenceCredentialSeedableHook(
+                deps.onInferenceCredentialUsable,
+                deps.log,
+                {
+                  userId: user.id,
+                  tenantId: tenant.id,
+                  tenantDomain: tenant.domain,
+                  principalId: c.get("principal").id,
+                  provider: descriptor.id,
+                  apiKey: isUrlCredential ? OLLAMA_PLACEHOLDER_SECRET : parsed.apiKey,
+                  ...(isUrlCredential ? { baseURLOverride: parsed.apiKey } : {}),
+                },
               );
-              if (hasUsableModel(models)) {
-                await fireInferenceCredentialSeedableHook(
-                  deps.onInferenceCredentialUsable,
-                  deps.log,
-                  {
-                    userId: user.id,
-                    tenantId: tenant.id,
-                    tenantDomain: tenant.domain,
-                    principalId: c.get("principal").id,
-                    provider: descriptor.id,
-                    apiKey: isUrlCredential
-                      ? OLLAMA_PLACEHOLDER_SECRET
-                      : parsed.apiKey,
-                    ...(isUrlCredential
-                      ? { baseURLOverride: parsed.apiKey }
-                      : {}),
-                  },
-                );
-              }
-            } catch (cause) {
-              const message =
-                cause instanceof Error ? cause.message : String(cause);
-              deps.log(
-                `could not check tenant ${tenant.id}'s resolved catalog after connecting ${descriptor.id}; the bench stays as-is until its next reconcile: ${message}`,
-              );
-              reportError(cause, {
-                operation: "check_resolved_catalog_after_connect",
-                tenantId: tenant.id,
-                extra: { connectorId: descriptor.id },
-              });
             }
+          } catch (cause) {
+            const message = cause instanceof Error ? cause.message : String(cause);
+            deps.log(
+              `could not check tenant ${tenant.id}'s resolved catalog after connecting ${descriptor.id}; the bench stays as-is until its next reconcile: ${message}`,
+            );
+            reportError(cause, {
+              operation: "check_resolved_catalog_after_connect",
+              tenantId: tenant.id,
+              extra: { connectorId: descriptor.id },
+            });
           }
         }
-        return c.json(
-          modelGuidance !== undefined
-            ? { credentialId, status: "active" as const, modelGuidance }
-            : { credentialId, status: "active" as const },
-          200,
-        );
-      } catch (cause) {
-        const message = cause instanceof Error ? cause.message : String(cause);
-        deps.log(
-          `connection setup failed for connector ${connectorId} on tenant ${tenant.id}: ${message}`,
-        );
-        // Never widen extra beyond identifiers safe to print — the pasted
-        // `parsed.apiKey` is in scope above.
-        const refId = reportError(cause, {
-          operation: "persist_api_key_connection",
-          tenantId: tenant.id,
-          extra: { connectorId },
-        });
-        return c.json(
-          makeErrorEnvelope({
-            code: "connection_setup_failed",
-            userMessage:
-              "The key checked out, but saving the connection failed. Try again in a moment.",
-            refId,
-          }),
-          500,
-        );
       }
-    },
-  );
+      return c.json(
+        modelGuidance !== undefined
+          ? { credentialId, status: "active" as const, modelGuidance }
+          : { credentialId, status: "active" as const },
+        200,
+      );
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      deps.log(
+        `connection setup failed for connector ${connectorId} on tenant ${tenant.id}: ${message}`,
+      );
+      // Never widen extra beyond identifiers safe to print — the pasted
+      // `parsed.apiKey` is in scope above.
+      const refId = reportError(cause, {
+        operation: "persist_api_key_connection",
+        tenantId: tenant.id,
+        extra: { connectorId },
+      });
+      return c.json(
+        makeErrorEnvelope({
+          code: "connection_setup_failed",
+          userMessage:
+            "The key checked out, but saving the connection failed. Try again in a moment.",
+          refId,
+        }),
+        500,
+      );
+    }
+  });
 
   // The one disconnect path every settings-ui card (api-key or OAuth)
   // calls — see `disconnectConnector`'s own header for why a direct
   // `DELETE /credentials/:id` from the browser can never do this safely
   // on its own.
-  app.delete(
-    "/:connectorId/disconnect",
-    deps.requireGrant("credential:*", "manage"),
-    async (c) => {
-      const connectorId = c.req.param("connectorId");
-      if (registry[connectorId] === undefined) {
+  app.delete("/:connectorId/disconnect", deps.requireGrant("credential:*", "manage"), async (c) => {
+    const connectorId = c.req.param("connectorId");
+    if (registry[connectorId] === undefined) {
+      return c.json(
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: `Unknown connector: ${connectorId}`,
+        }),
+        404,
+      );
+    }
+
+    const tenant = c.get("tenant");
+    const cookies = cookiesFromHeader(c.req.header("cookie"));
+    try {
+      const result = await runDisconnectConnector(
+        api,
+        cookies,
+        { tenantId: tenant.id, connectorId },
+        deps.log,
+      );
+      if (!result.disconnected) {
         return c.json(
           makeErrorEnvelope({
             code: "not_found",
-            userMessage: `Unknown connector: ${connectorId}`,
+            userMessage: `${connectorId} is not connected`,
           }),
           404,
         );
       }
-
-      const tenant = c.get("tenant");
-      const cookies = cookiesFromHeader(c.req.header("cookie"));
-      try {
-        const result = await runDisconnectConnector(
-          api,
-          cookies,
-          { tenantId: tenant.id, connectorId },
-          deps.log,
-        );
-        if (!result.disconnected) {
-          return c.json(
-            makeErrorEnvelope({
-              code: "not_found",
-              userMessage: `${connectorId} is not connected`,
-            }),
-            404,
-          );
-        }
-        return c.body(null, 204);
-      } catch (cause) {
-        const message = cause instanceof Error ? cause.message : String(cause);
-        deps.log(
-          `disconnect failed for connector ${connectorId} on tenant ${tenant.id}: ${message}`,
-        );
-        const refId = reportError(cause, {
-          operation: "disconnect_connector",
-          tenantId: tenant.id,
-          extra: { connectorId },
-        });
-        return c.json(
-          makeErrorEnvelope({
-            code: "disconnect_failed",
-            userMessage: "Couldn't disconnect — try again.",
-            refId,
-          }),
-          500,
-        );
-      }
-    },
-  );
+      return c.body(null, 204);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      deps.log(`disconnect failed for connector ${connectorId} on tenant ${tenant.id}: ${message}`);
+      const refId = reportError(cause, {
+        operation: "disconnect_connector",
+        tenantId: tenant.id,
+        extra: { connectorId },
+      });
+      return c.json(
+        makeErrorEnvelope({
+          code: "disconnect_failed",
+          userMessage: "Couldn't disconnect — try again.",
+          refId,
+        }),
+        500,
+      );
+    }
+  });
 
   return app;
 }

@@ -25,11 +25,7 @@ import { type } from "arktype";
 import type { OneShotReply } from "./one-shot-prompt";
 
 import { BoundedDedupedToolPackageNameArray } from "./create-bounds";
-import {
-  assembleInventory,
-  type InventorySources,
-  type PlannerInventory,
-} from "./inventory";
+import { assembleInventory, type InventorySources, type PlannerInventory } from "./inventory";
 
 const DEFAULT_DRAFTING_TIMEOUT_MS = 60_000;
 const MAX_REPLY_EXCERPT = 400;
@@ -113,9 +109,7 @@ export type AgentDefinitionDraft = {
 };
 
 function excerpt(raw: string): string {
-  return raw.length > MAX_REPLY_EXCERPT
-    ? `${raw.slice(0, MAX_REPLY_EXCERPT)}…`
-    : raw;
+  return raw.length > MAX_REPLY_EXCERPT ? `${raw.slice(0, MAX_REPLY_EXCERPT)}…` : raw;
 }
 
 export class AgentDefinitionDraftReplyUnparseableError extends Error {
@@ -150,9 +144,7 @@ export class MyraAgentDefinitionDraftingUnavailableError extends Error {
  * that doesn't match, an empty/oversized system prompt or description,
  * or a `toolPackagePins` array over cardinality/with a duplicate. Never
  * partially trusts a near-miss. */
-export function parseAgentDefinitionDraftReply(
-  raw: string,
-): AgentDefinitionDraftReply {
+export function parseAgentDefinitionDraftReply(raw: string): AgentDefinitionDraftReply {
   let json: unknown;
   try {
     json = JSON.parse(raw);
@@ -186,9 +178,7 @@ export function validateAgentDefinitionDraftReplyAgainstInventory(
   inventory: PlannerInventory,
 ): AgentDefinitionDraft {
   if (reply.modelPreference !== undefined) {
-    const known = inventory.models.some(
-      (model) => model.canonicalName === reply.modelPreference,
-    );
+    const known = inventory.models.some((model) => model.canonicalName === reply.modelPreference);
     if (!known) {
       throw new AgentDefinitionDraftReferenceOutOfInventoryError(
         "modelPreference",
@@ -197,40 +187,27 @@ export function validateAgentDefinitionDraftReplyAgainstInventory(
     }
   }
 
-  const toolPackageNames = new Set(
-    inventory.toolPackages.map((entry) => entry.name),
-  );
+  const toolPackageNames = new Set(inventory.toolPackages.map((entry) => entry.name));
   for (const pin of reply.toolPackagePins ?? []) {
     if (!toolPackageNames.has(pin)) {
-      throw new AgentDefinitionDraftReferenceOutOfInventoryError(
-        "toolPackagePins",
-        pin,
-      );
+      throw new AgentDefinitionDraftReferenceOutOfInventoryError("toolPackagePins", pin);
     }
   }
 
   const skillNames = new Set(inventory.skills.map((skill) => skill.name));
   for (const skill of reply.skills ?? []) {
     if (!skillNames.has(skill)) {
-      throw new AgentDefinitionDraftReferenceOutOfInventoryError(
-        "skills",
-        skill,
-      );
+      throw new AgentDefinitionDraftReferenceOutOfInventoryError("skills", skill);
     }
   }
 
   const base: AgentDefinitionDraft = {
     systemPrompt: reply.systemPrompt,
-    toolPackagePins: withDefaultCapabilityRequestPin(
-      reply.toolPackagePins ?? [],
-      inventory,
-    ),
+    toolPackagePins: withDefaultCapabilityRequestPin(reply.toolPackagePins ?? [], inventory),
     skills: reply.skills ?? [],
   };
   const withDescription =
-    reply.description !== undefined
-      ? { ...base, description: reply.description }
-      : base;
+    reply.description !== undefined ? { ...base, description: reply.description } : base;
   return reply.modelPreference !== undefined
     ? { ...withDescription, modelPreference: reply.modelPreference }
     : withDescription;
@@ -290,9 +267,7 @@ function buildAgentDefinitionDraftPrompt(
           "before anything is deployed.",
         ]
       : [
-          "A person is creating a new agent named " +
-            JSON.stringify(name) +
-            ".",
+          "A person is creating a new agent named " + JSON.stringify(name) + ".",
           "They described what it should do like this, for you to turn into a",
           "starting system prompt for review before anything is deployed:",
           "",
@@ -387,11 +362,7 @@ export function createMyraAgentDefinitionDrafting(
         principalId,
       });
 
-      const draftPrompt = buildAgentDefinitionDraftPrompt(
-        name,
-        purpose,
-        inventory,
-      );
+      const draftPrompt = buildAgentDefinitionDraftPrompt(name, purpose, inventory);
 
       const reply = await deps.runner.run({
         tenantId,
@@ -402,10 +373,7 @@ export function createMyraAgentDefinitionDrafting(
       });
 
       const parsed = parseAgentDefinitionDraftReply(reply.content);
-      return validateAgentDefinitionDraftReplyAgainstInventory(
-        parsed,
-        inventory,
-      );
+      return validateAgentDefinitionDraftReplyAgainstInventory(parsed, inventory);
     },
   };
 }

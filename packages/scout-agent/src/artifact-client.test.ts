@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  createScoutArtifact,
-  listRecentScoutArtifacts,
-} from "./artifact-client";
+import { createScoutArtifact, listRecentScoutArtifacts } from "./artifact-client";
 
 const CONFIG = {
   hubArtifactsUrl: "https://hub.example",
@@ -17,12 +14,9 @@ describe("createScoutArtifact", () => {
     const fetchImpl = (async (url: string, init?: RequestInit) => {
       capturedUrl = url;
       capturedInit = init;
-      return new Response(
-        JSON.stringify({ data: { id: "art_1", version: 1 } }),
-        {
-          status: 201,
-        },
-      );
+      return new Response(JSON.stringify({ data: { id: "art_1", version: 1 } }), {
+        status: 201,
+      });
     }) as unknown as typeof fetch;
 
     const result = await createScoutArtifact(
@@ -31,9 +25,7 @@ describe("createScoutArtifact", () => {
     );
 
     expect(result).toEqual({ id: "art_1", version: 1 });
-    expect(capturedUrl).toBe(
-      "https://hub.example/api/workflow-artifacts/artifacts",
-    );
+    expect(capturedUrl).toBe("https://hub.example/api/workflow-artifacts/artifacts");
     expect(capturedInit?.method).toBe("POST");
     expect(JSON.parse(String(capturedInit?.body))).toEqual({
       title: "Diligence note",
@@ -47,10 +39,7 @@ describe("createScoutArtifact", () => {
       new Response("nope", { status: 500 })) as unknown as typeof fetch;
 
     await expect(
-      createScoutArtifact(
-        { ...CONFIG, fetchImpl },
-        { title: "x", kind: "text", content: "y" },
-      ),
+      createScoutArtifact({ ...CONFIG, fetchImpl }, { title: "x", kind: "text", content: "y" }),
     ).rejects.toThrow(/Scout artifact create failed/);
   });
 });
@@ -89,8 +78,8 @@ describe("listRecentScoutArtifacts", () => {
         status: 200,
       })) as unknown as typeof fetch;
 
-    await expect(
-      listRecentScoutArtifacts({ ...CONFIG, fetchImpl }),
-    ).rejects.toThrow(/did not match the expected shape/);
+    await expect(listRecentScoutArtifacts({ ...CONFIG, fetchImpl })).rejects.toThrow(
+      /did not match the expected shape/,
+    );
   });
 });

@@ -43,11 +43,7 @@ import { ArrowDown, ArrowUp, Cpu, Plugs, Robot } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
-import {
-  QueryView,
-  UnauthenticatedError,
-  describeQueryError,
-} from "@corbits/api-query";
+import { QueryView, UnauthenticatedError, describeQueryError } from "@corbits/api-query";
 import {
   ConnectionsApiError,
   completeConnectorCredential,
@@ -55,16 +51,8 @@ import {
   fetchOAuthConfigured,
 } from "./connections-api";
 import { CONNECTOR_PINNED_WORKFLOWS } from "./connections-pinned-by";
-import {
-  connectorStatus,
-  type ConnectorStatusResult,
-} from "./connections-status";
-import {
-  listCredentials,
-  listProviders,
-  type Credential,
-  type Provider,
-} from "./credentials-api";
+import { connectorStatus, type ConnectorStatusResult } from "./connections-status";
+import { listCredentials, listProviders, type Credential, type Provider } from "./credentials-api";
 import { SETTINGS_STRINGS } from "./strings";
 
 // `@corbits/connections/registry` is the only subpath this browser
@@ -155,11 +143,8 @@ export function ConnectorRowList({
    * session" from "the list changed." */
   readonly onConnected?: () => void;
 }) {
-  const [dialogDescriptor, setDialogDescriptor] =
-    useState<ConnectorDescriptor | null>(null);
-  const [dialogMode, setDialogMode] = useState<"connect" | "reconnect">(
-    "connect",
-  );
+  const [dialogDescriptor, setDialogDescriptor] = useState<ConnectorDescriptor | null>(null);
+  const [dialogMode, setDialogMode] = useState<"connect" | "reconnect">("connect");
 
   function handleDisconnect(connectorId: string) {
     onError?.(null);
@@ -218,11 +203,7 @@ export function ConnectorRowList({
   );
 }
 
-export function ConnectionsSection({
-  tenantId,
-}: {
-  readonly tenantId: string | null;
-}) {
+export function ConnectionsSection({ tenantId }: { readonly tenantId: string | null }) {
   const [query, setQuery] = useState<APIQuery<ConnectionsData>>({
     kind: "loading",
   });
@@ -244,23 +225,19 @@ export function ConnectionsSection({
       getResolvedCatalog(tenantId),
       listOwnOfferings(tenantId),
     ])
-      .then(
-        ([credentials, providers, oauthConfigured, models, ownOfferings]) => {
-          if (!cancelled)
-            setQuery({
-              kind: "ready",
-              data: {
-                credentials,
-                providers,
-                oauthConfigured,
-                models,
-                ownOfferingIds: new Set(
-                  ownOfferings.map((offering) => offering.id),
-                ),
-              },
-            });
-        },
-      )
+      .then(([credentials, providers, oauthConfigured, models, ownOfferings]) => {
+        if (!cancelled)
+          setQuery({
+            kind: "ready",
+            data: {
+              credentials,
+              providers,
+              oauthConfigured,
+              models,
+              ownOfferingIds: new Set(ownOfferings.map((offering) => offering.id)),
+            },
+          });
+      })
       .catch((cause: unknown) => {
         if (cancelled) return;
         if (cause instanceof UnauthenticatedError) {
@@ -276,7 +253,6 @@ export function ConnectionsSection({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, reloadKey]);
 
   // Connections can change elsewhere (another tab, the Plugins gallery's
@@ -338,17 +314,8 @@ export function ConnectionsSection({
 
   return (
     <QueryView query={query} label={SETTINGS_STRINGS.connectionsLoadError}>
-      {({
-        credentials,
-        providers,
-        oauthConfigured,
-        models,
-        ownOfferingIds,
-      }) => {
-        const effectiveRows = buildEffectiveInferenceRows(
-          models,
-          ownOfferingIds,
-        );
+      {({ credentials, providers, oauthConfigured, models, ownOfferingIds }) => {
+        const effectiveRows = buildEffectiveInferenceRows(models, ownOfferingIds);
         return (
           <SettingsPanel
             title={SETTINGS_STRINGS.connectionsSectionTitle}
@@ -391,11 +358,7 @@ export function ConnectionsSection({
                     key={card.id}
                     tenantId={currentTenantId}
                     card={card}
-                    statusResult={connectorStatus(
-                      card.id,
-                      credentials,
-                      providers,
-                    )}
+                    statusResult={connectorStatus(card.id, credentials, providers)}
                     modelCount={
                       new Set(
                         effectiveRows
@@ -435,16 +398,12 @@ function ModelRoutePanel({
   const currentModel = ordered[0]?.canonicalName ?? "";
   const models = ordered.filter(
     (row, index, all) =>
-      all.findIndex(
-        (candidate) => candidate.canonicalName === row.canonicalName,
-      ) === index,
+      all.findIndex((candidate) => candidate.canonicalName === row.canonicalName) === index,
   );
   const route = ordered.filter((row) => row.canonicalName === currentModel);
 
   function applyPatches(
-    patches:
-      | readonly { readonly offeringId: string; readonly priority: number }[]
-      | null,
+    patches: readonly { readonly offeringId: string; readonly priority: number }[] | null,
   ) {
     if (patches === null) {
       onError(SETTINGS_STRINGS.connectionsSetDefaultModelError);
@@ -468,18 +427,11 @@ function ModelRoutePanel({
     // agents may still pick up the default at create. Never PATCH
     // `/agent-definitions`.
     const target = ordered.find((row) => row.canonicalName === canonicalName);
-    applyPatches(
-      target === undefined
-        ? null
-        : computeMakeDefaultPatches(rows, target.offeringId),
-    );
+    applyPatches(target === undefined ? null : computeMakeDefaultPatches(rows, target.offeringId));
   }
 
   return (
-    <section
-      className="settings-model-route"
-      aria-labelledby="model-route-title"
-    >
+    <section className="settings-model-route" aria-labelledby="model-route-title">
       <div className="settings-model-route-heading">
         <span className="settings-model-route-icon" aria-hidden>
           <Cpu />
@@ -487,8 +439,8 @@ function ModelRoutePanel({
         <div>
           <h3 id="model-route-title">Default model & fallbacks</h3>
           <p>
-            Used by Myra and new agents. Changing the default does not rewrite
-            models already stored on existing agents.
+            Used by Myra and new agents. Changing the default does not rewrite models already stored
+            on existing agents.
           </p>
         </div>
       </div>
@@ -513,10 +465,7 @@ function ModelRoutePanel({
               ))}
             </select>
           </label>
-          <div
-            className="settings-model-route-list"
-            aria-label="Fallback order"
-          >
+          <div className="settings-model-route-list" aria-label="Fallback order">
             <p className="settings-model-route-list-label">Fallback order</p>
             {route.map((row, index) => (
               <div className="settings-model-route-row" key={row.offeringId}>
@@ -536,9 +485,7 @@ function ModelRoutePanel({
                     aria-label={`Move ${providerDisplayName(row.providerName)} up`}
                     disabled={index === 0 || row.provenance === "inherited"}
                     onClick={() =>
-                      applyPatches(
-                        computeGlobalRoutePatches(route, row.offeringId, "up"),
-                      )
+                      applyPatches(computeGlobalRoutePatches(route, row.offeringId, "up"))
                     }
                   >
                     <ArrowUp />
@@ -547,18 +494,9 @@ function ModelRoutePanel({
                     variant="ghost"
                     size="icon"
                     aria-label={`Move ${providerDisplayName(row.providerName)} down`}
-                    disabled={
-                      index === route.length - 1 ||
-                      row.provenance === "inherited"
-                    }
+                    disabled={index === route.length - 1 || row.provenance === "inherited"}
                     onClick={() =>
-                      applyPatches(
-                        computeGlobalRoutePatches(
-                          route,
-                          row.offeringId,
-                          "down",
-                        ),
-                      )
+                      applyPatches(computeGlobalRoutePatches(route, row.offeringId, "down"))
                     }
                   >
                     <ArrowDown />
@@ -585,11 +523,7 @@ function pinnedByLine(connectorId: string): string {
  * for text/structure, the accent color only ever marks something to act
  * on), matching the plugins directory's own `plugins-directory-needs-
  * attention` convention. */
-function StatusCaption({
-  statusResult,
-}: {
-  readonly statusResult: ConnectorStatusResult;
-}) {
+function StatusCaption({ statusResult }: { readonly statusResult: ConnectorStatusResult }) {
   if (statusResult.status === "connected") {
     return (
       <span className="settings-connection-row-status">
@@ -630,12 +564,7 @@ function ConnectorLogo({
   if (icon !== undefined) {
     return (
       <span className="settings-connection-row-logo" aria-hidden="true">
-        <svg
-          viewBox={icon.viewBox ?? "0 0 24 24"}
-          width="16"
-          height="16"
-          fill={`#${icon.hex}`}
-        >
+        <svg viewBox={icon.viewBox ?? "0 0 24 24"} width="16" height="16" fill={`#${icon.hex}`}>
           <path d={icon.path} />
         </svg>
       </span>
@@ -674,9 +603,7 @@ function ConnectorRow({
       />
       <div className="settings-connection-row-text">
         <div className="settings-connection-row-name-row">
-          <span className="settings-connection-row-name">
-            {descriptor.displayName}
-          </span>
+          <span className="settings-connection-row-name">{descriptor.displayName}</span>
           <StatusCaption statusResult={statusResult} />
         </div>
         {statusResult.status === "connected" && modelCount > 0 ? (
@@ -686,9 +613,7 @@ function ConnectorRow({
         ) : null}
         {descriptor.feedsTools.length > 0 && (
           <span className="settings-connection-row-pinned-row">
-            <span className="settings-connection-row-caption">
-              {pinnedByLine(descriptor.id)}
-            </span>
+            <span className="settings-connection-row-caption">{pinnedByLine(descriptor.id)}</span>
             {(CONNECTOR_PINNED_WORKFLOWS[descriptor.id]?.length ?? 0) > 0 && (
               <InfoTooltip
                 label={SETTINGS_STRINGS.connectionsPinnedByApproximationNote}
@@ -763,15 +688,10 @@ function OAuthConnectorRow({
   if (!configured) {
     return (
       <div className="settings-connection-row settings-connection-row-muted">
-        <ConnectorLogo
-          displayName={card.displayName}
-          {...(icon !== undefined ? { icon } : {})}
-        />
+        <ConnectorLogo displayName={card.displayName} {...(icon !== undefined ? { icon } : {})} />
         <div className="settings-connection-row-text">
           <div className="settings-connection-row-name-row">
-            <span className="settings-connection-row-name">
-              {card.displayName}
-            </span>
+            <span className="settings-connection-row-name">{card.displayName}</span>
             <span className="settings-connection-row-status">
               {SETTINGS_STRINGS.connectionsStatusNotConfigured}
             </span>
@@ -786,15 +706,10 @@ function OAuthConnectorRow({
 
   return (
     <div className="settings-connection-row">
-      <ConnectorLogo
-        displayName={card.displayName}
-        {...(icon !== undefined ? { icon } : {})}
-      />
+      <ConnectorLogo displayName={card.displayName} {...(icon !== undefined ? { icon } : {})} />
       <div className="settings-connection-row-text">
         <div className="settings-connection-row-name-row">
-          <span className="settings-connection-row-name">
-            {card.displayName}
-          </span>
+          <span className="settings-connection-row-name">{card.displayName}</span>
           <StatusCaption statusResult={statusResult} />
         </div>
         {statusResult.status === "connected" && modelCount > 0 ? (
@@ -855,9 +770,7 @@ export function ConnectorCredentialDialog({
 
   useEffect(() => {
     setApiKey(
-      descriptor?.credentialInputKind === "url"
-        ? (descriptor.credentialPlaceholder ?? "")
-        : "",
+      descriptor?.credentialInputKind === "url" ? (descriptor.credentialPlaceholder ?? "") : "",
     );
     setShowKey(false);
     setSubmitting(false);
@@ -910,12 +823,8 @@ export function ConnectorCredentialDialog({
             {descriptor === null
               ? ""
               : mode === "reconnect"
-                ? SETTINGS_STRINGS.connectionsDialogReconnectTitle(
-                    descriptor.displayName,
-                  )
-                : SETTINGS_STRINGS.connectionsDialogConnectTitle(
-                    descriptor.displayName,
-                  )}
+                ? SETTINGS_STRINGS.connectionsDialogReconnectTitle(descriptor.displayName)
+                : SETTINGS_STRINGS.connectionsDialogConnectTitle(descriptor.displayName)}
           </DialogTitle>
           <DialogDescription>
             {isUrlField
@@ -973,11 +882,7 @@ export function ConnectorCredentialDialog({
           <Button variant="ghost" onClick={onClose}>
             {SETTINGS_STRINGS.connectionsCancel}
           </Button>
-          <Button
-            variant="primary"
-            disabled={!canSubmit}
-            onClick={handleSubmit}
-          >
+          <Button variant="primary" disabled={!canSubmit} onClick={handleSubmit}>
             {submitting
               ? SETTINGS_STRINGS.connectionsConnecting
               : SETTINGS_STRINGS.connectionsConnectDialogAction}

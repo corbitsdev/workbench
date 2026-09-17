@@ -228,9 +228,7 @@ describe("messageRunBracket", () => {
   test("any other event, or a bracket missing its ids, reads as no bracket", () => {
     expect(messageRunBracket({ type: "connector.reply" })).toBeUndefined();
     expect(messageRunBracket(undefined)).toBeUndefined();
-    expect(
-      messageRunBracket({ type: "message.run.started", data: {} }),
-    ).toBeUndefined();
+    expect(messageRunBracket({ type: "message.run.started", data: {} })).toBeUndefined();
     expect(
       messageRunBracket({
         type: "message.run.ended",

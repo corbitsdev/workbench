@@ -7,12 +7,7 @@ import { LoginForm } from "@corbits/react-ui/blocks/login/login-form";
 import { useState } from "react";
 
 import { AuthLayout } from "./auth/auth-layout";
-import {
-  SOCIAL_SIGN_IN_PROVIDERS,
-  signIn,
-  signInSocial,
-  signUp,
-} from "./session";
+import { SOCIAL_SIGN_IN_PROVIDERS, signIn, signInSocial, signUp } from "./session";
 import type { SessionUser, SocialProviderId } from "./session";
 
 type Mode = "sign-in" | "sign-up";
@@ -35,19 +30,12 @@ const SOCIAL_PROVIDER_LABEL: Record<SocialProviderId, string> = {
   github: "Continue with GitHub",
 };
 
-export function AuthScreen({
-  onSignedIn,
-}: {
-  readonly onSignedIn: (user: SessionUser) => void;
-}) {
+export function AuthScreen({ onSignedIn }: { readonly onSignedIn: (user: SessionUser) => void }) {
   const [mode, setMode] = useState<Mode>("sign-in");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const submit = async (credentials: {
-    readonly email: string;
-    readonly password: string;
-  }) => {
+  const submit = async (credentials: { readonly email: string; readonly password: string }) => {
     setBusy(true);
     setError(null);
     const result =

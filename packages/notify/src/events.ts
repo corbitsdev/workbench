@@ -68,8 +68,7 @@ export type NotifyRecipient = typeof NotifyRecipient.infer;
 export type ApprovalNotification = typeof ApprovalNotification.infer;
 export type RunFailureNotification = typeof RunFailureNotification.infer;
 export type MentionNotification = typeof MentionNotification.infer;
-export type CredentialExpiredNotification =
-  typeof CredentialExpiredNotification.infer;
+export type CredentialExpiredNotification = typeof CredentialExpiredNotification.infer;
 export type NotificationEvent = typeof NotificationEvent.infer;
 
 export class InvalidNotificationEventError extends Error {

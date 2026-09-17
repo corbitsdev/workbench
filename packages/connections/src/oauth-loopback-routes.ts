@@ -54,15 +54,11 @@ export type CreateOAuthLoopbackRoutesDeps = PersistConnectorCredentialFns & {
   }) => Promise<void> | void;
 };
 
-export function isLoopbackConnectorId(
-  connectorId: string,
-): connectorId is "codex" | "xai-oauth" {
+export function isLoopbackConnectorId(connectorId: string): connectorId is "codex" | "xai-oauth" {
   return connectorId === "codex" || connectorId === "xai-oauth";
 }
 
-export function createOAuthLoopbackRoutes(
-  deps: CreateOAuthLoopbackRoutesDeps,
-): Hono<TenantEnv> {
+export function createOAuthLoopbackRoutes(deps: CreateOAuthLoopbackRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
   const api = createHubAPI(deps.hubUrl);
 
@@ -106,16 +102,10 @@ export function createOAuthLoopbackRoutes(
       return c.json({ ok: false, reason: "error", message }, 502);
     }
     if (outcome.status === "gate") {
-      return c.json(
-        { ok: false, reason: "gate", message: outcome.message },
-        409,
-      );
+      return c.json({ ok: false, reason: "gate", message: outcome.message }, 409);
     }
     if (outcome.status === "error") {
-      return c.json(
-        { ok: false, reason: "error", message: outcome.message },
-        502,
-      );
+      return c.json({ ok: false, reason: "error", message: outcome.message }, 502);
     }
 
     // The terminal frame lands after this response: persist detached, but
@@ -135,9 +125,7 @@ export function createOAuthLoopbackRoutes(
         // id_token never goes there. The expiry is a first-class COLUMN
         // (serving-time refresh keys on it), never metadata.
         const credentialMetadata: Record<string, unknown> = {
-          ...(tokens.accountId !== undefined
-            ? { accountId: tokens.accountId }
-            : {}),
+          ...(tokens.accountId !== undefined ? { accountId: tokens.accountId } : {}),
         };
         await persistConnectorCredential({
           api,
@@ -146,9 +134,7 @@ export function createOAuthLoopbackRoutes(
           descriptor,
           secret: tokens.access,
           credentialMetadata,
-          ...(tokens.refresh !== undefined
-            ? { refreshSecret: tokens.refresh }
-            : {}),
+          ...(tokens.refresh !== undefined ? { refreshSecret: tokens.refresh } : {}),
           ...(tokens.expiresAt !== undefined
             ? { expiresAt: new Date(tokens.expiresAt).toISOString() }
             : {}),
@@ -158,9 +144,7 @@ export function createOAuthLoopbackRoutes(
           ...(deps.ensureCredentialFn !== undefined
             ? { ensureCredentialFn: deps.ensureCredentialFn }
             : {}),
-          ...(deps.seedCatalogFn !== undefined
-            ? { seedCatalogFn: deps.seedCatalogFn }
-            : {}),
+          ...(deps.seedCatalogFn !== undefined ? { seedCatalogFn: deps.seedCatalogFn } : {}),
           log: deps.log,
         });
         deps.providerHealth?.clear(tenant.id, connectorId);

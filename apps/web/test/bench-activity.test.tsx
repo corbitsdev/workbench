@@ -40,8 +40,7 @@ function stubTenantFetch(
     calls.push(path);
     if (path.includes("/agent-definitions/visible"))
       return Promise.resolve(json({ definitions: data.agents ?? [] }));
-    if (path.includes("kind=chat"))
-      return Promise.resolve(json({ items: data.chats ?? [] }));
+    if (path.includes("kind=chat")) return Promise.resolve(json({ items: data.chats ?? [] }));
     return Promise.resolve(json({ items: data.workbenches ?? [] }));
   }) as typeof fetch;
 }
@@ -109,9 +108,7 @@ describe("useBenchActivity", () => {
     expect(calls.some((path) => path.includes("kind=chat"))).toBe(true);
     expect(calls.some((path) => path.includes("/workflows/runs"))).toBe(false);
     expect(calls.some((path) => path.includes("/top-level-runs"))).toBe(false);
-    expect(
-      calls.some((path) => path.includes("/agent-definitions/visible")),
-    ).toBe(true);
+    expect(calls.some((path) => path.includes("/agent-definitions/visible"))).toBe(true);
     root.unmount();
     container.remove();
   });
@@ -125,9 +122,7 @@ describe("useBenchActivity", () => {
           title: "General",
           kind: "workbench",
           pinned: true,
-          participants: [
-            { address: "run_invited1@tnt1.example", handle: "echo" },
-          ],
+          participants: [{ address: "run_invited1@tnt1.example", handle: "echo" }],
         },
       ],
       chats: [
@@ -199,9 +194,7 @@ describe("useBenchActivity", () => {
     });
     const { latest, root, container } = await mountHook("tnt_1");
     await settle();
-    expect(
-      (latest() as { workbenches?: readonly unknown[] }).workbenches,
-    ).toEqual([]);
+    expect((latest() as { workbenches?: readonly unknown[] }).workbenches).toEqual([]);
 
     // The row a fresh `createWorkbench` call would have returned — present
     // in the backing store now, as if the mint had just landed.

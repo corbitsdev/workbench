@@ -29,9 +29,7 @@ function format(value: unknown): string {
   return JSON.stringify(value) ?? String(value);
 }
 
-export function renderNotification(
-  event: NotificationEvent,
-): RenderedNotification {
+export function renderNotification(event: NotificationEvent): RenderedNotification {
   if (event.kind === "approval") {
     return {
       subject: `Approve “${event.toolName}”?`,

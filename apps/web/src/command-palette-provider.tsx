@@ -1,9 +1,4 @@
-import {
-  artifactKindLabel,
-  CommandPalette,
-  useCommandShortcut,
-  useTheme,
-} from "@corbits/react-ui";
+import { artifactKindLabel, CommandPalette, useCommandShortcut, useTheme } from "@corbits/react-ui";
 import type { CommandPaletteGroup } from "@corbits/react-ui";
 import { listWorkbenches } from "@corbits/chat-ui";
 import { libraryArtifactPath } from "@corbits/artifact-ui";
@@ -20,21 +15,10 @@ import {
   type RecentEntry,
 } from "@corbits/command-palette";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { listAgentDefinitions } from "./agents-api";
-import {
-  ACTION_COMMANDS,
-  runActionCommand,
-  type ActionCommandId,
-} from "./command-palette-actions";
+import { ACTION_COMMANDS, runActionCommand, type ActionCommandId } from "./command-palette-actions";
 import {
   openCommandPalette,
   setCommandPaletteOpen,
@@ -49,16 +33,8 @@ import { ArtifactListPageSchema, useAPIQuery } from "./api";
 import { isBenchMembership, useBench } from "./bench-context";
 import { useCloseCanvas } from "./shell/canvas-availability";
 import { listMcpServers } from "@corbits/plugins-ui";
-import {
-  AGENTS_PATH_PREFIX,
-  PLUGINS_PATH_PREFIX,
-  SKILLS_PATH_PREFIX,
-} from "./path-ids";
-import {
-  listScheduledWorkflows,
-  runScheduledWorkflowNow,
-  useTenantQuery,
-} from "./routines-api";
+import { AGENTS_PATH_PREFIX, PLUGINS_PATH_PREFIX, SKILLS_PATH_PREFIX } from "./path-ids";
+import { listScheduledWorkflows, runScheduledWorkflowNow, useTenantQuery } from "./routines-api";
 import { listSkills } from "./skills-api";
 import { tenantKeys } from "./query-client";
 import type { Navigate } from "./navigation";
@@ -105,8 +81,7 @@ export function CommandPaletteProvider({
   const closeCanvas = useCloseCanvas();
 
   const recentsStore = useMemo(
-    () =>
-      selectedTenantId === null ? null : recentsStoreForBench(selectedTenantId),
+    () => (selectedTenantId === null ? null : recentsStoreForBench(selectedTenantId)),
     [selectedTenantId],
   );
 
@@ -145,10 +120,7 @@ export function CommandPaletteProvider({
     }
     window.addEventListener(WORKBENCH_NOT_FOUND_EVENT, onWorkbenchNotFound);
     return () => {
-      window.removeEventListener(
-        WORKBENCH_NOT_FOUND_EVENT,
-        onWorkbenchNotFound,
-      );
+      window.removeEventListener(WORKBENCH_NOT_FOUND_EVENT, onWorkbenchNotFound);
     };
   }, [removeRecent]);
 
@@ -212,12 +184,8 @@ export function CommandPaletteProvider({
   // fetches for (by design — the unscoped default view should not dump
   // every entity on open). The mock shows every item in an active scope for
   // this input, so fetch that scope's raw list directly instead.
-  const [bareWorkbenches, setBareWorkbenches] = useState<
-    readonly PaletteResultItem[]
-  >([]);
-  const [bareAgents, setBareAgents] = useState<readonly PaletteResultItem[]>(
-    [],
-  );
+  const [bareWorkbenches, setBareWorkbenches] = useState<readonly PaletteResultItem[]>([]);
+  const [bareAgents, setBareAgents] = useState<readonly PaletteResultItem[]>([]);
 
   useEffect(() => {
     if (bareScopeKind !== "workbenches" || !open) {
@@ -279,9 +247,7 @@ export function CommandPaletteProvider({
     () => listMcpServers(selectedTenantId ?? ""),
   );
   const artifactsQuery = useAPIQuery(
-    selectedTenantId === null || !open
-      ? ""
-      : `/api/tenants/${selectedTenantId}/artifacts`,
+    selectedTenantId === null || !open ? "" : `/api/tenants/${selectedTenantId}/artifacts`,
     ArtifactListPageSchema,
   );
 
@@ -296,9 +262,7 @@ export function CommandPaletteProvider({
   // tenancy is the only thing filtered out here.
   const workbenchMemberships =
     memberships.kind === "ready"
-      ? memberships.data.data.filter((membership) =>
-          isBenchMembership(membership),
-        )
+      ? memberships.data.data.filter((membership) => isBenchMembership(membership))
       : [];
   const nextWorkbench =
     workbenchMemberships.length > 1
@@ -325,8 +289,7 @@ export function CommandPaletteProvider({
   useEffect(() => {
     const previous = searchScope.current;
     const routeChanged = previous.path !== path;
-    const benchSwitched =
-      previous.tenantId !== null && previous.tenantId !== selectedTenantId;
+    const benchSwitched = previous.tenantId !== null && previous.tenantId !== selectedTenantId;
     searchScope.current = { path, tenantId: selectedTenantId };
     if (routeChanged || benchSwitched) setCommandPaletteOpen(false);
   }, [path, selectedTenantId]);
@@ -530,21 +493,17 @@ export function CommandPaletteProvider({
         });
       } else if (id.startsWith("route:")) {
         const routePath = id.slice("route:".length);
-        const label =
-          STATIC_COMMANDS.find((command) => command.id === id)?.title ??
-          routePath;
+        const label = STATIC_COMMANDS.find((command) => command.id === id)?.title ?? routePath;
         navigate(routePath);
         pushRecent({ kind: "route", id, title: label });
       } else if (id.startsWith("entity:workbenches:")) {
         const workbenchId = id.slice("entity:workbenches:".length);
-        const title =
-          workbenchItems.find((item) => item.id === id)?.title ?? workbenchId;
+        const title = workbenchItems.find((item) => item.id === id)?.title ?? workbenchId;
         navigate(`/w/${workbenchId}`);
         pushRecent({ kind: "workbenches", id, title, subtitle: "Workbench" });
       } else if (id.startsWith("entity:agents:")) {
         const agentId = id.slice("entity:agents:".length);
-        const title =
-          agentItems.find((item) => item.id === id)?.title ?? agentId;
+        const title = agentItems.find((item) => item.id === id)?.title ?? agentId;
         navigate(
           detailPath(AGENTS_PATH_PREFIX, {
             slug: agentHandleById.current.get(agentId) ?? "",
@@ -554,18 +513,14 @@ export function CommandPaletteProvider({
         pushRecent({ kind: "agents", id, title, subtitle: "Agent" });
       } else if (id.startsWith("entity:routines:")) {
         const routineId = id.slice("entity:routines:".length);
-        const title =
-          routineItems.find((item) => item.id === id)?.title ?? routineId;
+        const title = routineItems.find((item) => item.id === id)?.title ?? routineId;
         navigate(`/routines/${encodeURIComponent(routineId)}`);
         pushRecent({ kind: "routines", id, title, subtitle: "Routine" });
       } else if (id.startsWith("entity:skills:")) {
         const skillId = id.slice("entity:skills:".length);
-        const title =
-          skillItems.find((item) => item.id === id)?.title ?? skillId;
+        const title = skillItems.find((item) => item.id === id)?.title ?? skillId;
         // A skill's name is its slug: the Skills API keys every route on it.
-        navigate(
-          detailPath(SKILLS_PATH_PREFIX, { slug: skillId, id: skillId }),
-        );
+        navigate(detailPath(SKILLS_PATH_PREFIX, { slug: skillId, id: skillId }));
         pushRecent({ kind: "skills", id, title, subtitle: "Skill" });
       } else if (id.startsWith("entity:plugins:")) {
         const slug = id.slice("entity:plugins:".length);
@@ -576,8 +531,7 @@ export function CommandPaletteProvider({
         pushRecent({ kind: "plugins", id, title, subtitle: "Plugin" });
       } else if (id.startsWith("entity:library:")) {
         const artifactId = id.slice("entity:library:".length);
-        const title =
-          libraryItems.find((item) => item.id === id)?.title ?? "Files";
+        const title = libraryItems.find((item) => item.id === id)?.title ?? "Files";
         navigate(libraryArtifactPath(artifactId));
         pushRecent({ kind: "library", id, title, subtitle: "Files" });
       }

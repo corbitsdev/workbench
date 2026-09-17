@@ -47,9 +47,7 @@ export function reportAndExit(name: string, report: CheckReport): never {
     for (const violation of report.violations) {
       console.error(`${name}: ${violation}`);
     }
-    console.error(
-      `${name}: FAIL — ${report.violations.length} violation(s) above`,
-    );
+    console.error(`${name}: FAIL — ${report.violations.length} violation(s) above`);
     process.exit(1);
   }
   console.log(`${name}: ok`);

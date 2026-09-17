@@ -42,11 +42,13 @@ export async function materializeWorkflowSources(
     try {
       existing = await readFile(sourcesAssetPath, "utf8");
     } catch (cause) {
-      if (!(
-        cause instanceof Error &&
-        "code" in cause &&
-        (cause as { code: unknown }).code === "ENOENT"
-      )) {
+      if (
+        !(
+          cause instanceof Error &&
+          "code" in cause &&
+          (cause as { code: unknown }).code === "ENOENT"
+        )
+      ) {
         throw cause;
       }
     }

@@ -13,19 +13,11 @@ function pinUrl(workbenchId: string, messageId: string) {
   return `/workbenches/${workbenchId}/messages/${messageId}/pin`;
 }
 
-async function pin(
-  app: ReturnType<typeof mountAs>,
-  workbenchId: string,
-  messageId: string,
-) {
+async function pin(app: ReturnType<typeof mountAs>, workbenchId: string, messageId: string) {
   return app.request(pinUrl(workbenchId, messageId), { method: "POST" });
 }
 
-async function unpin(
-  app: ReturnType<typeof mountAs>,
-  workbenchId: string,
-  messageId: string,
-) {
+async function unpin(app: ReturnType<typeof mountAs>, workbenchId: string, messageId: string) {
   return app.request(pinUrl(workbenchId, messageId), { method: "DELETE" });
 }
 
@@ -54,17 +46,14 @@ describe("pin routes — gating", () => {
 
     expect((await pin(app, workbench.id, "m1")).status).toBe(404);
     expect((await unpin(app, workbench.id, "m1")).status).toBe(404);
-    expect(
-      (await app.request(`/workbenches/${workbench.id}/pins`)).status,
-    ).toBe(404);
+    expect((await app.request(`/workbenches/${workbench.id}/pins`)).status).toBe(404);
   });
 
   test("a denied grant is rejected before any pin is stored", async () => {
     const store = createInMemoryPinStore();
     const deps = buildDeps({
       pins: store,
-      requireGrant: () => async (c) =>
-        c.json({ error: { code: "forbidden", message: "no" } }, 403),
+      requireGrant: () => async (c) => c.json({ error: { code: "forbidden", message: "no" } }, 403),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const workbenchId = "run_workbench1";
@@ -86,10 +75,7 @@ describe("pin routes — gating", () => {
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body } = await createWorkbench(app, { kind: "workbench" });
 
-    const otherApp = mountAs(
-      createChatRoutes(buildDeps({ pins: store })),
-      "prn_mallory",
-    );
+    const otherApp = mountAs(createChatRoutes(buildDeps({ pins: store })), "prn_mallory");
     expect((await pin(otherApp, body.id, "m1")).status).toBe(404);
   });
 
@@ -217,9 +203,7 @@ describe("pin routes — chat.pin SSE event", () => {
     const messageId = await sendAndGetMessageId(app, workbench.id);
 
     const received: ChatWorkbenchEvent[] = [];
-    workbenchSubscribers.subscribe(workbench.id, (event) =>
-      received.push(event),
-    );
+    workbenchSubscribers.subscribe(workbench.id, (event) => received.push(event));
 
     await pin(app, workbench.id, messageId);
     await unpin(app, workbench.id, messageId);

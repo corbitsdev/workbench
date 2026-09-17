@@ -19,11 +19,7 @@
 // session. See CL-8171 for the upstream ask that would let these four
 // follow `deploy` onto stock routes.
 import { type } from "arktype";
-import {
-  runBearerHeaders,
-  runBearerFetch,
-  type RunBearerClientConfig,
-} from "./run-bearer";
+import { runBearerHeaders, runBearerFetch, type RunBearerClientConfig } from "./run-bearer";
 
 export interface WorkflowAuthoringClientConfig extends RunBearerClientConfig {
   /** The hub's plain HTTP origin, the same value every other tool
@@ -100,12 +96,7 @@ export class WorkflowAuthoringRequestError extends Error {
   readonly status: number;
   readonly code: string;
   readonly currentHeadSha?: string;
-  constructor(
-    status: number,
-    code: string,
-    message: string,
-    currentHeadSha?: string,
-  ) {
+  constructor(status: number, code: string, message: string, currentHeadSha?: string) {
     super(message);
     this.name = "WorkflowAuthoringRequestError";
     this.status = status;
@@ -166,29 +157,17 @@ function endpoint(config: WorkflowAuthoringClientConfig, path: string): string {
   return `${config.hubWorkflowAuthoringUrl}/api/workflow-workflow-authoring${path}`;
 }
 
-function stockEndpoint(
-  config: WorkflowAuthoringClientConfig,
-  path: string,
-): string {
+function stockEndpoint(config: WorkflowAuthoringClientConfig, path: string): string {
   return `${config.hubWorkflowAuthoringUrl}/api/tenants/${encodeURIComponent(config.tenantId)}${path}`;
 }
 
-async function throwForStockFailure(
-  response: Response,
-  operation: string,
-): Promise<never> {
+async function throwForStockFailure(response: Response, operation: string): Promise<never> {
   const body: unknown = await response.json().catch(() => undefined);
   const parsed = StockErrorResponse(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `${operation} failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`${operation} failed: ${response.status} ${response.statusText}`);
   }
-  throw new WorkflowAuthoringRequestError(
-    response.status,
-    parsed.error.code,
-    parsed.error.message,
-  );
+  throw new WorkflowAuthoringRequestError(response.status, parsed.error.code, parsed.error.message);
 }
 
 /**
@@ -208,10 +187,7 @@ export function orderedSourceOfferingIds(
   models: readonly { readonly offerings: readonly OfferingOrdering[] }[],
 ): readonly string[] {
   const flattened = models.flatMap((m) => [...m.offerings]);
-  flattened.sort(
-    (a, b) =>
-      a.priority - b.priority || a.offeringId.localeCompare(b.offeringId),
-  );
+  flattened.sort((a, b) => a.priority - b.priority || a.offeringId.localeCompare(b.offeringId));
   return [...new Set(flattened.map((o) => o.offeringId))];
 }
 
@@ -220,16 +196,11 @@ export type OfferingOrdering = {
   readonly priority: number;
 };
 
-async function throwForFailure(
-  response: Response,
-  operation: string,
-): Promise<never> {
+async function throwForFailure(response: Response, operation: string): Promise<never> {
   const body: unknown = await response.json().catch(() => undefined);
   const parsed = ErrorResponse(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `${operation} failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`${operation} failed: ${response.status} ${response.statusText}`);
   }
   throw new WorkflowAuthoringRequestError(
     response.status,
@@ -246,9 +217,7 @@ function parseOrThrow<T>(
 ): T {
   const parsed = schema(body);
   if (parsed instanceof type.errors) {
-    throw new Error(
-      `${operation} response did not match the expected shape: ${parsed.summary}`,
-    );
+    throw new Error(`${operation} response did not match the expected shape: ${parsed.summary}`);
   }
   return parsed;
 }
@@ -267,11 +236,7 @@ export async function authorWorkflow(
     body: JSON.stringify(input),
   });
   if (!response.ok) await throwForFailure(response, "Authoring a workflow");
-  return parseOrThrow(
-    SummaryResponse,
-    await response.json(),
-    "Authoring a workflow",
-  ).data;
+  return parseOrThrow(SummaryResponse, await response.json(), "Authoring a workflow").data;
 }
 
 export async function republishWorkflow(
@@ -290,11 +255,7 @@ export async function republishWorkflow(
   if (!response.ok) {
     await throwForFailure(response, "Republishing a workflow");
   }
-  return parseOrThrow(
-    SummaryResponse,
-    await response.json(),
-    "Republishing a workflow",
-  ).data;
+  return parseOrThrow(SummaryResponse, await response.json(), "Republishing a workflow").data;
 }
 
 export async function deployWorkflow(
@@ -307,10 +268,7 @@ export async function deployWorkflow(
     headers: runBearerHeaders(config),
   });
   if (!catalogResponse.ok) {
-    await throwForStockFailure(
-      catalogResponse,
-      "Reading the workbench's inference catalog",
-    );
+    await throwForStockFailure(catalogResponse, "Reading the workbench's inference catalog");
   }
   const models = parseOrThrow(
     DiscoveredModels,
@@ -327,26 +285,23 @@ export async function deployWorkflow(
     );
   }
 
-  const response = await doFetch(
-    stockEndpoint(config, "/workflows/deployments"),
-    {
-      method: "POST",
-      headers: {
-        ...runBearerHeaders(config),
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        source: {
-          kind: "asset",
-          assetId: input.assetId,
-          package: { format: "source", commitSha: input.commitSha },
-        },
-        entry: input.entry,
-        sourceOfferingIds,
-        defaultSourceOfferingId,
-      }),
+  const response = await doFetch(stockEndpoint(config, "/workflows/deployments"), {
+    method: "POST",
+    headers: {
+      ...runBearerHeaders(config),
+      "content-type": "application/json",
     },
-  );
+    body: JSON.stringify({
+      source: {
+        kind: "asset",
+        assetId: input.assetId,
+        package: { format: "source", commitSha: input.commitSha },
+      },
+      entry: input.entry,
+      sourceOfferingIds,
+      defaultSourceOfferingId,
+    }),
+  });
   if (!response.ok) {
     await throwForStockFailure(response, "Deploying a workflow");
   }
@@ -384,11 +339,8 @@ export async function previewDeployWorkflow(
   if (!response.ok) {
     await throwForFailure(response, "Previewing a workflow deploy");
   }
-  return parseOrThrow(
-    DeployPreviewResponse,
-    await response.json(),
-    "Previewing a workflow deploy",
-  ).data;
+  return parseOrThrow(DeployPreviewResponse, await response.json(), "Previewing a workflow deploy")
+    .data;
 }
 
 export async function readWorkflowSource(
@@ -396,16 +348,11 @@ export async function readWorkflowSource(
   assetId: string,
 ): Promise<WorkflowSourceSnapshot> {
   const doFetch = runBearerFetch(config);
-  const response = await doFetch(
-    endpoint(config, `/${encodeURIComponent(assetId)}/source`),
-    { headers: runBearerHeaders(config) },
-  );
+  const response = await doFetch(endpoint(config, `/${encodeURIComponent(assetId)}/source`), {
+    headers: runBearerHeaders(config),
+  });
   if (!response.ok) {
     await throwForFailure(response, "Reading a workflow's source");
   }
-  return parseOrThrow(
-    SnapshotResponse,
-    await response.json(),
-    "Reading a workflow's source",
-  ).data;
+  return parseOrThrow(SnapshotResponse, await response.json(), "Reading a workflow's source").data;
 }

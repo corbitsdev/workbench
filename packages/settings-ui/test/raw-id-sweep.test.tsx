@@ -15,8 +15,7 @@ import { PeopleTable } from "../src/people-section";
 import { RolesTable } from "../src/roles-section";
 
 const AGENT_REF_ID = "agt_8f14e45fceea167a5a36dedd4bea2543";
-const UUID_PATTERN =
-  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 function visibleText(markup: string): string {
   return markup.replace(/<[^>]*>/g, " ");

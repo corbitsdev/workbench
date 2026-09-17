@@ -36,20 +36,14 @@ export function readProvisionerConfig(
   if (parsed instanceof type.errors) {
     throw new Error(`Invalid E2B provisioner configuration: ${parsed.summary}`);
   }
-  if (
-    !parsed.E2B_API_KEY.startsWith("e2b_") ||
-    parsed.E2B_API_KEY.length < 16
-  ) {
+  if (!parsed.E2B_API_KEY.startsWith("e2b_") || parsed.E2B_API_KEY.length < 16) {
     throw new Error("E2B_API_KEY must be a valid E2B API key");
   }
   if (!isAbsolute(dataDir)) {
     throw new Error("E2B provisioner data dir must be an absolute path");
   }
 
-  const sandboxTimeoutMs = readTimeout(
-    parsed.E2B_SANDBOX_TIMEOUT_MS,
-    15 * 60 * 1_000,
-  );
+  const sandboxTimeoutMs = readTimeout(parsed.E2B_SANDBOX_TIMEOUT_MS, 15 * 60 * 1_000);
   return {
     apiKey: parsed.E2B_API_KEY,
     template: parsed.E2B_TEMPLATE,

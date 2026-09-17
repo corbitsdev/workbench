@@ -40,8 +40,7 @@ const json = (status: number, body: unknown) =>
     headers: { "content-type": "application/json" },
   });
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 const timestamps = {
   createdAt: "2026-01-01T00:00:00.000Z",
@@ -193,9 +192,7 @@ describe("PeopleSection", () => {
       await settle();
       expect(container.textContent).toContain("Alice Anderson");
       expect(container.textContent).not.toContain("Invite someone");
-      expect(
-        calls.some((c) => c.url.includes("/access-policy/pending-invites")),
-      ).toBe(false);
+      expect(calls.some((c) => c.url.includes("/access-policy/pending-invites"))).toBe(false);
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -219,10 +216,9 @@ describe("PeopleSection", () => {
           nextCursor: null,
         },
         "/api/tenants/tnt_1/roles": rolesPage,
-        "POST /api/tenants/tnt_1/principals/prn_human_2/roles/role_owner": () =>
-          json(200, {}),
-        "DELETE /api/tenants/tnt_1/principals/prn_human_2/roles/role_member":
-          () => json(204, undefined),
+        "POST /api/tenants/tnt_1/principals/prn_human_2/roles/role_owner": () => json(200, {}),
+        "DELETE /api/tenants/tnt_1/principals/prn_human_2/roles/role_member": () =>
+          json(204, undefined),
       },
       calls,
     );
@@ -245,16 +241,14 @@ describe("PeopleSection", () => {
       expect(
         calls.some(
           (c) =>
-            c.url ===
-              "/api/tenants/tnt_1/principals/prn_human_2/roles/role_member" &&
+            c.url === "/api/tenants/tnt_1/principals/prn_human_2/roles/role_member" &&
             c.init?.method === "DELETE",
         ),
       ).toBe(true);
       expect(
         calls.some(
           (c) =>
-            c.url ===
-              "/api/tenants/tnt_1/principals/prn_human_2/roles/role_owner" &&
+            c.url === "/api/tenants/tnt_1/principals/prn_human_2/roles/role_owner" &&
             c.init?.method === "POST",
         ),
       ).toBe(true);
@@ -280,9 +274,7 @@ describe("PeopleSection", () => {
     const { container, root } = mount();
     try {
       await settle();
-      const select = container.querySelector(
-        "tbody select",
-      ) as HTMLSelectElement;
+      const select = container.querySelector("tbody select") as HTMLSelectElement;
       expect(select.value).toBe("role_owner");
 
       act(() => {
@@ -294,13 +286,10 @@ describe("PeopleSection", () => {
       expect(
         calls.some(
           (c) =>
-            c.init?.method === "DELETE" ||
-            (c.init?.method === "POST" && c.url.includes("/roles/")),
+            c.init?.method === "DELETE" || (c.init?.method === "POST" && c.url.includes("/roles/")),
         ),
       ).toBe(false);
-      expect(container.textContent).toContain(
-        "This workbench needs at least one owner",
-      );
+      expect(container.textContent).toContain("This workbench needs at least one owner");
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -321,18 +310,13 @@ describe("PeopleSection", () => {
       operation: "settings.people.updateStatus",
       principals: [humanPrincipal()],
       failingHandler: {
-        "PATCH /api/tenants/tnt_1/principals/prn_human_1": () =>
-          json(500, { error: "boom" }),
+        "PATCH /api/tenants/tnt_1/principals/prn_human_1": () => json(500, { error: "boom" }),
       },
       trigger: async (container) => {
-        const suspendButton = Array.from(
-          container.querySelectorAll("button"),
-        ).find((b) => b.textContent === "Suspend");
-        act(() =>
-          suspendButton?.dispatchEvent(
-            new MouseEvent("click", { bubbles: true }),
-          ),
+        const suspendButton = Array.from(container.querySelectorAll("button")).find(
+          (b) => b.textContent === "Suspend",
         );
+        act(() => suspendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
         await settle();
       },
     },
@@ -341,27 +325,18 @@ describe("PeopleSection", () => {
       operation: "settings.people.remove",
       principals: [humanPrincipal()],
       failingHandler: {
-        "DELETE /api/tenants/tnt_1/principals/prn_human_1": () =>
-          json(500, { error: "boom" }),
+        "DELETE /api/tenants/tnt_1/principals/prn_human_1": () => json(500, { error: "boom" }),
       },
       trigger: async (container) => {
-        const removeButton = Array.from(
-          container.querySelectorAll("button"),
-        ).find((b) => b.textContent === "Remove");
-        act(() =>
-          removeButton?.dispatchEvent(
-            new MouseEvent("click", { bubbles: true }),
-          ),
+        const removeButton = Array.from(container.querySelectorAll("button")).find(
+          (b) => b.textContent === "Remove",
         );
+        act(() => removeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
         await settle();
-        const confirmButton = Array.from(
-          container.querySelectorAll("button"),
-        ).find((b) => b.textContent === "Remove for good?");
-        act(() =>
-          confirmButton?.dispatchEvent(
-            new MouseEvent("click", { bubbles: true }),
-          ),
+        const confirmButton = Array.from(container.querySelectorAll("button")).find(
+          (b) => b.textContent === "Remove for good?",
         );
+        act(() => confirmButton?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
         await settle();
       },
     },
@@ -378,8 +353,8 @@ describe("PeopleSection", () => {
         }),
       ],
       failingHandler: {
-        "DELETE /api/tenants/tnt_1/principals/prn_human_2/roles/role_member":
-          () => json(500, { error: "boom" }),
+        "DELETE /api/tenants/tnt_1/principals/prn_human_2/roles/role_member": () =>
+          json(500, { error: "boom" }),
       },
       trigger: async (container) => {
         const selects = container.querySelectorAll("tbody select");
@@ -419,8 +394,7 @@ describe("PeopleSection", () => {
         expect(
           reportErrorCalls.some(
             (call) =>
-              call.context.operation === testCase.operation &&
-              call.context.tenantId === "tnt_1",
+              call.context.operation === testCase.operation && call.context.tenantId === "tnt_1",
           ),
         ).toBe(true);
       } finally {
@@ -466,10 +440,7 @@ describe("PeopleTable Actions column", () => {
     expect(actionsCellOpenTag(markup)).toContain("settings-actions-cell");
     expect(markup).toContain("Remove");
 
-    const css = readFileSync(
-      new URL("../src/styles.css", import.meta.url),
-      "utf8",
-    );
+    const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
     const cell = ruleFor(css, "settings-actions-cell");
     expect(cell).toContain("overflow: visible");
     expect(cell).toContain("min-width");

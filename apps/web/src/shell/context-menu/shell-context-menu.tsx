@@ -18,23 +18,15 @@ import { invalidateRoutineQueries } from "../../query-client";
 import { useOpenProfileInCanvas } from "../canvas-availability";
 import { shellContextMenuFor } from "./items";
 import type { ShellContextMenuActions } from "./items";
-import {
-  SHELL_CONTEXT_MENU_FALLBACK,
-  SHELL_CONTEXT_MENU_TARGETS,
-} from "./targets";
+import { SHELL_CONTEXT_MENU_FALLBACK, SHELL_CONTEXT_MENU_TARGETS } from "./targets";
 
-export function ShellContextMenu({
-  onSignOut,
-}: {
-  readonly onSignOut: () => void;
-}) {
+export function ShellContextMenu({ onSignOut }: { readonly onSignOut: () => void }) {
   const { selectedTenantId } = useBench();
   const navigate = useNavigate();
   const openProfile = useOpenProfileInCanvas();
   const { cycleMode } = useTheme();
   const queryClient = useQueryClient();
-  const { open, x, y, menu, triggerElement, show, hide } =
-    useContextMenuState();
+  const { open, x, y, menu, triggerElement, show, hide } = useContextMenuState();
 
   const actions: ShellContextMenuActions = {
     tenantId: selectedTenantId,
@@ -56,14 +48,7 @@ export function ShellContextMenu({
     },
     // `actions` is a fresh object every render; the values it closes over
     // are what actually determine the menu, so those are the real deps.
-    [
-      selectedTenantId,
-      navigate,
-      openProfile,
-      cycleMode,
-      onSignOut,
-      queryClient,
-    ],
+    [selectedTenantId, navigate, openProfile, cycleMode, onSignOut, queryClient],
   );
 
   useDocumentContextMenuTrigger({ resolve, onOpen: show });

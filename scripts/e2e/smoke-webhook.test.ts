@@ -27,10 +27,7 @@ import {
   buildHeartbeatWorkflow,
   serializeHeartbeatWorkflow,
 } from "../../workflows/heartbeat/src/index.ts";
-import {
-  ensureNoopCatalogOffering,
-  startNoopInferenceServer,
-} from "./noop-inference-server.ts";
+import { ensureNoopCatalogOffering, startNoopInferenceServer } from "./noop-inference-server.ts";
 import { publishCorbitsToolsRegistry } from "../../packages/tool-registry-publish/src/publish.ts";
 import { createHubAPI } from "../../packages/hub-api-client/src/index.ts";
 import {
@@ -62,9 +59,7 @@ function stringField(data: unknown, field: string, what: string): string {
     const value = (data as Record<string, unknown>)[field];
     if (typeof value === "string" && value !== "") return value;
   }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing string field "${field}": ${JSON.stringify(data)}`);
 }
 
 describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
@@ -83,9 +78,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
       startHub({
         databaseUrl: url,
         port: freePort(),
-        sessionSecret: Buffer.from(
-          crypto.getRandomValues(new Uint8Array(32)),
-        ).toString("hex"),
+        sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
         dataDir: hubDataDir,
       }),
     );
@@ -131,8 +124,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
       });
       const offeringId = await hop("noop catalog seeding", () =>
         ensureNoopCatalogOffering(
-          (method, path, body, cookies2) =>
-            api(hub.baseUrl, method, path, body, cookies2),
+          (method, path, body, cookies2) => api(hub.baseUrl, method, path, body, cookies2),
           cookies,
           tenantId,
           noopServer.baseUrl,
@@ -141,49 +133,46 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
       );
 
       const assetName = "heartbeat";
-      const { assetId, commitSha } = await hop(
-        "workflow asset publication",
-        async () => {
-          const created = await api(
-            hub.baseUrl,
-            "POST",
-            `/api/tenants/${tenantId}/assets`,
-            { kind: "workflow", name: assetName },
-            cookies,
-          );
-          expectStatus("create workflow asset", created, 201);
-          const id = stringField(created.data, "id", "create workflow asset");
+      const { assetId, commitSha } = await hop("workflow asset publication", async () => {
+        const created = await api(
+          hub.baseUrl,
+          "POST",
+          `/api/tenants/${tenantId}/assets`,
+          { kind: "workflow", name: assetName },
+          cookies,
+        );
+        expectStatus("create workflow asset", created, 201);
+        const id = stringField(created.data, "id", "create workflow asset");
 
-          const minted = await api(
-            hub.baseUrl,
-            "POST",
-            `/api/tenants/${tenantId}/git-tokens`,
-            {
-              name: "e2e-smoke-webhook-push",
-              resource: "asset:*",
-              refPattern: "**",
-              actions: ["can_read", "can_push"],
-              expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
-            },
-            cookies,
-          );
-          expectStatus("mint git token", minted, 201);
+        const minted = await api(
+          hub.baseUrl,
+          "POST",
+          `/api/tenants/${tenantId}/git-tokens`,
+          {
+            name: "e2e-smoke-webhook-push",
+            resource: "asset:*",
+            refPattern: "**",
+            actions: ["can_read", "can_push"],
+            expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+          },
+          cookies,
+        );
+        expectStatus("mint git token", minted, 201);
 
-          const definition = buildHeartbeatWorkflow({
-            triggerAddress: `heartbeat@${slug}.localhost`,
-            inferencePreferences: [{ provider: "anthropic", model: "noop" }],
-            turnTimeoutMs: 30_000,
-          });
-          const pushed = await pushWorkflowSource({
-            baseUrl: hub.baseUrl,
-            tenantId,
-            assetName,
-            tokenSecret: stringField(minted.data, "secret", "mint git token"),
-            workflowJson: serializeHeartbeatWorkflow(definition),
-          });
-          return { assetId: id, commitSha: pushed.commitSha };
-        },
-      );
+        const definition = buildHeartbeatWorkflow({
+          triggerAddress: `heartbeat@${slug}.localhost`,
+          inferencePreferences: [{ provider: "anthropic", model: "noop" }],
+          turnTimeoutMs: 30_000,
+        });
+        const pushed = await pushWorkflowSource({
+          baseUrl: hub.baseUrl,
+          tenantId,
+          assetName,
+          tokenSecret: stringField(minted.data, "secret", "mint git token"),
+          workflowJson: serializeHeartbeatWorkflow(definition),
+        });
+        return { assetId: id, commitSha: pushed.commitSha };
+      });
 
       const definitionId = await hop("workflow deploy", async () => {
         const body = workflowDeployBody({
@@ -195,9 +184,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         const deadline = Date.now() + 60_000;
         for (;;) {
           if (hub.exited()) {
-            throw new Error(
-              `hub exited before deploy; output:\n${hub.output()}`,
-            );
+            throw new Error(`hub exited before deploy; output:\n${hub.output()}`);
           }
           // CL-7071 cutover: the launched run's sidecar initialization
           // resolves its `@corbits` scope pins against the tenant's own
@@ -252,9 +239,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         );
         expectStatus("list workflow definitions", listed, 200);
         const rows =
-          typeof listed.data === "object" &&
-          listed.data !== null &&
-          "data" in listed.data
+          typeof listed.data === "object" && listed.data !== null && "data" in listed.data
             ? (listed.data as { data: unknown[] }).data
             : (listed.data as unknown[]);
         const heartbeat = (rows as { id: string; name?: string }[]).find(
@@ -268,27 +253,24 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         return heartbeat.id;
       });
 
-      const { triggerId, secret } = await hop(
-        "webhook trigger creation",
-        async () => {
-          const res = await api(
-            hub.baseUrl,
-            "POST",
-            `/api/tenants/${tenantId}/webhook-triggers`,
-            {
-              name: "Smoke webhook",
-              workflowDefinitionId: definitionId,
-              inputTemplate: "webhook smoke: {{event}}",
-            },
-            cookies,
-          );
-          expectStatus("create webhook trigger", res, 201);
-          return {
-            triggerId: stringField(res.data, "id", "create webhook trigger"),
-            secret: stringField(res.data, "secret", "create webhook trigger"),
-          };
-        },
-      );
+      const { triggerId, secret } = await hop("webhook trigger creation", async () => {
+        const res = await api(
+          hub.baseUrl,
+          "POST",
+          `/api/tenants/${tenantId}/webhook-triggers`,
+          {
+            name: "Smoke webhook",
+            workflowDefinitionId: definitionId,
+            inputTemplate: "webhook smoke: {{event}}",
+          },
+          cookies,
+        );
+        expectStatus("create webhook trigger", res, 201);
+        return {
+          triggerId: stringField(res.data, "id", "create webhook trigger"),
+          secret: stringField(res.data, "secret", "create webhook trigger"),
+        };
+      });
 
       const instanceId = await hop(
         "a correctly signed delivery is accepted and launches a run",
@@ -348,9 +330,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
             cookies,
           );
           expectStatus("get webhook trigger", triggerRes, 200);
-          const lastFiredAt = (
-            triggerRes.data as { lastFiredAt: string | null }
-          ).lastFiredAt;
+          const lastFiredAt = (triggerRes.data as { lastFiredAt: string | null }).lastFiredAt;
           if (lastFiredAt === null) {
             throw new Error(
               `webhook trigger lastFiredAt was not recorded after delivery: ${JSON.stringify(triggerRes.data)}`,
@@ -408,9 +388,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
               );
               if (rows.length > 0) break;
               if (Date.now() > deadline) {
-                throw new Error(
-                  `run ${instanceId} recorded no inference_turn within the deadline`,
-                );
+                throw new Error(`run ${instanceId} recorded no inference_turn within the deadline`);
               }
               await Bun.sleep(200);
             }
@@ -438,9 +416,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
           }
           const turnSpan = trace.spans.find((span) => span.kind === "turn");
           if (turnSpan === undefined) {
-            throw new Error(
-              `run trace had no "turn" span: ${JSON.stringify(trace)}`,
-            );
+            throw new Error(`run trace had no "turn" span: ${JSON.stringify(trace)}`);
           }
           expect(["ok", "awaiting", "failed"]).toContain(turnSpan.phase);
         },

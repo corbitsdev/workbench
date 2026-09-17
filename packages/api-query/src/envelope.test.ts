@@ -43,9 +43,7 @@ describe("describeQueryError", () => {
   });
 
   test("maps everything else to generic retry copy", () => {
-    expect(describeQueryError(new Error("boom"))).toBe(
-      "Something went wrong. Try again.",
-    );
+    expect(describeQueryError(new Error("boom"))).toBe("Something went wrong. Try again.");
     expect(describeQueryError(new ApiQueryError("boom", 500))).toBe(
       "Something went wrong. Try again.",
     );
@@ -66,27 +64,25 @@ describe("describeApiError", () => {
   });
 
   test("401 and 403 read as an access problem", () => {
-    expect(
-      describeApiError(new ApiQueryError("boom", 401), "loading this"),
-    ).toBe("You don't have access to this.");
-    expect(
-      describeApiError(new ApiQueryError("boom", 403), "loading this"),
-    ).toBe("You don't have access to this.");
-  });
-
-  test("404 reads as gone, not as a generic failure", () => {
-    expect(describeApiError(pathBearing, "loading this")).toBe(
-      "This isn't here anymore.",
+    expect(describeApiError(new ApiQueryError("boom", 401), "loading this")).toBe(
+      "You don't have access to this.",
+    );
+    expect(describeApiError(new ApiQueryError("boom", 403), "loading this")).toBe(
+      "You don't have access to this.",
     );
   });
 
+  test("404 reads as gone, not as a generic failure", () => {
+    expect(describeApiError(pathBearing, "loading this")).toBe("This isn't here anymore.");
+  });
+
   test("5xx and network failures share the same actionable copy, named around the task", () => {
-    expect(
-      describeApiError(new ApiQueryError("boom", 500), "uploading this file"),
-    ).toBe("Something went wrong uploading this file. Try again.");
-    expect(
-      describeApiError(new TypeError("Failed to fetch"), "starting that task"),
-    ).toBe("Something went wrong starting that task. Try again.");
+    expect(describeApiError(new ApiQueryError("boom", 500), "uploading this file")).toBe(
+      "Something went wrong uploading this file. Try again.",
+    );
+    expect(describeApiError(new TypeError("Failed to fetch"), "starting that task")).toBe(
+      "Something went wrong starting that task. Try again.",
+    );
   });
 
   test("an error with no status falls back to the same generic copy", () => {

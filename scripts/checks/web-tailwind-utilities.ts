@@ -6,12 +6,7 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 /** Substrings that must appear in the built CSS. Escaped selectors are
  * written the way Tailwind emits them (e.g. `sm\:px-7`). */
@@ -76,10 +71,7 @@ function findBuiltCss(distAssets: string): string[] {
   }
 }
 
-async function ensureWebBuild(
-  root: string,
-  report: CheckReport,
-): Promise<void> {
+async function ensureWebBuild(root: string, report: CheckReport): Promise<void> {
   const webDir = path.join(root, "apps/web");
   const distAssets = path.join(webDir, "dist/assets");
   const cssPaths = findBuiltCss(distAssets);
@@ -105,14 +97,11 @@ async function ensureWebBuild(
   }
 
   report.notes.push("building @workbench/web for CSS inspection");
-  const proc = Bun.spawn(
-    ["bun", "run", "--filter", "@workbench/web", "build"],
-    {
-      cwd: root,
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
+  const proc = Bun.spawn(["bun", "run", "--filter", "@workbench/web", "build"], {
+    cwd: root,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const exit = await proc.exited;
   if (exit !== 0) {
     const stderr = await new Response(proc.stderr).text();
@@ -130,16 +119,12 @@ async function main(): Promise<void> {
 
   const cssPaths = findBuiltCss(path.join(root, "apps/web/dist/assets"));
   if (cssPaths.length === 0) {
-    report.violations.push(
-      "no CSS asset under apps/web/dist/assets after build",
-    );
+    report.violations.push("no CSS asset under apps/web/dist/assets after build");
     reportAndExit("check:web-utilities", report);
   }
 
   const cssFiles = cssPaths.map((cssPath) => path.relative(root, cssPath));
-  const css = cssPaths
-    .map((cssPath) => readFileSync(cssPath, "utf8"))
-    .join("\n");
+  const css = cssPaths.map((cssPath) => readFileSync(cssPath, "utf8")).join("\n");
   for (const utility of REQUIRED_UTILITIES) {
     if (!css.includes(utility)) {
       report.violations.push(

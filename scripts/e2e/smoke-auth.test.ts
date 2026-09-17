@@ -33,9 +33,7 @@ function stringField(data: unknown, field: string, what: string): string {
     const value = (data as Record<string, unknown>)[field];
     if (typeof value === "string" && value !== "") return value;
   }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing string field "${field}": ${JSON.stringify(data)}`);
 }
 
 describe.skipIf(databaseUrl === undefined)("smoke: sign-up and session", () => {
@@ -53,9 +51,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: sign-up and session", () => {
       startHub({
         databaseUrl: url,
         port: freePort(),
-        sessionSecret: Buffer.from(
-          crypto.getRandomValues(new Uint8Array(32)),
-        ).toString("hex"),
+        sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
         dataDir,
       }),
     );
@@ -65,13 +61,10 @@ describe.skipIf(databaseUrl === undefined)("smoke: sign-up and session", () => {
     const email = `smoke-auth-${crypto.randomUUID()}@example.invalid`;
     const password = `pw-${crypto.randomUUID()}`;
 
-    await hop(
-      "anonymous call to a session-gated route is rejected",
-      async () => {
-        const res = await api(baseUrl, "GET", "/api/me/principals");
-        expectStatus("anonymous /api/me/principals", res, 401);
-      },
-    );
+    await hop("anonymous call to a session-gated route is rejected", async () => {
+      const res = await api(baseUrl, "GET", "/api/me/principals");
+      expectStatus("anonymous /api/me/principals", res, 401);
+    });
 
     const cookies = await hop("sign-up", async () => {
       const res = await api(baseUrl, "POST", "/api/auth/sign-up/email", {
@@ -87,13 +80,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: sign-up and session", () => {
     });
 
     await hop("session cookie authorizes a session-gated route", async () => {
-      const res = await api(
-        baseUrl,
-        "GET",
-        "/api/me/principals",
-        undefined,
-        cookies,
-      );
+      const res = await api(baseUrl, "GET", "/api/me/principals", undefined, cookies);
       expectStatus("authenticated /api/me/principals", res, 200);
       const body = res.data as { data: unknown[] };
       expect(Array.isArray(body.data)).toBe(true);
@@ -101,23 +88,16 @@ describe.skipIf(databaseUrl === undefined)("smoke: sign-up and session", () => {
       expect(body.data.length).toBe(0);
     });
 
-    await hop(
-      "sign-in with the same credentials also mints a session",
-      async () => {
-        const res = await api(baseUrl, "POST", "/api/auth/sign-in/email", {
-          email,
-          password,
-        });
-        expectStatus("sign-in", res, 200);
-        if (res.cookies.length === 0) {
-          throw new Error("sign-in returned no session cookie");
-        }
-        stringField(
-          (res.data as { user: unknown }).user,
-          "id",
-          "sign-in user field",
-        );
-      },
-    );
+    await hop("sign-in with the same credentials also mints a session", async () => {
+      const res = await api(baseUrl, "POST", "/api/auth/sign-in/email", {
+        email,
+        password,
+      });
+      expectStatus("sign-in", res, 200);
+      if (res.cookies.length === 0) {
+        throw new Error("sign-in returned no session cookie");
+      }
+      stringField((res.data as { user: unknown }).user, "id", "sign-in user field");
+    });
   }, 60_000);
 });

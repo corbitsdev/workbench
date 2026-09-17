@@ -8,11 +8,7 @@
 
 import { useEffect } from "react";
 
-function legacyRedirectTarget(
-  path: string,
-  oldPrefix: string,
-  newPrefix: string,
-): string {
+function legacyRedirectTarget(path: string, oldPrefix: string, newPrefix: string): string {
   if (path === oldPrefix) return newPrefix;
   if (path.startsWith(`${oldPrefix}/`)) {
     return `${newPrefix}/${path.slice(oldPrefix.length + 1)}`;
@@ -78,12 +74,5 @@ export function LegacyLibraryRedirect({
   readonly path: string;
   readonly navigate: (to: string) => void;
 }) {
-  return (
-    <LegacyRedirect
-      path={path}
-      navigate={navigate}
-      oldPrefix="/library"
-      newPrefix="/files"
-    />
-  );
+  return <LegacyRedirect path={path} navigate={navigate} oldPrefix="/library" newPrefix="/files" />;
 }

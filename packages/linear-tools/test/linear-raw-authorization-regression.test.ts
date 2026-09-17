@@ -10,10 +10,7 @@
 // package's own `tool.test.ts` fake) end to end and asserting the header
 // Linear actually expects.
 import { expect, test } from "bun:test";
-import {
-  createCredentialCapability,
-  createCredentialProviderRegistry,
-} from "@intx/harness";
+import { createCredentialCapability, createCredentialProviderRegistry } from "@intx/harness";
 import { toolConsumer } from "@intx/authz";
 import {
   createHttpRawAuthorizationCredentialProvider,
@@ -27,14 +24,10 @@ test("the real http-raw-authorization provider sends Linear's raw-key convention
   const providers = createCredentialProviderRegistry([
     createHttpRawAuthorizationCredentialProvider({
       fetch: async (_input, init) => {
-        captured.auth =
-          (init?.headers as Headers | undefined)?.get("authorization") ?? null;
-        return new Response(
-          JSON.stringify({ data: { issues: { nodes: [] } } }),
-          {
-            status: 200,
-          },
-        );
+        captured.auth = (init?.headers as Headers | undefined)?.get("authorization") ?? null;
+        return new Response(JSON.stringify({ data: { issues: { nodes: [] } } }), {
+          status: 200,
+        });
       },
     }),
   ]);

@@ -69,10 +69,9 @@ test("run persists every approved piece on real invocation (i.e. after approval 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => {
     call += 1;
-    return new Response(
-      JSON.stringify({ data: { id: `art_${call}`, version: 1 } }),
-      { status: 201 },
-    );
+    return new Response(JSON.stringify({ data: { id: `art_${call}`, version: 1 } }), {
+      status: 201,
+    });
   }) as unknown as typeof fetch;
 
   try {
@@ -119,10 +118,7 @@ test("run reports a partial failure honestly, naming how many pieces already per
   globalThis.fetch = (async () => {
     call += 1;
     if (call === 1) {
-      return new Response(
-        JSON.stringify({ data: { id: "art_1", version: 1 } }),
-        { status: 201 },
-      );
+      return new Response(JSON.stringify({ data: { id: "art_1", version: 1 } }), { status: 201 });
     }
     return new Response("nope", { status: 500 });
   }) as unknown as typeof fetch;

@@ -30,9 +30,7 @@ export const CORBITS_VOCABULARY =
  * `github_activity` as ordinary tools during the two gathering phases,
  * then finalizing exactly once.
  */
-export function buildLast30DaysResearchSystemPrompt(
-  sections: readonly string[],
-): string {
+export function buildLast30DaysResearchSystemPrompt(sections: readonly string[]): string {
   const [overview, keyFindings, sourcesConsulted, citations] = sections;
   return [
     CORBITS_VOCABULARY,
@@ -96,5 +94,4 @@ export const LAST_30_DAYS_RESEARCH_PENDING_SOURCES = [
   "Polymarket",
 ] as const;
 
-const LAST_30_DAYS_RESEARCH_PENDING_SOURCES_LIST =
-  LAST_30_DAYS_RESEARCH_PENDING_SOURCES.join(", ");
+const LAST_30_DAYS_RESEARCH_PENDING_SOURCES_LIST = LAST_30_DAYS_RESEARCH_PENDING_SOURCES.join(", ");

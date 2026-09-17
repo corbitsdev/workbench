@@ -16,7 +16,5 @@ test("native principal reads stay scoped to the requested tenant", async () => {
     status: "active",
     refId: "usr_member",
   });
-  expect(
-    await principals.getTenantPrincipal("tnt_other", "prn_member"),
-  ).toBeUndefined();
+  expect(await principals.getTenantPrincipal("tnt_other", "prn_member")).toBeUndefined();
 });

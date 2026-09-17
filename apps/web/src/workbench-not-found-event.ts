@@ -8,7 +8,5 @@ export const WORKBENCH_NOT_FOUND_EVENT = "workbench:workbench-not-found";
 
 export function reportWorkbenchNotFound(workbenchId: string): void {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(
-    new CustomEvent(WORKBENCH_NOT_FOUND_EVENT, { detail: workbenchId }),
-  );
+  window.dispatchEvent(new CustomEvent(WORKBENCH_NOT_FOUND_EVENT, { detail: workbenchId }));
 }

@@ -73,43 +73,31 @@ describe("resolveToolIdentity", () => {
 
 describe("describeToolCall", () => {
   test("a web search names what was searched for, in the right tense", () => {
-    expect(
-      describeToolCall("web_search", { query: "bench pricing" }, "past"),
-    ).toBe('Searched the web for "bench pricing"');
-    expect(
-      describeToolCall("web_search", { query: "bench pricing" }, "present"),
-    ).toBe('Searching the web for "bench pricing"');
+    expect(describeToolCall("web_search", { query: "bench pricing" }, "past")).toBe(
+      'Searched the web for "bench pricing"',
+    );
+    expect(describeToolCall("web_search", { query: "bench pricing" }, "present")).toBe(
+      'Searching the web for "bench pricing"',
+    );
   });
 
   test("a provider tool reads as a sentence naming the provider, not the identifier", () => {
-    const phrase = describeToolCall(
-      "slack__post_message",
-      { channel: "general" },
-      "past",
-    );
+    const phrase = describeToolCall("slack__post_message", { channel: "general" }, "past");
     expect(phrase).toBe("Posted a message in Slack #general");
     expect(phrase).not.toContain("__");
     expect(phrase).not.toContain("slack__post_message");
   });
 
   test("a file tool names the file, not its full path", () => {
-    expect(
-      describeToolCall(
-        "write_file",
-        { path: "/srv/app/src/report.md" },
-        "past",
-      ),
-    ).toBe("Wrote a file — report.md");
+    expect(describeToolCall("write_file", { path: "/srv/app/src/report.md" }, "past")).toBe(
+      "Wrote a file — report.md",
+    );
   });
 
   test("a url tool names the host", () => {
-    expect(
-      describeToolCall(
-        "fetch_page",
-        { url: "https://www.example.com/a/b" },
-        "past",
-      ),
-    ).toBe("Fetched a page on example.com");
+    expect(describeToolCall("fetch_page", { url: "https://www.example.com/a/b" }, "past")).toBe(
+      "Fetched a page on example.com",
+    );
   });
 
   test("an MCP dispatch call describes the tool it actually invoked", () => {
@@ -133,24 +121,16 @@ describe("describeToolCall", () => {
   });
 
   test("a colon-namespaced GitHub tool still names the provider, not the id", () => {
-    expect(describeToolCall("github:get_issue", {}, "past")).toBe(
-      "Retrieved an issue in GitHub",
-    );
-    expect(describeToolCall("github__get_issue", {}, "past")).toBe(
-      "Retrieved an issue in GitHub",
-    );
+    expect(describeToolCall("github:get_issue", {}, "past")).toBe("Retrieved an issue in GitHub");
+    expect(describeToolCall("github__get_issue", {}, "past")).toBe("Retrieved an issue in GitHub");
   });
 
   test("a bare search names the query and never the identifier", () => {
-    expect(describeToolCall("search", { q: "x" }, "past")).toBe(
-      'Searched for "x"',
-    );
+    expect(describeToolCall("search", { q: "x" }, "past")).toBe('Searched for "x"');
   });
 
   test("an unknown colon-namespaced verb title-cases the end name, not the package", () => {
-    expect(describeToolCall("acme:frobnicate_widget", {}, "past")).toBe(
-      "Frobnicate widget",
-    );
+    expect(describeToolCall("acme:frobnicate_widget", {}, "past")).toBe("Frobnicate widget");
   });
 
   test("an Interchange memory search is a layman sentence, not a qualified id", () => {
@@ -166,33 +146,21 @@ describe("describeToolCall", () => {
   });
 
   test("an Interchange memory search still running has no query to name", () => {
-    expect(
-      describeToolCall(
-        "@corbits/memory-tools/memory:memory_search",
-        {},
-        "present",
-      ),
-    ).toBe("Searching memory");
+    expect(describeToolCall("@corbits/memory-tools/memory:memory_search", {}, "present")).toBe(
+      "Searching memory",
+    );
   });
 
   test("an Interchange list-agents call pluralizes without a package path", () => {
-    expect(
-      describeToolCall(
-        "@corbits/agent-directory-tools/ad:list_agents",
-        {},
-        "past",
-      ),
-    ).toBe("Listed agents");
+    expect(describeToolCall("@corbits/agent-directory-tools/ad:list_agents", {}, "past")).toBe(
+      "Listed agents",
+    );
   });
 
   test("an Interchange ask-user call is a question, not the tool id", () => {
-    expect(
-      describeToolCall(
-        "@corbits/interaction-tools/ask-user:ask_user",
-        {},
-        "past",
-      ),
-    ).toBe("Asked a question");
+    expect(describeToolCall("@corbits/interaction-tools/ask-user:ask_user", {}, "past")).toBe(
+      "Asked a question",
+    );
   });
 
   test("a verb in the middle of the leftover name still tenses, without repeating Linear", () => {
@@ -204,25 +172,17 @@ describe("describeToolCall", () => {
     expect(phrase).toBe("Listed recent issues in Linear");
     expect(phrase).not.toBe("Linear list recent issues in Linear");
     expect(
-      describeToolCall(
-        "@corbits/linear-tools/li:linear_list_recent_issues",
-        {},
-        "present",
-      ),
+      describeToolCall("@corbits/linear-tools/li:linear_list_recent_issues", {}, "present"),
     ).toBe("Listing recent issues in Linear");
   });
 
   test("a nameless-verb tool still tenses its query clause", () => {
-    expect(
-      describeToolCall("github_activity", { query: "bench pricing" }, "past"),
-    ).toBe('Ran github activity for "bench pricing"');
-    expect(
-      describeToolCall(
-        "github_activity",
-        { query: "bench pricing" },
-        "present",
-      ),
-    ).toBe('Running github activity for "bench pricing"');
+    expect(describeToolCall("github_activity", { query: "bench pricing" }, "past")).toBe(
+      'Ran github activity for "bench pricing"',
+    );
+    expect(describeToolCall("github_activity", { query: "bench pricing" }, "present")).toBe(
+      'Running github activity for "bench pricing"',
+    );
   });
 });
 
@@ -237,9 +197,7 @@ describe("plainTextOfOutput", () => {
   });
 
   test("unwraps a result envelope's content", () => {
-    expect(plainTextOfOutput({ content: [{ type: "text", text: "hi" }] })).toBe(
-      "hi",
-    );
+    expect(plainTextOfOutput({ content: [{ type: "text", text: "hi" }] })).toBe("hi");
   });
 
   test("returns nothing for an opaque object rather than stringifying it", () => {
@@ -253,15 +211,13 @@ describe("summarizeToolOutput", () => {
   });
 
   test("a failure keeps its first line as the reason", () => {
-    expect(
-      summarizeToolOutput("failed", "Repository not found\n  at listIssues"),
-    ).toBe("Repository not found");
+    expect(summarizeToolOutput("failed", "Repository not found\n  at listIssues")).toBe(
+      "Repository not found",
+    );
   });
 
   test("a success with no prose falls back to counting the results", () => {
-    expect(summarizeToolOutput("success", [{ id: 1 }, { id: 2 }])).toBe(
-      "2 results.",
-    );
+    expect(summarizeToolOutput("success", [{ id: 1 }, { id: 2 }])).toBe("2 results.");
     expect(summarizeToolOutput("success", [])).toBe("Nothing found.");
   });
 
@@ -287,9 +243,7 @@ describe("toToolActivityRow", () => {
       "k",
     );
     expect(row.status).toBe("failed");
-    expect(row.phrase).toBe(
-      "Retrieved an issue in GitHub corbitsdev/workbench",
-    );
+    expect(row.phrase).toBe("Retrieved an issue in GitHub corbitsdev/workbench");
     expect(row.detail).toBe("Repository not found");
   });
 
@@ -325,8 +279,7 @@ describe("toToolActivityRow", () => {
       trace({
         name: "@corbits/interaction-tools/ask-user:ask_user",
         status: "success",
-        output:
-          "The question has been shown to the user. Do not repeat the question.",
+        output: "The question has been shown to the user. Do not repeat the question.",
       }),
       "k",
     );
@@ -428,31 +381,18 @@ describe("groupTimelineParts", () => {
       ],
       "m1",
     );
-    expect(groups.map((group) => group.kind)).toEqual([
-      "part",
-      "tool-activity",
-      "part",
-    ]);
+    expect(groups.map((group) => group.kind)).toEqual(["part", "tool-activity", "part"]);
     const round = groups[1];
     expect(round?.kind === "tool-activity" && round.rows.length).toBe(3);
   });
 
   test("rounds separated by prose stay separate rounds", () => {
-    const groups = groupTimelineParts(
-      [trace({}), text("mid"), trace({}), trace({})],
-      "m1",
-    );
-    expect(groups.map((group) => group.kind)).toEqual([
-      "tool-activity",
-      "part",
-      "tool-activity",
-    ]);
+    const groups = groupTimelineParts([trace({}), text("mid"), trace({}), trace({})], "m1");
+    expect(groups.map((group) => group.kind)).toEqual(["tool-activity", "part", "tool-activity"]);
   });
 
   test("a message with no tool calls is unchanged", () => {
     const groups = groupTimelineParts([text("hello")], "m1");
-    expect(groups).toEqual([
-      { kind: "part", part: text("hello"), key: "m1-0" },
-    ]);
+    expect(groups).toEqual([{ kind: "part", part: text("hello"), key: "m1-0" }]);
   });
 });

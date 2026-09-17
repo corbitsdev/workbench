@@ -37,19 +37,12 @@ import {
 } from "../workbench-path";
 import { reportWorkbenchNotFound } from "../workbench-not-found-event";
 import { recordLastWorkbenchId } from "../last-workbench";
-import {
-  ONBOARDING_PATH,
-  MISSION_CONTROL_PATH,
-  NEW_WORKBENCH_PATH,
-} from "../routes";
+import { ONBOARDING_PATH, MISSION_CONTROL_PATH, NEW_WORKBENCH_PATH } from "../routes";
 import {
   useProviderHealthBanner,
   useRequestPluginsConnect,
 } from "../shell/provider-health-context";
-import {
-  useOpenArtifactInCanvas,
-  useOpenProfileInCanvas,
-} from "../shell/canvas-availability";
+import { useOpenArtifactInCanvas, useOpenProfileInCanvas } from "../shell/canvas-availability";
 import { useRegisterComposerInsert } from "../shell/composer-insertion";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
@@ -112,10 +105,7 @@ export function ChatPage({
   // any more (that stack still backs the artifact canvas's cursor sync,
   // which has no chat stream of its own to piggyback on).
   const approvalActions = useMemo(
-    () =>
-      tenantId === null
-        ? undefined
-        : createChatApprovalActions(tenantId, queryClient),
+    () => (tenantId === null ? undefined : createChatApprovalActions(tenantId, queryClient)),
     [tenantId, queryClient],
   );
   const blockResponses = useMemo(
@@ -126,10 +116,7 @@ export function ChatPage({
     [tenantId, workbenchId],
   );
   const connectServiceActions = useMemo(
-    () =>
-      tenantId === null
-        ? undefined
-        : createChatConnectServiceActions(tenantId, path),
+    () => (tenantId === null ? undefined : createChatConnectServiceActions(tenantId, path)),
     [tenantId, path],
   );
 
@@ -213,9 +200,7 @@ export function ChatPage({
       const blobId = part.blobId;
       void fetchWorkbenchBlob(tenantId, workbenchId, blobId)
         .then((contentBase64) => {
-          openArtifactInCanvas(
-            artifactContentFromBlob(part, blobId, contentBase64),
-          );
+          openArtifactInCanvas(artifactContentFromBlob(part, blobId, contentBase64));
         })
         .catch((err) => {
           openArtifactInCanvas(
@@ -251,9 +236,7 @@ export function ChatPage({
       tenant={tenant}
       {...(currentUser !== undefined ? { currentUser } : {})}
       workbenchId={workbenchId}
-      onWorkbenchChange={(nextWorkbenchId) =>
-        navigate(workbenchPath(nextWorkbenchId))
-      }
+      onWorkbenchChange={(nextWorkbenchId) => navigate(workbenchPath(nextWorkbenchId))}
       onOpenProfile={openProfile}
       registerComposerInsert={registerComposerInsert}
       settingsOpen={settingsOpen}
@@ -261,11 +244,7 @@ export function ChatPage({
         if (workbenchId === null) return;
         navigate(
           open
-            ? workbenchSettingsPath(
-                workbenchId,
-                section ?? settingsSection,
-                entityId,
-              )
+            ? workbenchSettingsPath(workbenchId, section ?? settingsSection, entityId)
             : workbenchPath(workbenchId),
         );
       }}
@@ -277,13 +256,7 @@ export function ChatPage({
       settingsEntityId={settingsEntityId}
       onSettingsEntityIdChange={(entityId) => {
         if (workbenchId === null) return;
-        navigate(
-          workbenchSettingsPath(
-            workbenchId,
-            settingsSection,
-            entityId ?? undefined,
-          ),
-        );
+        navigate(workbenchSettingsPath(workbenchId, settingsSection, entityId ?? undefined));
       }}
       onOpenArtifact={openArtifact}
       onOpenArtifactInLibrary={openArtifactInLibrary}
@@ -292,9 +265,7 @@ export function ChatPage({
       onConnectModel={handleConnectModel}
       {...(approvalActions !== undefined ? { approvalActions } : {})}
       {...(blockResponses !== undefined ? { blockResponses } : {})}
-      {...(connectServiceActions !== undefined
-        ? { connectServiceActions }
-        : {})}
+      {...(connectServiceActions !== undefined ? { connectServiceActions } : {})}
       listMembers={listMembers}
       onWorkbenchNotFound={reportWorkbenchNotFound}
       onGoToMissionControl={() => navigate(MISSION_CONTROL_PATH)}
@@ -304,9 +275,7 @@ export function ChatPage({
       headerSlot={(chrome) => (
         <StageTopBar
           crumbs={chrome.crumbs}
-          {...(chrome.subtitle !== undefined
-            ? { subtitle: chrome.subtitle }
-            : {})}
+          {...(chrome.subtitle !== undefined ? { subtitle: chrome.subtitle } : {})}
           {...(chrome.actions !== undefined ? { actions: chrome.actions } : {})}
         />
       )}

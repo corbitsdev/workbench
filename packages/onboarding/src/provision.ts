@@ -85,9 +85,7 @@ export async function provisionPersonalTenantIfNeeded(
     defaultTenantSlug: args.defaultTenantSlug,
     tenancy: args.tenancy,
     log: args.log,
-    ...(args.displayName !== undefined
-      ? { displayName: args.displayName }
-      : {}),
+    ...(args.displayName !== undefined ? { displayName: args.displayName } : {}),
   });
   if (result.kind === "genesis") {
     return {

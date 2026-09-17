@@ -26,9 +26,7 @@ describe("ReactionStore — toggle semantics", () => {
     });
     expect(result.added).toBe(true);
 
-    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, [
-      "m1",
-    ]);
+    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, ["m1"]);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ emoji: "👍", principalId: "prn_alice" });
   });
@@ -46,9 +44,7 @@ describe("ReactionStore — toggle semantics", () => {
     const second = await store.toggleReaction(input);
     expect(second.added).toBe(false);
 
-    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, [
-      "m1",
-    ]);
+    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, ["m1"]);
     expect(rows).toHaveLength(0);
   });
 
@@ -69,9 +65,7 @@ describe("ReactionStore — toggle semantics", () => {
       principalId: "prn_bob",
     });
 
-    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, [
-      "m1",
-    ]);
+    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, ["m1"]);
     expect(rows).toHaveLength(2);
   });
 
@@ -92,11 +86,7 @@ describe("ReactionStore — toggle semantics", () => {
       principalId: "prn_alice",
     });
 
-    const tenant1Rows = await store.listReactionsForMessages(
-      "tnt_1",
-      WORKBENCH,
-      ["m1"],
-    );
+    const tenant1Rows = await store.listReactionsForMessages("tnt_1", WORKBENCH, ["m1"]);
     expect(tenant1Rows).toHaveLength(1);
     expect(tenant1Rows[0]?.tenantId).toBe("tnt_1");
   });
@@ -118,11 +108,7 @@ describe("ReactionStore — toggle semantics", () => {
       principalId: "prn_bob",
     });
 
-    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, [
-      "m1",
-      "m2",
-      "m3",
-    ]);
+    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, ["m1", "m2", "m3"]);
     expect(rows.map((row) => row.messageId).sort()).toEqual(["m1", "m2"]);
   });
 
@@ -156,9 +142,7 @@ describe("ReactionStore — toggle semantics", () => {
     ]);
 
     expect([first.added, second.added]).toEqual([true, false]);
-    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, [
-      "m_race",
-    ]);
+    const rows = await store.listReactionsForMessages(TENANT, WORKBENCH, ["m_race"]);
     expect(rows).toHaveLength(0);
   });
 });
@@ -226,11 +210,7 @@ describe("aggregateReactions / aggregateReactionsByMessage", () => {
       },
     ];
     const byMessage = aggregateReactionsByMessage(rows, "prn_bob");
-    expect(byMessage.get("m1")).toEqual([
-      { emoji: "👍", count: 1, reactedByMe: false },
-    ]);
-    expect(byMessage.get("m2")).toEqual([
-      { emoji: "🚀", count: 1, reactedByMe: false },
-    ]);
+    expect(byMessage.get("m1")).toEqual([{ emoji: "👍", count: 1, reactedByMe: false }]);
+    expect(byMessage.get("m2")).toEqual([{ emoji: "🚀", count: 1, reactedByMe: false }]);
   });
 });

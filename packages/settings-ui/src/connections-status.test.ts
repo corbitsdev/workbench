@@ -51,38 +51,22 @@ describe("connectorStatus", () => {
   });
 
   test("connected when the newest credential is active", () => {
-    const result = connectorStatus(
-      "linear",
-      [credential({ status: "active" })],
-      [provider()],
-    );
+    const result = connectorStatus("linear", [credential({ status: "active" })], [provider()]);
     expect(result.status).toBe("connected");
   });
 
   test("needs_attention when the newest credential is expired", () => {
-    const result = connectorStatus(
-      "linear",
-      [credential({ status: "expired" })],
-      [provider()],
-    );
+    const result = connectorStatus("linear", [credential({ status: "expired" })], [provider()]);
     expect(result.status).toBe("needs_attention");
   });
 
   test("needs_attention when the newest credential is in error", () => {
-    const result = connectorStatus(
-      "linear",
-      [credential({ status: "error" })],
-      [provider()],
-    );
+    const result = connectorStatus("linear", [credential({ status: "error" })], [provider()]);
     expect(result.status).toBe("needs_attention");
   });
 
   test("not_connected when the newest credential is revoked", () => {
-    const result = connectorStatus(
-      "linear",
-      [credential({ status: "revoked" })],
-      [provider()],
-    );
+    const result = connectorStatus("linear", [credential({ status: "revoked" })], [provider()]);
     expect(result.status).toBe("not_connected");
   });
 
@@ -117,11 +101,7 @@ describe("connectorStatus", () => {
   // reconnected. A caller passing the display label instead of the id
   // must never match.
   test("a connector's display name never matches its own provider row", () => {
-    const result = connectorStatus(
-      "Linear",
-      [credential({ status: "active" })],
-      [provider()],
-    );
+    const result = connectorStatus("Linear", [credential({ status: "active" })], [provider()]);
     expect(result.status).toBe("not_connected");
   });
 });

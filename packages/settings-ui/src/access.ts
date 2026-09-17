@@ -41,10 +41,7 @@ export async function probeSectionAccess(
 /** A failed probe must not clobber a prior allow/deny — only an unresolved
  *  gate becomes `error`. That keeps last-known nav and avoids flashing
  *  gated sections that a later successful deny would hide. */
-export function coalesceSectionAccess(
-  previous: SectionAccess,
-  next: SectionAccess,
-): SectionAccess {
+export function coalesceSectionAccess(previous: SectionAccess, next: SectionAccess): SectionAccess {
   if (next === "error" && (previous === "allowed" || previous === "denied")) {
     return previous;
   }

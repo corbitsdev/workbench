@@ -8,15 +8,9 @@ import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import * as errorSink from "@corbits/error-sink";
-import type {
-  GitHubClientConfig,
-  GitHubRepoSummary,
-} from "@corbits/github-tools";
+import type { GitHubClientConfig, GitHubRepoSummary } from "@corbits/github-tools";
 
-import {
-  createConnectGithubRoutes,
-  type ConnectGithubRoutesDeps,
-} from "./connect-github-routes";
+import { createConnectGithubRoutes, type ConnectGithubRoutesDeps } from "./connect-github-routes";
 
 const TENANT = {
   id: "tnt_1",
@@ -87,35 +81,20 @@ function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
     mintRepoGrant: async (tenantId, repo) => {
       grants.push({ tenantId, repo });
     },
-    createWebhookTrigger: async (
-      tenantId,
-      _principalId,
-      _definitionId,
-      repo,
-    ) => {
+    createWebhookTrigger: async (tenantId, _principalId, _definitionId, repo) => {
       triggers.push({ tenantId, repo });
       return { id: `trg_${repo.id}` };
     },
     hasWebhookTrigger: async (_tenantId, _definitionId, repo) =>
       triggers.some((t) => t.repo.id === repo.id),
     getTemplateSettings: async () => settings,
-    persistSelectedRepos: async (
-      _tenantId,
-      _workbenchId,
-      _principalId,
-      patch,
-    ) => {
+    persistSelectedRepos: async (_tenantId, _workbenchId, _principalId, patch) => {
       settings = {
         pendingConnections: patch["template/pendingConnections"],
         selectedRepos: patch["template/selectedRepos"],
       };
     },
-    onReviewingStarted: async (
-      tenantId,
-      workbenchId,
-      principalId,
-      introductions,
-    ) => {
+    onReviewingStarted: async (tenantId, workbenchId, principalId, introductions) => {
       introductionCalls.push({
         tenantId,
         workbenchId,
@@ -165,9 +144,7 @@ describe("GET /:workbenchId/github/state", () => {
   test("surfaces a consumer-language error, never the raw GitHub failure, on a listRepos throw", async () => {
     const { app } = buildApp({
       listReposFn: async () => {
-        throw new Error(
-          "GitHub request to /user/repos failed: 401 Bad credentials",
-        );
+        throw new Error("GitHub request to /user/repos failed: 401 Bad credentials");
       },
     });
     const response = await app.request("/wb_1/github/state");
@@ -189,14 +166,8 @@ describe("POST /:workbenchId/github/start-reviewing", () => {
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ startedTriggerCount: 2 });
-    expect(harness.grants.map((g) => g.repo.name)).toEqual([
-      "acme/widgets",
-      "acme/gadgets",
-    ]);
-    expect(harness.triggers.map((t) => t.repo.name)).toEqual([
-      "acme/widgets",
-      "acme/gadgets",
-    ]);
+    expect(harness.grants.map((g) => g.repo.name)).toEqual(["acme/widgets", "acme/gadgets"]);
+    expect(harness.triggers.map((t) => t.repo.name)).toEqual(["acme/widgets", "acme/gadgets"]);
     expect(harness.settingsNow()).toEqual({
       pendingConnections: [],
       selectedRepos: ["1", "2"],
@@ -220,9 +191,7 @@ describe("POST /:workbenchId/github/start-reviewing", () => {
     expect(call.introductions.length).toBe(3);
     for (const introduction of call.introductions) {
       expect(
-        ["acme/widgets", "acme/gadgets"].some((name) =>
-          introduction.text.includes(name),
-        ),
+        ["acme/widgets", "acme/gadgets"].some((name) => introduction.text.includes(name)),
       ).toBe(true);
     }
   });
@@ -293,9 +262,7 @@ describe("POST /:workbenchId/github/start-reviewing", () => {
   test("502s when GitHub cannot be read, without posting introductions", async () => {
     const harness = buildApp({
       listReposFn: async () => {
-        throw new Error(
-          "GitHub request to /user/repos failed: 401 Bad credentials",
-        );
+        throw new Error("GitHub request to /user/repos failed: 401 Bad credentials");
       },
     });
     const response = await harness.app.request("/wb_1/github/start-reviewing", {

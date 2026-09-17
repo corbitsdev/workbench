@@ -41,27 +41,20 @@ export type CreateToolGrantsForPinsDeps = {
    * shadows-wins down the ancestor chain. The hub binds
    * `@intx/db`'s `listAssetsForTenant` to its own db handle.
    */
-  listAssets: (
-    tenantId: string,
-    kind: string,
-  ) => Promise<readonly AssetWithOrigin[]>;
+  listAssets: (tenantId: string, kind: string) => Promise<readonly AssetWithOrigin[]>;
   /** The launch-path asset service — the launch caches' SHA-keyed wrapper. */
   assetService: Pick<AssetService, "listAssetBlobs" | "readAssetBlob">;
 };
 
-export function createToolGrantsForPins(
-  deps: CreateToolGrantsForPinsDeps,
-): ToolGrantsForPins {
+export function createToolGrantsForPins(deps: CreateToolGrantsForPinsDeps): ToolGrantsForPins {
   return async (tenantId, pins) => {
     const assets = await deps.listAssets(tenantId, "package-registry");
     const registry = assets.find((row) => row.name === CORBITS_TOOLS_REGISTRY);
     if (registry === undefined) return [];
 
     const source: ToolSurfaceBlobSource = {
-      listBlobs: (dir) =>
-        deps.assetService.listAssetBlobs({ assetId: registry.id, dir }),
-      readBlob: (path) =>
-        deps.assetService.readAssetBlob({ assetId: registry.id, path }),
+      listBlobs: (dir) => deps.assetService.listAssetBlobs({ assetId: registry.id, dir }),
+      readBlob: (path) => deps.assetService.readAssetBlob({ assetId: registry.id, path }),
       rootDir: "tarballs",
     };
     const manifests = await readToolSurfaceManifests(source);

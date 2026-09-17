@@ -81,20 +81,11 @@ export class RetiredWorkflowEnvelopeError extends Error {
  * an evaluation: anything else is an asset this lineage did not author
  * in its current form.
  */
-export function parseWorkflowSourceEntry(
-  entryModule: string,
-  assetId: string,
-): string {
-  if (
-    !entryModule.startsWith(ENTRY_PREFIX) ||
-    !entryModule.endsWith(ENTRY_SUFFIX)
-  ) {
+export function parseWorkflowSourceEntry(entryModule: string, assetId: string): string {
+  if (!entryModule.startsWith(ENTRY_PREFIX) || !entryModule.endsWith(ENTRY_SUFFIX)) {
     throw new RetiredWorkflowEnvelopeError(assetId);
   }
-  return entryModule.slice(
-    ENTRY_PREFIX.length,
-    entryModule.length - ENTRY_SUFFIX.length,
-  );
+  return entryModule.slice(ENTRY_PREFIX.length, entryModule.length - ENTRY_SUFFIX.length);
 }
 
 /**
@@ -125,8 +116,5 @@ export async function readWorkflowSourceDefinition(
   } catch (cause) {
     throw new RetiredWorkflowEnvelopeError(assetId, { cause });
   }
-  return parseWorkflowSourceEntry(
-    new TextDecoder().decode(entryBytes),
-    assetId,
-  );
+  return parseWorkflowSourceEntry(new TextDecoder().decode(entryBytes), assetId);
 }

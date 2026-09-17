@@ -26,8 +26,7 @@ describe("createWorkbench", () => {
   function stubFetch(respond: (path: string) => Response): RecordedCall[] {
     const calls: RecordedCall[] = [];
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-      const path =
-        typeof input === "string" ? input : new URL(String(input)).pathname;
+      const path = typeof input === "string" ? input : new URL(String(input)).pathname;
       calls.push(init === undefined ? { path } : { path, init });
       return Promise.resolve(respond(path));
     }) as typeof fetch;
@@ -71,20 +70,10 @@ describe("createWorkbench", () => {
       throw new Error(`unexpected fetch: ${path}`);
     });
 
-    await createWorkbench(
-      "tnt_1",
-      (to) => navigated.push(to),
-      newQueryClient(),
-    );
-    await createWorkbench(
-      "tnt_1",
-      (to) => navigated.push(to),
-      newQueryClient(),
-    );
+    await createWorkbench("tnt_1", (to) => navigated.push(to), newQueryClient());
+    await createWorkbench("tnt_1", (to) => navigated.push(to), newQueryClient());
 
-    const createCalls = calls.filter((call) =>
-      call.path.endsWith("/chat/workbenches"),
-    );
+    const createCalls = calls.filter((call) => call.path.endsWith("/chat/workbenches"));
     expect(createCalls).toHaveLength(2);
     expect(navigated).toEqual(["/w/chan-1", "/w/chan-2"]);
     expect(navigated[0]).not.toBe(navigated[1]);
@@ -109,9 +98,7 @@ describe("createWorkbench", () => {
       cause = error;
     }
     expect(cause).toBeInstanceOf(WorkbenchPreconditionError);
-    expect((cause as WorkbenchPreconditionError).kind).toBe(
-      "setup-agent-missing",
-    );
+    expect((cause as WorkbenchPreconditionError).kind).toBe("setup-agent-missing");
   });
 
   test("a first message renames the room off New Workbench via chat/name", async () => {

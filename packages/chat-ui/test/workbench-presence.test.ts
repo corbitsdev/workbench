@@ -36,20 +36,14 @@ describe("parsePresenceSnapshotEvent", () => {
   test("parses a well-formed roster", () => {
     expect(
       parsePresenceSnapshotEvent({
-        members: [
-          { principalId: "prn_alice", lastActiveAt: "2026-01-01T00:00:00Z" },
-        ],
+        members: [{ principalId: "prn_alice", lastActiveAt: "2026-01-01T00:00:00Z" }],
       }),
-    ).toEqual([
-      { principalId: "prn_alice", lastActiveAt: "2026-01-01T00:00:00Z" },
-    ]);
+    ).toEqual([{ principalId: "prn_alice", lastActiveAt: "2026-01-01T00:00:00Z" }]);
   });
 
   test("rejects a malformed roster rather than crashing", () => {
     expect(parsePresenceSnapshotEvent({ members: "nope" })).toBeNull();
-    expect(
-      parsePresenceSnapshotEvent({ members: [{ principalId: "x" }] }),
-    ).toBeNull();
+    expect(parsePresenceSnapshotEvent({ members: [{ principalId: "x" }] })).toBeNull();
   });
 });
 
@@ -96,15 +90,11 @@ describe("nextPresenceRoster", () => {
 
   test("any other event type leaves the roster untouched", () => {
     const current = [{ principalId: "prn_alice", lastActiveAt: "t1" }];
-    expect(
-      nextPresenceRoster(current, { eventType: "chat.typing", data: {} }),
-    ).toBe(current);
+    expect(nextPresenceRoster(current, { eventType: "chat.typing", data: {} })).toBe(current);
   });
 
   test("a malformed delta leaves the roster untouched", () => {
     const current = [{ principalId: "prn_alice", lastActiveAt: "t1" }];
-    expect(
-      nextPresenceRoster(current, { eventType: "chat.presence", data: null }),
-    ).toBe(current);
+    expect(nextPresenceRoster(current, { eventType: "chat.presence", data: null })).toBe(current);
   });
 });

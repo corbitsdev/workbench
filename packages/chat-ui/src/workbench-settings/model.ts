@@ -19,18 +19,25 @@
 import { CHAT_STRINGS } from "../strings";
 
 export type WorkbenchSettingsSectionId =
-  "general" | "members" | "agents" | "notifications" | "danger";
+  | "general"
+  | "members"
+  | "agents"
+  | "notifications"
+  | "danger";
 
 /** Every `WorkbenchSettingsSectionId`, for validating a section id read
  * off a URL — a route parser needs this list to narrow untrusted input
  * without an unchecked cast; `sectionsForWorkbenchKind` below is a
  * per-kind subset that doesn't fit that job. */
-export const WORKBENCH_SETTINGS_SECTION_IDS: readonly WorkbenchSettingsSectionId[] =
-  ["general", "members", "agents", "notifications", "danger"];
+export const WORKBENCH_SETTINGS_SECTION_IDS: readonly WorkbenchSettingsSectionId[] = [
+  "general",
+  "members",
+  "agents",
+  "notifications",
+  "danger",
+];
 
-export function isWorkbenchSettingsSectionId(
-  value: string,
-): value is WorkbenchSettingsSectionId {
+export function isWorkbenchSettingsSectionId(value: string): value is WorkbenchSettingsSectionId {
   return (WORKBENCH_SETTINGS_SECTION_IDS as readonly string[]).includes(value);
 }
 

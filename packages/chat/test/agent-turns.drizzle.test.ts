@@ -14,10 +14,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
-import {
-  AGENT_TURN_STALE_MS,
-  createDrizzleAgentTurnStore,
-} from "@corbits/agent-runtime";
+import { AGENT_TURN_STALE_MS, createDrizzleAgentTurnStore } from "@corbits/agent-runtime";
 import { applyChatMigrations } from "../src/migrations";
 import { createDrizzleRoomMessageStore } from "../src/room-messages";
 import { listWorkbenchLiveState } from "../src/workbench-reply-activity";
@@ -38,9 +35,7 @@ const WORKBENCH = "run_workbench1";
 const AGENT = "ins_echo1@acme.example";
 
 describeIfDb("createDrizzleAgentTurnStore", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchDatabase = new URL(scratchUrl).pathname.replace(/^\//, "");
 
   async function withMaintenance(
@@ -103,10 +98,7 @@ describeIfDb("createDrizzleAgentTurnStore", () => {
         requestMessageIds: ["msg_3"],
       });
 
-      expect([first.childRunId, second.childRunId]).toEqual([
-        "turn__0",
-        "turn__1",
-      ]);
+      expect([first.childRunId, second.childRunId]).toEqual(["turn__0", "turn__1"]);
       expect(otherAgent.childRunId).toBe("turn__0");
       expect(otherWorkbench.childRunId).toBe("turn__2");
       expect(first.status).toBe("running");
@@ -148,10 +140,7 @@ describeIfDb("createDrizzleAgentTurnStore", () => {
         requestMessageIds: ["msg_race"],
       };
 
-      const settled = await Promise.allSettled([
-        store.startTurn(input),
-        store.startTurn(input),
-      ]);
+      const settled = await Promise.allSettled([store.startTurn(input), store.startTurn(input)]);
       const opened = settled.flatMap((result) =>
         result.status === "fulfilled" ? [result.value] : [],
       );
@@ -166,9 +155,7 @@ describeIfDb("createDrizzleAgentTurnStore", () => {
         tenantId: TENANT,
         workbenchId: "run_race",
       });
-      expect(new Set(listed.map((turn) => turn.childRunId)).size).toBe(
-        listed.length,
-      );
+      expect(new Set(listed.map((turn) => turn.childRunId)).size).toBe(listed.length);
     } finally {
       await sql.end();
     }
@@ -231,15 +218,11 @@ describeIfDb("createDrizzleAgentTurnStore", () => {
       expect(second.status).toBe("running");
 
       expect((await store.findRunningTurn(input))?.id).toBe(second.id);
-      expect(
-        (await store.findRunningTurn({ ...input, childRunId: "turn__0" }))?.id,
-      ).toBe(first.id);
-      expect(
-        (await store.findRunningTurn({ ...input, childRunId: "turn__1" }))?.id,
-      ).toBe(second.id);
-      expect(
-        await store.findRunningTurn({ ...input, childRunId: "turn__9" }),
-      ).toBeUndefined();
+      expect((await store.findRunningTurn({ ...input, childRunId: "turn__0" }))?.id).toBe(first.id);
+      expect((await store.findRunningTurn({ ...input, childRunId: "turn__1" }))?.id).toBe(
+        second.id,
+      );
+      expect(await store.findRunningTurn({ ...input, childRunId: "turn__9" })).toBeUndefined();
     } finally {
       await sql.end();
     }

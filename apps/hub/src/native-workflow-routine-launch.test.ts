@@ -80,9 +80,7 @@ describe("triggerNativeWorkflowRoutineRun", () => {
       address: "wfr_anchor1@acme.hub.test",
     });
     expect(routeMailCalls).toHaveLength(1);
-    const [call] = routeMailCalls as [
-      { address: string; base64: string; messageId: string },
-    ];
+    const [call] = routeMailCalls as [{ address: string; base64: string; messageId: string }];
     expect(call.address).toBe("wfr_anchor1@acme.hub.test");
     expect(typeof call.base64).toBe("string");
     expect(call.base64.length).toBeGreaterThan(0);

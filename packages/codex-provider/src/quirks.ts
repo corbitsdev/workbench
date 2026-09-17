@@ -25,9 +25,7 @@ export class CodexQuirksError extends Error {
 export function parseCodexQuirks(raw: unknown): CodexQuirks {
   const validated = CodexQuirks(raw ?? {});
   if (validated instanceof type.errors) {
-    throw new CodexQuirksError(
-      `@corbits/codex-provider: invalid quirks: ${validated.summary}`,
-    );
+    throw new CodexQuirksError(`@corbits/codex-provider: invalid quirks: ${validated.summary}`);
   }
   return validated;
 }

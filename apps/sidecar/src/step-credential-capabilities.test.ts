@@ -33,8 +33,7 @@ function trackingProvider(): {
 }
 
 function grant(
-  overrides: Partial<GrantRule> &
-    Pick<GrantRule, "resource" | "action" | "effect">,
+  overrides: Partial<GrantRule> & Pick<GrantRule, "resource" | "action" | "effect">,
 ): GrantRule {
   return {
     id: "grt_test",
@@ -100,21 +99,18 @@ describe("buildCredentialCapabilities", () => {
         ],
       },
     };
-    const caps = buildCredentialCapabilities(
-      [fac("@intx/pkg-a", []), fac("@intx/pkg-b", [])],
-      {
-        materialCell: cell,
-        resolveGrants: () => [
-          grant({
-            resource: "credential:c1",
-            action: "use",
-            effect: "allow",
-            conditions: { tool: toolConsumer("@intx/pkg-a") },
-          }),
-        ],
-        providers: createCredentialProviderRegistry([track.provider]),
-      },
-    );
+    const caps = buildCredentialCapabilities([fac("@intx/pkg-a", []), fac("@intx/pkg-b", [])], {
+      materialCell: cell,
+      resolveGrants: () => [
+        grant({
+          resource: "credential:c1",
+          action: "use",
+          effect: "allow",
+          conditions: { tool: toolConsumer("@intx/pkg-a") },
+        }),
+      ],
+      providers: createCredentialProviderRegistry([track.provider]),
+    });
 
     const capA = caps.get("@intx/pkg-a");
     const capB = caps.get("@intx/pkg-b");
@@ -134,17 +130,12 @@ describe("buildCredentialCapabilities", () => {
     const track = trackingProvider();
     const cell = { current: { bindings: [], materials: [] } };
     expect(() =>
-      buildCredentialCapabilities(
-        [fac("@intx/pkg-a", [{ handle: "needed" }])],
-        {
-          materialCell: cell,
-          resolveGrants: () => [],
-          providers: createCredentialProviderRegistry([track.provider]),
-        },
-      ),
-    ).toThrow(
-      /declares credential handle\(s\) that no binding resolves: needed/,
-    );
+      buildCredentialCapabilities([fac("@intx/pkg-a", [{ handle: "needed" }])], {
+        materialCell: cell,
+        resolveGrants: () => [],
+        providers: createCredentialProviderRegistry([track.provider]),
+      }),
+    ).toThrow(/declares credential handle\(s\) that no binding resolves: needed/);
   });
 
   test("dropping a credential's material starves an already-shaped handle", async () => {
@@ -185,8 +176,7 @@ describe("buildCredentialCapabilities", () => {
 
     await capA.resolve("cred");
     const shaped = track.shapes[0];
-    if (shaped === undefined)
-      throw new Error("expected the handle to be shaped");
+    if (shaped === undefined) throw new Error("expected the handle to be shaped");
 
     // Live read works while the material is delivered.
     expect(shaped.readCurrentMaterial()).toEqual({ secret: "sk-1" });
@@ -239,8 +229,7 @@ describe("buildCredentialCapabilities", () => {
     if (capA === undefined) throw new Error("expected a capability for pkg-a");
     await capA.resolve("cred");
     const shaped = track.shapes[0];
-    if (shaped === undefined)
-      throw new Error("expected the handle to be shaped");
+    if (shaped === undefined) throw new Error("expected the handle to be shaped");
 
     // A rotation may change the secret, never the provider/origin. A live entry
     // whose origin drifted is refused rather than followed.
@@ -255,9 +244,7 @@ describe("buildCredentialCapabilities", () => {
         },
       ],
     };
-    expect(() => shaped.readCurrentMaterial()).toThrow(
-      /changed provider\/origin/,
-    );
+    expect(() => shaped.readCurrentMaterial()).toThrow(/changed provider\/origin/);
   });
 
   test("a descriptor with no backing material fails the build closed", () => {

@@ -18,12 +18,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 import {
   checkToolPackageFreshness,
@@ -43,9 +38,7 @@ const PACKAGE_ROOT = "packages";
 const TOOL_PACKAGE_REGISTRY = "packages/tool-registry-publish/src/registry.ts";
 
 export function readToolPackageNames(source: string): string[] {
-  const block = source.match(
-    /CORBITS_TOOL_PACKAGE_DIRS[^=]*=\s*\[([\s\S]*?)\]/,
-  );
+  const block = source.match(/CORBITS_TOOL_PACKAGE_DIRS[^=]*=\s*\[([\s\S]*?)\]/);
   if (block === null) return [];
   return [...(block[1] ?? "").matchAll(/\.\.\/\.\.\/([a-z0-9-]+)/g)]
     .map((match) => match[1] ?? "")
@@ -69,9 +62,7 @@ function git(root: string, args: readonly string[]): string | undefined {
  * Absent (local runs, push events, unreadable payload) means fall
  * through to merge-base with origin/main.
  */
-export function pullRequestBaseSha(
-  env: NodeJS.ProcessEnv = process.env,
-): string | undefined {
+export function pullRequestBaseSha(env: NodeJS.ProcessEnv = process.env): string | undefined {
   const eventPath = env["GITHUB_EVENT_PATH"];
   if (eventPath === undefined || eventPath === "") return undefined;
   let raw: string;
@@ -86,19 +77,11 @@ export function pullRequestBaseSha(
   } catch {
     return undefined;
   }
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    !("pull_request" in parsed)
-  ) {
+  if (typeof parsed !== "object" || parsed === null || !("pull_request" in parsed)) {
     return undefined;
   }
   const pullRequest = parsed.pull_request;
-  if (
-    typeof pullRequest !== "object" ||
-    pullRequest === null ||
-    !("base" in pullRequest)
-  ) {
+  if (typeof pullRequest !== "object" || pullRequest === null || !("base" in pullRequest)) {
     return undefined;
   }
   const base = pullRequest.base;
@@ -162,26 +145,14 @@ export function auditFreshness(changes: readonly PackageChange[]): CheckReport {
   return report;
 }
 
-function versionAtRef(
-  root: string,
-  ref: string,
-  name: string,
-): string | undefined {
-  const shown = git(root, [
-    "show",
-    `${ref}:${PACKAGE_ROOT}/${name}/package.json`,
-  ]);
+function versionAtRef(root: string, ref: string, name: string): string | undefined {
+  const shown = git(root, ["show", `${ref}:${PACKAGE_ROOT}/${name}/package.json`]);
   if (shown === undefined) return undefined;
   return (JSON.parse(shown) as { version?: string }).version;
 }
 
-async function versionAtHead(
-  root: string,
-  name: string,
-): Promise<string | undefined> {
-  const manifest = Bun.file(
-    path.join(root, PACKAGE_ROOT, name, "package.json"),
-  );
+async function versionAtHead(root: string, name: string): Promise<string | undefined> {
+  const manifest = Bun.file(path.join(root, PACKAGE_ROOT, name, "package.json"));
   if (!(await manifest.exists())) return undefined;
   return ((await manifest.json()) as { version?: string }).version;
 }
@@ -190,23 +161,15 @@ async function main(): Promise<void> {
   const root = rootFromArgs(Bun.argv.slice(2));
   const baseRef = resolveBaseRef(root);
   const registry = Bun.file(path.join(root, TOOL_PACKAGE_REGISTRY));
-  const toolPackages = (await registry.exists())
-    ? readToolPackageNames(await registry.text())
-    : [];
+  const toolPackages = (await registry.exists()) ? readToolPackageNames(await registry.text()) : [];
   const diff =
-    baseRef === undefined
-      ? undefined
-      : git(root, ["diff", "--name-only", `${baseRef}...HEAD`]);
-  const names = packagesWithChangedSource(
-    (diff ?? "").split("\n"),
-    toolPackages,
-  );
+    baseRef === undefined ? undefined : git(root, ["diff", "--name-only", `${baseRef}...HEAD`]);
+  const names = packagesWithChangedSource((diff ?? "").split("\n"), toolPackages);
   const changes: PackageChange[] = [];
   for (const name of names) {
     changes.push({
       name,
-      baseVersion:
-        baseRef === undefined ? undefined : versionAtRef(root, baseRef, name),
+      baseVersion: baseRef === undefined ? undefined : versionAtRef(root, baseRef, name),
       headVersion: await versionAtHead(root, name),
     });
   }
@@ -214,17 +177,13 @@ async function main(): Promise<void> {
   const report = auditFreshness(changes);
   try {
     await checkToolPackageFreshness({
-      packageDirs: toolPackages.map((name) =>
-        path.join(root, PACKAGE_ROOT, name),
-      ),
+      packageDirs: toolPackages.map((name) => path.join(root, PACKAGE_ROOT, name)),
     });
   } catch (error) {
     if (!(error instanceof StaleToolPackageError)) throw error;
     report.violations.push(error.message);
   }
-  report.notes.push(
-    `${toolPackages.length} tool package(s) checked against version history`,
-  );
+  report.notes.push(`${toolPackages.length} tool package(s) checked against version history`);
   reportAndExit("check:tool-package-freshness", report);
 }
 

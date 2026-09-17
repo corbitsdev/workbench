@@ -34,9 +34,7 @@ export type ThreadFeedView = {
 
 function oldestFirst(items: readonly MessageItem[]): MessageItem[] {
   return [...items].sort((a, b) =>
-    a.createdAt === b.createdAt
-      ? a.id.localeCompare(b.id)
-      : a.createdAt.localeCompare(b.createdAt),
+    a.createdAt === b.createdAt ? a.id.localeCompare(b.id) : a.createdAt.localeCompare(b.createdAt),
   );
 }
 
@@ -65,9 +63,7 @@ export function selectThreadFeed(
 ): MessageItem[] {
   if (view.openThreadId !== null) {
     const inThread = oldestFirst(
-      items.filter(
-        (item) => threadIdOf(item, view.rootThreadId) === view.openThreadId,
-      ),
+      items.filter((item) => threadIdOf(item, view.rootThreadId) === view.openThreadId),
     );
     return withParent(inThread, items, view.parentMessageId);
   }
@@ -76,9 +72,7 @@ export function selectThreadFeed(
   }
   if (view.rootThreadId === "") return oldestFirst(items);
   return oldestFirst(
-    items.filter(
-      (item) => threadIdOf(item, view.rootThreadId) === view.rootThreadId,
-    ),
+    items.filter((item) => threadIdOf(item, view.rootThreadId) === view.rootThreadId),
   );
 }
 

@@ -57,11 +57,7 @@ function InsightsPageAtPath({
   return (
     <NavigationProvider navigate={() => {}}>
       <BenchContext.Provider value={benchState}>
-        <InsightsPage
-          path={path}
-          runs={readyEmpty(runs)}
-          routines={readyEmpty([])}
-        />
+        <InsightsPage path={path} runs={readyEmpty(runs)} routines={readyEmpty([])} />
       </BenchContext.Provider>
     </NavigationProvider>
   );
@@ -72,12 +68,7 @@ function render(path: string, runs?: RunsStub) {
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root?.render(
-      <InsightsPageAtPath
-        path={path}
-        {...(runs === undefined ? {} : { runs })}
-      />,
-    );
+    root?.render(<InsightsPageAtPath path={path} {...(runs === undefined ? {} : { runs })} />);
   });
   return container;
 }
@@ -126,9 +117,7 @@ describe("InsightsPage 'Running now' strip", () => {
   // recent-runs slice. Persist has not settled (`endedAt` absent), so the
   // fire is live — not remapped to completed by the abandoned-fire window.
   test("a run started 8 days ago that is still running stays in the strip and the KPI", () => {
-    const eightDaysAgo = new Date(
-      Date.now() - 8 * 24 * 60 * 60 * 1000,
-    ).toISOString();
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
     const el = render("/insights", {
       data: [
         {

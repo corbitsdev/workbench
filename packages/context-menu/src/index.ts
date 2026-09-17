@@ -12,24 +12,12 @@
 export { resolveTarget } from "./target-resolver";
 export type { TargetDefinition } from "./target-resolver";
 
-export {
-  isBlockingOverlayOpen,
-  isInsideInteractiveInput,
-} from "./dialog-guard";
+export { isBlockingOverlayOpen, isInsideInteractiveInput } from "./dialog-guard";
 
 export { findFocusable, restoreFocus } from "./focus-restore";
 
-export {
-  contextMenuItem,
-  contextMenuSeparator,
-  isContextMenuEmpty,
-} from "./menu";
-export type {
-  ContextMenu,
-  ContextMenuEntry,
-  ContextMenuItem,
-  ContextMenuSeparator,
-} from "./menu";
+export { contextMenuItem, contextMenuSeparator, isContextMenuEmpty } from "./menu";
+export type { ContextMenu, ContextMenuEntry, ContextMenuItem, ContextMenuSeparator } from "./menu";
 
 export { useContextMenuState } from "./use-context-menu-state";
 export type { ContextMenuState } from "./use-context-menu-state";

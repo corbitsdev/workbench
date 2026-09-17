@@ -25,9 +25,7 @@ const INPUT = {
 function scannerStep(definition: WorkflowDefinition): StepPrimitive {
   const primitive = definition.steps[REDDIT_OPPORTUNITY_SCANNER_STEP_ID];
   if (primitive === undefined || primitive.kind !== "step") {
-    throw new Error(
-      `definition has no step primitive named ${REDDIT_OPPORTUNITY_SCANNER_STEP_ID}`,
-    );
+    throw new Error(`definition has no step primitive named ${REDDIT_OPPORTUNITY_SCANNER_STEP_ID}`);
   }
   return primitive;
 }
@@ -35,9 +33,7 @@ function scannerStep(definition: WorkflowDefinition): StepPrimitive {
 test("the definition has exactly one step", () => {
   const definition = buildRedditOpportunityScannerWorkflow(INPUT);
   expect(definition.stepOrder).toEqual([REDDIT_OPPORTUNITY_SCANNER_STEP_ID]);
-  expect(Object.keys(definition.steps)).toEqual([
-    REDDIT_OPPORTUNITY_SCANNER_STEP_ID,
-  ]);
+  expect(Object.keys(definition.steps)).toEqual([REDDIT_OPPORTUNITY_SCANNER_STEP_ID]);
 });
 
 test("the step carries an explicit per-turn timeout", () => {
@@ -48,9 +44,7 @@ test("the step carries an explicit per-turn timeout", () => {
 test("the workflow is triggered by mail to the given deployment address", () => {
   const definition = buildRedditOpportunityScannerWorkflow(INPUT);
   expect(definition.id).toBe(REDDIT_OPPORTUNITY_SCANNER_WORKFLOW_ID);
-  expect(definition.triggers).toEqual([
-    { type: "mail", to: INPUT.triggerAddress },
-  ]);
+  expect(definition.triggers).toEqual([{ type: "mail", to: INPUT.triggerAddress }]);
 });
 
 test("the agent carries the fixed prompt, the preferences, and inlines no tools", () => {
@@ -69,19 +63,13 @@ test("the system prompt names the exact approval-gated finalize tool", () => {
 });
 
 test("the system prompt names the real Reddit and scrape tools by their exact names", () => {
-  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toContain(
-    "firecrawl_scrape",
-  );
+  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toContain("firecrawl_scrape");
   expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toContain("reddit_search");
-  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toContain(
-    "reddit_subreddit_search",
-  );
+  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toContain("reddit_subreddit_search");
 });
 
 test("the system prompt commits to an honest no-scrape failure, not fabricated site content", () => {
-  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toMatch(
-    /never fabricate what the site sells/i,
-  );
+  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toMatch(/never fabricate what the site sells/i);
 });
 
 test("the system prompt requires the search plan to be reviewed before any search runs", () => {
@@ -95,9 +83,7 @@ test("the system prompt names the honest no-data teaching-artifact tool and its 
     REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME,
   );
   expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toContain("scrapecreators");
-  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toMatch(
-    /needs no approval/i,
-  );
+  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toMatch(/needs no approval/i);
 });
 
 test("the system prompt collapses opportunity selection into one approval, not a second gate", () => {
@@ -108,30 +94,26 @@ test("the system prompt collapses opportunity selection into one approval, not a
 
 test("the system prompt commits to a calm terminal reply on denial, not an error", () => {
   expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toMatch(/not approved/i);
-  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toMatch(
-    /never present a denial as an error/i,
-  );
+  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toMatch(/never present a denial as an error/i);
 });
 
 test("the definition survives the workflow-asset JSON round-trip", () => {
   const definition = buildRedditOpportunityScannerWorkflow(INPUT);
-  const revived: unknown = JSON.parse(
-    serializeRedditOpportunityScannerWorkflow(definition),
-  );
+  const revived: unknown = JSON.parse(serializeRedditOpportunityScannerWorkflow(definition));
   expect(revived).toEqual(definition);
 });
 
 test("an empty trigger address is rejected", () => {
-  expect(() =>
-    buildRedditOpportunityScannerWorkflow({ ...INPUT, triggerAddress: "" }),
-  ).toThrow(/triggerAddress/);
+  expect(() => buildRedditOpportunityScannerWorkflow({ ...INPUT, triggerAddress: "" })).toThrow(
+    /triggerAddress/,
+  );
 });
 
 test("a non-positive or fractional turn timeout is rejected", () => {
-  expect(() =>
-    buildRedditOpportunityScannerWorkflow({ ...INPUT, turnTimeoutMs: 0 }),
-  ).toThrow(/turnTimeoutMs/);
-  expect(() =>
-    buildRedditOpportunityScannerWorkflow({ ...INPUT, turnTimeoutMs: 0.5 }),
-  ).toThrow(/turnTimeoutMs/);
+  expect(() => buildRedditOpportunityScannerWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(
+    /turnTimeoutMs/,
+  );
+  expect(() => buildRedditOpportunityScannerWorkflow({ ...INPUT, turnTimeoutMs: 0.5 })).toThrow(
+    /turnTimeoutMs/,
+  );
 });

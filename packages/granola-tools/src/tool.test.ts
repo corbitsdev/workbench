@@ -2,11 +2,7 @@ import { expect, test } from "bun:test";
 import type { ToolCall } from "@intx/types/runtime";
 import type { CredentialCapability, MediatedCredential } from "@intx/types";
 
-import {
-  GRANOLA_GET_NOTE_TOOL,
-  GRANOLA_LIST_RECENT_NOTES_TOOL,
-  granolaTools,
-} from "./tool";
+import { GRANOLA_GET_NOTE_TOOL, GRANOLA_LIST_RECENT_NOTES_TOOL, granolaTools } from "./tool";
 import type { GranolaEnv } from "./tool";
 
 const CALL: ToolCall = {
@@ -32,9 +28,7 @@ function fakeCredentials(secret: string | undefined): CredentialCapability {
   return {
     resolve(handle: string): Promise<MediatedCredential> {
       if (secret === undefined) {
-        return Promise.reject(
-          new Error(`no credential is bound to handle "${handle}"`),
-        );
+        return Promise.reject(new Error(`no credential is bound to handle "${handle}"`));
       }
       return Promise.resolve({
         kind: "http",
@@ -78,9 +72,7 @@ test("degrades the same way when the step carries no credentials capability at a
 test("returns the notes as JSON content on a successful call", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
-    expect((init?.headers as Headers | undefined)?.get("authorization")).toBe(
-      "Bearer key",
-    );
+    expect((init?.headers as Headers | undefined)?.get("authorization")).toBe("Bearer key");
     return new Response(
       JSON.stringify({
         notes: [
@@ -114,8 +106,7 @@ test("returns the notes as JSON content on a successful call", async () => {
 
 test("degrades to an error result (never throws) when the underlying call fails", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
   try {
     const bundle = granolaTools(fakeEnv(fakeCredentials("key")));
     const result = await bundle.run(CALL, new AbortController().signal);
@@ -167,10 +158,7 @@ test("granola_get_note returns the note as JSON content on a successful call", a
     )) as unknown as typeof fetch;
   try {
     const bundle = granolaTools(fakeEnv(fakeCredentials("key")));
-    const result = await bundle.run(
-      GET_NOTE_CALL,
-      new AbortController().signal,
-    );
+    const result = await bundle.run(GET_NOTE_CALL, new AbortController().signal);
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content as string) as {
       note: { id: string; transcript: unknown[] };
@@ -184,14 +172,10 @@ test("granola_get_note returns the note as JSON content on a successful call", a
 
 test("granola_get_note degrades to an error result (never throws) when the underlying call fails", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
   try {
     const bundle = granolaTools(fakeEnv(fakeCredentials("key")));
-    const result = await bundle.run(
-      GET_NOTE_CALL,
-      new AbortController().signal,
-    );
+    const result = await bundle.run(GET_NOTE_CALL, new AbortController().signal);
     expect(result.isError).toBe(true);
   } finally {
     globalThis.fetch = originalFetch;

@@ -15,12 +15,7 @@
 //   - the same binding fails closed (`unresolved`) when no credential
 //     exists for the provider, rather than delivering nothing silently.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import {
-  buildCredentialDelivery,
-  createDB,
-  runMigrations,
-  dropSchema,
-} from "@intx/db";
+import { buildCredentialDelivery, createDB, runMigrations, dropSchema } from "@intx/db";
 import { schema } from "@intx/db";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import { credentialAad } from "@intx/types";
@@ -45,9 +40,7 @@ const LINEAR_BINDING: CredentialBinding = {
 };
 
 describeIfDb("buildCredentialDelivery: the linear handle binding", () => {
-  const target = dbTargetFromUrl(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const target = dbTargetFromUrl(databaseUrl ?? "postgres://localhost:5432/unused");
 
   beforeAll(async () => {
     await runMigrations(target, { schema: SCHEMA });

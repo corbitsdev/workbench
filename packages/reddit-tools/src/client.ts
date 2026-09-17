@@ -118,8 +118,7 @@ async function fetchPosts(
   });
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    const detail =
-      body.length > 0 ? `: ${body.slice(0, MAX_ERROR_BODY_LENGTH)}` : "";
+    const detail = body.length > 0 ? `: ${body.slice(0, MAX_ERROR_BODY_LENGTH)}` : "";
     throw new Error(
       `ScrapeCreators Reddit request failed: ${response.status} ${response.statusText}${detail}`,
     );

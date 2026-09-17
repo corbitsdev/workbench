@@ -32,10 +32,7 @@ test("extractPins reads a multi-line, trailing-comma pin literal", () => {
     '  version: "0.0.1",',
     "} as const;",
   ].join("\n");
-  const pins = extractPins(
-    "packages/agent-directory/src/agent-workflow.ts",
-    contents,
-  );
+  const pins = extractPins("packages/agent-directory/src/agent-workflow.ts", contents);
   expect(pins).toEqual([
     {
       relPath: "packages/agent-directory/src/agent-workflow.ts",

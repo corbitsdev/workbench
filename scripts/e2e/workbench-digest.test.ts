@@ -20,10 +20,7 @@ import {
   buildWorkbenchDigestWorkflow,
   serializeWorkbenchDigestWorkflow,
 } from "../../workflows/workbench-digest/src/index.ts";
-import {
-  ensureNoopCatalogOffering,
-  startNoopInferenceServer,
-} from "./noop-inference-server.ts";
+import { ensureNoopCatalogOffering, startNoopInferenceServer } from "./noop-inference-server.ts";
 import {
   api,
   createCleanupHarness,
@@ -53,9 +50,7 @@ function stringField(data: unknown, field: string, what: string): string {
     const value = (data as Record<string, unknown>)[field];
     if (typeof value === "string" && value !== "") return value;
   }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing string field "${field}": ${JSON.stringify(data)}`);
 }
 
 function runIds(data: unknown): string[] {
@@ -105,9 +100,7 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
       const handle = await startHub({
         databaseUrl: url,
         port: freePort(),
-        sessionSecret: Buffer.from(
-          crypto.getRandomValues(new Uint8Array(32)),
-        ).toString("hex"),
+        sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
         dataDir: await tempDir("e2e-workbench-digest-hub-data-"),
       });
       track(handle);
@@ -141,48 +134,45 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
     });
 
     const assetName = "workbench-digest";
-    const { assetId, commitSha } = await hop(
-      "workflow asset publication",
-      async () => {
-        const created = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/assets`,
-          { kind: "workflow", name: assetName },
-          user.cookies,
-        );
-        expectStatus("create workflow asset", created, 201);
-        const id = stringField(created.data, "id", "create workflow asset");
+    const { assetId, commitSha } = await hop("workflow asset publication", async () => {
+      const created = await api(
+        hub.baseUrl,
+        "POST",
+        `/api/tenants/${tenantId}/assets`,
+        { kind: "workflow", name: assetName },
+        user.cookies,
+      );
+      expectStatus("create workflow asset", created, 201);
+      const id = stringField(created.data, "id", "create workflow asset");
 
-        const minted = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/git-tokens`,
-          {
-            name: "e2e-workbench-digest-push",
-            resource: "asset:*",
-            refPattern: "**",
-            actions: ["can_read", "can_push"],
-            expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
-          },
-          user.cookies,
-        );
-        expectStatus("mint git token", minted, 201);
+      const minted = await api(
+        hub.baseUrl,
+        "POST",
+        `/api/tenants/${tenantId}/git-tokens`,
+        {
+          name: "e2e-workbench-digest-push",
+          resource: "asset:*",
+          refPattern: "**",
+          actions: ["can_read", "can_push"],
+          expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+        },
+        user.cookies,
+      );
+      expectStatus("mint git token", minted, 201);
 
-        const definition = buildWorkbenchDigestWorkflow({
-          inferencePreferences: [{ provider: "anthropic", model: "noop" }],
-          turnTimeoutMs: DIGEST_TURN_TIMEOUT_MS,
-        });
-        const pushed = await pushWorkflowSource({
-          baseUrl: hub.baseUrl,
-          tenantId,
-          assetName,
-          tokenSecret: stringField(minted.data, "secret", "mint git token"),
-          workflowJson: serializeWorkbenchDigestWorkflow(definition),
-        });
-        return { assetId: id, commitSha: pushed.commitSha };
-      },
-    );
+      const definition = buildWorkbenchDigestWorkflow({
+        inferencePreferences: [{ provider: "anthropic", model: "noop" }],
+        turnTimeoutMs: DIGEST_TURN_TIMEOUT_MS,
+      });
+      const pushed = await pushWorkflowSource({
+        baseUrl: hub.baseUrl,
+        tenantId,
+        assetName,
+        tokenSecret: stringField(minted.data, "secret", "mint git token"),
+        workflowJson: serializeWorkbenchDigestWorkflow(definition),
+      });
+      return { assetId: id, commitSha: pushed.commitSha };
+    });
 
     // The deploy's source is this suite's own, really-reachable noop
     // inference server — not a placeholder like the walking skeleton's
@@ -200,8 +190,7 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
     });
     const offeringId = await hop("noop catalog seeding", () =>
       ensureNoopCatalogOffering(
-        (method, path, body, cookies) =>
-          api(hub.baseUrl, method, path, body, cookies),
+        (method, path, body, cookies) => api(hub.baseUrl, method, path, body, cookies),
         user.cookies,
         tenantId,
         noopServer.baseUrl,
@@ -280,9 +269,7 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
           const started = runIds(listed.data).find((id) => !before.has(id));
           if (started !== undefined) return started;
           if (Date.now() > deadline) {
-            throw new Error(
-              "workbench-digest trigger was accepted but no run started within 30s",
-            );
+            throw new Error("workbench-digest trigger was accepted but no run started within 30s");
           }
           await Bun.sleep(200);
         }

@@ -31,9 +31,7 @@ export const BASELINE_AGENT_TOOL_PINS = [
 
 /** The baseline pins this tenant can actually resolve — a package the
  * registry does not carry is dropped, never pinned to fail at launch. */
-export function baselineAgentToolPins(
-  inventory: CapabilityInventory,
-): string[] {
+export function baselineAgentToolPins(inventory: CapabilityInventory): string[] {
   const available = new Set(inventory.toolPackages.map((entry) => entry.name));
   return BASELINE_AGENT_TOOL_PINS.filter((name) => available.has(name));
 }
@@ -53,9 +51,7 @@ export type CapabilityInventoryProvider = {
 
 export class CapabilityOutOfInventoryError extends Error {
   constructor(field: string, reference: string) {
-    super(
-      `"${reference}" for "${field}" was never offered in this workbench's inventory`,
-    );
+    super(`"${reference}" for "${field}" was never offered in this workbench's inventory`);
     this.name = "CapabilityOutOfInventoryError";
   }
 }
@@ -79,18 +75,14 @@ export function assertCapabilityInInventory(
 ): void {
   switch (addition.kind) {
     case "toolPackage": {
-      const known = inventory.toolPackages.some(
-        (entry) => entry.name === addition.name,
-      );
+      const known = inventory.toolPackages.some((entry) => entry.name === addition.name);
       if (!known) {
         throw new CapabilityOutOfInventoryError("toolPackage", addition.name);
       }
       return;
     }
     case "skill": {
-      const known = inventory.skills.some(
-        (entry) => entry.name === addition.name,
-      );
+      const known = inventory.skills.some((entry) => entry.name === addition.name);
       if (!known) {
         throw new CapabilityOutOfInventoryError("skill", addition.name);
       }
@@ -101,10 +93,7 @@ export function assertCapabilityInInventory(
         (entry) => entry.canonicalName === addition.canonicalName,
       );
       if (!known) {
-        throw new CapabilityOutOfInventoryError(
-          "model",
-          addition.canonicalName,
-        );
+        throw new CapabilityOutOfInventoryError("model", addition.canonicalName);
       }
       return;
     }

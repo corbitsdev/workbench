@@ -44,15 +44,9 @@ import { beforeAll, describe, expect, test } from "bun:test";
 
 import { seedCatalog } from "../../packages/connections/src/seed-catalog.ts";
 import { createGitWorkflowPusher } from "../../packages/connections/src/workflow-push.ts";
-import {
-  createHubAPI,
-  type ApiCall,
-} from "../../packages/hub-api-client/src/index.ts";
+import { createHubAPI, type ApiCall } from "../../packages/hub-api-client/src/index.ts";
 import type { Part } from "../../packages/chat/src/index.ts";
-import {
-  DEFAULT_WORKFLOWS,
-  seedTenant,
-} from "../../packages/onboarding/src/tenant-seed.ts";
+import { DEFAULT_WORKFLOWS, seedTenant } from "../../packages/onboarding/src/tenant-seed.ts";
 import { modelSourceFor } from "../../packages/onboarding/src/complete-credential.ts";
 import { publishCorbitsToolsRegistry } from "../../packages/tool-registry-publish/src/publish.ts";
 
@@ -81,25 +75,17 @@ function stringField(data: unknown, field: string, what: string): string {
     const value = (data as Record<string, unknown>)[field];
     if (typeof value === "string" && value !== "") return value;
   }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing string field "${field}": ${JSON.stringify(data)}`);
 }
 
-function objectField(
-  data: unknown,
-  field: string,
-  what: string,
-): Record<string, unknown> {
+function objectField(data: unknown, field: string, what: string): Record<string, unknown> {
   if (typeof data === "object" && data !== null && field in data) {
     const value = (data as Record<string, unknown>)[field];
     if (typeof value === "object" && value !== null) {
       return value as Record<string, unknown>;
     }
   }
-  throw new Error(
-    `${what}: missing object field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing object field "${field}": ${JSON.stringify(data)}`);
 }
 
 function arrayField(data: unknown, field: string, what: string): unknown[] {
@@ -107,9 +93,7 @@ function arrayField(data: unknown, field: string, what: string): unknown[] {
     const value = (data as Record<string, unknown>)[field];
     if (Array.isArray(value)) return value;
   }
-  throw new Error(
-    `${what}: missing array field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing array field "${field}": ${JSON.stringify(data)}`);
 }
 
 const { tempDir, track } = createCleanupHarness();
@@ -177,12 +161,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   // fixture rather than sharing the `beforeAll` tenant.
   async function setupTenant(): Promise<TenantFixture> {
     const slug = `chate2e${crypto.randomUUID().slice(0, 8)}`;
-    const created = await api(
-      "POST",
-      "/api/tenants",
-      { name: "Chat E2E", slug },
-      user1.cookies,
-    );
+    const created = await api("POST", "/api/tenants", { name: "Chat E2E", slug }, user1.cookies);
     expectStatus("create tenant", created, 201);
     const fixtureTenantId = stringField(created.data, "id", "create tenant");
     const fixtureDomain = stringField(created.data, "domain", "create tenant");
@@ -209,9 +188,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       user1.cookies,
     );
     expectStatus("activate user2", activated, 200);
-    expect(stringField(activated.data, "status", "activate user2")).toBe(
-      "active",
-    );
+    expect(stringField(activated.data, "status", "activate user2")).toBe("active");
 
     async function plantGrant(
       principalId: string,
@@ -259,12 +236,9 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       user1.cookies,
     );
     expectStatus("list tenant principals", principalsListed, 200);
-    const owner = arrayField(
-      principalsListed.data,
-      "data",
-      "list tenant principals",
-    ).find((row) => (row as { refId?: unknown }).refId === user1.userId) as
-      { id: string } | undefined;
+    const owner = arrayField(principalsListed.data, "data", "list tenant principals").find(
+      (row) => (row as { refId?: unknown }).refId === user1.userId,
+    ) as { id: string } | undefined;
     if (owner === undefined) {
       throw new Error(
         `no owner principal for user1 in tenant ${fixtureTenantId}: ` +
@@ -295,18 +269,15 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
         user1.cookies,
       );
       if (res.status === 200) {
-        const items = arrayField(
-          res.data,
-          "items",
-          "list invitable definitions",
-        ) as { id: string; name: string }[];
+        const items = arrayField(res.data, "items", "list invitable definitions") as {
+          id: string;
+          name: string;
+        }[];
         const assistant = items.find((item) => item.name === "assistant");
         if (assistant !== undefined) return assistant.id;
       }
       if (Date.now() > deadline) {
-        throw new Error(
-          `"assistant" never appeared as invitable: ${JSON.stringify(res.data)}`,
-        );
+        throw new Error(`"assistant" never appeared as invitable: ${JSON.stringify(res.data)}`);
       }
       await Bun.sleep(1000);
     }
@@ -323,9 +294,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     const deadline = Date.now() + 120_000;
     for (;;) {
       if (hub.exited()) {
-        throw new Error(
-          `hub exited before assistant deploy; output:\n${hub.output()}`,
-        );
+        throw new Error(`hub exited before assistant deploy; output:\n${hub.output()}`);
       }
       try {
         // CL-7071 cutover: seeding no longer packs, and a launched
@@ -357,12 +326,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
             principalId: fixture.ownerPrincipalId,
             domain: fixture.domain,
           },
-          model: await modelSourceFor(
-            api,
-            user1.cookies,
-            fixture.tenantId,
-            "anthropic",
-          ),
+          model: await modelSourceFor(api, user1.cookies, fixture.tenantId, "anthropic"),
           pushWorkflow,
           log: () => undefined,
           workflows: DEFAULT_WORKFLOWS,
@@ -391,9 +355,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     hub = await startHub({
       databaseUrl: url,
       port: freePort(),
-      sessionSecret: Buffer.from(
-        crypto.getRandomValues(new Uint8Array(32)),
-      ).toString("hex"),
+      sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
       dataDir: await tempDir("e2e-chat-hub-data-"),
     });
     track(hub);
@@ -431,16 +393,9 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     let res: ApiResult;
     for (;;) {
       if (hub.exited()) {
-        throw new Error(
-          `hub exited before workbench creation; output:\n${hub.output()}`,
-        );
+        throw new Error(`hub exited before workbench creation; output:\n${hub.output()}`);
       }
-      res = await api(
-        "POST",
-        `/api/tenants/${forTenant}/chat/workbenches`,
-        body,
-        user1.cookies,
-      );
+      res = await api("POST", `/api/tenants/${forTenant}/chat/workbenches`, body, user1.cookies);
       if (res.status !== 500) break;
       if (Date.now() > deadline) {
         throw new Error(
@@ -481,11 +436,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       cookies,
     );
     expectStatus("list messages", res, 200);
-    return arrayField(
-      res.data,
-      "items",
-      "list messages",
-    ) as unknown as ListedMessage[];
+    return arrayField(res.data, "items", "list messages") as unknown as ListedMessage[];
   }
 
   type RunEvent = { seq: number; type: string };
@@ -512,11 +463,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       cookies,
     );
     expectStatus(`list run events for ${runId}`, res, 200);
-    return arrayField(
-      res.data,
-      "events",
-      `run events for ${runId}`,
-    ) as unknown as RunEvent[];
+    return arrayField(res.data, "events", `run events for ${runId}`) as unknown as RunEvent[];
   }
 
   function highestSeq(events: readonly RunEvent[]): number {
@@ -564,8 +511,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     const items = await listMessages(user1.cookies, workbenchId);
     const texts = items.map((item) => ({
       text: (
-        item.parts.find((p) => p.kind === "text") as
-          { kind: "text"; text: string } | undefined
+        item.parts.find((p) => p.kind === "text") as { kind: "text"; text: string } | undefined
       )?.text,
       senderAddress: item.sender.address,
     }));
@@ -573,9 +519,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     const foundUser1 = texts.find((t) => t.text === firstFromUser1);
     const foundUser2 = texts.find((t) => t.text === firstFromUser2);
     if (foundUser1 === undefined || foundUser2 === undefined) {
-      throw new Error(
-        `converged timeline missing a message: ${JSON.stringify(items)}`,
-      );
+      throw new Error(`converged timeline missing a message: ${JSON.stringify(items)}`);
     }
     // Each message carries a sender identity distinct per author — the
     // address is the platform's own per-principal mail identity (not
@@ -630,9 +574,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       user1.cookies,
     );
     expectStatus("get user1 read-state", gotUser1, 200);
-    expect(stringField(gotUser1.data, "lastSeenId", "user1 read-state")).toBe(
-      seenId,
-    );
+    expect(stringField(gotUser1.data, "lastSeenId", "user1 read-state")).toBe(seenId);
 
     const gotUser2 = await api(
       "GET",
@@ -641,9 +583,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       user2.cookies,
     );
     expectStatus("get user2 read-state", gotUser2, 200);
-    expect((gotUser2.data as { lastSeenId: string | null }).lastSeenId).toBe(
-      null,
-    );
+    expect((gotUser2.data as { lastSeenId: string | null }).lastSeenId).toBe(null);
   });
 
   // Stock Interchange cutover: one workbench per conversation tenant,
@@ -682,11 +622,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       mention.tenantId,
     );
     expectStatus("create mention fan-out room", mentionRoom, 201);
-    const mentionRoomId = stringField(
-      mentionRoom.data,
-      "id",
-      "create mention fan-out room",
-    );
+    const mentionRoomId = stringField(mentionRoom.data, "id", "create mention fan-out room");
 
     const invited = await api(
       "POST",
@@ -751,11 +687,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       undefined,
       user1.cookies,
     );
-    expectStatus(
-      "get settings after second mention",
-      settingsAfterSecondMention,
-      200,
-    );
+    expectStatus("get settings after second mention", settingsAfterSecondMention, 200);
     const participantsAfterSecondMention = arrayField(
       settingsAfterSecondMention.data,
       "participants",
@@ -778,14 +710,8 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       user1.cookies,
     );
     expectStatus("invite assistant", invited, 201);
-    const invitedAddress = stringField(
-      invited.data,
-      "address",
-      "invite assistant",
-    );
-    expect(stringField(invited.data, "definitionId", "invite assistant")).toBe(
-      assistantId,
-    );
+    const invitedAddress = stringField(invited.data, "address", "invite assistant");
+    expect(stringField(invited.data, "definitionId", "invite assistant")).toBe(assistantId);
     const invitedLocalPart = invitedAddress.split("@")[0];
     if (invitedLocalPart === undefined || invitedLocalPart === "") {
       throw new Error(`malformed invited agent address: ${invitedAddress}`);
@@ -845,11 +771,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     const mentionText = `hey @${invitedParticipant.handle} welcome ${crypto.randomUUID()}`;
     await postMessage(user1.cookies, workbenchId, mentionText);
 
-    const fresh = await waitForRunProgress(
-      user1.cookies,
-      invitedLocalPart,
-      before,
-    );
+    const fresh = await waitForRunProgress(user1.cookies, invitedLocalPart, before);
     expect(fresh.length).toBeGreaterThan(0);
   }, 90_000);
 
@@ -875,16 +797,13 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     expect(stringField(chatCreated.data, "kind", "create chat")).toBe("chat");
     expect(stringField(chatCreated.data, "title", "create chat")).toBe("Myra");
     const chatId = stringField(chatCreated.data, "id", "create chat");
-    const chatParticipants = arrayField(
-      chatCreated.data,
-      "participants",
-      "create chat",
-    ) as { address: string; handle: string }[];
+    const chatParticipants = arrayField(chatCreated.data, "participants", "create chat") as {
+      address: string;
+      handle: string;
+    }[];
     const chatAgent = chatParticipants.find((p) => p.handle === "myra");
     if (chatAgent === undefined) {
-      throw new Error(
-        `chat has no "myra" agent participant: ${JSON.stringify(chatParticipants)}`,
-      );
+      throw new Error(`chat has no "myra" agent participant: ${JSON.stringify(chatParticipants)}`);
     }
     const chatAgentLocalPart = chatAgent.address.split("@")[0];
     if (chatAgentLocalPart === undefined || chatAgentLocalPart === "") {
@@ -896,9 +815,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     // placeholder key in CI, so its reply attempt is expected to error
     // and is never asserted here — only that the fan-out mail reached
     // it.
-    const before = highestSeq(
-      await runEvents(user1.cookies, chatAgentLocalPart, direct.tenantId),
-    );
+    const before = highestSeq(await runEvents(user1.cookies, chatAgentLocalPart, direct.tenantId));
     const unmentionedText = `no mention needed ${crypto.randomUUID()}`;
     await postMessage(user1.cookies, chatId, unmentionedText, direct.tenantId);
 
@@ -951,11 +868,9 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       user1.cookies,
     );
     expectStatus("list kind=chat", chatKindListed, 200);
-    const chatKindIds = arrayField(
-      chatKindListed.data,
-      "items",
-      "list kind=chat",
-    ).map((item) => (item as { id: string }).id);
+    const chatKindIds = arrayField(chatKindListed.data, "items", "list kind=chat").map(
+      (item) => (item as { id: string }).id,
+    );
     // The tenant's one row is a room, so the chat listing is empty —
     // the filter never leaks a workbench into the other kind's view.
     expect(chatKindIds).not.toContain(roomId);
@@ -1027,17 +942,14 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       user1.cookies,
     );
     expectStatus("get settings", fetched, 200);
-    const participants = arrayField(
-      fetched.data,
-      "participants",
-      "get settings",
-    ) as { address: string; handle: string }[];
+    const participants = arrayField(fetched.data, "participants", "get settings") as {
+      address: string;
+      handle: string;
+    }[];
     expect(participants.some((p) => p.address === newParticipant)).toBe(true);
 
     const items = await listMessages(user1.cookies, workbenchId);
-    const events = items.flatMap((item) =>
-      item.parts.filter((p) => p.kind === "event"),
-    );
+    const events = items.flatMap((item) => item.parts.filter((p) => p.kind === "event"));
     const membershipEvent = events.find(
       (e) => (e as { event: string }).event === "workbench.membership-changed",
     );

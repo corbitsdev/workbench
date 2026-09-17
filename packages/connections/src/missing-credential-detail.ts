@@ -16,15 +16,11 @@ export const MissingCredentialDetail = type({
 });
 export type MissingCredentialDetail = typeof MissingCredentialDetail.infer;
 
-export function missingCredentialDetail(
-  connectorId: string,
-): MissingCredentialDetail {
+export function missingCredentialDetail(connectorId: string): MissingCredentialDetail {
   return { kind: "missing-credential", connectorId };
 }
 
-export function parseMissingCredentialDetail(
-  detail: unknown,
-): MissingCredentialDetail | undefined {
+export function parseMissingCredentialDetail(detail: unknown): MissingCredentialDetail | undefined {
   const parsed = MissingCredentialDetail(detail);
   return parsed instanceof type.errors ? undefined : parsed;
 }

@@ -19,12 +19,7 @@
 // that half is out of scope here.
 import { Glob } from "bun";
 import path from "node:path";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 const SCAN_DIRS = ["apps", "packages", "tools", "workflows"];
 
@@ -35,8 +30,7 @@ const EXCLUDED_SEGMENTS = ["node_modules", "dist", ".worktrees", "vendor"];
 // optional trailing comma before the closing brace. `\s` already spans
 // newlines, so the multi-line form (`SKILLS_TOOL_PACKAGE_PIN`) matches
 // the same as the single-line array-entry form.
-const PIN_PATTERN =
-  /\{\s*name:\s*"(@corbits\/[a-z0-9-]+)"\s*,\s*version:\s*"([^"]*)"\s*,?\s*\}/g;
+const PIN_PATTERN = /\{\s*name:\s*"(@corbits\/[a-z0-9-]+)"\s*,\s*version:\s*"([^"]*)"\s*,?\s*\}/g;
 
 export interface PinReference {
   readonly relPath: string;
@@ -172,10 +166,7 @@ async function addVendoredDependencyVersions(
  * on it — so this checks every workspace's own `node_modules` first, then
  * falls back to the root's.
  */
-async function installedVersion(
-  root: string,
-  name: string,
-): Promise<string | undefined> {
+async function installedVersion(root: string, name: string): Promise<string | undefined> {
   const candidateDirs = [".", "apps/*", "packages/*", "tools/*", "workflows/*"];
   for (const dir of candidateDirs) {
     const glob = new Glob(`${dir}/node_modules/${name}/package.json`);
@@ -193,16 +184,11 @@ async function installedVersion(
 function isExcludedPath(relPath: string): boolean {
   return EXCLUDED_SEGMENTS.some(
     (segment) =>
-      relPath === segment ||
-      relPath.startsWith(`${segment}/`) ||
-      relPath.includes(`/${segment}/`),
+      relPath === segment || relPath.startsWith(`${segment}/`) || relPath.includes(`/${segment}/`),
   );
 }
 
-async function scanFiles(
-  root: string,
-  dirs: readonly string[],
-): Promise<ScannedFile[]> {
+async function scanFiles(root: string, dirs: readonly string[]): Promise<ScannedFile[]> {
   const files: ScannedFile[] = [];
   for (const dir of dirs) {
     const glob = new Glob("**/*.ts");
@@ -222,9 +208,7 @@ async function scanFiles(
 async function main(): Promise<void> {
   const root = rootFromArgs(Bun.argv.slice(2));
   const files = await scanFiles(root, SCAN_DIRS);
-  const pins = files.flatMap((file) =>
-    extractPins(file.relPath, file.contents),
-  );
+  const pins = files.flatMap((file) => extractPins(file.relPath, file.contents));
   const versions = await manifestVersions(root);
   const report = auditToolPackagePins(pins, versions);
   report.notes.push(

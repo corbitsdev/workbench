@@ -65,10 +65,7 @@ import {
 import { type ReadParkedApprovalOps, type StepInvoker } from "@intx/workflow";
 import type { InboundMessage } from "@intx/types/runtime";
 
-import {
-  createToolBearingAgentFactory,
-  type StepToolCacheConfig,
-} from "../step-agent-tools";
+import { createToolBearingAgentFactory, type StepToolCacheConfig } from "../step-agent-tools";
 import {
   createDurableConversationRegistry,
   prepareConversationForOriginatingWorkbench,
@@ -103,11 +100,7 @@ import {
   type SidecarRunChildDeps,
 } from "./child-runtime";
 
-export {
-  createSidecarRunChild,
-  createSidecarSpawnSuspendableChild,
-  type SidecarBodyStepInvoker,
-};
+export { createSidecarRunChild, createSidecarSpawnSuspendableChild, type SidecarBodyStepInvoker };
 
 export { parseAdapterManifest, SIDECAR_SUBSTRATE_CONFIG_KEYS };
 
@@ -144,9 +137,7 @@ export class ChildStepNotImplementedError extends Error {
 
 function hexDecode(hex: string, name: string): Uint8Array {
   if (hex.length % 2 !== 0) {
-    throw new Error(
-      `${name} must be even-length hex; got ${String(hex.length)} chars`,
-    );
+    throw new Error(`${name} must be even-length hex; got ${String(hex.length)} chars`);
   }
   const out = new Uint8Array(hex.length / 2);
   for (let i = 0; i < out.length; i += 1) {
@@ -196,9 +187,7 @@ function createStepStorageSigner(signingKey: {
   privateKey: Uint8Array;
 }): (payload: string) => Promise<string> {
   return (payload: string) =>
-    Promise.resolve(
-      createSSHSignature(payload, signingKey.privateKey, signingKey.publicKey),
-    );
+    Promise.resolve(createSSHSignature(payload, signingKey.privateKey, signingKey.publicKey));
 }
 
 /**
@@ -233,8 +222,7 @@ export function createSidecarSubstrateFactory(
 ): SubstrateFactory {
   const createBareRepoStore =
     deps.createBareRepoStore ??
-    (({ dataDir, signingKey }) =>
-      createAgentRepoStore({ dataDir, signingKey }).repoStore);
+    (({ dataDir, signingKey }) => createAgentRepoStore({ dataDir, signingKey }).repoStore);
 
   return async (env: SubstrateFactoryEnv) => {
     const validated = SubstrateConfig(env.substrateConfig);
@@ -244,9 +232,7 @@ export function createSidecarSubstrateFactory(
       );
     }
 
-    const stepInferenceSources = parseStepInferenceSources(
-      validated.STEP_INFERENCE_SOURCES,
-    );
+    const stepInferenceSources = parseStepInferenceSources(validated.STEP_INFERENCE_SOURCES);
 
     // Build the child's adapter registry eagerly at boot from the
     // operator-supplied manifest. `loadAdapterRegistry` imports every
@@ -260,14 +246,8 @@ export function createSidecarSubstrateFactory(
     );
 
     const signingKey = {
-      publicKey: hexDecode(
-        validated.SIDECAR_SIGNING_PUBLIC_KEY,
-        "SIDECAR_SIGNING_PUBLIC_KEY",
-      ),
-      privateKey: hexDecode(
-        validated.SIDECAR_SIGNING_PRIVATE_KEY,
-        "SIDECAR_SIGNING_PRIVATE_KEY",
-      ),
+      publicKey: hexDecode(validated.SIDECAR_SIGNING_PUBLIC_KEY, "SIDECAR_SIGNING_PUBLIC_KEY"),
+      privateKey: hexDecode(validated.SIDECAR_SIGNING_PRIVATE_KEY, "SIDECAR_SIGNING_PRIVATE_KEY"),
     };
 
     const bareStore: RepoStore = createBareRepoStore({
@@ -313,10 +293,7 @@ export function createSidecarSubstrateFactory(
     // delivers the resolved input as a synthesized inbound message, and
     // captures the agent's reply as the step output.
     const stepToolCache: StepToolCacheConfig = {
-      cacheMaxBytes: parseByteCap(
-        validated.SIDECAR_CACHE_MAX_BYTES,
-        "SIDECAR_CACHE_MAX_BYTES",
-      ),
+      cacheMaxBytes: parseByteCap(validated.SIDECAR_CACHE_MAX_BYTES, "SIDECAR_CACHE_MAX_BYTES"),
       registryMaxTarballBytes: parseByteCap(
         validated.SIDECAR_REGISTRY_MAX_TARBALL_BYTES,
         "SIDECAR_REGISTRY_MAX_TARBALL_BYTES",
@@ -344,8 +321,7 @@ export function createSidecarSubstrateFactory(
     // and each store restores its prior snapshot from the substrate on
     // first acquire.
     const conversationSigner = createStepStorageSigner(signingKey);
-    const durableConversation: DurableConversationRegistry | undefined = env
-      .spawn.warmKeep
+    const durableConversation: DurableConversationRegistry | undefined = env.spawn.warmKeep
       ? createDurableConversationRegistry({
           dataDir: validated.SIDECAR_DATA_DIR,
           workflowRunRepoId,
@@ -460,9 +436,7 @@ export function createSidecarSubstrateFactory(
     // `runChild` recursion and the sub-namespace scoping around it are
     // real and exercised right up to this seam.
     const childInvokeStep: StepInvoker = (req) =>
-      Promise.reject(
-        new ChildStepNotImplementedError(req.agent.id, req.authzContext.stepId),
-      );
+      Promise.reject(new ChildStepNotImplementedError(req.agent.id, req.authzContext.stepId));
 
     // onTrigger BODY step invoker (CL-6448). Unlike a childWorkflow child,
     // an onTrigger section body IS staged: its definition and per-step
@@ -501,8 +475,7 @@ export function createSidecarSubstrateFactory(
       try {
         return await createWorkflowStepInvoker({
           workflowAuthorize: authorize,
-          buildEnv: (buildReq) =>
-            buildStepEnv(buildReq, sourcesRef, credentialWiring),
+          buildEnv: (buildReq) => buildStepEnv(buildReq, sourcesRef, credentialWiring),
           agentFactory: stepAgentFactory,
           sourcesRef,
           onEvent,
@@ -590,22 +563,15 @@ export function createSidecarSubstrateFactory(
             driveConnectorReplies({
               stream,
               composeReply: () => durableConversation.get(key).composeReply(),
-              send: (message) =>
-                env.outboundMailBridge.submit(
-                  env.spawn.mailboxAddress,
-                  message,
-                ),
+              send: (message) => env.outboundMailBridge.submit(env.spawn.mailboxAddress, message),
               resolveReferences: async (inReplyTo) => {
                 const store = await transportInbound.reader.open();
-                const parent = store.messages.find(
-                  (m) => m.envelope.messageId === inReplyTo,
-                );
+                const parent = store.messages.find((m) => m.envelope.messageId === inReplyTo);
                 return parent === undefined
                   ? undefined
                   : [...parent.envelope.references, parent.envelope.messageId];
               },
-              onReplySent: (receipt) =>
-                durableConversation.get(key).onReplySent(receipt),
+              onReplySent: (receipt) => durableConversation.get(key).onReplySent(receipt),
             })
         : undefined;
 
@@ -642,11 +608,7 @@ export function createSidecarSubstrateFactory(
       })(req);
     };
 
-    const evaluateGrantsAdapter: GrantEvaluator = async ({
-      resource,
-      action,
-      grants,
-    }) => {
+    const evaluateGrantsAdapter: GrantEvaluator = async ({ resource, action, grants }) => {
       const result = await evaluateGrants(
         // The credentialsSnapshot's grants are typed as
         // `readonly unknown[]` so the workflow-host package does not
@@ -689,8 +651,7 @@ export function createSidecarSubstrateFactory(
     // closure, so a body resolves in-process with no on-disk read and no
     // separate per-body re-verify -- the parent's re-verify already covers
     // every inline body.
-    const runSuspendableChild =
-      createSidecarSpawnSuspendableChild(childRunDeps);
+    const runSuspendableChild = createSidecarSpawnSuspendableChild(childRunDeps);
 
     // Per-run scratch reclamation for the cold (multi-step) path. The
     // run-loop fires this once each run reaches its terminal status; it
@@ -705,18 +666,17 @@ export function createSidecarSubstrateFactory(
     // module's intent explicit. `rm -rf` semantics via `recursive +
     // force` so a run that never wrote scratch (no buildEnv reached) is
     // a no-op rather than an ENOENT throw.
-    const cleanupRunStorage: ((runId: string) => Promise<void>) | undefined =
-      env.spawn.warmKeep
-        ? undefined
-        : (runId: string) =>
-            fs.promises.rm(
-              runStepStorageRoot({
-                dataDir: validated.SIDECAR_DATA_DIR,
-                workflowRunRepoId,
-                runId,
-              }),
-              { recursive: true, force: true },
-            );
+    const cleanupRunStorage: ((runId: string) => Promise<void>) | undefined = env.spawn.warmKeep
+      ? undefined
+      : (runId: string) =>
+          fs.promises.rm(
+            runStepStorageRoot({
+              dataDir: validated.SIDECAR_DATA_DIR,
+              workflowRunRepoId,
+              runId,
+            }),
+            { recursive: true, force: true },
+          );
 
     // Recover a parked correlation's approval snapshot for the child's
     // re-registration enumeration (ported from upstream Interchange's
@@ -726,12 +686,7 @@ export function createSidecarSubstrateFactory(
     // selects the durable read — cold reads the per-attempt isogit
     // store, warm reconstructs the agent's durable conversation state
     // from the substrate.
-    const loadParkedApproval: LoadParkedApproval = ({
-      runId,
-      stepId,
-      attempt,
-      correlationId,
-    }) =>
+    const loadParkedApproval: LoadParkedApproval = ({ runId, stepId, attempt, correlationId }) =>
       env.spawn.warmKeep
         ? readWarmParkedApprovalSnapshot({
             substrate,
@@ -754,11 +709,7 @@ export function createSidecarSubstrateFactory(
     // correlationId (answering the supervisor's re-registration), this is
     // the enumeration the classifier needs when the correlationId never
     // reached the log — the crash-across-park case.
-    const readParkedApprovalOps: ReadParkedApprovalOps = async ({
-      runId,
-      stepId,
-      attempt,
-    }) =>
+    const readParkedApprovalOps: ReadParkedApprovalOps = async ({ runId, stepId, attempt }) =>
       toParkedApprovalOps(
         env.spawn.warmKeep
           ? await readWarmParkedPendingOperations({
@@ -805,5 +756,4 @@ export function createSidecarSubstrateFactory(
  * hub sink (tests, alternate hosts) construct their own via
  * `createSidecarSubstrateFactory`.
  */
-export const createSubstrate: SubstrateFactory =
-  createSidecarSubstrateFactory();
+export const createSubstrate: SubstrateFactory = createSidecarSubstrateFactory();

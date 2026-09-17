@@ -1,13 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { InferenceEvent } from "@intx/types/runtime";
 
-import {
-  createInlineToolJsonState,
-  reclassifyInlineToolJsonEvents,
-} from "./inline-tool-json";
+import { createInlineToolJsonState, reclassifyInlineToolJsonEvents } from "./inline-tool-json";
 
-const CL_7186_PAYLOAD =
-  '{"name":"memory_search","parameters":{"query":"this person"}}';
+const CL_7186_PAYLOAD = '{"name":"memory_search","parameters":{"query":"this person"}}';
 
 function textDelta(token: string, seq = 1): InferenceEvent {
   return {
@@ -39,11 +35,7 @@ function reclassify(
   declaredNames: Iterable<string>,
   opts?: { flush?: boolean },
 ): InferenceEvent[] {
-  return reclassifyInlineToolJsonEvents(
-    events,
-    createInlineToolJsonState(declaredNames),
-    opts,
-  );
+  return reclassifyInlineToolJsonEvents(events, createInlineToolJsonState(declaredNames), opts);
 }
 
 function toolStarts(events: readonly InferenceEvent[]): InferenceEvent[] {
@@ -58,8 +50,7 @@ function toolCallIds(events: readonly InferenceEvent[]): string[] {
   return events
     .filter(
       (event) =>
-        event.type === "inference.tool_call.start" ||
-        event.type === "inference.tool_call.delta",
+        event.type === "inference.tool_call.start" || event.type === "inference.tool_call.delta",
     )
     .map((event) => (event.data as { callId: string }).callId);
 }
@@ -73,18 +64,13 @@ function expectSharedToolCallId(events: readonly InferenceEvent[]): void {
 function argumentFragments(events: readonly InferenceEvent[]): string {
   return events
     .filter((event) => event.type === "inference.tool_call.delta")
-    .map(
-      (event) => (event.data as { argumentFragment: string }).argumentFragment,
-    )
+    .map((event) => (event.data as { argumentFragment: string }).argumentFragment)
     .join("");
 }
 
 describe("reclassifyInlineToolJsonEvents", () => {
   test("the CL-7186 memory_search JSON becomes a tool_call.start with no text", () => {
-    const out = reclassify(
-      [textDelta(CL_7186_PAYLOAD), usageEvent()],
-      ["memory_search"],
-    );
+    const out = reclassify([textDelta(CL_7186_PAYLOAD), usageEvent()], ["memory_search"]);
     expect(textDeltas(out)).toEqual([]);
     const starts = toolStarts(out);
     expect(starts).toHaveLength(1);
@@ -114,9 +100,7 @@ describe("reclassifyInlineToolJsonEvents", () => {
 
     const flushed = reclassifyInlineToolJsonEvents([], state, { flush: true });
     expect(textDeltas(flushed)).toEqual([]);
-    expect((toolStarts(flushed)[0]?.data as { name: string }).name).toBe(
-      "memory_search",
-    );
+    expect((toolStarts(flushed)[0]?.data as { name: string }).name).toBe("memory_search");
     expectSharedToolCallId(flushed);
     expect(JSON.parse(argumentFragments(flushed))).toEqual({
       query: "this person",
@@ -124,8 +108,7 @@ describe("reclassifyInlineToolJsonEvents", () => {
   });
 
   test("arguments is accepted as the args object, same as parameters", () => {
-    const payload =
-      '{"name":"memory_search","arguments":{"query":"this person"}}';
+    const payload = '{"name":"memory_search","arguments":{"query":"this person"}}';
     const out = reclassify([textDelta(payload)], ["memory_search"], {
       flush: true,
     });
@@ -137,8 +120,7 @@ describe("reclassifyInlineToolJsonEvents", () => {
   });
 
   test("an unknown name stays text even when the JSON shape matches", () => {
-    const payload =
-      '{"name":"not_a_tool","parameters":{"query":"this person"}}';
+    const payload = '{"name":"not_a_tool","parameters":{"query":"this person"}}';
     const original = [textDelta(payload)];
     const out = reclassify(original, ["memory_search"], { flush: true });
     expect(out).toEqual(original);

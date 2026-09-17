@@ -28,11 +28,7 @@ export interface PinMessageInput {
 
 export interface PinStore {
   pinMessage(input: PinMessageInput): Promise<PinRow>;
-  unpinMessage(
-    tenantId: string,
-    workbenchId: string,
-    messageId: string,
-  ): Promise<void>;
+  unpinMessage(tenantId: string, workbenchId: string, messageId: string): Promise<void>;
   /** Every pinned message in a workbench, newest pin first — the pinned
    * strip's own read, and the set `GET /workbenches/:id/messages` marks
    * each page item against. */
@@ -65,17 +61,14 @@ export function createInMemoryPinStore(): PinStore {
 
     async listPins(tenantId, workbenchId) {
       return [...rows.values()]
-        .filter(
-          (row) => row.tenantId === tenantId && row.workbenchId === workbenchId,
-        )
+        .filter((row) => row.tenantId === tenantId && row.workbenchId === workbenchId)
         .sort((a, b) => b.pinnedAt.getTime() - a.pinnedAt.getTime());
     },
   };
 }
 
-export type PinDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> = PostgresJsDatabase<TSchema>;
+export type PinDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+  PostgresJsDatabase<TSchema>;
 
 export function createDrizzlePinStore<TSchema extends Record<string, unknown>>(
   db: PinDb<TSchema>,
@@ -93,11 +86,7 @@ export function createDrizzlePinStore<TSchema extends Record<string, unknown>>(
           pinnedAt: now,
         })
         .onConflictDoUpdate({
-          target: [
-            pinnedMessages.tenantId,
-            pinnedMessages.workbenchId,
-            pinnedMessages.messageId,
-          ],
+          target: [pinnedMessages.tenantId, pinnedMessages.workbenchId, pinnedMessages.messageId],
           set: { pinnedBy: input.pinnedBy, pinnedAt: now },
         })
         .returning();
@@ -124,10 +113,7 @@ export function createDrizzlePinStore<TSchema extends Record<string, unknown>>(
         .select()
         .from(pinnedMessages)
         .where(
-          and(
-            eq(pinnedMessages.tenantId, tenantId),
-            eq(pinnedMessages.workbenchId, workbenchId),
-          ),
+          and(eq(pinnedMessages.tenantId, tenantId), eq(pinnedMessages.workbenchId, workbenchId)),
         )
         .orderBy(desc(pinnedMessages.pinnedAt));
       return rows as PinRow[];

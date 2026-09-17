@@ -167,8 +167,7 @@ test("run persists a teaching artifact for the no-data case, still chip-visible"
 
 test("run returns an honest error result when persistence fails, never fabricating persisted: true", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
 
   try {
     const bundle = PROCESS_GRANOLA_CALL_FINALIZE_TOOL(testEnv());

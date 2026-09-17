@@ -130,9 +130,7 @@ export function threadMessagesToTimeline(
 
   return messages.map((message) => {
     const parentId =
-      message.inReplyTo !== undefined
-        ? idByMessageId.get(message.inReplyTo)
-        : undefined;
+      message.inReplyTo !== undefined ? idByMessageId.get(message.inReplyTo) : undefined;
     const text =
       message.subject !== undefined &&
       message.subject !== null &&

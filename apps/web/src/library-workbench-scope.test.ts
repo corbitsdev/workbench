@@ -35,9 +35,7 @@ describe("resolveLibraryWorkbenchScope", () => {
   });
 
   test("returns null for an id absent from the bench's workbench list", () => {
-    const workbenches = [
-      workbench({ id: "ch_1", tenancy: { tenantId: "tnt_1" } }),
-    ];
+    const workbenches = [workbench({ id: "ch_1", tenancy: { tenantId: "tnt_1" } })];
     expect(resolveLibraryWorkbenchScope(workbenches, "ch_stale")).toBeNull();
   });
 

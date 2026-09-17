@@ -96,8 +96,7 @@ function PickReposHarness({
   readonly initiallySelected: readonly string[];
   readonly onStartReviewing: (repoIds: readonly string[]) => void;
 }) {
-  const [selected, setSelected] =
-    useState<readonly string[]>(initiallySelected);
+  const [selected, setSelected] = useState<readonly string[]>(initiallySelected);
   return (
     <ConnectGithubBlockView
       scene={SCENE}
@@ -107,9 +106,7 @@ function PickReposHarness({
       selectedRepoIds={selected}
       onToggleRepo={(repoId) =>
         setSelected((prev) =>
-          prev.includes(repoId)
-            ? prev.filter((id) => id !== repoId)
-            : [...prev, repoId],
+          prev.includes(repoId) ? prev.filter((id) => id !== repoId) : [...prev, repoId],
         )
       }
       onSelectAll={() => setSelected(REPOS.map((repo) => repo.id))}
@@ -172,15 +169,11 @@ describe("connect GitHub card — 2a disconnected", () => {
       (item) => item.textContent,
     );
     expect(steps).toHaveLength(4);
-    expect(steps[0]).toContain(
-      "Open GitHub's fine-grained token page and generate a new token.",
-    );
+    expect(steps[0]).toContain("Open GitHub's fine-grained token page and generate a new token.");
     expect(steps[1]).toContain("Repository access");
     expect(steps[3]).toContain("Paste it here");
     expect(
-      el.querySelector(
-        'a[href="https://github.com/settings/personal-access-tokens/new"]',
-      ),
+      el.querySelector('a[href="https://github.com/settings/personal-access-tokens/new"]'),
     ).not.toBeNull();
 
     const field = el.querySelector("#connect-github-token");
@@ -229,8 +222,7 @@ describe("connect GitHub card — 2a disconnected", () => {
     const el = await mount({
       kind: "disconnected",
       onConnect: () => undefined,
-      onSubmitAccessToken: () =>
-        Promise.resolve({ ok: false, message: "Bad token." }),
+      onSubmitAccessToken: () => Promise.resolve({ ok: false, message: "Bad token." }),
     });
 
     const openLink = [...el.querySelectorAll("button")].find(
@@ -256,9 +248,7 @@ describe("connect GitHub card — 2a disconnected", () => {
 
     expect(el.textContent).toContain("Bad token.");
     expect(el.querySelector("#connect-github-token")).not.toBeNull();
-    expect(
-      el.querySelector(".chat-block-connect-token-error")?.getAttribute("role"),
-    ).toBe("alert");
+    expect(el.querySelector(".chat-block-connect-token-error")?.getAttribute("role")).toBe("alert");
     expect(field.getAttribute("aria-invalid")).toBe("true");
   });
 });
@@ -305,9 +295,7 @@ describe("connect GitHub card — 2b pick your repos", () => {
       onSkip: () => undefined,
     });
 
-    const mobileCheckbox = [
-      ...el.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
-    ][3];
+    const mobileCheckbox = [...el.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')][3];
     expect(mobileCheckbox).not.toBeUndefined();
 
     await act(async () => {
@@ -333,9 +321,7 @@ describe("connect GitHub card — 2b pick your repos", () => {
     ) as HTMLButtonElement;
     expect(start.textContent).toBe("Start reviewing 3 repos");
 
-    const mobileCheckbox = [
-      ...el.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
-    ][3];
+    const mobileCheckbox = [...el.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')][3];
     await act(async () => {
       mobileCheckbox?.click();
     });
@@ -354,10 +340,7 @@ describe("connect GitHub card — 2b pick your repos", () => {
 
   test("Select all picks every repo and the primary label pluralizes to a single repo correctly", async () => {
     const el = await mountElement(
-      <PickReposHarness
-        initiallySelected={[]}
-        onStartReviewing={() => undefined}
-      />,
+      <PickReposHarness initiallySelected={[]} onStartReviewing={() => undefined} />,
     );
 
     expect(el.textContent).toContain("6 repos your token can reach · 0 picked");
@@ -426,9 +409,7 @@ describe("connect GitHub card — accessibility", () => {
       onSkip: () => undefined,
     });
 
-    const checkboxes = el.querySelectorAll<HTMLInputElement>(
-      'input[type="checkbox"]',
-    );
+    const checkboxes = el.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
     expect(checkboxes).toHaveLength(6);
     for (const checkbox of checkboxes) {
       expect(checkbox.id.length).toBeGreaterThan(0);
@@ -438,12 +419,10 @@ describe("connect GitHub card — accessibility", () => {
     }
 
     const group = el.querySelector('[role="group"]');
-    expect(
-      el.querySelector(".chat-block-scene-pick-heading")?.textContent,
-    ).toBe("Choose what gets reviewed");
-    expect(group?.getAttribute("aria-labelledby")).toBe(
-      "connect-github-pick-heading",
+    expect(el.querySelector(".chat-block-scene-pick-heading")?.textContent).toBe(
+      "Choose what gets reviewed",
     );
+    expect(group?.getAttribute("aria-labelledby")).toBe("connect-github-pick-heading");
 
     const firstCheckbox = checkboxes[0];
     if (firstCheckbox === undefined) {
@@ -477,8 +456,7 @@ describe("connect GitHub card — accessibility", () => {
     expect(status?.textContent).toBe("Connect GitHub");
     expect(body?.contains(status)).toBe(false);
     expect(
-      el.querySelector("#connect-github-token") ??
-        el.querySelector('input[type="password"]'),
+      el.querySelector("#connect-github-token") ?? el.querySelector('input[type="password"]'),
     ).toBeNull();
   });
 
@@ -486,8 +464,7 @@ describe("connect GitHub card — accessibility", () => {
     const el = await mount({
       kind: "disconnected",
       onConnect: () => undefined,
-      onSubmitAccessToken: () =>
-        Promise.resolve({ ok: false, message: "Bad token." }),
+      onSubmitAccessToken: () => Promise.resolve({ ok: false, message: "Bad token." }),
     });
 
     const openLink = [...el.querySelectorAll("button")].find(
@@ -516,9 +493,7 @@ describe("connect GitHub card — accessibility", () => {
     expect(alert?.textContent).toContain("Bad token.");
     expect(status?.contains(alert)).toBe(false);
     expect(status?.textContent).toBe("Connect GitHub");
-    expect(el.querySelector(".chat-block-scene-body")?.contains(field)).toBe(
-      true,
-    );
+    expect(el.querySelector(".chat-block-scene-body")?.contains(field)).toBe(true);
   });
 
   test("a start-reviewing error is an alert beside the status live region, not nested inside it", async () => {
@@ -552,17 +527,12 @@ describe("connect GitHub card — accessibility", () => {
 
   test("toggling a repo checkbox does not change the status live region", async () => {
     const el = await mountElement(
-      <PickReposHarness
-        initiallySelected={["checkout"]}
-        onStartReviewing={() => undefined}
-      />,
+      <PickReposHarness initiallySelected={["checkout"]} onStartReviewing={() => undefined} />,
     );
     const status = el.querySelector(".chat-block-scene-status");
     expect(status?.textContent).toBe("Connect GitHub");
 
-    const mobileCheckbox = [
-      ...el.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
-    ][3];
+    const mobileCheckbox = [...el.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')][3];
     await act(async () => {
       mobileCheckbox?.click();
     });

@@ -1,8 +1,18 @@
 {
   "name": "@corbits/inference-catalog",
-  "description": "Model concepts and chain resolution: agents ask for what the work needs (a concept or a capability set) and get an ordered, priced fallback chain of the models this bench can actually reach — never a single model, never a model named by hand.",
   "version": "0.1.0",
+  "description": "Model concepts and chain resolution: agents ask for what the work needs (a concept or a capability set) and get an ordered, priced fallback chain of the models this bench can actually reach — never a single model, never a model named by hand.",
   "license": "LGPL-2.1-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "packages/inference-catalog"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -13,16 +23,6 @@
     "./resolve-chain": "./src/resolve-chain.ts",
     "./offering-capabilities": "./src/offering-capabilities.ts",
     "./ollama-context-defaults": "./src/ollama-context-defaults.ts"
-  },
-  "files": [
-    "src",
-    "LICENSE",
-    "README.md"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "packages/inference-catalog"
   },
   "publishConfig": {
     "access": "public"
@@ -36,11 +36,11 @@
     "@intx/inference-catalog": "0.3.0",
     "arktype": "catalog:"
   },
-  "peerDependencies": {
-    "@intx/types": "0.3.0"
-  },
   "devDependencies": {
     "@types/bun": "catalog:",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/types": "0.3.0"
   }
 }

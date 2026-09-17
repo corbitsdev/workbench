@@ -98,10 +98,7 @@ describe("readHubConfig", () => {
         GITHUB_CLIENT_ID: "github-id",
         GITHUB_CLIENT_SECRET: "github-secret",
       });
-      expect(Object.keys(config.socialProviders).sort()).toEqual([
-        "github",
-        "google",
-      ]);
+      expect(Object.keys(config.socialProviders).sort()).toEqual(["github", "google"]);
     });
 
     test("a client id with no secret fails loudly at boot", () => {
@@ -199,9 +196,7 @@ describe("readHubConfig", () => {
   });
 
   test("PRINCIPAL_KEY_ENCRYPTION_KEY absent by default", () => {
-    expect(
-      readHubConfig(validEnv).principalKeyEncryptionKeyHex,
-    ).toBeUndefined();
+    expect(readHubConfig(validEnv).principalKeyEncryptionKeyHex).toBeUndefined();
   });
 
   test("PRINCIPAL_KEY_ENCRYPTION_KEY accepts a 64-char hex key", () => {
@@ -241,12 +236,10 @@ describe("readHubConfig", () => {
 
   test("HUB_ALLOW_GIT_INSIDE_WORK_TREE='1' or 'true' opts in", () => {
     expect(
-      readHubConfig({ ...validEnv, HUB_ALLOW_GIT_INSIDE_WORK_TREE: "1" })
-        .allowGitInsideWorkTree,
+      readHubConfig({ ...validEnv, HUB_ALLOW_GIT_INSIDE_WORK_TREE: "1" }).allowGitInsideWorkTree,
     ).toBe(true);
     expect(
-      readHubConfig({ ...validEnv, HUB_ALLOW_GIT_INSIDE_WORK_TREE: "true" })
-        .allowGitInsideWorkTree,
+      readHubConfig({ ...validEnv, HUB_ALLOW_GIT_INSIDE_WORK_TREE: "true" }).allowGitInsideWorkTree,
     ).toBe(true);
   });
 
@@ -259,13 +252,11 @@ describe("readHubConfig", () => {
   });
 
   test("ALLOW_PLAINTEXT_SECRETS='1' or 'true' opts in", () => {
+    expect(readHubConfig({ ...validEnv, ALLOW_PLAINTEXT_SECRETS: "1" }).allowPlaintextSecrets).toBe(
+      true,
+    );
     expect(
-      readHubConfig({ ...validEnv, ALLOW_PLAINTEXT_SECRETS: "1" })
-        .allowPlaintextSecrets,
-    ).toBe(true);
-    expect(
-      readHubConfig({ ...validEnv, ALLOW_PLAINTEXT_SECRETS: "true" })
-        .allowPlaintextSecrets,
+      readHubConfig({ ...validEnv, ALLOW_PLAINTEXT_SECRETS: "true" }).allowPlaintextSecrets,
     ).toBe(true);
   });
 
@@ -360,9 +351,7 @@ describe("readHubConfig", () => {
         SIDECAR_PROVISIONERS: "docker",
         DOCKER_PROVISIONER_IMAGE: "ghcr.io/corbits/sidecar:latest",
       });
-      expect(config.sidecarProvisioners.map((one) => one.id)).toEqual([
-        "docker",
-      ]);
+      expect(config.sidecarProvisioners.map((one) => one.id)).toEqual(["docker"]);
     });
 
     test("SIDECAR_PROVISIONERS=docker with an image is wired and becomes the default", () => {
@@ -440,12 +429,9 @@ describe("readHubConfig", () => {
     test("is read from HUB_SIDECAR_WEBSOCKET_URL when set", () => {
       const config = readHubConfig({
         ...validEnv,
-        HUB_SIDECAR_WEBSOCKET_URL:
-          "ws://sidecar-host.internal:3000/api/sidecars/ws",
+        HUB_SIDECAR_WEBSOCKET_URL: "ws://sidecar-host.internal:3000/api/sidecars/ws",
       });
-      expect(config.sidecarWebSocketUrl).toBe(
-        "ws://sidecar-host.internal:3000/api/sidecars/ws",
-      );
+      expect(config.sidecarWebSocketUrl).toBe("ws://sidecar-host.internal:3000/api/sidecars/ws");
     });
 
     test("rejects a value that is not a ws(s):// URL", () => {

@@ -7,8 +7,4 @@ export {
   type CapabilityInventorySnapshot,
   type CapabilityToolClientConfig,
 } from "./client";
-export {
-  capabilityTools,
-  REQUEST_CAPABILITY_TOOL,
-  type WorkflowCapabilityEnv,
-} from "./tool";
+export { capabilityTools, REQUEST_CAPABILITY_TOOL, type WorkflowCapabilityEnv } from "./tool";

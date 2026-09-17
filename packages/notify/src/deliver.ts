@@ -58,10 +58,7 @@ export interface NotifyDeliveryReport {
   readonly queuedDispatchCount: number;
 }
 
-function toInboxItems(
-  event: NotificationEvent,
-  addressing: NotifyAddressing,
-): NotifyInboxItem[] {
+function toInboxItems(event: NotificationEvent, addressing: NotifyAddressing): NotifyInboxItem[] {
   const rendered = renderNotification(event);
   const externalId = notificationExternalId(event);
   return event.recipients.map((recipient) => ({
@@ -102,9 +99,7 @@ export async function deliverNotification(
   // that died before its dispatch enqueue (or a benign redelivery).
   // Resolve those ids so the enqueue below repairs the missing rows;
   // without the read-back there is nothing to enqueue for them.
-  const deduped = items.filter(
-    (_, index) => (results[index]?.id ?? null) === null,
-  );
+  const deduped = items.filter((_, index) => (results[index]?.id ?? null) === null);
   const repaired: { id: string; tenantId: string; principalId: string }[] = [];
   if (deduped.length > 0 && deps.resolveExistingMailIds !== undefined) {
     const resolved = await deps.resolveExistingMailIds(deduped);

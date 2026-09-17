@@ -60,9 +60,7 @@ const ADVERTISED_CONTEXT_WINDOWS: readonly (readonly [string, number])[] = [
 ];
 
 function positiveTokenCount(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? value
-    : undefined;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 function readWindowFromBag(bag: Record<string, unknown>): number | undefined {
@@ -86,9 +84,7 @@ function catalogModelKey(model: string): string {
  * family prefix. `undefined` if this module has no published window for
  * the name.
  */
-export function advertisedContextWindowTokens(
-  model: string,
-): number | undefined {
+export function advertisedContextWindowTokens(model: string): number | undefined {
   const key = catalogModelKey(model);
   if (key.length === 0) {
     return undefined;
@@ -98,10 +94,7 @@ export function advertisedContextWindowTokens(
     if (key === prefix) {
       return tokens;
     }
-    if (
-      key.startsWith(prefix) &&
-      (best === undefined || prefix.length > best.prefixLength)
-    ) {
+    if (key.startsWith(prefix) && (best === undefined || prefix.length > best.prefixLength)) {
       best = { prefixLength: prefix.length, tokens };
     }
   }
@@ -115,10 +108,7 @@ export function advertisedContextWindowTokens(
  * { numCtx? } } }`) and a few other common token-window field names.
  * Returns `undefined` for any unrecognized shape rather than throwing.
  */
-export function readNumCtxHint(
-  quirks: unknown,
-  model: string,
-): number | undefined {
+export function readNumCtxHint(quirks: unknown, model: string): number | undefined {
   if (typeof quirks !== "object" || quirks === null) {
     return undefined;
   }
@@ -149,10 +139,7 @@ export function readNumCtxHint(
  * fallback. Compact headroom is applied by the char-budget helpers,
  * not here.
  */
-export function resolveContextWindowTokens(
-  quirks: unknown,
-  model: string,
-): number {
+export function resolveContextWindowTokens(quirks: unknown, model: string): number {
   return (
     readNumCtxHint(quirks, model) ??
     advertisedContextWindowTokens(model) ??
@@ -169,14 +156,8 @@ function toChars(tokens: number, headroom: number): number {
  * Applies `COMPACTION_HEADROOM` on top of the resolved window so
  * compaction fires with room left, not at the hard edge.
  */
-export function resolveContextBudgetChars(
-  quirks: unknown,
-  model: string,
-): number {
-  return toChars(
-    resolveContextWindowTokens(quirks, model),
-    COMPACTION_HEADROOM,
-  );
+export function resolveContextBudgetChars(quirks: unknown, model: string): number {
+  return toChars(resolveContextWindowTokens(quirks, model), COMPACTION_HEADROOM);
 }
 
 /**
@@ -185,9 +166,6 @@ export function resolveContextBudgetChars(
  * at all, used to detect the unrecoverable case where even the turns a
  * compactor must keep verbatim are already too large.
  */
-export function resolveHardContextLimitChars(
-  quirks: unknown,
-  model: string,
-): number {
+export function resolveHardContextLimitChars(quirks: unknown, model: string): number {
   return toChars(resolveContextWindowTokens(quirks, model), 1);
 }

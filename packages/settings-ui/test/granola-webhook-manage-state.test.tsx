@@ -23,8 +23,7 @@ const json = (status: number, body: unknown) =>
     headers: { "content-type": "application/json" },
   });
 
-const settle = () =>
-  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 const descriptor: ConnectorDescriptor = {
   id: "granola-webhook",
@@ -40,9 +39,7 @@ function mount(): { container: HTMLDivElement; root: Root } {
   document.body.appendChild(container);
   const root = createRoot(container);
   act(() => {
-    root.render(
-      <GranolaWebhookCard tenantId="ten_1" descriptor={descriptor} />,
-    );
+    root.render(<GranolaWebhookCard tenantId="ten_1" descriptor={descriptor} />);
   });
   return { container, root };
 }
@@ -88,9 +85,7 @@ describe("GranolaWebhookCard Manage dialog (already connected)", () => {
       expect(document.body.textContent).toContain("/api/webhooks/wht_1");
       // Rotating should be flagged as immediately invalidating the old
       // secret, mirroring routines-page's WebhookTriggerPanel copy.
-      expect(document.body.textContent?.toLowerCase()).toContain(
-        "stops verifying immediately",
-      );
+      expect(document.body.textContent?.toLowerCase()).toContain("stops verifying immediately");
     } finally {
       act(() => root.unmount());
       container.remove();

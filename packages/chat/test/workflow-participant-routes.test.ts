@@ -38,9 +38,7 @@ const authenticateAsRun: WorkflowRunAuthenticator = {
     ),
 };
 
-function buildApp(
-  overrides: Partial<CreateWorkflowParticipantRoutesDeps> = {},
-): Hono {
+function buildApp(overrides: Partial<CreateWorkflowParticipantRoutesDeps> = {}): Hono {
   const store = overrides.store ?? createInMemoryChatStore();
   const publish = overrides.publish ?? (() => undefined);
   return createWorkflowParticipantRoutes({
@@ -258,9 +256,7 @@ describe("POST /participants/messages", () => {
     expect(listed.items[0]?.sender.address).toBe(RUN_ADDRESS);
     expect(listed.items[0]?.senderPrincipalId).toBe("prn_1");
     expect(listed.items[0]?.parts).toEqual([questionBlock]);
-    expect(
-      platform.sentMail.every((mail) => mail.workbenchId !== "chan_1"),
-    ).toBe(true);
+    expect(platform.sentMail.every((mail) => mail.workbenchId !== "chan_1")).toBe(true);
   });
 
   test("re-posting a question block with the same questionId returns the existing card and does not insert a second message", async () => {

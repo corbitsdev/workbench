@@ -46,9 +46,7 @@ export function MembersSection({
     removeWorkbenchParticipant(tenantId, workbenchId, address)
       .then(() => onParticipantsChanged())
       .catch((cause: unknown) =>
-        setRowError(
-          describeChatError(cause, CHAT_STRINGS.workbenchSettingsRemoveError),
-        ),
+        setRowError(describeChatError(cause, CHAT_STRINGS.workbenchSettingsRemoveError)),
       )
       .finally(() => setRemovingAddress(null));
   }
@@ -58,33 +56,22 @@ export function MembersSection({
       <div className="chat-settings-field">
         <span>{CHAT_STRINGS.workbenchSettingsPeopleLabel}</span>
         {people.length === 0 ? (
-          <p className="chat-settings-field-hint">
-            {CHAT_STRINGS.workbenchSettingsNoPeople}
-          </p>
+          <p className="chat-settings-field-hint">{CHAT_STRINGS.workbenchSettingsNoPeople}</p>
         ) : (
           <ul className="chat-settings-participants-list">
             {people.map((participant) => {
               const isSelf = participant.address === currentUserPrincipalId;
               const busy = removingAddress === participant.address;
               return (
-                <li
-                  key={participant.address}
-                  className="chat-settings-participant-row"
-                >
+                <li key={participant.address} className="chat-settings-participant-row">
                   <div className="chat-settings-participant-row-main">
                     <span>{participant.handle}</span>
                     <ConfirmButton
                       variant="outline"
                       size="sm"
-                      confirmLabel={
-                        CHAT_STRINGS.workbenchSettingsRemoveConfirmLabel
-                      }
+                      confirmLabel={CHAT_STRINGS.workbenchSettingsRemoveConfirmLabel}
                       disabled={isSelf || busy}
-                      title={
-                        isSelf
-                          ? CHAT_STRINGS.workbenchSettingsRemoveSelfHint
-                          : undefined
-                      }
+                      title={isSelf ? CHAT_STRINGS.workbenchSettingsRemoveSelfHint : undefined}
                       onConfirm={() => handleRemove(participant.address)}
                     >
                       {busy

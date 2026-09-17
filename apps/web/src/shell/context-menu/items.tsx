@@ -214,9 +214,7 @@ function insightsRunMenu(
  * right-clicked row, or the whole active selection when the row is part of
  * one — see `SHELL_CONTEXT_MENU_TARGETS`.
  */
-function artifactMenu(
-  target: Extract<ShellContextMenuTarget, { type: "artifact" }>,
-): ContextMenu {
+function artifactMenu(target: Extract<ShellContextMenuTarget, { type: "artifact" }>): ContextMenu {
   const count = target.ids.length;
   return {
     entries: [

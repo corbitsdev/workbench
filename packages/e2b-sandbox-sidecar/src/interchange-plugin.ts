@@ -33,11 +33,7 @@ export function createSidecarProvisioner(
   opts: CreateSidecarProvisionerOpts = {},
 ): SidecarProvisioner {
   const config =
-    opts.config ??
-    readProvisionerConfig(
-      opts.env ?? process.env,
-      requireDataDir(opts.dataDir),
-    );
+    opts.config ?? readProvisionerConfig(opts.env ?? process.env, requireDataDir(opts.dataDir));
   return createCoreSidecarProvisioner({
     id: "e2b",
     apiVersion: PROVISIONER_API_VERSION,
@@ -47,7 +43,6 @@ export function createSidecarProvisioner(
     // Interchange replaced sidecar placement with capability selection.
     capabilities: sidecarCapabilityDeclarations("vm"),
     backend: createE2BBackend(config),
-    store:
-      opts.store ?? createAllocationStateStore(`${config.dataDir}/state.json`),
+    store: opts.store ?? createAllocationStateStore(`${config.dataDir}/state.json`),
   });
 }

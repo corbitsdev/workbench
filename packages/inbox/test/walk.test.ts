@@ -58,9 +58,7 @@ describe("walkAllOpen", () => {
       items: [message("msg_1", "2026-01-01T00:00:00.000000Z")],
       nextCursor: "not-a-valid-cursor",
     };
-    await expect(walkAllOpen(async () => page)).rejects.toBeInstanceOf(
-      IncompleteWalkError,
-    );
+    await expect(walkAllOpen(async () => page)).rejects.toBeInstanceOf(IncompleteWalkError);
   });
 
   test("throws IncompleteWalkError when the cursor does not advance", async () => {
@@ -74,9 +72,7 @@ describe("walkAllOpen", () => {
     };
     // Every call returns the exact same page/cursor — an infinite loop
     // without the advance guard.
-    await expect(walkAllOpen(async () => page)).rejects.toBeInstanceOf(
-      IncompleteWalkError,
-    );
+    await expect(walkAllOpen(async () => page)).rejects.toBeInstanceOf(IncompleteWalkError);
   });
 
   test("throws IncompleteWalkError once maxPages is exceeded", async () => {

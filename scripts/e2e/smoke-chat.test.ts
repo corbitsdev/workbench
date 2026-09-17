@@ -40,9 +40,7 @@ function stringField(data: unknown, field: string, what: string): string {
     const value = (data as Record<string, unknown>)[field];
     if (typeof value === "string" && value !== "") return value;
   }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing string field "${field}": ${JSON.stringify(data)}`);
 }
 
 describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
@@ -61,9 +59,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
       startHub({
         databaseUrl: url,
         port: freePort(),
-        sessionSecret: Buffer.from(
-          crypto.getRandomValues(new Uint8Array(32)),
-        ).toString("hex"),
+        sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
         dataDir: hubDataDir,
       }),
     );
@@ -103,9 +99,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
         const deadline = Date.now() + 60_000;
         for (;;) {
           if (hub.exited()) {
-            throw new Error(
-              `hub exited before workbench creation; output:\n${hub.output()}`,
-            );
+            throw new Error(`hub exited before workbench creation; output:\n${hub.output()}`);
           }
           const res = await api(
             hub.baseUrl,
@@ -172,9 +166,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
           }
         ).items;
         const found = items.some((item) =>
-          item.parts.some(
-            (part) => part.kind === "text" && part.text === messageText,
-          ),
+          item.parts.some((part) => part.kind === "text" && part.text === messageText),
         );
         if (!found) {
           throw new Error(
@@ -201,29 +193,26 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
         }
       });
 
-      await hop(
-        "the invited-agent listing has the documented shape",
-        async () => {
-          const res = await api(
-            hub.baseUrl,
-            "GET",
-            `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invitable`,
-            undefined,
-            cookies,
-          );
-          expectStatus("list invitable definitions", res, 200);
-          const body = res.data as { items: { id: string; name: string }[] };
-          expect(Array.isArray(body.items)).toBe(true);
-          // No workflow is deployed on this tenant, so any listed entries
-          // are platform-provided definitions available by default; the
-          // contract asserted here is the response shape (an `items`
-          // array of `{id, name}`), not that the tenant deployed anything.
-          for (const item of body.items) {
-            expect(typeof item.id).toBe("string");
-            expect(typeof item.name).toBe("string");
-          }
-        },
-      );
+      await hop("the invited-agent listing has the documented shape", async () => {
+        const res = await api(
+          hub.baseUrl,
+          "GET",
+          `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invitable`,
+          undefined,
+          cookies,
+        );
+        expectStatus("list invitable definitions", res, 200);
+        const body = res.data as { items: { id: string; name: string }[] };
+        expect(Array.isArray(body.items)).toBe(true);
+        // No workflow is deployed on this tenant, so any listed entries
+        // are platform-provided definitions available by default; the
+        // contract asserted here is the response shape (an `items`
+        // array of `{id, name}`), not that the tenant deployed anything.
+        for (const item of body.items) {
+          expect(typeof item.id).toBe("string");
+          expect(typeof item.name).toBe("string");
+        }
+      });
     }
   }, 120_000);
 });

@@ -6,8 +6,7 @@ import { type } from "arktype";
 // (`preferCompletionCapable`, capability probing) is testable against the
 // exact values the real instance would answer, with no translation layer
 // duplicated in the mock.
-export type OllamaCapability =
-  "completion" | "embedding" | "tools" | "vision" | "insert";
+export type OllamaCapability = "completion" | "embedding" | "tools" | "vision" | "insert";
 
 export type OllamaCatalogEntry = {
   readonly name: string;

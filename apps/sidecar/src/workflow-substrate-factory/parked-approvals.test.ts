@@ -20,9 +20,7 @@ import {
 
 const tempDirs: string[] = [];
 afterEach(async () => {
-  await Promise.all(
-    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
-  );
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
 const REPO_ID = { kind: "workflow-run" as const, id: "dep-parked-1" };
@@ -113,12 +111,8 @@ describe("readWarmParkedPendingOperations", () => {
   test("collects pending ops from nested rooms and ignores a mixed agent-state blob", async () => {
     const repoDir = await mkdtemp(path.join(tmpdir(), "parked-warm-"));
     tempDirs.push(repoDir);
-    await writeRoomCheckpoint(repoDir, "default", "chan_a", [
-      approvalOp("corr-a"),
-    ]);
-    await writeRoomCheckpoint(repoDir, "default", "chan_b", [
-      approvalOp("corr-b"),
-    ]);
+    await writeRoomCheckpoint(repoDir, "default", "chan_a", [approvalOp("corr-a")]);
+    await writeRoomCheckpoint(repoDir, "default", "chan_b", [approvalOp("corr-b")]);
     await writeFile(
       path.join(repoDir, "agent-state", "default", "checkpoint.json"),
       JSON.stringify({ pendingOperations: [approvalOp("corr-legacy")] }),

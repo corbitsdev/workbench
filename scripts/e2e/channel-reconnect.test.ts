@@ -17,10 +17,7 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 
 import { seedCatalog } from "../../packages/connections/src/seed-catalog.ts";
-import {
-  createHubAPI,
-  type ApiCall,
-} from "../../packages/hub-api-client/src/index.ts";
+import { createHubAPI, type ApiCall } from "../../packages/hub-api-client/src/index.ts";
 import type { Part } from "../../packages/chat/src/index.ts";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
@@ -48,9 +45,7 @@ function stringField(data: unknown, field: string, what: string): string {
     const value = (data as Record<string, unknown>)[field];
     if (typeof value === "string" && value !== "") return value;
   }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing string field "${field}": ${JSON.stringify(data)}`);
 }
 
 function arrayField(data: unknown, field: string, what: string): unknown[] {
@@ -58,9 +53,7 @@ function arrayField(data: unknown, field: string, what: string): unknown[] {
     const value = (data as Record<string, unknown>)[field];
     if (Array.isArray(value)) return value;
   }
-  throw new Error(
-    `${what}: missing array field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing array field "${field}": ${JSON.stringify(data)}`);
 }
 
 type ListedMessage = { id: string; parts: Part[] };
@@ -90,9 +83,7 @@ describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
     expect(report.migrations).toBeGreaterThan(0);
 
     hubPort = freePort();
-    sessionSecret = Buffer.from(
-      crypto.getRandomValues(new Uint8Array(32)),
-    ).toString("hex");
+    sessionSecret = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex");
 
     hub = await startHub({
       databaseUrl: url,
@@ -137,23 +128,14 @@ describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
     });
   }, 120_000);
 
-  async function createWorkbench(
-    body: Record<string, unknown>,
-  ): Promise<ApiResult> {
+  async function createWorkbench(body: Record<string, unknown>): Promise<ApiResult> {
     const deadline = Date.now() + 60_000;
     let res: ApiResult;
     for (;;) {
       if (hub.exited()) {
-        throw new Error(
-          `hub exited before workbench creation; output:\n${hub.output()}`,
-        );
+        throw new Error(`hub exited before workbench creation; output:\n${hub.output()}`);
       }
-      res = await api(
-        "POST",
-        `/api/tenants/${tenantId}/chat/workbenches`,
-        body,
-        cookies,
-      );
+      res = await api("POST", `/api/tenants/${tenantId}/chat/workbenches`, body, cookies);
       if (res.status !== 500) break;
       if (Date.now() > deadline) {
         throw new Error(
@@ -183,11 +165,7 @@ describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
       cookies,
     );
     expectStatus("list messages", res, 200);
-    return arrayField(
-      res.data,
-      "items",
-      "list messages",
-    ) as unknown as ListedMessage[];
+    return arrayField(res.data, "items", "list messages") as unknown as ListedMessage[];
   }
 
   test("workbench creation launches the anchor", async () => {
@@ -254,9 +232,7 @@ describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
     let posted: ApiResult;
     for (;;) {
       if (hub.exited()) {
-        throw new Error(
-          `hub exited after hub restart; output:\n${hub.output()}`,
-        );
+        throw new Error(`hub exited after hub restart; output:\n${hub.output()}`);
       }
       posted = await postMessage(after);
       if (posted.status === 201) break;

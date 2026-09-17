@@ -83,10 +83,7 @@ export type WorkflowParticipantRunScope = {
 };
 
 export type WorkflowRunAuthenticator = {
-  resolve(
-    token: string,
-    runAddress: string,
-  ): Promise<WorkflowParticipantRunScope | null>;
+  resolve(token: string, runAddress: string): Promise<WorkflowParticipantRunScope | null>;
 };
 
 /** The resolved scope PLUS the run's own address — the address is
@@ -145,8 +142,7 @@ export type CreateWorkflowParticipantRoutesDeps = {
     | "mutateWorkbenchParticipants"
   > &
     SendWorkbenchMessageDeps["store"];
-  readonly platform: LaunchAndJoinAgentDeps["platform"] &
-    SendWorkbenchMessageDeps["platform"];
+  readonly platform: LaunchAndJoinAgentDeps["platform"] & SendWorkbenchMessageDeps["platform"];
   readonly roomMessages: SendWorkbenchMessageDeps["roomMessages"];
   readonly publish: LaunchAndJoinAgentDeps["publish"];
   /** The same one-in-flight-turn-per-workbench queue `createChatRoutes`
@@ -172,17 +168,14 @@ export function createWorkflowParticipantRoutes(
 
   app.use("*", async (c, next) => {
     const authHeader = c.req.header("authorization") ?? "";
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length)
-      : "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
     const address = c.req.header("x-workflow-run-address") ?? "";
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
       return c.json(
         makeErrorEnvelope({
           code: "unauthorized",
-          userMessage:
-            "Missing or unrecognized sidecar bearer token / run address",
+          userMessage: "Missing or unrecognized sidecar bearer token / run address",
         }),
         401,
       );
@@ -193,9 +186,7 @@ export function createWorkflowParticipantRoutes(
 
   app.post("/participants/invite", async (c) => {
     const scope = c.get("workflowParticipantScope");
-    const body = InviteParticipantInput(
-      await c.req.json().catch(() => undefined),
-    );
+    const body = InviteParticipantInput(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
         makeErrorEnvelope({
@@ -235,9 +226,7 @@ export function createWorkflowParticipantRoutes(
           workbenchId: workbench.workbenchId,
           definitionId: body.definitionId,
           existingSettings: workbench.settings,
-          invitable: await deps.platform.listInvitableDefinitions(
-            scope.tenantId,
-          ),
+          invitable: await deps.platform.listInvitableDefinitions(scope.tenantId),
         },
       );
     } catch (err) {
@@ -263,10 +252,7 @@ export function createWorkflowParticipantRoutes(
         );
       }
       if (err instanceof KindIsChatError) {
-        return c.json(
-          makeErrorEnvelope({ code: err.code, userMessage: err.message }),
-          409,
-        );
+        return c.json(makeErrorEnvelope({ code: err.code, userMessage: err.message }), 409);
       }
       throw err;
     }
@@ -336,9 +322,7 @@ export function createWorkflowParticipantRoutes(
           {
             id: existing.id,
             createdAt: existing.createdAt,
-            ...(existing.mailMessageId !== null
-              ? { mailMessageId: existing.mailMessageId }
-              : {}),
+            ...(existing.mailMessageId !== null ? { mailMessageId: existing.mailMessageId } : {}),
           },
           200,
         );
@@ -349,15 +333,10 @@ export function createWorkflowParticipantRoutes(
     // settings before the message lands, so a later connection completing
     // in the browser can find this room and settle the card
     // (`./connect-pending.ts`'s `settleConnectedService`).
-    const requestedConnectorIds = connectServiceConnectorIds(
-      body.parts as PartType[],
-    );
+    const requestedConnectorIds = connectServiceConnectorIds(body.parts as PartType[]);
     if (requestedConnectorIds.length > 0) {
       const pending = pendingConnectionsOf(workbench.settings);
-      const merged = [
-        ...pending,
-        ...requestedConnectorIds.filter((id) => !pending.includes(id)),
-      ];
+      const merged = [...pending, ...requestedConnectorIds.filter((id) => !pending.includes(id))];
       if (merged.length !== pending.length) {
         const updated = await deps.store.updateWorkbenchSettings({
           tenantId: scope.tenantId,
@@ -420,10 +399,7 @@ export function createWorkflowParticipantRoutes(
       mailMessageId,
     });
 
-    return c.json(
-      { id: sent.id, createdAt: sent.createdAt, mailMessageId },
-      201,
-    );
+    return c.json({ id: sent.id, createdAt: sent.createdAt, mailMessageId }, 201);
   });
 
   return app;

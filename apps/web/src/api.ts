@@ -16,11 +16,7 @@ import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
 import type { APIQuery } from "@corbits/api-query";
-import {
-  ApiQueryError,
-  UnauthenticatedError,
-  toAPIQuery,
-} from "@corbits/api-query";
+import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@corbits/api-query";
 import { pathToQueryKey } from "./query-client";
 
 export const ProfileSchema = UserProfile;
@@ -106,10 +102,7 @@ type Validator<T> = (data: unknown) => T | ArkErrors;
  * call sites that still pass `""` when a tenant is unresolved cannot hit
  * the network with a broken URL.
  */
-export function useAPIQuery<T>(
-  path: string,
-  schema: Validator<T>,
-): APIQuery<T> {
+export function useAPIQuery<T>(path: string, schema: Validator<T>): APIQuery<T> {
   const enabled = path !== "";
   const result = useQuery({
     queryKey: pathToQueryKey(path),
@@ -122,19 +115,11 @@ export function useAPIQuery<T>(
         throw new UnauthenticatedError();
       }
       if (!response.ok) {
-        throw new ApiQueryError(
-          `The server answered ${response.status}.`,
-          response.status,
-          path,
-        );
+        throw new ApiQueryError(`The server answered ${response.status}.`, response.status, path);
       }
       const parsed = schema(await response.json());
       if (parsed instanceof type.errors) {
-        throw new ApiQueryError(
-          `Unexpected response shape: ${parsed.summary}`,
-          undefined,
-          path,
-        );
+        throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
       }
       return parsed;
     },
@@ -147,11 +132,7 @@ export function useAPIQuery<T>(
  * parses its GETs: loud on a non-2xx status and on a response shape that
  * doesn't match the schema, never a silent fallback.
  */
-async function postJSON<T>(
-  path: string,
-  schema: Validator<T>,
-  body: unknown,
-): Promise<T> {
+async function postJSON<T>(path: string, schema: Validator<T>, body: unknown): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, {
@@ -167,19 +148,11 @@ async function postJSON<T>(
     );
   }
   if (!response.ok) {
-    throw new ApiQueryError(
-      `The server answered ${response.status}.`,
-      response.status,
-      path,
-    );
+    throw new ApiQueryError(`The server answered ${response.status}.`, response.status, path);
   }
   const parsed = schema(await response.json());
   if (parsed instanceof type.errors) {
-    throw new ApiQueryError(
-      `Unexpected response shape: ${parsed.summary}`,
-      undefined,
-      path,
-    );
+    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
   }
   return parsed;
 }
@@ -187,15 +160,10 @@ async function postJSON<T>(
 /** Approves a pending approval. Scope is always "once": the hub rejects
  * "always" with a 400 (see `vendor/intx/hub-api/src/routes/approvals.ts`),
  * so this surface never offers it. */
-export function approveApproval(
-  tenantId: string,
-  approvalId: string,
-): Promise<Approval> {
-  return postJSON(
-    `/api/tenants/${tenantId}/approvals/${approvalId}/approve`,
-    ApprovalResponse,
-    { scope: "once" },
-  );
+export function approveApproval(tenantId: string, approvalId: string): Promise<Approval> {
+  return postJSON(`/api/tenants/${tenantId}/approvals/${approvalId}/approve`, ApprovalResponse, {
+    scope: "once",
+  });
 }
 
 export function rejectApproval(
@@ -217,10 +185,7 @@ export function rejectApproval(
  * .../artifacts/:id/preview` in `@corbits/artifacts-hub`) answers 415 for
  * a non-HTML artifact.
  */
-export function artifactPreviewPath(
-  tenantId: string,
-  artifactId: string,
-): string {
+export function artifactPreviewPath(tenantId: string, artifactId: string): string {
   return `/api/tenants/${tenantId}/artifacts/${encodeURIComponent(artifactId)}/preview`;
 }
 
@@ -248,9 +213,7 @@ export async function fetchArtifactDetail(
   }
   const parsed = ArtifactDetailSchema(await response.json());
   if (parsed instanceof type.errors) {
-    throw new ApiQueryError(
-      `Unexpected artifact response shape: ${parsed.summary}`,
-    );
+    throw new ApiQueryError(`Unexpected artifact response shape: ${parsed.summary}`);
   }
   return parsed.artifact;
 }

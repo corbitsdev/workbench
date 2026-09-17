@@ -37,8 +37,6 @@ export function inboxGroupOf(message: {
  * Classification to stamp on a new write from the item's refs, so later
  * list filters (`?classification=`) hit the product group without re-deriving.
  */
-export function classificationFromRefs(
-  refs: readonly { kind: string }[] | undefined,
-): InboxGroup {
+export function classificationFromRefs(refs: readonly { kind: string }[] | undefined): InboxGroup {
   return inboxGroupOf({ refs });
 }

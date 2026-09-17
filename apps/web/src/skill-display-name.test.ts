@@ -4,9 +4,7 @@ import { skillDisplayName } from "./skill-display-name";
 
 describe("skillDisplayName", () => {
   test("title-cases a kebab slug when no display title is set", () => {
-    expect(skillDisplayName({ name: "writing-system-prompts" })).toBe(
-      "Writing System Prompts",
-    );
+    expect(skillDisplayName({ name: "writing-system-prompts" })).toBe("Writing System Prompts");
     expect(skillDisplayName({ name: "triage" })).toBe("Triage");
   });
 
@@ -29,8 +27,6 @@ describe("skillDisplayName", () => {
   });
 
   test("treats a whitespace-only displayTitle as absent", () => {
-    expect(skillDisplayName({ name: "triage", displayTitle: "   " })).toBe(
-      "Triage",
-    );
+    expect(skillDisplayName({ name: "triage", displayTitle: "   " })).toBe("Triage");
   });
 });

@@ -69,9 +69,7 @@ export interface ConnectGithubSetupPorts {
    * pure defense-in-depth — a lease bug degrades to a silent no-op
    * here instead of a hard failure or a real duplicate trigger.
    */
-  createWebhookTrigger(
-    repo: GitHubRepoSummary,
-  ): Promise<{ readonly id: string }>;
+  createWebhookTrigger(repo: GitHubRepoSummary): Promise<{ readonly id: string }>;
   /**
    * True once this repo already has a live webhook trigger — checked
    * before creating one, so a retry after a mid-loop failure (a repo

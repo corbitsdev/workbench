@@ -5,5 +5,4 @@ import githubJson from "./recordings/github.json";
 
 import { parseMcpFakeRecording, type McpFakeRecording } from "./recording.ts";
 
-export const GITHUB_MCP_FAKE_RECORDING: McpFakeRecording =
-  parseMcpFakeRecording(githubJson);
+export const GITHUB_MCP_FAKE_RECORDING: McpFakeRecording = parseMcpFakeRecording(githubJson);

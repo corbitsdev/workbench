@@ -30,9 +30,7 @@ export const REPO_ROOT = path.resolve(import.meta.dir, "..", "..");
 export function e2eDatabaseUrl(): string | undefined {
   const fromProcess = process.env["DATABASE_URL"];
   const url =
-    fromProcess !== undefined && fromProcess !== ""
-      ? fromProcess
-      : databaseUrlFromRepoEnvFile();
+    fromProcess !== undefined && fromProcess !== "" ? fromProcess : databaseUrlFromRepoEnvFile();
   if (url !== undefined && url !== "") return baseUrlToE2eUrl(url);
   assertDatabaseConfigured(undefined, "walking-skeleton suite");
   return undefined;
@@ -75,12 +73,7 @@ function databaseUrlFromRepoEnvFile(): string | undefined {
 }
 
 function isEnoent(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
 
 /**

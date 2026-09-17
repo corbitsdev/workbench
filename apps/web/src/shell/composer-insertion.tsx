@@ -20,11 +20,7 @@ const ComposerInsertionContext = createContext<ComposerInsertionHost>({
   insertText: () => false,
 });
 
-export function ComposerInsertionProvider({
-  children,
-}: {
-  readonly children: ReactNode;
-}) {
+export function ComposerInsertionProvider({ children }: { readonly children: ReactNode }) {
   const insertRef = useRef<((text: string) => void) | null>(null);
   const value = useMemo<ComposerInsertionHost>(
     () => ({
@@ -40,17 +36,13 @@ export function ComposerInsertionProvider({
     [],
   );
   return (
-    <ComposerInsertionContext.Provider value={value}>
-      {children}
-    </ComposerInsertionContext.Provider>
+    <ComposerInsertionContext.Provider value={value}>{children}</ComposerInsertionContext.Provider>
   );
 }
 
 /** `ChatPage` calls this once and hands the result straight to
  * `ChatWorkspace`'s `registerComposerInsert` prop. */
-export function useRegisterComposerInsert(): (
-  insert: ((text: string) => void) | null,
-) => void {
+export function useRegisterComposerInsert(): (insert: ((text: string) => void) | null) => void {
   return useContext(ComposerInsertionContext).registerInsert;
 }
 

@@ -27,9 +27,7 @@ const ALICE = { address: "prn_alice@acme.example", handle: "alice" };
 const BOB = { address: "prn_bob@acme.example", handle: "bob" };
 
 describeIfDb("createDrizzleChatStore: patchWorkbenchSettings", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchTarget = new URL(scratchUrl);
   const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
 

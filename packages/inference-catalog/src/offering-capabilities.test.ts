@@ -69,8 +69,7 @@ describe("capabilitiesForDeployment", () => {
         canonicalName: "grok-4.6",
       },
     ]) {
-      for (const capability of capabilitiesForDeployment(deployment)
-        .capabilities) {
+      for (const capability of capabilitiesForDeployment(deployment).capabilities) {
         expect(vocabulary.has(capability)).toBe(true);
       }
     }

@@ -26,10 +26,7 @@ import {
   GITHUB_AUTHORIZE_URL,
   GITHUB_TOKEN_EXCHANGE_URL,
 } from "../src/github-connect";
-import {
-  createOAuthConnectRoutes,
-  DEFAULT_RETURN_PATH_ALLOWLIST,
-} from "../src/oauth-routes";
+import { createOAuthConnectRoutes, DEFAULT_RETURN_PATH_ALLOWLIST } from "../src/oauth-routes";
 import { createTenantConnectCredential } from "../src/oauth-tenant-connect";
 
 /** A fixture standing in for the real `github` connector descriptor a
@@ -80,8 +77,7 @@ const REAL_GITHUB: ConnectorDescriptor = {
 
 // What `oauthStartHref("tnt_1", "github", "/plugins")` renders into the
 // plugins gallery's Connect link.
-const UI_START_URL =
-  "/api/tenants/tnt_1/connections/oauth/github/start?return=%2Fplugins";
+const UI_START_URL = "/api/tenants/tnt_1/connections/oauth/github/start?return=%2Fplugins";
 
 const TENANT = {
   id: "tnt_1",
@@ -201,8 +197,7 @@ function cookieHeaderFrom(response: Response): string {
 
 describe("hosted GitHub one-click connect through the UI's start URL", () => {
   test("start -> callback persists the exchanged token and lands back on /plugins", async () => {
-    const { app, providers, credentials, seeds, exchangeBodies } =
-      mountHubShaped();
+    const { app, providers, credentials, seeds, exchangeBodies } = mountHubShaped();
 
     const started = await app.request(UI_START_URL);
     expect(started.status).toBe(302);
@@ -222,10 +217,7 @@ describe("hosted GitHub one-click connect through the UI's start URL", () => {
       { headers: { cookie } },
     );
     expect(callback.status).toBe(302);
-    const redirect = new URL(
-      callback.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(callback.headers.get("location") ?? "", "https://x");
     expect(redirect.pathname).toBe("/plugins");
     expect(redirect.searchParams.get("outcome")).toBe("connected");
     expect(redirect.searchParams.get("tenantSlug")).toBe(TENANT.slug);
@@ -239,9 +231,7 @@ describe("hosted GitHub one-click connect through the UI's start URL", () => {
           "https://bench.example.com/api/tenants/tnt_1/connections/oauth/github/callback",
       },
     ]);
-    expect(providers).toEqual([
-      { tenantId: TENANT.id, name: "github", plugin: "http" },
-    ]);
+    expect(providers).toEqual([{ tenantId: TENANT.id, name: "github", plugin: "http" }]);
     expect(credentials).toEqual([
       {
         tenantId: TENANT.id,

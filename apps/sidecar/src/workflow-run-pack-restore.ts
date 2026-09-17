@@ -1,11 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import {
-  WORKFLOW_RUN_RESTORE_REFS,
-  type RepoId,
-  type RepoStore,
-} from "@intx/hub-sessions";
+import { WORKFLOW_RUN_RESTORE_REFS, type RepoId, type RepoStore } from "@intx/hub-sessions";
 import { deriveWorkflowRunRepoId } from "@intx/workflow-deploy";
 
 const RESTORABLE_REFS: readonly string[] = WORKFLOW_RUN_RESTORE_REFS;
@@ -18,19 +14,14 @@ export type WorkflowRunPackRestoreArgs = {
   commitSha: string;
 };
 
-export type WorkflowRunPackRestorer = (
-  args: WorkflowRunPackRestoreArgs,
-) => Promise<void>;
+export type WorkflowRunPackRestorer = (args: WorkflowRunPackRestoreArgs) => Promise<void>;
 
 type MaterializedFile = {
   oid: string;
   read(): Promise<Uint8Array>;
 };
 
-async function materializeRestoredRefs(
-  substrate: RepoStore,
-  repoId: RepoId,
-): Promise<void> {
+async function materializeRestoredRefs(substrate: RepoStore, repoId: RepoId): Promise<void> {
   const hubPrincipal = { kind: "hub" } as const;
   const files = new Map<string, MaterializedFile>();
   const directories = new Set<string>();
@@ -64,9 +55,7 @@ async function materializeRestoredRefs(
         }
         const existing = files.get(relPath);
         if (existing !== undefined && existing.oid !== entry.oid) {
-          throw new Error(
-            `workflow_run_restore_conflict: ${relPath} differs across restored refs`,
-          );
+          throw new Error(`workflow_run_restore_conflict: ${relPath} differs across restored refs`);
         }
         if (existing === undefined) {
           files.set(relPath, {
@@ -98,9 +87,7 @@ async function materializeRestoredRefs(
   for (const [relPath, file] of files) {
     const destination = destinations.get(relPath);
     if (destination === undefined) {
-      throw new Error(
-        `workflow_run_restore_invalid: missing validated destination for ${relPath}`,
-      );
+      throw new Error(`workflow_run_restore_invalid: missing validated destination for ${relPath}`);
     }
     await fs.mkdir(path.dirname(destination), { recursive: true });
     await fs.writeFile(destination, await file.read());
@@ -133,9 +120,7 @@ export function createWorkflowRunPackRestorer(args: {
       );
     }
     if (!RESTORABLE_REFS.includes(ref)) {
-      throw new Error(
-        `workflow_run_restore_invalid: unsupported workflow-run ref ${ref}`,
-      );
+      throw new Error(`workflow_run_restore_invalid: unsupported workflow-run ref ${ref}`);
     }
 
     // `RepoStore` initializes a signed `.gitignore` genesis on main. Do that
@@ -143,20 +128,9 @@ export function createWorkflowRunPackRestorer(args: {
     // null and then letting `receivePack` initialize it would observe a new
     // genesis inside the receive lock and reject the stale null pre-image.
     await substrate.initRepo(repoId);
-    const expectedOldSha = await substrate.resolveRef(
-      hubPrincipal,
-      repoId,
-      ref,
-    );
+    const expectedOldSha = await substrate.resolveRef(hubPrincipal, repoId, ref);
     if (expectedOldSha !== commitSha) {
-      await substrate.receivePack(
-        hubPrincipal,
-        repoId,
-        ref,
-        pack,
-        commitSha,
-        expectedOldSha,
-      );
+      await substrate.receivePack(hubPrincipal, repoId, ref, pack, commitSha, expectedOldSha);
     }
     await materializeRestoredRefs(substrate, repoId);
 

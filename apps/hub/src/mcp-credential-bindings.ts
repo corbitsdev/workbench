@@ -17,15 +17,11 @@ import type { DB } from "@intx/db";
 import type { CredentialBinding } from "@intx/types";
 import { listMcpServerConnections } from "@corbits/connections";
 
-export type McpCredentialBindingsFor = (
-  tenantId: string,
-) => Promise<readonly CredentialBinding[]>;
+export type McpCredentialBindingsFor = (tenantId: string) => Promise<readonly CredentialBinding[]>;
 
 const MCP_TOOLS_PACKAGE = "@corbits/mcp-tools";
 
-export function createMcpCredentialBindingsFor(
-  db: DB["db"],
-): McpCredentialBindingsFor {
+export function createMcpCredentialBindingsFor(db: DB["db"]): McpCredentialBindingsFor {
   return async (tenantId: string) => {
     const connections = await listMcpServerConnections(db, tenantId);
     return connections.map((connection): CredentialBinding => ({

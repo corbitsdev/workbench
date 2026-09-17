@@ -13,10 +13,7 @@ import { createInMemoryChatStore } from "../src/store";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import { createInMemoryTurnClaimStore } from "@corbits/agent-runtime";
 import { createWorkbenchTurnQueue } from "@corbits/agent-runtime";
-import {
-  CONNECTION_CONNECTED_EVENT,
-  settleConnectedService,
-} from "../src/connect-pending";
+import { CONNECTION_CONNECTED_EVENT, settleConnectedService } from "../src/connect-pending";
 import { fakePlatform, TENANT } from "./test-support";
 
 const HUMAN_ADDRESS = "prn_owner@acme.example";
@@ -88,16 +85,12 @@ function buildDeps() {
 
 function expectEventOnlySettleNotice(
   items: Awaited<
-    ReturnType<
-      ReturnType<typeof createInMemoryRoomMessageStore>["listMessages"]
-    >
+    ReturnType<ReturnType<typeof createInMemoryRoomMessageStore>["listMessages"]>
   >["items"],
   displayName: string,
 ) {
   const notices = items.filter(
-    (item) =>
-      item.parts.length > 0 &&
-      item.parts.every((part) => part.kind === "event"),
+    (item) => item.parts.length > 0 && item.parts.every((part) => part.kind === "event"),
   );
   expect(notices.length).toBeGreaterThanOrEqual(1);
   const notice = notices[0];
@@ -118,8 +111,7 @@ function expectEventOnlySettleNotice(
 }
 
 test("After connect, no new timeline row is authored as the signed-in user by the product", async () => {
-  const { store, roomMessages, published, platform, agentTurns, deps } =
-    buildDeps();
+  const { store, roomMessages, published, platform, agentTurns, deps } = buildDeps();
   await seedWorkbench(store, "chan_waiting", ["gmail", "exa"]);
   await seedWorkbench(store, "chan_other", undefined);
 
@@ -134,14 +126,10 @@ test("After connect, no new timeline row is authored as the signed-in user by th
   expect(settled?.settings["connections/pending"]).toEqual(["exa"]);
   expect(
     published.some(
-      (entry) =>
-        entry.workbenchId === "chan_waiting" &&
-        entry.event.type === "chat.settings",
+      (entry) => entry.workbenchId === "chan_waiting" && entry.event.type === "chat.settings",
     ),
   ).toBe(true);
-  expect(published.some((entry) => entry.event.type === "chat.message")).toBe(
-    true,
-  );
+  expect(published.some((entry) => entry.event.type === "chat.message")).toBe(true);
 
   const listed = await roomMessages.listMessages({
     tenantId: TENANT.id,
@@ -174,8 +162,7 @@ test("After connect, no new timeline row is authored as the signed-in user by th
 });
 
 test("Connect card flips in place; agent wakes without a forged user message", async () => {
-  const { store, roomMessages, published, platform, agentTurns, deps } =
-    buildDeps();
+  const { store, roomMessages, published, platform, agentTurns, deps } = buildDeps();
   await seedWorkbench(store, "chan_waiting", ["gmail"]);
   await roomMessages.insertMessage({
     id: "msg_1",
@@ -205,14 +192,10 @@ test("Connect card flips in place; agent wakes without a forged user message", a
   expect(settled?.settings["connections/pending"]).toEqual([]);
   expect(
     published.some(
-      (entry) =>
-        entry.workbenchId === "chan_waiting" &&
-        entry.event.type === "chat.settings",
+      (entry) => entry.workbenchId === "chan_waiting" && entry.event.type === "chat.settings",
     ),
   ).toBe(true);
-  expect(published.some((entry) => entry.event.type === "chat.message")).toBe(
-    true,
-  );
+  expect(published.some((entry) => entry.event.type === "chat.message")).toBe(true);
 
   const listed = await roomMessages.listMessages({
     tenantId: TENANT.id,
@@ -222,15 +205,11 @@ test("Connect card flips in place; agent wakes without a forged user message", a
   expect(listed.items.map((item) => item.id).toSorted()).toEqual(
     expect.arrayContaining(["msg_1", "msg_2"]),
   );
-  expect(
-    listed.items.some((item) =>
-      JSON.stringify(item.parts).includes("is connected now"),
-    ),
-  ).toBe(false);
+  expect(listed.items.some((item) => JSON.stringify(item.parts).includes("is connected now"))).toBe(
+    false,
+  );
   expectEventOnlySettleNotice(listed.items, "Gmail");
-  expect(
-    listed.items.filter((item) => item.senderPrincipalId === "prn_owner"),
-  ).toHaveLength(1);
+  expect(listed.items.filter((item) => item.senderPrincipalId === "prn_owner")).toHaveLength(1);
 
   expect(platform.sentMail).toHaveLength(1);
   expect(platform.sentMail[0]?.workbenchId).toBe("ins_myra");
@@ -265,8 +244,7 @@ test("matches a pending mcp-prefixed entry when the preset connects under its ba
 });
 
 test("settles a room whose GitHub card is pending under the code-review template's own key — a credential created out of band (not through that card's own submit) still reaches it, and no agent is woken", async () => {
-  const { store, roomMessages, published, platform, agentTurns, deps } =
-    buildDeps();
+  const { store, roomMessages, published, platform, agentTurns, deps } = buildDeps();
   await seedTemplateWorkbench(store, "chan_template", ["github"]);
 
   await settleConnectedService(deps, {
@@ -281,14 +259,10 @@ test("settles a room whose GitHub card is pending under the code-review template
   expect(settled?.settings["template/id"]).toBe("code-review");
   expect(
     published.some(
-      (entry) =>
-        entry.workbenchId === "chan_template" &&
-        entry.event.type === "chat.settings",
+      (entry) => entry.workbenchId === "chan_template" && entry.event.type === "chat.settings",
     ),
   ).toBe(true);
-  expect(published.some((entry) => entry.event.type === "chat.message")).toBe(
-    true,
-  );
+  expect(published.some((entry) => entry.event.type === "chat.message")).toBe(true);
 
   const listed = await roomMessages.listMessages({
     tenantId: TENANT.id,
@@ -452,17 +426,9 @@ test("System / settle notices are not presented as the human's messages", async 
   });
   expect(listed.items).toHaveLength(1);
   expectEventOnlySettleNotice(listed.items, "GitHub");
-  expect(
-    listed.items.filter((item) => item.sender.address === HUMAN_ADDRESS),
-  ).toHaveLength(0);
-  expect(
-    listed.items.filter((item) => item.senderPrincipalId === "prn_owner"),
-  ).toHaveLength(0);
-  expect(
-    listed.items.some((item) =>
-      item.parts.some((part) => part.kind === "text"),
-    ),
-  ).toBe(false);
+  expect(listed.items.filter((item) => item.sender.address === HUMAN_ADDRESS)).toHaveLength(0);
+  expect(listed.items.filter((item) => item.senderPrincipalId === "prn_owner")).toHaveLength(0);
+  expect(listed.items.some((item) => item.parts.some((part) => part.kind === "text"))).toBe(false);
 });
 
 test("a connector no room is waiting on settles nothing", async () => {

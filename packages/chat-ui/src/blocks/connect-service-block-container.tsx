@@ -10,10 +10,7 @@
 import { useEffect, useState } from "react";
 import type { ConnectServiceBlockData } from "../wire/blocks";
 
-import type {
-  ConnectServiceActions,
-  ConnectServiceQuery,
-} from "./connect-service-actions";
+import type { ConnectServiceActions, ConnectServiceQuery } from "./connect-service-actions";
 import { ConnectServiceBlockView } from "./connect-service-block";
 
 export function ConnectServiceBlockContainer({
@@ -35,10 +32,7 @@ export function ConnectServiceBlockContainer({
     }
 
     void actions.getConnectState(data.connectorId).then(applyQuery);
-    const unsubscribe = actions.subscribeConnectState(
-      data.connectorId,
-      applyQuery,
-    );
+    const unsubscribe = actions.subscribeConnectState(data.connectorId, applyQuery);
     return () => {
       cancelled = true;
       unsubscribe();
@@ -46,12 +40,7 @@ export function ConnectServiceBlockContainer({
   }, [actions, data.connectorId]);
 
   if (query.kind === "connected") {
-    return (
-      <ConnectServiceBlockView
-        kind="connected"
-        displayName={data.displayName}
-      />
-    );
+    return <ConnectServiceBlockView kind="connected" displayName={data.displayName} />;
   }
 
   const affordance = query.kind === "disconnected" ? query.affordance : "oauth";

@@ -91,11 +91,7 @@ async function request<T>(
   }
   const parsed = schema(json);
   if (parsed instanceof type.errors) {
-    throw new ApiQueryError(
-      `Unexpected response shape: ${parsed.summary}`,
-      undefined,
-      path,
-    );
+    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
   }
   return parsed;
 }
@@ -113,20 +109,16 @@ function toSkillSummary(asset: Asset): SkillSummary {
   };
 }
 
-export function listSkills(
-  tenantId: string,
-  query = "",
-): Promise<readonly SkillSummary[]> {
-  return request(
-    `${base(tenantId)}?kind=skill&inherited=false`,
-    AssetListResponse,
-  ).then((assets) => {
-    const skills = assets.map(toSkillSummary);
-    const needle = query.trim().toLowerCase();
-    return needle === ""
-      ? skills
-      : skills.filter((skill) => skill.name.toLowerCase().includes(needle));
-  });
+export function listSkills(tenantId: string, query = ""): Promise<readonly SkillSummary[]> {
+  return request(`${base(tenantId)}?kind=skill&inherited=false`, AssetListResponse).then(
+    (assets) => {
+      const skills = assets.map(toSkillSummary);
+      const needle = query.trim().toLowerCase();
+      return needle === ""
+        ? skills
+        : skills.filter((skill) => skill.name.toLowerCase().includes(needle));
+    },
+  );
 }
 
 export async function loadSkill(
@@ -136,11 +128,7 @@ export async function loadSkill(
   const skills = await listSkills(tenantId);
   const skill = skills.find((candidate) => candidate.name === name);
   if (skill === undefined) {
-    throw new ApiQueryError(
-      `No skill named "${name}" in this workbench.`,
-      404,
-      base(tenantId),
-    );
+    throw new ApiQueryError(`No skill named "${name}" in this workbench.`, 404, base(tenantId));
   }
   return { skill };
 }
@@ -161,9 +149,7 @@ export function createSkill(
     body: {
       kind: "skill",
       name: input.name,
-      ...(input.displayName !== undefined
-        ? { displayName: input.displayName }
-        : {}),
+      ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
     },
   }).then(toSkillSummary);
 }

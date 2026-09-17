@@ -170,9 +170,7 @@ function PdfRenderer({
   return (
     <div className="rounded-[var(--ui-radius-md)] border border-border bg-card p-6 shadow-sm">
       <h3 className="mb-3 text-sm font-semibold">{title}</h3>
-      <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-        {content}
-      </p>
+      <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{content}</p>
     </div>
   );
 }
@@ -211,11 +209,7 @@ function EmptyContent({ message }: { readonly message: string }) {
   return <p className="text-sm text-muted-foreground">{message}</p>;
 }
 
-function UnsupportedRenderer({
-  unavailableReason,
-}: {
-  readonly unavailableReason?: string;
-}) {
+function UnsupportedRenderer({ unavailableReason }: { readonly unavailableReason?: string }) {
   return (
     <div className="flex flex-col items-center gap-2 py-8 text-center text-sm text-muted-foreground">
       <FileDashed className="size-6" aria-hidden="true" />
@@ -234,19 +228,9 @@ export function ArtifactRenderer({
 }: ArtifactRenderProps) {
   switch (rendererKind) {
     case "doc":
-      return (
-        <DocRenderer
-          content={content}
-          contentUnavailable={contentUnavailable ?? false}
-        />
-      );
+      return <DocRenderer content={content} contentUnavailable={contentUnavailable ?? false} />;
     case "sheet":
-      return (
-        <SheetRenderer
-          content={content}
-          contentUnavailable={contentUnavailable ?? false}
-        />
-      );
+      return <SheetRenderer content={content} contentUnavailable={contentUnavailable ?? false} />;
     case "pdf":
       return (
         <PdfRenderer
@@ -257,16 +241,11 @@ export function ArtifactRenderer({
       );
     case "html":
       return (
-        <HtmlPreviewRenderer
-          title={title}
-          {...(previewSrc !== undefined ? { previewSrc } : {})}
-        />
+        <HtmlPreviewRenderer title={title} {...(previewSrc !== undefined ? { previewSrc } : {})} />
       );
     case "unsupported":
       return (
-        <UnsupportedRenderer
-          {...(unavailableReason !== undefined ? { unavailableReason } : {})}
-        />
+        <UnsupportedRenderer {...(unavailableReason !== undefined ? { unavailableReason } : {})} />
       );
   }
 }

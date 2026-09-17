@@ -11,11 +11,7 @@ import { createRoot, type Root } from "react-dom/client";
 
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
-import {
-  FILES_PATH_PREFIX,
-  PLUGINS_PATH_PREFIX,
-  SKILLS_PATH_PREFIX,
-} from "../src/path-ids";
+import { FILES_PATH_PREFIX, PLUGINS_PATH_PREFIX, SKILLS_PATH_PREFIX } from "../src/path-ids";
 import { MISSION_CONTROL_PATH, SETTINGS_PATH } from "../src/routes";
 import {
   isProviderHealthRecoverySurface,
@@ -61,8 +57,7 @@ const membership = {
 function stubFetch(providerHealthBody: unknown): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
-    if (path.includes("/api/me/principals"))
-      return Promise.resolve(json(membership));
+    if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
     if (path.includes("/connections/provider-health"))
       return Promise.resolve(json(providerHealthBody));
     return Promise.resolve(json({ items: [] }));
@@ -115,10 +110,7 @@ async function flushForHealthMarker(marker: string): Promise<void> {
   }
 }
 
-function findByText(
-  container: HTMLElement,
-  text: string,
-): HTMLElement | undefined {
+function findByText(container: HTMLElement, text: string): HTMLElement | undefined {
   return Array.from(container.querySelectorAll("button")).find(
     (button) => button.textContent === text,
   );
@@ -264,9 +256,7 @@ describe("ProviderHealthBanner (CL-6092)", () => {
     await flushForHealthMarker("healthy");
 
     expect(container.querySelector('[role="alert"]')).toBeNull();
-    expect(
-      container.querySelector('[data-provider-health="healthy"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('[data-provider-health="healthy"]')).not.toBeNull();
   });
 
   // CL-6834: a failed first poll used to leave providers at {}, which the
@@ -275,8 +265,7 @@ describe("ProviderHealthBanner (CL-6092)", () => {
   test("first-load poll failure shows error chrome, not a silent healthy state", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
-      if (path.includes("/api/me/principals"))
-        return Promise.resolve(json(membership));
+      if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
       if (path.includes("/connections/provider-health"))
         return Promise.reject(new Error("network down"));
       return Promise.resolve(json({ items: [] }));
@@ -285,17 +274,13 @@ describe("ProviderHealthBanner (CL-6092)", () => {
     await mount(() => undefined);
     await flushForHealthMarker("error");
 
-    expect(
-      container.querySelector('[data-provider-health="error"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('[data-provider-health="error"]')).not.toBeNull();
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
     expect(container.textContent).toContain("Couldn't check provider health");
     // Not the guided unhealthy-provider copy — there is no incident to fix.
     expect(container.textContent).not.toContain("turned down your key.");
     expect(findByText(container, "Fix it")).toBeUndefined();
-    expect(
-      container.querySelector('[data-provider-health="healthy"]'),
-    ).toBeNull();
+    expect(container.querySelector('[data-provider-health="healthy"]')).toBeNull();
   });
 });
 
@@ -313,22 +298,16 @@ const CREDENTIAL_FAILURE_HEALTH = {
 describe("isProviderHealthRecoverySurface (CL-6734)", () => {
   test("Skills, Files, Mission Control, and Plugins are not recovery surfaces", () => {
     expect(isProviderHealthRecoverySurface(SKILLS_PATH_PREFIX)).toBe(false);
-    expect(
-      isProviderHealthRecoverySurface(`${SKILLS_PATH_PREFIX}/drafting`),
-    ).toBe(false);
+    expect(isProviderHealthRecoverySurface(`${SKILLS_PATH_PREFIX}/drafting`)).toBe(false);
     expect(isProviderHealthRecoverySurface(FILES_PATH_PREFIX)).toBe(false);
     expect(isProviderHealthRecoverySurface(MISSION_CONTROL_PATH)).toBe(false);
     expect(isProviderHealthRecoverySurface(PLUGINS_PATH_PREFIX)).toBe(false);
-    expect(
-      isProviderHealthRecoverySurface(`${PLUGINS_PATH_PREFIX}/anthropic`),
-    ).toBe(false);
+    expect(isProviderHealthRecoverySurface(`${PLUGINS_PATH_PREFIX}/anthropic`)).toBe(false);
   });
 
   test("Settings and the broken room still are", () => {
     expect(isProviderHealthRecoverySurface(SETTINGS_PATH)).toBe(true);
-    expect(isProviderHealthRecoverySurface(`${SETTINGS_PATH}/members`)).toBe(
-      true,
-    );
+    expect(isProviderHealthRecoverySurface(`${SETTINGS_PATH}/members`)).toBe(true);
     expect(isProviderHealthRecoverySurface("/w/ch_1")).toBe(true);
     expect(isProviderHealthRecoverySurface("/w/ch_1/settings")).toBe(true);
     expect(isProviderHealthRecoverySurface("/")).toBe(true);
@@ -391,9 +370,7 @@ describe("ProviderHealthBanner scope (CL-6734)", () => {
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
 
     await act(async () => {
-      root.render(
-        <Harness navigate={() => undefined} path={SKILLS_PATH_PREFIX} />,
-      );
+      root.render(<Harness navigate={() => undefined} path={SKILLS_PATH_PREFIX} />);
     });
     expect(container.querySelector('[role="alert"]')).toBeNull();
 

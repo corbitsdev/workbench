@@ -23,10 +23,7 @@ import { WarningCircle } from "@corbits/icons";
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { useCallback, useEffect, useState } from "react";
 
-import {
-  ensurePrimaryTenant,
-  runPortableClientBootstrap,
-} from "../client-bootstrap";
+import { ensurePrimaryTenant, runPortableClientBootstrap } from "../client-bootstrap";
 import { createFetchStockHub, findOwnedTenants } from "../needs-converge";
 import { deployMyraSource } from "../myra-deploy";
 import { useNavigate } from "../navigation";
@@ -125,9 +122,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
             setState({
               phase: "error",
               message:
-                error instanceof Error
-                  ? error.message
-                  : "Checking your model access hit a snag.",
+                error instanceof Error ? error.message : "Checking your model access hit a snag.",
             });
           },
         );
@@ -136,10 +131,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         if (cancelled) return;
         setState({
           phase: "error",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Setting up your workbench hit a snag.",
+          message: error instanceof Error ? error.message : "Setting up your workbench hit a snag.",
         });
       },
     );
@@ -149,7 +141,6 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     // `publishAndInstall` is defined below and stable across renders (it
     // closes over nothing but `setState`), so it is intentionally left
     // out of this effect's dependency list.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.phase, user]);
 
   // Step 3: publish Myra's deploy input for the resolved offering, then
@@ -171,10 +162,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
       (error: unknown) => {
         setState({
           phase: "error",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Publishing Myra's source hit a snag.",
+          message: error instanceof Error ? error.message : "Publishing Myra's source hit a snag.",
         });
       },
     );
@@ -203,10 +191,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         if (cancelled) return;
         setState({
           phase: "error",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Setting up your workbench hit a snag.",
+          message: error instanceof Error ? error.message : "Setting up your workbench hit a snag.",
         });
       },
     );
@@ -222,10 +207,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
           <h1 className="onboarding-title">Checking your workbench</h1>
           <p className="onboarding-subtitle">One moment.</p>
           <div className="onboarding-content">
-            <WorkbenchLoadingState
-              delayMs={0}
-              title="Checking your workbench…"
-            />
+            <WorkbenchLoadingState delayMs={0} title="Checking your workbench…" />
           </div>
         </div>
       </OnboardingLayout>
@@ -235,10 +217,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   if (state.phase === "provider-setup") {
     return (
       <OnboardingLayout>
-        <div
-          className="onboarding-phase onboarding-phase--credential"
-          key="provider-setup"
-        >
+        <div className="onboarding-phase onboarding-phase--credential" key="provider-setup">
           <h1 className="onboarding-title">Connect a model provider</h1>
           <p className="onboarding-subtitle">
             Myra needs one working inference credential before she can start.
@@ -257,8 +236,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
                   if (primary === undefined) {
                     setState({
                       phase: "error",
-                      message:
-                        "Your primary workbench disappeared mid-setup — please retry.",
+                      message: "Your primary workbench disappeared mid-setup — please retry.",
                     });
                     return;
                   }
@@ -280,10 +258,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
           <h1 className="onboarding-title">Setting up your workbench</h1>
           <p className="onboarding-subtitle">One moment.</p>
           <div className="onboarding-content">
-            <WorkbenchLoadingState
-              delayMs={0}
-              title="Setting up your workbench…"
-            />
+            <WorkbenchLoadingState delayMs={0} title="Setting up your workbench…" />
           </div>
         </div>
       </OnboardingLayout>

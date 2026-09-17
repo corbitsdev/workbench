@@ -22,10 +22,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
-import {
-  buildEchoWorkflow,
-  serializeEchoWorkflow,
-} from "../../workflows/echo/src/index.ts";
+import { buildEchoWorkflow, serializeEchoWorkflow } from "../../workflows/echo/src/index.ts";
 import {
   api,
   assertNeverRealProvider,
@@ -54,9 +51,7 @@ function stringField(data: unknown, field: string, what: string): string {
     const value = (data as Record<string, unknown>)[field];
     if (typeof value === "string" && value !== "") return value;
   }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
+  throw new Error(`${what}: missing string field "${field}": ${JSON.stringify(data)}`);
 }
 
 /**
@@ -79,20 +74,12 @@ const PLACEHOLDER_MODEL = "noop";
  * address-reachable (see the module comment above).
  */
 async function seedPlaceholderCatalogOffering(options: {
-  call: (
-    method: string,
-    path: string,
-    body?: unknown,
-    cookies?: string[],
-  ) => Promise<ApiResult>;
+  call: (method: string, path: string, body?: unknown, cookies?: string[]) => Promise<ApiResult>;
   tenantId: string;
   cookies: string[];
   placeholderBaseUrl: string;
 }): Promise<{ offeringId: string }> {
-  assertNeverRealProvider(
-    options.placeholderBaseUrl,
-    "placeholder catalog provider baseURL",
-  );
+  assertNeverRealProvider(options.placeholderBaseUrl, "placeholder catalog provider baseURL");
   const { call, tenantId, cookies } = options;
 
   const model = await call(
@@ -139,11 +126,7 @@ async function seedPlaceholderCatalogOffering(options: {
     cookies,
   );
   expectStatus("create catalog provider", catalogProvider, 201);
-  const catalogProviderId = stringField(
-    catalogProvider.data,
-    "id",
-    "create catalog provider",
-  );
+  const catalogProviderId = stringField(catalogProvider.data, "id", "create catalog provider");
 
   const offering = await call(
     "POST",
@@ -184,9 +167,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
       const handle = await startHub({
         databaseUrl: url,
         port: freePort(),
-        sessionSecret: Buffer.from(
-          crypto.getRandomValues(new Uint8Array(32)),
-        ).toString("hex"),
+        sessionSecret: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"),
         dataDir: await tempDir("e2e-hub-data-"),
       });
       track(handle);
@@ -229,51 +210,46 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
     // arrives over the platform's git smart-HTTP surface — the only
     // surface that writes asset tree content.
     const assetName = "echo";
-    const { assetId, commitSha } = await hop(
-      "workflow asset publication",
-      async () => {
-        const created = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/assets`,
-          { kind: "workflow", name: assetName },
-          user.cookies,
-        );
-        expectStatus("create workflow asset", created, 201);
-        const id = stringField(created.data, "id", "create workflow asset");
+    const { assetId, commitSha } = await hop("workflow asset publication", async () => {
+      const created = await api(
+        hub.baseUrl,
+        "POST",
+        `/api/tenants/${tenantId}/assets`,
+        { kind: "workflow", name: assetName },
+        user.cookies,
+      );
+      expectStatus("create workflow asset", created, 201);
+      const id = stringField(created.data, "id", "create workflow asset");
 
-        const minted = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/git-tokens`,
-          {
-            name: "e2e-workflow-push",
-            resource: "asset:*",
-            refPattern: "**",
-            actions: ["can_read", "can_push"],
-            expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
-          },
-          user.cookies,
-        );
-        expectStatus("mint git token", minted, 201);
+      const minted = await api(
+        hub.baseUrl,
+        "POST",
+        `/api/tenants/${tenantId}/git-tokens`,
+        {
+          name: "e2e-workflow-push",
+          resource: "asset:*",
+          refPattern: "**",
+          actions: ["can_read", "can_push"],
+          expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+        },
+        user.cookies,
+      );
+      expectStatus("mint git token", minted, 201);
 
-        const definition = buildEchoWorkflow({
-          triggerAddress: `echo@${slug}.localhost`,
-          inferencePreferences: [
-            { provider: "anthropic", model: PLACEHOLDER_MODEL },
-          ],
-          turnTimeoutMs: 60_000,
-        });
-        const pushed = await pushWorkflowSource({
-          baseUrl: hub.baseUrl,
-          tenantId,
-          assetName,
-          tokenSecret: stringField(minted.data, "secret", "mint git token"),
-          workflowJson: serializeEchoWorkflow(definition),
-        });
-        return { assetId: id, commitSha: pushed.commitSha };
-      },
-    );
+      const definition = buildEchoWorkflow({
+        triggerAddress: `echo@${slug}.localhost`,
+        inferencePreferences: [{ provider: "anthropic", model: PLACEHOLDER_MODEL }],
+        turnTimeoutMs: 60_000,
+      });
+      const pushed = await pushWorkflowSource({
+        baseUrl: hub.baseUrl,
+        tenantId,
+        assetName,
+        tokenSecret: stringField(minted.data, "secret", "mint git token"),
+        workflowJson: serializeEchoWorkflow(definition),
+      });
+      return { assetId: id, commitSha: pushed.commitSha };
+    });
 
     // Hop: noop catalog seeding. The native deploy resolves inference
     // against a real catalog offering; this suite's chosen offering
@@ -281,8 +257,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
     // never calls inference and full run-completion is not asserted.
     const { offeringId } = await hop("noop catalog seeding", () =>
       seedPlaceholderCatalogOffering({
-        call: (method, path, body, cookies) =>
-          api(hub.baseUrl, method, path, body, cookies),
+        call: (method, path, body, cookies) => api(hub.baseUrl, method, path, body, cookies),
         tenantId,
         cookies: user.cookies,
         placeholderBaseUrl: "https://inference.invalid",
@@ -342,8 +317,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
       expectStatus("list deployments", listed, 200);
       if (!JSON.stringify(listed.data).includes(deploymentId)) {
         throw new Error(
-          `deployment ${deploymentId} missing from list: ` +
-            JSON.stringify(listed.data),
+          `deployment ${deploymentId} missing from list: ` + JSON.stringify(listed.data),
         );
       }
 
@@ -355,11 +329,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
         user.cookies,
       );
       expectStatus("trigger deployment mail", triggered, 202);
-      const address = stringField(
-        triggered.data,
-        "address",
-        "trigger deployment mail",
-      );
+      const address = stringField(triggered.data, "address", "trigger deployment mail");
       // The deployment's stable mail address. This same value is also the
       // deployment's run identity: the platform derives one run id from
       // the address, shared by every trigger of the deployment. The

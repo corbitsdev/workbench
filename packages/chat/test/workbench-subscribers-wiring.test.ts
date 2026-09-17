@@ -8,18 +8,9 @@ import { describe, expect, test } from "bun:test";
 import { createChatRoutes } from "../src/routes";
 import { createWorkbenchSubscriberRegistry } from "../src/workbench-events";
 import { startWorkflowCommand } from "../src/workbench-service";
-import {
-  createCommandRegistry,
-  createWorkflowCommandPlugin,
-} from "@corbits/commands";
+import { createCommandRegistry, createWorkflowCommandPlugin } from "@corbits/commands";
 import type { ChatWorkbenchEvent } from "../src/platform-port";
-import {
-  buildDeps,
-  createWorkbench,
-  fakePlatform,
-  mountAs,
-  sendText,
-} from "./test-support";
+import { buildDeps, createWorkbench, fakePlatform, mountAs, sendText } from "./test-support";
 
 describe("workbench subscriber registry shared between chat routes and command dispatch", () => {
   test("a workflow started via a slash command publishes onto a subscriber already listening on that workbench", async () => {
@@ -31,8 +22,7 @@ describe("workbench subscriber registry shared between chat routes and command d
     const commands = createCommandRegistry();
     commands.registerCommandPlugin(
       createWorkflowCommandPlugin({
-        listInvitableDefinitions: (tenantId) =>
-          platform.listInvitableDefinitions(tenantId),
+        listInvitableDefinitions: (tenantId) => platform.listInvitableDefinitions(tenantId),
         startWorkflow: (input) =>
           startWorkflowCommand(
             {
@@ -57,9 +47,7 @@ describe("workbench subscriber registry shared between chat routes and command d
     });
 
     const received: ChatWorkbenchEvent[] = [];
-    workbenchSubscribers.subscribe(workbench.id, (event) =>
-      received.push(event),
-    );
+    workbenchSubscribers.subscribe(workbench.id, (event) => received.push(event));
 
     const response = await sendText(app, workbench.id, "/echo hello there");
     expect(response.status).toBe(201);

@@ -14,10 +14,7 @@
 // Plugins gallery's resolver looks up. `seedCatalog` is passed that same
 // `credentialName` so its own internal `ensureCredential` resolves to
 // the row planted here rather than a second `<provider>-default` row.
-import {
-  PROVIDER_TEST_CONFIG,
-  type SupportedCredentialProvider,
-} from "./credential-test";
+import { PROVIDER_TEST_CONFIG, type SupportedCredentialProvider } from "./credential-test";
 import {
   ensureCredential,
   ensureProvider,
@@ -29,9 +26,7 @@ import {
 import type { ApiCall } from "@corbits/hub-api-client";
 import type { ConnectorDescriptor } from "./descriptor";
 
-export function isInferenceProvider(
-  id: string,
-): id is SupportedCredentialProvider {
+export function isInferenceProvider(id: string): id is SupportedCredentialProvider {
   return Object.hasOwn(PROVIDER_TEST_CONFIG, id);
 }
 
@@ -50,9 +45,7 @@ export type PersistConnectorCredentialFns = {
     args: EnsureCredentialArgs,
     log: (line: string) => void,
   ) => ReturnType<typeof ensureCredential>;
-  readonly seedCatalogFn?: (
-    args: SeedCatalogArgs,
-  ) => ReturnType<typeof seedCatalog>;
+  readonly seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
 };
 
 export type PersistConnectorCredentialArgs = PersistConnectorCredentialFns & {
@@ -87,9 +80,7 @@ export type PersistConnectorCredentialArgs = PersistConnectorCredentialFns & {
   readonly log: (line: string) => void;
 };
 
-export async function persistConnectorCredential(
-  args: PersistConnectorCredentialArgs,
-): Promise<{
+export async function persistConnectorCredential(args: PersistConnectorCredentialArgs): Promise<{
   credentialId: string;
   /** The catalog seed's own report (CL-6351's model-capability read
    * included) — absent for a non-inference connector, which never
@@ -100,9 +91,7 @@ export async function persistConnectorCredential(
   const runEnsureCredential = args.ensureCredentialFn ?? ensureCredential;
   const runSeedCatalog = args.seedCatalogFn ?? seedCatalog;
   const credentialType =
-    args.credentialMetadata !== undefined
-      ? ("oauth_token" as const)
-      : ("api_key" as const);
+    args.credentialMetadata !== undefined ? ("oauth_token" as const) : ("api_key" as const);
 
   const providerArgs: EnsureProviderArgs =
     args.baseURLOverride !== undefined
@@ -124,12 +113,7 @@ export async function persistConnectorCredential(
             name: args.descriptor.id,
             plugin: args.descriptor.credentialPlugin,
           };
-  const providerId = await runEnsureProvider(
-    args.api,
-    args.cookies,
-    providerArgs,
-    args.log,
-  );
+  const providerId = await runEnsureProvider(args.api, args.cookies, providerArgs, args.log);
 
   const credentialArgs: EnsureCredentialArgs =
     args.credentialMetadata !== undefined
@@ -141,12 +125,8 @@ export async function persistConnectorCredential(
           type: credentialType,
           verified: true,
           metadata: args.credentialMetadata,
-          ...(args.refreshSecret !== undefined
-            ? { refreshSecret: args.refreshSecret }
-            : {}),
-          ...(args.expiresAt !== undefined
-            ? { expiresAt: args.expiresAt }
-            : {}),
+          ...(args.refreshSecret !== undefined ? { refreshSecret: args.refreshSecret } : {}),
+          ...(args.expiresAt !== undefined ? { expiresAt: args.expiresAt } : {}),
         }
       : {
           tenantId: args.tenantId,
@@ -156,12 +136,7 @@ export async function persistConnectorCredential(
           type: credentialType,
           verified: true,
         };
-  const credentialId = await runEnsureCredential(
-    args.api,
-    args.cookies,
-    credentialArgs,
-    args.log,
-  );
+  const credentialId = await runEnsureCredential(args.api, args.cookies, credentialArgs, args.log);
 
   // An inference provider connected anywhere must become usable, not
   // just stored: plant its curated model catalog so the models show up

@@ -28,10 +28,7 @@ async function writePackage(
     join(dir, "tsconfig.json"),
     JSON.stringify({ extends: "../../tsconfig.base.json" }, null, 2),
   );
-  await writeFile(
-    join(dir, "src", "index.ts"),
-    options.srcFile ?? "export const value = 1;\n",
-  );
+  await writeFile(join(dir, "src", "index.ts"), options.srcFile ?? "export const value = 1;\n");
   if (options.withTest) {
     await mkdir(join(dir, "test"), { recursive: true });
     await writeFile(join(dir, "test", "index.test.ts"), "export {};\n");
@@ -59,10 +56,7 @@ function run(args: string[]): Promise<{ exitCode: number; stderr: string }> {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const [stderr, exitCode] = await Promise.all([
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
+    const [stderr, exitCode] = await Promise.all([new Response(child.stderr).text(), child.exited]);
     return { exitCode, stderr };
   })();
 }
@@ -114,9 +108,7 @@ describe("generate-tsconfig-references", () => {
     await run([]);
 
     const combined = await readTsconfig("leaf");
-    expect(combined.compilerOptions?.["tsBuildInfoFile"]).toBe(
-      "tsconfig.tsbuildinfo",
-    );
+    expect(combined.compilerOptions?.["tsBuildInfoFile"]).toBe("tsconfig.tsbuildinfo");
   });
 
   test("references a real workspace dependency's tsconfig.src.json", async () => {
@@ -156,17 +148,11 @@ describe("generate-tsconfig-references", () => {
 
   test("the combined tsconfig.json references the same deps as tsconfig.src.json", async () => {
     await writePackage("leaf");
-    await writePackage(
-      "consumer",
-      { "@fixture/leaf": "workspace:*" },
-      { withTest: true },
-    );
+    await writePackage("consumer", { "@fixture/leaf": "workspace:*" }, { withTest: true });
     await run([]);
 
     const combined = await readTsconfig("consumer");
-    expect(combined.references).toEqual([
-      { path: "../leaf/tsconfig.src.json" },
-    ]);
+    expect(combined.references).toEqual([{ path: "../leaf/tsconfig.src.json" }]);
     expect(combined.compilerOptions?.["composite"]).toBe(false);
     expect(combined.include).toContain("test");
   });
@@ -272,9 +258,7 @@ describe("generate-tsconfig-references", () => {
     );
     await run([]);
 
-    expect(await tsconfigExists("uses-harness", "tsconfig.src.json")).toBe(
-      false,
-    );
+    expect(await tsconfigExists("uses-harness", "tsconfig.src.json")).toBe(false);
     const config = await readTsconfig("uses-harness");
     expect(config.compilerOptions?.["composite"]).toBeUndefined();
   });

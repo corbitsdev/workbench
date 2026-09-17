@@ -15,16 +15,12 @@ import { tarballsCoverRequiredSeedPackages } from "./registry";
 
 describe("shouldPublishTarball", () => {
   test("a brand-new filename publishes", () => {
-    expect(shouldPublishTarball("corbits-x-tools-0.0.2.tgz", undefined)).toBe(
-      true,
-    );
+    expect(shouldPublishTarball("corbits-x-tools-0.0.2.tgz", undefined)).toBe(true);
   });
 
   test("an already-published filename is skipped, whatever its bytes", () => {
     const existing = sha512Integrity(new TextEncoder().encode("old bytes"));
-    expect(shouldPublishTarball("corbits-x-tools-0.0.2.tgz", existing)).toBe(
-      false,
-    );
+    expect(shouldPublishTarball("corbits-x-tools-0.0.2.tgz", existing)).toBe(false);
   });
 });
 
@@ -42,15 +38,11 @@ describe("tarballsCoverRequiredSeedPackages", () => {
   });
 
   test("covers @corbits/capability-tools at any version", () => {
-    expect(
-      tarballsCoverRequiredSeedPackages(["corbits-capability-tools-0.0.6.tgz"]),
-    ).toBe(true);
+    expect(tarballsCoverRequiredSeedPackages(["corbits-capability-tools-0.0.6.tgz"])).toBe(true);
   });
 
   test("a dangling registry with unrelated tarballs is not seeded", () => {
-    expect(
-      tarballsCoverRequiredSeedPackages(["corbits-other-tools-1.0.0.tgz"]),
-    ).toBe(false);
+    expect(tarballsCoverRequiredSeedPackages(["corbits-other-tools-1.0.0.tgz"])).toBe(false);
   });
 });
 
@@ -85,9 +77,7 @@ describe("publishCorbitsToolsRegistry", () => {
     } catch (cause) {
       expect(cause).toBeInstanceOf(EmptyRegistryPublishError);
       expect((cause as EmptyRegistryPublishError).success).toBe(false);
-      expect((cause as EmptyRegistryPublishError).message).toContain(
-        "uploaded none",
-      );
+      expect((cause as EmptyRegistryPublishError).message).toContain("uploaded none");
       expect((cause as EmptyRegistryPublishError).message).toContain(
         "still missing @corbits/capability-tools",
       );
@@ -138,13 +128,10 @@ describe("publishCorbitsToolsRegistry", () => {
           bytes: new Uint8Array([1, 2, 3]),
         }),
         fetchImpl: (async () =>
-          new Response(
-            JSON.stringify({ commit: "abc", integrity: "sha512-x" }),
-            {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            },
-          )) satisfies FetchTarballPut,
+          new Response(JSON.stringify({ commit: "abc", integrity: "sha512-x" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })) satisfies FetchTarballPut,
       });
       throw new Error("expected EmptyRegistryPublishError");
     } catch (cause) {
@@ -155,9 +142,7 @@ describe("publishCorbitsToolsRegistry", () => {
       expect((cause as EmptyRegistryPublishError).message).toContain(
         "still missing @corbits/capability-tools",
       );
-      expect((cause as EmptyRegistryPublishError).message).not.toContain(
-        "uploaded none",
-      );
+      expect((cause as EmptyRegistryPublishError).message).not.toContain("uploaded none");
     }
   });
 });

@@ -1,8 +1,8 @@
 {
   "name": "@corbits/icons",
+  "version": "0.0.1",
   "private": true,
   "description": "The one Phosphor icon surface every app/package imports glyphs through — bold weight, curated names, no lucide-react and no Sparkle anywhere",
-  "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "sideEffects": false,

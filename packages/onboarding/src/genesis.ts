@@ -61,11 +61,7 @@ async function fetchPrincipals(
   cookies: string[],
 ): Promise<{ tenantId: string; tenantSlug: string; principalId: string }[]> {
   const response = await api("GET", "/api/me/principals", undefined, cookies);
-  const summary = parseAs(
-    paginatedSchema(PrincipalSummary),
-    response.data,
-    "principals response",
-  );
+  const summary = parseAs(paginatedSchema(PrincipalSummary), response.data, "principals response");
   return summary.data.map((p) => ({
     tenantId: p.tenantId,
     tenantSlug: p.tenantSlug,
@@ -164,9 +160,7 @@ export async function genesisOrJoinHubSignup(
       "transient",
     );
   }
-  args.log(
-    `genesis tenant ${tenant.slug} (${tenant.id}) minted for ${args.userEmail}`,
-  );
+  args.log(`genesis tenant ${tenant.slug} (${tenant.id}) minted for ${args.userEmail}`);
   return {
     kind: "genesis",
     tenantId: tenant.id,

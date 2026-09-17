@@ -6,10 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import {
-  collapseHistoryVersions,
-  summarizeHistoryMessage,
-} from "./agents-section";
+import { collapseHistoryVersions, summarizeHistoryMessage } from "./agents-section";
 import type { AgentVersion } from "../api";
 
 function version(overrides: Partial<AgentVersion> = {}): AgentVersion {
@@ -28,34 +25,26 @@ describe("summarizeHistoryMessage", () => {
     expect(summarizeHistoryMessage("Update agent instructions for Myra")).toBe(
       "Instructions updated",
     );
-    expect(summarizeHistoryMessage("Update agent skills for Myra")).toBe(
-      "Skills updated",
-    );
+    expect(summarizeHistoryMessage("Update agent skills for Myra")).toBe("Skills updated");
   });
 
   test("a capability addition names what was added", () => {
     expect(summarizeHistoryMessage("Add @corbits/github-tools to Myra")).toBe(
       "Added tool: @corbits/github-tools",
     );
-    expect(summarizeHistoryMessage("Add research skill to Myra")).toBe(
-      "Added skill: research",
+    expect(summarizeHistoryMessage("Add research skill to Myra")).toBe("Added skill: research");
+    expect(summarizeHistoryMessage("Set Myra's model to anthropic/claude-sonnet")).toBe(
+      "Model set to anthropic/claude-sonnet",
     );
-    expect(
-      summarizeHistoryMessage("Set Myra's model to anthropic/claude-sonnet"),
-    ).toBe("Model set to anthropic/claude-sonnet");
   });
 
   test("restore and creation read as their own summaries", () => {
-    expect(summarizeHistoryMessage("Restore agent Myra to a1b2c3d4")).toBe(
-      "Restored from history",
-    );
+    expect(summarizeHistoryMessage("Restore agent Myra to a1b2c3d4")).toBe("Restored from history");
     expect(summarizeHistoryMessage("Define agent Myra")).toBe("Agent created");
   });
 
   test("an unrecognized message falls back to itself rather than going blank", () => {
-    expect(summarizeHistoryMessage("Something new entirely")).toBe(
-      "Something new entirely",
-    );
+    expect(summarizeHistoryMessage("Something new entirely")).toBe("Something new entirely");
   });
 });
 

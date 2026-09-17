@@ -33,8 +33,7 @@ function context(overrides: {
   const ctx = {
     path: overrides.path,
     navigate: (to: string) => navigated.push(to),
-    tenantId:
-      overrides.tenantId !== undefined ? overrides.tenantId : "tenant-1",
+    tenantId: overrides.tenantId !== undefined ? overrides.tenantId : "tenant-1",
     cycleTheme: () => {
       themeCycled = true;
     },
@@ -66,9 +65,7 @@ describe("ACTION_COMMANDS", () => {
   });
 
   test("exactly one New workbench create row — no duplicate title+destination (CL-6820)", () => {
-    const newWorkbenchRows = ACTION_COMMANDS.filter(
-      (c) => c.title === "New workbench",
-    );
+    const newWorkbenchRows = ACTION_COMMANDS.filter((c) => c.title === "New workbench");
     expect(newWorkbenchRows).toHaveLength(1);
     expect(newWorkbenchRows[0]?.id).toBe("new-workbench");
 
@@ -155,8 +152,7 @@ describe("runActionCommand", () => {
   test("talk-to-myra opens Myra's DM via kind=chat + definitionId, not a title-match mint", async () => {
     const calls: { readonly path: string; readonly init?: RequestInit }[] = [];
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-      const path =
-        typeof input === "string" ? input : new URL(String(input)).pathname;
+      const path = typeof input === "string" ? input : new URL(String(input)).pathname;
       calls.push(init === undefined ? { path } : { path, init });
       if (path.includes("/workflows/definitions")) {
         return Promise.resolve(
@@ -199,9 +195,7 @@ describe("runActionCommand", () => {
     const { ctx, navigated } = context({ path: "/" });
     await runActionCommand("talk-to-myra", ctx);
 
-    const createCall = calls.find((call) =>
-      call.path.endsWith("/chat/workbenches"),
-    );
+    const createCall = calls.find((call) => call.path.endsWith("/chat/workbenches"));
     expect(createCall?.init?.method).toBe("POST");
     expect(JSON.parse(String(createCall?.init?.body))).toEqual({
       kind: "chat",

@@ -125,11 +125,7 @@ async function seedToolBatch(director: ReactorDirector): Promise<void> {
 
 test("empty inference.done retries infer once", async () => {
   const director = createWorkbenchDirector("you are a test agent");
-  const actions = await director.decide(
-    inferenceDone(emptyTurn()),
-    state(),
-    caps,
-  );
+  const actions = await director.decide(inferenceDone(emptyTurn()), state(), caps);
 
   expect(typesOf(actions)).toEqual(["checkpoint", "infer"]);
 });
@@ -137,11 +133,7 @@ test("empty inference.done retries infer once", async () => {
 test("a second empty inference.done replies honestly instead of waiting", async () => {
   const director = createWorkbenchDirector("you are a test agent");
   await director.decide(inferenceDone(emptyTurn()), state(), caps);
-  const actions = await director.decide(
-    inferenceDone(emptyTurn()),
-    state(),
-    caps,
-  );
+  const actions = await director.decide(inferenceDone(emptyTurn()), state(), caps);
 
   expect(typesOf(actions)).toEqual(["checkpoint", "reply"]);
   expect(replyOf(actions)).toBe(EMPTY_TURN_REPLY);
@@ -163,11 +155,7 @@ test("empty then a real text turn replies with the model text", async () => {
 
 test("a text turn on the first inference.done replies without retrying", async () => {
   const director = createWorkbenchDirector("you are a test agent");
-  const actions = await director.decide(
-    inferenceDone(textTurn("hello")),
-    state(),
-    caps,
-  );
+  const actions = await director.decide(inferenceDone(textTurn("hello")), state(), caps);
 
   expect(typesOf(actions)).toEqual(["checkpoint", "reply"]);
   expect(replyOf(actions)).toBe("hello");
@@ -197,11 +185,7 @@ test("reactive mode still waits on an empty turn (no retry)", async () => {
   const director = createWorkbenchDirector("you are a test agent", [], {
     mode: "reactive",
   });
-  const actions = await director.decide(
-    inferenceDone(emptyTurn()),
-    state(),
-    caps,
-  );
+  const actions = await director.decide(inferenceDone(emptyTurn()), state(), caps);
 
   expect(typesOf(actions)).toEqual(["checkpoint", "wait"]);
 });
@@ -217,11 +201,7 @@ test("a new message.received resets the empty-turn retry budget", async () => {
     state(),
     caps,
   );
-  const actions = await director.decide(
-    inferenceDone(emptyTurn()),
-    state(),
-    caps,
-  );
+  const actions = await director.decide(inferenceDone(emptyTurn()), state(), caps);
 
   expect(typesOf(actions)).toEqual(["checkpoint", "infer"]);
 });
@@ -290,9 +270,7 @@ test("context budget: tool-heavy history past the hard limit is caught even thou
     },
   );
   const bigState = stateWithTurns(
-    Array.from({ length: 10 }, (_, i) =>
-      toolResultTurn("x".repeat(20_000), `call_${String(i)}`),
-    ),
+    Array.from({ length: 10 }, (_, i) => toolResultTurn("x".repeat(20_000), `call_${String(i)}`)),
   );
 
   const actions = await director.decide(
@@ -398,7 +376,7 @@ test("context budget: with no contextBudget configured, behavior is unchanged", 
 test("the factory is namespaced and is the sidecar registry default", () => {
   const registry = createWorkbenchDirectorRegistry();
   expect(registry.defaultFactory().id).toBe(WORKBENCH_DIRECTOR_ID);
-  expect(
-    registry.resolve({ id: defaultDirectorFactory.id, config: {} }).id,
-  ).toBe(defaultDirectorFactory.id);
+  expect(registry.resolve({ id: defaultDirectorFactory.id, config: {} }).id).toBe(
+    defaultDirectorFactory.id,
+  );
 });

@@ -1,8 +1,4 @@
-export {
-  gifSearchTool,
-  type GifResult,
-  type GifSearchEnv,
-} from "./gif-search-tool";
+export { gifSearchTool, type GifResult, type GifSearchEnv } from "./gif-search-tool";
 
 export { buildJimmyAgent, type BuildJimmyAgentInput } from "./agent";
 

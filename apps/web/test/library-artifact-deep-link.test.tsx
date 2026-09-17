@@ -48,9 +48,7 @@ function jsonResponse(body: unknown): Response {
 function routeFetch(input: RequestInfo | URL): Promise<Response> {
   const url = String(input);
   if (url.includes("/api/me/principals")) {
-    return Promise.resolve(
-      jsonResponse({ data: [membership], nextCursor: null }),
-    );
+    return Promise.resolve(jsonResponse({ data: [membership], nextCursor: null }));
   }
   if (url.includes("/artifacts/art_1")) {
     return Promise.resolve(
@@ -60,9 +58,7 @@ function routeFetch(input: RequestInfo | URL): Promise<Response> {
     );
   }
   if (url.includes("/artifacts")) {
-    return Promise.resolve(
-      jsonResponse({ artifacts: [listedArtifact], nextCursor: null }),
-    );
+    return Promise.resolve(jsonResponse({ artifacts: [listedArtifact], nextCursor: null }));
   }
   return Promise.reject(new Error(`unrouted fetch in library test: ${url}`));
 }

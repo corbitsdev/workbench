@@ -120,8 +120,7 @@ export async function runActionCommand(
     }
     case "new-skill": {
       newSkillRequest.request({
-        alreadyOnTargetRoute:
-          ctx.path === "/skills" || ctx.path.startsWith("/skills/"),
+        alreadyOnTargetRoute: ctx.path === "/skills" || ctx.path.startsWith("/skills/"),
         navigateToTargetRoute: () => ctx.navigate("/skills"),
         dispatch: () => window.dispatchEvent(new CustomEvent(NEW_SKILL_EVENT)),
       });
@@ -129,8 +128,7 @@ export async function runActionCommand(
     }
     case "upload-artifact": {
       requestLibraryUpload({
-        alreadyOnLibrary:
-          ctx.path === "/files" || ctx.path.startsWith("/files/"),
+        alreadyOnLibrary: ctx.path === "/files" || ctx.path.startsWith("/files/"),
         navigateToLibrary: () => ctx.navigate("/files"),
       });
       return;

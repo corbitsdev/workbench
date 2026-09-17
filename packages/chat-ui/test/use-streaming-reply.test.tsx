@@ -12,11 +12,7 @@ import { useStreamingReply } from "../src/streaming-reply";
 import type { StreamingReplyState } from "../src/streaming-reply";
 import { createFakeClock } from "./fake-clock";
 
-function mount(
-  initialWorkbenchId: string | null,
-  clearMs?: number,
-  minVisibleMs = 0,
-) {
+function mount(initialWorkbenchId: string | null, clearMs?: number, minVisibleMs = 0) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -26,9 +22,7 @@ function mount(
   let send: (eventType: string, data: unknown) => void = () => {};
   let setWorkbenchId: (id: string | null) => void = () => {};
   let awaitReply: () => void = () => {};
-  let resume: (
-    runningTurn: { readonly textSnapshot: string | null } | null,
-  ) => void = () => {};
+  let resume: (runningTurn: { readonly textSnapshot: string | null } | null) => void = () => {};
 
   function Host() {
     const [workbenchId, updateWorkbenchId] = useState(initialWorkbenchId);
@@ -65,9 +59,7 @@ function mount(
       act(() => {
         awaitReply();
       }),
-    resumeFromTurn: (
-      runningTurn: { readonly textSnapshot: string | null } | null,
-    ) =>
+    resumeFromTurn: (runningTurn: { readonly textSnapshot: string | null } | null) =>
       act(() => {
         resume(runningTurn);
       }),

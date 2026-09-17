@@ -5,9 +5,7 @@ import { assembleTurnContext } from "./turn-context";
 
 const TENANT = "ten_1";
 const WORKBENCH = "wb_1";
-const PARTICIPANTS = [
-  { address: "ins_echo1@acme.example", handle: "echo" },
-] as const;
+const PARTICIPANTS = [{ address: "ins_echo1@acme.example", handle: "echo" }] as const;
 
 async function seed(texts: readonly { from: string; text: string }[]) {
   const roomMessages = createInMemoryRoomMessageStore();
@@ -45,15 +43,11 @@ describe("assembleTurnContext", () => {
     expect(context).toContain("user: first");
     expect(context).toContain("@echo: second");
     expect(context).not.toContain("the new one");
-    expect(context?.indexOf("first")).toBeLessThan(
-      context?.indexOf("second") ?? -1,
-    );
+    expect(context?.indexOf("first")).toBeLessThan(context?.indexOf("second") ?? -1);
   });
 
   test("a context window of zero assembles nothing at all", async () => {
-    const { roomMessages } = await seed([
-      { from: "prn_alice@acme.example", text: "first" },
-    ]);
+    const { roomMessages } = await seed([{ from: "prn_alice@acme.example", text: "first" }]);
 
     expect(
       await assembleTurnContext({

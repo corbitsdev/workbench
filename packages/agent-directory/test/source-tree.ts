@@ -18,9 +18,7 @@ import {
 export const SOURCE_TREE_PATHS = ["package.json", AGENT_DEFINITION_ENTRY_PATH];
 
 /** The serialized definition a written source tree carries. */
-export function definitionFrom(
-  files: Record<string, string | Uint8Array> | undefined,
-): string {
+export function definitionFrom(files: Record<string, string | Uint8Array> | undefined): string {
   const entry = files?.[AGENT_DEFINITION_ENTRY_PATH];
   if (typeof entry !== "string") {
     throw new Error("the written tree carries no entry module");
@@ -31,9 +29,7 @@ export function definitionFrom(
 /** A stored definition that already pins skills — the state every
  * pin-reading route observes. The stanza is the seed: no side table to
  * write, the bytes carry the pins like a real asset would. */
-export function storedDefinitionBytesWithSkills(
-  ...names: string[]
-): Uint8Array {
+export function storedDefinitionBytesWithSkills(...names: string[]): Uint8Array {
   const tree = agentDefinitionSourceTree({
     handle: "research-buddy",
     workflowJson: reindexPinnedSkills(

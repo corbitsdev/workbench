@@ -8,10 +8,7 @@ import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { NavigationProvider } from "../src/navigation";
-import {
-  resolveRoutineSegment,
-  RoutineDetailPage,
-} from "../src/pages/routine-detail-page";
+import { resolveRoutineSegment, RoutineDetailPage } from "../src/pages/routine-detail-page";
 import type { GlobalRoutineRow } from "../src/global-routines";
 import type { ScheduledWorkflowDefinition } from "../src/routines-api";
 
@@ -75,9 +72,7 @@ describe("RoutineDetailPage", () => {
 
   test("Run now and Pause both sit in the top bar's action slot", () => {
     const markup = renderPage();
-    const actions = markup.slice(
-      markup.indexOf('data-testid="stage-top-bar-actions"'),
-    );
+    const actions = markup.slice(markup.indexOf('data-testid="stage-top-bar-actions"'));
     expect(actions).toContain("Run now");
     expect(actions).toContain("Pause");
   });
@@ -203,9 +198,7 @@ describe("RoutineDetailRoute", () => {
     });
   }
 
-  function scheduledRecord(
-    overrides: Record<string, unknown>,
-  ): Record<string, unknown> {
+  function scheduledRecord(overrides: Record<string, unknown>): Record<string, unknown> {
     return {
       definitionId: "wfd_mine",
       assetId: "ast_1",
@@ -231,17 +224,13 @@ describe("RoutineDetailRoute", () => {
     },
   ];
 
-  function mockFetch(
-    itemsByTenant: Record<string, Record<string, unknown>[]>,
-  ): typeof fetch {
+  function mockFetch(itemsByTenant: Record<string, Record<string, unknown>[]>): typeof fetch {
     return (async (input: RequestInfo | URL): Promise<Response> => {
       const url = String(input);
       if (url.includes("/api/me/principals")) {
         return jsonResponse({ data: memberships, nextCursor: null });
       }
-      const scheduledMatch = url.match(
-        /\/api\/tenants\/([^/]+)\/workflows\/scheduled$/,
-      );
+      const scheduledMatch = url.match(/\/api\/tenants\/([^/]+)\/workflows\/scheduled$/);
       if (scheduledMatch) {
         return jsonResponse({
           items: itemsByTenant[scheduledMatch[1] as string] ?? [],
@@ -259,8 +248,7 @@ describe("RoutineDetailRoute", () => {
     itemsByTenant: Record<string, Record<string, unknown>[]>,
   ): Promise<{ container: HTMLDivElement; root: Root }> {
     const { BenchProvider } = await import("../src/bench-context");
-    const { RoutineDetailRoute } =
-      await import("../src/pages/routine-detail-page");
+    const { RoutineDetailRoute } = await import("../src/pages/routine-detail-page");
     const { TestQueryProvider } = await import("./test-query-provider");
 
     globalThis.fetch = mockFetch(itemsByTenant);
@@ -271,9 +259,7 @@ describe("RoutineDetailRoute", () => {
       root.render(
         <TestQueryProvider>
           <NavigationProvider navigate={noop}>
-            <BenchProvider>
-              {createElement(RoutineDetailRoute, { segment })}
-            </BenchProvider>
+            <BenchProvider>{createElement(RoutineDetailRoute, { segment })}</BenchProvider>
           </NavigationProvider>
         </TestQueryProvider>,
       );
@@ -307,9 +293,7 @@ describe("RoutineDetailRoute", () => {
       tnt_1: [scheduledRecord({ definitionId: "wfd_mine", name: "My digest" })],
     });
     try {
-      expect(container.textContent).toContain(
-        "No scheduled workflow matches this address.",
-      );
+      expect(container.textContent).toContain("No scheduled workflow matches this address.");
       expect(container.textContent).toContain("Back to Routines");
     } finally {
       cleanup(container, root);

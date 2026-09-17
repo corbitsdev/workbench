@@ -109,9 +109,7 @@ export function createInMemoryTurnClaimStore(options: {
    * until a future `tryClaim` for this workbench happens to overwrite it
    * (CL-7200).
    */
-  function liveHolder(
-    workbenchId: string,
-  ): { token: string; claimedAt: number } | undefined {
+  function liveHolder(workbenchId: string): { token: string; claimedAt: number } | undefined {
     const existing = holders.get(workbenchId);
     if (existing === undefined) return undefined;
     if (isExpired(existing)) {

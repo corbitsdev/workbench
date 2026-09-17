@@ -6,12 +6,7 @@ import type { CSSProperties } from "react";
    theme) and consumed here by reference, so no product code hardcodes a
    color value. Numbered like react-ui's --chart-1..5 series — slot order is
    the deterministic resolution order, not a ranking. */
-export const AVATAR_COLORS = [
-  "--avatar-1",
-  "--avatar-2",
-  "--avatar-3",
-  "--avatar-4",
-] as const;
+export const AVATAR_COLORS = ["--avatar-1", "--avatar-2", "--avatar-3", "--avatar-4"] as const;
 
 export type AvatarColor = (typeof AVATAR_COLORS)[number];
 
@@ -54,11 +49,7 @@ export function resolveAvatarFill(
   principalId: string,
   explicitImageUrl?: string | null,
 ): AvatarFill {
-  if (
-    explicitImageUrl !== undefined &&
-    explicitImageUrl !== null &&
-    explicitImageUrl.length > 0
-  ) {
+  if (explicitImageUrl !== undefined && explicitImageUrl !== null && explicitImageUrl.length > 0) {
     return { kind: "image", url: explicitImageUrl };
   }
   return { kind: "generated", className: avatarClassForPrincipal(principalId) };
@@ -92,8 +83,7 @@ export function CorbitAvatar({
   className,
   style,
 }: CorbitAvatarProps) {
-  const sizeClass =
-    typeof size === "number" ? undefined : CORBIT_SIZE_CLASS[size];
+  const sizeClass = typeof size === "number" ? undefined : CORBIT_SIZE_CLASS[size];
   const sizeStyle: CSSProperties =
     typeof size === "number" ? { width: `${size}px`, height: `${size}px` } : {};
 

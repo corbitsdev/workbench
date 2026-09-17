@@ -13,10 +13,7 @@ import type { Root } from "react-dom/client";
 import { BenchProvider } from "../src/bench-context";
 import { requestWorkbenchRename } from "../src/workbench-rename-events";
 import { WorkbenchList } from "../src/shell/workbench-list";
-import {
-  createTestQueryClient,
-  TestQueryProvider,
-} from "./test-query-provider";
+import { createTestQueryClient, TestQueryProvider } from "./test-query-provider";
 
 const realFetch = globalThis.fetch;
 
@@ -61,8 +58,7 @@ function stubFetch(calls: string[]): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
     calls.push(path);
-    if (path.includes("/api/me/principals"))
-      return Promise.resolve(json(membership));
+    if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
     if (path.includes("/agent-definitions/visible"))
       return Promise.resolve(json({ definitions: [] }));
     return Promise.resolve(json({ items: [] }));
@@ -77,10 +73,7 @@ async function settle() {
   }
 }
 
-function countsByMatch(
-  calls: readonly string[],
-  predicate: (path: string) => boolean,
-): number {
+function countsByMatch(calls: readonly string[], predicate: (path: string) => boolean): number {
   return calls.filter(predicate).length;
 }
 
@@ -129,8 +122,7 @@ describe("shell listing dedupe (CL-6045)", () => {
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
       const path = typeof input === "string" ? input : String(input);
       calls.push(path);
-      if (path.includes("/api/me/principals"))
-        return Promise.resolve(json(membership));
+      if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
       if (path.includes("/agent-definitions/visible"))
         return Promise.resolve(json({ definitions: [] }));
       if (init?.method === "PATCH") {
@@ -143,8 +135,7 @@ describe("shell listing dedupe (CL-6045)", () => {
           }),
         );
       }
-      if (path.includes("kind=workbench"))
-        return Promise.resolve(json({ items: [workbench] }));
+      if (path.includes("kind=workbench")) return Promise.resolve(json({ items: [workbench] }));
       return Promise.resolve(json({ items: [] }));
     }) as typeof fetch;
     const queryClient = createTestQueryClient();
@@ -167,14 +158,9 @@ describe("shell listing dedupe (CL-6045)", () => {
 
     act(() => requestWorkbenchRename("ch_1"));
     await settle();
-    const input = container.querySelector(
-      'input[aria-label="Rename"]',
-    ) as HTMLInputElement | null;
+    const input = container.querySelector('input[aria-label="Rename"]') as HTMLInputElement | null;
     expect(input).not.toBeNull();
-    const setter = Object.getOwnPropertyDescriptor(
-      window.HTMLInputElement.prototype,
-      "value",
-    )?.set;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
     if (setter === undefined) {
       throw new Error("HTMLInputElement.prototype.value has no native setter");
     }
@@ -183,9 +169,7 @@ describe("shell listing dedupe (CL-6045)", () => {
       input?.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () => {
-      input?.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-      );
+      input?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     });
     await settle();
 

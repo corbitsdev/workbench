@@ -11,21 +11,13 @@
 // alone — see VENDORED.md.
 import { Glob } from "bun";
 import path from "node:path";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 
 const SCAN_DIRS = ["apps", "packages", "scripts"];
 const HAND_ROLLED_GATE_PATTERN =
   /const\s+describeIfDb\s*=\s*\w+\s*===\s*(?:undefined|"")\s*\?\s*describe\.skip\s*:\s*describe;/;
 
-export async function scanFiles(
-  root: string,
-  dirs: readonly string[],
-): Promise<string[]> {
+export async function scanFiles(root: string, dirs: readonly string[]): Promise<string[]> {
   const files: string[] = [];
   for (const dir of dirs) {
     const glob = new Glob(`${dir}/**/*.test.ts`);
@@ -40,9 +32,7 @@ export async function scanFiles(
   return files;
 }
 
-export function auditDbGate(
-  files: readonly { relPath: string; contents: string }[],
-): CheckReport {
+export function auditDbGate(files: readonly { relPath: string; contents: string }[]): CheckReport {
   const report = emptyReport();
   for (const { relPath, contents } of files) {
     if (!HAND_ROLLED_GATE_PATTERN.test(contents)) continue;
@@ -67,9 +57,7 @@ async function main(): Promise<void> {
     })),
   );
   const report = auditDbGate(files);
-  report.notes.push(
-    `scanned ${files.length} *.test.ts file(s) under ${SCAN_DIRS.join(", ")}`,
-  );
+  report.notes.push(`scanned ${files.length} *.test.ts file(s) under ${SCAN_DIRS.join(", ")}`);
   reportAndExit("check:db-gate", report);
 }
 

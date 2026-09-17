@@ -24,9 +24,7 @@ export class AppErrorBoundary extends Component<
     const refId = reportError(error, {
       operation: "app_render",
       extra: {
-        ...(info.componentStack !== null
-          ? { componentStack: info.componentStack }
-          : {}),
+        ...(info.componentStack !== null ? { componentStack: info.componentStack } : {}),
       },
     });
     this.setState({ hasError: true, refId });
@@ -47,17 +45,12 @@ export class AppErrorBoundary extends Component<
                 <>
                   Something broke while rendering. Reloading usually fixes it.
                   <br />
-                  <span className="app-boot-frame-refid">
-                    Reference: {this.state.refId}
-                  </span>
+                  <span className="app-boot-frame-refid">Reference: {this.state.refId}</span>
                 </>
               )
             }
             action={
-              <Button
-                variant="outline"
-                onClick={() => window.location.reload()}
-              >
+              <Button variant="outline" onClick={() => window.location.reload()}>
                 Reload
               </Button>
             }

@@ -50,9 +50,7 @@ function main(): void {
   const args = Bun.argv.slice(2);
   const root = rootFromArgs(args);
   const ledgerFile = path.join(root, LEDGER_PATH);
-  const ledgered = existsSync(ledgerFile)
-    ? parseLedger(readFileSync(ledgerFile, "utf8"))
-    : [];
+  const ledgered = existsSync(ledgerFile) ? parseLedger(readFileSync(ledgerFile, "utf8")) : [];
   const paths = [...ledgered, ...positionalArgs(args)];
   const report = auditReplacedPaths(paths, (repoRelativePath) =>
     existsSync(path.join(root, repoRelativePath)),

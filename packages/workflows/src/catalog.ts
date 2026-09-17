@@ -213,8 +213,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Fetches one call's transcript and publishes five-section working notes — Participants, Summary, Pain points, Decisions, Action items — grounded in the transcript.",
     requiredConnections: ["granola"],
-    exampleOutput:
-      "Participants, summary, and action items from the call transcript",
+    exampleOutput: "Participants, summary, and action items from the call transcript",
     typicalDuration: "1-2 minutes",
   },
   {
@@ -224,8 +223,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Pulls the sender's recent Granola calls and Linear issues and writes a three-section daily brief: what happened, what needs attention, and suggested next actions.",
     requiredConnections: ["granola", "linear"],
-    exampleOutput:
-      "Brief covering 2 calls, 3 issue updates, one blocked review",
+    exampleOutput: "Brief covering 2 calls, 3 issue updates, one blocked review",
     typicalDuration: "under a minute",
   },
   {
@@ -270,8 +268,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Drafts marketing collateral across picked content types from Granola notes, Linear issues, or pasted text, with a swipe review on every draft and one approval on the final set.",
     requiredConnections: ["granola", "linear"],
-    exampleOutput:
-      "Drafts ready to review: LinkedIn post, blog, Twitter thread",
+    exampleOutput: "Drafts ready to review: LinkedIn post, blog, Twitter thread",
     typicalDuration: "several minutes, plus review and approval time",
   },
   {
@@ -323,8 +320,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Researches a company across web search and firm memory, and writes a cited diligence brief across five fixed sections, held for approval before it's saved.",
     requiredConnections: ["exa"],
-    exampleOutput:
-      "Diligence brief: 5 sections, 2 flagged as insufficient evidence",
+    exampleOutput: "Diligence brief: 5 sections, 2 flagged as insufficient evidence",
     typicalDuration: "1-2 minutes, plus review and approval time",
     // Mirrors workflows/diligence-brief/src/index.ts's system prompt
     // exactly: "the trigger carries a `company` and an optional `focus`" —
@@ -379,8 +375,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Works one Attio task: reads the record and the surrounding context, drafts what the task needs, and writes back to Attio only once you approve it.",
     requiredConnections: ["attio"],
-    exampleOutput:
-      "Two drafts ready to review, plus a CRM note awaiting your OK",
+    exampleOutput: "Two drafts ready to review, plus a CRM note awaiting your OK",
     typicalDuration: "a few minutes, plus review and approval time",
     // Mirrors workflows/attio-task-agent/src/index.ts's system prompt:
     // the trigger names the task by id, or names whose task list to look
@@ -419,9 +414,7 @@ for (const entry of WORKFLOW_CATALOG) {
   }
 }
 
-const byAssetName = new Map(
-  WORKFLOW_CATALOG.map((entry) => [entry.assetName, entry]),
-);
+const byAssetName = new Map(WORKFLOW_CATALOG.map((entry) => [entry.assetName, entry]));
 
 export function isAutomatableWorkflowName(name: string): boolean {
   return byAssetName.get(name)?.automatable === true;
@@ -448,18 +441,14 @@ export function isConversationalWorkflowName(name: string): boolean {
  * (workbench required): the safe, prior-behavior default when a workflow
  * isn't catalog-known at all.
  */
-export function deliveryWorkbenchRequiredForWorkflowName(
-  name: string,
-): boolean {
+export function deliveryWorkbenchRequiredForWorkflowName(name: string): boolean {
   return byAssetName.get(name)?.deliveryMode !== "inbox";
 }
 
 /** The full catalog entry for an asset name, or `undefined` if it isn't
  * a known workflow — the demo-card fields (`whatItDoes`, `exampleOutput`,
  * etc.) live here alongside the display name. */
-export function workflowCatalogEntry(
-  name: string,
-): WorkflowCatalogEntry | undefined {
+export function workflowCatalogEntry(name: string): WorkflowCatalogEntry | undefined {
   return byAssetName.get(name);
 }
 
@@ -468,10 +457,7 @@ export function workflowCatalogEntry(
  * name, then a non-empty description, then a humanized asset name — never
  * a raw definition id.
  */
-export function workflowDisplayName(
-  name: string,
-  description?: string | null,
-): string {
+export function workflowDisplayName(name: string, description?: string | null): string {
   const entry = byAssetName.get(name);
   if (entry !== undefined) return entry.displayName;
   if (description !== undefined && description !== null) {
@@ -490,7 +476,8 @@ function humanizeAssetName(name: string): string {
 }
 
 export type TriggerFieldsValidation =
-  { readonly ok: true } | { readonly ok: false; readonly message: string };
+  | { readonly ok: true }
+  | { readonly ok: false; readonly message: string };
 
 /**
  * The create-time boundary check for a routine's stored `input`

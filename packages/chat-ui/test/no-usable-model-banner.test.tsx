@@ -25,9 +25,7 @@ describe("NoUsableModelBanner", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
-      root?.render(
-        <NoUsableModelBanner onConnectModel={() => connected.push(1)} />,
-      );
+      root?.render(<NoUsableModelBanner onConnectModel={() => connected.push(1)} />);
     });
 
     expect(container.querySelector(".chat-no-model-banner")).not.toBeNull();

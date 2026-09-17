@@ -12,9 +12,7 @@ import { WORKFLOW_CATALOG } from "@corbits/workflows/catalog";
 /** Myra's asset name in the seeded workflow catalog — the same lookup
  * `apps/web/src/myra-workbench.ts` does client-side, mirrored here for
  * the hub side. */
-const MYRA_ASSET_NAME = WORKFLOW_CATALOG.find(
-  (entry) => entry.displayName === "Myra",
-)?.assetName;
+const MYRA_ASSET_NAME = WORKFLOW_CATALOG.find((entry) => entry.displayName === "Myra")?.assetName;
 
 export class MyraDefinitionUnresolvableError extends Error {
   constructor(tenantId: string, reason: string) {
@@ -45,10 +43,7 @@ export async function resolveMyraDefinitionIdFromDb(
     ),
   });
   if (row === undefined || row.status !== "deployed" || row.assetId === null) {
-    throw new MyraDefinitionUnresolvableError(
-      tenantId,
-      "no deployed Myra definition was found",
-    );
+    throw new MyraDefinitionUnresolvableError(tenantId, "no deployed Myra definition was found");
   }
   return row.id;
 }

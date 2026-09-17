@@ -9,10 +9,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import {
-  GlobalRoutinesList,
-  scheduleSentence,
-} from "../src/pages/routines-page";
+import { GlobalRoutinesList, scheduleSentence } from "../src/pages/routines-page";
 import type { GlobalRoutineRow } from "../src/pages/routines-page";
 import { NavigationProvider } from "../src/navigation";
 import type { ScheduledWorkflowDefinition } from "../src/routines-api";
@@ -113,9 +110,7 @@ describe("GlobalRoutinesList", () => {
   });
 
   test("the On switch is named Off when the routine is disabled", () => {
-    const markup = renderList([
-      row({ definition: { ...definition, status: "stopped" } }),
-    ]);
+    const markup = renderList([row({ definition: { ...definition, status: "stopped" } })]);
     expect(markup).toContain('aria-label="Off Morning brief"');
     expect(markup).not.toContain('aria-label="Resume Morning brief"');
   });

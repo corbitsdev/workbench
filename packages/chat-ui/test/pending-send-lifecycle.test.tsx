@@ -20,10 +20,7 @@ afterEach(() => {
   root = null;
 });
 
-async function mount(
-  items: readonly TimelineMessageItem[],
-  pendingActions?: PendingActions,
-) {
+async function mount(items: readonly TimelineMessageItem[], pendingActions?: PendingActions) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -95,12 +92,8 @@ describe("pending send lifecycle", () => {
       { onRetry: () => {}, onDiscard: () => {} },
     );
 
-    expect(el.querySelector(".chat-bubble-text")?.textContent).toBe(
-      "will retry",
-    );
-    expect(el.querySelector(".chat-pending-failed-label")?.textContent).toBe(
-      "Not sent",
-    );
+    expect(el.querySelector(".chat-bubble-text")?.textContent).toBe("will retry");
+    expect(el.querySelector(".chat-pending-failed-label")?.textContent).toBe("Not sent");
     expect(el.querySelector(".chat-pending-retry")).not.toBeNull();
   });
 });

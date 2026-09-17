@@ -42,9 +42,7 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 
-function stubFetch(
-  byName: Readonly<Record<string, Response | (() => Response)>>,
-): void {
+function stubFetch(byName: Readonly<Record<string, Response | (() => Response)>>): void {
   globalThis.fetch = (async (input: string) => {
     const url = new URL(input, "https://workbench.test");
     const match = /\/credentials\/resolve\/([^/]+)$/.exec(url.pathname);
@@ -142,8 +140,6 @@ describe("listPluginsForTenant", () => {
 
     const resolved = await listPluginsForTenant("bench_1", TEST_REGISTRY);
 
-    expect(
-      resolved.some((entry) => entry.descriptor.id === "granola-webhook"),
-    ).toBe(false);
+    expect(resolved.some((entry) => entry.descriptor.id === "granola-webhook")).toBe(false);
   });
 });

@@ -39,8 +39,7 @@ import { type } from "arktype";
 import { defineTool, type BaseEnv } from "@intx/agent";
 import { createWorkflowArtifact } from "./artifact-client";
 
-export const PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME =
-  "pain_point_collateral_finalize";
+export const PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME = "pain_point_collateral_finalize";
 
 export const PAIN_POINT_COLLATERAL_FINALIZE_DESCRIPTION =
   "Finalizes one piece of pain-point sales collateral, pending human approval, and persists it as a Library artifact.";
@@ -101,72 +100,71 @@ export interface WorkflowArtifactEnv extends BaseEnv {
  * `defineTool`'s env-DI factory shape. Needs the sanctioned
  * workflow-artifacts credential trio beyond `BaseEnv`.
  */
-export const PAIN_POINT_COLLATERAL_FINALIZE_TOOL =
-  defineTool<WorkflowArtifactEnv>({
-    id: "@corbits/workflow-pain-point-collateral/finalize",
-    requires: ["hubArtifactsUrl", "sidecarToken", "address"],
+export const PAIN_POINT_COLLATERAL_FINALIZE_TOOL = defineTool<WorkflowArtifactEnv>({
+  id: "@corbits/workflow-pain-point-collateral/finalize",
+  requires: ["hubArtifactsUrl", "sidecarToken", "address"],
+  definitions: [
+    {
+      name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+      approval: "ask",
+    },
+  ],
+  factory: (env) => ({
     definitions: [
       {
         name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
-        approval: "ask",
+        description: PAIN_POINT_COLLATERAL_FINALIZE_DESCRIPTION,
+        inputSchema: {
+          type: "object",
+          properties: {
+            outcome: { type: "string", enum: ["collateral", "status-note"] },
+            title: { type: "string" },
+            painPoint: { type: "string" },
+            content: { type: "string" },
+          },
+          required: ["outcome", "title", "painPoint", "content"],
+        },
       },
     ],
-    factory: (env) => ({
-      definitions: [
-        {
-          name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
-          description: PAIN_POINT_COLLATERAL_FINALIZE_DESCRIPTION,
-          inputSchema: {
-            type: "object",
-            properties: {
-              outcome: { type: "string", enum: ["collateral", "status-note"] },
-              title: { type: "string" },
-              painPoint: { type: "string" },
-              content: { type: "string" },
-            },
-            required: ["outcome", "title", "painPoint", "content"],
+    run: async (call) => {
+      const parsed = FinalizeArgs(call.arguments);
+      if (parsed instanceof type.errors) {
+        return {
+          callId: call.id,
+          isError: true,
+          content: `Invalid arguments for ${PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME}: ${parsed.summary}`,
+        };
+      }
+      const artifact = buildArtifactPayload(parsed);
+      try {
+        const created = await createWorkflowArtifact(
+          {
+            hubArtifactsUrl: env.hubArtifactsUrl,
+            sidecarToken: env.sidecarToken,
+            runAddress: env.address,
           },
-        },
-      ],
-      run: async (call) => {
-        const parsed = FinalizeArgs(call.arguments);
-        if (parsed instanceof type.errors) {
-          return {
-            callId: call.id,
-            isError: true,
-            content: `Invalid arguments for ${PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME}: ${parsed.summary}`,
-          };
-        }
-        const artifact = buildArtifactPayload(parsed);
-        try {
-          const created = await createWorkflowArtifact(
-            {
-              hubArtifactsUrl: env.hubArtifactsUrl,
-              sidecarToken: env.sidecarToken,
-              runAddress: env.address,
-            },
-            artifact,
-          );
-          return {
-            callId: call.id,
-            isError: false,
-            content: JSON.stringify({
-              id: created.id,
-              version: created.version,
-              title: artifact.title,
-              kind: artifact.kind,
-              persisted: true,
-            }),
-          };
-        } catch (err) {
-          return {
-            callId: call.id,
-            isError: true,
-            content: `Failed to persist "${artifact.title}" as a Library artifact: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          };
-        }
-      },
-    }),
-  });
+          artifact,
+        );
+        return {
+          callId: call.id,
+          isError: false,
+          content: JSON.stringify({
+            id: created.id,
+            version: created.version,
+            title: artifact.title,
+            kind: artifact.kind,
+            persisted: true,
+          }),
+        };
+      } catch (err) {
+        return {
+          callId: call.id,
+          isError: true,
+          content: `Failed to persist "${artifact.title}" as a Library artifact: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        };
+      }
+    },
+  }),
+});

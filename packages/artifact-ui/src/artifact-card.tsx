@@ -2,11 +2,7 @@
 // line (owner · source · size · updated). Pure presentational — the page
 // owns selection and preview.
 
-import {
-  Badge,
-  artifactKindLabel,
-  formatRelativeTime,
-} from "@corbits/react-ui";
+import { Badge, artifactKindLabel, formatRelativeTime } from "@corbits/react-ui";
 import type { ReactNode } from "react";
 
 import type { ArtifactSummary } from "./types";
@@ -42,10 +38,7 @@ function metaLine(
   if (meta?.sizeLabel !== undefined && meta.sizeLabel !== null) {
     parts.push(meta.sizeLabel);
   }
-  const when = formatRelativeTime(
-    artifact.updatedAt ?? artifact.createdAt,
-    now,
-  );
+  const when = formatRelativeTime(artifact.updatedAt ?? artifact.createdAt, now);
   if (when !== "") parts.push(when);
   return parts.join(" · ");
 }
@@ -78,18 +71,12 @@ export function ArtifactCard({
         </Badge>
         {trailing}
       </div>
-      <span className="truncate text-sm font-semibold leading-snug">
-        {artifact.title}
-      </span>
+      <span className="truncate text-sm font-semibold leading-snug">{artifact.title}</span>
       {snippet !== undefined && snippet !== null && snippet !== "" ? (
-        <span className="line-clamp-2 text-xs text-muted-foreground">
-          {snippet}
-        </span>
+        <span className="line-clamp-2 text-xs text-muted-foreground">{snippet}</span>
       ) : null}
       {line !== "" ? (
-        <span className="truncate text-[0.7rem] text-muted-foreground">
-          {line}
-        </span>
+        <span className="truncate text-[0.7rem] text-muted-foreground">{line}</span>
       ) : null}
     </button>
   );

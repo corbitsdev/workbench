@@ -21,20 +21,12 @@ import { Copy, SignOut } from "@corbits/icons";
 import { useCallback, useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
-import {
-  QueryView,
-  UnauthenticatedError,
-  describeQueryError,
-} from "@corbits/api-query";
+import { QueryView, UnauthenticatedError, describeQueryError } from "@corbits/api-query";
 import { resolveAvatarFill } from "@corbits/chat-ui";
 import { getAccount, type Account } from "./api";
 import { SETTINGS_STRINGS } from "./strings";
 
-export function AccountSection({
-  onSignOut,
-}: {
-  readonly onSignOut?: () => void;
-}) {
+export function AccountSection({ onSignOut }: { readonly onSignOut?: () => void }) {
   const [query, setQuery] = useState<APIQuery<Account>>({ kind: "loading" });
 
   const load = useCallback(() => {
@@ -139,12 +131,7 @@ export function AccountSectionView({
               height={40}
             />
           ) : (
-            <Avatar
-              initials={initialsOf(name)}
-              label={name}
-              size="lg"
-              className={fill.className}
-            />
+            <Avatar initials={initialsOf(name)} label={name} size="lg" className={fill.className} />
           )}
           <div className="settings-account-identity-text">
             <span className="settings-account-name">{name}</span>
@@ -164,11 +151,7 @@ export function AccountSectionView({
           </div>
         </div>
         {onSignOut !== undefined ? (
-          <Button
-            variant="outline"
-            className="settings-account-signout"
-            onClick={onSignOut}
-          >
+          <Button variant="outline" className="settings-account-signout" onClick={onSignOut}>
             <SignOut /> {SETTINGS_STRINGS.accountSignOutAction}
           </Button>
         ) : null}
@@ -189,9 +172,7 @@ export function AccountSectionView({
             </Badge>
           </dd>
         </dl>
-        <p className="settings-field-hint">
-          {SETTINGS_STRINGS.accountReadOnlyNote}
-        </p>
+        <p className="settings-field-hint">{SETTINGS_STRINGS.accountReadOnlyNote}</p>
       </div>
     </SettingsPanel>
   );

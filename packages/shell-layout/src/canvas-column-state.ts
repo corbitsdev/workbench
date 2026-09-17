@@ -32,11 +32,11 @@ export type CanvasColumnState<TProfile, TArtifact, TRoutine> = {
   readonly focus: boolean;
 };
 
-export function initialCanvasColumnState<
+export function initialCanvasColumnState<TProfile, TArtifact, TRoutine>(): CanvasColumnState<
   TProfile,
   TArtifact,
-  TRoutine,
->(): CanvasColumnState<TProfile, TArtifact, TRoutine> {
+  TRoutine
+> {
   return {
     open: false,
     profile: null,
@@ -47,11 +47,11 @@ export function initialCanvasColumnState<
 }
 
 /** Drop profile/artifact/routine and close (workbench switch). */
-export function clearCanvasForTenantSwitch<
+export function clearCanvasForTenantSwitch<TProfile, TArtifact, TRoutine>(): CanvasColumnState<
   TProfile,
   TArtifact,
-  TRoutine,
->(): CanvasColumnState<TProfile, TArtifact, TRoutine> {
+  TRoutine
+> {
   return initialCanvasColumnState<TProfile, TArtifact, TRoutine>();
 }
 

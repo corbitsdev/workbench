@@ -67,11 +67,7 @@ export {
   type ResolveNotifyContextArgs,
   type ResolveNotifyContextDeps,
 } from "./context";
-export {
-  notificationExternalId,
-  renderNotification,
-  type RenderedNotification,
-} from "./render";
+export { notificationExternalId, renderNotification, type RenderedNotification } from "./render";
 export type {
   MailboxDelivery,
   NotifyAddressing,

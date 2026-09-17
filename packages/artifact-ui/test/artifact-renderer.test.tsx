@@ -12,10 +12,7 @@ import { ArtifactRenderer } from "../src/artifact-renderer";
 
 function oversizedCsv(rowCount: number): string {
   const header = "id,name\n";
-  const rows = Array.from(
-    { length: rowCount },
-    (_, index) => `${index},row-${index}`,
-  ).join("\n");
+  const rows = Array.from({ length: rowCount }, (_, index) => `${index},row-${index}`).join("\n");
   return header + rows;
 }
 
@@ -25,11 +22,7 @@ describe("ArtifactRenderer sheet cutover", () => {
     const content = oversizedCsv(rowCount);
 
     const markup = renderToStaticMarkup(
-      <ArtifactRenderer
-        rendererKind="sheet"
-        title="Big sheet"
-        content={content}
-      />,
+      <ArtifactRenderer rendererKind="sheet" title="Big sheet" content={content} />,
     );
 
     const renderedDataRows = markup.match(/row-\d+/g)?.length ?? 0;
@@ -61,46 +54,25 @@ describe("ArtifactRenderer sheet cutover", () => {
 describe("ArtifactRenderer contentUnavailable — stored-but-unreadable file", () => {
   test("doc renderer says the file couldn't be read, not that it's empty", () => {
     const markup = renderToStaticMarkup(
-      <ArtifactRenderer
-        rendererKind="doc"
-        title="notes.docx"
-        content=""
-        contentUnavailable
-      />,
+      <ArtifactRenderer rendererKind="doc" title="notes.docx" content="" contentUnavailable />,
     );
-    expect(markup).toContain(
-      "We couldn&#x27;t read this file&#x27;s contents for preview.",
-    );
+    expect(markup).toContain("We couldn&#x27;t read this file&#x27;s contents for preview.");
     expect(markup).not.toContain("This document has no content yet.");
   });
 
   test("sheet renderer says the file couldn't be read, not that it's empty", () => {
     const markup = renderToStaticMarkup(
-      <ArtifactRenderer
-        rendererKind="sheet"
-        title="budget.xlsx"
-        content=""
-        contentUnavailable
-      />,
+      <ArtifactRenderer rendererKind="sheet" title="budget.xlsx" content="" contentUnavailable />,
     );
-    expect(markup).toContain(
-      "We couldn&#x27;t read this file&#x27;s contents for preview.",
-    );
+    expect(markup).toContain("We couldn&#x27;t read this file&#x27;s contents for preview.");
     expect(markup).not.toContain("This sheet has no rows yet.");
   });
 
   test("pdf renderer says the file couldn't be read, not that no text is stored", () => {
     const markup = renderToStaticMarkup(
-      <ArtifactRenderer
-        rendererKind="pdf"
-        title="contract.pdf"
-        content=""
-        contentUnavailable
-      />,
+      <ArtifactRenderer rendererKind="pdf" title="contract.pdf" content="" contentUnavailable />,
     );
-    expect(markup).toContain(
-      "We couldn&#x27;t read this file&#x27;s contents for preview.",
-    );
+    expect(markup).toContain("We couldn&#x27;t read this file&#x27;s contents for preview.");
     expect(markup).not.toContain("No extracted text is stored");
   });
 
@@ -132,8 +104,6 @@ describe("ArtifactRenderer html preview", () => {
       <ArtifactRenderer rendererKind="html" title="Landing page" content="" />,
     );
     expect(markup).not.toContain("<iframe");
-    expect(markup).toContain(
-      "No sandboxed preview is available for this HTML artifact yet.",
-    );
+    expect(markup).toContain("No sandboxed preview is available for this HTML artifact yet.");
   });
 });

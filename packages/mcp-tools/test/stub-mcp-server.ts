@@ -10,10 +10,7 @@
 // SDK's own, already a transitive dependency.
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 export interface StubMcpServerHandle {
   readonly url: string;
@@ -72,8 +69,7 @@ function buildServer(
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
     calls.push({ name: request.params.name, args });
     if (request.params.name === "echo") {
-      const text =
-        opts?.echoResult !== undefined ? opts.echoResult : String(args["text"]);
+      const text = opts?.echoResult !== undefined ? opts.echoResult : String(args["text"]);
       return { content: [{ type: "text", text }] };
     }
     if (request.params.name === "write_note") {

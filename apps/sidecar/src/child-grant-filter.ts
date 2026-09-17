@@ -14,10 +14,7 @@
 import type { DirectorRegistry } from "@intx/agent";
 import { matchPattern } from "@intx/authz";
 import type { WorkflowDefinition } from "@intx/workflow";
-import {
-  walkCapabilities,
-  type PluginToolDefinitions,
-} from "@intx/workflow-deploy";
+import { walkCapabilities, type PluginToolDefinitions } from "@intx/workflow-deploy";
 
 /**
  * The flat union of every grant-shape resource string the child body declares,
@@ -81,10 +78,7 @@ export function filterGrantsToDeclaredResources(
   return parentGrants.filter((grant) => keepGrantForDeclared(grant, declared));
 }
 
-function keepGrantForDeclared(
-  grant: unknown,
-  declared: ReadonlySet<string>,
-): boolean {
+function keepGrantForDeclared(grant: unknown, declared: ReadonlySet<string>): boolean {
   if (!isAllowRuleWithResource(grant)) {
     return true;
   }
@@ -96,9 +90,7 @@ function keepGrantForDeclared(
   return false;
 }
 
-function isAllowRuleWithResource(
-  grant: unknown,
-): grant is { effect: "allow"; resource: string } {
+function isAllowRuleWithResource(grant: unknown): grant is { effect: "allow"; resource: string } {
   if (typeof grant !== "object" || grant === null) {
     return false;
   }

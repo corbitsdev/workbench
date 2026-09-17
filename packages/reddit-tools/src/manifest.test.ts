@@ -21,7 +21,5 @@ test("declares exactly one credential handle: scrapecreators", () => {
   if (parsed instanceof type.errors) {
     throw new Error(parsed.summary);
   }
-  expect(parsed.interchange?.credentials).toEqual([
-    { handle: "scrapecreators" },
-  ]);
+  expect(parsed.interchange?.credentials).toEqual([{ handle: "scrapecreators" }]);
 });

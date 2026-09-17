@@ -207,54 +207,50 @@ export function AgentDetailPage({
   const trimmedName = displayName.trim();
   const trimmedPrompt = systemPrompt.trim();
   const instructionsDirty =
-    trimmedName !== definition.displayName ||
-    trimmedPrompt !== detail.systemPrompt;
+    trimmedName !== definition.displayName || trimmedPrompt !== detail.systemPrompt;
   // Compared against the loaded value alone, so picking "Bench default" on
   // an agent with a pinned model is a real edit — clearing a model is a
   // change like any other, not the absence of one.
   const modelDirty = model !== (detail.model ?? "");
   const skillsDirty = !sameSkillSet(skills, detail.skills);
   const dirty = instructionsDirty || modelDirty || skillsDirty;
-  const saveable =
-    dirty && trimmedName !== "" && trimmedPrompt !== "" && save.kind !== "busy";
+  const saveable = dirty && trimmedName !== "" && trimmedPrompt !== "" && save.kind !== "busy";
 
   async function onSave() {
     setSave({ kind: "busy" });
-    const parts: readonly { part: SavePart; write: () => Promise<unknown> }[] =
-      [
-        ...(instructionsDirty
-          ? [
-              {
-                part: "instructions" as const,
-                write: () =>
-                  updateAgentInstructions(tenantId, definition.id, {
-                    name: trimmedName,
-                    systemPrompt: trimmedPrompt,
-                  }),
-              },
-            ]
-          : []),
-        ...(modelDirty
-          ? [
-              {
-                part: "model" as const,
-                write: () =>
-                  model === ""
-                    ? clearAgentModel(tenantId, definition.id)
-                    : setAgentModel(tenantId, definition.id, model),
-              },
-            ]
-          : []),
-        ...(skillsDirty
-          ? [
-              {
-                part: "skills" as const,
-                write: () =>
-                  updateAgentSkills(tenantId, definition.id, [...skills]),
-              },
-            ]
-          : []),
-      ];
+    const parts: readonly { part: SavePart; write: () => Promise<unknown> }[] = [
+      ...(instructionsDirty
+        ? [
+            {
+              part: "instructions" as const,
+              write: () =>
+                updateAgentInstructions(tenantId, definition.id, {
+                  name: trimmedName,
+                  systemPrompt: trimmedPrompt,
+                }),
+            },
+          ]
+        : []),
+      ...(modelDirty
+        ? [
+            {
+              part: "model" as const,
+              write: () =>
+                model === ""
+                  ? clearAgentModel(tenantId, definition.id)
+                  : setAgentModel(tenantId, definition.id, model),
+            },
+          ]
+        : []),
+      ...(skillsDirty
+        ? [
+            {
+              part: "skills" as const,
+              write: () => updateAgentSkills(tenantId, definition.id, [...skills]),
+            },
+          ]
+        : []),
+    ];
 
     const saved: SavePart[] = [];
     for (const { part, write } of parts) {
@@ -270,10 +266,7 @@ export function AgentDetailPage({
           saved,
           failed: {
             part,
-            message: describeApiError(
-              cause,
-              `saving this agent's ${SAVE_PART_COPY[part]}`,
-            ),
+            message: describeApiError(cause, `saving this agent's ${SAVE_PART_COPY[part]}`),
           },
         });
         return;
@@ -312,11 +305,7 @@ export function AgentDetailPage({
   async function onToggleArchived() {
     setLifecycle({ kind: "busy" });
     try {
-      await setAgentDefinitionStatus(
-        tenantId,
-        definition.id,
-        archived ? "deployed" : "stopped",
-      );
+      await setAgentDefinitionStatus(tenantId, definition.id, archived ? "deployed" : "stopped");
       setLifecycle({ kind: "idle" });
       onStatusChanged();
     } catch (cause: unknown) {
@@ -335,10 +324,7 @@ export function AgentDetailPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        crumbs={[
-          { label: "Agents", href: AGENTS_PATH_PREFIX },
-          { label: definition.displayName },
-        ]}
+        crumbs={[{ label: "Agents", href: AGENTS_PATH_PREFIX }, { label: definition.displayName }]}
         actions={
           <>
             <Button
@@ -355,9 +341,7 @@ export function AgentDetailPage({
               variant="outline"
               disabled={lifecycle.kind === "busy"}
               onConfirm={() => void onToggleArchived()}
-              aria-label={
-                archived ? "Restore this agent" : "Archive this agent"
-              }
+              aria-label={archived ? "Restore this agent" : "Archive this agent"}
             >
               {archived ? "Restore" : "Archive"}
             </ConfirmButton>
@@ -394,8 +378,7 @@ export function AgentDetailPage({
             ) : null}
             {dirty ? (
               <p className="text-sm text-muted-foreground">
-                Unsaved edits — Duplicate copies the saved version, so it waits
-                until you save.
+                Unsaved edits — Duplicate copies the saved version, so it waits until you save.
               </p>
             ) : null}
 
@@ -413,12 +396,9 @@ export function AgentDetailPage({
                   value={displayName}
                   onChange={(event) => setDisplayName(event.target.value)}
                 />
-                <p className="font-mono text-xs text-muted-foreground">
-                  {definition.name}
-                </p>
+                <p className="font-mono text-xs text-muted-foreground">{definition.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  The handle above is this agent&apos;s address and its URL. It
-                  never changes.
+                  The handle above is this agent&apos;s address and its URL. It never changes.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -440,8 +420,8 @@ export function AgentDetailPage({
                 </label>
                 {models.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    No models in this bench&apos;s catalog yet — connect a
-                    provider in Settings and this agent can pick one.
+                    No models in this bench&apos;s catalog yet — connect a provider in Settings and
+                    this agent can pick one.
                   </p>
                 ) : (
                   <Select
@@ -452,10 +432,7 @@ export function AgentDetailPage({
                   >
                     <option value="">Bench default</option>
                     {models.map((catalogModel) => (
-                      <option
-                        key={catalogModel.canonicalName}
-                        value={catalogModel.canonicalName}
-                      >
+                      <option key={catalogModel.canonicalName} value={catalogModel.canonicalName}>
                         {catalogModel.displayName ?? catalogModel.canonicalName}
                       </option>
                     ))}
@@ -477,10 +454,7 @@ export function AgentDetailPage({
               />
             </Section>
 
-            <Section
-              title="Skills"
-              description="Pinned skills this agent can load while it works."
-            >
+            <Section title="Skills" description="Pinned skills this agent can load while it works.">
               {skillsError !== undefined ? (
                 <p className="mb-3 text-sm text-destructive" role="alert">
                   Could not load agent skills: {skillsError}
@@ -500,8 +474,7 @@ export function AgentDetailPage({
             >
               {recent.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No runs yet — start a chat with this agent and its runs appear
-                  here.
+                  No runs yet — start a chat with this agent and its runs appear here.
                 </p>
               ) : (
                 <Table aria-label="Recent runs">
@@ -516,10 +489,7 @@ export function AgentDetailPage({
                     {recent.map((run) => (
                       <TableRow key={run.id}>
                         <TableCell className="font-mono text-xs">
-                          <Link
-                            to={runDetailPath(run.id)}
-                            className="underline underline-offset-2"
-                          >
+                          <Link to={runDetailPath(run.id)} className="underline underline-offset-2">
                             {run.id}
                           </Link>
                         </TableCell>
@@ -528,9 +498,7 @@ export function AgentDetailPage({
                             {RUN_STATUS_COPY[run.status].label}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {run.createdAt}
-                        </TableCell>
+                        <TableCell className="text-muted-foreground">{run.createdAt}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -611,12 +579,7 @@ export function AgentDetailRoute({
   function shell(body: ReactNode) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar
-          crumbs={[
-            { label: "Agents", href: AGENTS_PATH_PREFIX },
-            { label: slug },
-          ]}
-        />
+        <StageTopBar crumbs={[{ label: "Agents", href: AGENTS_PATH_PREFIX }, { label: slug }]} />
         <PageShell width="full" className="page-fill">
           {body}
         </PageShell>

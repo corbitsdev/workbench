@@ -27,9 +27,7 @@ const describeIfDb = dbGate(databaseUrl, import.meta.path);
 const TENANT_ID = "tnt_1";
 
 describeIfDb("createDrizzleRepoReviewLeaseStore", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl || "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl || "postgres://localhost:5432/unused");
   const scratchTarget = new URL(scratchUrl);
   const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
 
@@ -153,9 +151,7 @@ describeIfDb("createDrizzleRepoReviewLeaseStore", () => {
     try {
       const db = drizzle(sql);
       const store = createDrizzleRepoReviewLeaseStore(db);
-      await expect(
-        store.release(TENANT_ID, "acme/never-leased"),
-      ).resolves.toBeUndefined();
+      await expect(store.release(TENANT_ID, "acme/never-leased")).resolves.toBeUndefined();
     } finally {
       await sql.end();
     }

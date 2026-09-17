@@ -82,8 +82,7 @@ describe("useEntitySearch", () => {
     // as long as the test needs it: the hook only drops `loading` once the
     // search's fetches resolve, so a gated source makes that phase
     // deterministic instead of racing the 5ms debounce on a loaded runner.
-    let releaseWorkbenches:
-      ((entities: readonly SearchableEntity[]) => void) | undefined;
+    let releaseWorkbenches: ((entities: readonly SearchableEntity[]) => void) | undefined;
     const workbenches = new Promise<readonly SearchableEntity[]>((resolve) => {
       releaseWorkbenches = (entities) => resolve(entities);
     });
@@ -104,9 +103,7 @@ describe("useEntitySearch", () => {
     expect(
       titles.every(
         (title) =>
-          !title.startsWith("chan-") &&
-          !title.startsWith("rt-") &&
-          !title.startsWith("agent-"),
+          !title.startsWith("chan-") && !title.startsWith("rt-") && !title.startsWith("agent-"),
       ),
     ).toBe(true);
     expect(harness.get().hasMore).toBe(true);
@@ -141,9 +138,7 @@ describe("useEntitySearch", () => {
 
     await harness.setQuery("triage");
     await harness.settle();
-    expect(harness.get().results.map((result) => result.title)).toEqual([
-      "Support Triage",
-    ]);
+    expect(harness.get().results.map((result) => result.title)).toEqual(["Support Triage"]);
     harness.unmount();
   });
 

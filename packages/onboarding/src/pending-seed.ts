@@ -110,9 +110,8 @@ export type PendingSeed = {
   readonly baseURLOverride?: string;
 };
 
-export type PendingSeedDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> = PostgresJsDatabase<TSchema>;
+export type PendingSeedDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+  PostgresJsDatabase<TSchema>;
 
 /** Domain separation on top of the AEAD tag, mirroring `pkce.ts`'s
  * `connectStateAad`: a row sealed for one provider's connect flow
@@ -124,10 +123,7 @@ function pendingSeedAad(provider: string): string {
 export interface PendingSeedStore {
   /** Upserts the single active row for (userId, tenantId) — a fresh
    * connect always replaces whatever pending seed came before it. */
-  put(
-    seed: PendingSeed,
-    args?: { ttlMs?: number; now?: () => number },
-  ): Promise<void>;
+  put(seed: PendingSeed, args?: { ttlMs?: number; now?: () => number }): Promise<void>;
   /**
    * Reads and validates the row for exactly the signed-in user and
    * tenant this request already resolved — a row belonging to a
@@ -199,16 +195,10 @@ interface RowAccess {
   get(userId: string, tenantId: string): Promise<StoredRow | undefined>;
   put(userId: string, tenantId: string, row: StoredRow): Promise<void>;
   delete(userId: string, tenantId: string): Promise<void>;
-  list(args: {
-    limit: number;
-    after?: PendingSeedListCursor;
-  }): Promise<IdentifiedRow[]>;
+  list(args: { limit: number; after?: PendingSeedListCursor }): Promise<IdentifiedRow[]>;
 }
 
-function comparePendingSeedCursor(
-  a: PendingSeedListCursor,
-  b: PendingSeedListCursor,
-): number {
+function comparePendingSeedCursor(a: PendingSeedListCursor, b: PendingSeedListCursor): number {
   const byExpires = a.expiresAt.getTime() - b.expiresAt.getTime();
   if (byExpires !== 0) return byExpires;
   if (a.userId < b.userId) return -1;
@@ -218,20 +208,14 @@ function comparePendingSeedCursor(
   return 0;
 }
 
-function createPendingSeedStore(
-  access: RowAccess,
-  cipher: CredentialCipher,
-): PendingSeedStore {
+function createPendingSeedStore(access: RowAccess, cipher: CredentialCipher): PendingSeedStore {
   /**
    * The single validity rule both readers apply: a row that is expired,
    * sealed for an unsupported provider, or undecryptable under the
    * current key is dead weight — deleted here and reported as absent,
    * rather than left to linger or handed onward as a usable seed.
    */
-  async function decodeRow(
-    row: IdentifiedRow,
-    nowMs: number,
-  ): Promise<PendingSeed | undefined> {
+  async function decodeRow(row: IdentifiedRow, nowMs: number): Promise<PendingSeed | undefined> {
     const drop = async (): Promise<undefined> => {
       await access.delete(row.userId, row.tenantId);
       return undefined;
@@ -244,10 +228,7 @@ function createPendingSeedStore(
     const provider = row.provider as SupportedCredentialProvider;
 
     try {
-      const plaintext = await cipher.decrypt(
-        row.payload,
-        pendingSeedAad(provider),
-      );
+      const plaintext = await cipher.decrypt(row.payload, pendingSeedAad(provider));
       const parsed = PendingSeedSecret(JSON.parse(plaintext));
       if (parsed instanceof type.errors) return drop();
       return {
@@ -275,9 +256,7 @@ function createPendingSeedStore(
           principalId: seed.principalId,
           tenantDomain: seed.tenantDomain,
           apiKey: seed.apiKey,
-          ...(seed.baseURLOverride !== undefined
-            ? { baseURLOverride: seed.baseURLOverride }
-            : {}),
+          ...(seed.baseURLOverride !== undefined ? { baseURLOverride: seed.baseURLOverride } : {}),
         }),
         pendingSeedAad(seed.provider),
       );
@@ -292,10 +271,7 @@ function createPendingSeedStore(
       const now = args.now ?? Date.now;
       const row = await access.get(args.userId, args.tenantId);
       if (row === undefined) return undefined;
-      return decodeRow(
-        { ...row, userId: args.userId, tenantId: args.tenantId },
-        now(),
-      );
+      return decodeRow({ ...row, userId: args.userId, tenantId: args.tenantId }, now());
     },
 
     async listDue(args) {
@@ -335,21 +311,17 @@ function createPendingSeedStore(
   };
 }
 
-export function createDrizzlePendingSeedStore<
-  TSchema extends Record<string, unknown>,
->(db: PendingSeedDb<TSchema>, cipher: CredentialCipher): PendingSeedStore {
+export function createDrizzlePendingSeedStore<TSchema extends Record<string, unknown>>(
+  db: PendingSeedDb<TSchema>,
+  cipher: CredentialCipher,
+): PendingSeedStore {
   return createPendingSeedStore(
     {
       async get(userId, tenantId) {
         const [row] = await db
           .select()
           .from(pendingSeed)
-          .where(
-            and(
-              eq(pendingSeed.userId, userId),
-              eq(pendingSeed.tenantId, tenantId),
-            ),
-          );
+          .where(and(eq(pendingSeed.userId, userId), eq(pendingSeed.tenantId, tenantId)));
         return row === undefined
           ? undefined
           : {
@@ -380,12 +352,7 @@ export function createDrizzlePendingSeedStore<
       async delete(userId, tenantId) {
         await db
           .delete(pendingSeed)
-          .where(
-            and(
-              eq(pendingSeed.userId, userId),
-              eq(pendingSeed.tenantId, tenantId),
-            ),
-          );
+          .where(and(eq(pendingSeed.userId, userId), eq(pendingSeed.tenantId, tenantId)));
       },
       async list({ limit, after }) {
         const rows =
@@ -438,9 +405,7 @@ export function createDrizzlePendingSeedStore<
 /** The fake this package's own tests drive routes through — no
  * Postgres required, same encrypt/validate/TTL semantics as the real
  * store. */
-export function createInMemoryPendingSeedStore(
-  cipher: CredentialCipher,
-): PendingSeedStore {
+export function createInMemoryPendingSeedStore(cipher: CredentialCipher): PendingSeedStore {
   const rows = new Map<string, StoredRow>();
   const keyOf = (userId: string, tenantId: string) => `${userId}:${tenantId}`;
   return createPendingSeedStore(
@@ -463,9 +428,7 @@ export function createInMemoryPendingSeedStore(
         const filtered =
           after === undefined
             ? identified
-            : identified.filter(
-                (row) => comparePendingSeedCursor(row, after) > 0,
-              );
+            : identified.filter((row) => comparePendingSeedCursor(row, after) > 0);
         return filtered.slice(0, limit);
       },
     },

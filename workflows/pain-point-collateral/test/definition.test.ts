@@ -27,9 +27,7 @@ const INPUT = {
 function collateralStep(definition: WorkflowDefinition): StepPrimitive {
   const primitive = definition.steps[PAIN_POINT_COLLATERAL_STEP_ID];
   if (primitive === undefined || primitive.kind !== "step") {
-    throw new Error(
-      `definition has no step primitive named ${PAIN_POINT_COLLATERAL_STEP_ID}`,
-    );
+    throw new Error(`definition has no step primitive named ${PAIN_POINT_COLLATERAL_STEP_ID}`);
   }
   return primitive;
 }
@@ -37,9 +35,7 @@ function collateralStep(definition: WorkflowDefinition): StepPrimitive {
 test("the definition has exactly one step", () => {
   const definition = buildPainPointCollateralWorkflow(INPUT);
   expect(definition.stepOrder).toEqual([PAIN_POINT_COLLATERAL_STEP_ID]);
-  expect(Object.keys(definition.steps)).toEqual([
-    PAIN_POINT_COLLATERAL_STEP_ID,
-  ]);
+  expect(Object.keys(definition.steps)).toEqual([PAIN_POINT_COLLATERAL_STEP_ID]);
 });
 
 test("the step carries an explicit per-turn timeout", () => {
@@ -50,9 +46,7 @@ test("the step carries an explicit per-turn timeout", () => {
 test("the workflow is triggered by mail to the given deployment address", () => {
   const definition = buildPainPointCollateralWorkflow(INPUT);
   expect(definition.id).toBe(PAIN_POINT_COLLATERAL_WORKFLOW_ID);
-  expect(definition.triggers).toEqual([
-    { type: "mail", to: INPUT.triggerAddress },
-  ]);
+  expect(definition.triggers).toEqual([{ type: "mail", to: INPUT.triggerAddress }]);
 });
 
 test("the agent carries the fixed prompt, the preferences, and inlines no tools", () => {
@@ -66,24 +60,18 @@ test("the agent carries the fixed prompt, the preferences, and inlines no tools"
 
 test("the agent pins @corbits/granola-tools by name and version", () => {
   const agent = collateralStep(buildPainPointCollateralWorkflow(INPUT)).agent;
-  expect(agent.toolPackagePins).toEqual([
-    ...PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS,
-  ]);
+  expect(agent.toolPackagePins).toEqual([...PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS]);
   expect(PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS).toEqual([
     { name: "@corbits/granola-tools", version: "0.0.4" },
   ]);
 });
 
 test("the system prompt names the exact approval-gated finalize tool", () => {
-  expect(PAIN_POINT_COLLATERAL_SYSTEM_PROMPT).toContain(
-    PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
-  );
+  expect(PAIN_POINT_COLLATERAL_SYSTEM_PROMPT).toContain(PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME);
 });
 
 test("the system prompt names the intake tool and requires calling it first", () => {
-  expect(PAIN_POINT_COLLATERAL_SYSTEM_PROMPT).toContain(
-    PAIN_POINT_COLLATERAL_INTAKE_TOOL_NAME,
-  );
+  expect(PAIN_POINT_COLLATERAL_SYSTEM_PROMPT).toContain(PAIN_POINT_COLLATERAL_INTAKE_TOOL_NAME);
 });
 
 test("the system prompt names both trigger-carried fields unambiguously", () => {
@@ -101,16 +89,12 @@ test("the system prompt commits to a teaching artifact, not silence, when intake
 
 test("the system prompt commits to a calm terminal reply on denial, not an error", () => {
   expect(PAIN_POINT_COLLATERAL_SYSTEM_PROMPT).toMatch(/not approved/i);
-  expect(PAIN_POINT_COLLATERAL_SYSTEM_PROMPT).toMatch(
-    /never present a denial as an error/i,
-  );
+  expect(PAIN_POINT_COLLATERAL_SYSTEM_PROMPT).toMatch(/never present a denial as an error/i);
 });
 
 test("the definition binds @corbits/granola-tools' declared handle to a tenant-owned granola credential", () => {
   const definition = buildPainPointCollateralWorkflow(INPUT);
-  expect(definition.credentialBindings).toEqual([
-    ...PAIN_POINT_COLLATERAL_CREDENTIAL_BINDINGS,
-  ]);
+  expect(definition.credentialBindings).toEqual([...PAIN_POINT_COLLATERAL_CREDENTIAL_BINDINGS]);
   expect(PAIN_POINT_COLLATERAL_CREDENTIAL_BINDINGS).toEqual([
     {
       package: "@corbits/granola-tools",
@@ -123,23 +107,21 @@ test("the definition binds @corbits/granola-tools' declared handle to a tenant-o
 
 test("the definition survives the workflow-asset JSON round-trip", () => {
   const definition = buildPainPointCollateralWorkflow(INPUT);
-  const revived: unknown = JSON.parse(
-    serializePainPointCollateralWorkflow(definition),
-  );
+  const revived: unknown = JSON.parse(serializePainPointCollateralWorkflow(definition));
   expect(revived).toEqual(definition);
 });
 
 test("an empty trigger address is rejected", () => {
-  expect(() =>
-    buildPainPointCollateralWorkflow({ ...INPUT, triggerAddress: "" }),
-  ).toThrow(/triggerAddress/);
+  expect(() => buildPainPointCollateralWorkflow({ ...INPUT, triggerAddress: "" })).toThrow(
+    /triggerAddress/,
+  );
 });
 
 test("a non-positive or fractional turn timeout is rejected", () => {
-  expect(() =>
-    buildPainPointCollateralWorkflow({ ...INPUT, turnTimeoutMs: 0 }),
-  ).toThrow(/turnTimeoutMs/);
-  expect(() =>
-    buildPainPointCollateralWorkflow({ ...INPUT, turnTimeoutMs: 0.5 }),
-  ).toThrow(/turnTimeoutMs/);
+  expect(() => buildPainPointCollateralWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(
+    /turnTimeoutMs/,
+  );
+  expect(() => buildPainPointCollateralWorkflow({ ...INPUT, turnTimeoutMs: 0.5 })).toThrow(
+    /turnTimeoutMs/,
+  );
 });

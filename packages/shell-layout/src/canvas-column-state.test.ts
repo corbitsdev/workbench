@@ -74,9 +74,7 @@ describe("canvas column state", () => {
   });
 
   test("clearing a profile closes the canvas and drops focus", () => {
-    const withProfile = focusCanvas(
-      openProfileInCanvas(initial(), sampleProfile),
-    );
+    const withProfile = focusCanvas(openProfileInCanvas(initial(), sampleProfile));
     expect(clearProfileInCanvas(withProfile)).toEqual({
       open: false,
       profile: null,
@@ -107,9 +105,7 @@ describe("canvas column state", () => {
   });
 
   test("clearing an artifact closes the canvas and drops focus", () => {
-    const withArtifact = focusCanvas(
-      openArtifactInCanvas(initial(), sampleArtifact),
-    );
+    const withArtifact = focusCanvas(openArtifactInCanvas(initial(), sampleArtifact));
     expect(clearArtifactInCanvas(withArtifact)).toEqual({
       open: false,
       profile: null,
@@ -140,9 +136,7 @@ describe("canvas column state", () => {
   });
 
   test("clearing a routine closes the canvas and drops focus", () => {
-    const withRoutine = focusCanvas(
-      openRoutineInCanvas(initial(), sampleRoutine),
-    );
+    const withRoutine = focusCanvas(openRoutineInCanvas(initial(), sampleRoutine));
     expect(clearRoutineInCanvas(withRoutine)).toEqual({
       open: false,
       profile: null,
@@ -211,13 +205,8 @@ describe("canvas column state", () => {
 
   test("workbench switch clears profile, artifact, routine, and open flag", () => {
     const open = openProfileInCanvas(initial(), sampleProfile);
-    expect(
-      clearCanvasForTenantSwitch<TestProfile, TestArtifact, TestRoutine>(),
-    ).toEqual(initial());
+    expect(clearCanvasForTenantSwitch<TestProfile, TestArtifact, TestRoutine>()).toEqual(initial());
     expect(open.profile).toEqual(sampleProfile);
-    expect(
-      clearCanvasForTenantSwitch<TestProfile, TestArtifact, TestRoutine>()
-        .profile,
-    ).toBeNull();
+    expect(clearCanvasForTenantSwitch<TestProfile, TestArtifact, TestRoutine>().profile).toBeNull();
   });
 });

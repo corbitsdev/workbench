@@ -36,11 +36,7 @@ import {
   HUGGINGFACE_AUTHORIZE_URL,
   HUGGINGFACE_SCOPE,
 } from "./huggingface-connect";
-import {
-  exchangeCodeForGoogleToken,
-  GMAIL_SCOPE,
-  GOOGLE_AUTHORIZE_URL,
-} from "./gmail-connect";
+import { exchangeCodeForGoogleToken, GMAIL_SCOPE, GOOGLE_AUTHORIZE_URL } from "./gmail-connect";
 // simple-icons ships one brand per named export, tree-shaken by any bundler
 // that respects its `sideEffects: false` — importing only the brands this
 // registry actually has a listing for pulls in only those icons' data, not
@@ -82,10 +78,7 @@ import {
   XAI_TOKEN_URL,
 } from "@corbits/xai-provider/constants";
 import { exchangeCodeForKey, OPENROUTER_AUTH_URL } from "./openrouter-connect";
-import {
-  exchangeCodeForGithubToken,
-  GITHUB_AUTHORIZE_URL,
-} from "./github-connect";
+import { exchangeCodeForGithubToken, GITHUB_AUTHORIZE_URL } from "./github-connect";
 import {
   testExaCredential,
   testGitHubCredential,
@@ -106,9 +99,7 @@ export function createConnectorRegistry(
   return connectors;
 }
 
-export function connectorDescriptors(
-  registry: ConnectorRegistry,
-): readonly ConnectorDescriptor[] {
+export function connectorDescriptors(registry: ConnectorRegistry): readonly ConnectorDescriptor[] {
   return Object.values(registry);
 }
 
@@ -123,9 +114,10 @@ function chatgptAccountIdFromIdToken(idToken: string): string | undefined {
   let claims: Record<string, unknown>;
   try {
     const base64 = payload.replaceAll("-", "+").replaceAll("_", "/");
-    claims = JSON.parse(
-      atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")),
-    ) as Record<string, unknown>;
+    claims = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="))) as Record<
+      string,
+      unknown
+    >;
   } catch {
     // report-error-ignore: a malformed id_token payload degrades to "no
     // account id", never an incident.
@@ -135,20 +127,14 @@ function chatgptAccountIdFromIdToken(idToken: string): string | undefined {
     return claims.chatgpt_account_id;
   }
   const auth: unknown = claims["https://api.openai.com/auth"];
-  if (
-    typeof auth === "object" &&
-    auth !== null &&
-    "chatgpt_account_id" in auth
-  ) {
+  if (typeof auth === "object" && auth !== null && "chatgpt_account_id" in auth) {
     const nested = auth.chatgpt_account_id;
     if (typeof nested === "string") return nested;
   }
   return undefined;
 }
 
-const INFERENCE_PROVIDER_DOCS_URL: Readonly<
-  Record<SupportedCredentialProvider, string>
-> = {
+const INFERENCE_PROVIDER_DOCS_URL: Readonly<Record<SupportedCredentialProvider, string>> = {
   anthropic: "https://console.anthropic.com/settings/keys",
   openai: "https://platform.openai.com/api-keys",
   "google-genai": "https://aistudio.google.com/apikey",
@@ -180,10 +166,7 @@ const EXA_ICON = {
 // four fall through to the monochrome initial tile every iconless
 // descriptor already gets.
 const INFERENCE_PROVIDER_ICONS: Partial<
-  Record<
-    SupportedCredentialProvider,
-    { readonly path: string; readonly hex: string }
-  >
+  Record<SupportedCredentialProvider, { readonly path: string; readonly hex: string }>
 > = {
   anthropic: { path: siAnthropic.path, hex: siAnthropic.hex },
   "google-genai": { path: siGooglegemini.path, hex: siGooglegemini.hex },
@@ -231,8 +214,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
             credentialPlugin: "http",
             docsUrl: INFERENCE_PROVIDER_DOCS_URL[providerId],
             feedsTools: [],
-            probe: (apiKey) =>
-              testProviderCredential({ provider: providerId, apiKey }),
+            probe: (apiKey) => testProviderCredential({ provider: providerId, apiKey }),
             ...(icon !== undefined ? { icon } : {}),
           };
   }
@@ -359,9 +341,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
           url.searchParams.set("code_challenge", codeChallenge);
         }
         url.searchParams.set("code_challenge_method", "S256");
-        for (const [name, value] of Object.entries(
-          CODEX_AUTHORIZE_EXTRA_PARAMS,
-        )) {
+        for (const [name, value] of Object.entries(CODEX_AUTHORIZE_EXTRA_PARAMS)) {
           url.searchParams.set(name, value);
         }
         return url;
@@ -407,9 +387,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
               : {}),
             ...(typeof tokens.expires_in === "number"
               ? {
-                  expiresAt: new Date(
-                    Date.now() + tokens.expires_in * 1000,
-                  ).toISOString(),
+                  expiresAt: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
                 }
               : {}),
             ...(accountId !== undefined ? { accountId } : {}),
@@ -487,9 +465,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
               : {}),
             ...(typeof tokens.expires_in === "number"
               ? {
-                  expiresAt: new Date(
-                    Date.now() + tokens.expires_in * 1000,
-                  ).toISOString(),
+                  expiresAt: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
                 }
               : {}),
           };
@@ -527,8 +503,7 @@ export const CONNECTOR_REGISTRY: ConnectorRegistry = createConnectorRegistry({
     docsUrl: "https://open.manus.ai/docs/v2/introduction",
     feedsTools: ["@corbits/manus-tools"],
     probe: (apiKey) => testManusCredential(apiKey),
-    description:
-      "Have Manus run tasks and produce files — including slide decks.",
+    description: "Have Manus run tasks and produce files — including slide decks.",
   },
   exa: {
     id: "exa",
@@ -608,13 +583,7 @@ export const CONNECTOR_REGISTRY: ConnectorRegistry = createConnectorRegistry({
         }
         return url;
       },
-      exchange: async ({
-        code,
-        codeVerifier,
-        redirectUri,
-        clientId,
-        clientSecret,
-      }) => {
+      exchange: async ({ code, codeVerifier, redirectUri, clientId, clientSecret }) => {
         if (clientId === undefined || clientSecret === undefined) {
           return {
             ok: false,
@@ -649,8 +618,7 @@ export const CONNECTOR_REGISTRY: ConnectorRegistry = createConnectorRegistry({
     authKind: "api-key",
     docsUrl: "https://github.com/settings/tokens",
     feedsTools: ["@corbits/github-tools"],
-    probe: (apiKey, opts) =>
-      testGitHubCredential(apiKey, undefined, opts?.baseUrl),
+    probe: (apiKey, opts) => testGitHubCredential(apiKey, undefined, opts?.baseUrl),
     description: "Read repos, issues, and pull requests.",
     icon: { path: siGithub.path, hex: siGithub.hex },
     oauth: {

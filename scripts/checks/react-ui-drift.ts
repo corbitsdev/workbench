@@ -33,12 +33,7 @@
 // total are the accepted baseline, not a clean bill of health.
 import { Glob } from "bun";
 import path from "node:path";
-import {
-  emptyReport,
-  reportAndExit,
-  rootFromArgs,
-  type CheckReport,
-} from "./lib/repo";
+import { emptyReport, reportAndExit, rootFromArgs, type CheckReport } from "./lib/repo";
 import {
   REACT_UI_DRIFT_ALLOWLIST,
   REACT_UI_DRIFT_SNAPSHOT,
@@ -47,20 +42,14 @@ import {
 
 const SCAN_DIRS = ["apps", "packages", "workflows"];
 
-const EXCLUDED_SEGMENTS = [
-  "node_modules",
-  "dist",
-  ".worktrees",
-  "scripts/checks/test",
-];
+const EXCLUDED_SEGMENTS = ["node_modules", "dist", ".worktrees", "scripts/checks/test"];
 
 export interface ScannedFile {
   relPath: string;
   contents: string;
 }
 
-export type DriftClass =
-  "raw-form-control" | "raw-table" | "raw-modal-attr" | "raw-button";
+export type DriftClass = "raw-form-control" | "raw-table" | "raw-modal-attr" | "raw-button";
 
 export interface DriftViolation {
   relPath: string;
@@ -69,8 +58,7 @@ export interface DriftViolation {
   snippet: string;
 }
 
-const RAW_FORM_CONTROL_PATTERN =
-  /<select\b|<textarea\b|type=["']radio["']|type=["']checkbox["']/g;
+const RAW_FORM_CONTROL_PATTERN = /<select\b|<textarea\b|type=["']radio["']|type=["']checkbox["']/g;
 
 const RAW_TABLE_PATTERN = /<table\b/g;
 
@@ -89,11 +77,7 @@ function lineNumberAt(contents: string, index: number): number {
   return contents.slice(0, index).split("\n").length;
 }
 
-function snippetAt(
-  contents: string,
-  index: number,
-  matchLength: number,
-): string {
+function snippetAt(contents: string, index: number, matchLength: number): string {
   const lines = contents.split("\n");
   const line = lineNumberAt(contents, index);
   return (lines[line - 1] ?? contents.slice(index, index + matchLength)).trim();
@@ -135,10 +119,7 @@ function findMatches(
   return violations;
 }
 
-function findRawButtonViolations(
-  contents: string,
-  relPath: string,
-): DriftViolation[] {
+function findRawButtonViolations(contents: string, relPath: string): DriftViolation[] {
   if (importsButtonLike(contents)) return [];
   const violations: DriftViolation[] = [];
   for (const match of contents.matchAll(BUTTON_OPEN_TAG_PATTERN)) {
@@ -160,25 +141,13 @@ function findRawButtonViolations(
  * count (they're known, ticketed drift) but still returned so callers can
  * see the full picture.
  */
-export function findDriftViolations(
-  files: readonly ScannedFile[],
-): readonly DriftViolation[] {
+export function findDriftViolations(files: readonly ScannedFile[]): readonly DriftViolation[] {
   const violations: DriftViolation[] = [];
   for (const { relPath, contents } of files) {
     violations.push(
-      ...findMatches(
-        RAW_FORM_CONTROL_PATTERN,
-        contents,
-        relPath,
-        "raw-form-control",
-      ),
+      ...findMatches(RAW_FORM_CONTROL_PATTERN, contents, relPath, "raw-form-control"),
       ...findMatches(RAW_TABLE_PATTERN, contents, relPath, "raw-table"),
-      ...findMatches(
-        RAW_MODAL_ATTR_PATTERN,
-        contents,
-        relPath,
-        "raw-modal-attr",
-      ),
+      ...findMatches(RAW_MODAL_ATTR_PATTERN, contents, relPath, "raw-modal-attr"),
       ...findRawButtonViolations(contents, relPath),
     );
   }
@@ -219,9 +188,7 @@ export function auditReactUiDrift(
     );
   }
 
-  const ratcheted = violations.filter((v) =>
-    countsTowardRatchet(v, allowlistPaths),
-  );
+  const ratcheted = violations.filter((v) => countsTowardRatchet(v, allowlistPaths));
   const ratchetCount = ratcheted.length;
 
   if (ratchetCount > snapshot) {
@@ -239,25 +206,18 @@ export function auditReactUiDrift(
     );
   }
 
-  report.notes.push(
-    `${ratchetCount} drift site(s) counted against a snapshot of ${snapshot}`,
-  );
+  report.notes.push(`${ratchetCount} drift site(s) counted against a snapshot of ${snapshot}`);
   return { report, ratchetCount };
 }
 
 function isExcludedPath(relPath: string): boolean {
   return EXCLUDED_SEGMENTS.some(
     (segment) =>
-      relPath === segment ||
-      relPath.startsWith(`${segment}/`) ||
-      relPath.includes(`/${segment}/`),
+      relPath === segment || relPath.startsWith(`${segment}/`) || relPath.includes(`/${segment}/`),
   );
 }
 
-async function scanFiles(
-  root: string,
-  dirs: readonly string[],
-): Promise<ScannedFile[]> {
+async function scanFiles(root: string, dirs: readonly string[]): Promise<ScannedFile[]> {
   const files: ScannedFile[] = [];
   for (const dir of dirs) {
     const glob = new Glob("**/*.tsx");
@@ -278,9 +238,7 @@ async function main(): Promise<void> {
   const root = rootFromArgs(Bun.argv.slice(2));
   const files = await scanFiles(root, SCAN_DIRS);
   const { report } = auditReactUiDrift(files);
-  report.notes.push(
-    `scanned ${files.length} .tsx file(s) under ${SCAN_DIRS.join(", ")}`,
-  );
+  report.notes.push(`scanned ${files.length} .tsx file(s) under ${SCAN_DIRS.join(", ")}`);
   reportAndExit("check:react-ui-drift", report);
 }
 

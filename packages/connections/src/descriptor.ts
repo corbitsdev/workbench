@@ -71,18 +71,14 @@ export interface ConnectorOAuthConfig {
    * connect routes refuse the flow rather than round-trip a doomed
    * request, and the settings-ui card renders the muted "not
    * configured" state instead of a live Connect button. */
-  readonly clientId?: (
-    env: Readonly<Record<string, string | undefined>>,
-  ) => string | undefined;
+  readonly clientId?: (env: Readonly<Record<string, string | undefined>>) => string | undefined;
   /** Resolves this connector's registered OAuth app secret from the same
    * env bag `clientId` reads — present only for a confidential-client
    * `oauth-code` flow (GitHub's OAuth App token exchange requires one;
    * OpenRouter and Hugging Face are public clients and never set this).
    * `undefined` is treated the same as an absent client id: the flow
    * refuses rather than exchanging with a missing secret. */
-  readonly clientSecret?: (
-    env: Readonly<Record<string, string | undefined>>,
-  ) => string | undefined;
+  readonly clientSecret?: (env: Readonly<Record<string, string | undefined>>) => string | undefined;
   /** Builds the full authorize-page URL from the mechanics `oauth-routes.ts`
    * already computed — every provider names its query parameters
    * differently (OpenRouter: `callback_url`; Hugging Face:

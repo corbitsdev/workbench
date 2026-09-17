@@ -26,9 +26,7 @@ export type AgentDefinitionWithDisplayName = WithDisplayName<AgentDefinition>;
 
 /** One definition's display name derived the same way the roster's are, so
  * the same agent never reads under two different names across screens. */
-export function withAgentDisplayName(
-  definition: AgentDefinition,
-): AgentDefinitionWithDisplayName {
+export function withAgentDisplayName(definition: AgentDefinition): AgentDefinitionWithDisplayName {
   return withDisplayNameShared(definition);
 }
 

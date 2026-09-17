@@ -1,13 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import {
-  CORBITS_VOCABULARY,
-  buildLast30DaysResearchSystemPrompt,
-} from "./prompts";
+import { CORBITS_VOCABULARY, buildLast30DaysResearchSystemPrompt } from "./prompts";
 import { LAST_30_DAYS_RESEARCH_SECTIONS } from "./index";
 
-const prompt = buildLast30DaysResearchSystemPrompt(
-  LAST_30_DAYS_RESEARCH_SECTIONS,
-);
+const prompt = buildLast30DaysResearchSystemPrompt(LAST_30_DAYS_RESEARCH_SECTIONS);
 
 describe("CORBITS_VOCABULARY", () => {
   test("names every canonical Corbits term", () => {
@@ -92,9 +87,7 @@ describe("phase 6 — write", () => {
   });
 
   test("requires every claim in Key findings to trace to a citation", () => {
-    expect(prompt.toLowerCase()).toContain(
-      "every claim here must trace to a citation",
-    );
+    expect(prompt.toLowerCase()).toContain("every claim here must trace to a citation");
   });
 
   test("uses house style: collective voice and hyphen-spaced asides, not I", () => {

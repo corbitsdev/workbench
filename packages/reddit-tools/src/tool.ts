@@ -51,9 +51,7 @@ async function resolveRedditCredential(
 ): Promise<{ fetchImpl: typeof fetch } | null> {
   if (env.credentials === undefined) return null;
   try {
-    const mediated = await env.credentials.resolve(
-      SCRAPECREATORS_CREDENTIAL_HANDLE,
-    );
+    const mediated = await env.credentials.resolve(SCRAPECREATORS_CREDENTIAL_HANDLE);
     return { fetchImpl: mediated.fetch as unknown as typeof fetch };
   } catch {
     return null;
@@ -70,9 +68,7 @@ function optionalStringArg(call: ToolCall, name: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function searchOptions(
-  call: ToolCall,
-): Pick<RedditSearchParams, "sort" | "timeframe"> {
+function searchOptions(call: ToolCall): Pick<RedditSearchParams, "sort" | "timeframe"> {
   const options: { sort?: string; timeframe?: string } = {};
   const sort = optionalStringArg(call, "sort");
   const timeframe = optionalStringArg(call, "timeframe");
@@ -81,10 +77,7 @@ function searchOptions(
   return options;
 }
 
-async function runRedditSearch(
-  env: RedditEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runRedditSearch(env: RedditEnv, call: ToolCall): Promise<ToolResult> {
   const credential = await resolveRedditCredential(env);
   if (credential === null) {
     return notConnectedResult(call.id);
@@ -112,10 +105,7 @@ async function runRedditSearch(
   }
 }
 
-async function runRedditSubredditSearch(
-  env: RedditEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runRedditSubredditSearch(env: RedditEnv, call: ToolCall): Promise<ToolResult> {
   const credential = await resolveRedditCredential(env);
   if (credential === null) {
     return notConnectedResult(call.id);
@@ -153,10 +143,7 @@ async function runRedditSubredditSearch(
 export const redditTools = defineTool<RedditEnv>({
   id: "@corbits/reddit-tools/reddit",
   requires: ["credentials"],
-  definitions: [
-    { name: REDDIT_SEARCH_TOOL },
-    { name: REDDIT_SUBREDDIT_SEARCH_TOOL },
-  ],
+  definitions: [{ name: REDDIT_SEARCH_TOOL }, { name: REDDIT_SUBREDDIT_SEARCH_TOOL }],
   factory: (env) => ({
     definitions: [
       {

@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  bringInLoadErrorMessage,
-  buildMemberAvatarStack,
-} from "./chat-workspace";
+import { bringInLoadErrorMessage, buildMemberAvatarStack } from "./chat-workspace";
 import type { ParticipantRecord } from "./api";
 import { avatarClassForPrincipal } from "./avatar";
 import { CHAT_STRINGS } from "./strings";
@@ -98,8 +95,8 @@ describe("bringInLoadErrorMessage (CL-6839)", () => {
   });
 
   test("both failures use the combined copy", () => {
-    expect(
-      bringInLoadErrorMessage(["members", "invitableAgents"], new Error("x")),
-    ).toBe(CHAT_STRINGS.mentionBringInLoadError);
+    expect(bringInLoadErrorMessage(["members", "invitableAgents"], new Error("x"))).toBe(
+      CHAT_STRINGS.mentionBringInLoadError,
+    );
   });
 });

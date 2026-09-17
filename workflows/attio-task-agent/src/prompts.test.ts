@@ -16,15 +16,11 @@ test("every draft kind the prompt offers has its own quality bar", () => {
     expect(ARTIFACT_KIND_GUIDANCE[kind].length).toBeGreaterThan(0);
     expect(PROMPT).toContain(`- ${kind}:`);
   }
-  expect(Object.keys(ARTIFACT_KIND_GUIDANCE).sort()).toEqual(
-    [...ATTIO_TASK_ARTIFACT_KINDS].sort(),
-  );
+  expect(Object.keys(ARTIFACT_KIND_GUIDANCE).sort()).toEqual([...ATTIO_TASK_ARTIFACT_KINDS].sort());
 });
 
 test("the dropped Gamma hand-off is gone, not left as a kind nothing can act on", () => {
-  expect(ATTIO_TASK_ARTIFACT_KINDS).not.toContain(
-    "gamma-presentation" as never,
-  );
+  expect(ATTIO_TASK_ARTIFACT_KINDS).not.toContain("gamma-presentation" as never);
   expect(PROMPT).not.toContain("gamma");
 });
 

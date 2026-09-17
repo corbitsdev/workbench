@@ -133,9 +133,7 @@ describe("createTenantConnectCredential, mounted through createOAuthConnectRoute
   test("full authorize -> callback -> credential-stored round trip", async () => {
     const { app, providers, credentials } = mountTenantScoped();
 
-    const started = await app.request(
-      "/api/tenants/tnt_1/connections/oauth/widget/start",
-    );
+    const started = await app.request("/api/tenants/tnt_1/connections/oauth/widget/start");
     expect(started.status).toBe(302);
     const authorizeUrl = new URL(started.headers.get("location") ?? "");
     expect(authorizeUrl.origin).toBe("https://widget.example.com");
@@ -146,16 +144,11 @@ describe("createTenantConnectCredential, mounted through createOAuthConnectRoute
       { headers: { cookie } },
     );
     expect(callback.status).toBe(302);
-    const redirect = new URL(
-      callback.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(callback.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("outcome")).toBe("connected");
     expect(redirect.searchParams.get("tenantSlug")).toBe(TENANT.slug);
 
-    expect(providers).toEqual([
-      { tenantId: TENANT.id, name: "widget", plugin: "http" },
-    ]);
+    expect(providers).toEqual([{ tenantId: TENANT.id, name: "widget", plugin: "http" }]);
     expect(credentials).toEqual([
       {
         tenantId: TENANT.id,
@@ -178,8 +171,7 @@ describe("createTenantConnectCredential, mounted through createOAuthConnectRoute
 
     const result = await connectCredential({
       c: {
-        get: (key: string) =>
-          key === "tenant" ? TENANT : key === "principal" ? PRINCIPAL : null,
+        get: (key: string) => (key === "tenant" ? TENANT : key === "principal" ? PRINCIPAL : null),
       } as never,
       connectorId: "widget",
       userId: "user_1",
@@ -206,10 +198,7 @@ describe("createTenantConnectCredential, mounted through createOAuthConnectRoute
       "/api/tenants/tnt_1/connections/oauth/widget/callback?code=abc123&state=forged",
     );
     expect(callback.status).toBe(302);
-    const redirect = new URL(
-      callback.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(callback.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("outcome")).toBe("error");
     expect(redirect.searchParams.get("code")).toBe("state_expired");
     expect(providers).toEqual([]);
@@ -219,9 +208,7 @@ describe("createTenantConnectCredential, mounted through createOAuthConnectRoute
   test("a tampered state cookie is rejected before anything is persisted", async () => {
     const { app, providers, credentials } = mountTenantScoped();
 
-    const started = await app.request(
-      "/api/tenants/tnt_1/connections/oauth/widget/start",
-    );
+    const started = await app.request("/api/tenants/tnt_1/connections/oauth/widget/start");
     // Same cookie *name*, garbage value: fails the sealed-state cipher
     // check the same way a forged or replayed cookie would, matching
     // the factory's own cross-user regression coverage in
@@ -236,10 +223,7 @@ describe("createTenantConnectCredential, mounted through createOAuthConnectRoute
       { headers: { cookie } },
     );
     expect(callback.status).toBe(302);
-    const redirect = new URL(
-      callback.headers.get("location") ?? "",
-      "https://x",
-    );
+    const redirect = new URL(callback.headers.get("location") ?? "", "https://x");
     expect(redirect.searchParams.get("code")).toBe("state_expired");
     expect(providers).toEqual([]);
     expect(credentials).toEqual([]);
@@ -257,14 +241,11 @@ describe("createTenantConnectCredential, mounted through createOAuthConnectRoute
       providerHealth,
     });
 
-    const started = await app.request(
-      "/api/tenants/tnt_1/connections/oauth/widget/start",
-    );
+    const started = await app.request("/api/tenants/tnt_1/connections/oauth/widget/start");
     const cookie = cookieHeaderFrom(started);
-    await app.request(
-      "/api/tenants/tnt_1/connections/oauth/widget/callback?code=abc123",
-      { headers: { cookie } },
-    );
+    await app.request("/api/tenants/tnt_1/connections/oauth/widget/callback?code=abc123", {
+      headers: { cookie },
+    });
 
     expect(providerHealth.listForTenant(TENANT.id)["widget"]).toBeUndefined();
   });

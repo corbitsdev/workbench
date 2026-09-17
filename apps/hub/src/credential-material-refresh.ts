@@ -94,10 +94,7 @@ export type ServingRefreshStore = {
   >;
   /** Persists a successful refresh (encrypting the new pair) — only an
    * `active` row is updated; false means it was claimed meanwhile. */
-  applyRefreshedTokens(
-    credentialId: string,
-    tokens: RefreshedTokens,
-  ): Promise<boolean>;
+  applyRefreshedTokens(credentialId: string, tokens: RefreshedTokens): Promise<boolean>;
   /** Marks the credential re-auth-required: visible to the settings
    * Connections card as needs-attention. */
   markReauthRequired(credentialId: string, reason: string): Promise<void>;
@@ -105,11 +102,7 @@ export type ServingRefreshStore = {
    * running instances, so sidecars pick the new material up live. */
   pushUpdates(tenantId: string): Promise<void>;
   /** Decrypts a stored secret column for the grant. */
-  decrypt(
-    credentialId: string,
-    column: "secret" | "refreshSecret",
-    value: string,
-  ): Promise<string>;
+  decrypt(credentialId: string, column: "secret" | "refreshSecret", value: string): Promise<string>;
   /** Every `active` `oauth_token` credential in the tenant whose stored
    * `expiresAt` is at or before `cutoff` — the tenant-wide serving-time
    * sweep `refreshTenantServingCredentials` runs ahead of a dial. */
@@ -170,9 +163,7 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
         ...(result.tokens.refresh_token === undefined
           ? {}
           : { refreshToken: result.tokens.refresh_token }),
-        ...(result.tokens.expires_in === undefined
-          ? {}
-          : { expiresIn: result.tokens.expires_in }),
+        ...(result.tokens.expires_in === undefined ? {} : { expiresIn: result.tokens.expires_in }),
       };
     });
 
@@ -193,11 +184,7 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
           refreshSecret:
             row.refreshSecret === null
               ? null
-              : await deps.store.decrypt(
-                  row.id,
-                  "refreshSecret",
-                  row.refreshSecret,
-                ),
+              : await deps.store.decrypt(row.id, "refreshSecret", row.refreshSecret),
           expiresAt: row.expiresAt,
         } satisfies CredentialTokenRow;
       },
@@ -205,10 +192,7 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
         // False = another writer claimed the row (claimed-elsewhere): a
         // lost race, not an error — skip the follow-up push and let the
         // next resolution re-read whatever was persisted.
-        const applied = await deps.store.applyRefreshedTokens(
-          credentialId,
-          tokens,
-        );
+        const applied = await deps.store.applyRefreshedTokens(credentialId, tokens);
         lastApplyWon = applied;
       },
       refresh: async (row) => {
@@ -226,9 +210,7 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
           const refreshed = await refreshCodexTokens(row.refreshSecret, now(), {
             access: row.secret,
             refresh: row.refreshSecret,
-            ...(row.expiresAt === null
-              ? {}
-              : { expiresAt: row.expiresAt.getTime() }),
+            ...(row.expiresAt === null ? {} : { expiresAt: row.expiresAt.getTime() }),
             // The account id rides the credential's metadata (written at
             // connect from the id_token); carry it forward so a refresh
             // response without an id_token never drops chatgpt-account-id.
@@ -236,32 +218,21 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
           });
           return {
             secret: refreshed.access,
-            ...(refreshed.refresh === undefined
-              ? {}
-              : { refreshSecret: refreshed.refresh }),
-            expiresAt:
-              refreshed.expiresAt === undefined
-                ? null
-                : new Date(refreshed.expiresAt),
+            ...(refreshed.refresh === undefined ? {} : { refreshSecret: refreshed.refresh }),
+            expiresAt: refreshed.expiresAt === undefined ? null : new Date(refreshed.expiresAt),
           };
         }
         if (full.providerName === "xai-oauth") {
           const refreshed = await refreshXaiTokens(row.refreshSecret, now());
           return {
             secret: refreshed.access,
-            ...(refreshed.refresh === undefined
-              ? {}
-              : { refreshSecret: refreshed.refresh }),
-            expiresAt:
-              refreshed.expiresAt === undefined
-                ? null
-                : new Date(refreshed.expiresAt),
+            ...(refreshed.refresh === undefined ? {} : { refreshSecret: refreshed.refresh }),
+            expiresAt: refreshed.expiresAt === undefined ? null : new Date(refreshed.expiresAt),
           };
         }
         const parsed = CredentialMetadata(full.metadata ?? {});
         const serverUrl =
-          full.apiBaseUrl ??
-          (parsed instanceof type.errors ? undefined : parsed.url);
+          full.apiBaseUrl ?? (parsed instanceof type.errors ? undefined : parsed.url);
         if (serverUrl === undefined) {
           throw new Error(
             `credential ${row.id} has neither a provider API base URL nor a metadata URL to refresh against`,
@@ -274,12 +245,10 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
           serverUrl,
           accessToken: row.secret,
           refreshToken: row.refreshSecret,
-          ...(parsed instanceof type.errors ||
-          parsed.clientInformation === undefined
+          ...(parsed instanceof type.errors || parsed.clientInformation === undefined
             ? {}
             : {
-                clientInformation:
-                  parsed.clientInformation as OAuthClientInformationMixed,
+                clientInformation: parsed.clientInformation as OAuthClientInformationMixed,
               }),
         });
         return {
@@ -291,9 +260,7 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
           // the oauth-core stance. Never a short artificial
           // timer that would re-refresh on every dial.
           expiresAt:
-            refreshed.expiresIn === undefined
-              ? null
-              : new Date(now() + refreshed.expiresIn * 1000),
+            refreshed.expiresIn === undefined ? null : new Date(now() + refreshed.expiresIn * 1000),
         };
       },
     });
@@ -394,9 +361,7 @@ export function createDrizzleServingRefreshStore(
           expiresAt: tokens.expiresAt,
           updatedAt: now,
         })
-        .where(
-          and(eq(credential.id, credentialId), eq(credential.status, "active")),
-        )
+        .where(and(eq(credential.id, credentialId), eq(credential.status, "active")))
         .returning({ id: credential.id });
       return updated.length > 0;
     },
@@ -409,8 +374,7 @@ export function createDrizzleServingRefreshStore(
         })
         .where(eq(credential.id, credentialId));
     },
-    pushUpdates: (tenantId) =>
-      pushSourceUpdates(db, sidecarRouter, tenantId, credentialCipher),
+    pushUpdates: (tenantId) => pushSourceUpdates(db, sidecarRouter, tenantId, credentialCipher),
     decrypt: (credentialId, column, value) =>
       credentialCipher.decrypt(value, credentialAad(credentialId, column)),
     async loadDueRows(tenantId, cutoff) {
@@ -451,10 +415,7 @@ export function createTenantServingRefresh(
   const skewLeadMs = deps.skewLeadMs ?? 60 * 1000;
   const now = deps.now ?? Date.now;
   return async (tenantId: string) => {
-    const due = await deps.store.loadDueRows(
-      tenantId,
-      new Date(now() + skewLeadMs),
-    );
+    const due = await deps.store.loadDueRows(tenantId, new Date(now() + skewLeadMs));
     await Promise.all(due.map((row) => refresh(row)));
   };
 }

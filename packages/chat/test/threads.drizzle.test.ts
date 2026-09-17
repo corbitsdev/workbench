@@ -35,9 +35,7 @@ const TENANT = "tnt_1";
 const WORKBENCH = "run_workbench1";
 
 describeIfDb("createDrizzleThreadStore: concurrent first writers", () => {
-  const scratchUrl = scratchUrlFor(
-    databaseUrl ?? "postgres://localhost:5432/unused",
-  );
+  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
   const scratchTarget = new URL(scratchUrl);
   const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
 

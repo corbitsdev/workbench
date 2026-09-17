@@ -101,10 +101,7 @@ describe("startReviewingRepos", () => {
     const result = await startReviewingRepos(["1", "3"], REPOS, fake.ports);
 
     expect(fake.grantedRepos).toEqual(["acme/widgets", "acme/sprockets"]);
-    expect(fake.createdTriggerRepos).toEqual([
-      "acme/widgets",
-      "acme/sprockets",
-    ]);
+    expect(fake.createdTriggerRepos).toEqual(["acme/widgets", "acme/sprockets"]);
     expect(result.createdTriggerIds).toEqual(["trg_1", "trg_3"]);
     expect(fake.persistedRepoIds()).toEqual(["1", "3"]);
   });
@@ -117,9 +114,9 @@ describe("startReviewingRepos", () => {
 
   test("throws rather than silently dropping a repoId the listed repos don't carry", async () => {
     const fake = fakePorts();
-    await expect(
-      startReviewingRepos(["not-a-real-repo"], REPOS, fake.ports),
-    ).rejects.toThrow(/not in the listed repos/);
+    await expect(startReviewingRepos(["not-a-real-repo"], REPOS, fake.ports)).rejects.toThrow(
+      /not in the listed repos/,
+    );
     expect(fake.grantedRepos).toEqual([]);
   });
 
@@ -135,9 +132,9 @@ describe("startReviewingRepos", () => {
       },
     };
 
-    await expect(
-      startReviewingRepos(["1", "2", "3"], REPOS, failingPorts),
-    ).rejects.toThrow(/mint failed/);
+    await expect(startReviewingRepos(["1", "2", "3"], REPOS, failingPorts)).rejects.toThrow(
+      /mint failed/,
+    );
 
     // The first repo made it through before the failure; the other two
     // never got a grant or a trigger.
@@ -146,22 +143,10 @@ describe("startReviewingRepos", () => {
 
     // Retrying the same selection (as the route's "Try again" does)
     // skips the repo that's already set up and only mints for the rest.
-    const result = await startReviewingRepos(
-      ["1", "2", "3"],
-      REPOS,
-      fake.ports,
-    );
+    const result = await startReviewingRepos(["1", "2", "3"], REPOS, fake.ports);
 
-    expect(fake.grantedRepos).toEqual([
-      "acme/widgets",
-      "acme/gadgets",
-      "acme/sprockets",
-    ]);
-    expect(fake.createdTriggerRepos).toEqual([
-      "acme/widgets",
-      "acme/gadgets",
-      "acme/sprockets",
-    ]);
+    expect(fake.grantedRepos).toEqual(["acme/widgets", "acme/gadgets", "acme/sprockets"]);
+    expect(fake.createdTriggerRepos).toEqual(["acme/widgets", "acme/gadgets", "acme/sprockets"]);
     expect(result.createdTriggerIds).toEqual(["trg_2", "trg_3"]);
   });
 
@@ -177,33 +162,21 @@ describe("startReviewingRepos", () => {
       },
     };
 
-    await expect(
-      startReviewingRepos(["1", "2", "3"], REPOS, failingPorts),
-    ).rejects.toThrow(/trigger create failed/);
+    await expect(startReviewingRepos(["1", "2", "3"], REPOS, failingPorts)).rejects.toThrow(
+      /trigger create failed/,
+    );
 
     // The failing repo's grant was minted before the trigger create blew
     // up; the repo after it was never reached at all.
     expect(fake.grantedRepos).toEqual(["acme/widgets", "acme/gadgets"]);
     expect(fake.createdTriggerRepos).toEqual(["acme/widgets"]);
 
-    const result = await startReviewingRepos(
-      ["1", "2", "3"],
-      REPOS,
-      fake.ports,
-    );
+    const result = await startReviewingRepos(["1", "2", "3"], REPOS, fake.ports);
 
     // acme/gadgets' grant is not re-minted on retry — only its missing
     // trigger is created.
-    expect(fake.grantedRepos).toEqual([
-      "acme/widgets",
-      "acme/gadgets",
-      "acme/sprockets",
-    ]);
-    expect(fake.createdTriggerRepos).toEqual([
-      "acme/widgets",
-      "acme/gadgets",
-      "acme/sprockets",
-    ]);
+    expect(fake.grantedRepos).toEqual(["acme/widgets", "acme/gadgets", "acme/sprockets"]);
+    expect(fake.createdTriggerRepos).toEqual(["acme/widgets", "acme/gadgets", "acme/sprockets"]);
     expect(result.createdTriggerIds).toEqual(["trg_2", "trg_3"]);
   });
 
@@ -227,12 +200,10 @@ describe("startReviewingRepos", () => {
     expect(fake.grantedRepos).toEqual(["acme/widgets"]);
     expect(fake.createdTriggerRepos).toEqual(["acme/widgets"]);
 
-    const totalCreated =
-      first.createdTriggerIds.length + second.createdTriggerIds.length;
+    const totalCreated = first.createdTriggerIds.length + second.createdTriggerIds.length;
     expect(totalCreated).toBe(1);
 
-    const totalSkipped =
-      first.skippedRepoIds.length + second.skippedRepoIds.length;
+    const totalSkipped = first.skippedRepoIds.length + second.skippedRepoIds.length;
     expect(totalSkipped).toBe(1);
   });
 });

@@ -97,9 +97,7 @@ const FILES_PROPERTY = {
     '{ "package.json": "...", "workflow.ts": "..." }.',
 } as const;
 
-function clientConfig(
-  env: WorkflowAuthoringEnv,
-): WorkflowAuthoringClientConfig {
+function clientConfig(env: WorkflowAuthoringEnv): WorkflowAuthoringClientConfig {
   return {
     hubWorkflowAuthoringUrl: env.hubWorkflowAuthoringUrl,
     tenantId: env.tenantId,
@@ -116,10 +114,7 @@ function textResult(callId: string, content: string): ToolResult {
   return { callId, isError: false, content };
 }
 
-async function runAuthor(
-  env: WorkflowAuthoringEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runAuthor(env: WorkflowAuthoringEnv, call: ToolCall): Promise<ToolResult> {
   const input = AuthorInput(call.arguments);
   if (input instanceof type.errors) {
     throw invalidInput(WORKFLOW_AUTHOR_TOOL, input);
@@ -132,10 +127,7 @@ async function runAuthor(
   );
 }
 
-async function runRepublish(
-  env: WorkflowAuthoringEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runRepublish(env: WorkflowAuthoringEnv, call: ToolCall): Promise<ToolResult> {
   const input = RepublishInput(call.arguments);
   if (input instanceof type.errors) {
     throw invalidInput(WORKFLOW_REPUBLISH_TOOL, input);
@@ -148,10 +140,7 @@ async function runRepublish(
   );
 }
 
-async function runSourceRead(
-  env: WorkflowAuthoringEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runSourceRead(env: WorkflowAuthoringEnv, call: ToolCall): Promise<ToolResult> {
   const input = SourceReadInput(call.arguments);
   if (input instanceof type.errors) {
     throw invalidInput(WORKFLOW_SOURCE_READ_TOOL, input);
@@ -160,10 +149,7 @@ async function runSourceRead(
   return textResult(call.id, JSON.stringify(snapshot));
 }
 
-async function runDeployPreview(
-  env: WorkflowAuthoringEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runDeployPreview(env: WorkflowAuthoringEnv, call: ToolCall): Promise<ToolResult> {
   const input = DeployPreviewInput(call.arguments);
   if (input instanceof type.errors) {
     throw invalidInput(WORKFLOW_DEPLOY_PREVIEW_TOOL, input);
@@ -172,10 +158,7 @@ async function runDeployPreview(
   return textResult(call.id, JSON.stringify(result));
 }
 
-async function runDeploy(
-  env: WorkflowAuthoringEnv,
-  call: ToolCall,
-): Promise<ToolResult> {
+async function runDeploy(env: WorkflowAuthoringEnv, call: ToolCall): Promise<ToolResult> {
   const input = DeployInput(call.arguments);
   if (input instanceof type.errors) {
     throw invalidInput(WORKFLOW_DEPLOY_TOOL, input);
@@ -231,8 +214,7 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
             name: {
               type: "string",
               description:
-                "Lowercase-kebab asset name (letters, digits, hyphens), " +
-                'e.g. "daily-digest".',
+                "Lowercase-kebab asset name (letters, digits, hyphens), " + 'e.g. "daily-digest".',
             },
             files: FILES_PROPERTY,
             message: {
@@ -324,8 +306,7 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
             },
             entry: {
               type: "string",
-              description:
-                'The interchange.workflow entry module path, e.g. "./workflow.ts".',
+              description: 'The interchange.workflow entry module path, e.g. "./workflow.ts".',
             },
           },
           required: ["assetId", "commitSha", "entry"],
@@ -363,8 +344,7 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
             },
             entry: {
               type: "string",
-              description:
-                'The interchange.workflow entry module path, e.g. "./workflow.ts".',
+              description: 'The interchange.workflow entry module path, e.g. "./workflow.ts".',
             },
             packageName: {
               type: "string",
@@ -405,9 +385,7 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
           return runDeploy(env, call);
         default:
           return Promise.reject(
-            new Error(
-              `@corbits/workflow-authoring-tools: unknown tool "${call.name}"`,
-            ),
+            new Error(`@corbits/workflow-authoring-tools: unknown tool "${call.name}"`),
           );
       }
     },

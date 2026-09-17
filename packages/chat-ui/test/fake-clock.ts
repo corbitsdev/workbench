@@ -34,10 +34,7 @@ export function createFakeClock(): FakeClock {
       let dueId: number | null = null;
       let dueEntry: { fireAt: number; callback: () => void } | null = null;
       for (const [id, entry] of timers) {
-        if (
-          entry.fireAt <= target &&
-          (dueEntry === null || entry.fireAt < dueEntry.fireAt)
-        ) {
+        if (entry.fireAt <= target && (dueEntry === null || entry.fireAt < dueEntry.fireAt)) {
           dueId = id;
           dueEntry = entry;
         }

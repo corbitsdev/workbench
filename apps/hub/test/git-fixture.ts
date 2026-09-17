@@ -20,9 +20,7 @@ function findRepositoryRoot(): string {
       stderr: "pipe",
     });
     if (result.exitCode !== 0) {
-      throw new Error(
-        `git rev-parse --show-toplevel failed: ${result.stderr.toString()}`,
-      );
+      throw new Error(`git rev-parse --show-toplevel failed: ${result.stderr.toString()}`);
     }
     repositoryRoot = realpathSync(result.stdout.toString().trim());
   }
@@ -81,9 +79,7 @@ export function gitFixture(cwd: string, args: readonly string[]): void {
     },
   );
   if (result.exitCode !== 0) {
-    throw new Error(
-      `git ${args.join(" ")} failed: ${result.stderr.toString()}`,
-    );
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr.toString()}`);
   }
 }
 

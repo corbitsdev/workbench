@@ -62,16 +62,9 @@ export type PlannerInventory = {
 };
 
 export type InventorySources = {
-  listConversationalAgents(
-    tenantId: string,
-  ): Promise<readonly InventoryAgent[]>;
-  listUsableToolPackages(
-    tenantId: string,
-  ): Promise<readonly InventoryToolPackage[]>;
-  listSkills(caller: {
-    tenantId: string;
-    principalId: string;
-  }): Promise<readonly InventorySkill[]>;
+  listConversationalAgents(tenantId: string): Promise<readonly InventoryAgent[]>;
+  listUsableToolPackages(tenantId: string): Promise<readonly InventoryToolPackage[]>;
+  listSkills(caller: { tenantId: string; principalId: string }): Promise<readonly InventorySkill[]>;
   /** A process-level fact (`mountMemory() !== undefined` at hub boot),
    * not a per-call async lookup — memory is either compiled into this
    * process's deployment or it isn't, for the process's whole
@@ -101,10 +94,7 @@ export async function assembleInventory(
       agent.description !== undefined
         ? {
             ...agent,
-            description: sanitizeInventoryText(
-              agent.description,
-              MAX_DESCRIPTION_LENGTH,
-            ),
+            description: sanitizeInventoryText(agent.description, MAX_DESCRIPTION_LENGTH),
           }
         : agent,
     ),
@@ -113,10 +103,7 @@ export async function assembleInventory(
       skill.description !== undefined
         ? {
             ...skill,
-            description: sanitizeInventoryText(
-              skill.description,
-              MAX_DESCRIPTION_LENGTH,
-            ),
+            description: sanitizeInventoryText(skill.description, MAX_DESCRIPTION_LENGTH),
           }
         : skill,
     ),

@@ -53,10 +53,7 @@ function seededClient(access: TenancyAccess = deniedAccess): QueryClient {
     },
   });
   client.setQueryData(meKeys.principals, principalsPage);
-  client.setQueryData(
-    tenantKeys.settingsAccess("tenant_1", "principal_1"),
-    access,
-  );
+  client.setQueryData(tenantKeys.settingsAccess("tenant_1", "principal_1"), access);
   return client;
 }
 
@@ -75,11 +72,7 @@ describe("SettingsRoute section-id redirect", () => {
     container = null;
   });
 
-  async function mount(
-    path: string,
-    navigated: string[],
-    access: TenancyAccess = deniedAccess,
-  ) {
+  async function mount(path: string, navigated: string[], access: TenancyAccess = deniedAccess) {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -115,19 +108,13 @@ describe("SettingsRoute section-id redirect", () => {
   test("a probe failure is not presented as a gate deny", async () => {
     const navigated: string[] = [];
     await mount("/settings/account", navigated, errorAccess);
-    expect(container?.textContent).toContain(
-      SETTINGS_STRINGS.accessProbeFailedHint,
-    );
-    expect(container?.textContent).not.toContain(
-      SETTINGS_STRINGS.peopleSectionTitle,
-    );
+    expect(container?.textContent).toContain(SETTINGS_STRINGS.accessProbeFailedHint);
+    expect(container?.textContent).not.toContain(SETTINGS_STRINGS.peopleSectionTitle);
   });
 
   test("a gate deny does not claim the access check failed", async () => {
     const navigated: string[] = [];
     await mount("/settings/account", navigated);
-    expect(container?.textContent).not.toContain(
-      SETTINGS_STRINGS.accessProbeFailedHint,
-    );
+    expect(container?.textContent).not.toContain(SETTINGS_STRINGS.accessProbeFailedHint);
   });
 });

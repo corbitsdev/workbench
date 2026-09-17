@@ -19,11 +19,7 @@ import { getLogger } from "@intx/log";
 import { SourcesUpdatedData } from "@intx/workflow-host";
 import type { InferenceSource } from "@intx/types/runtime";
 import type { CredentialDelivery } from "@intx/types/sidecar";
-import type {
-  RepoId,
-  RepoStore,
-  WorkflowRunSupervisorPrincipal,
-} from "@intx/hub-sessions";
+import type { RepoId, RepoStore, WorkflowRunSupervisorPrincipal } from "@intx/hub-sessions";
 import type { HubLink } from "@intx/hub-agent";
 
 const logger = getLogger(["sidecar", "workflow-run-pack-client"]);
@@ -37,11 +33,7 @@ export type WorkflowRunPackClient = {
    * failure shape is intentionally loud per the project's
    * defensive-coding rule.
    */
-  push(opts: {
-    agentAddress: string;
-    repoId: RepoId;
-    ref: string;
-  }): Promise<void>;
+  push(opts: { agentAddress: string; repoId: RepoId; ref: string }): Promise<void>;
   /**
    * Seed the acknowledged-tip state after the Hub restores a ref into a fresh
    * worker. This prevents a reconnect from trying to re-send an empty delta at
@@ -96,11 +88,7 @@ export function createWorkflowRunPackClient(
       if (tip !== null && tip === lastAckedSha.get(ackKey(repoId, ref))) {
         return;
       }
-      const { pack, commitSha } = await substrate.createPack(
-        principal,
-        repoId,
-        ref,
-      );
+      const { pack, commitSha } = await substrate.createPack(principal, repoId, ref);
       await hubLink.pushWorkflowRunPack({
         agentAddress,
         repoId,
@@ -359,9 +347,7 @@ export function createMultistepGrantsRouter(): MultistepGrantsRouter {
  * the child where the material cell is swapped. No durable persist --
  * credential material never touches disk.
  */
-export type MultistepCredentialsHandler = (args: {
-  delivery: CredentialDelivery;
-}) => Promise<void>;
+export type MultistepCredentialsHandler = (args: { delivery: CredentialDelivery }) => Promise<void>;
 
 /**
  * Per-deployment-address credential-delivery handler registry the sidecar
@@ -416,9 +402,7 @@ export function createMultistepCredentialsRouter(): MultistepCredentialsRouter {
  * commits a signed `CancelRequested{origin: "supervisor-drain"}`
  * against the workflow-run repo when the deadline expires.
  */
-export type MultistepDrainHandler = (args: {
-  deadlineMs: number;
-}) => Promise<void>;
+export type MultistepDrainHandler = (args: { deadlineMs: number }) => Promise<void>;
 
 /**
  * Per-deployment-address drain handler registry the sidecar hub-link
@@ -653,10 +637,7 @@ export type WorkflowRunPackPushingRepoStore = RepoStore & {
    * hook so an undeploy does not leave a slot (and its blocked address)
    * in this process-wide map forever.
    */
-  reclaimPushState: (entry: {
-    deploymentId: string;
-    agentAddress: string;
-  }) => void;
+  reclaimPushState: (entry: { deploymentId: string; agentAddress: string }) => void;
 };
 
 export function createWorkflowRunPackPushingRepoStore(
@@ -721,8 +702,7 @@ export function createWorkflowRunPackPushingRepoStore(
         } catch (cause) {
           const msg = cause instanceof Error ? cause.message : String(cause);
           logger.warn`workflow-run pack push failed for deployment ${repoId.id} (${slot.agentAddress}): ${msg}`;
-          slot.lastError =
-            cause instanceof Error ? cause : new Error(String(cause));
+          slot.lastError = cause instanceof Error ? cause : new Error(String(cause));
         }
       }
       slot.inFlight = null;
@@ -730,11 +710,7 @@ export function createWorkflowRunPackPushingRepoStore(
     })();
   }
 
-  function schedulePush(
-    agentAddress: string,
-    repoId: RepoId,
-    ref: string,
-  ): void {
+  function schedulePush(agentAddress: string, repoId: RepoId, ref: string): void {
     const key = slotKey(repoId, ref);
     let slot = slots.get(key);
     if (slot === undefined) {
@@ -777,10 +753,7 @@ export function createWorkflowRunPackPushingRepoStore(
     blockedAddresses.add(agentAddress);
   }
 
-  function reclaimPushState(entry: {
-    deploymentId: string;
-    agentAddress: string;
-  }): void {
+  function reclaimPushState(entry: { deploymentId: string; agentAddress: string }): void {
     blockedAddresses.delete(entry.agentAddress);
     for (const [key, slot] of slots) {
       if (slot.repoId.id === entry.deploymentId) {
@@ -814,10 +787,7 @@ export function createWorkflowRunPackPushingRepoStore(
     }
   }
 
-  async function flushWorkflowRunPushes(
-    repoId: RepoId,
-    ref: string,
-  ): Promise<void> {
+  async function flushWorkflowRunPushes(repoId: RepoId, ref: string): Promise<void> {
     const slot = slots.get(slotKey(repoId, ref));
     if (slot === undefined) return;
     if (slot.inFlight === null && !slot.dirty) {
@@ -850,8 +820,7 @@ export function createWorkflowRunPackPushingRepoStore(
     getRepoDir: underlying.getRepoDir.bind(underlying),
     subscribe: underlying.subscribe.bind(underlying),
     openCommittedReads: underlying.openCommittedReads.bind(underlying),
-    openCommittedReadsAtCommit:
-      underlying.openCommittedReadsAtCommit.bind(underlying),
+    openCommittedReadsAtCommit: underlying.openCommittedReadsAtCommit.bind(underlying),
     flushWorkflowRunPushes,
     notifyAddressRoutable,
     markAddressUnroutable,
@@ -863,12 +832,7 @@ export function createWorkflowRunPackPushingRepoStore(
           throw latched;
         }
       }
-      const result = await underlying.writeTreePreservingPrefix(
-        principal,
-        repoId,
-        ref,
-        args,
-      );
+      const result = await underlying.writeTreePreservingPrefix(principal, repoId, ref, args);
       if (repoId.kind !== "workflow-run") {
         return result;
       }
@@ -888,12 +852,7 @@ export function createWorkflowRunPackPushingRepoStore(
           throw latched;
         }
       }
-      const result = await underlying.writeTreeDelta(
-        principal,
-        repoId,
-        ref,
-        args,
-      );
+      const result = await underlying.writeTreeDelta(principal, repoId, ref, args);
       if (repoId.kind !== "workflow-run") {
         return result;
       }

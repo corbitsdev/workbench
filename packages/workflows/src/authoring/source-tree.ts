@@ -97,9 +97,7 @@ function parsePackageJson(raw: string): {
   }
   const manifest = PackageJSON(parsed);
   if (manifest instanceof type.errors) {
-    throw invalid(
-      `${PACKAGE_JSON_PATH} failed validation: ${manifest.summary}`,
-    );
+    throw invalid(`${PACKAGE_JSON_PATH} failed validation: ${manifest.summary}`);
   }
   return manifest;
 }
@@ -147,9 +145,7 @@ export function validateWorkflowSourceTree(
   const manifest = parsePackageJson(manifestSource);
   const declaredEntry = manifest.interchange?.workflow;
   if (declaredEntry === undefined || declaredEntry === "") {
-    throw invalid(
-      `${PACKAGE_JSON_PATH} must declare a non-empty "interchange.workflow" entry`,
-    );
+    throw invalid(`${PACKAGE_JSON_PATH} must declare a non-empty "interchange.workflow" entry`);
   }
   if (!isContainedEntryPath(declaredEntry)) {
     throw invalid(

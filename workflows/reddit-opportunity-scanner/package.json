@@ -1,31 +1,21 @@
 {
   "name": "@corbits/reddit-opportunity-scanner-workflow",
-  "description": "Turns one target website into a short list of scored Reddit opportunities, with a search-plan review and one human approval before anything is finalized",
   "version": "0.0.1",
+  "description": "Turns one target website into a short list of scored Reddit opportunities, with a search-plan review and one human approval before anything is finalized",
   "license": "LGPL-2.1-or-later",
-  "type": "module",
-  "corbits": {
-    "workflow": {
-      "assetName": "reddit-opportunity-scanner",
-      "displayName": "Reddit opportunity scanner",
-      "automatable": false
-    }
-  },
-  "interchange": {
-    "workflow": "./src/index.ts"
-  },
-  "exports": {
-    ".": "./src/index.ts"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "workflows/reddit-opportunity-scanner"
   },
   "files": [
     "src",
     "LICENSE",
     "README.md"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "workflows/reddit-opportunity-scanner"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -37,12 +27,22 @@
   "dependencies": {
     "arktype": "catalog:"
   },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
   "peerDependencies": {
     "@intx/agent": "0.3.0",
     "@intx/workflow": "0.3.0"
   },
-  "devDependencies": {
-    "@types/bun": "catalog:",
-    "typescript": "catalog:"
+  "corbits": {
+    "workflow": {
+      "assetName": "reddit-opportunity-scanner",
+      "displayName": "Reddit opportunity scanner",
+      "automatable": false
+    }
+  },
+  "interchange": {
+    "workflow": "./src/index.ts"
   }
 }

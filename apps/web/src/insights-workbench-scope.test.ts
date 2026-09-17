@@ -39,9 +39,7 @@ describe("resolveWorkbenchInsightsScope", () => {
   });
 
   test("reports not-found for an id absent from the bench's workbench list", () => {
-    const workbenches = [
-      workbench({ id: "ch_1", tenancy: { tenantId: "tnt_1" } }),
-    ];
+    const workbenches = [workbench({ id: "ch_1", tenancy: { tenantId: "tnt_1" } })];
     expect(resolveWorkbenchInsightsScope(workbenches, "tnt_stale")).toEqual({
       kind: "not-found",
     });

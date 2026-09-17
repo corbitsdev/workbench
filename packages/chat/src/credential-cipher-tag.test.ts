@@ -16,18 +16,12 @@ describe("tagCredentialCipher", () => {
   });
 
   test("refuses to mint a tag when the cipher is missing", () => {
-    expect(() => tagCredentialCipher(undefined)).toThrow(
-      /missing or has the wrong shape/,
-    );
-    expect(() => tagCredentialCipher(null)).toThrow(
-      /missing or has the wrong shape/,
-    );
+    expect(() => tagCredentialCipher(undefined)).toThrow(/missing or has the wrong shape/);
+    expect(() => tagCredentialCipher(null)).toThrow(/missing or has the wrong shape/);
   });
 
   test("refuses to mint a tag when the cipher has the wrong shape", () => {
-    expect(() => tagCredentialCipher({})).toThrow(
-      /missing or has the wrong shape/,
-    );
+    expect(() => tagCredentialCipher({})).toThrow(/missing or has the wrong shape/);
     expect(() => tagCredentialCipher({ encrypt: async () => "" })).toThrow(
       /missing or has the wrong shape/,
     );

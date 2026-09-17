@@ -24,10 +24,7 @@ const INPUT = {
   turnTimeoutMs: 300000,
 } as const;
 
-function stepPrimitive(
-  definition: WorkflowDefinition,
-  id: string,
-): StepPrimitive {
+function stepPrimitive(definition: WorkflowDefinition, id: string): StepPrimitive {
   const primitive = definition.steps[id];
   if (primitive === undefined || primitive.kind !== "step") {
     throw new Error(`expected step primitive for "${id}"`);
@@ -38,16 +35,12 @@ function stepPrimitive(
 test("the definition is a single-step pipeline — the only shape this repo's routine launcher can run", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
   expect(definition.stepOrder).toEqual([LAST_30_DAYS_RESEARCH_STEP_ID]);
-  expect(Object.keys(definition.steps)).toEqual([
-    LAST_30_DAYS_RESEARCH_STEP_ID,
-  ]);
+  expect(Object.keys(definition.steps)).toEqual([LAST_30_DAYS_RESEARCH_STEP_ID]);
 });
 
 test("the one step is mail-triggered and reads the triggering mail as topic/focus via trigger.payload", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  expect(definition.triggers).toEqual([
-    { type: "mail", to: INPUT.triggerAddress },
-  ]);
+  expect(definition.triggers).toEqual([{ type: "mail", to: INPUT.triggerAddress }]);
 });
 
 test("the step carries an explicit per-turn timeout, no inline tools, and the two wired tool-package pins", () => {
@@ -60,9 +53,7 @@ test("the step carries an explicit per-turn timeout, no inline tools, and the tw
     { name: "@corbits/web-search-tools", version: "0.0.3" },
     { name: "@corbits/github-tools", version: "0.0.10" },
   ]);
-  expect(only.agent.toolPackagePins).toEqual(
-    LAST_30_DAYS_RESEARCH_TOOL_PACKAGE_PINS,
-  );
+  expect(only.agent.toolPackagePins).toEqual(LAST_30_DAYS_RESEARCH_TOOL_PACKAGE_PINS);
 });
 
 test("the workflow is triggered by mail to the given deployment address", () => {
@@ -78,8 +69,7 @@ test("the step's turn rides the caller's own inference preferences, unmodified",
 
 test("the system prompt walks all six research phases and names every pending source, honestly", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  const prompt = stepPrimitive(definition, LAST_30_DAYS_RESEARCH_STEP_ID).agent
-    .systemPrompt;
+  const prompt = stepPrimitive(definition, LAST_30_DAYS_RESEARCH_STEP_ID).agent.systemPrompt;
   expect(LAST_30_DAYS_RESEARCH_WIRED_SOURCES).toEqual(["Web search", "GitHub"]);
   expect(prompt).toContain("web_search");
   expect(prompt).toContain("github_activity");
@@ -101,8 +91,7 @@ test("the system prompt walks all six research phases and names every pending so
 
 test("the prompt names the fixed report section headings, in order", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  const prompt = stepPrimitive(definition, LAST_30_DAYS_RESEARCH_STEP_ID).agent
-    .systemPrompt;
+  const prompt = stepPrimitive(definition, LAST_30_DAYS_RESEARCH_STEP_ID).agent.systemPrompt;
   expect(LAST_30_DAYS_RESEARCH_SECTIONS).toEqual([
     "Overview",
     "Key findings",
@@ -119,8 +108,7 @@ test("the prompt names the fixed report section headings, in order", () => {
 
 test("the prompt names the exact approval-gated finalize tool and commits to always finalizing", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  const prompt = stepPrimitive(definition, LAST_30_DAYS_RESEARCH_STEP_ID).agent
-    .systemPrompt;
+  const prompt = stepPrimitive(definition, LAST_30_DAYS_RESEARCH_STEP_ID).agent.systemPrompt;
   expect(prompt).toContain(LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME);
   expect(prompt).toMatch(/never end a run without finalizing/i);
   expect(prompt).toContain("exa");
@@ -128,17 +116,14 @@ test("the prompt names the exact approval-gated finalize tool and commits to alw
 
 test("the prompt commits to a calm terminal reply on denial, not an error", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  const prompt = stepPrimitive(definition, LAST_30_DAYS_RESEARCH_STEP_ID).agent
-    .systemPrompt;
+  const prompt = stepPrimitive(definition, LAST_30_DAYS_RESEARCH_STEP_ID).agent.systemPrompt;
   expect(prompt).toMatch(/not approved/i);
   expect(prompt).toMatch(/never present a denial as an error/i);
 });
 
 test("the definition survives the workflow-asset JSON round-trip", () => {
   const definition = buildLast30DaysResearchWorkflow(INPUT);
-  const revived: unknown = JSON.parse(
-    serializeLast30DaysResearchWorkflow(definition),
-  );
+  const revived: unknown = JSON.parse(serializeLast30DaysResearchWorkflow(definition));
   expect(revived).toEqual(definition);
 });
 
@@ -168,16 +153,16 @@ test("serialization fails loud on a function-valued field, naming its path", () 
 });
 
 test("an empty trigger address is rejected", () => {
-  expect(() =>
-    buildLast30DaysResearchWorkflow({ ...INPUT, triggerAddress: "" }),
-  ).toThrow(/triggerAddress/);
+  expect(() => buildLast30DaysResearchWorkflow({ ...INPUT, triggerAddress: "" })).toThrow(
+    /triggerAddress/,
+  );
 });
 
 test("a non-positive or fractional turn timeout is rejected", () => {
-  expect(() =>
-    buildLast30DaysResearchWorkflow({ ...INPUT, turnTimeoutMs: 0 }),
-  ).toThrow(/turnTimeoutMs/);
-  expect(() =>
-    buildLast30DaysResearchWorkflow({ ...INPUT, turnTimeoutMs: 0.5 }),
-  ).toThrow(/turnTimeoutMs/);
+  expect(() => buildLast30DaysResearchWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(
+    /turnTimeoutMs/,
+  );
+  expect(() => buildLast30DaysResearchWorkflow({ ...INPUT, turnTimeoutMs: 0.5 })).toThrow(
+    /turnTimeoutMs/,
+  );
 });

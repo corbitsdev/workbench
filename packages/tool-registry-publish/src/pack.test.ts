@@ -32,20 +32,13 @@ describe("packToolPackageTarball", () => {
     test(`packs ${path.basename(packageDir)} into a self-contained, validating tarball`, async () => {
       const tarball = await packToolPackageTarball(packageDir);
 
-      expect(tarball.filename).toBe(
-        tarballFilenameFor(tarball.name, tarball.version),
-      );
+      expect(tarball.filename).toBe(tarballFilenameFor(tarball.name, tarball.version));
       expect(TARBALL_FILENAME_PATTERN.test(tarball.filename)).toBe(true);
       expect(tarball.bytes.byteLength).toBeGreaterThan(0);
 
-      const extractDir = await mkdtemp(
-        path.join(tmpdir(), "corbits-tools-pack-test-"),
-      );
+      const extractDir = await mkdtemp(path.join(tmpdir(), "corbits-tools-pack-test-"));
       try {
-        await Bun.write(
-          path.join(extractDir, "out.tgz"),
-          Buffer.from(tarball.bytes),
-        );
+        await Bun.write(path.join(extractDir, "out.tgz"), Buffer.from(tarball.bytes));
         await tar.extract({
           cwd: extractDir,
           file: path.join(extractDir, "out.tgz"),
@@ -89,8 +82,7 @@ describe("packToolPackageTarball", () => {
                 definitions: { name: string }[];
               }
             ).definitions.map(
-              (definition) =>
-                `${(factory as { id: string }).id}:${definition.name}`,
+              (definition) => `${(factory as { id: string }).id}:${definition.name}`,
             ),
           );
           expect([...surface.surface.map((e) => e.qualifiedId)].sort()).toEqual(
@@ -105,9 +97,7 @@ describe("packToolPackageTarball", () => {
           // `./index.ts`'s re-exports would still leave
           // `factories.length` above 0. Catalog administration is UI-only
           // (CL-7588), so there is no second bundle anymore.
-          const ids = factories.map(
-            (factory) => (factory as { id: string }).id,
-          );
+          const ids = factories.map((factory) => (factory as { id: string }).id);
           expect(ids).toContain("@corbits/catalog-tools/catalog");
           expect(ids).not.toContain("@corbits/catalog-tools/off");
         }

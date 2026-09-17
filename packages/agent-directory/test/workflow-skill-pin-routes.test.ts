@@ -20,16 +20,9 @@ import {
   type WorkflowSkillPinRunScope,
   type WorkflowRunAuthenticator,
 } from "../src/workflow-skill-pin-routes";
-import {
-  agentDefinitionSourceTree,
-  AGENT_DEFINITION_ENTRY_PATH,
-} from "../src/definition-asset";
+import { agentDefinitionSourceTree, AGENT_DEFINITION_ENTRY_PATH } from "../src/definition-asset";
 import type { PinnedSkillIndexResolver } from "../src/routes";
-import {
-  definitionFrom,
-  SOURCE_TREE_PATHS,
-  storedDefinitionBytesWithSkills,
-} from "./source-tree";
+import { definitionFrom, SOURCE_TREE_PATHS, storedDefinitionBytesWithSkills } from "./source-tree";
 
 const TENANT_ID = "tnt_1";
 const OTHER_TENANT_ID = "tnt_2";
@@ -40,9 +33,7 @@ const RUN_ADDRESS = "run_1@example.com";
 
 const fakeSkillIndex: PinnedSkillIndexResolver = {
   resolve: (_tenantId, _principalId, names) =>
-    Promise.resolve(
-      names.map((name) => ({ name, description: `What ${name} does.` })),
-    ),
+    Promise.resolve(names.map((name) => ({ name, description: `What ${name} does.` }))),
 };
 
 function storedDefinitionBytes(): Uint8Array {
@@ -60,9 +51,7 @@ function storedDefinitionBytes(): Uint8Array {
   return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
 }
 
-function readAssetBlobFor(
-  workflowBytes: Uint8Array,
-): AssetService["readAssetBlob"] {
+function readAssetBlobFor(workflowBytes: Uint8Array): AssetService["readAssetBlob"] {
   return () => Promise.resolve(workflowBytes);
 }
 
@@ -121,9 +110,7 @@ function currentLookup(
     name: string;
   }[],
 ) {
-  return rows.find(
-    (row) => row.id === lookupId && row.tenantId === lookupTenant,
-  );
+  return rows.find((row) => row.id === lookupId && row.tenantId === lookupTenant);
 }
 
 const authenticateAsTenant1: WorkflowRunAuthenticator = {
@@ -301,9 +288,7 @@ test("pins a skill onto another definition in the same tenant and re-indexes its
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(writtenMessage).toBe("Pin research skill to research-buddy");
   // The written tree's stanza is the pins — no side table to consult.
-  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual([
-    "research",
-  ]);
+  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual(["research"]);
   const body = (await response.json()) as { skills: string[] };
   expect(body.skills).toEqual(["research"]);
 });
@@ -356,9 +341,7 @@ test("pinning the same skill twice is idempotent, never duplicated", async () =>
       },
     ]),
     assetService: fakeAssetService({
-      readAssetBlob: readAssetBlobFor(
-        storedDefinitionBytesWithSkills("research"),
-      ),
+      readAssetBlob: readAssetBlobFor(storedDefinitionBytesWithSkills("research")),
     }),
   });
   const response = await postPin(app, {

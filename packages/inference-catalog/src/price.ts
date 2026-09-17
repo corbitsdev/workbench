@@ -76,10 +76,7 @@ export function referenceCostUsd(
   if (price.inputUsdPerMTok === null || price.outputUsdPerMTok === null) {
     return null;
   }
-  return (
-    price.inputUsdPerMTok * mix.inputMTok +
-    price.outputUsdPerMTok * mix.outputMTok
-  );
+  return price.inputUsdPerMTok * mix.inputMTok + price.outputUsdPerMTok * mix.outputMTok;
 }
 
 /** What a run of the given size would cost at this price, in USD. Null

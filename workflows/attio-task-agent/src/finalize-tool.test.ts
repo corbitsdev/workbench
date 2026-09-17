@@ -14,9 +14,7 @@ test("the tool's definition marks itself approval-gated", () => {
 });
 
 test("the tool is namespaced under this workflow package, not a shared one", () => {
-  expect(ATTIO_TASK_AGENT_FINALIZE_TOOL.id).toBe(
-    "@corbits/workflow-attio-task-agent/finalize",
-  );
+  expect(ATTIO_TASK_AGENT_FINALIZE_TOOL.id).toBe("@corbits/workflow-attio-task-agent/finalize");
 });
 
 test("requires the sanctioned workflow-artifacts env keys", () => {
@@ -104,8 +102,7 @@ test("run persists the draft on real invocation (i.e. after approval re-dispatch
 
 test("run returns an honest error result when persistence fails, never fabricating persisted: true", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 500 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
 
   try {
     const bundle = ATTIO_TASK_AGENT_FINALIZE_TOOL(testEnv());

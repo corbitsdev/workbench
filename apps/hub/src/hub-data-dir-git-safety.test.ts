@@ -1,11 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import {
-  cleanupGitFixtures,
-  gitFixture,
-  scratchGitFixtureDir,
-} from "../test/git-fixture";
+import { cleanupGitFixtures, gitFixture, scratchGitFixtureDir } from "../test/git-fixture";
 import {
   assertHubDataDirGitSafety,
   enclosingGitWorkTree,
@@ -30,9 +26,7 @@ test("a directory inside an existing git work tree fails loud", () => {
   mkdirSync(dataDir, { recursive: true });
 
   expect(enclosingGitWorkTree(dataDir)).toBe(realpathSync(workTree));
-  expect(() => assertHubDataDirGitSafety(dataDir)).toThrow(
-    HubDataDirInsideGitWorkTreeError,
-  );
+  expect(() => assertHubDataDirGitSafety(dataDir)).toThrow(HubDataDirInsideGitWorkTreeError);
   try {
     assertHubDataDirGitSafety(dataDir);
     throw new Error("expected assertHubDataDirGitSafety to throw");
@@ -50,7 +44,5 @@ test("opt-in allows initializing inside an existing git work tree", () => {
   const workTree = scratchGitFixtureDir("hub-data-opt-in-");
   gitFixture(workTree, ["init", "-b", "main"]);
   const dataDir = path.join(workTree, ".data", "hub");
-  expect(() =>
-    assertHubDataDirGitSafety(dataDir, { allowInsideWorkTree: true }),
-  ).not.toThrow();
+  expect(() => assertHubDataDirGitSafety(dataDir, { allowInsideWorkTree: true })).not.toThrow();
 });

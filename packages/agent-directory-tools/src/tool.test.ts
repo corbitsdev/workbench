@@ -23,10 +23,7 @@ function callFor(name: string, args: Record<string, unknown>): ToolCall {
 
 test("declares exactly list_agents and create_agent", () => {
   const bundle = agentDirectoryTools(testEnv());
-  expect(bundle.definitions.map((d) => d.name)).toEqual([
-    LIST_AGENTS_TOOL,
-    CREATE_AGENT_TOOL,
-  ]);
+  expect(bundle.definitions.map((d) => d.name)).toEqual([LIST_AGENTS_TOOL, CREATE_AGENT_TOOL]);
 });
 
 test("requires the sanctioned env keys", () => {
@@ -47,13 +44,9 @@ test("list_agents and create_agent declare no approval key", () => {
 
 test("create_agent's description does not say a human must approve before anything is created", () => {
   const bundle = agentDirectoryTools(testEnv());
-  const definition = bundle.definitions.find(
-    (d) => d.name === CREATE_AGENT_TOOL,
-  );
+  const definition = bundle.definitions.find((d) => d.name === CREATE_AGENT_TOOL);
   expect(definition).toBeDefined();
-  expect((definition as { description: string }).description).not.toMatch(
-    /human must approve/i,
-  );
+  expect((definition as { description: string }).description).not.toMatch(/human must approve/i);
 });
 
 test("create_agent's modelPreference field tells the model to omit it rather than guess a name", () => {
@@ -63,8 +56,7 @@ test("create_agent's modelPreference field tells the model to omit it rather tha
       properties: { modelPreference: { description: string } };
     };
   };
-  const description =
-    definition.inputSchema.properties.modelPreference.description;
+  const description = definition.inputSchema.properties.modelPreference.description;
   expect(description).toMatch(/omit/i);
   expect(description).toMatch(/do not (guess|invent)/i);
 });
@@ -113,10 +105,7 @@ test("list_agents reports the tenant's taskable agents", async () => {
     )) as unknown as typeof fetch;
   try {
     const bundle = agentDirectoryTools(testEnv());
-    const result = await bundle.run(
-      callFor(LIST_AGENTS_TOOL, {}),
-      new AbortController().signal,
-    );
+    const result = await bundle.run(callFor(LIST_AGENTS_TOOL, {}), new AbortController().signal);
     expect(result.isError).toBeFalsy();
     expect(result.content).toContain("Research Buddy");
     expect(result.content).toContain("Answers research questions");
@@ -128,15 +117,10 @@ test("list_agents reports the tenant's taskable agents", async () => {
 test("list_agents reports honestly when the workbench has no other agents", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>
-    new Response(
-      JSON.stringify({ definitions: [] }),
-    )) as unknown as typeof fetch;
+    new Response(JSON.stringify({ definitions: [] }))) as unknown as typeof fetch;
   try {
     const bundle = agentDirectoryTools(testEnv());
-    const result = await bundle.run(
-      callFor(LIST_AGENTS_TOOL, {}),
-      new AbortController().signal,
-    );
+    const result = await bundle.run(callFor(LIST_AGENTS_TOOL, {}), new AbortController().signal);
     expect(result.isError).toBeFalsy();
     expect(result.content).toMatch(/No other agents/);
   } finally {
@@ -187,12 +171,8 @@ test("create_agent creates then mints its own DM by default, in one call sequenc
     expect(result.content).toMatch(/opened its own chat/);
     expect(result.content).toMatch(/workbenchId/);
     expect(seenUrls.some((url) => url.endsWith("/definitions"))).toBe(true);
-    expect(seenUrls.some((url) => url.endsWith("/participants/mint-dm"))).toBe(
-      true,
-    );
-    expect(seenUrls.some((url) => url.endsWith("/participants/invite"))).toBe(
-      false,
-    );
+    expect(seenUrls.some((url) => url.endsWith("/participants/mint-dm"))).toBe(true);
+    expect(seenUrls.some((url) => url.endsWith("/participants/invite"))).toBe(false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -228,12 +208,8 @@ test("create_agent with invite: false creates but never calls mint-dm or invite"
     );
     expect(result.isError).toBeFalsy();
     expect(result.content).toMatch(/Created "Research Buddy"/);
-    expect(seenUrls.some((url) => url.endsWith("/participants/invite"))).toBe(
-      false,
-    );
-    expect(seenUrls.some((url) => url.endsWith("/participants/mint-dm"))).toBe(
-      false,
-    );
+    expect(seenUrls.some((url) => url.endsWith("/participants/invite"))).toBe(false);
+    expect(seenUrls.some((url) => url.endsWith("/participants/mint-dm"))).toBe(false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -323,9 +299,7 @@ test("create_agent maps modelPreference to the create route's model field", asyn
       }),
       new AbortController().signal,
     );
-    expect((seenBody as { model?: string }).model).toBe(
-      "anthropic/claude-sonnet-5",
-    );
+    expect((seenBody as { model?: string }).model).toBe("anthropic/claude-sonnet-5");
   } finally {
     globalThis.fetch = originalFetch;
   }

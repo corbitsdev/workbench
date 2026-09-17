@@ -39,15 +39,12 @@ const fakeCapabilityInventory: CapabilityInventoryProvider = {
 
 const fakeSkillIndex: PinnedSkillIndexResolver = {
   resolve: (_tenantId, _principalId, names) =>
-    Promise.resolve(
-      names.map((name) => ({ name, description: `What ${name} does.` })),
-    ),
+    Promise.resolve(names.map((name) => ({ name, description: `What ${name} does.` }))),
 };
 
 function fakeAssetService(overrides: Partial<AssetService> = {}): AssetService {
   return {
-    createAsset: () =>
-      Promise.resolve({ id: "ast_new", tenantId: TENANT_ID, kind: "workflow" }),
+    createAsset: () => Promise.resolve({ id: "ast_new", tenantId: TENANT_ID, kind: "workflow" }),
     populateAsset: () => Promise.resolve({ commitSha: "deadbeef" }),
     readAssetBlob: () => {
       throw new Error("not used in these tests");
@@ -135,8 +132,7 @@ function fakeDb(
         const chain: Record<string, unknown> = {
           onConflictDoNothing: () => chain,
           returning: () => Promise.resolve([{ id: createdRow.id }]),
-          then: (onFulfilled: unknown) =>
-            Promise.resolve([]).then(onFulfilled as never),
+          then: (onFulfilled: unknown) => Promise.resolve([]).then(onFulfilled as never),
         };
         return chain;
       },
@@ -189,9 +185,7 @@ function recordingAgentDefinitionDeployer() {
     },
   };
 }
-function buildApp(
-  opts: Partial<CreateWorkflowAgentCreateRoutesDeps> = {},
-): Hono {
+function buildApp(opts: Partial<CreateWorkflowAgentCreateRoutesDeps> = {}): Hono {
   return createWorkflowAgentCreateRoutes({
     db: opts.db ?? fakeDb(),
     assetService: opts.assetService ?? fakeAssetService(),
@@ -342,9 +336,7 @@ test("a create with no model bakes the tenant's catalog default in, so the defin
       },
     }),
     tenantDefaultModel: (tenantId) =>
-      Promise.resolve(
-        tenantId === TENANT_ID ? "anthropic/claude-sonnet" : undefined,
-      ),
+      Promise.resolve(tenantId === TENANT_ID ? "anthropic/claude-sonnet" : undefined),
   });
   const response = await app.request("/definitions", {
     method: "POST",
@@ -401,9 +393,7 @@ test("a create naming a model outside the tenant's catalog falls back to the ten
       },
     }),
     tenantDefaultModel: (tenantId) =>
-      Promise.resolve(
-        tenantId === TENANT_ID ? "anthropic/claude-sonnet" : undefined,
-      ),
+      Promise.resolve(tenantId === TENANT_ID ? "anthropic/claude-sonnet" : undefined),
   });
   const response = await app.request("/definitions", {
     method: "POST",

@@ -19,9 +19,7 @@ describe("shouldRetryQuery", () => {
   });
 
   test("never retries a definitive 404", () => {
-    expect(shouldRetryQuery(0, new ApiQueryError("not found", 404))).toBe(
-      false,
-    );
+    expect(shouldRetryQuery(0, new ApiQueryError("not found", 404))).toBe(false);
   });
 
   test("retries other statuses up to 3 attempts", () => {

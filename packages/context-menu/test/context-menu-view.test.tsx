@@ -153,9 +153,7 @@ describe("ContextMenuView danger styling", () => {
     );
     await flush();
 
-    const items = document.querySelectorAll<HTMLElement>(
-      '[data-slot="menu-item"]',
-    );
+    const items = document.querySelectorAll<HTMLElement>('[data-slot="menu-item"]');
     expect(items).toHaveLength(2);
     expect(items[0]?.className).not.toContain("text-destructive");
     expect(items[1]?.className).toContain("text-destructive");
@@ -176,11 +174,7 @@ describe("ContextMenuView Esc precedence", () => {
         createElement(
           Dialog,
           { open: dialogOpen, onOpenChange: setDialogOpen },
-          createElement(
-            DialogContent,
-            null,
-            createElement(DialogTitle, null, "Rename channel"),
-          ),
+          createElement(DialogContent, null, createElement(DialogTitle, null, "Rename channel")),
         ),
         createElement(ContextMenuView, {
           x: 10,

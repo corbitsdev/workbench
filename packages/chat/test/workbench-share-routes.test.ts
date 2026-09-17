@@ -17,13 +17,7 @@ import { createWorkbenchSubscriberRegistry } from "../src/workbench-events";
 import { createInMemoryBlockResponseStore } from "../src/block-responses";
 import { createInMemoryReactionStore } from "../src/reactions";
 import { createInMemoryPinStore } from "../src/pins";
-import {
-  buildDeps,
-  createWorkbench,
-  principal,
-  sendText,
-  TENANT,
-} from "./test-support";
+import { buildDeps, createWorkbench, principal, sendText, TENANT } from "./test-support";
 
 const TENANT_B = {
   id: "tnt_2",
@@ -77,14 +71,11 @@ describe("shared workbench projection", () => {
       kind: "workbench",
     });
 
-    const response = await owner.request(
-      `/workbenches/${workbench.id}/shares`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectedTenantId: TENANT_B.id }),
-      },
-    );
+    const response = await owner.request(`/workbenches/${workbench.id}/shares`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectedTenantId: TENANT_B.id }),
+    });
 
     expect(response.status).toBe(403);
     expect(await shares.getShare(workbench.id, TENANT_B.id)).toBeUndefined();
@@ -107,24 +98,18 @@ describe("shared workbench projection", () => {
     await trust.establishBilateralTrust(TENANT.id, TENANT_B.id);
     trust.seedDirectionalTrust(TENANT.id, TENANT_C.id, "outbound");
 
-    const okResponse = await owner.request(
-      `/workbenches/${workbench.id}/shares`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectedTenantId: TENANT_B.id }),
-      },
-    );
+    const okResponse = await owner.request(`/workbenches/${workbench.id}/shares`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectedTenantId: TENANT_B.id }),
+    });
     expect(okResponse.status).toBe(201);
 
-    const oneWayResponse = await owner.request(
-      `/workbenches/${workbench.id}/shares`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectedTenantId: TENANT_C.id }),
-      },
-    );
+    const oneWayResponse = await owner.request(`/workbenches/${workbench.id}/shares`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectedTenantId: TENANT_C.id }),
+    });
     expect(oneWayResponse.status).toBe(403);
   });
 
@@ -148,9 +133,7 @@ describe("shared workbench projection", () => {
       body: JSON.stringify({ projectedTenantId: TENANT_B.id }),
     });
 
-    const beforeMember = await (
-      await memberSide.request("/workbenches?kind=workbench")
-    ).json();
+    const beforeMember = await (await memberSide.request("/workbenches?kind=workbench")).json();
     expect(
       (beforeMember as { items: unknown[] }).items.some(
         (item) => (item as { id: string }).id === workbench.id,
@@ -196,14 +179,12 @@ describe("shared workbench projection", () => {
       body: JSON.stringify({ projectedTenantId: TENANT_B.id }),
     });
 
-    const list = (await (
-      await outsider.request("/workbenches?kind=workbench")
-    ).json()) as { items: { id: string }[] };
+    const list = (await (await outsider.request("/workbenches?kind=workbench")).json()) as {
+      items: { id: string }[];
+    };
     expect(list.items.some((item) => item.id === workbench.id)).toBe(false);
 
-    const direct = await outsider.request(
-      `/workbenches/${workbench.id}/messages`,
-    );
+    const direct = await outsider.request(`/workbenches/${workbench.id}/messages`);
     expect(direct.status).toBe(404);
   });
 
@@ -234,25 +215,19 @@ describe("shared workbench projection", () => {
     });
 
     const received: unknown[] = [];
-    workbenchSubscribers.subscribe(workbench.id, (event) =>
-      received.push(event),
-    );
+    workbenchSubscribers.subscribe(workbench.id, (event) => received.push(event));
 
     // Both an owning-tenant caller and a projected-member-tenant caller
     // can reach the same workbench's typing route (fan-out is keyed by
     // workbenchId only — see workbench-events.ts) once resolveWorkbenchAccess
     // lets the member-tenant request past the gate at all.
-    const ownerTyping = await owner.request(
-      `/workbenches/${workbench.id}/typing`,
-      {
-        method: "POST",
-      },
-    );
+    const ownerTyping = await owner.request(`/workbenches/${workbench.id}/typing`, {
+      method: "POST",
+    });
     expect(ownerTyping.status).toBe(202);
-    const memberTyping = await memberSide.request(
-      `/workbenches/${workbench.id}/typing`,
-      { method: "POST" },
-    );
+    const memberTyping = await memberSide.request(`/workbenches/${workbench.id}/typing`, {
+      method: "POST",
+    });
     expect(memberTyping.status).toBe(202);
 
     expect(received).toHaveLength(2);
@@ -283,11 +258,7 @@ describe("shared workbench projection", () => {
       body: JSON.stringify({ principalId: "prn_bob" }),
     });
 
-    const sendResponse = await sendText(
-      memberSide,
-      workbench.id,
-      "hi from beta",
-    );
+    const sendResponse = await sendText(memberSide, workbench.id, "hi from beta");
     expect(sendResponse.status).toBe(201);
     // The row is written under the OWNING tenant, never a copy
     // materialized under the projected one.
@@ -305,11 +276,9 @@ describe("shared workbench projection", () => {
     const ownerMessages = (await (
       await owner.request(`/workbenches/${workbench.id}/messages`)
     ).json()) as { items: { sender: { address: string } }[] };
-    expect(
-      ownerMessages.items.some((item) =>
-        item.sender.address.startsWith("prn_bob@"),
-      ),
-    ).toBe(true);
+    expect(ownerMessages.items.some((item) => item.sender.address.startsWith("prn_bob@"))).toBe(
+      true,
+    );
   });
 
   test("per-tenant membership isolation over HTTP: removing tenant B's member does not affect tenant C's", async () => {
@@ -354,12 +323,8 @@ describe("shared workbench projection", () => {
       method: "DELETE",
     });
 
-    expect(
-      await shares.isShareMember(TENANT_B.id, workbench.id, "prn_bob"),
-    ).toBe(false);
-    expect(
-      await shares.isShareMember(TENANT_C.id, workbench.id, "prn_carol"),
-    ).toBe(true);
+    expect(await shares.isShareMember(TENANT_B.id, workbench.id, "prn_bob")).toBe(false);
+    expect(await shares.isShareMember(TENANT_C.id, workbench.id, "prn_carol")).toBe(true);
   });
 
   test("revoking a share member's row is live on the real SSE stream: the next published event never reaches them", async () => {
@@ -388,9 +353,7 @@ describe("shared workbench projection", () => {
       body: JSON.stringify({ principalId: "prn_bob" }),
     });
 
-    const streamResponse = await memberSide.request(
-      `/workbenches/${workbench.id}/stream`,
-    );
+    const streamResponse = await memberSide.request(`/workbenches/${workbench.id}/stream`);
     expect(streamResponse.status).toBe(200);
     const body = streamResponse.body;
     if (body === null) throw new Error("stream has no body");
@@ -401,13 +364,9 @@ describe("shared workbench projection", () => {
       return Promise.race([
         reader
           .read()
-          .then((result) =>
-            result.done ? undefined : decoder.decode(result.value),
-          )
+          .then((result) => (result.done ? undefined : decoder.decode(result.value)))
           .catch(() => undefined),
-        new Promise<undefined>((resolve) =>
-          setTimeout(() => resolve(undefined), timeoutMs),
-        ),
+        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), timeoutMs)),
       ]);
     }
 
@@ -415,9 +374,7 @@ describe("shared workbench projection", () => {
     // presence delta) before anything else — see `bridgeWorkbenchStream`'s
     // `presence` option — so this reads past those rather than assuming
     // `chat.typing` is the very first chunk.
-    async function readUntilContains(
-      needle: string,
-    ): Promise<string | undefined> {
+    async function readUntilContains(needle: string): Promise<string | undefined> {
       for (let attempt = 0; attempt < 5; attempt += 1) {
         const chunk = await readChunk(2_000);
         if (chunk === undefined) return undefined;
@@ -433,14 +390,11 @@ describe("shared workbench projection", () => {
     const beforeRevocation = await readUntilContains("chat.typing");
     expect(beforeRevocation).toContain("chat.typing");
 
-    const revoked = await memberSide.request(
-      `/workbenches/${workbench.id}/share-members/prn_bob`,
-      { method: "DELETE" },
-    );
+    const revoked = await memberSide.request(`/workbenches/${workbench.id}/share-members/prn_bob`, {
+      method: "DELETE",
+    });
     expect(revoked.status).toBe(204);
-    expect(
-      await shares.isShareMember(TENANT_B.id, workbench.id, "prn_bob"),
-    ).toBe(false);
+    expect(await shares.isShareMember(TENANT_B.id, workbench.id, "prn_bob")).toBe(false);
 
     workbenchSubscribers.publish(workbench.id, {
       type: "chat.typing",
@@ -454,11 +408,7 @@ describe("shared workbench projection", () => {
 });
 
 describe("shared workbench projection — block responses", () => {
-  function responsesUrl(
-    workbenchId: string,
-    messageId: string,
-    blockId: string,
-  ) {
+  function responsesUrl(workbenchId: string, messageId: string, blockId: string) {
     return `/workbenches/${workbenchId}/messages/${messageId}/blocks/${blockId}/responses`;
   }
 
@@ -488,19 +438,14 @@ describe("shared workbench projection — block responses", () => {
       body: JSON.stringify({ principalId: "prn_bob" }),
     });
 
-    const post = await memberSide.request(
-      responsesUrl(workbench.id, "m1", "blk_poll1"),
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind: "poll", choiceIds: ["tue"] }),
-      },
-    );
+    const post = await memberSide.request(responsesUrl(workbench.id, "m1", "blk_poll1"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "poll", choiceIds: ["tue"] }),
+    });
     expect(post.status).toBe(200);
 
-    const get = await memberSide.request(
-      responsesUrl(workbench.id, "m1", "blk_poll1"),
-    );
+    const get = await memberSide.request(responsesUrl(workbench.id, "m1", "blk_poll1"));
     expect(get.status).toBe(200);
     const body = (await get.json()) as {
       tally: Record<string, number>;
@@ -512,20 +457,13 @@ describe("shared workbench projection — block responses", () => {
 
     // The response is stored under the OWNING tenant, not the acting
     // (projected) tenant — the owner can read the very same tally back.
-    const ownerGet = await owner.request(
-      responsesUrl(workbench.id, "m1", "blk_poll1"),
-    );
+    const ownerGet = await owner.request(responsesUrl(workbench.id, "m1", "blk_poll1"));
     const ownerBody = (await ownerGet.json()) as {
       tally: Record<string, number>;
     };
     expect(ownerBody.tally).toEqual({ tue: 1 });
     expect(
-      await blockResponses.listBlockResponses(
-        TENANT.id,
-        workbench.id,
-        "m1",
-        "blk_poll1",
-      ),
+      await blockResponses.listBlockResponses(TENANT.id, workbench.id, "m1", "blk_poll1"),
     ).toHaveLength(1);
   });
 
@@ -544,19 +482,14 @@ describe("shared workbench projection — block responses", () => {
       kind: "workbench",
     });
 
-    const post = await outsider.request(
-      responsesUrl(workbench.id, "m1", "blk_poll1"),
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind: "poll", choiceIds: ["tue"] }),
-      },
-    );
+    const post = await outsider.request(responsesUrl(workbench.id, "m1", "blk_poll1"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "poll", choiceIds: ["tue"] }),
+    });
     expect(post.status).toBe(404);
 
-    const get = await outsider.request(
-      responsesUrl(workbench.id, "m1", "blk_poll1"),
-    );
+    const get = await outsider.request(responsesUrl(workbench.id, "m1", "blk_poll1"));
     expect(get.status).toBe(404);
   });
 });
@@ -608,20 +541,17 @@ describe("shared workbench projection — reactions and pins", () => {
     await establishShare(trust, owner, memberSide, workbench.id, "prn_bob");
 
     await sendText(owner, workbench.id, "hello from the owner");
-    const list = (await (
-      await owner.request(`/workbenches/${workbench.id}/messages`)
-    ).json()) as { items: { id: string }[] };
+    const list = (await (await owner.request(`/workbenches/${workbench.id}/messages`)).json()) as {
+      items: { id: string }[];
+    };
     const messageId = list.items[0]?.id;
     if (messageId === undefined) throw new Error("no message id");
 
-    const toggle = await memberSide.request(
-      toggleUrl(workbench.id, messageId),
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ emoji: "👍" }),
-      },
-    );
+    const toggle = await memberSide.request(toggleUrl(workbench.id, messageId), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ emoji: "👍" }),
+    });
     expect(toggle.status).toBe(200);
     const toggleBody = (await toggle.json()) as {
       emoji: string;
@@ -632,9 +562,7 @@ describe("shared workbench projection — reactions and pins", () => {
 
     // Stored under the OWNING tenant, not the acting (projected) tenant.
     expect(
-      await reactions.listReactionsForMessages(TENANT.id, workbench.id, [
-        messageId,
-      ]),
+      await reactions.listReactionsForMessages(TENANT.id, workbench.id, [messageId]),
     ).toHaveLength(1);
 
     const pin = await memberSide.request(pinUrl(workbench.id, messageId), {
@@ -675,9 +603,9 @@ describe("shared workbench projection — reactions and pins", () => {
       kind: "workbench",
     });
     await sendText(owner, workbench.id, "hello from the owner");
-    const list = (await (
-      await owner.request(`/workbenches/${workbench.id}/messages`)
-    ).json()) as { items: { id: string }[] };
+    const list = (await (await owner.request(`/workbenches/${workbench.id}/messages`)).json()) as {
+      items: { id: string }[];
+    };
     const messageId = list.items[0]?.id;
     if (messageId === undefined) throw new Error("no message id");
 
@@ -694,9 +622,7 @@ describe("shared workbench projection — reactions and pins", () => {
     expect(pin.status).toBe(404);
 
     expect(
-      await reactions.listReactionsForMessages(TENANT.id, workbench.id, [
-        messageId,
-      ]),
+      await reactions.listReactionsForMessages(TENANT.id, workbench.id, [messageId]),
     ).toHaveLength(0);
     expect(await pins.listPins(TENANT.id, workbench.id)).toHaveLength(0);
   });

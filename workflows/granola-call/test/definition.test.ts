@@ -27,9 +27,7 @@ const INPUT = {
 function granolaCallStep(definition: WorkflowDefinition): StepPrimitive {
   const primitive = definition.steps[GRANOLA_CALL_STEP_ID];
   if (primitive === undefined || primitive.kind !== "step") {
-    throw new Error(
-      `definition has no step primitive named ${GRANOLA_CALL_STEP_ID}`,
-    );
+    throw new Error(`definition has no step primitive named ${GRANOLA_CALL_STEP_ID}`);
   }
   return primitive;
 }
@@ -48,9 +46,7 @@ test("the step carries an explicit per-turn timeout", () => {
 test("the workflow is triggered by mail to the given deployment address", () => {
   const definition = buildGranolaCallWorkflow(INPUT);
   expect(definition.id).toBe(GRANOLA_CALL_WORKFLOW_ID);
-  expect(definition.triggers).toEqual([
-    { type: "mail", to: INPUT.triggerAddress },
-  ]);
+  expect(definition.triggers).toEqual([{ type: "mail", to: INPUT.triggerAddress }]);
 });
 
 test("the agent instructs the pipeline, carries the preferences, and inlines no tools", () => {
@@ -72,31 +68,21 @@ test("the agent pins @corbits/granola-tools by name and version", () => {
 
 test("the system prompt commits to the default call limit and an honest no-connection message", () => {
   expect(GRANOLA_CALL_SYSTEM_PROMPT).toContain(String(DEFAULT_CALL_LIMIT));
-  expect(GRANOLA_CALL_SYSTEM_PROMPT.toLowerCase()).toContain(
-    "never invent call counts",
-  );
+  expect(GRANOLA_CALL_SYSTEM_PROMPT.toLowerCase()).toContain("never invent call counts");
 });
 
 test("the system prompt names the status-report tool for a run that starts no children", () => {
-  expect(GRANOLA_CALL_SYSTEM_PROMPT).toContain(
-    GRANOLA_CALL_REPORT_STATUS_TOOL_NAME,
-  );
-  expect(GRANOLA_CALL_SYSTEM_PROMPT.toLowerCase()).toContain(
-    "granola connector",
-  );
+  expect(GRANOLA_CALL_SYSTEM_PROMPT).toContain(GRANOLA_CALL_REPORT_STATUS_TOOL_NAME);
+  expect(GRANOLA_CALL_SYSTEM_PROMPT.toLowerCase()).toContain("granola connector");
 });
 
 test("the system prompt commits to skip-and-continue on a bad call, never blocking the batch", () => {
-  expect(GRANOLA_CALL_SYSTEM_PROMPT.toLowerCase()).toContain(
-    "skip only that call",
-  );
+  expect(GRANOLA_CALL_SYSTEM_PROMPT.toLowerCase()).toContain("skip only that call");
 });
 
 test("the definition binds @corbits/granola-tools' declared handle to a tenant-owned granola credential", () => {
   const definition = buildGranolaCallWorkflow(INPUT);
-  expect(definition.credentialBindings).toEqual([
-    ...GRANOLA_CALL_CREDENTIAL_BINDINGS,
-  ]);
+  expect(definition.credentialBindings).toEqual([...GRANOLA_CALL_CREDENTIAL_BINDINGS]);
   expect(GRANOLA_CALL_CREDENTIAL_BINDINGS).toEqual([
     {
       package: "@corbits/granola-tools",
@@ -139,16 +125,12 @@ test("serialization fails loud on a function-valued field, naming its path", () 
 });
 
 test("an empty trigger address is rejected", () => {
-  expect(() =>
-    buildGranolaCallWorkflow({ ...INPUT, triggerAddress: "" }),
-  ).toThrow(/triggerAddress/);
+  expect(() => buildGranolaCallWorkflow({ ...INPUT, triggerAddress: "" })).toThrow(
+    /triggerAddress/,
+  );
 });
 
 test("a non-positive or fractional turn timeout is rejected", () => {
-  expect(() =>
-    buildGranolaCallWorkflow({ ...INPUT, turnTimeoutMs: 0 }),
-  ).toThrow(/turnTimeoutMs/);
-  expect(() =>
-    buildGranolaCallWorkflow({ ...INPUT, turnTimeoutMs: 0.5 }),
-  ).toThrow(/turnTimeoutMs/);
+  expect(() => buildGranolaCallWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(/turnTimeoutMs/);
+  expect(() => buildGranolaCallWorkflow({ ...INPUT, turnTimeoutMs: 0.5 })).toThrow(/turnTimeoutMs/);
 });

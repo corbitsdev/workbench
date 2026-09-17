@@ -69,11 +69,7 @@ export const EXA_MCP_SERVER_SLUG = "exa";
 
 /** The digest's fixed section structure — this deployment's contract, and
  * what the system prompt below instructs the model to fill in. */
-export const EXA_TOPIC_WATCH_SECTIONS = [
-  "What moved",
-  "Takeaways",
-  "Worth a closer look",
-] as const;
+export const EXA_TOPIC_WATCH_SECTIONS = ["What moved", "Takeaways", "Worth a closer look"] as const;
 
 const CORBITS_VOCABULARY =
   "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical " +
@@ -93,8 +89,7 @@ export const EXA_TOPIC_WATCH_SYSTEM_PROMPT = [
     "entirely and finalize a status note saying what a topic looks like.",
   `Searching: web search reaches you through the "${EXA_MCP_SERVER_SLUG}" server. Call \`mcp_list_tools\` once for that server to learn its search tool's exact name and arguments, then call \`mcp_read\` at most three times, each with a differently-angled query for the same topic. If the server is not connected, or a call comes back as an error, that is an honest "the web is not reachable right now" — say so plainly, and never invent results to cover for it.`,
   `Write the digest as markdown with exactly these sections, in order: ${EXA_TOPIC_WATCH_SECTIONS.join(", ")}. "What moved" is one line. "Takeaways" is three to seven bullets, each linking its source. "Worth a closer look" is at most three items, each with one sentence on why. No preamble.`,
-  "Every claim carries the link it came from. A claim you cannot link " +
-    "does not go in.",
+  "Every claim carries the link it came from. A claim you cannot link " + "does not go in.",
   `Finalizing: call \`${EXA_TOPIC_WATCH_FINALIZE_TOOL_NAME}\` exactly once with outcome "digest", a short title (e.g. "Web topic watch: <topic>"), and the full markdown digest as content. This call requires a human's approval before it completes. A quiet run is still a run: when nothing new surfaced, or the web was unreachable, call the same tool once with outcome "status-note", a plain title (e.g. "Web topic watch: <topic> — quiet week"), and content that honestly says what you searched for and what you found or could not reach. Never end a run without finalizing.`,
   "If the finalize call succeeds, present the digest as your reply " +
     "exactly as written, with no commentary about the approval mechanism " +
@@ -133,18 +128,12 @@ export interface ExaTopicWatchWorkflowInput {
  * never inlined on the definition — they arrive as pinned packages on the
  * deploy, keeping the definition pure data.
  */
-export function buildExaTopicWatchWorkflow(
-  input: ExaTopicWatchWorkflowInput,
-): WorkflowDefinition {
+export function buildExaTopicWatchWorkflow(input: ExaTopicWatchWorkflowInput): WorkflowDefinition {
   if (input.triggerAddress === "") {
-    throw new Error(
-      "buildExaTopicWatchWorkflow requires a non-empty triggerAddress",
-    );
+    throw new Error("buildExaTopicWatchWorkflow requires a non-empty triggerAddress");
   }
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
-    throw new Error(
-      "buildExaTopicWatchWorkflow requires turnTimeoutMs to be a positive integer",
-    );
+    throw new Error("buildExaTopicWatchWorkflow requires turnTimeoutMs to be a positive integer");
   }
   return defineWorkflow({
     id: EXA_TOPIC_WATCH_WORKFLOW_ID,
@@ -174,9 +163,7 @@ export function buildExaTopicWatchWorkflow(
  * anything JSON would silently drop or mangle is a loud error naming the
  * offending path instead of a corrupted asset.
  */
-export function serializeExaTopicWatchWorkflow(
-  definition: WorkflowDefinition,
-): string {
+export function serializeExaTopicWatchWorkflow(definition: WorkflowDefinition): string {
   assertJsonPortable(definition, "definition");
   return JSON.stringify(definition);
 }
@@ -196,8 +183,7 @@ function assertJsonPortable(value: unknown, path: string): void {
       break;
     default:
       throw new Error(
-        `${path} is a ${typeof value}, which does not survive JSON ` +
-          "serialization",
+        `${path} is a ${typeof value}, which does not survive JSON ` + "serialization",
       );
   }
   if (Array.isArray(value)) {
@@ -208,9 +194,7 @@ function assertJsonPortable(value: unknown, path: string): void {
   }
   const proto: unknown = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) {
-    throw new Error(
-      `${path} is a non-plain object; JSON would flatten it lossily`,
-    );
+    throw new Error(`${path} is a non-plain object; JSON would flatten it lossily`);
   }
   for (const [key, entry] of Object.entries(value)) {
     assertJsonPortable(entry, `${path}.${key}`);

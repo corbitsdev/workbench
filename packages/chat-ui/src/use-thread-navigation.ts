@@ -50,18 +50,10 @@ export function useThreadNavigation(args: {
   readonly threadsLoaded: boolean;
   readonly refetchThreads: () => Promise<unknown>;
 }): ThreadNavigation {
-  const {
-    tenantId,
-    activeWorkbenchId,
-    threads,
-    rootThreadId,
-    threadsLoaded,
-    refetchThreads,
-  } = args;
+  const { tenantId, activeWorkbenchId, threads, rootThreadId, threadsLoaded, refetchThreads } =
+    args;
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
-  const [pendingParentMessageId, setPendingParentMessageId] = useState<
-    string | null
-  >(null);
+  const [pendingParentMessageId, setPendingParentMessageId] = useState<string | null>(null);
   // A thread id `openThreadById` just set (first reply create, CL-6660)
   // can land one render before the seeded `GET /threads` row is visible
   // to this hook. Hold it so the stale-id effect below does not drop a
@@ -97,10 +89,7 @@ export function useThreadNavigation(args: {
 
   const replyThreadFor = useCallback(
     (messageId: string) =>
-      threads.find(
-        (thread) =>
-          thread.kind === "reply" && thread.parentMessageId === messageId,
-      ),
+      threads.find((thread) => thread.kind === "reply" && thread.parentMessageId === messageId),
     [threads],
   );
 
@@ -164,17 +153,13 @@ export function useThreadNavigation(args: {
     [threads],
   );
   const depth1Threads = useMemo(
-    () =>
-      replyThreads.filter((thread) => thread.parentThreadId === rootThreadId),
+    () => replyThreads.filter((thread) => thread.parentThreadId === rootThreadId),
     [replyThreads, rootThreadId],
   );
   const subThreadsByParentId = useMemo(() => {
     const map = new Map<string, WorkbenchThreadRow[]>();
     for (const thread of replyThreads) {
-      if (
-        thread.parentThreadId === null ||
-        thread.parentThreadId === rootThreadId
-      ) {
+      if (thread.parentThreadId === null || thread.parentThreadId === rootThreadId) {
         continue;
       }
       const list = map.get(thread.parentThreadId) ?? [];
@@ -184,9 +169,7 @@ export function useThreadNavigation(args: {
   }, [replyThreads, rootThreadId]);
 
   const openThread =
-    openThreadId === null
-      ? undefined
-      : threads.find((thread) => thread.id === openThreadId);
+    openThreadId === null ? undefined : threads.find((thread) => thread.id === openThreadId);
   const openThreadParent =
     openThread?.parentThreadId !== undefined &&
     openThread.parentThreadId !== null &&
@@ -200,9 +183,7 @@ export function useThreadNavigation(args: {
     inThreadView: openThreadId !== null || pendingParentMessageId !== null,
     openThread,
     openThreadParent,
-    threadTitle:
-      openThread?.title ??
-      (pendingParentMessageId !== null ? "New thread" : "Thread"),
+    threadTitle: openThread?.title ?? (pendingParentMessageId !== null ? "New thread" : "Thread"),
     depth1Threads,
     subThreadsByParentId,
     openThreadForMessage,

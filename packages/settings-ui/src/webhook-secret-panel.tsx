@@ -13,13 +13,7 @@ import { Copy } from "@corbits/icons";
 import { useEffect, useRef, useState } from "react";
 
 /** Copies `value` to the clipboard, showing "Copied" for 1.5s. */
-export function CopyButton({
-  value,
-  label,
-}: {
-  readonly value: string;
-  readonly label: string;
-}) {
+export function CopyButton({ value, label }: { readonly value: string; readonly label: string }) {
   const [copied, setCopied] = useState(false);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -95,15 +89,11 @@ export function WebhookSecretPanel({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
-        This secret is shown once — copy it now. It signs every delivery to this
-        URL; losing it means rotating for a new one.
+        This secret is shown once — copy it now. It signs every delivery to this URL; losing it
+        means rotating for a new one.
       </p>
       <CopyableCodeRow label="Hook URL" value={url} copyLabel="Copy hook URL" />
-      <CopyableCodeRow
-        label="Signing secret"
-        value={secret}
-        copyLabel="Copy signing secret"
-      />
+      <CopyableCodeRow label="Signing secret" value={secret} copyLabel="Copy signing secret" />
       {samplePayload !== undefined && (
         <div className="flex flex-col gap-1">
           <span className="text-xs font-medium">Example payload</span>
@@ -112,8 +102,7 @@ export function WebhookSecretPanel({
           </pre>
           <p className="text-xs text-[var(--ui-fg-muted)]">
             Any valid JSON body with a matching{" "}
-            <code className="font-mono">X-Webhook-Signature</code> header starts
-            a run.
+            <code className="font-mono">X-Webhook-Signature</code> header starts a run.
           </p>
         </div>
       )}

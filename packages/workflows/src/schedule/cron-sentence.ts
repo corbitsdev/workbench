@@ -33,10 +33,7 @@ export function cronHasWallClock(expression: string): boolean {
  * their own invalid input instead of a confident sentence about a
  * schedule that will never fire.
  */
-export function cronSentence(
-  expression: string,
-  timezone: string = "UTC",
-): string | null {
+export function cronSentence(expression: string, timezone: string = "UTC"): string | null {
   let described: string;
   try {
     described = describeCronExpression(expression, {
@@ -50,7 +47,5 @@ export function cronSentence(
     return null;
   }
   if (described === "") return null;
-  return cronHasWallClock(expression)
-    ? `${described} (${timezone})`
-    : described;
+  return cronHasWallClock(expression) ? `${described} (${timezone})` : described;
 }

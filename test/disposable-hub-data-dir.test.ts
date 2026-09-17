@@ -14,8 +14,7 @@ test("points HUB_DATA_DIR at a fresh directory under the OS temp dir", () => {
     restore();
   }
   expect(existsSync(hubDataDir)).toBe(false);
-  if (previous === undefined)
-    expect(process.env["HUB_DATA_DIR"]).toBeUndefined();
+  if (previous === undefined) expect(process.env["HUB_DATA_DIR"]).toBeUndefined();
   else expect(process.env["HUB_DATA_DIR"]).toBe(previous);
 });
 

@@ -22,9 +22,7 @@ export interface StartedWorkflowCommand {
 }
 
 export interface WorkflowCommandDeps {
-  listInvitableDefinitions(
-    tenantId: string,
-  ): Promise<readonly WorkflowCommandTarget[]>;
+  listInvitableDefinitions(tenantId: string): Promise<readonly WorkflowCommandTarget[]>;
   startWorkflow(input: {
     readonly tenantId: string;
     readonly principalId: string;
@@ -42,9 +40,7 @@ export interface WorkflowCommandDeps {
  * a definition deployed after boot becomes a command on the very next
  * listing, never requiring a re-registration step.
  */
-export function createWorkflowCommandPlugin(
-  deps: WorkflowCommandDeps,
-): CommandPlugin {
+export function createWorkflowCommandPlugin(deps: WorkflowCommandDeps): CommandPlugin {
   return async ({ tenantId }) => {
     const definitions = await deps.listInvitableDefinitions(tenantId);
     return definitions.map((definition): CommandDefinition => ({

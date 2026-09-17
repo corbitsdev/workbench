@@ -19,10 +19,7 @@ import {
   mcpTools,
 } from "../src/tool";
 import type { McpToolsEnv } from "../src/tool";
-import {
-  startStubMcpServer,
-  type StubMcpServerHandle,
-} from "./stub-mcp-server";
+import { startStubMcpServer, type StubMcpServerHandle } from "./stub-mcp-server";
 
 let stub: StubMcpServerHandle;
 const TOKEN = "test-bearer-token";
@@ -42,9 +39,7 @@ function fakeCredentials(): CredentialCapability {
   return {
     resolve(handle: string): Promise<MediatedCredential> {
       if (handle !== mcpCredentialHandle("notion")) {
-        return Promise.reject(
-          new Error(`no credential is bound to handle "${handle}"`),
-        );
+        return Promise.reject(new Error(`no credential is bound to handle "${handle}"`));
       }
       return Promise.resolve({
         kind: "http",
@@ -87,12 +82,8 @@ test("mcp_call declares approval: ask, unconditionally", () => {
   expect(callDecl).toBeDefined();
 
   expect(toolApprovalEffect(findDeclaration(MCP_CALL_TOOL))).toBe("ask");
-  expect(toolApprovalEffect(findDeclaration(MCP_LIST_SERVERS_TOOL))).toBe(
-    "allow",
-  );
-  expect(toolApprovalEffect(findDeclaration(MCP_LIST_TOOLS_TOOL))).toBe(
-    "allow",
-  );
+  expect(toolApprovalEffect(findDeclaration(MCP_LIST_SERVERS_TOOL))).toBe("allow");
+  expect(toolApprovalEffect(findDeclaration(MCP_LIST_TOOLS_TOOL))).toBe("allow");
   expect(toolApprovalEffect(findDeclaration(MCP_READ_TOOL))).toBe("allow");
 });
 
@@ -128,9 +119,7 @@ test("mcp_read executes a readOnlyHint tool without approval", async () => {
       new AbortController().signal,
     );
     expect(result.isError).toBeFalsy();
-    expect(JSON.parse(result.content as string)).toEqual([
-      { type: "text", text: "hi" },
-    ]);
+    expect(JSON.parse(result.content as string)).toEqual([{ type: "text", text: "hi" }]);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -215,9 +204,7 @@ test("connect -> list servers -> list tools -> call, end to end", async () => {
       tools: { name: string; readOnly: boolean }[];
     };
     expect(toolsBody.server).toBe("notion");
-    const byName = Object.fromEntries(
-      toolsBody.tools.map((t) => [t.name, t.readOnly]),
-    );
+    const byName = Object.fromEntries(toolsBody.tools.map((t) => [t.name, t.readOnly]));
     expect(byName["echo"]).toBe(true);
     expect(byName["write_note"]).toBe(false);
 
@@ -234,9 +221,7 @@ test("connect -> list servers -> list tools -> call, end to end", async () => {
       signal,
     );
     expect(called.isError).toBeFalsy();
-    expect(JSON.parse(called.content as string)).toEqual([
-      { type: "text", text: "hi" },
-    ]);
+    expect(JSON.parse(called.content as string)).toEqual([{ type: "text", text: "hi" }]);
     expect(stub.calls).toEqual([{ name: "echo", args: { text: "hi" } }]);
   } finally {
     globalThis.fetch = originalFetch;
@@ -326,9 +311,7 @@ test("mcp_list_tools truncates long descriptions and schemas like the catalog", 
     expect(echo?.description.length ?? 0).toBeLessThanOrEqual(120);
     expect(echo?.description).toContain("[truncated]");
     const schemaText =
-      typeof echo?.inputSchema === "string"
-        ? echo.inputSchema
-        : JSON.stringify(echo?.inputSchema);
+      typeof echo?.inputSchema === "string" ? echo.inputSchema : JSON.stringify(echo?.inputSchema);
     expect(schemaText.length).toBeLessThanOrEqual(120);
     expect(schemaText).toContain("[truncated]");
   } finally {

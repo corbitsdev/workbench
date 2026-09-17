@@ -28,9 +28,7 @@ const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const SCHEMA = "agent_directory_tool_package_version_test";
 
-function fakeAssetService(
-  filenamesByDir: Record<string, string[]>,
-): AssetService {
+function fakeAssetService(filenamesByDir: Record<string, string[]>): AssetService {
   return {
     createAsset: () => {
       throw new Error("not used in these tests");
@@ -58,130 +56,117 @@ async function seedTenant(
   });
 }
 
-describeIfDb(
-  "resolvePinnedVersion: resolves against the tenant's corbits-tools registry",
-  () => {
-    const target = dbTargetFromUrl(
-      databaseUrl ?? "postgres://localhost:5432/unused",
-    );
+describeIfDb("resolvePinnedVersion: resolves against the tenant's corbits-tools registry", () => {
+  const target = dbTargetFromUrl(databaseUrl ?? "postgres://localhost:5432/unused");
 
-    beforeAll(async () => {
-      await runMigrations(target, { schema: SCHEMA });
-    });
+  beforeAll(async () => {
+    await runMigrations(target, { schema: SCHEMA });
+  });
 
-    afterAll(async () => {
-      await dropSchema(target, { schema: SCHEMA });
-    });
+  afterAll(async () => {
+    await dropSchema(target, { schema: SCHEMA });
+  });
 
-    test("resolves the highest published version among the registry's tarballs", async () => {
-      const { db, close } = createDB({ ...target, schema: SCHEMA });
-      try {
-        const tenantId = `tnt_tpv_${randomUUID().slice(0, 8)}`;
-        await seedTenant(db, { id: tenantId });
-        await db.insert(schema.asset).values({
-          id: `asset_${tenantId}`,
-          tenantId,
-          kind: "package-registry",
-          name: CORBITS_TOOLS_REGISTRY,
-        });
+  test("resolves the highest published version among the registry's tarballs", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      const tenantId = `tnt_tpv_${randomUUID().slice(0, 8)}`;
+      await seedTenant(db, { id: tenantId });
+      await db.insert(schema.asset).values({
+        id: `asset_${tenantId}`,
+        tenantId,
+        kind: "package-registry",
+        name: CORBITS_TOOLS_REGISTRY,
+      });
 
-        const assetService = fakeAssetService({
-          tarballs: [
-            "corbits-memory-tools-1.2.0.tgz",
-            "corbits-memory-tools-1.10.0.tgz",
-            "corbits-memory-tools-1.3.0.tgz",
-            "corbits-capability-tools-0.0.2.tgz",
-          ],
-        });
-        const resolved = await resolvePinnedVersion(
-          { db, assetService },
-          tenantId,
-          "@corbits/memory-tools",
-        );
-        expect(resolved).toEqual({
-          name: "@corbits/memory-tools",
-          version: "1.10.0",
-        });
-      } finally {
-        await close();
-      }
-    });
+      const assetService = fakeAssetService({
+        tarballs: [
+          "corbits-memory-tools-1.2.0.tgz",
+          "corbits-memory-tools-1.10.0.tgz",
+          "corbits-memory-tools-1.3.0.tgz",
+          "corbits-capability-tools-0.0.2.tgz",
+        ],
+      });
+      const resolved = await resolvePinnedVersion(
+        { db, assetService },
+        tenantId,
+        "@corbits/memory-tools",
+      );
+      expect(resolved).toEqual({
+        name: "@corbits/memory-tools",
+        version: "1.10.0",
+      });
+    } finally {
+      await close();
+    }
+  });
 
-    test("a child tenant resolves against its inherited (ancestor-owned) registry", async () => {
-      const { db, close } = createDB({ ...target, schema: SCHEMA });
-      try {
-        const rootId = `tnt_tpv_root_${randomUUID().slice(0, 8)}`;
-        const childId = `tnt_tpv_child_${randomUUID().slice(0, 8)}`;
-        await seedTenant(db, { id: rootId });
-        await seedTenant(db, { id: childId, parentId: rootId });
-        await db.insert(schema.asset).values({
-          id: `asset_${rootId}`,
-          tenantId: rootId,
-          kind: "package-registry",
-          name: CORBITS_TOOLS_REGISTRY,
-        });
+  test("a child tenant resolves against its inherited (ancestor-owned) registry", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      const rootId = `tnt_tpv_root_${randomUUID().slice(0, 8)}`;
+      const childId = `tnt_tpv_child_${randomUUID().slice(0, 8)}`;
+      await seedTenant(db, { id: rootId });
+      await seedTenant(db, { id: childId, parentId: rootId });
+      await db.insert(schema.asset).values({
+        id: `asset_${rootId}`,
+        tenantId: rootId,
+        kind: "package-registry",
+        name: CORBITS_TOOLS_REGISTRY,
+      });
 
-        const assetService = fakeAssetService({
-          tarballs: ["corbits-capability-tools-0.0.2.tgz"],
-        });
-        const resolved = await resolvePinnedVersion(
-          { db, assetService },
-          childId,
-          "@corbits/capability-tools",
-        );
-        expect(resolved).toEqual({
-          name: "@corbits/capability-tools",
-          version: "0.0.2",
-        });
-      } finally {
-        await close();
-      }
-    });
+      const assetService = fakeAssetService({
+        tarballs: ["corbits-capability-tools-0.0.2.tgz"],
+      });
+      const resolved = await resolvePinnedVersion(
+        { db, assetService },
+        childId,
+        "@corbits/capability-tools",
+      );
+      expect(resolved).toEqual({
+        name: "@corbits/capability-tools",
+        version: "0.0.2",
+      });
+    } finally {
+      await close();
+    }
+  });
 
-    test("pinning a package absent from the registry fails closed", async () => {
-      const { db, close } = createDB({ ...target, schema: SCHEMA });
-      try {
-        const tenantId = `tnt_tpv_${randomUUID().slice(0, 8)}`;
-        await seedTenant(db, { id: tenantId });
-        await db.insert(schema.asset).values({
-          id: `asset_${tenantId}`,
-          tenantId,
-          kind: "package-registry",
-          name: CORBITS_TOOLS_REGISTRY,
-        });
+  test("pinning a package absent from the registry fails closed", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      const tenantId = `tnt_tpv_${randomUUID().slice(0, 8)}`;
+      await seedTenant(db, { id: tenantId });
+      await db.insert(schema.asset).values({
+        id: `asset_${tenantId}`,
+        tenantId,
+        kind: "package-registry",
+        name: CORBITS_TOOLS_REGISTRY,
+      });
 
-        const assetService = fakeAssetService({
-          tarballs: ["corbits-memory-tools-1.0.0.tgz"],
-        });
-        await expect(
-          resolvePinnedVersion(
-            { db, assetService },
-            tenantId,
-            "@corbits/no-such-tools",
-          ),
-        ).rejects.toBeInstanceOf(CapabilityOutOfInventoryError);
-      } finally {
-        await close();
-      }
-    });
+      const assetService = fakeAssetService({
+        tarballs: ["corbits-memory-tools-1.0.0.tgz"],
+      });
+      await expect(
+        resolvePinnedVersion({ db, assetService }, tenantId, "@corbits/no-such-tools"),
+      ).rejects.toBeInstanceOf(CapabilityOutOfInventoryError);
+    } finally {
+      await close();
+    }
+  });
 
-    test("a tenant with no visible corbits-tools registry fails closed", async () => {
-      const { db, close } = createDB({ ...target, schema: SCHEMA });
-      try {
-        const tenantId = `tnt_tpv_${randomUUID().slice(0, 8)}`;
-        await seedTenant(db, { id: tenantId });
+  test("a tenant with no visible corbits-tools registry fails closed", async () => {
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      const tenantId = `tnt_tpv_${randomUUID().slice(0, 8)}`;
+      await seedTenant(db, { id: tenantId });
 
-        const assetService = fakeAssetService({});
-        await expect(
-          resolvePinnedVersion(
-            { db, assetService },
-            tenantId,
-            "@corbits/memory-tools",
-          ),
-        ).rejects.toBeInstanceOf(CapabilityOutOfInventoryError);
-      } finally {
-        await close();
-      }
-    });
-  },
-);
+      const assetService = fakeAssetService({});
+      await expect(
+        resolvePinnedVersion({ db, assetService }, tenantId, "@corbits/memory-tools"),
+      ).rejects.toBeInstanceOf(CapabilityOutOfInventoryError);
+    } finally {
+      await close();
+    }
+  });
+});

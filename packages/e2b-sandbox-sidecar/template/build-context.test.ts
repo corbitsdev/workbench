@@ -1,20 +1,9 @@
-import {
-  existsSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
-import {
-  SIDECAR_FULL_SOURCE_DIRS,
-  listWorkspaceMembers,
-  stageBuildContext,
-} from "./build-context";
+import { SIDECAR_FULL_SOURCE_DIRS, listWorkspaceMembers, stageBuildContext } from "./build-context";
 
 const repositoryRoot = resolve(import.meta.dir, "../../..");
 
@@ -66,10 +55,7 @@ describe("stageBuildContext", () => {
     // *inputs* the stager is allowed to read, not just its outputs, so a
     // future change that widens the scan (e.g. `readdirSync(repositoryRoot)`)
     // fails here even before it could copy anything sensitive.
-    const source = readFileSync(
-      resolve(import.meta.dir, "build-context.ts"),
-      "utf8",
-    );
+    const source = readFileSync(resolve(import.meta.dir, "build-context.ts"), "utf8");
     expect(source).not.toContain("readdirSync(repositoryRoot)");
   });
 
@@ -79,9 +65,7 @@ describe("stageBuildContext", () => {
       expect(existsSync(join(staged, dir, "package.json"))).toBe(true);
     }
     expect(existsSync(join(staged, "apps/sidecar/src/index.ts"))).toBe(true);
-    expect(
-      existsSync(join(staged, "vendor/intx/hub-sessions/src/index.ts")),
-    ).toBe(true);
+    expect(existsSync(join(staged, "vendor/intx/hub-sessions/src/index.ts"))).toBe(true);
   });
 
   test("ships root package.json and bun.lock", () => {

@@ -22,9 +22,7 @@ function fakeCredentials(secret: string | undefined): CredentialCapability {
   return {
     resolve(handle: string): Promise<MediatedCredential> {
       if (secret === undefined) {
-        return Promise.reject(
-          new Error(`no credential is bound to handle "${handle}"`),
-        );
+        return Promise.reject(new Error(`no credential is bound to handle "${handle}"`));
       }
       return Promise.resolve({
         kind: "http",
@@ -67,9 +65,7 @@ test("returns a gif CDN url for a stubbed Giphy search", async () => {
     const bundle = gifSearchTool(fakeEnv(fakeCredentials("key")));
     const result = await bundle.run(CALL, new AbortController().signal);
     expect(result.isError).toBeUndefined();
-    expect(result.content).toContain(
-      "https://media.giphy.com/media/abc123/giphy.gif",
-    );
+    expect(result.content).toContain("https://media.giphy.com/media/abc123/giphy.gif");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -123,8 +119,7 @@ test("rejects a missing query without calling the network", async () => {
 
 test("degrades to an error result (never throws) when Giphy rejects the key", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response("nope", { status: 401 })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 401 })) as unknown as typeof fetch;
   try {
     const bundle = gifSearchTool(fakeEnv(fakeCredentials("key")));
     const result = await bundle.run(CALL, new AbortController().signal);

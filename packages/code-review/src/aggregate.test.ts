@@ -257,10 +257,7 @@ test("every finding carries its fingerprint as an HTML comment marker", () => {
     file: "a.ts",
     summary: "rename this",
   };
-  const review = aggregateReview(
-    [pass("correctness", { summary: "", findings: [finding] })],
-    DIFF,
-  );
+  const review = aggregateReview([pass("correctness", { summary: "", findings: [finding] })], DIFF);
   const fingerprint = fingerprintOf(finding);
   expect(review.body).toContain(`<!-- code-review:finding:${fingerprint} -->`);
 });
@@ -282,18 +279,15 @@ test("a fingerprint already posted is skipped on a re-run", () => {
 });
 
 test("an untruncated diff and comment page post no incompleteness note", () => {
-  const review = aggregateReview(
-    [pass("correctness", { summary: "read it", findings: [] })],
-    DIFF,
-  );
+  const review = aggregateReview([pass("correctness", { summary: "read it", findings: [] })], DIFF);
   expect(review.body).not.toContain("may be incomplete");
 });
 
 test("a truncated diff surfaces an incompleteness note in the review body", () => {
-  const review = aggregateReview(
-    [pass("correctness", { summary: "read it", findings: [] })],
-    { ...DIFF, truncated: true },
-  );
+  const review = aggregateReview([pass("correctness", { summary: "read it", findings: [] })], {
+    ...DIFF,
+    truncated: true,
+  });
   expect(review.body).toContain(
     "This review may be incomplete: the pull request has more changed " +
       "files or already-posted comments than one review pass reads",

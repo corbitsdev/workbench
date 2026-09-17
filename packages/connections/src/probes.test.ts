@@ -70,10 +70,7 @@ describe("testExaCredential", () => {
 
 describe("testScrapeCreatorsCredential", () => {
   test("rejects a 401", async () => {
-    const result = await testScrapeCreatorsCredential(
-      "test-key",
-      fakeFetch(401),
-    );
+    const result = await testScrapeCreatorsCredential("test-key", fakeFetch(401));
     expect(result.ok).toBe(false);
   });
 
@@ -120,11 +117,7 @@ describe("testGitHubCredential", () => {
         status: 200,
       });
     };
-    const result = await testGitHubCredential(
-      "test-key",
-      fetchImpl,
-      "http://fake-github.test",
-    );
+    const result = await testGitHubCredential("test-key", fetchImpl, "http://fake-github.test");
     expect(requested).toEqual(["http://fake-github.test/user"]);
     expect(result.ok).toBe(true);
   });
@@ -164,16 +157,12 @@ describe("testManusCredential", () => {
     const fetchImpl: FetchLike = async (input, init) => {
       requested.push({
         url: String(input),
-        key:
-          (init?.headers as Headers | undefined)?.get("x-manus-api-key") ??
-          null,
+        key: (init?.headers as Headers | undefined)?.get("x-manus-api-key") ?? null,
       });
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     };
     const result = await testManusCredential("manus_key", fetchImpl);
     expect(result.ok).toBe(true);
-    expect(requested).toEqual([
-      { url: "https://api.manus.ai/v2/skill.list", key: "manus_key" },
-    ]);
+    expect(requested).toEqual([{ url: "https://api.manus.ai/v2/skill.list", key: "manus_key" }]);
   });
 });

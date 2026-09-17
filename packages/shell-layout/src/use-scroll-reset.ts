@@ -8,10 +8,7 @@ import { useEffect, type RefObject } from "react";
 
 /** Scrolls `ref` back to the top whenever `dep` changes. No-op while the
  * ref is unattached. */
-export function useScrollReset<T extends Element>(
-  ref: RefObject<T | null>,
-  dep: unknown,
-): void {
+export function useScrollReset<T extends Element>(ref: RefObject<T | null>, dep: unknown): void {
   useEffect(() => {
     if (ref.current !== null) ref.current.scrollTop = 0;
     // `ref` is a stable identity; `dep` is what actually triggers a reset.
