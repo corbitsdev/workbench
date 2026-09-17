@@ -54,27 +54,25 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-const emptyTokens = {
-  input: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  output: 0,
-  thinking: 0,
-  total: 0,
-};
-
-function usageBody(turns: number): unknown {
+function runsBody(count: number): unknown {
   return {
-    turns,
-    tokens: { ...emptyTokens, total: turns },
-    costUsd: turns > 0 ? 1.25 : 0,
-    byModel: [],
+    data: Array.from({ length: count }, (_, i) => ({
+      id: `run_${i}`,
+      tenantId: "tnt_1",
+      definitionId: "wfd_a",
+      definitionName: "Research brief",
+      address: "addr",
+      status: "deployed",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    })),
+    nextCursor: null,
   };
 }
 
 function stubFetch(options?: {
-  readonly usageTurns?: number;
-  readonly failUsage?: boolean;
+  readonly runCount?: number;
+  readonly failRuns?: boolean;
 }): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
@@ -82,10 +80,10 @@ function stubFetch(options?: {
       return Promise.resolve(json(membership));
     if (path.includes("/agent-definitions/visible"))
       return Promise.resolve(json({ definitions: [] }));
-    if (path.includes("/insights/usage")) {
-      if (options?.failUsage === true)
+    if (path.includes("/workflows/runs")) {
+      if (options?.failRuns === true)
         return Promise.resolve(json({ error: "unavailable" }, 500));
-      return Promise.resolve(json(usageBody(options?.usageTurns ?? 0)));
+      return Promise.resolve(json(runsBody(options?.runCount ?? 0)));
     }
     return Promise.resolve(json({ items: [] }));
   }) as typeof fetch;
@@ -221,8 +219,8 @@ describe("Sidebar", () => {
     );
   });
 
-  test("first-run footer rail does not list Insights before there is honest usage", async () => {
-    stubFetch({ usageTurns: 0 });
+  test("first-run footer rail does not list Insights before there are honest runs", async () => {
+    stubFetch({ runCount: 0 });
     const { container, root } = await mountSidebar("/w");
     expect(footerRowLabelsFromDom(container)).toEqual([
       "Routines",
@@ -269,8 +267,8 @@ describe("Sidebar", () => {
     expect(elsewhere).not.toMatch(/>Routines<[\s\S]{0,80}aria-current="page"/);
   });
 
-  test("Insights joins the footer rail only when usage has turns", async () => {
-    stubFetch({ usageTurns: 4 });
+  test("Insights joins the footer rail only when top-level runs exist", async () => {
+    stubFetch({ runCount: 4 });
     const { container, root } = await mountSidebar("/insights");
     expect(footerRowLabelsFromDom(container)).toEqual([
       "Routines",
@@ -289,7 +287,7 @@ describe("Sidebar", () => {
   });
 
   test("a failed usage probe omits the row rather than claiming usage", async () => {
-    stubFetch({ failUsage: true });
+    stubFetch({ failRuns: true });
     const { container, root } = await mountSidebar("/w");
     expect(footerRowLabelsFromDom(container)).toEqual([
       "Routines",
@@ -712,14 +710,17 @@ describe("Sidebar", () => {
       container.remove();
     });
 
-    test("offers a Weekly usage line, a feedback link, and Log out", async () => {
+    // CL-8160: the "Weekly usage" line read packages/insights' `/usage`
+    // route, deleted along with the package — the menu is just feedback and
+    // log out now.
+    test("offers a feedback link and Log out, no Weekly usage line", async () => {
       stubFetch();
       const container = document.createElement("div");
       document.body.appendChild(container);
       const root = await openAccountMenu(container);
 
       const menu = document.querySelector('[role="menu"]');
-      expect(menu?.textContent).toContain("Weekly usage");
+      expect(menu?.textContent).not.toContain("Weekly usage");
       expect(menu?.textContent).toContain("Send Feedback");
       expect(menu?.textContent).toContain("Log out");
       // Settings moved out to its own direct control (see the test
@@ -732,34 +733,6 @@ describe("Sidebar", () => {
       expect(feedbackLink).not.toBeUndefined();
       expect(feedbackLink?.getAttribute("href")).toContain("/issues");
       expect(feedbackLink?.getAttribute("target")).toBe("_blank");
-
-      act(() => root.unmount());
-      container.remove();
-    });
-
-    // CL-6877: empty weekly usage is `$0.00`, never `$0.00 · 0 tok`.
-    test("Weekly usage at zero spend shows $0.00 without 0 tok chrome", async () => {
-      stubFetch({ usageTurns: 0 });
-      const container = document.createElement("div");
-      document.body.appendChild(container);
-      const root = await openAccountMenu(container);
-
-      // Wait for the usage query to settle into the menu value.
-      for (let i = 0; i < 20; i++) {
-        const value = document.querySelector(
-          ".shell-sidebar-account-menu-usage-value",
-        );
-        if (value?.textContent?.includes("$0.00") === true) break;
-        await act(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 0));
-        });
-      }
-
-      const value = document.querySelector(
-        ".shell-sidebar-account-menu-usage-value",
-      );
-      expect(value?.textContent).toContain("$0.00");
-      expect(value?.textContent).not.toContain("0 tok");
 
       act(() => root.unmount());
       container.remove();

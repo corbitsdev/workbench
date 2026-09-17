@@ -2,10 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { Workbench } from "@corbits/chat-ui";
 
-import {
-  workbenchIdForWorkbenchTenant,
-  resolveWorkbenchInsightsScope,
-} from "./insights-workbench-scope";
+import { resolveWorkbenchInsightsScope } from "./insights-workbench-scope";
 
 function workbench(overrides: Partial<Workbench> & { id: string }): Workbench {
   return {
@@ -48,20 +45,5 @@ describe("resolveWorkbenchInsightsScope", () => {
     expect(resolveWorkbenchInsightsScope(workbenches, "tnt_stale")).toEqual({
       kind: "not-found",
     });
-  });
-});
-
-describe("workbenchIdForWorkbenchTenant", () => {
-  test("finds the workbench that carries a given workbench tenant", () => {
-    const workbenches = [
-      workbench({ id: "ch_1", tenancy: { tenantId: "tnt_1" } }),
-      workbench({ id: "ch_2", tenancy: { tenantId: "tnt_2" } }),
-    ];
-    expect(workbenchIdForWorkbenchTenant(workbenches, "tnt_2")).toBe("ch_2");
-  });
-
-  test("returns null when no workbench carries that tenancy", () => {
-    const workbenches = [workbench({ id: "ch_1", tenancy: null })];
-    expect(workbenchIdForWorkbenchTenant(workbenches, "tnt_9")).toBeNull();
   });
 });

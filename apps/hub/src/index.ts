@@ -93,17 +93,6 @@ import {
   createInboxRoutes,
   WORKBENCH_MAILBOX_VOCABULARY,
 } from "@corbits/inbox";
-import {
-  applyInsightsMigrations,
-  createDrizzleRunTraceReader,
-  createDrizzleTurnTextSnapshotReader,
-  createInsightsRoutes,
-  createPostgresTurnLatencyStore,
-  createPostgresUsageStore,
-  createTurnLatencyTracker,
-  createUsageSink,
-  withTurnPartPersistGuard,
-} from "@corbits/insights";
 import { generateId } from "@intx/hub-common";
 
 import {
@@ -244,6 +233,7 @@ import {
 } from "./config";
 import type { SidecarProvisioner } from "@intx/hub-sessions";
 import { withTurnPartWriteDefaults } from "./turn-part-content-default";
+import { createDrizzleTurnTextSnapshotReader } from "./turn-text-snapshot";
 import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
 import {
   runNowScheduledDefinition,
@@ -707,34 +697,8 @@ export async function createHub(config: HubConfig) {
       },
     ) => void;
   } = {};
-  // Package-owned insights tables, migrated ahead of the event collector
-  // registry so `usageSink` is live before the first `inference.usage`
-  // event can arrive.
-  await applyInsightsMigrations(config.databaseUrl);
-  const insightsUsage = createPostgresUsageStore(config.databaseUrl);
-  const insightsLatency = createPostgresTurnLatencyStore(config.databaseUrl);
-  const usageSink = createUsageSink({
-    store: insightsUsage.store,
-    generateId: () => generateId("inferenceTurn"),
-  });
-  // CL-6257: per-message-run stage latency (message-received →
-  // reactor.start → inference.start → first-token → reply-posted). The
-  // vendored event collector never persists the events this reads (see
-  // @corbits/insights' latency-tracker.ts header) and isn't ours to edit,
-  // so this observes the same InferenceEvent stream from outside it by
-  // wrapping `eventCollectors` below — the same seam `withTurnPartPersistGuard`
-  // already uses on the `db` handle passed into the vendored registry.
-  const turnLatency = createTurnLatencyTracker({
-    store: insightsLatency.store,
-    generateId: () => generateId("inferenceTurn"),
-  });
   const baseEventCollectors = createEventCollectorRegistry({
-    // `withTurnPartPersistGuard` (see @corbits/insights) wraps
-    // `withTurnPartWriteDefaults`: it retries a turn_part insert once on
-    // the collector's known turn_id/session_id FK race and makes any
-    // surviving loss loud (error-level cause, counted) instead of a
-    // swallowed WRN.
-    db: withTurnPartPersistGuard(withTurnPartWriteDefaults(db)),
+    db: withTurnPartWriteDefaults(db),
     // CL-7418: deliberately no terminal-status settle here. The folded
     // routine-fire settle (CL-6778, keyed off routines.routine_run) died
     // with the routines cut (CL-4455) and has no native equivalent: a
@@ -749,59 +713,22 @@ export async function createHub(config: HubConfig) {
     onTurnFinalized: (agentAddress, turn) => {
       artifactDeliveryHandlerRef.current?.(agentAddress, turn);
     },
-    // Per-turn usage, emitted once when the collector finalizes a turn.
-    onUsage: (_agentAddress, usage) => {
-      void usageSink
-        .handle({
-          turnId: usage.turnId,
-          tenantId: usage.tenantId,
-          sessionId: usage.sessionId,
-          provider: usage.provider,
-          model: usage.model,
-          tokens: usage.usage,
-        })
-        .catch((err: unknown) => {
-          log.warn`Failed to record usage for turn ${usage.turnId}: ${err instanceof Error ? err.message : String(err)}`;
-        });
-    },
   });
-  // Wraps every `EventCollectorRegistry` call the vendored session
-  // orchestrator makes: `create`/`dispatch`/`abandon` also feed
-  // `turnLatency`, which is the only place tenantId/sessionId land
-  // against an agentAddress for the raw event stream (the registry keeps
-  // that mapping private). Every other method passes straight through.
+  // Wraps `dispatch` for CL-7480: a run's turn events can start arriving
+  // before anything else ever recorded its session — the first inbound
+  // trigger that just reconciled its principal races this same dispatch.
+  // No live collector for the address is exactly that case: ensure the
+  // session (and, inside it, the collector) before delegating, rather
+  // than silently dropping the event for a collector that never gets
+  // created. Every other method passes straight through.
   const eventCollectors: EventCollectorRegistry = {
     ...baseEventCollectors,
-    create(agentAddress, tenantId, sessionId, runId) {
-      turnLatency.onSessionCreate(agentAddress, tenantId, sessionId);
-      baseEventCollectors.create(agentAddress, tenantId, sessionId, runId);
-    },
     dispatch(agentAddress, event) {
-      // CL-7480: a run's turn events can start arriving before anything
-      // else ever recorded its session — the first inbound trigger that
-      // just reconciled its principal races this same dispatch. No live
-      // collector for the address is exactly that case: ensure the
-      // session (and, inside it, the collector) before delegating,
-      // rather than silently dropping the event for a collector that
-      // never gets created.
       if (!baseEventCollectors.has(agentAddress)) {
         void ensureCollectorThenDispatch(agentAddress, event);
         return;
       }
-      turnLatency.onEvent(agentAddress, event);
       baseEventCollectors.dispatch(agentAddress, event);
-      // Mirrors the registry's own `isTerminal` check (event-collector-registry.ts)
-      // so `turnLatency`'s per-agentAddress session map is cleared on the
-      // same terminal events that make the registry drop its own collector
-      // — otherwise a session that ends without `abandon()` never frees.
-      const isTerminal =
-        event.type === "reactor.done" ||
-        (event.type === "reactor.error" && event.data.fatal);
-      if (isTerminal) turnLatency.onSessionEnd(agentAddress);
-    },
-    abandon(agentAddress) {
-      turnLatency.onSessionEnd(agentAddress);
-      baseEventCollectors.abandon(agentAddress);
     },
   };
   eventCollectorsRef.current = eventCollectors;
@@ -827,12 +754,7 @@ export async function createHub(config: HubConfig) {
         extra: { agentAddress },
       });
     }
-    turnLatency.onEvent(agentAddress, event);
     baseEventCollectors.dispatch(agentAddress, event);
-    const isTerminal =
-      event.type === "reactor.done" ||
-      (event.type === "reactor.error" && event.data.fatal);
-    if (isTerminal) turnLatency.onSessionEnd(agentAddress);
   }
   createHubSessionOrchestrator({
     events: sidecarRouter.events,
@@ -1604,33 +1526,6 @@ export async function createHub(config: HubConfig) {
     `${TENANT_PREFIX}/inbox`,
     createInboxRoutes({ db: mailboxDb, bus: mailboxBus }),
   );
-  // Insights usage sink + read API. Package-owned tables are migrated
-  // at hub start (idempotent ledger); the store is Postgres-backed so
-  // numbers survive restarts. Absent rates / pre-sink history stay null.
-  // runTraceReader reads the platform's own workflow_run /
-  // inference_turn / turn_part tables directly
-  // (see @corbits/insights' createDrizzleRunTraceReader) — no new storage,
-  // same `db` handle every other platform-table reader in this file uses.
-  // The sink itself is constructed earlier, alongside `eventCollectors`
-  // (see the `onUsage` hook on `createEventCollectorRegistry` above),
-  // which reports each finalized turn's usage with its run identity.
-  app.route(
-    `${TENANT_PREFIX}/insights`,
-    createInsightsRoutes({
-      store: insightsUsage.store,
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: grantConditionRegistry,
-      }),
-      runTraceReader: createDrizzleRunTraceReader(db),
-      latencyStore: insightsLatency.store,
-      // Same `db` handle every other platform-table reader in this file
-      // uses — lets /usage, /activity, /tools, and /scope roll up a
-      // workspace parent's child chats (see resolveScope in
-      // @corbits/insights' routes.ts).
-      db,
-    }),
-  );
   // A workflow definition's own detail page (CL-7371): what it is,
   // whether it can run right now, its steps, and its access surface.
   // Mounted alongside — not inside — the vendored
@@ -2265,8 +2160,6 @@ export async function createHub(config: HubConfig) {
       chatOrchestrator.dispose();
       inboxUnsnoozeSweep.stop();
       cronEmitter.stop();
-      await insightsUsage.close();
-      await insightsLatency.close();
       await closeMailbox();
       // The pool end waits on in-flight queries; a query whose socket
       // died with the process must never stall shutdown, so bound it.

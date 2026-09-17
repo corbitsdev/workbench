@@ -35,7 +35,6 @@ import {
   applyInboxMigrations,
   applyMailboxMigrations,
 } from "../packages/inbox/src/migrations";
-import { applyInsightsMigrations } from "../packages/insights/src/migrations";
 import { applyAgentDirectoryMigrations } from "../packages/agent-directory/src/migrations";
 import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
 
@@ -61,7 +60,6 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/mailbox", apply: applyMailboxMigrations },
   // CL-7208's snooze-until table, own schema — see packages/inbox/src/schema.ts.
   { name: "@corbits/inbox", apply: applyInboxMigrations },
-  { name: "@corbits/insights", apply: applyInsightsMigrations },
   { name: "@corbits/agent-directory", apply: applyAgentDirectoryMigrations },
   { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
 ];
@@ -102,6 +100,7 @@ async function applyInstalledPackageMigrations(
   await dropSchemaIfPresent(databaseUrl, "run_key_history");
   await dropSchemaIfPresent(databaseUrl, "preferences");
   await dropSchemaIfPresent(databaseUrl, "bench");
+  await dropSchemaIfPresent(databaseUrl, "insights");
 }
 
 // --- hub-resolved platform dependencies ------------------------------
@@ -395,11 +394,14 @@ async function dropRoutinesSchemaAfterDigestHandoff(
 
 /**
  * One-shot, forward-only: `@corbits/run-key-history` and
- * `@corbits/preferences` (CL-8158), and `@corbits/bench` (CL-8160), had
- * zero web callers on their mounts — a diagnostics-only listener and two
- * clients that were built but never imported — so those packages, their
- * mounts, and their schemas are gone. Absent schema is a no-op; safe to
- * re-run.
+ * `@corbits/preferences` (CL-8158) had zero web callers on their mounts —
+ * a diagnostics-only listener and a client that was built but never
+ * imported — so both packages, their mounts, and their schemas are gone.
+ * `bench` (CL-8160) joins them for the same reason. `insights` (also
+ * CL-8160) joins them too, for a different reason: the hub mounts nothing
+ * Workbench-specific, so its usage/latency writers and read routes are
+ * gone — Insights UI now reads stock observability/workflow routes
+ * client-side instead. Absent schema is a no-op; safe to re-run.
  */
 async function dropSchemaIfPresent(
   databaseUrl: string,

@@ -4,32 +4,13 @@ import { FIRE_RUNNING_WINDOW_MS } from "@corbits/workflows/client";
 
 import {
   computeInsightsStats,
-  computeTraceStats,
-  filterRunsByCreatedAt,
   groupRunsByDefinition,
   INSIGHTS_RECENT_LIMIT,
   purposeRunsForInsights,
   runDisplayName,
 } from "./insights-stats";
-import type { InsightsRun, RunTraceSpan } from "./insights-api";
+import type { InsightsRun } from "./insights-api";
 import type { ScheduledWorkflowDefinition } from "./routines-api";
-
-function span(
-  partial: Partial<RunTraceSpan> & Pick<RunTraceSpan, "id">,
-): RunTraceSpan {
-  return {
-    label: partial.id,
-    kind: "tool",
-    start: 0,
-    end: 1000,
-    durationMs: null,
-    tokens: null,
-    phase: "ok",
-    error: null,
-    timingSource: "measured",
-    ...partial,
-  };
-}
 
 function run(
   partial: Partial<InsightsRun> & Pick<InsightsRun, "id" | "status">,
@@ -170,27 +151,6 @@ describe("purposeRunsForInsights", () => {
 
   test("an empty feed (server already scoped out everything) reads as zero, not an error", () => {
     expect(purposeRunsForInsights([])).toEqual([]);
-  });
-});
-
-describe("computeTraceStats", () => {
-  test("returns null when spans are absent or empty", () => {
-    expect(computeTraceStats(null)).toBeNull();
-    expect(computeTraceStats([])).toBeNull();
-  });
-
-  test("derives steps, completed, failed, and duration from spans", () => {
-    const stats = computeTraceStats([
-      span({ id: "a", phase: "ok", start: 0, end: 500 }),
-      span({ id: "b", phase: "failed", start: 200, end: 900 }),
-      span({ id: "c", phase: "awaiting", start: 400, end: 1200 }),
-    ]);
-    expect(stats).toEqual({
-      steps: 3,
-      completed: 1,
-      failed: 1,
-      durationMs: 1200,
-    });
   });
 });
 
@@ -340,53 +300,5 @@ describe("runDisplayName", () => {
     delete native.routineId;
     delete native.routineName;
     expect(runDisplayName(native)).toBe("researcher");
-  });
-});
-
-describe("filterRunsByCreatedAt", () => {
-  const from = "2026-01-08T18:00:00.000Z";
-  const to = "2026-01-15T18:00:00.000Z";
-
-  test("keeps runs inside the inclusive window", () => {
-    const filtered = filterRunsByCreatedAt(
-      [
-        run({
-          id: "old",
-          status: "stopped",
-          createdAt: "2026-01-08T17:59:59.000Z",
-        }),
-        run({ id: "edge-from", status: "stopped", createdAt: from }),
-        run({
-          id: "mid",
-          status: "running",
-          createdAt: "2026-01-12T12:00:00.000Z",
-        }),
-        run({ id: "edge-to", status: "deployed", createdAt: to }),
-        run({
-          id: "future",
-          status: "running",
-          createdAt: "2026-01-15T18:00:01.000Z",
-        }),
-      ],
-      from,
-      to,
-    );
-    expect(filtered.map((r) => r.id)).toEqual(["edge-from", "mid", "edge-to"]);
-  });
-
-  test("drops invalid createdAt timestamps", () => {
-    const filtered = filterRunsByCreatedAt(
-      [
-        run({ id: "bad", status: "stopped", createdAt: "not-a-date" }),
-        run({
-          id: "ok",
-          status: "stopped",
-          createdAt: "2026-01-10T00:00:00.000Z",
-        }),
-      ],
-      from,
-      to,
-    );
-    expect(filtered.map((r) => r.id)).toEqual(["ok"]);
   });
 });

@@ -2,11 +2,12 @@
 // resolves to that workbench's OWN workbench tenant — every workbench minted
 // through POST /workbenches carries a tenancy link (see `WorkbenchWire.tenancy`
 // in @corbits/chat-ui) — never the workbench id itself and never the bench's
-// root tenant. Both directions of that lookup (a workbench id in the URL
-// resolving to a tenant id; a tenant id off a usage row resolving back to
-// the workbench that opens it) go through these two pure functions over the
-// SAME cached workbench rows the shell's sidebar already fetched, rather
-// than a bespoke reverse-lookup endpoint.
+// root tenant. That lookup goes through this one pure function over the SAME
+// cached workbench rows the shell's sidebar already fetches, rather than a
+// bespoke endpoint. CL-8160 deleted the reverse lookup
+// (`workbenchIdForWorkbenchTenant`): it only served the cross-workbench
+// "activity by workbench" chart and scope switcher, both dropped along with
+// packages/insights.
 
 import type { Workbench } from "@corbits/chat-ui";
 
@@ -39,24 +40,4 @@ export function resolveWorkbenchInsightsScope(
     tenantId: workbench.tenancy.tenantId,
     title: workbench.title,
   };
-}
-
-/** The reverse lookup: a workbench usage row only carries the workbench's
- * tenant id (see `WorkbenchUsage` in `./insights-api`) — this finds the
- * workbench that opens it, for the "activity by workbench" rows and the
- * scope switcher's sibling pills. Null when no workbench in view carries
- * that tenancy (shouldn't happen for a same-bench sibling, but never
- * invents a link). */
-export function workbenchIdForWorkbenchTenant(
-  workbenches: readonly Workbench[],
-  tenantId: string,
-): string | null {
-  return (
-    workbenches.find(
-      (c) =>
-        c.tenancy !== undefined &&
-        c.tenancy !== null &&
-        c.tenancy.tenantId === tenantId,
-    )?.id ?? null
-  );
 }

@@ -51,7 +51,6 @@ export interface BrowserSafeEntry {
  */
 export const ENTRIES: readonly BrowserSafeEntry[] = [
   { package: "@corbits/inbox", subpath: "./client" },
-  { package: "@corbits/insights", subpath: "./client" },
   { package: "@corbits/agent-directory", subpath: "./client" },
   { package: "@corbits/api-query", subpath: "." },
   // The envelope alone (UnauthenticatedError, ApiQueryError, toAPIQuery) has
@@ -184,7 +183,7 @@ function splitPackageSpecifier(specifier: string): {
 
 /**
  * `./client` is this repo's naming convention for a browser-safe subpath
- * (inbox, insights, agent-directory, presence,
+ * (inbox, agent-directory, presence, bench,
  * preferences all use it) — a package that declares one is making the same
  * "nothing server-only reaches here" promise ENTRIES exists to check, so a
  * declared `./client` with no ENTRIES ruling is itself a violation, not a
