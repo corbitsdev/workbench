@@ -25,7 +25,8 @@
     "no-useless-concat": "off",
     "unicorn/no-thenable": "off",
     "unicorn/no-new-array": "off",
-    "unicorn/require-module-specifiers": "off"
+    "unicorn/require-module-specifiers": "off",
+    "no-console": "off"
   },
   "env": {
     "builtin": true
@@ -37,5 +38,45 @@
     ".worktrees/**",
     ".data/**",
     "*.gen.*"
+  ],
+  "overrides": [
+    {
+      "files": ["**/src/**/*.ts", "**/src/**/*.tsx"],
+      "excludeFiles": [
+        "**/src/**/*.test.ts",
+        "**/src/**/*.test.tsx",
+        "packages/client-log/src/index.ts"
+      ],
+      "rules": {
+        "no-console": "error"
+      }
+    },
+    {
+      "files": ["**/*.ts", "**/*.tsx"],
+      "excludeFiles": ["packages/icons/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "lucide-react",
+                "message": "lucide-react is retired — import from @corbits/icons instead."
+              },
+              {
+                "name": "@phosphor-icons/react",
+                "message": "Import icons from @corbits/icons, not @phosphor-icons/react directly."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["@phosphor-icons/react/*"],
+                "message": "Import icons from @corbits/icons, not @phosphor-icons/react directly."
+              }
+            ]
+          }
+        ]
+      }
+    }
   ]
 }
