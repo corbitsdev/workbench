@@ -21,7 +21,6 @@
 // exercised without a real Postgres.
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
 import {
   DefinitionProjectionMissingError,
   WORKFLOW_SOURCE_ENTRY,
@@ -2106,15 +2105,12 @@ describe("createHubChatPlatform", () => {
     unsubscribe();
   });
 
-  // The idle-sleep sweep's own gates (idle sleeps, active/busy/untracked
-  // spared, first-sighting grace) and `ensureAwake`'s coalescing are
-  // `@corbits/agent-lifecycle`'s own contract, proven in
-  // `packages/agent-lifecycle/test/index.test.ts`, not re-proven here.
-  // What belongs here is the wiring: that `createHubChatPlatform` only
-  // builds a lifecycle (and only ever calls `ensureAwake`/`recordActivity`)
-  // when `deps.lifecycle` is configured, and that `sendMail` actually
-  // redeploys a non-routable target before sending.
-  describe("lifecycle wiring", () => {
+  // CL-8187: idle hibernation is now the sidecar's own decision — it is
+  // no longer wired through `createHubChatPlatform` at all. What belongs
+  // here is `sendMail`'s wake-before-send behavior for a target the
+  // sidecar has already taken down (idle-hibernated, or never came back
+  // after a restart).
+  describe("wake before send", () => {
     // CL-7490: a provisioned anchor stays "deployed" until its first
     // trigger, so a run mid-boot looks exactly like this — live, not yet
     // routable. `wakeByAddress` must not relaunch it; the run is waited
@@ -2202,7 +2198,6 @@ describe("createHubChatPlatform", () => {
         runTrigger,
         sidecarRouter,
         eventCollectors,
-        lifecycle: { idleSleepMs: 60_000 },
       });
 
       const sent = await platform.sendMail({
@@ -2291,7 +2286,6 @@ describe("createHubChatPlatform", () => {
         runTrigger,
         sidecarRouter,
         eventCollectors,
-        lifecycle: { idleSleepMs: 60_000 },
       });
 
       const sent = await platform.sendMail({
@@ -2306,275 +2300,11 @@ describe("createHubChatPlatform", () => {
       expect(sidecarRouter.sendAgentUndeployCalls).toHaveLength(0);
       expect(runTrigger.triggerCalls).toHaveLength(1);
     });
-
-    test("the idle sweep never undeploys an address the event collector reports as busy", async () => {
-      // The sweep's `setInterval` otherwise keeps the process's event
-      // loop alive past this test; `unref` it exactly as the
-      // sweep-interval tests below do.
-      const originalSetInterval = globalThis.setInterval;
-      globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
-        const timer = originalSetInterval(...args);
-        timer.unref?.();
-        return timer;
-      }) as typeof setInterval;
-
-      const address = "ins_workbench1@ten1.workbench.test";
-      const db = createFakeDb({
-        assetRow: {
-          tenantId: "ten_1",
-          creatorPrincipalId: "prin_creator",
-          name: "workbench-1",
-          displayName: null,
-        },
-        definitionId: "wfd_workbench1",
-        workflowRunRow: {
-          id: "ins_workbench1",
-          address,
-          principalId: "prin_run1",
-        },
-      });
-      db.inserted.push({
-        table: agentSession,
-        values: { id: "ses_run1", principalId: "prin_run1" },
-      });
-
-      const sidecarRouter = createFakeSidecarRouter({
-        routableAddresses: [address],
-      });
-      // The registry reports a live turn for this address -- the
-      // event-activity heuristic ("any event counts as activity") is
-      // not the only thing standing between a mid-turn agent and the
-      // idle sweep; `isBusy` must independently spare it too, and stay
-      // spared even once `recordActivity`'s own clock goes stale.
-      const eventCollectors = createFakeEventCollectors({
-        busyAddresses: new Set([address]),
-      });
-
-      const platform = createPlatform({
-        toolGrantsForPins: async () => [],
-        db: db as never,
-        runTrigger: createFakeRunTrigger(),
-        sidecarRouter,
-        eventCollectors,
-        lifecycle: { idleSleepMs: 5, sweepIntervalMs: 5 },
-      });
-
-      // A single send tracks the address and records one activity
-      // timestamp; nothing else touches it afterwards, so by the time
-      // the sweep ticks past `idleSleepMs` the event-activity heuristic
-      // alone would no longer spare it.
-      await platform.sendMail({
-        tenantId: "ten_1",
-        workbenchId: "ins_workbench1",
-        principalId: "prin_sender",
-        content: { content: "hello" },
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 40));
-
-      expect(sidecarRouter.sendAgentUndeployCalls).toEqual([]);
-      globalThis.setInterval = originalSetInterval;
-    });
-
-    test("the idle sweep reaps a genuinely idle address with the state-preserving reason", async () => {
-      const originalSetInterval = globalThis.setInterval;
-      globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
-        const timer = originalSetInterval(...args);
-        timer.unref?.();
-        return timer;
-      }) as typeof setInterval;
-
-      const address = "ins_workbench1@ten1.workbench.test";
-      const db = createFakeDb({
-        assetRow: {
-          tenantId: "ten_1",
-          creatorPrincipalId: "prin_creator",
-          name: "workbench-1",
-          displayName: null,
-        },
-        definitionId: "wfd_workbench1",
-        workflowRunRow: {
-          id: "ins_workbench1",
-          address,
-          principalId: "prin_run1",
-        },
-      });
-      db.inserted.push({
-        table: agentSession,
-        values: { id: "ses_run1", principalId: "prin_run1" },
-      });
-
-      const sidecarRouter = createFakeSidecarRouter({
-        routableAddresses: [address],
-      });
-      // No open turn on this address -- unlike the busy-guard test above,
-      // nothing spares it once its recorded activity goes stale past
-      // `idleSleepMs`.
-      const eventCollectors = createFakeEventCollectors({
-        busyAddresses: new Set(),
-      });
-
-      const platform = createPlatform({
-        toolGrantsForPins: async () => [],
-        db: db as never,
-        runTrigger: createFakeRunTrigger(),
-        sidecarRouter,
-        eventCollectors,
-        lifecycle: { idleSleepMs: 5, sweepIntervalMs: 5 },
-      });
-
-      await platform.sendMail({
-        tenantId: "ten_1",
-        workbenchId: "ins_workbench1",
-        principalId: "prin_sender",
-        content: { content: "hello" },
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 40));
-
-      expect(sidecarRouter.sendAgentUndeployCalls).toEqual([
-        { address, reason: IDLE_HIBERNATE_UNDEPLOY_REASON },
-      ]);
-      globalThis.setInterval = originalSetInterval;
-    });
-
-    // CL-6164 regression pin: the anchor's `workflow_run` row must stay
-    // "running" (never end/un-anchor) across an idle-reap-then-relaunch
-    // cycle. Reap is a sidecar-local `sendAgentUndeploy` call -- it never
-    // touches `workflow_run` at all -- and `wakeByAddress` only reads the
-    // run, never updates its `status`/`endedAt`. This test pins that
-    // invariant against a regression, not against a bug this lane found:
-    // see the final report for the file/line evidence.
-    test("idle-reap-then-relaunch never updates workflow_run's status or endedAt", async () => {
-      const originalSetInterval = globalThis.setInterval;
-      globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
-        const timer = originalSetInterval(...args);
-        timer.unref?.();
-        return timer;
-      }) as typeof setInterval;
-
-      const address = "ins_workbench1@ten1.workbench.test";
-      const db = createFakeDb({
-        assetRow: {
-          tenantId: "ten_1",
-          creatorPrincipalId: "prin_creator",
-          name: "workbench-1",
-          displayName: null,
-        },
-        definitionId: "wfd_workbench1",
-        workflowRunRow: {
-          id: "ins_workbench1",
-          address,
-          principalId: "prin_run1",
-        },
-      });
-      db.inserted.push({
-        table: agentSession,
-        values: { id: "ses_run1", principalId: "prin_run1" },
-      });
-
-      const sidecarRouter = createFakeSidecarRouter({
-        routableAddresses: [address],
-      });
-      const eventCollectors = createFakeEventCollectors({
-        busyAddresses: new Set(),
-      });
-
-      const platform = createPlatform({
-        toolGrantsForPins: async () => [],
-        db: db as never,
-        runTrigger: createFakeRunTrigger(),
-        sidecarRouter,
-        eventCollectors,
-        lifecycle: { idleSleepMs: 5, sweepIntervalMs: 5 },
-      });
-
-      await platform.sendMail({
-        tenantId: "ten_1",
-        workbenchId: "ins_workbench1",
-        principalId: "prin_sender",
-        content: { content: "hello" },
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 40));
-
-      expect(sidecarRouter.sendAgentUndeployCalls).toEqual([
-        { address, reason: IDLE_HIBERNATE_UNDEPLOY_REASON },
-      ]);
-      expect(db.updated.some((call) => call.table === workflowRun)).toBe(false);
-      globalThis.setInterval = originalSetInterval;
-    });
-
-    test("createHubChatPlatform installs no sweep interval when lifecycle is not configured", () => {
-      const originalSetInterval = globalThis.setInterval;
-      let setIntervalCalls = 0;
-      globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
-        setIntervalCalls += 1;
-        return originalSetInterval(...args);
-      }) as typeof setInterval;
-
-      try {
-        const db = createFakeDb({
-          assetRow: {
-            tenantId: "ten_1",
-            creatorPrincipalId: "prin_creator",
-            name: "workbench-1",
-            displayName: null,
-          },
-          definitionId: "wfd_workbench1",
-        });
-        createPlatform({
-          toolGrantsForPins: async () => [],
-          db: db as never,
-          runTrigger: createFakeRunTrigger(),
-          sidecarRouter: createFakeSidecarRouter(),
-          eventCollectors: createFakeEventCollectors(),
-        });
-        expect(setIntervalCalls).toBe(0);
-      } finally {
-        globalThis.setInterval = originalSetInterval;
-      }
-    });
-
-    test("createHubChatPlatform installs a sweep interval when lifecycle is configured", () => {
-      const originalSetInterval = globalThis.setInterval;
-      let setIntervalCalls = 0;
-      globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
-        setIntervalCalls += 1;
-        const timer = originalSetInterval(...args);
-        timer.unref?.();
-        return timer;
-      }) as typeof setInterval;
-
-      try {
-        const db = createFakeDb({
-          assetRow: {
-            tenantId: "ten_1",
-            creatorPrincipalId: "prin_creator",
-            name: "workbench-1",
-            displayName: null,
-          },
-          definitionId: "wfd_workbench1",
-        });
-        createPlatform({
-          toolGrantsForPins: async () => [],
-          db: db as never,
-          runTrigger: createFakeRunTrigger(),
-          sidecarRouter: createFakeSidecarRouter(),
-          eventCollectors: createFakeEventCollectors(),
-          lifecycle: { idleSleepMs: 60_000 },
-        });
-        expect(setIntervalCalls).toBe(1);
-      } finally {
-        globalThis.setInterval = originalSetInterval;
-      }
-    });
   });
 
   // `ensureAwake` is the primitive a caller outside this adapter (the
   // hub's `mail.outbound.undelivered` handler) uses to wake a chat
-  // resident before re-attempting delivery itself, over both
-  // lifecycle configurations `sendMail` itself branches on.
+  // resident before re-attempting delivery itself.
   describe("ensureAwake", () => {
     test("no-ops for an already-routable address", async () => {
       const address = "ins_workbench1@ten1.workbench.test";
@@ -2623,69 +2353,7 @@ describe("createHubChatPlatform", () => {
     // here (no unit test needed for that: `wakeByAddress` becomes a
     // pure no-op, nothing to assert beyond "did not call prepare", which
     // the failed-run tests below cover by contrast).
-    test("relaunches a failed, non-routable address exactly once when lifecycle is configured", async () => {
-      resolveDefinitionSourcesResult = {
-        ok: true,
-        materials: [],
-        sources: [
-          {
-            id: "off_1",
-            provider: "anthropic",
-            baseURL: "https://inference.invalid",
-            credentialId: "cred_placeholder",
-            model: "claude-sonnet-5",
-          },
-        ],
-        defaultSource: "off_1",
-      };
-      const address = "ins_workbench1@ten1.workbench.test";
-      const db = createFakeDb({
-        assetRow: {
-          tenantId: "ten_1",
-          creatorPrincipalId: "prin_creator",
-          name: "workbench-1",
-          displayName: null,
-        },
-        definitionId: "wfd_workbench1",
-        workflowRunRow: {
-          id: "ins_workbench1",
-          address,
-          principalId: "prin_run1",
-          status: "failed",
-        },
-        workbenchLaunchRow: {
-          tenantId: "ten_1",
-          instanceId: "ins_workbench1",
-          foldedBody: {
-            systemPrompt: "host prompt",
-            model: "claude-sonnet-5",
-            toolPackagePins: [],
-            grantRequirements: [],
-            credentialBindings: [],
-          },
-        },
-      });
-      db.inserted.push({
-        table: agentSession,
-        values: { id: "ses_run1", principalId: "prin_run1" },
-      });
-
-      const runTrigger = createFakeRunTrigger();
-      const platform = createPlatform({
-        toolGrantsForPins: async () => [],
-        db: db as never,
-        runTrigger,
-        sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
-        eventCollectors: createFakeEventCollectors(),
-        lifecycle: { idleSleepMs: 60_000 },
-      });
-
-      await platform.ensureAwake(address);
-
-      expect(lastAllocationService.prepareCalls).toHaveLength(1);
-    });
-
-    test("relaunches a failed, non-routable address exactly once when lifecycle is not configured", async () => {
+    test("relaunches a failed, non-routable address exactly once", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
         materials: [],
@@ -2777,9 +2445,8 @@ describe("createHubChatPlatform", () => {
   // redeploy is no longer wakeByAddress's behavior for a live, merely
   // not-yet-routable run (CL-7490) — the only thing left to redeploy is a
   // genuinely terminal run, and the coalescing that guards a concurrent
-  // redeploy of it is `@corbits/agent-lifecycle`'s `pendingWakes` map,
-  // proven directly in that package's own test suite (see the note above
-  // `describe("lifecycle wiring", ...)`), not re-proven here.
+  // redeploy of it is `wakeByAddressBounded`'s own `pendingWakes` map,
+  // defined next to it in `platform-adapter.ts`.
 
   // CL-7486: `sendRunMailWithReclaimRetry` used to retry every attempt
   // against the address it started with, even after a wake in between
@@ -3040,7 +2707,6 @@ describe("createHubChatPlatform", () => {
         runTrigger,
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
         eventCollectors: createFakeEventCollectors(),
-        lifecycle: { idleSleepMs: 60_000 },
       });
 
       await platform.refreshAgentInstanceFromDefinition(
@@ -3309,7 +2975,7 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
     expect(repointOf(db)).toBeUndefined();
   });
 
-  test("sendMail redeploys an already-routable-but-drifted target before delivering — lifecycle.ensureAwake's routability check alone would have missed it", async () => {
+  test("sendMail redeploys an already-routable-but-drifted target before delivering — a routability check alone would have missed it", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
       materials: [],
@@ -3342,7 +3008,6 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
         routableAddresses: ["run_stale@ten1.workbench.test"],
       }),
       eventCollectors: createFakeEventCollectors(),
-      lifecycle: { idleSleepMs: 60_000 },
     });
 
     await platform.sendMail({

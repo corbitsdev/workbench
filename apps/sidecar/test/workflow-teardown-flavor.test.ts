@@ -11,9 +11,10 @@ import { describe, test, expect } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
-
-import { deriveDeploymentId } from "../src/workflow-host-wiring";
+import {
+  deriveDeploymentId,
+  IDLE_HIBERNATE_UNDEPLOY_REASON,
+} from "../src/workflow-host-wiring";
 import { readWorkflowDeploymentRecord } from "../src/workflow-deployment-record";
 import {
   answerReadyHandshake,

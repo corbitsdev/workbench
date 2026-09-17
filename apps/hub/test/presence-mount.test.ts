@@ -34,7 +34,6 @@ const config: HubConfig = {
   socialProviders: {},
   allowPlaintextSecrets: true,
   sidecarProvisioners: [],
-  chatIdleReapMs: 30 * 60_000,
 };
 
 const closers: (() => Promise<void>)[] = [];

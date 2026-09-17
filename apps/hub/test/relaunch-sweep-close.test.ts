@@ -37,7 +37,6 @@ const config: HubConfig = {
   signInRateLimit: { windowSeconds: 60, max: 10 },
   socialProviders: {},
   sidecarProvisioners: [],
-  chatIdleReapMs: 30 * 60_000,
   allowPlaintextSecrets: true,
 };
 

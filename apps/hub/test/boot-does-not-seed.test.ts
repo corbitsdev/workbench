@@ -175,7 +175,6 @@ describeIfDb("createHub on a scratch database inserts no tenant", () => {
         socialProviders: {},
         allowPlaintextSecrets: true,
         sidecarProvisioners: [],
-        chatIdleReapMs: 30 * 60_000,
       };
       const hub = await createHub(config);
       const stop = async () => {
@@ -348,7 +347,6 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
         socialProviders: {},
         allowPlaintextSecrets: true,
         sidecarProvisioners: [],
-        chatIdleReapMs: 30 * 60_000,
       };
 
       // Phase 1: mint the operator tenant the old plant targeted.
