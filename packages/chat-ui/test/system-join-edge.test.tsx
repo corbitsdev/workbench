@@ -11,7 +11,6 @@ import type { Root } from "react-dom/client";
 import type { MessageItem } from "../src/api";
 import type { CurrentUser } from "../src/timeline";
 import { WorkbenchTimeline } from "../src/timeline";
-import type { PinActions, ReactionActions } from "../src/timeline";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -25,11 +24,6 @@ afterEach(() => {
 
 const socialActions = {
   onOpenThread: () => undefined,
-  reactionActions: { onToggle: () => undefined } satisfies ReactionActions,
-  pinActions: {
-    onPin: () => undefined,
-    onUnpin: () => undefined,
-  } satisfies PinActions,
 };
 
 async function mount(items: readonly MessageItem[], currentUser?: CurrentUser) {
@@ -41,8 +35,6 @@ async function mount(items: readonly MessageItem[], currentUser?: CurrentUser) {
       <WorkbenchTimeline
         items={items}
         onOpenThread={socialActions.onOpenThread}
-        reactionActions={socialActions.reactionActions}
-        pinActions={socialActions.pinActions}
         {...(currentUser !== undefined ? { currentUser } : {})}
       />,
     );

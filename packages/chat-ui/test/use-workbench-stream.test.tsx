@@ -187,26 +187,6 @@ describe("useWorkbenchStream (reconnect + poll wiring)", () => {
     harness.unmount();
   });
 
-  test("chat.reaction and chat.pin events are forwarded to the caller — live, not just via poll", async () => {
-    const harness = mount({
-      pollMs: 1000,
-      baseDelayMs: 5000,
-      maxDelayMs: 5000,
-    });
-    harness.latest().open();
-
-    harness
-      .latest()
-      .emit("chat.reaction", { messageId: "m1", emoji: "👍", added: true });
-    harness.latest().emit("chat.pin", { messageId: "m1", pinned: true });
-
-    expect(harness.events()).toEqual([
-      ["chat.reaction", { messageId: "m1", emoji: "👍", added: true }],
-      ["chat.pin", { messageId: "m1", pinned: true }],
-    ]);
-    harness.unmount();
-  });
-
   test("invalid JSON on chat.message is not forwarded and polls immediately (CL-6837)", async () => {
     const parseErrors: string[] = [];
     const harness = mount(

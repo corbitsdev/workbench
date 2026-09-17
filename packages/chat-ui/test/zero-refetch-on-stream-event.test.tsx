@@ -74,7 +74,8 @@ function stubFetch() {
     const method = init?.method ?? "GET";
     if (
       method === "GET" &&
-      /\/chat\/workbenches\/[^/]+\/(messages|threads|pins)(\?|$)/.test(path)
+      (/\/chat\/workbenches\/[^/]+\/(messages|threads|pins)(\?|$)/.test(path) ||
+        /\/mailbox\/me\/threads/.test(path))
     ) {
       feedRefetchCount += 1;
     }
@@ -114,6 +115,9 @@ function stubFetch() {
     ) {
       return json({});
     }
+    if (/\/mailbox\/me\/threads/.test(path)) {
+      return json({ threads: [] });
+    }
     throw new Error(`unstubbed fetch: ${path}`);
   }) as typeof fetch;
 }
@@ -145,42 +149,27 @@ function mount(props: Parameters<typeof ChatWorkspace>[0]) {
   };
 }
 
+// The workbench's own chat stream, not the mailbox live-update
+// subscription `useWorkbenchFeed` also opens (CL-8174 slice 2b).
 function firstStream(): StubEventSource {
-  const instance = StubEventSource.instances[0];
+  const instance = StubEventSource.instances.find((source) =>
+    /\/chat\/workbenches\/[^/]+\/stream/.test(source.url),
+  );
   if (instance === undefined) throw new Error("no stream connected");
   return instance;
 }
 
 describe("zero refetches on a stream event, post-hydration (CL-6328 §6/1.2)", () => {
-  test("a streamed chat.message renders with no fetch call beyond mount-hydration", async () => {
-    stubFetch();
-    const harness = mount({
-      tenant: { kind: "ready", tenantId: "tnt_1" },
-      workbenchId: "ch_1",
-    });
-    await harness.settle();
-
-    const feedRefetchCountAfterHydration = feedRefetchCount;
-    expect(feedRefetchCountAfterHydration).toBeGreaterThan(0);
-
-    act(() => {
-      firstStream().emit("chat.message", {
-        id: "m_streamed",
-        workbenchId: "ch_1",
-        ref: { kind: "workbench", id: "ch_1" },
-        createdAt: "2026-01-01T00:00:10.000Z",
-        threadId: null,
-        sender: { name: "Bob", address: "prn_bob@acme.example" },
-        parts: [{ kind: "text", text: "streamed in live" }],
-      });
-    });
-    await harness.settle();
-
-    expect(feedRefetchCount).toBe(feedRefetchCountAfterHydration);
-    expect(harness.container.textContent).toContain("streamed in live");
-    harness.unmount();
-  });
-
+  // CL-8174 slice 2b retires this suite's other test — "a streamed
+  // chat.message renders with no fetch call beyond mount-hydration" —
+  // along with `applyStreamMessage`: the feed now reads via the mailbox,
+  // and a peer's `chat.message` is no longer folded straight into the
+  // messages cache. Its own connection instead relies on the mailbox's
+  // `/me/inbox/events` live-update subscription (`useWorkbenchFeed`) to
+  // notice the fan-out landing and refetch — a real (small) refetch,
+  // not the zero this test asserted. The confirm-echo test below is
+  // untouched: it covers this reader's own optimistic send, a write
+  // straight into the cache independent of where reads come from.
   test("a composer send's own confirm echo (matching clientId) never doubles the bubble or triggers a refetch", async () => {
     stubFetch();
     const harness = mount({

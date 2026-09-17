@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { MailboxThreadMessage } from "@corbits/mailbox";
 
-import { roomRefFor, threadMessagesToTimeline } from "./mailbox-timeline";
+import {
+  roomRefFor,
+  threadMessagesToTimeline,
+  type MailboxThreadMessage,
+} from "./mailbox-timeline";
 
 function message(
   overrides: Partial<MailboxThreadMessage> &

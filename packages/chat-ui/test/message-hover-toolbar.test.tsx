@@ -10,12 +10,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { WorkbenchTimeline } from "../src/timeline";
-import type {
-  CurrentUser,
-  PinActions,
-  ReactionActions,
-  TimelineMessageItem,
-} from "../src/timeline";
+import type { CurrentUser, TimelineMessageItem } from "../src/timeline";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -72,8 +67,6 @@ async function mount(props: {
   onOpenThread?: (messageId: string) => void;
   onEditMessage?: (messageId: string) => void;
   currentUser?: CurrentUser;
-  reactionActions?: ReactionActions;
-  pinActions?: PinActions;
 }) {
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -91,12 +84,6 @@ async function mount(props: {
         {...(props.currentUser !== undefined
           ? { currentUser: props.currentUser }
           : {})}
-        {...(props.reactionActions !== undefined
-          ? { reactionActions: props.reactionActions }
-          : {})}
-        {...(props.pinActions !== undefined
-          ? { pinActions: props.pinActions }
-          : {})}
       />,
     );
   });
@@ -104,25 +91,22 @@ async function mount(props: {
 }
 
 describe("message hover toolbar", () => {
-  test("with no host actions wired, only the ellipsis (copy text) shows — no reply, no add-reaction", async () => {
+  test("with no host actions wired, only the ellipsis (copy text) shows — no reply", async () => {
     const el = await mount({ items: textMessage() });
     const toolbar = el.querySelector(".chat-hover-toolbar");
     expect(toolbar).not.toBeNull();
     expect(toolbar?.querySelector(".chat-hover-reply")).toBeNull();
-    expect(toolbar?.querySelector(".chat-reaction-add")).toBeNull();
     expect(toolbar?.querySelector(".chat-hover-ellipsis")).not.toBeNull();
   });
 
-  test("carries add-reaction, reply, and ellipsis once any action is wired", async () => {
+  test("carries reply and ellipsis once any action is wired", async () => {
     const el = await mount({
       items: textMessage(),
       onOpenThread: () => undefined,
-      reactionActions: { onToggle: () => undefined },
     });
 
     const toolbar = el.querySelector(".chat-hover-toolbar");
     expect(toolbar).not.toBeNull();
-    expect(toolbar?.querySelector(".chat-reaction-add")).not.toBeNull();
     expect(toolbar?.querySelector(".chat-hover-reply")).not.toBeNull();
     expect(toolbar?.querySelector(".chat-hover-ellipsis")).not.toBeNull();
   });
@@ -331,60 +315,6 @@ describe("the persistent inline 'Reply in thread' link is gone", () => {
   });
 });
 
-describe("reactions still render as chips regardless of the hover toolbar", () => {
-  test("an existing reaction is always visible, not just on hover", async () => {
-    const el = await mount({
-      items: textMessage({
-        reactions: [{ emoji: "👍", count: 2, reactedByMe: false }],
-      }),
-      reactionActions: { onToggle: () => undefined },
-    });
-
-    expect(el.querySelector(".chat-reaction-chip")).not.toBeNull();
-    expect(el.querySelector(".chat-reaction-chip")?.textContent).toContain("2");
-  });
-});
-
-describe("the reaction picker", () => {
-  test("a pointerdown outside the open picker closes it", async () => {
-    const el = await mount({
-      items: textMessage(),
-      reactionActions: { onToggle: () => undefined },
-    });
-
-    const trigger = el.querySelector(".chat-reaction-add") as HTMLButtonElement;
-    await act(async () => trigger.click());
-    expect(el.querySelector(".chat-reaction-picker")).not.toBeNull();
-
-    await act(async () => {
-      document.body.dispatchEvent(
-        new PointerEvent("pointerdown", { bubbles: true }),
-      );
-    });
-
-    expect(el.querySelector(".chat-reaction-picker")).toBeNull();
-  });
-
-  test("a pointerdown on the picker itself never closes it", async () => {
-    const el = await mount({
-      items: textMessage(),
-      reactionActions: { onToggle: () => undefined },
-    });
-
-    const trigger = el.querySelector(".chat-reaction-add") as HTMLButtonElement;
-    await act(async () => trigger.click());
-
-    const option = el.querySelector(
-      ".chat-reaction-picker-option",
-    ) as HTMLButtonElement;
-    await act(async () => {
-      option.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-    });
-
-    expect(el.querySelector(".chat-reaction-picker")).not.toBeNull();
-  });
-});
-
 describe("the ellipsis menu", () => {
   test("opens with Reply in thread and Copy text, and clicking Reply in thread calls onOpenThread", async () => {
     const opened: string[] = [];
@@ -413,24 +343,6 @@ describe("the ellipsis menu", () => {
     await flush();
 
     expect(opened).toEqual(["m1"]);
-  });
-
-  test("includes Pin message when pinActions is wired", async () => {
-    const el = await mount({
-      items: textMessage(),
-      pinActions: { onPin: () => undefined, onUnpin: () => undefined },
-    });
-
-    const ellipsis = el.querySelector(
-      ".chat-hover-ellipsis",
-    ) as HTMLButtonElement;
-    await act(async () => ellipsis.click());
-    await flush();
-
-    const labels = Array.from(
-      document.querySelectorAll<HTMLElement>('[data-slot="menu-item"]'),
-    ).map((item) => item.textContent);
-    expect(labels).toContain("Pin message");
   });
 
   test("right-clicking the message opens the same menu", async () => {

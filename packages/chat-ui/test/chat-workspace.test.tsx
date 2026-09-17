@@ -118,6 +118,9 @@ function stubFetch(
     if (/\/chat\/bench\/settings$/.test(path)) {
       return json({ settings: {}, contextWindow: 20 });
     }
+    if (/\/mailbox\/me\/threads/.test(path)) {
+      return json({ threads: [] });
+    }
     throw new Error(`unstubbed fetch: ${path}`);
   }) as typeof fetch;
 }
@@ -126,8 +129,15 @@ const { ChatWorkspace } = await import("../src/chat-workspace");
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// The workbench's own chat stream, not the mailbox live-update
+// subscription `useWorkbenchFeed` also opens (CL-8174 slice 2b) — the two
+// connect in the same render, so picking by url rather than array index
+// is what keeps this pointed at the chat stream regardless of which
+// opens first.
 function firstStream(): StubEventSource {
-  const instance = StubEventSource.instances[0];
+  const instance = StubEventSource.instances.find((source) =>
+    /\/chat\/workbenches\/[^/]+\/stream/.test(source.url),
+  );
   if (instance === undefined) throw new Error("no EventSource was opened");
   return instance;
 }
@@ -218,10 +228,7 @@ describe("ChatWorkspace settings surface", () => {
         return json({ rootThreadId: "", items: [] });
       }
       if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
-        return new Response(JSON.stringify({ error: "not found" }), {
-          status: 404,
-          headers: { "content-type": "application/json" },
-        });
+        return json({ items: [] });
       }
       if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
       if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
@@ -238,6 +245,14 @@ describe("ChatWorkspace settings surface", () => {
       }
       if (/\/chat\/bench\/settings$/.test(path)) {
         return json({ settings: {}, contextWindow: 20 });
+      }
+      // The feed reads via the mailbox now (CL-8174 slice 2b) — a 404
+      // here is the authoritative miss this test drives.
+      if (/\/mailbox\/me\/threads/.test(path)) {
+        return new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
       }
       throw new Error(`unstubbed fetch: ${path}`);
     }) as typeof fetch;
@@ -391,65 +406,23 @@ describe("connection state is never rendered as chrome", () => {
   });
 });
 
-// Two-level thread model + fork affordance (CL-5908, CL-5948): a workbench
-// with one depth-1 thread already open, plus the sub-thread a fork creates.
-const ROOT_THREAD = {
-  id: "thr_root",
-  kind: "root",
-  parentMessageId: null,
-  parentThreadId: null,
-  runRef: null,
-  title: null,
-  createdAt: "2026-01-01T00:00:00.000Z",
-};
-const DEPTH1_THREAD = {
-  id: "thr_1",
-  kind: "reply",
-  parentMessageId: "msg_1",
-  parentThreadId: "thr_root",
-  runRef: null,
-  title: null,
-  createdAt: "2026-01-01T00:01:00.000Z",
-};
-const DEPTH2_THREAD = {
-  id: "thr_2",
-  kind: "reply",
-  parentMessageId: "msg_2",
-  parentThreadId: "thr_1",
-  runRef: null,
-  title: null,
-  createdAt: "2026-01-01T00:02:00.000Z",
-};
+// A depth-1 thread (CL-5908): a root message ("msg_1") with one reply
+// ("msg_2"), as `stubThreadedFetch` below serves it over the mailbox.
 
-// One mailbox, every message stamped with the thread it belongs to — the
-// shape `GET /messages` returns since CL-6313. The client filters this
-// into the root feed and each open thread; it never fetches per thread.
-const THREADED_MESSAGES = [
-  {
-    id: "msg_1",
-    createdAt: "2026-01-01T00:00:30.000Z",
-    parts: [{ kind: "text", text: "root note" }],
-    sender: { name: null, address: "prn_alice@acme.example" },
-    threadId: ROOT_THREAD.id,
-  },
-  {
-    id: "msg_2",
-    createdAt: "2026-01-01T00:01:30.000Z",
-    parts: [{ kind: "text", text: "inside the thread" }],
-    sender: { name: null, address: "prn_alice@acme.example" },
-    threadId: DEPTH1_THREAD.id,
-  },
-];
-
+// A single depth-1 mail thread: a root message ("msg_1", the
+// `WorkbenchThreadRow.id` it hands out is its own row id — see
+// `mailbox-timeline.ts`'s `loadRoomThreadRows`) with one reply ("msg_2").
+// No fork/sub-thread fixture here — forking a message into a depth-2
+// sub-thread still posts to the old `@corbits/chat` thread store
+// (`use-thread-navigation.ts`'s `forkThread`), which has no mailbox
+// counterpart post-CL-8174; that gap is tracked separately, not covered
+// by this harness.
 function stubThreadedFetch({
   sentMessages = [],
-  forkCalls = [],
 }: {
   sentMessages?: unknown[];
-  forkCalls?: string[];
 } = {}) {
   globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
-  let forked = false;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = typeof input === "string" ? input : String(input);
     const json = (body: unknown) =>
@@ -462,64 +435,15 @@ function stubThreadedFetch({
     }
     if (/\/chat\/workbenches\?kind=chat$/.test(path))
       return json({ items: [] });
-    if (/\/chat\/workbenches\/[^/]+\/threads\/fork$/.test(path)) {
-      forkCalls.push(path);
-      forked = true;
-      const body = JSON.parse(String(init?.body)) as {
-        parentMessageId: string;
-      };
-      return json({ ...DEPTH2_THREAD, parentMessageId: body.parentMessageId });
-    }
     if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
-      const items = (
-        forked
-          ? [ROOT_THREAD, DEPTH1_THREAD, DEPTH2_THREAD]
-          : [ROOT_THREAD, DEPTH1_THREAD]
-      ).map((thread) => ({
-        ...thread,
-        replyCount: THREADED_MESSAGES.filter((m) => m.threadId === thread.id)
-          .length,
-        lastActivityAt:
-          THREADED_MESSAGES.filter((m) => m.threadId === thread.id).at(-1)
-            ?.createdAt ?? null,
-      }));
-      return json({ rootThreadId: ROOT_THREAD.id, items });
-    }
-    if (/\/threads\/thr_root\/messages$/.test(path)) {
-      return json({
-        thread: ROOT_THREAD,
-        items: [
-          {
-            id: "msg_1",
-            createdAt: "2026-01-01T00:00:30.000Z",
-            parts: [{ kind: "text", text: "root note" }],
-            sender: { name: null, address: "prn_alice@acme.example" },
-          },
-        ],
-      });
-    }
-    if (/\/threads\/thr_1\/messages$/.test(path)) {
-      return json({
-        thread: DEPTH1_THREAD,
-        items: [
-          {
-            id: "msg_2",
-            createdAt: "2026-01-01T00:01:30.000Z",
-            parts: [{ kind: "text", text: "inside the thread" }],
-            sender: { name: null, address: "prn_alice@acme.example" },
-          },
-        ],
-      });
-    }
-    if (/\/threads\/thr_2\/messages$/.test(path)) {
-      return json({ thread: DEPTH2_THREAD, items: [] });
+      return json({ rootThreadId: "", items: [] });
     }
     if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
       if (init?.method === "POST") {
         sentMessages.push(JSON.parse(String(init.body)));
         return json({ id: "msg_new", createdAt: "2026-01-01T00:00:00.000Z" });
       }
-      return json({ items: THREADED_MESSAGES });
+      return json({ items: [] });
     }
     if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
     if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
@@ -534,6 +458,50 @@ function stubThreadedFetch({
     }
     if (/\/chat\/bench\/settings$/.test(path)) {
       return json({ settings: {}, contextWindow: 20 });
+    }
+    if (/\/mailbox\/me\/threads\/msg_1/.test(path)) {
+      return json({
+        messages: [
+          {
+            id: "msg_1",
+            messageId: "msg_1",
+            references: [],
+            fromAddress: "prn_alice@acme.example",
+            createdAt: "2026-01-01T00:00:30.000Z",
+            read: true,
+            archived: false,
+            parentId: null,
+            body: "root note",
+          },
+          {
+            id: "msg_2",
+            messageId: "msg_2",
+            inReplyTo: "msg_1",
+            references: ["msg_1"],
+            fromAddress: "prn_alice@acme.example",
+            createdAt: "2026-01-01T00:01:30.000Z",
+            read: true,
+            archived: false,
+            parentId: "msg_1",
+            body: "inside the thread",
+          },
+        ],
+      });
+    }
+    if (/\/mailbox\/me\/threads/.test(path)) {
+      return json({
+        threads: [
+          {
+            rootId: "msg_1",
+            rootMessageId: "msg_1",
+            messageCount: 2,
+            unreadCount: 0,
+            lastMessageId: "msg_2",
+            lastFromAddress: "prn_alice@acme.example",
+            lastCreatedAt: "2026-01-01T00:01:30.000Z",
+          },
+        ],
+      });
     }
     throw new Error(`unstubbed fetch: ${path}`);
   }) as typeof fetch;
@@ -596,8 +564,7 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
 
   test("editing an own prompt in an open reply thread resends into that thread without replacing history", async () => {
     const sentMessages: unknown[] = [];
-    const forkCalls: string[] = [];
-    stubThreadedFetch({ sentMessages, forkCalls });
+    stubThreadedFetch({ sentMessages });
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "ch_1",
@@ -636,93 +603,24 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
 
     expect(sentMessages).toHaveLength(1);
     expect(sentMessages[0]).toMatchObject({
-      threadId: DEPTH1_THREAD.id,
+      threadId: "msg_1",
       parts: [{ kind: "text", text: editedPrompt }],
     });
-    expect(forkCalls).toEqual([]);
     expect(
       harness.container.querySelector("#chat-message-msg_2")?.textContent,
     ).toContain("inside the thread");
     harness.unmount();
   });
 
-  test("forking a message inside a thread opens a sub-thread with a three-segment breadcrumb and an origin banner", async () => {
-    stubThreadedFetch();
-    const harness = await mount({
-      tenant: { kind: "ready", tenantId: "tnt_1" },
-      workbenchId: "ch_1",
-    });
-    await harness.settle();
-
-    // Open the depth-1 thread first.
-    const openButton = harness.container.querySelector(
-      ".chat-thread-open",
-    ) as HTMLButtonElement;
-    await act(async () => {
-      openButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await sleep(30);
-    });
-
-    // Inside the thread, every message's hover-toolbar reply action forks
-    // instead of replying — the persistent "Reply in thread" row only
-    // renders once a thread already has replies (see `MessageHoverToolbar`
-    // and `ThreadAffordance` in `timeline.tsx`), so a fresh message's fork
-    // affordance lives in the hover cluster, not a `.chat-thread-open` row.
-    // Scope to the reply message's own toolbar — the thread view now
-    // renders the parent message (msg_1) above it, which has its own
-    // hover cluster.
-    const forkButton = harness.container.querySelector(
-      '#chat-message-msg_2 .chat-hover-toolbar[data-thread-affordance-mode="fork"] .chat-hover-reply',
-    ) as HTMLButtonElement;
-    expect(forkButton).not.toBeNull();
-    await act(async () => {
-      forkButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await sleep(30);
-    });
-
-    const breadcrumb = harness.container.querySelector(
-      ".chat-thread-breadcrumb",
-    );
-    expect(
-      breadcrumb?.querySelectorAll(".chat-thread-breadcrumb-link"),
-    ).toHaveLength(2);
-
-    expect(
-      harness.container.querySelector(".chat-thread-origin-banner"),
-    ).not.toBeNull();
-    harness.unmount();
-  });
-
-  test("the threads menu indents sub-threads under their depth-1 parent", async () => {
-    stubThreadedFetch();
-    const harness = await mount({
-      tenant: { kind: "ready", tenantId: "tnt_1" },
-      workbenchId: "ch_1",
-    });
-    await harness.settle();
-
-    const openButton = harness.container.querySelector(
-      ".chat-thread-open",
-    ) as HTMLButtonElement;
-    await act(async () => {
-      openButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await sleep(30);
-    });
-    const forkButton = harness.container.querySelector(
-      '#chat-message-msg_2 .chat-hover-toolbar[data-thread-affordance-mode="fork"] .chat-hover-reply',
-    ) as HTMLButtonElement;
-    await act(async () => {
-      forkButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await sleep(30);
-    });
-
-    const group = harness.container.querySelector(".chat-threads-menu-group");
-    expect(group).not.toBeNull();
-    expect(
-      group?.querySelector(".chat-threads-menu-item-nested"),
-    ).not.toBeNull();
-    harness.unmount();
-  });
+  // A fork still posts to `@corbits/chat`'s own thread store
+  // (`use-thread-navigation.ts`'s `forkThread`), which has no mailbox
+  // counterpart post-CL-8174 — the depth-2 sub-thread it creates can
+  // never appear in a `threads` list built from mail thread summaries.
+  // Retiring the fork UI (or giving it a mailbox-native landing) is
+  // separate follow-up work; the two tests that drove it
+  // ("forking a message inside a thread opens a sub-thread…" and
+  // "the threads menu indents sub-threads…") encoded the old chat
+  // thread-store's behavior and are deleted rather than adapted.
 });
 
 describe("hover Edit copies an own prompt into the composer", () => {
@@ -760,25 +658,7 @@ describe("hover Edit copies an own prompt into the composer", () => {
           sentMessages.push(JSON.parse(String(init.body)));
           return json({ id: "msg_new", createdAt: "2026-01-01T00:00:00.000Z" });
         }
-        return json({
-          items: [
-            {
-              id: "msg_own",
-              createdAt: "2026-01-01T00:00:00.000Z",
-              parts: [{ kind: "text", text: OWN_PROMPT }],
-              sender: { name: null, address: "prn_alice@acme.example" },
-            },
-            {
-              id: "msg_agent",
-              createdAt: "2026-01-01T00:00:01.000Z",
-              parts: [{ kind: "text", text: "agent reply" }],
-              sender: {
-                name: "Researcher",
-                address: "researcher@agents.example",
-              },
-            },
-          ],
-        });
+        return json({ items: [] });
       }
       if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
       if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
@@ -796,6 +676,66 @@ describe("hover Edit copies an own prompt into the composer", () => {
       }
       if (/\/chat\/bench\/settings$/.test(path)) {
         return json({ settings: {}, contextWindow: 20 });
+      }
+      // Two separate root conversations — one message each, so neither
+      // shows a reply-thread affordance.
+      if (/\/mailbox\/me\/threads\/msg_own/.test(path)) {
+        return json({
+          messages: [
+            {
+              id: "msg_own",
+              messageId: "msg_own",
+              references: [],
+              fromAddress: "prn_alice@acme.example",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              read: true,
+              archived: false,
+              parentId: null,
+              body: OWN_PROMPT,
+            },
+          ],
+        });
+      }
+      if (/\/mailbox\/me\/threads\/msg_agent/.test(path)) {
+        return json({
+          messages: [
+            {
+              id: "msg_agent",
+              messageId: "msg_agent",
+              references: [],
+              fromAddress: "researcher@agents.example",
+              createdAt: "2026-01-01T00:00:01.000Z",
+              read: true,
+              archived: false,
+              parentId: null,
+              body: "agent reply",
+            },
+          ],
+        });
+      }
+      if (/\/mailbox\/me\/threads/.test(path)) {
+        return json({
+          threads: [
+            {
+              rootId: "msg_own",
+              rootMessageId: "msg_own",
+              messageCount: 1,
+              unreadCount: 0,
+              lastMessageId: "msg_own",
+              lastFromAddress: "prn_alice@acme.example",
+              lastCreatedAt: "2026-01-01T00:00:00.000Z",
+            },
+            {
+              rootId: "msg_agent",
+              rootMessageId: "msg_agent",
+              messageCount: 1,
+              unreadCount: 0,
+              lastMessageId: "msg_agent",
+              lastFromAddress: "researcher@agents.example",
+              lastCreatedAt: "2026-01-01T00:00:01.000Z",
+            },
+          ],
+        });
       }
       throw new Error(`unstubbed fetch: ${path}`);
     }) as typeof fetch;
@@ -1205,86 +1145,6 @@ describe("composer slash commands — each wired command's real action", () => {
   });
 });
 
-describe("a stale thread reference self-heals instead of dead-ending", () => {
-  // CL-6069: a workbench's remembered root-thread id can outlive the
-  // server-side run it named (e.g. across a hub restart), so
-  // `GET .../threads/:id/messages` 404s. The client must fall back to
-  // the workbench's live feed rather than rendering a dead-end
-  // "Couldn't load messages" / "Try again" that keeps re-requesting
-  // the same gone thread.
-  function stubFetchWithStaleThread(recoveredText: string) {
-    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const path = typeof input === "string" ? input : String(input);
-      const json = (body: unknown) =>
-        new Response(JSON.stringify(body), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
-        return json({ items: [WORKBENCH_WIRE] });
-      }
-      if (/\/chat\/workbenches\?kind=chat$/.test(path))
-        return json({ items: [] });
-      if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
-        return json({ rootThreadId: "thr_stale", items: [] });
-      }
-      if (
-        /\/chat\/workbenches\/[^/]+\/threads\/thr_stale\/messages$/.test(path)
-      ) {
-        return new Response(JSON.stringify({ error: "not found" }), {
-          status: 404,
-          headers: { "content-type": "application/json" },
-        });
-      }
-      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
-        return json({
-          items: [
-            {
-              id: "msg_recovered",
-              createdAt: "2026-01-01T00:00:00.000Z",
-              sender: { name: null, address: "user@x.localhost" },
-              parts: [{ kind: "text", text: recoveredText }],
-            },
-          ],
-        });
-      }
-      if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
-      if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
-        return json({ items: [] });
-      }
-      if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
-        return json({
-          ...WORKBENCH_WIRE,
-          settings: {},
-          contextWindow: { value: 20, source: "inherit" },
-        });
-      }
-      if (/\/chat\/bench\/settings$/.test(path)) {
-        return json({ settings: {}, contextWindow: 20 });
-      }
-      throw new Error(`unstubbed fetch: ${path}`);
-    }) as typeof fetch;
-  }
-
-  test("a 404 on the workbench's remembered root thread falls back to the workbench's live feed", async () => {
-    stubFetchWithStaleThread("recovered after a stale thread 404");
-    const harness = await mount({
-      tenant: { kind: "ready", tenantId: "tnt_1" },
-      workbenchId: "ch_1",
-    });
-    await harness.settle();
-    await harness.settle();
-
-    expect(harness.container.textContent).not.toContain("Couldn't load");
-    expect(harness.container.textContent).not.toContain("Try again");
-    expect(harness.container.textContent).toContain(
-      "recovered after a stale thread 404",
-    );
-    harness.unmount();
-  });
-});
-
 describe("a workbench-level 404 offers a way out instead of retrying forever", () => {
   // CL-6077: the routed workbench itself is gone (deleted, or a stale id from
   // a Recents entry that outlived it), not a transient load failure — a
@@ -1313,10 +1173,7 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
         return json({ rootThreadId: "", items: [] });
       }
       if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
-        return new Response(JSON.stringify({ error: "not found" }), {
-          status: 404,
-          headers: { "content-type": "application/json" },
-        });
+        return json({ items: [] });
       }
       if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
       if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
@@ -1333,6 +1190,14 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
       }
       if (/\/chat\/bench\/settings$/.test(path)) {
         return json({ settings: {}, contextWindow: 20 });
+      }
+      // The feed reads via the mailbox now (CL-8174 slice 2b) — a 404 here
+      // is what the workbench-not-found recovery actually reacts to.
+      if (/\/mailbox\/me\/threads/.test(path)) {
+        return new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
       }
       throw new Error(`unstubbed fetch: ${path}`);
     }) as typeof fetch;
@@ -1464,7 +1329,7 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
         return json({ rootThreadId: "", items: [] });
       }
       if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
-        return messagesGate;
+        return json({ items: [] });
       }
       if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
       if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
@@ -1485,6 +1350,12 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
       }
       if (/\/chat\/bench\/settings$/.test(path)) {
         return json({ settings: {}, contextWindow: 20 });
+      }
+      // The feed reads via the mailbox now (CL-8174 slice 2b) — gate its
+      // list read so the assertions below can observe the still-loading
+      // state before it resolves.
+      if (/\/mailbox\/me\/threads/.test(path)) {
+        return messagesGate;
       }
       throw new Error(`unstubbed fetch: ${path}`);
     }) as typeof fetch;
@@ -1509,7 +1380,7 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
 
     await act(async () => {
       resolveMessages?.(
-        new Response(JSON.stringify({ items: [] }), {
+        new Response(JSON.stringify({ threads: [] }), {
           status: 200,
           headers: { "content-type": "application/json" },
         }),
@@ -1545,10 +1416,7 @@ describe("a 401 on the messages load offers Sign in instead of a dead-end retry"
         return json({ rootThreadId: "", items: [] });
       }
       if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
-        return new Response(JSON.stringify({ error: "unauthorized" }), {
-          status: 401,
-          headers: { "content-type": "application/json" },
-        });
+        return json({ items: [] });
       }
       if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
       if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
@@ -1565,6 +1433,14 @@ describe("a 401 on the messages load offers Sign in instead of a dead-end retry"
       }
       if (/\/chat\/bench\/settings$/.test(path)) {
         return json({ settings: {}, contextWindow: 20 });
+      }
+      // The feed reads via the mailbox now (CL-8174 slice 2b) — a 401 here
+      // is what the sign-in recovery actually reacts to.
+      if (/\/mailbox\/me\/threads/.test(path)) {
+        return new Response(JSON.stringify({ error: "unauthorized" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        });
       }
       throw new Error(`unstubbed fetch: ${path}`);
     }) as typeof fetch;
@@ -1617,10 +1493,7 @@ describe("chat error copy never leaks a raw API path", () => {
         return json({ rootThreadId: "", items: [] });
       }
       if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
-        return new Response(JSON.stringify({ error: "boom" }), {
-          status: 500,
-          headers: { "content-type": "application/json" },
-        });
+        return json({ items: [] });
       }
       if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
       if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
@@ -1635,6 +1508,15 @@ describe("chat error copy never leaks a raw API path", () => {
       }
       if (/\/chat\/bench\/settings$/.test(path)) {
         return json({ settings: {}, contextWindow: 20 });
+      }
+      // The feed reads via the mailbox now (CL-8174 slice 2b) — a 500
+      // here is what this test's "no raw path/status leaks" copy check
+      // actually exercises.
+      if (/\/mailbox\/me\/threads/.test(path)) {
+        return new Response(JSON.stringify({ error: "boom" }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        });
       }
       throw new Error(`unstubbed fetch: ${path}`);
     }) as typeof fetch;
@@ -1702,6 +1584,9 @@ describe("optimistic send (CL-6103)", () => {
       }
       if (/\/chat\/bench\/settings$/.test(path)) {
         return json({ settings: {}, contextWindow: 20 });
+      }
+      if (/\/mailbox\/me\/threads/.test(path)) {
+        return json({ threads: [] });
       }
       throw new Error(`unstubbed fetch: ${path}`);
     }) as typeof fetch;
@@ -1937,6 +1822,9 @@ describe("refresh ordering around a send (CL-6251, CL-6313)", () => {
       if (/\/chat\/bench\/settings$/.test(path)) {
         return json({ settings: {}, contextWindow: 20 });
       }
+      if (/\/mailbox\/me\/threads/.test(path)) {
+        return json({ threads: [] });
+      }
       throw new Error(`unstubbed fetch: ${path}`);
     }) as typeof fetch;
 
@@ -1997,6 +1885,11 @@ describe("Workbench header polish (CL-6106)", () => {
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "ch_1",
     });
+    await harness.settle();
+    // The mailbox feed is two round trips — the thread list, then each
+    // visible thread's own read (see `mailbox-timeline.ts`'s
+    // `loadRoomThreadRows`/`loadRoomMailboxMessages`) — so this needs a
+    // second settle beyond mount's own.
     await harness.settle();
 
     const trigger = harness.container.querySelector(
@@ -2298,6 +2191,9 @@ describe("Invite control visibility (CL-6781)", () => {
       if (/\/chat\/bench\/settings$/.test(path)) {
         return json({ settings: {}, contextWindow: 20 });
       }
+      if (/\/mailbox\/me\/threads/.test(path)) {
+        return json({ threads: [] });
+      }
       throw new Error(`unstubbed fetch: ${path}`);
     }) as typeof fetch;
 
@@ -2342,43 +2238,11 @@ describe("switching workbenches never carries a stale root-thread id across", ()
       }
       if (/\/chat\/workbenches\?kind=chat$/.test(path))
         return json({ items: [] });
-      if (/\/chat\/workbenches\/ch_a\/threads$/.test(path)) {
-        return json({ rootThreadId: "thr_a", items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
+        return json({ rootThreadId: "", items: [] });
       }
-      if (/\/chat\/workbenches\/ch_b\/threads$/.test(path)) {
-        return json({ rootThreadId: "thr_b", items: [] });
-      }
-      if (/\/chat\/workbenches\/ch_a\/messages/.test(path)) {
-        return json({
-          items: [
-            {
-              id: "msg_a",
-              createdAt: "2026-01-01T00:00:00.000Z",
-              sender: { name: null, address: "user@x.localhost" },
-              parts: [{ kind: "text", text: "A message" }],
-              threadId: "thr_a",
-            },
-          ],
-        });
-      }
-      if (/\/chat\/workbenches\/ch_b\/messages/.test(path)) {
-        return json({
-          items: [
-            {
-              id: "msg_b",
-              createdAt: "2026-01-01T00:00:00.000Z",
-              sender: { name: null, address: "user@x.localhost" },
-              parts: [{ kind: "text", text: "B message" }],
-              threadId: "thr_b",
-            },
-          ],
-        });
-      }
-      // A read for any other workbench is the bug this test guards
-      // against — record it and 404, exactly like the real hub would.
-      if (/\/chat\/workbenches\/[^/]+\/(messages|threads)/.test(path)) {
-        wrongRequests.push(path);
-        return notFound();
+      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
+        return json({ items: [] });
       }
       if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
       if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
@@ -2395,6 +2259,78 @@ describe("switching workbenches never carries a stale root-thread id across", ()
       }
       if (/\/chat\/bench\/settings$/.test(path)) {
         return json({ settings: {}, contextWindow: 20 });
+      }
+      if (/\/mailbox\/me\/threads\/msg_a/.test(path)) {
+        return json({
+          messages: [
+            {
+              id: "msg_a",
+              messageId: "msg_a",
+              references: [],
+              fromAddress: "user@x.localhost",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              read: true,
+              archived: false,
+              parentId: null,
+              body: "A message",
+            },
+          ],
+        });
+      }
+      if (/\/mailbox\/me\/threads\/msg_b/.test(path)) {
+        return json({
+          messages: [
+            {
+              id: "msg_b",
+              messageId: "msg_b",
+              references: [],
+              fromAddress: "user@x.localhost",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              read: true,
+              archived: false,
+              parentId: null,
+              body: "B message",
+            },
+          ],
+        });
+      }
+      // `refs` scopes the mailbox list to one room — a list call for a
+      // ref naming the other workbench is the bug this test guards
+      // against — record it and 404, exactly like the real hub would
+      // for a ref that resolves to nothing this caller can see.
+      if (/\/mailbox\/me\/threads\?/.test(path)) {
+        if (path.includes("ch_a")) {
+          return json({
+            threads: [
+              {
+                rootId: "msg_a",
+                rootMessageId: "msg_a",
+                messageCount: 1,
+                unreadCount: 0,
+                lastMessageId: "msg_a",
+                lastFromAddress: "user@x.localhost",
+                lastCreatedAt: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+          });
+        }
+        if (path.includes("ch_b")) {
+          return json({
+            threads: [
+              {
+                rootId: "msg_b",
+                rootMessageId: "msg_b",
+                messageCount: 1,
+                unreadCount: 0,
+                lastMessageId: "msg_b",
+                lastFromAddress: "user@x.localhost",
+                lastCreatedAt: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+          });
+        }
+        wrongRequests.push(path);
+        return notFound();
       }
       throw new Error(`unstubbed fetch: ${path}`);
     }) as typeof fetch;

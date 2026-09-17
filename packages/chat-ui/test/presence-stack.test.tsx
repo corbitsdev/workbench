@@ -78,6 +78,9 @@ function stubFetch() {
     if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
     if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path))
       return json({ items: [] });
+    if (/\/mailbox\/me\/threads/.test(path)) {
+      return json({ threads: [] });
+    }
     throw new Error(`unstubbed fetch: ${path}`);
   }) as typeof fetch;
 }
@@ -110,8 +113,12 @@ function mount(props: Parameters<typeof ChatWorkspace>[0]) {
   };
 }
 
+// The workbench's own chat stream, not the mailbox live-update
+// subscription `useWorkbenchFeed` also opens (CL-8174 slice 2b).
 function firstStream(): StubEventSource {
-  const instance = StubEventSource.instances[0];
+  const instance = StubEventSource.instances.find((source) =>
+    /\/chat\/workbenches\/[^/]+\/stream/.test(source.url),
+  );
   if (instance === undefined) throw new Error("no stream connected");
   return instance;
 }
