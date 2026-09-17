@@ -31,7 +31,9 @@ describe("createScoutArtifact", () => {
     );
 
     expect(result).toEqual({ id: "art_1", version: 1 });
-    expect(capturedUrl).toBe("https://hub.example/api/workflow-artifacts/");
+    expect(capturedUrl).toBe(
+      "https://hub.example/api/workflow-artifacts/artifacts",
+    );
     expect(capturedInit?.method).toBe("POST");
     expect(JSON.parse(String(capturedInit?.body))).toEqual({
       title: "Diligence note",

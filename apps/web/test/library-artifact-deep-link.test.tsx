@@ -54,12 +54,14 @@ function routeFetch(input: RequestInfo | URL): Promise<Response> {
   }
   if (url.includes("/artifacts/art_1")) {
     return Promise.resolve(
-      jsonResponse({ ...listedArtifact, content: "# Q3\nGrowth is up." }),
+      jsonResponse({
+        artifact: { ...listedArtifact, content: "# Q3\nGrowth is up." },
+      }),
     );
   }
   if (url.includes("/artifacts")) {
     return Promise.resolve(
-      jsonResponse({ data: [listedArtifact], nextCursor: null }),
+      jsonResponse({ artifacts: [listedArtifact], nextCursor: null }),
     );
   }
   return Promise.reject(new Error(`unrouted fetch in library test: ${url}`));
