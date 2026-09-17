@@ -46,7 +46,7 @@ grants); the hub never seeds data on a client's behalf.
   before every commit. `check:structural` (`scripts/checks/run.ts`)
   discovers and runs every `scripts/checks/*.ts` file with an
   `import.meta.main` entry point — run one on its own with `bun run
-  check:structural <name>` (e.g. `bun run check:structural report-error`),
+check:structural <name>` (e.g. `bun run check:structural report-error`),
   forwarding flags after it.
 - Worktrees live in `.worktrees/<branch>`; branch = `cl-<issue#>-<slug>`.
 - Commit sequence per change: tests first ("Add tests for X"), then
@@ -64,14 +64,14 @@ grants); the hub never seeds data on a client's behalf.
 
 Env flags (unset behavior):
 
-| Flag | If unset |
-| --- | --- |
-| `DATABASE_URL` | DB-gated suites skip locally; `CI=true` makes it a hard failure on jobs that provision Postgres |
-| `HUB_DATA_DIR` | hub boot fails — required runtime config |
-| `CI` | set by GitHub Actions; not a caller flag |
-| `E2E_PROVIDER` / `E2E_PROVIDER_API_KEY` / `OLLAMA_BASE_URL` | live-inference e2e stays on the noop/stub path |
-| `EVAL_PROVIDER` / `EVAL_PROVIDER_API_KEY` | `bun run eval` runs against the stub |
-| `CHROME_PATH` | browser walkthrough falls back to platform defaults, fails if none exist |
+| Flag                                                        | If unset                                                                                        |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                              | DB-gated suites skip locally; `CI=true` makes it a hard failure on jobs that provision Postgres |
+| `HUB_DATA_DIR`                                              | hub boot fails — required runtime config                                                        |
+| `CI`                                                        | set by GitHub Actions; not a caller flag                                                        |
+| `E2E_PROVIDER` / `E2E_PROVIDER_API_KEY` / `OLLAMA_BASE_URL` | live-inference e2e stays on the noop/stub path                                                  |
+| `EVAL_PROVIDER` / `EVAL_PROVIDER_API_KEY`                   | `bun run eval` runs against the stub                                                            |
+| `CHROME_PATH`                                               | browser walkthrough falls back to platform defaults, fails if none exist                        |
 
 ## Tests
 

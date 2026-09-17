@@ -203,11 +203,6 @@ import {
   createDrizzleServingRefreshStore,
   createTenantServingRefresh,
 } from "./credential-material-refresh";
-import {
-  createDrizzleInboxUnsnoozeSweepStore,
-  createInboxUnsnoozeSweep,
-} from "./inbox-unsnooze-sweep";
-
 import { type } from "arktype";
 import { betterAuth } from "better-auth";
 import { createSignInAttemptLimiter } from "./sign-in-rate-limit";
@@ -1869,13 +1864,8 @@ export async function createHub(config: HubConfig) {
   // workflow deployed like any other Routine rather than a hub-owned
   // periodic loop.
 
-  // Reopen a snoozed inbox item once its `until` has passed (CL-7208) — a
-  // light periodic sweep over `@corbits/inbox`'s own snooze table, on the
-  // same mailboxDb/mailboxBus every other mailbox consumer here shares.
-  const inboxUnsnoozeSweep = createInboxUnsnoozeSweep({
-    store: createDrizzleInboxUnsnoozeSweepStore(mailboxDb),
-    bus: mailboxBus,
-  });
+  // Snooze is dropped (CL-8185): the unsnooze sweep and its `inbox.snooze`
+  // table are gone — see `packages/inbox/src/migrations.ts`'s forward-drop.
 
   // Recurring auto-fire for schedule-triggered deployments. The cron and
   // the tick arithmetic belong to `@corbits/workflow-schedule`; this root
@@ -1951,7 +1941,6 @@ export async function createHub(config: HubConfig) {
       relaunchSweepSeries += 1;
       clearTimeout(relaunchSweepTimer);
       chatOrchestrator.dispose();
-      inboxUnsnoozeSweep.stop();
       cronEmitter.stop();
       await closeMailbox();
       // The pool end waits on in-flight queries; a query whose socket

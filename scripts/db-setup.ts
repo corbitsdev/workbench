@@ -58,7 +58,7 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/webhook-triggers", apply: applyWebhookTriggersMigrations },
   { name: "@corbits/notify", apply: applyNotifyMigrations },
   { name: "@corbits/mailbox", apply: applyMailboxMigrations },
-  // CL-7208's snooze-until table, own schema — see packages/inbox/src/schema.ts.
+  // Own `inbox` schema; CL-8185 forward-drops the CL-7208 snooze table.
   { name: "@corbits/inbox", apply: applyInboxMigrations },
   { name: "@corbits/agent-directory", apply: applyAgentDirectoryMigrations },
   { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
