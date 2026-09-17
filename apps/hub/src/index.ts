@@ -33,12 +33,15 @@ import {
 import { reportError } from "@corbits/error-sink";
 import { decodedOrNull } from "@corbits/url-path";
 import {
+  buildMailFrame,
   createInMemoryMailboxEventBus,
   createMailboxDb,
   createMailboxPersist,
+  generateMailboxMessageId,
   mountMailbox,
 } from "@corbits/mailbox";
 import { createMemory, loadMemoryConfig } from "@corbits/memory";
+import { applyCronMigrations, createCronTicker, mountCron } from "@corbits/cron";
 import {
   createHubMailboxAuthorizeSender,
   createHubPersistMailWithSessionEnsure,
@@ -546,6 +549,9 @@ export async function createHub(config: HubConfig) {
   // Package-owned artifacts tables (CL-8188): idempotent, advisory-locked,
   // safe on every boot of every replica — see @corbits/artifacts' README.
   await runArtifactMigrations(db);
+  // `@corbits/cron`'s own schema (CL-8183): idempotent, its own migration
+  // ledger — see the package's README.
+  await applyCronMigrations(config.databaseUrl);
   const artifactContentStore = InlineContentStore;
   const baseEventCollectors = createEventCollectorRegistry({
     db,
@@ -881,6 +887,68 @@ export async function createHub(config: HubConfig) {
     app.route(`${TENANT_PREFIX}/mailbox`, mailboxApp);
   }
 
+  let cronTicker: { start(): void; stop(): void } | undefined;
+  {
+    // Cron-to-mail bridge (CL-8183): `@corbits/cron` registers its own
+    // absolute `/api/tenants/:tenantId/cron` routes, so it gets its own
+    // `Hono<TenantEnv>` routed at "/" — matching `mailboxApp` above —
+    // rather than `TENANT_PREFIX`, which would double the tenant-route
+    // prefix. `requireTenantMember` reads the tenant middleware's context
+    // exactly like the mailbox mount's `resolvePrincipal` above.
+    const cronApp = new Hono<TenantEnv>();
+    mountCron(cronApp, {
+      db,
+      requireTenantMember: (ctx, tenantId) => {
+        const c = ctx as { get(key: "tenant"): { id: string } };
+        return c.get("tenant").id === tenantId;
+      },
+    });
+    app.route("/", cronApp);
+
+    // The ticker delivers each due schedule as mail through the same
+    // `lookups.persistMail` every other outbound frame in this hub already
+    // dispatches through (see the mailbox mount's own `deliver` above).
+    // `@corbits/cron` hands back only `{to, subject, body, from}`, not a
+    // raw frame, so this hub builds the RFC 5322 message itself with
+    // `@corbits/mailbox`'s own `buildMailFrame` — the same builder that
+    // package uses for every frame it authors. `senderAddressFor` addresses
+    // the sender as `cron@<tenant domain>`, the same domain-scoped shape
+    // every other mailbox writer in this file uses (see the mailbox
+    // mount's `senderAddressFor` above), by looking the domain up per
+    // tenant the way that one does.
+    cronTicker = createCronTicker({
+      db,
+      intervalMs: 60_000,
+      senderAddressFor: (tenantId) => `cron@${tenantId}`,
+      deliver: async (message) => {
+        // `message.from` is `cron@<tenantId>` from `senderAddressFor`
+        // above; resolve the real tenant domain to address it from.
+        const tenantId = message.from.slice("cron@".length);
+        const [tenantRow] = await db
+          .select({ domain: tenantTable.domain })
+          .from(tenantTable)
+          .where(eq(tenantTable.id, tenantId))
+          .limit(1);
+        if (tenantRow === undefined) {
+          throw new Error(`no tenant "${tenantId}" to address cron mail from`);
+        }
+        const from = `cron@${tenantRow.domain}`;
+        await lookups.persistMail({
+          senderAddress: from,
+          recipients: message.to,
+          raw: buildMailFrame({
+            from,
+            to: message.to.join(", "),
+            subject: message.subject,
+            body: message.body,
+            messageId: generateMailboxMessageId(from),
+          }),
+        });
+      },
+    });
+    cronTicker.start();
+  }
+
   {
     // Firm memory (CL-8186): `@corbits/memory` registers its own
     // absolute `/api/tenants/:tenantId/memory/*` routes on whatever
@@ -1149,6 +1217,7 @@ export async function createHub(config: HubConfig) {
         clearTimeout(sidecarAllocationReconciliationTimer);
       }
       await closeMailbox();
+      cronTicker?.stop();
       // The pool end waits on in-flight queries; a query whose socket
       // died with the process must never stall shutdown, so bound it.
       // (CL-7584: a fire-and-forget reconcile's request can be cut

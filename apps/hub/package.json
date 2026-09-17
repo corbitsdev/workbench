@@ -37,7 +37,7 @@
     "@corbits/last-30-days-research-workflow": "workspace:*",
     "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#e85b81e4a2e0cc318dd33a4f0f92337b6fac7f38",
     "@corbits/mcp-tools": "workspace:*",
-    "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
+    "@corbits/memory": "github:corbitsdev/corbits-memory#e74da20f148a302dff5400915fe504ee2395e913",
     "@corbits/morning-brief-workflow": "workspace:*",
     "@corbits/notify": "workspace:*",
     "@corbits/pain-point-collateral-workflow": "workspace:*",
