@@ -1,4 +1,4 @@
-// The shell's provider-health state (CL-6092): polls
+// The shell's provider-health state: polls
 // `GET .../connections/provider-health` for the selected bench and turns
 // it into the one banner-worthy provider (if any), plus the Plugins deep
 // link intent that hands a provider id from the banner's "Fix it" click
@@ -12,9 +12,9 @@
 // Dismissal is per-incident, not per-provider: dismissing an unhealthy
 // provider's banner remembers the record's own `at` timestamp, so a
 // *new* failure for the same provider (a later `at`) shows the banner
-// again — matching CL-6092's "reappears on a new failure" rule.
+// again — matching its "reappears on a new failure" rule.
 //
-// Poll status (CL-6834): empty `providers` alone is not "all healthy".
+// Poll status: empty `providers` alone is not "all healthy".
 // The chrome distinguishes `unknown` (no successful poll yet), `error`
 // (first-load / never-ready poll failure), and `ready` (a snapshot has
 // landed). A failed poll after `ready` keeps last-known providers on
@@ -50,7 +50,7 @@ export type ProviderHealthBannerState = {
   readonly zeroWorkingProviders: boolean;
 };
 
-/** Whether the shell has a usable health snapshot yet (CL-6834). */
+/** Whether the shell has a usable health snapshot yet. */
 export type ProviderHealthPollStatus = "unknown" | "ready" | "error";
 
 /**
@@ -89,7 +89,7 @@ function firstUnhealthyProvider(
 }
 
 /**
- * Pure banner-selection logic (CL-6092), split out from
+ * Pure banner-selection logic, split out from
  * `ProviderHealthProvider`'s state wiring so it is unit-testable without
  * mounting React: picks the most recently reported unhealthy provider,
  * skips it if the person already dismissed *this exact incident*
@@ -116,7 +116,7 @@ export function deriveProviderHealthBanner(
 }
 
 /**
- * Next poll-status after one fetch outcome (CL-6834). Success always
+ * Next poll-status after one fetch outcome. Success always
  * becomes `ready`. Failure before any success becomes `error` (so empty
  * providers are not read as healthy). Failure after `ready` stays
  * `ready` so last-known state remains on screen for the next retry.
@@ -133,7 +133,7 @@ export function nextProviderHealthPollStatus(
 /**
  * Maps poll status + the (possibly null) unhealthy banner into chrome
  * the shell can render. Empty providers under `unknown`/`error` are
- * never `healthy` (CL-6834).
+ * never `healthy`.
  */
 export function deriveProviderHealthChrome(
   status: ProviderHealthPollStatus,
@@ -254,13 +254,13 @@ export function useProviderHealthBanner(): ProviderHealthBannerState | null {
   return useProviderHealthContext().banner;
 }
 
-/** Poll readiness (CL-6834) — consumers that used to treat a null banner
+/** Poll readiness — consumers that used to treat a null banner
  * as "all healthy" must check this: `unknown`/`error` are not healthy. */
 export function useProviderHealthStatus(): ProviderHealthPollStatus {
   return useProviderHealthContext().status;
 }
 
-/** Chrome discriminant (CL-6834) — unknown / error / healthy / unhealthy. */
+/** Chrome discriminant — unknown / error / healthy / unhealthy. */
 export function useProviderHealthChrome(): ProviderHealthChrome {
   const { status, banner } = useProviderHealthContext();
   return deriveProviderHealthChrome(status, banner);

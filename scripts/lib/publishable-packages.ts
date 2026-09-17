@@ -1,4 +1,4 @@
-// Shared plumbing for deploy-compatibility auditing (CL-8167): finds every
+// Shared plumbing for deploy-compatibility auditing: finds every
 // workspace package and splits it into publishable (not `private`) vs.
 // still-private, the same way scripts/checks/publishable-workflows.ts
 // scopes its audit. Computed from package.json files on disk — never

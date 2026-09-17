@@ -1,4 +1,4 @@
-// Guards against the exact bug this file was added for (CL-6499 design
+// Guards against the exact bug this file was added for (design
 // review): a page grows its own run-status → tone map/function instead of
 // reading react-ui's `RUN_STATUS_TONE` (`workflow-run.ts`), and it quietly
 // disagrees — a cancelled run reading neutral grey on Routines and amber

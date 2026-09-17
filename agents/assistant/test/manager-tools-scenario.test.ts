@@ -1,5 +1,4 @@
-// A scripted playback of the owner's canonical GTM scenario (CL-5879
-// manager-tools follow-up), exercised directly against the manager-tools
+// A scripted playback of the owner's canonical GTM scenario, exercised directly against the manager-tools
 // bundles' `run()` with a single fake `fetch` standing in for every
 // workflow-run-authenticated route those bundles call. This proves the
 // CONTRACT across packages — a tool call's request shape matches what
@@ -132,9 +131,9 @@ function createFakeHub() {
     }
 
     if (url.pathname === "/api/workflow-chat/participants/messages" && method === "POST" && body) {
-      // The connect-service card post `request_connection` (CL-6393)
-      // makes into the caller's own room. Recorded so the scenario can
-      // assert the card itself, not just the tool's advice text.
+      // The connect-service card post `request_connection` makes into
+      // the caller's own room. Recorded so the scenario can assert the
+      // card itself, not just the tool's advice text.
       const parts = body["parts"] as {
         kind: string;
         block: { type: string; data: Record<string, unknown> };
@@ -244,7 +243,7 @@ async function runScenario(hub: ReturnType<typeof createFakeHub>): Promise<void>
   // A connector name that is neither a fixed `CONNECTOR_REGISTRY`
   // entry, a curated MCP preset, nor a connected MCP server makes
   // `request_connection` tell the agent to keep helping with what it
-  // can do (CL-6393) — never "go add a server and report back".
+  // can do — never "go add a server and report back".
   const unknown = await connectionsBundle.run(
     call("req_unknown", REQUEST_CONNECTION_TOOL, { connector: "acmecrm" }),
     new AbortController().signal,
@@ -255,7 +254,7 @@ async function runScenario(hub: ReturnType<typeof createFakeHub>): Promise<void>
   expect(hub.postedCards).toHaveLength(0);
 
   // She puts a connect card in the room for each of the three (real)
-  // services (CL-6393) — the card is what the human clicks; the tool
+  // services — the card is what the human clicks; the tool
   // result only tells Myra to keep helping in the meantime.
   for (const connector of ["exa", "granola", "linear"]) {
     const result = await connectionsBundle.run(

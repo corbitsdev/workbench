@@ -1,8 +1,8 @@
 // The browser side of the first-login hook: reads the client converge
-// state (CL-8160) instead of a hub-served setup-status route — a hub with
+// state instead of a hub-served setup-status route — a hub with
 // zero owned tenants means setup-required so the UI routes into the setup
 // wizard; any owned tenant means a bench exists and the shell loads
-// normally. Read-only on purpose (CL-8112): provisioning itself back onto
+// normally. Read-only on purpose: provisioning itself back onto
 // the hub is T6/T7's surface, so this never mints anything — a failed
 // read blocks the shell loudly rather than leaving the user silently
 // benchless.
@@ -21,7 +21,7 @@ const CredentialsPage = type({
 /**
  * Outcome of the cheap credentials read used before trusting a
  * `seeded: true` hard-skip. A probe that cannot complete is never
- * collapsed into `none` (CL-6868): that would open paste-a-key as if no
+ * collapsed into `none`: that would open paste-a-key as if no
  * key exists when one may already be connected.
  */
 export type ActiveCredentialProbe =
@@ -33,7 +33,7 @@ export type ActiveCredentialProbe =
  * Whether `tenantId` has at least one credential in the `active`
  * status. A cheap, single read — no provider/catalog chain resolution —
  * so the caller treats it as the weaker check it is: only a confirmed
- * miss means "no key", never a probe failure (CL-6868).
+ * miss means "no key", never a probe failure.
  */
 export async function hasActiveCredential(tenantId: string): Promise<ActiveCredentialProbe> {
   try {
@@ -48,7 +48,7 @@ export async function hasActiveCredential(tenantId: string): Promise<ActiveCrede
   }
 }
 
-// The hub's user-facing error envelope (CL-6360): `userMessage` is
+// The hub's user-facing error envelope: `userMessage` is
 // consumer language, safe to render as-is; `refId` is what a person can
 // quote back for support. Never a raw `message`/stack/file-path field —
 // those stay in the hub's own logger.
@@ -84,7 +84,7 @@ export async function triggerFirstLoginProvisioning(): Promise<ProvisionOutcome>
   }
 }
 
-/* CL-8112 cut the rest of this module's provisioning surface: the
+/* cut the rest of this module's provisioning surface: the
  * credential-submit, one-click OAuth connect, and complete-setup helpers
  * all spoke to the deleted `/api/onboarding/*` routes, so they went with
  * the hub mount. What remains is the first-login status read above plus
@@ -93,7 +93,7 @@ export async function triggerFirstLoginProvisioning(): Promise<ProvisionOutcome>
  * native agent definition directly — so this helper exists only to keep
  * the deleted route's absence explicit: a 404/410 is `route-gone`, never
  * a generic agent error. The setup flow itself is T6/T7's to build.
- * TODO(CL-8112-T6/T7): replace this tombstone with native readiness once
+ * TODO(T6/T7): replace this tombstone with native readiness once
  * T6/T7 builds it — no new `/api/onboarding/*` client calls until then. */
 const ProvisioningStatus = type({
   kind: "'ready' | 'provisioning'",
@@ -102,7 +102,7 @@ const ProvisioningStatus = type({
 
 /**
  * Whether this account can start a conversation yet, and whether
- * anything is still coming online behind it (CL-6462). Deliberately not
+ * anything is still coming online behind it. Deliberately not
  * a count: how many workflows a bench seeds is an implementation detail,
  * and a person watching "0 of 5" learns nothing they can act on.
  *
@@ -112,7 +112,7 @@ const ProvisioningStatus = type({
  * - `preparing` — Myra is not live yet; this is the only state worth
  *   holding someone on a loader for.
  * - `route-gone` — the legacy `/api/onboarding/provisioning-status`
- *   route is gone (CL-8112 deleted it with the hub mount). Explicit on
+ * route is gone (deleted it with the hub mount). Explicit on
  *   purpose: a deleted route must never read as "your agent is broken".
  * - `error` — readiness could not be checked; show the message and allow retry.
  */
@@ -126,7 +126,7 @@ export type AgentReadiness =
 /**
  * Legacy agent-readiness read against the deleted
  * `/api/onboarding/provisioning-status` route. No live caller uses this
- * (CL-8112 T1): the home page's first-workbench flow and the picker read
+ * (T1): the home page's first-workbench flow and the picker read
  * Myra's native agent definition directly instead. Kept so the route's
  * absence stays an explicit, testable outcome — a 404/410 answers
  * `route-gone`, never the generic agent error below.

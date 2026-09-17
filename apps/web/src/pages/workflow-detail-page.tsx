@@ -1,12 +1,7 @@
-// `/workflows/<definitionId>` (CL-7371) — a workflow definition's own
-// page. CL-8160: the hub-composed detail read (name, lifecycle, source
-// commit, steps, declared-vs-approved grants, credential bindings) is
-// gone with `@corbits/workflows`'s deleted `./detail/detail-route.ts` —
-// stock's `GET /workflows/definitions` (`workflow-detail-api.ts`) exposes
-// only name, description, status (`deployed` | `stopped`), current
-// version, and timestamps. This renders exactly that; see the CL-8160 PR
-// for the upstream ask to expose more (package manifest, wire projection,
-// grant snapshot) through a stock route.
+// `/workflows/<definitionId>` — a workflow definition's own page. Stock's
+// `GET /workflows/definitions` (`workflow-detail-api.ts`) exposes only
+// name, description, status (`deployed` | `stopped`), current version,
+// and timestamps, so this renders exactly that.
 import { Badge, EmptyState, PageShell } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
 import { Clock, FlowArrow } from "@corbits/icons";

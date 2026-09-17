@@ -128,7 +128,7 @@ function Harness() {
   );
 }
 
-describe("palette actions reach the real shell state (CL-5936 sibling-context regression)", () => {
+describe("palette actions reach the real shell state (sibling-context regression)", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -236,7 +236,7 @@ function RouteHarness({ path }: { readonly path: string }) {
   );
 }
 
-describe("canvas dismisses when in-app nav leaves a rail surface (CL-6819)", () => {
+describe("canvas dismisses when in-app nav leaves a rail surface", () => {
   let container: HTMLDivElement;
   let root: Root;
 

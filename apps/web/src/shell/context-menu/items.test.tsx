@@ -70,7 +70,7 @@ describe("shellContextMenuFor: workbench", () => {
     expect(itemIds(menu.entries)).toEqual(["rename", "copy-link"]);
   });
 
-  test("pin dispatches WORKBENCHES_MUTATED_EVENT so the sidebar list refetches (CL-6657)", async () => {
+  test("pin dispatches WORKBENCHES_MUTATED_EVENT so the sidebar list refetches", async () => {
     const realFetch = globalThis.fetch;
     // `patchWorkbenchSettings` validates against WorkbenchSettingsResponse —
     // a partial body rejects and the success path (event + toast) never runs.
@@ -177,7 +177,7 @@ describe("shellContextMenuFor: routine", () => {
     expect(navigate).toHaveBeenCalledWith("/routines/rt-1");
   });
 
-  // CL-8160: `runScheduledWorkflowNow` no longer calls a hub route at all
+  // `runScheduledWorkflowNow` no longer calls a hub route at all
   // (`@corbits/workflows`'s scheduled-workflow routes are deleted — see
   // `apps/web/src/routines-api.ts`'s file header) — it always rejects. The
   // former "run starts" success-path test asserted an outcome that is no
@@ -228,7 +228,7 @@ describe("shellContextMenuFor: artifact", () => {
     };
     const menu = shellContextMenuFor(target, actions());
     // Parity, not eyeballing: the context menu and the bulk action bar are
-    // driven off the exact same constant (CL-6423).
+    // driven off the exact same constant.
     expect(itemIds(menu.entries)).toEqual([...LIBRARY_BULK_OPERATION_IDS]);
     expect(findItem(menu.entries, "copy-link").label).toBe("Copy link");
   });

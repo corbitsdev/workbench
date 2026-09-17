@@ -1,4 +1,4 @@
-// CL-8087 deleted `@corbits/run-scope`'s `/top-level-runs?feed=fires`
+// deleted `@corbits/run-scope`'s `/top-level-runs?feed=fires`
 // route — the only listing that kept a routine's fire despite it not
 // being a top-level run — and the native `GET /workflows/runs` listing
 // has no equivalent: its top-level-only predicate drops every routine
@@ -7,7 +7,7 @@
 // name here would be exactly the slug guess the Insights feed refuses
 // to do). So `listRoutineActivity` resolves no items without fetching:
 // the shell's "Running" band and Mission Control's active-run count
-// (CL-6595) honestly report no routine activity until a native fires
+// honestly report no routine activity until a native fires
 // equivalent exists, instead of deriving routine activity from
 // top-level deployment rows that are not routine fires. The
 // `RoutineActivityItem` shape is kept so both consumers keep compiling

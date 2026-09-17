@@ -1,4 +1,4 @@
-// CL-8086: the Workbench skill registry (`@corbits/skills`' HTTP surface
+// the Workbench skill registry (`@corbits/skills`' HTTP surface
 // this client used to call, mounted at `/api/workflow-skills`) was
 // deleted — skills are native `kind:"skill"` hub assets now, and there is
 // no stock Interchange route yet that lets a workflow-run bearer identity
@@ -23,7 +23,7 @@ export type SkillIndexItem = {
 export type LoadedSkill = SkillIndexItem & { readonly body: string };
 
 const NO_STOCK_SKILL_CONTENT_ROUTE =
-  "Skill content has no stock Interchange HTTP route (CL-8086): the " +
+  "Skill content has no stock Interchange HTTP route: the " +
   "workbench-specific skills registry that used to serve it was removed, " +
   "and no replacement has been added to @intx/hub-api yet.";
 

@@ -9,13 +9,13 @@
 // platform's deploy machinery; the execution host materializes it at
 // runtime from the deploy alone.
 //
-// Tool-package pins (CL-5999, CL-5852): `@intx/agent`'s `defineAgent`
+// Tool-package pins: `@intx/agent`'s `defineAgent`
 // still does not accept a `toolPackagePins` field on its authoring-time
 // config — it is vendored, read-only source for this change — so the
 // agent below is built directly against `AgentDefinition`'s own type,
 // which already carries the field, matching
 // `workflows/collateral-generation`'s precedent. `@corbits/memory`
-// (CL-8186) is pinned so this deployment can search, add, and list the
+// is pinned so this deployment can search, add, and list the
 // tenant's firm memory (`memory_search`/`memory_add`/`memory_list`) — a
 // published dependency, not a workbench-built tool package, resolved
 // through its own `interchange.tools` surface the same way any other

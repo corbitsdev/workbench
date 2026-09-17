@@ -57,7 +57,7 @@ Running routines in the contextual column are sourced today from
 | `/c`         | Workbench deep-link surface. On wide layouts the conversation opens in the right canvas; on compact layouts it fills the main pane. Legacy `/chat` links still resolve here. |
 | `/workflows` | Workflow runs executing across your benches.                                                                                                                                 |
 | `/library`   | The artifact gallery. See "Library" below.                                                                                                                                   |
-| `/settings`  | Account, bench membership, and (CL-5990) Agents/Skills. See "Agents" and "Skills" below.                                                                                     |
+| `/settings`  | Account, bench membership, and Agents/Skills. See "Agents" and "Skills" below.                                                                                               |
 
 Agents and Skills are Settings sections, not rail destinations — old
 `/agents[/:id]` and `/skills[/:id]` links still resolve, redirecting to

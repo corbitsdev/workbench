@@ -17,7 +17,7 @@ export const MISSING_DATABASE_HINT =
   `DATABASE_URL=${TEST_DATABASE_URL} bun test ...`;
 
 // GitHub Actions sets CI=true on every job. None of ci.yml's jobs
-// provision Postgres (CL-8150 dropped the db-backed e2e/isolation/
+// provision Postgres (dropped the db-backed e2e/isolation/
 // db-suites jobs), so every DB-gated suite skips there (loudly). Any
 // other CI context — including `CI=true bun test` locally — treats a
 // missing DATABASE_URL as a hard failure so a miswired pipeline cannot

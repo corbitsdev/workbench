@@ -1,5 +1,5 @@
 // Coverage for the cleanup registry every e2e/smoke suite in this
-// directory shares (CL-5515): `tempDir` really mkdtemps under the OS
+// directory shares: `tempDir` really mkdtemps under the OS
 // temp dir with the given prefix, and `track` accepts a spawned app
 // without requiring its `stop()` to fire immediately (that only
 // happens once the suite's own tests finish, via `afterAll`).
@@ -126,7 +126,7 @@ describe("parseEnvFileDatabaseUrl", () => {
   });
 });
 
-// CL-7472 regression: at pin 692c3106, the hub authenticates a
+// regression: at pin 692c3106, the hub authenticates a
 // sidecar's register/reconnect frame only against a `sidecar` row that
 // resolves to a live `sidecar_allocation` (or `workflow_probe`) row —
 // upstream dropped the older "shared" credential scope this repo used

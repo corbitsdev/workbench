@@ -1,4 +1,4 @@
-// Per-workbench Insights view (CL-6224): one wall-clock spine merging chat
+// Per-workbench Insights view: one wall-clock spine merging chat
 // messages, thread forks, and approvals for a single workbench
 // (== workbench, per docs/GLOSSARY.md), oldest to newest with day dividers.
 // No new backend — every fetch here is an existing route this app already

@@ -2,7 +2,7 @@
 // must render the same landing dashboard any other unrecognized Insights
 // path gets — never a blank page (see `insights-path.ts`'s
 // `parseInsightsPath`, which InsightsPage calls with the exact same `path`
-// prop this test passes). CL-8160 deleted the usage/activity/tools/latency/
+// prop this test passes). deleted the usage/activity/tools/latency/
 // scope-switcher props `InsightsPage` used to take along with
 // `packages/insights` itself — `InsightsWorkbenchPage`'s workbench-scoped
 // mode now lives entirely in `InsightsRoute`, so a `/insights/workbench/...`

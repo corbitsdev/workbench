@@ -113,9 +113,9 @@ export function buildSkillMd(input: {
  *
  * No backfill for the dropped `skill_access` table: every pre-cutover
  * SKILL.md lacks `scope`, and no seed, fixture, template, or
- * provisioning path plants a tenant-visible row (verified CL-7583), so
+ * provisioning path plants a tenant-visible row (verified), so
  * there is nothing that would silently narrow. Pre-GA cutovers are not
- * migrated — dev databases reseed via `bun run reset` (CL-7445 ruling;
+ * migrated — dev databases reseed via `bun run reset` (ruling;
  * see docs/package-migrations.md). */
 export function parseSkillMd(text_: string): ParsedSkillMd {
   const lines = text_.split(/\r?\n/);

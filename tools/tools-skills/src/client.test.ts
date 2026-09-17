@@ -8,7 +8,7 @@ const CONFIG = {
   runAddress: "run@runs.example",
 };
 
-// CL-8086: the workflow-skills HTTP surface these calls used to reach was
+// the workflow-skills HTTP surface these calls used to reach was
 // deleted, and no stock Interchange route yet serves skill content. Every
 // call fails closed with an explicit error rather than degrading to an
 // empty registry.

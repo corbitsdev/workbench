@@ -1,4 +1,4 @@
-// CL-6372: a failed workbench create used to fire two toasts — the house
+// a failed workbench create used to fire two toasts — the house
 // `<Toaster />` from `@corbits/react-ui` (mounted in main.tsx) and a second,
 // unstyled `<Toaster />` imported straight from `sonner` (mounted in
 // app.tsx). Sonner's `toast()` renders into every mounted `<Toaster />`, so
@@ -143,7 +143,7 @@ function emptyChannelButton(): HTMLButtonElement | null {
   return container?.querySelector(".new-workbench-empty-channel") ?? null;
 }
 
-describe("the one toast system (CL-6372)", () => {
+describe("the one toast system", () => {
   // The store outlives this file too: a sibling suite that raised a toast
   // before bun loaded this one leaves it queued, and it would render into
   // the first `<Toaster />` mounted here. Start every test from an empty
@@ -173,7 +173,7 @@ describe("the one toast system (CL-6372)", () => {
     await waitForClear();
   });
 
-  // CL-6510: the new contract this file's own change introduced — a
+  // the new contract this file's own change introduced — a
   // missing setup agent no longer fires a toast at all, since the
   // picker now shows a retryable "still setting up" panel instead of
   // treating that precondition as a dead end.
@@ -186,7 +186,7 @@ describe("the one toast system (CL-6372)", () => {
       if (path.includes("/workflows/definitions")) {
         return Promise.resolve(json({ data: [], nextCursor: null }));
       }
-      // CL-8112 T1: no `/api/onboarding/*` request anywhere on this
+      // T1: no `/api/onboarding/*` request anywhere on this
       // path — the empty native definition alone drives the retry panel.
       return Promise.resolve(json({ error: "boom" }, 500));
     }) as typeof fetch;

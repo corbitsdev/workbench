@@ -281,7 +281,7 @@ describe("RoutineDetailRoute", () => {
     window.localStorage.clear();
   }
 
-  // CL-8160: `listScheduledWorkflows` (`../src/routines-api.ts`) now
+  // `listScheduledWorkflows` (`../src/routines-api.ts`) now
   // always resolves empty — the hub route this mocked
   // (`/api/tenants/:id/workflows/scheduled`) is deleted with no
   // stock-derivable replacement yet. The "renders the scheduled workflow

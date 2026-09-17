@@ -1,11 +1,11 @@
-// Mission Control (CL-6488/CL-6489): the bench's dashboard — what needs a
+// Mission Control: the bench's dashboard — what needs a
 // decision, what's running, and a way back into recent context. A new
 // top-level route (`/mission-control`), never `/` — `/` stays the Myra
 // land-hop redirect (see routes.tsx's header comment). Every panel here is
 // backed by a query already used elsewhere in this app (pending approvals,
 // top-level runs); nothing on this page is invented. A panel with no honest
 // data source renders an empty state naming what's missing instead of a
-// fabricated number. CL-8160 dropped the "Runs today" / "Spend today" KPI
+// fabricated number. dropped the "Runs today" / "Spend today" KPI
 // tiles and the "This week" panel — both read packages/insights routes with
 // no stock equivalent.
 
@@ -317,7 +317,7 @@ export function MissionControlRoute({ navigate }: { readonly navigate: (to: stri
               inFlightRows.length === 0 ? (
                 <RichEmptyState
                   title="Nothing running right now"
-                  description="Routine activity has no feed in this build (CL-8087 deleted feed=fires with no native equivalent), so this stays empty until one lands."
+                  description="Routine activity has no feed in this build (deleted feed=fires with no native equivalent), so this stays empty until one lands."
                 />
               ) : null}
               {inFlightRows.length > 0 ? (

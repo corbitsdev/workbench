@@ -1,4 +1,4 @@
-// Skills (CL-6355), over the native skill assets (CL-8086). The page reads
+// Skills, over the native skill assets. The page reads
 // the stock asset routes (`GET /api/tenants/:id/assets?kind=skill` for the
 // roster, `POST` for create), so every case here stubs `fetch` at that seam
 // — no live hub, and no workbench-local skill registry (that path is gone).
@@ -143,7 +143,7 @@ describe("SkillsPage", () => {
       [`GET ${LIST_PATH}`]: [TRIAGE_ASSET],
     });
     const el = await mount();
-    // Name slot is a display title, never the raw kebab slug (CL-6747).
+    // Name slot is a display title, never the raw kebab slug.
     expect(el.textContent).toContain("Triage");
     // Description and scope lived in the deleted registry: the roster must
     // not invent them from asset metadata.

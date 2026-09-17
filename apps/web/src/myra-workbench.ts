@@ -26,7 +26,7 @@ const myraWorkbench = createDefaultAgentWorkbench({
 });
 
 /** The last workbench id `ensureMyraWorkbench` resolved to, for the shell's
- * col2-wide derivation (CL-5936): "Myra is the active surface" reduces to
+ * col2-wide derivation: "Myra is the active surface" reduces to
  * "the open workbench is the one Talk-to-Myra last landed us on". */
 export function isMyraWorkbenchId(workbenchId: string | null): boolean {
   return myraWorkbench.isCachedWorkbenchId(workbenchId);

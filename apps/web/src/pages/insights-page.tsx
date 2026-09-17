@@ -1,19 +1,11 @@
 // Insights over the native `GET /workflows/runs` top-level listing: KPI
 // row, "running now" strip, recent purpose runs, and runs history grouped
-// by definition. CL-8160: the hub mounts nothing Workbench-specific any
-// more (packages/insights and its `/insights/*` routes are gone), and the
-// stock observability routes it could have read instead
+// by definition. The stock observability routes
 // (`vendor/intx/hub-api/src/routes/observability.ts`'s four GET routes)
-// are unimplemented stubs — each returns 501. With no data source left,
-// this page dropped everything packages/insights used to compute: cost
-// KPIs, token mosaic, activity bars, cost-by-model, calls-by-tool, turn
-// latency, cross-workbench "activity by workbench" and the scope switcher
-// that navigated between sibling workbenches, and the run-detail trace
-// waterfall (steps/completed/failed/duration were derived from trace
-// spans this build no longer has). What is left — the run list, its KPI
-// counts, and run metadata — is entirely native `WorkflowRunResponse`
-// data, already fetched the same way `mission-control-page.tsx` and
-// `routines-api.ts` read runs elsewhere in this app.
+// are unimplemented stubs — each returns 501 — so this page is entirely
+// native `WorkflowRunResponse` data, already fetched the same way
+// `mission-control-page.tsx` and `routines-api.ts` read runs elsewhere in
+// this app.
 
 import {
   Badge,
@@ -628,7 +620,7 @@ export function InsightsPage({
 }
 
 /**
- * Insights scoped to one workbench (CL-5879) — `/insights/workbench/:workbenchId`
+ * Insights scoped to one workbench — `/insights/workbench/:workbenchId`
  * resolves the workbench's own workbench tenant (see
  * `../insights-workbench-scope.ts`) and titles the page by the WORKBENCH name,
  * never the tenant's. A true legacy workbench (tenancy `null`) and an id

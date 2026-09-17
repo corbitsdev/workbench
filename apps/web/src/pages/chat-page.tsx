@@ -70,7 +70,7 @@ export function ChatPage({
   const queryClient = useQueryClient();
   const tenantId = bench.selectedTenantId;
 
-  // Same display name the sidebar account row already shows (CL-6655): the
+  // Same display name the sidebar account row already shows: the
   // auth session's name, which sign-up seeds from the email local-part when
   // no profile name was typed. Without this, chat-ui falls back to "Member"
   // for the reader's own presence/message avatar.
@@ -90,7 +90,7 @@ export function ChatPage({
             : {}),
         };
 
-  // Files' workbench-first lens (CL-6353) reads this back to default to
+  // Files' workbench-first lens reads this back to default to
   // "this workbench" when the person just came from one.
   useEffect(() => {
     if (tenantId === null || workbenchId === null) return;
@@ -98,7 +98,7 @@ export function ChatPage({
   }, [tenantId, workbenchId]);
 
   // Who's live in this workbench right now is derived inside `ChatWorkspace`
-  // itself now (CL-6328), off the same `/stream` connection as everything
+  // itself now, off the same `/stream` connection as everything
   // else — no separate `@corbits/presence` room/heartbeat for this surface
   // any more (that stack still backs the artifact canvas's cursor sync,
   // which has no chat stream of its own to piggyback on).
@@ -111,7 +111,7 @@ export function ChatPage({
     [tenantId, path],
   );
 
-  // The in-chat "Fix this connection" affordance's deep link (CL-6092) —
+  // The in-chat "Fix this connection" affordance's deep link —
   // the exact same hop the shell banner's own "Fix it" takes, reusing
   // `providerHealthBanner`'s current provider (chat-ui only sees a
   // classified reply's prose, never which provider it named — see
@@ -136,7 +136,7 @@ export function ChatPage({
     navigate("/plugins");
   }, [providerHealthBanner, requestPluginsConnect, navigate]);
 
-  // CL-6568: whether this tenant can actually run inference — never
+  // whether this tenant can actually run inference — never
   // whether a `model_provider` row merely exists, since seeding mints
   // that row with no credential attached. The same resolved-catalog
   // read `resolveModelSources` acts on at launch, so a model only
@@ -155,7 +155,7 @@ export function ChatPage({
   }, [navigate]);
 
   // A file part with an `artifactId` links back to a real Library row
-  // (CL-6000) — this always resolves through the Library artifacts read
+  // — this always resolves through the Library artifacts read
   // surface for that id, the same one `LibraryRoute` reads, never raw blob
   // bytes. Only a part with no `artifactId` (a plain human upload the
   // platform never diverted into an artifact) falls back to reading the
@@ -211,7 +211,7 @@ export function ChatPage({
     [navigate],
   );
 
-  // Hub-zero T3 (CL-8114): the room GitHub card is unbound on
+  // Hub-zero T3: the room GitHub card is unbound on
   // purpose — its state/start-reviewing routes are deleted and no native
   // equivalent exists yet, so it renders its no-port disabled framing
   // until a connections follow-up rebinds it. Connect/disconnect itself

@@ -8,7 +8,7 @@ import type { InsightsRun } from "./insights-api";
 import type { ScheduledWorkflowDefinition } from "./routines-api";
 
 /** Compact integer; null/undefined → em-dash. Lifted out of the deleted
- * `@corbits/insights/client` (CL-8160) — this app's own copy since it has
+ * `@corbits/insights/client` — this app's own copy since it has
  * no other browser-safe home now that the package is gone. */
 export function formatCount(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
@@ -39,9 +39,9 @@ export const INSIGHTS_RECENT_LIMIT = 12;
 /**
  * Purpose runs only. `insights-page.tsx` sources `runs` from
  * `insightsTopLevelRunsPath` (see `./insights-api.ts`), the native `GET
- * /workflows/runs` top-level listing (CL-8087) whose own predicate already
+ * /workflows/runs` top-level listing whose own predicate already
  * excludes every non-top-level run — no workbench-host anchors exist to
- * filter post-cutover (CL-8175), so this is now an identity pass kept for
+ * filter post-cutover, so this is now an identity pass kept for
  * callers that still name it explicitly.
  */
 export function purposeRunsForInsights(runs: readonly InsightsRun[]): readonly InsightsRun[] {
@@ -49,10 +49,10 @@ export function purposeRunsForInsights(runs: readonly InsightsRun[]): readonly I
 }
 
 /**
- * A run's human-facing name (CL-6249): its routine's name when the feed
+ * A run's human-facing name: its routine's name when the feed
  * attributed one, honestly falling back to the definition name for a run
  * with no routine attribution — e.g. every row of the native
- * `GET /workflows/runs` listing (CL-8087), which carries no
+ * `GET /workflows/runs` listing, which carries no
  * `routineName`, or a directly launched workflow. Never mapped from a
  * client-side lookup table.
  */
@@ -68,7 +68,7 @@ export type DefinitionRunGroup = {
   /** `routineId` when the newest run in the group fired from one,
    * else `definitionId` — two different routines sharing one
    * definition (e.g. two workbench-digest schedules) never merge into
-   * one group. The native `GET /workflows/runs` feed (CL-8087) carries
+   * one group. The native `GET /workflows/runs` feed carries
    * no routine attribution, so in practice this is always `definitionId`
    * until a fires equivalent exists — the `routineId` branch is kept for
    * that feed, not removed. */

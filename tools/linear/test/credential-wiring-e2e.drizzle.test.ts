@@ -2,7 +2,7 @@
 // `credential-delivery.drizzle.test.ts` (its own schema, never the
 // developer's or the walking-skeleton suite's) and
 // `@corbits/granola-tools`'s `test/credential-wiring-e2e.drizzle.test.ts`
-// (CL-6032), which this test follows step for step.
+//, which this test follows step for step.
 //
 // Proves the FULL "connect once, workflows just work" chain end to end
 // through the platform's own, already-built functions -- never a

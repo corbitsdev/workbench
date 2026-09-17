@@ -66,7 +66,7 @@ function stringField(data: unknown, field: string, what: string): string {
  * model) pairs a step's own agent declares
  * (`@intx/workflow-deploy`'s `pickStepInferenceSource`); naming any other
  * model here 409s "no approved inference source" at deploy even though
- * this suite never calls real inference (CL-7473).
+ * this suite never calls real inference.
  */
 const PLACEHOLDER_MODEL = "noop";
 
@@ -287,7 +287,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
         if (hub.exited()) {
           throw new Error(`hub exited before deploy; output:\n${hub.output()}`);
         }
-        // CL-7071 cutover: the launched run's sidecar initialization
+        // cutover: the launched run's sidecar initialization
         // resolves its `@corbits` scope pins against the tenant's own
         // `corbits-tools` package registry — Myra's assistant definition
         // carries several such pins, so this registry must exist before

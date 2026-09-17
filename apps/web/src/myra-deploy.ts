@@ -1,5 +1,5 @@
 // Builds and publishes Myra's deployable definition entirely over stock
-// routes (CL-8154). See `myra-source.ts` for why this is the one
+// routes. See `myra-source.ts` for why this is the one
 // deploy-source variant that installs today.
 //
 // Three steps, each a stock route: ensure the `package-registry` asset

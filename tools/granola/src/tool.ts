@@ -6,8 +6,8 @@
 // and say so honestly, never to have the run itself fail because one
 // source is unreachable.
 //
-// CL-6028 declared this package's "granola" credential handle in
-// `package.json` (`interchange.credentials`); CL-6032 wires the runtime
+// declared this package's "granola" credential handle in
+// `package.json` (`interchange.credentials`); wires the runtime
 // half. `env.credentials` is the harness's consumer-gated capability
 // (`@intx/harness/src/credential-capability.ts`,
 // `createCredentialCapability`): the sidecar's step-invoker binding

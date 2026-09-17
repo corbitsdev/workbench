@@ -1,4 +1,4 @@
-// Agents roster (CL-6354, CL-6469): a flat table of every definition a
+// Agents roster: a flat table of every definition a
 // bench owns — rows, never cards — with Status/Model/Runs·7d columns and a
 // bulk-select bar. `AgentsPage` is the presentational half (same split
 // `LibraryPage`/`LibraryRoute` use in `pages.test.tsx`); no live hub here,
@@ -21,9 +21,9 @@ import type { AgentDefinitionWithDisplayName } from "../src/agents-directory";
 import type { AgentInstance } from "../src/agents-api";
 
 // `name` is the immutable kebab identifier (the URL slug); `displayName` is
-// what `withDisplayNames` (CL-6413) derives from the definition's
+// what `withDisplayNames` derives from the definition's
 // description (or, absent one, a humanized reading of `name`). The roster
-// name slot is displayName only (CL-6748) — the slug stays the URL, not a
+// name slot is displayName only — the slug stays the URL, not a
 // second line under the name.
 const triage: AgentDefinitionWithDisplayName = {
   id: "wfd_1",
@@ -102,7 +102,7 @@ describe("runsInLast7Days", () => {
   });
 });
 
-describe("agentModelSettledContent (CL-6848)", () => {
+describe("agentModelSettledContent", () => {
   test("a fetch failure is an error, never the same label as an unset model", () => {
     expect(
       agentModelSettledContent(
@@ -139,7 +139,7 @@ describe("agentModelSettledContent (CL-6848)", () => {
     ).toEqual({ kind: "model", label: "Default" });
   });
 
-  test("an unset model stays Default when the catalog winner changes (CL-6782)", () => {
+  test("an unset model stays Default when the catalog winner changes", () => {
     const unset = {
       status: "ready" as const,
       data: { name: "triage-bot" },
@@ -157,7 +157,7 @@ describe("agentModelSettledContent (CL-6848)", () => {
     ).toEqual({ kind: "model", label: "Default" });
   });
 
-  test("a stored model is unchanged when the catalog default becomes a different winner (CL-6782)", () => {
+  test("a stored model is unchanged when the catalog default becomes a different winner", () => {
     const stored = {
       status: "ready" as const,
       data: { name: "triage-bot", model: "claude-sonnet-4" },
@@ -201,7 +201,7 @@ describe("agentModelSettledContent (CL-6848)", () => {
   });
 });
 
-describe("AgentModelCellView (CL-6848)", () => {
+describe("AgentModelCellView", () => {
   test("a capabilities fetch error is visually distinct from an unset model", () => {
     const errorMarkup = renderToStaticMarkup(
       <AgentModelCellView
@@ -249,7 +249,7 @@ describe("AgentModelCellView (CL-6848)", () => {
   });
 });
 
-describe("agentRunsSettledContent (CL-6842)", () => {
+describe("agentRunsSettledContent", () => {
   test("a runs fetch failure is not the same as an honest empty history", () => {
     expect(agentRunsSettledContent("wfd_1", [], NOW, "Couldn't load run history")).toEqual({
       kind: "error",
@@ -373,7 +373,7 @@ describe("AgentsPage", () => {
     // Live carries the live dot (react-ui's StatusDot, `live` prop) —
     // the spec's liveness marker for an actively-running agent.
     expect(markup).toContain('aria-label="Live"');
-    // Badge must not shout via CSS uppercase (same as CL-6747 skills).
+    // Badge must not shout via CSS uppercase (same as skills).
     expect(markup).toContain("normal-case");
   });
 
@@ -436,7 +436,7 @@ describe("AgentsPage", () => {
     expect(markup).toContain(">Support<");
   });
 
-  // CL-6875: the roster's quick-peek panel must hop to the agent's own page
+  // the roster's quick-peek panel must hop to the agent's own page
   // at `/agents/<slug>` — panels preview enough to decide whether to open
   // the full page (DESIGN.md), never substitute for one.
   test("selected definition's panel offers a hop to /agents/<slug>", () => {
@@ -528,7 +528,7 @@ describe("AgentsPage", () => {
     expect(markup).not.toContain("data-bulk-action");
   });
 
-  test("CL-6836: skillsError is an alert, never silent 'no skills'", () => {
+  test("skillsError is an alert, never silent 'no skills'", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage
         tenantId="tnt_1"
@@ -550,7 +550,7 @@ describe("AgentsPage", () => {
     expect(markup).toContain("500: down");
   });
 
-  test("CL-6836: without skillsError, the skills failure alert is absent", () => {
+  test("without skillsError, the skills failure alert is absent", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage
         tenantId="tnt_1"
@@ -569,7 +569,7 @@ describe("AgentsPage", () => {
     expect(markup).not.toContain("Could not load agent skills");
   });
 
-  test("an honest empty run history shows 0, not a load-failure marker (CL-6842)", () => {
+  test("an honest empty run history shows 0, not a load-failure marker", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage
         tenantId="tnt_1"
@@ -590,7 +590,7 @@ describe("AgentsPage", () => {
     expect(markup).not.toContain("Couldn't load run history");
   });
 
-  test("a runs fetch failure is distinguishable from zero instances (CL-6842)", () => {
+  test("a runs fetch failure is distinguishable from zero instances", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage
         tenantId="tnt_1"

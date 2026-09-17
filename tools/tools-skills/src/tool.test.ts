@@ -42,7 +42,7 @@ test("no tool's input schema accepts a tenant or principal argument", () => {
   }
 });
 
-// CL-8086: the registry HTTP surface this client used to call was
+// the registry HTTP surface this client used to call was
 // deleted, and no stock Interchange route yet serves skill content, so
 // every call fails closed rather than reaching a live registry.
 test("skills_list surfaces the missing stock route as an error, never an empty list", async () => {

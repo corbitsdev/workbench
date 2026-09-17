@@ -1,9 +1,9 @@
 // Path-id helpers for settings and top-level roster deep links. Shared by
 // the shell (col2 section nav) and the settings sections (stage detail) so
 // neither layer owns the other. Same pattern as workbench-path.ts. Agents
-// and Skills were Settings sections for a stretch (CL-5990) at
-// `/settings/agents/:id` and `/settings/skills/:id`; CL-6353/CL-6354/
-// CL-6355 moved both back out to their own top-level rail destinations —
+// and Skills were Settings sections for a stretch at
+// `/settings/agents/:id` and `/settings/skills/:id`; //
+// moved both back out to their own top-level rail destinations —
 // `/agents/:id` and `/skills/:id`, via `agentIdFromPath`/`skillIdFromPath`
 // below.
 
@@ -68,7 +68,7 @@ export function routineSegmentFromPath(path: string): string | null {
 /** The workflow definition id `/workflows/<id>` addresses — `null` for the
  * bare prefix or a path outside it. A workflow definition has no slug of
  * its own, so — like a routine — it is addressed by its opaque id.
- * CL-8160: since the detail page now reads stock's `workflow_definition`
+ * since the detail page now reads stock's `workflow_definition`
  * list directly, this is `workflowDefinition.id`, not `asset.id` (the
  * former Workbench-composed detail route's own address space) — the
  * export name is kept to limit the diff. */

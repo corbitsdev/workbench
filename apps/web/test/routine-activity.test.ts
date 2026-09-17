@@ -1,4 +1,4 @@
-// CL-8087: `listRoutineActivity` resolves no items without fetching. The
+// `listRoutineActivity` resolves no items without fetching. The
 // `feed=fires` route it used to read is deleted with `@corbits/run-scope`,
 // and the native `GET /workflows/runs` listing has no fires equivalent —
 // its top-level-only predicate drops every routine fire by construction,

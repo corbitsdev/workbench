@@ -1,9 +1,5 @@
 // Screens without live backing must say so: every list renders an honest
 // empty state from real (empty) hub responses, never placeholder rows.
-// Skills coverage moved to `skills-settings-section.test.tsx` (CL-5990 —
-// it became a Settings section, not a stage-only page with an injectable
-// directory prop). Agents' Settings section was cut in CL-6121 — agent
-// configuration lives per-workbench now, not as a global tab.
 
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -23,7 +19,7 @@ describe("empty states", () => {
     expect(markup).toContain("Upload a file, or let your agents drop their work here");
   });
 
-  // CL-6750 — empty Files must tell one story: invite to add files. A
+  // Empty Files must tell one story: invite to add files. A
   // "0 files" count beside the poster reads as a second empty announcement,
   // and a labeled ghost file input twins the visible Upload button.
   test("empty library is one invitation, not count + poster + twin uploads", () => {

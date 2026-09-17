@@ -27,7 +27,7 @@ export type ShellContextMenuTarget =
        * The ids this menu acts on: the row's own id alone, or — when the
        * right-clicked row is part of a multi-row selection — every
        * selected id, so a right-click inside an active selection offers
-       * the exact same operation set as the bulk action bar (CL-6423).
+       * the exact same operation set as the bulk action bar.
        */
       readonly ids: readonly string[];
     };

@@ -71,7 +71,7 @@ test("read_skill rejects a call missing the name without calling out", async () 
   expect(result.content).toMatch(/invalid input/);
 });
 
-// CL-8086: the workflow-skills HTTP surface these tools used to call was
+// the workflow-skills HTTP surface these tools used to call was
 // deleted, and no stock Interchange route yet serves skill content, so
 // each fails closed with an explicit error instead of a fabricated
 // result.

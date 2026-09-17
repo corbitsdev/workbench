@@ -119,7 +119,7 @@ export function listAgentInstances(tenantId: string): Promise<readonly AgentInst
  * native `GET /workflows/runs` listing's own predicate (`address IS NOT
  * NULL AND anchorRunId = id`), the same one `isTopLevelRun` uses. Used
  * wherever a page needs "real deployments only" — the Agent Directory.
- * Single-tenant (CL-8087 accepted loss): the deleted route expanded the
+ * Single-tenant (accepted loss): the deleted route expanded the
  * requested tenant to its whole descendant subtree via
  * `getDescendantTenants`; the native listing filters one tenant, so a
  * workspace parent sees only its own runs, not its child workbenches'.
@@ -135,7 +135,7 @@ export function listTopLevelRuns(tenantId: string): Promise<readonly AgentInstan
  * bare-array discovery route at `/models` (`ModelInfo[]`) — those are
  * different wire shapes. Disabled rows are filtered out here because the
  * catalog may retain them. Embedding-named models, Hugging Face Hub paths,
- * and bare `.gguf` names are also omitted (CL-6744) — this endpoint carries
+ * and bare `.gguf` names are also omitted — this endpoint carries
  * no offering capability lists, so the name-only
  * {@link isChatPickerModelName} gate is the available signal. */
 export function listCatalogModels(tenantId: string): Promise<readonly CatalogModel[]> {
@@ -160,7 +160,7 @@ export type AgentDefinitionDraft = typeof AgentDefinitionDraftResponse.infer.dra
  * Asks Myra to draft a starting system prompt (and optionally a
  * refined description, a model pick, and skills) from a name and a
  * plain-language purpose — the create-agent panel's "Create & chat"
- * flow (CL-6074). Hits `@corbits/agent-directory`'s
+ * flow. Hits `@corbits/agent-directory`'s
  * `POST .../planner/agent-definitions/draft`; never deploys anything
  * itself. A caller that gets a rejected promise here (Myra unavailable,
  * the draft timing out, an unparseable or out-of-inventory reply, or a

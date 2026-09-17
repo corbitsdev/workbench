@@ -29,7 +29,7 @@ export function artifactContentFromDetail(
     title: detail.title,
     rendererKind,
     content: detail.content,
-    // Text-kind Library artifacts are co-editable (CL-5958 phase 2); the
+    // Text-kind Library artifacts are co-editable (phase 2); the
     // presence `/update` route's own write-grant check is the real gate
     // — this only decides which pane a capable viewer sees.
     canEdit: rendererKind === "doc",

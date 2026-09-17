@@ -8,10 +8,10 @@
 // Always present; there is no collapse affordance and no second nav column.
 // Approvals belong in the conversation, not as a standing band here.
 //
-// Inbox is gone (CL-6151, owner decision: tasks + approvals don't flow
+// Inbox is gone (owner decision: tasks + approvals don't flow
 // into workbenches).
 //
-// No bench switcher (CL-6089): a workbench IS an agent conversation now,
+// No bench switcher: a workbench IS an agent conversation now,
 // one per account, so there is nothing to switch between in the common
 // case. A multi-bench install still resolves and routes correctly (see
 // `bench-context.tsx`) — it just has no dedicated chrome slot. The one
@@ -125,11 +125,10 @@ export function Sidebar({
 
       <SidebarPanelFooter>
         {/* Footer order: Routines, Files, Skills, Agents, Plugins, then
-            Insights only when that existing read proves real
-            items, then the account row anchors everything else (settings,
-            feedback, log out) in its pop-up menu — a single footer,
-            never two stacked rows. Routines (CL-6362) is global-only here
-            — no per-workbench routines chrome remains. */}
+            Insights only when that existing read proves real items, then
+            the account row anchors everything else (settings, feedback,
+            log out) in its pop-up menu — a single footer, never two
+            stacked rows. */}
         <button
           type="button"
           className="shell-sidebar-footer-row"

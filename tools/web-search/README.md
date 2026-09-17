@@ -1,7 +1,7 @@
 # @corbits/web-search-tools
 
 A minimal web-search integration: one client call, one `@intx/agent` tool
-bundle. Built for the last-30-days-research workflow port (CL-5997);
+bundle. Built for the last-30-days-research workflow port;
 backed by Exa, the same provider the OG gtm-workbench's
 `last30days-research` workflow called for this source
 (`packages/tools-exa`) — a real, honest backend rather than a placeholder.

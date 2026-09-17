@@ -1,7 +1,7 @@
 // The canvas profile card's Message action: no silent no-op when there is
 // no bench to message against, and the panel never closes ahead of the DM
 // actually resolving — matching the toast-on-unable pattern the sibling
-// Mention action already used (CL-6019).
+// Mention action already used.
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
@@ -189,7 +189,7 @@ describe("canvas profile card Message action", () => {
   });
 });
 
-describe("canvas artifact pane: single-user text editing (CL-8189)", () => {
+describe("canvas artifact pane: single-user text editing", () => {
   let container: HTMLDivElement;
   let root: Root;
 

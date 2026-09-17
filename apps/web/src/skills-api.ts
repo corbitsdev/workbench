@@ -1,6 +1,6 @@
 // The Skills settings section's one seam to the hub's skill assets.
 //
-// CL-8086: the workbench-specific skill registry this used to call
+// the workbench-specific skill registry this used to call
 // (`@corbits/skills`, mounted at `/api/tenants/:tenantId/skills`) was
 // deleted — skills are native `kind:"skill"` hub assets now, listed and
 // created through the stock asset routes (`@intx/hub-api`'s
@@ -10,7 +10,7 @@
 // version history, its scope, or who has it pinned. `description` below
 // always reads back empty and `updateSkill`/`setSkillScope`/version
 // history are gone outright rather than vendored over a route that
-// doesn't exist — see the CL-8086 PR body for this gap.
+// doesn't exist — see the PR body for this gap.
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
@@ -136,7 +136,7 @@ export async function loadSkill(
 /**
  * Creates a skill asset's metadata only — a bare `kind:"skill"` asset
  * row and its (empty) backing repo. There is no stock route yet to
- * populate its SKILL.md body/description in the same call (CL-8086);
+ * populate its SKILL.md body/description in the same call;
  * the caller must fill those in through whatever surface eventually
  * covers skill content.
  */

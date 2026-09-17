@@ -1,9 +1,9 @@
 // Old links that must still land somewhere real. Agents and Skills were
-// Settings sections for a stretch (CL-5990: `/settings/agents[/:id]`,
-// `/settings/skills[/:id]`); CL-6354/CL-6355 moved both back out to their
+// Settings sections for a stretch (: `/settings/agents[/:id]`,
+// `/settings/skills[/:id]`); / moved both back out to their
 // own rail destinations, so any deep link into the old Settings home now
 // bounces to the new one, preserving a deep-linked id. Library was renamed
-// Files (CL-6353) at the same time it was moved off `/library` — that old
+// Files at the same time it was moved off `/library` — that old
 // prefix bounces to `/files` the same way.
 
 import { useEffect } from "react";

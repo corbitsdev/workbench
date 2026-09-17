@@ -52,7 +52,7 @@ function Root() {
   // the hub's native setup-status route whether any bench exists yet. An
   // empty hub reports setup-required so we route into the setup screen;
   // a hub with tenants loads the shell normally. Read-only on purpose
-  // (CL-8112) — this never mints anything. A failure blocks the shell
+  // — this never mints anything. A failure blocks the shell
   // entirely rather than leaving the user silently benchless.
   const [provisioningError, setProvisioningError] = useState<{
     message: string;
@@ -91,7 +91,7 @@ function Root() {
 
   // Per-user storage when signed in so theme preference follows the account;
   // signed-out / loading share the anonymous host key. Not synced to the
-  // preferences store (CL-5922): @corbits/react-ui's ThemeProvider owns mode
+  // preferences store: @corbits/react-ui's ThemeProvider owns mode
   // entirely internally (localStorage read/write on setMode/cycleMode) and
   // exposes no onChange hook or externally-supplied initial value a host
   // could observe or override without forking the component.

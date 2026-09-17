@@ -1,7 +1,7 @@
 # @corbits/workflow-authoring-tools
 
 The `@intx/agent` tool bundle over `@corbits/workflows`'s `./authoring`'s
-workflow-run-authenticated routes (CL-7360): an agent writes an ordinary
+workflow-run-authenticated routes: an agent writes an ordinary
 workflow code package into a `kind: "workflow"` hub asset, republishes it,
 and reads it back. See [docs/workflow-source-authoring.md](../../docs/workflow-source-authoring.md)
 for the contract this implements.
@@ -49,7 +49,7 @@ on.
 | `wf_deploy_preview`    | `POST /api/workflow-workflow-authoring/:assetId/deploy/preview` | `previewDeployWorkflow` |
 | `workflow_deploy`      | `POST /api/tenants/:tenantId/workflows/deployments` (stock)     | `deployWorkflow`        |
 
-`workflow_deploy` speaks stock Interchange routes (CL-8171): it reads the
+`workflow_deploy` speaks stock Interchange routes: it reads the
 tenant's resolved inference catalog from `GET /api/tenants/:tenantId/models`,
 flattens it into one priority-ordered `sourceOfferingIds` chain, and posts an
 `asset`/`source` deploy naming the commit. The run bearer authenticates both.
@@ -59,7 +59,7 @@ The four authoring operations still call the Workbench-specific
 smart-HTTP on the asset repo, which no run-bearer credential reaches today:
 `createGitTokenAuth` accepts only an `itx_pat_`/`itx_svc_` git token, and the
 stock mint route (`POST /api/tenants/:tenantId/git-tokens`) refuses a caller
-with no browser session. CL-8171 carries that upstream ask.
+with no browser session. carries that upstream ask.
 
 A hub refusal surfaces as `WorkflowAuthoringRequestError` (`status`, `code`,
 `currentHeadSha` on a conflict); the bundle lets it throw, and

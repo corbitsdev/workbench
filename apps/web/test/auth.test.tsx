@@ -83,7 +83,7 @@ describe("session probe", () => {
     expect(state.kind).toBe("error");
   });
 
-  // CL-6105: a session body that parses as JSON but carries no usable
+  // a session body that parses as JSON but carries no usable
   // `user` (the shape a hub restarted against an empty DB, or a cookie
   // for a since-deleted user, can answer with) must still land on login
   // — never the "connection lost" error screen, which would strand the
@@ -98,7 +98,7 @@ describe("session probe", () => {
 /** Mirrors `main.tsx`'s `Root`'s own probe-on-mount wiring, minus
  * provisioning — the minimum needed to prove a real DOM mount, driven by
  * the real `fetchSession`, never renders the shell for an invalid session.
- * `/login` is a real route now (CL-6369): an invalid session redirects
+ * `/login` is a real route now: an invalid session redirects
  * there rather than swapping in the auth screen at whatever path was
  * requested, so this mounts a real `navigate` to follow that redirect. */
 function ProbedApp() {
@@ -216,7 +216,7 @@ describe("the gate", () => {
     const markup = renderApp({ kind: "signed-in", user });
     // The one sidebar plus the account affordance — a menu (weekly usage,
     // Settings, feedback, Log out), not a plain link straight to settings
-    // (CL-6105, grown to the reference shape in CL-6132).
+    // (grown to the reference shape in).
     expect(markup).toContain('data-testid="shell-sidebar"');
     expect(markup).toContain("shell-sidebar-account-btn");
     expect(markup).toContain('aria-label="ada · Account menu"');

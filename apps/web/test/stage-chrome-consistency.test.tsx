@@ -1,4 +1,4 @@
-// CL-6368: /files, /skills, /agents must use the same stage chrome as the
+// /files, /skills, /agents must use the same stage chrome as the
 // reference pages (Insights, Plugins) — the shared `StageTopBar` component
 // and `Table` row idiom, not bespoke divs standing in for either. This is
 // a screenshot-free assertion that each page's presentational component
@@ -32,7 +32,7 @@ afterEach(() => {
   container = null;
 });
 
-describe("stage chrome consistency (CL-6368)", () => {
+describe("stage chrome consistency", () => {
   test("Agents uses the shared StageTopBar and Table row idiom", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage

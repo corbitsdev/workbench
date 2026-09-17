@@ -23,7 +23,7 @@ tools read only, so none is gated behind approval.
 
 ## Managing offerings
 
-Catalog administration is UI-only (CL-7588): models, providers, and
+Catalog administration is UI-only: models, providers, and
 offerings are managed through the tenant-admin catalog routes
 (`vendor/intx/hub-api/src/routes/{models,model-providers,
 model-offerings}.ts`) behind a browser session. This package exposes no

@@ -7,7 +7,7 @@
 // Myra's own definition to exist, then opens her DM the same way
 // "Talk to Myra" does (`openAgentDmChat`) — never `/new`, no
 // `ensureMyraWorkbench`, no second creation path. All three entries
-// CL-6081 asks for (a direct visit to `/`, `main.tsx`'s post-login
+// asks for (a direct visit to `/`, `main.tsx`'s post-login
 // `navigate("/")`, and the onboarding wizard's post-credential hand-off)
 // resolve through this exact hop, so proving HomeRoute itself lands
 // correctly in both cases proves the direct-`/` case fully; the other
@@ -157,7 +157,7 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
 
   test("a brand-new bench with zero workbenches opens Myra's one DM, not the guided picker", async () => {
     let posted: unknown;
-    // CL-8112 T1: the deleted `/api/onboarding/provisioning-status`
+    // T1: the deleted `/api/onboarding/provisioning-status`
     // route must never be requested on this flow — record every path
     // and pin the absence below, alongside the no-error-state land.
     const requestedPaths: string[] = [];
@@ -215,7 +215,7 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
   });
 });
 
-// CL-6462: what someone sees between "connect a provider" and "talking to
+// what someone sees between "connect a provider" and "talking to
 // Myra". The old answer was a bare centred "0 of 5 ready" on an empty
 // page; these pin the replacement — one warm loader, no counts, a land
 // that happens the moment Myra herself can answer, and an honest way out
@@ -224,7 +224,7 @@ describe("the wait right after connecting a provider", () => {
   /** A bench with no workbenches yet whose setup agent (Myra) deploys
    * only after `readyAfter` definition reads — everything before that is
    * the window the person spends waiting. Readiness is the native
-   * definitions read itself (CL-8112 T1): no `/api/onboarding/*`
+   * definitions read itself (T1): no `/api/onboarding/*`
    * request anywhere in this helper. */
   function benchWhereMyraArrivesAfter(readyAfter: number) {
     let definitionReads = 0;
@@ -234,7 +234,7 @@ describe("the wait right after connecting a provider", () => {
       if (path.endsWith("/chat/workbenches") && method === "GET") {
         return json({ items: [] });
       }
-      // CL-6780: while Myra is still deploying, the credential read is
+      // while Myra is still deploying, the credential read is
       // what tells "still coming online" apart from "nothing to deploy
       // with" — an active credential means the former, so serve one: the
       // no-credential case has its own test below, and this helper must
@@ -279,7 +279,7 @@ describe("the wait right after connecting a provider", () => {
     });
   }
 
-  // CL-8112 T1: the definitions read IS the readiness check now — a
+  // T1: the definitions read IS the readiness check now — a
   // failed read must surface as an honest, retryable error, never a
   // forever "preparing" spin.
   test("shows a definitions error and retries without pretending the agent is preparing", async () => {
@@ -324,7 +324,7 @@ describe("the wait right after connecting a provider", () => {
     }
 
     const text = container?.textContent ?? "";
-    // CL-6780: zero workbenches yet — this wait is for the agent, not a
+    // zero workbenches yet — this wait is for the agent, not a
     // workbench that does not exist.
     expect(text).toContain("Preparing your agent");
     expect(text).not.toContain("Getting your workbench ready");
@@ -334,7 +334,7 @@ describe("the wait right after connecting a provider", () => {
     expect(navigated).toEqual([]);
   });
 
-  test("skip with no credential lands on an honest next step instead of stuck workbench-ready copy (CL-6780)", async () => {
+  test("skip with no credential lands on an honest next step instead of stuck workbench-ready copy", async () => {
     stubFetch((path, method) => {
       if (path === "/api/me/principals") return json(PRINCIPALS_RESPONSE);
       if (path.endsWith("/chat/workbenches") && method === "GET") {
@@ -467,7 +467,7 @@ describe('a failed memberships fetch never reads as "pick from the switcher"', (
 
 describe("the other two entries land on the same `/` hop", () => {
   test("signing in navigates home (or `next=`), not a dashboard of its own", () => {
-    // CL-6369: a plain sign-in still lands on `/` — `validatedNextPath`
+    // a plain sign-in still lands on `/` — `validatedNextPath`
     // defaults there with no `next=` param — but a sign-in redirected
     // through `/login?next=...` returns to that path instead, so the
     // literal `navigate("/")` call this test used to pin no longer

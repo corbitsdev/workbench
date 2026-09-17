@@ -66,7 +66,7 @@ describe("isRunningNow", () => {
     ).toBe(false);
   });
 
-  // Warm-keep (CL-6681 / CL-6778): a routine's delivery agent stays deployed
+  // Warm-keep: a routine's delivery agent stays deployed
   // after it replies, so workflow_run.status lingers on `running`. Past the
   // fire window that is not an in-flight job — Insights must not keep it in
   // "Running now" forever.

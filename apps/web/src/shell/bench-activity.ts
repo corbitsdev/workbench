@@ -82,7 +82,7 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
   const routinesQuery = useQuery({
     queryKey: tenantKeys.routineActivity(key),
     enabled,
-    // CL-8087: `listRoutineActivity` resolves no items without fetching
+    // `listRoutineActivity` resolves no items without fetching
     // (the `feed=fires` route is deleted and the native listing has no
     // fires equivalent), so this query never fires a request — the
     // column keeps the shared key and renders the seam's honest empty

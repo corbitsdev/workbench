@@ -1,25 +1,16 @@
-// The agent-create panel (CL-6074): the drafted create path for Settings →
-// Agents (`agents-page.tsx` mounts it). Agent configuration lives
-// per-workbench now (CL-6121); the "+ New workbench" picker used to open
-// this panel, then moved to instant creation (CL-6081) and, since CL-6138,
-// to THE one creation verb for that entry: `instant-agent-create.ts` mints
-// straight off the account's default setup template, no drafting, no
-// dialog. Agents still opens this panel when the person wants an explicit,
-// drafted agent — `describe-first-workbench.tsx` (CL-6104) once needed the
-// same drafting machinery — and on success it lands them in a chat with
-// the new agent (see `../agent-chat-launch.ts` for the shared "exact same
-// path picking an existing agent uses" hop).
+// The agent-create panel: the drafted create path for Settings → Agents.
+// On success it lands the person in a chat with the new agent (see
+// `../agent-chat-launch.ts` for the shared hop).
 //
 // Deliberately small above the fold: an identity swatch, a Name field,
 // and "Get started" is the whole happy path — a plain-language purpose
 // is optional, a quiet secondary field, not a gate. Either way, one
 // click on "Get started" asks Myra to draft a starting system prompt
 // (and optionally a description/model/skills) via `draftAgentDefinition`
-// (`@corbits/agent-directory`'s one-shot drafting port, CL-6074) — with a
-// purpose, from that brief; with none, a friendly general-purpose draft
-// the person teaches in the conversation that follows — then deploys
-// with that draft. The Suggestions row below the button is the same
-// flow with the name+purpose pre-written: every card describes
+// with a purpose, from that brief; with none, a friendly general-purpose
+// draft the person teaches in the conversation that follows — then
+// deploys with that draft. The Suggestions row below the button is the
+// same flow with the name+purpose pre-written: every card describes
 // something this workbench can actually do today. Handle, model
 // override, and skills sit behind "Advanced", collapsed by default, for
 // anyone who wants to steer them.

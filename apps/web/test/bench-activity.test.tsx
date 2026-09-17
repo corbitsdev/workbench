@@ -87,7 +87,7 @@ describe("useBenchActivity", () => {
     container.remove();
   });
 
-  // CL-8087: the routines query resolves with no items and no fetch —
+  // the routines query resolves with no items and no fetch —
   // the `feed=fires` route is deleted and the native listing has no
   // fires equivalent — so the band renders its honest empty state.
   test("fetches workbenches, chats, and agents for the selected bench; routines resolve empty", async () => {
@@ -113,7 +113,7 @@ describe("useBenchActivity", () => {
     container.remove();
   });
 
-  test("splits workbenches by kind; routines stay empty without fetching (CL-8087)", async () => {
+  test("splits workbenches by kind; routines stay empty without fetching", async () => {
     const calls: string[] = [];
     stubTenantFetch(calls, {
       workbenches: [
@@ -177,7 +177,7 @@ describe("useBenchActivity", () => {
     container.remove();
   });
 
-  // CL-6387: a workbench minted anywhere (picker, agent launch, land-hop)
+  // a workbench minted anywhere (picker, agent launch, land-hop)
   // must show up in the sidebar the moment `createWorkbench` resolves — no
   // waiting for the next unrelated refetch. `WORKBENCHES_MUTATED_EVENT` is
   // the one signal every create path shares; this proves the listener

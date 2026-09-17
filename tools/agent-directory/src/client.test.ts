@@ -35,8 +35,7 @@ test("createAgentDefinition posts to the workflow-agent-directory definitions en
         name: "Research Buddy",
         description: null,
         // The real create route serializes a `text` DB column, always
-        // a string on the wire — never the JS number literal CL-6480
-        // let this schema wrongly accept.
+        // a string on the wire — never the JS number literal         // let this schema wrongly accept.
         currentVersion: "1",
         status: "deployed",
         skills: [],

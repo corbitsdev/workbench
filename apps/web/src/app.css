@@ -93,8 +93,8 @@ select:disabled,
   height: 100dvh;
 }
 
-/* A quoteable reference id under the error boundary's failure message
-   (CL-6632) — small and muted, same treatment as `.onboarding-error-refid`. */
+/* A quoteable reference id under the error boundary's failure message —
+   small and muted, same treatment as `.onboarding-error-refid`. */
 .app-boot-frame-refid {
   font-size: 0.75rem;
   color: var(--muted-foreground);
@@ -304,10 +304,10 @@ select:disabled,
   flex-direction: column;
 }
 
-/* CL-6092: the guided-fix banner, above the stage's own top bar — quiet
+/* the guided-fix banner, above the stage's own top bar — quiet
    until there is something to act on, then a clear (not alarming) nudge
    toward the fix. */
-/* Mount/unmount collapse (CL-6092): a grid-rows 0fr/1fr toggle so the
+/* Mount/unmount collapse: a grid-rows 0fr/1fr toggle so the
    banner's entrance/exit eases the stage's height rather than snapping it
    open or shut. `theme.css` (react-ui) already collapses every
    transition duration under `prefers-reduced-motion`, so this needs no
@@ -357,9 +357,9 @@ select:disabled,
   color: var(--card-foreground);
 }
 
-/* The Plugins gallery's own "couldn't find that connection" notice
-   (CL-6092): a deep link from the shell banner that names a provider the
-   gallery has no card for. */
+/* The Plugins gallery's own "couldn't find that connection" notice: a deep
+   link from the shell banner that names a provider the gallery has no
+   card for. */
 .plugins-connect-notice {
   display: flex;
   align-items: center;
@@ -1153,7 +1153,7 @@ select:disabled,
   overflow: auto;
 }
 
-/* Co-viewer cursors (CL-5958): positioned in the pane's own fractional
+/* Co-viewer cursors: positioned in the pane's own fractional
    coordinate space (see `PresenceCursor` in canvas-column.tsx), never
    intercepting pointer events — they are a read-only presence signal, not
    an interactive layer. */
@@ -1200,7 +1200,7 @@ select:disabled,
    that like any other. */
 
 /* Sidebar header: the brand mark, small and quiet — the mark is the brand
-   moment now (CL-6089 dropped the orange-rail era), not the switcher this
+ moment now (dropped the orange-rail era), not the switcher this
    dock replaced. */
 .shell-sidebar-brand-mark {
   display: flex;
@@ -1613,7 +1613,7 @@ select:disabled,
   white-space: nowrap;
 }
 
-/* Persistent pin glyph on pinned sidebar rows (CL-6657) — pinning must be
+/* Persistent pin glyph on pinned sidebar rows — pinning must be
    visible in the list itself, not only as a toast / settings bit. */
 .shell-ch-pin {
   flex-shrink: 0;
@@ -2269,8 +2269,8 @@ select:disabled,
   color: var(--muted-foreground);
 }
 
-/* A quoteable reference id under a consumer-language failure message
-   (CL-6360) — small and muted, never the focal point of the card. */
+/* A quoteable reference id under a consumer-language failure message —
+   small and muted, never the focal point of the card. */
 .onboarding-error-refid {
   font-size: 0.75rem;
   color: var(--muted-foreground);
@@ -2366,7 +2366,7 @@ select:disabled,
   min-height: 0;
 }
 
-/* Route-level Suspense fallback (CL-6370): centers the shared warm loader
+/* Route-level Suspense fallback: centers the shared warm loader
    instead of leaving a bare, un-laid-out box while a route chunk loads. */
 .shell-route-loading {
   display: flex;
@@ -3077,7 +3077,7 @@ tr.insights-row-clickable:hover {
   gap: 1rem;
 }
 
-/* CL-6124: the in-shell first-workbench screen — a chat, not a form. One
+/* the in-shell first-workbench screen — a chat, not a form. One
    prompt box, centered both ways in the stage; the stage owns the full
    width, no decorative panel. */
 .describe-first-workbench {
@@ -3124,7 +3124,7 @@ tr.insights-row-clickable:hover {
   color: var(--muted-foreground);
 }
 
-/* CL-6224: per-workbench Timeline — one wall-clock spine (chat messages,
+/* per-workbench Timeline — one wall-clock spine (chat messages,
    thread forks, routine runs, tasks, approvals), day dividers, and a right
    rail of per-day KPI counts. Matches the Insights stage's own visual
    language (hairline dividers, uppercase section labels, --shell-accent
@@ -3348,7 +3348,7 @@ tr.insights-row-clickable:hover {
   font-weight: 550;
 }
 
-/* ---------------- new-workbench picker (CL-6342) ---------------- */
+/* ---------------- new-workbench picker ---------------- */
 /* Screen 1 of the approved mock: one row list, no card grid. The
    selection rail (`box-shadow: inset 2px 0 0 0 var(--shell-accent)`)
    matches the sidebar's own active-row treatment exactly. */
@@ -3384,7 +3384,7 @@ tr.insights-row-clickable:hover {
   margin: 0;
 }
 
-/* The prompt box (CL-6628): the primary act on this screen, so it gets
+/* The prompt box: the primary act on this screen, so it gets
    the heaviest visual weight — a bordered, focus-ringed field with the
    send button inline, sized to read as "type here first". */
 .new-workbench-prompt {
@@ -3723,7 +3723,7 @@ tr.insights-row-clickable:hover {
   }
 }
 
-/* Mission Control (CL-6488/CL-6489) — stat strip, then a main column
+/* Mission Control — stat strip, then a main column
    (Needs you / In flight) beside a 320px rail (Jump back in / This week),
    the same "stack under 1100px" rule DESIGN.md gives every right rail. */
 .mission-control-layout {

@@ -1,4 +1,4 @@
-// CL-6096: drives the real @corbits/docker-provisioner plugin against a
+// drives the real @corbits/docker-provisioner plugin against a
 // live Docker daemon — create -> exclusive-run (container appears) ->
 // release -> container gone. This is the one proof of the docker sidecar
 // provisioner that needs real infrastructure, so it lives outside `bun

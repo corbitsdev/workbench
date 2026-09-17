@@ -24,7 +24,7 @@ export interface AskUserQuestion {
    * Stable id for this card. When omitted, `postQuestion` mints one.
    * `ask_user` always supplies `questionIdForCall(call.id)` so a retry of
    * the same tool call re-posts the same id — the participants/messages
-   * route treats that as a no-op and returns the existing card (CL-7248).
+   * route treats that as a no-op and returns the existing card.
    */
   readonly questionId?: string;
 }

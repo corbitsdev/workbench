@@ -14,7 +14,7 @@ import type { CanvasColumnState } from "@corbits/shell-layout";
  * / `resolveRendererKindFromMediaType`), and the content string those
  * renderers read.
  *
- * `canEdit` (CL-5958 phase 2) opts a text-kind ("doc") artifact into
+ * `canEdit` (phase 2) opts a text-kind ("doc") artifact into
  * `ArtifactTextEditor` instead of the read-only `ArtifactRenderer` —
  * defaults to `false`/absent so every existing caller keeps rendering
  * read-only with zero behavior change. The presence `/update` route's own
@@ -28,7 +28,7 @@ export type CanvasArtifactContent = {
   readonly content: string;
   readonly unavailableReason?: string;
   readonly canEdit?: boolean;
-  /** The sandboxed preview route for an `"html"`-kind artifact (CL-5879) —
+  /** The sandboxed preview route for an `"html"`-kind artifact —
    * see `ArtifactRenderProps.previewSrc`. Absent for every other renderer
    * kind, and for an HTML blob with no Library artifact id to preview. */
   readonly previewSrc?: string;
@@ -44,7 +44,7 @@ export type RoutinePanelSubject = {
   /** Always opens the editor: a specific routine (`routineId` set) or a
    * brand-new one (`routineId` omitted or `null`) — routines-page's own
    * "New routine"/"Edit" actions, "Make this a routine", the composer's
-   * `/routine` command, and "New routine in this space" (CL-6362:
+   * `/routine` command, and "New routine in this space" (:
    * browsing/running existing routines moved to the global `/routines`
    * page, so this pane no longer has a list mode). */
   readonly routineId?: string | null;
@@ -64,7 +64,7 @@ export type RoutinePanelSubject = {
    * in which case the panel falls back to this workbench's own default
    * (Myra) workbench — never mints a new one. */
   readonly workbenchId?: string;
-  /** Seeds the target picker's initial selection (CL-7356) — the
+  /** Seeds the target picker's initial selection — the
    * conversation's own single agent participant's definition asset id,
    * when the opener could resolve exactly one. Shown visibly in
    * `DefinitionTargetPicker` and freely replaceable/clearable by the

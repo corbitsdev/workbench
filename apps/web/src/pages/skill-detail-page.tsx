@@ -1,6 +1,6 @@
-// The skill detail page at `/skills/<name>` (CL-6416).
+// The skill detail page at `/skills/<name>`.
 //
-// CL-8086: this used to be a full editor over `@corbits/skills`' own
+// this used to be a full editor over `@corbits/skills`' own
 // registry — description/body editing with diff review, restore-by-
 // version off that asset's git history, a "pinned by" list, and a
 // private/shared visibility toggle. That registry (and the workflow
@@ -11,7 +11,7 @@
 // SKILL.md content, its version history, who has it pinned, or a
 // scope/visibility flag, so none of that can be rendered here without
 // vendoring a replacement surface. This page is scoped down to what the
-// stock routes actually carry until one exists — see the CL-8086 PR body
+// stock routes actually carry until one exists — see the PR body
 // for the gap.
 import { PageShell, RichEmptyState, Section, formatRelativeTime } from "@corbits/react-ui";
 import { Lightning } from "@corbits/icons";
@@ -131,12 +131,12 @@ export function SkillDetailPage({
 
       <Section
         title="Skill content"
-        description="Not readable here yet: there is no stock Interchange route for a skill's SKILL.md content (CL-8086)."
+        description="Not readable here yet: there is no stock Interchange route for a skill's SKILL.md content."
       >
         <p className="text-sm text-muted-foreground">
           This skill's description, instructions, version history, and pinned-by list lived in the
-          workbench-specific skill registry removed by CL-8086. They will return once a stock route
-          for reading and writing skill content exists.
+          workbench-specific skill registry removed by. They will return once a stock route for
+          reading and writing skill content exists.
         </p>
       </Section>
     </div>,

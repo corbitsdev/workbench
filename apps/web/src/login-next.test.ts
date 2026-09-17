@@ -1,4 +1,4 @@
-// CL-6369: the `next` param on /login is attacker-controllable (a crafted
+// the `next` param on /login is attacker-controllable (a crafted
 // `/login?next=...` link) — every case here is either a legitimate in-app
 // path or an open-redirect shape that must fall back to `/`.
 

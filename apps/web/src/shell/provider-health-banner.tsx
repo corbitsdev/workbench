@@ -1,7 +1,7 @@
-// The shell's guided-fix banner (CL-6092): shown above the stage
+// The shell's guided-fix banner: shown above the stage
 // whenever `ProviderHealthProvider` has a classified, undismissed
 // provider-health incident *and* the person is on Settings or the
-// broken room (CL-6734). It is not a sticky toast on Skills, Files,
+// broken room. It is not a sticky toast on Skills, Files,
 // Mission Control, or Plugins — recovery lives on the surface that
 // broke. "Fix it" deep-links to Plugins' connect panel for that
 // provider (see `../pages/plugins-page.tsx`'s pending-connect
@@ -9,7 +9,7 @@
 // routes to onboarding's credential step instead, since there is no
 // provider gallery worth opening yet.
 //
-// Chrome kinds (CL-6834): `unknown` (still polling), `error` (first-load
+// Chrome kinds: `unknown` (still polling), `error` (first-load
 // poll failed — not the same silence as healthy), `healthy` (ready and
 // nothing unhealthy), and `unhealthy` (guided Fix-it banner).
 
@@ -33,7 +33,7 @@ import {
 
 const PLUGINS_PATH = "/plugins";
 
-// CL-6734: recovery on Settings and the room only — never a stalker toast.
+// recovery on Settings and the room only — never a stalker toast.
 export function isProviderHealthRecoverySurface(path: string): boolean {
   return matchesRoute(SETTINGS_PATH, path) || matchesRoute(WORKBENCH_PATH_PREFIX, path);
 }
@@ -59,7 +59,7 @@ function providerDisplayName(provider: string): string {
   return descriptor?.displayName ?? provider;
 }
 
-// Fixed, pre-written copy per classified category (CL-6092) — the one
+// Fixed, pre-written copy per classified category — the one
 // place a `ProviderHealthRecord.category` becomes a sentence. Never a
 // provider's own error text: see `provider-health.ts`'s module header for
 // why only a closed enum ever reaches this far.
@@ -133,7 +133,7 @@ export function ProviderHealthBanner({ path }: { readonly path: string }) {
 
   // A ready all-clear still mounts a zero-size marker so tests (and any
   // future chrome) can tell "actually healthy" from "unknown / not yet
-  // polled" without treating empty DOM as healthy (CL-6834).
+  // polled" without treating empty DOM as healthy.
   if (chrome.kind === "healthy" && cachedVisible === null) {
     return <div data-provider-health="healthy" hidden />;
   }

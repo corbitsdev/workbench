@@ -6,16 +6,16 @@
 // a same-tick `dispatchEvent` would be a race the listener always loses.
 // `pending-dialog-request.ts` generalizes that pattern; the target page
 // (skills-page.tsx) consumes the pending flag on mount. Skills moved from
-// its own route into a Settings section (CL-5990) and back out to its own
-// rail destination (CL-6355) — "New skill" lands on `/skills`. "New task"
-// and the Inbox page it used to open are gone (CL-6151, owner decision):
+// its own route into a Settings section and back out to its own
+// rail destination — "New skill" lands on `/skills`. "New task"
+// and the Inbox page it used to open are gone (owner decision):
 // tasks are dispatched by Myra from inside a workbench now.
 //
 // Workbench creation is not one of those — there is no dialog to race, no
 // page to mount first: "new-workbench" navigates straight to the template
-// picker (`/new`, CL-6342 — superseding CL-6138's direct mint), the same
+// picker (`/new`, — superseding its direct mint), the same
 // hop the sidebar's own "+" control uses. A second "new-agent" row that
-// said and did the same thing was dropped (CL-6820). "New thread" is out
+// said and did the same thing was dropped. "New thread" is out
 // of scope (killed by owner decision).
 
 import { createPendingDialogRequest } from "@corbits/shell-layout";

@@ -16,7 +16,7 @@
 // smart-HTTP on the asset repo, which no run-bearer credential can reach
 // today: `createGitTokenAuth` accepts only an `itx_pat_`/`itx_svc_` git
 // token, and the stock mint route refuses a caller with no browser
-// session. See CL-8171 for the upstream ask that would let these four
+// session. See for the upstream ask that would let these four
 // follow `deploy` onto stock routes.
 import { type } from "arktype";
 import { runBearerHeaders, runBearerFetch, type RunBearerClientConfig } from "./run-bearer";

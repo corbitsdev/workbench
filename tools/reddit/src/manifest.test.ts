@@ -2,7 +2,7 @@
 // `PackageJSON` manifest schema (`@intx/types/src/package-json.ts`)
 // with an `interchange.credentials` declaration the deploy-time
 // `ToolPackageManifest` harvests into `topLevel[].credentials` — the
-// static half of the credential-binding seam CL-6028 adopts. Not a test
+// static half of the credential-binding seam adopts. Not a test
 // of the vendored schema itself, only that this package's manifest is
 // shaped the way that schema requires.
 import { expect, test } from "bun:test";

@@ -320,5 +320,5 @@ export const catalogTools = defineTool<WorkflowCatalogEnv>({
     },
   }),
 });
-// Catalog administration is UI-only (CL-7588): this package exposes no
+// Catalog administration is UI-only: this package exposes no
 // write tools — the three read-only tools above are the whole bundle.

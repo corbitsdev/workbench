@@ -22,11 +22,10 @@ import {
 } from "../src/routes";
 import type { SessionState } from "../src/session";
 
-/** Slug-addressed detail routes (CL-6412). The generic render loop below
- * renders each `route.path` verbatim, which for these is the pattern
- * (`/agents/:slug`) rather than a real path - they get their own render
- * tests instead. Plugin detail (`/plugins/:slug`) is intentionally absent
- * until CL-6417 — the stub was unlinked in CL-6817. */
+/** Slug-addressed detail routes. The generic render loop below renders
+ * each `route.path` verbatim, which for these is the pattern
+ * (`/agents/:slug`) rather than a real path — they get their own render
+ * tests instead. */
 const DETAIL_ROUTE_PATHS = new Set([
   ROUTINE_DETAIL_PATH,
   WORKFLOW_DETAIL_PATH,
@@ -34,10 +33,7 @@ const DETAIL_ROUTE_PATHS = new Set([
   SKILL_DETAIL_PATH,
 ]);
 
-/** Legacy routes that only redirect - `/library` bounces to `/files`
- * (CL-6353), `/settings/agents` and `/settings/skills` bounce to `/agents`
- * and `/skills` (CL-6354/CL-6355 moved both off Settings), `/inbox` bounces
- * home (the Inbox page is gone, CL-6151) - none has a stable panel title to
+/** Legacy routes that only redirect: none has a stable panel title to
  * assert via the generic render loop below. */
 const LEGACY_REDIRECT_PATHS = new Set([
   "/library",
@@ -204,7 +200,7 @@ describe("route table", () => {
     expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/library");
   });
 
-  test("a slug segment resolves to the entity's own detail route (CL-6412)", () => {
+  test("a slug segment resolves to the entity's own detail route", () => {
     expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/triage-bot")).toBe(true);
     expect(matchesRoute(SKILL_DETAIL_PATH, "/skills/pr-review")).toBe(true);
     expect(matchesRoute(ROUTINE_DETAIL_PATH, "/routines/weekly-digest")).toBe(true);
@@ -231,12 +227,12 @@ describe("route table", () => {
     expect(routeFor("/routines/rtn_1")).toBe(ROUTINE_DETAIL_PATH);
   });
 
-  test("the Plugins roster owns only its bare path until CL-6417 lands a detail page (CL-6817)", () => {
+  test("the Plugins roster owns only its bare path", () => {
     const routeFor = (path: string) =>
       APP_ROUTES.find((candidate) => matchesRoute(candidate.path, path))?.path;
     expect(routeFor("/plugins")).toBe("/plugins");
     // No stub detail: a slug under /plugins is unroutable, not a
-    // "still being built" placeholder (CL-6817).
+    // "still being built" placeholder.
     expect(routeFor("/plugins/linear")).toBeUndefined();
     expect(routeFor("/plugins/Linear")).toBeUndefined();
     expect(routeFor("/plugins/linear/settings")).toBeUndefined();
@@ -253,7 +249,7 @@ describe("route table", () => {
     expect(matchesRoute(ROUTINE_DETAIL_PATH, "/routines/%E0%A4%A")).toBe(false);
     expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/%2Ftriage-bot")).toBe(false);
     // A workflow detail path reuses workflowDefinitionAssetIdFromPath
-    // (CL-7371 review): a malformed percent-escape segment must never
+    // (review): a malformed percent-escape segment must never
     // match the route at all, not match and then fail to resolve an id.
     expect(matchesRoute(WORKFLOW_DETAIL_PATH, "/workflows/%E0%A4%A")).toBe(false);
   });
@@ -297,7 +293,7 @@ describe("/inbox redirect", () => {
     container = null;
   });
 
-  test("bounces old /inbox links home - the Inbox page is gone (CL-6151)", async () => {
+  test("bounces old /inbox links home - the Inbox page is gone", async () => {
     const inboxRoute = APP_ROUTES.find((route) => route.path === "/inbox");
     if (inboxRoute === undefined) throw new Error("no /inbox route entry");
     const navigated: string[] = [];
@@ -342,7 +338,7 @@ describe("routes render", () => {
     });
   }
 
-  // Agents is the one detail route whose real screen has landed (CL-6414),
+  // Agents is the one detail route whose real screen has landed,
   // so it titles itself with the slug and lights its roster row without a
   // placeholder's "Back to" affordance.
   test("/agents/<slug> titles the agent's own page with its roster row lit", async () => {
@@ -359,9 +355,9 @@ describe("routes render", () => {
     expect(activeFooterLabel(markup)).toBe("Skills");
   });
 
-  // CL-6817: the plugin detail stub ("still being built") is gone until
-  // CL-6417 ships a real page. A slug under /plugins must not promise one.
-  test("/plugins/<slug> is not-found, never a still-being-built stub (CL-6817)", async () => {
+  // the plugin detail stub ("still being built") is gone until
+  // ships a real page. A slug under /plugins must not promise one.
+  test("/plugins/<slug> is not-found, never a still-being-built stub", async () => {
     const markup = await renderApp("/plugins/linear");
     expect(markup).toContain("Page not found");
     expect(markup).not.toContain("still being built");

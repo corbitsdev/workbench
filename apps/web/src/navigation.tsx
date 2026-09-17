@@ -24,7 +24,7 @@ const SignOutContext = createContext<(() => void) | undefined>(undefined);
 
 /** Same availability rule as `SignOutContext`: present in the signed-in
  * shell so surfaces like `ChatPage` can label the reader's own avatar from
- * the auth account (CL-6655), undefined outside that shell. */
+ * the auth account, undefined outside that shell. */
 const SessionUserContext = createContext<SessionUser | undefined>(undefined);
 
 export function NavigationProvider({

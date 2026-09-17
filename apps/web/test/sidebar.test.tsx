@@ -138,7 +138,7 @@ describe("Sidebar", () => {
     expect(markup).not.toContain('aria-label="Expand sidebar"');
   });
 
-  // CL-6342: the "+" control opens the template picker (`/new`) instead of
+  // the "+" control opens the template picker (`/new`) instead of
   // minting a workbench directly.
   test("the + control opens the template picker, not an instant mint", async () => {
     stubFetch();
@@ -286,7 +286,7 @@ describe("Sidebar", () => {
     container.remove();
   });
 
-  // CL-6178: the global pages (Plugins, Insights) used to be the one place
+  // the global pages (Plugins, Insights) used to be the one place
   // the sidebar dropped the workbench list — reaching a conversation from
   // there took an extra hop back through `/`. The list is not page-scoped
   // (see `workbench-list.tsx`'s own header comment), so it renders exactly
@@ -595,12 +595,12 @@ describe("Sidebar", () => {
     container.remove();
   });
 
-  // CL-6105: the footer avatar used to be a plain link straight to
+  // the footer avatar used to be a plain link straight to
   // settings — there was no way to sign out short of the hidden
   // right-click context menu. It is now a real menu (react-ui's `Menu`
   // primitives).
   //
-  // CL-6132: grown to the reference shape — the whole account row (avatar
+  // grown to the reference shape — the whole account row (avatar
   // + name) is the trigger, and the menu itself carries a weekly usage
   // line, a feedback link out to the repo's GitHub issues, a divider, and
   // a danger-styled "Log out".
@@ -657,7 +657,7 @@ describe("Sidebar", () => {
       container.remove();
     });
 
-    // CL-8160: the "Weekly usage" line read packages/insights' `/usage`
+    // the "Weekly usage" line read packages/insights' `/usage`
     // route, deleted along with the package — the menu is just feedback and
     // log out now.
     test("offers a feedback link and Log out, no Weekly usage line", async () => {

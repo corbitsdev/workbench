@@ -52,7 +52,7 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/webhook-triggers", apply: applyWebhookTriggersMigrations },
   { name: "@corbits/notify", apply: applyNotifyMigrations },
   { name: "@corbits/mailbox", apply: applyMailboxMigrations },
-  // Own `inbox` schema; CL-8185 forward-drops the CL-7208 snooze table.
+  // Own `inbox` schema; forward-drops the snooze table.
   { name: "@corbits/inbox", apply: applyInboxMigrations },
   { name: "@corbits/agent-directory", apply: applyAgentDirectoryMigrations },
   { name: "@corbits/cron", apply: applyCronMigrations },
@@ -82,7 +82,7 @@ async function applyInstalledPackageMigrations(databaseUrl: string): Promise<voi
     }
   }
 
-  // CL-7593: the one-time CL-7242 duplicate-grant cleanup ran its era
+  // the one-time duplicate-grant cleanup ran its era
   // (the repo_review_lease now prevents new duplicates at write time),
   // so db-setup no longer performs it: setup applies migrations only,
   // and grant state stays on the native grant routes.
@@ -367,11 +367,11 @@ async function dropRoutinesSchemaAfterDigestHandoff(databaseUrl: string): Promis
 
 /**
  * One-shot, forward-only: `@corbits/run-key-history` and
- * `@corbits/preferences` (CL-8158) had zero web callers on their mounts —
+ * `@corbits/preferences` had zero web callers on their mounts —
  * a diagnostics-only listener and a client that was built but never
  * imported — so both packages, their mounts, and their schemas are gone.
- * `bench` (CL-8160) joins them for the same reason. `insights` (also
- * CL-8160) joins them too, for a different reason: the hub mounts nothing
+ * `bench` joins them for the same reason. `insights` (also
+ *) joins them too, for a different reason: the hub mounts nothing
  * Workbench-specific, so its usage/latency writers and read routes are
  * gone — Insights UI now reads stock observability/workflow routes
  * client-side instead. Absent schema is a no-op; safe to re-run.

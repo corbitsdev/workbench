@@ -2,7 +2,7 @@
 // ScheduleTrigger: list, run-now, and pause/resume. Pause/resume is the
 // same agent-directory status PUT seed uses (`stopped` / `deployed`).
 //
-// CL-8160: the hub routes `listScheduledWorkflows` and
+// the hub routes `listScheduledWorkflows` and
 // `runScheduledWorkflowNow`/`listAvailableCatalogWorkflows` used to call
 // (`@corbits/workflows`'s deleted `./schedule/scheduled-route.ts`) are
 // gone. Owner ruling: schedule state derives from stock reads client-side
@@ -13,10 +13,10 @@
 // `listAvailableCatalogWorkflows`'s connection-satisfaction read has no
 // stock equivalent either. Both resolve to an empty list rather than
 // fetch a route that no longer exists (same pattern as `tenantKeys`'
-// `routineActivity` comment in `query-client.ts` for CL-8087's deleted
+// `routineActivity` comment in `query-client.ts` for its deleted
 // `feed=fires` route): the Routines roster and Available section render
 // their existing empty states until an upstream ask lands. See the
-// CL-8160 PR for exactly what is missing.
+// PR for exactly what is missing.
 
 import { type } from "arktype";
 import { useQuery } from "@tanstack/react-query";
@@ -49,19 +49,19 @@ export const AvailableCatalogWorkflow = type({
 
 export type AvailableCatalogWorkflow = typeof AvailableCatalogWorkflow.infer;
 
-/** CL-8160: no route exists at this path any more — kept as a documented
+/** no route exists at this path any more — kept as a documented
  * dead address, not a live fetch target, for any caller that still reads
  * it for logging/keys. */
 export function scheduledWorkflowsPath(tenantId: string): string {
   return `/api/tenants/${tenantId}/workflows/scheduled`;
 }
 
-/** CL-8160: no route exists at this path any more — see the file header. */
+/** no route exists at this path any more — see the file header. */
 export function availableCatalogWorkflowsPath(tenantId: string): string {
   return `/api/tenants/${tenantId}/workflows/available`;
 }
 
-/** CL-8160: always empty — see the file header for why there is no
+/** always empty — see the file header for why there is no
  * stock-derivable replacement yet. */
 export function listAvailableCatalogWorkflows(
   _tenantId: string,
@@ -73,7 +73,7 @@ export function scheduledWorkflowRunPath(tenantId: string, definitionId: string)
   return `/api/tenants/${tenantId}/workflows/scheduled/${encodeURIComponent(definitionId)}/run`;
 }
 
-/** CL-8160: always empty — see the file header for why there is no
+/** always empty — see the file header for why there is no
  * stock-derivable replacement yet. */
 export function listScheduledWorkflows(
   _tenantId: string,
@@ -81,7 +81,7 @@ export function listScheduledWorkflows(
   return Promise.resolve([]);
 }
 
-/** CL-8160: unreachable in practice — `listScheduledWorkflows` never
+/** unreachable in practice — `listScheduledWorkflows` never
  * returns a row for `onRunNow` to be called with — kept only so
  * `useRoutineActions`' shape does not need to change too. Throws rather
  * than fetching a route that no longer exists. */
@@ -91,7 +91,7 @@ export function runScheduledWorkflowNow(
 ): Promise<{ runId: string }> {
   return Promise.reject(
     new ApiQueryError(
-      "Scheduled run-now has no stock route yet (CL-8160).",
+      "Scheduled run-now has no stock route yet.",
       undefined,
       scheduledWorkflowRunPath(_tenantId, _definitionId),
     ),

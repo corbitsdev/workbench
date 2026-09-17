@@ -38,7 +38,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function uploadFile(container: HTMLDivElement, file: File): void {
-  // The picker is unlabeled on purpose (CL-6750) — the visible Upload
+  // The picker is unlabeled on purpose — the visible Upload
   // button is the only named control; this helper drives the ghost input.
   const input = container.querySelector('input[type="file"]') as HTMLInputElement | null;
   if (input === null) throw new Error("no upload input");

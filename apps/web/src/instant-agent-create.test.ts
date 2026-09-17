@@ -171,7 +171,7 @@ describe("createWorkbench", () => {
       if (path.endsWith("/chat/workbenches/chan-recoverable/invite")) {
         return json({ address: "def-assistant@tnt-1.corbits.dev", definitionId: "def-assistant" });
       }
-      // CL-8175: the opening message now posts through `@corbits/mailbox`'s
+      // the opening message now posts through `@corbits/mailbox`'s
       // `POST /me/inbox/send` rather than the chat route.
       if (path.endsWith("/mailbox/me/inbox/send")) {
         return json({ error: "agent launch failed" }, 409);

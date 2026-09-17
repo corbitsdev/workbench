@@ -1,6 +1,6 @@
 // Builds the `ConnectServiceActions` port `ChatWorkspace` (`@corbits/chat-ui`)
-// calls for the generic in-room connect card (CL-6393) — the room
-// connect-github binding's shape (hub-zero T3, CL-8114, deleted with the
+// calls for the generic in-room connect card — the room
+// connect-github binding's shape (hub-zero T3, deleted with the
 // workbench-scoped mount) generalized to every connector and
 // MCP preset. The block's data carries only agent-authored framing;
 // every live fact is resolved here: a curated preset reads the
@@ -14,7 +14,7 @@
 // credential completed without leaving the room (another tab, the
 // Plugins page) publishes `chat.settings`; ChatWorkspace parses that
 // event and calls `notifySettingsChanged` so a mounted card flips
-// without remounting (CL-6476).
+// without remounting.
 import type { ConnectServiceActions, ConnectServiceQuery } from "@corbits/chat-ui";
 import {
   completeConnectorCredential,

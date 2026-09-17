@@ -1,4 +1,4 @@
-// CL-6656: ad-hoc ("Just start talking") benches mint as "New Workbench" and
+// ad-hoc ("Just start talking") benches mint as "New Workbench" and
 // used to stay that way in the sidebar. Prefab templates already name the
 // room after the template title; this helper turns the person's first message
 // into a short sidebar title so blank benches get the same treatment once

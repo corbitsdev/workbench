@@ -1,4 +1,4 @@
-// Integration coverage for CL-6092's shell banner: mounts the real
+// Integration coverage for its shell banner: mounts the real
 // `ProviderHealthProvider` above `ProviderHealthBanner` and `PluginsRoute`
 // exactly as `app.tsx`'s `Shell` nests them (siblings under one provider,
 // same shape `shell-chrome-wiring.test.tsx` proved for canvas state),
@@ -97,7 +97,7 @@ async function flush(): Promise<void> {
 }
 
 /** Same flush loop, but waits for a specific `data-provider-health` marker
- * (CL-6834) — used when the chrome settles without an alert (healthy) or
+ * — used when the chrome settles without an alert (healthy) or
  * with an error marker rather than an unhealthy-provider alert. */
 async function flushForHealthMarker(marker: string): Promise<void> {
   for (let i = 0; i < 20; i += 1) {
@@ -116,7 +116,7 @@ function findByText(container: HTMLElement, text: string): HTMLElement | undefin
   );
 }
 
-describe("ProviderHealthBanner (CL-6092)", () => {
+describe("ProviderHealthBanner", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -179,7 +179,7 @@ describe("ProviderHealthBanner (CL-6092)", () => {
     expect(container.textContent).toContain("says this key is out of credit.");
   });
 
-  // CL-6092: the record only ever carries a closed category, so there is
+  // the record only ever carries a closed category, so there is
   // no provider prose left to leak through this render layer at all — but
   // this still proves it end to end, from a stubbed HTTP response through
   // to what actually lands in the DOM, in case a future category ever
@@ -259,7 +259,7 @@ describe("ProviderHealthBanner (CL-6092)", () => {
     expect(container.querySelector('[data-provider-health="healthy"]')).not.toBeNull();
   });
 
-  // CL-6834: a failed first poll used to leave providers at {}, which the
+  // a failed first poll used to leave providers at {}, which the
   // chrome treated the same as "ready and nothing unhealthy" — so an
   // unreachable health endpoint looked like every provider was fine.
   test("first-load poll failure shows error chrome, not a silent healthy state", async () => {
@@ -295,7 +295,7 @@ const CREDENTIAL_FAILURE_HEALTH = {
   connectedProviderCount: 1,
 };
 
-describe("isProviderHealthRecoverySurface (CL-6734)", () => {
+describe("isProviderHealthRecoverySurface", () => {
   test("Skills, Files, Mission Control, and Plugins are not recovery surfaces", () => {
     expect(isProviderHealthRecoverySurface(SKILLS_PATH_PREFIX)).toBe(false);
     expect(isProviderHealthRecoverySurface(`${SKILLS_PATH_PREFIX}/drafting`)).toBe(false);
@@ -314,7 +314,7 @@ describe("isProviderHealthRecoverySurface (CL-6734)", () => {
   });
 });
 
-describe("ProviderHealthBanner scope (CL-6734)", () => {
+describe("ProviderHealthBanner scope", () => {
   let container: HTMLDivElement;
   let root: Root;
 

@@ -12,5 +12,5 @@ export {
 // two stock Interchange tenant reads — `/api/tenants/:tenantId/models` and
 // `/api/tenants/:tenantId` — with the run's own bearer credential. There is
 // no `/api/workflow-inference-catalog` mount any more. Catalog
-// administration stays UI-only (CL-7588): this package exposes no write
+// administration stays UI-only: this package exposes no write
 // tools and no hub routes.

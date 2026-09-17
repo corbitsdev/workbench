@@ -123,10 +123,10 @@ describe("buildSidebarRows", () => {
     expect(rows).toEqual([{ kind: "workbench", workbench: dm }]);
   });
 
-  test("every created workbench keeps its row even when each minted its own definition (CL-6621)", () => {
-    // Creation now clones a fresh definition per workbench (CL-6452), so
+  test("every created workbench keeps its row even when each minted its own definition", () => {
+    // Creation now clones a fresh definition per workbench, so
     // sibling rows for the same agent legitimately carry distinct
-    // definitionIds. The old CL-6271 collapse keyed on exactly that and
+    // definitionIds. The old collapse keyed on exactly that and
     // hid every workbench but the newest — a person creating a second
     // workbench watched the first vanish.
     const created = ["ch_new_1", "ch_new_2", "ch_new_3"].map((id, index) =>
@@ -145,7 +145,7 @@ describe("buildSidebarRows", () => {
     expect(idsOf(rows)).toEqual(["ch_new_3", "ch_new_2", "ch_new_1"]);
   });
 
-  test("two distinct agents whose slugs humanize to the same title never collapse into one row (CL-6413)", () => {
+  test("two distinct agents whose slugs humanize to the same title never collapse into one row", () => {
     const researchAnalystHyphen = workbench({
       id: "ch_research_analyst_hyphen",
       kind: "chat",
@@ -181,7 +181,7 @@ describe("buildSidebarRows", () => {
     ]);
   });
 
-  test("same-titled DMs both stay: a title is not identity (CL-6621)", () => {
+  test("same-titled DMs both stay: a title is not identity", () => {
     const olderDm = workbench({
       id: "ch_legacy_ancestor",
       kind: "chat",

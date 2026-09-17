@@ -1,5 +1,5 @@
 // What the profile card's Message action and shared-workbenches list need,
-// resolved against real bench data (CL-5914, CL-5919). Generalizes
+// resolved against real bench data. Generalizes
 // `myra-workbench.ts`'s ensure-style reuse — find an existing 1:1 by
 // participant instead of by a fixed title, and fall back to creating one —
 // to any profile subject rather than one hardcoded agent.

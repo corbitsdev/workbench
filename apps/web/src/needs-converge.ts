@@ -99,7 +99,7 @@ export type StockHub = {
    * "member") in the same op — the stock invite route's `roleId` is the
    * only way an invited principal gets any grant at all; without it the
    * principal lands with zero roles and every subsequent read 403s
-   * (CL-8085/CL-8131 fix).
+   * (/ fix).
    */
   inviteMember(tenantId: string, input: { email: string; role: string }): Promise<void>;
   deployWorkflow(tenantId: string, input: WorkflowDeployInput): Promise<void>;

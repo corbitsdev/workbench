@@ -1,7 +1,7 @@
 // Myra's pure prompt/pin data — no runtime import of `@intx/workflow` or
 // `@intx/agent` (only a type-only import below), so this module is safe
-// to bundle into a browser build (CL-8154's `apps/web` needs exactly
-// this: the content, not `buildAssistantWorkflow`'s `defineWorkflow`
+// to bundle into a browser build (`apps/web` needs exactly this: the
+// content, not `buildAssistantWorkflow`'s `defineWorkflow`
 // call, which pulls in `@intx/agent`'s Node-bound runtime — file
 // locking, in particular — that a browser bundle cannot resolve).
 // `index.ts`'s `buildAssistantWorkflow` imports these same constants;
@@ -18,7 +18,7 @@ export const ASSISTANT_STEP_ID = "assistant";
  * these: `@corbits/memory` is a normal published dependency, not a
  * workspace tool package the pin/registry resolver can name, so its
  * tool factories are attached directly on `toolFactories` in
- * `./index.ts` instead (CL-8186). `@corbits/capability-tools` lets Myra
+ * `./index.ts` instead. `@corbits/capability-tools` lets Myra
  * self-service a missing tool, skill, or model; the manager-tools
  * bundles give Myra real workbench-management capability — a specialist
  * agent she can create (each gets their own chat), connection
@@ -63,7 +63,7 @@ const ASSISTANT_WELCOME_CLAUSE =
   "allowed to.";
 
 /**
- * TRIAGE (CL-6350): how Myra decides, on every message, whether to
+ * TRIAGE: how Myra decides, on every message, whether to
  * answer directly or delegate — what to do when a job needs a
  * connection this workbench doesn't have yet, and the reverse case: she
  * answers by default and only steps back when a message @-mentions a
@@ -95,14 +95,14 @@ const ASSISTANT_TRIAGE_CLAUSE =
   "unless you are @-mentioned too or the sender asks you directly.";
 
 /**
- * TEAMMATE (CL-7469 folds in COORDINATOR): how Myra offers help without
+ * TEAMMATE (folds in COORDINATOR): how Myra offers help without
  * pushing it — folds in the skills-capture nudge rather than a separate
  * always-on clause. Myra is the coordinator of this bench's agents, not
  * just its resident assistant: she never builds a teammate by
  * hand-editing files or answering in its place, and never stands up a
  * second instance of an agent that already exists.
  *
- * The build-arc sentence (CL-5879) is the load-bearing one: it never
+ * The build-arc sentence is the load-bearing one: it never
  * waits for someone to name the mechanism ("make an agent", "set up a
  * routine"). An *outcome* — a sales motion, a content pipeline, a repo
  * to keep up — is enough on its own for Myra to work out the
@@ -145,7 +145,7 @@ const ASSISTANT_TEAMMATE_CLAUSE =
   "built and what it can now do once it's live.";
 
 /**
- * DISCOVERY (CL-6179): the specific interview-then-propose procedure a
+ * DISCOVERY: the specific interview-then-propose procedure a
  * stated outcome triggers, on top of the general "work out the team
  * yourself" doctrine in `ASSISTANT_TRIAGE_CLAUSE` above — short and
  * concrete rather than open-ended, so discovery never turns into a

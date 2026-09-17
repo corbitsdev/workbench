@@ -59,7 +59,7 @@ function clientConfig(env: AskUserEnv): AskUserClientConfig {
  * `postQuestion` stamps `questionIdForCall(call.id)` (derived from the
  * tool-call id, not minted per attempt) on the outbound question card, so a
  * crash-retry of the same call re-posts the same id and the write path
- * returns the existing card rather than a duplicate (CL-7248).
+ * returns the existing card rather than a duplicate.
  */
 async function runAskUser(env: AskUserEnv, call: ToolCall): Promise<ToolResult> {
   const parsed = AskUserInput(call.arguments);

@@ -1,6 +1,6 @@
 // The initials helper the sidebar's account affordance renders from. The
 // switcher dock this file used to also export (`BenchDock`) is gone — see
-// `sidebar.tsx`'s header comment (CL-6089).
+// `sidebar.tsx`'s header comment.
 
 /**
  * Initials for the identity dock's avatar, derived locally — the app is

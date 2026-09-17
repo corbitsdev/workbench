@@ -31,11 +31,11 @@ function isPinned(row: SidebarRow): boolean {
  */
 export function buildSidebarRows(items: readonly Workbench[]): readonly SidebarRow[] {
   // Every row a person can see in Postgres appears here. An earlier
-  // heuristic (CL-6271) collapsed same-agent chats onto the newest
+  // heuristic collapsed same-agent chats onto the newest
   // definitionId to hide stale cross-tenant DM siblings; once creation
-  // began cloning a fresh definition per workbench (CL-6452), that
+  // began cloning a fresh definition per workbench, that
   // heuristic could no longer tell a stale sibling from a deliberately
-  // created workbench and hid every workbench but the newest (CL-6621).
+  // created workbench and hid every workbench but the newest.
   // Hiding real workbenches reads as data loss; a duplicate stale DM is
   // merely untidy. If stale siblings resurface, fix them server-side at
   // list time, not with a client-side identity guess.

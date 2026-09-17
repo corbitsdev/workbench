@@ -7,7 +7,7 @@ import { decodedOrNull } from "@corbits/url-path";
 import { INSIGHTS_PATH_PREFIX, INSIGHTS_RUNS_PATH } from "./path-ids";
 
 /**
- * `/insights/workbench/:workbenchId` (CL-5879) is its own dedicated route — a
+ * `/insights/workbench/:workbenchId` is its own dedicated route — a
  * conversation's own scoped view, resolved by `InsightsWorkbenchPage`, never
  * a sub-mode of the landing. Every other path stays the cross-workbench
  * default landing: no per-mode branch needed there, since scoping happens

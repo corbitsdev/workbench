@@ -1,13 +1,12 @@
-// Agents: the global roster (CL-6354) — every agent definition this bench
+// Agents: the global roster — every agent definition this bench
 // has, one row per definition (name, description, workbenches currently
 // using it), with a detail panel that fetches the definition's model on
 // demand (`getAgentCapabilities`, the same route the per-workbench
 // Assistant editor reads). Create runs through `CreateAgentPanel`, the
-// same `createAgentDefinition` (`@corbits/agent-directory`) call the old
-// pre-CL-5990 Agents page used. Editing instructions/capabilities stays
-// where CL-6215 put it — the per-workbench Assistant tab
-// (`@corbits/chat-ui`'s `AgentsSection`) — this page is roster-only, never
-// a second instructions editor.
+// same `createAgentDefinition` (`@corbits/agent-directory`) call the
+// per-workbench Assistant tab uses. Editing instructions/capabilities
+// stays there (`@corbits/chat-ui`'s `AgentsSection`) — this page is
+// roster-only, never a second instructions editor.
 
 import {
   Badge,
@@ -166,7 +165,7 @@ export function archiveResultToast({ succeededIds, failedIds }: ArchiveDefinitio
 /** The short model name for a definition's capabilities — fetched lazily,
  * per row, the same route (and the same plain fetch-effect, no react-query
  * client required) `AgentDetailPanel` below already uses. A fetch failure
- * must not reuse the muted em-dash empty fields use (CL-6848). */
+ * must not reuse the muted em-dash empty fields use. */
 export type AgentModelCellState =
   | { readonly status: "loading" }
   | { readonly status: "ready"; readonly data: AgentCapabilities }
@@ -185,10 +184,10 @@ function catalogModelLabel(
 
 /** Settled Model-column content — an unset model reads as "Default"; a
  * fetch failure is a distinct error, never the same label. A set model
- * maps through the tenant catalog's displayName (CL-6748), the same
+ * maps through the tenant catalog's displayName, the same
  * `displayName ?? canonicalName` reading settings already uses — never
  * an invented label, and never a rewrite of an unset model to the
- * tenant default (CL-6782). */
+ * tenant default. */
 export function agentModelSettledContent(
   state:
     | { readonly status: "ready"; readonly data: AgentCapabilities }
@@ -273,7 +272,7 @@ function AgentModelCell({
 }
 
 /** Settled Runs · 7d content — a failed top-level-runs fetch is never the
- * same as an honest count of zero (CL-6842). */
+ * same as an honest count of zero. */
 export function agentRunsSettledContent(
   definitionId: string,
   instances: readonly AgentInstance[],
@@ -303,7 +302,7 @@ export type DefinitionWorkbenchInstance = {
  * definition id — the roster's "Workbenches" column and detail panel.
  * `chats` comes from `useBenchActivity`, the same agent-DM listing the
  * sidebar itself reads; the list here is exactly which rows the sidebar
- * would show for a definition before CL-6271's dedupe-by-title collapses
+ * would show for a definition before its dedupe-by-title collapses
  * same-named DMs across ancestor tenants. */
 export function workbenchesByDefinition(
   chats: readonly {
@@ -469,7 +468,7 @@ export function AgentsPage({
   readonly workbenches: ReadonlyMap<string, readonly DefinitionWorkbenchInstance[]>;
   readonly instances: readonly AgentInstance[];
   /** When the top-level-runs fetch failed — Status/Runs · 7d must not pretend
-   * the history is empty (CL-6842). */
+   * the history is empty. */
   readonly instancesError?: string | null;
   /** Tenant catalog used to map a stored canonical model id to its
    * person-readable displayName. Empty when the catalog failed independently
@@ -702,7 +701,7 @@ export function AgentsRoute({
   const directory = useAgentDirectory(selectedTenantId ?? undefined);
   const activity = useBenchActivity(selectedTenantId);
   // Powers the roster's Status and "Runs · 7d" columns. A failed fetch must
-  // not degrade those columns to Idle/0 (CL-6842) — the definitions listing
+  // not degrade those columns to Idle/0 — the definitions listing
   // still makes the page usable, but Status/Runs admit the load failed.
   const runsQuery = useQuery({
     queryKey: ["agent-top-level-runs", selectedTenantId],

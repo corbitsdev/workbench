@@ -1,4 +1,4 @@
-// CL-6360 regression: the onboarding failure path must render the
+// regression: the onboarding failure path must render the
 // consumer-language card — never the raw error text (freshness-gate
 // prose, file paths, stack detail) a hub route's exception happened to
 // carry. `ProvisioningErrorPage` is what `App` renders for a signed-in

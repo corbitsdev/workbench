@@ -1,4 +1,4 @@
-// Screen-level proof for the Plugins gallery route (CL-6090): real fetch
+// Screen-level proof for the Plugins gallery route: real fetch
 // wiring through `listPluginsForTenant` (chain-aware credential resolve,
 // not the tenant-local list route) and `../skills-api.ts`, rendered
 // through `PluginsGallery`. Card/search/tab behavior itself is covered in
@@ -182,7 +182,7 @@ async function mount(props: { readonly navigate?: (to: string) => void } = {}) {
 }
 
 /** Stands in for `ProviderHealthBanner`'s position as a sibling of the
- * routed page under `ProviderHealthProvider` (CL-6092) — fires the same
+ * routed page under `ProviderHealthProvider` — fires the same
  * `requestPluginsConnect` the banner's "Fix it" click does, without
  * pulling in the banner widget itself. */
 function DeepLinkProbe({ provider }: { readonly provider: string }) {
@@ -253,7 +253,7 @@ describe("PluginsRoute", () => {
     expect(el.textContent).toContain("weekly-digest");
   });
 
-  test("a pending connect deep link (CL-6092) opens that provider's connect panel once the gallery loads", async () => {
+  test("a pending connect deep link opens that provider's connect panel once the gallery loads", async () => {
     stubFetch();
     const el = await mountWithDeepLink("github");
 
@@ -279,12 +279,9 @@ describe("PluginsRoute", () => {
     expect(dialog?.textContent).toContain("GitHub");
   });
 
-  // CL-6272.2: a provider connector (OpenRouter, Anthropic, ...) never
-  // gets a card on this page at all — providers live only in Shared
-  // Settings' Connections section. The OAuth-connect-return-shows-
-  // connected assertion this used to cover now lives in
-  // `@corbits/settings-ui`'s own Connections suites, the one surface
-  // that still offers a provider a Connect button to return from.
+  // A provider connector (OpenRouter, Anthropic, ...) never gets a card
+  // on this page at all — providers live only in Shared Settings'
+  // Connections section.
   test("a fresh mount never shows a provider connector, even one resolved as connected", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
@@ -311,7 +308,7 @@ describe("PluginsRoute", () => {
     expect(el.textContent).not.toContain("OpenRouter");
   });
 
-  // CL-6092: a deep link naming a provider with no matching gallery card
+  // a deep link naming a provider with no matching gallery card
   // (a stale or misconfigured provider id) used to silently no-op — the
   // gallery should say something instead of nothing.
   test("a pending connect deep link with no matching gallery card renders a visible notice", async () => {
@@ -397,7 +394,7 @@ describe("PluginsRoute", () => {
     expect(navigated).toContain("/skills/summarize");
   });
 
-  // CL-7138: a fast bench switch used to let the previous tenant's
+  // a fast bench switch used to let the previous tenant's
   // in-flight fetch resolve after the new tenant's, overwriting its data.
   test("a fast bench switch never lets the previous tenant's late fetch overwrite the new one's data", async () => {
     function deferredResponse() {
@@ -523,7 +520,7 @@ describe("PluginsRoute", () => {
     expect(container.textContent).not.toContain("alpha-only");
   });
 
-  // CL-7138: cancellation must not turn every imperative reload (a
+  // cancellation must not turn every imperative reload (a
   // connect/disconnect panel's `onChanged`, the error screen's Retry) into
   // a full teardown to the loading skeleton — only a genuine tenant change
   // should do that. This drives the real disconnect flow end to end.
@@ -620,7 +617,7 @@ describe("PluginsRoute", () => {
     expect(el.textContent).not.toContain("Connected here");
   });
 
-  // CL-7141: `request_connection`'s fallback link (`/plugins?connect=<id>`)
+  // `request_connection`'s fallback link (`/plugins?connect=<id>`)
   // hands off through the same `requestPluginsConnect` path the shell
   // banner's "Fix it" click uses.
   test("a `?connect=<id>` URL naming a known connector opens that connector's connect panel", async () => {
@@ -636,7 +633,7 @@ describe("PluginsRoute", () => {
     expect(el).not.toBeNull();
   });
 
-  // CL-7141: an id the registry doesn't recognize (typo, stale link) is
+  // an id the registry doesn't recognize (typo, stale link) is
   // ignored — no dialog, no "couldn't find that connection" notice.
   test("a `?connect=<id>` URL naming an unknown connector is ignored", async () => {
     stubFetch();
@@ -649,7 +646,7 @@ describe("PluginsRoute", () => {
     expect(window.location.search).toBe("");
   });
 
-  // CL-7141: `?connect=<id>` strips only the `connect` param — any other
+  // `?connect=<id>` strips only the `connect` param — any other
   // query param this route was opened with must survive.
   test("a `?connect=<id>` URL keeps every other query param", async () => {
     stubFetch();
@@ -660,7 +657,7 @@ describe("PluginsRoute", () => {
     expect(window.location.search).toBe("?foo=bar");
   });
 
-  // CL-7141: `presetDeepLink` in `tools/connections/src/tool.ts`
+  // `presetDeepLink` in `tools/connections/src/tool.ts`
   // emits `/plugins?connect=mcp:<slug>` for a curated MCP preset (Exa,
   // Granola, Linear, ...) — this page resolves that against the preset
   // catalog and focuses the matching card's own Connect button once it
@@ -693,7 +690,7 @@ describe("PluginsRoute", () => {
     expect(window.location.search).toBe("");
   });
 
-  // CL-7141: a preset slug the catalog doesn't recognize (typo, stale
+  // a preset slug the catalog doesn't recognize (typo, stale
   // link) is ignored — no dialog, no notice, no thrown error.
   test("a `?connect=mcp:<slug>` URL naming an unknown preset is ignored", async () => {
     stubFetch();
@@ -707,7 +704,7 @@ describe("PluginsRoute", () => {
   });
 });
 
-// CL-6487: `plugins-page.tsx`'s visibility/focus refresh effect re-reads
+// `plugins-page.tsx`'s visibility/focus refresh effect re-reads
 // plugin status on `visibilitychange`/`focus` and every 30s while visible,
 // gated on a selected tenant, with a microtask guard collapsing a same-tick
 // visibilitychange+focus pair into a single reload.

@@ -1,4 +1,4 @@
-// CL-8114 evidence kept as a regression proof: exercises the browser's exact
+// evidence kept as a regression proof: exercises the browser's exact
 // GitHub connect→disconnect round-trip (`connections/github/complete` →
 // credentials list → `connections/github/disconnect` → credentials list)
 // against a booted hub on a scratch database with the operator's real `gh`

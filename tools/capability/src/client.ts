@@ -1,26 +1,15 @@
 // A minimal client for the workflow-run-authenticated capabilities
 // surface a running agent calls to add itself a tool package, skill, or
-// model — the execution half of `@corbits/agent-directory`'s already-
-// shipped `POST /:definitionId/capabilities` (fail-closed, versioned,
-// refresh-on-success) and `GET /capabilities/inventory`.
+// model — authenticated via `createWorkflowRunAuthenticator` (sidecar
+// bearer token + run address), never a human browser session.
 //
-// This surface is `@corbits/agent-directory`'s `createWorkflowCapabilityRoutes`
-// (`packages/agent-directory/src/workflow-capability-routes.ts`, CL-6086),
-// mounted in `apps/hub` at `/api/workflow-capabilities` beside
-// `/api/workflow-skills` — authenticated the same way, via
-// `createWorkflowRunAuthenticator` (sidecar bearer token + run address),
-// never a human browser session.
-//
-// [Intx gap, tracked durably by CL-6085]: a run's own `kind: "workflow"`
-// principal is still never seeded a `workflow-definition: <its own id>/
-// update` grant anywhere in `vendor/intx/hub-api`'s grant materialization.
-// The workflow-capability route does not block on this: it skips a
-// grant-store check for the narrow own-definition case, relying instead
-// on `request_capability`'s `approval: "ask"` gate already having put a
-// human in front of the call before this client is ever invoked — see
-// the route's own file-level comment for the full authorization
-// reasoning. `requireGrant` will replace that interim rule once CL-6085
-// closes.
+// Intx gap: a run's own `kind: "workflow"` principal is never seeded a
+// `workflow-definition: <its own id>/update` grant, so the
+// workflow-capability route skips a grant-store check for the narrow
+// own-definition case, relying instead on `request_capability`'s
+// `approval: "ask"` gate having already put a human in front of the
+// call before this client is ever invoked — see the route's own
+// file-level comment for the full authorization reasoning.
 import { type } from "arktype";
 import {
   runBearerHeaders,
