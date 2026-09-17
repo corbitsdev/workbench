@@ -16,7 +16,6 @@
   },
   "dependencies": {
     "@corbits/error-sink": "workspace:*",
-    "@corbits/workflow-schedule": "workspace:*",
     "@intx/authz": "0.3.0",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",

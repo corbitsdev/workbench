@@ -34,6 +34,7 @@ import { applyNotifyMigrations } from "../packages/notify/src/migrations";
 import { applyInboxMigrations, applyMailboxMigrations } from "../packages/inbox/src/migrations";
 import { applyAgentDirectoryMigrations } from "../packages/agent-directory/src/migrations";
 import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
+import { applyCronMigrations } from "../packages/cron/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const HUB_DIR = path.join(repoRoot, "apps", "hub");
@@ -59,6 +60,7 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/inbox", apply: applyInboxMigrations },
   { name: "@corbits/agent-directory", apply: applyAgentDirectoryMigrations },
   { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
+  { name: "@corbits/cron", apply: applyCronMigrations },
 ];
 
 /**
