@@ -9,16 +9,13 @@ export * from "./detail/index";
 export * from "./authoring/index";
 export {
   pickLaunchableDefinition,
-  resolveLaunchableDefinition,
-  listLaunchableDefinitions,
   routineTargetRejection,
   RoutineTargetUnresolvableError,
-  type LaunchableDefinition,
   type LaunchableDefinitionCandidate,
   type LaunchableDefinitionRejection,
   type LaunchableDefinitionResolution,
   type LaunchableDefinitionResolver,
-} from "./launchable/target";
+} from "./launchable/target-rule";
 export {
   WorkflowTriggerField,
   WORKFLOW_CATALOG,
@@ -31,16 +28,6 @@ export {
   type WorkflowCatalogEntry,
   type TriggerFieldsValidation,
 } from "./catalog";
-export {
-  authoredDefinitionCandidates,
-  readDefinitionProjection,
-  readFoldedBody,
-  resolveNewestProjectedDefinition,
-  DefinitionProjectionMissingError,
-  MultiStepFoldUnsupportedError,
-  FoldedBodySchema,
-  type DefinitionCandidate,
-} from "./definition-projection";
 export {
   CRON_FIELD_RANGES,
   cronExpressionCanFire,
@@ -67,13 +54,9 @@ export {
   type DeliverWhenRoutableOptions,
 } from "./deliver-when-routable";
 export {
-  listScheduledWorkflowDefinitions,
-  scheduledDefinitionsFromRows,
-  type ScheduledWorkflowDefinition,
-  type ScheduledWorkflowDefinitionRow,
-} from "./schedule/list-scheduled";
-export {
-  listDeployedCronDefinitions,
-  SCHEDULE_TICK_CONTENT,
-  type DeployedCronDefinition,
-} from "./schedule/deployed-cron-deployments";
+  readFoldedBody,
+  DefinitionProjectionMissingError,
+  MultiStepFoldUnsupportedError,
+  FoldedBodySchema,
+  type DefinitionCandidate,
+} from "./definition-projection";

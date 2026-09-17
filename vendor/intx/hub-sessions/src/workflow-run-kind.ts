@@ -166,9 +166,8 @@ import fs from "node:fs";
 import git from "isomorphic-git";
 import { type } from "arktype";
 import { getLogger } from "@intx/log";
-import { glob, repoActionToGrantVerb } from "@intx/hub-common";
 import {
-  UserPrincipal,
+  authorizeUserPrincipal,
   type AuthorizeFn,
   type CommittedReads,
   type KindHandler,
@@ -1186,9 +1185,11 @@ async function validateRunPartsSubtree(args: {
   readBlob: (path: string) => Promise<Uint8Array>;
   priorReadBlob: (path: string) => Promise<Uint8Array | null>;
   listDirOids:
-    ((path: string) => Promise<{ name: string; oid: string }[]>) | undefined;
+    | ((path: string) => Promise<{ name: string; oid: string }[]>)
+    | undefined;
   priorListDirOids:
-    ((path: string) => Promise<{ name: string; oid: string }[]>) | undefined;
+    | ((path: string) => Promise<{ name: string; oid: string }[]>)
+    | undefined;
   scopeRunIds: ReadonlySet<string> | undefined;
 }): Promise<ValidatePushResult> {
   const prospective = await enumerateRunParts(args.listDir, args.scopeRunIds);
@@ -1797,7 +1798,8 @@ async function hashConsumedBlobOid(bytes: Uint8Array): Promise<string> {
 function makeListingOidResolver(
   sideLabel: string,
   listDirOids:
-    ((path: string) => Promise<{ name: string; oid: string }[]>) | undefined,
+    | ((path: string) => Promise<{ name: string; oid: string }[]>)
+    | undefined,
   hashFallback: (blobPath: string) => Promise<string>,
 ): (blobPath: string) => Promise<string> {
   const dirOidCache = new Map<string, Map<string, string>>();
@@ -1829,7 +1831,8 @@ function makeListingOidResolver(
 function makePriorConsumedOidResolver(
   priorReadBlob: (path: string) => Promise<Uint8Array | null>,
   priorListDirOids:
-    ((path: string) => Promise<{ name: string; oid: string }[]>) | undefined,
+    | ((path: string) => Promise<{ name: string; oid: string }[]>)
+    | undefined,
 ): (blobPath: string) => Promise<string> {
   return makeListingOidResolver("prior", priorListDirOids, async (blobPath) => {
     const bytes = await priorReadBlob(blobPath);
@@ -2746,50 +2749,6 @@ export const workflowRunKindHandler: KindHandler = {
       return { ok: false, reason: combinedRuns.reason };
     }
 
-    // A sealed run (`hasCombined`, above) is skipped by the per-event
-    // terminal scan entirely, since its events never appear as individual
-    // `<seq>.json` blobs -- `checkCombinedStructure` already proved every
-    // combined `events.jsonl` ends on a terminal event, so every combined
-    // run IS terminal. Surface it here as newly terminal unless the prior
-    // tree already carried the same sealed file (already reported on
-    // whichever push first sealed it, or a run compacted before its first
-    // push ever landed -- CL-6595's "finished before we started recording
-    // steps" runs are exactly this case: sealed from birth, so the
-    // per-event loop above never had a blob to see them by).
-    for (const runId of combinedRuns.combinedRunIds) {
-      const runDirPath = `${WORKFLOW_RUN_RUNS_PREFIX}/${runId}`;
-      const priorChildren = await priorListDir(runDirPath);
-      if (priorChildren.includes(WORKFLOW_RUN_EVENTS_FILE)) continue;
-      const combinedPath = `${runDirPath}/${WORKFLOW_RUN_EVENTS_FILE}`;
-      const content = new TextDecoder().decode(await readBlob(combinedPath));
-      const lines = splitCombinedEventLog(content);
-      const lastLine = lines[lines.length - 1];
-      if (lastLine === undefined) {
-        throw new Error(
-          `combined event log ${combinedPath} sealed with no lines after passing structural validation`,
-        );
-      }
-      const body: unknown = JSON.parse(lastLine);
-      const type =
-        typeof body === "object" && body !== null && "type" in body
-          ? body.type
-          : undefined;
-      const classified =
-        typeof type === "string"
-          ? classifyTerminalEvent(type)
-          : ({ terminal: false } as const);
-      if (!classified.terminal) {
-        throw new Error(
-          `combined event log ${combinedPath} for run ${runId} sealed without a recognized terminal event type`,
-        );
-      }
-      newlyTerminalRuns.push({
-        runId,
-        status: classified.status,
-        terminalEventJson: lastLine,
-      });
-    }
-
     const blobsEnumerated = await enumerateRunBlobs(listDir, scopeRunIds);
     if (!blobsEnumerated.ok) {
       logger.debug`workflow-run validatePush rejected ${repoId.kind}/${repoId.id} on ${ref}: ${blobsEnumerated.reason}`;
@@ -2993,63 +2952,13 @@ export const workflowRunAuthorize: AuthorizeFn = (
   }
 
   if (principal.kind === "user") {
-    // The route layer has already pre-resolved the grant verdict and
-    // attached it as `authz`. The substrate does NOT re-query the
-    // grant store here; it (a) checks the bearer-token's claims
-    // bound the requested (ref, action) and have not expired, and
-    // (b) sanity-checks that the pre-resolved verdict targets this
-    // exact resource and grant verb. Both gates must pass before the
-    // verdict's `effect` is honoured.
-    const parsed = UserPrincipal(principal);
-    if (parsed instanceof type.errors) {
-      return {
-        allowed: false,
-        reason: `user principal is malformed: ${parsed.summary}`,
-      };
-    }
-    if (!parsed.tokenClaims.actions.includes(action)) {
-      return {
-        allowed: false,
-        reason: `token does not grant action ${action}`,
-      };
-    }
-    // `ref === "*"` is the substrate's sentinel for the bulk read
-    // performed by `listRefs`. Per-ref filtering is the advertise-refs
-    // layer's responsibility, so the bulk read is gated on action and
-    // expiry alone.
-    if (ref !== "*" && !glob.match(parsed.tokenClaims.refPattern, ref)) {
-      return {
-        allowed: false,
-        reason: `token refPattern ${parsed.tokenClaims.refPattern} does not match ${ref}`,
-      };
-    }
-    if (Date.now() >= parsed.tokenClaims.expiresAt) {
-      return {
-        allowed: false,
-        reason: `token expired at ${parsed.tokenClaims.expiresAt}`,
-      };
-    }
-    const expectedResource = `workflow-run:${repoId.id}`;
-    if (parsed.authz.resource !== expectedResource) {
-      return {
-        allowed: false,
-        reason: `authz verdict resource ${parsed.authz.resource} does not match ${expectedResource}`,
-      };
-    }
-    const expectedGrantVerb = repoActionToGrantVerb(action);
-    if (parsed.authz.grantVerb !== expectedGrantVerb) {
-      return {
-        allowed: false,
-        reason: `authz verdict grantVerb ${parsed.authz.grantVerb} does not match ${expectedGrantVerb}`,
-      };
-    }
-    if (parsed.authz.effect === "allow") {
-      return { allowed: true };
-    }
-    return {
-      allowed: false,
-      reason: `authz verdict denied for ${expectedResource} ${expectedGrantVerb}`,
-    };
+    return authorizeUserPrincipal({
+      principal,
+      repoId,
+      ref,
+      action,
+      resourcePrefix: "workflow-run",
+    });
   }
 
   // Fail closed on any kind not handled above. The tenant-level
@@ -3279,7 +3188,10 @@ export type EnqueueInboxResult = {
  * receipt on the enqueue may safely acknowledge on any of them.
  */
 export type EnqueueAlreadyPresentReason =
-  "duplicate" | "already_inbox" | "processing" | "consumed";
+  | "duplicate"
+  | "already_inbox"
+  | "processing"
+  | "consumed";
 
 /**
  * Outcome of an `enqueueInbox` call. Modeled as a value (not an exception)
@@ -3986,87 +3898,6 @@ export async function readCommittedWorkflowRunLifecycle(
       }
     },
   });
-}
-
-/**
- * Read one run's terminal `workflow_run.status` value from a committed
- * workflow-run tree, or `null` if the run has not reached a terminal event.
- * Companion to `readCommittedWorkflowRunLifecycle` for a caller that needs
- * the actual status to write (e.g. a `markTerminal` backfill), not just the
- * live/terminal/absent classification.
- */
-export async function readCommittedWorkflowRunTerminalStatus(
-  reads: CommittedReads | null,
-  runId: string,
-): Promise<"completed" | "failed" | "cancelled" | null> {
-  if (reads === null) return null;
-  const runPath = `${WORKFLOW_RUN_RUNS_PREFIX}/${runId}`;
-  const runChildren = await reads.listDir(runPath);
-  const sealed = runChildren.find(
-    (entry) => entry.type === "blob" && entry.name === WORKFLOW_RUN_EVENTS_FILE,
-  );
-  if (sealed !== undefined) {
-    const content = new TextDecoder().decode(
-      await reads.readBlobByOid(sealed.oid),
-    );
-    const lines = splitCombinedEventLog(content);
-    const lastLine = lines[lines.length - 1];
-    if (lastLine === undefined) {
-      throw new Error(
-        `combined event log ${runPath}/${WORKFLOW_RUN_EVENTS_FILE} is sealed but has no lines`,
-      );
-    }
-    const body: unknown = JSON.parse(lastLine);
-    const type =
-      typeof body === "object" && body !== null && "type" in body
-        ? body.type
-        : undefined;
-    const classified =
-      typeof type === "string"
-        ? classifyTerminalEvent(type)
-        : ({ terminal: false } as const);
-    if (!classified.terminal) {
-      throw new Error(
-        `sealed run ${runId} has no recognized terminal event type`,
-      );
-    }
-    return classified.status;
-  }
-
-  const eventsPath = `${runPath}/${WORKFLOW_RUN_EVENTS_DIR}`;
-  const eventEntries = (await reads.listDir(eventsPath)).filter(
-    (entry) => entry.type === "blob" && parseEventSeq(entry.name) !== null,
-  );
-  const latest = eventEntries.reduce<(typeof eventEntries)[number] | undefined>(
-    (candidate, entry) => {
-      if (candidate === undefined) return entry;
-      const candidateSeq = parseEventSeq(candidate.name);
-      const entrySeq = parseEventSeq(entry.name);
-      return entrySeq !== null &&
-        candidateSeq !== null &&
-        entrySeq > candidateSeq
-        ? entry
-        : candidate;
-    },
-    undefined,
-  );
-  if (latest === undefined) return null;
-  const eventPath = `${eventsPath}/${latest.name}`;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(
-      new TextDecoder().decode(await reads.readBlobByOid(latest.oid)),
-    );
-  } catch (cause) {
-    throw new Error(`workflow_run_event_unreadable: ${eventPath}`, { cause });
-  }
-  const type =
-    typeof parsed === "object" && parsed !== null && "type" in parsed
-      ? parsed.type
-      : undefined;
-  if (typeof type !== "string") return null;
-  const classified = classifyTerminalEvent(type);
-  return classified.terminal ? classified.status : null;
 }
 
 /**

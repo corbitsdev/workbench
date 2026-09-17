@@ -10,9 +10,7 @@
     "tsBuildInfoFile": "tsconfig.tsbuildinfo",
     "rootDir": "../../.."
   },
-  "include": [
-    "src"
-  ],
+  "include": ["src"],
   "exclude": [],
   "references": [
     {
@@ -20,6 +18,9 @@
     },
     {
       "path": "../mail-memory/tsconfig.src.json"
+    },
+    {
+      "path": "../mailbox/tsconfig.src.json"
     },
     {
       "path": "../types/tsconfig.src.json"

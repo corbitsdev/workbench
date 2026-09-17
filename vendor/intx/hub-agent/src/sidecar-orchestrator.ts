@@ -16,6 +16,7 @@ import type { HubTransport } from "@intx/mail-memory";
 import type { SignalKind } from "@intx/types";
 import type {
   ApprovalSnapshot,
+  CryptoProvider,
   InferenceEvent,
   KeyPair,
 } from "@intx/types/runtime";
@@ -38,6 +39,7 @@ import {
   type OAuthLoginExecutor,
   type ReconnectScheduler,
 } from "./ws/hub-link";
+import type { ResolvedInboundMailPolicy } from "./ws/inbound-signature";
 
 const log = getLogger(["interchange", "hub-agent", "orchestrator"]);
 
@@ -75,7 +77,6 @@ export type CreateDeployRouter = (deps: {
     agentAddress: string,
     event: InferenceEvent,
     sessionId: string | undefined,
-    childRunId?: string,
   ) => void;
   /**
    * Control-plane suspension sink the multi-step branch routes a
@@ -102,6 +103,34 @@ export type SidecarOrchestratorConfig = {
   dataDir: string;
   transport: HubTransport;
   cryptoOps: SidecarCryptoOps;
+  /**
+   * Resolves a sender address to the crypto that verifies its inbound mail.
+   * The host builds this over the sidecar's sender-key cache and the
+   * orchestrator forwards it unchanged to `createHubLink`, where the inbound
+   * signature verify uses it.
+   */
+  resolveSenderCrypto: (address: string) => CryptoProvider | undefined;
+  /**
+   * Resolves a recipient deployment address to its total inbound-mail
+   * admission policy. The host builds this over the sidecar's per-address
+   * policy registry and the orchestrator forwards it unchanged to
+   * `createHubLink`, where the `mail.inbound` seam enforces it.
+   */
+  lookupInboundMailPolicy: (address: string) => ResolvedInboundMailPolicy;
+  /**
+   * Persists the hub-vouched public key for a sender address. The host builds
+   * it over the same sender-key cache as `resolveSenderCrypto` and the
+   * orchestrator forwards it unchanged to `createHubLink`, where an inbound
+   * `sender.key.refresh` frame drives it.
+   */
+  cacheSenderKey: (address: string, publicKey: string) => Promise<void>;
+  /**
+   * Durably removes a sender's cached key. The host builds it over the same
+   * sender-key cache as `cacheSenderKey` and the orchestrator forwards it
+   * unchanged to `createHubLink`, where an inbound `sender.key.evict` frame
+   * drives it.
+   */
+  evictSenderKey: (address: string) => Promise<void>;
   /**
    * Host-injected `DeployRouter` factory. The orchestrator calls it
    * once after `sessions` and `keyStore` are constructed; the
@@ -171,10 +200,11 @@ export type SidecarOrchestratorConfig = {
    */
   workflowProbeExecutor?: WorkflowProbeExecutor;
   /**
-   * Optional loopback-login executor (CL-7508). Forwarded unchanged to
-   * `createHubLink`, where it answers every inbound `oauth.login.start`;
-   * omitted, the link answers those requests with an error rather than
-   * hanging the hub.
+   * Optional loopback-login executor. The orchestrator forwards it
+   * unchanged to `createHubLink`, where it answers every inbound
+   * `oauth.login.start`. Production wires the sidecar host's local-machine
+   * PKCE login here; omitted, the link falls back to its rejecting
+   * placeholder so a login is answered with an error rather than hanging.
    */
   oauthLoginExecutor?: OAuthLoginExecutor;
   /**
@@ -185,6 +215,14 @@ export type SidecarOrchestratorConfig = {
    * `activeAddresses`; omitted, the link announces none.
    */
   getWorkflowAddresses?: () => string[];
+  /**
+   * Returns the rotatable (non-run) sender addresses this sidecar holds cached
+   * keys for. Forwarded to the hub link, which reports them on every
+   * (re)connect so the hub re-resolves and re-pushes each key. Production wires
+   * this to the sender-key cache's rotatable view; omitted, the link reports
+   * none.
+   */
+  getCachedSenderAddresses?: () => string[];
   /**
    * Invoked with the workflow-substrate addresses the link just announced in
    * an authenticated reconnect. Forwarded to the hub link so the workflow-run
@@ -229,6 +267,10 @@ export function createSidecarOrchestrator(
     dataDir,
     transport,
     cryptoOps,
+    resolveSenderCrypto,
+    lookupInboundMailPolicy,
+    cacheSenderKey,
+    evictSenderKey,
     createDeployRouter,
     mailInboundRouter,
     signalInboundRouter,
@@ -240,6 +282,7 @@ export function createSidecarOrchestrator(
     workflowProbeExecutor,
     oauthLoginExecutor,
     getWorkflowAddresses,
+    getCachedSenderAddresses,
     onWorkflowAddressesRoutable,
     onWorkflowAddressesUnroutable,
     pingIntervalMs,
@@ -262,7 +305,6 @@ export function createSidecarOrchestrator(
     agentAddress: string,
     sessionId: string,
     event: InferenceEvent,
-    childRunId?: string,
   ) => void = () => {
     /* replaced after HubLink construction */
   };
@@ -295,7 +337,7 @@ export function createSidecarOrchestrator(
     // is observed. A sessionless event is dropped rather than guessed
     // onto an arbitrary session -- the hub timeline is session-keyed and
     // a forged session id would mis-route the event.
-    publishWorkflowInferenceEvent: (agentAddress, event, sessionId, childRunId) => {
+    publishWorkflowInferenceEvent: (agentAddress, event, sessionId) => {
       if (sessionId === undefined) {
         log.warn(
           "Dropping workflow inference event for {agentAddress}: deploy carried no sessionId",
@@ -303,7 +345,7 @@ export function createSidecarOrchestrator(
         );
         return;
       }
-      dispatchEvent(agentAddress, sessionId, event, childRunId);
+      dispatchEvent(agentAddress, sessionId, event);
     },
     // Route a supervisor's suspension registration up the hub-link so the
     // hub co-writes the parked run's routing + approval rows.
@@ -321,6 +363,10 @@ export function createSidecarOrchestrator(
     transport,
     sessions,
     keyStore,
+    resolveSenderCrypto,
+    lookupInboundMailPolicy,
+    cacheSenderKey,
+    evictSenderKey,
     deployRouter,
     applyWorkflowRunPack,
     ...(mailInboundRouter !== undefined ? { mailInboundRouter } : {}),
@@ -334,6 +380,9 @@ export function createSidecarOrchestrator(
     ...(workflowProbeExecutor !== undefined ? { workflowProbeExecutor } : {}),
     ...(oauthLoginExecutor !== undefined ? { oauthLoginExecutor } : {}),
     ...(getWorkflowAddresses !== undefined ? { getWorkflowAddresses } : {}),
+    ...(getCachedSenderAddresses !== undefined
+      ? { getCachedSenderAddresses }
+      : {}),
     ...(onWorkflowAddressesRoutable !== undefined
       ? { onWorkflowAddressesRoutable }
       : {}),

@@ -18,24 +18,6 @@ function firstCall<T>(calls: readonly T[]): T {
   return call;
 }
 
-// The inert projection the deploy freeze persists onto the definition's
-// version row — the launch body's only hub-side source under the
-// `workflow.json` retirement.
-const AGENT_WIRE_PROJECTION = {
-  id: "wfd_planner",
-  triggers: [],
-  stepOrder: ["agent"],
-  steps: {
-    agent: {
-      kind: "step",
-      agent: {
-        systemPrompt: "You are Myra.",
-        modelSources: [{ provider: "anthropic", model: "declared-default-model" }],
-      },
-    },
-  },
-};
-
 const DEFINITION_ROW = {
   id: "wfd_planner",
   tenantId: "tnt_1",
@@ -45,22 +27,12 @@ const DEFINITION_ROW = {
 };
 const TENANT_ROW = { id: "tnt_1", domain: "acme.example" };
 
-/** A `db` double covering both the row reads and the drizzle
- * `select().from().where().limit()` chain `loadFrozenWireProjection`
- * runs for the version row's stored projection. */
 function fakeDb() {
   return {
     query: {
       workflowDefinition: { findFirst: async () => DEFINITION_ROW },
       tenant: { findFirst: async () => TENANT_ROW },
     },
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: async () => [{ wireProjection: AGENT_WIRE_PROJECTION }],
-        }),
-      }),
-    }),
   };
 }
 
@@ -142,7 +114,7 @@ function createBaseDeps() {
     db: fakeDb(),
     repoStore: { resolveRef: async () => "sha_test" },
     workflowAllocationService: {},
-    sessionService: {},
+    sidecarRouter: {},
     isRoutable: () => true,
     cryptoProviders: {
       async get() {

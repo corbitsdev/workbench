@@ -1,13 +1,7 @@
 import { type } from "arktype";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 
 import { getLogger } from "@intx/log";
-import {
-  assembleMessage,
-  assembleSignedContent,
-  createDetachedSignatureFromProvider,
-  type MessageHeaders,
-} from "@intx/mime";
 import {
   buildCredentialDelivery,
   listAssetsForTenant,
@@ -20,19 +14,14 @@ import {
   workflowRun as workflowRunTable,
   type WorkflowRunCredentialRefs,
 } from "@intx/db/schema";
-import { base64Encode, hexEncode } from "@intx/types";
+import { hexEncode } from "@intx/types";
 import type {
   CredentialDelivery,
   CredentialMaterialEntry,
 } from "@intx/types/sidecar";
 import type { CredentialCipher } from "@intx/types";
 import { sessionAsset as sessionAssetTable } from "@intx/db/schema";
-import type {
-  CryptoProvider,
-  HarnessConfig,
-  InferenceSource,
-  MessageAttachment,
-} from "@intx/types/runtime";
+import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
 import {
   type RegistryConfig,
   type RegistrySource,
@@ -58,6 +47,7 @@ import type {
 } from "@intx/types/workflow-sources";
 import {
   buildInertProjectionStepSources,
+  collectAgentBearingStepIds,
   deriveRunAddress,
   deriveStepAgentId,
   resolveStepAddress,
@@ -73,6 +63,7 @@ import {
 } from "./asset-service";
 import type {
   AllocatedSidecarTarget,
+  SenderDeploySettledOutcome,
   SendProbeArgs,
   SidecarAllocationRouter,
   SidecarRouter,
@@ -92,6 +83,7 @@ import {
   type InstallAndApproveResult,
 } from "./workflow-probe-gate";
 import { buildReferencedWorkflowSourcePins } from "./workflow-source-pins";
+import type { SidecarReconciliationContext } from "./sidecar-allocation/operation";
 
 const logger = getLogger(["interchange", "hub", "session-service"]);
 
@@ -130,13 +122,6 @@ export type SessionService = {
     toolPackagePins?: readonly ToolPackagePin[];
     allocationTarget: AllocatedSidecarTarget;
   }): Promise<void>;
-
-  /**
-   * Compose a signed RFC 2822 message from the user and deliver it to the
-   * agent via the mail transport. Throws if the agent is unreachable.
-   * Returns the raw MIME bytes of the assembled message.
-   */
-  sendUserMessage(params: UserMessageParams): Promise<Uint8Array>;
 
   /**
    * Undeploy an agent and wait for the sidecar to acknowledge.
@@ -216,6 +201,8 @@ export type DeployPreparedCodeSourcedWorkflowParams = {
   toolPackagePins?: readonly ToolPackagePin[];
   /** The exact allocation generation to deploy onto. */
   allocationTarget: AllocatedSidecarTarget;
+  /** Current owner and cancellation of this initialization attempt. */
+  reconciliation: SidecarReconciliationContext;
   /** Cipher for the definition's tenant-owned credential bindings, if any. */
   credentialCipher?: CredentialCipher;
 };
@@ -239,20 +226,6 @@ export type PreparedWorkflowDeployer = {
   deployPreparedCodeSourcedWorkflow(
     params: DeployPreparedCodeSourcedWorkflowParams,
   ): Promise<DeployWorkflowDefinitionResult>;
-};
-
-export type UserMessageParams = {
-  agentAddress: string;
-  from: string;
-  messageId: string;
-  date: Date;
-  content: string;
-  attachments?: MessageAttachment[];
-  inReplyTo?: string;
-  references?: string[];
-  sessionId: string;
-  tenantId: string;
-  cryptoProvider: CryptoProvider;
 };
 
 export type SessionServiceDeps = {
@@ -466,7 +439,9 @@ export type SendMultiStepDeployFrameArgs = SourceRefDeployFrameArgs;
  */
 export async function sendMultiStepDeployFrame(
   args: SendMultiStepDeployFrameArgs,
+  signal?: AbortSignal,
 ): Promise<{ publicKey: string }> {
+  signal?.throwIfAborted();
   const workflow = {
     // The deploy frame carries no inline definition: the sidecar evaluates the
     // pinned code closure from `sourceRef` and re-verifies it against
@@ -490,6 +465,7 @@ export async function sendMultiStepDeployFrame(
     args.agentAddress,
     args.config,
     workflow,
+    signal,
   );
 }
 
@@ -675,7 +651,7 @@ async function prepareSourceRefDeploy(
   // The hub holds only the frozen inert projection, so it enumerates the inline
   // bodies from the wire form and resolves each body step's source through the
   // same resolver + operator-approval gate the top-level steps use
-  // (`pickStepInferenceSource` against `approval.approvedGrants`). Each body's
+  // (`pickStepInferenceSource` against `approval.approvedSurface`). Each body's
   // wire hash is recomputed from the inert body verbatim, so a body child's
   // re-verify over the re-evaluated closure clears the same barrier a top-level
   // re-verify does. The pinned sources ride OUTSIDE the hash; their trust comes
@@ -694,15 +670,22 @@ async function prepareSourceRefDeploy(
   const referencedDefinitions = await buildReferencedWorkflowSourcePins({
     projection,
     config: args.config,
-    operatorApprovals: approval.approvedGrants,
+    operatorApprovals: approval.approvedSurface,
   });
 
   // Assemble the ONE credential delivery. Its `materials` cover three rails, each
   // authorized upstream on its own terms, deduped by credentialId into one cell:
   //   - tool bindings, grant-scoped through `buildCredentialDelivery` above;
-  //   - EVERY top-level inference source (`args.sources`), tenant-owned;
-  //   - EVERY inline body step's inference source (onTrigger/childWorkflow bodies
+  //   - the inference source pinned to each top-level step that can actually
+  //     invoke inference, tenant-owned;
+  //   - the same for each inline body step (onTrigger/childWorkflow bodies
   //     pinned above), tenant-owned.
+  // Which steps those are is read from the hash-covered projection, never from
+  // the pinned map: every step carries a pin because the wire shape demands one,
+  // but a step that cannot issue a request has no use for a secret. Delivering
+  // one anyway decrypts a tenant credential, seals it to the sidecar, and
+  // re-delivers it on every reconnect, on behalf of a step that never makes a
+  // call.
   // The inference rails are resolved HERE from the DB under the tenant-ownership
   // authority, so this deploy is self-contained: a direct deploy (a test) that
   // seeds the credentials in the DB -- rather than pre-supplying material -- still
@@ -716,17 +699,34 @@ async function prepareSourceRefDeploy(
     materials.set(material.credentialId, material);
   }
   const inferenceCredentialIds = new Set<string>();
-  for (const stepSources of Object.values(args.sources)) {
-    for (const source of stepSources) {
-      inferenceCredentialIds.add(source.credentialId);
-    }
-  }
-  for (const body of referencedDefinitions) {
-    for (const stepSources of Object.values(body.sources)) {
+  const addAgentBearingCredentials = (
+    definition: WorkflowProjectionWithSources["definition"],
+    pinned: Readonly<Record<string, readonly InferenceSource[]>>,
+    context: string,
+  ): void => {
+    for (const stepId of collectAgentBearingStepIds({ definition, context })) {
+      const stepSources = pinned[stepId];
+      if (stepSources === undefined) {
+        throw new Error(
+          `${context}step ${stepId} can invoke inference but carries no pinned source`,
+        );
+      }
       for (const source of stepSources) {
         inferenceCredentialIds.add(source.credentialId);
       }
     }
+  };
+  addAgentBearingCredentials(
+    projection,
+    args.sources,
+    "deployCodeSourcedWorkflow: ",
+  );
+  for (const body of referencedDefinitions) {
+    addAgentBearingCredentials(
+      body.definition,
+      body.sources,
+      `deployCodeSourcedWorkflow body ${body.definition.id}: `,
+    );
   }
   if (inferenceCredentialIds.size > 0) {
     if (args.credentialCipher === undefined) {
@@ -814,14 +814,17 @@ async function emitSourceRefDeployFrame(
     allocationTarget?: AllocatedSidecarTarget;
     sidecarAllocationRouter?: SidecarAllocationRouter;
   },
+  signal?: AbortSignal,
 ): Promise<{
   publicKey: string;
   definitionId: string;
   credentialRefs?: WorkflowRunCredentialRefs;
 }> {
+  signal?.throwIfAborted();
   const { definitionId, sendArgs } = await prepareSourceRefDeploy(args);
+  signal?.throwIfAborted();
   try {
-    const result = await sendMultiStepDeployFrame(sendArgs);
+    const result = await sendMultiStepDeployFrame(sendArgs, signal);
     return {
       publicKey: result.publicKey,
       definitionId,
@@ -1388,7 +1391,7 @@ export function createSessionService(
     const common = {
       entry: params.entry,
       assetId: params.definitionAssetId,
-      approvals: { mode: "approve-probed" } as const,
+      approvals: { kind: "approve-probed" } as const,
       router: {
         sendProbe: (args: SendProbeArgs) =>
           requireAllocationRouter().sendProbeToAllocation(
@@ -1530,8 +1533,8 @@ export function createSessionService(
    * Update a prepared anchor run's `publicKey` under the allocation-ownership
    * lock. The anchor row was inserted at prepare time; this stamps the
    * supervisor key returned by the deploy ack, but only while the allocation
-   * still names this exact accepted generation for this anchor. A lost lock (the
-   * allocation moved on, another worker took the generation) fails closed as a
+   * still names this exact accepted generation and unexpired reconciliation
+   * lease for this anchor. Lost ownership or cancellation fails closed as a
    * leaked-agent `SessionLaunchError` -- the deploy already reached the sidecar,
    * so the caller must treat the sidecar agent as possibly live. Used by the
    * `deployPreparedCodeSourcedWorkflow` prepared path.
@@ -1540,6 +1543,7 @@ export function createSessionService(
     tenantId: string;
     anchorRunId: string;
     allocationTarget: AllocatedSidecarTarget;
+    reconciliation: SidecarReconciliationContext;
     publicKey: string;
     credentialRefs?: WorkflowRunCredentialRefs;
   }): Promise<void> {
@@ -1550,6 +1554,7 @@ export function createSessionService(
     }
     const dbHandle = db;
     try {
+      args.reconciliation.signal.throwIfAborted();
       const updated = await dbHandle.transaction(async (tx) => {
         const [allocation] = await tx
           .select({
@@ -1562,10 +1567,21 @@ export function createSessionService(
           })
           .from(sidecarAllocationTable)
           .where(
-            eq(sidecarAllocationTable.id, args.allocationTarget.allocationId),
+            and(
+              eq(sidecarAllocationTable.id, args.allocationTarget.allocationId),
+              eq(
+                sidecarAllocationTable.reconciliationLeaseId,
+                args.reconciliation.leaseId,
+              ),
+              gt(
+                sidecarAllocationTable.reconciliationLeaseExpiresAt,
+                sql`clock_timestamp()`,
+              ),
+            ),
           )
           .limit(1)
           .for("update");
+        args.reconciliation.signal.throwIfAborted();
         if (
           allocation === undefined ||
           allocation.anchorRunId !== args.anchorRunId ||
@@ -1592,6 +1608,7 @@ export function createSessionService(
             ),
           )
           .returning({ id: workflowRunTable.id });
+        args.reconciliation.signal.throwIfAborted();
         return anchor ?? null;
       });
       if (updated === null) {
@@ -1617,6 +1634,8 @@ export function createSessionService(
   async function deployPreparedCodeSourcedWorkflow(
     params: DeployPreparedCodeSourcedWorkflowParams,
   ): Promise<DeployWorkflowDefinitionResult> {
+    const { signal } = params.reconciliation;
+    signal.throwIfAborted();
     if (db === undefined) {
       throw new Error(
         "deployPreparedCodeSourcedWorkflow requires a db handle to update the prepared anchor run",
@@ -1638,7 +1657,7 @@ export function createSessionService(
     const sources = buildInertProjectionStepSources({
       projection: params.approved.projection,
       config: params.config,
-      operatorApprovals: approval.approvedGrants,
+      operatorApprovals: approval.approvedSurface,
     });
 
     // Restore the Hub-authoritative run ref onto the exact allocation generation
@@ -1648,7 +1667,9 @@ export function createSessionService(
       allocationRouter,
       allocationTarget: params.allocationTarget,
       agentAddress: params.agentAddress,
+      signal,
     });
+    signal.throwIfAborted();
 
     // Stage every top-level step's deploy tree BEFORE the deployment frame:
     // the frame spawns the child, whose step tools read each step's staged
@@ -1703,36 +1724,86 @@ export function createSessionService(
       definitionId: string;
       credentialRefs?: WorkflowRunCredentialRefs;
     };
-    if (source.kind === "asset") {
-      if (resolveAttachment === null) {
-        throw new Error(
-          "deployPreparedCodeSourcedWorkflow: asset source deploy is missing its attachment resolver",
+    let senderDeploySettled = false;
+    function settleSenderDeploy(outcome: SenderDeploySettledOutcome): void {
+      if (senderDeploySettled) return;
+      senderDeploySettled = true;
+      sidecarRouter.noteSenderDeploySettled(params.agentAddress, outcome);
+    }
+    const cancelSenderDeploy = () => {
+      settleSenderDeploy({
+        failed:
+          signal.reason instanceof Error
+            ? signal.reason.message
+            : "Initialization cancelled",
+      });
+    };
+    try {
+      // Bracket the allocated pre-ack window: mark the sender's key-record as
+      // mid-flight before the deploy emit so a run that sends mail before its
+      // anchor key is committed parks rather than delivering keyless. The settle
+      // in both the success and catch paths below clears the marker.
+      sidecarRouter.noteSenderDeployStarted(params.agentAddress);
+      // Settle before replacement starts, so this attempt's late completion
+      // cannot clear the next attempt's sender-key marker at the same address.
+      signal.addEventListener("abort", cancelSenderDeploy, { once: true });
+      signal.throwIfAborted();
+      if (source.kind === "asset") {
+        if (resolveAttachment === null) {
+          throw new Error(
+            "deployPreparedCodeSourcedWorkflow: asset source deploy is missing its attachment resolver",
+          );
+        }
+        result = await emitSourceRefDeployFrame(
+          { ...commonEmit, source, resolveAttachment },
+          signal,
+        );
+      } else {
+        result = await emitSourceRefDeployFrame(
+          { ...commonEmit, source },
+          signal,
         );
       }
-      result = await emitSourceRefDeployFrame({
-        ...commonEmit,
-        source,
-        resolveAttachment,
+
+      await updateAnchorPublicKeyUnderAllocationLock({
+        tenantId: params.tenantId,
+        anchorRunId: params.anchorRunId,
+        allocationTarget: params.allocationTarget,
+        reconciliation: params.reconciliation,
+        publicKey: result.publicKey,
+        ...(result.credentialRefs !== undefined
+          ? { credentialRefs: result.credentialRefs }
+          : {}),
       });
-    } else {
-      result = await emitSourceRefDeployFrame({ ...commonEmit, source });
+
+      // The anchor's public key is now durable. Wake any mail the run parked
+      // while pre-ack so it delivers with the sender key co-delivered, closing
+      // the window where a run sends before its key is recorded. The write above
+      // happens-before this settle, so a re-drive resolves the recorded key.
+      // `params.agentAddress` is the run's deploy address, byte-identical to the
+      // sender address its mail was sent under (asserted against the anchor at
+      // deploy time), so a settle matches the parked entries.
+      settleSenderDeploy({
+        recorded: result.publicKey,
+      });
+
+      return {
+        anchorRunId: params.anchorRunId,
+        deploymentAddress: params.agentAddress,
+        publicKey: result.publicKey,
+      };
+    } catch (error) {
+      // The deploy frame or the durable key write failed. Drain any mail the run
+      // parked while pre-ack so it surfaces as undelivered rather than waiting
+      // out the TTL. An allocated deploy's failure is owned here, not in the
+      // router's reject boundary.
+      settleSenderDeploy({
+        failed: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    } finally {
+      signal.removeEventListener("abort", cancelSenderDeploy);
     }
-
-    await updateAnchorPublicKeyUnderAllocationLock({
-      tenantId: params.tenantId,
-      anchorRunId: params.anchorRunId,
-      allocationTarget: params.allocationTarget,
-      publicKey: result.publicKey,
-      ...(result.credentialRefs !== undefined
-        ? { credentialRefs: result.credentialRefs }
-        : {}),
-    });
-
-    return {
-      anchorRunId: params.anchorRunId,
-      deploymentAddress: params.agentAddress,
-      publicKey: result.publicKey,
-    };
   }
 
   async function sendAttachmentPack(
@@ -1938,66 +2009,6 @@ export function createSessionService(
     };
   }
 
-  async function sendUserMessage(
-    params: UserMessageParams,
-  ): Promise<Uint8Array> {
-    const {
-      agentAddress,
-      from,
-      messageId,
-      date,
-      content,
-      attachments,
-      inReplyTo,
-      references,
-      sessionId,
-      tenantId,
-      cryptoProvider,
-    } = params;
-
-    const headers: MessageHeaders = {
-      from,
-      to: [agentAddress],
-      cc: undefined,
-      date,
-      messageId,
-      subject: undefined,
-      inReplyTo,
-      references,
-      mimeVersion: "1.0",
-      interchangeType: "conversation.message",
-      interchangeCorrelationId: undefined,
-      interchangeTenantId: tenantId,
-      interchangeAgentId: undefined,
-      interchangeSessionId: sessionId,
-      interchangeOfferingId: undefined,
-      interchangeSchemaVersion: undefined,
-      traceparent: undefined,
-      tracestate: undefined,
-    };
-
-    const signedContent = assembleSignedContent({
-      kind: "conversation",
-      text: content,
-      ...(attachments !== undefined ? { attachments } : {}),
-    });
-    const signature = await createDetachedSignatureFromProvider(
-      signedContent,
-      cryptoProvider,
-    );
-    const rawMessage = assembleMessage(headers, signedContent, signature);
-    const base64 = base64Encode(rawMessage);
-
-    const delivered = sidecarRouter.routeMail(agentAddress, base64, messageId);
-    if (!delivered) {
-      throw new Error(
-        `Failed to deliver message to ${agentAddress}: agent is unreachable`,
-      );
-    }
-
-    return rawMessage;
-  }
-
   async function endSession(
     agentAddress: string,
     reason: string,
@@ -2009,7 +2020,6 @@ export function createSessionService(
     stageWorkflowStep,
     installAndApproveWorkflowSource,
     deployPreparedCodeSourcedWorkflow,
-    sendUserMessage,
     endSession,
   };
 }

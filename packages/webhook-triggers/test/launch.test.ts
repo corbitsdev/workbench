@@ -1,30 +1,15 @@
 // Proves `launchWebhookTrigger` provisions through Interchange and
 // hardens the opening-mail send: a delivery already accepted has
-// already committed a real run, so a failed `sendUserMessage` must not
+// already committed a real run, so a failed `routeMail` must not
 // throw past this function (or `createWebhookIngressRoutes` would
 // reject an already-launched delivery, and a retried webhook client
 // would then mint a duplicate run for the same event).
 import { describe, expect, mock, test } from "bun:test";
 import { WORKFLOW_SOURCE_ENTRY } from "@corbits/workflows";
 import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
+import { base64Decode } from "@intx/types";
 
 const actualDb = await import("@intx/db");
-
-const INERT_PROJECTION = {
-  id: "wfd_1",
-  stepOrder: ["host"],
-  steps: {
-    host: {
-      kind: "step",
-      agent: {
-        systemPrompt: "you are a webhook-triggered agent",
-        toolPackagePins: [],
-        modelSources: [{ provider: "anthropic", model: "claude-sonnet-5" }],
-      },
-    },
-  },
-  credentialBindings: [],
-};
 
 const DEFAULT_VISIBLE_OFFERINGS = [
   {
@@ -40,12 +25,10 @@ const DEFAULT_VISIBLE_OFFERINGS = [
 ];
 
 let visibleOfferings: typeof DEFAULT_VISIBLE_OFFERINGS = [...DEFAULT_VISIBLE_OFFERINGS];
-let frozenProjection: unknown = INERT_PROJECTION;
 
 mock.module("@intx/db", () => ({
   ...actualDb,
   listVisibleOfferings: async () => visibleOfferings,
-  loadFrozenWireProjection: async () => frozenProjection,
 }));
 
 let reportErrorCalls: unknown[] = [];
@@ -144,10 +127,17 @@ type PrepareArgs = {
   readonly toolPackagePins?: readonly unknown[];
 };
 
+type RouteMailCall = {
+  readonly address: string;
+  readonly base64: string;
+  readonly authenticatedSender: string;
+  readonly messageId: string;
+};
+
 let resolveRefCalls: unknown[] = [];
 let prepareCalls: PrepareArgs[] = [];
-let sendUserMessageCalls: unknown[] = [];
-let sendUserMessageImpl: () => Promise<Uint8Array> = async () => new Uint8Array([1]);
+let routeMailCalls: RouteMailCall[] = [];
+let routeMailImpl: () => boolean = () => true;
 let cryptoGetKeys: string[] = [];
 let isRoutableForTest = true;
 
@@ -158,7 +148,7 @@ function baseDeps() {
     cryptoProviderCache: {
       get: async (key: string) => {
         cryptoGetKeys.push(key);
-        return {} as never;
+        return { sign: async (input: Uint8Array) => input } as never;
       },
     },
     repoStore: {
@@ -178,10 +168,15 @@ function baseDeps() {
         };
       },
     },
-    sessionService: {
-      sendUserMessage: async (args: unknown) => {
-        sendUserMessageCalls.push(args);
-        return sendUserMessageImpl();
+    sidecarRouter: {
+      routeMail: (
+        address: string,
+        base64: string,
+        authenticatedSender: string,
+        messageId?: string,
+      ) => {
+        routeMailCalls.push({ address, base64, authenticatedSender, messageId: messageId ?? "" });
+        return routeMailImpl();
       },
     },
     isRoutable: () => isRoutableForTest,
@@ -192,23 +187,23 @@ function baseDeps() {
 function resetLaunchSpies() {
   resolveRefCalls = [];
   prepareCalls = [];
-  sendUserMessageCalls = [];
+  routeMailCalls = [];
   cryptoGetKeys = [];
   reportErrorCalls = [];
   eventCollectorCreateCalls = [];
   visibleOfferings = [...DEFAULT_VISIBLE_OFFERINGS];
-  frozenProjection = INERT_PROJECTION;
-  sendUserMessageImpl = async () => new Uint8Array([1]);
+  routeMailImpl = () => true;
   isRoutableForTest = true;
+}
+
+function decodedContent(call: RouteMailCall): string {
+  return new TextDecoder().decode(base64Decode(call.base64));
 }
 
 describe("launchWebhookTrigger", () => {
   test("still returns the Interchange run when input delivery fails after prepare", async () => {
     resetLaunchSpies();
-    const deliveryError = new Error("sidecar unreachable");
-    sendUserMessageImpl = async () => {
-      throw deliveryError;
-    };
+    routeMailImpl = () => false;
 
     const result = await launchWebhookTrigger(baseDeps(), TRIGGER, {
       status: "ok",
@@ -220,7 +215,7 @@ describe("launchWebhookTrigger", () => {
     });
     expect(prepareCalls).toHaveLength(1);
     expect(resolveRefCalls).toHaveLength(1);
-    expect(sendUserMessageCalls).toHaveLength(1);
+    expect(routeMailCalls).toHaveLength(1);
   });
 
   // CL-7476: a freshly provisioned run's sidecar takes several seconds to
@@ -232,12 +227,9 @@ describe("launchWebhookTrigger", () => {
     resetLaunchSpies();
     isRoutableForTest = false;
     let sendAttempts = 0;
-    sendUserMessageImpl = async () => {
+    routeMailImpl = () => {
       sendAttempts += 1;
-      if (sendAttempts === 1) {
-        throw new Error("agent is unreachable: ins_1@ten1.workbench.test");
-      }
-      return new Uint8Array([1]);
+      return sendAttempts !== 1;
     };
 
     const deps = baseDeps();
@@ -252,16 +244,13 @@ describe("launchWebhookTrigger", () => {
       instanceId: INTERCHANGE_RUN_ID,
       triggerAddress: INTERCHANGE_ADDRESS,
     });
-    expect(sendUserMessageCalls).toHaveLength(2);
+    expect(routeMailCalls).toHaveLength(2);
     expect(reportErrorCalls).toHaveLength(0);
   });
 
   test("reports the delivery failure with the run's context", async () => {
     resetLaunchSpies();
-    const deliveryError = new Error("sidecar unreachable");
-    sendUserMessageImpl = async () => {
-      throw deliveryError;
-    };
+    routeMailImpl = () => false;
 
     const result = await launchWebhookTrigger(baseDeps(), TRIGGER, {
       status: "ok",
@@ -277,7 +266,7 @@ describe("launchWebhookTrigger", () => {
         extra: Record<string, unknown>;
       },
     ];
-    expect(cause).toBe(deliveryError);
+    expect(cause).toBeInstanceOf(Error);
     expect(context.operation).toBe("webhookTriggers.launch.deliverInput");
     expect(context.tenantId).toBe(TRIGGER.tenantId);
     expect(context.agentId).toBe(result.triggerAddress);
@@ -306,21 +295,18 @@ describe("launchWebhookTrigger", () => {
       instanceId: INTERCHANGE_RUN_ID,
       triggerAddress: INTERCHANGE_ADDRESS,
     });
-    expect(sendUserMessageCalls).toHaveLength(1);
-    const params = sendUserMessageCalls[0] as {
-      content: string;
-      sessionId: string;
-      from: string;
-      agentAddress: string;
-    };
+    expect(routeMailCalls).toHaveLength(1);
+    const call = routeMailCalls[0];
+    if (call === undefined) {
+      throw new Error("expected routeMail to be called");
+    }
     const preparedArgs = prepareCalls[0];
     if (preparedArgs === undefined) {
       throw new Error("expected prepareProvisionedDeployment to be called");
     }
-    expect(params.content).toBe("deployed: ok");
-    expect(params.sessionId).toBe(preparedArgs.sessionId);
-    expect(params.from).toBe(`webhook-trigger:${TRIGGER.id}`);
-    expect(params.agentAddress).toBe(INTERCHANGE_ADDRESS);
+    expect(decodedContent(call)).toContain("deployed: ok");
+    expect(call.authenticatedSender).toBe(`webhook-trigger:${TRIGGER.id}`);
+    expect(call.address).toBe(INTERCHANGE_ADDRESS);
   });
 
   test("resolves the definition asset HEAD and prepares through Interchange", async () => {
@@ -365,7 +351,7 @@ describe("launchWebhookTrigger", () => {
 
     expect(result.instanceId).toBe(INTERCHANGE_RUN_ID);
     expect(prepareCalls).toHaveLength(1);
-    expect(sendUserMessageCalls).toHaveLength(1);
+    expect(routeMailCalls).toHaveLength(1);
     expect(cryptoGetKeys).toEqual([INTERCHANGE_RUN_ID]);
   });
 });

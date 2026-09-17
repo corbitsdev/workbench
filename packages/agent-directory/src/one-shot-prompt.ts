@@ -10,8 +10,6 @@ import {
   deliverWhenRoutable,
   endAgentSessionForRun,
   isAgentUnreachableError,
-  readDefinitionProjection,
-  readFoldedBody,
   recordAgentSessionAtProvision,
   WORKFLOW_SOURCE_ENTRY,
   type EventCollectorPort,
@@ -20,14 +18,20 @@ import { listVisibleOfferings, type DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
 import {
+  assembleMessage,
+  assembleSignedContent,
+  createDetachedSignatureFromProvider,
+  type MessageHeaders,
+} from "@intx/mime";
+import { base64Encode } from "@intx/types";
+import {
   DEFAULT_ASSET_REF,
   type RepoStore,
-  type SessionService,
   type SidecarEventEmitter,
+  type SidecarRouter,
   type WorkflowAllocationService,
 } from "@intx/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
-import type { FoldedBody } from "@intx/workflow-deploy";
 
 export type CryptoProviderCache = {
   get(key: string): Promise<CryptoProvider>;
@@ -54,7 +58,7 @@ export type OneShotRunnerDeps = {
     WorkflowAllocationService,
     "prepareProvisionedDeployment"
   >;
-  readonly sessionService: Pick<SessionService, "sendUserMessage">;
+  readonly sidecarRouter: Pick<SidecarRouter, "routeMail">;
   readonly eventCollectors: EventCollectorPort;
   /**
    * Reads the hub's live sidecar routing table (the same source the
@@ -76,13 +80,12 @@ export type OneShotRunnerDeps = {
   };
   /**
    * Test seam only. Production never sets these; they default to
-   * Interchange `prepareProvisionedDeployment` and `sendUserMessage`.
+   * Interchange `prepareProvisionedDeployment` and `SidecarRouter.routeMail`.
    */
   readonly provision?: (input: {
     readonly tenantId: string;
     readonly principalId: string;
     readonly definitionId: string;
-    readonly foldedBody: FoldedBody;
     readonly domain: string;
   }) => Promise<ProvisionedOneShot>;
   readonly sendMail?: (input: {
@@ -146,7 +149,6 @@ async function provisionOnAsset(
     readonly tenantId: string;
     readonly principalId: string;
     readonly definitionAssetId: string;
-    readonly foldedBody: FoldedBody;
     readonly domain: string;
   },
 ): Promise<ProvisionedOneShot> {
@@ -184,9 +186,6 @@ async function provisionOnAsset(
     sourceOfferingIds,
     defaultSourceOfferingId,
     deployContent: { systemPrompt: "" },
-    ...(input.foldedBody.toolPackagePins.length > 0
-      ? { toolPackagePins: input.foldedBody.toolPackagePins }
-      : {}),
   });
   await recordAgentSessionAtProvision({
     db: deps.db,
@@ -233,22 +232,17 @@ export async function runOneShotPrompt(
     throw new Error(`No tenant "${input.tenantId}"`);
   }
 
-  const projection = await readDefinitionProjection(deps.db, definitionRow);
-  const foldedBody = readFoldedBody(projection, definitionRow.grantRequirements);
-
   const launched = await (deps.provision !== undefined
     ? deps.provision({
         tenantId: input.tenantId,
         principalId: input.principalId,
         definitionId: input.definitionId,
-        foldedBody,
         domain: tenantRow.domain,
       })
     : provisionOnAsset(deps, {
         tenantId: input.tenantId,
         principalId: input.principalId,
         definitionAssetId: definitionRow.assetId,
-        foldedBody,
         domain: tenantRow.domain,
       }));
 
@@ -324,16 +318,46 @@ export async function runOneShotPrompt(
                 cryptoProvider,
               });
             } else {
-              await deps.sessionService.sendUserMessage({
-                agentAddress: launched.address,
-                from: `${input.principalId}@${tenantRow.domain}`,
-                messageId: `<${crypto.randomUUID()}@${tenantRow.domain}>`,
+              const from = `${input.principalId}@${tenantRow.domain}`;
+              const messageId = `<${crypto.randomUUID()}@${tenantRow.domain}>`;
+              const headers: MessageHeaders = {
+                from,
+                to: [launched.address],
+                cc: undefined,
                 date: new Date(),
-                content: input.prompt,
-                sessionId: launched.sessionId,
-                tenantId: input.tenantId,
-                cryptoProvider,
+                messageId,
+                subject: undefined,
+                inReplyTo: undefined,
+                references: undefined,
+                mimeVersion: "1.0",
+                interchangeType: "conversation.message",
+                interchangeCorrelationId: undefined,
+                interchangeTenantId: input.tenantId,
+                interchangeAgentId: undefined,
+                interchangeSessionId: launched.sessionId,
+                interchangeOfferingId: undefined,
+                interchangeSchemaVersion: undefined,
+                traceparent: undefined,
+                tracestate: undefined,
+              };
+              const signedContent = assembleSignedContent({
+                kind: "conversation",
+                text: input.prompt,
               });
+              const signature = await createDetachedSignatureFromProvider(
+                signedContent,
+                cryptoProvider,
+              );
+              const rawMessage = assembleMessage(headers, signedContent, signature);
+              const delivered = deps.sidecarRouter.routeMail(
+                launched.address,
+                base64Encode(rawMessage),
+                from,
+                messageId,
+              );
+              if (!delivered) {
+                throw new Error(`agent is unreachable: ${launched.address} is not routable`);
+              }
             }
           },
           isRoutable: () => deps.isRoutable(launched.address),

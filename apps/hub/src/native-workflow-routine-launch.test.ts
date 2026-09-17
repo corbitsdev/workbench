@@ -66,8 +66,13 @@ describe("triggerNativeWorkflowRoutineRun", () => {
       {
         db: createFakeDb([LIVE_ANCHOR]) as never,
         sidecarRouter: {
-          routeMail: (address: string, base64: string, messageId: string) => {
-            routeMailCalls.push({ address, base64, messageId });
+          routeMail: (
+            address: string,
+            base64: string,
+            authenticatedSender: string,
+            messageId: string,
+          ) => {
+            routeMailCalls.push({ address, base64, authenticatedSender, messageId });
             return true;
           },
         } as never,
@@ -80,8 +85,11 @@ describe("triggerNativeWorkflowRoutineRun", () => {
       address: "wfr_anchor1@acme.hub.test",
     });
     expect(routeMailCalls).toHaveLength(1);
-    const [call] = routeMailCalls as [{ address: string; base64: string; messageId: string }];
+    const [call] = routeMailCalls as [
+      { address: string; base64: string; authenticatedSender: string; messageId: string },
+    ];
     expect(call.address).toBe("wfr_anchor1@acme.hub.test");
+    expect(call.authenticatedSender).toBe("usr_1@acme.hub.test");
     expect(typeof call.base64).toBe("string");
     expect(call.base64.length).toBeGreaterThan(0);
   });

@@ -14,7 +14,6 @@ import {
 import { grant, workflowRun } from "@intx/db/schema";
 import { eq } from "drizzle-orm";
 import { generateId } from "@intx/hub-common";
-import { getLogger } from "@intx/log";
 import {
   hexEncode,
   SidecarCapabilityRule,
@@ -25,6 +24,8 @@ import type { HarnessConfig } from "@intx/types/runtime";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type { WorkflowDefinitionSource } from "@intx/types/workflow-sources";
 import {
+  approvalItemsFromSet,
+  approvalSetFromItems,
   buildInertProjectionStepSources,
   deriveRunAddress,
   deriveRunAgentId,
@@ -50,8 +51,11 @@ import type {
 } from "./ws/sidecar-handler";
 import type { InstallAndApproveResult } from "./workflow-probe-gate";
 import { buildReferencedWorkflowSourcePins } from "./workflow-source-pins";
-
-const logger = getLogger(["hub", "workflow-allocation"]);
+import {
+  DEFAULT_SIDECAR_OPERATION_TIMEOUT_MS,
+  runSidecarOperation,
+  type SidecarReconciliationContext,
+} from "./sidecar-allocation/operation";
 
 export class WorkflowProvisioningError extends Error {
   readonly code: string;
@@ -100,6 +104,7 @@ export type WorkflowAllocationService = {
   ): Promise<PreparedProvisionedWorkflowDeployment>;
   deployReadyAllocation(
     allocation: SidecarAllocation,
+    reconciliation: SidecarReconciliationContext,
   ): Promise<DeployWorkflowDefinitionResult | null>;
 };
 
@@ -125,6 +130,7 @@ export type WorkflowAllocationServiceDeps = {
   readonly createSidecarId?: () => string;
   readonly createToken?: () => string;
   readonly connectTimeoutMs?: number;
+  readonly operationTimeoutMs?: number;
   readonly now?: () => Date;
 };
 
@@ -228,6 +234,7 @@ export function createWorkflowAllocationService({
   createSidecarId = randomSidecarId,
   createToken = randomToken,
   connectTimeoutMs = 120_000,
+  operationTimeoutMs = DEFAULT_SIDECAR_OPERATION_TIMEOUT_MS,
   now = () => new Date(),
 }: WorkflowAllocationServiceDeps): WorkflowAllocationService {
   const allocationStore = createSidecarAllocationStore(db);
@@ -247,6 +254,9 @@ export function createWorkflowAllocationService({
 
   if (connectTimeoutMs <= 0) {
     throw new Error("connectTimeoutMs must be positive");
+  }
+  if (!Number.isSafeInteger(operationTimeoutMs) || operationTimeoutMs <= 0) {
+    throw new Error("operationTimeoutMs must be a positive integer");
   }
 
   function matchingProvisioner(
@@ -281,11 +291,36 @@ export function createWorkflowAllocationService({
     );
   }
 
-  async function finishProbeRelease(
-    releasing: WorkflowProbe,
+  const probeCleanupTasks = new Map<string, Promise<void>>();
+
+  function finishProbeRelease(
+    probe: WorkflowProbe,
     finalStatus: "succeeded" | "failed",
   ): Promise<void> {
-    if (releasing.sidecarId !== null) {
+    const existing = probeCleanupTasks.get(probe.id);
+    if (existing !== undefined) return existing;
+    const task = cleanUpProbe(probe, finalStatus);
+    probeCleanupTasks.set(probe.id, task);
+    const settled = () => {
+      if (probeCleanupTasks.get(probe.id) === task)
+        probeCleanupTasks.delete(probe.id);
+    };
+    void task.then(settled, settled);
+    return task;
+  }
+
+  async function cleanUpProbe(
+    probe: WorkflowProbe,
+    finalStatus: "succeeded" | "failed",
+  ): Promise<void> {
+    const releasing = await probeStore.get(probe.id);
+    if (releasing?.status === "succeeded" || releasing?.status === "failed")
+      return;
+    if (releasing?.status !== "releasing") {
+      throw new Error(`Workflow probe ${probe.id} is not releasing`);
+    }
+    const sidecarId = releasing.sidecarId;
+    if (sidecarId !== null) {
       const provisioner = matchingProvisioner(releasing);
       if (provisioner === null) {
         throw new Error(
@@ -293,14 +328,20 @@ export function createWorkflowAllocationService({
         );
       }
       const destroyed = parseDestroyResult(
-        await provisioner.destroy({
-          allocationId: releasing.id,
-          generation: releasing.generation,
-          sidecarId: releasing.sidecarId,
-          ...(releasing.externalRef !== null
-            ? { externalRef: releasing.externalRef }
-            : {}),
-        }),
+        await runSidecarOperation(
+          "Probe destroy",
+          operationTimeoutMs,
+          (signal) =>
+            provisioner.destroy({
+              signal,
+              allocationId: releasing.id,
+              generation: releasing.generation,
+              sidecarId,
+              ...(releasing.externalRef !== null
+                ? { externalRef: releasing.externalRef }
+                : {}),
+            }),
+        ),
       );
       if (destroyed.kind === "rejected") {
         throw new Error(
@@ -365,7 +406,9 @@ export function createWorkflowAllocationService({
       projection: approved.projection,
       closure: approved.closure,
       approvedWireHash: approved.approval.approvedWireHash,
-      approvedGrants: [...approved.approval.approvedGrants],
+      approvedGrants: [
+        ...approvalItemsFromSet(approved.approval.approvedSurface),
+      ],
     };
 
     await db.transaction(async (tx) => {
@@ -550,17 +593,23 @@ export function createWorkflowAllocationService({
       };
       allocationRouter.fenceAllocation(probe.id, probe.generation);
       const ensured = parseEnsureResult(
-        await probeProvisioner.ensure({
-          allocationId: probe.id,
-          generation: probe.generation,
-          tenantId: probe.tenantId,
-          // The provisioner contract treats this as an opaque owner id. A
-          // probe has no workflow run, so its own id is the honest owner.
-          anchorRunId: probe.id,
-          sidecarId,
-          token,
-          hubWebSocketUrl,
-        }),
+        await runSidecarOperation(
+          "Probe ensure",
+          operationTimeoutMs,
+          (signal) =>
+            probeProvisioner.ensure({
+              signal,
+              allocationId: probe.id,
+              generation: probe.generation,
+              tenantId: probe.tenantId,
+              // The provisioner contract treats this as an opaque owner id. A
+              // probe has no workflow run, so its own id is the honest owner.
+              anchorRunId: probe.id,
+              sidecarId,
+              token,
+              hubWebSocketUrl,
+            }),
+        ),
       );
       if (ensured.kind === "rejected") {
         throw new WorkflowProvisioningError(ensured.code, ensured.message);
@@ -625,12 +674,12 @@ export function createWorkflowAllocationService({
       buildInertProjectionStepSources({
         projection: approved.projection,
         config,
-        operatorApprovals: approved.approval.approvedGrants,
+        operatorApprovals: approved.approval.approvedSurface,
       });
       await buildReferencedWorkflowSourcePins({
         projection: approved.projection,
         config,
-        operatorApprovals: approved.approval.approvedGrants,
+        operatorApprovals: approved.approval.approvedSurface,
       });
       const deploymentProvisioner = selectProvisioner(
         await deploymentPlugins.selectProvisioner({
@@ -670,7 +719,9 @@ export function createWorkflowAllocationService({
 
   async function deployReadyAllocation(
     allocation: SidecarAllocation,
+    reconciliation: SidecarReconciliationContext,
   ): Promise<DeployWorkflowDefinitionResult | null> {
+    reconciliation.signal.throwIfAborted();
     if (
       allocation.status !== "allocated" ||
       allocation.ensureAcceptedGeneration !== allocation.generation
@@ -712,15 +763,16 @@ export function createWorkflowAllocationService({
       );
     }
     // The frozen bundle deploys verbatim -- no re-probe. Rehydrate the approval
-    // hand-off from it: the approved grant set becomes a `Set`, and the frozen
-    // definition id is the anchor's own (set at prepare time from this freeze).
+    // hand-off from it: the persisted flat item list is partitioned back into
+    // the gate's `ApprovalSet`, and the frozen definition id is the anchor's own
+    // (set at prepare time from this freeze).
     const bundle = spec.frozenApprovalBundle;
     const approved: InstallAndApproveResult = {
       approval: {
         ok: true,
         definitionId: anchor.definitionId,
         approvedWireHash: bundle.approvedWireHash,
-        approvedGrants: new Set(bundle.approvedGrants),
+        approvedSurface: approvalSetFromItems(bundle.approvedGrants),
         projection: bundle.projection,
       },
       projection: bundle.projection,
@@ -758,7 +810,9 @@ export function createWorkflowAllocationService({
       defaultSource: defaultSource.id,
     });
 
+    reconciliation.signal.throwIfAborted();
     return preparedDeployer.deployPreparedCodeSourcedWorkflow({
+      reconciliation,
       tenantId: allocation.tenantId,
       anchorRunId: allocation.anchorRunId,
       deploymentDomain: spec.deploymentDomain,
@@ -802,9 +856,8 @@ export function createWorkflowAllocationService({
   async function initialize(): Promise<void> {
     const failures: unknown[] = [];
     for (const probe of await probeStore.listActive()) {
-      let releasing: WorkflowProbe | null;
       try {
-        releasing = await beginProbeRelease(
+        await beginProbeRelease(
           probe,
           probe.status === "releasing"
             ? undefined
@@ -815,13 +868,6 @@ export function createWorkflowAllocationService({
         );
       } catch (error) {
         failures.push(error);
-        continue;
-      }
-      if (releasing === null) continue;
-      try {
-        await finishProbeRelease(releasing, cleanupFinalStatus(releasing));
-      } catch (error) {
-        logger.warn`Workflow probe ${releasing.id} cleanup remains pending after startup: ${error instanceof Error ? error.message : String(error)}`;
       }
     }
     if (failures.length > 0) {

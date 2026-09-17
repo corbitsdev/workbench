@@ -295,12 +295,12 @@ export function mountHubRoutes(
   // the same endpoint. Must mount before `resolveTenant` so a bearer request
   // populates `principal`/`tenant` first and short-circuits the session
   // check; a request with no bearer credential falls through unchanged.
-  if (repoStore !== null && opts.workflowRunAuthenticator !== undefined) {
+  if (repoStore !== null && workflowRunAuthenticator !== undefined) {
     app.use(
       "/api/tenants/:tenantId/workflows/deployments",
       createWorkflowRunDeployAuth({
         db,
-        authenticator: opts.workflowRunAuthenticator,
+        authenticator: workflowRunAuthenticator,
       }),
     );
   }
