@@ -62,10 +62,16 @@ function LoginBounceHome({ navigate }: { readonly navigate: Navigate }) {
  * hub reports as setup-required must never see "Select a workbench"; the
  * setup screen is the only thing on screen until it hands off to `/`.
  */
-function OnboardingGate({ navigate }: { readonly navigate: Navigate }) {
+function OnboardingGate({
+  navigate,
+  user,
+}: {
+  readonly navigate: Navigate;
+  readonly user: SessionUser;
+}) {
   return (
     <NavigationProvider navigate={navigate}>
-      <OnboardingPage />
+      <OnboardingPage user={user} />
     </NavigationProvider>
   );
 }
@@ -191,7 +197,7 @@ export function App({
           return <LoginBounceHome navigate={navigate} />;
         }
         if (path === ONBOARDING_PATH) {
-          return <OnboardingGate navigate={navigate} />;
+          return <OnboardingGate navigate={navigate} user={session.user} />;
         }
         return (
           <Shell

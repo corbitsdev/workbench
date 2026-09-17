@@ -9,11 +9,6 @@ import { createRoot } from "react-dom/client";
 import { getLogger } from "@corbits/client-log";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { App } from "./app";
-import {
-  logBootstrapResult,
-  logBootstrapThrown,
-  runPortableClientBootstrap,
-} from "./client-bootstrap";
 import { validatedNextPath } from "./login-next";
 import { triggerFirstLoginProvisioning } from "./onboarding";
 import { ONBOARDING_PATH } from "./routes";
@@ -86,30 +81,6 @@ function Root() {
     runProvisioning();
   }, [runProvisioning]);
 
-  // The portable client lane: every signed-in open also converges the
-  // client's needs-list against stock Interchange routes and persists the
-  // child tenant ids it created (scoped by hub origin and account). It
-  // never gates the shell — stock hubs cannot project workflow principals
-  // into child rooms by refId yet, so a capability gap is the normal
-  // outcome until that lands upstream; it is logged, not shown.
-  const signedInUser = session.kind === "signed-in" ? session.user : null;
-  useEffect(() => {
-    if (signedInUser === null) return;
-    let cancelled = false;
-    void runPortableClientBootstrap(signedInUser).then(
-      (result) => {
-        if (cancelled) return;
-        logBootstrapResult(log, result);
-      },
-      (error) => {
-        if (cancelled) return;
-        logBootstrapThrown(log, error);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [signedInUser]);
   const handleSignOut = useCallback(() => {
     setSession({ kind: "signed-out" });
     toast(
