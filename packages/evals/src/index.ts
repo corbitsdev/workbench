@@ -64,14 +64,6 @@ export {
 export type { EvalRunRecord, EvalRunStore } from "./store/store.ts";
 export { createPostgresEvalRunStore } from "./store/pg-store.ts";
 export { applyEvalsMigrations } from "./store/migrations.ts";
-export { bootMyraTarget, createEvalAssetService } from "./targets/real-target.ts";
-export type {
-  EvalApiResult,
-  EvalHubHandle,
-  EvalSpawnedApp,
-  MyraTargetInfra,
-  MyraTargetMcpFake,
-} from "./targets/real-target.ts";
 export { newToolCallsSince, readAllToolCalls } from "./targets/trace.ts";
 export type { SqlClientLike } from "./targets/trace.ts";
 export { captureWorldSnapshot } from "./targets/world-snapshot.ts";

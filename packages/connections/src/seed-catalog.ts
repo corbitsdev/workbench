@@ -219,13 +219,10 @@ export async function ensureCredential(
   // not the person reconnecting regenerated the key or is retrying after
   // a bad paste — so it rotates on a name conflict only when
   // `args.verified` is set, which a caller sets only for an explicit user
-  // submission through a connect UI: `testAndPersistCredential`
-  // (`@workbench/onboarding`'s `complete-credential.ts`) sets it
-  // unconditionally for a pasted key or a completed OAuth exchange
-  // (CL-6123 dropped the probe that used to gate this), and
-  // `connections`' `POST /:connectorId/complete` (`routes.ts`) still
-  // sets it only after `descriptor.probe` passes, since that surface
-  // (Settings > Connections) is allowed to block on a real check.
+  // submission through a connect UI: `connections`'
+  // `POST /:connectorId/complete` (`routes.ts`) sets it only after
+  // `descriptor.probe` passes, since that surface (Settings > Connections)
+  // is allowed to block on a real check.
   const shouldRotate =
     args.type === "oauth_token"
       ? existing.status !== "active" || args.verified === true
@@ -518,17 +515,16 @@ export type SeedCatalogArgs = {
   credentialName?: string;
   /**
    * Free-form data attached to the seeded credential's `metadata`
-   * field — the extension point a token's expiry timestamp lives in
-   * (see `complete-credential.ts`), never interpreted by this function.
+   * field — the extension point a token's expiry timestamp lives in,
+   * never interpreted by this function.
    */
   credentialMetadata?: Record<string, unknown>;
   /**
    * Passed straight through to `ensureCredential`'s own `verified` — set
    * only by a caller that already proved `apiKey` against the provider's
-   * own probe before calling `seedCatalog` (onboarding's
-   * `testAndPersistCredential`). A plain `workbench seed` never sets
-   * this, since its key comes straight from env with no probe of its
-   * own.
+   * own probe before calling `seedCatalog`. A plain `workbench seed`
+   * never sets this, since its key comes straight from env with no
+   * probe of its own.
    */
   credentialVerified?: boolean;
   /**

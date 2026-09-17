@@ -38,7 +38,7 @@ async function readErrorBody(response: Response): Promise<string> {
 }
 
 /** Idempotently ensures the `package-registry` asset Myra's tarball is
- * published into, mirroring `packages/onboarding`'s `ensureWorkflowAsset`
+ * published into, mirroring `the deleted onboarding package's `ensureWorkflowAsset`
  * 409-then-list pattern. */
 export async function ensureMyraSourceAsset(
   tenantId: string,

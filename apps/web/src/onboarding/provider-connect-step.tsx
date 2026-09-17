@@ -72,7 +72,7 @@ export type ExistingOffering = {
  * ancestor, or minted by an earlier run of this step) needs no UI at
  * all: every visible offering becomes `sourceOfferingIds`, and the
  * lowest-priority one is the default — the same rule
- * `resolveRealSourceOfferingIds` in `packages/onboarding` applies. */
+ * `resolveRealSourceOfferingIds` in the deleted onboarding package applies. */
 export async function resolveExistingOffering(tenantId: string): Promise<ExistingOffering | null> {
   const models = await getResolvedCatalog(tenantId);
   const offerings = models

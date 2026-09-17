@@ -10,7 +10,6 @@ import * as errorSink from "@corbits/error-sink";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
-import type { ModelInfo } from "@intx/types";
 import type { ConnectorDescriptor } from "./descriptor";
 import type { ApiCall } from "@corbits/hub-api-client";
 import { createProviderHealthStore } from "./provider-health";
@@ -155,10 +154,6 @@ function buildApp(
     providerHealth?: Parameters<typeof createConnectionRoutes>[0]["providerHealth"];
     listConnectedProviders?: Parameters<typeof createConnectionRoutes>[0]["listConnectedProviders"];
     onConnected?: Parameters<typeof createConnectionRoutes>[0]["onConnected"];
-    onInferenceCredentialUsable?: Parameters<
-      typeof createConnectionRoutes
-    >[0]["onInferenceCredentialUsable"];
-    getResolvedCatalogFn?: Parameters<typeof createConnectionRoutes>[0]["getResolvedCatalogFn"];
   } = {},
 ) {
   const routeArgs: Parameters<typeof createConnectionRoutes>[0] = {
@@ -179,10 +174,6 @@ function buildApp(
   if (overrides.listConnectedProviders !== undefined)
     routeArgs.listConnectedProviders = overrides.listConnectedProviders;
   if (overrides.onConnected !== undefined) routeArgs.onConnected = overrides.onConnected;
-  if (overrides.onInferenceCredentialUsable !== undefined)
-    routeArgs.onInferenceCredentialUsable = overrides.onInferenceCredentialUsable;
-  if (overrides.getResolvedCatalogFn !== undefined)
-    routeArgs.getResolvedCatalogFn = overrides.getResolvedCatalogFn;
   const routes = createConnectionRoutes(routeArgs);
   return mountAs(routes);
 }
@@ -1076,160 +1067,5 @@ describe("onConnected hook", () => {
     });
     expect(response.status).toBe(422);
     expect(events).toHaveLength(0);
-  });
-});
-
-function modelWithOfferings(offeringCount: number): ModelInfo {
-  return {
-    id: "model_1",
-    canonicalName: "qwen3",
-    displayName: "Qwen3",
-    offerings: Array.from({ length: offeringCount }, (_, index) => ({
-      offeringId: `off_${index}`,
-      providerId: "prov_1",
-      providerName: "ollama",
-      plugin: "ollama",
-      priority: index,
-      capabilities: [],
-    })),
-  } as unknown as ModelInfo;
-}
-
-describe("onInferenceCredentialUsable hook", () => {
-  const OLLAMA_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> = {
-    ...FAKE_REGISTRY,
-    ollama: {
-      id: "ollama",
-      displayName: "Ollama",
-      authKind: "api-key",
-      credentialPlugin: "http",
-      docsUrl: "https://example.test/docs",
-      feedsTools: [],
-      credentialInputKind: "url",
-      credentialPlaceholder: "http://localhost:11434",
-      probe: async () => ({ ok: true }),
-    },
-  };
-
-  test("a connected provider that resolves a usable model fires the hook with that provider's own key and endpoint", async () => {
-    const events: unknown[] = [];
-    const routes = createConnectionRoutes({
-      hubUrl: "http://hub.test",
-      requireGrant: allowAll,
-      log: () => {},
-      registry: OLLAMA_REGISTRY,
-      ensureProviderFn: async () => "prv_1",
-      ensureCredentialFn: async () => "crd_1",
-      seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
-      getResolvedCatalogFn: async () => [modelWithOfferings(1)],
-      onInferenceCredentialUsable: async (info) => {
-        events.push(info);
-      },
-    });
-    const app = mountAs(routes);
-    const response = await app.request("/ollama/complete", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        apiKey: "https://home-mac-studio.tail87f5aa.ts.net",
-      }),
-    });
-
-    expect(response.status).toBe(200);
-    expect(events).toEqual([
-      {
-        userId: USER.id,
-        tenantId: TENANT.id,
-        tenantDomain: TENANT.domain,
-        principalId: PRINCIPAL.id,
-        provider: "ollama",
-        apiKey: "ollama",
-        baseURLOverride: "https://home-mac-studio.tail87f5aa.ts.net",
-      },
-    ]);
-  });
-
-  test("a connected provider that resolves no usable model never fires the hook — a seeded row is not the same as a usable one", async () => {
-    const events: unknown[] = [];
-    const routes = createConnectionRoutes({
-      hubUrl: "http://hub.test",
-      requireGrant: allowAll,
-      log: () => {},
-      registry: OLLAMA_REGISTRY,
-      ensureProviderFn: async () => "prv_1",
-      ensureCredentialFn: async () => "crd_1",
-      seedCatalogFn: async () => ({ hasCompletionCapableModel: false }),
-      getResolvedCatalogFn: async () => [modelWithOfferings(0)],
-      onInferenceCredentialUsable: async (info) => {
-        events.push(info);
-      },
-    });
-    const app = mountAs(routes);
-    const response = await app.request("/ollama/complete", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ apiKey: "http://localhost:11434" }),
-    });
-
-    expect(response.status).toBe(200);
-    expect(events).toHaveLength(0);
-  });
-
-  test("a non-inference connector never fires the hook", async () => {
-    const events: unknown[] = [];
-    const app = buildApp({
-      ensureProviderFn: async () => "prv_1",
-      ensureCredentialFn: async () => "crd_1",
-      onInferenceCredentialUsable: async (info) => {
-        events.push(info);
-      },
-    });
-    const response = await app.request("/accepting-connector/complete", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ apiKey: "good-key" }),
-    });
-
-    expect(response.status).toBe(200);
-    expect(events).toHaveLength(0);
-  });
-
-  test("a resolved-catalog check failure is reported and never breaks the connect", async () => {
-    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
-    const events: unknown[] = [];
-    const routes = createConnectionRoutes({
-      hubUrl: "http://hub.test",
-      requireGrant: allowAll,
-      log: () => {},
-      registry: OLLAMA_REGISTRY,
-      ensureProviderFn: async () => "prv_1",
-      ensureCredentialFn: async () => "crd_1",
-      seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
-      getResolvedCatalogFn: async () => {
-        throw new Error("hub unreachable");
-      },
-      onInferenceCredentialUsable: async (info) => {
-        events.push(info);
-      },
-    });
-    const app = mountAs(routes);
-    const response = await app.request("/ollama/complete", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        apiKey: "https://home-mac-studio.tail87f5aa.ts.net",
-      }),
-    });
-
-    expect(response.status).toBe(200);
-    expect(events).toHaveLength(0);
-    expect(report).toHaveBeenCalledTimes(1);
-    expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
-    expect(report.mock.calls[0]?.[1]).toMatchObject({
-      operation: "check_resolved_catalog_after_connect",
-      tenantId: TENANT.id,
-      extra: { connectorId: "ollama" },
-    });
-    report.mockRestore();
   });
 });

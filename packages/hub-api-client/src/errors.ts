@@ -22,11 +22,10 @@ export function isHubApiError(value: unknown): value is HubApiError {
  * a workflow-deployment create with 502 `sidecar_unavailable`: the
  * sidecar that hosts workflow execution is down, but every durable step
  * ahead of it (tenant, grants, credential, catalog, workflow assets)
- * already succeeded. Onboarding's `ensureSeeded` (see
- * `@workbench/onboarding`'s `complete-credential.ts`) parses this exact
- * class to finish the request successfully with an honest "agents
- * pending" report, instead of failing the whole flow the way any other
- * `HubApiError` still does.
+ * already succeeded. A caller deploying several workflows in sequence
+ * can parse this exact class to finish successfully with an honest
+ * "agents pending" report, instead of failing the whole flow the way
+ * any other `HubApiError` still does.
  */
 export class SidecarUnavailableError extends HubApiError {
   constructor(problem: string, fix: string, options?: ErrorOptions) {
