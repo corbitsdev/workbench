@@ -9,7 +9,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import type { ConnectGithubBlockData } from "@corbits/chat/blocks";
+import type { ConnectGithubBlockData } from "../src/wire/blocks";
 
 import type {
   ConnectGithubActions,
