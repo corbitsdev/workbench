@@ -103,7 +103,7 @@ that selector object instead of a bare string.
 - `packages/chat/src/platform-adapter.ts:340`
 
 **Cascades** (typecheck depends on the packages above) into
-`@corbits/slack-tag`, `@corbits/chat`, `@corbits/agent-directory`.
+`@corbits/chat`, `@corbits/agent-directory`.
 
 **Fix shape:** semantic. Each of the 3 call sites needs to produce a
 `wireHash` for the workflow JSON it just wrote (upstream's wire-definition

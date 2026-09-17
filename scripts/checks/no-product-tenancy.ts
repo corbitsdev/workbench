@@ -151,11 +151,6 @@ const ALLOWLIST: readonly {
     tables: ["snooze"],
   },
   {
-    relPath: "packages/slack-tag/src/schema.ts",
-    maxOccurrences: 1,
-    tables: ["slack_channel_binding"],
-  },
-  {
     relPath: "packages/preferences/src/schema.ts",
     maxOccurrences: 1,
     tables: ["user_preferences"],
