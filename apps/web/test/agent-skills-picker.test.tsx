@@ -1,7 +1,7 @@
-// AgentSkillsPicker (CL-5920): a pin can outlive its skill's visibility —
-// the author made it private, renamed it, or discarded it — so a stale
-// name in `selected` must still render as a removable row rather than
-// vanish silently and leave the dialog unsaveable.
+// AgentSkillsPicker (CL-5920): a pin can outlive its skill — it was
+// renamed or discarded — so a stale name in `selected` must still render as
+// a removable row rather than vanish silently and leave the dialog
+// unsaveable.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -12,12 +12,14 @@ import { AgentSkillsPicker } from "../src/pages/agent-skills-picker";
 const TENANT = "tnt_1";
 
 const TRIAGE = {
-  assetId: "ast_1",
+  id: "ast_1",
+  tenantId: "tnt_1",
+  kind: "skill",
   name: "triage",
-  description: "Sorts inbound issues.",
-  scope: "tenant",
+  displayName: "Triage",
   creatorPrincipalId: "prn_1",
-  updatedAtIso: "2026-08-05T11:00:00.000Z",
+  createdAt: "2026-08-05T11:00:00.000Z",
+  updatedAt: "2026-08-05T11:00:00.000Z",
 };
 
 let container: HTMLDivElement | null = null;
@@ -26,7 +28,7 @@ const originalFetch = globalThis.fetch;
 
 function stubSkills(skills: readonly unknown[]): void {
   globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ skills }), {
+    new Response(JSON.stringify(skills), {
       status: 200,
     })) as unknown as typeof fetch;
 }

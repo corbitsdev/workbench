@@ -168,14 +168,19 @@ describe("stage breadcrumbs", () => {
 
 const TENANT = "tnt_1";
 
-const SKILL = {
-  assetId: "ast_1",
+const SKILL_ASSET = {
+  id: "ast_1",
+  tenantId: "tnt_1",
+  kind: "skill",
   name: "weekly-digest",
-  description: "Summarizes the week.",
-  scope: "private",
+  displayName: "Weekly digest",
   creatorPrincipalId: "prn_1",
-  updatedAtIso: "2026-08-05T11:00:00.000Z",
+  createdAt: "2026-08-05T11:00:00.000Z",
+  updatedAt: "2026-08-05T11:00:00.000Z",
 };
+
+// The roster's and the detail page's one read: the stock skill-asset list.
+const SKILL_LIST_PATH = `/api/tenants/${TENANT}/assets?kind=skill&inherited=false`;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -188,8 +193,7 @@ describe("Skills declares its nav through the top-bar contract", () => {
   test("the list view titles itself and keeps New skill in the action slot, not the body", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === `/api/tenants/${TENANT}/skills`)
-        return Promise.resolve(json({ skills: [SKILL] }));
+      if (path === SKILL_LIST_PATH) return Promise.resolve(json([SKILL_ASSET]));
       return Promise.resolve(json({ error: { message: "no stub" } }, 404));
     }) as typeof fetch;
 
@@ -214,12 +218,10 @@ describe("Skills declares its nav through the top-bar contract", () => {
   test("an open skill deep-links its parent level back to /skills", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === `/api/tenants/${TENANT}/skills/weekly-digest`)
-        return Promise.resolve(
-          json({ skill: { ...SKILL, body: "Do it." }, pinnedBy: [] }),
-        );
-      if (path === `/api/tenants/${TENANT}/skills/weekly-digest/versions`)
-        return Promise.resolve(json({ versions: [] }));
+      // The detail page resolves its skill through the roster list read —
+      // the per-skill and versions sub-paths of the deleted registry are
+      // gone, so they stay unstubbed.
+      if (path === SKILL_LIST_PATH) return Promise.resolve(json([SKILL_ASSET]));
       return Promise.resolve(json({ error: { message: "no stub" } }, 404));
     }) as typeof fetch;
 
@@ -242,12 +244,7 @@ describe("Skills declares its nav through the top-bar contract", () => {
   test("the parent crumb is the way back: clicking it navigates to /skills", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === `/api/tenants/${TENANT}/skills/weekly-digest`)
-        return Promise.resolve(
-          json({ skill: { ...SKILL, body: "Do it." }, pinnedBy: [] }),
-        );
-      if (path === `/api/tenants/${TENANT}/skills/weekly-digest/versions`)
-        return Promise.resolve(json({ versions: [] }));
+      if (path === SKILL_LIST_PATH) return Promise.resolve(json([SKILL_ASSET]));
       return Promise.resolve(json({ error: { message: "no stub" } }, 404));
     }) as typeof fetch;
 
@@ -297,8 +294,8 @@ describe("Plugins declares its nav through the top-bar contract", () => {
         );
       if (path.includes("/credentials/resolve/"))
         return Promise.resolve(json(null, 404));
-      if (path.includes(`/api/tenants/${TENANT}/skills`))
-        return Promise.resolve(json({ skills: [SKILL] }));
+      if (path.includes(`/api/tenants/${TENANT}/assets`))
+        return Promise.resolve(json([SKILL_ASSET]));
       return Promise.resolve(json({ data: [], nextCursor: null }));
     }) as typeof fetch;
 

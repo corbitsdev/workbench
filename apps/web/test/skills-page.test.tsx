@@ -1,7 +1,7 @@
-// Skills (CL-6355), over the real registry (CL-5920). The page reads
-// `/api/tenants/:id/skills` and its sub-paths, so every case here stubs
-// `fetch` at that seam — no live hub, and no session-local skill store
-// (that path is gone).
+// Skills (CL-6355), over the native skill assets (CL-8086). The page reads
+// the stock asset routes (`GET /api/tenants/:id/assets?kind=skill` for the
+// roster, `POST` for create), so every case here stubs `fetch` at that seam
+// — no live hub, and no workbench-local skill registry (that path is gone).
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -13,14 +13,20 @@ import { TestQueryProvider } from "./test-query-provider";
 
 const TENANT = "tnt_1";
 
-const TRIAGE = {
-  assetId: "ast_1",
+const TRIAGE_ASSET = {
+  id: "ast_1",
+  tenantId: "tnt_1",
+  kind: "skill",
   name: "triage",
-  description: "Sorts inbound issues.",
-  scope: "private",
+  displayName: "Triage",
   creatorPrincipalId: "prn_1",
-  updatedAtIso: "2026-08-05T11:00:00.000Z",
+  createdAt: "2026-08-05T11:00:00.000Z",
+  updatedAt: "2026-08-05T11:00:00.000Z",
 };
+
+// The roster's one read: the stock asset list filtered to skill assets.
+const LIST_PATH = `/api/tenants/${TENANT}/assets?kind=skill&inherited=false`;
+const CREATE_PATH = `/api/tenants/${TENANT}/assets`;
 
 type StubRoutes = Record<string, unknown>;
 
@@ -90,7 +96,7 @@ async function mount(
 }
 
 const EMPTY_REGISTRY: StubRoutes = {
-  [`GET /api/tenants/${TENANT}/skills`]: { skills: [] },
+  [`GET ${LIST_PATH}`]: [],
 };
 
 function nativeValueSetter(
@@ -136,35 +142,32 @@ describe("SkillsPage", () => {
     expect(el.textContent).not.toContain("No skills yet");
   });
 
-  test("lists published skills with their access state", async () => {
+  test("lists skills by display title — the stock routes carry no description or scope", async () => {
     stubRoutes({
       ...EMPTY_REGISTRY,
-      [`GET /api/tenants/${TENANT}/skills`]: { skills: [TRIAGE] },
+      [`GET ${LIST_PATH}`]: [TRIAGE_ASSET],
     });
     const el = await mount();
     // Name slot is a display title, never the raw kebab slug (CL-6747).
     expect(el.textContent).toContain("Triage");
-    expect(el.textContent).toContain("Sorts inbound issues.");
-    expect(el.textContent).toContain("Only me");
-    // Badge must not shout via CSS uppercase (CL-6747).
-    const badge = Array.from(el.querySelectorAll('[data-slot="badge"]')).find(
-      (node) => node.textContent === "Only me",
-    );
-    expect(badge?.className).toContain("normal-case");
+    // Description and scope lived in the deleted registry: the roster must
+    // not invent them from asset metadata.
+    expect(el.textContent).not.toContain("Sorts inbound issues.");
+    expect(el.textContent).not.toContain("Only me");
+    expect(el.textContent).not.toContain("Everyone");
+    expect(el.querySelector('[data-slot="badge"]')).toBeNull();
   });
 
-  test("a kebab skill name is shown title-cased in the Name column", async () => {
+  test("a kebab skill name without a displayName is shown title-cased in the Name column", async () => {
     stubRoutes({
       ...EMPTY_REGISTRY,
-      [`GET /api/tenants/${TENANT}/skills`]: {
-        skills: [
-          {
-            ...TRIAGE,
-            name: "writing-system-prompts",
-            description: "Prompt craft.",
-          },
-        ],
-      },
+      [`GET ${LIST_PATH}`]: [
+        {
+          ...TRIAGE_ASSET,
+          name: "writing-system-prompts",
+          displayName: null,
+        },
+      ],
     });
     const el = await mount();
     expect(el.textContent).toContain("Writing System Prompts");
@@ -174,27 +177,28 @@ describe("SkillsPage", () => {
     expect(nameCell?.textContent?.trim()).toBe("Writing System Prompts");
   });
 
-  test("a shared skill's visibility badge stays sentence case", async () => {
+  test("an explicit displayName wins over the title-cased slug", async () => {
     stubRoutes({
       ...EMPTY_REGISTRY,
-      [`GET /api/tenants/${TENANT}/skills`]: {
-        skills: [{ ...TRIAGE, scope: "tenant" }],
-      },
+      [`GET ${LIST_PATH}`]: [
+        { ...TRIAGE_ASSET, name: "summarize", displayName: "Summarize Now!" },
+      ],
     });
     const el = await mount();
-    const badge = Array.from(el.querySelectorAll('[data-slot="badge"]')).find(
-      (node) => node.textContent === "Everyone",
+    const nameCell = Array.from(el.querySelectorAll("td")).find((cell) =>
+      cell.textContent?.includes("Summarize Now!"),
     );
-    expect(badge).toBeDefined();
-    expect(badge?.className).toContain("normal-case");
-    expect(badge?.textContent).toBe("Everyone");
+    expect(nameCell?.textContent?.trim()).toBe("Summarize Now!");
   });
 
-  test("Create skill posts directly to the registry and opens the new skill's page", async () => {
+  test("Create skill posts a kind:skill asset and opens the new skill's page", async () => {
     stubRoutes({
       ...EMPTY_REGISTRY,
-      [`POST /api/tenants/${TENANT}/skills`]: {
-        skill: { ...TRIAGE, name: "summarize" },
+      [`POST ${CREATE_PATH}`]: {
+        ...TRIAGE_ASSET,
+        id: "skill_created",
+        name: "summarize",
+        displayName: "Summarize",
       },
     });
     const navigated: string[] = [];
@@ -209,8 +213,7 @@ describe("SkillsPage", () => {
 
     await act(async () => {
       fillField("create-skill-name", "summarize");
-      fillField("create-skill-description", "Condenses.", true);
-      fillField("create-skill-body", "Do it.", true);
+      fillField("create-skill-displayName", "Summarize");
     });
 
     const create = Array.from(document.body.querySelectorAll("button")).find(
@@ -224,22 +227,24 @@ describe("SkillsPage", () => {
     });
 
     const call = requested.find(
-      (entry) => entry.method === "POST" && entry.path.endsWith("/skills"),
+      (entry) => entry.method === "POST" && entry.path === CREATE_PATH,
     );
     expect(call?.body).toEqual({
+      kind: "skill",
       name: "summarize",
-      description: "Condenses.",
-      body: "Do it.",
-      scope: "private",
+      displayName: "Summarize",
     });
     expect(navigated).toContain("/skills/summarize");
   });
 
-  test("Upload SKILL.md posts its parsed source and opens the new skill's page", async () => {
+  test("displayName is optional — omitting it posts kind and name only", async () => {
     stubRoutes({
       ...EMPTY_REGISTRY,
-      [`POST /api/tenants/${TENANT}/skills`]: {
-        skill: { ...TRIAGE, name: "summarize" },
+      [`POST ${CREATE_PATH}`]: {
+        ...TRIAGE_ASSET,
+        id: "skill_created",
+        name: "summarize",
+        displayName: null,
       },
     });
     const navigated: string[] = [];
@@ -252,41 +257,13 @@ describe("SkillsPage", () => {
       newSkill?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    const uploadTab = Array.from(
-      document.body.querySelectorAll<HTMLElement>("[role='tab']"),
-    ).find((tab) => tab.textContent === "Upload");
     await act(async () => {
-      uploadTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-
-    const source = [
-      "---",
-      "name: summarize",
-      "description: 'Condenses.'",
-      "---",
-      "",
-      "Do it.",
-      "",
-    ].join("\n");
-    const fileInput = document.body.querySelector(
-      'input[type="file"]',
-    ) as HTMLInputElement;
-    expect(fileInput).not.toBeNull();
-    const file = new File([source], "SKILL.md", { type: "text/markdown" });
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    await act(async () => {
-      Object.defineProperty(fileInput, "files", {
-        value: transfer.files,
-        configurable: true,
-      });
-      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+      fillField("create-skill-name", "summarize");
     });
 
     const create = Array.from(document.body.querySelectorAll("button")).find(
       (button) => button.textContent === "Create skill",
     );
-    expect(create?.hasAttribute("disabled")).toBe(false);
     await act(async () => {
       create?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
@@ -295,13 +272,19 @@ describe("SkillsPage", () => {
     });
 
     const call = requested.find(
-      (entry) => entry.method === "POST" && entry.path.endsWith("/skills"),
+      (entry) => entry.method === "POST" && entry.path === CREATE_PATH,
     );
-    expect(call?.body).toEqual({ source, scope: "private" });
+    expect(call?.body).toEqual({ kind: "skill", name: "summarize" });
     expect(navigated).toContain("/skills/summarize");
   });
 
-  test("uploading a malformed SKILL.md surfaces the parse error and creates nothing", async () => {
+  test("a rejected create surfaces the asset route's error inline in the dialog and creates nothing", async () => {
+    // The dialog's own validationIssues() only checks the name, so a
+    // server-side rejection is the realistic path exercised here: the
+    // stubbed 400 body carries the stock error envelope's exact
+    // plain-language message — regression coverage against that message
+    // drifting or an arktype summary leaking back in.
+    const ASSET_NAME_ERROR = "Name is taken.";
     globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
       const path = String(input);
       const method = init?.method ?? "GET";
@@ -311,104 +294,18 @@ describe("SkillsPage", () => {
         body:
           init?.body === undefined ? undefined : JSON.parse(String(init.body)),
       });
-      if (method === "POST" && path.endsWith("/skills")) {
+      if (method === "POST" && path === CREATE_PATH) {
         return new Response(
           JSON.stringify({
             error: {
-              code: "invalid_skill",
-              userMessage: "SKILL.md is missing its YAML frontmatter delimiter",
-              refId: "ref_1",
+              code: "name_taken",
+              message: ASSET_NAME_ERROR,
             },
           }),
           { status: 400 },
         );
       }
-      return new Response(JSON.stringify({ skills: [] }), { status: 200 });
-    }) as unknown as typeof fetch;
-
-    const el = await mount();
-    const newSkill = Array.from(el.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("New skill"),
-    );
-    await act(async () => {
-      newSkill?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-
-    const uploadTab = Array.from(
-      document.body.querySelectorAll<HTMLElement>("[role='tab']"),
-    ).find((tab) => tab.textContent === "Upload");
-    await act(async () => {
-      uploadTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-
-    const fileInput = document.body.querySelector(
-      'input[type="file"]',
-    ) as HTMLInputElement;
-    const file = new File(["not a skill file"], "SKILL.md", {
-      type: "text/markdown",
-    });
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    await act(async () => {
-      Object.defineProperty(fileInput, "files", {
-        value: transfer.files,
-        configurable: true,
-      });
-      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-
-    const create = Array.from(document.body.querySelectorAll("button")).find(
-      (button) => button.textContent === "Create skill",
-    );
-    await act(async () => {
-      create?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(document.body.textContent).toContain(
-      "SKILL.md is missing its YAML frontmatter delimiter",
-    );
-    expect(
-      requested.some(
-        (entry) => entry.method === "POST" && entry.path.endsWith("/skills"),
-      ),
-    ).toBe(true);
-  });
-
-  test("a rejected create surfaces the registry's error inline in the dialog and creates nothing", async () => {
-    // The dialog's own client-side validationIssues() never checks the
-    // description for HTML, so an author typing markup only gets caught
-    // server-side. That's the realistic path exercised here: the stubbed
-    // 400 body is the exact plain-language message
-    // `assertDescription` in packages/skills/src/registry.ts produces for
-    // a description containing an HTML tag ("Description can't contain
-    // HTML tags."), not an invented string — regression coverage against
-    // that message drifting or an arktype regex summary leaking back in.
-    const REGISTRY_DESCRIPTION_ERROR = "Description can't contain HTML tags.";
-    globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
-      const path = String(input);
-      const method = init?.method ?? "GET";
-      requested.push({
-        method,
-        path,
-        body:
-          init?.body === undefined ? undefined : JSON.parse(String(init.body)),
-      });
-      if (method === "POST" && path.endsWith("/skills")) {
-        return new Response(
-          JSON.stringify({
-            error: {
-              code: "invalid_skill",
-              userMessage: REGISTRY_DESCRIPTION_ERROR,
-              refId: "ref_1",
-            },
-          }),
-          { status: 400 },
-        );
-      }
-      return new Response(JSON.stringify({ skills: [] }), { status: 200 });
+      return new Response(JSON.stringify([]), { status: 200 });
     }) as unknown as typeof fetch;
 
     const el = await mount();
@@ -421,8 +318,7 @@ describe("SkillsPage", () => {
 
     await act(async () => {
       fillField("create-skill-name", "summarize");
-      fillField("create-skill-description", "<b>Condenses.</b>", true);
-      fillField("create-skill-body", "Do it.", true);
+      fillField("create-skill-displayName", "Summarize");
     });
 
     const create = Array.from(document.body.querySelectorAll("button")).find(
@@ -435,12 +331,12 @@ describe("SkillsPage", () => {
       await Promise.resolve();
     });
 
-    expect(document.body.textContent).toContain(REGISTRY_DESCRIPTION_ERROR);
+    expect(document.body.textContent).toContain(ASSET_NAME_ERROR);
     // The dialog is still open with the typed values rather than closed.
     expect(document.body.textContent).toContain("Create skill");
     expect(
       requested.filter(
-        (entry) => entry.method === "POST" && entry.path.endsWith("/skills"),
+        (entry) => entry.method === "POST" && entry.path === CREATE_PATH,
       ),
     ).toHaveLength(1);
   });
@@ -448,7 +344,7 @@ describe("SkillsPage", () => {
   test("opening a row leaves the roster listed — a skill is never rendered inline", async () => {
     stubRoutes({
       ...EMPTY_REGISTRY,
-      [`GET /api/tenants/${TENANT}/skills`]: { skills: [TRIAGE] },
+      [`GET ${LIST_PATH}`]: [TRIAGE_ASSET],
     });
     const el = await mount({ navigate: () => undefined });
     const row = Array.from(el.querySelectorAll("tr")).find((tr) =>
@@ -459,15 +355,14 @@ describe("SkillsPage", () => {
     });
     expect(el.querySelector('table[aria-label="Skills"]')).not.toBeNull();
     expect(el.textContent).not.toContain("Version history");
-    expect(
-      requested.some((entry) => entry.path.endsWith("/skills/triage")),
-    ).toBe(false);
+    // Opening a row navigates — it never issues a per-skill read.
+    expect(requested.filter((entry) => entry.path !== LIST_PATH)).toEqual([]);
   });
 
   test("navigate is called with the skill's name when a row is selected", async () => {
     stubRoutes({
       ...EMPTY_REGISTRY,
-      [`GET /api/tenants/${TENANT}/skills`]: { skills: [TRIAGE] },
+      [`GET ${LIST_PATH}`]: [TRIAGE_ASSET],
     });
     const navigated: string[] = [];
     const el = await mount({ navigate: (to) => navigated.push(to) });
@@ -483,19 +378,16 @@ describe("SkillsPage", () => {
 
 describe("CreateSkillDialog validation", () => {
   test("an empty form names every missing field in plain language", () => {
-    expect(validationIssues({ name: "", description: "", body: "" })).toEqual([
+    expect(validationIssues({ name: "", displayName: "" })).toEqual([
       "Name is required.",
-      "Description is required.",
-      "Skill body is required.",
     ]);
   });
 
-  test("a slug the registry could never carry is rejected before submit", () => {
+  test("a slug the asset routes could never carry is rejected before submit", () => {
     expect(
       validationIssues({
         name: "Summarize Transcript",
-        description: "x",
-        body: "do the thing",
+        displayName: "",
       }),
     ).toEqual([
       "Name must be lowercase letters, digits, and hyphens — no whitespace or capitals.",
@@ -506,9 +398,14 @@ describe("CreateSkillDialog validation", () => {
     expect(
       validationIssues({
         name: "summarize",
-        description: "x",
-        body: "do the thing",
+        displayName: "Summarize",
       }),
     ).toEqual([]);
+  });
+
+  test("displayName stays optional — a bare name is submittable", () => {
+    expect(validationIssues({ name: "summarize", displayName: "" })).toEqual(
+      [],
+    );
   });
 });

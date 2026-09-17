@@ -122,38 +122,42 @@ function stubFetch(
       );
     if (path.includes("/credentials/resolve/"))
       return Promise.resolve(json(null, 404));
-    if (path.includes("/api/tenants/tnt_1/skills")) {
+    if (path.includes("/api/tenants/tnt_1/assets")) {
       if (method === "POST") {
         const parsed =
           init?.body === undefined
             ? {}
-            : (JSON.parse(String(init.body)) as { name?: string });
+            : (JSON.parse(String(init.body)) as {
+                name?: string;
+                displayName?: string;
+              });
+        const name = parsed.name ?? "summarize";
         return Promise.resolve(
           json({
-            skill: {
-              assetId: "skill_created",
-              name: parsed.name ?? "summarize",
-              description: "Condenses.",
-              scope: "private",
-              creatorPrincipalId: "prn_1",
-              updatedAtIso: "2026-01-01T00:00:00.000Z",
-            },
+            id: "skill_created",
+            tenantId: "tnt_1",
+            kind: "skill",
+            name,
+            displayName: parsed.displayName ?? null,
+            creatorPrincipalId: "prn_1",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
           }),
         );
       }
       return Promise.resolve(
-        json({
-          skills: [
-            {
-              assetId: "skill_1",
-              name: "weekly-digest",
-              description: "Summarizes the week's workbench activity.",
-              scope: "tenant",
-              creatorPrincipalId: "prn_1",
-              updatedAtIso: "2026-01-01T00:00:00.000Z",
-            },
-          ],
-        }),
+        json([
+          {
+            id: "skill_1",
+            tenantId: "tnt_1",
+            kind: "skill",
+            name: "weekly-digest",
+            displayName: "Weekly digest",
+            creatorPrincipalId: "prn_1",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ]),
       );
     }
     return Promise.resolve(json({ data: [], nextCursor: null }));
@@ -262,7 +266,6 @@ describe("PluginsRoute", () => {
     ).not.toBeNull();
     expect(el.textContent).toContain("New skill");
     expect(el.textContent).toContain("weekly-digest");
-    expect(el.textContent).toContain("Shared with everyone");
   });
 
   test("a pending connect deep link (CL-6092) opens that provider's connect panel once the gallery loads", async () => {
@@ -318,8 +321,8 @@ describe("PluginsRoute", () => {
         );
       if (path.includes("/credentials/resolve/"))
         return Promise.resolve(json(null, 404));
-      if (path.includes("/api/tenants/tnt_1/skills"))
-        return Promise.resolve(json({ skills: [] }));
+      if (path.includes("/api/tenants/tnt_1/assets"))
+        return Promise.resolve(json([]));
       return Promise.resolve(json({ data: [], nextCursor: null }));
     }) as typeof fetch;
 
@@ -398,8 +401,7 @@ describe("PluginsRoute", () => {
 
     await act(async () => {
       fillField("create-skill-name", "summarize");
-      fillField("create-skill-description", "Condenses.", true);
-      fillField("create-skill-body", "Do it.", true);
+      fillField("create-skill-displayName", "Summarize");
     });
 
     const create = [...document.body.querySelectorAll("button")].find(
@@ -444,7 +446,7 @@ describe("PluginsRoute", () => {
         return Promise.resolve(
           json({ providers: {}, connectedProviderCount: 0 }),
         );
-      const skillsMatch = /\/api\/tenants\/(tnt_[ab])\/skills/.exec(path);
+      const skillsMatch = /\/api\/tenants\/(tnt_[ab])\/assets/.exec(path);
       if (skillsMatch) {
         const tenantId = skillsMatch[1] as string;
         return (
@@ -504,18 +506,18 @@ describe("PluginsRoute", () => {
     }
 
     skillsDeferred.tnt_b?.resolve(
-      json({
-        skills: [
-          {
-            assetId: "skill_b",
-            name: "beta-only",
-            description: "Tenant B's skill.",
-            scope: "tenant",
-            creatorPrincipalId: "prn_1",
-            updatedAtIso: "2026-01-01T00:00:00.000Z",
-          },
-        ],
-      }),
+      json([
+        {
+          id: "skill_b",
+          tenantId: "tnt_b",
+          kind: "skill",
+          name: "beta-only",
+          displayName: "Beta only",
+          creatorPrincipalId: "prn_1",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ]),
     );
     for (let i = 0; i < 10; i++) {
       await act(async () => {
@@ -524,18 +526,18 @@ describe("PluginsRoute", () => {
     }
 
     skillsDeferred.tnt_a?.resolve(
-      json({
-        skills: [
-          {
-            assetId: "skill_a",
-            name: "alpha-only",
-            description: "Tenant A's skill.",
-            scope: "tenant",
-            creatorPrincipalId: "prn_1",
-            updatedAtIso: "2026-01-01T00:00:00.000Z",
-          },
-        ],
-      }),
+      json([
+        {
+          id: "skill_a",
+          tenantId: "tnt_a",
+          kind: "skill",
+          name: "alpha-only",
+          displayName: "Alpha only",
+          creatorPrincipalId: "prn_1",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ]),
     );
     for (let i = 0; i < 10; i++) {
       await act(async () => {
@@ -599,8 +601,8 @@ describe("PluginsRoute", () => {
         );
       if (path.includes("/credentials/resolve/"))
         return Promise.resolve(json(null, 404));
-      if (path.includes("/api/tenants/tnt_1/skills"))
-        return Promise.resolve(json({ skills: [] }));
+      if (path.includes("/api/tenants/tnt_1/assets"))
+        return Promise.resolve(json([]));
       return Promise.resolve(json({ data: [], nextCursor: null }));
     }) as typeof fetch;
 
@@ -776,8 +778,8 @@ describe("PluginsRoute refresh-on-visibility effect", () => {
         return Promise.resolve(
           json({ providers: {}, connectedProviderCount: 0 }),
         );
-      if (path.includes("/api/tenants/tnt_1/skills"))
-        return Promise.resolve(json({ skills: [] }));
+      if (path.includes("/api/tenants/tnt_1/assets"))
+        return Promise.resolve(json([]));
       return Promise.resolve(json({ data: [], nextCursor: null }));
     }) as typeof fetch;
 
