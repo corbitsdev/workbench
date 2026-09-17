@@ -34,7 +34,7 @@ convention, with `@intx/hub-sessions` for session-authenticated calls.
 ## Running tests
 
 ```
-cd packages/skills && bun test
+cd skills/skills && bun test
 ```
 
 No drizzle suite in this package's `test/` directory and no migrations
