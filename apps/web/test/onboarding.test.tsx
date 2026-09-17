@@ -18,6 +18,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { App } from "../src/app";
 import {
+  fetchAgentReadiness,
   hasActiveCredential,
   triggerFirstLoginProvisioning,
 } from "../src/onboarding";
@@ -135,6 +136,30 @@ describe("triggerFirstLoginProvisioning", () => {
     expect(seen.map((s) => s.url)).toEqual(["/api/setup/status"]);
     expect(seen[0]?.init?.method ?? "GET").toBe("GET");
     expect(seen[0]?.init?.body).toBeUndefined();
+  });
+});
+
+describe("fetchAgentReadiness", () => {
+  // CL-8112 T1: the legacy `/api/onboarding/provisioning-status` route is
+  // gone with the hub mount — a 404/410 must answer `route-gone`, never
+  // the generic agent error, so no caller can read a deleted route as
+  // "your agent is broken".
+  test("a 404 is route-gone, not a generic agent error", async () => {
+    globalThis.fetch = (async () =>
+      new Response("not found", { status: 404 })) as unknown as typeof fetch;
+
+    expect(await fetchAgentReadiness("tnt_1")).toEqual({
+      kind: "route-gone",
+    });
+  });
+
+  test("a 410 is route-gone, not a generic agent error", async () => {
+    globalThis.fetch = (async () =>
+      new Response("gone", { status: 410 })) as unknown as typeof fetch;
+
+    expect(await fetchAgentReadiness("tnt_1")).toEqual({
+      kind: "route-gone",
+    });
   });
 });
 

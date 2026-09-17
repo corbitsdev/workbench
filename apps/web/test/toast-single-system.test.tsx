@@ -192,18 +192,8 @@ describe("the one toast system (CL-6372)", () => {
       if (path.includes("/workflows/definitions")) {
         return Promise.resolve(json({ data: [], nextCursor: null }));
       }
-      if (path.endsWith("/api/onboarding/provisioning-status?tenantId=tnt_1")) {
-        return Promise.resolve(
-          json({
-            kind: "provisioning",
-            tenantId: "tnt_1",
-            tenantSlug: "corbits-bench",
-            setupAgentReady: false,
-            deployed: [],
-            pending: ["assistant"],
-          }),
-        );
-      }
+      // CL-8112 T1: no `/api/onboarding/*` request anywhere on this
+      // path — the empty native definition alone drives the retry panel.
       return Promise.resolve(json({ error: "boom" }, 500));
     }) as typeof fetch;
     await renderPickerWithToaster();

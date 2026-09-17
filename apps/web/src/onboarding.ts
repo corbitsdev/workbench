@@ -111,9 +111,14 @@ export async function triggerFirstLoginProvisioning(): Promise<ProvisionOutcome>
 /* CL-8112 cut the rest of this module's provisioning surface: the
  * credential-submit, one-click OAuth connect, and complete-setup helpers
  * all spoke to the deleted `/api/onboarding/*` routes, so they went with
- * the hub mount. What remains is the first-login status read above and
- * the agent-readiness read below (still used by the home page's
- * first-workbench flow) — the setup flow itself is T6/T7's to build. */
+ * the hub mount. What remains is the first-login status read above plus
+ * the agent-readiness tombstone below. Live callers (the home page's
+ * first-workbench flow, the picker) no longer use it — they read Myra's
+ * native agent definition directly — so this helper exists only to keep
+ * the deleted route's absence explicit: a 404/410 is `route-gone`, never
+ * a generic agent error. The setup flow itself is T6/T7's to build.
+ * TODO(CL-8112-T6/T7): replace this tombstone with native readiness once
+ * T6/T7 builds it — no new `/api/onboarding/*` client calls until then. */
 const ProvisioningStatus = type({
   kind: "'ready' | 'provisioning'",
   setupAgentReady: "boolean",
@@ -130,17 +135,25 @@ const ProvisioningStatus = type({
  *   converge in the background.
  * - `preparing` — Myra is not live yet; this is the only state worth
  *   holding someone on a loader for.
+ * - `route-gone` — the legacy `/api/onboarding/provisioning-status`
+ *   route is gone (CL-8112 deleted it with the hub mount). Explicit on
+ *   purpose: a deleted route must never read as "your agent is broken".
  * - `error` — readiness could not be checked; show the message and allow retry.
  */
 export type AgentReadiness =
   | { readonly kind: "ready" }
   | { readonly kind: "chat-ready" }
   | { readonly kind: "preparing" }
+  | { readonly kind: "route-gone" }
   | { readonly kind: "error"; readonly message: string };
 
 /**
- * Where this account's agents stand right now. Cheap and read-only, so a
- * surface that has to wait may poll it on a short interval.
+ * Legacy agent-readiness read against the deleted
+ * `/api/onboarding/provisioning-status` route. No live caller uses this
+ * (CL-8112 T1): the home page's first-workbench flow and the picker read
+ * Myra's native agent definition directly instead. Kept so the route's
+ * absence stays an explicit, testable outcome — a 404/410 answers
+ * `route-gone`, never the generic agent error below.
  */
 export async function fetchAgentReadiness(
   tenantId: string,
@@ -149,6 +162,9 @@ export async function fetchAgentReadiness(
     const response = await fetch(
       `/api/onboarding/provisioning-status?${new URLSearchParams({ tenantId })}`,
     );
+    if (response.status === 404 || response.status === 410) {
+      return { kind: "route-gone" };
+    }
     const body: unknown = await response.json();
     if (!response.ok) {
       const envelope = ErrorEnvelope(body);

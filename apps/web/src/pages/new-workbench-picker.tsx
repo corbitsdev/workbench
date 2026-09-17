@@ -39,7 +39,6 @@ import {
   WorkbenchPostCreateError,
   WorkbenchPreconditionError,
 } from "../instant-agent-create";
-import { fetchAgentReadiness } from "../onboarding";
 import { useNavigate } from "../navigation";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { workbenchPath } from "../workbench-path";
@@ -135,11 +134,12 @@ export function NewWorkbenchPickerRoute() {
   const [activeAgentIndex, setActiveAgentIndex] = useState(0);
   const [creating, setCreating] = useState(false);
   // Set only when `createWorkbenchFromTemplate` hit the missing-setup-agent
-  // precondition *and* a readiness check confirmed the bench genuinely
-  // isn't chat-ready yet — never a guess from the error alone, since that
-  // precondition is also what a template-that-will-never-exist looks like.
-  // Distinct from `creating`'s loader: this is a dead end until setup
-  // finishes, not a request in flight.
+  // precondition — thrown only after its own native definitions read found
+  // no setup agent, so that read is the readiness check, never a guess
+  // from the error alone. (That precondition is distinct from
+  // template-unavailable, which is what a template-that-will-never-exist
+  // looks like.) Distinct from `creating`'s loader: this is a dead end
+  // until setup finishes, not a request in flight.
   const [stillSettingUp, setStillSettingUp] = useState(false);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const {
@@ -258,26 +258,22 @@ export function NewWorkbenchPickerRoute() {
         toast(describeWorkbenchCreateFailure(cause, refId));
         return;
       }
-      // The missing-setup-agent precondition reads identically whether
-      // this bench's default agents never finished deploying (CL-6457's
-      // background drain is still running, or never started without a
-      // credential) or something is genuinely broken. Only a readiness
-      // check tells those apart — never assume from the throw alone.
+      // The missing-setup-agent precondition is thrown only after a
+      // successful native definitions read found no setup agent
+      // (CL-6457's background drain still running, or never started
+      // without a credential) — that read IS the readiness check, so no
+      // second round-trip is needed before showing the retryable
+      // still-setting-up state. (CL-8112 T1 cut the deleted
+      // `/api/onboarding/provisioning-status` re-check here.)
+      // TODO(CL-8112-T6/T7): read native readiness here once T6/T7
+      // builds it, if the panel needs more than the definition's absence.
       if (
         cause instanceof WorkbenchPreconditionError &&
         cause.kind === "setup-agent-missing"
       ) {
-        const readiness = await fetchAgentReadiness(selectedTenantId);
-        if (readiness.kind === "error") {
-          toast(readiness.message);
-          setCreating(false);
-          return;
-        }
-        if (readiness.kind === "preparing") {
-          setCreating(false);
-          setStillSettingUp(true);
-          return;
-        }
+        setCreating(false);
+        setStillSettingUp(true);
+        return;
       }
       // Every remaining cause is a genuinely failed create: report it with
       // operation context and a quotable refId rather than a log line alone.

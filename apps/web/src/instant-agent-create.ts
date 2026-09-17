@@ -77,9 +77,10 @@ export function refreshWorkbenchLists(
  * from "this template genuinely doesn't exist here" without parsing
  * `message` text: the first is very often a still-provisioning bench
  * (CL-6457's background deploy hasn't finished, or never started
- * without a credential) that the caller should check
- * `fetchAgentReadiness` over before treating as a dead end; the second
- * never resolves itself and should surface as-is.
+ * without a credential) — `createWorkbenchFromTemplate` throws it only
+ * after its own native definitions read found no setup agent, so that
+ * read already is the readiness check and the caller can dead-end
+ * honestly; the second never resolves itself and should surface as-is.
  */
 export class WorkbenchPreconditionError extends Error {
   readonly kind: "setup-agent-missing" | "template-unavailable";

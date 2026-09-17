@@ -162,18 +162,20 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
 
   test("a brand-new bench with zero workbenches opens Myra's one DM, not the guided picker", async () => {
     let posted: unknown;
+    // CL-8112 T1: the deleted `/api/onboarding/provisioning-status`
+    // route must never be requested on this flow — record every path
+    // and pin the absence below, alongside the no-error-state land.
+    const requestedPaths: string[] = [];
     stubFetch((path, method, init) => {
+      requestedPaths.push(path);
       if (path === "/api/me/principals") {
         return json(PRINCIPALS_RESPONSE);
       }
       if (path.endsWith("/chat/workbenches") && method === "GET") {
         // listAllWorkbenches finds nothing — this bench has no workbenches
-        // yet, so HomeRoute waits for Myra's readiness and opens her DM
-        // rather than sending anyone to `/new`.
+        // yet, so HomeRoute reads Myra's native definition and opens her
+        // DM rather than sending anyone to `/new`.
         return json({ items: [] });
-      }
-      if (path === "/api/onboarding/provisioning-status?tenantId=tnt_1") {
-        return json({ kind: "ready", setupAgentReady: true });
       }
       if (path.includes("/workflows/definitions")) {
         return json({ data: [MYRA_DEFINITION], nextCursor: null });
@@ -211,6 +213,12 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
       reuseExisting: true,
     });
     expect(navigated).toEqual(["/w/chan_myra_dm"]);
+    // The land above is the no-error state: no `/api/onboarding/*`
+    // request fired, and no error copy rendered on the way there.
+    expect(
+      requestedPaths.filter((path) => path.includes("/api/onboarding")),
+    ).toEqual([]);
+    expect(container?.textContent).not.toContain("Couldn't open the workbench");
   });
 });
 
@@ -220,32 +228,34 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
 // that happens the moment Myra herself can answer, and an honest way out
 // if she never does.
 describe("the wait right after connecting a provider", () => {
-  /** A bench with no workbenches yet whose setup agent (Myra) reports
-   * ready only after `readyAfter` reads — everything before that is the
-   * window the person spends waiting. */
+  /** A bench with no workbenches yet whose setup agent (Myra) deploys
+   * only after `readyAfter` definition reads — everything before that is
+   * the window the person spends waiting. Readiness is the native
+   * definitions read itself (CL-8112 T1): no `/api/onboarding/*`
+   * request anywhere in this helper. */
   function benchWhereMyraArrivesAfter(readyAfter: number) {
-    let statusReads = 0;
-    const state = { statusCalls: 0 };
+    let definitionReads = 0;
+    const state = { definitionCalls: 0 };
     stubFetch((path, method) => {
       if (path === "/api/me/principals") return json(PRINCIPALS_RESPONSE);
       if (path.endsWith("/chat/workbenches") && method === "GET") {
         return json({ items: [] });
       }
-      // CL-6780: while Myra is still coming online we also confirm a
-      // credential exists — without one the drain never starts, so the
-      // wait must not pretend a workbench is "getting ready".
+      // CL-6780: while Myra is still deploying, the credential read is
+      // what tells "still coming online" apart from "nothing to deploy
+      // with" — an active credential means the former, so serve one: the
+      // no-credential case has its own test below, and this helper must
+      // never trip that branch by accident (a missing stub would throw).
       if (path === "/api/tenants/tnt_1/credentials") {
         return json({ data: [{ status: "active" }], nextCursor: null });
       }
-      if (path === "/api/onboarding/provisioning-status?tenantId=tnt_1") {
-        statusReads += 1;
-        state.statusCalls += 1;
-        const setupAgentReady = statusReads > readyAfter;
+      if (path.includes("/workflows/definitions")) {
+        definitionReads += 1;
+        state.definitionCalls += 1;
+        const arrived = definitionReads > readyAfter;
         return json({
-          kind: "provisioning",
-          setupAgentReady,
-          deployed: [],
-          pending: ["assistant"],
+          data: arrived ? [MYRA_DEFINITION] : [],
+          nextCursor: null,
         });
       }
       const myraLaunch = respondMyraDmLaunch(path, method);
@@ -279,25 +289,19 @@ describe("the wait right after connecting a provider", () => {
     });
   }
 
-  test("shows a readiness error and retries without pretending the agent is preparing", async () => {
-    let failReadiness = true;
+  // CL-8112 T1: the definitions read IS the readiness check now — a
+  // failed read must surface as an honest, retryable error, never a
+  // forever "preparing" spin.
+  test("shows a definitions error and retries without pretending the agent is preparing", async () => {
+    let failDefinitions = true;
     stubFetch((path, method) => {
       if (path === "/api/me/principals") return json(PRINCIPALS_RESPONSE);
       if (path.endsWith("/chat/workbenches") && method === "GET")
         return json({ items: [] });
-      if (path === "/api/onboarding/provisioning-status?tenantId=tnt_1") {
-        return failReadiness
-          ? json(
-              {
-                error: {
-                  code: "bench_unavailable",
-                  userMessage: "This workspace is unavailable. Try again.",
-                  refId: "ref_readiness",
-                },
-              },
-              409,
-            )
-          : json({ kind: "ready", setupAgentReady: true });
+      if (path.includes("/workflows/definitions")) {
+        return failDefinitions
+          ? json({ error: "boom" }, 500)
+          : json({ data: [MYRA_DEFINITION], nextCursor: null });
       }
       const launch = respondMyraDmLaunch(path, method);
       if (launch !== null) return launch;
@@ -306,15 +310,16 @@ describe("the wait right after connecting a provider", () => {
     const navigated: string[] = [];
     await renderHome({ retryMs: 10, stallAfterMs: 10_000, navigated });
     for (let i = 0; i < 20; i++) await settle();
+    expect(container?.textContent).toContain("Couldn't open the workbench");
     expect(container?.textContent).toContain(
-      "This workspace is unavailable. Try again.",
+      "Something went wrong preparing your agent. Try again.",
     );
     expect(container?.textContent).not.toContain("Preparing your agent");
     const retry = Array.from(container?.querySelectorAll("button") ?? []).find(
       (button) => button.textContent === "Retry",
     );
     expect(retry).toBeDefined();
-    failReadiness = false;
+    failDefinitions = false;
     await act(async () => retry?.click());
     for (let i = 0; i < 20 && navigated.length === 0; i++) await settle();
     expect(navigated).toEqual(["/w/chan_myra_dm"]);
@@ -349,13 +354,8 @@ describe("the wait right after connecting a provider", () => {
       if (path === "/api/tenants/tnt_1/credentials") {
         return json({ data: [], nextCursor: null });
       }
-      if (path === "/api/onboarding/provisioning-status?tenantId=tnt_1") {
-        return json({
-          kind: "provisioning",
-          setupAgentReady: false,
-          deployed: [],
-          pending: ["assistant"],
-        });
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [], nextCursor: null });
       }
       throw new Error(`unexpected fetch: ${method} ${path}`);
     });
@@ -375,8 +375,8 @@ describe("the wait right after connecting a provider", () => {
   });
 
   test("lands the moment Myra can answer, without waiting on the rest of the seeds", async () => {
-    // The status route still says "provisioning" — other workflows are
-    // mid-deploy — and the land happens anyway.
+    // Other workflows may still be mid-deploy — readiness is Myra's own
+    // native definition, and the land happens anyway.
     const state = benchWhereMyraArrivesAfter(1);
     const navigated: string[] = [];
     await renderHome({ retryMs: 10, stallAfterMs: 10_000, navigated });
@@ -386,7 +386,7 @@ describe("the wait right after connecting a provider", () => {
     }
 
     expect(navigated).toEqual(["/w/chan_myra_dm"]);
-    expect(state.statusCalls).toBeGreaterThan(0);
+    expect(state.definitionCalls).toBeGreaterThan(0);
   });
 
   test("says so honestly with a retry once the wait has gone on too long", async () => {
