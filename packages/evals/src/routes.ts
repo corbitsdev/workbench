@@ -1,9 +1,9 @@
 // Read-only HTTP surface over `EvalRunStore` (CL-6465): recent eval runs
 // across every eval, and one run's full step/scorer detail. Mounted the
-// same way `@corbits/insights` and `@corbits/run-key-history` mount their
-// own routes.ts — one `Hono<TenantEnv>` app gated by `requireGrant`, no
-// data partition by tenant (eval runs aren't tenant-owned, same as
-// `run_key_history`; the tenant middleware here is only the grant gate).
+// same way `@corbits/insights` mounts its own routes.ts — one
+// `Hono<TenantEnv>` app gated by `requireGrant`, no data partition by
+// tenant (eval runs aren't tenant-owned; the tenant middleware here is
+// only the grant gate).
 //
 // Every field below is either already human-readable (`evalName`,
 // `configName`, scorer `name`/`reason`) or a dedicated `id` a UI never

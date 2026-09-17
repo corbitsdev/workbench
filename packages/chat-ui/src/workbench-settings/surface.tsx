@@ -40,7 +40,6 @@ import type {
   WorkbenchSettingsSection,
   WorkbenchSettingsSectionId,
 } from "./model";
-import { NotificationsSection } from "./notifications-section";
 
 type WorkbenchSettingsData = {
   readonly data: WorkbenchSettings;
@@ -347,13 +346,6 @@ export function WorkbenchSettingsSurface({
                   {...(onEntityIdChange !== undefined
                     ? { onEntityIdChange }
                     : {})}
-                />
-              ) : null}
-
-              {activeSection.id === "notifications" ? (
-                <NotificationsSection
-                  tenantId={tenantId}
-                  workbenchId={workbenchId}
                 />
               ) : null}
 

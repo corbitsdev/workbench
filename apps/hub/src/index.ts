@@ -111,11 +111,6 @@ import {
   withTurnPartPersistGuard,
 } from "@corbits/insights";
 import {
-  applyPreferencesMigrations,
-  createPostgresPreferencesStore,
-  createPreferencesRoutes,
-} from "@corbits/preferences";
-import {
   applyBenchMigrations,
   createBenchRoutes,
   createPostgresBenchSettingsStore,
@@ -127,9 +122,7 @@ import {
 } from "@corbits/evals";
 import {
   applyInferenceCatalogMigrations,
-  createBenchModelPolicyRoutes,
   createPostgresBenchModelPolicyStore,
-  createResolvedOfferingsRoutes,
   createWorkflowCatalogRoutes,
 } from "@corbits/inference-catalog";
 import { createWorkflowAccessRoutes } from "@corbits/access-tools/routes";
@@ -171,12 +164,6 @@ import {
   createSidecarProvisioner as createE2BSidecarProvisioner,
   readProvisionerConfig as readE2BProvisionerConfig,
 } from "@corbits/e2b-sandbox-sidecar";
-import {
-  createDrizzleRunKeyHistoryStore,
-  createRunKeyHistoryListener,
-  createRunKeyHistoryRoutes,
-} from "@corbits/run-key-history";
-
 import {
   createEventCollectorRegistry,
   createHubSessionLookups,
@@ -619,14 +606,9 @@ export async function createHub(config: HubConfig) {
         : {}),
     });
   const baseLookups = createHubSessionLookups({ db, agentRepoStore });
-  // Shared with `createRunKeyHistoryListener` below: one store instance
-  // for the process, read here ahead of `workflow_run` and written to
-  // there off every `agent.deploy.ack`.
-  const runKeyHistoryStore = createDrizzleRunKeyHistoryStore(db);
   // A chat agent is a native provisioned deployment. Reconnect
-  // ownership is Interchange's live run + `@corbits/run-key-history`.
-  // Completed means dead; wake is a fresh provision, not a folded-run
-  // idle settle.
+  // ownership is Interchange's live run. Completed means dead; wake is a
+  // fresh provision, not a folded-run idle settle.
   // CL-6345: the grant-allowance gate wraps `registerSignalCorrelation`
   // so a parked read-only call whose resource a standing grant covers is
   // auto-approved right after its approval row lands — no card for a
@@ -903,18 +885,6 @@ export async function createHub(config: HubConfig) {
     router: sidecarRouter,
     db,
     eventCollectors,
-  });
-  // A second, independent listener on the same `agent.deploy.ack` event
-  // `createHubSessionOrchestrator` already reacts to above: that vendor
-  // listener owns `workflow_run.public_key`'s live value, this one
-  // maintains a decoupled append-only history so a historical signature
-  // stays re-provable after a key rotation. It never reads
-  // `workflow_run` — only its own last-recorded entry per address — so
-  // it cannot race vendor's independent write to that row on the same
-  // event.
-  createRunKeyHistoryListener({
-    events: sidecarRouter.events,
-    store: runKeyHistoryStore,
   });
   // CL-6225: the launch path re-reads every tool-package tarball and
   // rebuilds a full git pack of every attached asset on every agent
@@ -1773,72 +1743,16 @@ export async function createHub(config: HubConfig) {
         ),
     }),
   );
-  // Run key identity diagnostics: read side of the append-only
-  // `run_key_history` table above — per-run key lifecycle, divergence
-  // against `workflow_run.public_key`, and tenant-wide counts by
-  // identity state, so diagnosing a stranded run never again requires
-  // hand-comparing a sidecar's on-disk key against this table.
-  app.route(
-    `${TENANT_PREFIX}/run-key-history`,
-    createRunKeyHistoryRoutes({
-      db,
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
-      }),
-    }),
-  );
-  // Preferences: a single per-(tenant, principal) JSONB bag for small UI
-  // choices a surface wants to remember across reload (col2 collapse,
-  // theme, ...). Package-owned table, migrated at hub start like insights.
-  await applyPreferencesMigrations(config.databaseUrl);
-  const preferences = createPostgresPreferencesStore(config.databaseUrl);
-  app.route(
-    `${TENANT_PREFIX}/preferences`,
-    createPreferencesRoutes({
-      store: preferences.store,
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
-      }),
-    }),
-  );
-  // Bench model policy: what a bench will and will not spend inference on.
-  // Package-owned table, migrated at hub start like insights and
-  // preferences. A bench with no row is unconstrained, so a freshly
-  // connected bench needs no configuration to get an answer.
+  // Bench model policy migrations still run: the store itself is read
+  // below (tenant-session bench-model-policy read), even though the
+  // dedicated read/write mount is gone.
   await applyInferenceCatalogMigrations(config.databaseUrl);
   const benchModelPolicy = createPostgresBenchModelPolicyStore(
     config.databaseUrl,
   );
-  app.route(
-    `${TENANT_PREFIX}/bench-model-policy`,
-    createBenchModelPolicyRoutes({
-      store: benchModelPolicy.store,
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
-      }),
-    }),
-  );
-  // Resolved catalog offerings: the same ancestor-inheriting view
-  // `listVisibleOfferings` gives `workflowDeployer` above, exposed over
-  // HTTP so an out-of-process deployer (`workbench seed`) can deploy
-  // against exactly what the hub itself would deploy against, not just
-  // the offerings a tenant owns directly.
-  app.route(
-    `${TENANT_PREFIX}/catalog/resolved-offerings`,
-    createResolvedOfferingsRoutes({
-      listOfferings: (tenantId) => listVisibleOfferings(db, tenantId),
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
-      }),
-    }),
-  );
   // Bench purpose/type: benches are Interchange tenants, so this is a
   // package-owned side-table keyed by tenant id, migrated at hub start
-  // like insights and preferences.
+  // like insights.
   await applyBenchMigrations(config.databaseUrl);
   const benchSettings = createPostgresBenchSettingsStore(config.databaseUrl);
   app.route(
@@ -1853,8 +1767,8 @@ export async function createHub(config: HubConfig) {
   );
   // Eval run history: read-only surface over the package-owned
   // `evals.run` table, migrated at hub start like insights and
-  // bench-settings. Eval runs aren't tenant-owned (same as
-  // run-key-history), so the tenant prefix here is only the grant gate.
+  // bench-settings. Eval runs aren't tenant-owned, so the tenant prefix
+  // here is only the grant gate.
   await applyEvalsMigrations(config.databaseUrl);
   const evalRuns = createPostgresEvalRunStore(config.databaseUrl);
   app.route(
@@ -2493,7 +2407,6 @@ export async function createHub(config: HubConfig) {
       inboxUnsnoozeSweep.stop();
       await insightsUsage.close();
       await insightsLatency.close();
-      await preferences.close();
       await benchSettings.close();
       await evalRuns.close();
       await closeMailbox();

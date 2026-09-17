@@ -104,15 +104,6 @@ const ALLOWLIST: readonly {
     tables: ["usage_turn", "model_price", "turn_latency"],
   },
   {
-    // Append-only record of every public key a workflow run has been
-    // deployed under, in its own `run_key_history` Postgres schema —
-    // identity diagnostics the platform's `workflow_run.public_key`
-    // (a single mutable column) cannot answer.
-    relPath: "packages/run-key-history/src/schema.ts",
-    maxOccurrences: 1,
-    tables: ["run_key_history"],
-  },
-  {
     relPath: "packages/bench/src/schema.ts",
     maxOccurrences: 1,
     tables: ["bench_settings"],
@@ -144,11 +135,6 @@ const ALLOWLIST: readonly {
     relPath: "packages/inbox/src/schema.ts",
     maxOccurrences: 1,
     tables: ["snooze"],
-  },
-  {
-    relPath: "packages/preferences/src/schema.ts",
-    maxOccurrences: 1,
-    tables: ["user_preferences"],
   },
   {
     // Eval-run history (CL-6143): one row per (eval, config) scored

@@ -2,10 +2,10 @@
 // bench_settings table. Created after applyBenchMigrations on the same
 // URL. `purpose`/`type` are plain columns, not a jsonb bag, so the
 // upsert's partial-patch semantics come from `COALESCE(EXCLUDED.col,
-// existing.col)` rather than the `||` merge `@corbits/preferences` uses
-// for its jsonb column: a patch key that's absent sends `null` for that
-// column on the INSERT side, and COALESCE falls back to whatever the row
-// already had rather than overwriting it with that null.
+// existing.col)` rather than a `||` merge on a jsonb column: a patch key
+// that's absent sends `null` for that column on the INSERT side, and
+// COALESCE falls back to whatever the row already had rather than
+// overwriting it with that null.
 import postgres from "postgres";
 
 import type {

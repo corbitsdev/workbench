@@ -71,7 +71,7 @@ package onto the transactional pattern — see below):
 
 1. **Self-contained, transactional** — `@corbits/chat`, `@corbits/notify`,
    `@corbits/webhook-triggers`, `@corbits/insights`,
-   `@corbits/skills`, `@corbits/bench`, `@corbits/preferences`,
+   `@corbits/skills`, `@corbits/bench`,
    `@corbits/inference-catalog`, `@corbits/evals`.
    (`@corbits/workflows`'s `./deploy-source` followed this shape until
    CL-7591 deleted it; it is no longer wired through
