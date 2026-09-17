@@ -60,7 +60,6 @@ import {
   createDrizzleRoomMessageStore,
   createDrizzleThreadStore,
   createHubChatPlatform,
-  createNoopInferenceRoutes,
   createRelaunchNoticePoster,
   createRunTriggerClient,
   createWorkflowParticipantRoutes,
@@ -174,6 +173,7 @@ import {
 import { createLaunchCaches } from "./launch-caches";
 import { hubErrorHandler } from "./hub-error-handler";
 import { grantConditionRegistry } from "./grant-conditions";
+import { createNoopInferenceRoutes } from "./e2e/noop-inference";
 import { wireMailRedelivery } from "./mail-redelivery";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";

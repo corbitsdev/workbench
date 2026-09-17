@@ -198,8 +198,6 @@ export type {
 export { createInMemoryPinStore, createDrizzlePinStore } from "./pins";
 export type { PinRow, PinStore, PinDb, PinMessageInput } from "./pins";
 
-export { createNoopInferenceRoutes } from "./noop-inference";
-
 export { joinRunParticipant } from "./run-participant";
 export type {
   JoinRunParticipantDeps,
