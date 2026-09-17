@@ -23,7 +23,6 @@
     "@corbits/cron": "workspace:*",
     "@corbits/docker-provisioner": "workspace:*",
     "@corbits/e2b-sandbox-sidecar": "workspace:*",
-    "@corbits/echo-workflow": "workspace:*",
     "@corbits/error-sink": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
     "@corbits/inbox": "workspace:*",

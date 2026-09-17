@@ -13,8 +13,7 @@ import {
 } from "./catalog";
 
 describe("workflow catalog", () => {
-  test("marks neither echo nor assistant automatable", () => {
-    expect(isAutomatableWorkflowName("echo")).toBe(false);
+  test("marks the seeded assistant non-automatable", () => {
     expect(isAutomatableWorkflowName("assistant")).toBe(false);
   });
 
@@ -25,7 +24,6 @@ describe("workflow catalog", () => {
   });
 
   test("prefers catalog display names over raw asset names", () => {
-    expect(workflowDisplayName("echo")).toBe("Echo");
     expect(workflowDisplayName("assistant")).toBe("Myra");
   });
 
@@ -49,23 +47,9 @@ describe("workflow catalog", () => {
       expect(isConversationalWorkflowName("assistant")).toBe(true);
     });
 
-    test("marks echo, the mail-triggered wiring check, non-conversational", () => {
-      expect(isConversationalWorkflowName("echo")).toBe(false);
-    });
-
     test("treats a name absent from the catalog as conversational — a runtime agent-directory definition", () => {
       expect(isConversationalWorkflowName("my-researcher")).toBe(true);
       expect(isConversationalWorkflowName("wfd_deadbeef")).toBe(true);
-    });
-
-    // CL-6649: a non-automatable utility (echo) is still non-conversational
-    // — the exact combination that let a picker gated on
-    // `!isAutomatableWorkflowName` alone (rather than
-    // `isConversationalWorkflowName`) mistake a routine's delivery
-    // workflow for an invitable chat agent.
-    test("a non-automatable utility is still non-conversational (the CL-6649 trap)", () => {
-      expect(isAutomatableWorkflowName("echo")).toBe(false);
-      expect(isConversationalWorkflowName("echo")).toBe(false);
     });
 
     test("every catalog entry declares a conversational flag", () => {
@@ -125,7 +109,6 @@ describe("workflow catalog", () => {
 
   test("workflows with no external connector requirement declare an empty list", () => {
     const byAssetName = new Map(WORKFLOW_CATALOG.map((entry) => [entry.assetName, entry]));
-    expect(byAssetName.get("echo")?.requiredConnections).toEqual([]);
     expect(byAssetName.get("assistant")?.requiredConnections).toEqual([]);
   });
 
@@ -149,8 +132,7 @@ describe("workflow catalog", () => {
       }
     });
 
-    test("echo and assistant take no human-supplied trigger content", () => {
-      expect(workflowCatalogEntry("echo")?.triggerFields).toBeUndefined();
+    test("assistant takes no human-supplied trigger content", () => {
       expect(workflowCatalogEntry("assistant")?.triggerFields).toBeUndefined();
     });
   });

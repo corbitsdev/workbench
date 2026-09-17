@@ -16,7 +16,6 @@
 // only here, so there is no second copy for them to drift from.
 import { type } from "arktype";
 
-import echoPkg from "../../../workflows/echo/package.json";
 import assistantPkg from "../../../agents/assistant/package.json";
 
 const CorbitsWorkflowBlock = type({
@@ -69,10 +68,8 @@ export type WorkflowCatalogEntry = {
   /**
    * A real chat partner a person can open a DM with and converse
    * freely — as opposed to a mail-triggered utility whose only sane
-   * input is its declared trigger contract. `automatable` alone can't
-   * tell these apart: `echo` is a non-automatable on-demand run, not a
-   * conversational agent. Only the seeded `assistant`/Myra definition
-   * is `true`.
+   * input is its declared trigger contract. Only the seeded
+   * `assistant`/Myra definition is `true`.
    */
   readonly conversational: boolean;
   /**
@@ -118,16 +115,6 @@ export type WorkflowCatalogEntry = {
  */
 export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   {
-    ...workflowBlock(echoPkg),
-    conversational: false,
-    deliveryMode: "workbench",
-    whatItDoes:
-      "Replies with the exact text it received — a wiring check for the mail-triggered contract, not a real assistant.",
-    requiredConnections: [],
-    exampleOutput: "Echoed back: Testing 1 2 3",
-    typicalDuration: "a few seconds",
-  },
-  {
     ...workflowBlock(assistantPkg),
     conversational: true,
     deliveryMode: "workbench",
@@ -163,7 +150,7 @@ export function isAutomatableWorkflowName(name: string): boolean {
  * agent-directory-created definition — "Agent definitions created at
  * runtime are never listed here" (see `WORKFLOW_CATALOG`'s own comment) —
  * and is always conversational; a name present here is conversational
- * only when its entry says so (`assistant`/Myra today).
+ * only when its entry says so (`assistant`/Myra, the only entry today).
  */
 export function isConversationalWorkflowName(name: string): boolean {
   const entry = byAssetName.get(name);

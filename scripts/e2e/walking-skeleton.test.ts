@@ -22,7 +22,12 @@
 import { describe, expect, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
-import { buildEchoWorkflow, serializeEchoWorkflow } from "../../workflows/echo/src/index.ts";
+import {
+  buildAssistantWorkflow,
+  serializeAssistantWorkflow,
+} from "../../agents/assistant/src/index.ts";
+import { publishCorbitsToolsRegistry } from "../../packages/tool-registry-publish/src/publish.ts";
+import { createHubAPI } from "../../packages/hub-api-client/src/index.ts";
 import {
   api,
   assertNeverRealProvider,
@@ -143,7 +148,7 @@ async function seedPlaceholderCatalogOffering(options: {
 const { tempDir, track } = createCleanupHarness();
 
 describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
-  test("fresh schema to addressable echo-workflow deployment", async () => {
+  test("fresh schema to addressable assistant-workflow deployment", async () => {
     const url = databaseUrl;
     if (url === undefined) throw new Error("unreachable: suite is skipped");
 
@@ -205,11 +210,11 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
       return stringField(res.data, "id", "create tenant");
     });
 
-    // Hop: workflow asset. The echo workflow definition, built by its
-    // own package, published as a workflow asset whose source tree
-    // arrives over the platform's git smart-HTTP surface — the only
-    // surface that writes asset tree content.
-    const assetName = "echo";
+    // Hop: workflow asset. The assistant (Myra) workflow definition,
+    // built by its own package, published as a workflow asset whose
+    // source tree arrives over the platform's git smart-HTTP surface —
+    // the only surface that writes asset tree content.
+    const assetName = "assistant";
     const { assetId, commitSha } = await hop("workflow asset publication", async () => {
       const created = await api(
         hub.baseUrl,
@@ -236,8 +241,8 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
       );
       expectStatus("mint git token", minted, 201);
 
-      const definition = buildEchoWorkflow({
-        triggerAddress: `echo@${slug}.localhost`,
+      const definition = buildAssistantWorkflow({
+        triggerAddress: `assistant@${slug}.localhost`,
         inferencePreferences: [{ provider: "anthropic", model: PLACEHOLDER_MODEL }],
         turnTimeoutMs: 60_000,
       });
@@ -246,7 +251,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
         tenantId,
         assetName,
         tokenSecret: stringField(minted.data, "secret", "mint git token"),
-        workflowJson: serializeEchoWorkflow(definition),
+        workflowJson: serializeAssistantWorkflow(definition),
       });
       return { assetId: id, commitSha: pushed.commitSha };
     });
@@ -281,6 +286,27 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
       for (;;) {
         if (hub.exited()) {
           throw new Error(`hub exited before deploy; output:\n${hub.output()}`);
+        }
+        // CL-7071 cutover: the launched run's sidecar initialization
+        // resolves its `@corbits` scope pins against the tenant's own
+        // `corbits-tools` package registry — Myra's assistant definition
+        // carries several such pins, so this registry must exist before
+        // the deploy's sidecar allocation can succeed.
+        const published = await publishCorbitsToolsRegistry({
+          api: createHubAPI(hub.baseUrl),
+          cookies: user.cookies,
+          hubUrl: hub.baseUrl,
+          tenantId,
+          log: () => undefined,
+        });
+        if (!published.success) {
+          if (Date.now() > deadline) {
+            throw new Error(
+              `corbits-tools registry publish failed: ${JSON.stringify(published.summaries)}`,
+            );
+          }
+          await Bun.sleep(200);
+          continue;
         }
         res = await api(
           hub.baseUrl,
