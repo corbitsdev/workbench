@@ -49,10 +49,7 @@ function envWithoutGitDir(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return next;
 }
 
-function enclosingGitWorkTree(
-  dir: string,
-  env: NodeJS.ProcessEnv,
-): string | null {
+function enclosingGitWorkTree(dir: string, env: NodeJS.ProcessEnv): string | null {
   const absolute = path.resolve(dir);
   mkdirSync(absolute, { recursive: true });
   const canonical = realpathSync(absolute);
@@ -270,9 +267,7 @@ export type HubConfig = {
     readonly windowSeconds: number;
     readonly max: number;
   };
-  readonly socialProviders: Readonly<
-    Partial<Record<SocialProviderId, SocialProviderCredential>>
-  >;
+  readonly socialProviders: Readonly<Partial<Record<SocialProviderId, SocialProviderCredential>>>;
   readonly huggingfaceOAuthClientId?: string;
   readonly githubAppClientId?: string;
   readonly githubAppClientSecret?: string;

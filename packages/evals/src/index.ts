@@ -64,10 +64,7 @@ export {
 export type { EvalRunRecord, EvalRunStore } from "./store/store.ts";
 export { createPostgresEvalRunStore } from "./store/pg-store.ts";
 export { applyEvalsMigrations } from "./store/migrations.ts";
-export {
-  bootMyraTarget,
-  createEvalAssetService,
-} from "./targets/real-target.ts";
+export { bootMyraTarget, createEvalAssetService } from "./targets/real-target.ts";
 export type {
   EvalApiResult,
   EvalHubHandle,

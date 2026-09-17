@@ -26,11 +26,7 @@ import { createGitWorkflowPusher } from "./git-workflow-push";
 import { createHubAPI, type ApiCall } from "@corbits/hub-api-client";
 import { getLogger } from "@intx/log";
 import { generateKeyPair } from "@intx/crypto";
-import {
-  createAgentRepoStore,
-  createAssetService,
-  type AssetService,
-} from "@intx/hub-sessions";
+import { createAgentRepoStore, createAssetService, type AssetService } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
 import { completeCredentialSetup } from "@workbench/onboarding";
 import {

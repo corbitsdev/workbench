@@ -24,11 +24,7 @@ import {
   workflowRun,
 } from "@intx/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
-import {
-  createEnvKeyCredentialCipher,
-  createNoopCredentialCipher,
-  sha256,
-} from "@intx/crypto";
+import { createEnvKeyCredentialCipher, createNoopCredentialCipher, sha256 } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
 import {
   createApp,
@@ -458,11 +454,7 @@ function buildSidecarProvisioner(
 }
 
 export async function createHub(config: HubConfig) {
-  assertHubDataDirGitSafety(
-    config.hubDataDir,
-    config.allowGitInsideWorkTree === true,
-    process.env,
-  );
+  assertHubDataDirGitSafety(config.hubDataDir, config.allowGitInsideWorkTree === true, process.env);
   const { db, close } = createDB(dbConfigFromUrl(config.databaseUrl));
   const { db: mailboxDb, close: closeMailbox } = createMailboxDb(config.databaseUrl);
   const mailboxBus = createInMemoryMailboxEventBus();
