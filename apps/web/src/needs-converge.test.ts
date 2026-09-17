@@ -18,6 +18,7 @@ const primary = {
   id: "tnt_primary",
   name: "Ada",
   slug: "ada",
+  domain: "ada.example.com",
   parentId: null,
 };
 
@@ -70,6 +71,7 @@ function snapshotWithChild(childId: string): HubSnapshot {
         id: childId,
         name: "Atlas",
         slug: "ada-atlas",
+        domain: "ada.example.com",
         parentId: "tnt_primary",
       },
     ],
@@ -115,6 +117,7 @@ describe("group workbench creation sequence", () => {
           id: "tnt_atlas",
           name: input.name,
           slug: input.slug,
+          domain: "ada.example.com",
           parentId: input.parentId ?? null,
         });
       },
@@ -304,6 +307,7 @@ describe("group workbench creation sequence", () => {
           id: "tnt_atlas",
           name: input.name,
           slug: input.slug,
+          domain: "ada.example.com",
           parentId: input.parentId ?? null,
         }),
       inviteMember: () => Promise.resolve(),
@@ -412,6 +416,7 @@ describe("writes after gap checks", () => {
         id: "tnt_atlas",
         name: input.name,
         slug: input.slug,
+        domain: "ada.example.com",
         parentId: input.parentId ?? null,
       });
     };
@@ -517,6 +522,7 @@ describe("thread-native DM derivation", () => {
           id: `tnt_${input.slug}`,
           name: input.name,
           slug: input.slug,
+          domain: "ada.example.com",
           parentId: input.parentId ?? null,
         });
       },
@@ -805,6 +811,7 @@ describe("stock-only fetch hub", () => {
           id: "tnt_atlas",
           name: "Atlas",
           slug: "ada-atlas",
+          domain: "ada.example.com",
           parentId: "tnt_primary",
         },
         "POST /api/tenants/tnt_atlas/mailbox/messages": {

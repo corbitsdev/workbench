@@ -320,13 +320,14 @@ describe("the setup gate", () => {
     );
   }
 
-  test("an empty hub drives the installer, which mints the primary tenant then surfaces the myra-deploy gap", async () => {
-    // The installer's own flow (CL-8131): the first pass finds no owned
-    // primary tenant, mints one over stock `POST /api/tenants`, then
-    // converges again — landing on the "no myraDeploy configured" gap
-    // since this test supplies no deploy inputs and the fresh tenant has
-    // no Myra yet. The gate renders that gap, and never navigates: a gap
-    // is not "ready".
+  test("an empty hub drives the installer, which mints the primary tenant then asks the operator to connect a provider (CL-8154)", async () => {
+    // The installer's own flow (CL-8131, extended by CL-8154): the first
+    // pass finds no owned primary tenant, mints one over stock
+    // `POST /api/tenants`, then checks whether it already resolves a
+    // catalog offering. A fresh tenant has none, so the gate renders the
+    // credential-connect step rather than the old "no myraDeploy
+    // configured" gap — the whole point of CL-8154 is that this page
+    // supplies `myraDeploy` itself instead of stopping there.
     let ownsPrimary = false;
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -364,6 +365,7 @@ describe("the setup gate", () => {
             id: "tnt_primary",
             name: "Ada's Workbench",
             slug: "ada",
+            domain: "ada.workbench.localhost",
             parentId: null,
           },
           201,
@@ -374,11 +376,15 @@ describe("the setup gate", () => {
           id: "tnt_primary",
           name: "Ada's Workbench",
           slug: "ada",
+          domain: "ada.workbench.localhost",
           parentId: null,
         });
       }
       if (path === "/api/tenants/tnt_primary/principals") {
         return json({ data: [], nextCursor: null });
+      }
+      if (path === "/api/tenants/tnt_primary/models") {
+        return json([]);
       }
       // Anything outside the mocked stock routes is a failure: the gate
       // must never touch the deleted `/api/onboarding/*` routes.
@@ -388,16 +394,10 @@ describe("the setup gate", () => {
     try {
       await settle(root, gateElement(navigate));
 
-      expect(container.textContent).toContain("Set up your workbench");
-      expect(container.textContent).toContain("Check again");
+      expect(container.textContent).toContain("Connect a model provider");
       expect(calls).toEqual([]);
       expect(seen).toContain("/api/setup/status");
-      expect(
-        seen.some(
-          (url) =>
-            url.startsWith("/api/tenants") && !url.includes("principals"),
-        ),
-      ).toBe(true);
+      expect(seen).toContain("/api/tenants/tnt_primary/models");
     } finally {
       act(() => root.unmount());
       container.remove();

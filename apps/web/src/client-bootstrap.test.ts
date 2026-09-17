@@ -43,6 +43,7 @@ test("session bootstrap drives the portable client manifest", async () => {
         id,
         name: "Ada",
         slug: "ada",
+        domain: "ada.example.com",
         parentId: null,
       });
     },

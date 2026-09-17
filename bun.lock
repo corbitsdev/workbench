@@ -157,6 +157,7 @@
         "@corbits/api-query": "workspace:*",
         "@corbits/approvals": "workspace:*",
         "@corbits/artifact-ui": "workspace:*",
+        "@corbits/assistant-workflow": "workspace:*",
         "@corbits/bench-ui": "workspace:*",
         "@corbits/chat-ui": "workspace:*",
         "@corbits/client-log": "workspace:*",
