@@ -23,7 +23,10 @@ import {
 import { describe, expect, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
-import { buildEchoWorkflow, serializeEchoWorkflow } from "../../workflows/echo/src/index.ts";
+import {
+  buildAssistantWorkflow,
+  serializeAssistantWorkflow,
+} from "../../agents/assistant/src/index.ts";
 import { ensureNoopCatalogOffering, startNoopInferenceServer } from "./noop-inference-server.ts";
 import { publishCorbitsToolsRegistry } from "../../packages/tool-registry-publish/src/publish.ts";
 import { createHubAPI } from "../../packages/hub-api-client/src/index.ts";
@@ -129,7 +132,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         ),
       );
 
-      const assetName = "echo";
+      const assetName = "assistant";
       const { assetId, commitSha } = await hop("workflow asset publication", async () => {
         const created = await api(
           hub.baseUrl,
@@ -156,8 +159,8 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         );
         expectStatus("mint git token", minted, 201);
 
-        const definition = buildEchoWorkflow({
-          triggerAddress: `echo@${slug}.localhost`,
+        const definition = buildAssistantWorkflow({
+          triggerAddress: `assistant@${slug}.localhost`,
           inferencePreferences: [{ provider: "anthropic", model: "noop" }],
           turnTimeoutMs: 30_000,
         });
@@ -166,7 +169,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
           tenantId,
           assetName,
           tokenSecret: stringField(minted.data, "secret", "mint git token"),
-          workflowJson: serializeEchoWorkflow(definition),
+          workflowJson: serializeAssistantWorkflow(definition),
         });
         return { assetId: id, commitSha: pushed.commitSha };
       });
@@ -223,7 +226,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
             await Bun.sleep(200);
             continue;
           }
-          expectStatus("deploy echo workflow", res, 201);
+          expectStatus("deploy assistant workflow", res, 201);
           break;
         }
 
@@ -239,15 +242,15 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
           typeof listed.data === "object" && listed.data !== null && "data" in listed.data
             ? (listed.data as { data: unknown[] }).data
             : (listed.data as unknown[]);
-        const echo = (rows as { id: string; name?: string }[]).find(
+        const deployed = (rows as { id: string; name?: string }[]).find(
           (row) => row.name === assetName,
         );
-        if (echo === undefined) {
+        if (deployed === undefined) {
           throw new Error(
             `no workflow definition named "${assetName}": ${JSON.stringify(listed.data)}`,
           );
         }
-        return echo.id;
+        return deployed.id;
       });
 
       const { triggerId, secret } = await hop("webhook trigger creation", async () => {

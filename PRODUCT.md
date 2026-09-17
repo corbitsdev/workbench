@@ -195,9 +195,9 @@ person names what should happen again, on what schedule, and where the
 result should land. See `@corbits/workflows` for the schedule/cron
 helpers and the hub's `workflow-scheduler.ts` for the poller. Owner
 ruling (2026-09-17, LESS IS MORE): the shipped workflow catalog is
-deleted — `WORKFLOW_CATALOG` now carries only Myra and `echo` (the
-e2e smoke fixture), and every other workflow a workbench runs is one
-Myra creates dynamically for that workbench's own needs.
+deleted — `WORKFLOW_CATALOG` now carries only Myra, and every other
+workflow a workbench runs is one Myra creates dynamically for that
+workbench's own needs.
 
 ## Inbox and approvals
 

@@ -65,7 +65,6 @@
         "@corbits/cron": "workspace:*",
         "@corbits/docker-provisioner": "workspace:*",
         "@corbits/e2b-sandbox-sidecar": "workspace:*",
-        "@corbits/echo-workflow": "workspace:*",
         "@corbits/error-sink": "workspace:*",
         "@corbits/hub-api-client": "workspace:*",
         "@corbits/inbox": "workspace:*",
@@ -1404,18 +1403,6 @@
         "typescript": "catalog:",
       },
     },
-    "workflows/echo": {
-      "name": "@corbits/echo-workflow",
-      "version": "0.0.1",
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/workflow": "0.3.0",
-      },
-    },
   },
   "trustedDependencies": [
     "@corbits/react-ui",
@@ -1584,8 +1571,6 @@
     "@corbits/docker-provisioner": ["@corbits/docker-provisioner@workspace:packages/docker-provisioner"],
 
     "@corbits/e2b-sandbox-sidecar": ["@corbits/e2b-sandbox-sidecar@workspace:packages/e2b-sandbox-sidecar"],
-
-    "@corbits/echo-workflow": ["@corbits/echo-workflow@workspace:workflows/echo"],
 
     "@corbits/error-sink": ["@corbits/error-sink@workspace:packages/error-sink"],
 
