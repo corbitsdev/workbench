@@ -74,7 +74,6 @@ export {
 } from "./mcp-server-store";
 export {
   createWorkflowConnectionRoutes,
-  type ConnectionSummary,
   type CreateWorkflowConnectionRoutesDeps,
   type WorkflowConnectionRunScope,
   type WorkflowRunAuthenticator as WorkflowConnectionRunAuthenticator,

@@ -102,23 +102,25 @@ function createFakeHub() {
         ? (JSON.parse(init.body) as Record<string, unknown>)
         : undefined;
 
-    if (
-      url.pathname === "/api/workflow-connections/connections" &&
-      method === "GET"
-    ) {
+    if (url.pathname.endsWith("/providers") && method === "GET") {
       return Response.json({
         data: registry.map((entry) => ({
-          ...entry,
-          connected: connected.has(entry.id),
+          id: `prv_${entry.id}`,
+          name: entry.id,
         })),
+        nextCursor: null,
       });
     }
 
-    if (
-      url.pathname === "/api/workflow-connections/mcp-servers" &&
-      method === "GET"
-    ) {
-      return Response.json({ data: [] });
+    if (url.pathname.endsWith("/credentials") && method === "GET") {
+      return Response.json({
+        data: [...connected].map((id) => ({
+          id: `crd_${id}`,
+          providerId: `prv_${id}`,
+          status: "active",
+        })),
+        nextCursor: null,
+      });
     }
 
     if (
@@ -243,6 +245,7 @@ async function runScenario(
 ): Promise<void> {
   const connectionsEnv: WorkflowConnectionEnv = {
     hubConnectionsUrl: HUB,
+    tenantId: "ten_1",
     sidecarToken: "sc-token",
     address: "run_myra@workflow",
     connectorRegistry: CONNECTOR_REGISTRY,
@@ -314,7 +317,7 @@ async function runScenario(
     new AbortController().signal,
   );
   expect(String(afterConnect.content)).toContain(
-    "Not connected: GitHub MCP, Notion, Sentry, Attio, Railway, PostHog, Sumble, Canva.",
+    "GitHub MCP, Notion, Sentry, Attio, Railway, PostHog, Sumble, Canva.",
   );
   expect(String(afterConnect.content)).toContain(
     "Connected: Granola, Exa, Linear.",

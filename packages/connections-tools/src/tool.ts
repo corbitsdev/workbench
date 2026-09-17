@@ -8,13 +8,14 @@
 // OAuth itself; only a human, acting in the browser through the
 // existing Connections settings surface, can finish a connect flow.
 //
-// Both tools also read `@corbits/connections`' MCP-server listing
-// (CL-6142's `/api/workflow-connections/mcp-servers`, backed by
-// `@corbits/mcp-tools`' own `mcp_list_servers` route) — a tenant-minted
-// `mcp:<slug>` connector has no fixed registry id, so `list_connections`
-// folds it into the connected list by name, and `request_connection`
-// falls back to it (see `ADD_MCP_SERVER_GUIDANCE`) before reporting an
-// unknown connector.
+// Live connections come from the STOCK Interchange tenant routes
+// (providers + credentials), read with the run bearer; the tool pairs that
+// answer with the deploying build's own connector registry for display
+// names and links. MCP servers are not a stock Interchange concept, so a
+// tenant-minted `mcp:<slug>` connection is no longer listed: a curated
+// preset is still offered as a card, but the tool cannot say whether one is
+// already connected (CL-8164 moves MCP server config to the connections
+// library).
 //
 // Approval: `list_connections` reads only, so it declares no `approval`
 // key (matching a read-style tool, e.g. `@corbits/memory-tools`' search
@@ -36,8 +37,7 @@ import type { McpPreset } from "@corbits/connections/mcp-presets";
 import { type } from "arktype";
 
 import {
-  listConnections,
-  listMcpServerConnections,
+  listConnectedProviders,
   NoOwnRoomError,
   postConnectServiceBlock,
 } from "./client";
@@ -52,6 +52,7 @@ export const REQUEST_CONNECTION_TOOL = "request_connection";
  * definition). */
 export interface WorkflowConnectionEnv extends BaseEnv {
   readonly hubConnectionsUrl: string;
+  readonly tenantId: string;
   readonly sidecarToken: string;
   readonly address: string;
   /** The deploying build's connector set — this package carries no
@@ -81,6 +82,7 @@ function errorResult(callId: string, err: unknown): ToolResult {
 function clientConfig(env: WorkflowConnectionEnv) {
   return {
     hubConnectionsUrl: env.hubConnectionsUrl,
+    tenantId: env.tenantId,
     sidecarToken: env.sidecarToken,
     address: env.address,
   };
@@ -127,43 +129,24 @@ async function runListConnections(
   call: ToolCall,
 ): Promise<ToolResult> {
   try {
-    const [connections, mcpServers] = await Promise.all([
-      listConnections(clientConfig(env)),
-      listMcpServerConnections(clientConfig(env)),
-    ]);
+    const live = await listConnectedProviders(clientConfig(env));
     const presetFronted = presetFrontedIds(env.mcpPresets);
-    const connectedMcpSlugs = new Set(mcpServers.map((server) => server.slug));
-    const registryEntries = connections.filter(
-      (entry) => !presetFronted.has(entry.id),
-    );
+    const registryEntries = Object.values(env.connectorRegistry)
+      .filter((descriptor) => !presetFronted.has(descriptor.id))
+      .map((descriptor) => ({
+        displayName: descriptor.displayName,
+        connected: live.has(descriptor.id),
+      }));
     const connected = registryEntries.filter((entry) => entry.connected);
     const notConnected = registryEntries.filter((entry) => !entry.connected);
-    const otherMcpServers = mcpServers.filter(
-      (server) => !presetFronted.has(server.slug),
-    );
-    // A preset service counts as connected through EITHER door: its MCP
-    // server, or a plain key stored under the same connector id — a
-    // Granola key connected before the MCP card existed must never
-    // read as "Not connected".
-    const keyConnectedIds = new Set(
-      connections.filter((entry) => entry.connected).map((entry) => entry.id),
-    );
-    const presetConnected = env.mcpPresets.filter(
-      (preset) =>
-        connectedMcpSlugs.has(preset.slug) || keyConnectedIds.has(preset.slug),
+    const presetConnected = env.mcpPresets.filter((preset) =>
+      live.has(preset.slug),
     );
     const presetNotConnected = env.mcpPresets.filter(
-      (preset) =>
-        !connectedMcpSlugs.has(preset.slug) &&
-        !keyConnectedIds.has(preset.slug),
+      (preset) => !live.has(preset.slug),
     );
 
-    if (
-      connected.length === 0 &&
-      notConnected.length === 0 &&
-      otherMcpServers.length === 0 &&
-      env.mcpPresets.length === 0
-    ) {
+    if (registryEntries.length === 0 && env.mcpPresets.length === 0) {
       return {
         callId: call.id,
         isError: false,
@@ -172,12 +155,7 @@ async function runListConnections(
     }
     const connectedNames = [
       ...connected.map((entry) => entry.displayName),
-      ...presetConnected.map((preset) =>
-        connectedMcpSlugs.has(preset.slug)
-          ? `${preset.displayName} (via MCP)`
-          : preset.displayName,
-      ),
-      ...otherMcpServers.map((server) => `${server.name} (MCP server)`),
+      ...presetConnected.map((preset) => preset.displayName),
     ];
     const notConnectedNames = [
       ...notConnected.map((entry) => entry.displayName),
@@ -247,13 +225,11 @@ async function runRequestConnection(
   const preset = mcpPresetByName(env.mcpPresets, parsed.connector);
   if (preset !== undefined) {
     try {
-      const mcpServers = await listMcpServerConnections(clientConfig(env));
-      const already = mcpServers.find((server) => server.slug === preset.slug);
-      if (already !== undefined) {
+      if ((await listConnectedProviders(clientConfig(env))).has(preset.slug)) {
         return {
           callId: call.id,
           isError: false,
-          content: `"${already.name}" is already connected as an MCP server.`,
+          content: `${preset.displayName} is already connected.`,
         };
       }
     } catch (err) {
@@ -276,11 +252,9 @@ async function runRequestConnection(
   const descriptor = env.connectorRegistry[parsed.connector];
   if (descriptor !== undefined) {
     try {
-      const connections = await listConnections(clientConfig(env));
-      const entry = connections.find(
-        (candidate) => candidate.id === descriptor.id,
-      );
-      if (entry !== undefined && entry.connected) {
+      if (
+        (await listConnectedProviders(clientConfig(env))).has(descriptor.id)
+      ) {
         return {
           callId: call.id,
           isError: false,
@@ -304,24 +278,7 @@ async function runRequestConnection(
     );
   }
 
-  // Not a fixed registry connector — check whether it is already a
-  // connected MCP server under this name before assuming it needs one.
-  try {
-    const mcpServers = await listMcpServerConnections(clientConfig(env));
-    const already = mcpServers.find(
-      (server) =>
-        server.slug === parsed.connector || server.name === parsed.connector,
-    );
-    if (already !== undefined) {
-      return {
-        callId: call.id,
-        isError: false,
-        content: `"${already.name}" is already connected as an MCP server.`,
-      };
-    }
-  } catch (err) {
-    return errorResult(call.id, err);
-  }
+  // Not a fixed registry connector and not a curated preset.
 
   return {
     callId: call.id,
@@ -341,7 +298,7 @@ async function runRequestConnection(
  */
 export const connectionsTools = defineTool<WorkflowConnectionEnv>({
   id: "@corbits/connections-tools/conn",
-  requires: ["hubConnectionsUrl", "sidecarToken", "address"],
+  requires: ["hubConnectionsUrl", "tenantId", "sidecarToken", "address"],
   definitions: [
     { name: LIST_CONNECTIONS_TOOL },
     { name: REQUEST_CONNECTION_TOOL },

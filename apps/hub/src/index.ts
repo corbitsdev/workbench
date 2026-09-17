@@ -17,7 +17,6 @@ import {
   createWorkflowRunDispatchStore,
   listAssetsForTenant,
   listVisibleOfferings,
-  resolveCredentialRequirement,
 } from "@intx/db";
 import {
   asset as assetTable,
@@ -677,18 +676,6 @@ export async function createHub(config: HubConfig) {
     },
   };
   const hubPublicKey = hexEncode(signingKey.publicKey);
-  // Same owning check GET /connections uses — see
-  // `@corbits/connections`' `workflow-connection-routes.ts` and the
-  // `createWorkflowConnectionRoutes` wiring below. Not
-  // `listConnectedProviders` (catalog-only).
-  const isConnectorConnected = async (tenantId: string, connectorId: string) =>
-    (await resolveCredentialRequirement(
-      db,
-      tenantId,
-      { providerName: connectorId, source: "tenant" },
-      null,
-      null,
-    )) !== null;
   // One resolver serves both seams, exactly as @intx/hub-sessions's own
   // reference host wires them: `resolve` turns a presented bearer token
   // into a verified identity at the handshake, and `isCurrent`
@@ -2269,10 +2256,6 @@ export async function createHub(config: HubConfig) {
     "/api/workflow-connections",
     createWorkflowConnectionRoutes({
       authenticator: createWorkflowRunAuthenticator({ db }),
-      registry: CONNECTOR_REGISTRY,
-      // Same `isConnectorConnected` the pinned-package factory is wired
-      // with above (CL-6492).
-      isConnectorConnected,
       listMcpServers: (tenantId) => listMcpServerConnections(db, tenantId),
     }),
   );
