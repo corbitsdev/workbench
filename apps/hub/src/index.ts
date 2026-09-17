@@ -22,7 +22,7 @@ import {
   user as userTable,
   workflowDefinition,
 } from "@intx/db/schema";
-import { and, count, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   createEnvKeyCredentialCipher,
   createNoopCredentialCipher,
@@ -142,7 +142,6 @@ import {
 import { createLaunchCaches } from "./launch-caches";
 import { hubErrorHandler } from "./hub-error-handler";
 import { grantConditionRegistry } from "./grant-conditions";
-import { createNoopInferenceRoutes } from "./e2e/noop-inference";
 import { wireMailRedelivery } from "./mail-redelivery";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
@@ -204,7 +203,6 @@ import {
 import { type } from "arktype";
 import { betterAuth } from "better-auth";
 import { createSignInAttemptLimiter } from "./sign-in-rate-limit";
-import { createSetupStatusRoutes } from "./setup-status";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, Hono, type Next } from "hono";
 
@@ -1111,28 +1109,6 @@ export async function createHub(config: HubConfig) {
   // record the reply path reads back to thread an agent's answer under
   // the message that woke its turn. Same `db` handle, same reasoning.
   const turnMailCorrelation = createDrizzleTurnMailCorrelationStore(db);
-  // Mounted outside the tenant prefix — the sidecar reaches it as a
-  // plain inference endpoint, never through tenant-scoped auth, the
-  // same way it reaches a real provider's API. Pinned by the heartbeat
-  // and workbench-digest workflow seeds (from the deleted seeding
-  // package), whose
-  // agents never produce text. `config.baseUrl` (not `localhost`) is
-  // what makes the URL usable from a sidecar on another machine.
-  app.route("/api/chat/noop-inference", createNoopInferenceRoutes());
-  // Native cold-boot setup status (CL-8112). Mounted outside the tenant
-  // prefix like the noop-inference route: an empty hub has no tenant to
-  // scope to, and the first-login hook must read it before any bench
-  // exists. Counts come straight off the native user/tenant tables — no
-  // workbench package involved.
-  app.route(
-    "/api/setup",
-    createSetupStatusRoutes({
-      countUsers: async () =>
-        (await db.select({ n: count() }).from(userTable))[0]?.n ?? 0,
-      countTenants: async () =>
-        (await db.select({ n: count() }).from(tenantTable))[0]?.n ?? 0,
-    }),
-  );
   // The chat platform's invite-launch fallback: a definition with no
   // model requirements of its own resolves the tenant-catalog default.
   const chatHostInferencePreferencesResolver =

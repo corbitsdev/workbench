@@ -27,7 +27,7 @@
 // LLM inference cycle (`agent.send()` deciding to call the tool). No
 // scripted/deterministic tool-call inference adapter exists anywhere in
 // this repo today (`@intx/agent` ships no test fixtures for one,
-// and the hub's `noop-inference` route emits an empty delta that never
+// and the e2e suites' local noop inference server (`scripts/e2e/noop-inference-server.ts`) emits an empty delta that never
 // triggers a tool call) -- a genuine testing-infrastructure gap, not
 // something this test works around. This test instead drives the tool
 // bundle directly with a `ToolCall`, exactly as `../src/tool.test.ts`

@@ -9,17 +9,15 @@
 // relay an already-deterministic digest line back out verbatim, so
 // nothing about the reply's content is left to the model.
 //
-// Zero inference cost: like `@corbits/heartbeat-workflow`, this
-// definition is deployed with its `inferencePreferences` pinned to the
-// hub's `noop-inference` endpoint (see
-// `packages/chat/src/noop-inference.ts`). Under that
-// pin the turn completes instantly against a constant, empty reply —
-// by design, `noop-inference` never produces real text (see that
-// file's header comment) — so this deployment proves the scheduling
-// and workbench-mail-posting paths stay alive at zero cost, without
-// posting visible digest text. Pin `inferencePreferences` at a real
-// catalog model instead to get an actual, human-visible digest line
-// posted on every trigger, at that model's ordinary per-turn cost.
+// No agent-free step primitive runs on the deployed host today (see
+// `@corbits/heartbeat-workflow`'s own header comment for why), so this
+// step is unavoidably an agent step. CL-8160 stopped pinning a
+// deployer-supplied synthetic noop `ModelSource` here: `seedTenant`
+// (`packages/onboarding/src/tenant-seed.ts`) now deploys this workflow
+// against the tenant's own real, resolved catalog offering like every
+// other workflow (`resolveRealSourceOfferingIds`), so a trigger posts
+// an actual, human-visible digest line at that model's ordinary
+// per-turn cost rather than a constant empty reply.
 
 import { defineAgent } from "@intx/agent";
 import type { InferencePreference } from "@intx/agent";

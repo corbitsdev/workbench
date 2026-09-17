@@ -8,15 +8,21 @@
 // completion) is the "timestamp result" this workflow exists to
 // produce, not anything the agent says.
 //
-// Zero inference cost: the DSL has no agent-free step primitive that
-// runs on the deployed host today (the `action` primitive exists in
-// `@intx/workflow`, but no shipped host wires an `invokeAction`
-// callback to resolve it — see VENDORED.md-adjacent research notes in
-// this package's README). A deployer therefore pins this definition's
-// `inferencePreferences` to the hub's `noop-inference` endpoint (see
-// `packages/chat/src/noop-inference.ts`): the turn
-// completes instantly against a constant, never reaching a real model
-// provider, so running this workflow every few seconds costs nothing.
+// No agent-free step primitive runs on the deployed host today (the
+// `action` primitive exists in `@intx/workflow`, but no shipped host
+// wires an `invokeAction` callback to resolve it — see
+// VENDORED.md-adjacent research notes in this package's README), so
+// this step is unavoidably an agent step. CL-8160 stopped pinning a
+// deployer-supplied synthetic noop `ModelSource` here: a scheduled step
+// that needs no model must not call one, but with no non-agent step
+// shape available the least-bad option is to deploy against the
+// tenant's own real, resolved catalog offering like every other
+// workflow (`resolveRealSourceOfferingIds` in
+// `packages/onboarding/src/tenant-seed.ts`) rather than inventing a
+// fake provider to route around a step that will still make a real
+// call. This definition still accepts `inferencePreferences` as plain
+// deploy-time data; it is the deployer's choice, never this
+// definition's, what those preferences resolve against.
 //
 // This package is installable data. It imports only published platform
 // packages, and nothing imports it statically: a host publishes the

@@ -1,19 +1,15 @@
-// The browser side of the first-login hook: one GET against the hub's
-// native setup-status route, made once per session. A hub with zero
-// tenants reports setup-required so the UI routes into the setup wizard;
-// any tenant means a bench exists and the shell loads normally. Read-only
-// on purpose (CL-8112): provisioning itself back onto the hub is T6/T7's
-// surface, so this never mints anything — a broken status read blocks the
-// shell loudly rather than leaving the user silently benchless.
+// The browser side of the first-login hook: reads the client converge
+// state (CL-8160) instead of a hub-served setup-status route — a hub with
+// zero owned tenants means setup-required so the UI routes into the setup
+// wizard; any owned tenant means a bench exists and the shell loads
+// normally. Read-only on purpose (CL-8112): provisioning itself back onto
+// the hub is T6/T7's surface, so this never mints anything — a failed
+// read blocks the shell loudly rather than leaving the user silently
+// benchless.
 
 import { type } from "arktype";
 import { reportError } from "@corbits/error-sink";
-
-const SetupStatus = type({
-  setupRequired: "boolean",
-  "userCount?": "number",
-  "tenantCount?": "number",
-});
+import { createFetchStockHub, findOwnedTenants } from "./needs-converge";
 
 /** Any credential row this bench actually has stored — the cheap
  * pre-skip read the home page's first-workbench flow uses to tell "no
@@ -84,27 +80,13 @@ export type ProvisionOutcome =
 
 export async function triggerFirstLoginProvisioning(): Promise<ProvisionOutcome> {
   try {
-    const response = await fetch("/api/setup/status");
-    const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) {
-      const envelope = ErrorEnvelope(body);
-      return envelope instanceof type.errors
-        ? { kind: "error", message: FALLBACK_ERROR_MESSAGE }
-        : {
-            kind: "error",
-            message: envelope.error.userMessage,
-            refId: envelope.error.refId,
-          };
-    }
-    const parsed = SetupStatus(body);
-    if (parsed instanceof type.errors) {
-      return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
-    }
-    return parsed.setupRequired
+    const owned = await findOwnedTenants(createFetchStockHub());
+    return owned.length === 0
       ? { kind: "needs-onboarding" }
       : { kind: "existing-member" };
-  } catch {
-    return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
+  } catch (cause) {
+    const refId = reportError(cause, { operation: "first_login_provisioning" });
+    return { kind: "error", message: FALLBACK_ERROR_MESSAGE, refId };
   }
 }
 

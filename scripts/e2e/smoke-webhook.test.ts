@@ -2,9 +2,9 @@
 // a `@corbits/webhook-triggers` row instead of a cadence; a correctly
 // HMAC-signed payload delivered to the public ingress route launches a
 // run. Zero-cost like `scripts/e2e/workbench-digest.test.ts`: the
-// deployed workflow's only inference source is the hub's own
-// noop-inference endpoint, so nothing here ever calls a real model
-// provider.
+// deployed workflow's only inference source is this suite's own local
+// noop inference server (`./noop-inference-server.ts`), so nothing here
+// ever calls a real model provider.
 //
 // A webhook-fired run launches a standalone folded run via
 // `@corbits/folded-runs` (see `packages/webhook-triggers/src/launch.ts`).
@@ -27,7 +27,10 @@ import {
   buildHeartbeatWorkflow,
   serializeHeartbeatWorkflow,
 } from "../../workflows/heartbeat/src/index.ts";
-import { ensureNoopCatalogOffering } from "../../packages/connections/src/seed-catalog.ts";
+import {
+  ensureNoopCatalogOffering,
+  startNoopInferenceServer,
+} from "./noop-inference-server.ts";
 import { publishCorbitsToolsRegistry } from "../../packages/tool-registry-publish/src/publish.ts";
 import { createHubAPI } from "../../packages/hub-api-client/src/index.ts";
 import {
@@ -116,15 +119,23 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
       });
 
       // The zero-cost catalog chain: an anthropic-plugin provider whose
-      // base URL is the hub's own noop-inference endpoint, never a real
+      // base URL is this suite's own noop inference server, never the
+      // hub (CL-8160 dropped its noop-inference mount) and never a real
       // model.
+      const noopServer = startNoopInferenceServer();
+      track({
+        label: "noop-inference-server",
+        output: () => "",
+        exited: () => false,
+        stop: async () => noopServer.stop(),
+      });
       const offeringId = await hop("noop catalog seeding", () =>
         ensureNoopCatalogOffering(
           (method, path, body, cookies2) =>
             api(hub.baseUrl, method, path, body, cookies2),
           cookies,
           tenantId,
-          hub.baseUrl,
+          noopServer.baseUrl,
           () => {},
         ),
       );
