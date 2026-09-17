@@ -1,4 +1,4 @@
-// The agent's own page (CL-6414), addressed by its immutable slug —
+// The agent's own page, addressed by its immutable slug —
 // `/agents/<slug>`. Everything a person can author about an agent lives
 // here: its display name, the model it resolves against, the system prompt
 // it follows on every turn, the skills it has pinned, and the runs it has

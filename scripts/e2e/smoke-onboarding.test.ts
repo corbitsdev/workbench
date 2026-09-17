@@ -1,4 +1,4 @@
-// Smoke scenario 2/5 (CL-6004): first-tenant provisioning. Stock
+// Smoke scenario 2/5: first-tenant provisioning. Stock
 // Interchange cutover: composition mounts no provisioning hook
 // (`POST /api/onboarding/provision` is gone) — signup mints nothing,
 // and the first bench comes from an ordinary `POST /api/tenants` with

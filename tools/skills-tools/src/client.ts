@@ -1,7 +1,7 @@
 // A minimal client for the workflow-run-authenticated surfaces
 // `@corbits/skills-tools`' tools call.
 //
-// CL-8086: `@corbits/skills`' `createWorkflowSkillRoutes` (formerly
+// `@corbits/skills`' `createWorkflowSkillRoutes` (formerly
 // mounted at `/api/workflow-skills`, serving `list`/`search`/`load` plus
 // the `create`/`update` writes) was deleted — skills are native
 // `kind:"skill"` hub assets now, and no stock Interchange route yet lets
@@ -91,12 +91,12 @@ function skillPinEndpoint(config: SkillsToolClientConfig, path: string): string 
 }
 
 const NO_STOCK_SKILL_CONTENT_ROUTE =
-  "Skill content has no stock Interchange HTTP route (CL-8086): the " +
+  "Skill content has no stock Interchange HTTP route: the " +
   "workbench-specific skills registry that used to serve it was removed, " +
   "and no replacement has been added to @intx/hub-api yet.";
 
 /** Every skill this run can see, index-only (name + description, no
- * body). No stock Interchange route serves this yet (CL-8086); fails
+ * body). No stock Interchange route serves this yet; fails
  * closed rather than reaching a dead route or reading as an empty
  * registry. */
 export function listSkills(_config: SkillsToolClientConfig): Promise<readonly SkillIndexEntry[]> {
@@ -104,14 +104,14 @@ export function listSkills(_config: SkillsToolClientConfig): Promise<readonly Sk
 }
 
 /** Loads one skill's full body by name. No stock Interchange route
- * serves this yet (CL-8086); fails closed rather than fabricating
+ * serves this yet; fails closed rather than fabricating
  * content. */
 export function loadSkill(_config: SkillsToolClientConfig, _name: string): Promise<SkillDetail> {
   return Promise.reject(new Error(NO_STOCK_SKILL_CONTENT_ROUTE));
 }
 
 /** Creates a new, always tenant-scoped skill. No stock Interchange route
- * accepts skill content yet (CL-8086); fails closed rather than
+ * accepts skill content yet; fails closed rather than
  * fabricating success. */
 export function createSkill(
   _config: SkillsToolClientConfig,
@@ -125,7 +125,7 @@ export function createSkill(
 }
 
 /** Republishes an existing skill's body. No stock Interchange route
- * accepts skill content yet (CL-8086); fails closed rather than
+ * accepts skill content yet; fails closed rather than
  * fabricating success. */
 export function updateSkill(
   _config: SkillsToolClientConfig,

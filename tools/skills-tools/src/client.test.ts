@@ -19,7 +19,7 @@ function testConfig(fetchImpl: typeof fetch): SkillsToolClientConfig {
   };
 }
 
-// CL-8086: the workflow-skills HTTP surface these four calls used to
+// the workflow-skills HTTP surface these four calls used to
 // reach was deleted, and no stock Interchange route yet serves skill
 // content, so each fails closed with an explicit error instead of
 // reaching a dead route.

@@ -1,10 +1,9 @@
-// The workflow detail page's one seam to reading a definition. CL-8160:
-// the Workbench-composed hub route (`@corbits/workflows`'s former
-// `./detail/detail-route.ts`) is deleted — there is no `GET .../:id`
-// route at all, stock or otherwise (`vendor/intx/hub-api/src/routes/
-// workflow-definitions.ts` only lists, lists versions, and rolls back).
-// This walks the stock list a page at a time and stops at the matching
-// id. Wire schema and pure display helpers live in
+// The workflow detail page's one seam to reading a definition. There is
+// no `GET .../:id` route, stock or otherwise
+// (`vendor/intx/hub-api/src/routes/workflow-definitions.ts` only lists,
+// lists versions, and rolls back), so this walks the stock list a page
+// at a time and stops at the matching id. Wire schema and pure display
+// helpers live in
 // `@corbits/workflows/client`, browser-safe like `routines-api.ts`'s own
 // definitions listing — this file is fetch composition only.
 import { type } from "arktype";

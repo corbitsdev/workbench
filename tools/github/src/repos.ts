@@ -1,11 +1,11 @@
-// The connect-github card's repo picker (CL-6345): the repositories the
+// The connect-github card's repo picker: the repositories the
 // connected token can reach, most recently pushed first.
 //
 // One call, on purpose. This used to decorate every row with an exact
 // open-PR count from the search API, which cost one `/search/issues` call
 // per repo fired concurrently — and GitHub's search API allows 30 requests
 // a minute and secondary-rate-limits bursts, so any account past a handful
-// of repos got a 403 and the whole picker failed to load (CL-7189). The
+// of repos got a 403 and the whole picker failed to load. The
 // count was decoration on a checkbox row; the push timestamp that explains
 // the ordering rides along on the list response for free.
 import { type } from "arktype";
@@ -83,7 +83,7 @@ const GitHubAuthenticatedUser = type({ login: "string" });
 /**
  * The authenticated PAT's own login — this connector authenticates a
  * person, not an organization (GitHub App/OAuth org-level connect is
- * CL-6343, not built here), so a caller showing "connected as" shows
+ *, not built here), so a caller showing "connected as" shows
  * this login, not an org name.
  */
 export async function fetchAuthenticatedLogin(config: GitHubClientConfig): Promise<string> {

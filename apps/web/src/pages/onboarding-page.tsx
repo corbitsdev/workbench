@@ -1,4 +1,4 @@
-// The setup gate (CL-8112/CL-8131/CL-8154): the screen a signed-in
+// The setup gate: the screen a signed-in
 // session lands on when the hub reports setup-required. It reads the
 // hub's native setup-status route, and a hub that already has tenants
 // bounces straight into the shell (`/`). An empty hub drives the

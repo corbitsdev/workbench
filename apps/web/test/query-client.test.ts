@@ -28,7 +28,7 @@ describe("pathToQueryKey", () => {
 });
 
 describe("tenantKeys.routineActivity", () => {
-  // CL-8087: the sidebar routine-activity seam keeps a shared cache key that
+  // the sidebar routine-activity seam keeps a shared cache key that
   // names the seam — not the deleted `/top-level-runs` route — so both
   // mounts subscribe to one entry and a future native fires equivalent has
   // a key to rewire.

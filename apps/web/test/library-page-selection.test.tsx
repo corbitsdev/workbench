@@ -1,4 +1,4 @@
-// CL-6423: Files adopts @corbits/react-ui's selection system. These tests
+// Files adopts @corbits/react-ui's selection system. These tests
 // drive `LibraryPage` directly (it is a pure, uncontrolled-selection
 // component outside `LibraryRoute`) so selection state, the bulk action
 // bar, and the top-nav action placement can all be asserted without a

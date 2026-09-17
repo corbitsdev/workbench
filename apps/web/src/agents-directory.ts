@@ -18,7 +18,7 @@ import {
 
 import type { AgentDefinition, AgentInstance } from "./agents-api";
 
-/** An `AgentDefinition` with its display name derived (CL-6413) — its own
+/** An `AgentDefinition` with its display name derived — its own
  * description when the definition was created with one, otherwise a
  * humanized reading of its immutable `name` slug. `name` itself stays the
  * slug throughout; nothing here mutates it. */
@@ -41,7 +41,7 @@ export function purposeAgentDefinitions(
  * (see `./agents-api.ts`), which excludes every non-top-level run
  * (workbench host, invited agent, task) server-side — the native
  * `GET /workflows/runs` listing's own predicate. That listing is
- * single-tenant (CL-8087 accepted loss: no descendant-subtree rollup),
+ * single-tenant (accepted loss: no descendant-subtree rollup),
  * so this still applies the shared name-based workbench-host filter as
  * defense in depth.
  */

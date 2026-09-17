@@ -7,15 +7,13 @@
 // palette even when they are off the rail. Conversation deep links
 // (`/w/:workbenchId`) stay routable; `/` is the Myra land hop (ensure +
 // open her conversation) for a bench with a workbench already, or the
-// guided first-workbench describe screen for a bench with none (CL-6104)
-// — never a Home dashboard.
-// Approvals has no page — the Activity band owns them. Agents (CL-6354)
-// and Skills (CL-6355) are their own rail destinations again — they spent
-// a stretch as Settings sections (CL-5990) and `/settings/agents[/:id]` /
+// guided first-workbench describe screen for a bench with none // — never a Home dashboard.
+// Approvals has no page — the Activity band owns them. Agents // and Skills are their own rail destinations again — they spent
+// a stretch as Settings sections and `/settings/agents[/:id]` /
 // `/settings/skills[/:id]` stay routable only as redirects back here, so
 // old links and bookmarks still land somewhere real. Library was renamed
-// Files (CL-6353) at the same time it moved off `/library`, which
-// redirects the same way. Inbox is gone too (CL-6151: tasks + approvals
+// Files at the same time it moved off `/library`, which
+// redirects the same way. Inbox is gone too (: tasks + approvals
 // don't flow into workbenches); `/inbox` stays routable only as a
 // redirect to `/`.
 
@@ -100,7 +98,7 @@ const WorkflowDetailRoute = lazy(async () => ({
   default: (await import("./pages/workflow-detail-page")).WorkflowDetailRoute,
 }));
 
-/** The signed-out screen (CL-6369) — a real route, not a conditional swap:
+/** The signed-out screen — a real route, not a conditional swap:
  * any unauthenticated request for another path bounces here with `?next=`
  * so a successful sign-in returns to where the visitor meant to go. Not
  * one of `APP_ROUTES`: like `ONBOARDING_PATH`, it renders above the shell
@@ -116,7 +114,7 @@ export const ONBOARDING_PATH = "/onboarding";
 /** Settings path — sidebar footer + settings page. */
 export const SETTINGS_PATH = "/settings";
 
-/** Mission Control — the bench's dashboard (CL-6488/CL-6489). Pinned above
+/** Mission Control — the bench's dashboard. Pinned above
  * the sidebar's footer rail as its own row (see DESIGN.md's Shell &
  * Navigation section), reachable by direct URL and the command palette
  * like everything else, but deliberately off `NAV_ROUTES`: it isn't a
@@ -124,13 +122,13 @@ export const SETTINGS_PATH = "/settings";
  * view. */
 export const MISSION_CONTROL_PATH = "/mission-control";
 
-/** The template picker (CL-6342) — every "+ New workbench" affordance
+/** The template picker — every "+ New workbench" affordance
  * (sidebar, command palette) hops here first; picking a row is what
  * actually mints the workbench. Not in `NAV_ROUTES`: it has no sidebar
  * row of its own, only the "+" control and the palette reach it. */
 export const NEW_WORKBENCH_PATH = "/new";
 
-/** Detail routes are addressed by slug (CL-6412): one route path per
+/** Detail routes are addressed by slug: one route path per
  * entity, ending in this segment. A path matches only when its last
  * segment is a real slug, so `/agents/wfd_1` still resolves to the Agents
  * roster (which owns id deep links) while `/agents/triage-bot` resolves to
@@ -139,7 +137,7 @@ const SLUG_SEGMENT = "/:slug";
 
 export const AGENT_DETAIL_PATH = `${AGENTS_PATH_PREFIX}${SLUG_SEGMENT}`;
 export const SKILL_DETAIL_PATH = `${SKILLS_PATH_PREFIX}${SLUG_SEGMENT}`;
-// Plugin detail (`/plugins/:slug`) is parked with CL-6417. CL-6817 removed
+// Plugin detail (`/plugins/:slug`) is parked with. removed
 // the "still being built" stub so gallery/palette click-throughs do not
 // promise a page that is only a placeholder.
 
@@ -210,8 +208,8 @@ export type AppRoute = {
  * and the slug-addressed detail routes (`/agents/:slug`). Other routes are
  * exact path matches. A roster prefix still matches its own nested paths,
  * so the sidebar footer row stays lit on a detail screen. Plugins is exact
- * only: until CL-6417 lands a real detail page, a slug under `/plugins` is
- * unroutable rather than a stub (CL-6817).
+ * only: until lands a real detail page, a slug under `/plugins` is
+ * unroutable rather than a stub.
  */
 export function matchesRoute(routePath: string, path: string): boolean {
   if (routePath === WORKBENCH_PATH_PREFIX) {
@@ -244,7 +242,7 @@ export function matchesRoute(routePath: string, path: string): boolean {
   return routePath === path;
 }
 
-/** Bounces old `/inbox` links and bookmarks home (CL-6151: the Inbox page
+/** Bounces old `/inbox` links and bookmarks home (: the Inbox page
  * is gone — tasks and approvals don't flow into a workbench). */
 function InboxRedirect({ navigate }: { readonly navigate: (to: string) => void }) {
   useEffect(() => {
@@ -307,7 +305,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: () => <RoutinesRoute />,
   },
   {
-    // A workflow definition's own page (CL-7371) — no roster of its own
+    // A workflow definition's own page — no roster of its own
     // yet, only reached by a deep link (e.g. from a routine's target).
     path: WORKFLOW_DETAIL_PATH,
     label: "Workflow",
@@ -315,7 +313,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <WorkflowDetailRoute path={path} />,
   },
   {
-    // The renamed, remounted Library page (CL-6353) — "Library" stays out
+    // The renamed, remounted Library page — "Library" stays out
     // of user-facing copy, but the underlying artifact machinery
     // (`library-page.tsx`, `libraryArtifactIdFromPath`, …) keeps its name.
     path: "/files",
@@ -324,7 +322,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <LibraryRoute path={path} />,
   },
   {
-    // Old `/library` links and bookmarks (CL-6353's rename) land here.
+    // Old `/library` links and bookmarks (its rename) land here.
     path: "/library",
     label: "Files",
     icon: <FolderOpen />,
@@ -349,7 +347,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     ),
   },
   {
-    // Agents spent CL-5990 through CL-6354 as a Settings section — this
+    // Agents spent through as a Settings section — this
     // entry keeps old `/settings/agents[/:id]` links routable.
     path: "/settings/agents",
     label: "Agents",
@@ -371,7 +369,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (_path: string, navigate: (to: string) => void) => <SkillsRoute navigate={navigate} />,
   },
   {
-    // Skills spent CL-5990 through CL-6355 as a Settings section — this
+    // Skills spent through as a Settings section — this
     // entry keeps old `/settings/skills[/:id]` links routable.
     path: "/settings/skills",
     label: "Skills",
@@ -388,7 +386,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
   },
   {
     // First-run footer rail destination. No `/plugins/:slug` until
-    // CL-6417 (CL-6817 unlinked the stub).
+    // (unlinked the stub).
     path: "/plugins",
     label: "Plugins",
     icon: <PuzzlePiece />,

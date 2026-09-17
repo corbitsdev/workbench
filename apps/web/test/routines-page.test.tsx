@@ -185,13 +185,13 @@ describe("GlobalRoutinesList", () => {
   });
 });
 
-// CL-8160: the "RoutinesRoute — membership-based aggregation" suite that
+// the "RoutinesRoute — membership-based aggregation" suite that
 // lived here drove `RoutinesRoute` against a mocked
 // `/api/tenants/:id/workflows/scheduled` fetch — that route
 // (`@corbits/workflows`'s deleted `./schedule/scheduled-route.ts`) is
 // gone, and `listScheduledWorkflows` (`../src/routines-api.ts`) now
 // always resolves empty rather than fetching a route that no longer
 // exists. Deleted rather than adapted: there is nothing left to mock
-// against, and no stock-derivable replacement yet (see the CL-8160 PR).
+// against, and no stock-derivable replacement yet (see the PR).
 // `GlobalRoutinesList`'s own presentational tests above are untouched —
 // only the network-backed aggregation is gone.

@@ -1,10 +1,10 @@
-// Insights is scoped per workbench (CL-5879): `/insights/workbench/:workbenchId`
+// Insights is scoped per workbench: `/insights/workbench/:workbenchId`
 // resolves to that workbench's OWN workbench tenant — every workbench minted
 // through POST /workbenches carries a tenancy link (see `WorkbenchWire.tenancy`
 // in @corbits/chat-ui) — never the workbench id itself and never the bench's
 // root tenant. That lookup goes through this one pure function over the SAME
 // cached workbench rows the shell's sidebar already fetches, rather than a
-// bespoke endpoint. CL-8160 deleted the reverse lookup
+// bespoke endpoint. deleted the reverse lookup
 // (`workbenchIdForWorkbenchTenant`): it only served the cross-workbench
 // "activity by workbench" chart and scope switcher, both dropped along with
 // packages/insights.

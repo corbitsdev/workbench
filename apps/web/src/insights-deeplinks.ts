@@ -15,7 +15,7 @@ export function runDeepLinkTarget(run: { readonly id: string }): string {
   return runDetailPath(run.id);
 }
 
-/** Insights scoped to one workbench (CL-5879) — the target for the
+/** Insights scoped to one workbench — the target for the
  * conversation action bar's "Insights" entry point. The route resolves the
  * workbench's own workbench tenant itself (see `../insights-workbench-scope.ts`)
  * rather than trusting a tenant id from the caller, since the caller here

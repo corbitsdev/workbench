@@ -1,7 +1,7 @@
 # @corbits/github-tools
 
 A minimal GitHub integration: search, plus the pull-request reads and
-one write a code review needs — two `@intx/agent` tool bundles. Built for the last-30-days-research workflow port (CL-5997),
+one write a code review needs — two `@intx/agent` tool bundles. Built for the last-30-days-research workflow port,
 mirroring the OG gtm-workbench's `packages/tools-github` client against
 GitHub's real public REST search API.
 

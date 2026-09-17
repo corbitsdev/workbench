@@ -1,6 +1,6 @@
 /**
- * Manual smoke test for the GitHub connect binding (CL-6344, hub-zero T3
- * CL-8114): connects a real PAT through the native tenant-scoped
+ * Manual smoke test for the GitHub connect binding (hub-zero T3
+ *): connects a real PAT through the native tenant-scoped
  * `connections/github/complete` route against a running local hub.
  *
  * Hub-zero T3 deleted the workbench-scoped `github/state` and
@@ -62,10 +62,10 @@ async function main() {
   if (!connectRes.ok) {
     throw new Error("connect failed — see status above");
   }
-  // Hub-zero T3 (CL-8114) stops here: `github/state` and
-  // `github/start-reviewing` no longer exist, so there is nothing further
-  // to smoke until the connections follow-up lands the native rebind.
-  console.log("connected — state/start-reviewing walkthrough deleted (CL-8114)");
+  // `github/state` and `github/start-reviewing` no longer exist, so
+  // there is nothing further to smoke until the connections follow-up
+  // lands the native rebind.
+  console.log("connected — state/start-reviewing walkthrough deleted");
 }
 
 main().catch((err: unknown) => {

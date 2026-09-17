@@ -4,7 +4,7 @@
 // its own Postgres schema, never the developer's or the walking-skeleton
 // suite's.
 //
-// Proves the launch-time half of CL-6028's credential-binding adoption
+// Proves the launch-time half of its credential-binding adoption
 // using only the platform's own, already-built functions
 // (`buildCredentialDelivery`, `createEnvKeyCredentialCipher`,
 // `credentialAad`) — never a hand-rolled resolver:

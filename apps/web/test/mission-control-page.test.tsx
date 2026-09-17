@@ -81,7 +81,7 @@ describe("computeInFlightRows", () => {
     expect(rows[0]?.statusLabel).toBe("Running now");
   });
 
-  // Warm-keep (CL-6681 / CL-6778): Mission Control's active-run count and
+  // Warm-keep: Mission Control's active-run count and
   // in-flight table must not keep a finished fire as "Running" forever just
   // because the delivery agent is still deployed.
   test("endedAt drops a just-finished running routine from in-flight immediately", () => {
@@ -231,7 +231,7 @@ describe("MissionControlRoute", () => {
     expect(container.textContent).not.toContain("New bench");
     expect(container.textContent).toContain("Nothing waiting on you");
     expect(container.textContent).toContain("Nothing running right now");
-    // CL-8087: the In flight band is routine-feed only and the feed is
+    // the In flight band is routine-feed only and the feed is
     // stubbed, so the empty state says so instead of implying agent runs
     // appear here.
     expect(container.textContent).toContain("Routine activity has no feed");

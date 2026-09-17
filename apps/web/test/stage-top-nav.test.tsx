@@ -1,4 +1,4 @@
-// CL-6409: the shell's top-nav contract. A page declares where it sits with
+// the shell's top-nav contract. A page declares where it sits with
 // `StageTopBar`'s `crumbs` — a title trail whose every level above the
 // current page is a real route — and puts its primary controls in the
 // `actions` slot. This suite covers the trail's markup and navigation, the

@@ -69,11 +69,8 @@ if (!databaseUrl) {
   // harness.ts`) gives its process up to 5s to exit on SIGTERM before
   // escalating to SIGKILL — so a graceful-but-slow exit on either
   // process alone can approach Bun's 5000ms default hook timeout, and
-  // two of them in sequence can exceed it outright. CL-7462: this hook
-  // timed out at ~5001ms in CI once boot wiring grew (workflow
-  // allocation/dispatch initialization, extra reconciliation queries),
-  // pushing shutdown latency on CI's shared runners past the default
-  // margin even though nothing was actually hung.
+  // two of them in sequence can exceed it outright, even though nothing
+  // is actually hung.
   afterAll(async () => {
     await hub.shutdown();
   }, 20_000);

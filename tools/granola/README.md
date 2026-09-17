@@ -1,8 +1,8 @@
 # @corbits/granola-tools
 
 A minimal Granola integration: two client calls, one `@intx/agent` tool
-bundle. Built for the morning-brief workflow (CL-5993); `granola_get_note`
-was added by the pain-point-collateral workflow (CL-5995) — neither is
+bundle. Built for the morning-brief workflow; `granola_get_note`
+was added by the pain-point-collateral workflow — neither is
 specific to its origin workflow, so both stay in this one package rather
 than forking a second Granola client.
 
@@ -25,7 +25,7 @@ content naming the source "not connected", so a calling agent can
 degrade gracefully instead of failing its turn.
 
 This package declares one credential handle, `granola`, in its
-`package.json`'s `interchange.credentials` field (CL-6028). Connect
+`package.json`'s `interchange.credentials` field. Connect
 Granola once, in Settings · Connections, and every workflow that pins
 `@corbits/granola-tools` and binds this handle — `granola-call`,
 `process-granola-call`, `pain-point-collateral`, `collateral-generation`,
@@ -36,7 +36,7 @@ Launch-time resolution (`buildCredentialDelivery`) is proven in
 `test/credential-delivery.drizzle.test.ts`; the full chain — seeded
 credential through the sidecar's step wiring
 (`apps/sidecar/src/step-agent-tools.ts`) to this bundle's tool call — is
-proven in `test/credential-wiring-e2e.drizzle.test.ts` (CL-6032). See
+proven in `test/credential-wiring-e2e.drizzle.test.ts`. See
 `docs/credential-wiring.md` for the end-to-end picture and the provider
 plugins involved (this package's Granola credential uses the vendored
 `http` / Bearer plugin; `@corbits/linear-tools`'s Linear credential does

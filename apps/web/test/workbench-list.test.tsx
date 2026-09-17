@@ -145,7 +145,7 @@ describe("WorkbenchList — pending-approvals signal", () => {
   });
 });
 
-describe("WorkbenchList — pin visibility and order (CL-6657)", () => {
+describe("WorkbenchList — pin visibility and order", () => {
   test("pin glyph floats across the mixed list, never within Agents/Channels sections", async () => {
     stubFetch({
       chats: [

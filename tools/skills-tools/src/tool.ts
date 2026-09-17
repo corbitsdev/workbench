@@ -6,7 +6,7 @@
 // `@corbits/capability-tools`' `request_capability`, over the same
 // workflow-run-authenticated surfaces `./client.ts` calls.
 //
-// `create_skill` and `update_skill` (CL-6209) grant no credentials or
+// `create_skill` and `update_skill` grant no credentials or
 // capability pins and write only a tenant-internal skill row — a
 // skill's body is durable know-how, not something any agent's
 // capabilities or autonomy hinge on until a human separately pins it

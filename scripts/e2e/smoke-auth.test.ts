@@ -1,4 +1,4 @@
-// Smoke scenario 1/5 (CL-6004): sign-up + session. The narrowest proof
+// Smoke scenario 1/5: sign-up + session. The narrowest proof
 // in the suite — a real hub process, a real better-auth email sign-up,
 // and the resulting session cookie actually authorizing a session-gated
 // route. No tenant, no sidecar: this only proves the auth boundary

@@ -1,4 +1,4 @@
-// CL-6045: the shell used to fire the same listing 4-5x per navigation
+// the shell used to fire the same listing 4-5x per navigation
 // because independent components each fetched independently instead of
 // sharing a cache. Every mount of `useBenchActivity` (the sidebar's
 // `WorkbenchList`, and any second subscriber) shares the same TanStack
@@ -77,7 +77,7 @@ function countsByMatch(calls: readonly string[], predicate: (path: string) => bo
   return calls.filter(predicate).length;
 }
 
-describe("shell listing dedupe (CL-6045)", () => {
+describe("shell listing dedupe", () => {
   test("two WorkbenchList mounts together fetch each listing exactly once", async () => {
     const calls: string[] = [];
     stubFetch(calls);
@@ -103,7 +103,7 @@ describe("shell listing dedupe (CL-6045)", () => {
     // per (tenant, kind) no matter how many bands subscribe.
     expect(countsByMatch(calls, (p) => p.includes("kind=workbench"))).toBe(1);
     expect(countsByMatch(calls, (p) => p.includes("kind=chat"))).toBe(1);
-    // CL-8087: the routines query resolves with no items and no fetch (the
+    // the routines query resolves with no items and no fetch (the
     // `feed=fires` route is deleted and the native listing has no fires
     // equivalent), so both mounts share that without any request at all.
     expect(countsByMatch(calls, (p) => p.includes("/top-level-runs"))).toBe(0);

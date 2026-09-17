@@ -1,5 +1,5 @@
 // The one path from an agent definition's id to "the person is in their
-// direct chat with it" (CL-6253) — the sidebar's agent rows are the one
+// direct chat with it" — the sidebar's agent rows are the one
 // caller. Mirrors `agent-chat-launch.ts`'s shape exactly, but through
 // `openAgentDm` (`kind: "chat"`, `reuseExisting: true`) rather than
 // `createWorkbench` directly: the first click mints the DM, every later

@@ -2,7 +2,7 @@
 // `PackageJSON` manifest schema (`@intx/types/src/package-json.ts`)
 // with an `interchange.credentials` declaration the deploy-time
 // `ToolPackageManifest` harvests into `topLevel[].credentials` — the
-// static half of the credential-binding seam CL-6028 adopts. GitHub's
+// static half of the credential-binding seam adopts. GitHub's
 // credential is optional at runtime (an unresolved "github" handle
 // degrades to unauthenticated calls, never "not connected" — see
 // `tool.ts`), but the manifest still declares the handle that *could*

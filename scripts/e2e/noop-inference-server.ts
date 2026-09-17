@@ -1,10 +1,8 @@
-// A standalone stand-in for a real Anthropic endpoint, moved here from
-// the hub (`apps/hub/src/e2e/noop-inference.ts`, CL-8160): a scheduled
-// step that needs no model must not call one, so the hub no longer
-// mounts this route at all. An e2e suite that wants a deployment costing
-// zero real inference now starts this tiny server itself
-// (`startNoopInferenceServer`) and plants a catalog offering pointed at
-// its own `baseUrl` (`ensureNoopCatalogOffering`), never at the hub.
+// A standalone stand-in for a real Anthropic endpoint: an e2e suite that
+// wants a deployment costing zero real inference starts this tiny server
+// itself (`startNoopInferenceServer`) and plants a catalog offering
+// pointed at its own `baseUrl` (`ensureNoopCatalogOffering`), never at
+// the hub.
 //
 // The wire shape matches exactly what
 // `@intx/inference/src/providers/anthropic.ts`'s `parseResponse` accepts
@@ -127,7 +125,7 @@ const NOOP_OFFERING_PRIORITY = 0;
  * Plants (or finds) the dedicated catalog offering an e2e suite deploys
  * a zero-cost workflow against: a catalog model named `NOOP_MODEL`, a
  * provider pointed at this file's own `startNoopInferenceServer`
- * `baseUrl` (never the hub — CL-8160 dropped the hub's own mount), and a
+ * `baseUrl` (never the hub — dropped the hub's own mount), and a
  * placeholder credential — the same `ensureCatalogModel` / `ensureProvider`
  * / `ensureCredential` / `ensureCatalogProvider` / `ensureCatalogOffering`
  * sequence `seedCatalog` runs for a real provider, run here for this one

@@ -174,7 +174,7 @@ function ArtifactRows({
 }
 
 /**
- * The one cheap provenance fact worth surfacing (CL-6015): a link to the
+ * The one cheap provenance fact worth surfacing: a link to the
  * workflow run that produced this artifact, when `source` says so
  * (`workflowRunIdFromSource`). Not a lineage system — every other origin
  * (manual, agent, imported, unknown) renders nothing here rather than
@@ -322,11 +322,11 @@ export function LibraryPage({
   readonly preview?: ArtifactDetail | null;
   readonly previewLoading?: boolean;
   readonly previewError?: string | null;
-  /** Needed to build the HTML preview route's URL (CL-5879); the "Open in
+  /** Needed to build the HTML preview route's URL; the "Open in
    * new tab" / iframe affordance is simply absent without one (a
    * standalone render with no bench tenant, e.g. these page tests). */
   readonly tenantId?: string | null;
-  /** The workbench the person just came from (CL-6353), if any — drives the
+  /** The workbench the person just came from, if any — drives the
    * "This workbench" pill. `null` when Files was reached with no workbench
    * in view, in which case the lens has nothing to offer and stays hidden. */
   readonly workbenchScope?: { readonly title: string } | null;
@@ -402,7 +402,7 @@ export function LibraryPage({
         subtitle={
           selectedSummary === null
             ? // Empty Files already has a poster invitation — a "0 files"
-              // count beside it is a second empty announcement (CL-6750).
+              // count beside it is a second empty announcement.
               artifacts.length === 0
               ? undefined
               : `${artifacts.length} files`
@@ -610,7 +610,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  // `/files/a/:id` (CL-6015) — a chat artifact chip's "Open in Files"
+  // `/files/a/:id` — a chat artifact chip's "Open in Files"
   // deep link, distinct from the kind-nav segments below. It only ever
   // sets the initial selection; the user's own clicks stay local state,
   // the same way kind-nav selection already worked before this route
@@ -622,7 +622,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   }, [deepLinkedArtifactId]);
   const kindSegment = deepLinkedArtifactId === null ? libraryKindSegmentFromPath(path) : "";
 
-  // Files' workbench-first lens (CL-6353): the workbench the person just
+  // Files' workbench-first lens: the workbench the person just
   // came from, if `last-workbench.ts` recorded one for this bench, resolved
   // to its own tenant via the same sidebar-backed activity listing every
   // other bench-scoped surface already fetches.

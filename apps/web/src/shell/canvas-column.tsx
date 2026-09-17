@@ -1,10 +1,10 @@
 // Column 4: the optional canvas. Collapsed, it takes no space at all — the
 // main pane gets the width back — and open, it hosts targeted auxiliary
-// content: profile cards, and (CL-5938) typed artifact renderers opened
+// content: profile cards, and typed artifact renderers opened
 // from a chat artifact chip or the Library page. Primary workbench
 // conversation lives in the main stage, not here.
 //
-// CL-8189: co-edit presence is gone. A "doc"-kind, editable artifact
+// co-edit presence is gone. A "doc"-kind, editable artifact
 // renders `@corbits/artifact-ui`'s `ArtifactTextEditor` as a plain
 // single-user controlled textarea, debounced-saved through the artifacts
 // HTTP route; every other kind stays the read-only `ArtifactRenderer`. No
@@ -137,7 +137,7 @@ function messageAction(
 }
 
 /** Insert `@handle` into whichever workbench's composer is on screen — an
- * honest "nothing to mention into" toast when none is (CL-5914: no workbench
+ * honest "nothing to mention into" toast when none is (: no workbench
  * open, or the settings surface is showing instead of a conversation). */
 function mentionAction(
   profile: ProfileSubject,
@@ -258,7 +258,7 @@ function profileActions(
     },
   };
 
-  // Pause has no backing API today (CL-5884 follow-up: no workflow-run
+  // Pause has no backing API today (follow-up: no workflow-run
   // pause endpoint exists anywhere in the hub) — omitted rather than left
   // as a no-op that pretends to do something.
   if (profile.kind === "agent") {
@@ -313,10 +313,10 @@ function toProfileCardWorkbenches(
   }));
 }
 
-/** Shared workbenches between the viewer and `profile` (CL-5919) — refetched
+/** Shared workbenches between the viewer and `profile` — refetched
  * whenever the open profile changes, dropped if a later change races past
  * an in-flight fetch. Pinned skills are intentionally never populated: no
- * agent carries any real skill-attachment data yet (tracked in CL-5991), so
+ * agent carries any real skill-attachment data yet (tracked in), so
  * showing them would be fabricated, not deferred. */
 function useSharedWorkbenches(
   tenantId: string | null,

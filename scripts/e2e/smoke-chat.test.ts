@@ -1,4 +1,4 @@
-// Smoke scenario 3/5 (CL-6004): chat round-trip. A workbench is created,
+// Smoke scenario 3/5: chat round-trip. A workbench is created,
 // a message is posted and read back with its content intact, and the
 // workbench's invited-agent listing answers with the documented shape.
 // This deliberately stops short of `chat.test.ts`'s full battery

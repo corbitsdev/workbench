@@ -1,4 +1,4 @@
-// The Plugins gallery route (CL-6090) — a thin composition, same shape as
+// The Plugins gallery route — a thin composition, same shape as
 // `library-page.tsx`: page-level data fetching and wiring live here,
 // presentation lives in `@corbits/plugins-ui`. This page reads the
 // currently selected bench tenant the same way every other Settings
@@ -77,11 +77,11 @@ export function PluginsRoute({
   const [activeTab, setActiveTab] = useState<PluginsGalleryTab>("plugins");
   const [galleryQuery, setGalleryQuery] = useState("");
   // Set when the shell banner's "Fix it" deep link named a provider this
-  // gallery has no matching card for (CL-6092) — rather than the deep
+  // gallery has no matching card for — rather than the deep
   // link silently no-oping, this renders a notice pointing back at the
   // gallery itself.
   const [connectDeepLinkNotFound, setConnectDeepLinkNotFound] = useState(false);
-  // A preset deep link's slug (CL-7141), passed to the MCP presets
+  // A preset deep link's slug, passed to the MCP presets
   // section so it can focus that preset's own card once its catalog
   // has loaded — cleared as soon as the section has acted on it.
   const [autoConnectPresetSlug, setAutoConnectPresetSlug] = useState<string | null>(null);
@@ -182,7 +182,7 @@ export function PluginsRoute({
     };
   }, [selectedTenantId, skillsReloadKey]);
 
-  // The shell banner's "Fix it" deep link (CL-6092): once the gallery has
+  // The shell banner's "Fix it" deep link: once the gallery has
   // loaded, pick up any pending provider id and open its connect panel —
   // the same panel a gallery card click opens, so a person lands exactly
   // where they would have clicked themselves.
@@ -200,7 +200,7 @@ export function PluginsRoute({
     clearPendingConnectProvider();
   }, [pluginsState, pendingConnectProvider, clearPendingConnectProvider, openPluginPanel]);
 
-  // `request_connection`'s fallback link (CL-7141): `/plugins?connect=<id>`
+  // `request_connection`'s fallback link: `/plugins?connect=<id>`
   // hands the connector id off through the same `requestPluginsConnect`
   // path the shell banner's "Fix it" click uses, then strips only the
   // `connect` param — any other query param this route is ever opened

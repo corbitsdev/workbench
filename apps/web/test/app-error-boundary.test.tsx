@@ -1,4 +1,4 @@
-// CL-6381: a render error anywhere in the tree used to leave the reader
+// a render error anywhere in the tree used to leave the reader
 // staring at a blank white page (no error boundary existed anywhere in
 // apps/web). This pins the boundary's red/green behaviour — a throwing
 // child renders the designed EmptyState, never a blank screen — and that
@@ -56,7 +56,7 @@ describe("AppErrorBoundary", () => {
     expect(el.textContent).not.toContain("Everything is fine");
   });
 
-  // CL-6632: a render crash that never reaches a sink is undiagnosable in
+  // a render crash that never reaches a sink is undiagnosable in
   // production — the boundary must report through `reportError`
   // (`@corbits/error-sink`) and show the refId that call returns, so a
   // person hitting this can quote it back to support.

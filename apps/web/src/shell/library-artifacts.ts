@@ -91,7 +91,7 @@ export async function uploadArtifactFiles(
 }
 
 /**
- * PUT `/api/tenants/:tenantId/artifacts/:id` (CL-8189) — the artifact
+ * PUT `/api/tenants/:tenantId/artifacts/:id` — the artifact
  * editor's one save path now that co-edit presence is gone. Throws with
  * status on non-2xx so the host can render an honest failed-save state
  * instead of silently pretending the write landed.
@@ -140,7 +140,7 @@ export function artifactUploadToast(names: readonly string[]): string {
 
 /**
  * The bulk/context-menu operation set this file adopts from the shared
- * selection system (CL-6423) — deliberately just the one real, already-
+ * selection system — deliberately just the one real, already-
  * shippable operation: every other candidate (delete, move, rename,
  * download) has no backend route or store method behind it yet (see
  * `packages/artifacts-hub/src/routes.ts` and `@corbits/artifacts`'
@@ -151,7 +151,7 @@ export function artifactUploadToast(names: readonly string[]): string {
  */
 export const LIBRARY_BULK_OPERATION_IDS = ["copy-link"] as const;
 
-/** `/files/a/:id` (CL-6015) — the one canonical deep link a file has. */
+/** `/files/a/:id` — the one canonical deep link a file has. */
 export function libraryArtifactDeepLink(id: string): string {
   return `${FILES_PATH_PREFIX}/a/${encodeURIComponent(id)}`;
 }

@@ -73,7 +73,7 @@ describe("deriveProviderHealthBanner", () => {
   });
 });
 
-describe("nextProviderHealthPollStatus (CL-6834)", () => {
+describe("nextProviderHealthPollStatus", () => {
   test("a successful poll always lands on ready", () => {
     expect(nextProviderHealthPollStatus("unknown", "ok")).toBe("ready");
     expect(nextProviderHealthPollStatus("error", "ok")).toBe("ready");
@@ -93,7 +93,7 @@ describe("nextProviderHealthPollStatus (CL-6834)", () => {
   });
 });
 
-describe("deriveProviderHealthChrome (CL-6834)", () => {
+describe("deriveProviderHealthChrome", () => {
   const unhealthyBanner = {
     provider: "anthropic",
     category: "credential_failure" as const,

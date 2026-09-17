@@ -2,7 +2,7 @@
 // total silence. Locally (CI unset) it returns describe.skip and the
 // summary names `compose.test.yml`. Under CI=true it throws
 // instead, so a miswired pipeline cannot report green on a suite that
-// never ran. None of ci.yml's jobs provision Postgres (CL-8150); they
+// never ran. None of ci.yml's jobs provision Postgres; they
 // all still skip with the same compose hint.
 
 import { afterEach, describe, expect, test } from "bun:test";

@@ -1,4 +1,4 @@
-// Copy for the Routines page's "Available" section (CL-7073) — kept apart
+// Copy for the Routines page's "Available" section — kept apart
 // from JSX so a wording change never touches component logic. Every
 // string here reads as consumer language: no "deploy", "asset", or other
 // platform-side noun (see `scripts/checks/ui-vocabulary.ts`).

@@ -7,7 +7,7 @@ import {
   titleFromFirstMessage,
 } from "./auto-workbench-title";
 
-describe("titleFromFirstMessage (CL-6656)", () => {
+describe("titleFromFirstMessage", () => {
   test("trims and collapses whitespace into a single-line title", () => {
     expect(titleFromFirstMessage("  Help me\nplan  Q3  ")).toBe("Help me plan Q3");
   });
@@ -33,7 +33,7 @@ describe("titleFromFirstMessage (CL-6656)", () => {
   });
 });
 
-describe("autoNameFromFirstMessage (CL-6656)", () => {
+describe("autoNameFromFirstMessage", () => {
   test("names an ad-hoc New Workbench from the first message", () => {
     expect(autoNameFromFirstMessage(NEW_WORKBENCH_TITLE, "Plan the Q3 launch")).toBe(
       "Plan the Q3 launch",

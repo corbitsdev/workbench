@@ -238,9 +238,9 @@ export function CommandPaletteProvider({
     open && selectedTenantId !== null,
     () => listSkills(selectedTenantId ?? ""),
   );
-  // Connected MCP servers for this bench. Until CL-6417 lands a real
+  // Connected MCP servers for this bench. Until lands a real
   // `/plugins/<slug>` page, selecting one opens the Plugins gallery
-  // (CL-6817) rather than a "still being built" stub.
+  // rather than a "still being built" stub.
   const mcpServersQuery = useTenantQuery(
     tenantKeys.mcpServers(selectedTenantId ?? ""),
     open && selectedTenantId !== null,
@@ -251,7 +251,7 @@ export function CommandPaletteProvider({
     ArtifactListPageSchema,
   );
 
-  // CL-6089's hidden escape hatch: the sidebar dropped its bench switcher
+  // its hidden escape hatch: the sidebar dropped its bench switcher
   // (a workbench IS a conversation now, one per account in the common
   // case), but a multi-bench install still needs a way in. Plainly
   // labeled, cycling to the next workbench in membership order — the
@@ -525,8 +525,8 @@ export function CommandPaletteProvider({
       } else if (id.startsWith("entity:plugins:")) {
         const slug = id.slice("entity:plugins:".length);
         const title = pluginItems.find((item) => item.id === id)?.title ?? slug;
-        // No plugin detail page yet (CL-6417 parked). Land on the gallery
-        // instead of the removed stub (CL-6817).
+        // No plugin detail page yet (parked). Land on the gallery
+        // instead of the removed stub.
         navigate(PLUGINS_PATH_PREFIX);
         pushRecent({ kind: "plugins", id, title, subtitle: "Plugin" });
       } else if (id.startsWith("entity:library:")) {

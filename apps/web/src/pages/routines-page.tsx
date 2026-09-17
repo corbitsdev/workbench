@@ -1,7 +1,7 @@
 // Routines: an ops table of authored workflow definitions that carry a
 // ScheduleTrigger, including paused (`stopped`) ones. Pause/resume and
 // run-now are the only writes; schedules are authored on the definition.
-// The "Available" section (CL-7073) is scoped to the current bench only
+// The "Available" section is scoped to the current bench only
 // — adding a catalog workflow is a single-tenant write, unlike the
 // scheduled roster above, which aggregates every bench the account
 // belongs to.

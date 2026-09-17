@@ -1,4 +1,4 @@
-// CL-6015: a chat artifact chip's "Open in Files" affordance navigates to
+// a chat artifact chip's "Open in Files" affordance navigates to
 // `/files/a/:id` — this is the Files side of that deep link, proving
 // the route lands on the right artifact already selected, without any
 // extra click.

@@ -3,7 +3,7 @@
 // bodies only — they run inside the browser tab, not this Bun process, but
 // TypeScript still checks them against this file's own lib config.
 //
-// Real-browser acceptance harness (CL-6072): boots the real stack (a fresh
+// Real-browser acceptance harness: boots the real stack (a fresh
 // scratch database, the real hub, the real sidecar, a stubbed provider
 // credential) and drives the actual built web app in headless Chrome via
 // puppeteer-core — clicking, typing, and screenshotting exactly as a human
@@ -391,7 +391,7 @@ async function closeCreateAgentDrawer(page: Page): Promise<void> {
 
 /**
  * Drives the one creation flow a person actually walks: the sidebar's "+"
- * opens `/new` (prompt-primary picker, CL-8156 — a plain tenant + Myra,
+ * opens `/new` (prompt-primary picker, — a plain tenant + Myra,
  * no template cards). Clicking the empty-channel button mints
  * immediately. Waits for the URL to land on a fresh `/w/:id` distinct
  * from wherever the click started.
@@ -563,7 +563,7 @@ async function run(): Promise<void> {
       () => page,
       "02-onboarding-provisioning",
       async () => {
-        // CL-6089 dropped the naming step: provisioning now fires
+        // dropped the naming step: provisioning now fires
         // automatically, under a default name derived from the account, the
         // moment the wizard mounts. This step just waits for it to land on
         // the credential step next — an inference-provider radiogroup.
@@ -581,7 +581,7 @@ async function run(): Promise<void> {
       () => page,
       "03-connect-provider-stub-key",
       async () => {
-        // The hub never seeds (CL-8207): the onboarding page's own
+        // The hub never seeds: the onboarding page's own
         // `ProviderConnectStep` is the only path that plants a credential
         // and installs Myra, so this step drives that real form — the
         // same radiogroup + password input a person fills in — rather
@@ -612,7 +612,7 @@ async function run(): Promise<void> {
       },
     );
 
-    // --- Step 2: CL-7053 — `/` opens Myra's DM (kind chat, titled Myra).
+    // --- Step 2: — `/` opens Myra's DM (kind chat, titled Myra).
     // A brand-new account's bare root lands in that DM — not an auto-minted
     // empty workbench, not `/new`, no describe screen. Plus/picker still
     // mints empty "New Workbench" channels (step 05). Keep waiting for `/w/`
@@ -704,7 +704,7 @@ async function run(): Promise<void> {
         // only replaces the empty state once `/api/me/principals` resolves
         // and picks a tenant. Poll rather than reading once, so this never
         // flakes on that ordinary reload race. The rail is one mixed list
-        // of agent DMs and channels (CL-7053) — do not require labeled
+        // of agent DMs and channels — do not require labeled
         // "Agents" / "Channels" headings. Presence of Myra's row is the
         // mixed-list signal.
         let myraRows = 0;
@@ -736,7 +736,7 @@ async function run(): Promise<void> {
       },
     );
 
-    // --- Step 3: CL-6342 — the sidebar's "+" opens `/new`. Clicking
+    // --- Step 3: — the sidebar's "+" opens `/new`. Clicking
     // "Just start talking" mints an empty channel immediately (no kind
     // radio, no Create step). The mint must land somewhere NEW, distinct
     // from Myra's DM.
@@ -770,9 +770,9 @@ async function run(): Promise<void> {
         // The always-visible sidebar already lists every conversation —
         // the rows are just there, no navigation or priming needed. First
         // land is Myra's DM (titled Myra). The picker mint (05) is the one
-        // empty "New Workbench" channel — plus does not clone the DM
-        // (CL-7053). The list is a cache invalidated by the create event,
-        // so give the refetch a bounded moment to land before judging.
+        // empty "New Workbench" channel — plus does not clone the DM. The
+        // list is a cache invalidated by the create event, so give the
+        // refetch a bounded moment to land before judging.
         await page.waitForSelector(".shell-ch-row-wrap", { timeout: 15_000 });
         let mintedRows = 0;
         let myraRows = 0;
@@ -859,7 +859,7 @@ async function run(): Promise<void> {
         }
         if (live) {
           // Myra hosts every workbench and speaks first: her greeting must
-          // land without the person typing anything (CL-6126/CL-6137).
+          // land without the person typing anything.
           const greeted = await page
             .waitForSelector('div.chat-bubble-row[data-own="false"]', {
               timeout: 60_000,
@@ -971,7 +971,7 @@ async function run(): Promise<void> {
       },
     );
 
-    // --- Step 6: CL-6067 / CL-6069 — hub restart, stale-thread reconnect
+    // --- Step 6: / — hub restart, stale-thread reconnect
     await step(
       () => page,
       "09-restart-hub-same-db",
@@ -997,7 +997,7 @@ async function run(): Promise<void> {
 
     await step(
       () => page,
-      "10-reload-open-existing-chat-CL-6067-6069",
+      "10-reload-open-existing-chat--6069",
       async () => {
         await page.goto(`${webBaseUrl}/c`, {
           waitUntil: "domcontentloaded",
@@ -1016,7 +1016,7 @@ async function run(): Promise<void> {
             status: "repro-confirmed",
             detail:
               "after restart, the reloaded shell never regained the picker-minted New Workbench row within 15s " +
-              "(stuck disconnected) — CL-6067 reproduced",
+              "(stuck disconnected) — reproduced",
           };
         }
         await clickStable(
@@ -1033,7 +1033,7 @@ async function run(): Promise<void> {
           return {
             status: "repro-confirmed",
             detail:
-              'opening the existing chat after restart shows "Couldn\'t load" — CL-6069 ' +
+              'opening the existing chat after restart shows "Couldn\'t load" — ' +
               "stale-thread failure reproduced",
           };
         }
@@ -1054,9 +1054,9 @@ async function run(): Promise<void> {
       },
     );
 
-    // --- Step 11 (CL-7366): the routines page's target picker must offer
-    // at least one real option (CL-7351 target discovery) and creation
-    // must stay blocked until one is picked (CL-7355) — the panel has no
+    // --- Step 11: the routines page's target picker must offer
+    // at least one real option (target discovery) and creation
+    // must stay blocked until one is picked — the panel has no
     // Save button, it autosaves on blur once a target is chosen.
     await step(
       () => page,

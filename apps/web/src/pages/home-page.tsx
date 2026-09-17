@@ -8,9 +8,8 @@
 // `/` only exists as this hop onto `/w/:workbenchId`. Deep links to
 // other pages are unchanged.
 //
-// Right after a provider connect this hop is also the wait (CL-6457's
-// deploys run in the background, so landing here can beat them). CL-6462
-// settled what that wait looks like: one warm loader and nothing else. For
+// Right after a provider connect this hop is also the wait (its
+// deploys run in the background, so landing here can beat them). // settled what that wait looks like: one warm loader and nothing else. For
 // a zero-workbench bench the wait is for Myra's own definition to exist at
 // all — then we open her DM. The check is simply retried every few seconds,
 // because Myra's readiness IS the test of whether the person can start —
@@ -20,7 +19,7 @@
 // genuine failure, never to draw a progress number: a seed count is an
 // implementation detail, and "0 of 5" told a waiting person nothing.
 //
-// CL-6780: that wait is for the agent, never a workbench that does not
+// that wait is for the agent, never a workbench that does not
 // exist yet — so the loader says "Preparing your agent", and a skip with
 // no credential stops pretending anything is "getting ready" and offers
 // the honest next step (connect a provider) instead of spinning forever.
@@ -48,7 +47,7 @@ type LandState =
   | { readonly kind: "opening" }
   /** Zero workbenches, credential present, Myra not ready yet — the
    * post-connect wait. Headline names the agent, never a workbench that
-   * does not exist (CL-6780). */
+   * does not exist. */
   | { readonly kind: "waiting-for-agent" }
   /** Myra has taken long enough that silence would read as a hang. Says
    * so plainly and offers another go — never a frozen number. */
@@ -103,14 +102,14 @@ export function HomeRoute({
 
     // Zero workbenches: wait for Myra's own definition to exist, then
     // open her DM the same way "Talk to Myra" does — never `/new`.
-    // Readiness is Myra's deployed definition itself (CL-8112 T1 cut the
+    // Readiness is Myra's deployed definition itself (T1 cut the
     // deleted `/api/onboarding/provisioning-status` read, so this flow
     // makes zero `/api/onboarding/*` requests): a definition means "she
     // can start", no definition means keep waiting. Without a credential
-    // the drain never starts (CL-6780), so no definition with no
+    // the drain never starts, so no definition with no
     // credential is an honest next step, not a forever spin on
     // "getting ready".
-    // TODO(CL-8112-T6/T7): read native readiness here once T6/T7 builds
+    // TODO(T6/T7): read native readiness here once T6/T7 builds
     // it, instead of the definition's existence.
     const awaitFirstWorkbench = () => {
       void listAgentDefinitions(selectedTenantId).then(
@@ -124,7 +123,7 @@ export function HomeRoute({
           void hasActiveCredential(selectedTenantId).then((probe) => {
             if (cancelled) return;
             // Only a confirmed miss means "connect a provider". A probe
-            // failure must not pretend no key exists (CL-6868) — keep
+            // failure must not pretend no key exists — keep
             // waiting and retry; the key may already be connected.
             if (probe.kind === "none") {
               setState({ kind: "needs-provider" });

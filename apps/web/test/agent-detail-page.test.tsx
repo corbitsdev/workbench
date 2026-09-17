@@ -1,4 +1,4 @@
-// The agent detail page (CL-6414) at `/agents/<slug>`: the identity card,
+// The agent detail page at `/agents/<slug>`: the identity card,
 // the system-prompt editor, the skills section, recent runs, and the
 // Duplicate/Archive/Save trio in the top bar's action slot. Mounted against
 // a stubbed hub so every edit is asserted where it matters — on the request
@@ -197,7 +197,7 @@ describe("AgentDetailPage render", () => {
     expect(markup).toContain("The registry is unreachable.");
   });
 
-  test("CL-6836: skillsError is an alert above Skills, never silent empty pins", () => {
+  test("skillsError is an alert above Skills, never silent empty pins", () => {
     const markup = renderPage({ skillsError: "500: down" });
     expect(markup).toContain('role="alert"');
     expect(markup).toContain("Could not load agent skills");

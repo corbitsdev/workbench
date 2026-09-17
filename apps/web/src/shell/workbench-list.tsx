@@ -144,7 +144,7 @@ export function orderWorkbenchRows(workbenches: readonly Workbench[]): readonly 
 /**
  * Sidebar search over what the row actually shows: the displayed title and
  * the preview snippet. Title-only matching left people staring at a visible
- * preview word (CL-6662) and a "No matches" empty state. Case-insensitive
+ * preview word and a "No matches" empty state. Case-insensitive
  * substring; empty/whitespace query keeps every row.
  */
 export function filterSidebarRows(

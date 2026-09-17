@@ -42,7 +42,7 @@ export interface CreatedAgentDefinition {
   readonly description: string | null;
   /** The create route serializes `workflow_definition.current_version`,
    * a `text` DB column, verbatim — always a string on the wire, never
-   * a number (CL-6480: parsing this as `"number"` made every genuine
+   * a number (: parsing this as `"number"` made every genuine
    * success fail this schema and read as a create failure). */
   readonly currentVersion: string;
   readonly status: string;
@@ -50,7 +50,7 @@ export interface CreatedAgentDefinition {
   /** Set when `model` was requested but the tenant's catalog didn't
    * offer it, so the route substituted its default (or left the
    * definition modelless) instead of baking in a name that can never
-   * resolve (CL-6477). `null` when the requested model — or its
+   * resolve. `null` when the requested model — or its
    * absence — needed no substitution. */
   readonly modelNote: string | null;
 }

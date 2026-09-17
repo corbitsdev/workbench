@@ -209,7 +209,7 @@ function insightsRunMenu(
 }
 
 /**
- * Same operation set the Files bulk action bar offers (CL-6423): copy
+ * Same operation set the Files bulk action bar offers: copy
  * every acted-on file's canonical link. `target.ids` is either the single
  * right-clicked row, or the whole active selection when the row is part of
  * one — see `SHELL_CONTEXT_MENU_TARGETS`.

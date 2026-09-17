@@ -153,7 +153,7 @@ async function runCreateAgent(env: WorkflowAgentDirectoryEnv, call: ToolCall): P
   // Set when the requested `modelPreference` fell outside the tenant's
   // catalog and the route substituted its default (or left the
   // definition modelless) instead of baking in a name that can never
-  // resolve (CL-6477) — surfaced on every branch below so the model
+  // resolve — surfaced on every branch below so the model
   // relays the substitution to the user rather than claiming the
   // model it originally asked for.
   const modelSuffix = created.modelNote !== null ? ` ${created.modelNote}` : "";

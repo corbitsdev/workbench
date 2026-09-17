@@ -14,7 +14,7 @@
 // names and links. MCP servers are not a stock Interchange concept, so a
 // tenant-minted `mcp:<slug>` connection is no longer listed: a curated
 // preset is still offered as a card, but the tool cannot say whether one is
-// already connected (CL-8164 moves MCP server config to the connections
+// already connected (moves MCP server config to the connections
 // library).
 //
 // Approval: `list_connections` reads only, so it declares no `approval`
@@ -85,7 +85,7 @@ function clientConfig(env: WorkflowConnectionEnv) {
 
 /** `/plugins?connect=<connectorId>` — a deep link into the Plugins
  * panel that auto-opens the named connector's own connect card
- * (CL-7141: `apps/web/src/pages/plugins-page.tsx` reads this `connect`
+ * (`apps/web/src/pages/plugins-page.tsx` reads this `connect`
  * query param on mount and hands it to the same
  * `requestPluginsConnect` path an in-app "Fix it" click uses). */
 function connectDeepLink(connectorId: string): string {
@@ -93,7 +93,7 @@ function connectDeepLink(connectorId: string): string {
 }
 
 /** There is no fixed id — and no generic add-custom-MCP-server form at
- * all — to deep-link to (CL-7141; see
+ * all — to deep-link to (; see
  * `packages/plugins-ui/src/mcp-servers-section.tsx`'s header for why:
  * only curated presets are self-serve installable, an MCP server has
  * no id before it's tenant-minted at connect time). So this stays
@@ -102,10 +102,10 @@ function connectDeepLink(connectorId: string): string {
 const ADD_MCP_SERVER_GUIDANCE =
   "point them to the Plugins page in this workbench — every connector it can add lives there";
 
-/** `/plugins?connect=mcp:<slug>` — a curated preset's own card
- * (CL-6152). Presets are still tenant-minted `mcp:<slug>` connections
- * once connected, but the *card* a human clicks to start one is fixed
- * and known ahead of time, unlike a hand-typed custom MCP server. */
+/** `/plugins?connect=mcp:<slug>` — a curated preset's own card. Presets
+ * are still tenant-minted `mcp:<slug>` connections once connected, but
+ * the *card* a human clicks to start one is fixed and known ahead of
+ * time, unlike a hand-typed custom MCP server. */
 function presetDeepLink(slug: string): string {
   return `/plugins?connect=mcp:${slug}`;
 }

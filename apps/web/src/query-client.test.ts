@@ -55,7 +55,7 @@ describe("isAuthInvalidError", () => {
   });
 });
 
-// CL-6105: a hub restarted on an empty DB mid-session (or a cookie for a
+// a hub restarted on an empty DB mid-session (or a cookie for a
 // deleted user, or a session that simply expired) shows up as a 401 on
 // whatever query or mutation happens to run next — never a dedicated
 // "session ended" event. Every consumer of this client must be routed

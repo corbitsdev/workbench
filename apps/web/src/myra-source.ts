@@ -1,10 +1,10 @@
 // Myra's deploy source, pinned to what this hub can actually install
-// today (CL-8154).
+// today.
 //
 // `@corbits/assistant-workflow` (agents/assistant) is `private: true`
 // and unpublished, so `WorkflowDefinitionRegistrySource` (the `registry`
 // variant) has no external npm registry to resolve it from yet — that is
-// CL-8151's job. The package also exports builder functions
+// its job. The package also exports builder functions
 // (`buildAssistantWorkflow`), not a default-exported `WorkflowDefinition`,
 // so pointing a git `asset` "source" install at the real workspace
 // package would fail the source-tree installer's shape checks too.

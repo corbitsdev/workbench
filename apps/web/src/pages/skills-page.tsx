@@ -1,8 +1,8 @@
-// Skills: a standalone rail destination (CL-6355), over the workbench's
+// Skills: a standalone rail destination, over the workbench's
 // real skill registry (`@corbits/skills`, via `../skills-api.ts`). Used to
-// be a Settings section (CL-5990); the owner moved it back out to its own
+// be a Settings section; the owner moved it back out to its own
 // page — this is the only surface left, there is no Settings duplicate.
-// This replaced the session-local store CL-5991 shipped before that: a
+// This replaced the session-local store shipped before that: a
 // skill now lives in a native `kind:"skill"` hub asset the moment it is
 // created, and its version history is that asset's git history.
 //
@@ -54,10 +54,10 @@ function messageOf(cause: unknown): string {
 
 /**
  * The Skills roster over one workbench's skill registry, with its own
- * top-nav contract (CL-6409): the trail says where the reader is and the
+ * top-nav contract: the trail says where the reader is and the
  * top bar's action slot is the only home for "New skill". `tenantId` is the
  * registry every read is scoped to; opening a row navigates to that skill's
- * own page at `/skills/<name>` (CL-6416), which is where editing, versions,
+ * own page at `/skills/<name>`, which is where editing, versions,
  * and diffs live — this page never renders a skill inline.
  */
 export function SkillsPage({
@@ -238,7 +238,7 @@ export function SkillsPage({
 }
 
 /**
- * Skills roster mount at `/skills` (CL-6355): a thin adapter that resolves
+ * Skills roster mount at `/skills`: a thin adapter that resolves
  * which workbench's registry is listed. The stage chrome (breadcrumb trail,
  * action slot) belongs to `SkillsPage`; a single skill has its own route
  * (`/skills/<name>`, `skill-detail-page.tsx`).

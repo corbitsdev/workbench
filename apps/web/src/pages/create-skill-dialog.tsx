@@ -1,6 +1,6 @@
 // The create-skill dialog.
 //
-// CL-8086: this used to hand a full SKILL.md (name/description/body, or
+// this used to hand a full SKILL.md (name/description/body, or
 // an uploaded file) to the workbench's own skill registry, which parsed
 // and stored it. That registry is gone — skills are native `kind:"skill"`
 // hub assets now, and the stock asset routes (`@intx/hub-api`'s

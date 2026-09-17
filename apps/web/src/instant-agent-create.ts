@@ -1,9 +1,9 @@
 // Every "create a workbench" affordance — the sidebar's "+", the command
 // palette's "New workbench", and the zero-workbench land-hop on `/` —
 // opens the picker (`pages/new-workbench-picker.tsx`) and calls
-// `createWorkbench` below once a person hits Create. CL-8156 deleted
+// `createWorkbench` below once a person hits Create. deleted
 // workbench template picking (`@workbench/templates`): a new workbench is
-// a plain tenant + Myra now (CL-8154's converge path deploys Myra), so
+// a plain tenant + Myra now (its converge path deploys Myra), so
 // this mints an empty `kind: "workbench"` channel — no host, no
 // definitionId — and, when the prompt box supplied an opening message,
 // sends it and renames the room off it. Explicitly defining a brand-new

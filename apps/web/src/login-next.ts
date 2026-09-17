@@ -1,4 +1,4 @@
-// CL-6369: URLs tell the truth. The `next` query param carries where a
+// URLs tell the truth. The `next` query param carries where a
 // signed-out visit was headed so a successful sign-in returns there — but
 // it's attacker-controllable (a crafted `/login?next=...` link), so it must
 // resolve to an in-app path or nowhere at all. Never an open redirect.

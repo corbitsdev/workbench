@@ -39,7 +39,7 @@
 // call sees whether the tool the model is about to invoke claims to
 // be read-only — an honest signal, not an enforcement mechanism. This
 // is the [Intx gap] the task named up front (no dynamic/late-bound
-// approval floor); "ask always" stays the static floor. CL-6345 layers
+// approval floor); "ask always" stays the static floor. layers
 // the grant allowance on top at the hub: a parked `mcp_call` whose
 // downstream tool the server itself marks `readOnlyHint: true` (see
 // `./allowance.ts`'s classifier, which re-verifies the claim live) and

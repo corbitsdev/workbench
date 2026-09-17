@@ -265,7 +265,7 @@ export class DelegationCeilingError extends Error {}
  * within it.
  *
  * Two fidelity gaps against a server-side check, both recorded as upstream
- * asks on CL-7575: role-derived grants are not visible through the stock
+ * asks on: role-derived grants are not visible through the stock
  * principal-filtered listing, and the read-then-write is not atomic.
  */
 export async function firstActionOutsideCeiling(

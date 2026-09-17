@@ -53,8 +53,6 @@ export const ArtifactRowSchema = ArtifactListItemSchema.merge(
     content: "string",
   }),
 );
-// GET /api/tenants/:id/artifacts/:artifactId wraps the row in an `artifact`
-// envelope key (`@corbits/artifacts`' `mountArtifacts`, CL-8188).
 export const ArtifactDetailSchema = type({
   artifact: ArtifactRowSchema,
 });
@@ -179,7 +177,7 @@ export function rejectApproval(
 }
 
 /**
- * Sandboxed HTML preview URL for a Library artifact (CL-5879) — the same
+ * Sandboxed HTML preview URL for a Library artifact — the same
  * path an `<iframe sandbox>` in the canvas or Library detail pane loads,
  * and the "Open in new tab" affordance's `href`. Server-side (`GET
  * .../artifacts/:id/preview` in `@corbits/artifacts-hub`) answers 415 for

@@ -168,7 +168,7 @@ describe("groupRunsByDefinition", () => {
     expect(groupRunsByDefinition([])).toEqual([]);
   });
 
-  test("groups native rows with no routine attribution by definition (CL-8087)", () => {
+  test("groups native rows with no routine attribution by definition", () => {
     // The native `GET /workflows/runs` listing carries no `routineId`, so
     // history groups by definition — never by an invented routine.
     const native = run({
@@ -270,7 +270,7 @@ describe("runDisplayName", () => {
     ).toBe("researcher");
   });
 
-  test("falls back to the definition name for a native row with no routine attribution (CL-8087)", () => {
+  test("falls back to the definition name for a native row with no routine attribution", () => {
     const native = run({
       id: "native1",
       status: "running",

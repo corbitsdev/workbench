@@ -95,7 +95,7 @@ describe("listCatalogModels", () => {
     expect(models).toEqual([modelFixture]);
   });
 
-  test("CL-6744: drops embedding-named, hf.co, and .gguf catalog rows from the picker", async () => {
+  test("drops embedding-named, hf.co, and .gguf catalog rows from the picker", async () => {
     const embedding = {
       ...modelFixture,
       id: "mdl_embed",
@@ -220,7 +220,7 @@ describe("loadAgentDirectory", () => {
     expect(directory.skillsError).toBeUndefined();
   });
 
-  test("CL-6836: a broken skills endpoint keeps the page and surfaces skillsError, never silent empty", async () => {
+  test("a broken skills endpoint keeps the page and surfaces skillsError, never silent empty", async () => {
     stubFetch((path) => {
       if (path.includes("/workflows/definitions")) {
         return json({ data: [definitionFixture], nextCursor: null });
@@ -244,7 +244,7 @@ describe("loadAgentDirectory", () => {
     expect(directory.skillsError).toMatch(/500|down/i);
   });
 
-  // CL-8087: instances come from the native tenant-scoped
+  // instances come from the native tenant-scoped
   // `GET /workflows/runs` top-level listing — the deleted `/top-level-runs`
   // route (and its `feed=fires` variant) no longer exists.
   test("reads instances from the native top-level GET /workflows/runs listing", async () => {

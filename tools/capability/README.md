@@ -1,6 +1,6 @@
 # @corbits/capability-tools
 
-The `request_capability` `@intx/agent` tool bundle (CL-6084): an agent's
+The `request_capability` `@intx/agent` tool bundle: an agent's
 in-chat way to ask for a tool package, skill, or model it doesn't have
 yet. Declared `approval: "ask"` — Interchange's native per-invocation
 gate suspends the call as a pending approval and renders it in chat
@@ -23,7 +23,7 @@ next reply."); an out-of-inventory request comes back naming what's
 actually available, never a fabricated success. Any other transport or
 HTTP failure comes back as an honest `isError: true` result.
 
-## Activated end-to-end (CL-6086)
+## Activated end-to-end
 
 Both gaps this package was originally written against are now closed:
 
@@ -44,8 +44,8 @@ Both gaps this package was originally written against are now closed:
    That route deliberately does NOT gate on a grant-store check for the
    own-definition case — Interchange's grant materialization still
    never seeds a `kind: "workflow"` run's principal an `update` grant on
-   its own definition ([Intx gap], tracked durably by CL-6085). Instead
-   the route relies on the approval that already happened: this
+   its own definition. Instead the route relies on the approval that
+   already happened: this
    bundle's `request_capability` tool is declared `approval: "ask"`, so
    the reactor suspends every call as a pending approval and renders it
    in-chat BEFORE this bundle's `run` — and therefore before the route

@@ -1,6 +1,6 @@
 // The app's cached settings-access probe must agree with
 // `@corbits/settings-ui`'s mapping: evaluate effect !== allow is deny;
-// a thrown probe is error, not deny (CL-6829).
+// a thrown probe is error, not deny.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";

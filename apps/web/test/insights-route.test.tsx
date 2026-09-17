@@ -1,5 +1,5 @@
-// CL-6062: Insights' run feed reads from the native tenant-scoped
-// `GET /workflows/runs` top-level listing (CL-8087 repointed it off the
+// Insights' run feed reads from the native tenant-scoped
+// `GET /workflows/runs` top-level listing (repointed it off the
 // deleted `/top-level-runs` route), not the dead `/me/workflows/runs`
 // (every addressed run self-anchors at creation, so that feed's
 // `anchorRunId IS NULL` filter never matched anything). These
@@ -85,7 +85,7 @@ function stubFetch(runsBody: { data: readonly unknown[] }): RecordedCall[] {
           headers: { "content-type": "application/json" },
         }),
       );
-    // CL-8087: the native tenant-scoped top-level listing. Checked after
+    // the native tenant-scoped top-level listing. Checked after
     // the dead `/me/workflows/runs` branch above — that path also contains
     // "/workflows/runs".
     if (path.includes("/workflows/runs"))
@@ -161,7 +161,7 @@ describe("InsightsRoute run feed", () => {
     expect(calls.some((c) => c.path.includes("/me/workflows/runs"))).toBe(false);
   });
 
-  // CL-8087: the native listing carries no routine attribution at all, so
+  // the native listing carries no routine attribution at all, so
   // a row without `routineId`/`routineName` must still validate and reach
   // the surface via the definition-name fallback.
   test("a native row without routine attribution still reaches the surface", async () => {

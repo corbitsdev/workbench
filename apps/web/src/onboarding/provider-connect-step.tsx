@@ -1,5 +1,5 @@
 // The credential + model-offering step this onboarding page runs before
-// installing Myra (CL-8154): connects a provider credential through the
+// installing Myra: connects a provider credential through the
 // stock native credentials/providers routes (`@corbits/inference-settings`'
 // `shadowOffering`), then derives the exactly-one offering it mints into
 // `sourceOfferingIds`/`defaultSourceOfferingId` — no separate offering
@@ -28,7 +28,7 @@ export type ProviderOption = {
 // Deliberately small: `ModelProviderPlugin` names the adapters this hub
 // ships (`vendor/intx/types/src/catalog.ts`), and each option below picks
 // one canonical model so connecting a provider mints exactly one
-// offering — no second "which model" prompt (per the CL-8154 ruling,
+// offering — no second "which model" prompt (per the ruling,
 // the flow asks only where a human input is genuinely required).
 // Widening this list (more models per provider, an `openai-compatible`
 // custom-baseURL card) is a follow-up, not a blocker for a working

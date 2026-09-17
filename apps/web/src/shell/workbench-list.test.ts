@@ -115,7 +115,7 @@ describe("orderWorkbenchRows", () => {
 });
 
 describe("filterSidebarRows", () => {
-  // CL-6662: the row shows title + preview; search must match either, or a
+  // the row shows title + preview; search must match either, or a
   // query visible in the preview (e.g. "Solvora") falsely returns no matches.
   test("matches the displayed title", () => {
     const rows = [
@@ -125,7 +125,7 @@ describe("filterSidebarRows", () => {
     expect(filterSidebarRows(rows, "launch").map((r) => r.workbench.id)).toEqual(["ch_a"]);
   });
 
-  test("matches preview text even when the title does not (CL-6662)", () => {
+  test("matches preview text even when the title does not", () => {
     const rows = [
       row({
         id: "ch_solvora",

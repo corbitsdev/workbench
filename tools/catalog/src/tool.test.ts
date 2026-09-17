@@ -192,5 +192,5 @@ describe("list_model_concepts", () => {
     expect(content).toContain("nothing here can do it yet");
   });
 });
-// Catalog administration is UI-only (CL-7588): no write tools, so no
+// Catalog administration is UI-only: no write tools, so no
 // write-tool tests — the read-only describes above are the whole suite.

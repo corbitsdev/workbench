@@ -64,7 +64,7 @@ describe("ACTION_COMMANDS", () => {
     }
   });
 
-  test("exactly one New workbench create row — no duplicate title+destination (CL-6820)", () => {
+  test("exactly one New workbench create row — no duplicate title+destination", () => {
     const newWorkbenchRows = ACTION_COMMANDS.filter((c) => c.title === "New workbench");
     expect(newWorkbenchRows).toHaveLength(1);
     expect(newWorkbenchRows[0]?.id).toBe("new-workbench");
@@ -92,7 +92,7 @@ describe("ACTION_COMMANDS", () => {
 });
 
 describe("runActionCommand", () => {
-  test("new-workbench opens the template picker — no dialog, no pending flag, no instant mint (CL-6342)", async () => {
+  test("new-workbench opens the template picker — no dialog, no pending flag, no instant mint", async () => {
     const { ctx, navigated, dispatched } = context({ path: "/library" });
     await runActionCommand("new-workbench", ctx);
     expect(dispatched).toEqual([]);

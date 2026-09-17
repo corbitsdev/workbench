@@ -1,7 +1,7 @@
 # @corbits/linear-tools
 
 A minimal Linear integration: one client call, one `@intx/agent` tool
-bundle. Built for the morning-brief workflow (CL-5993) but not specific
+bundle. Built for the morning-brief workflow but not specific
 to it — any agent that needs a user's recently updated Linear issues
 pins this package.
 
@@ -23,7 +23,7 @@ content naming the source "not connected", so a calling agent can
 degrade gracefully instead of failing its turn.
 
 This package declares one credential handle, `linear`, in its
-`package.json`'s `interchange.credentials` field (CL-6028). Connect
+`package.json`'s `interchange.credentials` field. Connect
 Linear once, in Settings · Connections, and every workflow that pins
 `@corbits/linear-tools` and binds this handle — `collateral-generation`,
 `morning-brief` — resolves the same tenant-owned credential at launch;
@@ -33,7 +33,7 @@ Launch-time resolution (`buildCredentialDelivery`) is proven in
 `test/credential-delivery.drizzle.test.ts`; the full chain — seeded
 credential through the sidecar's step wiring
 (`apps/sidecar/src/step-agent-tools.ts`) to this bundle's tool call — is
-proven in `test/credential-wiring-e2e.drizzle.test.ts` (CL-6032).
+proven in `test/credential-wiring-e2e.drizzle.test.ts`.
 
 **Provider plugin.** Linear's API expects the raw key verbatim in
 `authorization`, not a `Bearer `-prefixed token. `@intx/harness`'s

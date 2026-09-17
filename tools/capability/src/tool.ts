@@ -10,7 +10,7 @@
 //
 // `definitionId` is threaded onto `env` by the sidecar's per-step env
 // builder (`apps/sidecar/src/workflow-substrate-factory/step-env.ts`,
-// CL-6086), the same ground `@corbits/memory-tools`' `hubMemoryUrl`/
+//), the same ground `@corbits/memory-tools`' `hubMemoryUrl`/
 // `sidecarToken`/`address` are threaded from — resolved at the
 // substrate factory from the deploying definition's own id
 // (`WORKFLOW_DEFINITION_REPO_ID`). `WorkflowCapabilityEnv` below
@@ -19,7 +19,7 @@
 //
 // See `./client.ts` for the workflow-run-authenticated capabilities
 // route (`@corbits/agent-directory`'s `createWorkflowCapabilityRoutes`,
-// also CL-6086) this bundle's execution calls.
+// also) this bundle's execution calls.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
@@ -144,7 +144,7 @@ async function runRequestCapability(
 
 /**
  * The `@corbits/capability-tools` bundle factory: one tool,
- * `approval: "ask"`, four env keys — the CL-6084 self-service capability
+ * `approval: "ask"`, four env keys — the self-service capability
  * request path. `description` is written to read as an approval card
  * headline (`@corbits/approvals`' `headlineFor` uses a tool's
  * `description` verbatim, appending `arguments.title` in quotes when the

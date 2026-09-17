@@ -1,4 +1,4 @@
-// The skill detail page at /skills/<name> (CL-6416, rescoped by CL-8086):
+// The skill detail page at /skills/<name> (rescoped by):
 // the workbench-specific skill registry is gone, so the page renders what
 // the stock skill-asset routes carry — the display title, the updated note,
 // and an honest placeholder where the SKILL.md content, version history,
@@ -103,7 +103,7 @@ describe("SkillDetailPage", () => {
   test("renders the display title with its updated note and the content placeholder", async () => {
     stubRoutes({ [`GET ${LIST_PATH}`]: { status: 200, body: [TRIAGE_ASSET] } });
     const el = await mount({});
-    // Title is the display name, not the raw kebab slug (CL-6747).
+    // Title is the display name, not the raw kebab slug.
     expect(el.querySelector("h1")?.textContent?.trim()).toBe("Triage");
     expect(el.textContent).toContain("Updated");
     // The editor, version history, pins, and scope toggle lived in the

@@ -6,8 +6,7 @@
 // source is not a side effect (docs/workflow-model.md, "Authority
 // boundaries"). `workflow_deploy` does — deploying is what makes a
 // workflow selectable as a routine target, so a human sees the deploy
-// intent and approves it before the tool call ever reaches the hub (CL-7362
-// still owns showing the probed capability surface on that approval card;
+// intent and approves it before the tool call ever reaches the hub (// still owns showing the probed capability surface on that approval card;
 // today's snapshot is the tool call's own arguments).
 //
 // A thrown error here is the honest result: `@intx/agent`'s tool runner
@@ -325,7 +324,7 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
           "so the approval reflects the real committed source, not just " +
           "an asset id. Grants/capabilities are stamped by the native " +
           "install+probe+gate this call runs, which the human does not " +
-          "see a preview of yet (CL-7362); say so if you explain this " +
+          "see a preview of yet; say so if you explain this " +
           "approval to a human. Inference sources come from the " +
           "workbench's own catalog — never pass a model or credential.",
         inputSchema: {

@@ -1,4 +1,4 @@
-// Files' workbench-first lens (CL-6353) needs to know which workbench, if
+// Files' workbench-first lens needs to know which workbench, if
 // any, the user was just inside — a signal `/files` can't carry itself,
 // since it's reached from the sidebar footer, not a workbench sub-route.
 // Recorded per bench (a switch to a different bench must not default to a

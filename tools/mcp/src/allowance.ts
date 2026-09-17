@@ -1,4 +1,4 @@
-// CL-6345: `mcp_call`'s declarative grant-allowance classification. The
+// `mcp_call`'s declarative grant-allowance classification. The
 // tool itself stays `approval: "ask"` (the static floor cannot vary by
 // downstream tool — see `./tool.ts`'s header), so every call still
 // parks; the hub's allowance gate then consults this classifier to

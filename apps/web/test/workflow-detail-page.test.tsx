@@ -1,4 +1,4 @@
-// `/workflows/<definitionId>` (CL-7371, thinned CL-8160): a workflow
+// `/workflows/<definitionId>` (thinned): a workflow
 // definition's own page. Covers the pure `WorkflowDetailPage` body
 // against fixtures for what stock's `GET /workflows/definitions` (via
 // `getWorkflowDefinitionDetail`) actually exposes — name, description,

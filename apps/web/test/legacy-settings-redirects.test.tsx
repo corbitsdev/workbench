@@ -1,7 +1,5 @@
-// Agents and Skills moved from Settings sections back to their own rail
-// routes (CL-6354/CL-6355); Library was renamed Files off its own prefix
-// (CL-6353). Old links must still land somewhere real: these components
-// bounce to the new home, preserving any deep-linked id.
+// Old links must still land somewhere real: these components bounce to
+// the new home, preserving any deep-linked id.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";

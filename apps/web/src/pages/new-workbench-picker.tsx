@@ -1,5 +1,5 @@
-// CL-8156: workbench template picking is gone — a new workbench is a
-// plain tenant + Myra (CL-8154's converge path deploys Myra behind the
+// workbench template picking is gone — a new workbench is a
+// plain tenant + Myra (its converge path deploys Myra behind the
 // scenes). This screen is just the prompt box: say what you want and hit
 // Enter, or open an empty channel and add people/agents as you go.
 
@@ -258,7 +258,7 @@ export function NewWorkbenchPickerRoute() {
           // `delayMs={0}`: we already know this is a genuine wait the
           // instant the person hits Enter, so the default "hold back
           // briefly in case it resolves fast" delay only bought a blank
-          // pane here (CL-6623 finding #3) — show the loader outright
+          // pane here (finding #3) — show the loader outright
           // instead of leaving a gap before it mounts.
           <WorkbenchLoadingState delayMs={0} title="Setting up your workbench…" />
         ) : (

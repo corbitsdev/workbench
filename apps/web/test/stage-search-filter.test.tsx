@@ -1,6 +1,6 @@
 // DECISIONS.md → Search: the stage top bar's magnifier filters the page it
 // is on — it is not a door into the global command palette, and it never
-// was meant to be one after CL-6487/CL-6410 conflated the two (PR #246).
+// was meant to be one after / conflated the two (PR #246).
 // This suite covers the per-page filter surface in isolation: a page hands
 // in its own `value`/`onChange`, and the magnifier morphs into a plain
 // input that drives that state directly, never the palette's open store.

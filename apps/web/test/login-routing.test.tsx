@@ -1,4 +1,4 @@
-// CL-6369: the URL bar is the source of truth for where you are.
+// the URL bar is the source of truth for where you are.
 // `TestRoot` mirrors `main.tsx`'s `Root` history wiring (same pattern as
 // `test/auth.test.tsx`'s `ProbedApp`) so these tests drive real
 // `pushState`/`popstate` traffic instead of asserting against a bare

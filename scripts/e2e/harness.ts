@@ -143,7 +143,7 @@ export async function connectE2eDb(databaseUrl: string): Promise<SqlClient> {
  * a sidecar identity that resolves to a live `sidecar_allocation` (or
  * `workflow_probe`) row — the standalone, unallocated ("shared"
  * credential scope) sidecar this used to provision no longer
- * authenticates at all (CL-7472), so a caller of this function gets a
+ * authenticates at all, so a caller of this function gets a
  * connect-and-immediately-reject loop, not a usable dial-in. Every
  * suite this repo runs against CI now lets the hub's own
  * process-provisioner spawn a dedicated sidecar per allocation instead
@@ -273,7 +273,7 @@ export async function startHub(options: {
     // The routine scheduler's real production cadence is a 30s
     // setInterval (routine-scheduler.ts); waiting that out for real on
     // every e2e test that touches a scheduled routine fire is exactly
-    // the sleep-dominated cost CL-7250 exists to cut. The default and
+    // the sleep-dominated cost exists to cut. The default and
     // the override are both proven in-process with fake timers in
     // apps/hub/test/routine-scheduler.test.ts, so no e2e test needs the
     // real cadence — a caller's extraEnv can still opt back into it by
@@ -317,7 +317,7 @@ export async function startHub(options: {
  * Boot a standalone sidecar as a real process, pointed at the hub's
  * WebSocket dial-in route with a `provisionSidecar`-issued identity.
  * See `provisionSidecar`'s own doc comment: at pin 692c3106 this
- * identity never authenticates (CL-7472), so the process this starts
+ * identity never authenticates, so the process this starts
  * connects and is immediately rejected in a loop rather than dialing
  * in. Kept only for the scripts not yet migrated to the hub's
  * automatic, per-allocation process-provisioner spawn.
@@ -410,7 +410,7 @@ export function expectStatus(what: string, result: ApiResult, expected: number):
  * each e2e suite chooses per file whether it stays zero-network: a
  * suite that pins every inference source at its own local noop
  * inference server (`./noop-inference-server.ts`; the hub itself mounts
- * no such route as of CL-8160) or an unreachable placeholder host
+ * no such route as of) or an unreachable placeholder host
  * imports this guard and calls it at every baseURL/apiKey it
  * constructs, so an accidental live-provider reference fails
  * immediately instead of silently attempting a real call. A suite that

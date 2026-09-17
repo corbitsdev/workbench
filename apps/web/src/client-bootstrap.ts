@@ -44,7 +44,7 @@ function primaryTenantSlug(account: ClientBootstrapAccount): string {
   return base !== undefined && base.length > 0 ? base : `home-${account.id}`;
 }
 
-/** First-signup installer step (CL-8131): mints the account's primary
+/** First-signup installer step: mints the account's primary
  * tenant over the stock `POST /api/tenants` route (no `parentId`, so the
  * caller becomes its owner) when it does not already own one. This is
  * the "0→1" ruling's execution — never hub boot, never a CLI — and it

@@ -1,7 +1,7 @@
 # @corbits/reddit-tools
 
 A minimal Reddit search integration: one client, one `@intx/agent` tool
-bundle. Built for the reddit-opportunity-scanner workflow (CL-5994) but
+bundle. Built for the reddit-opportunity-scanner workflow but
 not specific to it — any agent that needs to search Reddit pins this
 package.
 

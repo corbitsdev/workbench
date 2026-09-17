@@ -1,16 +1,13 @@
-// DOM-mounted coverage for the shared create-agent panel (CL-6074): the
+// DOM-mounted coverage for the shared create-agent panel: the
 // happy path is name-only (a purpose is an optional, quiet secondary
 // field), Advanced stays collapsed, submitting drafts a system prompt
 // via Myra before deploying, a Suggestions card runs the exact same
 // drafting flow with its name+purpose prefilled, and a failed draft
 // fails closed — the panel surfaces the failure, keeps Advanced
 // collapsed, and the disabled primary names the blocker rather than
-// silently opening Advanced or falling back to a silent template. Settings' global
-// "Agents" directory (this form's original entry point) was cut in
-// CL-6121 — agent configuration lives per-workbench now; the chat page's
-// "+ New chat" picker moved to instant creation (CL-6081) and no longer
-// opens it — see `instant-agent-create.ts`, which reuses this panel's own
-// draft-then-create calls instead of duplicating them.
+// silently opening Advanced or falling back to a silent template.
+// `instant-agent-create.ts` reuses this panel's own draft-then-create
+// calls instead of duplicating them.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -163,7 +160,7 @@ describe("CreateAgentPanel happy path", () => {
     expect(details?.open).toBe(false);
   });
 
-  // CL-6745: create-agent dialog is an agent-definition mint, not a
+  // create-agent dialog is an agent-definition mint, not a
   // workbench mint — title and CTA must use the agent noun.
   test("dialog title and primary CTA use the agent noun, not workbench", async () => {
     await mount();
@@ -380,7 +377,7 @@ describe("CreateAgentPanel drafting failure — fails closed", () => {
 });
 
 describe("agent creation entry points", () => {
-  test("the chat page never imports this form — agent creation lives outside it entirely (CL-6138)", () => {
+  test("the chat page never imports this form — agent creation lives outside it entirely", () => {
     const chatPageSource = readFileSync(
       new URL("../src/pages/chat-page.tsx", import.meta.url),
       "utf8",
@@ -389,7 +386,7 @@ describe("agent creation entry points", () => {
     expect(chatPageSource).not.toContain("instant-agent-create");
   });
 
-  test("the command palette's new-workbench opens the template picker, not an instant mint (CL-6342)", () => {
+  test("the command palette's new-workbench opens the template picker, not an instant mint", () => {
     const commandPaletteActionsSource = readFileSync(
       new URL("../src/command-palette-actions.ts", import.meta.url),
       "utf8",

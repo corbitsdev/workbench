@@ -1,4 +1,4 @@
-// The last line of defence (CL-6381): a render error anywhere in the tree
+// The last line of defence: a render error anywhere in the tree
 // used to leave the reader staring at a blank white page. React only offers
 // this as a class component (no hook equivalent exists), so it's the one
 // class in an otherwise function-component codebase.

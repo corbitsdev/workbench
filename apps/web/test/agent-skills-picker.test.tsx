@@ -1,4 +1,4 @@
-// AgentSkillsPicker (CL-5920): a pin can outlive its skill — it was
+// AgentSkillsPicker: a pin can outlive its skill — it was
 // renamed or discarded — so a stale name in `selected` must still render as
 // a removable row rather than vanish silently and leave the dialog
 // unsaveable.

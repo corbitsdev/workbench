@@ -75,7 +75,7 @@ export function AppShell({
   const canvasFocus = useCanvasColumnFocus();
   const { selectedTenantId: tenantId } = useBench();
 
-  // A text-kind artifact's save state (CL-8189: single-user editing, no
+  // A text-kind artifact's save state (: single-user editing, no
   // co-edit presence). Resets to a fresh state the moment the open
   // artifact changes so a stale "Saved · v3" from a previous artifact can
   // never leak into a newly opened one.
