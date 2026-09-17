@@ -14,9 +14,6 @@
       "path": "./apps/sidecar/tsconfig.src.json"
     },
     {
-      "path": "./packages/agent-directory/tsconfig.src.json"
-    },
-    {
       "path": "./packages/agent-events/tsconfig.src.json"
     },
     {
@@ -117,9 +114,6 @@
     },
     {
       "path": "./packages/url-path/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/webhook-triggers/tsconfig.src.json"
     },
     {
       "path": "./packages/workflows/tsconfig.src.json"
