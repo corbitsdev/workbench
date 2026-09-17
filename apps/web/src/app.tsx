@@ -104,7 +104,7 @@ function Shell({
   return (
     <QueryClientProvider client={queryClient}>
       <NavigationProvider navigate={navigate} onSignOut={onSignOut} user={user}>
-        <BenchProvider>
+        <BenchProvider user={user}>
           <ProviderHealthProvider>
             <ComposerInsertionProvider>
               <ShellChromeProvider path={path} navigate={navigate}>

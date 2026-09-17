@@ -9,16 +9,53 @@ import {
   listWorkbenchTenantIds,
 } from "@corbits/bench-ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
+import { reportError } from "@corbits/error-sink";
 
 import type { APIQuery } from "@corbits/api-query";
 
 import { PrincipalsSchema, useAPIQuery } from "./api";
 import type { Principal, PrincipalsPage } from "./api";
 import { meKeys, tenantKeys } from "./query-client";
+import { buildNeedsList } from "./needs-list";
+import { convergeNeedsList, createFetchStockHub } from "./needs-converge";
+import { MYRA_DEFINITION_REF_ID, resolveMyraDeployBody } from "./myra-deploy";
+import type { SessionUser } from "./session";
 
 const STORAGE_KEY = "workbench.selectedTenantId";
+
+/** A lowercase-kebab personal-tenant slug, unique per user without a
+ * coordinating registry: the local part of the email plus a short
+ * fragment of the user's own id. Mirrors
+ * `@workbench/onboarding`'s (server-side) `personalTenantSlug` — kept
+ * as its own copy here since this module must stay browser-safe and
+ * that package is not. */
+function personalTenantSlug(email: string, userId: string): string {
+  const local = email.split("@")[0] ?? email;
+  const kebab = local
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const suffix = userId
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .slice(-8)
+    .toLowerCase();
+  return `${kebab || "bench"}-${suffix || "personal"}`;
+}
+
+function defaultPrimaryTenantName(user: SessionUser): string {
+  const source =
+    user.name.trim().length > 0 ? user.name.trim() : user.email.split("@")[0];
+  return `${source || "Your"}'s team`;
+}
 
 function readStoredTenantId(): string | null {
   try {
@@ -84,12 +121,55 @@ export function resolveSelection(
   );
 }
 
-export function BenchProvider({ children }: { readonly children: ReactNode }) {
+export function BenchProvider({
+  children,
+  user,
+}: {
+  readonly children: ReactNode;
+  /** Absent only in tests that stand up `BenchProvider` without a full
+   * signed-in shell — genesis convergence below simply never fires
+   * without one. Every real mount (`Shell` in app.tsx) supplies it. */
+  readonly user?: SessionUser;
+}) {
   const queryClient = useQueryClient();
   const memberships = useAPIQuery("/api/me/principals", PrincipalsSchema);
   const [stored, setStored] = useState<string | null>(() =>
     readStoredTenantId(),
   );
+
+  // Genesis (CL-8085): a signed-in session with zero memberships anywhere
+  // converges its own primary tenant directly, over stock routes — the
+  // hub mints, gates, and observes nothing. Runs once per mount per
+  // empty-membership observation; a failure is reported and simply
+  // leaves membership empty for the next mount/retry to pick up.
+  const genesisRanRef = useRef(false);
+  useEffect(() => {
+    if (user === undefined) return;
+    if (memberships.kind !== "ready") return;
+    if (memberships.data.data.length > 0) return;
+    if (genesisRanRef.current) return;
+    genesisRanRef.current = true;
+    const manifest = buildNeedsList({
+      user: { id: user.id, email: user.email },
+      primaryTenant: {
+        slug: personalTenantSlug(user.email, user.id),
+        name: defaultPrimaryTenantName(user),
+      },
+      myraDefinitionRefId: MYRA_DEFINITION_REF_ID,
+      workbenches: [],
+    });
+    const hub = createFetchStockHub(fetch, {
+      resolveAgentDeploy: resolveMyraDeployBody,
+    });
+    void convergeNeedsList(manifest, hub)
+      .then(() => {
+        void queryClient.invalidateQueries({ queryKey: meKeys.principals });
+      })
+      .catch((cause: unknown) => {
+        genesisRanRef.current = false;
+        reportError(cause, { operation: "needs_list_genesis_converge" });
+      });
+  }, [memberships, user, queryClient]);
 
   const tenantIds =
     memberships.kind === "ready"
@@ -140,6 +220,19 @@ export function BenchProvider({ children }: { readonly children: ReactNode }) {
         writeStoredTenantId(tenantId);
         setStored(tenantId);
         void queryClient.invalidateQueries({ queryKey: meKeys.principals });
+        // CL-8085: every bench create converges Myra onto it directly —
+        // a stock deploy call, not a server-side kick.
+        const hub = createFetchStockHub(fetch, {
+          resolveAgentDeploy: resolveMyraDeployBody,
+        });
+        void hub
+          .deployAgent(tenantId, { definitionRefId: MYRA_DEFINITION_REF_ID })
+          .catch((cause: unknown) => {
+            reportError(cause, {
+              operation: "needs_list_bench_create_converge",
+              tenantId,
+            });
+          });
       },
     }),
     [memberships, resolved, stored, queryClient],

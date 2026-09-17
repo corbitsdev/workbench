@@ -10,8 +10,6 @@ import { getLogger } from "@corbits/client-log";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { App } from "./app";
 import { validatedNextPath } from "./login-next";
-import { triggerFirstLoginProvisioning } from "./onboarding";
-import { ONBOARDING_PATH } from "./routes";
 import { fetchSession, signOut } from "./session";
 import type { SessionState, SessionUser } from "./session";
 
@@ -48,37 +46,11 @@ function Root() {
     [navigate],
   );
 
-  // The first-login hook: once per session that reaches signed-in, ask
-  // the hub whether this is a session with zero principals anywhere.
-  // Without a display name the hub does not mint a bench — it returns
-  // needs-onboarding so we route into the naming wizard. Existing members
-  // cost one read. A failure blocks the shell entirely.
-  const [provisioningError, setProvisioningError] = useState<{
-    message: string;
-    refId?: string | undefined;
-  } | null>(null);
-  const provisionedUserId =
-    session.kind === "signed-in" ? session.user.id : null;
-  const runProvisioning = useCallback(() => {
-    if (provisionedUserId === null) return () => undefined;
-    let cancelled = false;
-    setProvisioningError(null);
-    void triggerFirstLoginProvisioning().then((result) => {
-      if (cancelled) return;
-      if (result.kind === "needs-onboarding" || result.kind === "provisioned") {
-        navigate(ONBOARDING_PATH);
-      } else if (result.kind === "error") {
-        setProvisioningError({ message: result.message, refId: result.refId });
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [provisionedUserId, navigate]);
-  useEffect(runProvisioning, [runProvisioning]);
-  const handleRetryProvisioning = useCallback(() => {
-    runProvisioning();
-  }, [runProvisioning]);
+  // 0→1 genesis moved to the client's needs-list (CL-8085): a signed-in
+  // session with zero memberships converges its own primary tenant
+  // directly over stock routes from inside `BenchProvider`, once the
+  // shell mounts — there is no server-side first-login hook left to call
+  // here.
   const handleSignOut = useCallback(() => {
     setSession({ kind: "signed-out" });
     toast(
@@ -110,9 +82,6 @@ function Root() {
         onSignedIn={handleSignedIn}
         onSignOut={handleSignOut}
         onRetry={probe}
-        provisioningError={provisioningError?.message ?? null}
-        provisioningErrorRefId={provisioningError?.refId}
-        onRetryProvisioning={handleRetryProvisioning}
       />
       <Toaster position="bottom-right" />
     </ThemeProvider>

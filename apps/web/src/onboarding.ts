@@ -1,21 +1,11 @@
-// The browser side of the first-login hook: one call against the
-// hub's native onboarding route, made once per session. A session with
-// zero principals and no display name is reported as needs-onboarding so
-// the UI can route into the naming wizard; only an explicit name creates
-// the personal bench. Distinguishes real failures from "nothing to do",
-// so a broken provisioning call never leaves the user silently benchless.
+// The browser side of onboarding's credential-connect surface. 0→1
+// tenant creation moved to the client's needs-list (CL-8085,
+// see needs-list.ts/needs-converge.ts) — this module no longer calls a
+// first-login provisioning route.
 
 import { type } from "arktype";
 import { reportError } from "@corbits/error-sink";
 import type { SupportedCredentialProvider } from "@corbits/connections/credential-test";
-
-const ProvisionResult = type({
-  kind: "'existing-member' | 'provisioned' | 'needs-onboarding'",
-  "tenantId?": "string",
-  "tenantSlug?": "string",
-  "seeded?": "boolean",
-  "seedSkipReason?": "string",
-});
 
 /** Any credential row this bench actually has stored — the cheap
  * pre-skip read `OnboardingPage` uses to independently confirm a
@@ -77,119 +67,6 @@ const FALLBACK_ERROR_MESSAGE =
  * paste-a-key as if no key exists. */
 export const CREDENTIAL_PROBE_FAILURE_MESSAGE =
   "Checking for a connected key hit a snag. Try again in a moment.";
-
-export type ProvisionOutcome =
-  | {
-      readonly kind: "existing-member";
-      /**
-       * Present only for the caller's own personal bench: `false` means
-       * it still has no working inference credential (`bench_unseeded`)
-       * and the credential step should stay open rather than read as
-       * finished. Absent when membership is on some other tenant, whose
-       * seed state this account has no say over.
-       */
-      readonly seeded?: boolean;
-      /**
-       * Present under the same condition as `seeded`: the caller's own
-       * personal bench. Lets the onboarding page independently confirm
-       * (`hasActiveCredential`) a working credential exists before
-       * trusting `seeded: true` enough to skip the credential step.
-       * A probe `error` must not be treated as absent (CL-6868).
-       */
-      readonly tenantId?: string;
-      /** Present when the caller just joined the root as a plain
-       * member: the tenant they joined, for the member-onboarding UX
-       * to surface later (CL-7584). */
-      readonly tenantSlug?: string;
-    }
-  | { readonly kind: "needs-onboarding" }
-  | {
-      readonly kind: "provisioned";
-      readonly tenantId: string;
-      readonly tenantSlug: string;
-      readonly seeded: boolean;
-      readonly seedSkipReason?: string;
-    }
-  | {
-      readonly kind: "error";
-      readonly message: string;
-      readonly refId?: string;
-    };
-
-export async function triggerFirstLoginProvisioning(
-  displayName?: string,
-): Promise<ProvisionOutcome> {
-  try {
-    const response = await fetch("/api/onboarding/provision", {
-      method: "POST",
-      ...(displayName !== undefined
-        ? {
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ name: displayName }),
-          }
-        : {}),
-    });
-    const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) {
-      const envelope = ErrorEnvelope(body);
-      return envelope instanceof type.errors
-        ? { kind: "error", message: FALLBACK_ERROR_MESSAGE }
-        : {
-            kind: "error",
-            message: envelope.error.userMessage,
-            refId: envelope.error.refId,
-          };
-    }
-    const parsed = ProvisionResult(body);
-    if (parsed instanceof type.errors) {
-      return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
-    }
-    if (parsed.kind === "existing-member") {
-      if (parsed.seeded === undefined) {
-        return parsed.tenantId === undefined
-          ? { kind: "existing-member" }
-          : {
-              kind: "existing-member",
-              tenantId: parsed.tenantId,
-              ...(parsed.tenantSlug !== undefined
-                ? { tenantSlug: parsed.tenantSlug }
-                : {}),
-            };
-      }
-      return parsed.tenantId === undefined
-        ? { kind: "existing-member", seeded: parsed.seeded }
-        : {
-            kind: "existing-member",
-            seeded: parsed.seeded,
-            tenantId: parsed.tenantId,
-          };
-    }
-    if (parsed.kind === "needs-onboarding") return { kind: "needs-onboarding" };
-    if (
-      parsed.tenantId === undefined ||
-      parsed.tenantSlug === undefined ||
-      parsed.seeded === undefined
-    ) {
-      return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
-    }
-    return parsed.seedSkipReason === undefined
-      ? {
-          kind: "provisioned",
-          tenantId: parsed.tenantId,
-          tenantSlug: parsed.tenantSlug,
-          seeded: parsed.seeded,
-        }
-      : {
-          kind: "provisioned",
-          tenantId: parsed.tenantId,
-          tenantSlug: parsed.tenantSlug,
-          seeded: parsed.seeded,
-          seedSkipReason: parsed.seedSkipReason,
-        };
-  } catch {
-    return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
-  }
-}
 
 export type CredentialProvider = SupportedCredentialProvider;
 

@@ -1,12 +1,10 @@
-// First-run wizard: provision the account's one workbench under a
-// default name derived from the account, then add an inference
-// credential. There is no naming step — CL-6089 collapsed the
+// First-run wizard: add an inference credential once the account's one
+// workbench exists. There is no naming step — CL-6089 collapsed the
 // multi-bench model down to one workbench per account, so nothing is
-// left to name. The heavy lifting — storing the key immediately (no
-// probe gates this, CL-6123), seeding the bench, and deploying every
-// default workflow — happens server-side in `@workbench/onboarding`;
-// this page is the guided shell around it. The credential step is
-// skipped entirely
+// left to name; CL-8085 moved the workbench's own creation to
+// `BenchProvider`'s client-side needs-list convergence, so this page
+// only checks membership and credential state before deciding whether
+// to show the credential step. The credential step is skipped entirely
 // (straight to `navigate("/")`) only once this page has independently
 // confirmed (`hasActiveCredential`, a cheap credentials read) that the
 // bench actually has a working credential — a hub-owned key (env-key
@@ -33,6 +31,7 @@ import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { OLLAMA_PLACEHOLDER_SECRET } from "@corbits/connections/credential-test";
+import { type } from "arktype";
 
 import { useNavigate } from "../navigation";
 import {
@@ -47,7 +46,6 @@ import {
   readOpenRouterConnectReturn,
   SECONDARY_CREDENTIAL_PROVIDERS,
   submitCredential,
-  triggerFirstLoginProvisioning,
 } from "../onboarding";
 import type {
   CredentialProvider,
@@ -57,23 +55,12 @@ import type {
 import { OnboardingLayout } from "../onboarding/onboarding-layout";
 import type { SessionUser } from "../session";
 
-/** No naming step means provisioning always needs a name to send — this
- * derives one from the account so `/api/onboarding/provision` never gets
- * called bare. Prefers the account's display name; an account with no
- * usable name falls back to the email's local part. Editable later from
- * Settings, same as any other display name.
- *
- * This names the account's one root tenant — the container real
- * workbenches (each its own child tenant, CL-6089) live under, never a
- * workbench itself (CL-6368). "…'s workbench" mislabeled it as one;
- * every fresh account now mints under its own name instead ("team space"
- * / "workspace" stay off the table too — check:ui-vocabulary bans both as
- * synonyms the CL-6089 product collapse deliberately retired). */
-function defaultTeamName(user: SessionUser): string {
-  const source =
-    user.name.trim().length > 0 ? user.name.trim() : user.email.split("@")[0];
-  return `${source || "Your"}'s team`;
-}
+const PrincipalsProbe = type({
+  data: type({
+    tenantId: "string",
+    status: "string",
+  }).array(),
+});
 
 type WizardState =
   | { readonly phase: "provisioning" }
@@ -197,7 +184,11 @@ function initialWizardState(): WizardState {
   return { phase: "credential", error: returned.message };
 }
 
-export function OnboardingPage({ user }: { readonly user: SessionUser }) {
+export function OnboardingPage({
+  user: _user,
+}: {
+  readonly user: SessionUser;
+}) {
   const navigate = useNavigate();
   const [state, setState] = useState<WizardState>(initialWizardState);
   const [provider, setProvider] = useState<CredentialProvider>("anthropic");
@@ -213,90 +204,52 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   // finishes setup, instead of the first-run pitch.
   const [resumingUnseeded, setResumingUnseeded] = useState(false);
 
-  const runProvisioning = useCallback(
-    (name: string) => {
-      setState({ phase: "provisioning" });
-      void triggerFirstLoginProvisioning(name).then(async (result) => {
-        if (result.kind === "error") {
-          setState(
-            result.refId === undefined
-              ? { phase: "provisioning-error", message: result.message }
-              : {
-                  phase: "provisioning-error",
-                  message: result.message,
-                  refId: result.refId,
-                },
-          );
-        } else if (
-          result.kind === "existing-member" &&
-          result.seeded === true
-        ) {
-          // `seeded: true` only means every default workflow has an
-          // active deployment — never that a credential was checked.
-          // Confirm one independently (a cheap credentials read) before
-          // handing off; no tenantId (should not happen alongside
-          // seeded: true) falls through to the credential step too.
-          // A probe that cannot complete stays on this setup step with
-          // Retry (CL-6868) — never opens paste-a-key as if none exists.
-          if (result.tenantId === undefined) {
-            setResumingUnseeded(false);
-            setState({ phase: "credential", error: null });
-            return;
-          }
-          const probe = await hasActiveCredential(result.tenantId);
-          if (probe.kind === "active") {
-            navigate("/");
-          } else if (probe.kind === "error") {
-            setState({
-              phase: "provisioning-error",
-              message: CREDENTIAL_PROBE_FAILURE_MESSAGE,
-            });
-          } else {
-            setResumingUnseeded(false);
-            setState({ phase: "credential", error: null });
-          }
-        } else if (result.kind === "existing-member") {
-          // `seeded === false` is the bench_unseeded condition: this
-          // account's own workbench exists but never got a working
-          // credential (no operator key configured, and none connected
-          // yet). `undefined` (membership on some other tenant) also lands
-          // here rather than handing off — there is nothing to skip ahead to.
-          const unseeded = result.seeded === false;
-          setResumingUnseeded(unseeded);
-          setState({ phase: "credential", error: null });
-        } else if (result.kind === "provisioned" && result.seeded) {
-          // The seed run's validation trigger only proves a workflow run
-          // started, never that it succeeded against a real credential.
-          // Confirm one independently before handing off. Probe failure
-          // stays here with Retry (CL-6868) — never paste-a-key as none.
-          const probe = await hasActiveCredential(result.tenantId);
-          if (probe.kind === "active") {
-            setResumingUnseeded(false);
-            navigate("/");
-          } else if (probe.kind === "error") {
-            setState({
-              phase: "provisioning-error",
-              message: CREDENTIAL_PROBE_FAILURE_MESSAGE,
-            });
-          } else {
-            setResumingUnseeded(false);
-            setState({ phase: "credential", error: null });
-          }
-        } else if (result.kind === "provisioned") {
-          setResumingUnseeded(false);
-          setState({ phase: "credential", error: null });
-        } else {
-          // needs-onboarding after an explicit name should not happen — a
-          // default name is always sent — so this reads as a soft error.
-          setState({
-            phase: "provisioning-error",
-            message: "Setup couldn't create your workbench. Try again.",
-          });
-        }
-      });
-    },
-    [navigate],
-  );
+  // 0→1 tenant creation moved to the client's needs-list (CL-8085): by
+  // the time this page is reachable, `BenchProvider`'s own genesis
+  // convergence has already minted the account's primary tenant (or is
+  // racing to). This step only has to find that membership and decide
+  // whether a working credential is already there to skip ahead to.
+  const runProvisioning = useCallback(() => {
+    setState({ phase: "provisioning" });
+    void (async () => {
+      let principals;
+      try {
+        const response = await fetch("/api/me/principals");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const parsed = PrincipalsProbe(await response.json());
+        if (parsed instanceof type.errors) throw new Error(parsed.summary);
+        principals = parsed.data;
+      } catch {
+        setState({
+          phase: "provisioning-error",
+          message:
+            "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
+        });
+        return;
+      }
+      const own = principals.find((p) => p.status === "active");
+      if (own === undefined) {
+        // Genesis convergence is still in flight (or hasn't started) —
+        // there is nothing to skip ahead to yet.
+        setResumingUnseeded(false);
+        setState({ phase: "credential", error: null });
+        return;
+      }
+      const probe = await hasActiveCredential(own.tenantId);
+      if (probe.kind === "active") {
+        setResumingUnseeded(false);
+        navigate("/");
+      } else if (probe.kind === "error") {
+        setState({
+          phase: "provisioning-error",
+          message: CREDENTIAL_PROBE_FAILURE_MESSAGE,
+        });
+      } else {
+        setResumingUnseeded(true);
+        setState({ phase: "credential", error: null });
+      }
+    })();
+  }, [navigate]);
 
   // A connect round-trip's outcome is consumed into the initial wizard
   // state above; dropping it from the URL keeps a reload or a shared
@@ -315,11 +268,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   // deferred: `completeSetup` runs the workflow deploy the callback
   // never ran inline. Everything else — the ordinary first-run landing,
   // or a stale connect error from a duplicate callback this page never
-  // saw resolved — provisions with a default name derived from the
-  // account: there is no naming step to gate this on, so it must always
-  // send a name (see `defaultTeamName`). A returning member's
-  // already-provisioned workbench is unaffected — the hub route only
-  // creates one the first time an account has none.
+  // saw resolved — checks membership and credential state.
   useEffect(() => {
     if (state.phase === "finishing-setup") {
       let cancelled = false;
@@ -362,7 +311,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         cancelled = true;
       };
     }
-    runProvisioning(defaultTeamName(user));
+    runProvisioning();
     // Mount-only: this reads `state.phase` exactly once, at the value
     // `initialWizardState` produced, to decide which of the two checks
     // above applies to this landing.
@@ -503,10 +452,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
                 )
               }
               action={
-                <Button
-                  variant="outline"
-                  onClick={() => runProvisioning(defaultTeamName(user))}
-                >
+                <Button variant="outline" onClick={() => runProvisioning()}>
                   Try again
                 </Button>
               }
