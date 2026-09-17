@@ -31,13 +31,11 @@ import {
   type DefaultWorkflow,
   type ModelSource,
   type SeedTenantArgs,
-  type ToolRegistryPublisher,
 } from "./tenant-seed";
 import {
   fetchRegistryTarballSource,
   installRegistryTarball,
   isCorbitsToolsRegistrySeeded,
-  publishCorbitsToolsRegistry,
   REQUIRED_SEED_TOOL_PACKAGES,
 } from "@corbits/tool-registry-publish";
 import type { WorkflowPusher } from "@corbits/connections/workflow-push";
@@ -322,8 +320,6 @@ export type ReconcileArgs = {
   };
   model: ModelSource | undefined;
   pushWorkflow: WorkflowPusher;
-  /** Defaults to the real `publishCorbitsToolsRegistry`. */
-  publishToolRegistry?: ToolRegistryPublisher;
   /** Test seam standing in for the deploy step, the same way
    * `ensureSeeded` accepts one. */
   seedTenantFn?: (args: SeedTenantArgs) => ReturnType<typeof seedTenant>;
@@ -426,15 +422,20 @@ export async function resolveTenantDeployer(
 /**
  * Installs ONLY the absent pins, tools first, then skills + grants +
  * workflows together through `seedTenant`. Safe to re-run: with every
- * pin present this is READS ONLY — `seedTenant` is never entered, the
- * publish is gated on the registry not already seeded, and a tarball
- * already published under its name@version is skipped (immutable).
- * Sidecar-unavailable (502-class) pins report `blocked` without
- * throwing — the same class `ensureSeeded` treats as pending; any other
- * failure reports `failed` and is safe to re-run. Skill pins are
- * re-read after the seed pass: still-absent (stock cutover — the skills
- * mount is gone, so the 404-tolerant plant writes nothing) reports
- * `blocked`, never `installed`.
+ * pin present this is READS ONLY — `seedTenant` is never entered.
+ * `workspace-pack` tool pins are never packed or published here (CL-8190:
+ * that requires `fs` + `bun build`, which no hub-triggered path may run —
+ * an operator publishes them out of band with `bun run publish-tools`);
+ * an absent workspace-pack pin reports `blocked` and this function stays
+ * read-only for tools. A `tarball-url` pin is still installed here — that
+ * install is a plain fetch + upload, and a tarball already published
+ * under its name@version is skipped (immutable). Sidecar-unavailable
+ * (502-class) pins report `blocked` without throwing — the same class
+ * `ensureSeeded` treats as pending; any other failure reports `failed`
+ * and is safe to re-run. Skill pins are re-read after the seed pass:
+ * still-absent (stock cutover — the skills mount is gone, so the
+ * 404-tolerant plant writes nothing) reports `blocked`, never
+ * `installed`.
  */
 export async function reconcileTenantDesiredState(
   args: ReconcileArgs,
@@ -458,26 +459,18 @@ export async function reconcileTenantDesiredState(
     }
   } else {
     try {
+      // `workspace-pack` pins are never packed or published from here
+      // (CL-8190): packing needs `fs` + `bun build`, which no
+      // hub-triggered reconcile path may run. An absent pin just reports
+      // `blocked` — the operator installs it out of band with
+      // `bun run publish-tools`.
       const workspacePacks = TENANT_DESIRED_STATE.toolPackages.filter(
         (pin) => pin.source.kind === "workspace-pack",
       );
-      if (workspacePacks.length > 0) {
-        const publish = args.publishToolRegistry ?? publishCorbitsToolsRegistry;
-        await publish({
-          api,
-          cookies,
-          hubUrl: args.hubUrl,
-          tenantId,
-          log,
-        });
-        for (const pin of workspacePacks) {
-          pins.push({
-            name: pin.name,
-            kind: "tool-package",
-            status: "installed",
-          });
-        }
+      for (const pin of workspacePacks) {
+        pins.push({ name: pin.name, kind: "tool-package", status: "blocked" });
       }
+      if (workspacePacks.length > 0) sawBlocked = true;
       // The tarball-url half of the tool install: live and wired, but
       // data-gated — no `tarball-url` pin exists in
       // `TENANT_DESIRED_STATE` yet (no external artifacts exist), so this

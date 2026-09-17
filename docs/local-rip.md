@@ -105,9 +105,13 @@ The **assistant** default workflow pins the `@corbits/memory-tools` tool
 package (`workflows/assistant/src/index.ts`), and that pin only resolves
 once a `package-registry`-kind asset named `corbits-tools` carries its
 tarball (see `apps/hub/src/index.ts`'s `CORBITS_TOOLS_REGISTRY` comment).
-Hub boot does not publish that asset. Onboarding and explicit
-`@corbits/seeding` callers publish it via `@corbits/tool-registry-publish`
-(bundles `@corbits/memory-tools` into a self-contained tarball and pushes it
+Hub boot does not publish that asset, and neither does anything
+hub-triggered (CL-8190): packing a package needs `fs` and `bun build`,
+so `reconcileTenantDesiredState` reports an absent `workspace-pack` pin
+`blocked` instead of packing it. The only publisher is the operator-run
+`bun run publish-tools` (`scripts/publish-tools.ts`), an out-of-band API
+client over `@corbits/tool-registry-publish` (bundles
+`@corbits/memory-tools` into a self-contained tarball and pushes it
 through the hub's native asset REST routes). Descendants inherit it;
 `seedTenant` does not pack. Isolated
 tests run with no explicit tenant config so the walkthrough's personal

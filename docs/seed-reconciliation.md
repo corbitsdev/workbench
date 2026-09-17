@@ -133,11 +133,14 @@ first checking `GET /api/tenants/:id/skills/:name`.
 
 `publishCorbitsToolsRegistry` (`packages/tool-registry-publish/src/publish.ts`)
 finds-or-creates the tenant's `corbits-tools` package-registry asset,
-then PUTs whatever tarball is missing. Onboarding and explicit
-`@corbits/seeding` callers publish onto a tenant so descendants inherit
-tarballs; `seedTenant` itself does not pack. Hub boot does not publish.
-The operator-facing install path is `bun run publish-tools`
-(`scripts/publish-tools.ts`), which signs an existing admin in and
+then PUTs whatever tarball is missing. Packing a package needs `fs` and
+`bun build`, so nothing hub-triggered may call it (CL-8190): hub boot
+never publishes, `seedTenant` never packs, and
+`reconcileTenantDesiredState` (`packages/onboarding/src/desired-state.ts`)
+reports an absent `workspace-pack` tool pin `blocked` rather than
+publishing it. The only caller of `publishCorbitsToolsRegistry` is the
+operator-facing `bun run publish-tools` (`scripts/publish-tools.ts`), a
+plain out-of-band API client: it signs an existing admin in and
 publishes onto an already-existing tenant — the same find-or-create,
 409-tolerant asset flow, never a new provisioning path. Each packed
 tarball's `package.json` also carries the `ToolSurfaceManifest` the
@@ -265,7 +268,10 @@ nothing seeded from hub boot.
 `reconcileTenantDesiredState` is the only installer. It reads the
 tenant's real state (native GETs) and installs ONLY absent pins;
 with everything present it is a read-only pass — `seedTenant` is
-never entered, the registry publish is gated on the seeded check,
+never entered. An absent `workspace-pack` tool pin is never packed or
+published here (see "Tool registry publish" above): it reports
+`blocked`, and an operator installs it with `bun run publish-tools`. A
+`tarball-url` pin is still installed here — that's a plain fetch + PUT,
 and a tarball already published under its `name@version` is skipped.
 Sidecar-unavailable failures report `blocked` (the same class
 `ensureSeeded` treats as pending-agents); other failures report
