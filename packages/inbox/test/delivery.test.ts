@@ -29,9 +29,9 @@ import {
 } from "@corbits/notify";
 
 import { setupDatabase } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../e2e/database-url";
+import { e2eDatabaseUrl } from "../../../test/database-url";
 import { createResolveExistingMailIds, createWorkbenchMailboxDelivery } from "../src/delivery";
-import { dbGate } from "../../../e2e/db-gate";
+import { dbGate } from "../../../test/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);

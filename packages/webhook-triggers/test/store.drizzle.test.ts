@@ -14,10 +14,10 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { createEnvKeyCredentialCipher, createNoopCredentialCipher } from "@intx/crypto";
 
-import { e2eDatabaseUrl } from "../../../e2e/database-url";
+import { e2eDatabaseUrl } from "../../../test/database-url";
 import { applyWebhookTriggersMigrations } from "../src/migrations";
 import { createDrizzleWebhookTriggerStore } from "../src/store";
-import { dbGate } from "../../../e2e/db-gate";
+import { dbGate } from "../../../test/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);

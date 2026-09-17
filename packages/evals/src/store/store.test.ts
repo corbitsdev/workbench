@@ -8,7 +8,7 @@ import postgres from "postgres";
 import { applyEvalsMigrations } from "./migrations.ts";
 import { createPostgresEvalRunStore } from "./pg-store.ts";
 import type { EvalRunResult } from "../types.ts";
-import { assertDatabaseConfigured } from "../../../../e2e/db-gate.ts";
+import { assertDatabaseConfigured } from "../../../../test/db-gate.ts";
 
 function scratchDatabaseUrl(): string | undefined {
   const base = process.env["DATABASE_URL"];

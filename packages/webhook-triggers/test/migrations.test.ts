@@ -7,9 +7,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import postgres from "postgres";
 
-import { e2eDatabaseUrl } from "../../../e2e/database-url";
+import { e2eDatabaseUrl } from "../../../test/database-url";
 import { applyWebhookTriggersMigrations } from "../src/migrations";
-import { dbGate } from "../../../e2e/db-gate";
+import { dbGate } from "../../../test/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);

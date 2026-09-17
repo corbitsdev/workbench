@@ -20,7 +20,6 @@
     "fmt:check": "oxfmt --check apps packages tools agents skills workflows scripts test e2e",
     "build": "bun run scripts/run-all.ts build",
     "test": "bun run scripts/run-all.ts test",
-    "test:e2e": "bun test e2e --max-concurrency=1",
     "dev": "bun run scripts/dev.ts",
     "publish-tools": "bun scripts/publish-tools.ts",
     "setup": "bun scripts/db-setup.ts",
