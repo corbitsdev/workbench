@@ -1876,7 +1876,6 @@ export async function createHub(config: HubConfig) {
         repoStore: agentRepoStore.repoStore,
         grantStore: chatGrantStore,
         conditionRegistry: grantConditionRegistry,
-        deployer: workflowDeployer,
       }),
     }),
   );
