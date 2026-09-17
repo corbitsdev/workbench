@@ -1,13 +1,13 @@
 // CL-7449: proves the real composition -- `createHubSessionLookups`'s
 // `persistMail` wrapped by `createMailboxPersist` via
-// `createHubMailboxAuthorizeSender` / `hubMailboxResolveRefs`
-// (`../src/mailbox-persist.ts`) -- against a real Postgres, matching how
+// `createHubMailboxAuthorizeSender` (`../src/mailbox-persist.ts`) -- against
+// a real Postgres, matching how
 // `createHub` wires them in `../src/index.ts`. DB-gated: skipped when
 // DATABASE_URL is unreachable, matching every other suite in this
 // directory (`composition.test.ts` boots the whole hub over HTTP; this
 // suite exercises the same `persistMail` wiring directly, without a boot).
 import { afterAll, expect, test } from "bun:test";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { createDB } from "@intx/db";
 import {
   agentSession,
@@ -25,7 +25,7 @@ import {
   type MailboxDb,
 } from "@corbits/mailbox";
 import { createHubSessionLookups, type AgentRepoStore } from "@intx/hub-sessions";
-import { createHubMailboxAuthorizeSender, hubMailboxResolveRefs } from "../src/mailbox-persist";
+import { createHubMailboxAuthorizeSender } from "../src/mailbox-persist";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 
 const databaseUrl = process.env["DATABASE_URL"] ?? "";
@@ -159,7 +159,7 @@ async function setup(opts: { withSession?: boolean } = {}) {
 }
 
 describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
-  test("an outbound frame to two humans and one agent produces exactly two principal_mail rows, an SSE event per mailbox carrying the workbench (tenant) ref already, and a durable session_mail row upstream", async () => {
+  test("an outbound frame to two humans and one agent produces exactly two principal_mail rows, an SSE event per mailbox, and a durable session_mail row upstream", async () => {
     const {
       db,
       mailboxDb,
@@ -173,33 +173,18 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
     } = await setup();
 
     const mailboxBus = createInMemoryMailboxEventBus();
-    // Asserted INSIDE the subscriber, at event-fire time -- no polling
-    // retry loop -- because `resolveRefs` runs inside the same transaction
-    // `createMailboxPersist` opens for the insert, and the bus event fires
-    // only after that transaction commits (see `persist.ts`'s `announce`).
-    const seenRefsByPrincipalId = new Map<string, unknown>();
-    const seenPromises: Promise<void>[] = [];
-    async function recordSeenRefs(principalId: string): Promise<void> {
-      const [row] = await mailboxDb
-        .select({ refs: principalMail.refs })
-        .from(principalMail)
-        .where(
-          and(eq(principalMail.tenantId, tenantId), eq(principalMail.principalId, principalId)),
-        );
-      seenRefsByPrincipalId.set(principalId, row?.refs);
-    }
+    const seenPrincipalIds = new Set<string>();
     mailboxBus.subscribe({ tenantId, principalId: human1Id }, () => {
-      seenPromises.push(recordSeenRefs(human1Id));
+      seenPrincipalIds.add(human1Id);
     });
     mailboxBus.subscribe({ tenantId, principalId: human2Id }, () => {
-      seenPromises.push(recordSeenRefs(human2Id));
+      seenPrincipalIds.add(human2Id);
     });
 
     const persistMail = createMailboxPersist(mailboxDb, {
       upstream: baseLookups.persistMail,
       authorizeSender: createHubMailboxAuthorizeSender(db),
       bus: mailboxBus,
-      resolveRefs: hubMailboxResolveRefs,
     });
 
     const raw = new TextEncoder().encode(
@@ -217,10 +202,6 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
       recipients: [`usr_${human1Id}@${domain}`, `usr_${human2Id}@${domain}`, agentRecipientAddress],
       raw,
     });
-    // The bus fires synchronously inside `persistMail`, but each listener's
-    // own read is async -- wait for those reads, not for more elapsed time,
-    // before asserting on what they saw.
-    await Promise.all(seenPromises);
 
     // The upstream `session_mail` write still ran, and is durable -- not
     // just present in the return value.
@@ -241,15 +222,9 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
       .where(eq(principalMail.tenantId, tenantId));
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.principalId).sort()).toEqual([human1Id, human2Id].sort());
-    for (const row of rows) {
-      expect(row.refs).toEqual([{ kind: "workbench", id: tenantId }]);
-    }
 
-    // Every SSE subscriber saw the ref already populated at event time.
-    expect(seenRefsByPrincipalId.size).toBe(2);
-    for (const refs of seenRefsByPrincipalId.values()) {
-      expect(refs).toEqual([{ kind: "workbench", id: tenantId }]);
-    }
+    // Every SSE subscriber fired.
+    expect(seenPrincipalIds).toEqual(new Set([human1Id, human2Id]));
   });
 
   test("dual-write independence: a sender run with no live session makes upstream throw, the mailbox rows still get written, and zero session_mail rows land", async () => {
@@ -260,7 +235,6 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
     const persistMail = createMailboxPersist(mailboxDb, {
       upstream: baseLookups.persistMail,
       authorizeSender: createHubMailboxAuthorizeSender(db),
-      resolveRefs: hubMailboxResolveRefs,
     });
 
     const raw = new TextEncoder().encode(
@@ -286,7 +260,6 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
       .from(principalMail)
       .where(eq(principalMail.tenantId, tenantId));
     expect(mailboxRows).toHaveLength(1);
-    expect(mailboxRows[0]?.refs).toEqual([{ kind: "workbench", id: tenantId }]);
 
     const sessionMailRows = await db
       .select()
@@ -301,7 +274,6 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
     const persistMail = createMailboxPersist(mailboxDb, {
       upstream: baseLookups.persistMail,
       authorizeSender: createHubMailboxAuthorizeSender(db),
-      resolveRefs: hubMailboxResolveRefs,
     });
 
     const raw = new TextEncoder().encode(

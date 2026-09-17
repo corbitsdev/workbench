@@ -13,40 +13,33 @@
 // The write itself is behind the small `MailboxWriter` port below, not
 // called against `@corbits/mailbox` directly: `writeChatMailboxFanout`'s
 // own logic (who gets a row, which direction, what the shared Message-ID
-// and refs are) is what this ticket is actually about, and it is
-// unit-testable with an in-memory writer that never touches Postgres.
-// `createDrizzleMailboxWriter` is the one production implementation, and
-// is the only piece that needs a live `@corbits/mailbox` schema.
+// is) is what this ticket is actually about, and it is unit-testable with
+// an in-memory writer that never touches Postgres. `createDrizzleMailboxWriter`
+// is the one production implementation, and is the only piece that needs
+// a live `@corbits/mailbox` schema.
 //
 // Every recipient's row shares this row's own frame `messageId` — the
-// caller-supplied `messageId` on every `writeMailboxMessages` item — so
-// the stored frame's `Message-ID:` header, the cached
-// `principal_mail.message_id` column, and the value a reply's
-// `In-Reply-To` names all agree. Idempotency rides the package's own
-// default transport key (`mailboxKey.transport`, direction-scoped) rather
-// than a caller-minted one: nothing here has a reason to override it.
+// caller-supplied `messageId` on every `writeMailboxMessage` call — so the
+// stored frame's `Message-ID:` header, the cached `principal_mail.message_id`
+// column, and the value a reply's `In-Reply-To` names all agree. Idempotency
+// rides the native store's own messageId-scoped dedupe within a (tenant,
+// principal, folder) mailbox.
 //
-// The whole fan-out is ONE batch, written in ONE transaction
-// (`@corbits/mailbox`'s `writeMailboxMessages`): a failure partway
-// through never leaves some recipients delivered and others missing, and
-// a retry after a genuine failure simply re-attempts every row (none of
-// which committed). No fallback: a write that fails is reported through
-// `reportError` and rethrown — never swallowed into a partially-delivered
-// send that looks successful to its caller. A participant address this
-// tenant has no principal for is a different, expected case (a stale or
-// removed member) and is reported and skipped rather than failing the
-// whole send; the sender's OWN principal missing from the row's tenant
-// (a share member from another tenant, sending into the owning bench) is
-// equally expected and is logged at debug rather than reported — see
-// `writeChatMailboxFanout`'s doc comment.
+// The native store has no multi-row batch, so each recipient is written
+// with its own `writeMailboxMessage` call, in order; a failure partway
+// through leaves earlier writes in place rather than rolling the whole
+// send back, and a retry re-attempts every item (already-written ones are
+// no-ops on the same messageId). No fallback: a write that fails is
+// reported through `reportError` and rethrown — never swallowed into a
+// partially-delivered send that looks successful to its caller. A
+// participant address this tenant has no principal for is a different,
+// expected case (a stale or removed member) and is reported and skipped
+// rather than failing the whole send; the sender's OWN principal missing
+// from the row's tenant (a share member from another tenant, sending into
+// the owning bench) is equally expected and is logged at debug rather than
+// reported — see `writeChatMailboxFanout`'s doc comment.
 import { getLogger } from "@intx/log";
-import {
-  writeMailboxMessages,
-  type MailboxDb,
-  type MailboxEventBus,
-  type MailboxRef,
-  type WriteMailboxMessagesItem,
-} from "@corbits/mailbox";
+import { writeMailboxMessage, type MailboxDb, type MailboxEventBus } from "@corbits/mailbox";
 import { reportError } from "@corbits/error-sink";
 import { isAgentAddress } from "./mentions";
 import type { ParticipantRecord } from "./participants";
@@ -88,7 +81,6 @@ export type MailboxBatchItem = {
    * stored frame's `References:` header carries. Absent on a root-feed
    * row, which answers nothing. */
   readonly references?: readonly string[];
-  readonly refs?: readonly MailboxRef[];
 };
 
 export type MailboxBatchResult = {
@@ -97,47 +89,54 @@ export type MailboxBatchResult = {
 };
 
 /**
- * The write seam `writeChatMailboxFanout` calls through — an entire
- * conversation turn's mailbox rows as ONE transaction. Split from
+ * The write seam `writeChatMailboxFanout` calls through. Split from
  * `@corbits/mailbox`'s own call surface so this package's fan-out LOGIC
- * (who gets a row, which direction, the shared Message-ID and refs) is
+ * (who gets a row, which direction, the shared Message-ID) is
  * unit-testable against an in-memory fake, with only
  * `createDrizzleMailboxWriter` below needing a live database.
  */
 export interface MailboxWriter {
   /**
-   * Writes every item in one transaction — `@corbits/mailbox`'s
-   * `writeMailboxMessages` semantics: a throw from any item rolls back
-   * the whole batch, and a per-item `messageKey` collision (retry
-   * idempotency) is a no-op for that item, not a rollback trigger.
-   * Returns one result per item, in item order.
+   * Writes every item, one `@corbits/mailbox` `writeMailboxMessage` append
+   * at a time (the native store has no multi-row batch) — a throw from any
+   * item stops the remaining items from being written but does not undo
+   * ones already appended; the messageId-scoped dedupe still makes a
+   * retried item a no-op. Returns one result per item written before any
+   * failure, in item order.
    */
   writeBatch(items: readonly MailboxBatchItem[]): Promise<readonly MailboxBatchResult[]>;
 }
 
 /** The production `MailboxWriter`: a thin pass-through onto
- * `@corbits/mailbox`'s own `writeMailboxMessages` batch call — no
+ * `@corbits/mailbox`'s own `writeMailboxMessage`, one append per item — no
  * hand-rolled inserts against the package's schema. */
 export function createDrizzleMailboxWriter(db: MailboxDb, bus?: MailboxEventBus): MailboxWriter {
   return {
     async writeBatch(items) {
-      const batch: WriteMailboxMessagesItem[] = items.map((item) => ({
-        scope: { tenantId: item.tenantId, principalId: item.principalId },
-        args: {
-          address: item.address,
-          fromAddress: item.fromAddress,
-          subject: item.subject,
-          body: item.body,
-          messageId: item.messageId,
-          direction: item.direction,
-          ...(item.inReplyTo !== undefined ? { inReplyTo: item.inReplyTo } : {}),
-          ...(item.references !== undefined && item.references.length > 0
-            ? { references: [...item.references] }
-            : {}),
-          ...(item.refs !== undefined ? { refs: [...item.refs] } : {}),
-        },
-      }));
-      return writeMailboxMessages(db, batch, bus !== undefined ? { bus } : {});
+      const results: MailboxBatchResult[] = [];
+      for (const item of items) {
+        const messageKey = `${item.tenantId}:${item.principalId}:${item.messageId}:${item.direction}`;
+        const written = await writeMailboxMessage(
+          db,
+          {
+            tenantId: item.tenantId,
+            principalId: item.principalId,
+            address: item.address,
+            fromAddress: item.fromAddress,
+            subject: item.subject,
+            body: item.body,
+            messageId: item.messageId,
+            folder: item.direction === "outbound" ? "Sent" : "INBOX",
+            ...(item.inReplyTo !== undefined ? { inReplyTo: item.inReplyTo } : {}),
+            ...(item.references !== undefined && item.references.length > 0
+              ? { references: [...item.references] }
+              : {}),
+          },
+          bus,
+        );
+        results.push({ messageKey, id: written?.id ?? null });
+      }
+      return results;
     },
   };
 }
@@ -221,7 +220,6 @@ export async function writeChatMailboxFanout(
 
   const known = await deps.resolveKnownPrincipalIds(input.tenantId, candidateList);
 
-  const refs: MailboxRef[] = [{ kind: "workbench", id: input.workbenchId }];
   const batch: MailboxBatchItem[] = [];
 
   for (const principalId of candidateList) {
@@ -254,7 +252,6 @@ export async function writeChatMailboxFanout(
       body: input.body,
       messageId: input.messageId,
       direction: principalId === input.senderPrincipalId ? "outbound" : "inbound",
-      refs,
       ...(input.inReplyTo !== undefined ? { inReplyTo: input.inReplyTo } : {}),
       ...(input.references !== undefined && input.references.length > 0
         ? { references: input.references }

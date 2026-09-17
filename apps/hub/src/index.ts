@@ -80,7 +80,6 @@ import type { RelaunchNoticePort } from "@corbits/chat";
 import { reportError } from "@corbits/error-sink";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
-import { createInboxRoutes, WORKBENCH_MAILBOX_VOCABULARY } from "@corbits/inbox";
 import {
   createInMemoryMailboxEventBus,
   createMailboxDb,
@@ -90,7 +89,6 @@ import {
 import { createMemory, loadMemoryConfig } from "@corbits/memory";
 import {
   createHubMailboxAuthorizeSender,
-  hubMailboxResolveRefs,
   createHubPersistMailWithSessionEnsure,
 } from "./mailbox-persist";
 import {
@@ -551,9 +549,10 @@ export async function createHub(config: HubConfig) {
     // write. Dual-write independence is `createMailboxPersist`'s own
     // contract (upstream failing still attempts the mailbox write, and a
     // mailbox failure never fails upstream) -- no second try/catch belongs
-    // here. `resolveRefs` runs inside the package's own transaction, so the
-    // workbench ref is present before the post-commit bus event fires --
-    // no out-of-band UPDATE, no polling read.
+    // here. This is also the seam the mailbox mount's own `deliver` below
+    // reuses for `POST /me/inbox/send` (CL-8174): both a run's outbound
+    // mail and a human's own sent mail land recipients through the same
+    // dual-write path.
     persistMail: createMailboxPersist(mailboxDb, {
       upstream: createHubPersistMailWithSessionEnsure(
         db,
@@ -562,7 +561,6 @@ export async function createHub(config: HubConfig) {
       ),
       authorizeSender: createHubMailboxAuthorizeSender(db),
       bus: mailboxBus,
-      resolveRefs: hubMailboxResolveRefs,
     }),
   };
   const hubPublicKey = hexEncode(signingKey.publicKey);
@@ -1262,11 +1260,12 @@ export async function createHub(config: HubConfig) {
       authenticator: createWorkflowRunAuthenticator({ db }),
     }),
   );
-  // Product inbox over `@corbits/mailbox` — three groups, mark-all-read
-  // (mentions + deliveries only), clear-done. The raw package surface
-  // (including SSE events) mounts under `/mailbox` for hosts and tools
-  // that need the universal API.
-  app.route(`${TENANT_PREFIX}/inbox`, createInboxRoutes({ db: mailboxDb, bus: mailboxBus }));
+  // The `@corbits/inbox` product-inbox routes (triage groups, mark-all-read,
+  // clear-done) are retired (CL-8209): they sat on `@corbits/mailbox` APIs
+  // (`listUserMailbox`, refs, classification) removed in the native 1.0
+  // cutover, and no web surface reads `${TENANT_PREFIX}/inbox` any more —
+  // `/inbox` in the web app only bounces old links home (CL-6151). The
+  // library's own `/me/inbox*` routes below are the whole inbox surface now.
   // Library/artifacts plane (CL-8188): `@corbits/artifacts` mounted directly
   // rather than through the retired `@corbits/artifacts-hub` wrapper — the
   // library now owns counts, preview, and every other Library HTTP surface
@@ -1317,7 +1316,6 @@ export async function createHub(config: HubConfig) {
     mountMailbox(mailboxApp, {
       db: mailboxDb,
       bus: mailboxBus,
-      vocabulary: WORKBENCH_MAILBOX_VOCABULARY,
       resolvePrincipal: (ctx) => {
         // Mounted under the hub tenant middleware; principal + tenant are set.
         const c = ctx as {
@@ -1327,6 +1325,40 @@ export async function createHub(config: HubConfig) {
           tenantId: c.get("tenant").id,
           principalId: c.get("principal").id,
         };
+      },
+      // The caller's own address for `POST /me/inbox/send`'s `From:` — the
+      // same `<principalId>@<tenant domain>` shape every other mailbox
+      // writer in this file addresses a human principal under
+      // (`mailbox-fanout.ts`'s `writeChatMailboxFanout`,
+      // `native-workflow-routine-launch.ts`'s trigger headers).
+      senderAddressFor: async (principal) => {
+        const [tenantRow] = await db
+          .select({ domain: tenantTable.domain })
+          .from(tenantTable)
+          .where(eq(tenantTable.id, principal.tenantId))
+          .limit(1);
+        if (tenantRow === undefined) {
+          throw new Error(`no tenant "${principal.tenantId}" to address a mailbox sender from`);
+        }
+        return `${principal.principalId}@${tenantRow.domain}`;
+      },
+      // This package only builds the RFC 5322 message and files the
+      // caller's own `Sent` copy — actually getting `message.raw` to
+      // `message.to` is this hub's job. Every recipient goes through the
+      // same `lookups.persistMail` (CL-7449's dual-write wrapper over
+      // `createMailboxPersist`) every other outbound frame in this hub
+      // already dispatches through: a live run address is delivered by
+      // the vendored `baseLookups.persistMail` (`SidecarRouter`-backed
+      // session/mail routing, the same path
+      // `native-workflow-routine-launch.ts`'s `routeMail` trigger uses),
+      // and a human recipient's `principal_mail` copy is appended by the
+      // wrapped `createMailboxPersist` alongside it.
+      deliver: async (message) => {
+        await lookups.persistMail({
+          senderAddress: message.from,
+          recipients: message.to,
+          raw: message.raw,
+        });
       },
     });
     app.route(`${TENANT_PREFIX}/mailbox`, mailboxApp);

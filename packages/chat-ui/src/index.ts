@@ -30,7 +30,7 @@ export {
 } from "./avatar";
 export type { AvatarFill, AvatarColor, CorbitAvatarProps, CorbitAvatarSize } from "./avatar";
 
-export { threadMessagesToTimeline, roomRefFor } from "./mailbox-timeline";
+export { threadTreeToTimeline } from "./mailbox-timeline";
 export type { TimelineItem } from "./mailbox-timeline";
 
 export {

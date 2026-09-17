@@ -1,11 +1,11 @@
 // CL-7450: a sent human message lands in every human participant's
-// mailbox — an "outbound" copy in the sender's own, "inbound" in every
-// other human's — all sharing the row's own RFC 5322 Message-ID, all in
-// ONE batch (one `@corbits/mailbox` transaction), and the same default
-// transport idempotency key makes a retried send a no-op rather than a
-// duplicate. Exercised against an in-memory `MailboxWriter`, never a
-// live `@corbits/mailbox` schema — see `../src/mailbox-fanout.ts`'s own
-// doc comment for why the write is behind that seam.
+// mailbox — an "outbound" copy in the sender's own Sent folder, "inbound"
+// in every other human's INBOX — all sharing the row's own RFC 5322
+// Message-ID, and the native store's own messageId-scoped dedupe makes a
+// retried send a no-op rather than a duplicate. Exercised against an
+// in-memory `MailboxWriter`, never a live `@corbits/mailbox` schema — see
+// `../src/mailbox-fanout.ts`'s own doc comment for why the write is behind
+// that seam.
 import { describe, expect, test } from "bun:test";
 import {
   writeChatMailboxFanout,
@@ -125,7 +125,6 @@ describe("writeChatMailboxFanout (CL-7450)", () => {
     expect(byPrincipal.has(AGENT_ADDRESS)).toBe(false);
 
     for (const row of rows) {
-      expect(row.refs).toEqual([{ kind: "workbench", id: WORKBENCH_ID }]);
       expect(row.address).toBe(`${row.principalId}@${DOMAIN}`);
     }
   });

@@ -1,16 +1,15 @@
 // check:browser-safe-subpaths — a package that declares a "browser-safe"
-// subpath (`@corbits/inbox/client`, `@corbits/workflows/client`, …) is
-// making a promise: nothing reachable from that one entry point pulls in
-// a server-only dependency. Comments have said as much for a while; this
-// check is what actually makes it true, by walking the real transitive
-// import graph — relative imports and `@corbits/*` workspace subpath
-// imports — starting at each declared entry, and failing if it ever
-// reaches `postgres`, `drizzle-orm`, `hono`, or any `@intx/*` import.
+// subpath (`@corbits/workflows/client`, `@corbits/agent-directory/client`,
+// …) is making a promise: nothing reachable from that one entry point
+// pulls in a server-only dependency. Comments have said as much for a
+// while; this check is what actually makes it true, by walking the real
+// transitive import graph — relative imports and `@corbits/*` workspace
+// subpath imports — starting at each declared entry, and failing if it
+// ever reaches `postgres`, `drizzle-orm`, `hono`, or any `@intx/*` import.
 //
 // `import type` / `export type` statements are skipped: a type-only
-// import is erased at compile time and carries no runtime dependency
-// (see e.g. packages/inbox/src/project.ts's type-only `@corbits/mailbox`
-// import). A package this repo doesn't own (an external git dependency
+// import is erased at compile time and carries no runtime dependency. A
+// package this repo doesn't own (an external git dependency
 // like `@corbits/mailbox` or `@corbits/react-ui`) is an opaque leaf — its
 // own source isn't in this tree to walk, so it can't be statically
 // checked here and is trusted the same way a `node_modules` import
@@ -45,7 +44,6 @@ export interface BrowserSafeEntry {
  * only reaches this entry point — this is what backs that claim.
  */
 export const ENTRIES: readonly BrowserSafeEntry[] = [
-  { package: "@corbits/inbox", subpath: "./client" },
   { package: "@corbits/agent-directory", subpath: "./client" },
   { package: "@corbits/api-query", subpath: "." },
   // The envelope alone (UnauthenticatedError, ApiQueryError, toAPIQuery) has

@@ -1,60 +1,55 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  roomRefFor,
-  threadMessagesToTimeline,
-  type MailboxThreadMessage,
-} from "./mailbox-timeline";
+import { threadTreeToTimeline } from "./mailbox-timeline";
 
-function message(
-  overrides: Partial<MailboxThreadMessage> & Pick<MailboxThreadMessage, "id" | "messageId">,
-): MailboxThreadMessage {
+function envelope(overrides: {
+  messageId: string;
+  from?: string;
+  subject?: string;
+  date?: string;
+}) {
   return {
+    messageId: overrides.messageId,
+    from: overrides.from ?? "sender@dana.localhost",
+    to: [],
+    subject: overrides.subject ?? "",
+    date: overrides.date ?? "2026-09-17T00:00:00.000Z",
     references: [],
-    fromAddress: "sender@dana.localhost",
-    createdAt: "2026-09-17T00:00:00.000000Z",
-    read: true,
-    archived: false,
-    parentId: null,
-    body: "hello",
-    ...overrides,
   };
 }
 
-describe("threadMessagesToTimeline", () => {
-  test("links a reply's threadId to its parent's own id via inReplyTo", () => {
-    const parent = message({ id: "id-1", messageId: "msg-1@mail" });
-    const child = message({
-      id: "id-2",
-      messageId: "msg-2@mail",
-      inReplyTo: "msg-1@mail",
-      body: "reply",
-    });
+describe("threadTreeToTimeline", () => {
+  test("links a reply's threadId to its parent's own uid", () => {
+    const root = {
+      uid: 1,
+      flags: [],
+      envelope: envelope({ messageId: "<msg-1@mail>" }),
+      children: [
+        {
+          uid: 2,
+          flags: [],
+          envelope: envelope({ messageId: "<msg-2@mail>", subject: "reply" }),
+          children: [],
+        },
+      ],
+    };
 
-    const items = threadMessagesToTimeline([parent, child]);
+    const items = threadTreeToTimeline(root);
 
     expect(items[0]?.threadId).toBeUndefined();
-    expect(items[1]?.threadId).toBe("id-1");
+    expect(items[1]?.threadId).toBe("1");
   });
 
-  test("leaves threadId absent when the parent isn't in this batch", () => {
-    const orphan = message({
-      id: "id-3",
-      messageId: "msg-3@mail",
-      inReplyTo: "msg-missing@mail",
-    });
+  test("a single-node thread has no threadId at all", () => {
+    const root = {
+      uid: 3,
+      flags: [],
+      envelope: envelope({ messageId: "<msg-3@mail>" }),
+      children: [],
+    };
 
-    const [item] = threadMessagesToTimeline([orphan]);
+    const [item] = threadTreeToTimeline(root);
 
     expect(item?.threadId).toBeUndefined();
-  });
-});
-
-describe("roomRefFor", () => {
-  test("stamps the same { kind: 'workbench', id } ref the mailbox writers use", () => {
-    expect(roomRefFor("tenant-1", "room-1")).toEqual({
-      kind: "workbench",
-      id: "room-1",
-    });
   });
 });

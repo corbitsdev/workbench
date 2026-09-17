@@ -10,14 +10,19 @@ import postgres from "postgres";
 
 import { createDB, schema } from "@intx/db";
 import { generateId } from "@intx/hub-common";
-import { createInMemoryMailboxEventBus, createMailboxDb, listUserMailbox } from "@corbits/mailbox";
+import {
+  createInMemoryMailboxEventBus,
+  createMailboxDb,
+  openNativeMailboxStore,
+  principalMail,
+} from "@corbits/mailbox";
+import { and, eq, like } from "drizzle-orm";
 import {
   deliverApprovalMail,
   type ApprovalNotification,
   type NotifyDispatchStore,
   type SinkDeliveryResult,
 } from "@corbits/notify";
-import { WORKBENCH_INBOX_PRIORITIES } from "@corbits/inbox";
 
 import { setupDatabase } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
@@ -169,20 +174,28 @@ describeIfDb("hub notify delivery repairs the CL-7238 crash window on redelivery
       expect(redelivery.deliveredMailboxRowIds).toEqual([]);
       expect(redelivery.queuedDispatchCount).toBe(1);
 
-      const page = await listUserMailbox(mailboxDb.db, {
+      const store = await openNativeMailboxStore(mailboxDb.db, {
         tenantId,
         principalId,
-        limit: 10,
-        view: "all",
-        priorities: WORKBENCH_INBOX_PRIORITIES,
+        folder: "INBOX",
       });
       // Exactly one mail row for the redelivered event — the crash and
       // the redelivery deduped onto the first attempt's row.
-      const matching = page.items.filter((item) =>
-        (item.subject ?? "").includes("quarantine_token"),
+      const matching = store.messages.filter((message) =>
+        message.envelope.subject.includes("quarantine_token"),
       );
       expect(matching).toHaveLength(1);
-      const mailId = matching[0]?.id;
+      const rows = await mailboxDb.db
+        .select({ id: principalMail.id })
+        .from(principalMail)
+        .where(
+          and(
+            eq(principalMail.tenantId, tenantId),
+            eq(principalMail.principalId, principalId),
+            like(principalMail.subject, "%quarantine_token%"),
+          ),
+        );
+      const mailId = rows[0]?.id;
       if (mailId === undefined) throw new Error("expected the redelivered mail row to list");
       expect(await dispatch.listFor(mailId)).toHaveLength(1);
 
