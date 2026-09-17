@@ -27,7 +27,7 @@ import {
   user as userTable,
   workflowDefinition,
 } from "@intx/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import {
   createEnvKeyCredentialCipher,
   createNoopCredentialCipher,
@@ -293,6 +293,7 @@ import {
   mintRepoGrantViaHttp,
 } from "./native-repo-grants";
 import { createSignInAttemptLimiter } from "./sign-in-rate-limit";
+import { createSetupStatusRoutes } from "./setup-status";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, Hono, type Next } from "hono";
 
@@ -402,14 +403,9 @@ export function createStaticHandler(staticDir: string) {
 
 /**
  * The `CredentialCipher` (see `@intx/types`) every secret-at-rest seam
- * in this composition root shares — `webhookTriggerStore`'s signing
- * secrets, `@workbench/onboarding`'s in-flight OAuth connect state
- * (the PKCE verifier parked between `/start` and `/callback`, sealed
- * into the state itself so it survives a restart between the two), and
- * (since CL-6031) the same package's `pending_seed` table — a
- * just-connected credential's plaintext key, parked server-side
- * between the OAuth callback and the onboarding page's own
- * `/complete-setup` follow-up (see `packages/onboarding/src/pending-seed.ts`).
+ * in this composition root shares — currently `webhookTriggerStore`'s
+ * signing secrets (CL-8112 unmounted the onboarding router whose OAuth
+ * connect state and `pending_seed` table used to share it).
  * A real key (`CREDENTIAL_ENCRYPTION_KEY`) builds an AES-256-GCM
  * cipher. An unset key hard-fails boot — a self-hosting operator who
  * forgets this variable must not silently end up storing those secrets
@@ -425,9 +421,8 @@ export function credentialCipherFrom(
       throw new Error(
         [
           "CREDENTIAL_ENCRYPTION_KEY is not set.",
-          "It encrypts secrets at rest — webhook-trigger signing secrets,",
-          "onboarding's OAuth PKCE connect state, and its pending-seed",
-          "table — so the hub refuses to boot without it. Generate one and",
+          "It encrypts secrets at rest — webhook-trigger signing secrets —",
+          "so the hub refuses to boot without it. Generate one and",
           "add it to .env:",
           "",
           "  openssl rand -hex 32",
@@ -438,7 +433,7 @@ export function credentialCipherFrom(
         ].join("\n"),
       );
     }
-    log.warn`No CREDENTIAL_ENCRYPTION_KEY configured; secrets (e.g. webhook-trigger signing secrets, onboarding OAuth connect state, onboarding's pending-seed table) will NOT be encrypted at rest. ALLOW_PLAINTEXT_SECRETS is set — expected in dev/test only, never for a real deployment.`;
+    log.warn`No CREDENTIAL_ENCRYPTION_KEY configured; secrets (e.g. webhook-trigger signing secrets) will NOT be encrypted at rest. ALLOW_PLAINTEXT_SECRETS is set — expected in dev/test only, never for a real deployment.`;
     return createNoopCredentialCipher();
   }
   return createEnvKeyCredentialCipher(
@@ -1348,6 +1343,20 @@ export async function createHub(config: HubConfig) {
   // agents never produce text. `config.baseUrl` (not `localhost`) is
   // what makes the URL usable from a sidecar on another machine.
   app.route("/api/chat/noop-inference", createNoopInferenceRoutes());
+  // Native cold-boot setup status (CL-8112). Mounted outside the tenant
+  // prefix like the noop-inference route: an empty hub has no tenant to
+  // scope to, and the first-login hook must read it before any bench
+  // exists. Counts come straight off the native user/tenant tables — no
+  // workbench package involved.
+  app.route(
+    "/api/setup",
+    createSetupStatusRoutes({
+      countUsers: async () =>
+        (await db.select({ n: count() }).from(userTable))[0]?.n ?? 0,
+      countTenants: async () =>
+        (await db.select({ n: count() }).from(tenantTable))[0]?.n ?? 0,
+    }),
+  );
   const selfApi = createHubAPI(config.baseUrl);
   // The chat platform's invite-launch fallback: a definition with no
   // model requirements of its own resolves the tenant-catalog default.

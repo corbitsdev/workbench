@@ -104,7 +104,7 @@ const HubEnv = type({
     "override for the GitHub REST API origin the `github` connector's PAT probe and credential delivery target, e.g. a fake server recorded for tests/evals; unset (default) targets https://api.github.com — never set this for a real deployment",
   ),
   "CREDENTIAL_ENCRYPTION_KEY?": type(/^[0-9a-fA-F]{64}$/).describe(
-    "a 64-character hex-encoded 32-byte AES-256 key (openssl rand -hex 32) encrypting secrets at rest through Interchange's CredentialCipher seam — webhook-trigger signing secrets and onboarding's OAuth PKCE connect state; boot fails without it unless ALLOW_PLAINTEXT_SECRETS opts into dev/test's unencrypted fallback",
+    "a 64-character hex-encoded 32-byte AES-256 key (openssl rand -hex 32) encrypting secrets at rest through Interchange's CredentialCipher seam — webhook-trigger signing secrets; boot fails without it unless ALLOW_PLAINTEXT_SECRETS opts into dev/test's unencrypted fallback",
   ),
   "PRINCIPAL_KEY_ENCRYPTION_KEY?": type(/^[0-9a-fA-F]{64}$/).describe(
     "a 64-character hex-encoded 32-byte AES-256 key (openssl rand -hex 32) sealing every principal's per-principal signing key at rest through Interchange's principal-key store — deliberately separate from CREDENTIAL_ENCRYPTION_KEY so the two rotate independently; boot fails without it unless ALLOW_PLAINTEXT_SECRETS opts into dev/test's unencrypted fallback",

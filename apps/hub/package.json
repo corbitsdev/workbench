@@ -60,7 +60,6 @@
     "@intx/workflow": "workspace:*",
     "@intx/workflow-deploy": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",
-    "@workbench/access-policy": "workspace:*",
     "@corbits/connections": "workspace:*",
     "@corbits/codex-provider": "workspace:*",
     "@corbits/xai-provider": "workspace:*",

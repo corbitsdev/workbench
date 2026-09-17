@@ -21,6 +21,9 @@
 // (mounted in `apps/hub`) imports this; it is deliberately not
 // re-exported from the package root.
 import { deployableCatalogWorkflow } from "@workbench/onboarding/tenant-seed";
+// TODO(CL-8113, hub-zero T2): this tenant-seed import is the hub's last
+// `@workbench/onboarding` edge — cut it over to the native catalog when
+// T2 lands, then drop the dependency from `apps/hub/package.json`.
 
 export interface BlockWorkflowBuildInput {
   readonly tenantDomain: string;
