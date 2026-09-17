@@ -5,7 +5,6 @@
 // in ./provision.ts.
 
 import type { AppEnv } from "@intx/hub-api";
-import { createExpiringMap } from "@corbits/collections";
 import { createNoopCredentialCipher } from "@intx/crypto";
 import {
   CredentialResponse,
@@ -30,7 +29,6 @@ import {
 } from "@corbits/hub-api-client";
 import { Hono } from "hono";
 import { type } from "arktype";
-import type { AccessPolicyStore } from "@workbench/access-policy";
 import {
   generateRefId,
   makeErrorEnvelope,
@@ -38,17 +36,11 @@ import {
 } from "@corbits/error-sink";
 
 import {
-  personalTenantSlug,
-  provisionPersonalTenantIfNeeded,
-  ProvisionError,
-} from "./provision";
-import {
   desiredStateSteps,
   readTenantDesiredStateStatus,
   TENANT_DESIRED_STATE,
 } from "./desired-state";
-
-import type { HubSignupTenancy } from "./genesis";
+import { personalTenantSlug } from "./tenant-slug";
 
 import {
   findPersonalTenant,
@@ -133,19 +125,8 @@ const SubmitCredential = type({
   "baseURL?": "string > 0",
 });
 
-const ProvisionBody = type({
-  "name?": "string > 0",
-});
-
 export type CreateOnboardingRoutesDeps = {
   hubUrl: string;
-  /** Slug for the genesis tenant the first signup on an empty hub
-   * mints; later signups join the existing root and never read it. */
-  defaultTenantSlug: string;
-  /** Hub tenancy reads/writes for the genesis-or-join decision — see
-   * ./genesis.ts's `HubSignupTenancy`. Production wiring is
-   * `createHubSignupTenancy` in apps/hub/src/signup-tenancy.ts. */
-  tenancy: HubSignupTenancy;
   pushWorkflow: WorkflowPusher;
   log: (line: string) => void;
   /** Error-level sibling of `log`: every server-side failure path in
@@ -170,14 +151,6 @@ export type CreateOnboardingRoutesDeps = {
     exchange?: typeof exchangeHuggingFaceCodeForToken;
     connectCredential?: typeof testAndPersistCredential;
   };
-  /**
-   * CL-7584 revisit kick: fire-and-forget desired-state reconcile for the
-   * caller's tenant, fired unconditionally — never gated on a pending
-   * check (the reconciler itself is reads-only when converged). The hub
-   * wires this to the same reconciler the tenant-create observer uses;
-   * the route never awaits it. Absent means no kick.
-   */
-  desiredStateKick?: (args: { tenantId: string; cookies: string[] }) => void;
   /** Test seam for `POST /complete`'s fast half — credential persist and
    * catalog seed, the only work that call still does inline. */
   testAndPersistCredentialFn?: typeof testAndPersistCredential;
@@ -191,16 +164,6 @@ export type CreateOnboardingRoutesDeps = {
    * optional dep here.
    */
   providerHealth?: ProviderHealthStore;
-  /** The closed-by-default access-policy gate threaded straight into
-   * `provisionPersonalTenantIfNeeded` — see that function's own
-   * `accessPolicy` doc comment. Absent means no access-policy package
-   * is wired in at all; never a valid production shape. */
-  accessPolicy?: {
-    store: AccessPolicyStore;
-    envSignupMode: "open" | "closed";
-    envAllowedDomains: readonly string[];
-    allowUnverifiedEmails: boolean;
-  };
   /** Seals the OAuth connect state (PKCE verifier included) parked
    * between `/start` and `/callback`, so a hub restart in between
    * doesn't strand it — see `@corbits/connections`' `pkce.ts`. The same `CredentialCipher`
@@ -373,24 +336,6 @@ export function createOnboardingRoutes(
   const credentialCipher =
     deps.credentialCipher ?? createNoopCredentialCipher();
 
-  // A simple in-process per-user provision rate limiter. Provisioning is
-  // idempotent and safe to retry, but a client stuck in a tight retry loop
-  // (or a runaway script) can pile concurrent tenant creates onto the hub.
-  // One in-flight or recent provision per user is enough; the window is
-  // short because successful provisioning resolves immediately.
-  //
-  // This router is built once at hub boot and lives for the process —
-  // every distinct user who has ever attempted a named create would
-  // otherwise sit in this map forever (CL-7233). A TTL equal to the rate
-  // limit window itself is exactly the right eviction policy here: an
-  // entry has no reason to exist past the window it gates, so
-  // `createExpiringMap`'s own `get()` already encodes the rate-limit
-  // check — a defined result means "still inside the window".
-  const PROVISION_RATE_LIMIT_MS = 10_000;
-  const lastProvisionByUser = createExpiringMap<string, number>({
-    ttlMs: PROVISION_RATE_LIMIT_MS,
-  });
-
   /**
    * Reads where the bench's agents actually stand. Two hub reads, no
    * writes, no deploys — cheap enough that every provisioning-aware
@@ -429,199 +374,10 @@ export function createOnboardingRoutes(
     };
   }
 
-  app.post("/provision", async (c) => {
-    const user = c.get("user");
-    if (!user) {
-      return c.json(
-        makeErrorEnvelope({
-          code: "unauthorized",
-          userMessage: "Sign in to continue.",
-        }),
-        401,
-      );
-    }
-
-    // Optional body: the naming wizard sends `{ name }`; the shell's
-    // membership probe may POST with no body and only wants the read path.
-    // Parse before rate-limiting so the read probe never burns a create slot.
-    // Empty body → probe. Present body that is not valid JSON or fails the
-    // schema → 400 (never silently treated as a probe).
-    const bodyText = await c.req.text();
-    let body: { name?: string } | undefined;
-    if (bodyText.trim() === "") {
-      body = undefined;
-    } else {
-      let rawBody: unknown;
-      try {
-        rawBody = JSON.parse(bodyText) as unknown;
-      } catch {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: "That request wasn't valid. Try again.",
-          }),
-          400,
-        );
-      }
-      const parsed = ProvisionBody(rawBody);
-      if (parsed instanceof type.errors) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: "That request wasn't valid. Try again.",
-          }),
-          400,
-        );
-      }
-      body = parsed;
-    }
-    const isCreateAttempt = body?.name !== undefined;
-
-    // Rate-limit only named creates. The two-step first-login flow is
-    // probe (no name) → naming submit (with name); gating both would 429
-    // anyone who types a name within the window of their membership probe.
-    if (isCreateAttempt) {
-      const now = Date.now();
-      const isRateLimited = lastProvisionByUser.get(user.id) !== undefined;
-      if (isRateLimited) {
-        return c.json(
-          {
-            error: {
-              ...makeErrorEnvelope({
-                code: "rate_limited",
-                userMessage:
-                  "Too many attempts. Wait a moment, then try again.",
-              }).error,
-              kind: "transient" as const,
-            },
-          },
-          429,
-        );
-      }
-      lastProvisionByUser.set(user.id, now);
-    }
-
-    const cookies = cookiesFromHeader(c.req.header("cookie"));
-    try {
-      const provisionArgs: Parameters<
-        typeof provisionPersonalTenantIfNeeded
-      >[0] = {
-        api,
-        cookies,
-        userId: user.id,
-        userEmail: user.email,
-        userEmailVerified: user.emailVerified,
-        defaultTenantSlug: deps.defaultTenantSlug,
-        tenancy: deps.tenancy,
-        log: deps.log,
-      };
-      if (body?.name !== undefined) provisionArgs.displayName = body.name;
-      if (deps.accessPolicy !== undefined)
-        provisionArgs.accessPolicy = deps.accessPolicy;
-
-      const result = await provisionPersonalTenantIfNeeded(provisionArgs);
-
-      // CL-7584 revisit kick: fire unconditionally — never await the
-      // multi-GET status read on this hot path. `reconcileTenantDesiredState`
-      // is reads-only when converged (it never enters `seedTenant` with
-      // every pin present), so a pending-check here would only ever delay
-      // this response; the reconcile itself re-reads the pins behind the
-      // fire-and-forget boundary. Repeat probes re-kick safely
-      // (idempotent).
-      if (
-        (result.kind === "provisioned" || result.kind === "existing-member") &&
-        deps.desiredStateKick !== undefined
-      ) {
-        const kick = deps.desiredStateKick;
-        const fire = (tenantId: string) => {
-          try {
-            kick({ tenantId, cookies });
-          } catch (cause) {
-            // report-error-ignore: the kick is best-effort — a failed
-            // kick only ever costs one missed reconcile.
-            deps.log(
-              `desired-state kick for user ${user.id} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-            );
-          }
-        };
-        // A just-joined or just-minted tenant carries its id and fires
-        // synchronously, before this response is even serialized.
-        const directTenantId = result.tenantId;
-        if (directTenantId !== undefined) {
-          fire(directTenantId);
-        } else {
-          // A plain existing member carries no id — resolve it the same
-          // way the connect flow does (first active principal) behind the
-          // fire-and-forget boundary, so the response never waits on it
-          // either.
-          void (async () => {
-            try {
-              const found = await findPersonalTenant(
-                api,
-                cookies,
-                personalTenantSlug(user.email, user.id),
-                { fallbackToFirstPrincipal: true },
-              );
-              if (found?.tenantId !== undefined) fire(found.tenantId);
-            } catch (cause) {
-              // report-error-ignore: the kick lookup is best-effort — a
-              // failed lookup only ever costs one missed reconcile.
-              deps.log(
-                `desired-state kick lookup for user ${user.id} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-              );
-            }
-          })();
-        }
-      }
-
-      return c.json(result, 200);
-    } catch (cause) {
-      // report-error-ignore: both branches below route through
-      // reportOnboardingError, this package's reportError wrapper.
-      if (cause instanceof ProvisionError) {
-        const status =
-          cause.code === "signup_not_allowed"
-            ? 403
-            : cause.errorKind === "transient"
-              ? 503
-              : 500;
-        const userMessage =
-          cause.code === "signup_not_allowed"
-            ? "Sign-ups aren't open for this account yet. Contact your workspace admin for access."
-            : "Setting up your workbench hit a snag — we're on it. Try again in a moment.";
-        const envelope = reportOnboardingError(deps.logError ?? deps.log, {
-          operation: "onboarding_provision",
-          userAction: `first-login provisioning for user ${user.id}`,
-          code: cause.code,
-          userMessage,
-          cause,
-          extra: { userId: user.id, code: cause.code },
-        });
-        return c.json(
-          {
-            error: { ...envelope.error, kind: cause.errorKind },
-          },
-          status,
-        );
-      }
-      // An unrecognized error is treated as transient — the hub may have
-      // been momentarily unavailable, and retrying is safe because
-      // provisioning is idempotent.
-      const envelope = reportOnboardingError(deps.logError ?? deps.log, {
-        operation: "onboarding_provision",
-        userAction: `first-login provisioning for user ${user.id}`,
-        code: "provisioning_failed",
-        userMessage:
-          "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
-        cause,
-        extra: { userId: user.id },
-      });
-      return c.json(
-        { error: { ...envelope.error, kind: "transient" as const } },
-        503,
-      );
-    }
-  });
+  // First-login 0→1 no longer lives here (CL-8085): the client's
+  // needs-list drives tenant creation and Myra deploy directly over
+  // stock routes (`apps/web/src/needs-converge.ts`). This package keeps
+  // only the credential-connect surface below.
 
   // OAuth connect (OpenRouter, Hugging Face): CL-6028 generalized both
   // providers' start/callback mechanics into `@corbits/connections`'
@@ -630,13 +386,11 @@ export function createOnboardingRoutes(
   // now, driven by `CONNECTOR_REGISTRY`'s `openrouter`/`huggingface`
   // entries. What stays here, unchanged: persisting the exchanged
   // material (`testAndPersistCredential`, the fast half — no probe, no
-  // workflow deploy), the duplicate-callback recovery lookup
-  // (`recentlyConnectedCredential`, below), and firing the desired-state
-  // kick `/complete-setup` and the revisit probe build on (see
-  // `afterConnected`, below). Every test seam this package's deps already
-  // exposed (`openrouterConnect`/`huggingfaceConnect` overrides) still
-  // works — they're threaded into the registry entries' `oauth.exchange`
-  // below.
+  // workflow deploy) and the duplicate-callback recovery lookup
+  // (`recentlyConnectedCredential`, below). Every test seam this
+  // package's deps already exposed (`openrouterConnect`/
+  // `huggingfaceConnect` overrides) still works — they're threaded into
+  // the registry entries' `oauth.exchange` below.
 
   /**
    * Adapts `packages/onboarding`'s pre-CL-6028 exchange function shape
@@ -804,44 +558,6 @@ export function createOnboardingRoutes(
     });
   }
 
-  /** Runs only for a connector whose `oauth.deploysDefaultWorkflows` is
-   * true (both OpenRouter and Hugging Face) — fires the desired-state
-   * revisit kick for the just-connected bench, so its default workflows
-   * converge without the redirect waiting on a deploy. Best-effort:
-   * the onboarding page's own `/complete-setup` call kicks again, and
-   * the reconciler itself is reads-only when converged. */
-  async function afterConnected(args: {
-    c: import("hono").Context;
-    connectorId: string;
-    userId: string;
-    apiKey: string;
-    tenantId: string;
-    tenantSlug: string;
-    principalId: string;
-    tenantDomain: string;
-  }): Promise<void> {
-    const provider = onboardingOAuthProvider(args.connectorId);
-    if (provider === undefined) {
-      throw new Error(
-        `onboarding only converges its own providers, not ${args.connectorId}`,
-      );
-    }
-    if (deps.desiredStateKick === undefined) return;
-    try {
-      deps.desiredStateKick({
-        tenantId: args.tenantId,
-        cookies: cookiesFromHeader(args.c.req.header("cookie")),
-      });
-    } catch (cause) {
-      // report-error-ignore: the kick is best-effort — `/complete-setup`
-      // kicks again when the onboarding page lands, so a failed kick
-      // here only ever costs one missed reconcile.
-      deps.log(
-        `desired-state kick after OAuth connect for user ${args.userId} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-      );
-    }
-  }
-
   app.route(
     "/oauth",
     createOAuthConnectRoutes({
@@ -854,7 +570,6 @@ export function createOnboardingRoutes(
       },
       connectCredential,
       recentlyConnected,
-      afterConnected,
       defaultReturnPath: "/onboarding",
       // The plugins gallery (CL-6090) reuses this same onboarding OAuth
       // route for its one-flow connect panel — `/plugins` joins the
@@ -911,8 +626,8 @@ export function createOnboardingRoutes(
       // credential, seed its catalog, answer. Deploying this bench's
       // default workflows never blocks this response — a request that
       // waits on it is the 2+ minute "Connecting…" this route exists to
-      // never reproduce. Convergence is kicked below; the response only
-      // ever reports status.
+      // never reproduce. The response only ever reports status; pending
+      // pins converge from the client's needs-list (CL-8085).
       const result = await runTestAndPersistCredential(
         parsed.baseURL !== undefined
           ? { ...baseCompleteCredentialArgs, baseURLOverride: parsed.baseURL }
@@ -952,23 +667,9 @@ export function createOnboardingRoutes(
       const status = await provisioningStatus(cookies, result);
       if (status.kind === "ready") return c.json(status, 200);
 
-      // Pins still missing: kick the desired-state reconcile for this
-      // bench (fire-and-forget — the response answers from the status
-      // read above, never waits on the deploy) and answer the same
-      // status, so the waiting surface polls `/provisioning-status` for
-      // live progress.
-      if (deps.desiredStateKick !== undefined) {
-        try {
-          deps.desiredStateKick({ tenantId: result.tenantId, cookies });
-        } catch (cause) {
-          // report-error-ignore: the kick is best-effort — the revisit
-          // kick on the tenant's next visit covers it, so a failed kick
-          // here only ever costs one missed reconcile.
-          deps.log(
-            `desired-state kick after credential connect for user ${user.id} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-          );
-        }
-      }
+      // Pins still missing: the client's needs-list convergence
+      // (`apps/web/src/needs-converge.ts`) deploys them from the
+      // browser — this route only ever answers status.
       return c.json(status, 200);
     } catch (cause) {
       // Neither `ProvisionError` nor `CliError` messages are safe to show
@@ -998,9 +699,9 @@ export function createOnboardingRoutes(
   // error) means the bench holds no active inference credential yet —
   // nothing this call can converge — and the caller should fall back to
   // the ordinary credential step rather than treat it as a failure.
-  // Otherwise the bench has a credential and missing pins, so this call
-  // kicks the desired-state reconcile (fire-and-forget) and answers the
-  // status for the waiting surface to poll on.
+  // Otherwise the bench has a credential and missing pins; the client's
+  // own needs-list convergence drives the deploy, so this call just
+  // answers the status for the waiting surface to poll on.
   app.post("/complete-setup", async (c) => {
     const user = c.get("user");
     if (!user) {
@@ -1049,18 +750,8 @@ export function createOnboardingRoutes(
       );
       if (!seeded) return c.json({ kind: "unseeded" }, 200);
 
-      if (deps.desiredStateKick !== undefined) {
-        try {
-          deps.desiredStateKick({ tenantId: tenant.tenantId, cookies });
-        } catch (cause) {
-          // report-error-ignore: the kick is best-effort — the revisit
-          // kick on the tenant's next visit covers it, so a failed kick
-          // here only ever costs one missed reconcile.
-          deps.log(
-            `desired-state kick from complete-setup for user ${user.id} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-          );
-        }
-      }
+      // Pending pins converge from the client's needs-list, not a
+      // server-side kick — see the `/complete` comment above.
       return c.json(status, 200);
     } catch (cause) {
       // report-error-ignore: CL-7234 — reportOnboardingError itself needs

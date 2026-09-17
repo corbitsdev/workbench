@@ -1,15 +1,4 @@
-export {
-  personalTenantSlug,
-  provisionPersonalTenantIfNeeded,
-} from "./provision";
-export type { ProvisionArgs, ProvisionResult } from "./provision";
-export { genesisOrJoinHubSignup, ProvisionError } from "./genesis";
-export type {
-  GenesisOrJoinArgs,
-  GenesisOrJoinResult,
-  HubSignupTenancy,
-  ProvisionErrorKind,
-} from "./genesis";
+export { personalTenantSlug } from "./tenant-slug";
 export {
   completeCredentialSetup,
   findPersonalTenant,

@@ -81,7 +81,7 @@ import {
 } from "@corbits/connections/persist-credential";
 import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
 import { TENANT_DESIRED_STATE, seededWorkflowNames } from "./desired-state";
-import { personalTenantSlug } from "./provision";
+import { personalTenantSlug } from "./tenant-slug";
 
 /** The onboarding UI's copy for a partial seed: every durable step
  * (credential, tenant, grants, assets) already succeeded, and the
