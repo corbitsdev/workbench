@@ -322,6 +322,14 @@ function createFakeDb(opts: {
       }[]
     | undefined;
   tenantRow?: { id: string; domain: string } | undefined;
+  /**
+   * A tenant hierarchy keyed by id, for the ancestor walk
+   * `listInvitableDefinitions` performs. A row whose `parentId` is null
+   * (or absent from this record) ends the chain.
+   */
+  tenantRowsById?:
+    | Record<string, { id: string; parentId: string | null } | undefined>
+    | undefined;
   workbenchLaunchRow?:
     | {
         tenantId: string;
@@ -526,7 +534,17 @@ function createFakeDb(opts: {
             : []),
       },
       tenant: {
-        findFirst: async () => opts.tenantRow,
+        // `getAncestorChain` walks parent by parent, so a test that seeds
+        // a hierarchy needs each id answered with its OWN row rather than
+        // one fixed row for every lookup — which would re-answer the same
+        // parent forever and trip the walk's own cycle guard.
+        findFirst: async (args?: { where?: unknown }) => {
+          if (opts.tenantRowsById === undefined) return opts.tenantRow;
+          const [queriedId] = boundStringValues(args?.where);
+          return queriedId === undefined
+            ? undefined
+            : opts.tenantRowsById[queriedId];
+        },
       },
     },
     select(..._cols: unknown[]) {
@@ -1975,6 +1993,71 @@ describe("createHubChatPlatform", () => {
     const items = await platform.listInvitableDefinitions("ten_1");
     expect(items).toEqual([
       { id: "wfd_echo", name: "echo", description: "Echo" },
+    ]);
+  });
+
+  test("listInvitableDefinitions walks the tenant ancestors, and a workbench's own definition shadows its parent's of the same name", async () => {
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_child",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_workbench1",
+      tenantRowsById: {
+        ten_child: { id: "ten_child", parentId: "ten_root" },
+        ten_root: { id: "ten_root", parentId: null },
+      },
+      workflowDefinitionRows: [
+        {
+          id: "wfd_echo_child",
+          tenantId: "ten_child",
+          status: "deployed",
+          origin: "authored",
+          name: "echo",
+          description: "Echo, this workbench's own",
+        },
+        {
+          id: "wfd_echo_root",
+          tenantId: "ten_root",
+          status: "deployed",
+          origin: "authored",
+          name: "echo",
+          description: "Echo, inherited",
+        },
+        {
+          id: "wfd_researcher_root",
+          tenantId: "ten_root",
+          status: "deployed",
+          origin: "authored",
+          name: "researcher",
+          description: "Researcher",
+        },
+      ],
+    });
+    const platform = createPlatform({
+      toolGrantsForPins: async () => [],
+      db: db as never,
+      runTrigger: createFakeRunTrigger(),
+      sidecarRouter: createFakeSidecarRouter(),
+      eventCollectors: createFakeEventCollectors(),
+    });
+
+    const items = await platform.listInvitableDefinitions("ten_child");
+    // The root's `researcher` is invitable from the child like a plugin;
+    // its `echo` is not, because the child deploys its own.
+    expect(items).toEqual([
+      {
+        id: "wfd_echo_child",
+        name: "echo",
+        description: "Echo, this workbench's own",
+      },
+      {
+        id: "wfd_researcher_root",
+        name: "researcher",
+        description: "Researcher",
+      },
     ]);
   });
 
