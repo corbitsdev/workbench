@@ -9,6 +9,7 @@
 "@corbits/code-review-workflow": minor
 "@corbits/collateral-generation-workflow": minor
 "@corbits/connections-tools": minor
+"@corbits/credential-expiry-workflow": minor
 "@corbits/diligence-brief-workflow": minor
 "@corbits/echo-workflow": minor
 "@corbits/error-sink": minor

@@ -15,11 +15,6 @@ export {
   parseNotificationEvent,
 } from "./events";
 export {
-  findDueCredentialExpiries,
-  type DueCredentialExpiry,
-  type ExpiringCredential,
-} from "./credential-expiry";
-export {
   applyNotifyMigrations,
   notifyMigrations,
   type ApplyNotifyMigrationsReport,

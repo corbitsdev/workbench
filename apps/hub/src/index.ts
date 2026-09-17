@@ -222,7 +222,6 @@ import {
   createProviderHealthPort,
   createProviderHealthStore,
 } from "@corbits/connections/provider-health";
-import { createHubNotifyDeliveryDeps } from "./notify-delivery";
 import {
   createWorkflowAuthorRegistry,
   createWorkflowAuthorRoutes,
@@ -231,10 +230,6 @@ import {
   WorkflowAuthorError,
   type WorkflowDeployer,
 } from "@corbits/workflows";
-import {
-  createCredentialExpirySweep,
-  createDrizzleCredentialExpirySweepStore,
-} from "./credential-expiry-sweep";
 import {
   createDrizzleServingRefreshStore,
   createTenantServingRefresh,
@@ -2256,29 +2251,10 @@ export async function createHub(config: HubConfig) {
     }),
   );
   // Notify-to-reconnect for an OAuth-connected credential whose token
-  // expired (Hugging Face today — see docs/onboarding-huggingface-connect.md):
-  // a light periodic sweep over `@corbits/notify`'s pure
-  // `findDueCredentialExpiries`, mailing through the hub's notify delivery
-  // deps (`createHubNotifyDeliveryDeps`). `createInMemoryNotifyDispatchStore`/`createSinkRegistry()`
-  // mean external sink fan-out (Slack, email) is a no-op until a sink is
-  // registered — the mailbox row itself is what a person sees in their
-  // inbox. Requires `@corbits/mailbox`'s and `@corbits/notify`'s own
-  // migrations applied against `DATABASE_URL`, same as any other
-  // consumer of this delivery adapter.
-  const notifyHost = new URL(config.baseUrl).host;
-  const credentialExpirySweep = createCredentialExpirySweep({
-    store: createDrizzleCredentialExpirySweepStore(
-      db,
-      credentialCipher,
-      sidecarRouter,
-    ),
-    hubUrl: config.baseUrl,
-    notify: createHubNotifyDeliveryDeps({
-      mailboxDb,
-      bus: mailboxBus,
-      host: notifyHost,
-    }),
-  });
+  // expired (Hugging Face today — see docs/onboarding-huggingface-connect.md)
+  // is now `workflows/credential-expiry` (CL-8181), a schedule-triggered
+  // workflow deployed like any other Routine rather than a hub-owned
+  // periodic loop.
 
   // Reopen a snoozed inbox item once its `until` has passed (CL-7208) — a
   // light periodic sweep over `@corbits/inbox`'s own snooze table, on the
@@ -2362,7 +2338,6 @@ export async function createHub(config: HubConfig) {
       relaunchSweepSeries += 1;
       clearTimeout(relaunchSweepTimer);
       chatOrchestrator.dispose();
-      credentialExpirySweep.stop();
       inboxUnsnoozeSweep.stop();
       cronEmitter.stop();
       await insightsUsage.close();
