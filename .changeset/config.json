@@ -52,11 +52,9 @@
     "@corbits/notify",
     "@corbits/ollama-adapter",
     "@corbits/plugins-ui",
-    "@corbits/preferences",
     "@corbits/presence",
     "@corbits/process-provisioner",
     "@corbits/provider-pricing",
-    "@corbits/run-key-history",
     "@corbits/sandbox-sidecar",
     "@corbits/scout-agent",
     "@corbits/settings-ui",
@@ -68,12 +66,12 @@
     "@corbits/turn-artifacts",
     "@corbits/url-path",
     "@corbits/webhook-triggers",
+    "@corbits/workflow-schedule",
     "@corbits/workflows",
     "@corbits/xai-provider",
     "@workbench/hub",
     "@workbench/onboarding",
     "@workbench/sidecar",
-    "@workbench/templates",
     "@workbench/web"
   ]
 }
