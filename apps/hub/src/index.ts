@@ -164,7 +164,17 @@ import {
   readProcessProvisionerConfig,
   type ProcessProvisionerRole,
 } from "@corbits/process-provisioner";
-import { createWorkflowRunAuthenticator } from "@corbits/artifacts-hub";
+import {
+  InlineContentStore,
+  mountArtifacts,
+  mountWorkflowArtifacts,
+  runArtifactMigrations,
+  type WorkflowArtifactEnv,
+} from "@corbits/artifacts";
+import {
+  artifactMatchesLibraryKindSegment,
+  LIBRARY_KIND_SEGMENTS,
+} from "@corbits/artifact-ui/kind-filter";
 import {
   createConnectionRoutes,
   isInferenceProvider,
@@ -223,7 +233,10 @@ import {
   createInFlightRequestTracker,
   withInFlightRequestTracking,
 } from "./in-flight-requests";
-import { withWorkflowRunTenantAuth } from "./workflow-run-tenant-auth";
+import {
+  createWorkflowRunAuthenticator,
+  withWorkflowRunTenantAuth,
+} from "./workflow-run-tenant-auth";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
@@ -674,6 +687,10 @@ export async function createHub(config: HubConfig) {
       },
     ) => void;
   } = {};
+  // Package-owned artifacts tables (CL-8188): idempotent, advisory-locked,
+  // safe on every boot of every replica — see @corbits/artifacts' README.
+  await runArtifactMigrations(db);
+  const artifactContentStore = InlineContentStore;
   const baseEventCollectors = createEventCollectorRegistry({
     db: withTurnPartWriteDefaults(db),
     // CL-7418: deliberately no terminal-status settle here. The folded
@@ -1468,18 +1485,53 @@ export async function createHub(config: HubConfig) {
     `${TENANT_PREFIX}/inbox`,
     createInboxRoutes({ db: mailboxDb, bus: mailboxBus }),
   );
-  // CL-8160: the Workbench-composed workflow detail route
-  // (`@corbits/workflows`'s former `./detail/detail-route.ts`, mounted
-  // here at this same `/workflows/definitions` prefix as the vendored
-  // `createWorkflowDefinitionRoutes`) and the scheduled-workflow routes
-  // (`./schedule/scheduled-route.ts`: list/run-now/available-catalog) are
-  // both deleted per the owner ruling that workflow detail and schedule
-  // state derive from stock `@intx/hub-api` reads, not a hub-composed
-  // route. Stock's `GET /workflows/definitions` (mounted below by
-  // `createWorkflowDefinitionRoutes`) does not yet expose enough to
-  // reconstruct what these routes gave (no manifest/package metadata, no
-  // wire projection, no grant snapshot) — see the PR for CL-8160 for the
-  // upstream ask.
+  // Library/artifacts plane (CL-8188): `@corbits/artifacts` mounted directly
+  // rather than through the retired `@corbits/artifacts-hub` wrapper — the
+  // library now owns counts, preview, and every other Library HTTP surface
+  // this app previously reimplemented. `countSegments` keeps the segment
+  // taxonomy (what makes an artifact a "document" or a "routine") host-owned,
+  // per the library's README; the predicates themselves live in
+  // `@corbits/artifact-ui` so the web Files nav and this count walk share one
+  // mapping.
+  {
+    const artifactsApi = new Hono<TenantEnv>();
+    mountArtifacts(artifactsApi, {
+      db,
+      contentStore: artifactContentStore,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: grantConditionRegistry,
+      }),
+      countSegments: Object.fromEntries(
+        LIBRARY_KIND_SEGMENTS.map((segment) => [
+          segment,
+          (row: { kind: string; title: string }) =>
+            artifactMatchesLibraryKindSegment(row, segment),
+        ]),
+      ),
+    });
+    app.route(TENANT_PREFIX, artifactsApi);
+  }
+  // Myra's own artifact tools (`@corbits/artifact-tools`, CL-6000) and every
+  // Routine's own `finalize-tool`/`artifact-client` duplicate: the
+  // workflow-run-authenticated counterpart to the tenant-session mount just
+  // above, at the same `/api/workflow-artifacts` prefix the sidecar's
+  // `hubArtifactsUrl` already points at. Every route lives under this
+  // mount's own `/artifacts` prefix per `@corbits/artifacts`' fixed shape
+  // (`POST /artifacts`, `GET /artifacts/recent`, `GET /artifacts/:id`,
+  // `POST /artifacts/binary`) — callers reach it at
+  // `/api/workflow-artifacts/artifacts...`.
+  {
+    const workflowArtifactsApi = new Hono<WorkflowArtifactEnv>();
+    const workflowRunAuthenticator = createWorkflowRunAuthenticator({ db });
+    mountWorkflowArtifacts(workflowArtifactsApi, {
+      db,
+      contentStore: artifactContentStore,
+      resolveRunScope: (token, runAddress) =>
+        workflowRunAuthenticator.resolve(token, runAddress),
+    });
+    app.route("/api/workflow-artifacts", workflowArtifactsApi);
+  }
   {
     const mailboxApp = new Hono<TenantEnv>();
     mountMailbox(mailboxApp, {

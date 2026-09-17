@@ -21,8 +21,11 @@
 // before. The `:tenantId` path segment is never trusted: the middleware sets
 // the tenant from the authenticated run's own scope, so a run cannot widen
 // its reach by naming another tenant in the URL.
+import { eq } from "drizzle-orm";
 import { Hono } from "hono";
+import { sha256 } from "@intx/crypto";
 import type { DB } from "@intx/db";
+import { sidecar, workflowRun } from "@intx/db/schema";
 import {
   createWorkflowRunDeployAuth,
   type AppEnv,
@@ -33,6 +36,59 @@ export type WorkflowRunTenantAuthDeps = {
   db: DB["db"];
   authenticator: WorkflowRunAuthenticator;
 };
+
+/**
+ * The tenant + principal + run a presented sidecar token and run address
+ * resolve to. This is the one concrete implementation of the
+ * `WorkflowRunAuthenticator` shape every workflow-run-authenticated surface
+ * in this app takes structurally (agent-directory, chat, connections,
+ * memory-hub, `@corbits/artifacts`' `mountWorkflowArtifacts`, and the
+ * `withWorkflowRunTenantAuth` wrap below) — a single sidecar-token +
+ * run-address check, reused everywhere rather than re-verified per surface.
+ */
+export type ResolvedWorkflowRunScope = {
+  readonly tenantId: string;
+  readonly principalId: string;
+  readonly runId: string;
+};
+
+export type CreateWorkflowRunAuthenticatorDeps = {
+  db: DB["db"];
+};
+
+export type ConcreteWorkflowRunAuthenticator = {
+  resolve(
+    token: string,
+    runAddress: string,
+  ): Promise<ResolvedWorkflowRunScope | null>;
+};
+
+export function createWorkflowRunAuthenticator(
+  deps: CreateWorkflowRunAuthenticatorDeps,
+): ConcreteWorkflowRunAuthenticator {
+  return {
+    async resolve(token, runAddress) {
+      if (token === "" || runAddress === "") return null;
+
+      const tokenHash = await sha256(token);
+      const sidecarRow = await deps.db.query.sidecar.findFirst({
+        where: eq(sidecar.tokenHashSha256, tokenHash),
+      });
+      if (sidecarRow === undefined) return null;
+
+      const run = await deps.db.query.workflowRun.findFirst({
+        where: eq(workflowRun.address, runAddress),
+      });
+      if (run === undefined || run.principalId === null) return null;
+
+      return {
+        tenantId: run.tenantId,
+        principalId: run.principalId,
+        runId: run.id,
+      };
+    },
+  };
+}
 
 export function withWorkflowRunTenantAuth(
   nativeApp: Hono<AppEnv>,

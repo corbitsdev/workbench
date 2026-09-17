@@ -88,12 +88,12 @@ export async function uploadArtifactFiles(
     );
   }
   const body = (await response.json()) as {
-    data?: readonly ArtifactDetail[];
+    artifacts?: readonly ArtifactDetail[];
   };
-  if (!Array.isArray(body.data)) {
+  if (!Array.isArray(body.artifacts)) {
     throw new ApiQueryError("Unexpected response shape from artifact upload.");
   }
-  return body.data;
+  return body.artifacts;
 }
 
 /**
