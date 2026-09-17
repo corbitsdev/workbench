@@ -12,7 +12,6 @@ import {
   createWorkflowAuthorRegistry,
   type CreateWorkflowAuthorRegistryDeps,
   type WorkflowAuthorRepoReads,
-  type WorkflowDeployer,
 } from "./registry";
 
 const MANIFEST = JSON.stringify({
@@ -108,17 +107,6 @@ function fakeDb(row: AssetRow | undefined): DB["db"] {
   } as unknown as DB["db"];
 }
 
-function fakeDeployer(
-  overrides: Partial<WorkflowDeployer> = {},
-): WorkflowDeployer {
-  return {
-    deploy: async () => {
-      throw new Error("deploy not stubbed");
-    },
-    ...overrides,
-  };
-}
-
 function deps(
   overrides: Partial<CreateWorkflowAuthorRegistryDeps> = {},
 ): CreateWorkflowAuthorRegistryDeps {
@@ -132,7 +120,6 @@ function deps(
       allowGrant("read"),
     ]),
     conditionRegistry,
-    deployer: fakeDeployer(),
     ...overrides,
   };
 }
@@ -478,98 +465,13 @@ test("readSource refuses without an asset read grant", async () => {
   expect((err as WorkflowAuthorError).reason).toBe("forbidden");
 });
 
-test("deploy refuses an asset id that does not resolve in the caller's own tenant", async () => {
-  let deployCalled = false;
-  const registry = createWorkflowAuthorRegistry(
-    deps({
-      db: fakeDb(undefined),
-      grantStore: fakeGrantStore([workflowGrant("create")]),
-      deployer: fakeDeployer({
-        deploy: async () => {
-          deployCalled = true;
-          throw new Error("must not be called");
-        },
-      }),
-    }),
-  );
-  const err = await registry
-    .deploy(caller, "asset_from_another_tenant", {
-      commitSha: "sha_1",
-      entry: "./workflow.ts",
-    })
-    .catch((e: unknown) => e);
-  expect(err).toBeInstanceOf(WorkflowAuthorError);
-  expect((err as WorkflowAuthorError).reason).toBe("not_found");
-  expect(deployCalled).toBe(false);
-});
-
-test("deploy refuses when the grant store has no matching workflow:*/create grant", async () => {
-  let deployCalled = false;
-  const registry = createWorkflowAuthorRegistry(
-    deps({
-      db: fakeDb(ownRow),
-      grantStore: fakeGrantStore([allowGrant("create")]), // asset:*/create, not workflow:*/create
-      deployer: fakeDeployer({
-        deploy: async () => {
-          deployCalled = true;
-          throw new Error("must not be called");
-        },
-      }),
-    }),
-  );
-  const err = await registry
-    .deploy(caller, "asset_1", { commitSha: "sha_1", entry: "./workflow.ts" })
-    .catch((e: unknown) => e);
-  expect(err).toBeInstanceOf(WorkflowAuthorError);
-  expect((err as WorkflowAuthorError).reason).toBe("forbidden");
-  expect(deployCalled).toBe(false);
-});
-
-test("deploy calls the injected deployer with the caller's own scope once authorized", async () => {
-  let seen: unknown;
-  const registry = createWorkflowAuthorRegistry(
-    deps({
-      db: fakeDb(ownRow),
-      grantStore: fakeGrantStore([workflowGrant("create")]),
-      deployer: fakeDeployer({
-        deploy: async (params) => {
-          seen = params;
-          return {
-            deploymentId: "run_1",
-            definitionAssetId: "asset_1",
-            status: "deployed",
-          };
-        },
-      }),
-    }),
-  );
-  const result = await registry.deploy(caller, "asset_1", {
-    commitSha: "sha_1",
-    entry: "./workflow.ts",
-  });
-  expect(result).toEqual({
-    deploymentId: "run_1",
-    definitionAssetId: "asset_1",
-    status: "deployed",
-  });
-  expect(seen).toEqual({
-    tenantId: "tenant_1",
-    principalId: "principal_1",
-    assetId: "asset_1",
-    assetName: "daily-digest",
-    commitSha: "sha_1",
-    entry: "./workflow.ts",
-  });
-});
-
-test("previewDeploy is a static read of the committed source at commitSha: file list, package name, and declared tool pins from an inert entry, never a deploy call", async () => {
+test("previewDeploy is a static read of the committed source at commitSha: file list, package name, and declared tool pins from an inert entry", async () => {
   const pinnedEntry =
     'export default { toolPackagePins: [{ name: "@corbits/foo-tools", version: "1.2.3" }] };\n';
   const blobs: Record<string, string> = {
     oid_pkg: MANIFEST,
     oid_entry: pinnedEntry,
   };
-  let deployCalled = false;
   const registry = createWorkflowAuthorRegistry(
     deps({
       db: fakeDb(ownRow),
@@ -591,12 +493,6 @@ test("previewDeploy is a static read of the committed source at commitSha: file 
               }
             : null,
       }),
-      deployer: fakeDeployer({
-        deploy: async () => {
-          deployCalled = true;
-          throw new Error("must not be called");
-        },
-      }),
     }),
   );
 
@@ -612,7 +508,6 @@ test("previewDeploy is a static read of the committed source at commitSha: file 
     toolPackagePins: [{ name: "@corbits/foo-tools", version: "1.2.3" }],
     packageName: "daily-digest",
   });
-  expect(deployCalled).toBe(false);
 });
 
 test("previewDeploy lists files only, with no tool pins, when the entry is not an inert object literal", async () => {

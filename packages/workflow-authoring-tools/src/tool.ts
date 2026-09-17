@@ -39,6 +39,9 @@ export const WORKFLOW_DEPLOY_TOOL = "workflow_deploy";
  * way `@corbits/capability-tools`' `hubCapabilitiesUrl` is. */
 export interface WorkflowAuthoringEnv extends BaseEnv {
   readonly hubWorkflowAuthoringUrl: string;
+  /** The run's own tenant — the `:tenantId` segment of the stock deploy
+   * and model-discovery routes `workflow_deploy` calls. */
+  readonly tenantId: string;
   readonly sidecarToken: string;
   readonly address: string;
 }
@@ -99,6 +102,7 @@ function clientConfig(
 ): WorkflowAuthoringClientConfig {
   return {
     hubWorkflowAuthoringUrl: env.hubWorkflowAuthoringUrl,
+    tenantId: env.tenantId,
     sidecarToken: env.sidecarToken,
     address: env.address,
   };
@@ -200,7 +204,7 @@ async function runDeploy(
  */
 export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
   id: "@corbits/workflow_authoring/wf",
-  requires: ["hubWorkflowAuthoringUrl", "sidecarToken", "address"],
+  requires: ["hubWorkflowAuthoringUrl", "tenantId", "sidecarToken", "address"],
   definitions: [
     { name: WORKFLOW_AUTHOR_TOOL },
     { name: WORKFLOW_REPUBLISH_TOOL },

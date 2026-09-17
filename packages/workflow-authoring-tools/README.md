@@ -8,9 +8,8 @@ for the contract this implements.
 
 ## The tools
 
-None of the three is `approval: "ask"`: storing source is not a side effect.
-Deploying an asset so it can run is a separate, human-approved step
-(`workflow_deploy`, CL-7362), never this bundle's job.
+Only `workflow_deploy` is `approval: "ask"`: storing source is not a side
+effect, but making a workflow runnable is.
 
 - `workflow_author({ name, files, message? })` — creates the asset and
   commits the tree; returns `{ assetId, name, commitSha }`. `name` is
@@ -22,6 +21,14 @@ Deploying an asset so it can run is a separate, human-approved step
   committed content.
 - `workflow_source_read({ assetId })` — every file on `refs/heads/main` plus
   `headSha`, as JSON.
+- `wf_deploy_preview({ assetId, commitSha, entry })` — a static read of the
+  already-committed source: package name, file list, and any statically
+  declared `toolPackagePins`. Never installs, probes, gates, or freezes.
+- `workflow_deploy({ assetId, commitSha, entry, packageName?, toolPackagePins? })`
+  — deploys the committed source through Interchange's native pipeline behind
+  a human approval. `packageName`/`toolPackagePins` come from a prior
+  `wf_deploy_preview` on the same commit and are shown on the approval card;
+  they are not sent to the hub.
 
 Every request carries the run's own sidecar bearer token and
 `x-workflow-run-address`; the hub resolves tenant and principal from the run
@@ -34,11 +41,25 @@ on.
 
 ## Routes and client
 
-| Tool                   | Route                                                  | Client function      |
-| ---------------------- | ------------------------------------------------------ | -------------------- |
-| `workflow_author`      | `POST /api/workflow-workflow-authoring/author`         | `authorWorkflow`     |
-| `workflow_republish`   | `POST /api/workflow-workflow-authoring/republish`      | `republishWorkflow`  |
-| `workflow_source_read` | `GET /api/workflow-workflow-authoring/:assetId/source` | `readWorkflowSource` |
+| Tool                   | Route                                                           | Client function         |
+| ---------------------- | --------------------------------------------------------------- | ----------------------- |
+| `workflow_author`      | `POST /api/workflow-workflow-authoring/author`                  | `authorWorkflow`        |
+| `workflow_republish`   | `POST /api/workflow-workflow-authoring/republish`               | `republishWorkflow`     |
+| `workflow_source_read` | `GET /api/workflow-workflow-authoring/:assetId/source`          | `readWorkflowSource`    |
+| `wf_deploy_preview`    | `POST /api/workflow-workflow-authoring/:assetId/deploy/preview` | `previewDeployWorkflow` |
+| `workflow_deploy`      | `POST /api/tenants/:tenantId/workflows/deployments` (stock)     | `deployWorkflow`        |
+
+`workflow_deploy` speaks stock Interchange routes (CL-8171): it reads the
+tenant's resolved inference catalog from `GET /api/tenants/:tenantId/models`,
+flattens it into one priority-ordered `sourceOfferingIds` chain, and posts an
+`asset`/`source` deploy naming the commit. The run bearer authenticates both.
+
+The four authoring operations still call the Workbench-specific
+`/api/workflow-workflow-authoring` mount. Their stock equivalent is git
+smart-HTTP on the asset repo, which no run-bearer credential reaches today:
+`createGitTokenAuth` accepts only an `itx_pat_`/`itx_svc_` git token, and the
+stock mint route (`POST /api/tenants/:tenantId/git-tokens`) refuses a caller
+with no browser session. CL-8171 carries that upstream ask.
 
 A hub refusal surfaces as `WorkflowAuthoringRequestError` (`status`, `code`,
 `currentHeadSha` on a conflict); the bundle lets it throw, and
@@ -46,10 +67,12 @@ A hub refusal surfaces as `WorkflowAuthoringRequestError` (`status`, `code`,
 
 ## Env
 
-`requires: ["hubWorkflowAuthoringUrl", "sidecarToken", "address"]` —
-`hubWorkflowAuthoringUrl` is threaded in
-`apps/sidecar/src/workflow-substrate-factory/step-env.ts` exactly like
-`hubCapabilitiesUrl`.
+`requires: ["hubWorkflowAuthoringUrl", "tenantId", "sidecarToken", "address"]`
+— all four are threaded in
+`apps/sidecar/src/workflow-substrate-factory/step-env.ts`;
+`hubWorkflowAuthoringUrl` exactly like `hubCapabilitiesUrl`, `tenantId` from
+the hub's signed deploy frame, as the `:tenantId` segment of the stock routes
+`workflow_deploy` calls.
 
 ## Bundle id
 

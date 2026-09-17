@@ -452,8 +452,10 @@ export function createSidecarStepBuildEnv(
       hubAgentDirectoryUrl: deps.hubArtifactsUrl,
       hubChatUrl: deps.hubArtifactsUrl,
       // And under the key `@corbits/workflow-authoring-tools` declares
-      // (`requires: ["hubWorkflowAuthoringUrl", "sidecarToken", "address"]`)
-      // for `@corbits/workflows`'s `./authoring`'s run-authenticated routes.
+      // (`requires: ["hubWorkflowAuthoringUrl", "tenantId", "sidecarToken",
+      // "address"]`) for `@corbits/workflows`'s `./authoring`'s
+      // run-authenticated routes and for the stock deploy route it calls
+      // alongside them.
       hubWorkflowAuthoringUrl: deps.hubArtifactsUrl,
       // And once more under the key `@corbits/access-tools` declares
       // (`requires: ["hubAccessUrl", "sidecarToken", "address"]`) for its
@@ -463,7 +465,8 @@ export function createSidecarStepBuildEnv(
       definitionId: deps.definitionId,
       // The run's own tenant/principal, for the tool bundles that address
       // stock `/api/tenants/:tenantId/*` routes with the run bearer
-      // (`@corbits/access-tools`, `@corbits/connections-tools`).
+      // (`@corbits/access-tools`, `@corbits/connections-tools`,
+      // `@corbits/workflow-authoring-tools`).
       tenantId: deps.tenantId,
       principalId: deps.principalId,
     };

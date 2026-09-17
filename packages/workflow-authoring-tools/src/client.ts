@@ -1,9 +1,23 @@
-// A minimal client for the workflow-run-authenticated authoring surface
-// (`@corbits/workflows`'s `./authoring`'s `createWorkflowAuthorRoutes`,
-// mounted in `apps/hub` at `/api/workflow-workflow-authoring`). Every
-// call carries the run's own sidecar bearer token and run address —
-// the same two headers `@corbits/capability-tools` sends — so the hub
-// resolves tenant and principal from the run, never from an argument.
+// Two surfaces, one credential.
+//
+// `deployWorkflow` speaks the STOCK `@intx/hub-api` routes: `GET
+// /api/tenants/:tenantId/models` for the tenant's resolved inference
+// catalog, then `POST /api/tenants/:tenantId/workflows/deployments`. The
+// run bearer authenticates both — `apps/hub/src/workflow-run-tenant-auth.ts`
+// resolves the sidecar token + run address into a principal and tenant
+// across the whole tenant subtree. The tenant id is a path segment on
+// every stock route, so it rides in the client config; it is never
+// trusted as authority, since the hub sets the acting tenant from the
+// authenticated run alone.
+//
+// `authorWorkflow` / `republishWorkflow` / `readWorkflowSource` /
+// `previewDeployWorkflow` still call the Workbench-specific
+// `/api/workflow-workflow-authoring` mount. Their stock equivalent is git
+// smart-HTTP on the asset repo, which no run-bearer credential can reach
+// today: `createGitTokenAuth` accepts only an `itx_pat_`/`itx_svc_` git
+// token, and the stock mint route refuses a caller with no browser
+// session. See CL-8171 for the upstream ask that would let these four
+// follow `deploy` onto stock routes.
 import { type } from "arktype";
 import {
   runBearerHeaders,
@@ -15,6 +29,8 @@ export interface WorkflowAuthoringClientConfig extends RunBearerClientConfig {
   /** The hub's plain HTTP origin, the same value every other tool
    * bundle's `hub*Url` env key carries. */
   readonly hubWorkflowAuthoringUrl: string;
+  /** The run's own tenant — the `:tenantId` segment of every stock route. */
+  readonly tenantId: string;
 }
 
 export type WorkflowSourceFiles = Readonly<Record<string, string>>;
@@ -116,12 +132,24 @@ const SnapshotResponse = type({
   },
 });
 
-const DeployResponse = type({
-  data: {
-    deploymentId: "string",
-    definitionAssetId: "string",
-    status: "string",
-  },
+/** The stock deploy route's response: the anchor run projected as a
+ * deployment record. */
+const StockDeployResponse = type({
+  id: "string",
+  definitionAssetId: "string",
+  status: "string",
+});
+
+/** The stock model-discovery response, narrowed to the two fields the
+ * deploy's ordered offering chain is built from. */
+const DiscoveredModels = type({
+  offerings: type({ offeringId: "string", priority: "number" }).array(),
+}).array();
+
+/** The stock error envelope (`{error: {code, message}}`), which the
+ * vendored routes use in place of the canonical `userMessage` shape. */
+const StockErrorResponse = type({
+  error: { code: "string", message: "string" },
 });
 
 const DeployPreviewResponse = type({
@@ -137,6 +165,60 @@ const DeployPreviewResponse = type({
 function endpoint(config: WorkflowAuthoringClientConfig, path: string): string {
   return `${config.hubWorkflowAuthoringUrl}/api/workflow-workflow-authoring${path}`;
 }
+
+function stockEndpoint(
+  config: WorkflowAuthoringClientConfig,
+  path: string,
+): string {
+  return `${config.hubWorkflowAuthoringUrl}/api/tenants/${encodeURIComponent(config.tenantId)}${path}`;
+}
+
+async function throwForStockFailure(
+  response: Response,
+  operation: string,
+): Promise<never> {
+  const body: unknown = await response.json().catch(() => undefined);
+  const parsed = StockErrorResponse(body);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `${operation} failed: ${response.status} ${response.statusText}`,
+    );
+  }
+  throw new WorkflowAuthoringRequestError(
+    response.status,
+    parsed.error.code,
+    parsed.error.message,
+  );
+}
+
+/**
+ * The ordered catalog offering chain a deploy hands the hub, rebuilt on
+ * the client from the tenant's resolved model catalog.
+ *
+ * The deleted `/api/workflow-workflow-authoring/:assetId/deploy` mirror
+ * resolved this server-side with `listVisibleOfferings` sorted by
+ * `priority`; the stock route takes it from the caller instead. The
+ * discovery route already applies the same inheritance, shadowing and
+ * disable cascade, and groups its offerings under each model, so the
+ * flattened list is re-sorted by priority here to restore the single
+ * global ordering the mirror produced. `offeringId` is deduplicated
+ * because the stock route rejects a chain with a repeat.
+ */
+export function orderedSourceOfferingIds(
+  models: readonly { readonly offerings: readonly OfferingOrdering[] }[],
+): readonly string[] {
+  const flattened = models.flatMap((m) => [...m.offerings]);
+  flattened.sort(
+    (a, b) =>
+      a.priority - b.priority || a.offeringId.localeCompare(b.offeringId),
+  );
+  return [...new Set(flattened.map((o) => o.offeringId))];
+}
+
+export type OfferingOrdering = {
+  readonly offeringId: string;
+  readonly priority: number;
+};
 
 async function throwForFailure(
   response: Response,
@@ -220,8 +302,33 @@ export async function deployWorkflow(
   input: DeployWorkflowRequest,
 ): Promise<WorkflowDeployResult> {
   const doFetch = runBearerFetch(config);
+
+  const catalogResponse = await doFetch(stockEndpoint(config, "/models"), {
+    headers: runBearerHeaders(config),
+  });
+  if (!catalogResponse.ok) {
+    await throwForStockFailure(
+      catalogResponse,
+      "Reading the workbench's inference catalog",
+    );
+  }
+  const models = parseOrThrow(
+    DiscoveredModels,
+    await catalogResponse.json(),
+    "Reading the workbench's inference catalog",
+  );
+  const sourceOfferingIds = orderedSourceOfferingIds(models);
+  const defaultSourceOfferingId = sourceOfferingIds[0];
+  if (defaultSourceOfferingId === undefined) {
+    throw new WorkflowAuthoringRequestError(
+      409,
+      "invalid",
+      "No catalog offerings are visible to this workbench, so a workflow cannot be deployed",
+    );
+  }
+
   const response = await doFetch(
-    endpoint(config, `/${encodeURIComponent(input.assetId)}/deploy`),
+    stockEndpoint(config, "/workflows/deployments"),
     {
       method: "POST",
       headers: {
@@ -229,17 +336,30 @@ export async function deployWorkflow(
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        commitSha: input.commitSha,
+        source: {
+          kind: "asset",
+          assetId: input.assetId,
+          package: { format: "source", commitSha: input.commitSha },
+        },
         entry: input.entry,
+        sourceOfferingIds,
+        defaultSourceOfferingId,
       }),
     },
   );
-  if (!response.ok) await throwForFailure(response, "Deploying a workflow");
-  return parseOrThrow(
-    DeployResponse,
+  if (!response.ok) {
+    await throwForStockFailure(response, "Deploying a workflow");
+  }
+  const deployment = parseOrThrow(
+    StockDeployResponse,
     await response.json(),
     "Deploying a workflow",
-  ).data;
+  );
+  return {
+    deploymentId: deployment.id,
+    definitionAssetId: deployment.definitionAssetId,
+    status: deployment.status,
+  };
 }
 
 export async function previewDeployWorkflow(
