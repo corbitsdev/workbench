@@ -49,7 +49,6 @@ type Stub = {
 function harness(state: Stub) {
   const calls: { method: string; path: string }[] = [];
   let seedTenantCalls = 0;
-  let published = 0;
   const api = (async (method: string, path: string): Promise<unknown> => {
     calls.push({ method, path });
     if (
@@ -162,12 +161,6 @@ function harness(state: Stub) {
     throw new Error(`stub api: unhandled ${method} ${path}`);
   }) as unknown as ApiCall;
 
-  const publishToolRegistry = async () => {
-    calls.push({ method: "PUBLISH", path: "corbits-tools" });
-    published += 1;
-    state.registryTarballs = true;
-  };
-
   const pushWorkflow: WorkflowPusher = async (args) => {
     calls.push({ method: "PUSH", path: args.remoteUrl });
     return { outcome: "pushed", commitSha: "a".repeat(40) };
@@ -180,7 +173,6 @@ function harness(state: Stub) {
     tenant: { tenantId: TENANT_ID, principalId: "prn_1", domain: "t.local" },
     model: MODEL,
     pushWorkflow,
-    publishToolRegistry,
     seedTenantFn: async (seedArgs) => {
       calls.push({ method: "SEED_TENANT", path: seedArgs.tenant.tenantId });
       seedTenantCalls += 1;
@@ -197,12 +189,11 @@ function harness(state: Stub) {
     calls,
     nonGetCalls: () => calls.filter((c) => c.method !== "GET"),
     seedTenantCalls: () => seedTenantCalls,
-    publishedCount: () => published,
   };
 }
 
 describe("reconcileTenantDesiredState", () => {
-  test("a fresh tenant installs every pin: tools first, then one seedTenant", async () => {
+  test("a fresh tenant reports absent workspace-pack tools blocked (CL-8190: never packed here) while workflows still install", async () => {
     const h = harness({
       workflowAssets: false,
       liveDeployments: false,
@@ -211,11 +202,11 @@ describe("reconcileTenantDesiredState", () => {
       catalogOfferings: true,
     });
     const report = await reconcileTenantDesiredState(h.args);
-    expect(report.ready).toBe(true);
-    expect(h.publishedCount()).toBe(1);
+    expect(report.ready).toBe(false);
     expect(h.seedTenantCalls()).toBe(1);
     const tools = report.pins.filter((p) => p.kind === "tool-package");
-    expect(tools.every((p) => p.status === "installed")).toBe(true);
+    expect(tools.every((p) => p.status === "blocked")).toBe(true);
+    expect(h.nonGetCalls().some((c) => c.method === "PUBLISH")).toBe(false);
     expect(report.pins.filter((p) => p.kind === "workflow")).toEqual(
       TENANT_DESIRED_STATE.workflows.map((w) => ({
         name: w.assetName,
@@ -241,14 +232,15 @@ describe("reconcileTenantDesiredState", () => {
     const first = await reconcileTenantDesiredState(h.args);
     expect(first.ready).toBe(true);
     expect(h.seedTenantCalls()).toBe(0);
-    expect(h.publishedCount()).toBe(0);
     expect(h.nonGetCalls().length).toBe(0);
 
-    // And a fresh install followed by a revisit behaves identically.
+    // And a fresh workflow/skill install (tools already present, as an
+    // operator's out-of-band `bun run publish-tools` would leave them)
+    // followed by a revisit behaves identically.
     const h2 = harness({
       workflowAssets: false,
       liveDeployments: false,
-      registryTarballs: false,
+      registryTarballs: true,
       skills: false,
       catalogOfferings: true,
     });
