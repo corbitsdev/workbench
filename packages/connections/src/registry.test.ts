@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CODEX_SCOPES } from "@corbits/codex-provider/constants";
+import { CODEX_SCOPES } from "@corbits/codex-provider";
 import { CONNECTOR_REGISTRY, connectorDescriptors } from "./registry";
 import {
   MCP_PRESET_CONNECTOR_IDS,

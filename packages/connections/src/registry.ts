@@ -69,14 +69,14 @@ import {
   CODEX_REDIRECT_URI,
   CODEX_SCOPES,
   CODEX_TOKEN_URL,
-} from "@corbits/codex-provider/constants";
+} from "@corbits/codex-provider";
 import {
   XAI_AUTHORIZE_URL,
   XAI_CLIENT_ID,
   XAI_REDIRECT_URI,
   XAI_SCOPES,
   XAI_TOKEN_URL,
-} from "@corbits/xai-provider/constants";
+} from "@corbits/xai-provider";
 import { exchangeCodeForKey, OPENROUTER_AUTH_URL } from "./openrouter-connect";
 import { exchangeCodeForGithubToken, GITHUB_AUTHORIZE_URL } from "./github-connect";
 import {
