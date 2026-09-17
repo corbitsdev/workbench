@@ -1,8 +1,8 @@
 // Smoke scenario 5/5 (CL-6004): webhook trigger. A workflow is bound to
 // a `@corbits/webhook-triggers` row instead of a cadence; a correctly
 // HMAC-signed payload delivered to the public ingress route launches a
-// run. Zero-cost like `scripts/e2e/workbench-digest.test.ts`: the
-// deployed workflow's only inference source is this suite's own local
+// run. Zero-cost: the deployed workflow's only inference source is this
+// suite's own local
 // noop inference server (`./noop-inference-server.ts`), so nothing here
 // ever calls a real model provider.
 //
@@ -23,10 +23,7 @@ import {
 import { describe, expect, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
-import {
-  buildHeartbeatWorkflow,
-  serializeHeartbeatWorkflow,
-} from "../../workflows/heartbeat/src/index.ts";
+import { buildEchoWorkflow, serializeEchoWorkflow } from "../../workflows/echo/src/index.ts";
 import { ensureNoopCatalogOffering, startNoopInferenceServer } from "./noop-inference-server.ts";
 import { publishCorbitsToolsRegistry } from "../../packages/tool-registry-publish/src/publish.ts";
 import { createHubAPI } from "../../packages/hub-api-client/src/index.ts";
@@ -132,7 +129,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         ),
       );
 
-      const assetName = "heartbeat";
+      const assetName = "echo";
       const { assetId, commitSha } = await hop("workflow asset publication", async () => {
         const created = await api(
           hub.baseUrl,
@@ -159,8 +156,8 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         );
         expectStatus("mint git token", minted, 201);
 
-        const definition = buildHeartbeatWorkflow({
-          triggerAddress: `heartbeat@${slug}.localhost`,
+        const definition = buildEchoWorkflow({
+          triggerAddress: `echo@${slug}.localhost`,
           inferencePreferences: [{ provider: "anthropic", model: "noop" }],
           turnTimeoutMs: 30_000,
         });
@@ -169,7 +166,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
           tenantId,
           assetName,
           tokenSecret: stringField(minted.data, "secret", "mint git token"),
-          workflowJson: serializeHeartbeatWorkflow(definition),
+          workflowJson: serializeEchoWorkflow(definition),
         });
         return { assetId: id, commitSha: pushed.commitSha };
       });
@@ -226,7 +223,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
             await Bun.sleep(200);
             continue;
           }
-          expectStatus("deploy heartbeat workflow", res, 201);
+          expectStatus("deploy echo workflow", res, 201);
           break;
         }
 
@@ -242,15 +239,15 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
           typeof listed.data === "object" && listed.data !== null && "data" in listed.data
             ? (listed.data as { data: unknown[] }).data
             : (listed.data as unknown[]);
-        const heartbeat = (rows as { id: string; name?: string }[]).find(
+        const echo = (rows as { id: string; name?: string }[]).find(
           (row) => row.name === assetName,
         );
-        if (heartbeat === undefined) {
+        if (echo === undefined) {
           throw new Error(
             `no workflow definition named "${assetName}": ${JSON.stringify(listed.data)}`,
           );
         }
-        return heartbeat.id;
+        return echo.id;
       });
 
       const { triggerId, secret } = await hop("webhook trigger creation", async () => {

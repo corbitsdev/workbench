@@ -1,5 +1,11 @@
 # Workflow packages
 
+Owner ruling (2026-09-17, LESS IS MORE): the shipped workflow catalog is
+deleted. Myra (`agents/assistant`) creates workflows dynamically for a
+tenant's own needs; there is no seeded catalog of ready-made workflows
+any more. `workflows/echo` is kept only as the e2e smoke fixture proving
+the mail-triggered contract works — it is not a product offering.
+
 Each subdirectory is a deployable workflow package: an Interchange
 `defineWorkflow` plus a `corbits.workflow` block in its `package.json`
 (`assetName`, `displayName`, `automatable`). `@corbits/workflows/catalog`'s

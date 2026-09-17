@@ -193,10 +193,11 @@ frozen projection carries a native `ScheduleTrigger`. Cadence is set
 from inside conversation, not from a separate scheduling console: a
 person names what should happen again, on what schedule, and where the
 result should land. See `@corbits/workflows` for the schedule/cron
-helpers and the hub's `workflow-scheduler.ts` for the poller. The
-Routines page also offers an Available section (CL-7073): every
-catalog workflow this workbench hasn't added yet, with an Add action
-that deploys it in place — no separate create flow.
+helpers and the hub's `workflow-scheduler.ts` for the poller. Owner
+ruling (2026-09-17, LESS IS MORE): the shipped workflow catalog is
+deleted — `WORKFLOW_CATALOG` now carries only Myra and `echo` (the
+e2e smoke fixture), and every other workflow a workbench runs is one
+Myra creates dynamically for that workbench's own needs.
 
 ## Inbox and approvals
 
