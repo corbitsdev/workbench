@@ -119,6 +119,15 @@ function memoryStore(): ArtifactRoutesStore & { rows: Row[] } {
       if (row.mimeType !== "text/html") return { status: "unsupported" };
       return { status: "ok", html: row.content };
     },
+    async update(tenantId, _principalId, artifactId, content) {
+      const row = rows.find(
+        (r) => r.id === artifactId && r._tenantId === tenantId,
+      );
+      if (row === undefined) return null;
+      row.content = content;
+      row.version += 1;
+      return stripTenant(row);
+    },
   };
 }
 
@@ -188,6 +197,39 @@ describe("artifact routes", () => {
     const body = (await res.json()) as { id: string; content: string };
     expect(body.id).toBe("a1");
     expect(body.content).toBe("hello");
+  });
+
+  test("PUT /:id saves a new version and returns the updated row", async () => {
+    store.rows.push(sampleRow("a1", TENANT.id, "hello"));
+    const res = await app.request("/artifacts/a1", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "edited" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { content: string; version: number };
+    expect(body.content).toBe("edited");
+    expect(body.version).toBe(2);
+  });
+
+  test("PUT /:id returns 404 for a foreign tenant row", async () => {
+    store.rows.push(sampleRow("b1", OTHER.id, "secret"));
+    const res = await app.request("/artifacts/b1", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "edited" }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  test("PUT /:id returns 400 without a string content field", async () => {
+    store.rows.push(sampleRow("a1", TENANT.id, "hello"));
+    const res = await app.request("/artifacts/a1", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
   });
 
   test("GET /:id/preview serves HTML with a strict sandbox CSP", async () => {
@@ -349,6 +391,9 @@ describe("GET /counts pagination", () => {
       async preview() {
         return { status: "not_found" };
       },
+      async update() {
+        return null;
+      },
     };
   }
 
@@ -404,6 +449,9 @@ describe("GET /counts pagination", () => {
       async preview() {
         return { status: "not_found" };
       },
+      async update() {
+        return null;
+      },
     };
     const app = mount(neverEndingStore);
 
@@ -427,6 +475,9 @@ describe("GET /counts pagination", () => {
       },
       async preview() {
         return { status: "not_found" };
+      },
+      async update() {
+        return null;
       },
     };
     const app = mount(stuckCursorStore);

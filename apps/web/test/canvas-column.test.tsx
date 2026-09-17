@@ -198,7 +198,7 @@ describe("canvas profile card Message action", () => {
   });
 });
 
-describe("canvas artifact pane: co-editing (CL-5958 phase 2)", () => {
+describe("canvas artifact pane: single-user text editing (CL-8189)", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -224,8 +224,7 @@ describe("canvas artifact pane: co-editing (CL-5958 phase 2)", () => {
       readonly content: string;
       readonly canEdit?: boolean;
     };
-    readonly artifactDoc?: import("yjs").Doc;
-    readonly presenceConnection?: "ok" | "degraded";
+    readonly onSaveArtifact?: (content: string) => void;
   }): Promise<void> {
     await act(async () => {
       root.render(
@@ -241,11 +240,8 @@ describe("canvas artifact pane: co-editing (CL-5958 phase 2)", () => {
                 onClose={noop}
                 onToggleFocus={noop}
                 onNavigate={noop}
-                {...(props.artifactDoc !== undefined
-                  ? { artifactDoc: props.artifactDoc }
-                  : {})}
-                {...(props.presenceConnection !== undefined
-                  ? { presenceConnection: props.presenceConnection }
+                {...(props.onSaveArtifact !== undefined
+                  ? { onSaveArtifact: props.onSaveArtifact }
                   : {})}
               />
             </BenchProvider>
@@ -255,10 +251,7 @@ describe("canvas artifact pane: co-editing (CL-5958 phase 2)", () => {
     });
   }
 
-  test("a non-'doc' kind never renders the text editor, even with canEdit and a doc", async () => {
-    const Y = await import("yjs");
-    const doc = new Y.Doc();
-    doc.getText("content").insert(0, "sheet content");
+  test("a non-'doc' kind never renders the text editor, even with canEdit", async () => {
     await renderArtifact({
       artifact: {
         id: "art_1",
@@ -267,58 +260,47 @@ describe("canvas artifact pane: co-editing (CL-5958 phase 2)", () => {
         content: "a,b\n1,2",
         canEdit: true,
       },
-      artifactDoc: doc,
     });
 
     expect(container.querySelector("textarea")).toBeNull();
   });
 
-  test("a 'doc' artifact with canEdit and a synced doc renders an editable textarea bound to the Y.Text", async () => {
-    const Y = await import("yjs");
-    const doc = new Y.Doc();
-    doc.getText("content").insert(0, "shared draft");
+  test("a 'doc' artifact with canEdit renders an editable textarea seeded with its content", async () => {
     await renderArtifact({
       artifact: {
         id: "art_2",
         title: "Notes",
         rendererKind: "doc",
-        content: "stale fetch content",
+        content: "fetched draft",
         canEdit: true,
       },
-      artifactDoc: doc,
     });
 
     const textarea = container.querySelector("textarea");
     expect(textarea).not.toBeNull();
-    expect(textarea?.value).toBe("shared draft");
+    expect(textarea?.value).toBe("fetched draft");
     expect(textarea?.hasAttribute("readonly")).toBe(false);
   });
 
-  test("a 'doc' artifact without canEdit renders the same textarea, but readonly and live-updating", async () => {
-    const Y = await import("yjs");
-    const doc = new Y.Doc();
-    doc.getText("content").insert(0, "live from co-editors");
+  test("a 'doc' artifact without canEdit renders the same textarea, but readonly", async () => {
     await renderArtifact({
       artifact: {
         id: "art_3",
         title: "Notes",
         rendererKind: "doc",
-        content: "stale fetch content",
+        content: "fetched content",
         canEdit: false,
       },
-      artifactDoc: doc,
     });
 
     const textarea = container.querySelector("textarea");
     expect(textarea).not.toBeNull();
-    expect(textarea?.value).toBe("live from co-editors");
+    expect(textarea?.value).toBe("fetched content");
     expect(textarea?.hasAttribute("readonly")).toBe(true);
   });
 
-  test("typing in the editable textarea applies the diff to the shared Y.Text", async () => {
-    const Y = await import("yjs");
-    const doc = new Y.Doc();
-    doc.getText("content").insert(0, "hello");
+  test("typing in the editable textarea eventually calls onSaveArtifact with the full text", async () => {
+    const saved: string[] = [];
     await renderArtifact({
       artifact: {
         id: "art_4",
@@ -327,7 +309,7 @@ describe("canvas artifact pane: co-editing (CL-5958 phase 2)", () => {
         content: "hello",
         canEdit: true,
       },
-      artifactDoc: doc,
+      onSaveArtifact: (content) => saved.push(content),
     });
 
     const textarea = container.querySelector("textarea");
@@ -342,49 +324,10 @@ describe("canvas artifact pane: co-editing (CL-5958 phase 2)", () => {
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    expect(doc.getText("content").toString()).toBe("hello world");
-  });
-
-  test("a 'doc' artifact with no synced doc yet falls back to the static read-only renderer", async () => {
-    await renderArtifact({
-      artifact: {
-        id: "art_5",
-        title: "Notes",
-        rendererKind: "doc",
-        content: "fetched content",
-        canEdit: true,
-      },
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
     });
 
-    expect(container.querySelector("textarea")).toBeNull();
-    expect(container.textContent).toContain("fetched content");
-  });
-
-  test("a degraded presence connection shows a quiet reconnecting caption", async () => {
-    await renderArtifact({
-      artifact: {
-        id: "art_6",
-        title: "Notes",
-        rendererKind: "doc",
-        content: "fetched content",
-      },
-      presenceConnection: "degraded",
-    });
-
-    expect(container.textContent).toContain("Reconnecting…");
-  });
-
-  test("a healthy presence connection shows no reconnecting caption", async () => {
-    await renderArtifact({
-      artifact: {
-        id: "art_7",
-        title: "Notes",
-        rendererKind: "doc",
-        content: "fetched content",
-      },
-      presenceConnection: "ok",
-    });
-
-    expect(container.textContent).not.toContain("Reconnecting…");
+    expect(saved).toEqual(["hello world"]);
   });
 });
