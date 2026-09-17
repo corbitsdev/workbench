@@ -1739,7 +1739,7 @@
       "name": "@corbits/code-review-workflow",
       "version": "0.0.1",
       "dependencies": {
-        "@corbits/code-review": "0.0.1",
+        "@corbits/code-review": "0.0.2",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
