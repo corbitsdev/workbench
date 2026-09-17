@@ -677,6 +677,8 @@ export function createOnboardingRoutes(
       // failure whose text names absolute file paths on the hub's own
       // disk (CL-6360). The raw detail is logged behind a refId; the
       // client only ever sees a fixed consumer sentence plus that refId.
+      // report-error-ignore: CL-7234 — reportOnboardingError itself needs
+      // to call reportError; tracked there rather than at each call site
       const envelope = reportOnboardingError(deps.logError ?? deps.log, {
         operation: "onboarding_complete",
         userAction: `credential setup for user ${user.id}`,

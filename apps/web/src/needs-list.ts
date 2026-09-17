@@ -142,6 +142,8 @@ export function loadCreatedWorkbenchTenantIds(
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((entry): entry is string => typeof entry === "string");
   } catch {
+    // report-error-ignore: a corrupt localStorage row reads as empty by
+    // design (see above) — client-local damage with no incident to report.
     return [];
   }
 }

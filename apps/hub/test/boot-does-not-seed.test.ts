@@ -269,15 +269,18 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
     expect(signUp.status).toBe(200);
     const cookies = signUp.headers.getSetCookie();
     expect(cookies.length).toBeGreaterThan(0);
-    const provision = await fetch(`${baseUrl}/api/onboarding/provision`, {
+    // Client convergence replaced the deleted genesis hook: the root
+    // tenant the old plant looked up by slug is created over the stock
+    // route, with the signer as owner.
+    const created = await fetch(`${baseUrl}/api/tenants`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         cookie: cookies.join("; "),
       },
-      body: JSON.stringify({ name: "Workbench" }),
+      body: JSON.stringify({ name: "Workbench", slug: "workbench" }),
     });
-    expect(provision.status).toBe(200);
+    expect(created.status).toBe(201);
   }
 
   test("process boot with OLLAMA_BASE_URL set inserts no credential or offering rows", async () => {
@@ -373,15 +376,17 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
         }),
       });
       expect(signUp.status).toBe(200);
-      const provision = await genesis.app.request("/api/onboarding/provision", {
+      // Client convergence replaced the deleted genesis hook: mint the
+      // operator bench over the stock tenant route.
+      const created = await genesis.app.request("/api/tenants", {
         method: "POST",
         headers: {
           "content-type": "application/json",
           cookie: signUp.headers.getSetCookie().join("; "),
         },
-        body: JSON.stringify({ name: "Workbench" }),
+        body: JSON.stringify({ name: "Workbench", slug: "workbench" }),
       });
-      expect(provision.status).toBe(200);
+      expect(created.status).toBe(201);
       await genesis.close();
 
       const hub = await createHub({

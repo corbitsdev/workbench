@@ -96,19 +96,17 @@ export async function ensureMyraDeployed(
     typeof (deploy as { definitionAssetId: unknown }).definitionAssetId !==
       "string"
   ) {
-    throw new Error("myra deploy: the resolved deploy body has no asset id");
+    throw new Error("myra: the resolved body has no workflow id");
   }
   const definitionAssetId = (deploy as { definitionAssetId: string })
     .definitionAssetId;
   const listed = await fetch(`/api/tenants/${encoded}/workflows/deployments`);
   if (!listed.ok) {
-    throw new Error(
-      `myra deploy: listing deployments failed: HTTP ${listed.status}`,
-    );
+    throw new Error(`myra: listing workflows failed: HTTP ${listed.status}`);
   }
   const existing: unknown = await listed.json().catch(() => null);
   if (!Array.isArray(existing)) {
-    throw new Error("myra deploy: the deployments answer was not a list");
+    throw new Error("myra: the workflows answer was not a list");
   }
   const live = existing
     .filter(isDeploymentRow)
@@ -125,7 +123,7 @@ export async function ensureMyraDeployed(
   });
   if (!posted.ok) {
     throw new Error(
-      `myra deploy: posting the deployment failed: HTTP ${posted.status}`,
+      `myra: starting the assistant failed: HTTP ${posted.status}`,
     );
   }
   return { kind: "deployed" };
@@ -164,7 +162,7 @@ export async function resolveTenantIdForSlug(
     );
     if (!response.ok) {
       throw new Error(
-        `myra deploy: listing memberships failed: HTTP ${response.status}`,
+        `myra: listing memberships failed: HTTP ${response.status}`,
       );
     }
     const body: unknown = await response.json().catch(() => null);
@@ -174,7 +172,7 @@ export async function resolveTenantIdForSlug(
       !("data" in body) ||
       !Array.isArray((body as { data: unknown }).data)
     ) {
-      throw new Error("myra deploy: the memberships answer was not a page");
+      throw new Error("myra: the memberships answer was not a page");
     }
     const page = body as {
       readonly data: unknown[];

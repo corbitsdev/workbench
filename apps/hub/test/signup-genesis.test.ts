@@ -1,8 +1,10 @@
 // CL-7578 end-to-end proof of the 0→1 contract: a hub booted on an
-// empty database starts truly empty, and the first signup — not a CLI,
-// not a boot-time seed — mints the root tenant and becomes its owner.
-// The second signup joins that root as a plain member. Signup never
-// seeds workflows, tools, or grants.
+// empty database starts truly empty. Signup mints no tenant — under the
+// CL-8085 client-convergence contract the client creates the root tenant
+// itself over the stock route (`POST /api/tenants`, whose signer becomes
+// owner) and later members join by owner invite + activate. The first
+// signup — not a CLI, not a boot-time seed — still owns the root it
+// creates. Signup never seeds workflows, tools, or grants.
 //
 // DB-gated: each test boots a full hub against its own scratch
 // database, so a reachable DATABASE_URL is required and the suite
@@ -161,31 +163,77 @@ async function signUp(
   return cookies;
 }
 
-async function provision(
+// Client convergence over the stock tenant route: the signer becomes
+// the tenant owner (see walking-skeleton's "tenant creation" hop).
+async function createTenant(
   baseUrl: string,
   cookies: string[],
-  name?: string,
-): Promise<{
-  kind: string;
-  tenantId?: string;
-  tenantSlug?: string;
-  seeded?: boolean;
-}> {
-  const response = await fetch(`${baseUrl}/api/onboarding/provision`, {
+  args: { name: string; slug: string },
+): Promise<{ tenantId: string }> {
+  const response = await fetch(`${baseUrl}/api/tenants`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       cookie: cookies.join("; "),
     },
-    ...(name !== undefined ? { body: JSON.stringify({ name }) } : {}),
+    body: JSON.stringify(args),
   });
-  expect(response.status).toBe(200);
-  return (await response.json()) as {
-    kind: string;
-    tenantId?: string;
-    tenantSlug?: string;
-    seeded?: boolean;
-  };
+  expect(response.status).toBe(201);
+  const body = (await response.json()) as { id?: string };
+  expect(typeof body.id).toBe("string");
+  return { tenantId: body.id ?? "" };
+}
+
+// Owner invite + activate: the join path that replaced the deleted
+// genesis-or-join hook. The invitee must already hold an account;
+// the owner activates the invited principal into a role by id.
+async function inviteAndActivate(
+  baseUrl: string,
+  ownerCookies: string[],
+  args: { tenantId: string; email: string; roleId?: string },
+): Promise<void> {
+  const invited = await fetch(
+    `${baseUrl}/api/tenants/${args.tenantId}/members/invite`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: ownerCookies.join("; "),
+      },
+      body: JSON.stringify({
+        email: args.email,
+        ...(args.roleId !== undefined ? { roleId: args.roleId } : {}),
+      }),
+    },
+  );
+  expect(invited.status).toBe(201);
+  const inviteBody = (await invited.json()) as { id?: string };
+  expect(typeof inviteBody.id).toBe("string");
+  const activated = await fetch(
+    `${baseUrl}/api/tenants/${args.tenantId}/principals/${inviteBody.id ?? ""}`,
+    {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        cookie: ownerCookies.join("; "),
+      },
+      body: JSON.stringify({ status: "active" }),
+    },
+  );
+  expect(activated.status).toBe(200);
+}
+
+async function memberRoleIdFor(
+  db: Awaited<ReturnType<typeof createHub>>["db"],
+  tenantId: string,
+): Promise<string> {
+  const [memberRole] = await db
+    .select({ id: role.id })
+    .from(role)
+    .where(and(eq(role.tenantId, tenantId), eq(role.name, "member")))
+    .limit(1);
+  expect(memberRole).toBeDefined();
+  return memberRole?.id ?? "";
 }
 
 async function roleNamesFor(
@@ -216,8 +264,8 @@ async function roleNamesFor(
   return rows.map((r) => r.roleName);
 }
 
-describeIfDb("signup genesis (CL-7578)", () => {
-  test("a closed empty hub admits the first signup, which mints the root tenant as owner — no seed", async () => {
+describeIfDb("signup-driven tenant creation (CL-7578, CL-8085)", () => {
+  test("a closed empty hub admits the first signup, which creates the root tenant as owner — no seed", async () => {
     const scratchUrl = scratchUrlFor("closed");
     await withScratchDatabase(scratchUrl, async () => {
       const { baseUrl, db } = await bootEmptyHub({
@@ -233,15 +281,15 @@ describeIfDb("signup genesis (CL-7578)", () => {
         password: "password123",
       });
 
-      const probe = await provision(baseUrl, cookies);
-      expect(probe.kind).toBe("needs-onboarding");
-
-      const result = await provision(baseUrl, cookies, "Acme");
-      expect(result.kind).toBe("provisioned");
-      expect(result.tenantSlug).toBe("workbench");
-      expect(result.seeded).toBe(false);
-      expect(typeof result.tenantId).toBe("string");
-      const tenantId = result.tenantId;
+      // Client convergence: the first signup creates the root over the
+      // stock route and becomes its owner.
+      const created = await createTenant(baseUrl, cookies, {
+        name: "Acme",
+        slug: "workbench",
+      });
+      expect(typeof created.tenantId).toBe("string");
+      expect(created.tenantId).not.toBe("");
+      const tenantId = created.tenantId;
 
       const [userCount] = await db.select().from(userTable);
       expect(userCount).toBeDefined();
@@ -262,7 +310,7 @@ describeIfDb("signup genesis (CL-7578)", () => {
         }),
       ).toEqual(["owner"]);
 
-      // No seed side effects: the genesis tenant carries no workflow
+      // No seed side effects: the created root carries no workflow
       // assets and no deployments.
       const assets = await fetch(
         `${baseUrl}/api/tenants/${tenantId}/assets?kind=workflow&inherited=false`,
@@ -290,21 +338,25 @@ describeIfDb("signup genesis (CL-7578)", () => {
         email: "alice@example.com",
         password: "password123",
       });
-      const genesis = await provision(baseUrl, alice, "Acme");
-      expect(genesis.kind).toBe("provisioned");
-      expect(genesis.tenantSlug).toBe("workbench");
+      const created = await createTenant(baseUrl, alice, {
+        name: "Acme",
+        slug: "workbench",
+      });
 
-      const bob = await signUp(baseUrl, {
+      // Bob must already hold an account for the owner to invite him —
+      // the invite path looks the invitee up by email.
+      await signUp(baseUrl, {
         name: "Bob",
         email: "bob@example.com",
         password: "password123",
       });
-      // The join path needs no display name: a plain membership probe
-      // is enough, because the root already exists.
-      const joined = await provision(baseUrl, bob);
-      expect(joined.kind).toBe("existing-member");
-      expect(joined.tenantSlug).toBe("workbench");
-      expect(joined.tenantId).toBe(genesis.tenantId);
+      // The join path is owner invite + activate into the member role:
+      // no second tenant is minted.
+      await inviteAndActivate(baseUrl, alice, {
+        tenantId: created.tenantId,
+        email: "bob@example.com",
+        roleId: await memberRoleIdFor(db, created.tenantId),
+      });
 
       const tenants = await db.select().from(tenant);
       expect(tenants).toHaveLength(1);
@@ -340,14 +392,21 @@ describeIfDb("signup genesis (CL-7578)", () => {
         email: "alice@example.com",
         password: "password123",
       });
-      await provision(open.baseUrl, alice, "Acme");
-      const bob = await signUp(open.baseUrl, {
+      const created = await createTenant(open.baseUrl, alice, {
+        name: "Acme",
+        slug: "workbench",
+      });
+      // Bob must already hold an account for the owner to invite him.
+      await signUp(open.baseUrl, {
         name: "Bob",
         email: "bob@example.com",
         password: "password123",
       });
-      const joined = await provision(open.baseUrl, bob);
-      expect(joined.kind).toBe("existing-member");
+      await inviteAndActivate(open.baseUrl, alice, {
+        tenantId: created.tenantId,
+        email: "bob@example.com",
+        roleId: await memberRoleIdFor(open.db, created.tenantId),
+      });
 
       // Operator removal: native removal deletes the member's
       // principal rows outright, leaving the account itself alive.
@@ -398,16 +457,23 @@ describeIfDb("signup genesis (CL-7578)", () => {
       expect(signIn.status).toBe(200);
       const sessionCookies = signIn.headers.getSetCookie();
 
-      const res = await fetch(`${closed.baseUrl}/api/onboarding/provision`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          cookie: sessionCookies.join("; "),
+      // Self-rejoin is invite-shaped now, and bob holds no membership:
+      // the tenant middleware answers 403 before any invite handler
+      // runs, so the removal sticks.
+      const res = await fetch(
+        `${closed.baseUrl}/api/tenants/${created.tenantId}/members/invite`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            cookie: sessionCookies.join("; "),
+          },
+          body: JSON.stringify({ email: "bob@example.com" }),
         },
-      });
+      );
       expect(res.status).toBe(403);
       const body = (await res.json()) as { error: { code: string } };
-      expect(body.error.code).toBe("signup_not_allowed");
+      expect(body.error.code).toBe("forbidden");
 
       // No principal was minted: the removal sticks.
       const [bobAfter] = await closed.db

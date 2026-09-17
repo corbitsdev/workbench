@@ -3,10 +3,10 @@
 // provider. One sequential scenario against a real hub, a real
 // sidecar, and a real Postgres.
 //
-// Phase A (onboard → connect): alice signs up first as genesis owner
-// → a tester joins the genesis root as a plain member (the genesis
-// path — first signup on a truly empty hub mints the root — is also
-// covered in-process by `apps/hub/test/signup-genesis.test.ts`) →
+// Phase A (onboard → connect): alice signs up first and creates the root
+// as its owner over the stock tenant route → a tester joins the root by
+// owner invite as a plain member (the join path is also covered
+// in-process by `apps/hub/test/signup-genesis.test.ts`) →
 // occupied closed signup is refused → the root's owner (alice)
 // connects a real inference credential through the key path
 // (`POST /api/onboarding/complete`'s own machinery, called directly —
@@ -23,7 +23,7 @@
 // had published a `package-registry`-kind asset named "corbits-tools"
 // carrying its tarball. CL-7071 moved that publish off `seedTenant`
 // onto `workbench setup` (the root tenant; descendants inherit). The
-// connect flow runs on the genesis root itself, so an explicit
+// connect flow runs on the root itself, so an explicit
 // `runPublishTools` hop onto the root stands in for
 // setup, then `ensureSeeded` deploys without packing.
 //
@@ -172,7 +172,7 @@ describe.skipIf(databaseUrl === undefined)(
 
       const hubApi: ApiCall = createHubAPI(hub.baseUrl);
 
-      const admin = await hop("alice genesis sign-up", async () => {
+      const admin = await hop("alice creates the root as owner", async () => {
         const res = await api(hub.baseUrl, "POST", "/api/auth/sign-up/email", {
           name: "Alice",
           email: "alice@example.com",
@@ -187,25 +187,19 @@ describe.skipIf(databaseUrl === undefined)(
           "id",
           "alice sign-up user field",
         );
-        const probe = await api(
-          hub.baseUrl,
-          "POST",
-          "/api/onboarding/provision",
-          undefined,
-          res.cookies,
-        );
-        expectStatus("alice genesis probe", probe, 200);
-        expect((probe.data as { kind: string }).kind).toBe("needs-onboarding");
+        // Client convergence: the first signup creates the root over the
+        // stock route and becomes its owner.
+        const tenantSlug = `local-rip-${crypto.randomUUID().slice(0, 8)}`;
         const minted = await api(
           hub.baseUrl,
           "POST",
-          "/api/onboarding/provision",
-          { name: "Workbench" },
+          "/api/tenants",
+          { name: "Workbench", slug: tenantSlug },
           res.cookies,
         );
-        expectStatus("alice genesis provision", minted, 200);
-        expect((minted.data as { kind: string }).kind).toBe("provisioned");
-        return { cookies: res.cookies, userId };
+        expectStatus("alice create root tenant", minted, 201);
+        const tenantId = stringField(minted.data, "id", "create tenant");
+        return { cookies: res.cookies, userId, tenantId, tenantSlug };
       });
 
       // Occupied closed signup: a hub with WORKBENCH_SIGNUP=closed
@@ -247,42 +241,42 @@ describe.skipIf(databaseUrl === undefined)(
       );
 
       const provisioned = await hop(
-        "a membership probe joins the genesis root as a member",
+        "the owner invites the tester, who joins the root as a member",
+        async () => {
+          const invited = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${admin.tenantId}/members/invite`,
+            { email: user.email },
+            admin.cookies,
+          );
+          expectStatus("invite tester", invited, 201);
+          const principalId = stringField(invited.data, "id", "invite tester");
+          const activated = await api(
+            hub.baseUrl,
+            "PATCH",
+            `/api/tenants/${admin.tenantId}/principals/${principalId}`,
+            { status: "active" },
+            admin.cookies,
+          );
+          expectStatus("activate tester", activated, 200);
+          return { tenantId: admin.tenantId, tenantSlug: admin.tenantSlug };
+        },
+      );
+
+      await hop(
+        "re-creating the same root slug conflicts outright",
         async () => {
           const res = await api(
             hub.baseUrl,
             "POST",
-            "/api/onboarding/provision",
-            undefined,
+            "/api/tenants",
+            { name: "Local Rip Tester's Bench", slug: admin.tenantSlug },
             user.cookies,
           );
-          expectStatus("provision probe", res, 200);
-          const data = res.data as {
-            kind: string;
-            tenantId: string;
-            tenantSlug: string;
-            seeded: boolean;
-            seedSkipReason?: string;
-          };
-          expect(data.kind).toBe("existing-member");
-          stringField(data, "tenantId", "provision result");
-          stringField(data, "tenantSlug", "provision result");
-          return data;
+          expectStatus("re-create root tenant", res, 409);
         },
       );
-
-      await hop("re-provisioning the same account is idempotent", async () => {
-        const res = await api(
-          hub.baseUrl,
-          "POST",
-          "/api/onboarding/provision",
-          { name: "Local Rip Tester's Bench" },
-          user.cookies,
-        );
-        expectStatus("re-provision", res, 200);
-        const data = res.data as { kind: string };
-        expect(data.kind).toBe("existing-member");
-      });
 
       await hop(
         "the provisioned bench is a real tenant membership",
@@ -342,7 +336,7 @@ describe.skipIf(databaseUrl === undefined)(
           const assets = assetsRes.data as { name: string }[];
           if (assets.some((asset) => asset.name === "assistant")) {
             throw new Error(
-              "the genesis root already carries an assistant on a seedless boot — hub boot seeded product state",
+              "the root already carries an assistant on a seedless boot — hub boot seeded product state",
             );
           }
         },
@@ -420,7 +414,7 @@ describe.skipIf(databaseUrl === undefined)(
       }
 
       // CL-7071: seedTenant/ensureSeeded no longer pack. The connect
-      // flow runs on the genesis root itself, so install `corbits-tools`
+      // flow runs on the root itself, so install `corbits-tools`
       // onto that already-existing tenant with the publish-tools CLI —
       // the same sign-in → tenant resolve → publish path an operator
       // runs (`bun run publish-tools`) — rather than calling the

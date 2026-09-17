@@ -8,9 +8,9 @@
 // turns into an agent-authored workbench message on real machinery,
 // not merely that the route returns 201.
 //
-// Mirrors `local-rip.test.ts`'s phase A (alice signs up first as
-// genesis owner; a tester then joins as a member; the owner connects
-// a credential through the key path)
+// Mirrors `local-rip.test.ts`'s phase A (alice signs up first and creates
+// the root as owner; a tester then joins by invite as a member; the owner
+// connects a credential through the key path)
 // rather than `chat.test.ts`'s zero-credential `seedCatalog` setup:
 // the greeting mail rides the same host-session delivery path as every
 // real reply, so it landing with zero user messages sent — on a mint
@@ -148,7 +148,7 @@ describe.skipIf(databaseUrl === undefined)(
 
       const hubApi: ApiCall = createHubAPI(hub.baseUrl);
 
-      const admin = await hop("alice genesis sign-up", async () => {
+      const admin = await hop("alice creates the root as owner", async () => {
         const res = await api(hub.baseUrl, "POST", "/api/auth/sign-up/email", {
           name: "Alice",
           email: "alice@example.com",
@@ -163,59 +163,56 @@ describe.skipIf(databaseUrl === undefined)(
           "id",
           "alice sign-up user field",
         );
-        const probe = await api(
-          hub.baseUrl,
-          "POST",
-          "/api/onboarding/provision",
-          undefined,
-          res.cookies,
-        );
-        expectStatus("alice genesis probe", probe, 200);
-        expect((probe.data as { kind: string }).kind).toBe("needs-onboarding");
+        // Client convergence: the first signup creates the root over the
+        // stock route and becomes its owner.
+        const tenantSlug = `greeting-${crypto.randomUUID().slice(0, 8)}`;
         const minted = await api(
           hub.baseUrl,
           "POST",
-          "/api/onboarding/provision",
-          { name: "Workbench" },
+          "/api/tenants",
+          { name: "Workbench", slug: tenantSlug },
           res.cookies,
         );
-        expectStatus("alice genesis provision", minted, 200);
-        expect((minted.data as { kind: string }).kind).toBe("provisioned");
-        return { cookies: res.cookies, userId };
+        expectStatus("alice create root tenant", minted, 201);
+        const tenantId = stringField(minted.data, "id", "create tenant");
+        return { cookies: res.cookies, userId, tenantId, tenantSlug };
       });
 
       const user = await hop("sign-up", () =>
         signUp(hub.baseUrl, "Greeting Delivery Tester"),
       );
 
-      // Under the CL-7578 genesis-or-join contract the tester joins the
-      // genesis root as a plain member — the genesis path is covered
-      // in-process by `apps/hub/test/signup-genesis.test.ts`.
+      // Under the CL-8085 client-convergence contract the tester joins
+      // the root by owner invite + activate — the genesis-or-join hook is
+      // gone, and the join path is covered in-process by
+      // `apps/hub/test/signup-genesis.test.ts`.
       const provisioned = await hop(
-        "a membership probe joins the genesis root as a member",
+        "the owner invites the tester, who joins the root as a member",
         async () => {
-          const res = await api(
+          const invited = await api(
             hub.baseUrl,
             "POST",
-            "/api/onboarding/provision",
-            undefined,
-            user.cookies,
+            `/api/tenants/${admin.tenantId}/members/invite`,
+            { email: user.email },
+            admin.cookies,
           );
-          expectStatus("provision probe", res, 200);
-          const data = res.data as {
-            kind: string;
-            tenantSlug: string;
-            seeded: boolean;
-          };
-          expect(data.kind).toBe("existing-member");
-          stringField(data, "tenantSlug", "provision result");
-          return data;
+          expectStatus("invite tester", invited, 201);
+          const principalId = stringField(invited.data, "id", "invite tester");
+          const activated = await api(
+            hub.baseUrl,
+            "PATCH",
+            `/api/tenants/${admin.tenantId}/principals/${principalId}`,
+            { status: "active" },
+            admin.cookies,
+          );
+          expectStatus("activate tester", activated, 200);
+          return { tenantSlug: admin.tenantSlug };
         },
       );
 
       // A joined member is read-only by design, so every owner-level
       // leg below — seeding, chat mint, turns — runs as alice, the
-      // genesis owner.
+      // root owner.
       const tenant = await hop(
         "the joined root resolves through findPersonalTenant",
         async () => {

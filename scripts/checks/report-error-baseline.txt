@@ -74,7 +74,6 @@ apps/web/src/last-workbench.ts	1	return null;
 apps/web/src/onboarding.ts	1	return { kind: "error" };
 apps/web/src/onboarding.ts	1	return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
 apps/web/src/onboarding.ts	2	return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
-apps/web/src/onboarding.ts	3	return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
 apps/web/src/pages/agent-detail-page.tsx	1	// A handle collision is the one failure retrying can never clear, so
 apps/web/src/pages/agent-detail-page.tsx	1	setLifecycle({
 apps/web/src/pages/agent-detail-page.tsx	1	setSave({ kind: "idle" });
@@ -191,7 +190,6 @@ packages/memory-tools/src/tool.ts	3	if (err instanceof MemoryUnavailableError) {
 packages/mocks/src/ollama/capture.ts	1	return raw;
 packages/ollama-adapter/src/inline-tool-json.ts	1	return false;
 packages/ollama-adapter/src/inline-tool-json.ts	1	return { kind: "incomplete" };
-packages/onboarding/src/routes.ts	1	return c.json(
 packages/presence/src/artifact-persistence.ts	1	deps.onSnapshotError?.(key, error);
 packages/presence/src/client.ts	1	// A malformed update is dropped rather than crashing the client;
 packages/presence/src/client.ts	1	return [];

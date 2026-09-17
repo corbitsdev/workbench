@@ -163,7 +163,7 @@ describe("ensureMyraDeployed", () => {
       throw new Error(`unexpected fetch: ${path}`);
     });
     await expect(ensureMyraDeployed("tnt_1")).rejects.toThrow(
-      /deployments.*500|500.*deployments/,
+      /workflows.*500|500.*workflows/,
     );
   });
 });

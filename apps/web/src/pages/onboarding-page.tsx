@@ -217,11 +217,15 @@ export function OnboardingPage() {
         const parsed = PrincipalsProbe(await response.json());
         if (parsed instanceof type.errors) throw new Error(parsed.summary);
         principals = parsed.data;
-      } catch {
+      } catch (error) {
+        const refId = reportError(error, {
+          operation: "onboarding_provisioning",
+        });
         setState({
           phase: "provisioning-error",
           message:
             "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
+          refId,
         });
         return;
       }

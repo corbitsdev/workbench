@@ -338,7 +338,7 @@ export async function convergeNeedsList(
         op.parentSlug === null ? undefined : tenantIds.get(op.parentSlug);
       if (op.parentSlug !== null && parentId === undefined) {
         throw new Error(
-          `needs-list converge cannot create tenant ${op.slug}: parent slug ${op.parentSlug} is unknown`,
+          `needs-list converge cannot create ${op.slug}: parent ${op.parentSlug} is unknown`,
         );
       }
       const created = await hub.createTenant({
@@ -353,7 +353,7 @@ export async function convergeNeedsList(
     const tenantId = tenantIds.get(op.tenantSlug);
     if (tenantId === undefined) {
       throw new Error(
-        `needs-list converge cannot apply ${op.kind} on slug ${op.tenantSlug}: no tenant id is known`,
+        `needs-list converge cannot apply ${op.kind} on ${op.tenantSlug}: no id is known`,
       );
     }
     if (op.kind === "invite-member") {
@@ -422,7 +422,7 @@ const TenantPrincipalPageShape = type({
 
 async function readJson(response: Response, what: string): Promise<unknown> {
   if (!response.ok) {
-    throw new Error(`stock hub ${what} failed: HTTP ${response.status}`);
+    throw new Error(`stock ${what} failed: HTTP ${response.status}`);
   }
   return (await response.json()) as unknown;
 }
@@ -430,7 +430,7 @@ async function readJson(response: Response, what: string): Promise<unknown> {
 function tenantOf(value: unknown, what: string): HubTenant {
   const parsed = TenantShape(value);
   if (parsed instanceof type.errors) {
-    throw new Error(`stock hub ${what} shape changed: ${parsed.summary}`);
+    throw new Error(`stock ${what} shape changed: ${parsed.summary}`);
   }
   return {
     id: parsed.id,
@@ -469,9 +469,7 @@ export function createFetchStockHub(
         );
         const parsed = MembershipPageShape(body);
         if (parsed instanceof type.errors) {
-          throw new Error(
-            `stock hub principals shape changed: ${parsed.summary}`,
-          );
+          throw new Error(`stock membership shape changed: ${parsed.summary}`);
         }
         rows.push(
           ...parsed.data.map((row) => ({
@@ -514,9 +512,7 @@ export function createFetchStockHub(
         );
         const parsed = TenantPrincipalPageShape(body);
         if (parsed instanceof type.errors) {
-          throw new Error(
-            `stock hub tenant principals shape changed: ${parsed.summary}`,
-          );
+          throw new Error(`stock membership shape changed: ${parsed.summary}`);
         }
         rows.push(
           ...parsed.data.map((row) => ({
@@ -573,7 +569,7 @@ export function createFetchStockHub(
         }));
       if (deploy === undefined) {
         throw new Error(
-          `stock hub deployAgent needs a caller-resolved deploy body for definition ${input.definitionRefId}`,
+          `stock deployAgent needs a caller-resolved body for ${input.definitionRefId}`,
         );
       }
       await readJson(
