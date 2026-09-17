@@ -11,14 +11,14 @@ requires an upstream Interchange change. **Do not patch `vendor/intx`.**
 
 ## What already works (consume, do not reimplement)
 
-| Capability                      | Where                                                                                                                                                                                                                                                  |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Tenant `parentId` hierarchy     | `@intx/db` tenant table; POST `/api/tenants` accepts `parentId`                                                                                                                                                                                        |
-| Live ancestor-chain inheritance | `getAncestorChain` in `@intx/db` — catalog, credentials, providers walk ancestors at read time                                                                                                                                                         |
-| Descendant walk                 | `getDescendantTenants` in `@intx/db`                                                                                                                                                                                                                   |
-| Roles                           | Interchange native `owner` / `admin` / `member` — mirror 1:1 in UI; never invent a parallel role table                                                                                                                                                 |
-| First-signup genesis / join     | `packages/onboarding`'s `genesisOrJoinHubSignup` is retained but unwired: stock composition mounts no first-login provisioning hook, so signup mints no tenants — the first tenant still comes from an ordinary `POST /api/tenants` with a chosen slug |
-| Memberships                     | Native principal + membership routes                                                                                                                                                                                                                   |
+| Capability                      | Where                                                                                                                                                                  |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tenant `parentId` hierarchy     | `@intx/db` tenant table; POST `/api/tenants` accepts `parentId`                                                                                                        |
+| Live ancestor-chain inheritance | `getAncestorChain` in `@intx/db` — catalog, credentials, providers walk ancestors at read time                                                                         |
+| Descendant walk                 | `getDescendantTenants` in `@intx/db`                                                                                                                                   |
+| Roles                           | Interchange native `owner` / `admin` / `member` — mirror 1:1 in UI; never invent a parallel role table                                                                 |
+| First-signup genesis / join     | Stock composition mounts no first-login provisioning hook, so signup mints no tenants — the first tenant comes from an ordinary `POST /api/tenants` with a chosen slug |
+| Memberships                     | Native principal + membership routes                                                                                                                                   |
 
 Inheritance is **live**. Creating a sub-workbench must **not** copy
 catalog rows, credentials, or providers from the parent — resolution
@@ -65,11 +65,12 @@ all gone, and nothing gates better-auth's `/sign-up/email` route or
 requires `user.emailVerified`. Anyone can register (rate-limited
 only — see `SIGNUP_RATE_LIMIT_*` in `.env.example`).
 
-`@workbench/access-policy` and `packages/onboarding`'s first-login
-provisioning hook are retained as packages but unwired: the hub never
-calls them, so no policy row or env flag decides signup. A deployment
-that needs closed signup gates it in the composition that embeds the
-hub.
+`@workbench/access-policy` (the closed-by-default signup/sub-workbench
+policy table and gate) was deleted rather than kept unwired (CL-8130):
+it had no native equivalent and nothing in the hub called it. A
+deployment that needs closed signup gates it in the composition that
+embeds the hub — there is no Workbench-side policy row or env flag to
+configure.
 
 ### Workbench icon
 
@@ -91,10 +92,11 @@ tenant with the caller as owner — no signup-gate landing zone, no
 membership check on `parentId`.
 
 `@workbench/access-policy`'s `POST /api/tenants/:tenantId/access-policy/
-child-tenants` is the polished UI-facing wrapper for creating a child
-tenant under a parent — it makes the same decision and gives a clean
-pre-flight 403, but with the guard above removed in the cutover the
-wrapper alone does not close the gap.
+child-tenants` — a polished UI-facing wrapper that pre-flighted this
+same decision with a clean 403 — was deleted (CL-8130): it was never
+mounted, so it never closed this gap either. Native `POST /api/tenants`
+grant-gating is the only real gate; until the platform check lands
+this gap stays open.
 
 Interchange currently does **not** validate `parentId` on POST and has
 **no** cycle constraint — see gaps below.
@@ -289,8 +291,6 @@ needs a weaker role, that is an Interchange conversation first.
 - `@corbits/bench-ui` — `isRawIdentifier` raw-id guard, tenancy contracts (tenancy-kind helpers and the workbench-tenancy client were removed in the thread-native client-driver cutover)
 - `@workbench/onboarding` — genesis-or-join first-signup provisioning
   (retained, unwired in stock composition)
-- `@workbench/access-policy` — signup/sub-workbench-creation policy
-  package (retained, but the hub's stock composition mounts no gate)
 - `apps/hub` — invite routes, icon routes; one of the
   explicitly-listed apps/hub mounts pending extraction into a package (see
   [ARCHITECTURE.md](../ARCHITECTURE.md), CL-6127)

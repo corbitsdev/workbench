@@ -32,7 +32,6 @@ toggles).
   draft until a preference store exists)
 - `access.ts` / `tenancy-api.ts` — tenancy-gate resolution and the
   principals/roles/grants HTTP client
-- `access-policy.tsx` — the grant preview/editor shared by roles and grants
 
 ## Running tests
 

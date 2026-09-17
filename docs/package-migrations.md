@@ -72,7 +72,7 @@ package onto the transactional pattern — see below):
 1. **Self-contained, transactional** — `@corbits/chat`, `@corbits/notify`,
    `@corbits/webhook-triggers`, `@corbits/insights`,
    `@corbits/skills`, `@corbits/bench`, `@corbits/preferences`,
-   `@corbits/inference-catalog`, `@corbits/evals`, `@corbits/access-policy`.
+   `@corbits/inference-catalog`, `@corbits/evals`.
    (`@corbits/workflows`'s `./deploy-source` followed this shape until
    CL-7591 deleted it; it is no longer wired through
    `scripts/db-setup.ts`.)
@@ -84,7 +84,7 @@ package onto the transactional pattern — see below):
    table name, and migration array. `scripts/db-setup.ts` imports the
    package's `applyXMigrations(databaseUrl)` function directly and calls it
    after the platform's own migrations. See
-   `packages/access-policy/src/migrations.ts` for the reference
+   `packages/inference-catalog/src/migrations.ts` for the reference
    implementation every other package now matches.
 2. **Delegated to an external package** — `@corbits/mailbox`. The package
    ships and owns its entire migration story (its own literal SQL, its own
@@ -121,7 +121,7 @@ the new schema by running `bun run reset` rather than by an in-place
 ## Which shape to use for a new package
 
 **Transactional, self-contained** (shape 1 above), in a Postgres schema
-named for the package. Copy `packages/access-policy/src/migrations.ts`'s
+named for the package. Copy `packages/inference-catalog/src/migrations.ts`'s
 shape: a `pgSchema("<name>")` in `schema.ts`, a literal migration array
 whose SQL qualifies every table/index with that schema, a package-named
 ledger table living in the same schema, and an `applyXMigrations` that

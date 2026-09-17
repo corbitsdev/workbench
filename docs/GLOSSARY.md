@@ -64,5 +64,5 @@ Naming conventions for this repository's packages:
   plain local domain code — with a kebab-case kind suffix where the
   package is one of a family (`-agent`, `-tool`).
 - `@workbench/*` is a legacy scope being migrated to `@corbits/*` package
-  by package; a handful of packages still carry it (`access-policy`,
-  `connections`, `onboarding`). New packages never use it.
+  by package; a handful of packages still carry it (`connections`,
+  `onboarding`). New packages never use it.
