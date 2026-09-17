@@ -26,10 +26,7 @@
 // What this does NOT cover: driving the call through a real `Agent` +
 // LLM inference cycle (`agent.send()` deciding to call the tool). No
 // scripted/deterministic tool-call inference adapter exists anywhere in
-// this repo today (`@intx/agent` ships no test fixtures for one,
-// and the e2e suites' local noop inference server (`e2e/noop-inference-server.ts`) emits an empty delta that never
-// triggers a tool call) -- a genuine testing-infrastructure gap, not
-// something this test works around. This test instead drives the tool
+// this repo today (`@intx/agent` ships no test fixtures for one). This test instead drives the tool
 // bundle directly with a `ToolCall`, exactly as `../src/tool.test.ts`
 // does, so what's new here is steps 1-3: a REAL seeded credential
 // reaching the tool through the REAL substrate composition.
@@ -50,10 +47,10 @@ import { deriveResolvedBindings } from "@corbits/credential-providers";
 import type { ToolCall } from "@intx/types/runtime";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../e2e/database-url";
+import { e2eDatabaseUrl } from "../../../test/database-url";
 import { GRANOLA_LIST_RECENT_NOTES_TOOL, granolaTools } from "../src/tool";
 import type { GranolaEnv } from "../src/tool";
-import { dbGate } from "../../../e2e/db-gate";
+import { dbGate } from "../../../test/db-gate";
 
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);

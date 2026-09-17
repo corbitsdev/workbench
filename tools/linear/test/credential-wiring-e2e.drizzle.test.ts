@@ -53,10 +53,10 @@ import {
 import type { ToolCall } from "@intx/types/runtime";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../e2e/database-url";
+import { e2eDatabaseUrl } from "../../../test/database-url";
 import { LINEAR_LIST_RECENT_ISSUES_TOOL, linearTools } from "../src/tool";
 import type { LinearEnv } from "../src/tool";
-import { dbGate } from "../../../e2e/db-gate";
+import { dbGate } from "../../../test/db-gate";
 
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);

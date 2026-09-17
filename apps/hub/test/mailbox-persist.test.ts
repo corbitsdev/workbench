@@ -21,7 +21,7 @@ import {
 } from "@corbits/mailbox";
 import { createHubSessionLookups, type AgentRepoStore } from "@intx/hub-sessions";
 import { createHubMailboxAuthorizeSender } from "../src/mailbox-persist";
-import { dbGate } from "../../../e2e/db-gate";
+import { dbGate } from "../../../test/db-gate";
 
 const databaseUrl = process.env["DATABASE_URL"] ?? "";
 const describeIfDb = dbGate(databaseUrl, import.meta.path);

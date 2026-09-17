@@ -22,8 +22,8 @@ import { credentialAad } from "@intx/types";
 import type { CredentialBinding } from "@intx/types";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../e2e/database-url";
-import { dbGate } from "../../../e2e/db-gate";
+import { e2eDatabaseUrl } from "../../../test/database-url";
+import { dbGate } from "../../../test/db-gate";
 
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);

@@ -492,7 +492,7 @@ export type SeedCatalogArgs = {
    * not set, so a keyless dev or CI run can still launch workbench
    * anchors. Plain `workbench seed` never sets this — only callers that
    * need a launchable chain without a real key (the local dev
-   * bootstrap, the e2e harness) pass it.
+   * bootstrap) pass it.
    */
   placeholderCredential?: boolean;
   /**
@@ -767,12 +767,3 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<SeedCatalogRes
     ),
   };
 }
-
-// The noop-inference offering planter (`ensureNoopCatalogOffering`) that
-// used to live here moved to `e2e/noop-inference-server.ts`
-// (CL-8160): the hub no longer mounts a noop-inference route at all, so
-// planting a catalog offering against one is exclusively an e2e-suite
-// concern now, not something this connect-time planting module should
-// know about. That file reuses `ensureCatalogModel`, `ensureProvider`,
-// `ensureCredential`, `ensureCatalogProvider`, and `ensureCatalogOffering`
-// exported from here against its own tiny local noop server.
