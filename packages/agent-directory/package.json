@@ -21,7 +21,6 @@
     "@corbits/error-sink": "workspace:*",
     "@corbits/skills": "workspace:*",
     "@corbits/tool-registry-publish": "workspace:*",
-    "@workbench/templates": "workspace:*",
     "@corbits/workflows": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/db": "workspace:*",

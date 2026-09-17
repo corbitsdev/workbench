@@ -46,7 +46,6 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@tanstack/react-query": "catalog:",
     "@corbits/connections": "workspace:*",
-    "@workbench/templates": "workspace:*",
     "arktype": "catalog:",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

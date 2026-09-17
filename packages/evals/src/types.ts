@@ -145,17 +145,6 @@ export interface PersonaEvalStep {
   readonly expect: readonly Scorer[];
 }
 
-/** A harness step that installs a workbench template through the real
- * install path (#140's seeded-library instantiation): fetch the seeded
- * manifest, mint the workbench, create the participant agent
- * definitions, record pending connections — never a chat narration of
- * the install. Requires a `Target` with `installTemplate`. */
-export interface InstallTemplateEvalStep {
-  readonly kind: "install-template";
-  readonly templateId: string;
-  readonly expect: readonly Scorer[];
-}
-
 /** A harness step that fires the tenant's enabled `webhook_trigger`
  * through the real ingress route (`POST /api/webhooks/:triggerId`,
  * HMAC-signed) with `payload` as the delivery body. Requires a `Target`
@@ -169,11 +158,7 @@ export interface FireWebhookEvalStep {
   readonly expect: readonly Scorer[];
 }
 
-export type EvalStep =
-  | ScriptedEvalStep
-  | PersonaEvalStep
-  | InstallTemplateEvalStep
-  | FireWebhookEvalStep;
+export type EvalStep = ScriptedEvalStep | PersonaEvalStep | FireWebhookEvalStep;
 
 export interface EvalDefinition {
   readonly name: string;
@@ -208,10 +193,6 @@ export interface Target {
   readonly configName: string;
   sendTurn(human: string): Promise<Turn>;
   snapshotWorld?(): Promise<WorldSnapshot>;
-  /** Installs a seeded workbench template through the real install
-   * surfaces (library read → workbench mint → participant creation);
-   * the returned `Turn` records what the install actually did. */
-  installTemplate?(templateId: string): Promise<Turn>;
   /** Fires one webhook trigger through the real ingress route with a
    * properly signed delivery; the returned `Turn` records the
    * accepted launch (`instanceId`). */

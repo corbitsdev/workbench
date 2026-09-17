@@ -116,6 +116,26 @@ export function listAvailableCatalogWorkflows(
   ).then((page) => page.items);
 }
 
+const CatalogBlockDeployResponse = type({
+  id: "string > 0",
+  created: "boolean",
+});
+
+/** Deploys one catalog workflow on demand through the hub's
+ * `POST /catalog-blocks/:assetName/deploy` — the "Available" section's
+ * add action. `created: false` means the tenant already carried a
+ * deployed definition under this asset name. */
+export function deployCatalogBlock(
+  tenantId: string,
+  assetName: string,
+): Promise<{ readonly created: boolean }> {
+  return request(
+    `/api/tenants/${tenantId}/catalog-blocks/${assetName}/deploy`,
+    CatalogBlockDeployResponse,
+    { method: "POST" },
+  ).then((body) => ({ created: body.created }));
+}
+
 export function scheduledWorkflowRunPath(
   tenantId: string,
   definitionId: string,

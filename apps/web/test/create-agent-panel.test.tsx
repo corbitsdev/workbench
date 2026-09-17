@@ -441,12 +441,12 @@ describe("agent creation entry points", () => {
     expect(commandPaletteActionsSource).toContain('from "./routes"');
   });
 
-  test("the template picker mints through instant-agent-create.ts's createWorkbenchFromTemplate", () => {
+  test("the new-workbench picker mints through instant-agent-create.ts's createWorkbench", () => {
     const pickerSource = readFileSync(
       new URL("../src/pages/new-workbench-picker.tsx", import.meta.url),
       "utf8",
     );
     expect(pickerSource).toContain('from "../instant-agent-create"');
-    expect(pickerSource).toContain("createWorkbenchFromTemplate");
+    expect(pickerSource).toContain("createWorkbench");
   });
 });

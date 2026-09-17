@@ -1,12 +1,14 @@
-// The instantiate path's block-workflow deploy surface (CL-6405):
-// `instantiateWorkbenchTemplate`'s `deployBlockWorkflow` port binds to
-// `POST /:assetName/deploy` here, the way its `createParticipantAgent`
-// port binds to `POST /agent-definitions`. Mounted per-tenant inside
-// the platform's native tenant middleware, mirroring
-// `./connect-github-routes.ts`: every side effect a host needs — the
-// tenant's default inference preferences, and the actual source-form
-// asset write + `workflow_definition` projection — arrives as an
-// injected port, so `apps/hub` is the only place drizzle and the
+// The on-demand catalog-workflow deploy surface (CL-6405, generalized by
+// CL-7073 to any catalog entry — CL-8156 dropped the "template" naming
+// once workbench template picking was deleted): `POST /:assetName/deploy`
+// deploys a `workflows/<name>` package's block as a real `workflow`-kind
+// asset on the requesting tenant, the same surface the "Available"
+// catalog-workflows section (`apps/web`'s routines page) drives.
+// Mounted per-tenant inside the platform's native tenant middleware,
+// mirroring `./connect-github-routes.ts`: every side effect a host needs
+// — the tenant's default inference preferences, and the actual
+// source-form asset write + `workflow_definition` projection — arrives
+// as an injected port, so `apps/hub` is the only place drizzle and the
 // `AssetService` are touched and this stays testable with plain fakes.
 import { Hono } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
@@ -18,9 +20,9 @@ import {
 } from "./block-workflows";
 
 const DEPLOY_FAILED_MESSAGE =
-  "Couldn't set up this template's workflow. Try again in a moment.";
+  "Couldn't set up this workflow. Try again in a moment.";
 
-export type TemplateBlockRoutesDeps = {
+export type CatalogBlockRoutesDeps = {
   requireGrant: RequireGrant;
   /** Where a failure's real cause goes — the same CL-6360 idiom
    * `./connect-github-routes.ts` documents: the client sees one honest
@@ -48,8 +50,8 @@ export type TemplateBlockRoutesDeps = {
   }): Promise<{ readonly id: string; readonly created: boolean }>;
 };
 
-export function createTemplateBlockRoutes(
-  deps: TemplateBlockRoutesDeps,
+export function createCatalogBlockRoutes(
+  deps: CatalogBlockRoutesDeps,
 ): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
 
@@ -69,7 +71,7 @@ export function createTemplateBlockRoutes(
         return c.json(
           makeErrorEnvelope({
             code: "not_found",
-            userMessage: `"${assetName}" isn't a deployable template workflow.`,
+            userMessage: `"${assetName}" isn't a deployable catalog workflow.`,
           }),
           404,
         );
@@ -88,9 +90,12 @@ export function createTemplateBlockRoutes(
           result.created ? 201 : 200,
         );
       } catch (cause) {
+        // report-error-ignore: the client sees one honest userMessage
+        // below; the real cause goes to deps.log, the same CL-6360 idiom
+        // `./connect-github-routes.ts` documents.
         const message = cause instanceof Error ? cause.message : String(cause);
         deps.log(
-          `template-blocks: deploying "${assetName}" failed for tenant ${tenant.id}: ${message}`,
+          `catalog-blocks: deploying "${assetName}" failed for tenant ${tenant.id}: ${message}`,
         );
         return c.json(
           makeErrorEnvelope({

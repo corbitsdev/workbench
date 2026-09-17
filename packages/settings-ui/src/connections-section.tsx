@@ -22,13 +22,11 @@ import {
 } from "@corbits/react-ui";
 import {
   connectorDescriptors,
+  CONNECTOR_REGISTRY,
   type ConnectorDescriptor,
 } from "@corbits/connections/registry";
-import { workflowDisplayName } from "@workbench/templates";
-import {
-  CONNECTOR_REGISTRY,
-  MCP_PRESET_CONNECTOR_IDS,
-} from "@workbench/templates/connectors";
+import { MCP_PRESET_CONNECTOR_IDS } from "@corbits/connections/mcp-presets";
+import { workflowDisplayName } from "@corbits/workflows/catalog";
 import {
   buildEffectiveInferenceRows,
   computeGlobalRoutePatches,

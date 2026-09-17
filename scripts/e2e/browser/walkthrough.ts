@@ -438,15 +438,12 @@ async function closeCreateAgentDrawer(page: Page): Promise<void> {
 
 // --- the walkthrough -----------------------------------------------------
 
-/** The picker card that mints a plain empty channel (`workbench-templates.ts`). */
-const BLANK_TEMPLATE_TITLE = "Just start talking";
-
 /**
  * Drives the one creation flow a person actually walks: the sidebar's "+"
- * opens `/new` (prompt-primary picker). Clicking a prefab card mints
- * immediately — no kind radiogroup, no second "Create workbench" step.
- * Waits for the URL to land on a fresh `/w/:id` distinct from wherever
- * the click started.
+ * opens `/new` (prompt-primary picker, CL-8156 — a plain tenant + Myra,
+ * no template cards). Clicking the empty-channel button mints
+ * immediately. Waits for the URL to land on a fresh `/w/:id` distinct
+ * from wherever the click started.
  */
 async function createMyraChat(page: Page): Promise<void> {
   const before = await page.evaluate(() => window.location.pathname);
@@ -457,27 +454,7 @@ async function createMyraChat(page: Page): Promise<void> {
   let landed = false;
   for (let attempt = 0; attempt < 3 && !landed; attempt += 1) {
     await clickStable(page, 'button[aria-label="New workbench"]');
-    await page.waitForSelector(".new-workbench-prefab-grid", {
-      timeout: 15_000,
-    });
-    const picked = await page.evaluate((title: string) => {
-      const rows = Array.from(
-        document.querySelectorAll<HTMLButtonElement>(
-          "button.new-workbench-prefab-card",
-        ),
-      );
-      const row = rows.find((candidate) =>
-        (candidate.textContent ?? "").includes(title),
-      );
-      if (row === undefined) return false;
-      row.click();
-      return true;
-    }, BLANK_TEMPLATE_TITLE);
-    if (!picked) {
-      throw new Error(
-        `the new-workbench picker offered no "${BLANK_TEMPLATE_TITLE}" card`,
-      );
-    }
+    await clickStable(page, "button.new-workbench-empty-channel");
     landed = await page
       .waitForFunction(
         (previous: string) => {

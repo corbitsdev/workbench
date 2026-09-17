@@ -95,7 +95,7 @@ import {
   buildDiligenceBriefWorkflow,
   serializeDiligenceBriefWorkflow,
 } from "@corbits/diligence-brief-workflow";
-import { WORKFLOW_CATALOG } from "@workbench/templates";
+import { WORKFLOW_CATALOG } from "@corbits/workflows/catalog";
 import { type PublishCorbitsToolsRegistryArgs } from "@corbits/tool-registry-publish";
 import { WORKFLOW_SOURCE_ENTRY } from "@corbits/workflows";
 import {

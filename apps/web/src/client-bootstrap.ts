@@ -11,7 +11,7 @@
 // config — this module never guesses them. When stock Interchange lacks a
 // capability the result carries the typed gap instead of throwing.
 
-import { WORKFLOW_CATALOG } from "@workbench/templates";
+import { WORKFLOW_CATALOG } from "@corbits/workflows/catalog";
 
 import type { ClientLogger } from "@corbits/client-log";
 

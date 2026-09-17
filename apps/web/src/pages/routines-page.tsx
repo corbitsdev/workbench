@@ -32,10 +32,10 @@ import { routineDetailPath } from "../global-routines";
 import { useBench } from "../bench-context";
 import { tenantKeys } from "../query-client";
 import {
+  deployCatalogBlock,
   listAvailableCatalogWorkflows,
   type AvailableCatalogWorkflow,
 } from "../routines-api";
-import { deployWorkbenchTemplateBlock } from "../workbench-templates-api";
 import { Link } from "../navigation";
 import { PLUGINS_PATH_PREFIX } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
@@ -71,7 +71,7 @@ export function AvailableCatalogWorkflowsSection({
   async function handleAdd(entry: AvailableCatalogWorkflow) {
     setPendingAssetName(entry.assetName);
     try {
-      await deployWorkbenchTemplateBlock(tenantId, entry.assetName);
+      await deployCatalogBlock(tenantId, entry.assetName);
       await queryClient.invalidateQueries({
         queryKey: tenantKeys.availableCatalogWorkflows(tenantId),
       });

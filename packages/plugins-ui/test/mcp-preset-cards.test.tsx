@@ -8,7 +8,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import { MCP_PRESETS } from "@workbench/templates/connectors";
+import { MCP_PRESETS } from "@corbits/connections/mcp-presets";
 
 import { McpPresetCard, useMcpPresetCatalog } from "../src/mcp-preset-cards";
 import type { McpPreset } from "../src/mcp-servers-api";

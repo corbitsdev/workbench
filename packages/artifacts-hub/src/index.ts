@@ -10,22 +10,6 @@ export {
   type CreateArtifactRoutesDeps,
 } from "./routes";
 export {
-  WORKBENCH_TEMPLATE_ARTIFACT_KIND,
-  createTemplateLibraryDbStore,
-  createTemplateLibraryRoutes,
-  createTemplateLibrarySeeder,
-  createUnavailableTemplateLibraryRoutes,
-  seedTemplateLibrary,
-  type CreateTemplateLibraryRoutesDeps,
-  type CreateTemplateLibrarySeederArgs,
-  type SeedTemplateLibraryArgs,
-  type TemplateLibraryEngine,
-  type TemplateLibraryEntry,
-  type TemplateLibrarySeeder,
-  type TemplateLibraryStore,
-  type TemplateSeedOutcome,
-} from "./template-library";
-export {
   createWorkflowRunAuthenticator,
   type ResolvedWorkflowRunScope,
   type WorkflowRunAuthenticator,

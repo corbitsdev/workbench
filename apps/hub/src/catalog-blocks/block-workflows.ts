@@ -17,7 +17,7 @@
 //
 // Server-only, on purpose: each `buildJson` closure pulls in its
 // workflow package (e.g. `@corbits/granola-call-workflow`) and with it
-// `@intx/agent`/`@intx/workflow`. Only `./template-block-routes.ts`
+// `@intx/agent`/`@intx/workflow`. Only `./catalog-block-routes.ts`
 // (mounted in `apps/hub`) imports this; it is deliberately not
 // re-exported from the package root.
 import { deployableCatalogBlock } from "./catalog-blocks";

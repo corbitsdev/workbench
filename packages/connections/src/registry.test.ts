@@ -1,15 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { CODEX_SCOPES } from "@corbits/codex-provider/constants";
-import { connectorDescriptors } from "@corbits/connections/registry";
+import { CONNECTOR_REGISTRY, connectorDescriptors } from "./registry";
 import {
-  mcpPresetByName,
-  mcpPresetBySlug,
-} from "@corbits/connections/mcp-presets";
-import {
-  CONNECTOR_REGISTRY,
   MCP_PRESET_CONNECTOR_IDS,
   MCP_PRESETS,
-} from "./connectors";
+  mcpPresetByName,
+  mcpPresetBySlug,
+} from "./mcp-presets";
 
 describe("CONNECTOR_REGISTRY", () => {
   test("every entry has an id, displayName, and docsUrl", () => {
@@ -154,9 +151,9 @@ describe("CONNECTOR_REGISTRY", () => {
     // tools to this client, and the authorization server issues them only
     // to the Codex client id. Asserted against the exported constant so
     // the descriptor cannot drift from the adapter's refresh path.
-    expect(codexUrl?.searchParams.get("scope")?.split(" ")).toEqual(
-      CODEX_SCOPES,
-    );
+    expect(codexUrl?.searchParams.get("scope")?.split(" ")).toEqual([
+      ...CODEX_SCOPES,
+    ]);
 
     const xaiUrl = CONNECTOR_REGISTRY["xai-oauth"]?.oauth?.buildAuthorizeUrl({
       callbackUrl: "https://bench.example.com/ignored",
@@ -174,9 +171,8 @@ describe("CONNECTOR_REGISTRY", () => {
   test("exchanges a loopback code for tokens against the provider's own token endpoint", async () => {
     const originalFetch = globalThis.fetch;
     const requestedURLs: string[] = [];
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const url = String(input);
-      requestedURLs.push(url);
+    globalThis.fetch = (async (input: string) => {
+      requestedURLs.push(input);
       return new Response(
         JSON.stringify({
           access_token: "at_1",
@@ -185,7 +181,7 @@ describe("CONNECTOR_REGISTRY", () => {
         }),
         { status: 200 },
       );
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     try {
       const result = await CONNECTOR_REGISTRY["codex"]?.oauth?.exchange({
         code: "abc",
@@ -208,7 +204,7 @@ describe("CONNECTOR_REGISTRY", () => {
   test("reports a failed loopback exchange without throwing", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
-      new Response("nope", { status: 400 })) as typeof fetch;
+      new Response("nope", { status: 400 })) as unknown as typeof fetch;
     try {
       const result = await CONNECTOR_REGISTRY["xai-oauth"]?.oauth?.exchange({
         code: "abc",

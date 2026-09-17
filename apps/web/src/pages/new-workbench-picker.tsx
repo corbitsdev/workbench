@@ -1,21 +1,11 @@
-// CL-6628: flips the picker's hierarchy from "choose a kind, then create"
-// to "say what you want, or choose a shortcut" — a prompt box is the
-// primary act, with the prefab rows (still CL-6342/CL-6344's real
-// instantiation paths) demoted to one-click shortcuts underneath. Typing
-// a goal and hitting Enter creates a blank room and hands that text to
-// `createWorkbenchFromTemplate` as `firstMessage`, so Myra's first read of
-// the room is the person's actual intent rather than a kind label. A
-// prefab click still creates immediately — no radio-then-Create
-// second step anywhere on this screen.
+// CL-8156: workbench template picking is gone — a new workbench is a
+// plain tenant + Myra (CL-8154's converge path deploys Myra behind the
+// scenes). This screen is just the prompt box: say what you want and hit
+// Enter, or open an empty channel and add people/agents as you go.
 
 import { Button, toast } from "@corbits/react-ui";
 import { useDismissablePopover } from "@corbits/react-ui/hooks/use-dismissable-popover";
-import {
-  ChatCircle,
-  GitPullRequest,
-  MagnifyingGlass,
-  PaperPlaneRight,
-} from "@corbits/icons";
+import { PaperPlaneRight } from "@corbits/icons";
 import {
   ChatApiError,
   CHAT_STRINGS,
@@ -29,12 +19,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiQueryError, describeApiError } from "@corbits/api-query";
 import { reportError } from "@corbits/error-sink";
 
-import { useAPIQuery } from "../api";
 import { CreateAgentPanel } from "./create-agent-panel";
-import { TemplateLibraryPage } from "../workbench-templates-api";
 import { useBench } from "../bench-context";
 import {
-  createWorkbenchFromTemplate,
+  createWorkbench,
   refreshWorkbenchLists,
   WorkbenchPostCreateError,
   WorkbenchPreconditionError,
@@ -42,24 +30,18 @@ import {
 import { useNavigate } from "../navigation";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { workbenchPath } from "../workbench-path";
-import {
-  WORKBENCH_TEMPLATES,
-  type WorkbenchTemplateId,
-} from "../workbench-templates";
 
 const GENERIC_CREATE_FAILURE =
   "Something went wrong creating this workbench. Try again.";
 
 /**
  * Allow-lists what's safe to show verbatim, rather than denylisting
- * what to hide — a new error type `createWorkbenchFromTemplate`'s path
- * starts throwing later lands here unrecognized and falls to the
- * generic message, not into the toast raw. Only
- * `WorkbenchPreconditionError` carries authored, always-safe copy
- * ("try again" is a lie for a missing template, so its own message
- * says so instead); `ApiQueryError` and `ChatApiError` both embed raw
- * request paths and schema summaries in `.message` and must go through
- * their own describer, never shown directly.
+ * what to hide — a new error type `createWorkbench`'s path starts
+ * throwing later lands here unrecognized and falls to the generic
+ * message, not into the toast raw. Only `WorkbenchPreconditionError`
+ * carries authored, always-safe copy; `ApiQueryError` and `ChatApiError`
+ * both embed raw request paths and schema summaries in `.message` and
+ * must go through their own describer, never shown directly.
  */
 export function describeWorkbenchCreateFailure(
   cause: unknown,
@@ -81,16 +63,6 @@ export function describeWorkbenchCreateFailure(
   }
   return GENERIC_CREATE_FAILURE;
 }
-
-const CARD_ICON: Record<WorkbenchTemplateId, typeof GitPullRequest> = {
-  "code-review": GitPullRequest,
-  "due-diligence": MagnifyingGlass,
-  blank: ChatCircle,
-};
-
-/** The one kind that needs no manifest: an empty room is always
- * something this bench can set up. */
-const BLANK_TEMPLATE_ID: WorkbenchTemplateId = "blank";
 
 const PROMPT_PLACEHOLDER = "What do you want your Workbench to do?";
 const AGENT_LISTBOX_ID = "new-workbench-agent-listbox";
@@ -118,12 +90,6 @@ export function NewWorkbenchPickerRoute() {
       currentTenantIdRef.current = null;
     };
   }, [selectedTenantId]);
-  const library = useAPIQuery(
-    selectedTenantId === null
-      ? ""
-      : `/api/tenants/${selectedTenantId}/library/templates`,
-    TemplateLibraryPage,
-  );
   const [prompt, setPrompt] = useState("");
   const [selectedAgentDefinitionIds, setSelectedAgentDefinitionIds] = useState<
     readonly string[]
@@ -133,13 +99,11 @@ export function NewWorkbenchPickerRoute() {
   const [agentQuery, setAgentQuery] = useState("");
   const [activeAgentIndex, setActiveAgentIndex] = useState(0);
   const [creating, setCreating] = useState(false);
-  // Set only when `createWorkbenchFromTemplate` hit the missing-setup-agent
+  // Set only when `createWorkbench` hit the missing-setup-agent
   // precondition — thrown only after its own native definitions read found
   // no setup agent, so that read is the readiness check, never a guess
-  // from the error alone. (That precondition is distinct from
-  // template-unavailable, which is what a template-that-will-never-exist
-  // looks like.) Distinct from `creating`'s loader: this is a dead end
-  // until setup finishes, not a request in flight.
+  // from the error alone. Distinct from `creating`'s loader: this is a
+  // dead end until setup finishes, not a request in flight.
   const [stillSettingUp, setStillSettingUp] = useState(false);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const {
@@ -165,18 +129,14 @@ export function NewWorkbenchPickerRoute() {
   // dead end and a plain toast-and-retry) replays the exact same request
   // rather than silently falling back to blank.
   const lastAttemptRef = useRef<{
-    readonly templateId: WorkbenchTemplateId;
     readonly firstMessage: string | undefined;
     readonly selectedIds: readonly string[];
   } | null>(null);
 
-  // The prompt box only exists in the DOM once the library read settles
-  // and neither dead-end state is showing — an unconditional mount-time
-  // effect would fire while that branch renders `WorkbenchLoadingState`
-  // instead, before `promptRef` has anything to focus. Re-running on
-  // `showingPrompt` catches the moment the textarea actually mounts.
-  const showingPrompt =
-    !stillSettingUp && !creating && library.kind !== "loading";
+  // The prompt box only exists in the DOM once neither dead-end state is
+  // showing — an unconditional mount-time effect would fire while a dead
+  // end renders instead, before `promptRef` has anything to focus.
+  const showingPrompt = !stillSettingUp && !creating;
   useEffect(() => {
     if (showingPrompt) promptRef.current?.focus();
   }, [showingPrompt]);
@@ -200,21 +160,6 @@ export function NewWorkbenchPickerRoute() {
     });
   }, [invitableAgents.data]);
 
-  // What this bench's library can actually serve (CL-6458). A kind whose
-  // manifest the library doesn't hold is shown as not set up rather than
-  // offered and then dead-ended on a 404 at create time.
-  const servedTemplateIds =
-    library.kind === "ready"
-      ? new Set(library.data.data.map((entry) => entry.id))
-      : new Set<string>();
-  const offeredTemplates = WORKBENCH_TEMPLATES.filter(
-    (template) =>
-      template.id !== BLANK_TEMPLATE_ID && servedTemplateIds.has(template.id),
-  );
-  const unavailableTemplates = WORKBENCH_TEMPLATES.filter(
-    (template) =>
-      template.id !== BLANK_TEMPLATE_ID && !offeredTemplates.includes(template),
-  );
   const filteredAgents = (invitableAgents.data ?? []).filter((agent) => {
     const query = agentQuery.trim().toLocaleLowerCase();
     return (
@@ -228,18 +173,16 @@ export function NewWorkbenchPickerRoute() {
   );
 
   async function handleCreate(
-    templateId: WorkbenchTemplateId,
     firstMessage?: string,
     selectedIds: readonly string[] = [],
   ) {
     if (selectedTenantId === null || creating) return;
-    lastAttemptRef.current = { templateId, firstMessage, selectedIds };
+    lastAttemptRef.current = { firstMessage, selectedIds };
     setCreating(true);
     setStillSettingUp(false);
     try {
-      await createWorkbenchFromTemplate(
+      await createWorkbench(
         selectedTenantId,
-        templateId,
         navigate,
         queryClient,
         firstMessage,
@@ -258,15 +201,6 @@ export function NewWorkbenchPickerRoute() {
         toast(describeWorkbenchCreateFailure(cause, refId));
         return;
       }
-      // The missing-setup-agent precondition is thrown only after a
-      // successful native definitions read found no setup agent
-      // (CL-6457's background drain still running, or never started
-      // without a credential) — that read IS the readiness check, so no
-      // second round-trip is needed before showing the retryable
-      // still-setting-up state. (CL-8112 T1 cut the deleted
-      // `/api/onboarding/provisioning-status` re-check here.)
-      // TODO(CL-8112-T6/T7): read native readiness here once T6/T7
-      // builds it, if the panel needs more than the definition's absence.
       if (
         cause instanceof WorkbenchPreconditionError &&
         cause.kind === "setup-agent-missing"
@@ -289,17 +223,13 @@ export function NewWorkbenchPickerRoute() {
   function retryLastAttempt() {
     const attempt = lastAttemptRef.current;
     if (attempt === null) return;
-    void handleCreate(
-      attempt.templateId,
-      attempt.firstMessage,
-      attempt.selectedIds,
-    );
+    void handleCreate(attempt.firstMessage, attempt.selectedIds);
   }
 
   function handlePromptSubmit() {
     const trimmed = prompt.trim();
     if (trimmed === "") return;
-    void handleCreate(BLANK_TEMPLATE_ID, trimmed, selectedAgentDefinitionIds);
+    void handleCreate(trimmed, selectedAgentDefinitionIds);
   }
 
   function toggleAgent(definitionId: string) {
@@ -351,22 +281,19 @@ export function NewWorkbenchPickerRoute() {
           </div>
         ) : creating ? (
           // `delayMs={0}`: we already know this is a genuine wait the
-          // instant the person hits Enter or clicks a card, so the default
-          // "hold back briefly in case it resolves fast" delay only bought
-          // a blank pane here (CL-6623 finding #3) — show the loader
-          // outright instead of leaving a gap before it mounts.
+          // instant the person hits Enter, so the default "hold back
+          // briefly in case it resolves fast" delay only bought a blank
+          // pane here (CL-6623 finding #3) — show the loader outright
+          // instead of leaving a gap before it mounts.
           <WorkbenchLoadingState
             delayMs={0}
             title="Setting up your workbench…"
           />
-        ) : library.kind === "loading" ? (
-          <WorkbenchLoadingState title="Seeing what you can set up here…" />
         ) : (
           <>
             <h3>What do you want your Workbench to do?</h3>
             <p className="new-workbench-picker-sub">
-              Tell it what you're trying to get done, or pick one below. Takes
-              about ten seconds.
+              Tell it what you're trying to get done. Takes about ten seconds.
             </p>
 
             <form
@@ -583,85 +510,11 @@ export function NewWorkbenchPickerRoute() {
               </div>
             </form>
 
-            {library.kind === "error" ? (
-              <p className="new-workbench-picker-sub" role="status">
-                Couldn't load what this bench can set up, so only a plain room
-                is on offer right now.{" "}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => library.retry()}
-                >
-                  Try again
-                </Button>
-              </p>
-            ) : null}
-
-            <div className="new-workbench-template-heading">
-              <span>Or start from a template</span>
-              <span>Agents are already in the room. One click opens it.</span>
-            </div>
-            <div className="new-workbench-prefab-grid">
-              {offeredTemplates.map((template) => {
-                const Icon = CARD_ICON[template.id];
-                return (
-                  <button
-                    key={template.id}
-                    type="button"
-                    className="new-workbench-prefab-card"
-                    disabled={creating || selectedTenantId === null}
-                    onClick={() => void handleCreate(template.id)}
-                  >
-                    <span
-                      className="new-workbench-pick-glyph"
-                      aria-hidden="true"
-                    >
-                      <Icon size={16} strokeWidth={1.8} />
-                    </span>
-                    <span className="new-workbench-pick-text">
-                      <span className="new-workbench-pick-title">
-                        {template.title}
-                      </span>
-                      <span className="new-workbench-pick-promise">
-                        {template.promise}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-
-              {unavailableTemplates.map((template) => {
-                const Icon = CARD_ICON[template.id];
-                return (
-                  <span
-                    key={template.id}
-                    className="new-workbench-prefab-card"
-                    aria-disabled="true"
-                  >
-                    <span
-                      className="new-workbench-pick-glyph"
-                      aria-hidden="true"
-                    >
-                      <Icon size={16} strokeWidth={1.8} />
-                    </span>
-                    <span className="new-workbench-pick-text">
-                      <span className="new-workbench-pick-title">
-                        {template.title}
-                      </span>
-                      <span className="new-workbench-pick-promise">
-                        Not set up on this bench yet.
-                      </span>
-                    </span>
-                  </span>
-                );
-              })}
-            </div>
             <button
               type="button"
               className="new-workbench-empty-channel"
               disabled={creating || selectedTenantId === null}
-              onClick={() => void handleCreate(BLANK_TEMPLATE_ID)}
+              onClick={() => void handleCreate()}
             >
               Or <span>just open an empty channel</span> — nobody is in it yet,
               add people and agents as you go.

@@ -1,5 +1,5 @@
 // Pins the hub's native catalog-block adapter (`./catalog-blocks`): the
-// deployable set served by `POST /template-blocks/:assetName/deploy`,
+// deployable set served by `POST /catalog-blocks/:assetName/deploy`,
 // rendered from the `workflows/*` builder packages against
 // `@corbits/workflows` catalog metadata — with zero import from
 // `@workbench/onboarding`.

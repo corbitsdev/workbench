@@ -27,11 +27,6 @@ import { createHubAPI, type ApiCall } from "@corbits/hub-api-client";
 import { getLogger } from "@intx/log";
 import { completeCredentialSetup } from "@workbench/onboarding";
 import {
-  instantiateWorkbenchTemplate,
-  parseWorkbenchDefinition,
-  templateSettingsPatch,
-} from "@workbench/templates";
-import {
   signPayload,
   WEBHOOK_SIGNATURE_HEADER,
   WEBHOOK_TIMESTAMP_HEADER,
@@ -674,168 +669,6 @@ export async function bootMyraTarget(
       ];
     }
 
-    // The REAL install path (#140): the exact surfaces
-    // `apps/web/src/instant-agent-create.ts`'s
-    // `createWorkbenchFromTemplate` drives — seeded-library definition
-    // read, workbench mint, `instantiateWorkbenchTemplate` over
-    // HTTP-bound ports — never an eval-only instantiation mechanism.
-    // The library read is also what seeds this scratch tenant's shelf
-    // (CL-6458), so a passing install proves convergence on first read.
-    async function installTemplate(templateId: string): Promise<Turn> {
-      const entryRes = await api(
-        hub.baseUrl,
-        "GET",
-        `/api/tenants/${seeded.tenantId}/library/templates/${templateId}`,
-        undefined,
-        cookies,
-      );
-      expectStatus(`fetch seeded template "${templateId}"`, entryRes, 200);
-      const definition = parseWorkbenchDefinition(
-        stringField(entryRes.data, "content", `template "${templateId}"`),
-      );
-
-      // Hostless, exactly as the web create flow mints it: a template
-      // room has no `definitionId` and nobody is hosted in it.
-      const createBody: Record<string, unknown> = {
-        kind: "workbench",
-        name: definition.title,
-      };
-      const createRes = await api(
-        hub.baseUrl,
-        "POST",
-        `/api/tenants/${seeded.tenantId}/chat/workbenches`,
-        createBody,
-        cookies,
-      );
-      expectStatus(`create workbench from "${templateId}"`, createRes, 201);
-      const workbenchId = stringField(
-        createRes.data,
-        "id",
-        `create workbench from "${templateId}"`,
-      );
-
-      const result = await instantiateWorkbenchTemplate(definition, {
-        async listAgentHandles() {
-          const res = await api(
-            hub.baseUrl,
-            "GET",
-            `/api/tenants/${seeded.tenantId}/workflows/definitions?limit=100`,
-            undefined,
-            cookies,
-          );
-          expectStatus("list agent definitions", res, 200);
-          const rows = arrayField(
-            res.data,
-            "data",
-            "list agent definitions",
-          ) as { name: string; id: string }[];
-          return rows.map((row) => ({ handle: row.name, id: row.id }));
-        },
-        async createParticipantAgent(request) {
-          const res = await api(
-            hub.baseUrl,
-            "POST",
-            `/api/tenants/${seeded.tenantId}/agent-definitions`,
-            request,
-            cookies,
-          );
-          if (res.status !== 200 && res.status !== 201) {
-            throw new Error(
-              `create participant agent "${request.handle}" returned ` +
-                `${String(res.status)}: ${JSON.stringify(res.data)}`,
-            );
-          }
-          return {
-            id: stringField(res.data, "id", `created "${request.handle}"`),
-          };
-        },
-        async inviteParticipantAgent(id) {
-          const res = await api(
-            hub.baseUrl,
-            "POST",
-            `/api/tenants/${seeded.tenantId}/chat/workbenches/${workbenchId}/invite`,
-            { definitionId: id },
-            cookies,
-          );
-          if (res.status !== 200 && res.status !== 201) {
-            throw new Error(
-              `invite participant agent "${id}" returned ` +
-                `${String(res.status)}: ${JSON.stringify(res.data)}`,
-            );
-          }
-        },
-        async deployBlockWorkflow(block) {
-          const res = await api(
-            hub.baseUrl,
-            "POST",
-            `/api/tenants/${seeded.tenantId}/template-blocks/${block.assetName}/deploy`,
-            undefined,
-            cookies,
-          );
-          if (res.status !== 200 && res.status !== 201) {
-            throw new Error(
-              `deploy template block "${block.assetName}" returned ` +
-                `${String(res.status)}: ${JSON.stringify(res.data)}`,
-            );
-          }
-          return { created: res.status === 201 };
-        },
-        async recordPendingConnections(pendingConnections) {
-          const res = await api(
-            hub.baseUrl,
-            "PATCH",
-            `/api/tenants/${seeded.tenantId}/chat/workbenches/${workbenchId}/settings`,
-            templateSettingsPatch(definition.id, pendingConnections),
-            cookies,
-          );
-          expectStatus("record pending connections", res, 200);
-        },
-        async beginOnboarding(steps) {
-          for (const step of steps) {
-            if (step.kind !== "connect-plugin") continue;
-            const res = await api(
-              hub.baseUrl,
-              "POST",
-              `/api/tenants/${seeded.tenantId}/chat/workbenches/${workbenchId}/onboarding`,
-              {
-                kind: "connect-github",
-                requiredForTemplate: definition.title,
-                promise: definition.promise,
-                steps: steps.map(({ title, why }) => ({ title, why })),
-              },
-              cookies,
-            );
-            expectStatus("post the onboarding walkthrough card", res, 201);
-          }
-        },
-      });
-
-      // Hub-zero T3 (CL-8114): the hub's workbench-scoped GitHub
-      // state/start-reviewing routes are deleted with no native
-      // equivalent yet, so this harness no longer drives the card's
-      // repo-pick walkthrough — the per-repo grant and
-      // `webhook_trigger` rows the fire-webhook step needs now come
-      // from a connections follow-up. The install honestly reports
-      // zero started triggers until then.
-      const startedTriggerCount = 0;
-      if (definition.plugins.required.includes("github")) {
-        // TODO(connections-follow-up): rebind the repo-pick walkthrough
-        // to the native tenant-scoped repo-review setup once it exists.
-      }
-
-      return {
-        human: `(harness) install template "${templateId}"`,
-        replyText:
-          `template "${templateId}" installed into workbench ${workbenchId}: ` +
-          `created [${result.createdHandles.join(", ")}], ` +
-          `skipped [${result.skippedHandles.join(", ")}], ` +
-          `deployed blocks [${result.deployedBlockAssetNames.join(", ")}], ` +
-          `pending connections [${result.pendingConnections.join(", ")}], ` +
-          `webhook triggers started: ${String(startedTriggerCount)}`,
-        toolCalls: [],
-      };
-    }
-
     // Fires a trigger through the REAL ingress route
     // (`POST /api/webhooks/:triggerId`), HMAC-signed the way any
     // external sender signs. The signing secret is read off the
@@ -902,7 +735,6 @@ export async function bootMyraTarget(
     return {
       configName: config.name,
       sendTurn,
-      installTemplate,
       fireWebhook,
       close: closeAll,
       ...(captureWorldSnapshot === undefined

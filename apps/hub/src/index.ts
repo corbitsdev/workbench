@@ -78,9 +78,6 @@ import {
   isWorkbenchHostDefinitionName,
   listConnectedProviders,
   listDefaultInferencePreferences,
-  localPartOf,
-  parseParticipants,
-  postRoomMessage,
   startWorkflowCommand,
   settleConnectedService,
   createCryptoProviderCache,
@@ -150,7 +147,6 @@ import {
   createWebhookTriggerRoutes,
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
-import { createTemplateBlockRoutes } from "./templates/template-block-routes";
 import {
   createWorkflowDetailRoute,
   createScheduledWorkflowRoutes,
@@ -225,6 +221,7 @@ import {
   DEFAULT_RETURN_PATH_ALLOWLIST,
   listMcpServerConnections,
 } from "@corbits/connections";
+import { createCatalogBlockRoutes } from "./catalog-blocks/catalog-block-routes";
 import type { ServiceConnectedHook } from "@corbits/connections";
 import { CONNECTOR_REGISTRY, MCP_PRESETS } from "./native-connector-registry";
 import {
@@ -2128,16 +2125,16 @@ export async function createHub(config: HubConfig) {
       providerHealth: providerHealthStore,
     }),
   );
-  // Template block workflows (CL-6405, cut over to native deploy in
-  // CL-7364): the instantiate path's `deployBlockWorkflow` port lands
-  // here — the same source-form materialization pattern (asset +
-  // `@corbits/workflows`'s `./source` tree) applied to a template's referenced
-  // block definition (`code-review` today), now deployed through the
-  // same `workflowDeployer` the agent-authored deploy path above uses
-  // rather than a hub-local inert freeze.
+  // On-demand catalog workflow deploy (CL-6405, generalized by CL-7073):
+  // the "Available" catalog-workflows section (`apps/web`'s routines
+  // page) drives this to add any `workflows/*` package on demand, the
+  // same source-form materialization pattern (asset +
+  // `@corbits/workflows`'s `./source` tree) applied through the same
+  // `workflowDeployer` the agent-authored deploy path above uses rather
+  // than a hub-local inert freeze.
   app.route(
-    `${TENANT_PREFIX}/template-blocks`,
-    createTemplateBlockRoutes({
+    `${TENANT_PREFIX}/catalog-blocks`,
+    createCatalogBlockRoutes({
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
@@ -2196,16 +2193,16 @@ export async function createHub(config: HubConfig) {
           principal: { kind: "hub" },
           tree: {
             files: renderWorkflowSourceTree({
-              packageName: `@workbench-template/${assetName}`,
+              packageName: `@workbench-catalog-block/${assetName}`,
               workflowJson,
             }),
-            message: `Deploy template block ${assetName}`,
+            message: `Deploy catalog block ${assetName}`,
           },
         });
 
-        // Native deploy, not a hub-local inert freeze (CL-7364): the same
+        // Native deploy, not a hub-local inert freeze: the same
         // `workflowDeployer` the agent-authored deploy path above drives,
-        // so a template block's definition goes through the real
+        // so a catalog block's definition goes through the real
         // bundle → sidecar probe → capability walk → gate → freeze
         // pipeline instead of a hub-side shortcut.
         const result = await workflowDeployer.deploy({

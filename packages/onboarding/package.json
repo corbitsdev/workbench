@@ -41,7 +41,6 @@
     "@corbits/connections": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
     "@corbits/tool-registry-publish": "workspace:*",
-    "@workbench/templates": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "catalog:",
