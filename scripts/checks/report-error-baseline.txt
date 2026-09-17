@@ -77,17 +77,9 @@ apps/web/src/session.ts	3	return {
 apps/web/src/shell/context-menu/items.tsx	1	toast("Couldn't copy the link");
 apps/web/src/shell/workbench-list.tsx	1	// Revert the optimistic title on failure; the list will refetch on
 apps/web/src/shell/workbench-list.tsx	1	setPinned(!next);
-packages/agent-directory-tools/src/tool.ts	1	// The agent was genuinely created — that half-success must never
-packages/agent-directory-tools/src/tool.ts	1	if (err instanceof CreateAgentDefinitionError) {
-packages/agent-directory-tools/src/tool.ts	1	return errorResult(call.id, err);
 packages/agent-directory/src/definition-history.ts	1	return null;
 packages/approvals/src/allowance.ts	1	deps.log(
 packages/approvals/src/allowance.ts	1	return { outcome: "park", reason: "classification_failed" };
-packages/capability-tools/src/tool.ts	1	if (err instanceof CapabilityOutOfInventoryError) {
-packages/capability-tools/src/tool.ts	1	return errorResult(call.id, err);
-packages/catalog-tools/src/tool.ts	1	return errorResult(call.id, err);
-packages/catalog-tools/src/tool.ts	2	return errorResult(call.id, err);
-packages/catalog-tools/src/tool.ts	3	return errorResult(call.id, err);
 packages/chat-ui/src/composer.tsx	1	if (attachGenerationRef.current !== generation) return;
 packages/chat-ui/src/default-agent-workbench.ts	1	return {
 packages/chat-ui/src/invite-agent-dialog.tsx	1	setInviteError(
@@ -111,10 +103,6 @@ packages/code-review/src/review-run.ts	1	return { reviewer, ok: false, reason: r
 packages/command-palette/src/recents.ts	1	// A full or disabled store (private browsing, quota) loses
 packages/command-palette/src/recents.ts	1	// As above — loses persistence, not function.
 packages/command-palette/src/recents.ts	1	return [];
-packages/connections-tools/src/tool.ts	1	if (err instanceof NoOwnRoomError) {
-packages/connections-tools/src/tool.ts	1	return errorResult(call.id, err);
-packages/connections-tools/src/tool.ts	2	return errorResult(call.id, err);
-packages/connections-tools/src/tool.ts	3	return errorResult(call.id, err);
 packages/connections/src/connect-github-routes.ts	1	// A repoId `state.repos` doesn't carry means the card's own
 packages/connections/src/connect-github-routes.ts	1	// The GitHub client's own errors (transport, HTTP status, shape
 packages/connections/src/credential-test.ts	1	// Not JSON, or didn't match either shape — fall through to the
@@ -122,60 +110,19 @@ packages/connections/src/credential-test.ts	1	return [];
 packages/connections/src/credential-test.ts	1	return undefined;
 packages/connections/src/credential-test.ts	1	return {
 packages/error-sink/src/index.ts	1	return context.refId ?? UNKNOWN_OPERATION;
-packages/github-tools/src/pull-request-tools.ts	1	return errorResult(call.id, failureMessage(err));
-packages/github-tools/src/pull-request-tools.ts	1	return null;
-packages/github-tools/src/pull-request-tools.ts	2	return errorResult(call.id, failureMessage(err));
-packages/github-tools/src/tool.ts	1	return null;
-packages/github-tools/src/tool.ts	1	return {
-packages/granola-tools/src/tool.ts	1	return null;
-packages/granola-tools/src/tool.ts	1	return {
-packages/granola-tools/src/tool.ts	2	return {
-packages/jimmy-agent/src/gif-search-tool.ts	1	return false;
-packages/jimmy-agent/src/gif-search-tool.ts	1	return null;
-packages/jimmy-agent/src/gif-search-tool.ts	1	return {
-packages/linear-tools/src/tool.ts	1	return null;
-packages/linear-tools/src/tool.ts	1	return {
-packages/manus-tools/src/tool.ts	1	return errorResult(call.id, err);
-packages/manus-tools/src/tool.ts	1	return null;
-packages/manus-tools/src/tool.ts	2	return errorResult(call.id, err);
-packages/manus-tools/src/tool.ts	3	return errorResult(call.id, err);
-packages/manus-tools/src/tool.ts	4	return errorResult(call.id, err);
-packages/manus-tools/src/tool.ts	5	return errorResult(call.id, err);
-packages/manus-tools/src/tool.ts	6	return errorResult(call.id, err);
-packages/mcp-tools/src/tool.ts	1	return errorResult(call.id, err);
-packages/mcp-tools/src/tool.ts	1	return errorResult(call.id, new Error(`"${pattern}" is not a valid regex: ${String(err)}`));
-packages/mcp-tools/src/tool.ts	1	return {
-packages/mcp-tools/src/tool.ts	2	return errorResult(call.id, err);
-packages/mcp-tools/src/tool.ts	3	return errorResult(call.id, err);
-packages/mcp-tools/src/tool.ts	4	return errorResult(call.id, err);
 packages/mocks/src/ollama/capture.ts	1	return raw;
 packages/ollama-adapter/src/inline-tool-json.ts	1	return false;
 packages/ollama-adapter/src/inline-tool-json.ts	1	return { kind: "incomplete" };
 packages/onboarding/src/pending-seed.ts	1	return drop();
 packages/onboarding/src/routes.ts	1	// Neither `ProvisionError` nor `CliError` messages are safe to show
 packages/onboarding/src/routes.ts	1	return c.json(
-packages/reddit-tools/src/tool.ts	1	return null;
-packages/reddit-tools/src/tool.ts	1	return {
-packages/reddit-tools/src/tool.ts	2	return {
 packages/sandbox-sidecar/src/provisioner.ts	1	log.error`failed to sweep obsolete unit ${externalRef} for allocation ${allocationId}: ${
 packages/sandbox-sidecar/src/provisioner.ts	1	return rejected(...classify(error, "destroy_unit_failed"));
 packages/sandbox-sidecar/src/provisioner.ts	1	return rejected(...classify(error, "start_unit_failed"));
-packages/scout-agent/src/artifact-tool.ts	1	return {
-packages/scout-agent/src/artifact-tool.ts	2	return {
 packages/settings-ui/src/account-section.tsx	1	toast(SETTINGS_STRINGS.accountEmailCopyError);
-packages/skills-tools/src/tool.ts	1	return errorResult(call.id, err);
-packages/skills-tools/src/tool.ts	2	return errorResult(call.id, err);
-packages/skills-tools/src/tool.ts	3	return errorResult(call.id, err);
-packages/skills-tools/src/tool.ts	4	return errorResult(call.id, err);
-packages/skills-tools/src/tool.ts	5	return errorResult(call.id, err);
 packages/tool-registry-publish/src/freshness-check.ts	1	log.error`${err instanceof Error ? err.message : String(err)}`;
-packages/tools-skills/src/tool.ts	1	return errorResult(call.id, err);
-packages/tools-skills/src/tool.ts	2	return errorResult(call.id, err);
-packages/tools-skills/src/tool.ts	3	return errorResult(call.id, err);
 packages/turn-artifacts/src/index.ts	1	return [];
 packages/url-path/src/decoded-or-null.ts	1	return null;
-packages/web-search-tools/src/tool.ts	1	return null;
-packages/web-search-tools/src/tool.ts	1	return {
 packages/webhook-triggers/src/ingress-routes.ts	1	return c.json(
 packages/webhook-triggers/src/signature.ts	1	return false;
 workflows/attio-task-agent/src/finalize-tool.ts	1	return {
