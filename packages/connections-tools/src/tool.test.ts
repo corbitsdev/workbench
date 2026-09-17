@@ -1,8 +1,7 @@
 import { expect, test } from "bun:test";
 import type { ToolCall } from "@intx/types/runtime";
-import { createConnectorRegistry } from "@corbits/connections/registry";
-import type { McpPreset } from "@corbits/connections/mcp-presets";
 
+import type { ConnectorRegistry, McpPreset } from "./registry-shape";
 import {
   connectionsTools,
   LIST_CONNECTIONS_TOOL,
@@ -15,44 +14,28 @@ import {
 // `@corbits/connections/registry` `CONNECTOR_REGISTRY`) — this package
 // carries no default of its own, so its tests exercise the lookup logic
 // against a small stand-in.
-const TEST_CONNECTOR_REGISTRY = createConnectorRegistry({
+const TEST_CONNECTOR_REGISTRY: ConnectorRegistry = {
   github: {
     id: "github",
-    credentialPlugin: "http",
     displayName: "GitHub",
-    authKind: "api-key",
-    docsUrl: "https://github.com/settings/tokens",
-    feedsTools: ["@corbits/github-tools"],
-    probe: async () => ({ ok: true }),
   },
-});
+};
 
 const TEST_MCP_PRESETS: readonly McpPreset[] = [
   {
     slug: "granola",
     displayName: "Granola",
     description: "Search meeting notes, transcripts, and action items.",
-    url: "https://mcp.granola.ai/mcp",
-    connectionMode: "oauth",
-    docsUrl: "https://docs.granola.ai/help-center/sharing/integrations/mcp",
-    nativeConnectorId: "granola",
   },
   {
     slug: "exa",
     displayName: "Exa",
     description: "Search and research the live web.",
-    url: "https://mcp.exa.ai/mcp",
-    connectionMode: "keyless",
-    docsUrl: "https://docs.exa.ai/reference/exa-mcp",
-    nativeConnectorId: "exa",
   },
   {
     slug: "notion",
     displayName: "Notion",
     description: "Search and update pages, databases, and workspace content.",
-    url: "https://mcp.notion.com/mcp",
-    connectionMode: "oauth",
-    docsUrl: "https://developers.notion.com/guides/mcp/get-started-with-mcp",
   },
 ];
 
