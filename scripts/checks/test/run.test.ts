@@ -21,7 +21,6 @@ const EXPECTED_CHECK_NAMES = [
   "killdates",
   "licenses",
   "no-product-tenancy",
-  "owned-tables-fk",
   "packages",
   "publishable-workflows",
   "react-ui-drift",
