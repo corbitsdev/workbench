@@ -18,7 +18,7 @@ export function itemsEligibleForMarkAllRead(
   );
 }
 
-/** Rows whose status is `done` — open and snoozed stay. */
+/** Rows whose status is `done` — open rows stay. */
 export function itemsEligibleForClearDone(
   items: readonly InboxItem[],
 ): InboxItem[] {

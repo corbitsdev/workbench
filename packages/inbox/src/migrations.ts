@@ -5,10 +5,10 @@
 //   can apply it the same way it applies every other installed package's
 //   migrations. That package keeps its own ledger inside the `mailbox`
 //   schema.
-// - `applyInboxMigrations`: this package's own product table (CL-7208's
-//   `inbox.snooze` — see `./schema.ts` for why `@corbits/mailbox`'s
-//   enrichment has no column for a snooze's `until`). Bookkeeping uses its
-//   own ledger table, following the same pattern as
+// - `applyInboxMigrations`: this package's own product table history.
+//   CL-7208 added `inbox.snooze` for a snooze's `until` timestamp;
+//   CL-8185 drops it forward — snooze is gone per owner ruling.
+//   Bookkeeping uses its own ledger table, following the same pattern as
 //   `@workbench/onboarding`'s `migrations.ts`, so this package's migration
 //   history stays extractable on its own.
 
@@ -61,6 +61,15 @@ export const inboxMigrations: readonly InboxMigration[] = [
       );
       CREATE INDEX IF NOT EXISTS "inbox_snooze_until_idx" ON "inbox"."snooze" ("until");
     `,
+  },
+  // CL-8185: snooze is dropped per owner ruling — no web UI ever grew an
+  // affordance for it, and the hub's own unsnooze sweep is deleted
+  // alongside this migration. Forward-drop, never a backfill: any row
+  // still here just meant an item was hidden until its `until` passed,
+  // which the row's own deletion (not its message) restores to visible.
+  {
+    name: "0002_drop_snooze",
+    sql: `DROP TABLE IF EXISTS "inbox"."snooze";`,
   },
 ];
 

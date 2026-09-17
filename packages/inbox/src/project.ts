@@ -14,7 +14,7 @@ export const InboxItemSchema = type({
   "subject?": "string",
   date: "string",
   read: "boolean",
-  status: "'open' | 'done' | 'snoozed'",
+  status: "'open' | 'done'",
   "snippet?": "string",
   "refs?": type({
     kind: "string",
@@ -39,10 +39,8 @@ export const InboxCountsSchema = type({
 });
 export type InboxCounts = typeof InboxCountsSchema.infer;
 
-function projectStatus(
-  status: string | undefined,
-): "open" | "done" | "snoozed" {
-  if (status === "done" || status === "snoozed") return status;
+function projectStatus(status: string | undefined): "open" | "done" {
+  if (status === "done") return status;
   return "open";
 }
 

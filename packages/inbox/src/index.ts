@@ -35,8 +35,3 @@ export {
   type ApplyMailboxMigrationsReport,
 } from "./migrations";
 export { createInboxRoutes, type CreateInboxRoutesDeps } from "./routes";
-export {
-  claimAndReopenSnooze,
-  findDueSnoozes,
-  type DueSnooze,
-} from "./snooze-store";

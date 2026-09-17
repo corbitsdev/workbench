@@ -1,7 +1,7 @@
 // Host vocabulary for `@corbits/mailbox`. The package has none of its own —
 // every mount must hand priorities and statuses in. Workbench's three-group
-// product layer uses `status` for open/done/snoozed and leaves `priority` as
-// a free ranking the write path may set later.
+// product layer uses `status` for open/done (snooze is dropped, CL-8185)
+// and leaves `priority` as a free ranking the write path may set later.
 
 import type { MailboxVocabulary } from "@corbits/mailbox";
 
@@ -12,7 +12,7 @@ export const WORKBENCH_INBOX_PRIORITIES = [
   "low",
 ] as const;
 
-export const WORKBENCH_INBOX_STATUSES = ["open", "done", "snoozed"] as const;
+export const WORKBENCH_INBOX_STATUSES = ["open", "done"] as const;
 
 export type WorkbenchInboxStatus = (typeof WORKBENCH_INBOX_STATUSES)[number];
 
