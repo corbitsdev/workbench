@@ -9,6 +9,15 @@
 // `createRequireGrant` and the delegation-ceiling check both call — so
 // this proves the ceiling is enforced against the SAME grants a real
 // deploy would see, not a bundle-local approximation.
+//
+// Every assertion speaks the native Interchange contract (`@intx/hub-api`'s
+// `createGrantRoutes`/`createPrincipalRoutes` vocabulary): `{data,
+// nextCursor}` pages, single-action `POST /grants` bodies returning the
+// single `GrantResponse` object, `204` deletes, and `{error: {code,
+// message}}` envelopes. The workflow-access surface is the
+// workflow-run-authenticated counterpart to `/api/tenants/:tenantId
+// /principals` and `/grants` — same shapes, run bearer instead of a human
+// session (see the mount comment in `apps/hub/src/index.ts`).
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 
@@ -35,6 +44,34 @@ function dbConfigFromUrl(databaseUrl: string) {
 
 const databaseUrl = process.env["DATABASE_URL"];
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
+
+function storeGrant(
+  principalId: string,
+  resource: string,
+  action: string,
+): {
+  id: string;
+  resource: string;
+  action: string;
+  effect: "allow";
+  origin: "system";
+  conditions: null;
+  expiresAt: null;
+  roleId: null;
+  principalId: string;
+} {
+  return {
+    id: generateId("grant"),
+    resource,
+    action,
+    effect: "allow",
+    origin: "system",
+    conditions: null,
+    expiresAt: null,
+    roleId: null,
+    principalId,
+  };
+}
 
 describeIfDb("createWorkflowAccessRoutes", () => {
   let db: DB;
@@ -125,6 +162,27 @@ describeIfDb("createWorkflowAccessRoutes", () => {
     expect(res.status).toBe(401);
   });
 
+  test("GET /principals returns the native page envelope", async () => {
+    const app = mountedApp(
+      createInMemoryGrantStore([
+        storeGrant(callerPrincipalId, "principal:*", "read"),
+      ]),
+    );
+    const res = await app.request(request("/principals"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: { id: string; kind: string; status: string }[];
+      nextCursor: string | null;
+    };
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(
+      body.data.some(
+        (p) => p.id === callerPrincipalId && p.kind === "workflow",
+      ),
+    ).toBe(true);
+    expect(body.nextCursor).toBeNull();
+  });
+
   test("403 when the caller lacks grant:*/create", async () => {
     const app = mountedApp(createInMemoryGrantStore([]));
     const res = await app.request(
@@ -133,7 +191,9 @@ describeIfDb("createWorkflowAccessRoutes", () => {
         body: {
           principalId: targetPrincipalId,
           resource: "room:*",
-          actions: ["read"],
+          action: "read",
+          effect: "allow",
+          origin: "invoker",
         },
       }),
     );
@@ -142,28 +202,8 @@ describeIfDb("createWorkflowAccessRoutes", () => {
 
   test("403 when the requested pair exceeds the caller's own ceiling", async () => {
     const grantStore = createInMemoryGrantStore([
-      {
-        id: generateId("grant"),
-        resource: "grant:*",
-        action: "create",
-        effect: "allow",
-        origin: "system",
-        conditions: null,
-        expiresAt: null,
-        roleId: null,
-        principalId: callerPrincipalId,
-      },
-      {
-        id: generateId("grant"),
-        resource: "room:*",
-        action: "read",
-        effect: "allow",
-        origin: "system",
-        conditions: null,
-        expiresAt: null,
-        roleId: null,
-        principalId: callerPrincipalId,
-      },
+      storeGrant(callerPrincipalId, "grant:*", "create"),
+      storeGrant(callerPrincipalId, "room:*", "read"),
     ]);
     const app = mountedApp(grantStore);
     const res = await app.request(
@@ -172,39 +212,22 @@ describeIfDb("createWorkflowAccessRoutes", () => {
         body: {
           principalId: targetPrincipalId,
           resource: "room:*",
-          actions: ["read", "write"],
+          action: "write",
+          effect: "allow",
+          origin: "invoker",
         },
       }),
     );
     expect(res.status).toBe(403);
-    const body = (await res.json()) as { error: { userMessage: string } };
-    expect(body.error.userMessage).toContain("write");
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain("write");
   });
 
-  test("201 within the caller's own ceiling", async () => {
+  test("201 within the caller's own ceiling returns the single native GrantResponse", async () => {
     const grantStore = createInMemoryGrantStore([
-      {
-        id: generateId("grant"),
-        resource: "grant:*",
-        action: "create",
-        effect: "allow",
-        origin: "system",
-        conditions: null,
-        expiresAt: null,
-        roleId: null,
-        principalId: callerPrincipalId,
-      },
-      {
-        id: generateId("grant"),
-        resource: "room:*",
-        action: "read",
-        effect: "allow",
-        origin: "system",
-        conditions: null,
-        expiresAt: null,
-        roleId: null,
-        principalId: callerPrincipalId,
-      },
+      storeGrant(callerPrincipalId, "grant:*", "create"),
+      storeGrant(callerPrincipalId, "grant:*", "read"),
+      storeGrant(callerPrincipalId, "room:*", "read"),
     ]);
     const app = mountedApp(grantStore);
     const res = await app.request(
@@ -213,22 +236,76 @@ describeIfDb("createWorkflowAccessRoutes", () => {
         body: {
           principalId: targetPrincipalId,
           resource: "room:*",
-          actions: ["read"],
+          action: "read",
+          effect: "allow",
+          origin: "invoker",
         },
       }),
     );
     expect(res.status).toBe(201);
     const body = (await res.json()) as {
-      grants: { id: string; resource: string; action: string }[];
+      id: string;
+      principalId: string;
+      resource: string;
+      action: string;
+      effect: string;
+      origin: string;
     };
-    expect(body.grants).toHaveLength(1);
-    const createdGrant = body.grants[0];
-    if (createdGrant === undefined) throw new Error("expected a created grant");
-    expect(createdGrant.resource).toBe("room:*");
+    expect(body.principalId).toBe(targetPrincipalId);
+    expect(body.resource).toBe("room:*");
+    expect(body.action).toBe("read");
+    expect(body.effect).toBe("allow");
 
-    await db.db
-      .delete(schema.grant)
-      .where(eq(schema.grant.id, createdGrant.id));
+    const listRes = await app.request(
+      request(`/grants?principalId=${targetPrincipalId}`),
+    );
+    expect(listRes.status).toBe(200);
+    const listBody = (await listRes.json()) as {
+      data: { id: string }[];
+      nextCursor: string | null;
+    };
+    expect(listBody.data.some((g) => g.id === body.id)).toBe(true);
+    expect(listBody.nextCursor).toBeNull();
+
+    await db.db.delete(schema.grant).where(eq(schema.grant.id, body.id));
+  });
+
+  test("revoke: 204 within the caller's own ceiling", async () => {
+    const inserted = await db.db
+      .insert(schema.grant)
+      .values({
+        id: generateId("grant"),
+        tenantId,
+        roleId: null,
+        principalId: targetPrincipalId,
+        resource: "room:*",
+        action: "read",
+        effect: "allow",
+        conditions: null,
+        origin: "invoker",
+        expiresAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+    const grantableRow = inserted[0];
+    if (grantableRow === undefined)
+      throw new Error("expected an inserted grant");
+
+    const grantStore = createInMemoryGrantStore([
+      storeGrant(callerPrincipalId, "grant:*", "manage"),
+      storeGrant(callerPrincipalId, "room:*", "read"),
+    ]);
+    const app = mountedApp(grantStore);
+    const res = await app.request(
+      request(`/grants/${grantableRow.id}`, { method: "DELETE" }),
+    );
+    expect(res.status).toBe(204);
+
+    const gone = await db.db.query.grant.findFirst({
+      where: eq(schema.grant.id, grantableRow.id),
+    });
+    expect(gone).toBeUndefined();
   });
 
   test("revoke: 403 outside the caller's own ceiling", async () => {
@@ -254,17 +331,7 @@ describeIfDb("createWorkflowAccessRoutes", () => {
       throw new Error("expected an inserted grant");
 
     const grantStore = createInMemoryGrantStore([
-      {
-        id: generateId("grant"),
-        resource: "grant:*",
-        action: "manage",
-        effect: "allow",
-        origin: "system",
-        conditions: null,
-        expiresAt: null,
-        roleId: null,
-        principalId: callerPrincipalId,
-      },
+      storeGrant(callerPrincipalId, "grant:*", "manage"),
     ]);
     const app = mountedApp(grantStore);
     const res = await app.request(
@@ -284,17 +351,7 @@ describeIfDb("createWorkflowAccessRoutes", () => {
 
   test("404 for an unknown grant id", async () => {
     const grantStore = createInMemoryGrantStore([
-      {
-        id: generateId("grant"),
-        resource: "grant:*",
-        action: "manage",
-        effect: "allow",
-        origin: "system",
-        conditions: null,
-        expiresAt: null,
-        roleId: null,
-        principalId: callerPrincipalId,
-      },
+      storeGrant(callerPrincipalId, "grant:*", "manage"),
     ]);
     const app = mountedApp(grantStore);
     const res = await app.request(
