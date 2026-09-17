@@ -1,4 +1,4 @@
-// Adapting `@corbits/chat`'s parts to the shapes `@corbits/react-ui`
+// Adapting the chat wire's parts (`./wire/parts`) to the shapes `@corbits/react-ui`
 // renders (CL-6318).
 //
 // Only reasoning crosses this boundary now. Tool calls used to as well,
@@ -8,7 +8,7 @@
 // turn's calls into rounds and never shows a reader JSON at all.
 
 import type { PartReasoning } from "@corbits/react-ui";
-import type { ReasoningPart } from "@corbits/chat/parts";
+import type { ReasoningPart } from "./wire/parts";
 
 /** chat's reasoning carries no duration; react-ui's is optional, so it
  * stays absent rather than being fabricated. */

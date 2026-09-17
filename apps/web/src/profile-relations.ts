@@ -4,7 +4,7 @@
 // participant instead of by a fixed title, and fall back to creating one —
 // to any profile subject rather than one hardcoded agent.
 
-import { localPartOf } from "@corbits/chat/agent-address";
+import { localPartOf } from "@corbits/chat-ui/wire/agent-address";
 import {
   createWorkbench,
   findDirectWorkbenchWith,

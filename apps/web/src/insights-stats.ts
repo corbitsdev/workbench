@@ -2,7 +2,7 @@
 // routines). No new analytics backend — I1 is an honest live surface on
 // existing endpoints.
 
-import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
+import { isWorkbenchHostDefinitionName } from "@corbits/chat-ui/wire/workbench-host-naming";
 import {
   runOutcomeStatus,
   withListingAbandoned,

@@ -13,7 +13,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { isAgentAddress, mentionedParticipants } from "@corbits/chat/mentions";
+import { isAgentAddress, mentionedParticipants } from "./wire/mentions";
 import { reportError } from "@corbits/error-sink";
 import type { Part, ParticipantRecord } from "./api";
 import { REAL_CLOCK, type Clock } from "./clock";
@@ -314,7 +314,7 @@ export function useStreamingReply(
   /** Set once the backstop above has fired for the turn just cleared — a
    * `reportError` refId (CL-6677) the host's honest notice quotes, the
    * same "ref id + Retry" treatment `postUndeliveredNotice`
-   * (`@corbits/chat`) gives a dispatch failure that surfaces server-side.
+   * (the hub's chat routes) gives a dispatch failure that surfaces server-side.
    * This is the same class of failure with no server signal at all (a
    * cold-waking agent that never streams back a token), so it deserves
    * the same backstop rather than the ref-less, action-less notice this

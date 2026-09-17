@@ -1,4 +1,4 @@
-import type { StepsBlockData } from "@corbits/chat/blocks";
+import type { StepsBlockData } from "../wire/blocks";
 
 import { BlockCard } from "./block-card";
 

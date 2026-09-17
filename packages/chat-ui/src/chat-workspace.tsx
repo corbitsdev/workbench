@@ -9,9 +9,9 @@
 // `@workbench/web` that is the same `/api/me/principals` call the Home
 // and Settings pages use), so `ChatWorkspace` takes a small
 // `TenantResolution` value rather than importing app code: the same
-// narrow-port shape `@corbits/chat`'s `routes.ts` uses for `ChatPlatform`.
+// narrow-port shape the hub's chat routes uses for `ChatPlatform`.
 
-import { isAgentAddress } from "@corbits/chat/mentions";
+import { isAgentAddress } from "./wire/mentions";
 import { Button, EmptyState, toast } from "@corbits/react-ui";
 import { reportError } from "@corbits/error-sink";
 import { getResolvedCatalog } from "@corbits/inference-settings";
@@ -124,7 +124,7 @@ import {
   ChatPinEventData,
   ChatReactionEventData,
   ChatSettingsEventData,
-} from "@corbits/chat/stream-events";
+} from "./wire/stream-events";
 import { useThreadNavigation } from "./use-thread-navigation";
 import { mergePendingSends, useOptimisticSends } from "./use-optimistic-sends";
 export {
@@ -459,7 +459,7 @@ const REPLY_TIMED_OUT_ITEM_ID = "reply_timed_out_notice";
  * (`PENDING_REPLY_CLEAR_MS`) has fired — a turn that opened but never got a
  * single token and never closed out either, so the reader was left staring
  * at a typing indicator that just vanished with no explanation. This is
- * the same class of failure `postUndeliveredNotice` (`@corbits/chat`)
+ * the same class of failure `postUndeliveredNotice` (the hub's chat routes)
  * already gives an honest, actionable backstop to when the dispatch fails
  * loud enough for the server to see it — a cold-waking agent that never
  * streams a token back fails silently instead, so before CL-6677 this

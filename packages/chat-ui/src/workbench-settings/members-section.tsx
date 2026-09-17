@@ -9,7 +9,7 @@
 
 import { useState } from "react";
 import { Button, ConfirmButton } from "@corbits/react-ui";
-import { isAgentAddress } from "@corbits/chat/mentions";
+import { isAgentAddress } from "../wire/mentions";
 import { UserPlus } from "@corbits/icons";
 
 import type { ParticipantRecord } from "../api";

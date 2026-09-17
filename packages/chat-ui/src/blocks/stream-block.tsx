@@ -1,4 +1,4 @@
-import type { StreamBlockData } from "@corbits/chat/blocks";
+import type { StreamBlockData } from "../wire/blocks";
 
 import { BlockCard } from "./block-card";
 

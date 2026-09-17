@@ -23,7 +23,7 @@ import {
   listTenantInvitableDefinitions,
   WorkbenchLoadingState,
 } from "@corbits/chat-ui";
-import { humanizeSlug } from "@corbits/chat/display-name";
+import { humanizeSlug } from "@corbits/chat-ui/wire/display-name";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiQueryError, describeApiError } from "@corbits/api-query";

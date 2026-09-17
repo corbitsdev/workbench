@@ -1,7 +1,7 @@
 // Builds the `BlockResponseActions` port `ChatWorkspace` (`@corbits/chat-ui`)
 // calls for its in-chat poll/form cards, mirroring `createChatApprovalActions`
 // in `./approval-actions.ts`: `@corbits/chat-ui` owns no session, so the host
-// supplies the concrete fetches against `@corbits/chat`'s own response
+// supplies the concrete fetches against the hub's chat response
 // routes (`getBlockResponses`/`submitPollResponse`/`submitFormResponse` in
 // `api.ts`).
 

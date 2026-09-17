@@ -1,7 +1,7 @@
 // Identity payload for opening a ProfileCard in the shell canvas. Chat-ui
 // never mounts the card itself — the host canvas column owns that surface.
 
-import { isAgentAddress } from "@corbits/chat/mentions";
+import { isAgentAddress } from "./wire/mentions";
 
 import type { ParticipantRecord } from "./api";
 

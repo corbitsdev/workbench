@@ -21,7 +21,7 @@
 // known-good connection. An explicit `disconnected` result clears the
 // snapshot so a real disconnect still shows Connect.
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ConnectGithubBlockData } from "@corbits/chat/blocks";
+import type { ConnectGithubBlockData } from "../wire/blocks";
 import { reportError } from "@corbits/error-sink";
 
 import { CHAT_STRINGS } from "../strings";

@@ -1,19 +1,20 @@
-// The chat surface's one seam to `@corbits/chat`'s HTTP routes (see
-// packages/chat/src/routes.ts). Every fetch the chat/* components make goes
-// through a function here, and every response is parsed with an arktype
-// schema at the boundary — a route shape change is a one-file fix.
+// The chat surface's one seam to the hub's chat HTTP routes (see
+// packages/chat/src/routes.ts, still the routes' implementation). Every
+// fetch the chat/* components make goes through a function here, and every
+// response is parsed with an arktype schema at the boundary — a route
+// shape change is a one-file fix.
 //
-// The wire-level `Part` and participant schemas are imported from
-// `@corbits/chat` rather than redefined here: this UI validates the wire
-// contract at its own boundary, but against the one real schema rather than
-// a second, hand-copied one.
+// The wire-level `Part` and participant schemas live in this package's own
+// `./wire` (mirrored off the hub's wire contract) rather than being
+// imported from `@corbits/chat` directly, so this browser bundle never
+// carries a server-only dependency.
 
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
-import { Part } from "@corbits/chat/parts";
-import { parseParticipants } from "@corbits/chat/participants";
-import type { ParticipantRecord } from "@corbits/chat/participants";
-import type { WorkbenchOnboardingStep } from "@corbits/chat/blocks";
+import { Part } from "./wire/parts";
+import { parseParticipants } from "./wire/participants";
+import type { ParticipantRecord } from "./wire/participants";
+import type { WorkbenchOnboardingStep } from "./wire/blocks";
 import { UnauthenticatedError } from "@corbits/api-query";
 import { InferenceSettingsApiError } from "@corbits/inference-settings";
 import { jimmyAgentRequest } from "@workbench/templates";
@@ -27,14 +28,14 @@ export {
   FilePart,
   EventPart,
   Part,
-} from "@corbits/chat/parts";
-export type { ParticipantRecord } from "@corbits/chat/participants";
+} from "./wire/parts";
+export type { ParticipantRecord } from "./wire/participants";
 export type {
   OnboardingStepLabel,
   WorkbenchOnboardingStep,
-} from "@corbits/chat/blocks";
-export { REACTION_EMOJI } from "@corbits/chat/reaction-emoji";
-export type { ReactionEmoji } from "@corbits/chat/reaction-emoji";
+} from "./wire/blocks";
+export { REACTION_EMOJI } from "./wire/reaction-emoji";
+export type { ReactionEmoji } from "./wire/reaction-emoji";
 
 export const WorkbenchKind = type("'workbench' | 'chat'");
 export type WorkbenchKind = typeof WorkbenchKind.infer;
