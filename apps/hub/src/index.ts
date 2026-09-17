@@ -97,7 +97,6 @@ import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
 import {
   createInboxRoutes,
-  createWorkbenchMailboxDelivery,
   WORKBENCH_MAILBOX_VOCABULARY,
 } from "@corbits/inbox";
 import {
@@ -245,10 +244,7 @@ import {
   createProviderHealthPort,
   createProviderHealthStore,
 } from "@corbits/connections/provider-health";
-import {
-  createInMemoryNotifyDispatchStore,
-  createSinkRegistry,
-} from "@corbits/notify";
+import { createHubNotifyDeliveryDeps } from "./notify-delivery";
 import {
   createWorkflowAuthorRegistry,
   createWorkflowAuthorRoutes,
@@ -554,15 +550,6 @@ export async function createHub(config: HubConfig) {
     config.databaseUrl,
   );
   const mailboxBus = createInMemoryMailboxEventBus();
-  // Delivery adapter for `@corbits/notify` — kept at the composition root so
-  // routine / approval / mention writers can inject it without the hub
-  // re-implementing mailbox writes. The credential-expiry sweep below is
-  // its first live caller; approval/run-failure/mention still have no
-  // writer wired to this adapter.
-  const mailboxDelivery = createWorkbenchMailboxDelivery({
-    db: mailboxDb,
-    bus: mailboxBus,
-  });
   const log = getLogger(["hub", "auth"]);
   // Built once, tagged, and shared by every secret-at-rest seam in this
   // composition root — see `hubCredentialCipher`.
@@ -2422,8 +2409,8 @@ export async function createHub(config: HubConfig) {
   // Notify-to-reconnect for an OAuth-connected credential whose token
   // expired (Hugging Face today — see docs/onboarding-huggingface-connect.md):
   // a light periodic sweep over `@corbits/notify`'s pure
-  // `findDueCredentialExpiries`, mailing through the same delivery
-  // adapter above. `createInMemoryNotifyDispatchStore`/`createSinkRegistry()`
+  // `findDueCredentialExpiries`, mailing through the hub's notify delivery
+  // deps (`createHubNotifyDeliveryDeps`). `createInMemoryNotifyDispatchStore`/`createSinkRegistry()`
   // mean external sink fan-out (Slack, email) is a no-op until a sink is
   // registered — the mailbox row itself is what a person sees in their
   // inbox. Requires `@corbits/mailbox`'s and `@corbits/notify`'s own
@@ -2437,15 +2424,11 @@ export async function createHub(config: HubConfig) {
       sidecarRouter,
     ),
     hubUrl: config.baseUrl,
-    notify: {
-      mail: mailboxDelivery,
-      addressing: {
-        inbox: (recipient) => `${recipient.principalId}@inbox.${notifyHost}`,
-        from: (kind) => `${kind}@notify.${notifyHost}`,
-      },
-      dispatch: createInMemoryNotifyDispatchStore(),
-      sinks: createSinkRegistry(),
-    },
+    notify: createHubNotifyDeliveryDeps({
+      mailboxDb,
+      bus: mailboxBus,
+      host: notifyHost,
+    }),
   });
 
   // Reopen a snoozed inbox item once its `until` has passed (CL-7208) — a
