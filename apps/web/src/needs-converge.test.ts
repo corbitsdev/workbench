@@ -115,7 +115,7 @@ describe("group workbench creation sequence", () => {
           id: "tnt_atlas",
           name: input.name,
           slug: input.slug,
-          parentId: input.parentId,
+          parentId: input.parentId ?? null,
         });
       },
       inviteMember: (tenantId, input) => {
@@ -304,7 +304,7 @@ describe("group workbench creation sequence", () => {
           id: "tnt_atlas",
           name: input.name,
           slug: input.slug,
-          parentId: input.parentId,
+          parentId: input.parentId ?? null,
         }),
       inviteMember: () => Promise.resolve(),
       deployWorkflow: () => Promise.reject(new Error("unexpected deploy")),
@@ -412,7 +412,7 @@ describe("writes after gap checks", () => {
         id: "tnt_atlas",
         name: input.name,
         slug: input.slug,
-        parentId: input.parentId,
+        parentId: input.parentId ?? null,
       });
     };
 
@@ -517,7 +517,7 @@ describe("thread-native DM derivation", () => {
           id: `tnt_${input.slug}`,
           name: input.name,
           slug: input.slug,
-          parentId: input.parentId,
+          parentId: input.parentId ?? null,
         });
       },
       inviteMember: () => Promise.resolve(),
@@ -851,5 +851,31 @@ describe("stock-only fetch hub", () => {
     expect(send).toBeDefined();
     expect(JSON.stringify(send?.body)).not.toContain("idempotency");
     expect(JSON.stringify(send?.body)).not.toContain("dm:");
+  });
+
+  test("inviteMember resolves the role name to the tenant's own role id before inviting", async () => {
+    const seen: { method: string; url: string; body: unknown }[] = [];
+    const hub = createFetchStockHub(
+      stubFetch(seen, {
+        "/api/tenants/tnt_atlas/roles": {
+          data: [{ id: "role_member", name: "member" }],
+          nextCursor: null,
+        },
+        "POST /api/tenants/tnt_atlas/members/invite": {},
+      }),
+    );
+
+    await hub.inviteMember("tnt_atlas", {
+      email: "bea@example.com",
+      role: "member",
+    });
+
+    const invite = seen.find((request) =>
+      request.url.startsWith("/api/tenants/tnt_atlas/members/invite"),
+    );
+    expect(invite?.body).toEqual({
+      email: "bea@example.com",
+      roleId: "role_member",
+    });
   });
 });

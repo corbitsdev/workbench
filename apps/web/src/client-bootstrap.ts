@@ -24,12 +24,43 @@ import {
 import {
   convergeNeedsList,
   createFetchStockHub,
+  findOwnedTenants,
   StockHubCapabilityError,
   StockHubRequestError,
   type PrimaryThread,
   type StockHub,
   type StockHubCapability,
 } from "./needs-converge";
+
+/** Derives a stable, readable slug for the primary tenant this account is
+ * about to mint — never random, so a retry after a dropped response
+ * targets the same slug rather than minting a second root. */
+function primaryTenantSlug(account: ClientBootstrapAccount): string {
+  const base = account.email
+    .split("@")[0]
+    ?.toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base !== undefined && base.length > 0 ? base : `home-${account.id}`;
+}
+
+/** First-signup installer step (CL-8131): mints the account's primary
+ * tenant over the stock `POST /api/tenants` route (no `parentId`, so the
+ * caller becomes its owner) when it does not already own one. This is
+ * the "0→1" ruling's execution — never hub boot, never a CLI — and it
+ * never mints a second root: an account that already owns a top-level
+ * tenant is left alone. */
+export async function ensurePrimaryTenant(
+  account: ClientBootstrapAccount,
+  hub: StockHub,
+): Promise<void> {
+  const owned = await findOwnedTenants(hub);
+  if (owned.some((tenant) => tenant.parentId === null)) return;
+  await hub.createTenant({
+    name: `${account.name}'s Workbench`,
+    slug: primaryTenantSlug(account),
+  });
+}
 
 /** The seeded assistant asset, productized as Myra — the same wire
  * identifier the hub seed deploys under and the catalog resolves to the
@@ -125,7 +156,22 @@ export async function bootstrapClientSession(
   });
   const store = childTenantStore(deps.storage, deps.hubScope, account.id);
   try {
-    const report = await convergeNeedsList(manifest, deps.hub, store);
+    // The common case (an account that already owns its primary tenant)
+    // never pays for a primary-tenant existence probe: convergence is
+    // attempted directly, and only a "primary-tenant-bootstrap" gap — the
+    // first-signup case — triggers the one-time mint-then-retry below.
+    const report = await convergeNeedsList(manifest, deps.hub, store).catch(
+      async (cause: unknown) => {
+        if (
+          !(cause instanceof StockHubCapabilityError) ||
+          cause.capability !== "primary-tenant-bootstrap"
+        ) {
+          throw cause;
+        }
+        await ensurePrimaryTenant(account, deps.hub);
+        return convergeNeedsList(manifest, deps.hub, store);
+      },
+    );
     return {
       kind: "ready",
       primaryTenantId: report.primaryTenantId,

@@ -320,19 +320,84 @@ describe("the setup gate", () => {
     );
   }
 
-  test("an empty hub renders the setup-pending panel with a recheck, and never navigates", async () => {
-    const { container, root, navigate, calls, seen } = renderGateAtOnboarding({
-      setupRequired: true,
-      userCount: 1,
-      tenantCount: 0,
-    });
+  test("an empty hub drives the installer, which mints the primary tenant then surfaces the myra-deploy gap", async () => {
+    // The installer's own flow (CL-8131): the first pass finds no owned
+    // primary tenant, mints one over stock `POST /api/tenants`, then
+    // converges again — landing on the "no myraDeploy configured" gap
+    // since this test supplies no deploy inputs and the fresh tenant has
+    // no Myra yet. The gate renders that gap, and never navigates: a gap
+    // is not "ready".
+    let ownsPrimary = false;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+    const { navigate, calls } = trackedNavigate();
+    const seen: string[] = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      seen.push(url);
+      const path = url.split("?")[0] ?? url;
+      if (path === "/api/setup/status") {
+        return json({ setupRequired: true, userCount: 1, tenantCount: 0 });
+      }
+      if (path === "/api/me/principals") {
+        return json({
+          data: ownsPrimary
+            ? [
+                {
+                  principalId: "prn_user",
+                  tenantId: "tnt_primary",
+                  tenantName: "Ada's Workbench",
+                  tenantSlug: "ada",
+                  kind: "user",
+                  status: "active",
+                  roles: [{ id: "role_owner", name: "owner" }],
+                },
+              ]
+            : [],
+          nextCursor: null,
+        });
+      }
+      if (path === "/api/tenants" && init?.method === "POST") {
+        ownsPrimary = true;
+        return json(
+          {
+            id: "tnt_primary",
+            name: "Ada's Workbench",
+            slug: "ada",
+            parentId: null,
+          },
+          201,
+        );
+      }
+      if (path === "/api/tenants/tnt_primary") {
+        return json({
+          id: "tnt_primary",
+          name: "Ada's Workbench",
+          slug: "ada",
+          parentId: null,
+        });
+      }
+      if (path === "/api/tenants/tnt_primary/principals") {
+        return json({ data: [], nextCursor: null });
+      }
+      // Anything outside the mocked stock routes is a failure: the gate
+      // must never touch the deleted `/api/onboarding/*` routes.
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
     try {
       await settle(root, gateElement(navigate));
 
       expect(container.textContent).toContain("Set up your workbench");
       expect(container.textContent).toContain("Check again");
       expect(calls).toEqual([]);
-      expect(seen).toEqual(["/api/setup/status"]);
+      expect(seen).toContain("/api/setup/status");
+      expect(
+        seen.some(
+          (url) =>
+            url.startsWith("/api/tenants") && !url.includes("principals"),
+        ),
+      ).toBe(true);
     } finally {
       act(() => root.unmount());
       container.remove();
