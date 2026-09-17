@@ -3,10 +3,10 @@
 // `./connect-github-routes.test.ts` mounts its routes: a bare `Hono`
 // with a tenant-injecting middleware, every port a plain fake.
 //
-// WIRING PINS (CL-7585): the per-workflow `buildJson` closures live on
-// `@workbench/onboarding`'s tenant-seed `CATALOG_WORKFLOWS` entries and
+// WIRING PINS (CL-8113): the per-workflow `buildJson` closures live on
+// the hub's native `./catalog-blocks` `CATALOG_BLOCKS` entries and
 // `buildBlockWorkflowSource` wires them through
-// `deployableCatalogWorkflow`, so every catalog workflow deploys below
+// `deployableCatalogBlock`, so every catalog workflow deploys below
 // with its real rendered definition — no silent no-op, no fake deploy.
 // These tests pin that wiring in the open: the trigger address stamped
 // into each deployed definition proves the real builder ran against the
