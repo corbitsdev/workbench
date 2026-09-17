@@ -1153,4 +1153,49 @@ describe("CL-7584 desired-state steps in finishing-setup", () => {
 
     expect(calls).toEqual(["/"]);
   });
+
+  test("a ready answer drives the Myra deploy over stock routes before handing off", async () => {
+    // Genesis had to leave the deploy pending (the catalog was still
+    // empty when it converged), so the handoff itself is the driver:
+    // resolve the assistant asset from the tenant's own catalog, post
+    // the deployment, and only then navigate.
+    const posted: unknown[] = [];
+    globalThis.fetch = (async (
+      url: string,
+      init?: { method?: string; body?: unknown },
+    ) => {
+      if (url === "/api/onboarding/complete-setup") {
+        return json({
+          kind: "ready",
+          tenantId: "ten_1",
+          tenantSlug: "ada-user1",
+          setupAgentReady: true,
+          deployed: ["assistant"],
+          pending: [],
+          steps: [{ name: "assistant", label: "Myra", status: "present" }],
+        });
+      }
+      if (url === "/api/tenants/ten_1/assets?kind=workflow&inherited=true") {
+        return json([{ id: "asst_1", name: "assistant" }]);
+      }
+      if (url === "/api/tenants/ten_1/workflows/deployments") {
+        if (init?.method === "POST") {
+          posted.push(init.body);
+          return json({ id: "dep_1" });
+        }
+        return json([]);
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const { navigate, calls } = trackedNavigate();
+    renderFinishingSetup(navigate);
+    await settle(50);
+
+    expect(posted.length).toBe(1);
+    expect(
+      typeof posted[0] === "string" ? JSON.parse(posted[0]) : posted[0],
+    ).toEqual({ definitionAssetId: "asst_1", confirmDeployments: false });
+    expect(calls).toEqual(["/"]);
+  });
 });

@@ -264,6 +264,77 @@ describe("readHubSnapshot", () => {
   });
 });
 
+describe("convergeNeedsList deploy pending", () => {
+  test("an unresolvable deploy body is reported pending, never thrown or silently skipped", async () => {
+    const { hub, calls } = recordingHub(emptySnapshot());
+    const report = await convergeNeedsList(manifest, hub, emptySnapshot(), {
+      resolveAgentDeploy: () => undefined,
+    });
+    // Everything else still converges — only the agent deploy waits for
+    // the catalog seed that the credential step brings.
+    expect(report.applied.map((op) => op.kind)).toEqual([
+      "create-tenant",
+      "create-tenant",
+      "invite-member",
+      "invite-member",
+    ]);
+    expect(report.pending).toEqual([
+      {
+        kind: "deploy-agent",
+        tenantSlug: "ada",
+        definitionRefId: "assistant",
+      },
+    ]);
+    expect(calls.some((call) => call.startsWith("deployAgent"))).toBe(false);
+  });
+
+  test("a resolved deploy body still deploys and leaves nothing pending", async () => {
+    const { hub, calls } = recordingHub(emptySnapshot());
+    const report = await convergeNeedsList(manifest, hub, emptySnapshot(), {
+      resolveAgentDeploy: () => ({ definitionAssetId: "ast_1" }),
+    });
+    expect(report.applied.map((op) => op.kind)).toEqual([
+      "create-tenant",
+      "deploy-agent",
+      "create-tenant",
+      "invite-member",
+      "invite-member",
+    ]);
+    expect(report.pending).toEqual([]);
+    expect(calls.some((call) => call.startsWith("deployAgent:tnt_ada"))).toBe(
+      true,
+    );
+  });
+
+  test("a workbench member without an email is an explicit skip, not a silent drop", async () => {
+    const emailLess: NeedsList = buildNeedsList({
+      user: { id: "usr_1", email: "ada@example.com" },
+      primaryTenant: { slug: "ada", name: "Ada" },
+      myraDefinitionRefId: "assistant",
+      workbenches: [
+        {
+          slug: "ada-atlas",
+          name: "Atlas",
+          members: [{ refId: "usr_9", role: "member" }],
+        },
+      ],
+      shares: [],
+      createdWorkbenchTenantIds: [],
+    });
+    const { hub } = recordingHub(emptySnapshot());
+    const report = await convergeNeedsList(emailLess, hub, emptySnapshot(), {
+      resolveAgentDeploy: () => ({ definitionAssetId: "ast_1" }),
+    });
+    expect(report.skipped).toEqual([
+      {
+        kind: "invite-member",
+        tenantSlug: "ada-atlas",
+        reason: "member without an email address cannot be invited",
+      },
+    ]);
+  });
+});
+
 describe("createFetchStockHub", () => {
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {
@@ -363,5 +434,83 @@ describe("createFetchStockHub", () => {
       expect(call.path).not.toContain("/api/workbench-tenancies");
       expect(call.path).not.toContain("/chat/");
     }
+  });
+
+  test("membership reads follow cursor pages instead of stopping at the first", async () => {
+    const page = (rows: unknown[], nextCursor: string | null) =>
+      json({ data: rows, nextCursor });
+    const mine = (tenantId: string, tenantSlug: string) => ({
+      principalId: `prn_${tenantId}`,
+      tenantId,
+      tenantName: tenantSlug,
+      tenantSlug,
+      kind: "user",
+      status: "active",
+      roles: [{ id: "r1", name: "owner" }],
+    });
+    const { fetchImpl, calls } = stubFetch((path) => {
+      if (path === "/api/me/principals") {
+        return page([mine("tnt_1", "ada")], "cursor_2");
+      }
+      if (path === "/api/me/principals?cursor=cursor_2") {
+        return page([mine("tnt_2", "ada-atlas")], null);
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+    const hub = createFetchStockHub(fetchImpl);
+    const principals = await hub.listMyPrincipals();
+    expect(principals.map((row) => row.tenantId)).toEqual(["tnt_1", "tnt_2"]);
+    expect(calls.map((call) => call.path)).toEqual([
+      "/api/me/principals",
+      "/api/me/principals?cursor=cursor_2",
+    ]);
+  });
+
+  test("tenant principal reads follow cursor pages", async () => {
+    const row = (id: string) => ({
+      id,
+      tenantId: "tnt_1",
+      kind: "user",
+      refId: "usr_1",
+      status: "active",
+      roles: ["owner"],
+    });
+    const { fetchImpl, calls } = stubFetch((path) => {
+      if (path === "/api/tenants/tnt_1/principals?limit=100") {
+        return json({ data: [row("prn_1")], nextCursor: "cursor_2" });
+      }
+      if (path === "/api/tenants/tnt_1/principals?limit=100&cursor=cursor_2") {
+        return json({ data: [row("prn_2")], nextCursor: null });
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+    const hub = createFetchStockHub(fetchImpl);
+    const principals = await hub.listPrincipals("tnt_1");
+    expect(principals.map((row) => row.id)).toEqual(["prn_1", "prn_2"]);
+    expect(calls.map((call) => call.path)).toEqual([
+      "/api/tenants/tnt_1/principals?limit=100",
+      "/api/tenants/tnt_1/principals?limit=100&cursor=cursor_2",
+    ]);
+  });
+
+  test("deployAgent hands the resolver the manifest tenant slug, not the tenant id", async () => {
+    const seen: { tenantId: string; tenantSlug: string }[] = [];
+    const { fetchImpl } = stubFetch((path) => {
+      if (path === "/api/tenants/tnt_1/workflows/deployments") {
+        return json({}, 201);
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+    const hub = createFetchStockHub(fetchImpl, {
+      resolveAgentDeploy: (op) => {
+        seen.push({ tenantId: op.tenantId, tenantSlug: op.tenantSlug });
+        return { definitionAssetId: "ast_1" };
+      },
+    });
+    await hub.deployAgent("tnt_1", {
+      definitionRefId: "assistant",
+      tenantSlug: "ada",
+    });
+    expect(seen).toEqual([{ tenantId: "tnt_1", tenantSlug: "ada" }]);
   });
 });

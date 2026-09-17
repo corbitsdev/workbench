@@ -62,16 +62,10 @@ function LoginBounceHome({ navigate }: { readonly navigate: Navigate }) {
  * account with no completed onboarding must never see "Select a workbench";
  * the wizard is the only thing on screen until it hands off to `/`.
  */
-function OnboardingGate({
-  navigate,
-  user,
-}: {
-  readonly navigate: Navigate;
-  readonly user: SessionUser;
-}) {
+function OnboardingGate({ navigate }: { readonly navigate: Navigate }) {
   return (
     <NavigationProvider navigate={navigate}>
-      <OnboardingPage user={user} />
+      <OnboardingPage />
     </NavigationProvider>
   );
 }
@@ -197,7 +191,7 @@ export function App({
           return <LoginBounceHome navigate={navigate} />;
         }
         if (path === ONBOARDING_PATH) {
-          return <OnboardingGate navigate={navigate} user={session.user} />;
+          return <OnboardingGate navigate={navigate} />;
         }
         return (
           <Shell

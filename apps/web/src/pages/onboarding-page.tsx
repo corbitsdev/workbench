@@ -46,14 +46,16 @@ import {
   readOpenRouterConnectReturn,
   SECONDARY_CREDENTIAL_PROVIDERS,
   submitCredential,
+  waitForSetupCompletion,
 } from "../onboarding";
+import { driveMyraDeployAfterCredential } from "../myra-deploy";
+import { reportError } from "@corbits/error-sink";
 import type {
   CredentialProvider,
   CredentialProviderCard,
   OnboardingStep,
 } from "../onboarding";
 import { OnboardingLayout } from "../onboarding/onboarding-layout";
-import type { SessionUser } from "../session";
 
 const PrincipalsProbe = type({
   data: type({
@@ -184,11 +186,7 @@ function initialWizardState(): WizardState {
   return { phase: "credential", error: returned.message };
 }
 
-export function OnboardingPage({
-  user: _user,
-}: {
-  readonly user: SessionUser;
-}) {
+export function OnboardingPage() {
   const navigate = useNavigate();
   const [state, setState] = useState<WizardState>(initialWizardState);
   const [provider, setProvider] = useState<CredentialProvider>("anthropic");
@@ -272,40 +270,67 @@ export function OnboardingPage({
   useEffect(() => {
     if (state.phase === "finishing-setup") {
       let cancelled = false;
-      // Poll until ready: each pass renders the hub's own desired-state
-      // step list (CL-7584); a ready answer collapses it and hands off.
+      // The OAuth callback only stored the key — the catalog seed it
+      // triggered is what genesis was missing, so the wait is bounded (a
+      // stalled bench settles as a timeout instead of spinning forever)
+      // and this page drives the Myra deploy itself over stock routes
+      // before handing off. A still-empty catalog is an expected pending,
+      // not a failure; a real transport error is reported, never silent.
+      // Either way the person still moves on, and the warm loading state
+      // on the other side covers whatever is still coming online.
       void (async () => {
-        for (;;) {
-          const outcome = await completeSetup();
-          if (cancelled) return;
-          if (outcome.kind === "connected") {
-            if (!outcome.agentsPending) {
-              navigate("/");
-              return;
-            }
+        const settled = await waitForSetupCompletion(completeSetup, {
+          isCancelled: () => cancelled,
+          onPolling: (outcome) => {
+            if (cancelled || outcome.kind !== "connected") return;
             setState({
               phase: "finishing-setup",
               steps: outcome.steps ?? [],
             });
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-            continue;
+          },
+        });
+        if (cancelled || settled.kind === "cancelled") return;
+        if (settled.kind === "connected" || settled.kind === "timeout") {
+          const ready =
+            settled.kind === "connected"
+              ? settled
+              : settled.lastOutcome.kind === "connected"
+                ? settled.lastOutcome
+                : null;
+          if (ready !== null) {
+            try {
+              await driveMyraDeployAfterCredential({
+                tenantId: ready.tenantId,
+                tenantSlug: ready.tenantSlug,
+              });
+            } catch (error) {
+              reportError(error, {
+                operation: "myra_deploy_after_credential",
+                ...(ready.tenantId === undefined
+                  ? {}
+                  : { tenantId: ready.tenantId }),
+                extra: { tenantSlug: ready.tenantSlug },
+              });
+            }
+            if (cancelled) return;
           }
-          if (outcome.kind === "unseeded") {
-            setResumingUnseeded(true);
-            setState({ phase: "credential", error: null });
-            return;
-          }
-          setState(
-            outcome.refId === undefined
-              ? { phase: "credential", error: outcome.message }
-              : {
-                  phase: "credential",
-                  error: outcome.message,
-                  errorRefId: outcome.refId,
-                },
-          );
+          navigate("/");
           return;
         }
+        if (settled.kind === "unseeded") {
+          setResumingUnseeded(true);
+          setState({ phase: "credential", error: null });
+          return;
+        }
+        setState(
+          settled.refId === undefined
+            ? { phase: "credential", error: settled.message }
+            : {
+                phase: "credential",
+                error: settled.message,
+                errorRefId: settled.refId,
+              },
+        );
       })();
       return () => {
         cancelled = true;
@@ -355,8 +380,24 @@ export function OnboardingPage({
         // Connected is the finish line for this screen (CL-6457):
         // whether or not the agents have finished deploying, the person
         // moves on now, and the warm loading state on the other side
-        // covers whatever is still coming online.
+        // covers whatever is still coming online. The deploy itself is
+        // still driven here — fire-and-forget, so the handoff never waits
+        // on it — because this direct-submit path never passes through
+        // the finishing-setup poll below, and a deploy nobody drives is
+        // a bench without Myra.
         if (outcome.kind === "connected") {
+          void driveMyraDeployAfterCredential({
+            tenantId: outcome.tenantId,
+            tenantSlug: outcome.tenantSlug,
+          }).catch((cause: unknown) => {
+            reportError(cause, {
+              operation: "myra_deploy_after_credential",
+              ...(outcome.tenantId === undefined
+                ? {}
+                : { tenantId: outcome.tenantId }),
+              extra: { tenantSlug: outcome.tenantSlug },
+            });
+          });
           navigate("/");
         } else {
           setState(

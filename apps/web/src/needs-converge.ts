@@ -68,7 +68,14 @@ export type StockHub = {
   inviteMember(tenantId: string, input: { email: string }): Promise<void>;
   deployAgent(
     tenantId: string,
-    input: { definitionRefId: string; deploy?: unknown },
+    input: {
+      definitionRefId: string;
+      /** The manifest slug being converged — the resolver reads the
+       * tenant's own catalog, and a slug is what the manifest knows. Falls
+       * back to the tenant id only for callers older than this field. */
+      tenantSlug?: string;
+      deploy?: unknown;
+    },
   ): Promise<void>;
 };
 
@@ -215,6 +222,21 @@ export function diffNeedsList(
 export type ConvergeReport = {
   ops: ConvergeOp[];
   applied: ConvergeOp[];
+  /** Ops the driver deliberately did not attempt: an agent deploy whose
+   * body the resolver cannot build yet (fresh tenant, catalog still
+   * unseeded). Pending is a retry contract, not a skip — the
+   * post-credential driver re-resolves once the seed lands. */
+  pending: ConvergeOp[];
+  /** Desired invites the driver refused to attempt, with the reason kept
+   * alongside — an email-less member can never be invited, so it is
+   * reported, never silently dropped. */
+  skipped: ConvergeSkip[];
+};
+
+export type ConvergeSkip = {
+  readonly kind: "invite-member";
+  readonly tenantSlug: string;
+  readonly reason: string;
 };
 
 export type ConvergeOptions = {
@@ -236,9 +258,62 @@ export type ConvergeOptions = {
 };
 
 /**
+ * Email-less workbench members can never be invited (the stock invite
+ * route takes an email), so the diff drops them — this names each one as
+ * an explicit skip instead of letting that drop read as silence. A member
+ * already active on the tenant needs no invite and is not reported.
+ */
+function skippedEmailLessInvites(
+  manifest: NeedsList,
+  snapshot: HubSnapshot,
+): ConvergeSkip[] {
+  const primaryId = tenantIdForSlug(snapshot, manifest.primaryTenant.slug);
+  const skipped: ConvergeSkip[] = [];
+  for (const workbench of manifest.workbenches) {
+    const workbenchId =
+      primaryId === null
+        ? null
+        : (Object.values(snapshot.tenantsById).find(
+            (tenant) =>
+              tenant.slug === workbench.slug && tenant.parentId === primaryId,
+          )?.id ??
+          manifest.createdWorkbenchTenantIds
+            .map((id) => snapshot.tenantsById[id])
+            .find((tenant) => tenant?.slug === workbench.slug)?.id ??
+          null);
+    const observed =
+      workbenchId === null ? [] : snapshot.principalsByTenant[workbenchId];
+    for (const member of workbench.members) {
+      if (member.email !== undefined) continue;
+      const present =
+        activePrincipal(
+          observed,
+          (principal) =>
+            principal.kind === "user" && principal.refId === member.refId,
+        ) !== null;
+      if (!present) {
+        skipped.push({
+          kind: "invite-member",
+          tenantSlug: workbench.slug,
+          reason: "member without an email address cannot be invited",
+        });
+      }
+    }
+  }
+  return skipped;
+}
+
+/**
  * Converges the hub toward the manifest: read (unless a snapshot is
  * supplied), diff, then execute each op against stock APIs in order. A
  * supplied snapshot skips the reads entirely — the caller already looked.
+ *
+ * A configured `resolveAgentDeploy` that returns `undefined` (fresh tenant,
+ * catalog still unseeded) reports the deploy as pending rather than posting
+ * a guessed body or failing the run — everything else still converges, and
+ * the post-credential driver retries the pending deploy once the seed
+ * lands. Without a resolver at all the hub port's own contract applies
+ * (the fetch hub refuses the op).
  */
 export async function convergeNeedsList(
   manifest: NeedsList,
@@ -248,6 +323,7 @@ export async function convergeNeedsList(
 ): Promise<ConvergeReport> {
   const observed = snapshot ?? (await readHubSnapshot(hub, manifest));
   const ops = diffNeedsList(manifest, observed);
+  const skipped = skippedEmailLessInvites(manifest, observed);
   const tenantIds = new Map<string, string>(
     Object.values(observed.tenantsById).map((tenant): [string, string] => [
       tenant.slug,
@@ -255,41 +331,56 @@ export async function convergeNeedsList(
     ]),
   );
   const applied: ConvergeOp[] = [];
+  const pending: ConvergeOp[] = [];
   for (const op of ops) {
     if (op.kind === "create-tenant") {
       const parentId =
-        op.parentSlug === null
-          ? undefined
-          : tenantIds.get(op.parentSlug) !== undefined
-            ? { parentId: tenantIds.get(op.parentSlug) as string }
-            : {};
+        op.parentSlug === null ? undefined : tenantIds.get(op.parentSlug);
+      if (op.parentSlug !== null && parentId === undefined) {
+        throw new Error(
+          `needs-list converge cannot create tenant ${op.slug}: parent slug ${op.parentSlug} is unknown`,
+        );
+      }
       const created = await hub.createTenant({
         name: op.name,
         slug: op.slug,
-        ...parentId,
+        ...(parentId === undefined ? {} : { parentId }),
       });
       tenantIds.set(op.slug, created.id);
       applied.push(op);
       continue;
     }
     const tenantId = tenantIds.get(op.tenantSlug);
-    if (tenantId === undefined) continue;
+    if (tenantId === undefined) {
+      throw new Error(
+        `needs-list converge cannot apply ${op.kind} on slug ${op.tenantSlug}: no tenant id is known`,
+      );
+    }
     if (op.kind === "invite-member") {
       await hub.inviteMember(tenantId, { email: op.email });
       applied.push(op);
       continue;
     }
-    await hub.deployAgent(tenantId, {
-      definitionRefId: op.definitionRefId,
-      deploy: await options?.resolveAgentDeploy?.({
+    if (op.kind === "deploy-agent") {
+      const deploy = await options?.resolveAgentDeploy?.({
         tenantId,
         tenantSlug: op.tenantSlug,
         definitionRefId: op.definitionRefId,
-      }),
-    });
-    applied.push(op);
+      });
+      if (options?.resolveAgentDeploy !== undefined && deploy === undefined) {
+        pending.push(op);
+        continue;
+      }
+      await hub.deployAgent(tenantId, {
+        definitionRefId: op.definitionRefId,
+        tenantSlug: op.tenantSlug,
+        deploy,
+      });
+      applied.push(op);
+      continue;
+    }
   }
-  return { ops, applied };
+  return { ops, applied, pending, skipped };
 }
 
 const TenantShape = type({
@@ -362,25 +453,40 @@ export function createFetchStockHub(
 ): StockHub {
   return {
     async listMyPrincipals() {
-      const body = await readJson(
-        await fetchImpl("/api/me/principals"),
-        "listMyPrincipals",
-      );
-      const parsed = MembershipPageShape(body);
-      if (parsed instanceof type.errors) {
-        throw new Error(
-          `stock hub principals shape changed: ${parsed.summary}`,
+      // Membership is cursor-paged: a first page is never the whole
+      // answer for an account with several benches, so follow `nextCursor`
+      // until the hub says there is no more.
+      const rows: MyMembership[] = [];
+      let cursor: string | null = null;
+      for (;;) {
+        const body = await readJson(
+          await fetchImpl(
+            cursor === null
+              ? "/api/me/principals"
+              : `/api/me/principals?cursor=${encodeURIComponent(cursor)}`,
+          ),
+          "listMyPrincipals",
         );
+        const parsed = MembershipPageShape(body);
+        if (parsed instanceof type.errors) {
+          throw new Error(
+            `stock hub principals shape changed: ${parsed.summary}`,
+          );
+        }
+        rows.push(
+          ...parsed.data.map((row) => ({
+            principalId: row.principalId,
+            tenantId: row.tenantId,
+            tenantName: row.tenantName,
+            tenantSlug: row.tenantSlug,
+            kind: row.kind,
+            status: row.status,
+            roles: row.roles.map((role) => ({ id: role.id, name: role.name })),
+          })),
+        );
+        if (parsed.nextCursor === null) return rows;
+        cursor = parsed.nextCursor;
       }
-      return parsed.data.map((row) => ({
-        principalId: row.principalId,
-        tenantId: row.tenantId,
-        tenantName: row.tenantName,
-        tenantSlug: row.tenantSlug,
-        kind: row.kind,
-        status: row.status,
-        roles: row.roles.map((role) => ({ id: role.id, name: role.name })),
-      }));
     },
     async getTenant(id) {
       const response = await fetchImpl(
@@ -390,27 +496,42 @@ export function createFetchStockHub(
       return tenantOf(await readJson(response, "getTenant"), "getTenant");
     },
     async listPrincipals(tenantId) {
-      const body = await readJson(
-        await fetchImpl(
-          `/api/tenants/${encodeURIComponent(tenantId)}/principals?limit=100`,
-        ),
-        "listPrincipals",
-      );
-      const parsed = TenantPrincipalPageShape(body);
-      if (parsed instanceof type.errors) {
-        throw new Error(
-          `stock hub tenant principals shape changed: ${parsed.summary}`,
+      // Same cursor contract as the membership list — a bench with more
+      // than one page of principals must not converge against a partial
+      // read and re-invite people who are already there.
+      const rows: HubPrincipal[] = [];
+      let cursor: string | null = null;
+      for (;;) {
+        const query =
+          cursor === null
+            ? "limit=100"
+            : `limit=100&cursor=${encodeURIComponent(cursor)}`;
+        const body = await readJson(
+          await fetchImpl(
+            `/api/tenants/${encodeURIComponent(tenantId)}/principals?${query}`,
+          ),
+          "listPrincipals",
         );
+        const parsed = TenantPrincipalPageShape(body);
+        if (parsed instanceof type.errors) {
+          throw new Error(
+            `stock hub tenant principals shape changed: ${parsed.summary}`,
+          );
+        }
+        rows.push(
+          ...parsed.data.map((row) => ({
+            id: row.id,
+            tenantId: row.tenantId,
+            kind: row.kind,
+            refId: row.refId,
+            ...(row.email === undefined ? {} : { email: row.email }),
+            status: row.status,
+            roles: [...row.roles],
+          })),
+        );
+        if (parsed.nextCursor === null) return rows;
+        cursor = parsed.nextCursor;
       }
-      return parsed.data.map((row) => ({
-        id: row.id,
-        tenantId: row.tenantId,
-        kind: row.kind,
-        refId: row.refId,
-        ...(row.email === undefined ? {} : { email: row.email }),
-        status: row.status,
-        roles: [...row.roles],
-      }));
     },
     async createTenant(input) {
       const body = await readJson(
@@ -447,7 +568,7 @@ export function createFetchStockHub(
         input.deploy ??
         (await options?.resolveAgentDeploy?.({
           tenantId,
-          tenantSlug: tenantId,
+          tenantSlug: input.tenantSlug ?? tenantId,
           definitionRefId: input.definitionRefId,
         }));
       if (deploy === undefined) {

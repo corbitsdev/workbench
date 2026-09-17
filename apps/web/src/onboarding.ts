@@ -479,6 +479,69 @@ export type CompleteSetupOutcome =
  * nothing to finish setting up with yet, and the wizard falls back to
  * the ordinary credential step rather than treating it as broken.
  */
+export const FINISHING_SETUP_MAX_ATTEMPTS = 20;
+export const FINISHING_SETUP_POLL_DELAY_MS = 2000;
+
+export type SetupCompletionSettled =
+  | CompleteSetupOutcome
+  | {
+      readonly kind: "timeout";
+      readonly attempts: number;
+      readonly lastOutcome: CompleteSetupOutcome;
+    }
+  | { readonly kind: "cancelled" };
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Re-polls `/api/setup/complete` while the tenant is connected but its
+ * agents are still pending — the credential seed needs a moment, and the
+ * older unconditional loop never stopped asking on a stalled bench. The
+ * poll gives up after `maxAttempts` and hands the caller the last answer
+ * so it can still drive the deploy and navigate; both the coasting
+ * (still polling) and the giving-up (timed out) are explicit outcomes,
+ * never an unbounded wait and never a silent swallow.
+ */
+export async function waitForSetupCompletion(
+  poll: () => Promise<CompleteSetupOutcome>,
+  options?: {
+    readonly maxAttempts?: number;
+    readonly delayMs?: number;
+    readonly isCancelled?: () => boolean;
+    readonly onPolling?: (outcome: CompleteSetupOutcome) => void;
+  },
+): Promise<SetupCompletionSettled> {
+  const maxAttempts = Math.max(
+    1,
+    options?.maxAttempts ?? FINISHING_SETUP_MAX_ATTEMPTS,
+  );
+  const delayMs = options?.delayMs ?? FINISHING_SETUP_POLL_DELAY_MS;
+  const isCancelled = options?.isCancelled ?? (() => false);
+  let attempts = 0;
+  let lastOutcome: CompleteSetupOutcome | undefined;
+  while (attempts < maxAttempts) {
+    if (isCancelled()) return { kind: "cancelled" };
+    const outcome = await poll();
+    attempts += 1;
+    if (isCancelled()) return { kind: "cancelled" };
+    lastOutcome = outcome;
+    if (outcome.kind === "connected" && outcome.agentsPending) {
+      options?.onPolling?.(outcome);
+      if (attempts < maxAttempts) await sleep(delayMs);
+      continue;
+    }
+    return outcome;
+  }
+  // maxAttempts is clamped to >= 1, so the loop always polls at least
+  // once, and every answer that isn't "keep waiting" returns early —
+  // reaching here means the last poll asked to keep waiting.
+  const last = lastOutcome;
+  if (last === undefined) return { kind: "cancelled" };
+  return { kind: "timeout", attempts, lastOutcome: last };
+}
+
 export async function completeSetup(): Promise<CompleteSetupOutcome> {
   try {
     const response = await fetch("/api/onboarding/complete-setup", {
