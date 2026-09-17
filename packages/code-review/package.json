@@ -1,8 +1,7 @@
 {
   "name": "@corbits/code-review",
-  "private": true,
   "description": "Multi-reviewer pull-request review: three reviewer definitions, one aggregated review, posted to GitHub",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
@@ -11,13 +10,28 @@
     "./agent-requests": "./src/agent-requests.ts",
     "./introductions": "./src/introductions.ts"
   },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "packages/code-review"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/github-tools": "workspace:*",
     "arktype": "catalog:"
+  },
+  "peerDependencies": {
+    "@corbits/github-tools": "0.0.10"
   },
   "devDependencies": {
     "@corbits/agent-directory": "workspace:*",

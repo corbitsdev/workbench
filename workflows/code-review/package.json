@@ -35,7 +35,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/code-review": "0.0.1"
+    "@corbits/code-review": "0.0.2"
   },
   "peerDependencies": {
     "@intx/agent": "0.3.0",
