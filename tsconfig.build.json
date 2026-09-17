@@ -143,9 +143,6 @@
       "path": "./packages/run-key-history/tsconfig.src.json"
     },
     {
-      "path": "./packages/run-scope/tsconfig.src.json"
-    },
-    {
       "path": "./packages/sandbox-sidecar/tsconfig.src.json"
     },
     {

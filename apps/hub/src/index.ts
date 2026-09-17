@@ -95,7 +95,6 @@ import type { RelaunchNoticePort } from "@corbits/chat";
 import { reportError } from "@corbits/error-sink";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
-import { createTopLevelRunRoutes } from "@corbits/run-scope";
 import {
   createInboxRoutes,
   createWorkbenchMailboxDelivery,
@@ -2496,23 +2495,6 @@ export async function createHub(config: HubConfig) {
     store: createDrizzleInboxUnsnoozeSweepStore(mailboxDb),
     bus: mailboxBus,
   });
-
-  // Every genuine top-level deployment run, chat-hosted and invited-agent
-  // runs excluded — the scoped listing CL-6061 adds so the Agent Directory
-  // and the shell's "Running" bands stop deriving that exclusion
-  // client-side from a tenant's chats alone (see
-  // `@corbits/run-scope`'s `scope-routes.ts`, which a non-top-level run
-  // with no chat involved silently slipped past).
-  app.route(
-    `${TENANT_PREFIX}/top-level-runs`,
-    createTopLevelRunRoutes({
-      db,
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
-      }),
-    }),
-  );
 
   // Recurring auto-fire: `workflow-scheduler.ts` ticks authored, deployed
   // definitions whose frozen projection carries a native ScheduleTrigger.
