@@ -61,10 +61,13 @@ export function OnboardingPage() {
     return (
       <OnboardingLayout>
         <div className="onboarding-phase" key="checking">
-          <h1 className="onboarding-title">Checking your hub</h1>
+          <h1 className="onboarding-title">Checking your workbench</h1>
           <p className="onboarding-subtitle">One moment.</p>
           <div className="onboarding-content">
-            <WorkbenchLoadingState delayMs={0} title="Checking your hub…" />
+            <WorkbenchLoadingState
+              delayMs={0}
+              title="Checking your workbench…"
+            />
           </div>
         </div>
       </OnboardingLayout>
@@ -75,10 +78,10 @@ export function OnboardingPage() {
     return (
       <OnboardingLayout>
         <div className="onboarding-phase" key="setup-pending">
-          <h1 className="onboarding-title">Set up your hub</h1>
+          <h1 className="onboarding-title">Set up your workbench</h1>
           <p className="onboarding-subtitle">
-            This hub is empty — nothing is set up yet. The first-workbench setup
-            flow is still being built; this screen will host it.
+            Your workbench isn&apos;t set up yet. The first-workbench setup flow
+            is still being built; this screen will host it.
           </p>
           <div className="onboarding-content">
             <Button variant="outline" onClick={checkStatus}>
@@ -96,7 +99,7 @@ export function OnboardingPage() {
         <div className="onboarding-content">
           <EmptyState
             icon={<WarningCircle />}
-            title="Couldn't check your hub"
+            title="Couldn't check your workbench"
             description={
               state.refId === undefined ? (
                 state.message

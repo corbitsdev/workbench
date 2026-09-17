@@ -42,7 +42,7 @@ export function createSetupStatusRoutes(deps: SetupStatusCounts): Hono {
         makeErrorEnvelope({
           code: "setup_status_failed",
           userMessage:
-            "Checking whether this hub is set up hit a snag. Try again in a moment.",
+            "Checking your workbench hit a snag. Try again in a moment.",
           refId,
         }),
         500,

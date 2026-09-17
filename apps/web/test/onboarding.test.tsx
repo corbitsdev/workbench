@@ -60,7 +60,7 @@ describe("triggerFirstLoginProvisioning", () => {
           error: {
             code: "setup_status_failed",
             userMessage:
-              "Checking whether this hub is set up hit a snag. Try again in a moment.",
+              "Checking your workbench hit a snag. Try again in a moment.",
             refId: "abc123",
           },
         },
@@ -70,8 +70,7 @@ describe("triggerFirstLoginProvisioning", () => {
     const result = await triggerFirstLoginProvisioning();
     expect(result).toEqual({
       kind: "error",
-      message:
-        "Checking whether this hub is set up hit a snag. Try again in a moment.",
+      message: "Checking your workbench hit a snag. Try again in a moment.",
       refId: "abc123",
     });
   });
@@ -251,7 +250,7 @@ describe("App at the onboarding path", () => {
 
   test("lands on the checking phase first — the verdict arrives after the status read", () => {
     const markup = renderOnboarding();
-    expect(markup).toContain("Checking your hub");
+    expect(markup).toContain("Checking your workbench");
   });
 });
 
@@ -330,7 +329,7 @@ describe("the setup gate", () => {
     try {
       await settle(root, gateElement(navigate));
 
-      expect(container.textContent).toContain("Set up your hub");
+      expect(container.textContent).toContain("Set up your workbench");
       expect(container.textContent).toContain("Check again");
       expect(calls).toEqual([]);
       expect(seen).toEqual(["/api/setup/status"]);
@@ -363,7 +362,7 @@ describe("the setup gate", () => {
         error: {
           code: "setup_status_failed",
           userMessage:
-            "Checking whether this hub is set up hit a snag. Try again in a moment.",
+            "Checking your workbench hit a snag. Try again in a moment.",
           refId: "r1",
         },
       },
@@ -372,7 +371,7 @@ describe("the setup gate", () => {
     try {
       await settle(root, gateElement(navigate));
 
-      expect(container.textContent).toContain("Couldn't check your hub");
+      expect(container.textContent).toContain("Couldn't check your workbench");
       expect(container.textContent).toContain("Try again");
       expect(container.textContent).toContain("r1");
       expect(calls).toEqual([]);
