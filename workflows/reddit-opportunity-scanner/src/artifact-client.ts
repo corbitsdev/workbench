@@ -44,7 +44,7 @@ export async function createWorkflowArtifact(
 ): Promise<CreatedWorkflowArtifact> {
   const doFetch = config.fetchImpl ?? fetch;
   const response = await doFetch(
-    `${config.hubArtifactsUrl}/api/workflow-artifacts/`,
+    `${config.hubArtifactsUrl}/api/workflow-artifacts/artifacts`,
     {
       method: "POST",
       headers: {

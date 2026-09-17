@@ -49,16 +49,21 @@ export const ArtifactListItemSchema = type({
   updatedAt: "string",
 });
 export const ArtifactListPageSchema = type({
-  data: ArtifactListItemSchema.array(),
+  artifacts: ArtifactListItemSchema.array(),
   nextCursor: "string | null",
 });
-export const ArtifactDetailSchema = ArtifactListItemSchema.merge(
+export const ArtifactRowSchema = ArtifactListItemSchema.merge(
   type({
     content: "string",
   }),
 );
+// GET /api/tenants/:id/artifacts/:artifactId wraps the row in an `artifact`
+// envelope key (`@corbits/artifacts`' `mountArtifacts`, CL-8188).
+export const ArtifactDetailSchema = type({
+  artifact: ArtifactRowSchema,
+});
 export const ArtifactUploadResponseSchema = type({
-  data: ArtifactDetailSchema.array(),
+  artifacts: ArtifactRowSchema.array(),
 });
 
 // GET /api/tenants/:id/artifacts/counts — honest per-kind-segment counts
@@ -79,7 +84,7 @@ export type Approval = typeof ApprovalResponse.infer;
 export type AssetRow = typeof AssetWithOriginResponse.infer;
 export type ArtifactListItem = typeof ArtifactListItemSchema.infer;
 export type ArtifactListPage = typeof ArtifactListPageSchema.infer;
-export type ArtifactDetail = typeof ArtifactDetailSchema.infer;
+export type ArtifactDetail = typeof ArtifactRowSchema.infer;
 export type ArtifactCounts = typeof ArtifactCountsSchema.infer;
 /**
  * The envelope paginatedSchema validates, stated structurally: the generic
@@ -247,5 +252,5 @@ export async function fetchArtifactDetail(
       `Unexpected artifact response shape: ${parsed.summary}`,
     );
   }
-  return parsed;
+  return parsed.artifact;
 }

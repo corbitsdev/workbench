@@ -733,7 +733,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   // Drop selection when the filtered list no longer contains the id.
   useEffect(() => {
     if (selectedId === null || page.kind !== "ready") return;
-    const stillThere = mapArtifactListToSummaries(page.data.data)
+    const stillThere = mapArtifactListToSummaries(page.data.artifacts)
       .filter((row) => artifactMatchesLibraryKindSegment(row, kindSegment))
       .some((row) => row.id === selectedId);
     if (!stillThere) setSelectedId(null);
@@ -796,8 +796,8 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   return (
     <QueryView query={page} label="your files" skeleton="rows">
       {(rows) => {
-        const artifacts = mapArtifactListToSummaries(rows.data).filter((row) =>
-          artifactMatchesLibraryKindSegment(row, kindSegment),
+        const artifacts = mapArtifactListToSummaries(rows.artifacts).filter(
+          (row) => artifactMatchesLibraryKindSegment(row, kindSegment),
         );
         return (
           <LibraryPage
@@ -812,7 +812,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
             onQueryChange={setSearchQuery}
             selectedId={selectedId}
             onSelect={setSelectedId}
-            preview={detail.kind === "ready" ? detail.data : null}
+            preview={detail.kind === "ready" ? detail.data.artifact : null}
             previewLoading={detail.kind === "loading" && selectedId !== null}
             previewError={
               detail.kind === "error" && selectedId !== null

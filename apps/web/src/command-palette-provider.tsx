@@ -427,7 +427,7 @@ export function CommandPaletteProvider({
   const libraryItems = useMemo<readonly PaletteResultItem[]>(
     () =>
       artifactsQuery.kind === "ready"
-        ? artifactsQuery.data.data.map((artifact) => ({
+        ? artifactsQuery.data.artifacts.map((artifact) => ({
             id: `entity:library:${artifact.id}`,
             title: artifact.title,
             subtitle: artifactKindLabel(artifact.kind),

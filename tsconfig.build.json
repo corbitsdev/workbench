@@ -23,9 +23,6 @@
       "path": "./packages/artifact-ui/tsconfig.src.json"
     },
     {
-      "path": "./packages/artifacts-hub/tsconfig.src.json"
-    },
-    {
       "path": "./packages/bench-ui/tsconfig.src.json"
     },
     {

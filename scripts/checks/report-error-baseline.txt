@@ -87,9 +87,6 @@ packages/agent-directory-tools/src/tool.ts	1	return errorResult(call.id, err);
 packages/agent-directory/src/definition-history.ts	1	return null;
 packages/approvals/src/allowance.ts	1	deps.log(
 packages/approvals/src/allowance.ts	1	return { outcome: "park", reason: "classification_failed" };
-packages/artifacts-hub/src/routes.ts	1	return c.json(
-packages/artifacts-hub/src/workflow-routes.ts	1	return c.json(
-packages/artifacts-hub/src/workflow-routes.ts	2	return c.json(
 packages/capability-tools/src/tool.ts	1	if (err instanceof CapabilityOutOfInventoryError) {
 packages/capability-tools/src/tool.ts	1	return errorResult(call.id, err);
 packages/catalog-tools/src/tool.ts	1	return errorResult(call.id, err);

@@ -64,7 +64,7 @@ export async function createScoutArtifact(
 ): Promise<CreatedScoutArtifact> {
   const doFetch = config.fetchImpl ?? fetch;
   const response = await doFetch(
-    `${config.hubArtifactsUrl}/api/workflow-artifacts/`,
+    `${config.hubArtifactsUrl}/api/workflow-artifacts/artifacts`,
     {
       method: "POST",
       headers: { ...authHeaders(config), "content-type": "application/json" },
@@ -95,7 +95,7 @@ export async function listRecentScoutArtifacts(
   const query =
     params.limit !== undefined ? `?limit=${String(params.limit)}` : "";
   const response = await doFetch(
-    `${config.hubArtifactsUrl}/api/workflow-artifacts/recent${query}`,
+    `${config.hubArtifactsUrl}/api/workflow-artifacts/artifacts/recent${query}`,
     { headers: authHeaders(config) },
   );
   if (!response.ok) {

@@ -105,7 +105,7 @@ describe("Files upload confirmation", () => {
       if (url.includes("/artifacts/upload") && init?.method === "POST") {
         return Promise.resolve(
           jsonResponse({
-            data: [
+            artifacts: [
               {
                 id: "art_new",
                 kind: "document",
@@ -126,7 +126,9 @@ describe("Files upload confirmation", () => {
         );
       }
       if (url.includes("/artifacts")) {
-        return Promise.resolve(jsonResponse({ data: [], nextCursor: null }));
+        return Promise.resolve(
+          jsonResponse({ artifacts: [], nextCursor: null }),
+        );
       }
       return Promise.reject(new Error(`unrouted fetch: ${url}`));
     }) as typeof fetch;
@@ -153,7 +155,9 @@ describe("Files upload confirmation", () => {
         return Promise.resolve(jsonResponse({ error: "boom" }, 500));
       }
       if (url.includes("/artifacts")) {
-        return Promise.resolve(jsonResponse({ data: [], nextCursor: null }));
+        return Promise.resolve(
+          jsonResponse({ artifacts: [], nextCursor: null }),
+        );
       }
       return Promise.reject(new Error(`unrouted fetch: ${url}`));
     }) as typeof fetch;
