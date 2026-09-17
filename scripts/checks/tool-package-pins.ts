@@ -118,7 +118,76 @@ async function manifestVersions(root: string): Promise<Map<string, string>> {
     }
     versions.set(manifest.name, manifest.version);
   }
+  await addVendoredDependencyVersions(root, versions);
   return versions;
+}
+
+/**
+ * A pin may also name a `@corbits/*` package that is a real (non-
+ * `workspace:*`) dependency of some workspace manifest rather than a
+ * package this repo itself builds and publishes — `@corbits/memory`
+ * (CL-8186), pinned as a git dependency in `apps/hub`, is the first of
+ * these: it declares its own `interchange.tools` surface and resolves
+ * through the same tool-package registry as any workspace-built tool
+ * package, so a pin naming it is not unresolvable. Its authoritative
+ * version is whatever actually got installed, read from the installed
+ * copy's own `package.json` — never the dependency range string itself
+ * (a `github:...#sha` range names no semver).
+ */
+async function addVendoredDependencyVersions(
+  root: string,
+  versions: Map<string, string>,
+): Promise<void> {
+  const glob = new Glob("{apps,packages,tools,workflows}/*/package.json");
+  const corbitsDepNames = new Set<string>();
+  for await (const relPath of glob.scan(root)) {
+    if (relPath.includes("node_modules/")) continue;
+    const manifest = (await Bun.file(path.join(root, relPath)).json()) as {
+      dependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+    };
+    for (const field of ["dependencies", "peerDependencies"] as const) {
+      for (const [name, range] of Object.entries(manifest[field] ?? {})) {
+        if (!name.startsWith("@corbits/")) continue;
+        if (range.startsWith("workspace:")) continue;
+        if (versions.has(name)) continue;
+        corbitsDepNames.add(name);
+      }
+    }
+  }
+  for (const name of corbitsDepNames) {
+    const version = await installedVersion(root, name);
+    if (version !== undefined) {
+      versions.set(name, version);
+    }
+  }
+}
+
+/**
+ * Reads a `@corbits/*` package's actually-installed version. Bun hoists a
+ * git/tarball dependency into root `node_modules/.bun/<escaped-spec>/…`
+ * and symlinks it into each consuming workspace package's own
+ * `node_modules/@corbits/<name>` — never into the repo-root
+ * `node_modules/@corbits/<name>` unless the root manifest itself depends
+ * on it — so this checks every workspace's own `node_modules` first, then
+ * falls back to the root's.
+ */
+async function installedVersion(
+  root: string,
+  name: string,
+): Promise<string | undefined> {
+  const candidateDirs = [".", "apps/*", "packages/*", "tools/*", "workflows/*"];
+  for (const dir of candidateDirs) {
+    const glob = new Glob(`${dir}/node_modules/${name}/package.json`);
+    for await (const relPath of glob.scan(root)) {
+      const manifest = await Bun.file(path.join(root, relPath))
+        .json()
+        .catch(() => undefined);
+      const version = (manifest as { version?: string } | undefined)?.version;
+      if (version !== undefined) return version;
+    }
+  }
+  return undefined;
 }
 
 function isExcludedPath(relPath: string): boolean {

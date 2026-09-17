@@ -92,7 +92,7 @@ function stubApi(state: StubState): ApiCall & { calls: [string, string][] } {
         data: state.registryTarballs
           ? [
               {
-                filename: "corbits-memory-tools-0.0.4.tgz",
+                filename: "corbits-capability-tools-0.0.6.tgz",
                 size: 1,
                 integrity: "sha512-x",
               },

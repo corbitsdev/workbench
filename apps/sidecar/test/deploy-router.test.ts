@@ -285,7 +285,7 @@ test("a single-step deploy writes the self-anchored run's grants before spawning
   const runId = `run_${"a1".repeat(16)}`;
   const grant = {
     id: "grant_1",
-    resource: "tool:@corbits/memory-tools:memory_search",
+    resource: "tool:@corbits/catalog-tools:models_list",
     action: "invoke",
     effect: "allow" as const,
     origin: "system" as const,

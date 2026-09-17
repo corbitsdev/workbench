@@ -9,12 +9,14 @@
 // Tools are never inlined here, matching every workflow definition in
 // this catalog (see `workflows/attio-task-agent/src/index.ts`'s header
 // comment): they arrive as pinned packages at deploy time, keeping this
-// definition pure data. Two of the three pins are existing, already-wired
-// workbench tool packages reused as-is — `@corbits/memory-tools`
-// (knowledge-search/memory-add/memory-list) and `@corbits/web-search-tools`
-// (web-research, Exa-backed, credential handle `"exa"`, satisfied by the
-// keyless Exa MCP preset in `packages/connections/src/mcp-presets.ts`).
-// The third, `@corbits/scout-agent` itself, supplies `./artifact-tool.ts`.
+// definition pure data. `@corbits/memory` (CL-8186) supplies firm
+// memory (memory_search/memory_add/memory_list) directly — it is not a
+// workbench-built tool package but a published dependency that declares
+// its own `interchange.tools` surface, resolved the same way as any
+// other pin. `@corbits/web-search-tools` gives web-research (Exa-backed,
+// credential handle `"exa"`, satisfied by the keyless Exa MCP preset in
+// `packages/connections/src/mcp-presets.ts`). The third,
+// `@corbits/scout-agent` itself, supplies `./artifact-tool.ts`.
 //
 // `launch-diligence-brief` and `launch-fact-check` are not pinned here —
 // see `./system-prompt.ts`'s header comment and this package's README for
@@ -30,9 +32,9 @@ export const SCOUT_AGENT_DESCRIPTION =
   "saves and recalls Library write-ups, and answers with sources.";
 
 export const SCOUT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/memory-tools", version: "0.0.4" },
+  { name: "@corbits/memory", version: "0.1.2" },
   { name: "@corbits/web-search-tools", version: "0.0.3" },
-  { name: "@corbits/scout-agent", version: "0.0.2" },
+  { name: "@corbits/scout-agent", version: "0.0.3" },
 ];
 
 /** The plain-data shape the agent-directory create path takes. */

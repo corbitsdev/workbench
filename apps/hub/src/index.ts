@@ -101,6 +101,7 @@ import {
   createMailboxPersist,
   mountMailbox,
 } from "@corbits/mailbox";
+import { createMemory, loadMemoryConfig } from "@corbits/memory";
 import {
   createHubMailboxAuthorizeSender,
   hubMailboxResolveRefs,
@@ -1574,6 +1575,28 @@ export async function createHub(config: HubConfig) {
       },
     });
     app.route(`${TENANT_PREFIX}/mailbox`, mailboxApp);
+  }
+
+  {
+    // Firm memory (CL-8186): `@corbits/memory` registers its own
+    // absolute `/api/tenants/:tenantId/memory/*` routes on whatever
+    // Hono app it's given (see its `routes/add.ts`, etc.) rather than
+    // composing under a mount prefix, so it gets its own `Hono<TenantEnv>`
+    // — matching `mailboxApp` above — routed at "/" rather than
+    // `TENANT_PREFIX`, which would double the tenant-route prefix.
+    // Guarded by the hub's own `requireGrant`: the same
+    // `chatGrantStore`/`grantConditionRegistry` every other tenant-scoped
+    // mount above uses. `loadMemoryConfig` reads
+    // `DATABASE_URL`/`EMBED_BASE_URL`/`EMBED_MODEL` (and friends) from
+    // env itself; nothing else in this file constructs the memory plane.
+    const memoryApp = new Hono<TenantEnv>();
+    createMemory({
+      app: memoryApp,
+      config: loadMemoryConfig(),
+      grantStore: chatGrantStore,
+      conditionRegistry: grantConditionRegistry,
+    });
+    app.route("/", memoryApp);
   }
 
   // The hub-side deploy seam the on-demand catalog-block route below

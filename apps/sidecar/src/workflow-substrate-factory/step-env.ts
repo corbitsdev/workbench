@@ -126,11 +126,11 @@ export interface SidecarStepBuildEnvDeps {
    * (`@corbits/artifacts-hub`'s `createWorkflowArtifactRoutes`, CL-6000)
    * without ever holding a database handle. `address` is already on
    * `env` via `mailboxAddress` below; these two widen the same surface.
-   * The same origin is re-exposed on the step env as `hubMemoryUrl` for
-   * `@corbits/memory-tools` (`requires: ["hubMemoryUrl", "sidecarToken",
-   * "address"]`), which calls the sibling workflow-memory HTTP surface
-   * (`@corbits/memory-hub`'s `createWorkflowMemoryRoutes`, CL-5852), and
-   * again as `hubSkillsUrl` for `@corbits/tools-skills`, which calls
+   * The same origin is re-exposed on the step env as `memoryBaseUrl` for
+   * `@corbits/memory/tools` (CL-8186), which calls the STOCK
+   * `/api/tenants/:tenantId/memory/*` routes `@corbits/memory` mounts on
+   * the hub directly (see `memoryFetch` below), and again as
+   * `hubSkillsUrl` for `@corbits/tools-skills`, which calls
    * `@corbits/skills`' `createWorkflowSkillRoutes`.
    */
   hubArtifactsUrl: string;
@@ -372,7 +372,13 @@ export function createSidecarStepBuildEnv(
       transport: MessageTransport;
       address: string;
       hubArtifactsUrl: string;
-      hubMemoryUrl: string;
+      memoryBaseUrl: string;
+      memoryTenantId: string;
+      memoryAuthToken: string;
+      memoryFetch: (
+        input: Parameters<typeof fetch>[0],
+        init?: Parameters<typeof fetch>[1],
+      ) => ReturnType<typeof fetch>;
       hubSkillsUrl: string;
       hubCapabilitiesUrl: string;
       hubRoutinesUrl: string;
@@ -420,13 +426,26 @@ export function createSidecarStepBuildEnv(
       transport,
       address: deps.mailboxAddress,
       hubArtifactsUrl: deps.hubArtifactsUrl,
-      // Same hub HTTP origin as `hubArtifactsUrl` above, under the key
-      // `@corbits/memory-tools` declares (`requires: ["hubMemoryUrl",
-      // "sidecarToken", "address"]`) — one hub origin, two accurately
-      // named env keys per tool-bundle surface, matching the artifact
-      // bundle's own precedent rather than overloading its name for an
-      // unrelated surface.
-      hubMemoryUrl: deps.hubArtifactsUrl,
+      // `@corbits/memory/tools` (CL-8186) calls the STOCK
+      // `/api/tenants/:tenantId/memory/*` routes `@corbits/memory` mounts
+      // on the hub, the same run-bearer scheme `@corbits/connections-tools`
+      // and friends use: sidecar token as the bearer, `tenantId` as the
+      // path segment. Its own HTTP client sends only an `Authorization`
+      // header, so `memoryFetch` (the client's documented fetch override,
+      // never part of `requires`) is what actually attaches the
+      // `x-workflow-run-address` header the hub's `withWorkflowRunTenantAuth`
+      // needs to resolve the bearer to this run's principal.
+      memoryBaseUrl: deps.hubArtifactsUrl,
+      memoryTenantId: deps.tenantId,
+      memoryAuthToken: deps.sidecarToken,
+      memoryFetch: (input, init) =>
+        fetch(input, {
+          ...init,
+          headers: {
+            ...init?.headers,
+            "x-workflow-run-address": deps.mailboxAddress,
+          },
+        }),
       // And once more under the key `@corbits/tools-skills` declares
       // (`requires: ["hubSkillsUrl", "sidecarToken", "address"]`) for the
       // skill registry's own run-authenticated surface.

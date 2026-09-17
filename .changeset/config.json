@@ -36,7 +36,6 @@
     "@corbits/inference-settings",
     "@corbits/jimmy-agent",
     "@corbits/longevity-sim",
-    "@corbits/memory-hub",
     "@corbits/migration-runner",
     "@corbits/mocks",
     "@corbits/notify",

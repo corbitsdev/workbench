@@ -22,8 +22,8 @@
 // Both folds are deliberately lossy -- a bounded recap of what was
 // active in the folded turns, not a durable record. Anything a channel
 // agent needs to recall past the working window is firm memory's job
-// (`@corbits/memory-tools`'s `memory_search`/`memory_add`, already
-// pinned for the assistant workflow), not this recap's.
+// (`@corbits/memory/tools`'s `memory_search`/`memory_add`, already
+// wired for the assistant workflow), not this recap's.
 
 import type {
   Compactor,
@@ -270,7 +270,7 @@ export function createSummarizeOlderTurnsCompactor(
  * deliberately lossy -- it is a bounded reminder of what was active in
  * the folded turns, not a durable record. Anything a channel agent
  * needs to recall past the working window belongs in firm memory
- * (`@corbits/memory-tools`'s `memory_search`/`memory_add`), not in this
+ * (`@corbits/memory/tools`'s `memory_search`/`memory_add`), not in this
  * recap.
  */
 function foldOlderTurns(

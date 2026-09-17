@@ -102,19 +102,21 @@ export const DILIGENCE_BRIEF_WIRED_SOURCES = [
 /**
  * Tool packages this definition pins (CL-5999 shape, matching
  * `code-review`/`collateral-generation`/`assistant`'s precedent):
- * `@corbits/web-search-tools` for live research, `@corbits/memory-tools`
- * so a brief can check (and later inform) the tenant's firm memory.
+ * `@corbits/web-search-tools` for live research, `@corbits/memory`
+ * (CL-8186) so a brief can check (and later inform) the tenant's firm
+ * memory — a published dependency, not a workbench-built tool package,
+ * resolved the same way through its own `interchange.tools` surface.
  */
 export const DILIGENCE_BRIEF_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/web-search-tools", version: "0.0.3" },
-  { name: "@corbits/memory-tools", version: "0.0.4" },
+  { name: "@corbits/memory", version: "0.1.2" },
 ];
 
 /**
  * Binds the pinned web-search package's "exa" handle to the tenant's
- * connection — `@corbits/memory-tools` needs no credential binding of
- * its own; its env keys (`hubMemoryUrl`/`sidecarToken`/`address`) are
- * populated for every workflow step directly, the same as
+ * connection — `@corbits/memory` needs no credential binding of its
+ * own; its env keys (`memoryBaseUrl`/`memoryTenantId`/`memoryAuthToken`)
+ * are populated for every workflow step directly, the same as
  * `@corbits/artifact-tools`' trio.
  */
 export const DILIGENCE_BRIEF_CREDENTIAL_BINDINGS: readonly CredentialBinding[] =

@@ -38,7 +38,6 @@
     "@corbits/connections-tools": "workspace:*",
     "@corbits/github-tools": "workspace:*",
     "@corbits/mcp-tools": "workspace:*",
-    "@corbits/memory-tools": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

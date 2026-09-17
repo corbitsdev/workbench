@@ -1,9 +1,7 @@
 // Proves the CL-6086 binding: `createSidecarStepBuildEnv` threads the
 // deploying definition's own `definitionId` (and the derived
 // `hubCapabilitiesUrl`) onto the built step env, following exactly the
-// binding pattern `hubMemoryUrl`/`hubSkillsUrl`/`sidecarToken`/`address`
-// already use — see this file's header comment for the memory-tools
-// precedent this mirrors.
+// binding pattern `hubSkillsUrl`/`sidecarToken`/`address` already use.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -87,13 +85,16 @@ test("the built step env carries the deploying definition's own definitionId and
   expect(
     (env as unknown as { hubCapabilitiesUrl: string }).hubCapabilitiesUrl,
   ).toBe("https://hub.example.com");
-  // Same hub origin as the sibling artifacts/memory/skills bindings —
-  // one origin, one name per tool-bundle surface, never overloaded.
+  // Same hub origin as the sibling artifacts/skills bindings — one
+  // origin, one name per tool-bundle surface, never overloaded.
   expect((env as unknown as { hubArtifactsUrl: string }).hubArtifactsUrl).toBe(
     "https://hub.example.com",
   );
-  expect((env as unknown as { hubMemoryUrl: string }).hubMemoryUrl).toBe(
+  expect((env as unknown as { memoryBaseUrl: string }).memoryBaseUrl).toBe(
     "https://hub.example.com",
+  );
+  expect((env as unknown as { memoryTenantId: string }).memoryTenantId).toBe(
+    "ten_test",
   );
   expect((env as unknown as { address: string }).address).toBe(
     "run_1@example.com",

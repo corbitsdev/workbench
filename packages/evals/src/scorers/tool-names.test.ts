@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 
 import { CREATE_AGENT_TOOL as REAL_CREATE_AGENT_TOOL } from "@corbits/agent-directory-tools";
-import { MEMORY_ADD_TOOL as REAL_MEMORY_ADD_TOOL } from "@corbits/memory-tools";
 import { LIST_CONNECTIONS_TOOL as REAL_LIST_CONNECTIONS_TOOL } from "@corbits/connections-tools";
 import {
   GITHUB_PULL_REQUEST_DIFF_TOOL as REAL_GITHUB_PULL_REQUEST_DIFF_TOOL,
@@ -19,7 +18,9 @@ import {
 
 test("eval tool-name constants match the real manager-tools bundles", () => {
   expect(CREATE_AGENT_TOOL).toBe(REAL_CREATE_AGENT_TOOL);
-  expect(MEMORY_ADD_TOOL).toBe(REAL_MEMORY_ADD_TOOL);
+  // `@corbits/memory` exports no name constant (CL-8186) — its
+  // `memoryAdd` tool factory names itself "memory_add" inline.
+  expect(MEMORY_ADD_TOOL).toBe("memory_add");
   expect(LIST_CONNECTIONS_TOOL).toBe(REAL_LIST_CONNECTIONS_TOOL);
 });
 

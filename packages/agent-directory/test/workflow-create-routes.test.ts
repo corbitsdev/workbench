@@ -31,7 +31,7 @@ const RUN_ADDRESS = `${RUN_ID}@example.com`;
 const fakeCapabilityInventory: CapabilityInventoryProvider = {
   resolve: () =>
     Promise.resolve({
-      toolPackages: [{ name: "@corbits/memory-tools" }],
+      toolPackages: [{ name: "@corbits/memory" }],
       skills: [{ name: "research" }],
       models: [{ canonicalName: "anthropic/claude-sonnet" }],
     }),
@@ -53,8 +53,8 @@ function fakeAssetService(overrides: Partial<AssetService> = {}): AssetService {
       throw new Error("not used in these tests");
     },
     // `resolvePinnedVersion`'s tarball listing — every create test in
-    // this file pins (or gets baseline-pinned) `@corbits/memory-tools`.
-    listAssetBlobs: () => Promise.resolve(["corbits-memory-tools-1.4.0.tgz"]),
+    // this file pins (or gets baseline-pinned) `@corbits/memory`.
+    listAssetBlobs: () => Promise.resolve(["corbits-memory-1.4.0.tgz"]),
     ...overrides,
   } as unknown as AssetService;
 }
@@ -296,12 +296,12 @@ test("a toolPackagePins entry the tenant's inventory offers is pinned onto the c
       name: "Research Buddy",
       handle: "research-buddy",
       systemPrompt: "You are a careful research assistant.",
-      toolPackagePins: ["@corbits/memory-tools"],
+      toolPackagePins: ["@corbits/memory"],
     }),
   });
   expect(response.status).toBe(201);
   const written = definitionFrom(writtenFiles);
-  expect(written).toContain("@corbits/memory-tools");
+  expect(written).toContain("@corbits/memory");
 });
 
 test("a create naming no pins gets the baseline set the inventory offers — a specialist is never toolless (CL-6206)", async () => {
@@ -325,10 +325,10 @@ test("a create naming no pins gets the baseline set the inventory offers — a s
   });
   expect(response.status).toBe(201);
   const written = definitionFrom(writtenFiles);
-  // The fake inventory offers memory-tools (see buildApp); mcp-tools and
+  // The fake inventory offers memory (see buildApp); mcp-tools and
   // interaction-tools are not offered, so only the resolvable baseline
   // member is pinned — never a pin that would fail at launch.
-  expect(written).toContain("@corbits/memory-tools");
+  expect(written).toContain("@corbits/memory");
   expect(written).not.toContain("@corbits/mcp-tools");
 });
 
