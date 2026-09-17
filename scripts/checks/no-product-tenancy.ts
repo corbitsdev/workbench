@@ -143,8 +143,10 @@ const ALLOWLIST: readonly {
     // expressions as plain mail instead. Product-owned schedule state,
     // never tenancy — FK'd back to the native `tenant` table.
     relPath: "packages/cron/src/schema.ts",
-    maxOccurrences: 1,
-    tables: ["cron.schedule"],
+    maxOccurrences: 2,
+    // CL-8210: Interchange's `tenant` re-declared (id only, never migrated)
+    // to carry the FK from cron.schedule.
+    tables: ["tenant", "cron.schedule"],
   },
 ];
 
