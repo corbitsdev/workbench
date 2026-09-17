@@ -1,0 +1,39 @@
+{
+  "name": "@corbits/interaction-tools",
+  "version": "0.0.11",
+  "description": "The ask_user tool: an @intx/agent bundle that poses an interview question in-thread as a question block, then ends the turn — the user's answer arrives as the agent's next message, not this call's result",
+  "license": "LGPL-2.1-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "tools/interaction"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@corbits/error-sink": "0.0.2",
+    "@intx/agent": "0.3.0",
+    "@intx/types": "0.3.0"
+  }
+}
