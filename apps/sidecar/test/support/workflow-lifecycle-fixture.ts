@@ -411,8 +411,16 @@ export function makeWorkflowFrame(agentAddress: string): AgentDeployFrame {
     agentAddress,
     agentId: "lifecycle-agent",
     hubPublicKey: "hub-pk",
-    // Boundary type assertion: the multi-step branch does not read config
-    config: {} as AgentDeployFrame["config"],
+    // Boundary type assertion: the multi-step branch does not read most of
+    // `config` -- but `tenantId`/`principalId` ride the deploy frame's
+    // config into the v2 deployment record (CL-8184), so a record written
+    // from this fixture must carry real values or every subsequent
+    // `readWorkflowDeploymentRecord` fails schema validation and silently
+    // returns undefined.
+    config: {
+      tenantId: "tenant-lifecycle-fixture",
+      principalId: "principal-lifecycle-fixture",
+    } as AgentDeployFrame["config"],
     workflow: {
       approvedWireHash: LIFECYCLE_APPROVED_WIRE_HASH,
       sourceRef: {
