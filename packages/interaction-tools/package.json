@@ -1,7 +1,7 @@
 {
   "name": "@corbits/interaction-tools",
   "description": "The ask_user tool: an @intx/agent bundle that poses an interview question in-thread as a question block, then ends the turn — the user's answer arrives as the agent's next message, not this call's result",
-  "version": "0.0.9",
+  "version": "1.0.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
@@ -28,7 +28,7 @@
     "arktype": "catalog:"
   },
   "peerDependencies": {
-    "@corbits/error-sink": "0.0.2",
+    "@corbits/error-sink": "0.1.0",
     "@intx/agent": "0.3.0",
     "@intx/types": "0.3.0"
   },

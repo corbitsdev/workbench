@@ -1,7 +1,7 @@
 {
   "name": "@corbits/code-review-workflow",
   "description": "Pull-request review workflow: three reviewer lenses over one diff, one review posted back",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {
@@ -35,7 +35,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/code-review": "0.0.2"
+    "@corbits/code-review": "1.0.0"
   },
   "peerDependencies": {
     "@intx/agent": "0.3.0",

@@ -1,7 +1,7 @@
 {
   "name": "@corbits/heartbeat-workflow",
   "description": "Minimal mail-triggered workflow that completes immediately, exercising Interchange's scheduling path at zero inference cost",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {

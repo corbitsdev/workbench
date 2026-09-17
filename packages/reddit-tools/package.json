@@ -1,7 +1,7 @@
 {
   "name": "@corbits/reddit-tools",
   "description": "Reddit integration (via ScrapeCreators): a minimal client and an @intx/agent tool bundle for searching Reddit sitewide or within one subreddit",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "interchange": {

@@ -1,7 +1,7 @@
 {
   "name": "@corbits/linear-tools",
   "description": "Linear integration: a minimal client and an @intx/agent tool bundle for listing a user's recently updated issues",
-  "version": "0.0.4",
+  "version": "0.1.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "interchange": {

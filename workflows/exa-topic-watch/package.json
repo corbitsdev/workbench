@@ -1,7 +1,7 @@
 {
   "name": "@corbits/exa-topic-watch-workflow",
   "description": "Scheduled web topic watch: searches the live web for one topic each run and publishes a short digest, held for approval",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {

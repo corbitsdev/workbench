@@ -1,7 +1,7 @@
 {
   "name": "@corbits/credential-expiry-workflow",
   "description": "Scheduled workflow that checks this tenant's credentials and mails a reconnect notice for any active credential past its own expiresAt, replacing the hub-owned credential-expiry sweep",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {

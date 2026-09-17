@@ -1,7 +1,7 @@
 {
   "name": "@corbits/assistant-workflow",
   "description": "Mail-triggered conversational workflow with a general-purpose assistant agent",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {
@@ -36,7 +36,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/catalog-tools": "0.1.0"
+    "@corbits/catalog-tools": "0.2.0"
   },
   "peerDependencies": {
     "@intx/agent": "0.3.0",

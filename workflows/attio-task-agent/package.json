@@ -1,7 +1,7 @@
 {
   "name": "@corbits/attio-task-agent-workflow",
   "description": "Works one Attio task end to end: grounds itself in the CRM and past calls read-only, drafts what the task needs, and writes back to Attio only once a human approves",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {

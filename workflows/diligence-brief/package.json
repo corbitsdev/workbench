@@ -1,7 +1,7 @@
 {
   "name": "@corbits/diligence-brief-workflow",
   "description": "Single-step, mail-triggered workflow that researches a company and writes a cited diligence brief, held for approval",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {

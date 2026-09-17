@@ -1,7 +1,7 @@
 {
   "name": "@corbits/echo-workflow",
   "description": "Minimal mail-triggered conversational workflow that echoes each inbound message back verbatim",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {

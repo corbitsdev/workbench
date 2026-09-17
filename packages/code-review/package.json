@@ -1,7 +1,7 @@
 {
   "name": "@corbits/code-review",
   "description": "Multi-reviewer pull-request review: three reviewer definitions, one aggregated review, posted to GitHub",
-  "version": "0.0.2",
+  "version": "1.0.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
@@ -31,7 +31,7 @@
     "arktype": "catalog:"
   },
   "peerDependencies": {
-    "@corbits/github-tools": "0.0.10"
+    "@corbits/github-tools": "0.1.0"
   },
   "devDependencies": {
     "@corbits/agent-directory": "workspace:*",

@@ -1,7 +1,7 @@
 {
   "name": "@corbits/pain-point-collateral-workflow",
   "description": "Turns one sales call transcript into one piece of targeted collateral, gated behind a single human approval before anything is finalized",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {
