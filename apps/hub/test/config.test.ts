@@ -34,7 +34,6 @@ describe("readHubConfig", () => {
       allowPlaintextSecrets: false,
       sidecarProvisioners: [{ id: "process" }],
       defaultSidecarProvisionerId: "process",
-      chatIdleReapMs: 30 * 60_000,
     });
   });
 
@@ -51,7 +50,6 @@ describe("readHubConfig", () => {
       [
         "allowPlaintextSecrets",
         "baseUrl",
-        "chatIdleReapMs",
         "databaseUrl",
         "defaultSidecarProvisionerId",
         "hubDataDir",
@@ -456,36 +454,6 @@ describe("readHubConfig", () => {
         HUB_SIDECAR_WEBSOCKET_URL: "http://not-a-websocket-url",
       });
       expect(message).toContain("HUB_SIDECAR_WEBSOCKET_URL");
-    });
-  });
-
-  describe("chatIdleReapMs", () => {
-    test("defaults to 30 minutes when HUB_CHAT_IDLE_REAP_MS is unset", () => {
-      expect(readHubConfig(validEnv).chatIdleReapMs).toBe(30 * 60_000);
-    });
-
-    test("is read from HUB_CHAT_IDLE_REAP_MS when set", () => {
-      const config = readHubConfig({
-        ...validEnv,
-        HUB_CHAT_IDLE_REAP_MS: "5000",
-      });
-      expect(config.chatIdleReapMs).toBe(5000);
-    });
-
-    test("rejects zero", () => {
-      const message = readExpectingError({
-        ...validEnv,
-        HUB_CHAT_IDLE_REAP_MS: "0",
-      });
-      expect(message).toContain("HUB_CHAT_IDLE_REAP_MS");
-    });
-
-    test("rejects a non-integer value", () => {
-      const message = readExpectingError({
-        ...validEnv,
-        HUB_CHAT_IDLE_REAP_MS: "not-a-number",
-      });
-      expect(message).toContain("HUB_CHAT_IDLE_REAP_MS");
     });
   });
 

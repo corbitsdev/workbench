@@ -10,7 +10,6 @@
   "ignore": [
     "@corbits/agent-directory",
     "@corbits/agent-events",
-    "@corbits/agent-lifecycle",
     "@corbits/agent-runtime",
     "@corbits/api-query",
     "@corbits/approvals",

@@ -7,10 +7,6 @@
 // chat's own: `workbench_launch` persistence, invitable listing, and
 // participant/fromWorkbenchId send semantics.
 // A workbench itself is data — only invited agents have runs here.
-import {
-  createAgentLifecycle,
-  DEFAULT_WAKE_TIMEOUT_MS,
-} from "@corbits/agent-lifecycle";
 import { reportError } from "@corbits/error-sink";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
@@ -85,6 +81,15 @@ import {
   type SentMail,
 } from "./platform-port";
 
+/**
+ * Bound on one wake dispatch (`wakeByAddress`, via `wakeByAddressBounded`).
+ * A cold wake for a run whose deployed record was parked aside is a real
+ * deploy round-trip to the sidecar, not a local check — long enough to
+ * allow for that, short enough that a wake the sidecar never acks turns
+ * into a rejection (CL-6643) instead of a promise nothing ever observes.
+ */
+const DEFAULT_WAKE_TIMEOUT_MS = 30_000;
+
 function domainOf(address: string): string {
   const domain = addressDomainOf(address);
   if (domain === undefined) {
@@ -125,8 +130,7 @@ export type CreateHubChatPlatformDeps = {
    * Every caller of `createHubChatPlatform` builds this via
    * `createEventCollectorRegistry` and passes it through — without it,
    * an agent's runtime status/readiness (health, SSE replay) reads as
-   * permanently "not_ready", and the idle-sweep's `isBusy` guard (see
-   * the lifecycle construction below) has no signal at all.
+   * permanently "not_ready".
    */
   eventCollectors: EventCollectorRegistry;
   /**
@@ -146,18 +150,6 @@ export type CreateHubChatPlatformDeps = {
    * Best-effort: absent or throwing, mail proceeds exactly as before.
    */
   refreshServingCredentials?: (tenantId: string) => Promise<void>;
-  /**
-   * Opt-in idle-sleep for every launched instance: absent here, the adapter keeps today's
-   * behavior exactly (nothing ever sleeps, no interval runs). When
-   * present, this adapter builds a `@corbits/agent-lifecycle` instance
-   * from it, wiring its `isRoutable`/`undeploy`/`wake` ports onto
-   * `sidecarRouter` and this adapter's `provisionOnAsset` wake —
-   * `@corbits/agent-lifecycle` itself never imports the hub or this
-   * package. Its sweep tears down instances idle for `idleSleepMs` via
-   * `sidecarRouter.sendAgentUndeploy`, and `sendMail` calls
-   * `ensureAwake` to redeploy a non-routable target before sending.
-   */
-  lifecycle?: { idleSleepMs: number; sweepIntervalMs?: number };
   /**
    * Per-attempt wall-clock bound on `sendRunMail` inside
    * `sendRunMailWithReclaimRetry` (CL-6644). Defaults to
@@ -209,16 +201,9 @@ const RELAUNCH_SWEEP_LIMIT = 100;
 
 /**
  * The concrete object `createHubChatPlatform` returns: the `ChatPlatform`
- * port itself, plus a `recordActivity` hook the host wires into
- * `createChatOrchestrator` (see `chat-orchestrator.ts`) so an invited
- * agent's `connector.reply` traffic — observed on the orchestrator's
- * own event subscription, not this adapter's `sendMail` — still counts
- * as activity against the idle-sleep lifecycle built here. A no-op
- * when `deps.lifecycle` is unset, matching every other lifecycle hook
- * on this adapter.
+ * port itself, plus the extra hooks the host wires up around it.
  */
 export type HubChatPlatform = ChatPlatform & {
-  recordActivity(address: string): void;
   /**
    * Redeploys `address` if it is not currently routable, otherwise
    * no-ops — the same wake path `sendMail` runs ahead of every send,
@@ -456,39 +441,6 @@ export function createHubChatPlatform(
   const cryptoProviders = deps.cryptoProviders;
   const wakeLogger = getLogger(["chat", "wake"]);
 
-  // Built from `@corbits/agent-lifecycle` — the idle-sleep sweep and
-  // wake-coalescing logic live entirely in that package, imported as a
-  // published dependency rather than reimplemented here; this adapter
-  // only wires its ports onto `sidecarRouter` (routability, undeploy),
-  // `deps.eventCollectors` (busy detection), and `wakeByAddress` below
-  // (a plain `function` declaration, so it is already hoisted by the
-  // time this closure is called). `undefined` when `deps.lifecycle` is
-  // unset, matching today's behavior exactly: nothing is tracked, no
-  // sweep runs, `sendMail` never calls `ensureAwake`.
-  function buildLifecycle(
-    lifecycleDeps: NonNullable<CreateHubChatPlatformDeps["lifecycle"]>,
-  ) {
-    const base = {
-      idleSleepMs: lifecycleDeps.idleSleepMs,
-      isRoutable: (address: string) =>
-        deps.sidecarRouter.getRoutableAddresses().includes(address),
-      undeploy: (address: string, reason: string) =>
-        deps.sidecarRouter.sendAgentUndeploy(address, reason),
-      wake: wakeByAddress,
-      isBusy: (address: string) =>
-        typeof deps.eventCollectors.getCurrentTurnId(address) === "string",
-      log: getLogger(["chat", "lifecycle"]),
-    };
-    return createAgentLifecycle(
-      lifecycleDeps.sweepIntervalMs !== undefined
-        ? { ...base, sweepIntervalMs: lifecycleDeps.sweepIntervalMs }
-        : base,
-    );
-  }
-
-  const lifecycle =
-    deps.lifecycle !== undefined ? buildLifecycle(deps.lifecycle) : undefined;
-
   // CL-6644: a per-attempt bound on `sendRunMail` inside
   // `sendRunMailWithReclaimRetry` -- a send that stalls forever (a
   // sidecar ack that never comes, a wedged promise anywhere in
@@ -550,8 +502,6 @@ export function createHubChatPlatform(
       prepared.runId,
       prepared.sourcesDigest,
     );
-    lifecycle?.untrack(binding.liveAddress);
-    lifecycle?.track(prepared.address);
 
     deps.relaunchNotice?.current?.({
       tenantId: binding.tenantId,
@@ -825,43 +775,66 @@ export function createHubChatPlatform(
     }
   }
 
+  // CL-7214: two concurrent wakes for the same address (a reclaim retry
+  // racing an independent `ensureAwake` call) must not both call
+  // `wakeByAddress` — a terminal run's redeploy would collide on the
+  // same `session_asset` primary key and git ref. `pendingWakes` tracks
+  // the raw, untimed `wakeByAddress(address)` call so every caller
+  // arriving while one is in flight coalesces onto it instead of
+  // dispatching a second one; the entry is cleared only once the real
+  // wake settles, never when a caller's own timeout fires below, so a
+  // later caller cannot slip through the window between a timeout and
+  // the real wake's actual completion (CL-6643/CL-7217).
+  const pendingWakes = new Map<string, Promise<void>>();
+
   /**
-   * `wakeByAddress`, bounded to `DEFAULT_WAKE_TIMEOUT_MS` — the same
-   * bound `@corbits/agent-lifecycle`'s `ensureAwake` puts on this exact
-   * call when `lifecycle` is configured (CL-6643), so a deploy the
-   * sidecar never acked fails loud instead of wedging the caller forever
-   * (CL-6644).
-   *
-   * When `lifecycle` is configured, this routes through
-   * `lifecycle.ensureAwake` rather than calling `wakeByAddress` itself —
-   * `sendRunMailWithReclaimRetry`'s reclaim retry used to call
-   * `wakeByAddress` directly, bypassing `lifecycle.ensureAwake`'s
-   * per-address coalescing entirely. Two wakes for the same instance
-   * racing in through this bypass could both pass `provisionOnAsset`'s
-   * populate and both prepare, colliding on the same
-   * primary key and git ref (CL-7214). Every wake path now funnels
-   * through the one coalescing map `@corbits/agent-lifecycle` owns,
-   * rather than this package growing a second one beside it.
-   * `reconcileDriftedRun` mirrors the pattern `sendMail` and the
-   * exported `ensureAwake` hook already use: `lifecycle.ensureAwake`
-   * no-ops on an address that is already routable, so a staleness check
-   * needs to run unconditionally alongside it (CL-6588). Only the
-   * no-`lifecycle` fallback still calls `wakeByAddress` directly.
+   * Races `pending` against `DEFAULT_WAKE_TIMEOUT_MS`, rejecting with a
+   * distinct error so a caller always gets a settled outcome — never a
+   * hang — even though `pending` itself keeps running unobserved past
+   * the deadline. Called once per `wakeByAddressBounded` caller, so one
+   * caller's timeout never shortens another's wait on the same
+   * coalesced wake.
+   */
+  function boundToWakeTimeout(
+    pending: Promise<void>,
+    address: string,
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(
+          new Error(
+            `wake for "${address}" did not settle within ${String(DEFAULT_WAKE_TIMEOUT_MS)}ms`,
+          ),
+        );
+      }, DEFAULT_WAKE_TIMEOUT_MS);
+      pending.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (cause: unknown) => {
+          clearTimeout(timer);
+          reject(cause);
+        },
+      );
+    });
+  }
+
+  /**
+   * `wakeByAddress`, bounded to `DEFAULT_WAKE_TIMEOUT_MS` (CL-6643) — a
+   * deploy the sidecar never acked fails loud instead of wedging the
+   * caller forever (CL-6644) — and coalesced across concurrent callers
+   * for the same address (CL-7214, see `pendingWakes` above).
    */
   async function wakeByAddressBounded(address: string): Promise<void> {
-    if (lifecycle === undefined) {
-      // CL-7193: `wakeByAddress` has no cancellable primitive to hook a
-      // signal into, so a timeout here still abandons the underlying wake
-      // exactly as before — the signal parameter is unused on purpose.
-      await withTimeout(
-        () => wakeByAddress(address),
-        DEFAULT_WAKE_TIMEOUT_MS,
-        `wake for "${address}" did not settle within ${String(DEFAULT_WAKE_TIMEOUT_MS)}ms`,
-      );
-      return;
+    let inFlight = pendingWakes.get(address);
+    if (inFlight === undefined) {
+      inFlight = wakeByAddress(address).finally(() => {
+        pendingWakes.delete(address);
+      });
+      pendingWakes.set(address, inFlight);
     }
-    await lifecycle.ensureAwake(address);
-    await reconcileDriftedRun(address);
+    return boundToWakeTimeout(inFlight, address);
   }
 
   /**
@@ -1078,9 +1051,9 @@ export function createHubChatPlatform(
             // Wake exactly once, the moment the first attempt reports
             // unreachable: if the run had already died, this is the
             // genuine redeploy that recovers it; if a deploy is merely
-            // still booting, `wakeByAddress`/`lifecycle.ensureAwake`
-            // no-op past the routability check and this becomes a
-            // cheap reconcile. Re-resolving only after the wake means a
+            // still booting, `wakeByAddressBounded` no-ops past the
+            // routability check and this becomes a cheap reconcile.
+            // Re-resolving only after the wake means a
             // relaunch it just performed is exactly what the fresh read
             // picks up, rather than the address that was current a
             // moment before.
@@ -1369,9 +1342,9 @@ export function createHubChatPlatform(
       const { binding } = await requireLive(input.workbenchId, input.tenantId);
       const liveAddress = binding.liveAddress;
 
-      // Wake before send: a sleeping instance (the lifecycle package's
-      // own sweep) or one that never came back up after a stack
-      // restart is not in the sidecar's routable set. Re-deploying it
+      // Wake before send: a run the sidecar idle-hibernated on its own,
+      // or one that never came back up after a stack restart, is not in
+      // the sidecar's routable set. Re-deploying it
       // here — and letting a wake failure propagate — means the send
       // fails loud rather than vanishing into an agent nothing is
       // listening on. This is also how a mention fan-out copy reaches
@@ -1404,9 +1377,7 @@ export function createHubChatPlatform(
       // `chat.agent` stream, and into `useStreamingReply` — real plumbing
       // across this package and the sidecar, not a client-side fix, so
       // it is left as a follow-up rather than done here.
-      if (lifecycle !== undefined) {
-        await lifecycle.ensureAwake(liveAddress);
-      } else if (!isRoutable(liveAddress)) {
+      if (!isRoutable(liveAddress)) {
         await wakeByAddressBounded(liveAddress);
       }
       // CL-7505: serve on a live token. Any `oauth_token` credential the
@@ -1426,12 +1397,10 @@ export function createHubChatPlatform(
           logger.warn`serving-time credential refresh failed (mail proceeding): ${String(cause)}`;
         }
       }
-      // CL-6588: `lifecycle.ensureAwake` returns immediately for an
-      // address that is already routable — routability is the only
-      // thing it checks — so an already-live-but-stale run would never
-      // reach `wakeByAddress`'s drift check above through that branch.
-      // Run it unconditionally so every send through this choke point
-      // — not only the ones that needed waking — reconciles staleness.
+      // CL-6588: an already-routable address never reaches
+      // `wakeByAddress`'s drift check above through the wake gate. Run
+      // it unconditionally so every send through this choke point —
+      // not only the ones that needed waking — reconciles staleness.
       try {
         await reconcileDriftedRun(liveAddress);
       } catch (error) {
@@ -1439,11 +1408,6 @@ export function createHubChatPlatform(
       }
       const delivery = await requireLive(input.workbenchId, input.tenantId);
       const deliveryAddress = delivery.binding.liveAddress;
-      // Tracking here (not only at launch) brings instances that were
-      // already resident before this hub process started — restored by
-      // a sidecar reconnect, launched by an earlier run — under the
-      // idle sweep the moment they see traffic.
-      lifecycle?.track(deliveryAddress);
 
       // CL-7480: a run just woken/reconciled above can be routable
       // before anything ever recorded its session — waking it is not
@@ -1561,8 +1525,6 @@ export function createHubChatPlatform(
         },
       );
 
-      lifecycle?.recordActivity(deliveryAddress);
-
       return sent;
     },
 
@@ -1637,21 +1599,13 @@ export function createHubChatPlatform(
     async ensureAwake(address: string): Promise<void> {
       // The caller may hold either side of the mapping (the hub's
       // undelivered-mail handler holds whatever the envelope named), so
-      // the lifecycle is driven on the LIVE address it resolves to —
-      // that is the only address the sidecar ever announces.
+      // the wake is driven on the LIVE address it resolves to — that is
+      // the only address the sidecar ever announces.
       const binding = await readBindingByAddressAnyTenant(deps.db, address);
       if (binding === undefined) {
         throw new Error(`No workbench_launch binding for address "${address}"`);
       }
       try {
-        if (lifecycle !== undefined) {
-          await lifecycle.ensureAwake(binding.liveAddress);
-          // CL-6588: see the matching note in `sendMail` — routability
-          // alone is what `lifecycle.ensureAwake` checks, so an
-          // already-routable-but-stale run needs this run unconditionally.
-          await reconcileDriftedRun(binding.liveAddress);
-          return;
-        }
         if (isRoutable(binding.liveAddress)) {
           await reconcileDriftedRun(binding.liveAddress);
           return;
@@ -1664,7 +1618,6 @@ export function createHubChatPlatform(
   };
 
   return Object.assign(platform, {
-    recordActivity: (address: string) => lifecycle?.recordActivity(address),
     sweepTerminalRuns,
     reconcileInferenceSources,
     reconcilePinnedToolPackages,

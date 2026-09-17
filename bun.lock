@@ -39,7 +39,6 @@
       "dependencies": {
         "@chat-adapter/state-memory": "^4.35.0",
         "@corbits/agent-directory": "workspace:*",
-        "@corbits/agent-lifecycle": "workspace:*",
         "@corbits/agent-runtime": "workspace:*",
         "@corbits/approvals": "workspace:*",
         "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#dc435ba749b4378f19e5de772159c2a57e932938",
@@ -115,7 +114,6 @@
         "workflow-child": "./bin/workflow-child",
       },
       "dependencies": {
-        "@corbits/agent-lifecycle": "workspace:*",
         "@corbits/codex-provider": "workspace:*",
         "@corbits/credential-providers": "workspace:*",
         "@corbits/error-sink": "workspace:*",
@@ -221,7 +219,6 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/agent-events": "workspace:*",
-        "@corbits/agent-lifecycle": "workspace:*",
         "@corbits/agent-runtime": "workspace:*",
         "@corbits/chat": "workspace:*",
         "@corbits/error-sink": "workspace:*",
@@ -269,17 +266,6 @@
     "packages/agent-events": {
       "name": "@corbits/agent-events",
       "version": "0.0.1",
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/agent-lifecycle": {
-      "name": "@corbits/agent-lifecycle",
-      "version": "0.0.1",
-      "dependencies": {
-        "@intx/log": "0.3.0",
-      },
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
@@ -437,7 +423,6 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/agent-events": "workspace:*",
-        "@corbits/agent-lifecycle": "workspace:*",
         "@corbits/agent-runtime": "workspace:*",
         "@corbits/approvals": "workspace:*",
         "@corbits/collections": "workspace:*",
@@ -1693,7 +1678,7 @@
       "name": "@corbits/assistant-workflow",
       "version": "0.0.2",
       "dependencies": {
-        "@corbits/catalog-tools": "0.0.6",
+        "@corbits/catalog-tools": "0.1.0",
       },
       "devDependencies": {
         "@corbits/agent-directory-tools": "workspace:*",
@@ -2100,8 +2085,6 @@
     "@corbits/agent-directory-tools": ["@corbits/agent-directory-tools@workspace:packages/agent-directory-tools"],
 
     "@corbits/agent-events": ["@corbits/agent-events@workspace:packages/agent-events"],
-
-    "@corbits/agent-lifecycle": ["@corbits/agent-lifecycle@workspace:packages/agent-lifecycle"],
 
     "@corbits/agent-runtime": ["@corbits/agent-runtime@workspace:packages/agent-runtime"],
 
@@ -3660,8 +3643,6 @@
     "@typescript-eslint/eslint-plugin/ignore": ["ignore@7.0.9", "", {}, "sha512-brTTsvFRt5C1gGHtPst/281UjPD5t9fBqbgoMPlVWy11ZLTPfu7HxK4ZYqO9H7o/yC9rSTCI85EaQ4OoY12qYw=="],
 
     "@workbench/hub/@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#dc435ba", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/hub-api": "^0.2.2", "@intx/types": "^0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-dc435ba", "sha512-VksIyrrJY9nRke0QyjgqGdW3gLD73Bi3+CzpJWG+l8vRJKdUxVi7ms2Mp95NmJXr4TpVX6i1z4odufX/QBxnSw=="],
-
-    "@workbench/sidecar/@corbits/oauth-core": ["@corbits/oauth-core@github:corbitsdev/corbits-oauth-core#e1e69e6", { "dependencies": { "arktype": "2.2.3" } }, "corbitsdev-corbits-oauth-core-e1e69e6", "sha512-wUrD73iVyk/Dtb4yRn3hCh6N8syfsEvAkRz4XYqT0FIB3sYDSMYEWHcDMJx9nq64my/HBOeN1J6PHIOtpjhtPg=="],
 
     "ajv-formats/ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
 

@@ -139,29 +139,6 @@ function createFakeUndeploy() {
   };
 }
 
-/** A tiny fake `lifecycle` recording track/recordActivity/untrack calls. */
-function createFakeLifecycle() {
-  const tracked: string[] = [];
-  const activity: string[] = [];
-  const untracked: string[] = [];
-  return {
-    tracked,
-    activity,
-    untracked,
-    lifecycle: {
-      track: (address: string) => {
-        tracked.push(address);
-      },
-      recordActivity: (address: string) => {
-        activity.push(address);
-      },
-      untrack: (address: string) => {
-        untracked.push(address);
-      },
-    },
-  };
-}
-
 function createBaseDeps() {
   return {
     db: fakeDb(),
@@ -192,14 +169,12 @@ describe("runOneShotPrompt", () => {
     const fakeSend = createFakeSend();
     const { sendMail } = fakeSend;
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
-    const { lifecycle, tracked, activity, untracked } = createFakeLifecycle();
     const deps = {
       ...createBaseDeps(),
       events: fake.emitter,
       provision,
       sendMail,
       undeploy,
-      lifecycle,
     } as never;
 
     const promise = runOneShotPrompt(deps, INPUT);
@@ -235,9 +210,6 @@ describe("runOneShotPrompt", () => {
     expect(undeployCalls).toEqual([
       { address: triggerAddress, reason: "planning-run-complete" },
     ]);
-    expect(tracked).toEqual([triggerAddress]);
-    expect(activity).toEqual([triggerAddress]);
-    expect(untracked).toEqual([triggerAddress]);
   });
 
   test("a failed run rejects with OneShotRunFailedError, unsubscribes, and tears the run down", async () => {

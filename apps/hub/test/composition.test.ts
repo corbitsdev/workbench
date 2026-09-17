@@ -38,7 +38,6 @@ const config: HubConfig = {
   // credential-cipher seam, so the dev opt-in keeps boot working.
   allowPlaintextSecrets: true,
   sidecarProvisioners: [],
-  chatIdleReapMs: 30 * 60_000,
 };
 
 const closers: (() => Promise<void>)[] = [];

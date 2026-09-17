@@ -41,6 +41,7 @@ test("parses a complete environment into config", () => {
     adapterManifest: DEFAULT_MANIFEST,
     consumedRetentionMs: undefined,
     readyTimeoutMs: undefined,
+    idleHibernateMs: undefined,
   });
 });
 

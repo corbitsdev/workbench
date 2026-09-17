@@ -24,8 +24,7 @@ from, `@intx/workflow` and `@intx/workflow-deploy` for the workbench-host
 workflow definition and its deployment, `@intx/db` for schema/query
 primitives, `@intx/authz` for grant checks, `@intx/crypto` for signing,
 `@intx/mime` for attachment validation, `@intx/log` for logging, and
-`@intx/types` for shared wire types. It also depends on
-`@corbits/agent-lifecycle` (idle-sleep/wake-on-mail).
+`@intx/types` for shared wire types.
 
 ## Key modules
 

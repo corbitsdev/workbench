@@ -31,7 +31,6 @@ export const WORKSPACE_GLOB_ROOTS = [
 // package.json-only stub.
 export const SIDECAR_FULL_SOURCE_DIRS = [
   "apps/sidecar",
-  "packages/agent-lifecycle",
   "packages/credential-providers",
   "vendor/intx/db",
   "vendor/intx/hub-sessions",

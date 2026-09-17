@@ -23,7 +23,6 @@ const baseConfig: HubConfig = {
   socialProviders: {},
   allowPlaintextSecrets: false,
   sidecarProvisioners: [],
-  chatIdleReapMs: 30 * 60_000,
 };
 
 describe("credentialCipherFrom", () => {
