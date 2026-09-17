@@ -204,7 +204,7 @@ test("GTM scenario: connect three services, then create two specialist agents", 
   // `fetchImpl` test seam (only their `client.ts`'s own config type
   // does, never threaded from `env`) — the established pattern this
   // repo's other tool-bundle tests use instead (see
-  // `packages/capability-tools/src/tool.test.ts`) is to monkey-patch
+  // `tools/capability/src/tool.test.ts`) is to monkey-patch
   // `globalThis.fetch` for the call, restored in a `finally`.
   const originalFetch = globalThis.fetch;
   globalThis.fetch = hub.fetchImpl;
