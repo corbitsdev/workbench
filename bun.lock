@@ -57,7 +57,7 @@
         "@corbits/approvals": "workspace:*",
         "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#5309a15d4aa504f132c54b4da08bb672b4903873",
         "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
-        "@corbits/cron": "workspace:*",
+        "@corbits/cron": "github:corbitsdev/corbits-cron#0581a6cb6921294743ce6db822fee6291cf09117",
         "@corbits/error-sink": "workspace:*",
         "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#65590a85fa143251b3ac20ba2eca92fc35e70e51",
         "@corbits/memory": "github:corbitsdev/corbits-memory#e74da20f148a302dff5400915fe504ee2395e913",
@@ -178,21 +178,6 @@
         "@intx/hub-common": "0.3.0",
         "@types/bun": "catalog:",
         "postgres": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/cron": {
-      "name": "@corbits/cron",
-      "version": "0.0.1",
-      "dependencies": {
-        "arktype": "catalog:",
-        "drizzle-orm": "catalog:",
-        "hono": "catalog:",
-        "postgres": "catalog:",
-      },
-      "devDependencies": {
-        "@intx/db": "workspace:*",
-        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -625,7 +610,7 @@
 
     "@corbits/credential-mcp": ["@corbits/credential-mcp@github:corbitsdev/corbits-credential-mcp#fb9ec3a", { "peerDependencies": { "@intx/harness": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-credential-mcp-fb9ec3a", "sha512-Co4jR+L3pfBbVYY7I6jRftoHeSb5+LCxzEEaAhVLYA3aY2PrPHZV37+DWxj3fcK/KdzboqbT3XSnqU8DyHRU9Q=="],
 
-    "@corbits/cron": ["@corbits/cron@workspace:packages/cron"],
+    "@corbits/cron": ["@corbits/cron@github:corbitsdev/corbits-cron#0581a6c", { "dependencies": { "@intx/db": "^0.3.0", "arktype": "^2.2.0", "drizzle-orm": "^0.45.2", "hono": "^4.11.9", "postgres": "^3.4.8" } }, "corbitsdev-corbits-cron-0581a6c", "sha512-RUusPYGv31dDSiZrYjFu5OUz0Ueq7+aIs3XHiHubNFVvs2vSRmy9VAq6ld9wp/aZuloBofGZYD6WM6Wb/xbWlQ=="],
 
     "@corbits/error-sink": ["@corbits/error-sink@workspace:packages/error-sink"],
 

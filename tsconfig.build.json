@@ -11,9 +11,6 @@
       "path": "./packages/approvals/tsconfig.src.json"
     },
     {
-      "path": "./packages/cron/tsconfig.src.json"
-    },
-    {
       "path": "./packages/error-sink/tsconfig.src.json"
     },
     {
