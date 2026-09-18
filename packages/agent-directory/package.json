@@ -16,7 +16,7 @@
   "dependencies": {
     "@corbits/agent-events": "workspace:*",
     "@corbits/error-sink": "workspace:*",
-    "@corbits/skills": "workspace:*",
+    "@corbits/skills-tools": "workspace:*",
     "@corbits/tool-registry-publish": "workspace:*",
     "@corbits/workflows": "workspace:*",
     "@intx/agent": "workspace:*",

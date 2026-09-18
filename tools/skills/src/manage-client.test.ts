@@ -7,7 +7,7 @@ import {
   pinSkill,
   updateSkill,
   type SkillsToolClientConfig,
-} from "./client";
+} from "./manage-client";
 
 function testConfig(fetchImpl: typeof fetch): SkillsToolClientConfig {
   return {

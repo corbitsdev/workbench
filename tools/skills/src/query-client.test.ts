@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { listSkills, loadSkill, searchSkills } from "./client";
+import { listSkills, loadSkill, searchSkills } from "./query-client";
 
 const CONFIG = {
   hubSkillsUrl: "https://hub.example",

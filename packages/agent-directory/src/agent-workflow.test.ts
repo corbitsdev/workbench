@@ -1,10 +1,9 @@
 // `SKILLS_TOOL_PACKAGE_PIN` named
-// `@corbits/tools-skills`, but `tool-registry-publish`'s
+// `@corbits/skills-tools`, but `tool-registry-publish`'s
 // `CORBITS_TOOL_PACKAGE_DIRS` never listed that package's directory, so
 // a definition pinning skills carried a pin the corbits-tools registry
 // could never resolve at launch.
 import { describe, expect, test } from "bun:test";
-import path from "node:path";
 import type { DB } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
 import { CORBITS_TOOL_PACKAGE_DIRS, packToolPackageTarball } from "@corbits/tool-registry-publish";
@@ -21,14 +20,14 @@ import {
 describe("SKILLS_TOOL_PACKAGE_PIN", () => {
   test("resolves through the corbits-tools registry", async () => {
     // Assert against what the registry actually carries: the packed
-    // tarball for the pinned package, not a source-tree import.
-    const dir = CORBITS_TOOL_PACKAGE_DIRS.find(
-      (candidate) => path.basename(candidate) === SKILLS_TOOL_PACKAGE_PIN.name.split("/")[1],
-    );
-    expect(dir).toBeDefined();
-    const tarball = await packToolPackageTarball(dir as string);
-    expect(tarball.name).toBe(SKILLS_TOOL_PACKAGE_PIN.name);
-    expect(tarball.version).toBe(SKILLS_TOOL_PACKAGE_PIN.version);
+    // tarball for the pinned package, not a source-tree import. A
+    // package's directory name need not match its `@corbits/*` name
+    // (e.g. `tools/skills` publishes `@corbits/skills-tools`), so this
+    // packs every registered directory rather than guessing one by path.
+    const tarballs = await Promise.all(CORBITS_TOOL_PACKAGE_DIRS.map(packToolPackageTarball));
+    const tarball = tarballs.find((candidate) => candidate.name === SKILLS_TOOL_PACKAGE_PIN.name);
+    expect(tarball).toBeDefined();
+    expect(tarball?.version).toBe(SKILLS_TOOL_PACKAGE_PIN.version);
   });
 });
 

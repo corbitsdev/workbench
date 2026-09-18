@@ -25,7 +25,7 @@ import { idResource } from "@intx/hub-api";
 import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 
-import { type PinnedSkillIndexEntry } from "@corbits/skills";
+import { type PinnedSkillIndexEntry } from "@corbits/skills-tools";
 
 import {
   createAgentDefinitionCore,

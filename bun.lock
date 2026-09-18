@@ -62,7 +62,6 @@
         "@corbits/inference-catalog": "workspace:*",
         "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#e85b81e4a2e0cc318dd33a4f0f92337b6fac7f38",
         "@corbits/memory": "github:corbitsdev/corbits-memory#e74da20f148a302dff5400915fe504ee2395e913",
-        "@corbits/skills": "workspace:*",
         "@corbits/tool-registry-publish": "workspace:*",
         "@corbits/url-path": "workspace:*",
         "@corbits/webhook-triggers": "workspace:*",
@@ -169,7 +168,7 @@
       "dependencies": {
         "@corbits/agent-events": "workspace:*",
         "@corbits/error-sink": "workspace:*",
-        "@corbits/skills": "workspace:*",
+        "@corbits/skills-tools": "workspace:*",
         "@corbits/tool-registry-publish": "workspace:*",
         "@corbits/workflows": "workspace:*",
         "@intx/agent": "workspace:*",
@@ -372,17 +371,6 @@
         "typescript": "catalog:",
       },
     },
-    "skills/skills": {
-      "name": "@corbits/skills",
-      "version": "0.0.2",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "tools/access": {
       "name": "@corbits/access-tools",
       "version": "0.0.6",
@@ -546,24 +534,9 @@
         "@intx/types": "0.3.0",
       },
     },
-    "tools/skills-tools": {
+    "tools/skills": {
       "name": "@corbits/skills-tools",
-      "version": "0.0.8",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
-      },
-    },
-    "tools/tools-skills": {
-      "name": "@corbits/tools-skills",
-      "version": "0.0.4",
+      "version": "0.0.9",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -1040,13 +1013,9 @@
 
     "@corbits/reddit-tools": ["@corbits/reddit-tools@workspace:tools/reddit"],
 
-    "@corbits/skills": ["@corbits/skills@workspace:skills/skills"],
-
-    "@corbits/skills-tools": ["@corbits/skills-tools@workspace:tools/skills-tools"],
+    "@corbits/skills-tools": ["@corbits/skills-tools@workspace:tools/skills"],
 
     "@corbits/tool-registry-publish": ["@corbits/tool-registry-publish@workspace:packages/tool-registry-publish"],
-
-    "@corbits/tools-skills": ["@corbits/tools-skills@workspace:tools/tools-skills"],
 
     "@corbits/url-path": ["@corbits/url-path@workspace:packages/url-path"],
 

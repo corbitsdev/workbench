@@ -21,3 +21,18 @@ export {
   type SkillFrontmatter,
   type SkillScope,
 } from "./skill-md";
+export {
+  skillsManageTools,
+  CREATE_SKILL_TOOL,
+  LIST_SKILLS_TOOL,
+  PIN_SKILL_TOOL,
+  READ_SKILL_TOOL,
+  UPDATE_SKILL_TOOL,
+  type WorkflowSkillsWriteEnv,
+} from "./manage-tools";
+export {
+  skillsQueryTools,
+  SKILLS_LIST_TOOL,
+  SKILLS_SEARCH_TOOL,
+  type WorkflowSkillsToolEnv,
+} from "./query-tools";

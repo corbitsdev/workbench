@@ -2,7 +2,7 @@
 // capability (`@corbits/capability-tools`'s `request_capability`)
 // — the execution half of `POST /:definitionId/capabilities`
 // / `GET /capabilities/inventory` in `./routes.ts`, mirroring
-// `@corbits/skills`' `createWorkflowSkillRoutes` and
+// `@corbits/skills-tools`' `createWorkflowSkillRoutes` and
 // `@corbits/artifacts-hub`'s workflow-artifacts routes: a workflow child
 // has no browser session, only its sidecar bearer token and its own run
 // address, so it authenticates through a `WorkflowRunAuthenticator`
@@ -65,7 +65,7 @@ import { makeErrorEnvelope } from "@corbits/error-sink";
 /**
  * The tenant + principal + run a presented sidecar token and run
  * address resolve to. Declared structurally (mirroring
- * `@corbits/skills`' `WorkflowRunScope`) rather than importing
+ * `@corbits/skills-tools`' `WorkflowRunScope`) rather than importing
  * `@corbits/artifacts-hub`'s concrete type, so this package carries no
  * dependency on the artifacts plane; `apps/hub` supplies
  * `@corbits/artifacts-hub`'s `createWorkflowRunAuthenticator`, which

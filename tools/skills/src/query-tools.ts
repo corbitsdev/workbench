@@ -15,11 +15,12 @@ import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 
-import { listSkills, loadSkill, searchSkills } from "./client";
+import { listSkills, loadSkill, searchSkills } from "./query-client";
+import { SKILLS_LOAD_TOOL } from "./prompt";
 
 export const SKILLS_LIST_TOOL = "skills_list";
 export const SKILLS_SEARCH_TOOL = "skills_search";
-export const SKILLS_LOAD_TOOL = "skills_load";
+export { SKILLS_LOAD_TOOL };
 
 /** Env this bundle needs beyond `BaseEnv`: the run's hub-reach credential. */
 export interface WorkflowSkillsToolEnv extends BaseEnv {
@@ -87,8 +88,8 @@ async function runSkillsLoad(env: WorkflowSkillsToolEnv, call: ToolCall): Promis
   }
 }
 
-export const skillsTools = defineTool<WorkflowSkillsToolEnv>({
-  id: "@corbits/tools-skills/skills",
+export const skillsQueryTools = defineTool<WorkflowSkillsToolEnv>({
+  id: "@corbits/skills-tools/skills-query",
   requires: ["hubSkillsUrl", "sidecarToken", "address"],
   definitions: [
     { name: SKILLS_LIST_TOOL },

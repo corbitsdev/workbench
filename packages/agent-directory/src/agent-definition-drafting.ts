@@ -36,7 +36,7 @@ const MAX_DESCRIPTION_LENGTH = 500;
  * `request_capability` bundle every drafted agent gets pinned by
  * default (see `validateAgentDefinitionDraftReplyAgainstInventory`'s
  * default-pin step below), the same way a definition that pins skills
- * always gets `@corbits/tools-skills` alongside them
+ * always gets `@corbits/skills-tools` alongside them
  * (`@corbits/agent-directory`'s `reindexPinnedSkills`) — self-service
  * capability requests are a baseline capability every drafted agent
  * should carry, not something Myra has to remember to choose. Only

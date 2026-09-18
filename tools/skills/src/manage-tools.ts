@@ -29,7 +29,7 @@ import {
   pinSkill,
   updateSkill,
   type SkillsToolClientConfig,
-} from "./client";
+} from "./manage-client";
 
 export const LIST_SKILLS_TOOL = "list_skills";
 export const READ_SKILL_TOOL = "read_skill";
@@ -184,7 +184,7 @@ async function runPinSkill(env: WorkflowSkillsWriteEnv, call: ToolCall): Promise
  * The `@corbits/skills-tools` bundle factory: four tools over the
  * workbench skill registry and definition-skill pins.
  */
-export const skillsTools = defineTool<WorkflowSkillsWriteEnv>({
+export const skillsManageTools = defineTool<WorkflowSkillsWriteEnv>({
   id: "@corbits/skills-tools/skills",
   requires: ["hubSkillsUrl", "hubAgentDirectoryUrl", "sidecarToken", "address"],
   definitions: [
