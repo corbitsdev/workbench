@@ -64,7 +64,12 @@ import {
 } from "./mailbox-persist";
 import { captureMailboxRequest, createMailboxDeliver } from "./mailbox-send";
 import { reportError } from "@corbits/error-sink";
-import { createRunTriggerDeliverer, installWebhooks, type HookMailRouter } from "@corbits/webhooks";
+import {
+  createRunTriggerDeliverer,
+  createTenantSystemSender,
+  installWebhooks,
+  type HookMailRouter,
+} from "@corbits/webhooks";
 import {
   createProcessSidecarProvisioner,
   readProcessProvisionerConfig,
@@ -601,6 +606,9 @@ export async function createHubServer({
             return tenantRow.domain;
           },
           senderLocalPart: "cron",
+          // A durable per-tenant key the recipient can verify against;
+          // the sidecar rejects trigger mail from an unknown sender.
+          systemSender: createTenantSystemSender({ db, principalKeyStore }),
         }),
       ),
       onDeliveryError: (error, schedule) => {
