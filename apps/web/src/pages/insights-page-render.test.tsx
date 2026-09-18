@@ -41,6 +41,7 @@ const readyEmpty = <T,>(data: T): APIQuery<T> => ({ kind: "ready", data });
 
 const benchState: BenchState = {
   memberships: { kind: "ready", data: { data: [], nextCursor: null } },
+  benchMemberships: [],
   selectedTenantId: "tnt_bench_a",
   selectedPrincipalId: "prn_bench_a",
   selectTenant: () => {},

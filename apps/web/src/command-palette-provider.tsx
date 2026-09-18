@@ -31,7 +31,7 @@ import { WORKBENCH_NOT_FOUND_EVENT } from "./workbench-not-found-event";
 import { recentsStoreForBench } from "./command-palette-recents";
 import { NAV_ROUTES } from "./routes";
 import { ArtifactListPageSchema, useAPIQuery } from "./api";
-import { isBenchMembership, useBench } from "./bench-context";
+import { useBench } from "./bench-context";
 import { useCloseCanvas } from "./shell/canvas-availability";
 import { SKILLS_PATH_PREFIX } from "./path-ids";
 import { listScheduledWorkflows, runScheduledWorkflowNow, useTenantQuery } from "./routines-api";
@@ -69,7 +69,7 @@ export function CommandPaletteProvider({
   readonly navigate: Navigate;
   readonly children: ReactNode;
 }) {
-  const { memberships, selectedTenantId, selectTenant } = useBench();
+  const { benchMemberships, selectedTenantId, selectTenant } = useBench();
   const queryClient = useQueryClient();
   // Open state and query live in the shared store, not in this component:
   // Cmd+K and a context-menu item both open this surface from outside the
@@ -220,12 +220,9 @@ export function CommandPaletteProvider({
   // simplest honest thing a single command-palette entry can do without
   // reinventing a picker. Absent entirely for the common one-workbench
   // account, same principle the old dock used to hide itself by. Benches
-  // are the named memberships — the kinds lookup is gone, so a raw-id
-  // tenancy is the only thing filtered out here.
-  const workbenchMemberships =
-    memberships.kind === "ready"
-      ? memberships.data.data.filter((membership) => isBenchMembership(membership))
-      : [];
+  // are top-level memberships (`useBench`'s `benchMemberships`) — a room
+  // (a named child tenant) can never be cycled to.
+  const workbenchMemberships = benchMemberships;
   const nextWorkbench =
     workbenchMemberships.length > 1
       ? workbenchMemberships[

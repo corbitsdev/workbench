@@ -9,10 +9,16 @@
 import type { APIQuery } from "@/lib/api-query";
 import { createContext } from "react";
 
-import type { PrincipalsPage } from "./api";
+import type { Principal, PrincipalsPage } from "./api";
 
 export type BenchState = {
   readonly memberships: APIQuery<PrincipalsPage>;
+  /** The subset of `memberships` this account may treat as a bench: a
+   * top-level tenant (`parentId === null`, per `GET /api/tenants/:id`).
+   * Empty while any membership's tenant detail is still loading — every
+   * consumer that used to filter `memberships` with `isBenchMembership`
+   * reads this instead, so a room can never sneak into a bench list. */
+  readonly benchMemberships: readonly Principal[];
   readonly selectedTenantId: string | null;
   readonly selectedPrincipalId: string | null;
   readonly selectTenant: (tenantId: string) => void;
