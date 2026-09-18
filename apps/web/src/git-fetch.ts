@@ -30,8 +30,9 @@ export async function fetchSourceFile(args: {
       dir,
       url: args.url,
       ref: MAIN_REF,
+      // The hub's git server advertises no `shallow` capability, so a
+      // depth-limited fetch is rejected outright; fetch the full branch.
       singleBranch: true,
-      depth: 1,
       tags: false,
       headers: { Authorization: `Bearer ${args.token}` },
     });
