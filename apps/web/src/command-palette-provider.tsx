@@ -43,23 +43,9 @@ const STATIC_COMMANDS = buildStaticCommands(
   NAV_ROUTES.map((route) => ({ path: route.path, label: route.label })),
 );
 
-/**
- * Wires the data-driven react-ui command palette into the app shell, and
- * renders it — the global surface `Cmd+K` (and a context-menu item) opens,
- * as its own modal dialog (`CommandPalette`), never anchored to the stage
- * top bar's per-page filter magnifier. Mounted once in `app.tsx`'s `Shell`,
- * above `AppShell`, so it works from every route — including one that
- * matches no page and renders no stage top bar of its own.
- *
- * Grouping, `#`/`@`/`>`/`/` scope parsing, and the Recents rule live in
- * `@/command-palette` (`buildCommandPaletteGroups`) — this file only
- * assembles the app's own sources (routes, workbenches, agents, routines,
- * skills, library artifacts) and maps a selection back to a real route or
- * action. Entity results for workbenches/runs/agents still come off the same
- * `useEntitySearch` paging this provider already used; routines, skills and
- * library artifacts are small per-bench catalogs fetched once and filtered
- * client-side, the same way the static route list already is.
- */
+// Mounted once above `AppShell` so it works from every route, including
+// one that matches no page. Grouping/scope-parsing lives in
+// `@/command-palette`; this file only assembles the app's own sources.
 export function CommandPaletteProvider({
   path,
   navigate,
@@ -109,11 +95,8 @@ export function CommandPaletteProvider({
     [recentsStore],
   );
 
-  // A workbench-level 404 (`chat-page.tsx`, via `ChatWorkspace`'s
-  // `onWorkbenchNotFound`) means a Recents entry outlived the workbench it
-  // points at — drop it so re-opening the palette never offers a dead end
-  // again. See `workbench-not-found-event.ts` for why this is an event
-  // rather than a prop: the chat route and this provider are siblings.
+  // A workbench-level 404 means a Recents entry outlived the workbench it
+  // points at — drop it so re-opening never offers a dead end again.
   useEffect(() => {
     function onWorkbenchNotFound(event: Event) {
       const workbenchId = (event as CustomEvent<string>).detail;
@@ -128,11 +111,8 @@ export function CommandPaletteProvider({
     };
   }, [removeRecent]);
 
-  // Reads through `queryClient` at the shared `tenantKeys.workbenches` key
-  // (rather than calling `listWorkbenches` directly) so a re-search — every
-  // debounced keystroke re-invokes this — and the bare `#` scope view below
-  // both reuse one cached fetch with every other workbench-listing surface in
-  // the shell, instead of each one issuing its own request.
+  // Reads through the shared query key, not `listWorkbenches` directly,
+  // so every re-search reuses one cached fetch instead of its own request.
   const listWorkbenchesForSearch = useCallback(async () => {
     if (selectedTenantId === null) return [];
     const result = await queryClient.ensureQueryData({
@@ -174,10 +154,8 @@ export function CommandPaletteProvider({
     sources: entitySearchSources,
   });
 
-  // A bare `#` or `@` strips to an empty query, which useEntitySearch never
-  // fetches for (by design — the unscoped default view should not dump
-  // every entity on open). The mock shows every item in an active scope for
-  // this input, so fetch that scope's raw list directly instead.
+  // A bare `#`/`@` strips to an empty query, which useEntitySearch never
+  // fetches for by design — so fetch that scope's raw list directly.
   const bareWorkbenchesQuery = useQuery({
     queryKey: [...tenantKeys.workbenches(selectedTenantId ?? "", "workbench"), "bare-scope"],
     enabled: bareScopeKind === "workbenches" && open && selectedTenantId !== null,
@@ -213,15 +191,9 @@ export function CommandPaletteProvider({
     ArtifactListPageSchema,
   );
 
-  // its hidden escape hatch: the sidebar dropped its bench switcher
-  // (a workbench IS a conversation now, one per account in the common
-  // case), but a multi-bench install still needs a way in. Plainly
-  // labeled, cycling to the next workbench in membership order — the
-  // simplest honest thing a single command-palette entry can do without
-  // reinventing a picker. Absent entirely for the common one-workbench
-  // account, same principle the old dock used to hide itself by. Benches
-  // are top-level memberships (`useBench`'s `benchMemberships`) — a workbench
-  // (a named child tenant) can never be cycled to.
+  // The sidebar dropped its bench switcher, so this is the hidden escape
+  // hatch: cycles to the next workbench in membership order, absent
+  // entirely for the common one-workbench account.
   const workbenchMemberships = benchMemberships;
   const nextWorkbench =
     workbenchMemberships.length > 1
@@ -239,11 +211,9 @@ export function CommandPaletteProvider({
   // the overlay are the ways back out.
   useCommandShortcut(openCommandPalette);
 
-  // Search is scoped to where it was opened from. A route change (including
-  // browser Back out of a result) closes it, so the overlay never stands over
-  // content it was not opened from; a bench switch closes it too, dropping a
-  // query whose results belonged to the bench being left. A tenant resolving
-  // for the first time (null → a real bench, at boot) is not a switch.
+  // A route change or bench switch closes the palette, so it never stands
+  // over content it wasn't opened from. A tenant resolving for the first
+  // time (boot) is not a switch.
   const [searchScope, setSearchScope] = useState({ path, tenantId: selectedTenantId });
   if (searchScope.path !== path || searchScope.tenantId !== selectedTenantId) {
     const benchSwitched =
