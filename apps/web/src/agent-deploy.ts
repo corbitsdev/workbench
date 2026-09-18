@@ -172,6 +172,22 @@ export async function pushAgentSource(
   );
 }
 
+/** Every created agent's source asset name, `agent-<slug>-source` — the one
+ * naming convention this pipeline owns, so callers can recognize a created
+ * agent's asset without a lookup. */
+export function agentDeploySourceAssetName(slug: string): string {
+  return `agent-${slug}-source`;
+}
+
+const AGENT_DEPLOY_SOURCE_ASSET_NAME = /^agent-.+-source$/;
+
+/** True for any asset this deploy pipeline named — used to keep created
+ * agents (and Myra, checked separately by callers) out of surfaces that
+ * list real workflows, since both are `workflow`-kind assets. */
+export function isAgentDeploySourceAssetName(name: string): boolean {
+  return AGENT_DEPLOY_SOURCE_ASSET_NAME.test(name);
+}
+
 export type NewAgentInput = {
   readonly name: string;
   readonly systemPrompt: string;
@@ -199,7 +215,7 @@ export async function deployAgentSource(
   if (!isValidSlug(slug)) {
     throw new AgentDeployError("this name doesn't produce a usable agent address");
   }
-  const assetName = `agent-${slug}-source`;
+  const assetName = agentDeploySourceAssetName(slug);
   const packageName = `@workbench-agent/${slug}`;
 
   const tenantResponse = await fetchImpl(`/api/tenants/${encodeURIComponent(args.tenantId)}`);

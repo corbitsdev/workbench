@@ -30,7 +30,6 @@ import type { Slug } from "@/lib/slug";
 import { lazy, type ReactElement, type ReactNode } from "react";
 
 import {
-  AGENTS_PATH_PREFIX,
   SKILLS_PATH_PREFIX,
   WORKFLOWS_PATH_PREFIX,
   detailSlugFromPath,
@@ -76,9 +75,6 @@ const InsightsRoute = lazy(async () => ({
 const SettingsRoute = lazy(async () => ({
   default: (await import("./pages/settings-page")).SettingsRoute,
 }));
-const AgentDetailRoute = lazy(async () => ({
-  default: (await import("./pages/agent-detail-page")).AgentDetailRoute,
-}));
 const SkillDetailRoute = lazy(async () => ({
   default: (await import("./pages/skill-detail-page")).SkillDetailRoute,
 }));
@@ -115,7 +111,6 @@ export const NEW_WORKBENCH_PATH = "/new";
  * the agent's own screen. */
 const SLUG_SEGMENT = "/:slug";
 
-export const AGENT_DETAIL_PATH = `${AGENTS_PATH_PREFIX}${SLUG_SEGMENT}`;
 export const SKILL_DETAIL_PATH = `${SKILLS_PATH_PREFIX}${SLUG_SEGMENT}`;
 
 /**
@@ -145,16 +140,6 @@ function routineDetailSegment(path: string): string {
     throw new Error(`${ROUTINE_DETAIL_PATH} rendered for a path with no routine: ${path}`);
   }
   return segment;
-}
-
-/** A detail route only ever renders for a path `matchesRoute` already
- * accepted, which is what makes the slug non-null here. */
-function detailRouteSlug(routePath: string, path: string): Slug {
-  const slug = slugForDetailRoute(routePath, path);
-  if (slug === null) {
-    throw new Error(`${routePath} rendered for a path with no slug: ${path}`);
-  }
-  return slug;
 }
 
 export type AppRoute = {
@@ -284,20 +269,10 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <ArtifactsRoute path={path} />,
   },
   {
-    path: AGENT_DETAIL_PATH,
-    label: "Agent",
-    icon: <Robot />,
-    render: (path: string, navigate: (to: string) => void) => (
-      <AgentDetailRoute slug={detailRouteSlug(AGENT_DETAIL_PATH, path)} navigate={navigate} />
-    ),
-  },
-  {
     path: "/agents",
     label: "Agents",
     icon: <Robot />,
-    render: (path: string, navigate: (to: string) => void) => (
-      <AgentsRoute path={path} navigate={navigate} />
-    ),
+    render: () => <AgentsRoute />,
   },
   {
     path: SKILL_DETAIL_PATH,

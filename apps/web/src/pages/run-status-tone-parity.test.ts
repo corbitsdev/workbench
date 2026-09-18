@@ -19,7 +19,6 @@ import { describe, expect, test } from "bun:test";
 import { RUN_STATUS_TONE } from "@corbits/react-ui";
 
 import { statusTone } from "./insights-page";
-import { AGENT_ROSTER_STATUS_TONE } from "./agents-page";
 
 describe("run-status tone parity with react-ui's RUN_STATUS_TONE", () => {
   test("Insights' statusTone agrees with canonical for every shared status", () => {
@@ -27,12 +26,5 @@ describe("run-status tone parity with react-ui's RUN_STATUS_TONE", () => {
     // RunStatus does — the exact pair the reviewer caught disagreeing.
     expect(statusTone("running")).toBe(RUN_STATUS_TONE.running);
     expect(statusTone("stopped")).toBe(RUN_STATUS_TONE.stopped);
-  });
-
-  test("Agents' roster status tone (a genuinely different vocabulary) still agrees where it overlaps", () => {
-    // AgentRosterStatus is its own enum, not RunStatus — this is the one
-    // local map the ticket calls defensible. It only shares one name
-    // ("running") with RunStatus, and it must keep agreeing on that one.
-    expect(AGENT_ROSTER_STATUS_TONE.running).toBe(RUN_STATUS_TONE.running);
   });
 });

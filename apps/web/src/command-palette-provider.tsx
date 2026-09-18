@@ -15,9 +15,10 @@ import {
   type RecentEntry,
 } from "@/command-palette";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { listAgentDefinitions } from "./agents-api";
+import { listChatAgents } from "@/chat/threads-api";
+import { chatPath } from "./chat-path";
 import { ACTION_COMMANDS, runActionCommand, type ActionCommandId } from "./command-palette-actions";
 import {
   openCommandPalette,
@@ -32,7 +33,7 @@ import { NAV_ROUTES } from "./routes";
 import { ArtifactListPageSchema, useAPIQuery } from "./api";
 import { isBenchMembership, useBench } from "./bench-context";
 import { useCloseCanvas } from "./shell/canvas-availability";
-import { AGENTS_PATH_PREFIX, SKILLS_PATH_PREFIX } from "./path-ids";
+import { SKILLS_PATH_PREFIX } from "./path-ids";
 import { listScheduledWorkflows, runScheduledWorkflowNow, useTenantQuery } from "./routines-api";
 import { listSkills } from "./skills-api";
 import { tenantKeys } from "./query-client";
@@ -144,23 +145,13 @@ export function CommandPaletteProvider({
     }));
   }, [selectedTenantId, queryClient]);
 
-  // `useEntitySearch` carries an id and a title per result and nothing else,
-  // but `/agents/<slug>` needs the definition's own minted handle — which is
-  // exactly what the fetch just read. Recorded here as the list arrives so a
-  // selection resolves the real slug instead of guessing one back out of a
-  // display title.
-  const agentHandleById = useRef(new Map<string, string>());
-
+  // A palette hit opens a chat with the agent, so the search source is the
+  // same chat-partner listing the roster and the Agents page read — its
+  // `id` is exactly what `chatPath` expects.
   const listAgentsForSearch = useCallback(async () => {
     if (selectedTenantId === null) return [];
-    const definitions = await listAgentDefinitions(selectedTenantId);
-    for (const definition of definitions) {
-      agentHandleById.current.set(definition.id, definition.name);
-    }
-    return definitions.map((definition) => ({
-      id: definition.id,
-      name: definition.name,
-    }));
+    const agents = await listChatAgents(selectedTenantId);
+    return agents.map((agent) => ({ id: agent.id, name: agent.name }));
   }, [selectedTenantId]);
 
   const entitySearchSources = useMemo(
@@ -453,12 +444,7 @@ export function CommandPaletteProvider({
       } else if (id.startsWith("entity:agents:")) {
         const agentId = id.slice("entity:agents:".length);
         const title = agentItems.find((item) => item.id === id)?.title ?? agentId;
-        navigate(
-          detailPath(AGENTS_PATH_PREFIX, {
-            slug: agentHandleById.current.get(agentId) ?? "",
-            id: agentId,
-          }),
-        );
+        navigate(chatPath(agentId));
         pushRecent({ kind: "agents", id, title, subtitle: "Agent" });
       } else if (id.startsWith("entity:routines:")) {
         const routineId = id.slice("entity:routines:".length);

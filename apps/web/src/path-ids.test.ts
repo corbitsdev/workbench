@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 
 import {
   AGENTS_PATH_PREFIX,
-  agentIdFromPath,
   detailSlugFromPath,
   settingsEntityIdFromPath,
   settingsSectionIdFromPath,
@@ -34,12 +33,7 @@ describe("detailSlugFromPath", () => {
 });
 
 describe("id extraction", () => {
-  test("decodes an escaped id", () => {
-    expect(agentIdFromPath("/agents/wfd%201")).toBe("wfd 1");
-  });
-
   test("a malformed escape names no entity instead of throwing", () => {
-    expect(agentIdFromPath("/agents/%")).toBeNull();
     expect(settingsSectionIdFromPath("/settings/%E0%A4%A")).toBeNull();
     expect(settingsEntityIdFromPath("/settings/agents/%", "agents")).toBeNull();
   });
