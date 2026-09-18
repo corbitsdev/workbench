@@ -20,7 +20,6 @@
     "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
     "@corbits/cron": "workspace:*",
     "@corbits/error-sink": "workspace:*",
-    "@corbits/hub-api-client": "workspace:*",
     "@corbits/inference-catalog": "workspace:*",
     "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#e85b81e4a2e0cc318dd33a4f0f92337b6fac7f38",
     "@corbits/memory": "github:corbitsdev/corbits-memory#e74da20f148a302dff5400915fe504ee2395e913",

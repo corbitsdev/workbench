@@ -276,14 +276,7 @@ async function requireDatabaseSetUp(config: DevConfig): Promise<void> {
     if (report.createdDatabase) {
       console.log(`[dev] created database ${JSON.stringify(report.database)}`);
     }
-    if (report.action === "migrated") {
-      console.log(
-        `[dev] applied ${report.migrations} platform migrations to database ` +
-          `${JSON.stringify(report.database)}`,
-      );
-    } else {
-      console.log(`[dev] database ${JSON.stringify(report.database)} schema is current`);
-    }
+    console.log(`[dev] database ${JSON.stringify(report.database)} schema is current`);
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
   }

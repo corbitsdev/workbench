@@ -64,7 +64,7 @@ import {
   mountMailbox,
 } from "@corbits/mailbox";
 import { createMemory, loadMemoryConfig } from "@corbits/memory";
-import { applyCronMigrations, createCronTicker, mountCron } from "@corbits/cron";
+import { createCronTicker, mountCron } from "@corbits/cron";
 import {
   createHubMailboxAuthorizeSender,
   createHubPersistMailWithSessionEnsure,
@@ -86,7 +86,6 @@ import {
   InlineContentStore,
   mountArtifacts,
   mountWorkflowArtifacts,
-  runArtifactMigrations,
   type WorkflowArtifactEnv,
 } from "@corbits/artifacts";
 import {
@@ -96,6 +95,7 @@ import {
 import type { DB } from "@intx/db";
 import { sidecar, workflowRun } from "@intx/db/schema";
 import path from "node:path";
+import { migrateHub } from "./migrate";
 
 // The same condition registry `mountHubRoutes` builds by default when no
 // registry is supplied -- kept as one local constant so every Corbits
@@ -184,14 +184,20 @@ export async function createHubServer({
   // dedicated, droppable schema. Production deployments leave it
   // unset and run against postgres' default search_path.
   const pgSchema = process.env["PG_SCHEMA"];
-  const { db } = createDB({
+  const dbConfig = {
     host: process.env["DB_HOST"] ?? "localhost",
     port: Number(process.env["DB_PORT"] ?? 5432),
     user: process.env["DB_USER"] ?? "postgres",
     password: process.env["DB_PASSWORD"] ?? "postgres",
     database: process.env["DB_NAME"] ?? "interchange",
     ...(pgSchema !== undefined && { schema: pgSchema }),
-  });
+  };
+  const { db } = createDB(dbConfig);
+
+  // Platform schema plus every mounted Corbits package's own migration,
+  // applied once at boot before anything below reads or writes the
+  // database.
+  await migrateHub(dbConfig, db);
 
   const auth = createAuth(db);
 
@@ -493,8 +499,6 @@ export async function createHubServer({
     }),
   };
 
-  await runArtifactMigrations(db);
-  await applyCronMigrations(corbitsDatabaseUrl);
   const artifactContentStore = InlineContentStore;
 
   {
