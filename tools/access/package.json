@@ -28,8 +28,6 @@
     "arktype": "catalog:"
   },
   "devDependencies": {
-    "@corbits/agent-directory": "workspace:*",
-    "@corbits/agent-directory-tools": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   },
