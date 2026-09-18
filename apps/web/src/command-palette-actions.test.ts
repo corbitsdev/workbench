@@ -107,14 +107,14 @@ describe("runActionCommand", () => {
     expect(consumePendingNewSkill()).toBe(true);
   });
 
-  test("upload-artifact navigates to /files when off-route", async () => {
+  test("upload-artifact navigates to /artifacts when off-route", async () => {
     const { ctx, navigated } = context({ path: "/agents" });
     await runActionCommand("upload-artifact", ctx);
-    expect(navigated).toEqual(["/files"]);
+    expect(navigated).toEqual(["/artifacts"]);
   });
 
-  test("upload-artifact does not navigate when already on /files", async () => {
-    const { ctx, navigated } = context({ path: "/files" });
+  test("upload-artifact does not navigate when already on /artifacts", async () => {
+    const { ctx, navigated } = context({ path: "/artifacts" });
     await runActionCommand("upload-artifact", ctx);
     expect(navigated).toEqual([]);
   });

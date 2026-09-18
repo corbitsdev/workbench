@@ -10,7 +10,7 @@
 import type { ArtifactSummary } from "@/library";
 import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";
 
-import { FILES_PATH_PREFIX } from "../path-ids";
+import { ARTIFACTS_PATH_PREFIX } from "../path-ids";
 
 /** List row from the hub artifacts surface (content omitted). */
 export type ArtifactListRow = {
@@ -151,9 +151,9 @@ export function artifactUploadToast(names: readonly string[]): string {
  */
 export const LIBRARY_BULK_OPERATION_IDS = ["copy-link"] as const;
 
-/** `/files/a/:id` — the one canonical deep link a file has. */
+/** `/artifacts/a/:id` — the one canonical deep link a file has. */
 export function libraryArtifactDeepLink(id: string): string {
-  return `${FILES_PATH_PREFIX}/a/${encodeURIComponent(id)}`;
+  return `${ARTIFACTS_PATH_PREFIX}/a/${encodeURIComponent(id)}`;
 }
 
 /** Copies one or more files' canonical links, newline-joined, to the

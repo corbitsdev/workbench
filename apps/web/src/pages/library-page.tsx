@@ -54,7 +54,7 @@ import { readLastWorkbenchId } from "../last-workbench";
 import { consumePendingLibraryUpload, LIBRARY_UPLOAD_EVENT } from "../library-upload";
 import { resolveLibraryWorkbenchScope } from "../library-workbench-scope";
 import { Link } from "../navigation";
-import { FILES_PATH_PREFIX } from "../path-ids";
+import { ARTIFACTS_PATH_PREFIX } from "../path-ids";
 import { tenantKeys } from "../query-client";
 import { useBenchActivity } from "../shell/bench-activity";
 import {
@@ -101,15 +101,15 @@ function ArtifactRows({
   );
 
   return (
-    <Table aria-label="Files">
+    <Table aria-label="Artifacts">
       <TableHeader>
         <TableRow>
           <TableHead className="w-10">
             <SelectionCheckbox
               checked={headerChecked}
               onToggle={() => (allSelected ? selection.clear() : selection.selectAll())}
-              rowLabel="all files"
-              ariaLabel="Select all files"
+              rowLabel="all artifacts"
+              ariaLabel="Select all artifacts"
               className="opacity-100"
             />
           </TableHead>
@@ -281,7 +281,7 @@ function PreviewPane({
 }
 
 /**
- * The Files stage: a row list of everything this workbench owns, with an
+ * The Artifacts stage: a row list of everything this workbench owns, with an
  * in-stage preview when a row is selected. Real data only.
  *
  * Every control the page owns — the workbench lens, the name filter, sort,
@@ -327,7 +327,7 @@ export function LibraryPage({
    * standalone render with no bench tenant, e.g. these page tests). */
   readonly tenantId?: string | null;
   /** The workbench the person just came from, if any — drives the
-   * "This workbench" pill. `null` when Files was reached with no workbench
+   * "This workbench" pill. `null` when Artifacts was reached with no workbench
    * in view, in which case the lens has nothing to offer and stays hidden. */
   readonly workbenchScope?: { readonly title: string } | null;
   /** Which lens is active: this one workbench's files, or every workbench
@@ -396,20 +396,23 @@ export function LibraryPage({
       <StageTopBar
         crumbs={
           selectedSummary === null
-            ? [{ label: "Files" }]
-            : [{ label: "Files", href: FILES_PATH_PREFIX }, { label: selectedSummary.title }]
+            ? [{ label: "Artifacts" }]
+            : [
+                { label: "Artifacts", href: ARTIFACTS_PATH_PREFIX },
+                { label: selectedSummary.title },
+              ]
         }
         subtitle={
           selectedSummary === null
-            ? // Empty Files already has a poster invitation — a "0 files"
-              // count beside it is a second empty announcement.
+            ? // Empty Artifacts already has a poster invitation — a "0
+              // artifacts" count beside it is a second empty announcement.
               artifacts.length === 0
               ? undefined
-              : `${artifacts.length} files`
+              : `${artifacts.length} artifacts`
             : artifactKindLabel(selectedSummary.kind)
         }
         filter={{
-          label: "Filter files",
+          label: "Filter artifacts",
           placeholder: "Filter by name",
           value: activeQuery,
           onChange: setActiveQuery,
@@ -423,7 +426,7 @@ export function LibraryPage({
               // vs. "All workbenches"); this label can't be mistaken for
               // that.
               <Button variant="ghost" size="sm" onClick={() => select(null)}>
-                Back to files
+                Back to artifacts
               </Button>
             ) : null}
             {workbenchScope !== null && onScopeChange !== undefined ? (
@@ -435,7 +438,7 @@ export function LibraryPage({
               <>
                 <div
                   role="group"
-                  aria-label="Files scope"
+                  aria-label="Artifacts scope"
                   className="hidden items-center gap-0.5 rounded-md border border-border p-0.5 lg:flex"
                 >
                   <Button
@@ -460,7 +463,7 @@ export function LibraryPage({
                 <div className="lg:hidden">
                   <Menu>
                     <MenuTrigger asChild>
-                      <Button type="button" size="sm" variant="ghost" aria-label="Files scope">
+                      <Button type="button" size="sm" variant="ghost" aria-label="Artifacts scope">
                         {scope === "all" ? "All workbenches" : workbenchScope.title}
                       </Button>
                     </MenuTrigger>
@@ -531,7 +534,7 @@ export function LibraryPage({
             {artifacts.length === 0 ? (
               <RichEmptyState
                 icon={<Stack />}
-                title="No files yet"
+                title="No artifacts yet"
                 description="Upload a file, or let your agents drop their work here — it lands the moment it exists."
               />
             ) : visible.length === 0 ? (
@@ -610,7 +613,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  // `/files/a/:id` — a chat artifact chip's "Open in Files"
+  // `/artifacts/a/:id` — a chat artifact chip's "Open in Artifacts"
   // deep link, distinct from the kind-nav segments below. It only ever
   // sets the initial selection; the user's own clicks stay local state,
   // the same way kind-nav selection already worked before this route
@@ -622,7 +625,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   }, [deepLinkedArtifactId]);
   const kindSegment = deepLinkedArtifactId === null ? libraryKindSegmentFromPath(path) : "";
 
-  // Files' workbench-first lens: the workbench the person just
+  // Artifacts' workbench-first lens: the workbench the person just
   // came from, if `last-workbench.ts` recorded one for this bench, resolved
   // to its own tenant via the same sidebar-backed activity listing every
   // other bench-scoped surface already fetches.
@@ -663,12 +666,12 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   if (selectedTenantId === null) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar crumbs={[{ label: "Files" }]} />
+        <StageTopBar crumbs={[{ label: "Artifacts" }]} />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<Stack />}
             title="Select a workbench"
-            description="Open a workbench to browse the files it owns."
+            description="Open a workbench to browse the artifacts it owns."
           />
         </PageShell>
       </div>
@@ -678,12 +681,12 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   if (page.kind === "error" && isArtifactsUnavailableStatus(page.status)) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar crumbs={[{ label: "Files" }]} />
+        <StageTopBar crumbs={[{ label: "Artifacts" }]} />
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<Stack />}
-            title="Files not configured"
-            description="Files isn't set up yet. Ask your workbench admin to finish setup."
+            title="Artifacts not configured"
+            description="Artifacts isn't set up yet. Ask your workbench admin to finish setup."
           />
         </PageShell>
       </div>
@@ -693,7 +696,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   if (page.kind !== "ready") {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar crumbs={[{ label: "Files" }]} />
+        <StageTopBar crumbs={[{ label: "Artifacts" }]} />
         <PageShell width="full" className="page-fill">
           {page.kind === "loading" ? (
             <ListSkeleton />
@@ -702,8 +705,8 @@ export function LibraryRoute({ path }: { readonly path: string }) {
           ) : (
             <RichEmptyState
               icon={<Stack />}
-              title="Couldn't load your files"
-              description={describeApiError({ status: page.status }, "loading your files")}
+              title="Couldn't load your artifacts"
+              description={describeApiError({ status: page.status }, "loading your artifacts")}
             />
           )}
         </PageShell>
@@ -712,7 +715,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   }
 
   return (
-    <QueryView query={page} label="your files" skeleton="rows">
+    <QueryView query={page} label="your artifacts" skeleton="rows">
       {(rows) => {
         const artifacts = mapArtifactListToSummaries(rows.artifacts).filter((row) =>
           artifactMatchesLibraryKindSegment(row, kindSegment),

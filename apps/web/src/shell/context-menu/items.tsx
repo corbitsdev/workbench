@@ -139,7 +139,7 @@ function routineMenu(
   target: Extract<ShellContextMenuTarget, { type: "routine" }>,
   actions: ShellContextMenuActions,
 ): ContextMenu {
-  const path = `/routines/${encodeURIComponent(target.id)}`;
+  const path = `/workflows/${encodeURIComponent(target.id)}`;
   const entries: ContextMenuEntry[] = [
     contextMenuItem({
       id: "open",

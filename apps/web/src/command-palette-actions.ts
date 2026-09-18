@@ -69,7 +69,7 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "upload-artifact",
     title: "Upload artifact",
-    subtitle: "Files · open dialog",
+    subtitle: "Artifacts · open dialog",
   },
   { id: "toggle-theme", title: "Toggle theme", subtitle: "Light / dark" },
   {
@@ -90,7 +90,7 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "go-insights",
     title: "Go to insights",
-    subtitle: "Not in the nav · still routable",
+    subtitle: "Settings · still routable",
   },
 ];
 
@@ -128,8 +128,8 @@ export async function runActionCommand(
     }
     case "upload-artifact": {
       requestLibraryUpload({
-        alreadyOnLibrary: ctx.path === "/files" || ctx.path.startsWith("/files/"),
-        navigateToLibrary: () => ctx.navigate("/files"),
+        alreadyOnLibrary: ctx.path === "/artifacts" || ctx.path.startsWith("/artifacts/"),
+        navigateToLibrary: () => ctx.navigate("/artifacts"),
       });
       return;
     }

@@ -17,14 +17,19 @@ import {
   useTheme,
 } from "@corbits/react-ui";
 import { Select } from "@corbits/react-ui/ui/select";
-import { Copy, SignOut } from "@/lib/icons";
+import { ChatCircleDots, Copy, SignOut } from "@/lib/icons";
 import { useCallback, useEffect, useState } from "react";
 
 import type { APIQuery } from "@/lib/api-query";
 import { QueryView, UnauthenticatedError, describeQueryError } from "@/lib/api-query";
 import { resolveAvatarFill } from "@/chat";
+import webPackage from "../../package.json";
 import { getAccount, type Account } from "./api";
 import { SETTINGS_STRINGS } from "./strings";
+
+/** The repo's own issue tracker — read off this package's manifest (set
+ * from `git remote`) rather than a hardcoded org/repo guess. */
+const FEEDBACK_URL = `${webPackage.repository.url}/issues`;
 
 export function AccountSection({ onSignOut }: { readonly onSignOut?: () => void }) {
   const [query, setQuery] = useState<APIQuery<Account>>({ kind: "loading" });
@@ -150,11 +155,18 @@ export function AccountSectionView({
             </span>
           </div>
         </div>
-        {onSignOut !== undefined ? (
-          <Button variant="outline" className="settings-account-signout" onClick={onSignOut}>
-            <SignOut /> {SETTINGS_STRINGS.accountSignOutAction}
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <a href={FEEDBACK_URL} target="_blank" rel="noreferrer">
+              <ChatCircleDots /> Send Feedback
+            </a>
           </Button>
-        ) : null}
+          {onSignOut !== undefined ? (
+            <Button variant="outline" className="settings-account-signout" onClick={onSignOut}>
+              <SignOut /> {SETTINGS_STRINGS.accountSignOutAction}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="settings-account-details">

@@ -1,4 +1,4 @@
-// Routines: an ops table of authored workflow definitions that carry a
+// Workflows: an ops table of authored workflow definitions that carry a
 // ScheduleTrigger, including paused (`stopped`) ones. Pause/resume and
 // run-now are the only writes; schedules are authored on the definition.
 import {
@@ -105,19 +105,19 @@ export function RoutinesRoute() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        crumbs={[{ label: "Routines" }]}
+        crumbs={[{ label: "Workflows" }]}
         subtitle="Scheduled workflows. Pause, resume, or run now."
       />
       <div className="stage-content flex min-h-0 flex-1 flex-col overflow-y-auto">
         {routinesQuery.kind === "loading" ? (
           <div className="flex flex-1 items-center justify-center p-6">
-            <EmptyState icon={<Clock />} title="Loading routines…" />
+            <EmptyState icon={<Clock />} title="Loading workflows…" />
           </div>
         ) : routinesQuery.kind === "error" ? (
           <div className="flex flex-1 items-center justify-center p-6">
             <RichEmptyState
               icon={<Clock />}
-              title="Couldn't load routines"
+              title="Couldn't load workflows"
               description={routinesQuery.message}
             />
           </div>

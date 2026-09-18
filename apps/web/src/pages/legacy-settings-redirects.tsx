@@ -3,8 +3,8 @@
 // `/settings/skills[/:id]`); / moved both back out to their
 // own rail destinations, so any deep link into the old Settings home now
 // bounces to the new one, preserving a deep-linked id. Library was renamed
-// Files at the same time it was moved off `/library` — that old
-// prefix bounces to `/files` the same way.
+// Files, then Artifacts, moving off `/library` and `/files` in turn — both
+// old prefixes bounce to `/artifacts` the same way.
 
 import { useEffect } from "react";
 
@@ -74,5 +74,7 @@ export function LegacyLibraryRedirect({
   readonly path: string;
   readonly navigate: (to: string) => void;
 }) {
-  return <LegacyRedirect path={path} navigate={navigate} oldPrefix="/library" newPrefix="/files" />;
+  return (
+    <LegacyRedirect path={path} navigate={navigate} oldPrefix="/library" newPrefix="/artifacts" />
+  );
 }

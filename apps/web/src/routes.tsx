@@ -1,19 +1,21 @@
 // The route table: one entry per screen, consumed by the command palette
 // (label) and the route switch (render), so navigation and pages cannot
 // drift apart. The sidebar itself lists workbenches (conversations), not
-// routes — the first-run footer reaches Routines, Files, Skills, and
-// Agents; Insights joins that rail only given honest usage.
-// Insights and Settings stay reachable by deep link and the
-// palette even when they are off the rail. Conversation deep links
+// routes — the primary footer reaches Artifacts, Skills, Tools, and
+// Workflows. Insights moved under Settings, reachable there and by deep
+// link and the palette. Conversation deep links
 // (`/w/:workbenchId`) stay routable; `/` is the Myra land hop (ensure +
 // open her conversation) for a bench with a workbench already, or the
-// guided first-workbench describe screen for a bench with none // — never a Home dashboard.
-// Approvals has no page — the Activity band owns them. Agents // and Skills are their own rail destinations again — they spent
+// guided first-workbench describe screen for a bench with none — never a
+// Home dashboard.
+// Approvals has no page — the Activity band owns them. Agents
+// and Skills are their own rail destinations again — they spent
 // a stretch as Settings sections and `/settings/agents[/:id]` /
 // `/settings/skills[/:id]` stay routable only as redirects back here, so
 // old links and bookmarks still land somewhere real. Library was renamed
-// Files at the same time it moved off `/library`, which
-// redirects the same way. Inbox is gone too (: tasks + approvals
+// Files, then Workbench renamed Routines to Workflows and Files to
+// Artifacts — `/routines` and `/files` (and the older `/library`) all
+// redirect to their current homes. Inbox is gone too (tasks + approvals
 // don't flow into workbenches); `/inbox` stays routable only as a
 // redirect to `/`.
 
@@ -35,15 +37,14 @@ import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
 import {
   AGENTS_PATH_PREFIX,
   SKILLS_PATH_PREFIX,
-  ROUTINES_PATH_PREFIX,
   WORKFLOWS_PATH_PREFIX,
   detailSlugFromPath,
   routineSegmentFromPath,
-  workflowDefinitionAssetIdFromPath,
 } from "./path-ids";
 import { WORKBENCH_PATH_PREFIX, isWorkbenchPath } from "./workbench-path";
 import { CHATS_PATH_PREFIX, isChatPath } from "./chat-path";
 import {
+  LegacyRedirect,
   LegacyLibraryRedirect,
   LegacySettingsAgentsRedirect,
   LegacySettingsSkillsRedirect,
@@ -68,10 +69,10 @@ const ChatPage = lazy(async () => ({
 const ChatThreadRoute = lazy(async () => ({
   default: (await import("./pages/chat-thread-page")).ChatThreadRoute,
 }));
-const RoutinesRoute = lazy(async () => ({
+const WorkflowsRoute = lazy(async () => ({
   default: (await import("./pages/routines-page")).RoutinesRoute,
 }));
-const LibraryRoute = lazy(async () => ({
+const ArtifactsRoute = lazy(async () => ({
   default: (await import("./pages/library-page")).LibraryRoute,
 }));
 const AgentsRoute = lazy(async () => ({
@@ -97,9 +98,6 @@ const SkillDetailRoute = lazy(async () => ({
 }));
 const RoutineDetailRoute = lazy(async () => ({
   default: (await import("./pages/routine-detail-page")).RoutineDetailRoute,
-}));
-const WorkflowDetailRoute = lazy(async () => ({
-  default: (await import("./pages/workflow-detail-page")).WorkflowDetailRoute,
 }));
 
 /** The signed-out screen — a real route, not a conditional swap:
@@ -143,27 +141,19 @@ export const AGENT_DETAIL_PATH = `${AGENTS_PATH_PREFIX}${SLUG_SEGMENT}`;
 export const SKILL_DETAIL_PATH = `${SKILLS_PATH_PREFIX}${SLUG_SEGMENT}`;
 
 /**
- * Routines are addressed by id, not by slug. DESIGN.md allows a slug in a
+ * Workflows are addressed by id, not by slug. DESIGN.md allows a slug in a
  * route only where it is "immutable and tenant-unique, enforced as a hard
- * database constraint — never a soft convention"; a routine has no slug
+ * database constraint — never a soft convention"; a workflow has no slug
  * column, so a name-derived one is exactly the soft convention that rule
  * forbids, and the documented fallback is the opaque id. So this route
- * claims any single segment under `/routines`: an id renders the page,
+ * claims any single segment under `/workflows`: an id renders the page,
  * and a name still resolves — `routine-detail-page.tsx` redirects it to
  * the id path — which keeps human-typed and shared-by-name links working
  * without making the fragile address canonical. A real slug column is
  * ticketed separately.
  */
 const ROUTINE_SEGMENT = "/:routine";
-export const ROUTINE_DETAIL_PATH = `${ROUTINES_PATH_PREFIX}${ROUTINE_SEGMENT}`;
-
-/**
- * A workflow definition has no slug either — same reasoning as a routine
- * above — so `/workflows/:id` claims any single segment under
- * `/workflows`, addressed by the definition's own opaque asset id.
- */
-const WORKFLOW_SEGMENT = "/:workflow";
-export const WORKFLOW_DETAIL_PATH = `${WORKFLOWS_PATH_PREFIX}${WORKFLOW_SEGMENT}`;
+export const ROUTINE_DETAIL_PATH = `${WORKFLOWS_PATH_PREFIX}${ROUTINE_SEGMENT}`;
 
 function slugForDetailRoute(routePath: string, path: string): Slug | null {
   return detailSlugFromPath(path, routePath.slice(0, -SLUG_SEGMENT.length));
@@ -221,16 +211,14 @@ export function matchesRoute(routePath: string, path: string): boolean {
     const segment = routineSegmentFromPath(path);
     return segment !== null && !segment.includes("/");
   }
-  if (routePath === WORKFLOW_DETAIL_PATH) {
-    const assetId = workflowDefinitionAssetIdFromPath(path);
-    return assetId !== null && !assetId.includes("/");
-  }
   if (routePath.endsWith(SLUG_SEGMENT)) {
     return slugForDetailRoute(routePath, path) !== null;
   }
   if (
+    routePath === "/workflows" ||
     routePath === "/routines" ||
     routePath === "/library" ||
+    routePath === "/artifacts" ||
     routePath === "/files" ||
     routePath === "/insights" ||
     routePath === "/agents" ||
@@ -304,37 +292,52 @@ export const APP_ROUTES: readonly AppRoute[] = [
     // everything beneath it, so the more specific slug route has to be
     // found first.
     path: ROUTINE_DETAIL_PATH,
-    label: "Routine",
+    label: "Workflow",
     icon: <FlowArrow />,
     render: (path: string) => <RoutineDetailRoute segment={routineDetailSegment(path)} />,
   },
   {
-    path: "/routines",
-    label: "Routines",
+    path: "/workflows",
+    label: "Workflows",
     icon: <FlowArrow />,
-    render: () => <RoutinesRoute />,
+    render: () => <WorkflowsRoute />,
   },
   {
-    // A workflow definition's own page — no roster of its own
-    // yet, only reached by a deep link (e.g. from a routine's target).
-    path: WORKFLOW_DETAIL_PATH,
-    label: "Workflow",
+    // Old `/routines` links and bookmarks (its rename) land here.
+    path: "/routines",
+    label: "Workflows",
     icon: <FlowArrow />,
-    render: (path: string) => <WorkflowDetailRoute path={path} />,
+    render: (path: string, navigate: (to: string) => void) => (
+      <LegacyRedirect
+        path={path}
+        navigate={navigate}
+        oldPrefix="/routines"
+        newPrefix="/workflows"
+      />
+    ),
   },
   {
     // The renamed, remounted Library page — "Library" stays out
     // of user-facing copy, but the underlying artifact machinery
     // (`library-page.tsx`, `libraryArtifactIdFromPath`, …) keeps its name.
-    path: "/files",
-    label: "Files",
+    path: "/artifacts",
+    label: "Artifacts",
     icon: <FolderOpen />,
-    render: (path: string) => <LibraryRoute path={path} />,
+    render: (path: string) => <ArtifactsRoute path={path} />,
+  },
+  {
+    // Old `/files` links and bookmarks (its rename) land here.
+    path: "/files",
+    label: "Artifacts",
+    icon: <FolderOpen />,
+    render: (path: string, navigate: (to: string) => void) => (
+      <LegacyRedirect path={path} navigate={navigate} oldPrefix="/files" newPrefix="/artifacts" />
+    ),
   },
   {
     // Old `/library` links and bookmarks (its rename) land here.
     path: "/library",
-    label: "Files",
+    label: "Artifacts",
     icon: <FolderOpen />,
     render: (path: string, navigate: (to: string) => void) => (
       <LegacyLibraryRedirect path={path} navigate={navigate} />
@@ -420,17 +423,17 @@ function routesInOrder(paths: readonly string[]): readonly AppRoute[] {
 
 /**
  * Everything the command palette treats as a product destination (its
- * "Pages" group). The first-run sidebar footer reaches Routines / Files /
- * Skills / Agents (and Insights only given honest
- * usage); Insights and Settings stay palette- and
- * deep-link-reachable even when they are off the rail.
+ * "Pages" group). The primary sidebar footer reaches Artifacts / Skills /
+ * Tools / Workflows; Insights lives under Settings now. Agents, Insights
+ * and Settings stay palette- and deep-link-reachable even though they are
+ * off the primary rail.
  */
 export const NAV_ROUTES: readonly AppRoute[] = routesInOrder([
-  "/routines",
-  "/files",
+  "/artifacts",
   "/skills",
-  "/agents",
   "/tools",
+  "/workflows",
+  "/agents",
   "/insights",
   SETTINGS_PATH,
 ]);

@@ -355,8 +355,8 @@ export function CommandPaletteProvider({
   );
 
   // Order matches the mock's buildCmdkEntries: Commands, Agents &
-  // Channels, Pages, then the unscoped catalogs (Runs, Routines,
-  // Skills, Library), with People & agents last among the palette's
+  // Channels, Pages, then the unscoped catalogs (Runs, Workflows,
+  // Skills, Artifacts), with People & agents last among the palette's
   // groups.
   const sources = useMemo<readonly PaletteSource[]>(
     () => [
@@ -373,9 +373,9 @@ export function CommandPaletteProvider({
         items: workbenchItems,
       },
       { id: "pages", heading: "Pages", kind: "pages", items: pageItems },
-      { id: "routines", heading: "Routines", items: routineItems },
+      { id: "routines", heading: "Workflows", items: routineItems },
       { id: "skills", heading: "Skills", items: skillItems },
-      { id: "library", heading: "Files", items: libraryItems },
+      { id: "library", heading: "Artifacts", items: libraryItems },
       {
         id: "people",
         heading: "People & agents",
@@ -427,7 +427,7 @@ export function CommandPaletteProvider({
             }
           })();
         }
-        navigate(`/routines/${encodeURIComponent(routineId)}`);
+        navigate(`/workflows/${encodeURIComponent(routineId)}`);
       } else if (id.startsWith("action:")) {
         void runActionCommand(id.slice("action:".length) as ActionCommandId, {
           path,
@@ -459,8 +459,8 @@ export function CommandPaletteProvider({
       } else if (id.startsWith("entity:routines:")) {
         const routineId = id.slice("entity:routines:".length);
         const title = routineItems.find((item) => item.id === id)?.title ?? routineId;
-        navigate(`/routines/${encodeURIComponent(routineId)}`);
-        pushRecent({ kind: "routines", id, title, subtitle: "Routine" });
+        navigate(`/workflows/${encodeURIComponent(routineId)}`);
+        pushRecent({ kind: "routines", id, title, subtitle: "Workflow" });
       } else if (id.startsWith("entity:skills:")) {
         const skillId = id.slice("entity:skills:".length);
         const title = skillItems.find((item) => item.id === id)?.title ?? skillId;
@@ -469,9 +469,9 @@ export function CommandPaletteProvider({
         pushRecent({ kind: "skills", id, title, subtitle: "Skill" });
       } else if (id.startsWith("entity:library:")) {
         const artifactId = id.slice("entity:library:".length);
-        const title = libraryItems.find((item) => item.id === id)?.title ?? "Files";
+        const title = libraryItems.find((item) => item.id === id)?.title ?? "Artifacts";
         navigate(libraryArtifactPath(artifactId));
-        pushRecent({ kind: "library", id, title, subtitle: "Files" });
+        pushRecent({ kind: "library", id, title, subtitle: "Artifacts" });
       }
       setCommandPaletteOpen(false);
     },

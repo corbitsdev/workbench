@@ -33,8 +33,8 @@ import {
 } from "./canvas-availability";
 
 /** First pathname segment, ignoring query and hash. Nested detail under the
- * same surface (`/routines` vs `/routines/:id`) shares a prefix; a rail leave
- * (`/routines` → `/insights`) does not. */
+ * same surface (`/workflows` vs `/workflows/:id`) shares a prefix; a rail leave
+ * (`/workflows` → `/insights`) does not. */
 function inAppRoutePrefix(path: string): string {
   const pathname = path.split("?")[0]?.split("#")[0] ?? "";
   const trimmed = pathname.startsWith("/") ? pathname.slice(1) : pathname;
