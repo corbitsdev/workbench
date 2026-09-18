@@ -1,17 +1,16 @@
 // Builds and publishes Myra's deployable definition entirely over stock
 // routes, ending with a `WorkflowDeployInput` pinned to the pushed commit.
 import { ASSISTANT_SYSTEM_PROMPT } from "@corbits/myra/prompt";
-import { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "@corbits/myra/workflow-ids";
+import {
+  ASSISTANT_STEP_ID,
+  ASSISTANT_WORKFLOW_ID,
+  artifactToolsCredentialBinding,
+  artifactToolsCredentialUseRequirement,
+} from "@corbits/myra/workflow-ids";
 import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
 import { type } from "arktype";
 
-import {
-  artifactToolsCredentialBinding,
-  ensureAgentHubCredential,
-  grantArtifactToolsCredentialUse,
-  resolveAgentHubCredentialId,
-  resolveLiveDeploymentId,
-} from "./agent-hub-credential";
+import { ensureAgentHubCredential } from "./agent-hub-credential";
 
 import { MYRA_SOURCE_CONFIG } from "./myra-source";
 import type { WorkflowDeployInput } from "./needs-list";
@@ -87,11 +86,14 @@ export async function ensureMyraSourceAsset(
 export function buildMyraDefinitionJson(
   triggerAddress: string,
   declaredSources: readonly DeclaredSource[],
+  hubCredentialId: string,
 ): unknown {
   return {
     id: ASSISTANT_WORKFLOW_ID,
-    // Resolved at deploy into the `hub` handle the artifact tools use.
+    // Resolved at deploy into the `hub` handle the artifact tools use, and
+    // granted to the run on the deployer's authority at its first trigger.
     credentialBindings: [artifactToolsCredentialBinding(ASSISTANT_WORKFLOW_ID)],
+    grantRequirements: [artifactToolsCredentialUseRequirement(hubCredentialId)],
     // `to` only feeds the deploy-time mail.address/mail.send grants; Myra is
     // actually reached at her run address, minted at deploy time.
     triggers: [{ type: "mail", to: triggerAddress }],
@@ -169,6 +171,7 @@ export async function pushMyraSource(
   assetId: string,
   tenantDomain: string,
   declaredSources: readonly DeclaredSource[],
+  hubCredentialId: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   const triggerAddress = `assistant@${tenantDomain}`;
@@ -184,8 +187,11 @@ export async function pushMyraSource(
       triggerAddress,
       inferencePreferences: declaredSources.map((source) => ({ ...source })),
       systemPrompt: ASSISTANT_SYSTEM_PROMPT,
+      hubCredentialId,
     },
-    workflowJson: JSON.stringify(buildMyraDefinitionJson(triggerAddress, declaredSources)),
+    workflowJson: JSON.stringify(
+      buildMyraDefinitionJson(triggerAddress, declaredSources, hubCredentialId),
+    ),
   });
   const url = new URL(
     `/api/tenants/${encodeURIComponent(tenantId)}/assets/${MYRA_SOURCE_CONFIG.assetKind}/${MYRA_SOURCE_CONFIG.assetName}.git`,
@@ -241,9 +247,9 @@ export async function deployMyraSource(
   fetchImpl: typeof fetch = fetch,
 ): Promise<WorkflowDeployInput> {
   const assetId = await ensureMyraSourceAsset(args.tenantId, fetchImpl);
-  // Minted before the push: the definition's credential binding resolves
-  // this credential by name at deploy time, so it must already exist.
-  await ensureAgentHubCredential(
+  // Minted before the push: the definition binds this credential by name
+  // and requires its use by id, so it must exist before the source does.
+  const hubCredentialId = await ensureAgentHubCredential(
     { tenantId: args.tenantId, definitionId: ASSISTANT_WORKFLOW_ID, assetId },
     fetchImpl,
   );
@@ -252,6 +258,7 @@ export async function deployMyraSource(
     assetId,
     args.tenantDomain,
     args.declaredSources,
+    hubCredentialId,
     fetchImpl,
   );
   return buildMyraDeployInput({
@@ -260,37 +267,4 @@ export async function deployMyraSource(
     sourceOfferingIds: args.sourceOfferingIds,
     defaultSourceOfferingId: args.defaultSourceOfferingId,
   });
-}
-
-/**
- * Authorizes Myra's deployed run to use her hub credential. Separate from
- * `deployMyraSource` because the deployment does not exist until the caller
- * has sent the deploy input. It is safe to call again, and never re-mints:
- * rotating here would invalidate the token the deploy already delivered.
- */
-export async function authorizeMyraHubCredential(
-  args: { readonly tenantId: string },
-  fetchImpl: typeof fetch = fetch,
-): Promise<void> {
-  const assetId = await ensureMyraSourceAsset(args.tenantId, fetchImpl);
-  const deploymentId = await resolveLiveDeploymentId(
-    { tenantId: args.tenantId, assetId },
-    fetchImpl,
-  );
-  if (deploymentId === null) {
-    throw new MyraDeployError("Myra has no live deployment to authorize");
-  }
-  // Never re-mints: rotating here would invalidate the token the deploy
-  // already delivered to the running agent.
-  const credentialId = await resolveAgentHubCredentialId(
-    { tenantId: args.tenantId, definitionId: ASSISTANT_WORKFLOW_ID },
-    fetchImpl,
-  );
-  if (credentialId === null) {
-    throw new MyraDeployError("Myra has no hub credential to authorize");
-  }
-  await grantArtifactToolsCredentialUse(
-    { tenantId: args.tenantId, deploymentId, credentialId },
-    fetchImpl,
-  );
 }

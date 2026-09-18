@@ -16,6 +16,7 @@ describe("buildAgentDefinitionJson", () => {
       systemPrompt: "You research things.",
       triggerAddress: "research-buddy@example.test",
       declaredSources: [{ provider: "anthropic", model: "claude-test" }],
+      hubCredentialId: "crd_000000000000000000000000000000ab",
     };
     const projection = buildAgentDefinitionJson(args) as {
       id: string;
@@ -27,6 +28,7 @@ describe("buildAgentDefinitionJson", () => {
       triggerAddress: args.triggerAddress,
       inferencePreferences: args.declaredSources,
       systemPrompt: args.systemPrompt,
+      hubCredentialId: args.hubCredentialId,
     };
 
     expect(projection.id).toBe(buildInput.workflowId);

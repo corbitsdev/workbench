@@ -12,6 +12,7 @@ const INPUT = {
   triggerAddress: "ins_dep000000000000@example.test",
   inferencePreferences: [{ provider: "anthropic", model: "claude-test" }],
   systemPrompt: "You are Myra.",
+  hubCredentialId: "crd_000000000000000000000000000000ab",
 } as const;
 
 function assistantStep(definition: WorkflowDefinition): StepPrimitive {

@@ -7,9 +7,10 @@ import { reportError } from "@corbits/error-sink";
 
 import {
   artifactToolsCredentialBinding,
-  ensureAgentHubCredential,
-  grantArtifactToolsCredentialUse,
-} from "./agent-hub-credential";
+  artifactToolsCredentialUseRequirement,
+} from "@corbits/myra/workflow-ids";
+
+import { ensureAgentHubCredential } from "./agent-hub-credential";
 import { resolveExistingOffering } from "./onboarding/provider-connect-step";
 import { isValidSlug, slugify } from "@/lib/slug";
 
@@ -93,6 +94,7 @@ export function buildAgentDefinitionJson(args: {
   systemPrompt: string;
   triggerAddress: string;
   declaredSources: readonly { readonly provider: string; readonly model: string }[];
+  hubCredentialId: string;
 }): unknown {
   const stepId = "run";
   return {
@@ -100,8 +102,10 @@ export function buildAgentDefinitionJson(args: {
     // `to` only feeds the deploy-time mail.address/mail.send grants; it is
     // not how mail reaches this agent — that happens at its run address.
     triggers: [{ type: "mail", to: args.triggerAddress }],
-    // Resolved at deploy into the `hub` handle the artifact tools use.
+    // Resolved at deploy into the `hub` handle the artifact tools use, and
+    // granted to the run on the deployer's authority at its first trigger.
     credentialBindings: [artifactToolsCredentialBinding(args.slug)],
+    grantRequirements: [artifactToolsCredentialUseRequirement(args.hubCredentialId)],
     steps: {
       [stepId]: {
         kind: "step",
@@ -171,6 +175,7 @@ export async function pushAgentSource(
     readonly systemPrompt: string;
     readonly triggerAddress: string;
     readonly declaredSources: readonly { readonly provider: string; readonly model: string }[];
+    readonly hubCredentialId: string;
   },
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
@@ -184,6 +189,7 @@ export async function pushAgentSource(
       triggerAddress: args.triggerAddress,
       inferencePreferences: args.declaredSources.map((source) => ({ ...source })),
       systemPrompt: args.systemPrompt,
+      hubCredentialId: args.hubCredentialId,
     },
     workflowJson: JSON.stringify(
       buildAgentDefinitionJson({
@@ -191,6 +197,7 @@ export async function pushAgentSource(
         systemPrompt: args.systemPrompt,
         triggerAddress: args.triggerAddress,
         declaredSources: args.declaredSources,
+        hubCredentialId: args.hubCredentialId,
       }),
     ),
   });
@@ -345,9 +352,9 @@ export async function deployAgentSource(
   }
 
   const assetId = await ensureAgentSourceAsset(args.tenantId, assetName, name, fetchImpl);
-  // Minted before the push: the definition's credential binding resolves
-  // this credential by name at deploy time, so it must already exist.
-  const credentialId = await ensureAgentHubCredential(
+  // Minted before the push: the definition binds this credential by name
+  // and requires its use by id, so it must exist before the source does.
+  const hubCredentialId = await ensureAgentHubCredential(
     { tenantId: args.tenantId, definitionId: slug, assetId },
     fetchImpl,
   );
@@ -359,7 +366,13 @@ export async function deployAgentSource(
     assetId,
     assetName,
     packageName,
-    { slug, systemPrompt, triggerAddress, declaredSources: offering.declaredSources },
+    {
+      slug,
+      systemPrompt,
+      triggerAddress,
+      declaredSources: offering.declaredSources,
+      hubCredentialId,
+    },
     fetchImpl,
   );
 
@@ -383,10 +396,6 @@ export async function deployAgentSource(
   if (parsed instanceof type.errors) {
     throw new AgentDeployError(`this deployment came back an unexpected shape: ${parsed.summary}`);
   }
-  await grantArtifactToolsCredentialUse(
-    { tenantId: args.tenantId, deploymentId: parsed.id, credentialId },
-    fetchImpl,
-  );
   if (args.input.schedule !== undefined) {
     await scheduleAgentRun(
       args.tenantId,
