@@ -12,7 +12,7 @@
         "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
         "@corbits/connections": "workspace:*",
         "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#e85b81e4a2e0cc318dd33a4f0f92337b6fac7f38",
-        "@corbits/ollama-adapter": "workspace:*",
+        "@corbits/ollama-adapter": "github:corbitsdev/corbits-ollama-adapter#0387eb17bee5ac87530e9c48bb3bffd9a6998ded",
         "@corbits/webhook-triggers": "workspace:*",
         "@corbits/xai-provider": "github:corbitsdev/corbits-xai-provider#9f2d4bac40ea075df092fef807404a13c638cf14",
         "@intx/crypto": "workspace:*",
@@ -352,7 +352,7 @@
       "name": "@corbits/inference-catalog",
       "version": "0.1.0",
       "dependencies": {
-        "@corbits/ollama-adapter": "0.0.2",
+        "@corbits/ollama-adapter": "github:corbitsdev/corbits-ollama-adapter#0387eb17bee5ac87530e9c48bb3bffd9a6998ded",
         "@intx/inference-catalog": "0.3.0",
         "arktype": "catalog:",
       },
@@ -374,21 +374,6 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
-      },
-    },
-    "packages/ollama-adapter": {
-      "name": "@corbits/ollama-adapter",
-      "version": "0.0.2",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/inference": "0.3.0",
-        "@intx/types": "0.3.0",
       },
     },
     "packages/tool-registry-publish": {
@@ -1180,7 +1165,7 @@
 
     "@corbits/oauth-core": ["@corbits/oauth-core@github:corbitsdev/corbits-oauth-core#e1e69e6", { "dependencies": { "arktype": "2.2.3" } }, "corbitsdev-corbits-oauth-core-e1e69e6", "sha512-wUrD73iVyk/Dtb4yRn3hCh6N8syfsEvAkRz4XYqT0FIB3sYDSMYEWHcDMJx9nq64my/HBOeN1J6PHIOtpjhtPg=="],
 
-    "@corbits/ollama-adapter": ["@corbits/ollama-adapter@workspace:packages/ollama-adapter"],
+    "@corbits/ollama-adapter": ["@corbits/ollama-adapter@github:corbitsdev/corbits-ollama-adapter#0387eb1", { "dependencies": { "arktype": "2.2.3" }, "peerDependencies": { "@intx/inference": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-ollama-adapter-0387eb1", "sha512-O1dl5lSwWzNGJibQLlpYDFKJZWpstgHX519bl8oe1ALL/KHszT/tBDlpsD9jN3hmQD3jV2L1jNwvOwLOBLtpyw=="],
 
     "@corbits/openai-responses": ["@corbits/openai-responses@github:corbitsdev/corbits-openai-responses#7efe000", { "dependencies": { "arktype": "2.2.3" }, "peerDependencies": { "@intx/inference": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-openai-responses-7efe000", "sha512-pH6C8T1WDJjqM+YbnQpofd7HgP5krEj48JCCQK16KI98a6kaz+gffpgdOdQpU3aNVZnFlyADXod1Z4tqUG/3ww=="],
 
