@@ -1,7 +1,8 @@
-// Tools: a standalone rail destination listing the tool packages this
-// tenant has published into its own `corbits-tools` package-registry
-// asset. No stock route lists a tenant's MCP servers yet, so this page has
-// nothing to show for those until one exists.
+// Tools: a standalone rail destination listing the tool packages the
+// tenant's live agent deployments actually carry — read off each agent's
+// deployed `definition.json` (plus Myra's bundled mail/posix, which never
+// lands in that file). No stock route lists a tenant's MCP servers yet, so
+// this page has nothing to show for those until one exists.
 
 import {
   PageShell,
@@ -16,16 +17,16 @@ import {
 import { QueryView } from "@/lib/api-query";
 import { Plugs } from "@/lib/icons";
 
-import { useToolPackages } from "../tools/registry-read";
+import { useDeployedToolPackages } from "../tools/deployed-tool-packages";
 import { useBench } from "../bench-context";
 import { StageTopBar } from "../shell/stage-top-bar";
 
 /**
- * The tenant's published tool packages, read off the stock registry asset.
+ * The tool packages the tenant's live agent deployments carry.
  * `tenantId` is the tenant every read is scoped to.
  */
 export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
-  const query = useToolPackages(tenantId);
+  const query = useDeployedToolPackages(tenantId);
   const crumbs = [{ label: "Tools" }];
 
   function stage(body: React.ReactNode) {
@@ -54,7 +55,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
           <RichEmptyState
             icon={<Plugs />}
             title="No tools yet"
-            description="A tool package gives every agent in this workbench a new capability. Publish one to see it here."
+            description="A tool package gives an agent in this workbench a new capability. Deploy an agent that carries one to see it here."
           />
         ) : (
           <div className="px-4 pb-5 sm:px-7">
@@ -63,13 +64,17 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
                 <TableRow>
                   <TableHead>Tool package</TableHead>
                   <TableHead>Version</TableHead>
+                  <TableHead>Agents</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {toolPackages.map((tool) => (
-                  <TableRow key={tool.filename}>
+                  <TableRow key={tool.name}>
                     <TableCell className="font-medium">{tool.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{tool.version}</TableCell>
+                    <TableCell className="text-muted-foreground">{tool.version ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {tool.agentNames.join(", ")}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

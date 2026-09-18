@@ -4,15 +4,17 @@
 // profile never re-shows it for the wrong account, and finishing or
 // skipping both mark it seen for good — there is no "remind me later".
 
-import Joyride, { type CallBackProps, STATUS, type Step } from "react-joyride";
+import Joyride, { ACTIONS, type CallBackProps, STATUS, type Step } from "react-joyride";
 import { useState } from "react";
+import { reportError } from "@corbits/error-sink";
 
 const STORAGE_PREFIX = "workbench.first-run-tour-seen";
 
 function hasSeenTour(userId: string): boolean {
   try {
     return window.localStorage.getItem(`${STORAGE_PREFIX}:${userId}`) === "true";
-  } catch {
+  } catch (error) {
+    reportError(error, { operation: "first_run_tour_read" });
     return true; // Storage disabled: never nag with a tour that can't remember itself.
   }
 }
@@ -20,7 +22,8 @@ function hasSeenTour(userId: string): boolean {
 function markTourSeen(userId: string): void {
   try {
     window.localStorage.setItem(`${STORAGE_PREFIX}:${userId}`, "true");
-  } catch {
+  } catch (error) {
+    reportError(error, { operation: "first_run_tour_write" });
     // Storage disabled or full — the tour just replays next visit.
   }
 }
@@ -63,7 +66,15 @@ export function FirstRunTour({ userId }: { readonly userId: string }) {
   if (!run) return null;
 
   function handleCallback(data: CallBackProps) {
-    if (data.status === STATUS.FINISHED || data.status === STATUS.SKIPPED) {
+    // The tooltip's close (X) button fires action "close" without ever
+    // moving status to FINISHED or SKIPPED, so it has to be treated as a
+    // dismissal in its own right — otherwise closing the tour this way
+    // never persists and it replays on the next mount.
+    if (
+      data.status === STATUS.FINISHED ||
+      data.status === STATUS.SKIPPED ||
+      data.action === ACTIONS.CLOSE
+    ) {
       markTourSeen(userId);
     }
   }

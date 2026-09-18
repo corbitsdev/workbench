@@ -21,7 +21,8 @@
     ".": "./src/index.ts",
     "./prompt": "./src/system-prompt.ts",
     "./workflow-ids": "./src/workflow-ids.ts",
-    "./bundle": "./src/bundle.ts"
+    "./bundle": "./src/bundle.ts",
+    "./package.json": "./package.json"
   },
   "publishConfig": {
     "access": "public"
