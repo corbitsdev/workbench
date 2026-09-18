@@ -84,9 +84,13 @@ export function CommandPaletteProvider({
     [selectedTenantId],
   );
 
-  useEffect(() => {
+  // Recents are per bench: loaded during render when the store changes, so
+  // the palette never opens on the previous bench's entries.
+  const [recentsFor, setRecentsFor] = useState(recentsStore);
+  if (recentsFor !== recentsStore) {
+    setRecentsFor(recentsStore);
     setRecents(recentsStore?.load() ?? []);
-  }, [recentsStore]);
+  }
 
   const pushRecent = useCallback(
     (entry: RecentEntry) => {
@@ -252,14 +256,14 @@ export function CommandPaletteProvider({
   // content it was not opened from; a bench switch closes it too, dropping a
   // query whose results belonged to the bench being left. A tenant resolving
   // for the first time (null → a real bench, at boot) is not a switch.
-  const searchScope = useRef({ path, tenantId: selectedTenantId });
-  useEffect(() => {
-    const previous = searchScope.current;
-    const routeChanged = previous.path !== path;
-    const benchSwitched = previous.tenantId !== null && previous.tenantId !== selectedTenantId;
-    searchScope.current = { path, tenantId: selectedTenantId };
+  const [searchScope, setSearchScope] = useState({ path, tenantId: selectedTenantId });
+  if (searchScope.path !== path || searchScope.tenantId !== selectedTenantId) {
+    const benchSwitched =
+      searchScope.tenantId !== null && searchScope.tenantId !== selectedTenantId;
+    const routeChanged = searchScope.path !== path;
+    setSearchScope({ path, tenantId: selectedTenantId });
     if (routeChanged || benchSwitched) setCommandPaletteOpen(false);
-  }, [path, selectedTenantId]);
+  }
 
   const pageItems = useMemo<readonly PaletteResultItem[]>(
     () =>

@@ -338,9 +338,13 @@ export function useTurnActivity(
 } {
   const [activity, setActivity] = useState<TurnActivityState>(null);
 
-  useEffect(() => {
+  // Another workbench's activity must never show for a frame, so the reset
+  // happens during render rather than after the paint that would leak it.
+  const [activityFor, setActivityFor] = useState(workbenchId);
+  if (activityFor !== workbenchId) {
+    setActivityFor(workbenchId);
     setActivity(null);
-  }, [workbenchId]);
+  }
 
   // Reset (clear + re-arm) on every event that actually changes the
   // activity object — an ignored event never resets the clock, since
