@@ -134,20 +134,29 @@ export function frameBody(raw: string): string {
   } catch {
     return "";
   }
-  const text = decoded.replace(/\r\n/g, "\n");
-  const split = text.indexOf("\n\n");
-  if (split < 0) return "";
-  const headers = text.slice(0, split).toLowerCase();
-  const body = text.slice(split + 2);
-  const boundary = /boundary="?([^";\n]+)"?/.exec(headers)?.[1];
-  if (boundary === undefined) return body.trim();
-  for (const part of body.split(`--${boundary}`)) {
-    const partSplit = part.indexOf("\n\n");
-    if (partSplit < 0) continue;
-    if (!part.slice(0, partSplit).toLowerCase().includes("text/plain")) continue;
-    return part.slice(partSplit + 2).trim();
+  return textPart(decoded.replace(/\r\n/g, "\n")) ?? "";
+}
+
+/** First `text/plain` leaf of a MIME entity, descending nested multiparts
+ * (an agent reply is `multipart/signed` around `multipart/mixed`). The
+ * boundary is matched case-sensitively: it is a token, not a header name. */
+function textPart(entity: string): string | undefined {
+  const split = entity.indexOf("\n\n");
+  if (split < 0) return undefined;
+  const headers = entity.slice(0, split);
+  const body = entity.slice(split + 2);
+  const boundary = /boundary="?([^";\n]+)"?/i.exec(headers)?.[1];
+  if (boundary === undefined) {
+    return /content-type:\s*text\/plain/i.test(headers) || !/content-type:/i.test(headers)
+      ? body.trim()
+      : undefined;
   }
-  return "";
+  for (const part of body.split(`--${boundary}`).slice(1)) {
+    if (part.startsWith("--")) break;
+    const found = textPart(part.replace(/^\n/, ""));
+    if (found !== undefined) return found;
+  }
+  return undefined;
 }
 
 function addressRunId(address: string): string | undefined {
