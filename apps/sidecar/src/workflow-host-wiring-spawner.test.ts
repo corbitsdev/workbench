@@ -67,7 +67,7 @@ eventStream.write(event, () => {
     // path here points to a TypeScript file which requires Bun's
     // shebang to execute; the production binary at
     // `apps/sidecar/bin/workflow-child` is
-    // `#!/usr/bin/env -S bun --conditions=intx-src`, so the wiring
+    // `#!/usr/bin/env bun`, so the wiring
     // module spawns it as a bare argv entry. The
     // test mirrors that by routing the spawn through a tiny
     // wrapper script that points at Bun's runtime.

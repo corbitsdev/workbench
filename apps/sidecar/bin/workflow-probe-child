@@ -1,8 +1,6 @@
-#!/usr/bin/env -S bun --conditions=intx-src
-// One-shot workflow-probe child. The sidecar host spawns this by path
-// (`Bun.spawn([binaryPath])`); `--conditions` is not inherited, so it is
-// set on the shebang to resolve @intx/* to TypeScript source in the dev
-// loop. A bundled deployment does not run this file.
+#!/usr/bin/env bun
+// One-shot workflow-probe child, spawned by path with plain bun so
+// @intx/* resolves through published packages and vendored source.
 //
 // The child reads the materialized package dir and IPC anchors from its
 // fresh env, evaluates the workflow entry behind the airlock, and ships
