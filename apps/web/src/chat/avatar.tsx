@@ -1,5 +1,7 @@
 import type { CSSProperties } from "react";
 
+import { agentInitials } from "@/chat/threads-api";
+
 /* Avatar identity pastels. The palette is token references, not
    hex: --avatar-1 through --avatar-4 are defined once in this package's
    stylesheet :root (the proposed upstream contract for @corbits/react-ui's
@@ -122,6 +124,33 @@ export function CorbitAvatar({
         />
         <circle cx="70.63" cy="76.00" r="4.43" fill={CORBIT_GLINT_COLOR} />
       </svg>
+    </span>
+  );
+}
+
+/** The one avatar element for a `.shell-ch-avatar` slot: a Corbit avatar for
+ * an agent, a pastel initials chip (hashed off the person's own principal
+ * id, never their name) for a person — visually distinct per DESIGN.md's
+ * avatar identity rule. */
+export function IdentityAvatar({
+  kind,
+  name,
+  principalId,
+}: {
+  readonly kind: "agent" | "person";
+  readonly name: string;
+  readonly principalId: string;
+}) {
+  if (kind === "agent") {
+    return (
+      <span aria-hidden="true">
+        <CorbitAvatar size="sm" ariaLabel={name} />
+      </span>
+    );
+  }
+  return (
+    <span className={`shell-ch-initial ${avatarClassForPrincipal(principalId)}`} aria-hidden="true">
+      {agentInitials(name)}
     </span>
   );
 }

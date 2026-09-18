@@ -14,6 +14,7 @@
 
 import { type } from "arktype";
 import { WorkflowDeploymentResponse } from "@intx/types";
+import { reportError } from "@corbits/error-sink";
 
 import { listTopLevelRuns } from "../agents-api";
 import { MYRA_SOURCE_CONFIG } from "../myra-source";
@@ -63,6 +64,11 @@ export type ChatSummary = {
   readonly agentName: string;
   readonly preview: string;
   readonly lastActivityAt: string;
+  /** Who sent the newest turn — an "agent" turn is an unread reply until
+   * the chat is opened. */
+  readonly lastAuthor: "me" | "agent";
+  /** The newest turn's Message-ID, compared against what was last seen. */
+  readonly lastMessageId: string;
 };
 
 /** Myra is the one default agent; her deploy asset name is not a display
@@ -411,9 +417,43 @@ export async function listChats(tenantId: string): Promise<readonly ChatSummary[
         agentName,
         preview: newest.body.slice(0, 80),
         lastActivityAt: newest.at,
+        lastAuthor: newest.author,
+        lastMessageId: newest.messageId,
       };
     })
     .sort((a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt));
+}
+
+// ---------------------------------------------------------------------
+// Reply-ready: a chat is unread until it has been opened at its newest
+// message. Tracked per-viewer in localStorage — a convenience, not data of
+// record, so a missing/blocked store just falls back to "ready".
+// ---------------------------------------------------------------------
+
+const CHAT_SEEN_KEY_PREFIX = "workbench:chat-seen:";
+
+/** Marks a chat as read up to its newest turn. Call when a chat is opened. */
+export function markChatSeen(chatId: string, lastMessageId: string | undefined): void {
+  if (lastMessageId === undefined) return;
+  try {
+    localStorage.setItem(`${CHAT_SEEN_KEY_PREFIX}${chatId}`, lastMessageId);
+  } catch (cause) {
+    reportError(cause, { operation: "chat_mark_seen", refId: chatId });
+  }
+}
+
+/** True when the chat's newest turn is an agent reply that has not yet been
+ * seen in this browser. */
+export function isChatReplyReady(
+  summary: Pick<ChatSummary, "id" | "lastAuthor" | "lastMessageId">,
+): boolean {
+  if (summary.lastAuthor !== "agent") return false;
+  try {
+    return localStorage.getItem(`${CHAT_SEEN_KEY_PREFIX}${summary.id}`) !== summary.lastMessageId;
+  } catch (cause) {
+    reportError(cause, { operation: "chat_reply_ready_check", refId: summary.id });
+    return true;
+  }
 }
 
 /** One chat's full transcript: every mail turn addressed to any run this

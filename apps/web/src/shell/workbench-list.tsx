@@ -4,10 +4,11 @@
 // membership is a workbench concept; a chat has exactly one agent.
 
 import { EmptyState, Input, Skeleton } from "@corbits/react-ui";
-import { Hash, MagnifyingGlass } from "@/lib/icons";
+import { Check, Hash, MagnifyingGlass } from "@/lib/icons";
 import { useState } from "react";
 
-import { agentInitials, type ChatSummary } from "@/chat/threads-api";
+import { IdentityAvatar } from "@/chat/avatar";
+import { isChatReplyReady, type ChatSummary } from "@/chat/threads-api";
 
 import { useBench } from "../bench-context";
 import { chatPath, CHATS_PATH_PREFIX } from "../chat-path";
@@ -68,17 +69,27 @@ function ChatRow({
   readonly active: boolean;
   readonly onSelect: () => void;
 }) {
+  // A chat is reply-ready once its newest turn is an unseen agent reply;
+  // opening the chat (readChat/markChatSeen) clears it.
+  const replyReady = !active && isChatReplyReady(chat);
   return (
     <button
       type="button"
       className="shell-ch-row"
       aria-current={active ? "true" : undefined}
       data-active={active ? "true" : undefined}
+      data-unread={replyReady ? "true" : undefined}
       onClick={onSelect}
     >
-      <span className="shell-ch-avatar">
-        <span className="shell-ch-initial" aria-hidden="true">
-          {agentInitials(chat.agentName)}
+      <span className="shell-ch-avatar" data-live={replyReady ? "reply-ready" : undefined}>
+        <IdentityAvatar kind="agent" name={chat.agentName} principalId={chat.id} />
+        {replyReady ? (
+          <span className="shell-ch-completion" aria-hidden="true" title="Reply ready">
+            <Check aria-hidden="true" />
+          </span>
+        ) : null}
+        <span className="sr-only" aria-live="polite" aria-atomic="true">
+          {replyReady ? "Reply ready" : ""}
         </span>
       </span>
       <span className="shell-ch-meta">
