@@ -1,17 +1,7 @@
-// A minimal client for the STOCK `@intx/hub-api` principal and grant
-// routes (`/api/tenants/:tenantId/principals`, `/grants`), spoken with the
-// workflow run's own bearer credential: the sidecar token plus the run
-// address, which the hub resolves to this run's principal and tenant before
-// the stock handler's own `requireGrant` check runs. There is no
-// Workbench-specific mirror of these routes any more.
-//
-// The tenant id is a path segment on every stock tenant route, so it rides
-// in the client config; the sidecar threads it onto the step env from the
-// hub's signed deploy frame. It is never trusted as authority — the hub sets
-// the acting tenant from the authenticated run alone.
-//
-// Grants are NOT inherited across the tenant ancestor tree, so every read
-// and write here is the run's own tenant and nothing above it.
+// The tenant id rides in the client config as a path segment only, never
+// trusted as authority (the hub sets the acting tenant from the
+// authenticated run alone). Grants are not inherited across the tenant
+// ancestor tree, so every read/write here is the run's own tenant only.
 import { type } from "arktype";
 import { evaluateGrants, type GrantRule } from "@intx/authz";
 
@@ -250,23 +240,13 @@ function toGrantRule(row: GrantRow): GrantRule {
 export class DelegationCeilingError extends Error {}
 
 /**
- * The delegation ceiling: a caller may only grant (or revoke) authority it
- * already holds itself, or `grant:*`/`create` alone would let any principal
- * escalate past its own reach.
- *
- * Stock `POST /grants` has no such check, so the tool enforces it before
- * calling: it reads the caller's own grants in its own tenant and evaluates
- * each requested pair with `@intx/authz`'s own `evaluateGrants`, the same
- * engine the hub authorizes with. A parent tenant's grant is never consulted
- * — grants are not inherited across the ancestor tree, unlike credentials
- * and tool packages.
- *
- * Returns the first action outside the ceiling, or null when every pair is
- * within it.
- *
- * Two fidelity gaps against a server-side check, both recorded as upstream
- * asks on: role-derived grants are not visible through the stock
- * principal-filtered listing, and the read-then-write is not atomic.
+ * A caller may only grant/revoke authority it already holds itself, or
+ * `grant:*`/`create` alone would let any principal escalate past its own
+ * reach. Stock `POST /grants` has no such check, so this enforces it
+ * client-side with the same `evaluateGrants` engine the hub authorizes
+ * with. Two known fidelity gaps against a true server-side check:
+ * role-derived grants aren't visible through the stock listing, and the
+ * read-then-write isn't atomic.
  */
 export async function firstActionOutsideCeiling(
   config: AccessToolClientConfig,
