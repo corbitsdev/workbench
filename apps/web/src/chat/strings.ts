@@ -26,9 +26,8 @@ export const CHAT_STRINGS = {
   couldNotLoadMessages: "messages",
   workbenchNotFoundTitle: "This workbench isn't here anymore",
   workbenchNotFoundDescription: "It may have been deleted, or the link is out of date.",
-  /** @deprecated Prefer Mission Control / New workbench recovery. */
+  /** @deprecated Prefer New workbench recovery. */
   workbenchNotFoundAction: "Back to workbenches",
-  workbenchNotFoundMissionControlAction: "Mission Control",
   workbenchNotFoundNewWorkbenchAction: NEW_WORKBENCH_LABEL,
   /** Create-workbench CTA on every mint surface. */
   newWorkbenchAction: NEW_WORKBENCH_LABEL,

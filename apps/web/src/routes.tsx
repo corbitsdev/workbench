@@ -28,7 +28,6 @@ import {
   Plugs,
   Robot,
   SlidersHorizontal,
-  SquaresFour,
 } from "@/lib/icons";
 import { CHAT_STRINGS } from "@/chat";
 import type { Slug } from "@/lib/slug";
@@ -56,9 +55,6 @@ import {
 
 const HomeRoute = lazy(async () => ({
   default: (await import("./pages/home-page")).HomeRoute,
-}));
-const MissionControlRoute = lazy(async () => ({
-  default: (await import("./pages/mission-control-page")).MissionControlRoute,
 }));
 const NewWorkbenchPickerRoute = lazy(async () => ({
   default: (await import("./pages/new-workbench-picker")).NewWorkbenchPickerRoute,
@@ -115,14 +111,6 @@ export const ONBOARDING_PATH = "/onboarding";
 
 /** Settings path — sidebar footer + settings page. */
 export const SETTINGS_PATH = "/settings";
-
-/** Mission Control — the bench's dashboard. Pinned above
- * the sidebar's footer rail as its own row (see DESIGN.md's Shell &
- * Navigation section), reachable by direct URL and the command palette
- * like everything else, but deliberately off `NAV_ROUTES`: it isn't a
- * roster to browse, it's the one destination the sidebar always pins in
- * view. */
-export const MISSION_CONTROL_PATH = "/mission-control";
 
 /** The template picker — every "+ New workbench" affordance
  * (sidebar, command palette) hops here first; picking a row is what
@@ -250,11 +238,13 @@ export const APP_ROUTES: readonly AppRoute[] = [
     hasStageTopBar: false,
   },
   {
-    path: MISSION_CONTROL_PATH,
+    // Mission Control is gone — pending approvals and activity live in the
+    // workbench view now; old links and bookmarks bounce home.
+    path: "/mission-control",
     label: "Mission Control",
-    icon: <SquaresFour />,
-    render: (_path: string, navigate: (to: string) => void) => (
-      <MissionControlRoute navigate={navigate} />
+    icon: <ChatCircle />,
+    render: (path: string, navigate: (to: string) => void) => (
+      <LegacyRedirect path={path} navigate={navigate} oldPrefix="/mission-control" newPrefix="/" />
     ),
   },
   {
