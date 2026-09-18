@@ -39,7 +39,7 @@ proven in `test/credential-wiring-e2e.drizzle.test.ts`.
 `authorization`, not a `Bearer `-prefixed token. `@intx/harness`'s
 vendored `http` provider always sends Bearer, so a Linear provider row
 MUST set `plugin: "http-raw-authorization"`
-(`@corbits/credential-providers`) rather than the `"http"` default other
+(`@corbits/credential-header`) rather than the `"http"` default other
 connectors use — seeding it wrong sends the wrong header shape and
 Linear rejects the call. See `docs/credential-wiring.md` and
 `test/linear-raw-authorization-regression.test.ts`, a regression guard

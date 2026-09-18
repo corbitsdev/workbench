@@ -53,6 +53,11 @@ import {
   type ConnectorReplyDrain,
   type CredentialProviderRegistry,
 } from "@intx/harness";
+import {
+  rawAuthorizationCredentialProvider,
+  xApiKeyCredentialProvider,
+} from "@corbits/credential-header";
+import { createMcpStreamableHttpCredentialProvider } from "@corbits/credential-mcp";
 import { createSSHSignature } from "@intx/crypto";
 import {
   createAgentRepoStore,
@@ -2226,9 +2231,20 @@ export function createSidecarSubstrateFactory(
 
     // The credential provider registry that shapes a delivered credential into
     // a mediated handle. Built once here from the sidecar-static built-ins (the
-    // origin-pinned http provider) and shared by every per-step build; the
-    // per-run material and grants ride in separately at each invoke.
-    const credentialProviders = createCredentialProviderRegistry(builtinCredentialProviders());
+    // origin-pinned http provider) plus the header-shaped presets
+    // (`@corbits/credential-header`, for a provider row whose API expects
+    // the raw secret in `authorization` or an `x-api-key` header instead of
+    // a Bearer-prefixed `authorization`) and the MCP streamable-HTTP
+    // provider (`@corbits/credential-mcp`, for a tenant-connected MCP
+    // server, including its keyless-connection sentinel) — shared by every
+    // per-step build; the per-run material and grants ride in separately at
+    // each invoke.
+    const credentialProviders = createCredentialProviderRegistry([
+      ...builtinCredentialProviders(),
+      xApiKeyCredentialProvider(),
+      rawAuthorizationCredentialProvider(),
+      createMcpStreamableHttpCredentialProvider(),
+    ]);
 
     // Spawned-child step build env (INTR-310). Every spawned child's steps --
     // a childWorkflow child's and an onTrigger section body's alike -- run real,
