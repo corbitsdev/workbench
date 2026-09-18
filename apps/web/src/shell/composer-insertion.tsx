@@ -6,19 +6,13 @@
 // "shell context exposing a callback hook" shape `canvas-availability.tsx`
 // already uses for opening a profile.
 
-import { createContext, useContext, useMemo, useRef } from "react";
+import { useContext, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
-export type ComposerInsertionHost = {
-  readonly registerInsert: (insert: ((text: string) => void) | null) => void;
-  /** Returns whether a composer was actually mounted to receive the text. */
-  readonly insertText: (text: string) => boolean;
-};
+import { ComposerInsertionContext } from "./composer-insertion-context";
+import type { ComposerInsertionHost } from "./composer-insertion-context";
 
-const ComposerInsertionContext = createContext<ComposerInsertionHost>({
-  registerInsert: () => undefined,
-  insertText: () => false,
-});
+export type { ComposerInsertionHost };
 
 export function ComposerInsertionProvider({ children }: { readonly children: ReactNode }) {
   const insertRef = useRef<((text: string) => void) | null>(null);
