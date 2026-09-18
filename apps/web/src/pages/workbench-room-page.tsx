@@ -11,7 +11,6 @@ import {
   EmptyState,
   PageShell,
   Skeleton,
-  Textarea,
   formatRelativeTime,
   toast,
 } from "@corbits/react-ui";
@@ -19,6 +18,7 @@ import { WarningCircle } from "@/lib/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
+import { Composer } from "@/chat/composer";
 import { Markdown } from "@/chat/markdown";
 import {
   agentInitials,
@@ -43,47 +43,6 @@ import { workbenchIdFromPath } from "../workbench-path";
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
-}
-
-function RoomComposer({
-  placeholder,
-  busy,
-  disabled,
-  onSend,
-}: {
-  readonly placeholder: string;
-  readonly busy: boolean;
-  readonly disabled?: boolean;
-  readonly onSend: (text: string) => void;
-}) {
-  const [text, setText] = useState("");
-  const send = () => {
-    const trimmed = text.trim();
-    if (trimmed === "" || busy || disabled) return;
-    setText("");
-    onSend(trimmed);
-  };
-  return (
-    <div className="chat-composer">
-      <Textarea
-        value={text}
-        rows={3}
-        placeholder={placeholder}
-        aria-label={placeholder}
-        disabled={disabled}
-        onChange={(event) => setText(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            send();
-          }
-        }}
-      />
-      <Button variant="primary" disabled={busy || disabled || text.trim() === ""} onClick={send}>
-        {busy ? "Sending…" : "Send"}
-      </Button>
-    </div>
-  );
 }
 
 function RoomMessageRow({
@@ -417,7 +376,7 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
           </div>
           <div className="room-main-composer">
             <PageShell width="prose" className="page-fill">
-              <RoomComposer
+              <Composer
                 placeholder={
                   startingAgent === undefined
                     ? "Message this workbench"
@@ -447,7 +406,7 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
                 />
               ))}
             </div>
-            <RoomComposer
+            <Composer
               placeholder={
                 startingAgent === undefined
                   ? "Reply in this thread"

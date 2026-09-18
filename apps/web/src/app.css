@@ -3709,7 +3709,10 @@ tr.insights-row-clickable:hover {
 }
 .chat-thread-body {
   min-width: 0;
-  font-size: 0.9rem;
+  /* 16px minimum: keeps the transcript readable and matches the composer
+     below, and avoids mobile Safari's zoom-on-focus threshold. */
+  font-size: max(var(--text-base), 16px);
+  font-weight: var(--font-weight-medium);
   line-height: 1.55;
 }
 .chat-thread-error {
@@ -3725,14 +3728,84 @@ tr.insights-row-clickable:hover {
   font-size: 0.82rem;
   color: var(--muted-foreground);
 }
+
+/* Shared composer: transcript-matched text field on the left, a grouped
+   action rail (Send only — no turn cancellation exists yet) on the right. */
 .chat-composer {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
   align-items: flex-end;
-}
-.chat-composer > textarea {
+  gap: 0.5rem;
   width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 0.75rem);
+  background: var(--card, var(--background));
+}
+.chat-composer:focus-within {
+  border-color: var(--ring, var(--primary));
+}
+.chat-composer-input {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  background: transparent;
+  padding: 0.35rem 0;
+  font: inherit;
+  font-size: max(var(--text-base), 16px);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.5;
+  color: var(--foreground);
+}
+.chat-composer-input:focus {
+  outline: none;
+}
+.chat-composer-input::placeholder {
+  color: var(--muted-foreground);
+}
+.chat-composer-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.chat-composer-rail {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  padding-bottom: 0.35rem;
+}
+.chat-composer-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  cursor: pointer;
+}
+.chat-composer-send:disabled {
+  cursor: not-allowed;
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.chat-composer-send-spinner {
+  animation: chat-composer-spin 0.8s linear infinite;
+}
+@keyframes chat-composer-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-composer-send-spinner {
+    animation-duration: 1e-6ms;
+  }
 }
 
 /* A workbench room: a left info column (activity, artifacts, approvals,
