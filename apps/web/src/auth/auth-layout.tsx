@@ -4,16 +4,9 @@ import type { ReactNode } from "react";
 import { DitherBackground } from "./dither-background";
 import { QuoteCard } from "./quote-card";
 
-/**
- * Two-column auth shell modeled on the corbits.dev sign-in page: a centered
- * form column on the left and a brand panel with a quote card on the right
- * (hidden on small screens). Pure presentation.
- *
- * This is a local shell rather than react-ui's `blocks/login/auth-layout`
- * because that block hardcodes its own procedural `DitherCanvas` in the brand
- * panel; the signature visual here is an image-driven dither that needs the
- * hero `<img>` painted underneath as the no-JS fallback.
- */
+// Local shell rather than react-ui's `blocks/login/auth-layout`, since that
+// block hardcodes its own procedural `DitherCanvas` — this one needs the
+// image-driven dither's hero `<img>` as a no-JS fallback underneath.
 export function AuthLayout({ children }: { readonly children: ReactNode }) {
   return (
     <div className="auth-shell">

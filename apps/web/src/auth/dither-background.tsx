@@ -22,20 +22,8 @@ const STRENGTH_LERP = 0.08; // cursor influence easing per frame
 const FRAME_MS = 1000 / 30; // animation cap (~30fps) to spare the CPU
 const ASSET = "/images/hero-dither.png"; // same-origin source image
 
-/**
- * Animated ordered-dither over a source image, rendered on a 2D canvas. A
- * downscaled buffer is dithered each frame with a slow ambient sine warp plus a
- * cursor-driven displacement, then upscaled with `image-rendering: pixelated`.
- *
- * This replaces the original WebGL port: a WebGL canvas promoted the auth
- * panel to a GPU-composited layer that failed to paint (blank/white). A 2D
- * canvas is CPU-rasterized, composites reliably, and retains its last frame
- * when requestAnimationFrame is paused on a hidden tab.
- *
- * The loop is paused whenever the canvas is offscreen or the tab is hidden, is
- * capped to ~30fps, and honours `prefers-reduced-motion` reactively (a single
- * static frame, re-evaluated when the OS setting toggles).
- */
+// Renders on a plain 2D canvas, not WebGL — see
+// docs/auth-dither-background.md for why.
 export function DitherBackground({ className }: { className?: string }) {
   // The animation belongs to the canvas element, so it starts and stops with
   // it: a ref callback with a cleanup, never an effect reaching for a ref.
@@ -111,9 +99,7 @@ export function DitherBackground({ className }: { className?: string }) {
       tStr = inside ? 1 : 0;
     };
     // Listen on window, not the canvas: the canvas is painted behind the
-    // QuoteCard overlay, so canvas-scoped pointermove never fires. onMove
-    // already maps coordinates to the canvas rect and zeroes strength when
-    // the cursor is outside the panel, so the global listener is cheap.
+    // QuoteCard overlay, so canvas-scoped pointermove never fires.
     window.addEventListener("pointermove", onMove, { passive: true });
 
     const reduceQuery = window.matchMedia("(prefers-reduced-motion: reduce)");

@@ -49,10 +49,8 @@ function nextIndex(): number {
   return (lastIndex() + 1) % QUOTES.length;
 }
 
-/**
- * Brand quote card. Advances to the next quote once per page load (persisted in
- * localStorage) — it does not cycle while the page is open.
- */
+// Advances to the next quote once per page load; does not cycle while
+// the page is open.
 export function QuoteCard() {
   // Picked and persisted once, as the card mounts — the rotation advances
   // per page load, never while the page is open.
