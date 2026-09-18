@@ -687,6 +687,18 @@ export function resolveParticipantName(
   );
 }
 
+/** A turn's avatar name: the matching participant's real name, including
+ * the person's own — never the "You" transcript label, which stays for the
+ * row's own text elsewhere. Falls back to `resolveParticipantName` when no
+ * participant matches the turn's address. */
+export function resolveAvatarName(
+  message: Pick<RoomMessage, "author" | "authorName" | "address">,
+  participants: readonly RoomParticipant[],
+): string {
+  const matched = participants.find((participant) => participant.address === message.address);
+  return matched?.name ?? resolveParticipantName(message, participants);
+}
+
 type RoomTurn = {
   readonly id: string;
   readonly messageId: string;
