@@ -183,12 +183,7 @@ describe("Sidebar", () => {
 
   test("first-run footer rail is Routines, Files, Skills, Agents, then the account row — no Insights or Inbox", () => {
     const markup = renderSidebar("/w");
-    expect(footerRowLabelsFromMarkup(markup)).toEqual([
-      "Routines",
-      "Files",
-      "Skills",
-      "Agents",
-    ]);
+    expect(footerRowLabelsFromMarkup(markup)).toEqual(["Routines", "Files", "Skills", "Agents"]);
     expect(markup).toContain("data-ctx-account");
     expect(markup).not.toContain(">Inbox<");
     expect(markup).not.toContain('aria-label="Notifications"');
@@ -207,12 +202,7 @@ describe("Sidebar", () => {
   test("first-run footer rail does not list Insights before there are honest runs", async () => {
     stubFetch({ runCount: 0 });
     const { container, root } = await mountSidebar("/w");
-    expect(footerRowLabelsFromDom(container)).toEqual([
-      "Routines",
-      "Files",
-      "Skills",
-      "Agents",
-    ]);
+    expect(footerRowLabelsFromDom(container)).toEqual(["Routines", "Files", "Skills", "Agents"]);
     act(() => root.unmount());
     container.remove();
   });
@@ -254,12 +244,7 @@ describe("Sidebar", () => {
   test("a failed usage probe omits the row rather than claiming usage", async () => {
     stubFetch({ failRuns: true });
     const { container, root } = await mountSidebar("/w");
-    expect(footerRowLabelsFromDom(container)).toEqual([
-      "Routines",
-      "Files",
-      "Skills",
-      "Agents",
-    ]);
+    expect(footerRowLabelsFromDom(container)).toEqual(["Routines", "Files", "Skills", "Agents"]);
     act(() => root.unmount());
     container.remove();
   });

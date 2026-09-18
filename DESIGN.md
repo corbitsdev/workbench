@@ -34,11 +34,11 @@ Top to bottom:
    conversations, not product sections.
 3. **Footer rail** — Mission Control is pinned above the rail as its own
    row. The first-run rail below it is Routines, Files, Skills, Agents,
-   Plugins, in that order. Insights and Evals join that rail only when
+   Tools, in that order. Insights and Evals join that rail only when
    existing reads prove real usage (turns > 0 / at least one eval run).
    These are utility destinations, not workbenches, and each is its own
    top-level route (`/mission-control`, `/routines`, `/files`, `/skills`,
-   `/agents`, `/plugins`; plus `/insights`, `/evals` when reached).
+   `/agents`, `/tools`; plus `/insights`, `/evals` when reached).
 4. **Account row** — avatar and name, anchoring the rail, plus a separate
    settings icon beside it. The avatar+name half is a menu trigger
    (weekly usage, feedback, log out) that pops upward; the gear is a
@@ -74,7 +74,7 @@ not home. The primary act is a prompt: say what the channel should do,
 or pick a named-template shortcut underneath. Blank `+` / prompt mint
 an empty channel and invite nobody. Named templates mint that same
 empty channel with no host, then instantiate the picked Workbench
-Definition — the agents, block workflows, and pending plugins it names
+Definition — the agents, block workflows, and pending tools it names
 (Myra joins only when the definition names her; Code review's three
 reviewers do not) — and run its ordered onboarding walkthrough as an
 in-room card the room itself posts, never a side effect of hosting an
@@ -107,7 +107,7 @@ example (`ConnectorRow` / `OAuthConnectorRow`,
 Density over cards: one row per item, a small logo tile, name, a
 single-line outcome sentence, a status/provenance caption, and one honest
 action button that reflects the item's actual state. A browseable catalog
-of installable things, each with its own status and actions — the plugins
+of installable things, each with its own status and actions — the tools
 gallery is the standing example — is the one case where a two-column card
 catalog with status/category chip filters is the right idiom instead.
 Extend an existing idiom to a new directory before inventing a fourth
@@ -116,7 +116,7 @@ pattern; three ways to list things is a defect, not a design system.
 ## Detail Pages
 
 Anything with enough content to browse gets a full page, not a panel:
-`/agents/<slug>`, `/skills/<slug>`, `/plugins/<slug>`, `/routines/<id>`,
+`/agents/<slug>`, `/skills/<slug>`, `/tools/<slug>`, `/routines/<id>`,
 `/files/<id>`, `/evals/<run-id>`.
 
 Slugs are immutable once assigned and tenant-unique, enforced as a hard

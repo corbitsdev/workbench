@@ -55,12 +55,12 @@ describe("friendlyEventText — workbench.agent-joined", () => {
 });
 
 describe("friendlyEventText — connection.connected", () => {
-  test("names the connected service and points at Plugins", () => {
+  test("names the connected service and points at Tools", () => {
     const part: Part & { kind: "event" } = {
       kind: "event",
       event: "connection.connected",
       data: { connectorId: "github", displayName: "GitHub" },
     };
-    expect(friendlyEventText(part, [])).toBe("GitHub connected successfully. Manage in Plugins");
+    expect(friendlyEventText(part, [])).toBe("GitHub connected successfully. Manage in Tools");
   });
 });

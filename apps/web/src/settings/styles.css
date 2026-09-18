@@ -464,7 +464,7 @@
   }
 }
 
-/* Connections: rows over grid (the plugins-directory
+/* Connections: rows over grid (the tools directory
    rebuild is the reference pattern) — one row per connector, not a grid
    of bordered cards. Same brand rules: color-mix hairline dividers, the
    accent color only ever as text (needs-attention) or an inset edge,
@@ -576,7 +576,7 @@
 
 /* Disconnect keeps `ConfirmButton`'s confirm-step behavior but never the
    red fill it renders once armed — overriding the literal Tailwind
-   utility class it emits for that state, the same override the plugins
+   utility class it emits for that state, the same override the tools
    directory's own remove action uses. */
 .settings-connection-row-disconnect-action {
   color: var(--muted-foreground);

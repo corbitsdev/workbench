@@ -22,7 +22,7 @@ existing teammate's capability before duplicating it.
 
 ## MCP
 
-Myra can also reach any external MCP server: connect one in Plugins and
+Myra can also reach any external MCP server: connect one in Tools and
 its tools become callable the same way a native `@corbits/*` tool is,
 with no separate integration per server.
 

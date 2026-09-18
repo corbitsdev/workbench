@@ -96,12 +96,12 @@ export const CHAT_STRINGS = {
   eventBlockResponsePoll: "A vote was recorded",
   eventBlockResponseForm: "A form was submitted",
   /** Plain-text form of the settle notice. EventLine renders
-   * the same copy with "Plugins" as a `/plugins` link. */
+   * the same copy with "Tools" as a `/tools` link. */
   eventConnectionConnected: (displayName: string): string =>
-    `${displayName} connected successfully. Manage in Plugins`,
-  eventConnectionConnectedBeforePlugins: (displayName: string): string =>
+    `${displayName} connected successfully. Manage in Tools`,
+  eventConnectionConnectedBeforeTools: (displayName: string): string =>
     `${displayName} connected successfully. Manage in `,
-  eventConnectionConnectedPlugins: "Plugins",
+  eventConnectionConnectedTools: "Tools",
   eventGeneric: (event: string) => event.replace(/[.\-_]+/g, " "),
 
   inviteAgentAction: "Invite agent",

@@ -64,7 +64,6 @@ export {
   PlayCircle,
   Plus,
   Plugs,
-  PuzzlePiece,
   PushPin,
   PushPinSlash,
   Repeat,
