@@ -5,10 +5,17 @@
 import { Button } from "@corbits/react-ui";
 import { cronSentence } from "@corbits/workflows/client";
 
+import { WarningCircle } from "@/lib/icons";
+
 import { useDeployAgentMutation } from "../agents-api";
 import { chatPath } from "../chat-path";
 import { Link } from "../navigation";
-import { isFiveFieldCron, type DeployablePackage } from "./deployable-package";
+import {
+  isFiveFieldCron,
+  isPackageRejection,
+  type DeployablePackage,
+  type PackageOutcome,
+} from "./deployable-package";
 import type { MailAttachment } from "./threads-api";
 
 function errorText(cause: unknown): string {
@@ -24,9 +31,10 @@ export function MessageAttachments({
   readonly attachments: readonly MailAttachment[];
   /** Resolved by the caller via `resolveMessagePackage` — attachments and
    * body-carried fenced blocks both land here. */
-  readonly pkg: DeployablePackage | null;
+  readonly pkg: PackageOutcome;
 }) {
   if (pkg === null && attachments.length === 0) return null;
+  if (isPackageRejection(pkg)) return <PackageRejectionCard reason={pkg.reason} />;
   if (pkg === null) {
     return (
       <ul className="chat-attachment-list" aria-label="Attachments">
@@ -40,6 +48,22 @@ export function MessageAttachments({
     );
   }
   return <DeployPackageCard tenantId={tenantId} pkg={pkg} />;
+}
+
+/** Same visual family as the Deploy card, but for a package attempt that
+ * failed to parse — names the reason, offers no button. */
+function PackageRejectionCard({ reason }: { readonly reason: string }) {
+  return (
+    <div className="chat-deploy-card chat-package-rejection-card">
+      <div className="chat-deploy-card-text">
+        <span className="chat-deploy-card-name">
+          <WarningCircle className="chat-package-rejection-icon" aria-hidden="true" />
+          Package couldn&apos;t deploy
+        </span>
+        <span className="chat-deploy-card-error">{reason}</span>
+      </div>
+    </div>
+  );
 }
 
 function DeployPackageCard({

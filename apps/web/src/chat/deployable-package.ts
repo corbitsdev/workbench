@@ -12,8 +12,12 @@ import { reportError } from "@corbits/error-sink";
 
 import type { MailAttachment } from "./threads-api";
 
-const AgentDefinition = type({
-  name: "string",
+const PackageManifest = type({
+  "name?": "string",
+});
+
+const AgentDefinitionShape = type({
+  "name?": "string",
   systemPrompt: "string",
   "description?": "string",
   "schedule?": "string",
@@ -26,30 +30,97 @@ export function isFiveFieldCron(schedule: string): boolean {
   return schedule.trim().split(/\s+/).length === 5;
 }
 
-export type DeployablePackage = typeof AgentDefinition.infer;
+export interface DeployablePackage {
+  readonly name: string;
+  readonly systemPrompt: string;
+  readonly description?: string;
+  readonly schedule?: string;
+}
 
 export const PACKAGE_MANIFEST_NAME = "package.json";
 export const AGENT_DEFINITION_NAME = "definition.json";
 
-/** The agent package a message's attachments describe, or null when they
- * are just files. Untrusted input: parsed, never cast. */
-export function deployablePackage(
-  attachments: readonly MailAttachment[],
-): DeployablePackage | null {
-  if (!attachments.some((attachment) => attachment.name === PACKAGE_MANIFEST_NAME)) return null;
+/**
+ * What a message's attachments (or fenced blocks) resolve to: a parsed
+ * package, a named rejection when the message attempted a package but
+ * got a field wrong, or `null` when the message isn't a package attempt
+ * at all.
+ */
+export type PackageOutcome = DeployablePackage | { readonly reason: string } | null;
+
+export function isPackageRejection(
+  outcome: PackageOutcome,
+): outcome is { readonly reason: string } {
+  return outcome !== null && "reason" in outcome;
+}
+
+/** The plain-words reason a definition.json's arktype error names, e.g.
+ * "definition.json is missing systemPrompt" or "definition.json's
+ * schedule must be a string". Field name comes from the error's path. */
+function definitionRejectionReason(errors: type.errors): string {
+  const first = errors[0];
+  const field = first === undefined ? "value" : String(first.path.at(-1) ?? "value");
+  if (first?.code === "required") return `definition.json is missing ${field}`;
+  return `definition.json's ${field} ${first?.problem ?? "is invalid"}`;
+}
+
+/** Parses the two contract files' text into a package outcome. Returns
+ * `null` only when called on files that were never actually found — the
+ * caller decides that; this always parses given both texts. */
+function parsePackageFiles(
+  manifestText: string,
+  definitionText: string,
+): DeployablePackage | { readonly reason: string } {
+  let manifestBody: unknown;
+  try {
+    manifestBody = JSON.parse(manifestText);
+  } catch (cause) {
+    reportError(cause, { operation: "chat_deployable_package_manifest_parse" });
+    return { reason: "package.json is not valid JSON" };
+  }
+  const manifest = PackageManifest(manifestBody);
+  if (manifest instanceof type.errors) {
+    return { reason: `package.json's ${String(manifest[0]?.path.at(-1) ?? "value")} is invalid` };
+  }
+
+  let definitionBody: unknown;
+  try {
+    definitionBody = JSON.parse(definitionText);
+  } catch (cause) {
+    reportError(cause, { operation: "chat_deployable_package_definition_parse" });
+    return { reason: "definition.json is not valid JSON" };
+  }
+  const definition = AgentDefinitionShape(definitionBody);
+  if (definition instanceof type.errors) {
+    return { reason: definitionRejectionReason(definition) };
+  }
+
+  const name = definition.name?.trim() || manifest.name?.trim();
+  if (name === undefined || name === "") {
+    return { reason: "definition.json is missing name" };
+  }
+  if (definition.systemPrompt.trim() === "") {
+    return { reason: "definition.json is missing systemPrompt" };
+  }
+
+  return {
+    name,
+    systemPrompt: definition.systemPrompt,
+    ...(definition.description !== undefined ? { description: definition.description } : {}),
+    ...(definition.schedule !== undefined ? { schedule: definition.schedule } : {}),
+  };
+}
+
+/** The agent package a message's attachments describe: a parsed package,
+ * a rejection naming what's wrong, or `null` when the attachments aren't
+ * a package attempt at all (no package.json or no definition.json).
+ * Untrusted input: parsed, never cast. */
+export function deployablePackage(attachments: readonly MailAttachment[]): PackageOutcome {
+  const manifest = attachments.find((attachment) => attachment.name === PACKAGE_MANIFEST_NAME);
+  if (manifest === undefined) return null;
   const definition = attachments.find((attachment) => attachment.name === AGENT_DEFINITION_NAME);
   if (definition === undefined) return null;
-  let body: unknown;
-  try {
-    body = JSON.parse(definition.text);
-  } catch (cause) {
-    reportError(cause, { operation: "chat_deployable_package_parse" });
-    return null;
-  }
-  const parsed = AgentDefinition(body);
-  if (parsed instanceof type.errors) return null;
-  if (parsed.name.trim() === "" || parsed.systemPrompt.trim() === "") return null;
-  return parsed;
+  return parsePackageFiles(manifest.text, definition.text);
 }
 
 /** Strips wrapping backticks/colon and returns the canonical file name the
@@ -143,25 +214,19 @@ function findNamedFencedBlocks(lines: readonly string[]): Map<string, FencedBloc
 /** The agent package a message body carries as fenced code blocks, plus
  * the body with those blocks removed. Used when attachments are absent —
  * `@intx/tools-mail`'s `mail_send` has no attachments parameter, so this is
- * the mailed-package contract's actual delivery path today. */
-export function deployablePackageFromBody(
-  body: string,
-): { readonly pkg: DeployablePackage; readonly strippedBody: string } | null {
+ * the mailed-package contract's actual delivery path today. `null` when
+ * the body isn't a package attempt (neither file is present). */
+export function deployablePackageFromBody(body: string): {
+  readonly outcome: DeployablePackage | { readonly reason: string };
+  readonly strippedBody: string;
+} | null {
   const lines = body.split("\n");
   const blocks = findNamedFencedBlocks(lines);
   const manifest = blocks.get(PACKAGE_MANIFEST_NAME);
   const definition = blocks.get(AGENT_DEFINITION_NAME);
   if (manifest === undefined || definition === undefined) return null;
-  let parsedBody: unknown;
-  try {
-    parsedBody = JSON.parse(definition.content);
-  } catch (cause) {
-    reportError(cause, { operation: "chat_deployable_package_body_parse" });
-    return null;
-  }
-  const parsed = AgentDefinition(parsedBody);
-  if (parsed instanceof type.errors) return null;
-  if (parsed.name.trim() === "" || parsed.systemPrompt.trim() === "") return null;
+
+  const outcome = parsePackageFiles(manifest.content, definition.content);
 
   const ranges = [manifest, definition].sort((a, b) => a.start - b.start);
   const kept: string[] = [];
@@ -175,20 +240,20 @@ export function deployablePackageFromBody(
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return { pkg: parsed, strippedBody };
+  return { outcome, strippedBody };
 }
 
-/** The package a message describes and the body to render for it —
+/** The package outcome a message describes and the body to render for it —
  * attachments win when present (the intended path once `mail_send` grows
  * attachments support), otherwise the body's fenced blocks are read and
  * stripped from the rendered text. */
 export function resolveMessagePackage(
   attachments: readonly MailAttachment[],
   body: string,
-): { readonly pkg: DeployablePackage | null; readonly renderedBody: string } {
+): { readonly pkg: PackageOutcome; readonly renderedBody: string } {
   const fromAttachments = deployablePackage(attachments);
   if (fromAttachments !== null) return { pkg: fromAttachments, renderedBody: body };
   const fromBody = deployablePackageFromBody(body);
-  if (fromBody !== null) return { pkg: fromBody.pkg, renderedBody: fromBody.strippedBody };
+  if (fromBody !== null) return { pkg: fromBody.outcome, renderedBody: fromBody.strippedBody };
   return { pkg: null, renderedBody: body };
 }
