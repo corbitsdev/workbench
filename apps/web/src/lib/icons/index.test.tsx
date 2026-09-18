@@ -13,13 +13,8 @@ describe("@/lib/icons", () => {
     expect(typeof icons.BoldIconProvider).toBe("function");
   });
 
-  // Regression for the oversized right-click menu / search bar: Phosphor's
-  // IconContext.Provider fully replaces the context value rather than
-  // merging with it, so a bare `{ weight: "bold" }` silently drops the
-  // library's own `size: "1em"` default. Any glyph mounted without an
-  // ancestor CSS rule or an explicit `size=` prop then renders as a bare
-  // <svg> with no width/height, which the browser falls back to sizing as
-  // a 300x150 replaced element.
+  // Regression: a bare `{ weight: "bold" }` silently drops Phosphor's own
+  // `size` default, since the context value is replaced, not merged.
   test("BoldIconProvider preserves Phosphor's size default alongside bold weight", () => {
     expect(icons.boldIconContextValue).toEqual({
       size: "1em",
