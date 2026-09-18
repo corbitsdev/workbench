@@ -43,25 +43,20 @@ import {
 } from "@corbits/react-ui";
 import type { IntakeField } from "@corbits/react-ui";
 import { useEffect, useState } from "react";
-import {
-  AVATAR_COLORS,
-  avatarColorClass,
-  CORBIT_DEFAULT_COLOR,
-  CorbitAvatar,
-} from "@corbits/chat-ui";
-import type { AvatarColor } from "@corbits/chat-ui";
+import { AVATAR_COLORS, avatarColorClass, CORBIT_DEFAULT_COLOR, CorbitAvatar } from "@/chat";
+import type { AvatarColor } from "@/chat";
 
-import { ApiQueryError } from "@corbits/api-query";
+import { ApiQueryError } from "@/lib/api-query";
 
 import type { AgentDefinition, CatalogModel } from "../agents-api";
 import { createAgentDefinition, draftAgentDefinition, listCatalogModels } from "../agents-api";
-import { isValidSlug, slugify } from "@corbits/slug";
+import { isValidSlug, slugify } from "@/lib/slug";
 
 import { AgentSkillsPicker } from "./agent-skills-picker";
 
 // A handle IS the agent's slug — the immutable name `/agents/<slug>` is
 // addressed by (DESIGN.md → Detail Pages). Minting and validating it through
-// `@corbits/slug` rather than a local regex and a local slugify is what keeps
+// `@/lib/slug` rather than a local regex and a local slugify is what keeps
 // that true: one implementation, so a handle suggested or accepted here can
 // never be a shape the router refuses to resolve.
 

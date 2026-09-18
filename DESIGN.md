@@ -103,7 +103,7 @@ grid:
 This is a default, not a mandate. A directory that scans better as dense
 grouped rows than as a table — Settings > Connections is the standing
 example (`ConnectorRow` / `OAuthConnectorRow`,
-`packages/settings-ui/src/connections-section.tsx`) — keeps that idiom.
+`apps/web/src/settings/connections-section.tsx`) — keeps that idiom.
 Density over cards: one row per item, a small logo tile, name, a
 single-line outcome sentence, a status/provenance caption, and one honest
 action button that reflects the item's actual state. A browseable catalog
@@ -179,7 +179,7 @@ monospace (code, IDs, numeric/tabular contexts). Both are declared once in
 `font-mono`, never a font-family override.
 
 **Icons.** Phosphor, bold weight only, imported exclusively through
-`@corbits/icons` (`packages/icons/src/index.tsx`) — never straight from
+`@/lib/icons` (`apps/web/src/lib/icons/index.tsx`) — never straight from
 `@phosphor-icons/react` or from any other icon package. That module is a
 curated re-export: only glyphs the product actually uses are named there,
 so a stray import can't reach for an off-list icon or a different weight.

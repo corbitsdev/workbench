@@ -1,6 +1,6 @@
 // The sidebar's one data source: everything happening in the currently
 // selected bench right now. Workbenches and chats come from
-// `@corbits/chat-ui`'s own validated fetches; running routines come through
+// `@/chat`'s own validated fetches; running routines come through
 // the seam in `./routine-activity.ts`. Notifications have no backing
 // feature in the hub yet, so they are not fetched here at all — the
 // column renders an honest empty state for that section instead of a
@@ -22,8 +22,8 @@ import {
   workbenchesQueryKeyPrefix,
   listWorkbenches,
   listVisibleAgentDefinitions,
-} from "@corbits/chat-ui";
-import type { Workbench, VisibleAgentDefinition } from "@corbits/chat-ui";
+} from "@/chat";
+import type { Workbench, VisibleAgentDefinition } from "@/chat";
 
 import { tenantKeys } from "../query-client";
 import { listRoutineActivity } from "./routine-activity";

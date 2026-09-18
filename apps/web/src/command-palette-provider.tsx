@@ -1,7 +1,7 @@
 import { artifactKindLabel, CommandPalette, useCommandShortcut, useTheme } from "@corbits/react-ui";
 import type { CommandPaletteGroup } from "@corbits/react-ui";
-import { listWorkbenches } from "@corbits/chat-ui";
-import { libraryArtifactPath } from "@corbits/artifact-ui";
+import { listWorkbenches } from "@/chat";
+import { libraryArtifactPath } from "@/library";
 import { reportError } from "@corbits/error-sink";
 import {
   buildCommandPaletteGroups,
@@ -13,7 +13,7 @@ import {
   type PaletteResultItem,
   type PaletteSource,
   type RecentEntry,
-} from "@corbits/command-palette";
+} from "@/command-palette";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -32,7 +32,7 @@ import { NAV_ROUTES } from "./routes";
 import { ArtifactListPageSchema, useAPIQuery } from "./api";
 import { isBenchMembership, useBench } from "./bench-context";
 import { useCloseCanvas } from "./shell/canvas-availability";
-import { listMcpServers } from "@corbits/plugins-ui";
+import { listMcpServers } from "@/tools";
 import { AGENTS_PATH_PREFIX, PLUGINS_PATH_PREFIX, SKILLS_PATH_PREFIX } from "./path-ids";
 import { listScheduledWorkflows, runScheduledWorkflowNow, useTenantQuery } from "./routines-api";
 import { listSkills } from "./skills-api";
@@ -52,7 +52,7 @@ const STATIC_COMMANDS = buildStaticCommands(
  * matches no page and renders no stage top bar of its own.
  *
  * Grouping, `#`/`@`/`>`/`/` scope parsing, and the Recents rule live in
- * `@corbits/command-palette` (`buildCommandPaletteGroups`) — this file only
+ * `@/command-palette` (`buildCommandPaletteGroups`) — this file only
  * assembles the app's own sources (routes, workbenches, agents, routines,
  * skills, library artifacts) and maps a selection back to a real route or
  * action. Entity results for workbenches/runs/agents still come off the same

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ProfileSubject } from "@corbits/chat-ui";
+import type { ProfileSubject } from "@/chat";
 
 import { dmCreateInputFor } from "./profile-relations";
 

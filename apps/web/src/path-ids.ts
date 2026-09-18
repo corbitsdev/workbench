@@ -7,7 +7,7 @@
 // `/agents/:id` and `/skills/:id`, via `agentIdFromPath`/`skillIdFromPath`
 // below.
 
-import { isValidSlug, type Slug } from "@corbits/slug";
+import { isValidSlug, type Slug } from "@/lib/slug";
 import { decodedOrNull } from "@corbits/url-path";
 
 export const SETTINGS_PATH_PREFIX = "/settings";

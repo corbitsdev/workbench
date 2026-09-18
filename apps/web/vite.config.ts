@@ -4,6 +4,8 @@
 //
 // `vite dev` proxies /api to a locally running hub so the interface can be
 // developed against real data without a build step.
+import path from "node:path";
+
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
@@ -21,6 +23,11 @@ function manualChunks(id: string): string | undefined {
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+    },
+  },
   build: {
     rollupOptions: {
       output: {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveTarget } from "@corbits/context-menu";
+import { resolveTarget } from "@/shell/context-menu/lib";
 
 import { SHELL_CONTEXT_MENU_FALLBACK, SHELL_CONTEXT_MENU_TARGETS } from "./targets";
 

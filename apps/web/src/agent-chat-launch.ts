@@ -7,7 +7,7 @@
 // Always creates — never the `reuseExisting` land-hop path,
 // which is `default-agent-workbench.ts`'s own call, not this one.
 
-import { createWorkbench } from "@corbits/chat-ui";
+import { createWorkbench } from "@/chat";
 
 import { workbenchPath } from "./workbench-path";
 

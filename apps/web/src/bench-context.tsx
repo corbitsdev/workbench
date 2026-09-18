@@ -4,12 +4,12 @@
 // bench (the chat page, the benches page, the header switcher) reads this
 // context instead of re-deriving "membership[0]" on its own.
 
-import { isRawIdentifier } from "@corbits/bench-ui";
+import { isRawIdentifier } from "@/bench";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
-import type { APIQuery } from "@corbits/api-query";
+import type { APIQuery } from "@/lib/api-query";
 
 import { PrincipalsSchema, useAPIQuery } from "./api";
 import type { Principal, PrincipalsPage } from "./api";

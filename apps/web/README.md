@@ -46,7 +46,7 @@ cannot appear in one without the other. The contextual column no longer
 reads `NAV_ROUTES` at all: it has nothing to do with which pages exist.
 
 Running routines in the contextual column are sourced today from
-`@corbits/chat-ui`'s workflow-run listing (`src/shell/routine-activity.ts`)
+`@/chat`'s workflow-run listing (`src/shell/routine-activity.ts`)
 — the column depends only on that file's `RoutineActivityItem` shape.
 
 ## Screens
@@ -78,7 +78,7 @@ open, inline in that workbench). The `/approvals` route is gone.
 
 `/library` (`src/pages/library-page.tsx`) is the artifact gallery: search,
 sort, a grid/rows view toggle, kind-colored cards, and upload, built
-against the `ArtifactSummary` type from `@corbits/artifact-ui`.
+against the `ArtifactSummary` type from `@/library`.
 `LibraryRoute` reads and searches the tenant's artifacts from the real
 `/api/tenants/:id/artifacts` (list/detail) endpoint; a chat artifact
 chip's "Open in Library" link (`/library/a/:id`) deep-links into the same

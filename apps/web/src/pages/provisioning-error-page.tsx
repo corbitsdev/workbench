@@ -4,7 +4,7 @@
 // whole shell rather than a toast a user could miss or dismiss past.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
-import { WarningCircle } from "@corbits/icons";
+import { WarningCircle } from "@/lib/icons";
 
 export function ProvisioningErrorPage({
   message,

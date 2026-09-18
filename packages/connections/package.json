@@ -40,7 +40,6 @@
     "@corbits/github-tools": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
     "@corbits/inference-catalog": "workspace:*",
-    "@corbits/inference-settings": "workspace:*",
     "@corbits/mcp-tools": "workspace:*",
     "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core#v0.1.1",
     "@corbits/workflows": "workspace:*",

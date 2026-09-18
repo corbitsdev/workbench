@@ -26,14 +26,14 @@ import {
   type BadgeTone,
   type RunStatus,
 } from "@corbits/react-ui";
-import { ChartBar } from "@corbits/icons";
+import { ChartBar } from "@/lib/icons";
 import { runOutcomeStatus, runStatusLabel, withListingAbandoned } from "@corbits/workflows/client";
 import type * as React from "react";
 import { useEffect, useState } from "react";
 
 import { workflowRunStatuses, type WorkflowRunStatus } from "@intx/types";
-import { SignedOutNotice, type APIQuery } from "@corbits/api-query";
-import { workbenchesQueryKey, listWorkbenches } from "@corbits/chat-ui";
+import { SignedOutNotice, type APIQuery } from "@/lib/api-query";
+import { workbenchesQueryKey, listWorkbenches } from "@/chat";
 
 import { useBench } from "../bench-context";
 import { resolveWorkbenchInsightsScope } from "../insights-workbench-scope";

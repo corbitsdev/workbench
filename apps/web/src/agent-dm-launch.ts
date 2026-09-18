@@ -7,7 +7,7 @@
 // (`findExistingAgentChat` in `packages/chat/src/routes.ts`) instead of
 // spawning a new one each time.
 
-import { openAgentDm } from "@corbits/chat-ui";
+import { openAgentDm } from "@/chat";
 
 import { workbenchPath } from "./workbench-path";
 

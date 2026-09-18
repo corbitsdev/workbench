@@ -4,9 +4,9 @@
 
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 
-import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
-import { workbenchesQueryKey } from "@corbits/chat-ui";
-import type { WorkbenchKind } from "@corbits/chat-ui";
+import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";
+import { workbenchesQueryKey } from "@/chat";
+import type { WorkbenchKind } from "@/chat";
 
 /**
  * Retry policy shared by every query in the app: no session and a
@@ -107,7 +107,7 @@ export const tenantKeys = {
    * subtrees — share one cached probe instead of each firing its own. */
   settingsAccess: (tenantId: string, principalId: string) =>
     ["tenant", tenantId, "settings-access", principalId] as const,
-  /** Delegates to `@corbits/chat-ui`'s own key builder — that package owns
+  /** Delegates to `@/chat`'s own key builder — that package owns
    * both the workbenches endpoint and `WorkbenchKind`, so this is the one array
    * shape every workbench-listing surface (bench-activity, command palette,
    * the Routines picker, `ChatWorkspace`'s own sidebar) keys against,

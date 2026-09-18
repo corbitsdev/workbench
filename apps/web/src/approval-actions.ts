@@ -1,4 +1,4 @@
-// Builds the `ApprovalActions` port `ChatWorkspace` (`@corbits/chat-ui`)
+// Builds the `ApprovalActions` port `ChatWorkspace` (`@/chat`)
 // calls for its in-chat approve card. Reuses the exact reads and writes
 // every other approval surface uses -- `getApprovalDetail` in
 // `pending-approvals.ts`, `approveApproval`/`rejectApproval` in `api.ts` --
@@ -8,9 +8,9 @@
 // run here.
 
 import type { QueryClient } from "@tanstack/react-query";
-import type { ApprovalActions, ApprovalDecisionResult } from "@corbits/chat-ui";
-import { CHAT_STRINGS } from "@corbits/chat-ui";
-import { ApiQueryError } from "@corbits/api-query";
+import type { ApprovalActions, ApprovalDecisionResult } from "@/chat";
+import { CHAT_STRINGS } from "@/chat";
+import { ApiQueryError } from "@/lib/api-query";
 
 import { approveApproval, rejectApproval } from "./api";
 import type { Approval } from "./api";

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { ClientLogger } from "@corbits/client-log";
+import type { ClientLogger } from "@/lib/client-log";
 
 import { bootstrapClientSession, logBootstrapResult, logBootstrapThrown } from "./client-bootstrap";
 import type { ClientBootstrapResult } from "./client-bootstrap";

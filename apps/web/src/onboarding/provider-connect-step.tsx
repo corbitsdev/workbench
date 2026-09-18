@@ -1,6 +1,6 @@
 // The credential + model-offering step this onboarding page runs before
 // installing Myra: connects a provider credential through the
-// stock native credentials/providers routes (`@corbits/inference-settings`'
+// stock native credentials/providers routes (`@/settings/inference`'
 // `shadowOffering`), then derives the exactly-one offering it mints into
 // `sourceOfferingIds`/`defaultSourceOfferingId` — no separate offering
 // picker, because a freshly connected provider names exactly one model.
@@ -8,7 +8,7 @@
 // an earlier run of this same step) skips this UI entirely: see
 // `resolveExistingOffering` in `onboarding-page.tsx`.
 import { Button, Input, RadioGroup, RadioOption } from "@corbits/react-ui";
-import { getResolvedCatalog, shadowOffering } from "@corbits/inference-settings";
+import { getResolvedCatalog, shadowOffering } from "@/settings/inference";
 import { reportError } from "@corbits/error-sink";
 import { useState } from "react";
 import type { FormEvent } from "react";

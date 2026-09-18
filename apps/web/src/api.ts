@@ -15,8 +15,8 @@ import { useQuery } from "@tanstack/react-query";
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
-import type { APIQuery } from "@corbits/api-query";
-import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@corbits/api-query";
+import type { APIQuery } from "@/lib/api-query";
+import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@/lib/api-query";
 import { pathToQueryKey } from "./query-client";
 
 export const ProfileSchema = UserProfile;

@@ -12,7 +12,7 @@
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
-import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
+import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";
 
 export const WebhookTrigger = type({
   id: "string",

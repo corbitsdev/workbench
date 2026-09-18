@@ -8,7 +8,7 @@ import {
   resolveTarget,
   useContextMenuState,
   useDocumentContextMenuTrigger,
-} from "@corbits/context-menu";
+} from "@/shell/context-menu/lib";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 

@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import type { ProfileSubject } from "@corbits/chat-ui";
+import type { ProfileSubject } from "@/chat";
 import {
   canvasColumnAllowed,
   clearCanvasForTenantSwitch,
@@ -22,7 +22,7 @@ import {
   resolveCanvasVisibility,
   toggleCanvasFocus,
   useShellLayoutMode,
-} from "@corbits/shell-layout";
+} from "@/shell/layout";
 import { useBench } from "../bench-context";
 import { workbenchIdFromPath, workbenchPath, isWorkbenchPath } from "../workbench-path";
 import {

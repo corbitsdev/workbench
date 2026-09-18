@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@corbits/react-ui";
-import { Clock } from "@corbits/icons";
+import { Clock } from "@/lib/icons";
 import { cronSentence } from "@corbits/workflows/client";
 
 import { useGlobalRoutines, useRoutineActions } from "../global-routines";

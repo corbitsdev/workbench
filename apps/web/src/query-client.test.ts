@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { QueryClient } from "@tanstack/react-query";
 
-import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
+import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";
 
 import {
   createAppQueryClient,

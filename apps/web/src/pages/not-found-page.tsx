@@ -1,5 +1,5 @@
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
-import { Compass } from "@corbits/icons";
+import { Compass } from "@/lib/icons";
 
 import { Link } from "../navigation";
 

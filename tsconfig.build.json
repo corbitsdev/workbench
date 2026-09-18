@@ -11,31 +11,16 @@
       "path": "./packages/agent-events/tsconfig.src.json"
     },
     {
-      "path": "./packages/api-query/tsconfig.src.json"
-    },
-    {
       "path": "./packages/approvals/tsconfig.src.json"
     },
     {
       "path": "./packages/artifact-ui/tsconfig.src.json"
     },
     {
-      "path": "./packages/bench-ui/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/client-log/tsconfig.src.json"
-    },
-    {
       "path": "./packages/code-review/tsconfig.src.json"
     },
     {
       "path": "./packages/collections/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/command-palette/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/context-menu/tsconfig.src.json"
     },
     {
       "path": "./packages/credential-providers/tsconfig.src.json"
@@ -56,9 +41,6 @@
       "path": "./packages/hub-api-client/tsconfig.src.json"
     },
     {
-      "path": "./packages/icons/tsconfig.src.json"
-    },
-    {
       "path": "./packages/inference-catalog/tsconfig.src.json"
     },
     {
@@ -72,15 +54,6 @@
     },
     {
       "path": "./packages/sandbox-sidecar/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/shell-layout/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/slug/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/text-diff/tsconfig.src.json"
     },
     {
       "path": "./packages/tool-registry-publish/tsconfig.src.json"

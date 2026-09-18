@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { WorkbenchThread, MessageItem } from "@corbits/chat-ui";
+import type { WorkbenchThread, MessageItem } from "@/chat";
 
 import type { PendingApproval } from "./pending-approvals";
 import {

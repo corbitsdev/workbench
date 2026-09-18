@@ -4,7 +4,7 @@
 // and timestamps, so this renders exactly that.
 import { Badge, EmptyState, PageShell } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
-import { Clock, FlowArrow } from "@corbits/icons";
+import { Clock, FlowArrow } from "@/lib/icons";
 
 import { useBench } from "../bench-context";
 import { WORKFLOWS_PATH_PREFIX, workflowDefinitionAssetIdFromPath } from "../path-ids";

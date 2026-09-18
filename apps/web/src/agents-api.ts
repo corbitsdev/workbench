@@ -17,8 +17,8 @@ import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 import { useQuery } from "@tanstack/react-query";
 
-import type { APIQuery } from "@corbits/api-query";
-import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@corbits/api-query";
+import type { APIQuery } from "@/lib/api-query";
+import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@/lib/api-query";
 import { isChatPickerModelName } from "@corbits/connections/model-capability";
 import { parseErrorEnvelope } from "@corbits/error-sink";
 import { tenantKeys } from "./query-client";
@@ -210,7 +210,7 @@ const AgentCapabilitiesResponse = type({
 export type AgentCapabilities = typeof AgentCapabilitiesResponse.infer;
 
 /** `GET /api/tenants/:t/agent-definitions/:id` — the same route
- * `@corbits/chat-ui`'s per-workbench Agents section reads for its model
+ * `@/chat`'s per-workbench Agents section reads for its model
  * picker. Fetched lazily, per definition, only once its row is expanded on
  * the Agents roster — the paginated definitions list itself carries no
  * model field. */

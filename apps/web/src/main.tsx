@@ -6,7 +6,7 @@ import { ThemeProvider, Toaster, toast } from "@corbits/react-ui";
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
-import { getLogger } from "@corbits/client-log";
+import { getLogger } from "@/lib/client-log";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { App } from "./app";
 import { validatedNextPath } from "./login-next";

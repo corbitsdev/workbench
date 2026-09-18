@@ -7,10 +7,10 @@ import {
   patchWorkbenchSettings,
   profileSubjectFromParticipant,
   WORKBENCHES_MUTATED_EVENT,
-} from "@corbits/chat-ui";
-import type { ProfileSubject } from "@corbits/chat-ui";
-import { contextMenuItem, contextMenuSeparator } from "@corbits/context-menu";
-import type { ContextMenu, ContextMenuEntry } from "@corbits/context-menu";
+} from "@/chat";
+import type { ProfileSubject } from "@/chat";
+import { contextMenuItem, contextMenuSeparator } from "@/shell/context-menu/lib";
+import type { ContextMenu, ContextMenuEntry } from "@/shell/context-menu/lib";
 import { reportError } from "@corbits/error-sink";
 import {
   ArrowSquareOut,
@@ -25,7 +25,7 @@ import {
   SignOut,
   SlidersHorizontal,
   UserCircle,
-} from "@corbits/icons";
+} from "@/lib/icons";
 import { toast } from "@corbits/react-ui";
 
 import {

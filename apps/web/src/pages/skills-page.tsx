@@ -27,8 +27,8 @@ import {
   TableHeader,
   TableRow,
 } from "@corbits/react-ui";
-import { Lightning, Plus } from "@corbits/icons";
-import { WorkbenchLoadingState } from "@corbits/chat-ui";
+import { Lightning, Plus } from "@/lib/icons";
+import { WorkbenchLoadingState } from "@/chat";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { rowActivationProps } from "../activatable-row";

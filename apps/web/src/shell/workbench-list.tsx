@@ -21,10 +21,10 @@ import {
   displayWorkbenchTitle,
   workbenchesQueryKeyPrefix,
   patchWorkbenchSettings,
-} from "@corbits/chat-ui";
-import type { Workbench } from "@corbits/chat-ui";
+} from "@/chat";
+import type { Workbench } from "@/chat";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChatCircle, Check, DotsThree, Hash, MagnifyingGlass, PushPin } from "@corbits/icons";
+import { ChatCircle, Check, DotsThree, Hash, MagnifyingGlass, PushPin } from "@/lib/icons";
 import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
 

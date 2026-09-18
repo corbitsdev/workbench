@@ -33,13 +33,13 @@ import {
   resolveArtifactRendererKind,
   sortArtifacts,
   workflowRunIdFromSource,
-} from "@corbits/artifact-ui";
-import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
+} from "@/library";
+import type { ArtifactSort, ArtifactSummary } from "@/library";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowsDownUp, ArrowSquareOut, LinkSimple as LinkIcon, Stack, X } from "@corbits/icons";
+import { ArrowsDownUp, ArrowSquareOut, LinkSimple as LinkIcon, Stack, X } from "@/lib/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
-import { describeApiError, ListSkeleton, QueryView, SignedOutNotice } from "@corbits/api-query";
+import { describeApiError, ListSkeleton, QueryView, SignedOutNotice } from "@/lib/api-query";
 
 import {
   artifactPreviewPath,

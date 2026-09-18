@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { Workbench } from "@corbits/chat-ui";
+import type { Workbench } from "@/chat";
 
 import { buildSidebarRows } from "./sidebar-rows";
 import type { SidebarRow } from "./sidebar-rows";

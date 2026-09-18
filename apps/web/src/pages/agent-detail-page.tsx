@@ -53,12 +53,12 @@ import {
   Textarea,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
-import { Copy, Robot } from "@corbits/icons";
+import { Copy, Robot } from "@/lib/icons";
 import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { ApiQueryError, describeApiError, QueryView } from "@corbits/api-query";
-import { slugify } from "@corbits/slug";
+import { ApiQueryError, describeApiError, QueryView } from "@/lib/api-query";
+import { slugify } from "@/lib/slug";
 
 import type {
   AgentDefinition,

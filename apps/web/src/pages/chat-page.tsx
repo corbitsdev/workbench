@@ -3,13 +3,10 @@
 // Canvas stays auxiliary (profiles and similar) and opens on demand from
 // this workspace.
 
-import { libraryArtifactPath } from "@corbits/artifact-ui";
-import { describeApiError } from "@corbits/api-query";
-import { ChatWorkspace, fetchWorkbenchBlob, type Part } from "@corbits/chat-ui";
-import {
-  getResolvedCatalog,
-  hasUsableModel as computeHasUsableModel,
-} from "@corbits/inference-settings";
+import { libraryArtifactPath } from "@/library";
+import { describeApiError } from "@/lib/api-query";
+import { ChatWorkspace, fetchWorkbenchBlob, type Part } from "@/chat";
+import { getResolvedCatalog, hasUsableModel as computeHasUsableModel } from "@/settings/inference";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 

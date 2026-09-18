@@ -1,6 +1,6 @@
 // Query-key helpers — pure unit coverage so the TanStack cutover does not
 // depend only on page-level smoke. The APIQuery adapter itself
-// (`toAPIQuery`) is covered in `@corbits/api-query`.
+// (`toAPIQuery`) is covered in `@/lib/api-query`.
 
 import { describe, expect, test } from "bun:test";
 

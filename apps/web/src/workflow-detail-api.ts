@@ -8,7 +8,7 @@
 // definitions listing — this file is fetch composition only.
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
-import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
+import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";
 import { WorkflowDefinitionDetail } from "@corbits/workflows/client";
 import type { WorkflowDefinitionDetail as WorkflowDefinitionDetailT } from "@corbits/workflows/client";
 

@@ -5,18 +5,18 @@
 
 import { Button, toast } from "@corbits/react-ui";
 import { useDismissablePopover } from "@corbits/react-ui/hooks/use-dismissable-popover";
-import { PaperPlaneRight } from "@corbits/icons";
+import { PaperPlaneRight } from "@/lib/icons";
 import {
   ChatApiError,
   CHAT_STRINGS,
   describeChatError,
   listTenantInvitableDefinitions,
   WorkbenchLoadingState,
-} from "@corbits/chat-ui";
-import { humanizeSlug } from "@corbits/chat-ui/wire/display-name";
+} from "@/chat";
+import { humanizeSlug } from "@/chat/wire/display-name";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiQueryError, describeApiError } from "@corbits/api-query";
+import { ApiQueryError, describeApiError } from "@/lib/api-query";
 import { reportError } from "@corbits/error-sink";
 
 import { CreateAgentPanel } from "./create-agent-panel";

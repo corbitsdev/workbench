@@ -3,7 +3,7 @@
 // `insights-workbench-scope.ts` scopes Insights on — never the workbench id
 // itself and never the bench's root tenant.
 
-import type { Workbench } from "@corbits/chat-ui";
+import type { Workbench } from "@/chat";
 
 export type LibraryWorkbenchScope = {
   readonly tenantId: string;

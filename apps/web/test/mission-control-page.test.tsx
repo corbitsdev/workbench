@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import type { Workbench } from "@corbits/chat-ui";
+import type { Workbench } from "@/chat";
 import { FIRE_RUNNING_WINDOW_MS } from "@corbits/workflows/client";
 
 import { BenchContext, type BenchState } from "../src/bench-context";

@@ -94,7 +94,7 @@ function connectDeepLink(connectorId: string): string {
 
 /** There is no fixed id — and no generic add-custom-MCP-server form at
  * all — to deep-link to (; see
- * `packages/plugins-ui/src/mcp-servers-section.tsx`'s header for why:
+ * `apps/web/src/tools/mcp-servers-section.tsx`'s header for why:
  * only curated presets are self-serve installable, an MCP server has
  * no id before it's tenant-minted at connect time). So this stays
  * plain prose pointed at the Plugins page's own connector list rather

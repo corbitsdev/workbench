@@ -19,8 +19,8 @@
 // not anticipate, or a hard failure at any step, renders here with a
 // retry — a gap is not "ready".
 import { Button, EmptyState } from "@corbits/react-ui";
-import { WarningCircle } from "@corbits/icons";
-import { WorkbenchLoadingState } from "@corbits/chat-ui";
+import { WarningCircle } from "@/lib/icons";
+import { WorkbenchLoadingState } from "@/chat";
 import { useCallback, useEffect, useState } from "react";
 
 import { ensurePrimaryTenant, runPortableClientBootstrap } from "../client-bootstrap";

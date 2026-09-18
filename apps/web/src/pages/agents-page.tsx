@@ -5,7 +5,7 @@
 // Assistant editor reads). Create runs through `CreateAgentPanel`, the
 // same `createAgentDefinition` (`@corbits/agent-directory`) call the
 // per-workbench Assistant tab uses. Editing instructions/capabilities
-// stays there (`@corbits/chat-ui`'s `AgentsSection`) — this page is
+// stays there (`@/chat`'s `AgentsSection`) — this page is
 // roster-only, never a second instructions editor.
 
 import {
@@ -27,12 +27,12 @@ import {
   useListSelection,
 } from "@corbits/react-ui";
 import type { BadgeTone, SelectionCheckboxState } from "@corbits/react-ui";
-import { Archive, ArrowSquareOut, Plus, Robot } from "@corbits/icons";
-import { detailPath } from "@corbits/command-palette";
+import { Archive, ArrowSquareOut, Plus, Robot } from "@/lib/icons";
+import { detailPath } from "@/command-palette";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { describeApiError, QueryView } from "@corbits/api-query";
+import { describeApiError, QueryView } from "@/lib/api-query";
 
 import {
   getAgentCapabilities,
