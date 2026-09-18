@@ -201,16 +201,23 @@ export async function readHubSnapshot(hub: StockHub): Promise<HubSnapshot> {
   };
 }
 
-function hasMyra(manifest: NeedsList, snapshot: HubSnapshot): boolean {
-  const expected = manifest.myra.definitionRefId.toLowerCase();
-  return snapshot.primaryPrincipals.some(
+export function hasActiveMyraPrincipal(
+  principals: readonly HubPrincipal[],
+  definitionRefId: string,
+): boolean {
+  const expected = definitionRefId.toLowerCase();
+  return principals.some(
     (principal) =>
       principal.kind === "workflow" &&
       principal.status === "active" &&
-      (principal.refId === manifest.myra.definitionRefId ||
+      (principal.refId === definitionRefId ||
         principal.displayName.toLowerCase() === expected ||
         principal.displayName.toLowerCase() === "myra"),
   );
+}
+
+function hasMyra(manifest: NeedsList, snapshot: HubSnapshot): boolean {
+  return hasActiveMyraPrincipal(snapshot.primaryPrincipals, manifest.myra.definitionRefId);
 }
 
 export type ConvergeReport = {
