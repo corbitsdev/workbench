@@ -1,7 +1,5 @@
-// Files' workbench-first lens: resolves the "current workbench"
-// pill to that workbench's own tenant, the same `tenancy.tenantId`
-// `insights-workbench-scope.ts` scopes Insights on — never the workbench id
-// itself and never the bench's root tenant.
+// Resolves to the workbench's own tenant id, same as
+// `insights-workbench-scope.ts` — never the bench's root tenant.
 
 import type { Workbench } from "@/chat";
 
