@@ -1,7 +1,5 @@
-// The setup gate: an empty hub drives the installer itself (mint tenant,
-// resolve an offering, deploy Myra), asking the operator only where input
-// is genuinely required. A gap this loop can't cross renders here with a
-// retry, not a silent "ready".
+// A gap the install loop can't cross renders here with a retry, never a
+// silent "ready".
 import { Button, EmptyState } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
 import { WorkbenchLoadingState } from "@/chat";

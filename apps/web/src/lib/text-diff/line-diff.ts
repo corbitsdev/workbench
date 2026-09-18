@@ -1,7 +1,5 @@
-// Kept cheap enough for a dialog: newlines normalize first (no CRLF
-// false-positives), identical head/tail trim before the quadratic LCS
-// walk (with a hard cap instead of allocating gigabytes on a huge diff),
-// and long unchanged runs collapse into a single "skipped" row.
+// Head/tail trim before the quadratic LCS walk, with a hard cap, keeps
+// this cheap enough for a dialog on a huge diff.
 
 export type DiffLineKind = "context" | "added" | "removed" | "skipped";
 

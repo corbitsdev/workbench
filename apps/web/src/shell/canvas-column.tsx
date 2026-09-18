@@ -293,11 +293,9 @@ function ProfileCanvasPane({
   );
 }
 
-/** Whether this render shows `ArtifactTextEditor` instead of the static
- * `ArtifactRenderer`: the artifact has to be a text kind. Whether the
- * resulting pane is interactive is `artifact.canEdit`, checked separately:
- * a viewer without write access still gets `ArtifactTextEditor` in its
- * own `readOnly` mode, just with keystrokes ignored. */
+/** Whether the pane is interactive is `artifact.canEdit`, checked
+ * separately — a read-only viewer still gets the editor, just in
+ * `readOnly` mode. */
 function showsTextEditor(artifact: CanvasArtifactContent): boolean {
   return artifact.rendererKind === "doc";
 }

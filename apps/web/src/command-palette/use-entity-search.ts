@@ -31,11 +31,8 @@ export type UseEntitySearchResult = {
   readonly loadMore: () => void;
 };
 
-// Debouncing lives here, not the app shell, because it's inseparable from
-// the pagination it resets: a keystroke mid-debounce must restart the
-// timer and the offset together, or a stale page would leak in.
-// `loading` is derived so it's visible on the render the keystroke
-// caused, not after a passive effect flushes.
+// Debouncing lives here, inseparable from the pagination it resets: a
+// keystroke mid-debounce must restart the timer and offset together.
 export function useEntitySearch({
   query,
   enabled,
