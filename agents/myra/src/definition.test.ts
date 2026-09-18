@@ -12,7 +12,7 @@ import {
   ASSISTANT_WORKFLOW_ID,
   buildAssistantWorkflow,
   serializeAssistantWorkflow,
-} from "../src/index";
+} from "./index";
 
 const INPUT = {
   triggerAddress: "ins_dep000000000000@example.test",

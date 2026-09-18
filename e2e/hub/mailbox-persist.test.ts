@@ -20,8 +20,8 @@ import {
   type MailboxDb,
 } from "@corbits/mailbox";
 import { createHubSessionLookups, type AgentRepoStore } from "@intx/hub-sessions";
-import { createHubMailboxAuthorizeSender } from "../src/mailbox-persist";
-import { dbGate } from "../../../test/db-gate";
+import { createHubMailboxAuthorizeSender } from "../../apps/hub/src/mailbox-persist";
+import { dbGate } from "../lib/db-gate";
 
 const databaseUrl = process.env["DATABASE_URL"] ?? "";
 const describeIfDb = dbGate(databaseUrl, import.meta.path);

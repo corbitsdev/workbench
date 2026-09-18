@@ -35,7 +35,7 @@ test("shipped sources import only published platform packages", async () => {
   const importPattern = /from\s+"([^"]+)"/g;
   const violations: string[] = [];
   for (const file of await shippedFiles()) {
-    if (!file.endsWith(".ts")) continue;
+    if (!file.endsWith(".ts") || file.endsWith(".test.ts")) continue;
     const content = await readFile(file, "utf8");
     for (const match of content.matchAll(importPattern)) {
       const specifier = match[1] ?? "";

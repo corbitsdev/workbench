@@ -9,7 +9,7 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { dbGate } from "../../../test/db-gate";
+import { dbGate } from "../lib/db-gate";
 
 const databaseUrl = process.env["DATABASE_URL"] ?? "";
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
@@ -41,7 +41,7 @@ afterAll(async () => {
 
 describeIfDb("boot", () => {
   test("serves stock platform routes", async () => {
-    const { createHubServer } = await import("../src/server");
+    const { createHubServer } = await import("../../apps/hub/src/server");
     const opts = await createHubServer();
 
     const status = await opts.fetch(new Request("http://localhost/status"));
@@ -52,7 +52,7 @@ describeIfDb("boot", () => {
   });
 
   test("a Corbits mount (mailbox) sits inside the native tenant middleware", async () => {
-    const { createHubServer } = await import("../src/server");
+    const { createHubServer } = await import("../../apps/hub/src/server");
     const opts = await createHubServer();
 
     // Anonymous request to a Corbits-mounted route: the platform's tenant

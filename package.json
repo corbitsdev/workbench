@@ -41,7 +41,9 @@
     "oxlint": "1.83.0",
     "oxfmt": "0.68.0",
     "puppeteer-core": "^25.7.0",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "@intx/hub-sessions": "workspace:*",
+    "drizzle-orm": "catalog:"
   },
   "engines": {
     "bun": ">=1.2.0"
