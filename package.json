@@ -43,6 +43,8 @@
     "puppeteer-core": "^25.7.0",
     "typescript": "6.0.3",
     "@intx/hub-sessions": "workspace:*",
+    "@intx/authz": "0.3.0",
+    "@intx/harness": "workspace:*",
     "drizzle-orm": "catalog:"
   },
   "engines": {

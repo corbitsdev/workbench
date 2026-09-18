@@ -8,11 +8,11 @@ import { randomUUID } from "node:crypto";
 import { createDB, dropSchema, runMigrations, schema } from "@intx/db";
 import { eq } from "drizzle-orm";
 
-import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../test/database-url";
-import { dbGate } from "../../../test/db-gate";
-import { applyCronMigrations, cronScheduleTable } from "../src/schema";
-import { createCronTicker } from "../src/ticker";
+import { dbTargetFromUrl } from "../../scripts/db-setup";
+import { e2eDatabaseUrl } from "../lib/database-url";
+import { dbGate } from "../lib/db-gate";
+import { applyCronMigrations, cronScheduleTable } from "../../packages/cron/src/schema";
+import { createCronTicker } from "../../packages/cron/src/ticker";
 
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
