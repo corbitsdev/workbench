@@ -3,7 +3,6 @@ import { expect, test } from "bun:test";
 import {
   readWorkflowSourceDefinition,
   renderBundledWorkflowSourceTree,
-  renderWorkflowSourceTree,
   RetiredWorkflowEnvelopeError,
   WORKFLOW_SOURCE_ENTRY,
 } from "./source";
@@ -21,8 +20,11 @@ function readerFor(tree: Readonly<Record<string, string>>) {
 }
 
 test("the rendered tree is a manifest, the entry, and the definition projection", () => {
-  const tree = renderWorkflowSourceTree({
+  const tree = renderBundledWorkflowSourceTree({
     packageName: "@workbench-agent/research-buddy",
+    bundle: "export function build(input) { return input; }",
+    buildExport: "build",
+    buildInput: { id: "wf_agent_research-buddy" },
     workflowJson: WORKFLOW_JSON,
   });
 
@@ -57,8 +59,11 @@ test("an asset with no definition projection reads as the named retirement error
 });
 
 test("reading a source-form asset answers its serialized definition", async () => {
-  const tree = renderWorkflowSourceTree({
+  const tree = renderBundledWorkflowSourceTree({
     packageName: "@workbench-agent/research-buddy",
+    bundle: "export function build(input) { return input; }",
+    buildExport: "build",
+    buildInput: { id: "wf_agent_research-buddy" },
     workflowJson: WORKFLOW_JSON,
   });
 
