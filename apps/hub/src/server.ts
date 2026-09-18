@@ -57,15 +57,14 @@ import {
   mountMailbox,
 } from "@corbits/mailbox";
 import { createMemory, loadMemoryConfig } from "@corbits/memory";
-import { createCronTicker, mountCron } from "@corbits/cron";
+import { createCronTicker, createRunTriggerCronDeliver, mountCron } from "@corbits/cron";
 import {
   createHubMailboxAuthorizeSender,
   createHubPersistMailWithSessionEnsure,
 } from "./mailbox-persist";
 import { captureMailboxRequest, createMailboxDeliver } from "./mailbox-send";
-import { createCronDeliver } from "./cron-deliver";
 import { reportError } from "@corbits/error-sink";
-import { installWebhooks, type HookMailRouter } from "@corbits/webhooks";
+import { createRunTriggerDeliverer, installWebhooks, type HookMailRouter } from "@corbits/webhooks";
 import {
   createProcessSidecarProvisioner,
   readProcessProvisionerConfig,
@@ -577,25 +576,33 @@ export async function createHubServer({
     cronTicker = createCronTicker({
       db,
       intervalMs: 60_000,
-      deliver: createCronDeliver({
-        router: systemTriggerMailRouter,
-        materialize: createMailTriggeredRunGrantsMaterializer({
-          db,
-          principalKeyStore,
-          grantStore,
+      // A due schedule fires with nobody signed in, so it cannot ride the
+      // mailbox persist path, which authorizes its sender against a live
+      // routable endpoint. It is a system trigger like an inbound webhook,
+      // so it takes the same route: the run is the authenticated sender of
+      // its own signed trigger mail, with its grants materialized first.
+      deliver: createRunTriggerCronDeliver(
+        createRunTriggerDeliverer({
+          router: systemTriggerMailRouter,
+          materialize: createMailTriggeredRunGrantsMaterializer({
+            db,
+            principalKeyStore,
+            grantStore,
+          }),
+          tenantDomain: async (tenantId) => {
+            const [tenantRow] = await db
+              .select({ domain: tenantTable.domain })
+              .from(tenantTable)
+              .where(eq(tenantTable.id, tenantId))
+              .limit(1);
+            if (tenantRow === undefined) {
+              throw new Error(`no tenant "${tenantId}" to address cron mail from`);
+            }
+            return tenantRow.domain;
+          },
+          senderLocalPart: "cron",
         }),
-        tenantDomain: async (tenantId) => {
-          const [tenantRow] = await db
-            .select({ domain: tenantTable.domain })
-            .from(tenantTable)
-            .where(eq(tenantTable.id, tenantId))
-            .limit(1);
-          if (tenantRow === undefined) {
-            throw new Error(`no tenant "${tenantId}" to address cron mail from`);
-          }
-          return tenantRow.domain;
-        },
-      }),
+      ),
       onDeliveryError: (error, schedule) => {
         reportError(error, {
           operation: "hub.cron.deliver",

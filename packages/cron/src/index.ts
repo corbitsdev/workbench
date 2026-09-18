@@ -12,3 +12,4 @@ export {
 export { cronScheduleTable, applyCronMigrations } from "./schema";
 export { createCronTicker, type CronDb, type CronTicker, type DeliverCronMail } from "./ticker";
 export { mountCron, type MountCronOpts, type RequireTenantMember } from "./mount";
+export { createRunTriggerCronDeliver, type RunTriggerDeliverer } from "./deliver";
