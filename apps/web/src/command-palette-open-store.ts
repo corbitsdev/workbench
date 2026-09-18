@@ -1,15 +1,6 @@
-// The state of the global command palette (DECISIONS.md → Search) — a
-// separate surface from the stage top bar's per-page filter, which owns no
-// state here at all. Held outside the React tree because the things that
-// open it are siblings, not ancestors: `CommandPaletteProvider` renders the
-// palette itself, `Cmd+K` opens it from anywhere via `useCommandShortcut`,
-// and a context menu item opens it too. One store, so all three ways in can
-// never disagree about whether the palette is open.
-//
-// Module state outlives a React remount, so search is scoped explicitly:
-// `CommandPaletteProvider` closes it on a route change (a Back out of a
-// result must not leave the overlay standing) and on a bench switch (whose
-// results and query belonged to the bench being left).
+// Held outside the React tree because the things that open it (Cmd+K, a
+// context menu item, the provider) are siblings, not ancestors — one
+// store so all three ways in can never disagree.
 
 import { useSyncExternalStore } from "react";
 

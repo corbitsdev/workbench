@@ -19,11 +19,8 @@ export type PaletteResultGroup = {
   readonly items: readonly PaletteResultItem[];
 };
 
-/** One group of results, in the order it should appear among its siblings.
- * `kind` gates it to a prefix scope (`#`, `@`, `>`, `/`): visible when no
- * scope is active, or when the active scope matches. Omitting `kind` makes
- * it an unscoped-only group — the mock's Routines, Skills, Library and
- * Threads groups — visible only in the default (no scope) view. */
+// Omitting `kind` makes it an unscoped-only group, visible only in the
+// default (no scope) view.
 export type PaletteSource = {
   readonly id: string;
   readonly heading: string;
@@ -37,10 +34,8 @@ export type BuildCommandPaletteGroupsInput = {
   /** Already-ordered, already-capped Recents rows; shown only when the
    * query is empty and no scope prefix is active. */
   readonly recents: readonly PaletteResultItem[];
-  /** Every other group, already in the exact order they should render in —
-   * scoped and unscoped groups may be interleaved, matching the mock's
-   * Commands/Workbenches/Pages/Settings/Artifacts/Routines/Threads/People
-   * order (People last). */
+  // Already in the exact order they should render in; scoped and
+  // unscoped groups may be interleaved.
   readonly sources: readonly PaletteSource[];
 };
 
@@ -54,13 +49,8 @@ function filterItems(
   );
 }
 
-/**
- * Builds the palette's grouped, ordered result list from already-fetched
- * data: parses the `#`/`@`/`>`/`/` scope prefix, applies it to each scoped
- * source, folds in unscoped sources only in the default view, and shows
- * `recents` only on the empty, unscoped view — the same rules
- * `buildCmdkEntries` in the shell mock encodes. Pure: no fetch, no state.
- */
+// Pure: no fetch, no state. `recents` shows only on the empty, unscoped
+// view.
 export function buildCommandPaletteGroups(
   input: BuildCommandPaletteGroupsInput,
 ): readonly PaletteResultGroup[] {

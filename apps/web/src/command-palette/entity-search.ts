@@ -1,15 +1,12 @@
 import { matchesQuery } from "./static-commands";
 
-/** One entity result. Only `title` is ever shown — never the id it carries
- * for selection, so a consumer wiring this into a UI can never regress the
- * "no raw identifier on screen" floor by accident. */
+// Only `title` is ever shown, never the id, so a consumer can't regress
+// the "no raw identifier on screen" floor by accident.
 export type EntitySearchResult = {
   readonly id: string;
   readonly title: string;
-  /** Which source the result came from — a free-form label the consumer
-   * defines (e.g. `"workbenches"`, `"routines"`, `"agents"`). The package
-   * never interprets it; it only carries it through so the app shell can
-   * group results and map a selection back to the right route. */
+  // The package never interprets this — only carries it through so the
+  // app shell can group results and map a selection to a route.
   readonly category: string;
 };
 
@@ -18,18 +15,15 @@ export type EntitySearchPage = {
   readonly hasMore: boolean;
 };
 
-/** The bare shape entity search needs from an already-fetched, already-typed
- * list — workbenches, routines, agents, etc. all already come off
- * arktype-validated API responses before they reach here, so this module
- * trusts the shape it is handed. */
+// Already-typed data from arktype-validated API responses — this module
+// trusts the shape it's handed.
 export type SearchableEntity = {
   readonly id: string;
   readonly name: string;
 };
 
-/** A named bundle of entities the search core matches against. The
- * `category` label flows through to every result so the consumer can group
- * and route them without re-deriving provenance. */
+// `category` flows through to every result so the consumer can group and
+// route them without re-deriving provenance.
 export type EntitySource = {
   readonly category: string;
   readonly entities: readonly SearchableEntity[];
@@ -42,20 +36,9 @@ export type SearchEntitiesInput = {
   readonly offset: number;
 };
 
-/**
- * Client-side search over entities the app has already fetched for its own
- * pages — workbenches, routines, agents, whatever the consumer hands in. There
- * is no cross-tenant search endpoint yet, so every source is an
- * already-fetched list matched here.
- *
- * An empty query returns nothing rather than everything: the palette's own
- * "type to search" state covers that case, and dumping every entity into
- * the list the instant the palette opens would make the static commands
- * compete with noise for the first keystroke.
- *
- * Results preserve source order: if the consumer passes workbenches before
- * routines, workbench matches appear first within a page.
- */
+// There's no cross-tenant search endpoint yet, so every source is an
+// already-fetched list. An empty query returns nothing rather than
+// dumping every entity in, competing with static commands on open.
 export function searchEntities({
   query,
   sources,

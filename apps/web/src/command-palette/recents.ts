@@ -59,12 +59,8 @@ function isRecentEntry(value: unknown): value is RecentEntry {
   );
 }
 
-/**
- * A small localStorage-backed Recents list, keyed by `storageKey` so each
- * bench keeps its own history. Malformed or missing stored data is treated
- * as an empty list rather than thrown — a corrupt entry never breaks the
- * palette.
- */
+// Malformed or missing stored data is treated as an empty list rather
+// than thrown — a corrupt entry never breaks the palette.
 export function createRecentsStore(
   storage: RecentsStorage,
   storageKey: string,

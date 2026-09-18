@@ -31,24 +31,11 @@ export type UseEntitySearchResult = {
   readonly loadMore: () => void;
 };
 
-/**
- * Debounces a typed query, fetches every source once per search (cached
- * across pages of the same search), and matches/paginates them via
- * `searchEntities`. Debouncing lives here rather than in the app shell
- * because it is inseparable from the pagination it resets: a keystroke
- * that arrives mid-debounce must restart the timer *and* the offset
- * together, or a stale page from the previous query would leak into the
- * new one.
- *
- * `loading` is derived, not just set in an effect: the moment a keystroke
- * makes `query` outrun the debounce-committed `debouncedQuery`, the hook is
- * `pending`, and that is visible on the very render the keystroke caused —
- * no waiting for a passive effect to flush. It stays true through the fetch
- * (`fetching`) and only drops once that query's results are ready.
- *
- * All sources are fetched in parallel via `Promise.all`; a failure in any
- * one surfaces as `error: true` rather than a partial result set.
- */
+// Debouncing lives here, not the app shell, because it's inseparable from
+// the pagination it resets: a keystroke mid-debounce must restart the
+// timer and the offset together, or a stale page would leak in.
+// `loading` is derived so it's visible on the render the keystroke
+// caused, not after a passive effect flushes.
 export function useEntitySearch({
   query,
   enabled,
