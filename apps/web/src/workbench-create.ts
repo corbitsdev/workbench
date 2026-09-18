@@ -15,6 +15,9 @@ export class WorkbenchCreateError extends Error {
   constructor(
     message: string,
     readonly stage: "create" | "deploy" | "opening-message",
+    /** Set once the room tenant exists, so a later-stage failure can
+     * still land the person in the room it created. */
+    readonly tenantId?: string,
   ) {
     super(message);
     this.name = "WorkbenchCreateError";
@@ -32,8 +35,16 @@ function workbenchSlug(name: string): string {
   return `${base === "" ? "workbench" : base}-${Date.now().toString(36)}`;
 }
 
-function failure(cause: unknown, stage: WorkbenchCreateError["stage"]): WorkbenchCreateError {
-  return new WorkbenchCreateError(cause instanceof Error ? cause.message : String(cause), stage);
+function failure(
+  cause: unknown,
+  stage: WorkbenchCreateError["stage"],
+  tenantId?: string,
+): WorkbenchCreateError {
+  return new WorkbenchCreateError(
+    cause instanceof Error ? cause.message : String(cause),
+    stage,
+    tenantId,
+  );
 }
 
 export type CreateWorkbenchInput = {
@@ -92,7 +103,7 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
       });
     }
   } catch (cause) {
-    throw failure(cause, "deploy");
+    throw failure(cause, "deploy", tenantId);
   }
 
   if (input.openingMessage !== undefined && input.openingMessage !== "") {
@@ -106,7 +117,7 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
         await sendToRoom({ roomTenantId: tenantId, agents, content: input.openingMessage });
       }
     } catch (cause) {
-      throw failure(cause, "opening-message");
+      throw failure(cause, "opening-message", tenantId);
     }
   }
 
