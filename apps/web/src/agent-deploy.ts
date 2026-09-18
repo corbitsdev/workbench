@@ -348,7 +348,7 @@ export async function deployAgentSource(
   // Minted before the push: the definition's credential binding resolves
   // this credential by name at deploy time, so it must already exist.
   const credentialId = await ensureAgentHubCredential(
-    { tenantId: args.tenantId, definitionId: slug },
+    { tenantId: args.tenantId, definitionId: slug, assetId },
     fetchImpl,
   );
   // Grant configuration only, not a routable address: the hub mints the
@@ -383,15 +383,10 @@ export async function deployAgentSource(
   if (parsed instanceof type.errors) {
     throw new AgentDeployError(`this deployment came back an unexpected shape: ${parsed.summary}`);
   }
-  const authorized = await grantArtifactToolsCredentialUse(
+  await grantArtifactToolsCredentialUse(
     { tenantId: args.tenantId, deploymentId: parsed.id, credentialId },
     fetchImpl,
   );
-  if (authorized === "no-principal-yet") {
-    reportError(new Error("this agent's hub credential is not authorized yet"), {
-      operation: "agent_deploy_grant_hub_credential",
-    });
-  }
   if (args.input.schedule !== undefined) {
     await scheduleAgentRun(
       args.tenantId,

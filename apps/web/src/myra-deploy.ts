@@ -244,7 +244,7 @@ export async function deployMyraSource(
   // Minted before the push: the definition's credential binding resolves
   // this credential by name at deploy time, so it must already exist.
   await ensureAgentHubCredential(
-    { tenantId: args.tenantId, definitionId: ASSISTANT_WORKFLOW_ID },
+    { tenantId: args.tenantId, definitionId: ASSISTANT_WORKFLOW_ID, assetId },
     fetchImpl,
   );
   const commitSha = await pushMyraSource(
@@ -265,27 +265,31 @@ export async function deployMyraSource(
 /**
  * Authorizes Myra's deployed run to use her hub credential. Separate from
  * `deployMyraSource` because the deployment does not exist until the caller
- * has sent the deploy input; it is safe to call again, and answers
- * `"no-principal-yet"` while stock has not minted the run's principal.
+ * has sent the deploy input. It is safe to call again, and never re-mints:
+ * rotating here would invalidate the token the deploy already delivered.
  */
 export async function authorizeMyraHubCredential(
   args: { readonly tenantId: string },
   fetchImpl: typeof fetch = fetch,
-): Promise<"granted" | "no-principal-yet" | "no-deployment"> {
+): Promise<void> {
   const assetId = await ensureMyraSourceAsset(args.tenantId, fetchImpl);
   const deploymentId = await resolveLiveDeploymentId(
     { tenantId: args.tenantId, assetId },
     fetchImpl,
   );
-  if (deploymentId === null) return "no-deployment";
+  if (deploymentId === null) {
+    throw new MyraDeployError("Myra has no live deployment to authorize");
+  }
   // Never re-mints: rotating here would invalidate the token the deploy
   // already delivered to the running agent.
   const credentialId = await resolveAgentHubCredentialId(
     { tenantId: args.tenantId, definitionId: ASSISTANT_WORKFLOW_ID },
     fetchImpl,
   );
-  if (credentialId === null) return "no-deployment";
-  return await grantArtifactToolsCredentialUse(
+  if (credentialId === null) {
+    throw new MyraDeployError("Myra has no hub credential to authorize");
+  }
+  await grantArtifactToolsCredentialUse(
     { tenantId: args.tenantId, deploymentId, credentialId },
     fetchImpl,
   );

@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@chat-adapter/state-memory": "^4.35.0",
-    "@corbits/agent-token": "github:corbitsdev/corbits-agent-token#a4d45821abe7ac2a0387f6036255ed4d7ec1b17c",
+    "@corbits/agent-token": "github:corbitsdev/corbits-agent-token#0a3bd10d496927a2b1d3f854420b2d42de040254",
     "@corbits/approvals": "workspace:*",
     "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#9152ba5d55f1bdc88f992c5de54f01760992541b",
     "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",

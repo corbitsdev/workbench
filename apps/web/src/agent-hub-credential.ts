@@ -22,7 +22,11 @@ export class AgentHubCredentialError extends Error {}
 
 const ProviderShape = type({ id: "string", name: "string" });
 const ProvidersPage = type({ data: ProviderShape.array() });
-const CredentialShape = type({ id: "string", name: "string" });
+const CredentialShape = type({
+  id: "string",
+  name: "string",
+  "metadata?": "Record<string, unknown> | null",
+});
 const CredentialsPage = type({ data: CredentialShape.array() });
 const MintedTokenShape = type({ token: { id: "string", token: "string" } });
 const PrincipalShape = type({ id: "string", refId: "string" });
@@ -32,7 +36,10 @@ const DeploymentShape = type({
   status: "string",
 });
 const DeploymentsPage = type({ data: DeploymentShape.array() });
-const PrincipalsPage = type({ data: PrincipalShape.array() });
+const PrincipalsPage = type({
+  data: PrincipalShape.array(),
+  nextCursor: "string | null",
+});
 
 function tenantPath(tenantId: string, suffix: string): string {
   return `/api/tenants/${encodeURIComponent(tenantId)}${suffix}`;
@@ -121,10 +128,17 @@ async function ensureHubProvider(tenantId: string, fetchImpl: typeof fetch): Pro
  * written against.
  */
 export async function ensureAgentHubCredential(
-  args: { readonly tenantId: string; readonly definitionId: string },
+  args: {
+    readonly tenantId: string;
+    readonly definitionId: string;
+    /** The agent's `workflow` source asset. It is what the token is scoped
+     * to, because it is the tenant-owned thing that already exists when the
+     * token is minted — the deploy has not run yet. */
+    readonly assetId: string;
+  },
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
-  const { tenantId, definitionId } = args;
+  const { tenantId, definitionId, assetId } = args;
   const providerId = await ensureHubProvider(tenantId, fetchImpl);
   const credentialName = agentHubCredentialName(definitionId);
 
@@ -134,15 +148,32 @@ export async function ensureAgentHubCredential(
   }
   const page = await readJson(listed, CredentialsPage, "this workbench's credentials");
   for (const credential of page.data.filter((row) => row.name === credentialName)) {
-    await fetchImpl(tenantPath(tenantId, `/credentials/${encodeURIComponent(credential.id)}`), {
-      method: "DELETE",
-    });
+    // Revoke the bearer before dropping the row that recorded it: deleting
+    // only the credential would leave the old token valid forever.
+    const priorTokenId = credential.metadata?.["agentTokenId"];
+    if (typeof priorTokenId === "string" && priorTokenId !== "") {
+      const revoked = await fetchImpl(
+        tenantPath(tenantId, `/agent-tokens/${encodeURIComponent(priorTokenId)}`),
+        { method: "DELETE" },
+      );
+      // 404 means it was revoked already; anything else left a live bearer.
+      if (!revoked.ok && revoked.status !== 404) {
+        throw new AgentHubCredentialError("revoking this agent's previous hub token failed");
+      }
+    }
+    const dropped = await fetchImpl(
+      tenantPath(tenantId, `/credentials/${encodeURIComponent(credential.id)}`),
+      { method: "DELETE" },
+    );
+    if (!dropped.ok) {
+      throw new AgentHubCredentialError("replacing this agent's hub credential failed");
+    }
   }
 
   const minted = await fetchImpl(tenantPath(tenantId, "/agent-tokens"), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ definitionId, name: credentialName }),
+    body: JSON.stringify({ definitionId: assetId, name: credentialName }),
   });
   if (!minted.ok) {
     throw new AgentHubCredentialError("minting this agent's hub token failed");
@@ -159,6 +190,9 @@ export async function ensureAgentHubCredential(
       // The raw-authorization provider sends the secret verbatim, so the
       // secret is the finished header value, not the bare token.
       secret: `Bearer ${token.token}`,
+      // The token id, so the next deploy revokes this bearer instead of
+      // orphaning it.
+      metadata: { agentTokenId: token.id },
     }),
   });
   if (!stored.ok) {
@@ -167,11 +201,39 @@ export async function ensureAgentHubCredential(
   return (await readJson(stored, CredentialShape, "this agent's hub credential")).id;
 }
 
+/** The stock principals route filters by kind and status only, so the run's
+ * principal is found by walking the pages rather than by a server-side
+ * refId filter. */
+async function findWorkflowPrincipalId(
+  tenantId: string,
+  refId: string,
+  fetchImpl: typeof fetch,
+): Promise<string | null> {
+  let cursor: string | null = null;
+  do {
+    const query = new URLSearchParams({ kind: "workflow", limit: "100" });
+    if (cursor !== null) query.set("cursor", cursor);
+    const listed = await fetchImpl(tenantPath(tenantId, `/principals?${query.toString()}`));
+    if (!listed.ok) {
+      throw new AgentHubCredentialError("listing this workbench's agents failed");
+    }
+    const page: typeof PrincipalsPage.infer = await readJson(
+      listed,
+      PrincipalsPage,
+      "this workbench's agents",
+    );
+    const match = page.data.find((row) => row.refId === refId);
+    if (match !== undefined) return match.id;
+    cursor = page.nextCursor;
+  } while (cursor !== null);
+  return null;
+}
+
 /**
  * Authorizes the deployed run to use its hub credential, scoped to the
- * artifact tool package. Stock mints a deployment's principal at its first
- * run, so a deploy that has not run yet has nothing to target — the caller
- * hears that back rather than a failure, and the deploy still stands.
+ * artifact tool package. The deploy request creates the run's principal, so
+ * by the time its 201 is in hand the principal exists; an absent one means
+ * the deploy did not land what it claimed and the caller hears about it.
  */
 export async function grantArtifactToolsCredentialUse(
   args: {
@@ -180,19 +242,18 @@ export async function grantArtifactToolsCredentialUse(
     readonly credentialId: string;
   },
   fetchImpl: typeof fetch = fetch,
-): Promise<"granted" | "no-principal-yet"> {
-  const listed = await fetchImpl(tenantPath(args.tenantId, "/principals?kind=workflow"));
-  if (!listed.ok) {
-    throw new AgentHubCredentialError("listing this workbench's agents failed");
+): Promise<void> {
+  const principalId = await findWorkflowPrincipalId(args.tenantId, args.deploymentId, fetchImpl);
+  if (principalId === null) {
+    throw new AgentHubCredentialError(
+      "this agent has no principal to authorize, so its artifact tools would not work",
+    );
   }
-  const page = await readJson(listed, PrincipalsPage, "this workbench's agents");
-  const principal = page.data.find((row) => row.refId === args.deploymentId);
-  if (principal === undefined) return "no-principal-yet";
   const created = await fetchImpl(tenantPath(args.tenantId, "/grants"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      principalId: principal.id,
+      principalId,
       resource: `credential:${args.credentialId}`,
       action: "use",
       effect: "allow",
@@ -203,7 +264,6 @@ export async function grantArtifactToolsCredentialUse(
   if (!created.ok) {
     throw new AgentHubCredentialError("authorizing this agent's hub credential failed");
   }
-  return "granted";
 }
 
 const TERMINAL_DEPLOYMENT_STATUSES = new Set(["failed", "released", "destroy_failed"]);

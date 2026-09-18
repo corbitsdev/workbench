@@ -7,8 +7,12 @@ import {
   resolveFrameSenderKey,
   resolveSenderKey,
 } from "@intx/db";
-import { principal as principalTable, tenant as tenantTable } from "@intx/db/schema";
-import { eq } from "drizzle-orm";
+import {
+  asset as assetTable,
+  principal as principalTable,
+  tenant as tenantTable,
+} from "@intx/db/schema";
+import { and, eq } from "drizzle-orm";
 import { createEnvKeyCredentialCipher, sha256 } from "@intx/crypto";
 import { hexDecode, hexEncode, type SidecarCapabilityRule } from "@intx/types";
 import {
@@ -523,15 +527,32 @@ export async function createHubServer({
     app.route(TENANT_PREFIX, artifactsApi);
   }
   {
+    // Minting an agent token is minting a credential, so it is gated by the
+    // same stock grant the credential routes are, not by tenant membership.
     const agentTokensApp = new Hono<TenantEnv>();
+    const requireAgentTokenGrant = createRequireGrant({
+      grantStore,
+      conditionRegistry: grantConditionRegistry,
+    });
     mountAgentTokens(agentTokensApp, {
       db,
-      requireGrant: (ctx, tenantId) => {
-        const c = ctx as { get(key: "tenant"): { id: string } };
-        return c.get("tenant").id === tenantId;
+      requireGrant: requireAgentTokenGrant("credential:*", "create"),
+      resolveTenantId: (ctx) => (ctx as { get(key: "tenant"): { id: string } }).get("tenant").id,
+      // A token is scoped to the agent's `workflow` source asset: the
+      // tenant-owned thing that already exists when the workbench mints the
+      // token, before the deploy that would create a run.
+      resolveDefinition: async (tenantId, definitionId) => {
+        const row = await db.query.asset.findFirst({
+          where: and(
+            eq(assetTable.id, definitionId),
+            eq(assetTable.tenantId, tenantId),
+            eq(assetTable.kind, "workflow"),
+          ),
+        });
+        return row !== undefined;
       },
     });
-    app.route("/", agentTokensApp);
+    app.route(TENANT_PREFIX, agentTokensApp);
   }
   {
     const workflowArtifactsApi = new Hono<WorkflowArtifactEnv>();

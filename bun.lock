@@ -55,7 +55,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@chat-adapter/state-memory": "^4.35.0",
-        "@corbits/agent-token": "github:corbitsdev/corbits-agent-token#a4d45821abe7ac2a0387f6036255ed4d7ec1b17c",
+        "@corbits/agent-token": "github:corbitsdev/corbits-agent-token#0a3bd10d496927a2b1d3f854420b2d42de040254",
         "@corbits/approvals": "workspace:*",
         "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#9152ba5d55f1bdc88f992c5de54f01760992541b",
         "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
@@ -603,7 +603,7 @@
 
     "@chat-adapter/state-memory": ["@chat-adapter/state-memory@4.40.0", "", { "dependencies": { "chat": "4.40.0" } }, "sha512-NmFFkvUfnDBDS/mkzrtKHdW757EGt0eX3OQH5IPxrKqhjSsNzpqUdkJ/uDB4BP0Rbex4oW/HgwhZ+JGONVbMBQ=="],
 
-    "@corbits/agent-token": ["@corbits/agent-token@github:corbitsdev/corbits-agent-token#a4d4582", { "dependencies": { "@intx/db": "^0.3.0", "arktype": "^2.2.0", "drizzle-orm": "^0.45.2", "hono": "^4.11.9", "postgres": "^3.4.8" } }, "corbitsdev-corbits-agent-token-a4d4582", "sha512-5iMQc+uNFpOWrsQ2rPww3fdBBEPGHC7L5tArhd/kNFEozrtXSHtFzeaVutsqF7AlaV7DPo3Pubc9PxZ9AcNCiw=="],
+    "@corbits/agent-token": ["@corbits/agent-token@github:corbitsdev/corbits-agent-token#0a3bd10", { "dependencies": { "@intx/db": "^0.3.0", "arktype": "^2.2.0", "drizzle-orm": "^0.45.2", "hono": "^4.11.9", "postgres": "^3.4.8" } }, "corbitsdev-corbits-agent-token-0a3bd10", "sha512-8FX7qUOFQYK/SnmjtRrcyszinNV26UuWpEYReJiJSr9Xm8rRiNgzf9CNBYu9GDXYqgwf6LRCQ30y/RCCrmtRsQ=="],
 
     "@corbits/approvals": ["@corbits/approvals@workspace:packages/approvals"],
 
