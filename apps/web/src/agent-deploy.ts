@@ -184,7 +184,7 @@ export function agentDeploySourceAssetName(slug: string): string {
   return `agent-${slug}-source`;
 }
 
-const AGENT_DEPLOY_SOURCE_ASSET_NAME = /^agent-.+-source$/;
+const AGENT_DEPLOY_SOURCE_ASSET_NAME = /^agent-(.+)-source$/;
 
 /** True for any asset this deploy pipeline named — used to keep created
  * agents (and Myra, checked separately by callers) out of surfaces that
@@ -193,10 +193,24 @@ export function isAgentDeploySourceAssetName(name: string): boolean {
   return AGENT_DEPLOY_SOURCE_ASSET_NAME.test(name);
 }
 
+/** The inverse of `agentDeploySourceAssetName`: recovers the slug this
+ * pipeline deployed an asset under, so a caller re-deploying an existing
+ * agent can reuse its slug instead of re-deriving one from its display
+ * name. Null when the name isn't this pipeline's `agent-<slug>-source`
+ * shape. */
+export function agentSlugFromSourceAssetName(assetName: string): string | null {
+  const match = AGENT_DEPLOY_SOURCE_ASSET_NAME.exec(assetName);
+  return match?.[1] ?? null;
+}
+
 export type NewAgentInput = {
   readonly name: string;
   readonly systemPrompt: string;
   readonly schedule?: string;
+  /** The agent's address slug, when a caller already knows it (e.g.
+   * redeploying or re-joining an existing agent) — used verbatim instead
+   * of being re-derived from `name`, so the asset name stays stable. */
+  readonly slug?: string;
 };
 
 export type DeployedAgent = typeof WorkflowDeploymentResponse.infer;
@@ -217,7 +231,7 @@ export async function deployAgentSource(
   const systemPrompt = args.input.systemPrompt.trim();
   if (systemPrompt === "") throw new AgentDeployError("an agent needs a system prompt");
 
-  const slug = slugify(name);
+  const slug = args.input.slug ?? slugify(name);
   if (!isValidSlug(slug)) {
     throw new AgentDeployError("this name doesn't produce a usable agent address");
   }

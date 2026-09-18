@@ -5,7 +5,7 @@
 // resolved offering, which does inherit.
 
 import { isMyraAgent, listRoomParticipants, sendToRoom } from "@/chat/threads-api";
-import { deployAgentSource } from "./agent-deploy";
+import { agentSlugFromSourceAssetName, deployAgentSource } from "./agent-deploy";
 import { readAgentSource } from "./agent-source-read";
 import { deployMyraSource } from "./myra-deploy";
 import { createFetchStockHub } from "./needs-converge";
@@ -96,10 +96,14 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
     // source is read back out of the bench and re-pushed into the child,
     // since a child's deploy rejects the parent's inherited asset outright.
     for (const picked of input.pickedAgents ?? []) {
+      const slug = agentSlugFromSourceAssetName(picked.assetName);
+      if (slug === null) {
+        throw new Error(`${picked.assetName} isn't a recognized agent source asset`);
+      }
       const source = await readAgentSource(input.benchTenantId, picked.id, picked.assetName);
       await deployAgentSource({
         tenantId,
-        input: { name: picked.name, systemPrompt: source.systemPrompt },
+        input: { name: picked.name, systemPrompt: source.systemPrompt, slug },
       });
     }
   } catch (cause) {
@@ -167,9 +171,16 @@ export async function redeployRoomAgent(
     await hub.deployWorkflow(roomTenantId, deployInput);
     return;
   }
+  const slug = agentSlugFromSourceAssetName(agent.assetName);
+  if (slug === null) {
+    throw new WorkbenchCreateError(
+      `${agent.assetName} isn't a recognized agent source asset`,
+      "deploy",
+    );
+  }
   const source = await readAgentSource(roomTenantId, agent.id, agent.assetName);
   await deployAgentSource({
     tenantId: roomTenantId,
-    input: { name: agent.name, systemPrompt: source.systemPrompt },
+    input: { name: agent.name, systemPrompt: source.systemPrompt, slug },
   });
 }
