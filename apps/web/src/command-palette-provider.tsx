@@ -14,7 +14,7 @@ import {
   type PaletteSource,
   type RecentEntry,
 } from "@/command-palette";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { listAgentDefinitions } from "./agents-api";
@@ -183,49 +183,25 @@ export function CommandPaletteProvider({
   // fetches for (by design — the unscoped default view should not dump
   // every entity on open). The mock shows every item in an active scope for
   // this input, so fetch that scope's raw list directly instead.
-  const [bareWorkbenches, setBareWorkbenches] = useState<readonly PaletteResultItem[]>([]);
-  const [bareAgents, setBareAgents] = useState<readonly PaletteResultItem[]>([]);
+  const bareWorkbenchesQuery = useQuery({
+    queryKey: [...tenantKeys.workbenches(selectedTenantId ?? "", "workbench"), "bare-scope"],
+    enabled: bareScopeKind === "workbenches" && open && selectedTenantId !== null,
+    queryFn: listWorkbenchesForSearch,
+  });
+  const bareWorkbenches: readonly PaletteResultItem[] = (bareWorkbenchesQuery.data ?? []).map(
+    (row) => ({ id: `entity:workbenches:${row.id}`, title: row.name }),
+  );
 
-  useEffect(() => {
-    if (bareScopeKind !== "workbenches" || !open) {
-      setBareWorkbenches([]);
-      return;
-    }
-    let cancelled = false;
-    void listWorkbenchesForSearch().then((rows) => {
-      if (cancelled) return;
-      setBareWorkbenches(
-        rows.map((row) => ({
-          id: `entity:workbenches:${row.id}`,
-          title: row.name,
-        })),
-      );
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [bareScopeKind, open, listWorkbenchesForSearch]);
-
-  useEffect(() => {
-    if (bareScopeKind !== "people" || !open) {
-      setBareAgents([]);
-      return;
-    }
-    let cancelled = false;
-    void listAgentsForSearch().then((rows) => {
-      if (cancelled) return;
-      setBareAgents(
-        rows.map((row) => ({
-          id: `entity:agents:${row.id}`,
-          title: row.name,
-          subtitle: "Agent",
-        })),
-      );
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [bareScopeKind, open, listAgentsForSearch]);
+  const bareAgentsQuery = useQuery({
+    queryKey: ["tenant", selectedTenantId ?? "", "agents", "bare-scope"],
+    enabled: bareScopeKind === "people" && open && selectedTenantId !== null,
+    queryFn: listAgentsForSearch,
+  });
+  const bareAgents: readonly PaletteResultItem[] = (bareAgentsQuery.data ?? []).map((row) => ({
+    id: `entity:agents:${row.id}`,
+    title: row.name,
+    subtitle: "Agent",
+  }));
 
   const routinesQuery = useTenantQuery(
     tenantKeys.routines(selectedTenantId ?? ""),

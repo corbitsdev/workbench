@@ -1,25 +1,23 @@
-// The Routines page's seam to authored workflow definitions that carry a
-// ScheduleTrigger: list, run-now, and pause/resume. Pause/resume is the
-// same agent-directory status PUT seed uses (`stopped` / `deployed`).
+// The Routines page's seam to stock workflow deployments: list, run-now,
+// pause/resume. `@corbits/workflows`'s deleted `./schedule/scheduled-route.ts`
+// (and the hub route it backed) is gone; this reads the stock deployments
+// listing (`GET /workflows/deployments`) joined against the tenant's workflow
+// assets (`GET /assets?kind=workflow`) for a display name, exactly the two
+// stock reads `vendor/intx/hub-api/src/routes/workflows.ts` exposes.
 //
-// the hub route `listScheduledWorkflows`/`runScheduledWorkflowNow` used
-// to call (`@corbits/workflows`'s deleted `./schedule/scheduled-route.ts`)
-// is gone. Owner ruling: schedule state derives from stock reads
-// client-side or stays a package-internal pure function — no hub route.
-// Stock's `GET /workflows/definitions` (`vendor/intx/hub-api`) exposes no
-// wire projection, so there is no stock-derivable way to know which
-// definitions carry a `ScheduleTrigger` or what its cron is. It resolves
-// to an empty list rather than fetch a route that no longer exists (same
-// pattern as `tenantKeys`' `routineActivity` comment in `query-client.ts`
-// for its deleted `feed=fires` route): the Routines roster renders its
-// existing empty state until an upstream ask lands.
+// Stock's deployment row carries no schedule: a `ScheduleTrigger`'s cron
+// lives in the deployed source's `workflow.json`, unreachable from either
+// listing read, so `cron` always reports "manual" here — honest rather than
+// guessed — until an upstream read exposes it. Run-now and pause/resume have
+// no backing stock route either (`/deployments` is list/create only; no
+// per-deployment PATCH or trigger route exists), so both stay rejected
+// promises with a message naming the missing route, same pattern as before.
 
 import { type } from "arktype";
 import { useQuery } from "@tanstack/react-query";
+import { WorkflowDeploymentResponse } from "@intx/types";
 import type { APIQuery } from "@/lib/api-query";
 import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@/lib/api-query";
-
-import { setAgentDefinitionStatus } from "./agents-api";
 
 export const ScheduledWorkflowDefinition = type({
   definitionId: "string",
@@ -34,48 +32,83 @@ export const ScheduledWorkflowDefinition = type({
 
 export type ScheduledWorkflowDefinition = typeof ScheduledWorkflowDefinition.infer;
 
-/** no route exists at this path any more — kept as a documented
- * dead address, not a live fetch target, for any caller that still reads
- * it for logging/keys. */
-export function scheduledWorkflowsPath(tenantId: string): string {
-  return `/api/tenants/${tenantId}/workflows/scheduled`;
+const DeploymentsSchema = WorkflowDeploymentResponse.array();
+const WorkflowAssetSchema = type({ id: "string", name: "string" });
+const WorkflowAssetsSchema = WorkflowAssetSchema.array();
+
+function deploymentsPath(tenantId: string): string {
+  return `/api/tenants/${tenantId}/workflows/deployments`;
 }
 
-export function scheduledWorkflowRunPath(tenantId: string, definitionId: string): string {
-  return `/api/tenants/${tenantId}/workflows/scheduled/${encodeURIComponent(definitionId)}/run`;
+function workflowAssetsPath(tenantId: string): string {
+  return `/api/tenants/${tenantId}/assets?kind=workflow&inherited=false`;
 }
 
-/** always empty — see the file header for why there is no
- * stock-derivable replacement yet. */
-export function listScheduledWorkflows(
-  _tenantId: string,
+async function fetchJSON<T>(path: string, schema: (data: unknown) => T | type.errors): Promise<T> {
+  const response = await fetch(path, { headers: { accept: "application/json" } });
+  if (response.status === 401) throw new UnauthenticatedError();
+  if (!response.ok) {
+    throw new ApiQueryError(`The server answered ${response.status}.`, response.status, path);
+  }
+  const parsed = schema(await response.json());
+  if (parsed instanceof type.errors) {
+    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
+  }
+  return parsed;
+}
+
+/** Every workflow deployment on this tenant, named from the backing
+ * workflow asset. A deployment whose asset can't be resolved still lists,
+ * under a placeholder name, rather than disappearing. */
+export async function listScheduledWorkflows(
+  tenantId: string,
 ): Promise<readonly ScheduledWorkflowDefinition[]> {
-  return Promise.resolve([]);
+  const [deployments, assets] = await Promise.all([
+    fetchJSON(deploymentsPath(tenantId), DeploymentsSchema),
+    fetchJSON(workflowAssetsPath(tenantId), WorkflowAssetsSchema),
+  ]);
+  const nameByAssetId = new Map(assets.map((asset) => [asset.id, asset.name]));
+  return deployments.map((deployment) => ({
+    definitionId: deployment.id,
+    assetId: deployment.definitionAssetId,
+    name: nameByAssetId.get(deployment.definitionAssetId) ?? "Untitled workflow",
+    tenantId: deployment.tenantId,
+    status: deployment.status === "deployed" ? "deployed" : "stopped",
+    cron: "manual",
+    createdAt: deployment.createdAt,
+    updatedAt: deployment.createdAt,
+  }));
 }
 
-/** unreachable in practice — `listScheduledWorkflows` never
- * returns a row for `onRunNow` to be called with — kept only so
- * `useRoutineActions`' shape does not need to change too. Throws rather
- * than fetching a route that no longer exists. */
+/** No stock route reruns a deployment on demand yet. */
 export function runScheduledWorkflowNow(
-  _tenantId: string,
-  _definitionId: string,
+  tenantId: string,
+  definitionId: string,
 ): Promise<{ runId: string }> {
   return Promise.reject(
     new ApiQueryError(
-      "Scheduled run-now has no stock route yet.",
+      "Running a workflow now has no stock route yet.",
       undefined,
-      scheduledWorkflowRunPath(_tenantId, _definitionId),
+      `/api/tenants/${tenantId}/workflows/deployments/${encodeURIComponent(definitionId)}/run`,
     ),
   );
 }
 
+/** No stock route pauses or resumes a deployment yet. */
 export function setScheduledWorkflowStatus(
   tenantId: string,
   definitionId: string,
   status: "deployed" | "stopped",
 ): Promise<{ readonly status: string }> {
-  return setAgentDefinitionStatus(tenantId, definitionId, status);
+  return Promise.reject(
+    new ApiQueryError(
+      status === "deployed"
+        ? "Resuming a deployment has no stock route yet."
+        : "Pausing a deployment has no stock route yet.",
+      undefined,
+      `/api/tenants/${tenantId}/workflows/deployments/${encodeURIComponent(definitionId)}`,
+    ),
+  );
 }
 
 /**
