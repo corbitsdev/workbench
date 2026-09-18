@@ -1,14 +1,7 @@
-// Mirrored from packages/chat/src: apps/web and @/chat
-// must not import @corbits/chat, a server-only package. This is the browser-
-// facing half of the same wire contract the hub's chat routes still speak;
-// once the hub moves onto native mail threads (T5a/T5c) this file becomes
-// the one source of truth and packages/chat's copy goes away.
+// Mirrored from packages/chat/src (see docs/chat-wire-contract.md).
 
-/**
- * Person-facing inference copy. HTTP status, raw provider dumps, and
- * JSON error objects never belong on the timeline, in a sidebar preview,
- * or next to the composer — DESIGN.md Honesty is one consumer sentence.
- */
+// HTTP status, raw provider dumps, and JSON error objects never belong on
+// the timeline — DESIGN.md Honesty is one consumer sentence.
 
 import {
   TOOLS_UNSUPPORTED_CONSUMER_MESSAGE,
@@ -21,13 +14,8 @@ const TRAILING_HTTP_DUMP = /\s*\[HTTP\s+\d+\]:[\s\S]*$/i;
 export const CONSUMER_INFERENCE_FAILURE_NOTICE =
   "This didn't go through. Try again, or check the connection in Settings.";
 
-/**
- * Byte-for-byte copies of the two preambles `@intx/inference`'s
- * `formatInferenceError` writes for `credential_failure` and
- * `quota_exhausted`. Kept here so the bench-list preview path
- * can refuse them without depending on `@/chat`. The chat-ui
- * drift guard still owns matching these against the published director.
- */
+// Byte-for-byte copies of `@intx/inference`'s preambles, kept here so the
+// bench-list preview path can match them without depending on `@/chat`.
 export const CLASSIFIED_INFERENCE_FAILURE_PREAMBLES: readonly string[] = [
   "This agent could not complete your request due to a credential error",
   "This agent could not complete your request because the API quota has been exhausted",

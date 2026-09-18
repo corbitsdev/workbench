@@ -1,26 +1,15 @@
-// Mirrored from packages/chat/src: apps/web and @/chat
-// must not import @corbits/chat, a server-only package. This is the browser-
-// facing half of the same wire contract the hub's chat routes still speak;
-// once the hub moves onto native mail threads (T5a/T5c) this file becomes
-// the one source of truth and packages/chat's copy goes away.
+// Mirrored from packages/chat/src (see docs/chat-wire-contract.md) — apps/web
+// must not import @corbits/chat, a server-only package.
 
 import { type } from "arktype";
 
 import type { BlockPart } from "./parts";
 
-// The typed vocabulary for `BlockPart.block` payloads. `BlockPart` stays
-// `{ type: string, data: unknown }` on the wire so unknown types degrade to
-// a labeled fallback instead of failing the whole message; `parseBlock` is
-// the render-boundary parse that turns that envelope into a typed block.
-// Every schema strips undeclared keys deeply: agent-authored extras (say, a
-// hostile `tally` object on a poll) must never ride along on the parsed
-// object a renderer trusts.
+// Every schema strips undeclared keys deeply so agent-authored extras (a
+// hostile `tally` on a poll) never reach a renderer that trusts them.
 
-// An approve block carries only a reference to a platform approval plus the
-// agent's framing. It deliberately has no action labels and no resolved
-// state: free-form button text on an approval card is a spoofing surface,
-// and the decision's status lives on the approval record, never in the
-// message.
+// No action labels or resolved state: those live on the approval record,
+// never in the message, so an agent can't spoof a decision.
 export const ApproveBlockData = type({
   approvalId: "string",
   title: "string",
@@ -65,16 +54,9 @@ export const StreamBlockData = type({
 }).onDeepUndeclaredKey("delete");
 export type StreamBlockData = typeof StreamBlockData.infer;
 
-// An agent-authored "connect this service" card, the
-// generalization of `connect-github` to every connector and MCP preset:
-// `request_connection` posts one of these instead of a prose deep link.
-// It carries only the framing the agent decided — which service, and the
-// consumer-language reason it would unlock — never an auth mode or a
-// connected/disconnected verdict: an agent that could author "connected"
-// (or steer OAuth vs key-paste) would be spoofing live state next to a
-// live button. The card's real state and connect affordance come from a
-// host-supplied actions port resolved against the tenant's actual
-// connections at render time.
+// No auth mode or connected/disconnected verdict: an agent that could author
+// "connected" would be spoofing live state next to a live button. Real
+// state and the connect affordance come from the host at render time.
 export const ConnectServiceBlockData = type({
   connectorId: "string > 0",
   displayName: "string > 0",

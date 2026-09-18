@@ -1,36 +1,18 @@
-// Mirrored from packages/chat/src: apps/web and @/chat
-// must not import @corbits/chat, a server-only package. This is the browser-
-// facing half of the same wire contract the hub's chat routes still speak;
-// once the hub moves onto native mail threads (T5a/T5c) this file becomes
-// the one source of truth and packages/chat's copy goes away.
+// Mirrored from packages/chat/src (see docs/chat-wire-contract.md).
 
 import { type } from "arktype";
-
-// The wire contract for chat message content. Every message a thread
-// carries is a `Part[]`; each part is a structural arktype schema with a
-// `kind` discriminant, parsed at the trust boundary rather than cast.
 
 export const TextPart = type({
   kind: "'text'",
   text: "string",
-  /** Set only on the undelivered-turn notice `postUndeliveredNotice`
-   * posts in an unreachable agent's own voice — the client's
-   * one signal that this particular text bubble is a failed turn's
-   * notice, not an ordinary reply, so it renders the failed-turn strip
-   * (`PrFailedTurnStrip`) instead of a plain bubble. Absent on every
-   * other text part. */
+  // Marks the undelivered-turn notice so it renders the failed-turn strip,
+  // not a plain bubble.
   "turnFailed?": "boolean",
-  /** Set with `turnFailed` when the cause is a missing/unresolvable
-   * model (`InferenceResolutionError`) or a model that cannot use tools
-   * — the failed-turn strip renders named recovery (picker + Settings
-   * hop) instead of Retry. Absent on every other text part. */
+  // Set with `turnFailed` for a missing/unresolvable model or one that
+  // can't use tools, to render named recovery instead of Retry.
   "turnFailedReason?": "'model_unavailable' | 'tools_unsupported'",
-  /** Set only on the cancelled-turn notice `postCancelledNotice`
-   * (`./workbench-service.ts`) posts in the cancelled agent's own voice
-   * — distinct from `turnFailed`: a user cancelling a turn is
-   * not a failure, and the frontend renders it with its own honest copy
-   * rather than `FailedTurnStrip`'s "didn't reply" framing. Absent on
-   * every other text part. */
+  // Marks a user-cancelled turn — distinct from `turnFailed` since
+  // cancelling isn't a failure and gets its own copy.
   "turnCancelled?": "boolean",
 });
 export type TextPart = typeof TextPart.infer;
@@ -59,14 +41,9 @@ export const BlockPart = type({
 });
 export type BlockPart = typeof BlockPart.infer;
 
-// A file rides either as a reference into platform blob storage (`blobId`,
-// for content already persisted) or as inline base64 bytes (`data`, for
-// content the codec is encoding fresh). Exactly one of those two must be
-// present. `artifactId` is an orthogonal, optional link back to a Library
-// artifact (see `@corbits/artifacts`) — set when this file is also a
-// persisted Library row (e.g. a workflow finalize tool's output),
-// independent of whether the bytes themselves also live in chat's own blob
-// store.
+// Exactly one of `blobId` (already persisted) or `data` (inline base64)
+// must be present, unless `artifactId` links this file to a Library row
+// instead (see @corbits/artifacts).
 export const FilePart = type({
   kind: "'file'",
   name: "string",
@@ -77,10 +54,8 @@ export const FilePart = type({
 }).narrow((part, ctx) => {
   const hasBlobId = part.blobId !== undefined;
   const hasData = part.data !== undefined;
-  // An artifact-backed file needs neither: its bytes live in the Library
-  // artifact row `artifactId` names, not in chat's own blob store, so
-  // `blobId`/`data` stay optional (but still mutually exclusive) once
-  // `artifactId` is set.
+  // An artifact-backed file's bytes live in the Library row, so blobId/data
+  // stay optional (still mutually exclusive) once artifactId is set.
   if (part.artifactId !== undefined) {
     if (hasBlobId && hasData) {
       return ctx.reject("`blobId` and `data` cannot both be set on a FilePart");
