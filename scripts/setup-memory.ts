@@ -34,7 +34,6 @@ export function planEmbedding(probe: CapabilityProbe): SetupPlan {
       env: {
         EMBED_BASE_URL: "http://localhost:11434",
         EMBED_MODEL: "nomic-embed-text",
-        EMBED_API_STYLE: "ollama",
       },
       instructions: [
         "Native Ollama found on this machine — use it directly, no container needed.",
@@ -43,7 +42,6 @@ export function planEmbedding(probe: CapabilityProbe): SetupPlan {
         "Then add to .env:",
         "  EMBED_BASE_URL=http://localhost:11434",
         "  EMBED_MODEL=nomic-embed-text",
-        "  EMBED_API_STYLE=ollama",
       ],
     };
   }
@@ -53,7 +51,6 @@ export function planEmbedding(probe: CapabilityProbe): SetupPlan {
       env: {
         EMBED_BASE_URL: "http://localhost:11434",
         EMBED_MODEL: "nomic-embed-text",
-        EMBED_API_STYLE: "ollama",
       },
       instructions: [
         "No native Ollama on PATH, but Docker is available — brew install ollama is",
@@ -63,7 +60,6 @@ export function planEmbedding(probe: CapabilityProbe): SetupPlan {
         "Then add to .env:",
         "  EMBED_BASE_URL=http://localhost:11434",
         "  EMBED_MODEL=nomic-embed-text",
-        "  EMBED_API_STYLE=ollama",
       ],
     };
   }
@@ -77,7 +73,6 @@ export function planEmbedding(probe: CapabilityProbe): SetupPlan {
       "server running elsewhere. Add to .env:",
       "  EMBED_BASE_URL=<your endpoint>",
       "  EMBED_MODEL=<the model that endpoint serves>",
-      "  EMBED_API_STYLE=<openai (default) | ollama | tei>",
       "  EMBED_API_KEY=<if the endpoint requires one>",
       "See .env.example for worked examples of each.",
     ],
