@@ -60,7 +60,7 @@ never seeds data on a client's behalf.
   init can then walk up to the enclosing `.git` and land a genesis commit
   on the working branch. Tests that boot the hub or touch seed/deploy git
   paths must call `installDisposableHubDataDir()` from
-  `test/disposable-hub-data-dir.ts`; never delete the `HUB_DATA_DIR` key.
+  `e2e/lib/disposable-hub-data-dir.ts`; never delete the `HUB_DATA_DIR` key.
 - Deployment mechanics are not settled enough to state here — see
   [IMPLEMENTATION.md](IMPLEMENTATION.md)'s Deployment section first.
 
@@ -75,6 +75,13 @@ Env flags (unset behavior):
 | `CHROME_PATH`                                               | browser walkthrough falls back to platform defaults, fails if none exist                        |
 
 ## Tests
+
+Two homes only. A load-bearing unit test sits beside the module it covers
+(`src/**/*.test.ts`); a load-bearing integration or DB-backed suite lives
+under root `e2e/<area>/`, with shared helpers in `e2e/lib/`. No `test/`
+directory exists anywhere — not in apps, packages, agents, or tools. A test
+that isn't load-bearing (pins a literal, a shape, a re-export, or re-proves
+Interchange's own behavior) is deleted, not moved.
 
 Tests are meaningful red/green tests only — no coverage theater. An
 outdated test is deleted in the same PR that breaks it, not adapted to keep

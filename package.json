@@ -14,9 +14,9 @@
   "scripts": {
     "check": "bun run typecheck && bun run lint && bun run fmt:check && bun run test",
     "typecheck": "bun run scripts/typecheck.ts",
-    "lint": "oxlint apps packages tools agents workflows scripts test e2e",
-    "fmt": "oxfmt apps packages tools agents workflows scripts test e2e",
-    "fmt:check": "oxfmt --check apps packages tools agents workflows scripts test e2e",
+    "lint": "oxlint apps packages tools agents workflows scripts e2e",
+    "fmt": "oxfmt apps packages tools agents workflows scripts e2e",
+    "fmt:check": "oxfmt --check apps packages tools agents workflows scripts e2e",
     "build": "bun run scripts/run-all.ts build",
     "test": "bun run scripts/run-all.ts test",
     "dev": "bun run scripts/dev.ts",
