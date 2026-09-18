@@ -1,12 +1,6 @@
-// The credential + model-offering step this onboarding page runs before
-// installing Myra: connects a provider credential through the
-// stock native credentials/providers routes (`@/settings/inference`'
-// `shadowOffering`), then derives the exactly-one offering it mints into
-// `sourceOfferingIds`/`defaultSourceOfferingId` — no separate offering
-// picker, because a freshly connected provider names exactly one model.
-// A tenant that already resolves a catalog offering (inherited, or from
-// an earlier run of this same step) skips this UI entirely: see
-// `resolveExistingOffering` in `onboarding-page.tsx`.
+// Connects one provider credential through the stock catalog routes and
+// derives the single offering it mints; a tenant that already resolves an
+// offering skips this step (see `resolveExistingOffering`).
 import { Button, Input, RadioGroup, RadioOption } from "@corbits/react-ui";
 import { getResolvedCatalog, shadowOffering } from "@/settings/inference";
 import { reportError } from "@corbits/error-sink";
@@ -23,16 +17,12 @@ export type ProviderOption = {
   readonly modelDisplayName: string;
   readonly baseURL: string;
   readonly keyHint: string;
+  /** A server on this machine: base URL and model are typed in, no key needed. */
+  readonly local: boolean;
 };
 
-// Deliberately small: `ModelProviderPlugin` names the adapters this hub
-// ships (`vendor/intx/types/src/catalog.ts`), and each option below picks
-// one canonical model so connecting a provider mints exactly one
-// offering — no second "which model" prompt (per the ruling,
-// the flow asks only where a human input is genuinely required).
-// Widening this list (more models per provider, an `openai-compatible`
-// custom-baseURL card) is a follow-up, not a blocker for a working
-// install.
+// Each hosted option names one canonical model so connecting mints exactly
+// one offering and the flow never asks "which model".
 export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
   {
     plugin: "anthropic",
@@ -42,6 +32,7 @@ export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
     modelDisplayName: "Claude Sonnet 4.5",
     baseURL: "https://api.anthropic.com",
     keyHint: "sk-ant-",
+    local: false,
   },
   {
     plugin: "openai",
@@ -51,6 +42,7 @@ export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
     modelDisplayName: "GPT-5",
     baseURL: "https://api.openai.com/v1",
     keyHint: "sk-",
+    local: false,
   },
   {
     plugin: "google-genai",
@@ -60,19 +52,29 @@ export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
     modelDisplayName: "Gemini 2.5 Pro",
     baseURL: "https://generativelanguage.googleapis.com",
     keyHint: "AIza",
+    local: false,
+  },
+  {
+    plugin: "openai-compatible",
+    label: "Ollama (local)",
+    description: "A model served by Ollama on this machine. No key needed.",
+    canonicalName: "",
+    modelDisplayName: "",
+    baseURL: "http://localhost:11434/v1",
+    keyHint: "",
+    local: true,
   },
 ];
+
+// The credential row requires a secret; Ollama ignores whatever is sent.
+const LOCAL_PLACEHOLDER_KEY = "ollama";
 
 export type ExistingOffering = {
   readonly sourceOfferingIds: readonly string[];
   readonly defaultSourceOfferingId: string;
 };
 
-/** A tenant that already resolves a catalog offering (inherited from an
- * ancestor, or minted by an earlier run of this step) needs no UI at
- * all: every visible offering becomes `sourceOfferingIds`, and the
- * lowest-priority one is the default — the same rule
- * `resolveRealSourceOfferingIds` in the deleted onboarding package applies. */
+/** Every visible offering becomes a source; the lowest priority is the default. */
 export async function resolveExistingOffering(tenantId: string): Promise<ExistingOffering | null> {
   const models = await getResolvedCatalog(tenantId);
   const offerings = models
@@ -99,25 +101,37 @@ export function ProviderConnectStep({
     PROVIDER_OPTIONS[0]?.plugin ?? "anthropic",
   );
   const [apiKey, setApiKey] = useState("");
+  const [baseURL, setBaseURL] = useState("");
+  const [modelName, setModelName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const option =
     PROVIDER_OPTIONS.find((candidate) => candidate.plugin === selected) ?? PROVIDER_OPTIONS[0];
+  const isLocal = option?.local === true;
+  const ready = isLocal
+    ? baseURL.trim().length > 0 && modelName.trim().length > 0
+    : apiKey.trim().length > 0;
+
+  function selectOption(plugin: ModelProviderPlugin) {
+    setSelected(plugin);
+    const next = PROVIDER_OPTIONS.find((candidate) => candidate.plugin === plugin);
+    setBaseURL(next?.local === true ? next.baseURL : "");
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (option === undefined || apiKey.trim().length === 0 || submitting) {
+    if (option === undefined || !ready || submitting) {
       return;
     }
     setSubmitting(true);
     try {
       const created = await shadowOffering(tenantId, {
-        canonicalName: option.canonicalName,
-        modelDisplayName: option.modelDisplayName,
+        canonicalName: isLocal ? modelName.trim() : option.canonicalName,
+        modelDisplayName: isLocal ? modelName.trim() : option.modelDisplayName,
         providerName: option.label,
         plugin: option.plugin,
-        baseURL: option.baseURL,
-        apiKey: apiKey.trim(),
+        baseURL: isLocal ? baseURL.trim() : option.baseURL,
+        apiKey: isLocal ? LOCAL_PLACEHOLDER_KEY : apiKey.trim(),
         priority: 0,
       });
       onConnected({
@@ -141,7 +155,7 @@ export function ProviderConnectStep({
         name="provider"
         label="Inference provider"
         value={selected}
-        onValueChange={(value) => setSelected(value as ModelProviderPlugin)}
+        onValueChange={(value) => selectOption(value as ModelProviderPlugin)}
       >
         {PROVIDER_OPTIONS.map((candidate) => (
           <RadioOption
@@ -152,18 +166,44 @@ export function ProviderConnectStep({
           />
         ))}
       </RadioGroup>
-      <label>
-        API key
-        <Input
-          type="password"
-          autoComplete="off"
-          placeholder={option?.keyHint}
-          value={apiKey}
-          onChange={(event) => setApiKey(event.target.value)}
-          required
-        />
-      </label>
-      <Button type="submit" disabled={submitting || apiKey.trim().length === 0}>
+      {isLocal ? (
+        <>
+          <label>
+            Base URL
+            <Input
+              type="url"
+              autoComplete="off"
+              value={baseURL}
+              onChange={(event) => setBaseURL(event.target.value)}
+              required
+            />
+          </label>
+          <label>
+            Model
+            <Input
+              type="text"
+              autoComplete="off"
+              placeholder="qwen2.5:14b"
+              value={modelName}
+              onChange={(event) => setModelName(event.target.value)}
+              required
+            />
+          </label>
+        </>
+      ) : (
+        <label>
+          API key
+          <Input
+            type="password"
+            autoComplete="off"
+            placeholder={option?.keyHint}
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            required
+          />
+        </label>
+      )}
+      <Button type="submit" disabled={submitting || !ready}>
         {submitting ? "Connecting…" : "Connect"}
       </Button>
     </form>
