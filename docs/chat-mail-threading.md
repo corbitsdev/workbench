@@ -5,11 +5,14 @@ mail: a chat has exactly one agent, and both sides are durable mail — the
 person sends from their own mailbox (keeping a Sent copy), and an agent's
 reply lands in the same mailbox's INBOX. No chat-specific hub route exists.
 
-A chat is keyed by its agent's definition asset id, not a run id: every hub
-restart releases the old run and redeploys under a new one, so keying on a
-run id would 409 the moment it turns terminal. An agent's address set spans
-every run it has ever had, which keeps history intact across a redeploy;
-sends resolve the current live run's address at send time.
+A chat is keyed by its thread's root turn id (`Sent:<uid>` of the person's
+opening send), found by walking In-Reply-To/References back from every mail
+turn — not the agent's definition asset id, so two separate chats with the
+same agent stay separate instead of merging into one conversation. Sends
+resolve the agent's current live run's address at send time; an agent's
+address set spans every run it has ever had (a hub restart retires the old
+run and redeploys under a new one), which keeps a thread's history readable
+across a redeploy even though the address on later turns changes.
 
 A workbench is a child tenant, and its conversation is that tenant's own
 mailbox — reads are the same stock mailbox routes as a chat, scoped to the

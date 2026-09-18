@@ -1,6 +1,6 @@
-// Chats are mail threads (see docs/chat-mail-threading.md). Keyed by the
-// agent's definition asset id, not a run id, since a redeploy retires the
-// run id and would 409 a keyed-on-run chat.
+// Chats are mail threads (see docs/chat-mail-threading.md). A chat is keyed
+// by its thread root turn's id (the person's opening send), so two chats to
+// the same agent stay separate instead of merging into one conversation.
 
 import { type } from "arktype";
 import { WorkflowDeploymentResponse } from "@intx/types";
@@ -64,7 +64,8 @@ export type ChatMessage = {
 };
 
 export type ChatSummary = {
-  /** Route id: the agent's run id. */
+  /** Route id: the thread's root turn id (`folder:uid` of its opening
+   * send) — unique per conversation, unlike the agent it's addressed to. */
   readonly id: string;
   readonly title: string;
   readonly agentName: string;
@@ -332,6 +333,9 @@ function participantAddress(
 type MailTurn = {
   readonly id: string;
   readonly messageId: string;
+  /** In-Reply-To, or the newest References entry when that header is
+   * missing — what ties a reply back to the turn before it. */
+  readonly parentId: string | undefined;
   readonly address: string;
   readonly author: "me" | "agent";
   readonly subject: string;
@@ -352,6 +356,7 @@ async function readFolder(tenantId: string, folder: "INBOX" | "Sent"): Promise<M
       {
         id: `${folder}:${String(message.uid)}`,
         messageId: message.envelope.messageId,
+        parentId: message.envelope.inReplyTo ?? message.envelope.references.at(-1),
         address,
         author: folder === "Sent" ? ("me" as const) : ("agent" as const),
         subject: message.envelope.subject,
@@ -371,6 +376,26 @@ async function readTurns(tenantId: string): Promise<MailTurn[]> {
   return [...inbox, ...sent].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
 
+/** Each turn's own id, mapped to the id of its thread's opening turn —
+ * found by walking In-Reply-To/References back to a turn with no known
+ * parent. A cycle (shouldn't happen) just stops at the point it's seen. */
+function threadRootIds(turns: readonly MailTurn[]): Map<string, string> {
+  const byMessageId = new Map(turns.map((turn) => [turn.messageId, turn]));
+  const roots = new Map<string, string>();
+  for (const turn of turns) {
+    let current = turn;
+    const seen = new Set<string>([turn.messageId]);
+    for (;;) {
+      const parent = current.parentId === undefined ? undefined : byMessageId.get(current.parentId);
+      if (parent === undefined || seen.has(parent.messageId)) break;
+      seen.add(parent.messageId);
+      current = parent;
+    }
+    roots.set(turn.id, current.id);
+  }
+  return roots;
+}
+
 // ---------------------------------------------------------------------
 // Sends
 // ---------------------------------------------------------------------
@@ -382,7 +407,7 @@ async function sendToAgent(
   address: string,
   body: string,
   inReplyTo: string | undefined,
-): Promise<void> {
+): Promise<{ readonly messageId: string; readonly uid: number }> {
   let response: Response;
   try {
     response = await fetch(`${mailboxPath(tenantId)}/send`, {
@@ -408,11 +433,14 @@ async function sendToAgent(
   if (parsed instanceof type.errors) {
     throw new ChatApiError(`Unexpected send response: ${parsed.summary}`);
   }
+  return parsed;
 }
 
-/** Starts a chat with one agent. Returns the chat id to route to — the
- * agent's definition asset id. Callers should keep the composer disabled
- * until `liveAddress` is set; this still guards against a stale click. */
+/** Starts a brand-new chat with one agent: no `inReplyTo`, so the send opens
+ * its own thread rather than landing on whatever this agent last answered.
+ * Returns the chat id to route to — the opening send's own `Sent:<uid>`, the
+ * thread's root turn id. Callers should keep the composer disabled until
+ * `liveAddress` is set; this still guards against a stale click. */
 export async function startChat(
   tenantId: string,
   agent: ChatAgent,
@@ -421,8 +449,8 @@ export async function startChat(
   if (agent.liveAddress === null) {
     throw new ChatApiError(`${agent.name} is starting…`);
   }
-  await sendToAgent(tenantId, agent.liveAddress, content, undefined);
-  return agent.id;
+  const sent = await sendToAgent(tenantId, agent.liveAddress, content, undefined);
+  return `Sent:${String(sent.uid)}`;
 }
 
 /** A reply is the same send, threaded onto the chat's newest message, sent
@@ -469,25 +497,27 @@ function agentByAddress(agents: readonly ChatAgent[]): Map<string, ChatAgent> {
   return index;
 }
 
-/** Every chat the person has: one per agent they have exchanged mail with,
- * grouped by the agent's asset id so a redeploy's new run still lands in
- * the same chat. */
+/** Every chat the person has: one per mail thread with an agent, grouped by
+ * the thread's root turn id, not the agent — an agent's address set spans
+ * every run it has ever had, so two separate threads to the same agent stay
+ * two separate chats instead of merging into one. */
 export async function listChats(tenantId: string): Promise<readonly ChatSummary[]> {
   const [agents, turns] = await Promise.all([listChatAgents(tenantId), readTurns(tenantId)]);
   const addressToAgent = agentByAddress(agents);
-  const byAgent = new Map<string, MailTurn[]>();
+  const rootIds = threadRootIds(turns);
+  const byThread = new Map<string, MailTurn[]>();
   for (const turn of turns) {
-    const agent = addressToAgent.get(turn.address);
-    if (agent === undefined) continue;
-    byAgent.set(agent.id, [...(byAgent.get(agent.id) ?? []), turn]);
+    if (!addressToAgent.has(turn.address)) continue;
+    const rootId = rootIds.get(turn.id)!;
+    byThread.set(rootId, [...(byThread.get(rootId) ?? []), turn]);
   }
-  return [...byAgent.entries()]
-    .map(([agentId, rows]) => {
-      const resolvedName = agents.find((agent) => agent.id === agentId)?.name;
-      const agentName = resolvedName ?? agentId;
+  return [...byThread.entries()]
+    .map(([threadId, rows]) => {
       const newest = rows[rows.length - 1]!;
+      const resolvedName = addressToAgent.get(newest.address)?.name;
+      const agentName = resolvedName ?? "Unknown agent";
       return {
-        id: agentId,
+        id: threadId,
         title: chatTitle(rows, resolvedName),
         agentName,
         preview: newest.body.slice(0, 80),
@@ -528,16 +558,20 @@ export function isChatReplyReady(
   }
 }
 
-/** One chat's full transcript: every mail turn addressed to any run this
- * agent has ever had, oldest first. */
+/** One chat's full transcript: every turn in the thread rooted at `chatId`,
+ * oldest first. */
 export async function readChat(tenantId: string, chatId: string): Promise<ChatThread> {
   const [agents, turns] = await Promise.all([listChatAgents(tenantId), readTurns(tenantId)]);
-  const agent = agents.find((candidate) => candidate.id === chatId);
+  const rootIds = threadRootIds(turns);
+  const rows = turns.filter((turn) => rootIds.get(turn.id) === chatId);
+  if (rows.length === 0) {
+    throw new ChatApiError("That chat could not be found.", 404);
+  }
+  const addressToAgent = agentByAddress(agents);
+  const agent = addressToAgent.get(rows[0]!.address);
   if (agent === undefined) {
     throw new ChatApiError("That agent could not be found.", 404);
   }
-  const addresses = new Set(agent.addresses);
-  const rows = turns.filter((turn) => addresses.has(turn.address));
   return {
     id: chatId,
     title: chatTitle(rows, agent.name),
