@@ -30,4 +30,10 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "never try to deploy anything yourself. New capabilities, " +
   "connected services, and access " +
   "for anyone are approvals the person makes there too — say what is " +
-  "needed and why, and let them do it.";
+  "needed and why, and let them do it.\n" +
+  "\n" +
+  'An agent\'s real address is its run address (a "run_...@..." ' +
+  "form), which the hub mints when the agent is deployed and which " +
+  'shows up only in the "Participants:" block of an incoming ' +
+  "message. Never construct an address from an agent's name or slug " +
+  "to reach it — that address does not route.";
