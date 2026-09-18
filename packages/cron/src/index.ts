@@ -10,12 +10,6 @@ export {
   type ZonedParts,
 } from "./cron";
 export { cronScheduleTable, applyCronMigrations } from "./schema";
-export {
-  createCronTicker,
-  cronSenderAddress,
-  type CronDb,
-  type CronSenderAddress,
-  type CronTicker,
-  type DeliverCronMail,
-} from "./ticker";
+export { createCronTicker, type CronDb, type CronTicker, type DeliverCronMail } from "./ticker";
 export { mountCron, type MountCronOpts, type RequireTenantMember } from "./mount";
+export { createRunTriggerCronDeliver, type RunTriggerDeliverer } from "./deliver";
