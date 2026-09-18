@@ -119,17 +119,14 @@ function findNamedFencedBlocks(lines: readonly string[]): Map<string, FencedBloc
     }
     const end = Math.min(index + 1, lines.length);
     index = end;
-    // A comment label on the fence's first line (`// Scribe/definition.json`)
-    // names the file too; it is not part of the file.
+    // A label on the fence's first line (`// Scribe/definition.json`, or the
+    // bare filename) names the file too; it is not part of the file.
     if (name === null) {
       const firstContent = contentLines.findIndex((content) => content.trim() !== "");
-      const first = contentLines[firstContent] ?? "";
-      if (/^\s*(\/\/|#)/.test(first)) {
-        const fromComment = namedFile(first);
-        if (fromComment !== null) {
-          name = fromComment;
-          contentLines.splice(0, firstContent + 1);
-        }
+      const fromFirstLine = namedFile(contentLines[firstContent] ?? "");
+      if (fromFirstLine !== null) {
+        name = fromFirstLine;
+        contentLines.splice(0, firstContent + 1);
       }
     }
     if (name !== null && !found.has(name)) {

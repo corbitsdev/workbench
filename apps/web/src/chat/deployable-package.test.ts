@@ -30,6 +30,13 @@ describe("deployablePackageFromBody", () => {
     expect(result?.strippedBody).toBe("Here is the package:\n\nPress Deploy.");
   });
 
+  test("reads a bare filename on the fence's first line", () => {
+    const body =
+      `\`\`\`json\npackage.json\n${PACKAGE_JSON}\n\`\`\`\n\n` +
+      `\`\`\`json\ndefinition.json\n${DEFINITION_JSON}\n\`\`\``;
+    expect(deployablePackageFromBody(body)?.pkg.name).toBe("Echo");
+  });
+
   test("is null when only one of the two files is present", () => {
     const body = `package.json\n\`\`\`\n${PACKAGE_JSON}\n\`\`\``;
     expect(deployablePackageFromBody(body)).toBeNull();
