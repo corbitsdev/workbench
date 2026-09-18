@@ -31,7 +31,9 @@ function ccInstruction(entries: readonly RosterEntry[]): string | undefined {
   const people = entries.filter((entry) => entry.kind === "person");
   if (people.length === 0) return undefined;
   const addresses = people.map((entry) => entry.address).join(", ");
-  return `Copy ${addresses} in \`to\` on any mail you send another participant, so they can follow along.`;
+  // The subject clause is load-bearing: a mail with an empty Subject ends
+  // the receiving agent's run today.
+  return `Copy ${addresses} in \`to\` on any mail you send another participant, so they can follow along, and give every mail a short subject.`;
 }
 
 /** Appends a `Participants:` block listing every entry's name and address,
