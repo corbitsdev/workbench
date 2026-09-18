@@ -107,18 +107,6 @@ function tarballFilenameFor(name: string, version: string): string {
   return `${name.replace(/^@/, "").replace("/", "-")}-${version}.tgz`;
 }
 
-const TOOL_PACKAGE_MANIFESTS = import.meta.glob("../../../../tools/*/package.json", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
-
-const TOOL_PACKAGE_SOURCE_FILES = import.meta.glob("../../../../tools/*/src/**/*.ts", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
-
 function toolDirName(manifestPath: string): string {
   const match = /\/tools\/([^/]+)\/package\.json$/.exec(manifestPath);
   const dir = match?.[1];
@@ -133,6 +121,7 @@ function toolDirName(manifestPath: string): string {
 function buildToolPackageTree(
   manifestPath: string,
   manifestJson: string,
+  sourceFiles: Record<string, string>,
 ): {
   name: string;
   version: string;
@@ -160,7 +149,7 @@ function buildToolPackageTree(
       2,
     ),
   };
-  for (const [sourcePath, contents] of Object.entries(TOOL_PACKAGE_SOURCE_FILES)) {
+  for (const [sourcePath, contents] of Object.entries(sourceFiles)) {
     if (!sourcePath.startsWith(prefix) || /\.test\.tsx?$/.test(sourcePath)) continue;
     tree[sourcePath.slice(prefix.length)] = contents;
   }
@@ -169,14 +158,28 @@ function buildToolPackageTree(
 
 /** Every `tools/*` package this workspace ships, as the `packTarball`-ready
  * trees `publishToolPackageRegistry` packs and uploads. Exported standalone
- * so the packaging is unit-testable without a fetch round trip. */
+ * so the packaging is unit-testable without a fetch round trip.
+ *
+ * The globs are read here, not at module scope, so importing this module
+ * (e.g. transitively, from a bun test) never touches `import.meta.glob` —
+ * a Vite-only API — unless a caller actually builds the trees. */
 export function buildToolPackageTrees(): {
   name: string;
   version: string;
   tree: Record<string, string>;
 }[] {
-  return Object.entries(TOOL_PACKAGE_MANIFESTS).map(([manifestPath, manifestJson]) =>
-    buildToolPackageTree(manifestPath, manifestJson),
+  const manifests = import.meta.glob("../../../../tools/*/package.json", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }) as Record<string, string>;
+  const sourceFiles = import.meta.glob("../../../../tools/*/src/**/*.ts", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }) as Record<string, string>;
+  return Object.entries(manifests).map(([manifestPath, manifestJson]) =>
+    buildToolPackageTree(manifestPath, manifestJson, sourceFiles),
   );
 }
 
