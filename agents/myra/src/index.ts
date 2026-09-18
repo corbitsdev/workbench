@@ -36,8 +36,6 @@ export interface MyraWorkflowInput {
   readonly triggerAddress: string;
   /** Provider/model preferences, in order; resolved at deploy time. */
   readonly inferencePreferences: readonly InferencePreference[];
-  /** Per-turn timeout in milliseconds, enforced on the single step. */
-  readonly turnTimeoutMs: number;
   /** The prompt this deployment runs with. */
   readonly systemPrompt: string;
 }
@@ -48,10 +46,11 @@ export interface MyraWorkflowInput {
  * one warm agent with durable memory across runs). A second step would
  * silently trade that memory away, so the step count is contract, not style.
  *
- * The step always sets an explicit `timeout` — the singular `agent:`
- * shorthand sets none, and a wedged inference call would then hang a run
- * forever. `toolPackagePins` is empty because the source lineage resolves
- * no manifest: the factories above are the whole tool surface.
+ * The step carries no `timeout`. A step timeout is an execution budget that
+ * stays armed across an approval park, so any finite value aborts a warm
+ * agent that is waiting on a person to answer an ask-gated tool call.
+ * `toolPackagePins` is empty because the source lineage resolves no
+ * manifest: the factories above are the whole tool surface.
  */
 export function buildMyraWorkflow(input: MyraWorkflowInput): WorkflowDefinition {
   if (input.triggerAddress === "") {
@@ -59,9 +58,6 @@ export function buildMyraWorkflow(input: MyraWorkflowInput): WorkflowDefinition 
   }
   if (input.systemPrompt === "") {
     throw new Error("buildMyraWorkflow requires a non-empty systemPrompt");
-  }
-  if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
-    throw new Error("buildMyraWorkflow requires turnTimeoutMs to be a positive integer");
   }
   return defineWorkflow({
     id: ASSISTANT_WORKFLOW_ID,
@@ -77,7 +73,6 @@ export function buildMyraWorkflow(input: MyraWorkflowInput): WorkflowDefinition 
           inference: { sources: input.inferencePreferences },
           toolPackagePins: [],
         } satisfies AgentDefinition,
-        timeout: input.turnTimeoutMs,
         triggers: "unbounded",
       }),
     },

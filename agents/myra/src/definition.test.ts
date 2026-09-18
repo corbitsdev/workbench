@@ -10,7 +10,6 @@ import { ASSISTANT_STEP_ID, buildMyraWorkflow } from "./index";
 const INPUT = {
   triggerAddress: "ins_dep000000000000@example.test",
   inferencePreferences: [{ provider: "anthropic", model: "claude-test" }],
-  turnTimeoutMs: 600000,
   systemPrompt: "You are Myra.",
 } as const;
 
@@ -40,5 +39,10 @@ test("the definition has exactly one step, so a deployment stays conversational"
   const definition = buildMyraWorkflow(INPUT);
   expect(definition.stepOrder).toEqual([ASSISTANT_STEP_ID]);
   expect(assistantStep(definition).triggers).toBe("unbounded");
-  expect(assistantStep(definition).timeout).toBe(INPUT.turnTimeoutMs);
+});
+
+test("the step carries no timeout, so an approval park never aborts the run", () => {
+  // A step timeout stays armed across an approval park, so any finite
+  // value aborts a warm agent waiting on a person to answer an ask gate.
+  expect(assistantStep(buildMyraWorkflow(INPUT)).timeout).toBeUndefined();
 });
