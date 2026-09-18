@@ -88,11 +88,15 @@ export function buildAgentDefinitionJson(args: {
   systemPrompt: string;
   triggerAddress: string;
   declaredSources: readonly { readonly provider: string; readonly model: string }[];
+  schedule?: string;
 }): unknown {
   const stepId = "run";
   return {
     id: args.slug,
-    triggers: [{ type: "mail", to: args.triggerAddress }],
+    triggers: [
+      { type: "mail", to: args.triggerAddress },
+      ...(args.schedule !== undefined ? [{ type: "schedule", cron: args.schedule }] : []),
+    ],
     steps: {
       [stepId]: {
         kind: "step",
@@ -191,6 +195,7 @@ export function isAgentDeploySourceAssetName(name: string): boolean {
 export type NewAgentInput = {
   readonly name: string;
   readonly systemPrompt: string;
+  readonly schedule?: string;
 };
 
 export type DeployedAgent = typeof WorkflowDeploymentResponse.infer;
@@ -240,6 +245,7 @@ export async function deployAgentSource(
     systemPrompt,
     triggerAddress: `${slug}@${tenant.domain}`,
     declaredSources: offering.declaredSources,
+    ...(args.input.schedule !== undefined ? { schedule: args.input.schedule } : {}),
   });
   const commitSha = await pushAgentSource(
     args.tenantId,

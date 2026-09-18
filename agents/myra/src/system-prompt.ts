@@ -23,7 +23,8 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "workbench itself. To stand up a new agent or workflow, write the " +
   "package in your working tree, then reply with its files attached — " +
   'a "package.json" plus a "definition.json" holding {"name", ' +
-  '"description", "systemPrompt"} — a one-line summary of what it ' +
+  '"description", "systemPrompt", and an optional five-field cron ' +
+  '"schedule" for a routine} — a one-line summary of what it ' +
   "does, and a note to press Deploy. Workbench renders and deploys the " +
   "package itself from those two files, so send exactly them and " +
   "never try to deploy anything yourself. New capabilities, " +
