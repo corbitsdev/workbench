@@ -737,7 +737,7 @@ export const Composer = forwardRef<
   }
 
   return (
-    <div className="chat-composer">
+    <div className="chat-composer" data-tour="composer">
       {mention !== null && (
         <div className="chat-mention-popover chat-popover-enter" role="listbox">
           {mentionOptions.length === 0 ? (

@@ -704,6 +704,28 @@
   overflow: auto;
 }
 
+.chat-workbench-loading-brand {
+  height: 2rem;
+  width: 2rem;
+  color: var(--shell-accent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-workbench-loading-brand {
+    animation: chat-workbench-loading-brand-breathe 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes chat-workbench-loading-brand-breathe {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .chat-workbench-loading-mark {
   display: flex;
   gap: 0.3rem;
