@@ -86,11 +86,15 @@ function composeApproval(row: ApprovalRow, agentName: string): ApprovalDisplay {
  * them. One naming read per distinct run, cached by react-query, so a run
  * with several pending asks is named once.
  */
-export function usePendingApprovals(tenantId: string | null): APIQuery<readonly PendingApproval[]> {
+export function usePendingApprovals(
+  tenantId: string | null,
+  options?: { readonly refetchInterval?: number | false },
+): APIQuery<readonly PendingApproval[]> {
   const { memberships } = useBench();
   const list = useAPIQuery(
     tenantId === null ? "" : pendingApprovalsPath(tenantId),
     TenantApprovalsSchema,
+    options,
   );
   const rows = list.kind === "ready" ? list.data.data : [];
   const runIds = [...new Set(rows.map((row) => row.runId))];

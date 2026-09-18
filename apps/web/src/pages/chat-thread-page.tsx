@@ -153,8 +153,10 @@ function ChatTranscript({
 
   // Only this agent's asks belong in this transcript; the bench-wide list
   // is filtered down to the run address this chat talks to.
-  const approvalsQuery = usePendingApprovals(tenantId);
   const liveAddress = chat?.agent.liveAddress ?? null;
+  const approvalsQuery = usePendingApprovals(tenantId, {
+    refetchInterval: liveAddress !== null ? 3000 : false,
+  });
   const approvals =
     approvalsQuery.kind === "ready" && liveAddress !== null
       ? approvalsQuery.data.filter((item) => item.agentAddress === liveAddress)
