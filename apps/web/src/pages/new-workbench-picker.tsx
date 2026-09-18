@@ -123,12 +123,20 @@ export function NewWorkbenchPickerRoute() {
       });
       navigate(workbenchPath(tenantId));
     },
-    onError: (cause: unknown) => {
+    onError: (cause: unknown, variables) => {
       const refId = reportError(cause, {
         operation: "workbench_create",
         ...(selectedTenantId !== null ? { tenantId: selectedTenantId } : {}),
       });
       toast(describeWorkbenchCreateFailure(cause, refId));
+      // The room exists once a later stage fails; the toast says to retry
+      // from the room, so go there.
+      if (cause instanceof WorkbenchCreateError && cause.tenantId !== undefined) {
+        void queryClient.invalidateQueries({
+          queryKey: chatKeys.childTenants(variables.benchTenantId),
+        });
+        navigate(workbenchPath(cause.tenantId));
+      }
     },
   });
 
