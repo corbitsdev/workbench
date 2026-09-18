@@ -482,8 +482,10 @@ export type RoomMessage = {
   readonly authorName: string;
   readonly body: string;
   readonly at: string;
-  /** Native in-reply-to children: the room's sub-threads. */
-  readonly replies: readonly RoomMessage[];
+  /** In-reply-to parent, when this turn named one and it matched a known
+   * message — metadata for the sub-thread panel, never used to hide a turn
+   * from the main timeline. */
+  readonly parentMessageId: string | undefined;
 };
 
 function authorName(address: string): string {
@@ -517,8 +519,10 @@ async function readRoomFolder(tenantId: string, folder: "INBOX" | "Sent"): Promi
   }));
 }
 
-/** The room timeline: every root turn oldest first, its in-reply-to chain
- * nested beneath it as the room's sub-threads. */
+/** The room timeline: every turn oldest first, flat — no turn is ever
+ * dropped from the main list. A turn whose in-reply-to names a known
+ * message keeps that as `parentMessageId`, metadata for the sub-thread
+ * panel to walk the ancestor chain of whichever turn the person opened. */
 export async function readRoom(tenantId: string): Promise<readonly RoomMessage[]> {
   const [inbox, sent] = await Promise.all([
     readRoomFolder(tenantId, "INBOX"),
@@ -526,26 +530,35 @@ export async function readRoom(tenantId: string): Promise<readonly RoomMessage[]
   ]);
   const turns = [...inbox, ...sent].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   const known = new Set(turns.map((turn) => turn.messageId));
-  const children = new Map<string, RoomTurn[]>();
-  const roots: RoomTurn[] = [];
-  for (const turn of turns) {
-    const parentId = turn.parentId;
-    if (parentId === undefined || !known.has(parentId)) {
-      roots.push(turn);
-      continue;
-    }
-    children.set(parentId, [...(children.get(parentId) ?? []), turn]);
-  }
-  const build = (turn: RoomTurn): RoomMessage => ({
+  return turns.map((turn) => ({
     id: turn.id,
     messageId: turn.messageId,
     author: turn.author,
     authorName: turn.authorName,
     body: turn.body,
     at: turn.at,
-    replies: (children.get(turn.messageId) ?? []).map(build),
-  });
-  return roots.map(build);
+    parentMessageId:
+      turn.parentId !== undefined && known.has(turn.parentId) ? turn.parentId : undefined,
+  }));
+}
+
+/** The ancestor chain of a turn, oldest first, ending with the turn itself
+ * — what the sub-thread panel shows for the turn the person opened. */
+export function ancestorChain(
+  messages: readonly RoomMessage[],
+  messageId: string,
+): readonly RoomMessage[] {
+  const byMessageId = new Map(messages.map((message) => [message.messageId, message]));
+  const chain: RoomMessage[] = [];
+  let current = byMessageId.get(messageId);
+  const seen = new Set<string>();
+  while (current !== undefined && !seen.has(current.messageId)) {
+    seen.add(current.messageId);
+    chain.unshift(current);
+    current =
+      current.parentMessageId === undefined ? undefined : byMessageId.get(current.parentMessageId);
+  }
+  return chain;
 }
 
 /** The one send seam for a room: a single mailbox send addressed to every

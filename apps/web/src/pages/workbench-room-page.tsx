@@ -22,6 +22,7 @@ import { useEffect, useState } from "react";
 import { Markdown } from "@/chat/markdown";
 import {
   agentInitials,
+  ancestorChain,
   listRoomParticipants,
   readRoom,
   sendToRoom,
@@ -82,10 +83,11 @@ function RoomComposer({
 
 function RoomMessageRow({
   message,
-  onOpenReplies,
+  onReply,
 }: {
   readonly message: RoomMessage;
-  readonly onOpenReplies: (message: RoomMessage) => void;
+  /** Undefined in the sub-thread panel, where a row is read-only context. */
+  readonly onReply?: (message: RoomMessage) => void;
 }) {
   return (
     <div className="chat-thread-message" data-author={message.author}>
@@ -96,13 +98,9 @@ function RoomMessageRow({
       </span>
       <div className="chat-thread-body">
         <Markdown text={message.body} />
-        {message.replies.length === 0 ? null : (
-          <button
-            type="button"
-            className="room-replies-link"
-            onClick={() => onOpenReplies(message)}
-          >
-            {message.replies.length === 1 ? "1 reply" : `${String(message.replies.length)} replies`}
+        {onReply === undefined ? null : (
+          <button type="button" className="room-replies-link" onClick={() => onReply(message)}>
+            Reply
           </button>
         )}
       </div>
@@ -320,7 +318,8 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
 
   const messages = timeline.data ?? [];
   const latestMessage = [...messages].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
-  const opened = messages.find((message) => message.id === openThread);
+  const openedChain = openThread === null ? [] : ancestorChain(messages, openThread);
+  const opened = openedChain.at(-1);
   const failure: unknown = timeline.error ?? participants.error;
 
   if (failure !== null && failure !== undefined && timeline.data === undefined) {
@@ -352,7 +351,7 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
                   <RoomMessageRow
                     key={message.id}
                     message={message}
-                    onOpenReplies={(target) => setOpenThread(target.id)}
+                    onReply={(target) => setOpenThread(target.messageId)}
                   />
                 ))}
               </div>
@@ -380,12 +379,8 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
               </Button>
             </div>
             <div className="chat-thread-messages">
-              {[opened, ...opened.replies].map((message) => (
-                <RoomMessageRow
-                  key={message.id}
-                  message={message}
-                  onOpenReplies={() => undefined}
-                />
+              {openedChain.map((message) => (
+                <RoomMessageRow key={message.id} message={message} />
               ))}
             </div>
             <RoomComposer
