@@ -1,10 +1,6 @@
-// The hub-query envelope: every page's data fetch reports exactly one of
-// these four outcomes, so a page never has to invent its own notion of
-// "still loading" vs. "no session" vs. "failed". `toAPIQuery` adapts any
-// TanStack-Query-shaped result onto it; `QueryView` (./query-view) renders
-// it. Both halves are framework-agnostic about the fetch itself — neither
-// imports `@tanstack/react-query` — so a host wires its own query hook to
-// this contract instead of the package assuming one.
+// Neither this file nor `QueryView` imports `@tanstack/react-query`, so a
+// host wires its own query hook to this contract instead of one being
+// assumed.
 
 export type APIQuery<T> =
   | { readonly kind: "loading" }
@@ -13,16 +9,14 @@ export type APIQuery<T> =
       readonly kind: "error";
       readonly message: string;
       readonly retry: () => void;
-      /** The response status when the failure was an HTTP error (absent for
-       * network failures) — lets a caller tell "404, genuinely not found"
-       * apart from "500, something is actually broken" instead of
-       * collapsing every failure into the same generic error state. */
+      // Lets a caller tell "404, not found" from "500, broken" instead of
+      // one generic error state.
       readonly status?: number;
     }
   | { readonly kind: "ready"; readonly data: T };
 
-/** Thrown from a queryFn on HTTP 401 so a host's retry policy can stop
- * retrying and `toAPIQuery` can map the failure to `kind: "unauthenticated"`. */
+// Thrown on HTTP 401 so a retry policy can stop retrying and `toAPIQuery`
+// can map it to `kind: "unauthenticated"`.
 export class UnauthenticatedError extends Error {
   constructor(message = "unauthenticated") {
     super(message);
@@ -30,10 +24,7 @@ export class UnauthenticatedError extends Error {
   }
 }
 
-/** The one HTTP-query error shape every hub request throws: a human message
- * plus the response status when one exists (absent for network failures),
- * plus the request path for logs — never surfaced in user-facing copy —
- * plus the envelope `refId` when the hub answered through the sink. */
+// `path` is for logs only, never surfaced in user-facing copy.
 export class ApiQueryError extends Error {
   constructor(
     message: string,
@@ -45,11 +36,8 @@ export class ApiQueryError extends Error {
   }
 }
 
-/**
- * Human copy for a failed query, kept plain and actionable — the technical
- * detail (status codes, hub URLs, schema mismatches) stays in `console` /
- * devtools for debugging, never in the primary line a person reads.
- */
+// Technical detail stays in console/devtools, never the primary line a
+// person reads.
 export function describeQueryError(error: unknown): string {
   if (error instanceof TypeError) {
     return "Can't reach the server. Check your connection.";
@@ -57,14 +45,8 @@ export function describeQueryError(error: unknown): string {
   return "Something went wrong. Try again.";
 }
 
-/**
- * Human copy for a failed request, one sentence per status class, named
- * around what the caller was trying to do ("loading your benches",
- * "uploading this file"). Reads only `error.status` (any error-like value
- * carrying one, not just `ApiQueryError`) — never `error.message`, so a
- * request path, tenant id, or raw status text baked into a thrown message
- * can never reach this return value.
- */
+// Reads only `error.status`, never `error.message`, so a request path or
+// raw status text baked into a thrown message can never leak through.
 export function describeApiError(error: unknown, doing: string): string {
   const status =
     typeof error === "object" &&
@@ -82,11 +64,8 @@ export function describeApiError(error: unknown, doing: string): string {
   return `Something went wrong ${doing}. Try again.`;
 }
 
-/**
- * Map a TanStack-Query-shaped result onto `APIQuery`. `isLoading` (pending +
- * fetching) is the loading state — bare `isPending` would flash skeletons
- * when cached data exists.
- */
+// `isLoading` (pending + fetching), not bare `isPending`, since the
+// latter would flash skeletons when cached data exists.
 export function toAPIQuery<T>(result: {
   readonly isLoading: boolean;
   readonly isError: boolean;

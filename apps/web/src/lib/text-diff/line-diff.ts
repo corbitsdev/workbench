@@ -1,22 +1,7 @@
-// A line-level diff over two revisions of the same document, shaped the way
-// a review surface renders it: one row per line, in reading order, each row
-// knowing whether it was kept, added, or removed and which line number it
-// carries on each side.
-//
-// Three things keep it cheap enough to run in a dialog:
-//
-//   1. Newlines are normalized first, so a CRLF document never reads as
-//      "every line changed" — and callers can write back exactly the text
-//      they diffed (`normalizeNewlines` is exported for that).
-//   2. The identical head and tail are trimmed before any table is built,
-//      so a one-line edit in a 20k-line document costs a linear scan.
-//   3. What remains is diffed with a longest-common-subsequence walk, whose
-//      table is quadratic — so a hard cap refuses the walk instead of
-//      allocating gigabytes, and the caller shows a summary instead.
-//
-// Long runs of unchanged lines between edits are collapsed into a single
-// "skipped" row: a reader needs the neighbourhood of a change, not the
-// thousands of lines that did not move.
+// Kept cheap enough for a dialog: newlines normalize first (no CRLF
+// false-positives), identical head/tail trim before the quadratic LCS
+// walk (with a hard cap instead of allocating gigabytes on a huge diff),
+// and long unchanged runs collapse into a single "skipped" row.
 
 export type DiffLineKind = "context" | "added" | "removed" | "skipped";
 
@@ -89,12 +74,7 @@ function characterCount(lines: readonly string[]): number {
   return total;
 }
 
-/**
- * Lengths of the longest common subsequence for every suffix pair, so the
- * walk below can always take the branch that keeps more lines in common.
- * One Int32Array per row: the table is the expensive part of a diff, and a
- * typed array keeps it to four bytes a cell.
- */
+// A typed array keeps the expensive table to four bytes a cell.
 function commonSuffixLengths(
   before: readonly string[],
   after: readonly string[],
@@ -241,11 +221,8 @@ export function diffTotals(lines: readonly DiffLine[]): DiffTotals {
   return { added, removed };
 }
 
-/**
- * The one entry point: a diff of two revisions, or an honest refusal when
- * the changed region is too large to diff inline. Callers render whichever
- * status comes back rather than computing the script a second time.
- */
+// Callers render whichever status comes back rather than computing the
+// script a second time.
 export function diffText(
   beforeRevision: string,
   afterRevision: string,
