@@ -5,13 +5,14 @@ import {
   agentDirectoryTools,
   CREATE_AGENT_TOOL,
   LIST_AGENTS_TOOL,
+  MESSAGE_AGENT_TOOL,
   type WorkflowAgentDirectoryEnv,
 } from "./tool";
 
 function testEnv(): WorkflowAgentDirectoryEnv {
   return {
     hubAgentDirectoryUrl: "https://hub.example.com",
-    hubChatUrl: "https://hub.example.com",
+    tenantId: "ten_1",
     sidecarToken: "sc-token",
     address: "run_1@workflow",
   } as unknown as WorkflowAgentDirectoryEnv;
@@ -21,40 +22,36 @@ function callFor(name: string, args: Record<string, unknown>): ToolCall {
   return { id: "call_1", name, arguments: args };
 }
 
-test("declares exactly list_agents and create_agent", () => {
+test("declares list_agents, create_agent, and message_agent", () => {
   const bundle = agentDirectoryTools(testEnv());
-  expect(bundle.definitions.map((d) => d.name)).toEqual([LIST_AGENTS_TOOL, CREATE_AGENT_TOOL]);
+  expect(bundle.definitions.map((d) => d.name)).toEqual([
+    LIST_AGENTS_TOOL,
+    CREATE_AGENT_TOOL,
+    MESSAGE_AGENT_TOOL,
+  ]);
 });
 
 test("requires the sanctioned env keys", () => {
   expect(agentDirectoryTools.requires).toEqual([
     "hubAgentDirectoryUrl",
-    "hubChatUrl",
+    "tenantId",
     "sidecarToken",
     "address",
   ]);
 });
 
-test("list_agents and create_agent declare no approval key", () => {
+test("none of the tools declare an approval key", () => {
   expect(agentDirectoryTools.definitions).toEqual([
     { name: LIST_AGENTS_TOOL },
     { name: CREATE_AGENT_TOOL },
+    { name: MESSAGE_AGENT_TOOL },
   ]);
-});
-
-test("create_agent's description does not say a human must approve before anything is created", () => {
-  const bundle = agentDirectoryTools(testEnv());
-  const definition = bundle.definitions.find((d) => d.name === CREATE_AGENT_TOOL);
-  expect(definition).toBeDefined();
-  expect((definition as { description: string }).description).not.toMatch(/human must approve/i);
 });
 
 test("create_agent's modelPreference field tells the model to omit it rather than guess a name", () => {
   const bundle = agentDirectoryTools(testEnv());
   const definition = bundle.definitions[1] as unknown as {
-    inputSchema: {
-      properties: { modelPreference: { description: string } };
-    };
+    inputSchema: { properties: { modelPreference: { description: string } } };
   };
   const description = definition.inputSchema.properties.modelPreference.description;
   expect(description).toMatch(/omit/i);
@@ -63,9 +60,7 @@ test("create_agent's modelPreference field tells the model to omit it rather tha
 
 test("create_agent's input schema requires name and systemPrompt only", () => {
   const bundle = agentDirectoryTools(testEnv());
-  const definition = bundle.definitions[1] as unknown as {
-    inputSchema: { required: string[] };
-  };
+  const definition = bundle.definitions[1] as unknown as { inputSchema: { required: string[] } };
   expect(definition.inputSchema.required).toEqual(["name", "systemPrompt"]);
 });
 
@@ -73,6 +68,16 @@ test("create_agent rejects a call missing a required field", async () => {
   const bundle = agentDirectoryTools(testEnv());
   const result = await bundle.run(
     callFor(CREATE_AGENT_TOOL, { name: "Research Buddy" }),
+    new AbortController().signal,
+  );
+  expect(result.isError).toBe(true);
+  expect(result.content).toMatch(/invalid input/);
+});
+
+test("message_agent rejects a call missing a required field", async () => {
+  const bundle = agentDirectoryTools(testEnv());
+  const result = await bundle.run(
+    callFor(MESSAGE_AGENT_TOOL, { address: "a@b.example" }),
     new AbortController().signal,
   );
   expect(result.isError).toBe(true);
@@ -89,26 +94,23 @@ test("an unknown tool name returns an honest error", async () => {
   expect(result.content).toMatch(/unknown tool/);
 });
 
-test("list_agents reports the tenant's taskable agents", async () => {
+test("list_agents reports the tenant's taskable agents by address", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response(
-      JSON.stringify({
-        definitions: [
-          {
-            id: "def_1",
-            name: "Research Buddy",
-            description: "Answers research questions",
-          },
-        ],
-      }),
-    )) as unknown as typeof fetch;
+  globalThis.fetch = (async (url: string | URL) => {
+    const raw = String(url);
+    if (raw.endsWith("/assets?kind=workflow&inherited=false")) {
+      return Response.json([
+        { id: "asset_1", name: "agent-research-buddy-source", displayName: "Research Buddy" },
+      ]);
+    }
+    return Response.json({ domain: "acme.example" });
+  }) as unknown as typeof fetch;
   try {
     const bundle = agentDirectoryTools(testEnv());
     const result = await bundle.run(callFor(LIST_AGENTS_TOOL, {}), new AbortController().signal);
     expect(result.isError).toBeFalsy();
     expect(result.content).toContain("Research Buddy");
-    expect(result.content).toContain("Answers research questions");
+    expect(result.content).toContain("research-buddy@acme.example");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -116,8 +118,10 @@ test("list_agents reports the tenant's taskable agents", async () => {
 
 test("list_agents reports honestly when the workbench has no other agents", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ definitions: [] }))) as unknown as typeof fetch;
+  globalThis.fetch = (async (url: string | URL) => {
+    if (String(url).endsWith("/assets?kind=workflow&inherited=false")) return Response.json([]);
+    return Response.json({ domain: "acme.example" });
+  }) as unknown as typeof fetch;
   try {
     const bundle = agentDirectoryTools(testEnv());
     const result = await bundle.run(callFor(LIST_AGENTS_TOOL, {}), new AbortController().signal);
@@ -128,256 +132,41 @@ test("list_agents reports honestly when the workbench has no other agents", asyn
   }
 });
 
-test("create_agent creates then mints its own DM by default, in one call sequence", async () => {
+test("message_agent sends through the stock mailbox route", async () => {
   const originalFetch = globalThis.fetch;
-  const seenUrls: string[] = [];
+  let seenUrl: string | undefined;
   globalThis.fetch = (async (url: string | URL) => {
-    seenUrls.push(String(url));
-    if (String(url).endsWith("/definitions")) {
-      return new Response(
-        JSON.stringify({
-          id: "def_1",
-          name: "Research Buddy",
-          description: null,
-          currentVersion: "1",
-          status: "deployed",
-          skills: [],
-          modelNote: null,
-        }),
-        { status: 201 },
-      );
-    }
-    return new Response(
-      JSON.stringify({
-        workbenchId: "wb_1",
-        address: "ins_1@acme.example",
-        definitionId: "def_1",
-        handle: "research-buddy",
-      }),
-      { status: 201 },
-    );
+    seenUrl = String(url);
+    return Response.json({ messageId: "msg_1", uid: 1 });
   }) as unknown as typeof fetch;
   try {
     const bundle = agentDirectoryTools(testEnv());
     const result = await bundle.run(
-      callFor(CREATE_AGENT_TOOL, {
-        name: "Research Buddy",
-        systemPrompt: "You are a careful research assistant.",
-      }),
+      callFor(MESSAGE_AGENT_TOOL, { address: "research-buddy@acme.example", message: "hi" }),
       new AbortController().signal,
     );
     expect(result.isError).toBeFalsy();
-    expect(result.content).toMatch(/Created "Research Buddy"/);
-    expect(result.content).toMatch(/opened its own chat/);
-    expect(result.content).toMatch(/workbenchId/);
-    expect(seenUrls.some((url) => url.endsWith("/definitions"))).toBe(true);
-    expect(seenUrls.some((url) => url.endsWith("/participants/mint-dm"))).toBe(true);
-    expect(seenUrls.some((url) => url.endsWith("/participants/invite"))).toBe(false);
+    expect(result.content).toMatch(/Message sent/);
+    expect(seenUrl).toContain("/mailbox/me/inbox/send");
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("create_agent with invite: false creates but never calls mint-dm or invite", async () => {
-  const originalFetch = globalThis.fetch;
-  const seenUrls: string[] = [];
-  globalThis.fetch = (async (url: string | URL) => {
-    seenUrls.push(String(url));
-    return new Response(
-      JSON.stringify({
-        id: "def_1",
-        name: "Research Buddy",
-        description: null,
-        currentVersion: "1",
-        status: "deployed",
-        skills: [],
-        modelNote: null,
-      }),
-      { status: 201 },
-    );
-  }) as unknown as typeof fetch;
-  try {
-    const bundle = agentDirectoryTools(testEnv());
-    const result = await bundle.run(
-      callFor(CREATE_AGENT_TOOL, {
-        name: "Research Buddy",
-        systemPrompt: "You are a careful research assistant.",
-        invite: false,
-      }),
-      new AbortController().signal,
-    );
-    expect(result.isError).toBeFalsy();
-    expect(result.content).toMatch(/Created "Research Buddy"/);
-    expect(seenUrls.some((url) => url.endsWith("/participants/invite"))).toBe(false);
-    expect(seenUrls.some((url) => url.endsWith("/participants/mint-dm"))).toBe(false);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("create_agent reports a create-succeeded/mint-failed half-failure honestly, never as a plain error", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (url: string | URL) => {
-    if (String(url).endsWith("/definitions")) {
-      return new Response(
-        JSON.stringify({
-          id: "def_1",
-          name: "Research Buddy",
-          description: null,
-          currentVersion: "1",
-          status: "deployed",
-          skills: [],
-          modelNote: null,
-        }),
-        { status: 201 },
-      );
-    }
-    return new Response(
-      JSON.stringify({
-        error: {
-          code: "not_found",
-          userMessage: "no workbench",
-          refId: "ref_test",
-        },
-      }),
-      { status: 404 },
-    );
-  }) as unknown as typeof fetch;
-  try {
-    const bundle = agentDirectoryTools(testEnv());
-    const result = await bundle.run(
-      callFor(CREATE_AGENT_TOOL, {
-        name: "Research Buddy",
-        systemPrompt: "You are a careful research assistant.",
-      }),
-      new AbortController().signal,
-    );
-    expect(result.isError).toBeFalsy();
-    expect(result.content).toMatch(/Created "Research Buddy"/);
-    expect(result.content).toMatch(/could not open its own chat/);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("create_agent maps modelPreference to the create route's model field", async () => {
-  const originalFetch = globalThis.fetch;
-  let seenBody: unknown;
-  globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
-    if (String(url).endsWith("/definitions")) {
-      seenBody = JSON.parse(String(init?.body));
-      return new Response(
-        JSON.stringify({
-          id: "def_1",
-          name: "Research Buddy",
-          description: null,
-          currentVersion: "1",
-          status: "deployed",
-          skills: [],
-          modelNote: null,
-        }),
-        { status: 201 },
-      );
-    }
-    return new Response(
-      JSON.stringify({
-        workbenchId: "wb_1",
-        address: "ins_1@acme.example",
-        definitionId: "def_1",
-        handle: "research-buddy",
-      }),
-      { status: 201 },
-    );
-  }) as unknown as typeof fetch;
-  try {
-    const bundle = agentDirectoryTools(testEnv());
-    await bundle.run(
-      callFor(CREATE_AGENT_TOOL, {
-        name: "Research Buddy",
-        systemPrompt: "You are a careful research assistant.",
-        modelPreference: "anthropic/claude-sonnet-5",
-      }),
-      new AbortController().signal,
-    );
-    expect((seenBody as { model?: string }).model).toBe("anthropic/claude-sonnet-5");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("create_agent surfaces a model fallback note in its content, and still opens the specialist's own chat, rather than producing a silently dead agent", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (url: string | URL) => {
-    if (String(url).endsWith("/definitions")) {
-      return new Response(
-        JSON.stringify({
-          id: "def_1",
-          name: "Research Buddy",
-          description: null,
-          currentVersion: "1",
-          status: "deployed",
-          skills: [],
-          modelNote:
-            'Requested model "gpt-4o" is not in this workbench\'s catalog; used the workspace default "ollama/llama3" instead.',
-        }),
-        { status: 201 },
-      );
-    }
-    return new Response(
-      JSON.stringify({
-        workbenchId: "wb_1",
-        address: "ins_1@acme.example",
-        definitionId: "def_1",
-        handle: "research-buddy",
-      }),
-      { status: 201 },
-    );
-  }) as unknown as typeof fetch;
-  try {
-    const bundle = agentDirectoryTools(testEnv());
-    const result = await bundle.run(
-      callFor(CREATE_AGENT_TOOL, {
-        name: "Research Buddy",
-        systemPrompt: "You are a careful research assistant.",
-        modelPreference: "gpt-4o",
-      }),
-      new AbortController().signal,
-    );
-    expect(result.isError).toBeFalsy();
-    expect(result.content).toMatch(/Created "Research Buddy"/);
-    expect(result.content).toMatch(/opened its own chat/);
-    expect(result.content).toMatch(/workbenchId/);
-    expect(result.content).toMatch(/gpt-4o/);
-    expect(result.content).toMatch(/ollama\/llama3/);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("create_agent surfaces the create route's own rejection honestly on failure", async () => {
+test("message_agent surfaces a send failure honestly", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>
-    new Response(
-      JSON.stringify({
-        error: {
-          code: "conflict",
-          userMessage: "already exists",
-          refId: "ref_test",
-        },
-      }),
-      { status: 409 },
-    )) as unknown as typeof fetch;
+    new Response(JSON.stringify({ error: { code: "not_found", userMessage: "no such agent" } }), {
+      status: 404,
+    })) as unknown as typeof fetch;
   try {
     const bundle = agentDirectoryTools(testEnv());
     const result = await bundle.run(
-      callFor(CREATE_AGENT_TOOL, {
-        name: "Research Buddy",
-        systemPrompt: "You are a careful research assistant.",
-      }),
+      callFor(MESSAGE_AGENT_TOOL, { address: "ghost@acme.example", message: "hi" }),
       new AbortController().signal,
     );
     expect(result.isError).toBe(true);
-    expect(result.content).toMatch(/already exists/);
+    expect(result.content).toMatch(/no such agent/);
   } finally {
     globalThis.fetch = originalFetch;
   }
