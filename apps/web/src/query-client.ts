@@ -8,45 +8,25 @@ import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";
 import { workbenchesQueryKey } from "@/chat/workbench-tenants";
 import type { WorkbenchKind } from "@/chat/workbench-tenants";
 
-/**
- * Retry policy shared by every query in the app: no session and a
- * definitive 404 both mean retrying cannot help — a 404 on a detail
- * lookup (an artifact or approval deleted since the link was made) is a
- * real, stable answer, not a transient failure, so retrying it three
- * times only delays an honest quiet no-op. Everything else (500s,
- * network failures) gets the normal three attempts.
- */
+// A 404 is a stable answer, not a transient failure, so retrying it three
+// times only delays an honest quiet no-op.
 export function shouldRetryQuery(failureCount: number, error: unknown): boolean {
   if (error instanceof UnauthenticatedError) return false;
   if (error instanceof ApiQueryError && error.status === 404) return false;
   return failureCount < 3;
 }
 
-/**
- * True for any error this app's hub requests throw to mean "the hub no
- * longer recognizes this session" — a 401 from `useAPIQuery` surfaces as
- * `UnauthenticatedError`, everywhere else (mutations, hand-rolled fetches
- * in `agents-api.ts`/`routines-api.ts`/etc.) as an `ApiQueryError` whose
- * `status` is 401. Both mean the same thing: the DB was reset, the
- * session's user was deleted, or the cookie simply expired mid-session.
- */
+// Both shapes mean the same thing: the DB was reset, the user was
+// deleted, or the cookie expired mid-session.
 export function isAuthInvalidError(error: unknown): boolean {
   if (error instanceof UnauthenticatedError) return true;
   return error instanceof ApiQueryError && error.status === 401;
 }
 
-/**
- * One QueryClient for the signed-in shell, wired so ANY query or mutation
- * that discovers the session is no longer valid — a restarted hub on an
- * empty DB, a cookie for a deleted user, a session that simply expired —
- * routes the whole app back to the login screen, not just the one widget
- * that happened to notice. Without this, a query that 401s renders its own
- * local "sign in required" box while the rest of the shell (nav, other
- * panels) keeps rendering as if nothing happened — the broken half-state
- * this hook exists to prevent. `onAuthInvalid` is called at most once per
- * invalid-session discovery; the caller is responsible for making it
- * idempotent (main.tsx's `handleSignOut` already is).
- */
+// Without this, a query that 401s renders its own local "sign in
+// required" box while the rest of the shell keeps rendering — the broken
+// half-state this exists to prevent. Caller must make `onAuthInvalid`
+// idempotent.
 export function createAppQueryClient(onAuthInvalid: () => void = () => undefined): QueryClient {
   return new QueryClient({
     queryCache: new QueryCache({
@@ -92,10 +72,8 @@ export const tenantKeys = {
   routineRunHistories: (tenantId: string) => ["tenant", tenantId, "routine-run-histories"] as const,
   definitions: (tenantId: string) => ["tenant", tenantId, "definitions"] as const,
   agentDirectory: (tenantId: string) => ["tenant", tenantId, "agents", "directory"] as const,
-  /** The sidebar's unified list of agent-DM candidates, backed by the
-   * stock `GET /workflows/definitions` listing (see `listAgentDefinitions`
-   * in `agents-api.ts`). Kept apart from `agentDirectory` above, which is
-   * a different surface's own key. */
+  // Kept apart from `agentDirectory` above, which is a different
+  // surface's own key.
   visibleAgents: (tenantId: string) => ["tenant", tenantId, "agents", "visible"] as const,
   assets: (tenantId: string) => ["tenant", tenantId, "assets"] as const,
   artifacts: (tenantId: string) => ["tenant", tenantId, "artifacts"] as const,
@@ -107,23 +85,15 @@ export const tenantKeys = {
   principals: (tenantId: string) => ["tenant", tenantId, "principals"] as const,
   roles: (tenantId: string) => ["tenant", tenantId, "roles"] as const,
   grants: (tenantId: string) => ["tenant", tenantId, "grants"] as const,
-  /** Settings section-nav gating (People/Roles/Grants/Credentials). Keyed
-   * so col2's nav band and the settings stage — mounted in separate
-   * subtrees — share one cached probe instead of each firing its own. */
+  // Keyed so col2's nav band and the settings stage share one cached
+  // probe instead of each firing its own.
   settingsAccess: (tenantId: string, principalId: string) =>
     ["tenant", tenantId, "settings-access", principalId] as const,
-  /** Delegates to `@/chat`'s own key builder — that package owns
-   * both the workbenches endpoint and `WorkbenchKind`, so this is the one array
-   * shape every workbench-listing surface (bench-activity, command palette,
-   * the Routines picker, `ChatWorkspace`'s own sidebar) keys against,
-   * rather than each side of the app/package boundary keeping its own copy
-   * of the literal that could drift apart. */
+  // Delegates to `@/chat`'s own key builder so every workbench-listing
+  // surface keys against one shape, not a copy that could drift apart.
   workbenches: (tenantId: string, kind: WorkbenchKind) => workbenchesQueryKey(tenantId, kind),
-  /** The sidebar routine-activity seam (`./shell/routine-activity.ts`).
-   * The `feed=fires` route this read is gone, so the query resolves with
-   * no items and issues no fetch — the key is kept (not the deleted
-   * `/top-level-runs` path) so both sidebar mounts still share one cache
-   * entry, and so a future native fires equivalent has a key to rewire. */
+  // The `feed=fires` route is gone; the key is kept so a future native
+  // fires equivalent has somewhere to rewire.
   routineActivity: (tenantId: string) => ["tenant", tenantId, "routine-activity"] as const,
   /** A workbench's own timeline reads: `tenantId` is the owning
    * bench chat's workbench-tenancy addresses these routes at (see
@@ -136,12 +106,8 @@ export const tenantKeys = {
     ["tenant", tenantId, "workbench-timeline-routine-runs", workbenchId] as const,
 };
 
-/**
- * Every surface that runs a routine (the routine panel's Run now button,
- * the shell context menu's Run now item) must refresh the same two reads —
- * the routines list and its run history — or one of them goes stale while
- * the other doesn't.
- */
+// Both reads must refresh together or one goes stale while the other
+// doesn't.
 export function invalidateRoutineQueries(queryClient: QueryClient, tenantId: string): void {
   void queryClient.invalidateQueries({
     queryKey: tenantKeys.routines(tenantId),
@@ -151,10 +117,8 @@ export function invalidateRoutineQueries(queryClient: QueryClient, tenantId: str
   });
 }
 
-/**
- * Map a hub GET path onto a stable query key. Unknown paths fall back to a
- * path-keyed entry so callers cannot accidentally share cache entries.
- */
+// Unknown paths fall back to a path-keyed entry so callers can't
+// accidentally share cache entries.
 export function pathToQueryKey(path: string): readonly unknown[] {
   if (path === "/api/me") return meKeys.profile;
   if (path === "/api/me/principals") return meKeys.principals;
