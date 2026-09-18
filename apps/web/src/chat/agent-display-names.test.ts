@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  agentDisplayNamesFromAgents,
-  displayNameForAddress,
-} from "./agent-display-names";
+import { agentDisplayNamesFromAgents, displayNameForAddress } from "./agent-display-names";
 
 describe("agentDisplayNamesFromAgents", () => {
   test("keys each agent's display name by its participant address", () => {

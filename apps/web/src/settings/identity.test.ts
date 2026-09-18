@@ -3,11 +3,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import {
-  PRINCIPAL_KIND_LABEL,
-  PRINCIPAL_KIND_ORDER,
-  principalLabel,
-} from "./identity";
+import { PRINCIPAL_KIND_LABEL, PRINCIPAL_KIND_ORDER, principalLabel } from "./identity";
 
 describe("principalLabel", () => {
   test("passes through an already-humane display name unchanged", () => {

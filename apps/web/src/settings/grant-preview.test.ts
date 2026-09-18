@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  expiryIsoFromPreset,
-  expiryLabelFromPreset,
-  grantPreviewSentence,
-} from "./grant-preview";
+import { expiryIsoFromPreset, expiryLabelFromPreset, grantPreviewSentence } from "./grant-preview";
 
 describe("grantPreviewSentence", () => {
   test("defaults the subject when no target is chosen", () => {

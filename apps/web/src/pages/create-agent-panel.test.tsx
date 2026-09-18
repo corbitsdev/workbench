@@ -378,10 +378,7 @@ describe("CreateAgentPanel drafting failure — fails closed", () => {
 
 describe("agent creation entry points", () => {
   test("the chat page never imports this form — agent creation lives outside it entirely", () => {
-    const chatPageSource = readFileSync(
-      new URL("./chat-page.tsx", import.meta.url),
-      "utf8",
-    );
+    const chatPageSource = readFileSync(new URL("./chat-page.tsx", import.meta.url), "utf8");
     expect(chatPageSource).not.toContain('from "./create-agent-panel"');
     expect(chatPageSource).not.toContain("instant-agent-create");
   });

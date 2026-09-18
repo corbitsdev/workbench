@@ -1,11 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import {
-  WORKBENCHES_MUTATED_EVENT,
-  applyStreamWorkbenchesMutated,
-  createWorkbench,
-} from "./api";
+import { WORKBENCHES_MUTATED_EVENT, applyStreamWorkbenchesMutated, createWorkbench } from "./api";
 
 if (typeof document === "undefined") {
   GlobalRegistrator.register();

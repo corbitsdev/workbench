@@ -11,10 +11,7 @@
 import { describe, expect, test } from "bun:test";
 import { Robot } from "@/lib/icons";
 
-import {
-  insertEveryoneSections,
-  resolveSettingsSectionGroups,
-} from "./section-registry";
+import { insertEveryoneSections, resolveSettingsSectionGroups } from "./section-registry";
 import type { TenancyAccess } from "./access";
 import type { SettingsSection } from "./shell";
 

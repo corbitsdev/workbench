@@ -479,10 +479,7 @@ describe("the other two entries land on the same `/` hop", () => {
   });
 
   test("onboarding hands off to `/` once a working credential is confirmed", () => {
-    const source = readFileSync(
-      new URL("./onboarding-page.tsx", import.meta.url),
-      "utf8",
-    );
+    const source = readFileSync(new URL("./onboarding-page.tsx", import.meta.url), "utf8");
     expect(source).toContain('navigate("/")');
   });
 });

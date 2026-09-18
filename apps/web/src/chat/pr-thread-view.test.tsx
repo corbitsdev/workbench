@@ -13,11 +13,7 @@ import type { ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import type {
-  PrThreadFailedTurn,
-  PrThreadReply,
-  PrThreadViewProps,
-} from "./pr-thread-view";
+import type { PrThreadFailedTurn, PrThreadReply, PrThreadViewProps } from "./pr-thread-view";
 import { PrQueuedStrip, PrThreadView } from "./pr-thread-view";
 
 let container: HTMLDivElement | null = null;

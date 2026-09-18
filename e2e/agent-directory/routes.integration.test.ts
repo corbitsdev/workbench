@@ -84,7 +84,7 @@ const fakeHistory: DefinitionAssetHistory = {
   readBlobAtCommit: () => Promise.resolve(null),
 };
 
-const allowAllRequireGrant: RequireGrant = () => async (_c, next) => {
+const allowAllRequireGrant: RequireGrant = () => async (_c: unknown, next: () => Promise<void>) => {
   await next();
 };
 

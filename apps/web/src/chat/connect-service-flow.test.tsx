@@ -11,10 +11,7 @@ import type { ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import type {
-  ConnectServiceActions,
-  ConnectServiceQuery,
-} from "./blocks/connect-service-actions";
+import type { ConnectServiceActions, ConnectServiceQuery } from "./blocks/connect-service-actions";
 import { ConnectServiceBlockContainer } from "./blocks/connect-service-block-container";
 
 let container: HTMLDivElement | null = null;

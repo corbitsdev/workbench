@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  buildCommandPaletteGroups,
-  type PaletteSource,
-} from "./command-groups";
+import { buildCommandPaletteGroups, type PaletteSource } from "./command-groups";
 
 const actions: PaletteSource = {
   id: "actions",

@@ -10,11 +10,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
-import {
-  COMPACT_MAX_WIDTH,
-  NARROW_MAX_WIDTH,
-  type ShellLayoutMode,
-} from "./breakpoints";
+import { COMPACT_MAX_WIDTH, NARROW_MAX_WIDTH, type ShellLayoutMode } from "./breakpoints";
 import { useShellLayoutMode } from "./use-shell-layout";
 
 type StubQuery = {
