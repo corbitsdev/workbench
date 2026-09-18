@@ -13,9 +13,9 @@
   },
   "dependencies": {
     "@chat-adapter/state-memory": "^4.35.0",
-    "@corbits/agent-token": "github:corbitsdev/corbits-agent-token#0a3bd10d496927a2b1d3f854420b2d42de040254",
+    "@corbits/agent-token": "github:corbitsdev/corbits-agent-token#ed286f4592190f911de480ef5330ce03d8605f00",
     "@corbits/approvals": "workspace:*",
-    "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#9152ba5d55f1bdc88f992c5de54f01760992541b",
+    "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#4a2a3c22187991a6ce598faf794908fedd252e98",
     "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
     "@corbits/cron": "github:corbitsdev/corbits-cron#c60e62e0459fbb48c4eccb2e97b3ceb8e7d0d47e",
     "@corbits/error-sink": "workspace:*",

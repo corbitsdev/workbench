@@ -8,7 +8,7 @@
         "arktype": "catalog:",
       },
       "devDependencies": {
-        "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#5309a15d4aa504f132c54b4da08bb672b4903873",
+        "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#4a2a3c22187991a6ce598faf794908fedd252e98",
         "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
         "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#65590a85fa143251b3ac20ba2eca92fc35e70e51",
         "@corbits/ollama-adapter": "github:corbitsdev/corbits-ollama-adapter#0387eb17bee5ac87530e9c48bb3bffd9a6998ded",
@@ -36,7 +36,7 @@
       "name": "@corbits/myra",
       "version": "0.0.3",
       "dependencies": {
-        "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#9152ba5d55f1bdc88f992c5de54f01760992541b",
+        "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#4a2a3c22187991a6ce598faf794908fedd252e98",
         "@intx/tools-mail": "0.3.0",
         "@intx/tools-posix": "0.3.0",
       },
@@ -55,9 +55,9 @@
       "version": "0.0.1",
       "dependencies": {
         "@chat-adapter/state-memory": "^4.35.0",
-        "@corbits/agent-token": "github:corbitsdev/corbits-agent-token#0a3bd10d496927a2b1d3f854420b2d42de040254",
+        "@corbits/agent-token": "github:corbitsdev/corbits-agent-token#ed286f4592190f911de480ef5330ce03d8605f00",
         "@corbits/approvals": "workspace:*",
-        "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#9152ba5d55f1bdc88f992c5de54f01760992541b",
+        "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#4a2a3c22187991a6ce598faf794908fedd252e98",
         "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
         "@corbits/cron": "github:corbitsdev/corbits-cron#c60e62e0459fbb48c4eccb2e97b3ceb8e7d0d47e",
         "@corbits/error-sink": "workspace:*",
@@ -603,11 +603,11 @@
 
     "@chat-adapter/state-memory": ["@chat-adapter/state-memory@4.40.0", "", { "dependencies": { "chat": "4.40.0" } }, "sha512-NmFFkvUfnDBDS/mkzrtKHdW757EGt0eX3OQH5IPxrKqhjSsNzpqUdkJ/uDB4BP0Rbex4oW/HgwhZ+JGONVbMBQ=="],
 
-    "@corbits/agent-token": ["@corbits/agent-token@github:corbitsdev/corbits-agent-token#0a3bd10", { "dependencies": { "@intx/db": "^0.3.0", "arktype": "^2.2.0", "drizzle-orm": "^0.45.2", "hono": "^4.11.9", "postgres": "^3.4.8" } }, "corbitsdev-corbits-agent-token-0a3bd10", "sha512-8FX7qUOFQYK/SnmjtRrcyszinNV26UuWpEYReJiJSr9Xm8rRiNgzf9CNBYu9GDXYqgwf6LRCQ30y/RCCrmtRsQ=="],
+    "@corbits/agent-token": ["@corbits/agent-token@github:corbitsdev/corbits-agent-token#ed286f4", { "dependencies": { "@intx/db": "^0.3.0", "arktype": "^2.2.0", "drizzle-orm": "^0.45.2", "hono": "^4.11.9", "postgres": "^3.4.8" } }, "corbitsdev-corbits-agent-token-ed286f4", "sha512-k7puSwtCC2ZF7W0lzswtBoKxu4n+VjWwtzf8oa1OWe72FEI4TDdQ5gybqq/oW9XJAUHeCkjPL9bdwxG6C2TfpQ=="],
 
     "@corbits/approvals": ["@corbits/approvals@workspace:packages/approvals"],
 
-    "@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#5309a15", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/hub-api": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-5309a15", "sha512-zGHkq++juclUrOd0O8/Z5ziTldmJZ6gqyH/c9cs5S10UPU4gqn8CHwq174SiJXY0ujJ3cNpJXnrr+0fcqlfQ1w=="],
+    "@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#4a2a3c2", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/agent": "^0.3.0", "@intx/hub-api": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-4a2a3c2", "sha512-UY5nkQ31kGmYgqgIOSlbigwvm7c/s2kpqEbF6Oqo0rzoS1RejpPp+w/Yim6h2MRpYCl5CXgAET1MhkDboHuWBA=="],
 
     "@corbits/codex-provider": ["@corbits/codex-provider@github:corbitsdev/corbits-codex-provider#a1f475f", { "dependencies": { "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core", "@corbits/openai-responses": "github:corbitsdev/corbits-openai-responses", "arktype": "2.2.3" }, "peerDependencies": { "@intx/inference": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-codex-provider-a1f475f", "sha512-D6d0lblWx/4KudfLwQoQGrLB8GKRLP/HVp1cx08L2/hOGZAgH6txLPpeEtBqjl+R520qXSSPfM0kDC+3XNaAfw=="],
 
@@ -1831,8 +1831,6 @@
 
     "@corbits/mailbox/hono-openapi": ["hono-openapi@1.3.1", "", { "peerDependencies": { "@hono/standard-validator": "^0.2.0", "@standard-community/standard-json": "^0.3.5", "@standard-community/standard-openapi": "^0.2.9", "@types/json-schema": "^7.0.15", "hono": "^4.11.2", "openapi-types": "^12.1.3" }, "optionalPeers": ["@hono/standard-validator", "hono"] }, "sha512-NLVeVkhKZ3drmQNEIPac8HX8Y54uf1hJAgIM/7MfDsaeVVmB+QILWQxx5x3R3NvRHgedcbEbOCGY2uR7WQYyMw=="],
 
-    "@corbits/myra/@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#9152ba5", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/agent": "^0.3.0", "@intx/hub-api": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-9152ba5", "sha512-ZE2BLMND2elhGfvXBgkJlSD7x/WO6uTfloLajtXvneyuRKzaeXHXfqIKSVxC6NY9Qetyu4dOqZUPoeJBZopKKQ=="],
-
     "@corbits/xai-provider/@corbits/oauth-core": ["@corbits/oauth-core@github:corbitsdev/corbits-oauth-core#f186ed0", { "dependencies": { "@intx/db": "^0.3.0", "@intx/hub-api": "^0.3.0", "@intx/hub-common": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "2.2.3", "drizzle-orm": "^0.45.2", "hono": "^4.11.9" } }, "corbitsdev-corbits-oauth-core-f186ed0", "sha512-wjKVTa26EoUqg8biyC4CumDi6y1hBck6xJTB/oEaTkc1lQ3Foum89KoXGHSvact+N1j9uwLGFEnOfgYp2FFi5Q=="],
 
     "@esbuild-kit/core-utils/esbuild": ["esbuild@0.18.20", "", { "optionalDependencies": { "@esbuild/android-arm": "0.18.20", "@esbuild/android-arm64": "0.18.20", "@esbuild/android-x64": "0.18.20", "@esbuild/darwin-arm64": "0.18.20", "@esbuild/darwin-x64": "0.18.20", "@esbuild/freebsd-arm64": "0.18.20", "@esbuild/freebsd-x64": "0.18.20", "@esbuild/linux-arm": "0.18.20", "@esbuild/linux-arm64": "0.18.20", "@esbuild/linux-ia32": "0.18.20", "@esbuild/linux-loong64": "0.18.20", "@esbuild/linux-mips64el": "0.18.20", "@esbuild/linux-ppc64": "0.18.20", "@esbuild/linux-riscv64": "0.18.20", "@esbuild/linux-s390x": "0.18.20", "@esbuild/linux-x64": "0.18.20", "@esbuild/netbsd-x64": "0.18.20", "@esbuild/openbsd-x64": "0.18.20", "@esbuild/sunos-x64": "0.18.20", "@esbuild/win32-arm64": "0.18.20", "@esbuild/win32-ia32": "0.18.20", "@esbuild/win32-x64": "0.18.20" }, "bin": { "esbuild": "bin/esbuild" } }, "sha512-ceqxoedUrcayh7Y7ZX6NdbbDzGROiyVBgC4PriJThBKSVPWnnFHZAkfI1lJT8QFkOwH4qOS2SJkS4wvpGl8BpA=="],
@@ -1850,8 +1848,6 @@
     "@tailwindcss/oxide-wasm32-wasi/@tybys/wasm-util": ["@tybys/wasm-util@0.10.4", "", { "dependencies": { "tslib": "^2.4.0" }, "bundled": true }, "sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A=="],
 
     "@tailwindcss/oxide-wasm32-wasi/tslib": ["tslib@2.8.1", "", { "bundled": true }, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
-
-    "@workbench/hub/@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#9152ba5", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/agent": "^0.3.0", "@intx/hub-api": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-9152ba5", "sha512-ZE2BLMND2elhGfvXBgkJlSD7x/WO6uTfloLajtXvneyuRKzaeXHXfqIKSVxC6NY9Qetyu4dOqZUPoeJBZopKKQ=="],
 
     "@workbench/hub/@corbits/codex-provider": ["@corbits/codex-provider@github:corbitsdev/corbits-codex-provider#a1f475f", { "dependencies": { "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core", "@corbits/openai-responses": "github:corbitsdev/corbits-openai-responses", "arktype": "2.2.3" }, "peerDependencies": { "@intx/inference": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-codex-provider-a1f475f", "sha512-D6d0lblWx/4KudfLwQoQGrLB8GKRLP/HVp1cx08L2/hOGZAgH6txLPpeEtBqjl+R520qXSSPfM0kDC+3XNaAfw=="],
 
