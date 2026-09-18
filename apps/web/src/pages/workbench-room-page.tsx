@@ -31,6 +31,7 @@ import {
   readRoom,
   resolveAvatarName,
   resolveParticipantName,
+  sameAddress,
   sendToRoom,
   subscribeToInbox,
   type RoomMessage,
@@ -65,7 +66,9 @@ function RoomMessageRow({
   // included, never the "You" transcript label — falling back to the
   // address local part a mail turn otherwise carries.
   const avatarName = resolveAvatarName(message, participants);
-  const matched = participants.find((participant) => participant.address === message.address);
+  const matched = participants.find((participant) =>
+    sameAddress(participant.address, message.address),
+  );
   const kind = message.author !== "me" && matched?.kind === "agent" ? "agent" : "person";
   // The person's own send carries a trailing roster block so agents in the
   // room can hand off to each other; it's never something a person should
@@ -242,7 +245,10 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
   });
   const participants = useQuery({
     queryKey: roomKeys.participants(roomTenantId),
-    queryFn: () => listRoomParticipants(roomTenantId),
+    queryFn: () => listRoomParticipants(roomTenantId, tenant.data?.domain ?? ""),
+    // The room tenant's domain is read first; a person's mailbox address
+    // depends on it, so participants wait for it rather than racing it.
+    enabled: tenant.data !== undefined,
     // Poll while any agent has no live run yet, so the room notices its own
     // redeploy finishing without a manual refresh.
     refetchInterval: (query) =>
