@@ -66,7 +66,6 @@ import {
 } from "./mailbox-persist";
 import { captureMailboxRequest, createMailboxDeliver } from "./mailbox-send";
 import { installWebhooks, type HookMailRouter } from "@corbits/webhooks";
-import { createWorkflowAuthorRegistry, createWorkflowAuthorRoutes } from "@corbits/workflows";
 import {
   createProcessSidecarProvisioner,
   readProcessProvisionerConfig,
@@ -93,9 +92,9 @@ const grantConditionRegistry: ConditionRegistry = {
 };
 
 // The one concrete `WorkflowRunAuthenticator` every workflow-run-authenticated
-// Corbits surface below takes structurally (workflow-authoring,
-// `@corbits/artifacts`' `mountWorkflowArtifacts`): a sidecar bearer token +
-// run address resolve to the tenant/principal/run it names.
+// Corbits surface below takes structurally (`@corbits/artifacts`'
+// `mountWorkflowArtifacts`): a sidecar bearer token + run address resolve to
+// the tenant/principal/run it names.
 function createWorkflowRunAuthenticator(deps: { db: DB["db"] }) {
   return {
     async resolve(token: string, runAddress: string) {
@@ -600,20 +599,6 @@ export async function createHubServer({
     });
     app.route("/", memoryApp);
   }
-
-  app.route(
-    "/api/workflow-workflow-authoring",
-    createWorkflowAuthorRoutes({
-      authenticator: createWorkflowRunAuthenticator({ db }),
-      registry: createWorkflowAuthorRegistry({
-        db,
-        assetService,
-        repoStore: agentRepoStore.repoStore,
-        grantStore,
-        conditionRegistry: grantConditionRegistry,
-      }),
-    }),
-  );
 
   // `HookMailRouter` types its payloads as `unknown` at the package
   // boundary; this just narrows them back to `sidecarRouter`'s own types

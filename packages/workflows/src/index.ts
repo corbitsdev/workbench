@@ -2,7 +2,6 @@
 // `@corbits/workflows/client` instead (see ./client.ts).
 export * from "./source";
 export * from "./detail/index";
-export * from "./authoring/index";
 export {
   pickLaunchableDefinition,
   routineTargetRejection,

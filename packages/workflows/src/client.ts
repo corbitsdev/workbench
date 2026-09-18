@@ -2,13 +2,6 @@
 // no `hono`. A structural check walks the import graph from here.
 export * from "./source";
 export {
-  runBearerHeaders,
-  runBearerErrorMessage,
-  runBearerErrorCode,
-  runBearerFetch,
-  type RunBearerClientConfig,
-} from "./authoring/run-client";
-export {
   pickLaunchableDefinition,
   isFrozen,
   routineTargetRejection,
