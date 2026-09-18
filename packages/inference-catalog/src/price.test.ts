@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { pricing } from "../test/fixtures";
+import { pricing } from "./fixtures";
 import { groupPricingByOffering, perMTok, priceForOffering, referenceCostUsd } from "./price";
 
 describe("perMTok", () => {

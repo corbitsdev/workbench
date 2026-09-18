@@ -1,10 +1,6 @@
-// Since the process provisioner started spawning one sidecar per
-// allocation, a freshly launched run's first mail can arrive before that
-// sidecar has finished booting and registering with the hub, so the send
-// fails with "agent is unreachable" even though nothing is actually wrong
-// — the address just isn't routable yet. The webhook trigger's ingress
-// delivery goes through this helper; chat's `sendRunMailWithReclaimRetry`
-// shares this same budget rather than declaring its own.
+// A freshly launched run's first mail can arrive before its sidecar
+// finishes booting and registering, failing "agent is unreachable" even
+// though nothing is wrong. This helper retries once the address routes.
 export const DEFAULT_ROUTABLE_DEADLINE_MS = 20_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
 
@@ -31,13 +27,8 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Attempts `send`; if it fails with "agent is unreachable", polls
- * `isRoutable` until the address is routable (or the deadline passes)
- * and sends exactly once more. Any other failure, or an unreachable
- * failure that never resolves before the deadline, is rethrown as-is —
- * this never swallows the original error or retries indefinitely.
- */
+/** Attempts `send`; on "agent is unreachable", polls until routable (or the
+ * deadline passes) and sends once more. Never swallows the original error. */
 export async function deliverWhenRoutable<T>(opts: DeliverWhenRoutableOptions<T>): Promise<T> {
   const isUnreachable = opts.isUnreachable ?? isAgentUnreachableError;
   try {

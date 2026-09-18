@@ -1,21 +1,7 @@
 // The single 5-field cron grammar `@corbits/workflows` speaks: one parser
-// shared by validation (does this expression make sense at save time?)
-// and execution (does this expression match this minute?). Before this
-// module existed, `trigger.ts` and the hub's scheduler each hand-rolled
-// their own field parser — format-only, no range checking, incompatible
-// clause orderings — so an expression could validate as saveable and
-// then never fire, or fire on one parser's reading and not the other's.
-// One parser closes that gap: whatever validates here is exactly what
-// matches here.
-//
-// Semantics match Vixie/POSIX cron on the cases that matter:
-// - `*/N` steps from the field minimum (so `*/2` on day-of-month is
-//   1,3,5… not 2,4,6…).
-// - When both day-of-month and day-of-week are restricted, they OR
-//   (`0 0 13 * 5` = the 13th or any Friday).
-// - Day-of-week accepts both 0 and 7 as Sunday.
-// - Matching can be evaluated in an IANA timezone; `nextFireAt` is still
-//   stored as a UTC instant.
+// shared by validation and execution, so whatever validates here is
+// exactly what matches here (previously two hand-rolled parsers could
+// disagree). Semantics match Vixie/POSIX cron; see the functions below.
 export type CronField = "minute" | "hour" | "dayOfMonth" | "month" | "dayOfWeek";
 
 /** Field order in a 5-field cron expression, paired with its valid range. */
@@ -43,10 +29,8 @@ type CronClause = {
   readonly step?: number;
 };
 
-// Standard cron clause order is base, then an optional range, then an
-// optional step: `5`, `5-10`, `*/2`, `5-10/2`. Only this order is
-// accepted — the reversed `5/2-10` idiom neither cron nor either of
-// this repo's previous hand-rolled parsers meaningfully supported.
+// Only base-range-step order is accepted (`5`, `5-10`, `*/2`, `5-10/2`) —
+// the reversed `5/2-10` idiom is not supported.
 const CLAUSE_PATTERN = /^(\*|[0-9]+)(?:-([0-9]+))?(?:\/([0-9]+))?$/;
 
 function parseCronClause(raw: string): CronClause | undefined {
@@ -59,13 +43,8 @@ function parseCronClause(raw: string): CronClause | undefined {
   return step !== undefined ? { ...withRangeEnd, step: Number(step) } : withRangeEnd;
 }
 
-/**
- * True when `clause` is meaningful for a field whose valid values span
- * `[min, max]`: every literal value in range, and — the case the old
- * format-only validators missed — a reversed range (`10-5`) rejected
- * rather than accepted as an expression that is syntactically fine and
- * unconditionally never true.
- */
+/** True when `clause` is meaningful for `[min, max]`: values in range, and a
+ * reversed range (`10-5`) rejected rather than silently never-true. */
 function clauseInRange(clause: CronClause, [min, max]: readonly [number, number]): boolean {
   if (clause.step !== undefined && clause.step <= 0) return false;
   if (clause.base === "*") return true;
@@ -75,11 +54,8 @@ function clauseInRange(clause: CronClause, [min, max]: readonly [number, number]
   return clause.rangeEnd >= clause.base;
 }
 
-/**
- * Does `clause` match `value` for a field whose minimum is `min`?
- * Star-with-step (asterisk-slash-N) steps from `min`, not from zero — so on a
- * 1-based day-of-month, that pattern yields 1,3,5… rather than 2,4,6….
- */
+/** Does `clause` match `value`? Star-with-step steps from `min`, not zero,
+ * so on a 1-based day-of-month it yields 1,3,5… not 2,4,6…. */
 function clauseMatches(clause: CronClause, value: number, min: number): boolean {
   if (clause.base === "*") {
     return clause.step === undefined ? true : (value - min) % clause.step === 0;
@@ -106,16 +82,8 @@ function someClause(field: string, test: (clause: CronClause) => boolean): boole
   });
 }
 
-/**
- * Loud, eager validation for a raw 5-field cron expression
- * (minute hour day-of-month month day-of-week): every field's syntax
- * AND every field's values must be sane for that position — a minute
- * of 60, a month of 13, or a reversed range all fail here, never
- * silently accepted only to fail at fire-time.
- *
- * This is syntactic + range only. Whether the expression can ever
- * actually fire (e.g. `0 0 31 2 *` — Feb 31) is `cronExpressionCanFire`.
- */
+/** Loud, eager syntax + range validation (never a fire-time surprise like a
+ * minute of 60). Whether it can ever actually fire is `cronExpressionCanFire`. */
 export function isValidCronExpression(expression: string): boolean {
   const fields = expression.trim().split(/\s+/);
   if (fields.length !== 5) return false;
@@ -130,10 +98,7 @@ function fieldMatches(field: string, value: number, min: number): boolean {
   return someClause(field, (clause) => clauseMatches(clause, value, min));
 }
 
-/**
- * Day-of-week match with 0/7 both meaning Sunday. A clause of `7` matches
- * a Date whose day is 0, and a clause of `0` matches the same.
- */
+/** Day-of-week match with 0/7 both meaning Sunday. */
 function dayOfWeekMatches(field: string, dayOfWeek: number): boolean {
   const [min] = CRON_FIELD_RANGES.dayOfWeek;
   if (fieldMatches(field, dayOfWeek, min)) return true;
@@ -142,11 +107,8 @@ function dayOfWeekMatches(field: string, dayOfWeek: number): boolean {
   return false;
 }
 
-/**
- * True when the day-of-month field is restricted (not a bare `*`, and not
- * only `*` with a step that still covers every day). Vixie OR-semantics
- * for DOM/DOW only apply when *both* fields are restricted.
- */
+// True when the field is restricted (not a bare wildcard or step-1). Vixie
+// OR-semantics for DOM/DOW only apply when both fields are restricted.
 function isDayFieldRestricted(field: string): boolean {
   const trimmed = field.trim();
   if (trimmed === "*") return false;
@@ -165,12 +127,8 @@ export type ZonedParts = {
   readonly dayOfWeek: number;
 };
 
-/**
- * Wall-clock parts of `at` in `timeZone` (IANA). Falls back to UTC when
- * `timeZone` is omitted or `"UTC"`. Throws if `timeZone` is not a valid
- * IANA name — call sites that accept user input must validate first via
- * `isValidTimeZone`.
- */
+/** Wall-clock parts of `at` in `timeZone`. Throws on an invalid IANA name —
+ * user input must validate first via `isValidTimeZone`. */
 export function zonedParts(at: Date, timeZone: string = "UTC"): ZonedParts {
   if (timeZone === "UTC") {
     return {
@@ -237,11 +195,8 @@ export function isValidTimeZone(timeZone: string): boolean {
   }
 }
 
-/**
- * True when `expression`'s fields match the wall-clock minute of `at`
- * in `timeZone` (default UTC). DOM and DOW OR when both are restricted
- * (Vixie/POSIX); otherwise AND.
- */
+/** True when `expression` matches the wall-clock minute of `at` in
+ * `timeZone`. DOM and DOW OR when both are restricted; otherwise AND. */
 export function cronMatchesMinute(expression: string, at: Date, timeZone: string = "UTC"): boolean {
   const fields = expression.trim().split(/\s+/);
   const [minute, hour, dayOfMonth, month, dayOfWeek] = fields;
@@ -277,23 +232,12 @@ function minuteKey(at: Date): number {
   return Math.floor(at.getTime() / 60_000);
 }
 
-/**
- * Bounds how far ahead `nextCronFireAfter` will search before giving up.
- * One leap year of minutes is enough for any expression that fires at
- * least annually; impossible expressions (Feb 31, etc.) fail here — and
- * at save time via `cronExpressionCanFire` — never inside a claim
- * transaction that would otherwise spin for millions of iterations.
- */
+/** Bounds how far ahead `nextCronFireAfter` searches — one leap year is
+ * enough for any expression that fires at least annually. */
 export const MAX_LOOKAHEAD_MINUTES = 366 * 24 * 60;
 
-/**
- * The next minute at or after `after` (exclusive) that `expression`
- * matches in `timeZone` — the closed-form "when does this actually fire
- * next" calculation, used both to persist a routine's `nextFireAt` and
- * to render a UI's next-run estimate against the exact semantics that
- * fire it. `nextFireAt` is always a UTC instant even when matching is
- * zoned.
- */
+/** The next minute at or after `after` (exclusive) that `expression`
+ * matches. Always returns a UTC instant, even when matching is zoned. */
 export function nextCronFireAfter(expression: string, after: Date, timeZone: string = "UTC"): Date {
   const start = minuteKey(after) + 1;
   for (let minute = start; minute - start <= MAX_LOOKAHEAD_MINUTES; minute++) {
@@ -306,12 +250,8 @@ export function nextCronFireAfter(expression: string, after: Date, timeZone: str
   );
 }
 
-/**
- * True when `expression` has at least one fire inside the lookahead
- * window from `from` (default: Unix epoch). Used at save time so an
- * impossible expression (`0 0 31 2 *`) is rejected before it can ever
- * reach the scheduler's claim path.
- */
+/** True when `expression` has at least one fire inside the lookahead window
+ * from `from`. Used at save time to reject an impossible expression. */
 export function cronExpressionCanFire(
   expression: string,
   timeZone: string = "UTC",

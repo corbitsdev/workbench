@@ -1,18 +1,5 @@
-// The wire shape a workflow's own page (`apps/web/src/pages/
-// workflow-detail-page.tsx`) reads. Pure/browser-safe: no `@intx/*`, no
-// `drizzle-orm`, no `hono` — `@corbits/workflows/client` re-exports this
-// directly so `apps/web` can import it.
-//
-// The hub mounts no Workbench-composed detail route for this — the
-// client renders directly off `@intx/hub-api`'s stock
-// `GET /api/tenants/:tenantId/workflows/definitions` list
-// (`vendor/intx/hub-api/src/routes/workflow-definitions.ts`,
-// `WorkflowDefinitionResponse` in `vendor/intx/types/src/workflows.ts`),
-// which exposes only `id`, `name`, `description`, `currentVersion`,
-// `status` (`deployed` | `stopped`), `createdAt`, `updatedAt` — no asset
-// display name, no manifest/package metadata, no wire projection (so no
-// steps, no schedule trigger), and no grant/credential-binding read.
-// This is a real gap, not a design choice made here.
+// The wire shape a workflow's own page reads. Pure/browser-safe. Mirrors
+// `@intx/hub-api`'s stock definitions list, which exposes only these fields.
 import { type } from "arktype";
 
 export const WorkflowDefinitionDetail = type({

@@ -1,15 +1,5 @@
-// Price normalization. The catalog stores per-token prices as decimal
-// strings; every human number in this package — ceilings, estimates, the
-// copy an agent reads — is USD per million tokens. That conversion happens
-// here and nowhere else.
-//
-// As-of selection is not restated here: the platform's model discovery
-// route already returns the row in effect per currency, so this module only
-// picks the currency and converts.
-//
-// A missing row, a missing currency, or a null price component yields
-// `known: false` with null numbers. It never yields zero: a fabricated zero
-// would read as "free" and quietly win every cheapest-first sort.
+// Converts decimal-string per-token prices to USD/million. A missing row
+// yields `known: false`, never a fabricated zero that wins cheapest-first.
 import type { CatalogPricingRow } from "./catalog";
 
 export const DEFAULT_CURRENCY = "USD";

@@ -1,43 +1,6 @@
 // The sanctioned path for a workflow-process child to add itself a
-// capability (`@corbits/capability-tools`'s `request_capability`)
-// — the execution half of `POST /:definitionId/capabilities`
-// / `GET /capabilities/inventory` in `./routes.ts`, mirroring
-// `@corbits/skills-tools`' `createWorkflowSkillRoutes` and
-// `@corbits/artifacts-hub`'s workflow-artifacts routes: a workflow child
-// has no browser session, only its sidecar bearer token and its own run
-// address, so it authenticates through a `WorkflowRunAuthenticator`
-// rather than the tenant-session pipeline `./routes.ts` uses.
-//
-// Mounted OUTSIDE the tenant prefix for that reason, at
-// `/api/workflow-capabilities`. Identity NEVER rides in a request body
-// or path beyond the definitionId itself: the tenant and principal
-// every write is scoped to come from the authenticated run alone.
-//
-// Authorization decision (deliberate):
-// the vendored grant-materialization path never seeds a `kind:
-// "workflow"` run's own principal a `workflow-definition: <its own
-// id>/update` grant — `requireGrant` would 403 every self-update call a
-// run makes for its own definition until that vendor gap closes. Rather
-// than block `request_capability` on an unpublished vendor change, this
-// route skips a grant-store check entirely for the ONE case it accepts:
-// a call whose authenticated run targets its OWN definitionId. That
-// narrow case is already gated by a stronger control than a grant row —
-// `@corbits/capability-tools`' `request_capability` tool declares
-// `approval: "ask"` (`@intx/agent`'s native per-invocation gate), so the
-// reactor suspends every call as a pending approval and renders it
-// in-chat BEFORE this route ever runs; a human already had to approve
-// the specific addition. The human is the authorizer here, not a grant
-// row. This route still enforces, unconditionally: (1) the caller's run
-// must resolve to a live tenant/principal/run via the sidecar-token +
-// run-address check below, (2) the path `definitionId` must equal the
-// resolved run's OWN definitionId (rejected 403 otherwise — a run can
-// never touch another definition through this surface), and (3) the
-// addition must fail closed against the tenant's live capability
-// inventory (`assertCapabilityInInventory`, unchanged from the
-// tenant-session route). Once the real self-update grant is seeded in
-// vendor grant materialization, this route can
-// route through `requireGrant` like every other definition-mutating
-// surface instead of carrying this interim rule.
+// capability, authenticated through `WorkflowRunAuthenticator`. No
+// grant-store check — see docs/workflow-capability-authorization.md.
 import { type } from "arktype";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
@@ -62,15 +25,9 @@ import {
 import type { PinnedSkillIndexResolver } from "./routes";
 import { makeErrorEnvelope } from "@corbits/error-sink";
 
-/**
- * The tenant + principal + run a presented sidecar token and run
- * address resolve to. Declared structurally (mirroring
- * `@corbits/skills-tools`' `WorkflowRunScope`) rather than importing
- * `@corbits/artifacts-hub`'s concrete type, so this package carries no
- * dependency on the artifacts plane; `apps/hub` supplies
- * `@corbits/artifacts-hub`'s `createWorkflowRunAuthenticator`, which
- * satisfies this shape exactly (it resolves a superset: `runId` too).
- */
+/** The tenant + principal + run a sidecar token and run address resolve
+ * to. Declared structurally so this package carries no dependency on the
+ * artifacts plane. */
 export type WorkflowCapabilityRunScope = {
   readonly tenantId: string;
   readonly principalId: string;
@@ -107,9 +64,7 @@ export type CreateWorkflowCapabilityRoutesDeps = {
   capabilityInventory: CapabilityInventoryProvider;
   authenticator: WorkflowRunAuthenticator;
   /** Deploys the definition's commit through the native source pipeline
-   * after the rewrite; the composition root injects the SAME
-   * `WorkflowDeployer` `@corbits/workflows`'s `./authoring`'s registry
-   * calls. */
+   * after the rewrite. */
   deployer: AgentDefinitionDeployer;
 };
 
@@ -165,11 +120,7 @@ export function createWorkflowCapabilityRoutes(
     const scope = c.get("workflowCapabilityScope");
     const definitionId = c.req.param("definitionId");
 
-    // Resolve the calling run's OWN definitionId and reject outright if
-    // the path names anything else — a run may only ever touch its own
-    // definition through this surface (see the file-level "why" comment
-    // for the full authorization decision this enforces in place of a
-    // grant-store check).
+    // A run may only ever touch its own definition through this surface.
     const run = await deps.db.query.workflowRun.findFirst({
       where: eq(workflowRun.id, scope.runId),
     });
@@ -208,10 +159,7 @@ export function createWorkflowCapabilityRoutes(
       tenantId: scope.tenantId,
       principalId: scope.principalId,
     });
-    // Throws `CapabilityOutOfInventoryError`, caught by `app.onError`
-    // above — fail closed against exactly the inventory this call just
-    // fetched, never a stale or wider one. Unchanged from the
-    // tenant-session route's own fail-closed check.
+    // Throws `CapabilityOutOfInventoryError`, caught by `app.onError`.
     assertCapabilityInInventory(body, inventory);
 
     const added = await commitAgentCapabilityAdd({

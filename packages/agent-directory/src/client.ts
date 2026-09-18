@@ -1,11 +1,6 @@
 // Browser-safe "what counts as a user-facing agent" logic: filtering out
-// the chat anchor machinery's workbench hosts (they are plumbing, not an
-// agent a person created), full-text search across the fields a person
-// actually reads (never an id), and flagging an instance whose definition
-// has since gone missing from the tenant's own listing. Depends directly on
-// `@corbits/chat/workbench-host-naming` — a domain package, not app state —
-// to identify that plumbing; a host injects only its raw definition/
-// instance lists, already fetched from wherever it gets them.
+// workbench-host plumbing, full-text search across fields a person actually
+// reads, and flagging an instance whose definition has gone missing.
 
 import {
   deriveDisplayName,
@@ -16,15 +11,8 @@ import {
 } from "./display-name";
 import { isConversationalWorkflowName } from "@corbits/workflows/catalog";
 
-// `deriveDisplayName`/`humanizeSlug` live in `@corbits/chat`
-// itself, not here: this package already depends on `@corbits/chat` (for
-// `isWorkbenchHostDefinitionName` below), so a copy defined here could
-// never be imported back by `@corbits/chat`'s own call sites without a
-// circular dependency — exactly the gap that traces the "Run
-// 737a058d…" leak to (the chat participant invite/greeting path never
-// migrated onto this derivation because it couldn't). Re-exported here so
-// every existing caller of `@corbits/agent-directory/client`'s
-// `deriveDisplayName`/`humanizeSlug` keeps working unchanged.
+// Re-exported from `./display-name` so every existing caller of this
+// module's `deriveDisplayName`/`humanizeSlug` keeps working unchanged.
 export { deriveDisplayName, humanizeSlug, withDisplayName, withDisplayNames };
 export type { WithDisplayName };
 
@@ -41,33 +29,17 @@ export type UserFacingAgentInstance = {
   readonly address?: string;
 };
 
-/** Every definition, minus the chat anchor machinery's workbench hosts —
- * those are internal plumbing, never a user-facing agent — and minus every
- * non-conversational workflow-catalog utility (`workbench-digest`/"Daily
- * digest", `last-30-days-research`/"Last 30 days research", …): those are
- * mail-triggered automations a routine schedules, never something a person
- * opens a chat with, so they belong on the Routines page only. The one
- * distinguishing property is `isConversationalWorkflowName` — "can this be
- * DMed" — the same test `listVisibleAgentDefinitions` already applies to the
- * sidebar's DM list; `automatable` (schedulable as a routine) is orthogonal
- * and never decides this. Definitions never need the run-id filter
- * `purposeAgentInstances` below takes: definition rows aren't run rows, so a
- * chat-plumbing run's own id can never match here — an invited agent's real
- * `definitionId` stays a legitimate, reusable template even though its
- * *instance* is chat plumbing. */
+/** Every definition minus workbench-host plumbing and minus every
+ * non-conversational workflow-catalog utility. `isConversationalWorkflowName`
+ * is the one distinguishing property; `automatable` is orthogonal. */
 export function purposeAgentDefinitions<T extends UserFacingAgentDefinition>(
   definitions: readonly T[],
 ): readonly T[] {
   return definitions.filter((d) => isConversationalWorkflowName(d.name));
 }
 
-/**
- * `excludeRunIds` additionally drops chat-plumbing runs (invited agents):
- * they self-anchor like a real deployment and launch under a real,
- * user-authored `definitionId` that `isWorkbenchHostDefinitionName` never
- * catches, so the host names them by id instead. Defaults to an empty
- * set so callers without a run-id source keep the name-only filter.
- */
+/** `excludeRunIds` additionally drops chat-plumbing runs (invited agents),
+ * which a name-based filter never catches. Defaults to empty. */
 export function purposeAgentInstances<T extends UserFacingAgentInstance>(
   instances: readonly T[],
   excludeRunIds: ReadonlySet<string> = new Set(),
@@ -96,15 +68,8 @@ export function filterInstances<T extends UserFacingAgentInstance>(
   return instances.filter((i) => i.definitionName.toLowerCase().includes(needle));
 }
 
-/**
- * An instance is orphaned when the tenant's own definitions listing no
- * longer carries its `definitionId` — the definition was deleted or,
- * more commonly, has scrolled past the page's fetch window. A
- * definition row's own FK to the run means this can never mean "no
- * definition ever existed"; it means "not resolvable from here", which
- * is exactly the distinction the UI floor cares about: never hide an
- * instance the page cannot fully explain, mark it instead.
- */
+/** An instance is orphaned when the tenant's own definitions listing no
+ * longer carries its `definitionId` — never hide it, mark it instead. */
 export function isOrphanedInstance(
   instance: Pick<UserFacingAgentInstance, "definitionId">,
   definitionsById: ReadonlyMap<string, unknown>,

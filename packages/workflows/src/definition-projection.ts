@@ -1,30 +1,12 @@
 // Reads a `WorkflowDefinition`'s launch body back out of an already-resolved
-// inert wire projection.
-//
-// There is no hub-side row to read a launch body back off of — this
-// module is the pure half: the named errors and the schema-validated
-// reader that turns an already-in-hand inert projection into a
-// `FoldedBody`, needed by chat and anything else holding a projection
-// value from elsewhere. Nothing in this file queries a database.
-//
-// One field of the launch body is deliberately NOT in the projection:
-// `grantRequirements` does not survive the live->inert projector and is
-// therefore outside the wire hash. Its hub-side home is the
-// `workflow_definition.grant_requirements` column, so it is passed in
-// alongside the projection rather than read off it.
+// inert wire projection. See docs/workflow-definition-projection.md.
 import type { FoldedBody } from "@intx/workflow-deploy";
 import { GrantRequirement, CredentialBinding } from "@intx/types";
 import { ToolPackagePin } from "@intx/types/tool-packages";
 import { type } from "arktype";
 
-/**
- * Thrown when a definition carries no frozen wire projection — a row
- * persisted before the projection was stored, or one whose approval
- * never completed. Carries consumer language so an HTTP boundary can
- * answer with a named 4xx instead of an unhandled 500, mirroring
- * `InferenceResolutionError`'s split between the human `message` and the
- * `guidance` a caller surfaces verbatim.
- */
+/** Thrown when a definition carries no frozen wire projection. Carries
+ * consumer-facing `guidance` so an HTTP boundary can answer 4xx, not 500. */
 export class DefinitionProjectionMissingError extends Error {
   readonly definitionName: string;
   readonly guidance: string;
@@ -46,19 +28,9 @@ export type DefinitionCandidate = {
   readonly name: string;
 };
 
-/**
- * Thrown when a definition's frozen projection carries more than one
- * step. The launch target (`@corbits/agent-runtime`'s
- * `AgentRuntimeConfig`) renders exactly one `systemPrompt` into one
- * mailbox-triggered turn — it has no notion of step order at all, so
- * there is nothing here a length check could safely relax: reading past
- * `stepOrder[0]` would silently drop every later step's behavior rather
- * than run it. Genuine multi-step launch needs a different deploy
- * front (Interchange's native workflow-run trigger, `@intx/workflow-host`'s
- * DAG supervisor) than this module provides. Carries consumer language
- * so an HTTP boundary can answer with a named 4xx instead of an
- * unhandled 500, mirroring `DefinitionProjectionMissingError`.
- */
+/** Thrown when a definition's frozen projection carries more than one step —
+ * this launch target has no notion of step order. See
+ * docs/workflow-definition-projection.md#why-multi-step-definitions-are-rejected. */
 export class MultiStepFoldUnsupportedError extends Error {
   readonly definitionId: string;
   readonly stepCount: number;
@@ -78,14 +50,8 @@ export class MultiStepFoldUnsupportedError extends Error {
   }
 }
 
-/**
- * The launch-relevant subset of an inert projection's single `step`
- * primitive. The projector reifies the live `AgentDefinition` into plain
- * data and FLATTENS its inference chain: `agent.inference.sources`
- * becomes a top-level `modelSources: { provider, model }[]` and the
- * function-bearing `toolFactories` become descriptors. This schema
- * validates exactly the reified fields `readFoldedBody` below reads.
- */
+/** The launch-relevant subset of an inert projection's `step` primitive,
+ * after the projector flattens the live `AgentDefinition`'s inference chain. */
 const InertWorkflowStepSchema = type({
   kind: "'step'",
   agent: {
@@ -95,14 +61,8 @@ const InertWorkflowStepSchema = type({
   },
 });
 
-/**
- * The launch-relevant subset of an inert projection's `onTrigger`
- * primitive (per-turn section shape,
- * `@corbits/agent-runtime`'s `buildSectionWorkflow`): the agent-bearing
- * step lives one level down, inside the section's inline body, not on
- * the section step itself. `readFoldedBody` below reads through this
- * shape the same way it reads a bare `step` primitive.
- */
+/** The launch-relevant subset of an inert projection's `onTrigger`
+ * primitive — the agent-bearing step lives inside the section's inline body. */
 const InertOnTriggerStepSchema = type({
   kind: "'onTrigger'",
   body: {
@@ -113,14 +73,8 @@ const InertOnTriggerStepSchema = type({
   },
 });
 
-/**
- * Extracts the agent-bearing step primitive `readFoldedBody` needs,
- * whichever of the two shapes a projection's launch step takes — a
- * bare `step` (the conversational shape) or an `onTrigger`
- * section whose inline body carries the one step that answers each
- * turn. One reader for both shapes: neither call site duplicates the
- * other's parsing.
- */
+/** Extracts the agent-bearing step, whichever of the two launch-step shapes
+ * a projection takes. See docs/workflow-definition-projection.md#step-shapes. */
 function extractAgentBearingStep(
   rawStep: unknown,
   definitionId: string,
@@ -170,14 +124,9 @@ export const FoldedBodySchema = type({
   model: "string | null",
 });
 
-/**
- * Reads the launch body back out of a definition's frozen inert
- * projection — the same fields `@intx/workflow-deploy`'s
- * `extractFoldedBody` reads off a live `WorkflowDefinition`, read here
- * off the projected plain data instead. `grantRequirements` comes from
- * the definition row because the projector drops it (see the module
- * header).
- */
+/** Reads the launch body off a frozen inert projection instead of a live
+ * `WorkflowDefinition`. `grantRequirements` comes from the caller since the
+ * projector drops it. */
 export function readFoldedBody(projection: unknown, grantRequirements: unknown): FoldedBody {
   const definition = InertWorkflowDefinitionSchema(projection);
   if (definition instanceof type.errors) {

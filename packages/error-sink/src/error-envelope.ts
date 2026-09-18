@@ -1,10 +1,6 @@
-// The one shape every hub route uses to answer a failure a user can see:
-// a stable `code` a client can branch on, a `userMessage` written in
-// consumer language, and a `refId` a person can quote in a support
-// message or a bug report. The raw failure — stack text, file paths,
-// upstream error prose — never crosses the wire; it belongs in the
-// hub's own logger, keyed by the same `refId`, so an operator can find
-// it without the client ever having seen it.
+// The one shape every hub route uses to answer a user-visible failure. The
+// raw failure never crosses the wire — it stays in the hub's own logger,
+// keyed by the same `refId`.
 
 import { type } from "arktype";
 import { generateRefId } from "./ref-id";

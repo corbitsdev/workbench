@@ -1,8 +1,5 @@
-/** A URL path segment or param carries percent-escapes an id needs
- * decoded, and a hand-typed or truncated URL can carry a malformed one —
- * which `decodeURIComponent` answers with a throw. A segment that cannot
- * be decoded names no entity, so it reads as no selection at all rather
- * than taking the render — or the request — down with it. */
+/** Decodes a URL path segment, reading a malformed one as no selection
+ * rather than throwing. */
 export function decodedOrNull(segment: string): string | null {
   try {
     return decodeURIComponent(segment);

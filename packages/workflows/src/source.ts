@@ -1,25 +1,6 @@
-// The one shape a `workflow`-kind asset may carry.
-//
-// Upstream retired the on-disk `workflow.json` envelope: the push
-// validator (`vendor/intx/hub-sessions/src/workflow-kind.ts`,
-// `workflowKindHandler.validatePush`) refuses a bare serialized
-// definition and accepts only a source codebase — a `package.json`
-// declaring `interchange.workflow` plus that entry module, which
-// default-exports the definition. Every authoring path in this repo
-// writes that tree through `renderWorkflowSourceTree` and recovers the
-// definition back out of it through `parseWorkflowSourceEntry`, so the
-// bytes on disk have exactly one producer and one consumer.
-//
-// `validate-push.test.ts` round-trips the rendered tree through the real
-// `workflowKindHandler.validatePush`, so a renderer/validator drift fails a
-// test here instead of surfacing as a push rejection on a workflow someone
-// just created.
-//
-// The entry is a JSON literal rather than a call into a builder: an
-// asset tree is a standalone codebase, so it can declare no workspace
-// dependency to evaluate, and the definition it carries is inert data.
-// That is what lets the reader below be a strict slice of a known
-// prefix and suffix instead of an evaluation.
+// The one shape a `workflow`-kind asset may carry: a source codebase, per
+// upstream's push validator. `renderWorkflowSourceTree` and
+// `parseWorkflowSourceEntry` are its one producer and consumer.
 
 /** The entry module's path inside the asset tree. */
 export const WORKFLOW_SOURCE_ENTRY_PATH = "workflow.js";
@@ -53,13 +34,8 @@ export function renderWorkflowSourceTree(args: {
   };
 }
 
-/**
- * Thrown when an asset does not carry the source form — in practice, an
- * asset last written before the retirement, whose tree still holds a
- * bare `workflow.json`. Named so every route boundary can answer it as
- * a client-visible conflict with re-authoring guidance rather than
- * letting it read as a server fault.
- */
+/** Thrown when an asset still carries the retired bare `workflow.json`
+ * envelope, so a route boundary can answer it as a client-visible conflict. */
 export class RetiredWorkflowEnvelopeError extends Error {
   readonly assetId: string;
 
@@ -75,12 +51,8 @@ export class RetiredWorkflowEnvelopeError extends Error {
   }
 }
 
-/**
- * Recovers the serialized definition from the exact bytes
- * `renderWorkflowSourceTree` emits. A strict single-shape slice, never
- * an evaluation: anything else is an asset this lineage did not author
- * in its current form.
- */
+/** Recovers the serialized definition from the exact bytes
+ * `renderWorkflowSourceTree` emits — a strict slice, never an evaluation. */
 export function parseWorkflowSourceEntry(entryModule: string, assetId: string): string {
   if (!entryModule.startsWith(ENTRY_PREFIX) || !entryModule.endsWith(ENTRY_SUFFIX)) {
     throw new RetiredWorkflowEnvelopeError(assetId);
@@ -88,21 +60,14 @@ export function parseWorkflowSourceEntry(entryModule: string, assetId: string): 
   return entryModule.slice(ENTRY_PREFIX.length, entryModule.length - ENTRY_SUFFIX.length);
 }
 
-/**
- * The blob read a source-form asset needs. Declared structurally so this
- * package stays dependency-free; `@intx/hub-sessions`' `AssetService`
- * satisfies it exactly.
- */
+/** The blob read a source-form asset needs, declared structurally so this
+ * package stays dependency-free. */
 export type WorkflowSourceBlobReader = {
   readAssetBlob(params: { assetId: string; path: string }): Promise<Uint8Array>;
 };
 
-/**
- * Reads a source-form asset's serialized definition. A missing entry
- * module is the retirement's own failure mode — an asset written before
- * the cutover — so it surfaces as `RetiredWorkflowEnvelopeError` rather
- * than the asset service's generic not-found.
- */
+/** Reads a source-form asset's serialized definition. A missing entry
+ * module surfaces as `RetiredWorkflowEnvelopeError`, not a generic not-found. */
 export async function readWorkflowSourceDefinition(
   reader: WorkflowSourceBlobReader,
   assetId: string,

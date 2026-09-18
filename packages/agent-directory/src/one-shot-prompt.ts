@@ -1,8 +1,6 @@
-// A synchronous wrapper around one provisioned run's opening turn:
-// prepare, send the prompt, wait for exactly one reply, tear down the
-// subscription AND the launched run itself. Other launchers return as
-// soon as the run starts; this module turns the event stream into an
-// awaitable promise for a caller that has no later-delivery surface.
+// A synchronous wrapper around one provisioned run's opening turn: send,
+// await exactly one reply, tear down the run — for a caller with no
+// later-delivery surface.
 import { and, eq } from "drizzle-orm";
 import { connectorReplyContent, messageRunEnded } from "./agent-events";
 import { reportError } from "@corbits/error-sink";
@@ -60,28 +58,18 @@ export type OneShotRunnerDeps = {
   >;
   readonly sidecarRouter: Pick<SidecarRouter, "routeMail">;
   readonly eventCollectors: EventCollectorPort;
-  /**
-   * Reads the hub's live sidecar routing table (the same source the
-   * webhook launch path uses). A freshly provisioned run's sidecar
-   * takes several seconds to register, so the opening send fires once;
-   * if it fails as unreachable, this is polled — bounded — until the
-   * address is routable and the send is retried exactly once.
-   */
+  /** Reads the hub's live sidecar routing table so a retry can wait for a
+   * freshly provisioned run's sidecar to register. */
   readonly isRoutable: (address: string) => boolean;
-  /**
-   * Test seam only. Overrides `deliverWhenRoutable`'s default wait
-   * budget/poll so the expiry path stays fast under test; production
-   * never sets it and the defaults apply.
-   */
+  /** Test seam only. Overrides the default wait budget/poll so the expiry
+   * path stays fast under test. */
   readonly deliverWait?: {
     readonly deadlineMs?: number;
     readonly pollIntervalMs?: number;
     readonly sleep?: (ms: number) => Promise<void>;
   };
-  /**
-   * Test seam only. Production never sets these; they default to
-   * Interchange `prepareProvisionedDeployment` and `SidecarRouter.routeMail`.
-   */
+  /** Test seam only. Production defaults to Interchange's own
+   * provisioning and routing. */
   readonly provision?: (input: {
     readonly tenantId: string;
     readonly principalId: string;
@@ -201,16 +189,9 @@ async function provisionOnAsset(
   };
 }
 
-/**
- * Provisions a run against `input.definitionId`, sends `input.prompt`
- * as its opening mail, and resolves with the run's accumulated
- * `connector.reply` content once its opening turn's `message.run.ended`
- * bracket closes.
- *
- * No owning workbench_launch row and no Inbox delivery. The event
- * subscription unsubscribes exactly once, and `deps.undeploy` tears the
- * run down exactly once, on every exit path.
- */
+/** Provisions a run, sends the opening mail, and resolves with the reply
+ * once the turn's bracket closes. Unsubscribes and tears the run down
+ * exactly once, on every exit path. */
 export async function runOneShotPrompt(
   deps: OneShotRunnerDeps,
   input: OneShotPromptInput,

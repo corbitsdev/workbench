@@ -1,50 +1,67 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
+import { UnauthenticatedError } from "@/lib/api-query";
 import {
-  artifactUploadToast,
-  copyArtifactLinksActionLabel,
-  copyArtifactLinksToastLabel,
-  uploadMimeTypeFromSource,
+  artifactListRowToSummary,
+  isArtifactsUnavailableStatus,
+  mapArtifactListToSummaries,
+  uploadArtifactFiles,
+  type ArtifactListRow,
 } from "./library-artifacts";
 
-describe("copy-link labels", () => {
-  test("action label is count-aware", () => {
-    expect(copyArtifactLinksActionLabel(1)).toBe("Copy link");
-    expect(copyArtifactLinksActionLabel(3)).toBe("Copy 3 links");
-  });
+const realFetch = globalThis.fetch;
 
-  test("toast label is count-aware", () => {
-    expect(copyArtifactLinksToastLabel(1)).toBe("Link copied");
-    expect(copyArtifactLinksToastLabel(3)).toBe("3 links copied");
-  });
+afterEach(() => {
+  globalThis.fetch = realFetch;
 });
 
-describe("artifactUploadToast", () => {
-  test("a single file is confirmed by name", () => {
-    expect(artifactUploadToast(["q3-report.pdf"])).toBe("Uploaded · q3-report.pdf");
+const sample: ArtifactListRow = {
+  id: "art_1",
+  kind: "file",
+  title: "Quarterly report.pdf",
+  ownerName: "Ada",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-02T00:00:00.000Z",
+};
+
+describe("library-artifacts", () => {
+  test("maps list rows onto ArtifactSummary without inventing fields", () => {
+    expect(artifactListRowToSummary(sample)).toEqual({
+      id: "art_1",
+      title: "Quarterly report.pdf",
+      kind: "file",
+      ownerName: "Ada",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    });
   });
 
-  test("several files are confirmed by count", () => {
-    expect(artifactUploadToast(["a.png", "b.png", "c.png", "d.png"])).toBe("Uploaded 4 files");
-  });
-});
-
-describe("uploadMimeTypeFromSource", () => {
-  test("reads the mime type off a real upload's source", () => {
-    expect(
-      uploadMimeTypeFromSource({
-        origin: "library-upload",
-        upload: { id: "u1", mimeType: "text/markdown", filename: "a.md" },
-      }),
-    ).toBe("text/markdown");
-  });
-
-  test("is null for an artifact with no upload backing", () => {
-    expect(uploadMimeTypeFromSource({ origin: "chat" })).toBeNull();
+  test("maps a list without inventing or dropping rows", () => {
+    const second: ArtifactListRow = {
+      ...sample,
+      id: "art_2",
+      kind: "document",
+      title: "notes.txt",
+      ownerName: null,
+    };
+    const mapped = mapArtifactListToSummaries([sample, second]);
+    expect(mapped).toHaveLength(2);
+    expect(mapped[0]?.id).toBe("art_1");
+    expect(mapped[1]?.kind).toBe("document");
+    expect(mapped[1]?.ownerName).toBeNull();
   });
 
-  test("is null when the upload field is malformed", () => {
-    expect(uploadMimeTypeFromSource({ upload: "not-an-object" })).toBeNull();
-    expect(uploadMimeTypeFromSource({ upload: { id: "u1" } })).toBeNull();
+  test("detects the unconfigured-plane status", () => {
+    expect(isArtifactsUnavailableStatus(503)).toBe(true);
+    expect(isArtifactsUnavailableStatus(500)).toBe(false);
+    expect(isArtifactsUnavailableStatus(undefined)).toBe(false);
+  });
+
+  test("uploadArtifactFiles throws an UnauthenticatedError on 401", async () => {
+    globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(new Response(null, { status: 401 }))) as typeof fetch;
+    await expect(uploadArtifactFiles("tnt_1", [new File(["x"], "x.txt")])).rejects.toBeInstanceOf(
+      UnauthenticatedError,
+    );
   });
 });

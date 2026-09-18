@@ -1,9 +1,6 @@
 // The trust-boundary validator for a workflow source tree an agent hands
-// the authoring registry. The substrate's `workflowKindHandler.validatePush`
-// already checks the manifest's shape once bytes are staged; this module
-// runs BEFORE any write so a traversal path, a secret-looking filename, an
-// oversize tree, or an entry that names a file the tree does not carry is
-// rejected without touching git — and with a message the model can act on.
+// the authoring registry. Runs before any write so a traversal path, an
+// oversize tree, or a dangling entry is rejected without touching git.
 import path from "node:path";
 import { type } from "arktype";
 import { isContainedEntryPath, PackageJSON } from "@intx/types/package-json";

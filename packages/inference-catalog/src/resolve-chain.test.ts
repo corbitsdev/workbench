@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ProviderPreference } from "@intx/types";
 
-import { offering, pricing } from "../test/fixtures";
+import { offering, pricing } from "./fixtures";
 import { EMPTY_POLICY, type BenchModelPolicy } from "./policy";
 import {
   chainToModelRequirements,

@@ -11,9 +11,6 @@
       "path": "./packages/approvals/tsconfig.src.json"
     },
     {
-      "path": "./packages/collections/tsconfig.src.json"
-    },
-    {
       "path": "./packages/cron/tsconfig.src.json"
     },
     {

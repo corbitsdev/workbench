@@ -1,17 +1,5 @@
-// A bench's model policy: what this bench is willing to spend, and on
-// which models. Everything else the package answers is derived at read time
-// from the platform's own catalog and price history.
-//
-// The policy lives in the bench's own tenant `config` blob, under
-// `corbits.modelPolicy` — read with the stock `GET /api/tenants/:tenantId`,
-// written with the stock `PATCH`. A bench is a plain Interchange tenant and
-// its config blob is the platform's own place for per-tenant settings, so
-// there is no product table and no Workbench-only route in the path: a
-// workflow child reads its bench's policy through the same stock route
-// everything else reads a tenant through.
-//
-// A bench with no key uses EMPTY_POLICY, which constrains nothing — that is
-// what makes a freshly connected bench work with no configuration at all.
+// A bench's model policy: what it is willing to spend, and on which models.
+// Lives in tenant `config` under `corbits.modelPolicy` — no product table.
 import { type } from "arktype";
 import { ProviderPreference } from "@intx/types";
 
@@ -77,15 +65,9 @@ const CorbitsTenantConfig = type({
  * spells it. */
 export const MODEL_POLICY_CONFIG_PATH = ["corbits", "modelPolicy"] as const;
 
-/**
- * This bench's model policy, out of its tenant `config` blob.
- *
- * Anything the schema rejects — a missing key, a config blob shaped some
- * other way, a half-written policy — reads as the parts that do parse over
- * EMPTY_POLICY. A bench is never left unable to pick a model because its
- * settings blob is malformed; it is left unconstrained, which is the same
- * place a brand-new bench starts.
- */
+/** This bench's model policy. Anything the schema rejects reads as the parts
+ * that do parse over EMPTY_POLICY — a malformed blob leaves the bench
+ * unconstrained, never unable to pick a model. */
 export function readModelPolicy(tenantConfig: unknown): BenchModelPolicy {
   const parsed = CorbitsTenantConfig(tenantConfig);
   if (parsed instanceof type.errors) return EMPTY_POLICY;
