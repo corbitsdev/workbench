@@ -44,13 +44,14 @@ import {
   SquaresFour,
 } from "@/lib/icons";
 
-import { CHAT_STRINGS, avatarClassForPrincipal } from "@/chat";
+import { avatarClassForPrincipal } from "@/chat";
 
 import webPackage from "../../package.json";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { TopLevelRunsSchema, insightsTopLevelRunsPath } from "../insights-api";
-import { matchesRoute, MISSION_CONTROL_PATH, NEW_WORKBENCH_PATH, SETTINGS_PATH } from "../routes";
+import { matchesRoute, MISSION_CONTROL_PATH, SETTINGS_PATH } from "../routes";
+import { NEW_CHAT_PATH } from "../chat-path";
 import type { SessionUser } from "../session";
 import { SidebarBrandMark } from "./brand-mark";
 import { initialsOf } from "./docks";
@@ -92,9 +93,9 @@ export function Sidebar({
         <Button
           variant="ghost"
           size="sm"
-          aria-label={CHAT_STRINGS.newWorkbenchAction}
-          title={CHAT_STRINGS.newWorkbenchAction}
-          onClick={() => onNavigate(NEW_WORKBENCH_PATH)}
+          aria-label="New chat"
+          title="New chat"
+          onClick={() => onNavigate(NEW_CHAT_PATH)}
           data-tour="new-workbench-button"
         >
           <Plus />

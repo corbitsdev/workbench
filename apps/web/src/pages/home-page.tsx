@@ -1,256 +1,51 @@
-// Default land: `/` is a hop onto the most-recent existing workbench or
-// Myra's one DM, never the picker. A bench that already has one or
-// more workbenches lands in the first listed row (`workbenches[0]`) in
-// the main stage. A brand-new bench with zero workbenches waits for
-// Myra's own definition to exist, then opens her DM the same way
-// "Talk to Myra" does (`openAgentDmChat`) — never `/new`, never
-// `ensureMyraWorkbench`. Home as a dashboard does not earn its keep —
-// `/` only exists as this hop onto `/w/:workbenchId`. Deep links to
-// other pages are unchanged.
-//
-// Right after a provider connect this hop is also the wait (its
-// deploys run in the background, so landing here can beat them). // settled what that wait looks like: one warm loader and nothing else. For
-// a zero-workbench bench the wait is for Myra's own definition to exist at
-// all — then we open her DM. The check is simply retried every few seconds,
-// because Myra's readiness IS the test of whether the person can start —
-// she is deployed first (`SETUP_AGENT_ASSET_NAME` leads `DEFAULT_WORKFLOWS`),
-// so the moment she's ready we go, with every other seeded workflow still
-// converging behind us. Readiness is read only to tell a wait from a
-// genuine failure, never to draw a progress number: a seed count is an
-// implementation detail, and "0 of 5" told a waiting person nothing.
-//
-// that wait is for the agent, never a workbench that does not
-// exist yet — so the loader says "Preparing your agent", and a skip with
-// no credential stops pretending anything is "getting ready" and offers
-// the honest next step (connect a provider) instead of spinning forever.
+// Default land: `/` is a hop onto the person's most recent chat, or the
+// new-chat composer when they have none. Home as a dashboard does not
+// earn its keep — `/` only exists as this hop.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
-import { Clock, WarningCircle } from "@/lib/icons";
-import { useEffect, useState } from "react";
+import { WarningCircle } from "@/lib/icons";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 
-import { listAllWorkbenches, WorkbenchLoadingState } from "@/chat";
-import { describeApiError } from "@/lib/api-query";
+import { WorkbenchLoadingState } from "@/chat";
+import { listChats } from "@/chat/threads-api";
 
-import { hasActiveCredential } from "../onboarding";
-import { listAgentDefinitions } from "../agents-api";
-import { openAgentDmChat } from "../agent-dm-launch";
-import { findMyraDefinition } from "../myra-workbench";
 import { useBench } from "../bench-context";
-import { workbenchPath } from "../workbench-path";
+import { chatKeys, chatPath, NEW_CHAT_PATH } from "../chat-path";
 import { useNavigate } from "../navigation";
-import { ONBOARDING_PATH } from "../routes";
 
-type LandState =
-  /** Working on it: the warm loader, whether we are reading the bench's
-   * workbenches or waiting for Myra to finish coming online. Both are
-   * the same thing to the person waiting. */
-  | { readonly kind: "opening" }
-  /** Zero workbenches, credential present, Myra not ready yet — the
-   * post-connect wait. Headline names the agent, never a workbench that
-   * does not exist. */
-  | { readonly kind: "waiting-for-agent" }
-  /** Myra has taken long enough that silence would read as a hang. Says
-   * so plainly and offers another go — never a frozen number. */
-  | { readonly kind: "slow" }
-  /** Zero workbenches and no active credential: the drain never starts,
-   * so waiting on "ready" would spin forever. Offer the connect step. */
-  | { readonly kind: "needs-provider" }
-  | { readonly kind: "error"; readonly message: string };
-
-const LAND_RETRY_MS = 3_000;
-const LAND_STALL_MS = 45_000;
-
-/** Warm-loader headline for the post-onboarding wait on `/` when no
- * workbench exists yet — Myra is coming online, not a workbench. */
-const PREPARING_AGENT_TITLE = "Preparing your agent";
-
-export function HomeRoute({
-  retryMs = LAND_RETRY_MS,
-  stallAfterMs = LAND_STALL_MS,
-}: {
-  /** Timing seams. Production passes neither. */
-  readonly retryMs?: number;
-  readonly stallAfterMs?: number;
-} = {}) {
+export function HomeRoute() {
   const navigate = useNavigate();
   const { selectedTenantId, memberships } = useBench();
-  const [state, setState] = useState<LandState>({ kind: "opening" });
-  const [attempt, setAttempt] = useState(0);
-  const [waitId, setWaitId] = useState(0);
+  const chats = useQuery({
+    queryKey: chatKeys.list(selectedTenantId ?? ""),
+    enabled: selectedTenantId !== null,
+    queryFn: () => listChats(selectedTenantId ?? ""),
+  });
 
-  const startOver = () => {
-    setState({ kind: "opening" });
-    setAttempt(0);
-    setWaitId((id) => id + 1);
-  };
-
+  const newest = chats.data?.[0];
   useEffect(() => {
-    if (selectedTenantId === null) return;
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    if (chats.data === undefined) return;
+    navigate(newest === undefined ? NEW_CHAT_PATH : chatPath(newest.id));
+  }, [chats.data, newest, navigate]);
 
-    const waitAndRetry = () => {
-      if (cancelled) return;
-      if ((attempt + 1) * retryMs >= stallAfterMs) {
-        setState({ kind: "slow" });
-      }
-      // Slow is a message, not a stop: retries keep going underneath it so
-      // a backend that recovers after the stall still lands on its own —
-      // "Retry" stays as an escape hatch, never the only way forward.
-      retryTimer = setTimeout(() => setAttempt((count) => count + 1), retryMs);
-    };
-
-    // Zero workbenches: wait for Myra's own definition to exist, then
-    // open her DM the same way "Talk to Myra" does — never `/new`.
-    // Readiness is Myra's deployed definition itself (T1 cut the
-    // deleted `/api/onboarding/provisioning-status` read, so this flow
-    // makes zero `/api/onboarding/*` requests): a definition means "she
-    // can start", no definition means keep waiting. Without a credential
-    // the drain never starts, so no definition with no
-    // credential is an honest next step, not a forever spin on
-    // "getting ready".
-    // TODO(T6/T7): read native readiness here once T6/T7 builds
-    // it, instead of the definition's existence.
-    const awaitFirstWorkbench = () => {
-      void listAgentDefinitions(selectedTenantId).then(
-        (definitions) => {
-          if (cancelled) return;
-          const myra = findMyraDefinition(definitions);
-          if (myra !== undefined) {
-            void openAgentDmChat(selectedTenantId, myra.id, navigate);
-            return;
-          }
-          void hasActiveCredential(selectedTenantId).then((probe) => {
-            if (cancelled) return;
-            // Only a confirmed miss means "connect a provider". A probe
-            // failure must not pretend no key exists — keep
-            // waiting and retry; the key may already be connected.
-            if (probe.kind === "none") {
-              setState({ kind: "needs-provider" });
-              return;
-            }
-            setState((current) =>
-              current.kind === "slow" ? current : { kind: "waiting-for-agent" },
-            );
-            waitAndRetry();
-          });
-        },
-        (cause: unknown) => {
-          if (cancelled) return;
-          setState({
-            kind: "error",
-            message: describeApiError(cause, "preparing your agent"),
-          });
-        },
-      );
-    };
-
-    void listAllWorkbenches(selectedTenantId).then(
-      (workbenches) => {
-        if (cancelled) return;
-        const first = workbenches[0];
-        if (first === undefined) {
-          awaitFirstWorkbench();
-          return;
-        }
-        navigate(workbenchPath(first.id));
-      },
-      (cause: unknown) => {
-        if (cancelled) return;
-        setState({
-          kind: "error",
-          message: describeApiError(cause, "opening the workbench"),
-        });
-      },
-    );
-
-    return () => {
-      cancelled = true;
-      if (retryTimer !== undefined) clearTimeout(retryTimer);
-    };
-  }, [selectedTenantId, navigate, attempt, waitId, retryMs, stallAfterMs]);
-
-  if (memberships.kind === "loading") {
-    return (
-      <div className="page-fill shell-route-loading">
-        <WorkbenchLoadingState />
-      </div>
-    );
-  }
-
-  if (memberships.kind === "error") {
+  if (memberships.kind === "error" || chats.isError) {
+    const cause: unknown = chats.error;
+    const message =
+      memberships.kind === "error"
+        ? memberships.message
+        : cause instanceof Error
+          ? cause.message
+          : String(cause);
     return (
       <PageShell width="full" className="page-fill">
         <EmptyState
           icon={<WarningCircle />}
-          title="Couldn't load your workbenches"
-          description={memberships.message}
+          title="Couldn't load your chats"
+          description={message}
           action={
-            <Button variant="outline" onClick={memberships.retry}>
-              Retry
-            </Button>
-          }
-        />
-      </PageShell>
-    );
-  }
-
-  if (selectedTenantId === null) {
-    return (
-      <PageShell width="full" className="page-fill">
-        <EmptyState
-          icon={<WarningCircle />}
-          title="No workbench selected"
-          description="Nothing to open yet — start a new workbench and Myra will be waiting in it."
-        />
-      </PageShell>
-    );
-  }
-
-  if (state.kind === "error") {
-    return (
-      <PageShell width="full" className="page-fill">
-        <EmptyState
-          icon={<WarningCircle />}
-          title="Couldn't open the workbench"
-          description={state.message}
-          action={
-            <Button variant="outline" onClick={startOver}>
-              Retry
-            </Button>
-          }
-        />
-      </PageShell>
-    );
-  }
-
-  if (state.kind === "needs-provider") {
-    return (
-      <PageShell width="full" className="page-fill">
-        <EmptyState
-          icon={<WarningCircle />}
-          title="Connect a provider"
-          description="Agents need a provider before they can come online. Connect one to finish setup."
-          action={
-            <Button variant="primary" onClick={() => navigate(ONBOARDING_PATH)}>
-              Connect a provider
-            </Button>
-          }
-        />
-      </PageShell>
-    );
-  }
-
-  if (state.kind === "slow") {
-    return (
-      <PageShell width="full" className="page-fill">
-        <EmptyState
-          icon={<Clock />}
-          title="Myra is taking longer than usual"
-          description="She's still getting set up. Give it another moment, or try again."
-          action={
-            <Button variant="outline" onClick={startOver}>
-              Retry
+            <Button variant="outline" onClick={() => navigate(NEW_CHAT_PATH)}>
+              Start a new chat
             </Button>
           }
         />
@@ -260,7 +55,7 @@ export function HomeRoute({
 
   return (
     <div className="page-fill shell-route-loading">
-      <WorkbenchLoadingState delayMs={0} title={PREPARING_AGENT_TITLE} />
+      <WorkbenchLoadingState delayMs={0} />
     </div>
   );
 }
