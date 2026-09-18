@@ -4,7 +4,7 @@
 // agent joins a room by being deployed there — with the child's own
 // resolved offering, which does inherit.
 
-import { listRoomParticipants, sendToRoom } from "@/chat/threads-api";
+import { isMyraAgent, listRoomParticipants, sendToRoom } from "@/chat/threads-api";
 import { deployAgentSource } from "./agent-deploy";
 import { readAgentSource } from "./agent-source-read";
 import { deployMyraSource } from "./myra-deploy";
@@ -115,4 +115,43 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
   }
 
   return tenantId;
+}
+
+/** A hub restart releases every process-provisioned deployment; this
+ * redeploys one room agent through the same path `createWorkbench` used,
+ * re-running it against the tenant its asset already lives in. */
+export async function redeployRoomAgent(
+  roomTenantId: string,
+  agent: { readonly id: string; readonly name: string; readonly assetName: string },
+): Promise<void> {
+  if (isMyraAgent(agent)) {
+    const hub = createFetchStockHub();
+    const [tenant, offering] = await Promise.all([
+      hub.getTenant(roomTenantId),
+      resolveExistingOffering(roomTenantId),
+    ]);
+    if (tenant === null) {
+      throw new WorkbenchCreateError("this workbench no longer exists", "deploy");
+    }
+    if (offering === null) {
+      throw new WorkbenchCreateError(
+        "Connect a model provider in Settings before restarting Myra.",
+        "deploy",
+      );
+    }
+    const deployInput = await deployMyraSource({
+      tenantId: roomTenantId,
+      tenantDomain: tenant.domain,
+      sourceOfferingIds: offering.sourceOfferingIds,
+      defaultSourceOfferingId: offering.defaultSourceOfferingId,
+      declaredSources: offering.declaredSources,
+    });
+    await hub.deployWorkflow(roomTenantId, deployInput);
+    return;
+  }
+  const source = await readAgentSource(roomTenantId, agent.id, agent.assetName);
+  await deployAgentSource({
+    tenantId: roomTenantId,
+    input: { name: agent.name, systemPrompt: source.systemPrompt },
+  });
 }
