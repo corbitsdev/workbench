@@ -26,3 +26,15 @@ state, from the event alone — never a follow-up GET. `chat.message` carries
 the full rendered row (mail headers included, when the row was actually
 mailed); `chat.presence` deltas fold into the roster `chat.presence.snapshot`
 already gave the connecting stream.
+
+## Classified inference failures (`chat/inference-failure.ts`)
+
+By the time a reply reaches the chat timeline it is a plain text part with
+no metadata — the failure's category is structured further upstream
+(`packages/chat`'s orchestrator reads it directly), but nothing carries it
+down to this render layer. So this file matches reply prose against the
+exact preambles `@intx/inference`'s `formatInferenceError` writes for
+`credential_failure` and `quota_exhausted`, anchored at the start of the
+string (never a substring, so a reply that quotes one mid-sentence can't
+false-positive). A test asserts the preambles stay byte-for-byte identical
+to the vendored source they're copied from.

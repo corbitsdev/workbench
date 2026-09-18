@@ -1,11 +1,5 @@
-// Every user-facing word the conversation surface prints, in one place.
-// The package underneath calls everything a "workbench" — a `kind` string of
-// "workbench" or "chat" — but the app decides what a human reads: a
-// "workbench" is the product word for a conversation with an agent (each
-// one its own tenancy). Nothing in the chat/* components inlines its own
-// copy; it imports from here. There is no in-package new-workbench dialog
-// any more: the one creation verb mints and navigates directly —
-// see `apps/web/src/instant-agent-create.ts`.
+// Every user-facing word the conversation surface prints, in one place —
+// no chat/* component inlines its own copy.
 
 function joinWithAnd(names: readonly string[]): string {
   if (names.length <= 1) return names[0] ?? "";
@@ -348,10 +342,8 @@ export const CHAT_STRINGS = {
   workbenchSettingsAgentDetailLoadError: "Couldn't load this agent's instructions",
   workbenchSettingsAgentDetailSaveError: "Couldn't save these changes — try again.",
   workbenchSettingsAgentDetailSavedToast: "Instructions saved",
-  // Scoped rather than a bare "Save" — the top-bar Save
-  // right above it in the same view saves the conversation's own General
-  // fields, a different scope entirely; this one only ever writes this
-  // agent's instructions.
+  // Scoped, not a bare "Save": the top-bar Save above it saves General
+  // fields, a different scope.
   workbenchSettingsAgentDetailSave: "Save instructions",
   workbenchSettingsAgentDetailSaving: "Saving…",
   workbenchSettingsAgentDetailCancel: "Cancel",

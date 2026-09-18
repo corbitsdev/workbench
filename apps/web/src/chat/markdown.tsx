@@ -1,10 +1,5 @@
-// A minimal, dependency-free renderer for the safe markdown subset chat
-// messages use: bold, italic, inline code, fenced code blocks, ordered and
-// unordered lists, links, and headings (rendered as bold lines rather than
-// distinct heading elements, since a chat bubble has no heading hierarchy
-// to preserve). Never uses `dangerouslySetInnerHTML` — every character of
-// message text passes through React as text content, so raw HTML in a
-// message can never execute or render as markup.
+// Never uses `dangerouslySetInnerHTML` — every character passes through
+// React as text content, so raw HTML in a message can't execute.
 
 import type { ReactNode } from "react";
 
@@ -133,12 +128,7 @@ function parseBlocks(source: string): Block[] {
   return blocks;
 }
 
-/**
- * Renders the safe markdown subset (bold/italic/inline code/code
- * blocks/lists/links/headings-as-bold) message text uses. Plain text with
- * no markdown syntax renders exactly as before — a single paragraph of its
- * own text.
- */
+// Plain text with no markdown syntax renders exactly as before.
 export function Markdown({ text }: { readonly text: string }) {
   const blocks = parseBlocks(text);
 

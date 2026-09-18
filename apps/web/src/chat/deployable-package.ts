@@ -1,11 +1,5 @@
-// The one contract between an agent that writes a package and the client
-// that deploys it: a reply carrying `package.json` plus a
-// `definition.json` of {name, systemPrompt, description?, schedule?} —
-// either as mail attachments, or (since `@intx/tools-mail`'s `mail_send`
-// has no attachments parameter) as two labelled fenced code blocks in the
-// message body. The client renders the source tree itself
-// (`agent-deploy.ts`), so the agent never has to know the deploy
-// pipeline's shape.
+// Either mail attachments, or — since `@intx/tools-mail`'s `mail_send` has
+// no attachments parameter — two labelled fenced code blocks in the body.
 
 import { type } from "arktype";
 import { reportError } from "@corbits/error-sink";
@@ -40,12 +34,7 @@ export interface DeployablePackage {
 export const PACKAGE_MANIFEST_NAME = "package.json";
 export const AGENT_DEFINITION_NAME = "definition.json";
 
-/**
- * What a message's attachments (or fenced blocks) resolve to: a parsed
- * package, a named rejection when the message attempted a package but
- * got a field wrong, or `null` when the message isn't a package attempt
- * at all.
- */
+// `null` when the message isn't a package attempt at all.
 export type PackageOutcome = DeployablePackage | { readonly reason: string } | null;
 
 export function isPackageRejection(
@@ -111,10 +100,7 @@ function parsePackageFiles(
   };
 }
 
-/** The agent package a message's attachments describe: a parsed package,
- * a rejection naming what's wrong, or `null` when the attachments aren't
- * a package attempt at all (no package.json or no definition.json).
- * Untrusted input: parsed, never cast. */
+// Untrusted input: parsed, never cast.
 export function deployablePackage(attachments: readonly MailAttachment[]): PackageOutcome {
   const manifest = attachments.find((attachment) => attachment.name === PACKAGE_MANIFEST_NAME);
   if (manifest === undefined) return null;
@@ -211,11 +197,8 @@ function findNamedFencedBlocks(lines: readonly string[]): Map<string, FencedBloc
   return found;
 }
 
-/** The agent package a message body carries as fenced code blocks, plus
- * the body with those blocks removed. Used when attachments are absent —
- * `@intx/tools-mail`'s `mail_send` has no attachments parameter, so this is
- * the mailed-package contract's actual delivery path today. `null` when
- * the body isn't a package attempt (neither file is present). */
+// Used when attachments are absent — the actual delivery path today,
+// since `mail_send` has no attachments parameter.
 export function deployablePackageFromBody(body: string): {
   readonly outcome: DeployablePackage | { readonly reason: string };
   readonly strippedBody: string;
@@ -243,10 +226,8 @@ export function deployablePackageFromBody(body: string): {
   return { outcome, strippedBody };
 }
 
-/** The package outcome a message describes and the body to render for it —
- * attachments win when present (the intended path once `mail_send` grows
- * attachments support), otherwise the body's fenced blocks are read and
- * stripped from the rendered text. */
+// Attachments win when present (the intended path once `mail_send` grows
+// attachments support), otherwise the body's fenced blocks are used.
 export function resolveMessagePackage(
   attachments: readonly MailAttachment[],
   body: string,
