@@ -1,12 +1,5 @@
-// `listRoutineActivity` resolves no items without fetching. The
-// `feed=fires` route it used to read is deleted with `@corbits/run-scope`,
-// and the native `GET /workflows/runs` listing has no fires equivalent —
-// its top-level-only predicate drops every routine fire by construction,
-// and its rows carry no routine attribution to compose client-side from.
-// So the shell's "Running" band and Mission Control's active-run count
-// honestly report no routine activity until a native fires equivalent
-// exists, instead of deriving routine activity from top-level deployment
-// rows that are not routine fires.
+// See `routine-activity.ts` for why this resolves no items until a native
+// fires equivalent exists.
 
 import { afterEach, describe, expect, test } from "bun:test";
 

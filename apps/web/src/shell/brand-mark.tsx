@@ -1,7 +1,5 @@
-// A static inline SVG via react-ui's `CorbitsMark`, coloured with the
-// primary orange — simple and crisp over clever: an animated dither
-// background renders as a tiny pixelated square at this size, since its
-// dither grid needs real screen real estate to read.
+// Static, not the animated dither background: its grid needs real screen
+// real estate this size doesn't have.
 
 import { CorbitsMark } from "@corbits/react-ui";
 

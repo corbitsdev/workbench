@@ -1,23 +1,8 @@
-// Column 4: the optional canvas. Collapsed, it takes no space at all — the
-// main pane gets the width back — and open, it hosts targeted auxiliary
-// content: profile cards, and typed artifact renderers opened
-// from a chat artifact chip or the Library page. Primary workbench
-// conversation lives in the main stage, not here.
-//
-// co-edit presence is gone. A "doc"-kind, editable artifact
-// renders `@/library`'s `ArtifactTextEditor` as a plain
-// single-user controlled textarea, debounced-saved through the artifacts
-// HTTP route; every other kind stays the read-only `ArtifactRenderer`. No
-// co-viewer cursors, no shared doc — that capability returns, if it does,
-// on top of the preserved `@corbits/presence` library, not here.
-//
-// The collapse/expand motion lives entirely in `shell.css` as a CSS
-// transition on `transform`/`opacity` (plus width, so the main pane
-// actually reflows) triggered by the `data-open` attribute — never a JS
-// animation — so rapid toggling is inherently interruptible: the browser
-// just reverses whichever transition is already in flight, there is no
-// queue to get stuck. `prefers-reduced-motion` is handled the same way, in
-// CSS, by shortening the transition to near-zero.
+// Collapse/expand is a CSS transition on `data-open`, never JS animation,
+// so rapid toggling is inherently interruptible — no queue to get stuck.
+
+// No co-edit presence: a "doc"-kind artifact is a plain single-user
+// textarea. That capability, if it returns, lives on `@corbits/presence`.
 
 import {
   Button,
@@ -64,11 +49,8 @@ export function CanvasColumn({
    * one seam to the artifacts PUT route. Absent for a non-editable artifact. */
   readonly onSaveArtifact?: (content: string) => void;
 }) {
-  // `inert` rather than `aria-hidden`: a collapsed column has to be out of
-  // both the accessibility tree and the tab order, and `aria-hidden` alone
-  // only does the first — a focusable descendant inside an `aria-hidden`
-  // subtree is an ARIA violation, and the browser moves focus out of an
-  // `inert` subtree for us when it closes.
+  // `inert`, not `aria-hidden` alone: `aria-hidden` doesn't remove a
+  // focusable descendant from the tab order.
   return (
     <div className="shell-canvas-column" data-open={open} data-focus={focus} inert={!open}>
       <div className="shell-canvas-inner">
@@ -265,11 +247,8 @@ function profileActions(
     ];
   }
 
-  // No "Grants" hop here: settings-ui's Grants section has no deep-link
-  // filter to land on this person's rules specifically, and a profile
-  // card action that lands on the unfiltered, everyone's-rules list is
-  // worse than not offering it — same reasoning the agent branch above
-  // uses to drop "Edit agent".
+  // No "Grants" hop: no deep-link filter exists, and landing on the
+  // unfiltered everyone's-rules list is worse than not offering it.
   return [
     message,
     mention,

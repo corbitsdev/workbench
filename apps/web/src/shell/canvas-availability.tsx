@@ -1,8 +1,5 @@
-// Canvas host surface for stage content: whether the shell has space for the
-// fourth column, how main-stage chat opens auxiliary canvas content
-// (profiles, artifacts) without owning the canvas column itself, and — for
-// AppShell's own render, which no longer owns this state — what the canvas
-// column is actually showing right now.
+// Lets main-stage chat open auxiliary canvas content without owning the
+// canvas column itself.
 
 import { useContext, type ReactNode } from "react";
 import type { ProfileSubject } from "@/chat";
@@ -109,10 +106,8 @@ export function useOpenArtifactInCanvas(): (artifact: CanvasArtifactContent) => 
   return useContext(CanvasHostContext).openArtifact;
 }
 
-/** Opens (or replaces) the canvas's routine pane — the workbench header's
- * "New routine" action, the `/workflows` page's own create button, and an
- * existing routine's own "Edit" hop all call this. `routineId: null` starts
- * a brand-new routine; a real id opens that routine for editing. */
+// `routineId: null` starts a brand-new routine; a real id opens it for
+// editing.
 export function useOpenRoutineInCanvas(): (subject: RoutinePanelSubject) => void {
   return useContext(CanvasHostContext).openRoutine;
 }

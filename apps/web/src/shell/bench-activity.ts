@@ -1,7 +1,3 @@
-// Everything happening in the selected bench right now, over stock
-// listings only: workbenches are the bench's child tenants, chats are the
-// person's mail threads, agents are the bench's workflow definitions, and
-// running routines come through the seam in `./routine-activity.ts`.
 // Notifications have no backing feature in the hub, so nothing is fetched
 // for them — the column renders an honest empty state instead.
 

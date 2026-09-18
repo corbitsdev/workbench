@@ -1,10 +1,5 @@
-// A shell-level seam between two independent surfaces: the canvas column's
-// ProfileCard (this app) and the active workbench's composer (mounted deep
-// inside `@/chat`'s `ChatWorkspace`, a sibling tree). The profile
-// card's Mention action needs to land `@handle` in whatever
-// composer is on screen without either side importing the other — the same
-// "shell context exposing a callback hook" shape `canvas-availability.tsx`
-// already uses for opening a profile.
+// Lets the profile card's Mention action reach the composer without
+// either side importing the other — same shape as `canvas-availability.tsx`.
 
 import { useContext, useMemo, useRef } from "react";
 import type { ReactNode } from "react";

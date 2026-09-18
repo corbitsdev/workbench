@@ -1,8 +1,5 @@
-// The first-run tour's open state, held outside the React tree like
-// `command-palette-open-store.ts`: the tour must never auto-start itself on
-// landing (it used to, and its overlay would land right over the chat the
-// person was just redirected onto), so the only way in is an explicit call
-// to `openFirstRunTour` from a command or menu action.
+// Must never auto-start on landing (it used to, overlaying the chat the
+// person was just redirected onto) — only an explicit call opens it.
 
 import { useSyncExternalStore } from "react";
 
