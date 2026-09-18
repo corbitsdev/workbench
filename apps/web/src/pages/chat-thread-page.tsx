@@ -2,10 +2,11 @@
 // first message (agent picked in the select, or by @tagging one in the
 // message itself); `/chats/:id` is the transcript plus a reply box.
 
-import { Button, EmptyState, PageShell, Select } from "@corbits/react-ui";
+import { Button, EmptyState, PageShell, Select, toast } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { reportError } from "@corbits/error-sink";
 
 import { ApprovalRow } from "@/chat/approval-row";
 import { IdentityAvatar } from "@/chat/avatar";
@@ -25,7 +26,7 @@ import {
   type ChatAgent,
 } from "@/chat/threads-api";
 import { MYRA_SOURCE_CONFIG } from "../myra-source";
-import { redeployRoomAgent } from "../workbench-create";
+import { describeRestartFailure, redeployRoomAgent } from "../workbench-create";
 import { useBench } from "../bench-context";
 import { chatIdFromPath, chatKeys, chatPath, NEW_CHAT_PATH } from "../chat-path";
 import { usePendingApprovals } from "../pending-approvals";
@@ -73,6 +74,10 @@ function NewChat({
     mutationFn: (agent: ChatAgent) => redeployRoomAgent(tenantId, agent),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: chatKeys.agents(tenantId) });
+    },
+    onError: (cause) => {
+      reportError(cause, { operation: "agent_restart", tenantId });
+      toast(describeRestartFailure(cause));
     },
   });
 
@@ -206,6 +211,10 @@ function ChatTranscript({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: chatKeys.agents(tenantId) });
       void queryClient.invalidateQueries({ queryKey: chatKeys.one(tenantId, chatId) });
+    },
+    onError: (cause) => {
+      reportError(cause, { operation: "agent_restart", tenantId });
+      toast(describeRestartFailure(cause));
     },
   });
 
