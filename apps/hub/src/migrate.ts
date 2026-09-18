@@ -6,6 +6,7 @@
 // Interchange applies its schema — no separate migration-runner
 // service, no ledger table, just the hub doing the work itself.
 import { runMigrations } from "@intx/db";
+import { sql } from "drizzle-orm";
 import { applyCronMigrations } from "@corbits/cron";
 import { createMailboxDb, runMailboxMigrations } from "@corbits/mailbox";
 import { runArtifactMigrations } from "@corbits/artifacts";
@@ -18,6 +19,16 @@ export interface HubMigrateConfig {
   password: string;
   database: string;
   schema?: string;
+}
+
+async function platformSchemaPresent(
+  db: Parameters<typeof runArtifactMigrations>[0],
+  schema: string,
+): Promise<boolean> {
+  const rows = await db.execute<{ present: string | null }>(
+    sql`select to_regclass(${`"${schema}"."user"`}) as present`,
+  );
+  return rows[0]?.present != null;
 }
 
 function databaseUrlFrom(config: HubMigrateConfig): string {
@@ -43,7 +54,11 @@ export async function migrateHub(
   const databaseUrl = databaseUrlFrom(config);
   const schema = config.schema ?? "public";
 
-  await runMigrations(config, { schema });
+  // Upstream's platform SQL is one-shot (no ledger, no IF NOT EXISTS),
+  // so it runs only on a database that has no platform tables yet.
+  if (!(await platformSchemaPresent(db, schema))) {
+    await runMigrations(config, { schema });
+  }
   await applyCronMigrations(databaseUrl, { tenantSchema: schema });
 
   const mailboxDb = createMailboxDb(databaseUrl);
