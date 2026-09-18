@@ -819,7 +819,11 @@ export async function buildInboundMessageFromMail(
   return createInboundMessage({
     from: safeAddr(mail.headers.from, "trigger@local"),
     to: safeAddr(mail.headers.to[0], "agent@local"),
-    ...(mail.headers.subject !== undefined
+    // A present-but-empty Subject header (e.g. "Subject:" with no text)
+    // decodes to "" and createInboundMessage rejects an empty subject,
+    // failing the step -- so treat it like an absent header.
+    ...(mail.headers.subject !== undefined &&
+    mail.headers.subject.trim().length > 0
       ? { subject: mail.headers.subject }
       : {}),
     ...(isMessageId(mail.headers.messageId)
