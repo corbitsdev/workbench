@@ -28,19 +28,13 @@ import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 
-import {
-  ASSISTANT_STEP_ID,
-  ASSISTANT_SYSTEM_PROMPT,
-  ASSISTANT_TOOL_PACKAGE_PINS,
-  ASSISTANT_WORKFLOW_ID,
-} from "./system-prompt";
+import { ASSISTANT_SYSTEM_PROMPT } from "./system-prompt";
+import { ASSISTANT_TOOL_PACKAGE_PINS } from "./tool-packages";
+import { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "./workflow-ids";
 
-export {
-  ASSISTANT_STEP_ID,
-  ASSISTANT_SYSTEM_PROMPT,
-  ASSISTANT_TOOL_PACKAGE_PINS,
-  ASSISTANT_WORKFLOW_ID,
-} from "./system-prompt";
+export { ASSISTANT_SYSTEM_PROMPT } from "./system-prompt";
+export { ASSISTANT_TOOL_PACKAGE_PINS } from "./tool-packages";
+export { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "./workflow-ids";
 
 /**
  * Everything the definition needs that is per-deployment data. The

@@ -11,12 +11,9 @@
 // The pure offering-ids → deploy-input mapping (`buildMyraDeployInput`)
 // is split out so it can be unit-tested without a fetch or a real
 // gzip/tar round-trip.
-import {
-  ASSISTANT_STEP_ID,
-  ASSISTANT_SYSTEM_PROMPT,
-  ASSISTANT_TOOL_PACKAGE_PINS,
-  ASSISTANT_WORKFLOW_ID,
-} from "@corbits/myra/prompt";
+import { ASSISTANT_SYSTEM_PROMPT } from "@corbits/myra/prompt";
+import { ASSISTANT_TOOL_PACKAGE_PINS } from "@corbits/myra/tool-packages";
+import { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "@corbits/myra/workflow-ids";
 import { renderWorkflowSourceTree } from "@corbits/workflows/client";
 import { type } from "arktype";
 
