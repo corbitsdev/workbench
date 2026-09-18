@@ -11,9 +11,9 @@ handful of domain packages built on top.
   `@intx/hub-api` routes (auth, tenants, principals, grants, workflow
   deploy/run) plus one composition block that adds Corbits libraries —
   `@corbits/mailbox` (chat), `@corbits/memory` (recall), `@corbits/artifacts`
-  (files), `@corbits/cron` (scheduling) — and the remaining in-repo
-  packages: `webhook-triggers` (inbound webhook ingress), `workflows`
-  (author routes), and `agent-directory`. Credentials are stored through
+  (files), `@corbits/cron` (scheduling), `@corbits/webhooks` (inbound
+  webhook ingress) — and the remaining in-repo packages: `workflows`
+  (author routes) and `agent-directory`. Credentials are stored through
   Interchange's own stock credential routes; nothing in this repo wraps
   or replaces them.
 - **`apps/sidecar`** — a byte-for-byte copy of Interchange's own sidecar.
@@ -48,7 +48,7 @@ stock workflow-deploy route. `tools/*` and `skills/*` are ordinary
 
 ## Data
 
-Custom tables — `webhook-triggers`, `agent-directory`, and so on — live
+Custom tables — `agent-directory` and so on — live
 on their own Postgres schema, each with foreign keys back to
 Interchange's `tenant`/`principal` tables in `public`. Each package ships
 one idempotent migration, which the hub applies itself at boot. Anything

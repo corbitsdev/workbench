@@ -12,7 +12,6 @@
         "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
         "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#e85b81e4a2e0cc318dd33a4f0f92337b6fac7f38",
         "@corbits/ollama-adapter": "github:corbitsdev/corbits-ollama-adapter#0387eb17bee5ac87530e9c48bb3bffd9a6998ded",
-        "@corbits/webhook-triggers": "workspace:*",
         "@corbits/xai-provider": "github:corbitsdev/corbits-xai-provider#9f2d4bac40ea075df092fef807404a13c638cf14",
         "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
@@ -62,7 +61,7 @@
         "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#e85b81e4a2e0cc318dd33a4f0f92337b6fac7f38",
         "@corbits/memory": "github:corbitsdev/corbits-memory#e74da20f148a302dff5400915fe504ee2395e913",
         "@corbits/url-path": "workspace:*",
-        "@corbits/webhook-triggers": "workspace:*",
+        "@corbits/webhooks": "github:corbitsdev/webhooks#570bd52688920c0ce018a8fbcd046199fa4125dd",
         "@corbits/workflows": "workspace:*",
         "@corbits/xai-provider": "github:corbitsdev/corbits-xai-provider#9f2d4bac40ea075df092fef807404a13c638cf14",
         "@intx/authz": "0.3.0",
@@ -208,14 +207,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/collections": {
-      "name": "@corbits/collections",
-      "version": "0.0.1",
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "packages/cron": {
       "name": "@corbits/cron",
       "version": "0.0.1",
@@ -265,30 +256,6 @@
     "packages/url-path": {
       "name": "@corbits/url-path",
       "version": "0.0.1",
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/webhook-triggers": {
-      "name": "@corbits/webhook-triggers",
-      "version": "0.0.1",
-      "dependencies": {
-        "@corbits/collections": "workspace:*",
-        "@corbits/error-sink": "workspace:*",
-        "@corbits/workflows": "workspace:*",
-        "@intx/crypto": "0.3.0",
-        "@intx/db": "workspace:*",
-        "@intx/hub-api": "workspace:*",
-        "@intx/hub-common": "0.3.0",
-        "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "0.3.0",
-        "@intx/types": "workspace:*",
-        "arktype": "catalog:",
-        "drizzle-orm": "catalog:",
-        "hono": "catalog:",
-        "postgres": "catalog:",
-      },
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
@@ -817,8 +784,6 @@
 
     "@corbits/codex-provider": ["@corbits/codex-provider@github:corbitsdev/corbits-codex-provider#a1f475f", { "dependencies": { "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core", "@corbits/openai-responses": "github:corbitsdev/corbits-openai-responses", "arktype": "2.2.3" }, "peerDependencies": { "@intx/inference": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-codex-provider-a1f475f", "sha512-D6d0lblWx/4KudfLwQoQGrLB8GKRLP/HVp1cx08L2/hOGZAgH6txLPpeEtBqjl+R520qXSSPfM0kDC+3XNaAfw=="],
 
-    "@corbits/collections": ["@corbits/collections@workspace:packages/collections"],
-
     "@corbits/credential-header": ["@corbits/credential-header@github:corbitsdev/corbits-credential-header#eee7b7e", { "peerDependencies": { "@intx/harness": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-credential-header-eee7b7e", "sha512-jCgdLZDxHSqL7PJo/xwp/xTCXTBdBgTQb4ZMBwRYCS6x29j8EPtuQiX0mvzZPRXVi02cmz45Shbc2/xQsjZ1oQ=="],
 
     "@corbits/credential-mcp": ["@corbits/credential-mcp@github:corbitsdev/corbits-credential-mcp#fb9ec3a", { "peerDependencies": { "@intx/harness": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-credential-mcp-fb9ec3a", "sha512-Co4jR+L3pfBbVYY7I6jRftoHeSb5+LCxzEEaAhVLYA3aY2PrPHZV37+DWxj3fcK/KdzboqbT3XSnqU8DyHRU9Q=="],
@@ -849,7 +814,7 @@
 
     "@corbits/url-path": ["@corbits/url-path@workspace:packages/url-path"],
 
-    "@corbits/webhook-triggers": ["@corbits/webhook-triggers@workspace:packages/webhook-triggers"],
+    "@corbits/webhooks": ["@corbits/webhooks@github:corbitsdev/webhooks#570bd52", { "dependencies": { "@intx/crypto": "^0.3.0", "@intx/db": "^0.3.0", "@intx/hub-api": "^0.3.0", "@intx/mime": "^0.3.0", "@intx/types": "^0.3.0", "hono": "4.11.9" } }, "corbitsdev-webhooks-570bd52", "sha512-GWduublrOUDgiH20a5VHFcI/zcf4mcFlQL9IEesyXKXJLekqpLFbacs4V490h0jl0oVG9KQ5dVb+CjRfTcajZA=="],
 
     "@corbits/workflow-authoring-tools": ["@corbits/workflow-authoring-tools@workspace:tools/workflow-authoring"],
 
