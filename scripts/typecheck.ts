@@ -32,7 +32,6 @@ import { resolveConcurrency } from "./concurrency.ts";
 const PROJECT_GLOBS = [
   "apps/*/tsconfig.json",
   "packages/*/tsconfig.json",
-  "tools/*/tsconfig.json",
   "workflows/*/tsconfig.json",
   "vendor/intx/*/tsconfig.json",
 ];

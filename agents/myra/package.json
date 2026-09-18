@@ -20,7 +20,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./prompt": "./src/system-prompt.ts",
-    "./tool-packages": "./src/tool-packages.ts",
     "./workflow-ids": "./src/workflow-ids.ts",
     "./bundle": "./src/bundle.ts"
   },
@@ -33,14 +32,8 @@
     "build": "bun run scripts/build-bundle.ts"
   },
   "dependencies": {
-    "@corbits/access-tools": "workspace:*",
-    "@corbits/agent-directory-tools": "workspace:*",
-    "@corbits/capability-tools": "workspace:*",
-    "@corbits/catalog-tools": "workspace:*",
-    "@corbits/interaction-tools": "workspace:*",
-    "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
-    "@corbits/skills-tools": "workspace:*",
-    "@corbits/workflow-authoring-tools": "workspace:*"
+    "@intx/tools-mail": "0.3.0",
+    "@intx/tools-posix": "0.3.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

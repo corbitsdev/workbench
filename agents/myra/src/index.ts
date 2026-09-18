@@ -11,19 +11,12 @@
 import type { AgentDefinition, AnnotatedToolFactory, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
-import { memoryAdd, memoryList, memorySearch } from "@corbits/memory/tools";
-import { accessTools } from "@corbits/access-tools";
-import { agentDirectoryTools } from "@corbits/agent-directory-tools";
-import { capabilityTools } from "@corbits/capability-tools";
-import { catalogTools } from "@corbits/catalog-tools";
-import { interactionTools } from "@corbits/interaction-tools";
-import { skillsManageTools, skillsQueryTools } from "@corbits/skills-tools";
-import { workflowAuthoringTools } from "@corbits/workflow-authoring-tools";
+import { mail } from "@intx/tools-mail/sidecar-bundle";
+import { posix } from "@intx/tools-posix/sidecar-bundle";
 
 import { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "./workflow-ids";
 
 export { ASSISTANT_SYSTEM_PROMPT } from "./system-prompt";
-export { ASSISTANT_TOOL_PACKAGE_PINS } from "./tool-packages";
 export { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "./workflow-ids";
 
 /** The description the agent step carries; mirrored by the JSON projection
@@ -32,21 +25,10 @@ export const ASSISTANT_DESCRIPTION =
   "A general-purpose assistant that answers questions, drafts " +
   "text, and reasons through problems for the team";
 
-// Each factory declares its own env requirements, so the union has no
-// common `EnvReq`; the runtime `validateEnv` is the load-bearing check.
-export const MYRA_TOOL_FACTORIES = [
-  memoryAdd,
-  memorySearch,
-  memoryList,
-  capabilityTools,
-  agentDirectoryTools,
-  catalogTools,
-  skillsQueryTools,
-  skillsManageTools,
-  interactionTools,
-  workflowAuthoringTools,
-  accessTools,
-] as unknown as readonly AnnotatedToolFactory[];
+// Upstream's own tool packages, the only kind of tool Interchange has:
+// mail over the agent's transport and posix over its working tree. Neither
+// calls a hub API — nothing in the platform gives an agent that reach.
+export const MYRA_TOOL_FACTORIES = [mail, posix] as unknown as readonly AnnotatedToolFactory[];
 
 /** Everything the definition needs that is per-deployment data. */
 export interface MyraWorkflowInput {

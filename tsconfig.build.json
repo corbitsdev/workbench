@@ -17,34 +17,10 @@
       "path": "./packages/error-sink/tsconfig.src.json"
     },
     {
-      "path": "./packages/inference-catalog/tsconfig.src.json"
-    },
-    {
       "path": "./packages/url-path/tsconfig.src.json"
     },
     {
       "path": "./packages/workflows/tsconfig.src.json"
-    },
-    {
-      "path": "./tools/access/tsconfig.src.json"
-    },
-    {
-      "path": "./tools/agent-directory/tsconfig.src.json"
-    },
-    {
-      "path": "./tools/capability/tsconfig.src.json"
-    },
-    {
-      "path": "./tools/catalog/tsconfig.src.json"
-    },
-    {
-      "path": "./tools/interaction/tsconfig.src.json"
-    },
-    {
-      "path": "./tools/skills/tsconfig.src.json"
-    },
-    {
-      "path": "./tools/workflow-authoring/tsconfig.src.json"
     },
     {
       "path": "./vendor/intx/agent/tsconfig.src.json"

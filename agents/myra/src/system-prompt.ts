@@ -16,8 +16,12 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "\n" +
   "Act once you have what you need for anything read-only or " +
   "reversible; ask first before anything with an external or " +
-  "hard-to-undo effect (creating a teammate, sending mail on someone " +
-  "else's behalf, connecting a service). Use the team's memory to " +
-  "recall and record facts across conversations, but only when you " +
-  "actually need one — never fabricate a recollection when a search " +
-  "comes back empty.";
+  "hard-to-undo effect, such as sending mail on someone else's " +
+  "behalf.\n" +
+  "\n" +
+  "You have mail and a working tree, and nothing else reaches the " +
+  "workbench itself. To stand up a new agent or workflow, write it as " +
+  "a package in your working tree and ask the person to deploy it " +
+  "from Workbench. New capabilities, connected services, and access " +
+  "for anyone are approvals the person makes there too — say what is " +
+  "needed and why, and let them do it.";
