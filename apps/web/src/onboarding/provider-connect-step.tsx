@@ -1,13 +1,16 @@
 // Connects one provider credential through the stock catalog routes and
 // derives the single offering it mints; a tenant that already resolves an
 // offering skips this step (see `resolveExistingOffering`).
-import { Button, Input, RadioGroup, RadioOption } from "@corbits/react-ui";
+import { Button, Input, RadioGroup, RadioOption, Select } from "@corbits/react-ui";
 import { getResolvedCatalog, shadowOffering } from "@/settings/inference";
 import { reportError } from "@corbits/error-sink";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { FormEvent } from "react";
 
 import type { ModelProviderPlugin } from "@intx/types";
+
+import { fetchOllamaTags } from "./ollama-tags";
 
 export type ProviderOption = {
   readonly plugin: ModelProviderPlugin;
@@ -124,14 +127,30 @@ export function ProviderConnectStep({
   const option =
     PROVIDER_OPTIONS.find((candidate) => candidate.plugin === selected) ?? PROVIDER_OPTIONS[0];
   const isLocal = option?.local === true;
+
+  // Fetched straight from the browser to the user-supplied base URL — this
+  // never touches the hub. Validates the base URL is actually an Ollama
+  // server and offers exactly the models it has pulled, so a fresh local
+  // setup can't name a model Ollama doesn't have.
+  const tagsQuery = useQuery({
+    queryKey: ["onboarding", "ollama-tags", baseURL.trim()],
+    queryFn: () => fetchOllamaTags(baseURL),
+    enabled: isLocal && baseURL.trim().length > 0,
+    retry: false,
+    staleTime: 10_000,
+  });
+  const tags = tagsQuery.data ?? [];
+  const modelKnown = !isLocal || tags.includes(modelName);
+
   const ready = isLocal
-    ? baseURL.trim().length > 0 && modelName.trim().length > 0
+    ? baseURL.trim().length > 0 && modelName.trim().length > 0 && modelKnown
     : apiKey.trim().length > 0;
 
   function selectOption(plugin: ModelProviderPlugin) {
     setSelected(plugin);
     const next = PROVIDER_OPTIONS.find((candidate) => candidate.plugin === plugin);
     setBaseURL(next?.local === true ? next.baseURL : "");
+    setModelName("");
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -198,15 +217,36 @@ export function ProviderConnectStep({
           </label>
           <label>
             Model
-            <Input
-              type="text"
-              autoComplete="off"
-              placeholder="qwen2.5:14b"
+            <Select
               value={modelName}
+              aria-label="Model"
+              disabled={tagsQuery.isFetching || tags.length === 0}
               onChange={(event) => setModelName(event.target.value)}
-              required
-            />
+            >
+              <option value="">
+                {tagsQuery.isFetching
+                  ? "Checking Ollama…"
+                  : tags.length === 0
+                    ? "No models found"
+                    : "Select a model…"}
+              </option>
+              {tags.map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag}
+                </option>
+              ))}
+            </Select>
           </label>
+          {tagsQuery.isError ? (
+            <p className="onboarding-inline-error" role="alert">
+              {tagsQuery.error instanceof Error ? tagsQuery.error.message : String(tagsQuery.error)}
+            </p>
+          ) : null}
+          {!tagsQuery.isError && modelName !== "" && !modelKnown ? (
+            <p className="onboarding-inline-error" role="alert">
+              {modelName} is not one of the models Ollama reports at this base URL.
+            </p>
+          ) : null}
         </>
       ) : (
         <label>

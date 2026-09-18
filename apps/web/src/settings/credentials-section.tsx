@@ -26,7 +26,7 @@ import {
   TableRow,
 } from "@corbits/react-ui";
 import type { CredentialType } from "@intx/types";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { QueryView, toAPIQuery } from "@/lib/api-query";
@@ -38,6 +38,7 @@ import {
   deleteCredential,
   listCredentials,
   listProviders,
+  updateCredential,
   type Credential,
   type Provider,
 } from "./credentials-api";
@@ -51,9 +52,7 @@ type CredentialsData = {
 export function CredentialsSection({ tenantId }: { readonly tenantId: string | null }) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [rowError, setRowError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Credential | null>(null);
 
   // Credentials and their providers load together: creating one needs the
   // provider row for the typed name, so a split read would race the form.
@@ -77,6 +76,58 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
     void queryClient.invalidateQueries({ queryKey: tenantKeys.credentials(tenantId) });
   }
 
+  const create = useMutation({
+    mutationFn: async ({
+      name,
+      type,
+      secret,
+    }: {
+      readonly name: string;
+      readonly type: CredentialType;
+      readonly secret: string;
+    }) => {
+      if (tenantId === null) throw new Error("no workbench selected");
+      const existing = providers.find((provider) => provider.name === name);
+      const provider = existing !== undefined ? existing : await createProvider(tenantId, name);
+      return createCredential(tenantId, { providerId: provider.id, name, type, secret });
+    },
+    onSuccess: () => {
+      setCreateOpen(false);
+      reload();
+    },
+  });
+
+  const update = useMutation({
+    mutationFn: (input: {
+      readonly credentialId: string;
+      readonly name: string;
+      readonly description: string;
+      readonly baseURL: string;
+      readonly model: string;
+    }) => {
+      if (tenantId === null) throw new Error("no workbench selected");
+      return updateCredential(tenantId, input.credentialId, {
+        name: input.name,
+        description: input.description,
+        metadata: { baseURL: input.baseURL, model: input.model },
+      });
+    },
+    onSuccess: () => {
+      setEditing(null);
+      reload();
+    },
+  });
+
+  // The stock DELETE route this hits: `vendor/intx/hub-api/src/routes/
+  // credentials.ts`'s `app.delete("/:credentialId", ...)`.
+  const del = useMutation({
+    mutationFn: (credential: Credential) => {
+      if (tenantId === null) throw new Error("no workbench selected");
+      return deleteCredential(tenantId, credential.id);
+    },
+    onSuccess: reload,
+  });
+
   if (tenantId === null) {
     return (
       <EmptyState
@@ -84,31 +135,6 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
         description={SETTINGS_STRINGS.benchNoneSelectedDescription}
       />
     );
-  }
-
-  function handleCreate(name: string, type: CredentialType, secret: string) {
-    if (tenantId === null) return;
-    setCreating(true);
-    setCreateError(null);
-    const existing = providers.find((provider) => provider.name === name);
-    (existing !== undefined ? Promise.resolve(existing) : createProvider(tenantId, name))
-      .then((provider) =>
-        createCredential(tenantId, { providerId: provider.id, name, type, secret }),
-      )
-      .then(() => {
-        setCreateOpen(false);
-        reload();
-      })
-      .catch(() => setCreateError(SETTINGS_STRINGS.credentialsCreateError))
-      .finally(() => setCreating(false));
-  }
-
-  function handleDelete(credential: Credential) {
-    if (tenantId === null) return;
-    setRowError(null);
-    deleteCredential(tenantId, credential.id)
-      .then(reload)
-      .catch(() => setRowError(SETTINGS_STRINGS.credentialsDeleteError));
   }
 
   return (
@@ -123,18 +149,31 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
               {SETTINGS_STRINGS.credentialsCreateAction}
             </Button>
           </div>
-          {rowError !== null && (
+          {del.error === null || del.error === undefined ? null : (
             <p className="settings-inline-error" role="alert">
-              {rowError}
+              {SETTINGS_STRINGS.credentialsDeleteError}
             </p>
           )}
-          <CredentialsTable credentials={credentials} onDelete={handleDelete} />
+          <CredentialsTable
+            credentials={credentials}
+            onEdit={setEditing}
+            onDelete={(credential) => del.mutate(credential)}
+          />
           <CreateCredentialDialog
             open={createOpen}
             onOpenChange={setCreateOpen}
-            onCreate={handleCreate}
-            submitting={creating}
-            error={createError}
+            onCreate={(name, type, secret) => create.mutate({ name, type, secret })}
+            submitting={create.isPending}
+            error={create.error === null ? null : SETTINGS_STRINGS.credentialsCreateError}
+          />
+          <EditCredentialDialog
+            credential={editing}
+            onOpenChange={(open) => {
+              if (!open) setEditing(null);
+            }}
+            onSave={(input) => update.mutate(input)}
+            submitting={update.isPending}
+            error={update.error === null ? null : SETTINGS_STRINGS.credentialsEditError}
           />
         </SettingsPanel>
       )}
@@ -144,9 +183,11 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
 
 function CredentialsTable({
   credentials,
+  onEdit,
   onDelete,
 }: {
   readonly credentials: readonly Credential[];
+  readonly onEdit: (credential: Credential) => void;
   readonly onDelete: (credential: Credential) => void;
 }) {
   if (credentials.length === 0) {
@@ -174,6 +215,9 @@ function CredentialsTable({
             <TableCell>{credential.type}</TableCell>
             <TableCell>{credential.status}</TableCell>
             <TableCell className="settings-actions-cell">
+              <Button variant="outline" size="sm" onClick={() => onEdit(credential)}>
+                {SETTINGS_STRINGS.credentialsEditAction}
+              </Button>
               <ConfirmButton
                 variant="destructive"
                 size="sm"
@@ -283,6 +327,125 @@ function CreateCredentialDialog({
             disabled={!canSubmit || submitting}
           >
             {SETTINGS_STRINGS.credentialsCreateSubmit}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type EditCredentialInput = {
+  readonly credentialId: string;
+  readonly name: string;
+  readonly description: string;
+  readonly baseURL: string;
+  readonly model: string;
+};
+
+function readMetadataString(metadata: Credential["metadata"], key: string): string {
+  if (metadata === null || metadata === undefined) return "";
+  const value = (metadata as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : "";
+}
+
+/** Edits a credential through the stock `PATCH` route. `Base URL` and
+ * `Model` are this form's own metadata convention for a local, Ollama-style
+ * credential — they round-trip through the credential's opaque `metadata`
+ * field, nothing platform-specific. */
+function EditCredentialDialog({
+  credential,
+  onOpenChange,
+  onSave,
+  submitting,
+  error = null,
+}: {
+  readonly credential: Credential | null;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onSave: (input: EditCredentialInput) => void;
+  readonly submitting: boolean;
+  readonly error?: string | null;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [baseURL, setBaseURL] = useState("");
+  const [model, setModel] = useState("");
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+
+  // A render-time sync (not an effect): the form's own fields mirror the
+  // credential passed in exactly once per open, keyed by id.
+  if (credential !== null && loadedFor !== credential.id) {
+    setLoadedFor(credential.id);
+    setName(credential.name);
+    setDescription(credential.description ?? "");
+    setBaseURL(readMetadataString(credential.metadata, "baseURL"));
+    setModel(readMetadataString(credential.metadata, "model"));
+  }
+
+  const canSubmit = credential !== null && name.trim().length > 0;
+
+  return (
+    <Dialog open={credential !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{SETTINGS_STRINGS.credentialsEditDialogTitle}</DialogTitle>
+          <DialogDescription>{SETTINGS_STRINGS.credentialsEditDialogDescription}</DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          <form
+            id="edit-credential-form"
+            className="settings-form-field"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (credential === null || !canSubmit) return;
+              onSave({
+                credentialId: credential.id,
+                name: name.trim(),
+                description: description.trim(),
+                baseURL: baseURL.trim(),
+                model: model.trim(),
+              });
+            }}
+          >
+            <label className="settings-form-field">
+              <span>{SETTINGS_STRINGS.credentialsNameLabel}</span>
+              <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
+            </label>
+            <label className="settings-form-field">
+              <span>{SETTINGS_STRINGS.credentialsBaseUrlLabel}</span>
+              <Input
+                type="url"
+                value={baseURL}
+                onChange={(event) => setBaseURL(event.target.value)}
+                placeholder="http://localhost:11434"
+              />
+            </label>
+            <label className="settings-form-field">
+              <span>{SETTINGS_STRINGS.credentialsModelLabel}</span>
+              <Input
+                type="text"
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
+                placeholder="qwen2.5:14b"
+              />
+            </label>
+            {error !== null && (
+              <p className="settings-inline-error" role="alert">
+                {error}
+              </p>
+            )}
+          </form>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {SETTINGS_STRINGS.credentialsEditCancel}
+          </Button>
+          <Button
+            type="submit"
+            form="edit-credential-form"
+            variant="primary"
+            disabled={!canSubmit || submitting}
+          >
+            {SETTINGS_STRINGS.credentialsEditSubmit}
           </Button>
         </DialogFooter>
       </DialogContent>

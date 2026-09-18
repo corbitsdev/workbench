@@ -36,7 +36,15 @@ export function Composer({
         disabled={disabled}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
+          if (event.key !== "Enter") return;
+          // Auto-repeat fires the same keydown many times while a key is
+          // held; without this guard that means many sends (plain Enter)
+          // or many newlines (Shift+Enter) from one keystroke.
+          if (event.repeat) {
+            event.preventDefault();
+            return;
+          }
+          if (!event.shiftKey) {
             event.preventDefault();
             send();
           }

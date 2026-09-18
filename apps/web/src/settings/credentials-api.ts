@@ -90,3 +90,25 @@ export function deleteCredential(tenantId: string, credentialId: string): Promis
     { method: "DELETE" },
   );
 }
+
+export type UpdateCredentialInput = {
+  readonly name?: string;
+  readonly description?: string;
+  /** `baseURL`/`model` are this form's own convention for a local,
+   * Ollama-style credential — the stock route stores whatever object is
+   * sent here as opaque `metadata`, nothing more. */
+  readonly metadata?: { readonly baseURL?: string; readonly model?: string };
+};
+
+export function updateCredential(
+  tenantId: string,
+  credentialId: string,
+  input: UpdateCredentialInput,
+): Promise<Credential> {
+  return request(
+    `/api/tenants/${tenantId}/credentials/${credentialId}`,
+    CredentialResponse,
+    "updating that credential",
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
+}
