@@ -112,7 +112,10 @@ function RoomInfoColumn({
   readonly latestMessage: RoomMessage | undefined;
   readonly participants: readonly RoomParticipant[];
 }) {
-  const approvalsQuery = usePendingApprovals(roomTenantId);
+  const anyAgentLive = participants.some((p) => p.kind === "agent" && p.address !== "");
+  const approvalsQuery = usePendingApprovals(roomTenantId, {
+    refetchInterval: anyAgentLive ? 3000 : false,
+  });
   const artifactsQuery = useAPIQuery(
     `/api/tenants/${roomTenantId}/artifacts`,
     ArtifactListPageSchema,

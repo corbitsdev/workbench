@@ -100,11 +100,16 @@ type Validator<T> = (data: unknown) => T | ArkErrors;
  * call sites that still pass `""` when a tenant is unresolved cannot hit
  * the network with a broken URL.
  */
-export function useAPIQuery<T>(path: string, schema: Validator<T>): APIQuery<T> {
+export function useAPIQuery<T>(
+  path: string,
+  schema: Validator<T>,
+  options?: { readonly refetchInterval?: number | false },
+): APIQuery<T> {
   const enabled = path !== "";
   const result = useQuery({
     queryKey: pathToQueryKey(path),
     enabled,
+    ...(options?.refetchInterval === undefined ? {} : { refetchInterval: options.refetchInterval }),
     queryFn: async () => {
       const response = await fetch(path, {
         headers: { accept: "application/json" },
