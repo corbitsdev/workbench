@@ -321,7 +321,9 @@ export async function deployAgentSource(
     await scheduleAgentRun(
       args.tenantId,
       args.input.schedule,
-      `run_${parsed.id}@${tenant.domain}`,
+      // The deployment id is the top-level run id (already `run_…`), and
+      // the run address is that id at the tenant domain.
+      `${parsed.id}@${tenant.domain}`,
       fetchImpl,
     );
   }
