@@ -11,9 +11,6 @@
       "path": "./packages/approvals/tsconfig.src.json"
     },
     {
-      "path": "./packages/artifact-ui/tsconfig.src.json"
-    },
-    {
       "path": "./packages/collections/tsconfig.src.json"
     },
     {

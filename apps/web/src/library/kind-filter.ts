@@ -1,16 +1,13 @@
 // Pure helpers for the Files kind nav (`/files`, `/files/document`, …) —
-// this package's own names keep the "library" vocabulary (it's the
+// this module's own names keep the "library" vocabulary (it's the
 // internal name for the artifact store), but `LIBRARY_PATH` tracks the
 // app's real mount point: `/library` stays routable only as a redirect
 // to `/files` — see `legacy-settings-redirects.tsx`.
-// Framework-free so both the web app (rendering the nav + filtering the
-// visible list) and the hub (computing honest per-kind counts server-side)
-// share one mapping instead of two copies drifting apart.
 
 import { decodedOrNull } from "@corbits/url-path";
 
 import { titleExtension } from "./title-extension";
-import type { ArtifactSummary } from "./types";
+import type { ArtifactSummary } from "./artifact-summary";
 
 const LIBRARY_PATH = "/files";
 

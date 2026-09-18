@@ -88,10 +88,7 @@ import {
   mountWorkflowArtifacts,
   type WorkflowArtifactEnv,
 } from "@corbits/artifacts";
-import {
-  artifactMatchesLibraryKindSegment,
-  LIBRARY_KIND_SEGMENTS,
-} from "@corbits/artifact-ui/kind-filter";
+import { artifactMatchesLibraryKindSegment, LIBRARY_KIND_SEGMENTS } from "./library-kind-segments";
 import type { DB } from "@intx/db";
 import { sidecar, workflowRun } from "@intx/db/schema";
 import path from "node:path";

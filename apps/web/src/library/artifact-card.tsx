@@ -5,7 +5,7 @@
 import { Badge, artifactKindLabel, formatRelativeTime } from "@corbits/react-ui";
 import type { ReactNode } from "react";
 
-import type { ArtifactSummary } from "@corbits/artifact-ui/types";
+import type { ArtifactSummary } from "./artifact-summary";
 
 export type ArtifactCardMeta = {
   readonly sourceChannel?: string | null;

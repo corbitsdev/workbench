@@ -15,7 +15,6 @@
     "@chat-adapter/state-memory": "^4.35.0",
     "@corbits/agent-directory": "workspace:*",
     "@corbits/approvals": "workspace:*",
-    "@corbits/artifact-ui": "workspace:*",
     "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#5309a15d4aa504f132c54b4da08bb672b4903873",
     "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
     "@corbits/cron": "workspace:*",
