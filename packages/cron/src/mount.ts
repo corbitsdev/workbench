@@ -1,8 +1,5 @@
-// CRUD over a tenant's saved cron schedules. Mirrors `@corbits/mailbox`'s
-// `mountMailbox` shape: absolute routes registered directly on the host's
-// app (never a sub-router mounted under a prefix), a caller-supplied
-// resolver for "is the caller allowed to act on this tenant," and arktype
-// parsing at the one trust boundary that matters (the request body).
+// CRUD over a tenant's saved cron schedules. Absolute routes registered
+// directly on the host's app, never a sub-router under a prefix.
 import { randomUUID } from "node:crypto";
 import { type } from "arktype";
 import { eq, and } from "drizzle-orm";
