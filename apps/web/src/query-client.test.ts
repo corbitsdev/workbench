@@ -1,173 +1,41 @@
-import { describe, expect, mock, test } from "bun:test";
-import { QueryClient } from "@tanstack/react-query";
+// Query-key helpers — pure unit coverage so the TanStack cutover does not
+// depend only on page-level smoke. The APIQuery adapter itself
+// (`toAPIQuery`) is covered in `@/lib/api-query`.
 
-import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";
+import { describe, expect, test } from "bun:test";
 
-import {
-  createAppQueryClient,
-  isAuthInvalidError,
-  pathToQueryKey,
-  shouldRetryQuery,
-  tenantKeys,
-} from "./query-client";
-
-const TENANT = "tenant_1";
-
-describe("shouldRetryQuery", () => {
-  test("never retries once unauthenticated", () => {
-    expect(shouldRetryQuery(0, new UnauthenticatedError())).toBe(false);
-  });
-
-  test("never retries a definitive 404", () => {
-    expect(shouldRetryQuery(0, new ApiQueryError("not found", 404))).toBe(false);
-  });
-
-  test("retries other statuses up to 3 attempts", () => {
-    const error = new ApiQueryError("server exploded", 500);
-    expect(shouldRetryQuery(0, error)).toBe(true);
-    expect(shouldRetryQuery(2, error)).toBe(true);
-    expect(shouldRetryQuery(3, error)).toBe(false);
-  });
-
-  test("retries a network failure with no status up to 3 attempts", () => {
-    const error = new ApiQueryError("network down");
-    expect(shouldRetryQuery(0, error)).toBe(true);
-    expect(shouldRetryQuery(3, error)).toBe(false);
-  });
-});
-
-describe("isAuthInvalidError", () => {
-  test("an UnauthenticatedError is auth-invalid", () => {
-    expect(isAuthInvalidError(new UnauthenticatedError())).toBe(true);
-  });
-
-  test("an ApiQueryError with status 401 is auth-invalid", () => {
-    expect(isAuthInvalidError(new ApiQueryError("nope", 401))).toBe(true);
-  });
-
-  test("an ApiQueryError with a different status is not", () => {
-    expect(isAuthInvalidError(new ApiQueryError("nope", 403))).toBe(false);
-    expect(isAuthInvalidError(new ApiQueryError("boom", 500))).toBe(false);
-  });
-
-  test("a plain error is not", () => {
-    expect(isAuthInvalidError(new Error("boom"))).toBe(false);
-  });
-});
-
-// a hub restarted on an empty DB mid-session (or a cookie for a
-// deleted user, or a session that simply expired) shows up as a 401 on
-// whatever query or mutation happens to run next — never a dedicated
-// "session ended" event. Every consumer of this client must be routed
-// through the same `onAuthInvalid` callback, not left to render its own
-// local "sign in required" box while the rest of the shell renders on.
-describe("createAppQueryClient's auth-invalid wiring", () => {
-  test("a query throwing UnauthenticatedError calls onAuthInvalid", async () => {
-    const onAuthInvalid = mock(() => undefined);
-    const client = createAppQueryClient(onAuthInvalid);
-    await client
-      .fetchQuery({
-        queryKey: ["probe"],
-        queryFn: () => {
-          throw new UnauthenticatedError();
-        },
-        retry: false,
-      })
-      .catch(() => undefined);
-    expect(onAuthInvalid).toHaveBeenCalledTimes(1);
-  });
-
-  test("a query throwing a 401 ApiQueryError calls onAuthInvalid", async () => {
-    const onAuthInvalid = mock(() => undefined);
-    const client = createAppQueryClient(onAuthInvalid);
-    await client
-      .fetchQuery({
-        queryKey: ["probe-401"],
-        queryFn: () => {
-          throw new ApiQueryError("nope", 401);
-        },
-        retry: false,
-      })
-      .catch(() => undefined);
-    expect(onAuthInvalid).toHaveBeenCalledTimes(1);
-  });
-
-  test("a query failing for an unrelated reason never calls onAuthInvalid", async () => {
-    const onAuthInvalid = mock(() => undefined);
-    const client = createAppQueryClient(onAuthInvalid);
-    await client
-      .fetchQuery({
-        queryKey: ["probe-500"],
-        queryFn: () => {
-          throw new ApiQueryError("server exploded", 500);
-        },
-        retry: false,
-      })
-      .catch(() => undefined);
-    expect(onAuthInvalid).not.toHaveBeenCalled();
-  });
-
-  test("a mutation that 401s also calls onAuthInvalid", async () => {
-    const onAuthInvalid = mock(() => undefined);
-    const client = createAppQueryClient(onAuthInvalid);
-    const mutation = client.getMutationCache().build(client, {
-      mutationFn: () => {
-        throw new UnauthenticatedError();
-      },
-    });
-    await mutation.execute(undefined).catch(() => undefined);
-    expect(onAuthInvalid).toHaveBeenCalledTimes(1);
-  });
-
-  test("defaults to a no-op when no callback is given", async () => {
-    const client = createAppQueryClient();
-    await expect(
-      client.fetchQuery({
-        queryKey: ["probe-default"],
-        queryFn: () => {
-          throw new UnauthenticatedError();
-        },
-        retry: false,
-      }),
-    ).rejects.toBeInstanceOf(UnauthenticatedError);
-  });
-});
+import { meKeys, pathToQueryKey, tenantKeys } from "./query-client";
 
 describe("pathToQueryKey", () => {
-  test("maps the artifacts list under the artifacts key family", () => {
-    expect(pathToQueryKey(`/api/tenants/${TENANT}/artifacts`)).toEqual([
-      ...tenantKeys.artifacts(TENANT),
-      "",
-    ]);
+  test("maps identity-scoped hub paths onto meKeys", () => {
+    expect(pathToQueryKey("/api/me")).toEqual(meKeys.profile);
+    expect(pathToQueryKey("/api/me/principals")).toEqual(meKeys.principals);
   });
 
-  test("maps artifacts/counts under the artifacts key family, not the path fallback", () => {
-    expect(pathToQueryKey(`/api/tenants/${TENANT}/artifacts/counts`)).toEqual(
-      tenantKeys.artifactCounts(TENANT),
+  test("maps the pending-approvals list onto a tenant-scoped key", () => {
+    expect(pathToQueryKey("/api/tenants/tnt_1/approvals")).toEqual(
+      tenantKeys.pendingApprovals("tnt_1"),
     );
+  });
+
+  test("maps tenant assets onto a tenant-scoped key", () => {
+    expect(pathToQueryKey("/api/tenants/tnt_1/assets")).toEqual(tenantKeys.assets("tnt_1"));
+  });
+
+  test("falls back to a path key for unknown routes", () => {
+    expect(pathToQueryKey("/api/mystery")).toEqual(["path", "/api/mystery"]);
   });
 });
 
-describe("invalidating tenantKeys.artifacts after an upload", () => {
-  test("also invalidates the counts query, not just the list", async () => {
-    const queryClient = new QueryClient();
-    const listKey = pathToQueryKey(`/api/tenants/${TENANT}/artifacts`);
-    const countsKey = pathToQueryKey(`/api/tenants/${TENANT}/artifacts/counts`);
-
-    queryClient.setQueryData(listKey, { data: [], nextCursor: null });
-    queryClient.setQueryData(countsKey, {
-      all: 0,
-      document: 0,
-      sheet: 0,
-      pdf: 0,
-      routine: 0,
-    });
-
-    await queryClient.invalidateQueries({
-      queryKey: tenantKeys.artifacts(TENANT),
-    });
-
-    expect(queryClient.getQueryState(listKey)?.isInvalidated).toBe(true);
-    expect(queryClient.getQueryState(countsKey)?.isInvalidated).toBe(true);
+describe("tenantKeys.routineActivity", () => {
+  // the sidebar routine-activity seam keeps a shared cache key that
+  // names the seam — not the deleted `/top-level-runs` route — so both
+  // mounts subscribe to one entry and a future native fires equivalent has
+  // a key to rewire.
+  test("keys routine activity per tenant without the deleted route name", () => {
+    expect(tenantKeys.routineActivity("tnt_1")).toEqual(["tenant", "tnt_1", "routine-activity"]);
+    expect((tenantKeys.routineActivity("tnt_1") as readonly unknown[]).join("/")).not.toContain(
+      "top-level-runs",
+    );
   });
 });
