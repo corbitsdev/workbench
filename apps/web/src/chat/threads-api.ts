@@ -49,12 +49,21 @@ const LIVE_DEPLOYMENT_STATUSES = new Set(["deployed", "pending", "recovering"]);
 const DeploymentsSchema = WorkflowDeploymentResponse.array();
 const WorkflowAssetSchema = type({ id: "string", name: "string" }).array();
 
+/** One non-text MIME part of a mail frame, decoded to text — what the
+ * mail tools' `attachments: [{name, contentType, data}]` arrives as. */
+export type MailAttachment = {
+  readonly name: string;
+  readonly contentType: string;
+  readonly text: string;
+};
+
 export type ChatMessage = {
   readonly id: string;
   readonly author: "me" | "agent";
   readonly authorName: string;
   readonly body: string;
   readonly at: string;
+  readonly attachments: readonly MailAttachment[];
 };
 
 export type ChatSummary = {
@@ -225,6 +234,50 @@ function textPart(entity: string): string | undefined {
   return undefined;
 }
 
+/** Every named, non-inline MIME leaf of a frame, decoded. A part counts as
+ * an attachment when it carries a filename; the text body has none. */
+export function frameAttachments(raw: string): readonly MailAttachment[] {
+  let decoded: string;
+  try {
+    decoded = atob(raw);
+  } catch (cause) {
+    reportError(cause, { operation: "chat_frame_attachments" });
+    return [];
+  }
+  return attachmentParts(decoded.replace(/\r\n/g, "\n"));
+}
+
+function attachmentParts(entity: string): MailAttachment[] {
+  const split = entity.indexOf("\n\n");
+  if (split < 0) return [];
+  const headers = entity.slice(0, split).replace(/\n[ \t]+/g, " ");
+  const body = entity.slice(split + 2);
+  const boundary = /boundary="?([^";\n]+)"?/i.exec(headers)?.[1];
+  if (boundary !== undefined) {
+    const found: MailAttachment[] = [];
+    for (const part of body.split(`--${boundary}`).slice(1)) {
+      if (part.startsWith("--")) break;
+      found.push(...attachmentParts(part.replace(/^\n/, "")));
+    }
+    return found;
+  }
+  const name = /(?:filename|name)\*?="?([^";\n]+)"?/i.exec(headers)?.[1];
+  if (name === undefined) return [];
+  const contentType =
+    /content-type:\s*([^;\n]+)/i.exec(headers)?.[1]?.trim() ?? "application/octet-stream";
+  const base64 = /content-transfer-encoding:\s*base64/i.test(headers);
+  return [{ name, contentType, text: base64 ? decodeBase64(body) : body.trim() }];
+}
+
+function decodeBase64(body: string): string {
+  try {
+    return atob(body.replace(/\s+/g, ""));
+  } catch (cause) {
+    reportError(cause, { operation: "chat_attachment_decode" });
+    return "";
+  }
+}
+
 function extractAddress(raw: string): string {
   return (/<([^>]+)>/.exec(raw)?.[1] ?? raw).trim();
 }
@@ -266,6 +319,7 @@ type MailTurn = {
   readonly subject: string;
   readonly body: string;
   readonly at: string;
+  readonly attachments: readonly MailAttachment[];
 };
 
 /** Every chat turn in one folder: the person's own in `Sent`, the agents'
@@ -285,6 +339,7 @@ async function readFolder(tenantId: string, folder: "INBOX" | "Sent"): Promise<M
         subject: message.envelope.subject,
         body: frameBody(message.raw),
         at: message.envelope.date,
+        attachments: frameAttachments(message.raw),
       },
     ];
   });
@@ -478,6 +533,7 @@ export async function readChat(tenantId: string, chatId: string): Promise<ChatTh
       authorName: turn.author === "me" ? "You" : agent.name,
       body: turn.body,
       at: turn.at,
+      attachments: turn.attachments,
     })),
   };
 }
@@ -570,6 +626,7 @@ export type RoomMessage = {
    * message — metadata for the sub-thread panel, never used to hide a turn
    * from the main timeline. */
   readonly parentMessageId: string | undefined;
+  readonly attachments: readonly MailAttachment[];
 };
 
 function authorName(address: string): string {
@@ -599,6 +656,7 @@ type RoomTurn = {
   readonly address: string;
   readonly body: string;
   readonly at: string;
+  readonly attachments: readonly MailAttachment[];
 };
 
 /** One folder of the room mailbox: the person's own turns live in `Sent`,
@@ -615,6 +673,7 @@ async function readRoomFolder(tenantId: string, folder: "INBOX" | "Sent"): Promi
     address: extractAddress(message.envelope.from),
     body: frameBody(message.raw),
     at: message.envelope.date,
+    attachments: frameAttachments(message.raw),
   }));
 }
 
@@ -637,6 +696,7 @@ export async function readRoom(tenantId: string): Promise<readonly RoomMessage[]
     address: turn.address,
     body: turn.body,
     at: turn.at,
+    attachments: turn.attachments,
     parentMessageId:
       turn.parentId !== undefined && known.has(turn.parentId) ? turn.parentId : undefined,
   }));
