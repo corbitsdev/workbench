@@ -166,7 +166,6 @@
       "name": "@corbits/agent-directory",
       "version": "0.0.1",
       "dependencies": {
-        "@corbits/agent-events": "workspace:*",
         "@corbits/error-sink": "workspace:*",
         "@corbits/skills-tools": "workspace:*",
         "@corbits/tool-registry-publish": "workspace:*",
@@ -191,14 +190,6 @@
         "@intx/crypto": "0.3.0",
         "@types/bun": "catalog:",
         "@types/semver": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/agent-events": {
-      "name": "@corbits/agent-events",
-      "version": "0.0.1",
-      "devDependencies": {
-        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -847,8 +838,6 @@
     "@corbits/agent-directory": ["@corbits/agent-directory@workspace:packages/agent-directory"],
 
     "@corbits/agent-directory-tools": ["@corbits/agent-directory-tools@workspace:tools/agent-directory"],
-
-    "@corbits/agent-events": ["@corbits/agent-events@workspace:packages/agent-events"],
 
     "@corbits/approvals": ["@corbits/approvals@workspace:packages/approvals"],
 

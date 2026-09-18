@@ -8,9 +8,6 @@
       "path": "./apps/sidecar/tsconfig.src.json"
     },
     {
-      "path": "./packages/agent-events/tsconfig.src.json"
-    },
-    {
       "path": "./packages/approvals/tsconfig.src.json"
     },
     {
