@@ -16,6 +16,8 @@ export class AgentSourceReadError extends Error {}
 
 const GitTokenMintShape = type({ id: "string", secret: "string" });
 
+const ToolPackagePinShape = type({ name: "string", version: "string" });
+
 const AgentWorkflowJsonShape = type({
   id: "string",
   steps: type.Record(
@@ -24,6 +26,7 @@ const AgentWorkflowJsonShape = type({
       agent: type({
         systemPrompt: "string",
         inference: { sources: type({ provider: "string", model: "string" }).array() },
+        "toolPackagePins?": ToolPackagePinShape.array(),
       }),
     }),
   ),
@@ -46,14 +49,20 @@ export type AgentSource = {
   readonly declaredSources: readonly { readonly provider: string; readonly model: string }[];
 };
 
-/** Mints a read-only token, fetches the asset's `main`, and parses out the
- * agent definition its source tree carries. */
-export async function readAgentSource(
+export type AgentToolPackagePin = { readonly name: string; readonly version: string };
+
+type AgentWorkflowStep = (typeof AgentWorkflowJsonShape.infer)["steps"][string];
+
+/** Mints a read-only token, fetches the asset's `main` over its smart-HTTP
+ * git remote, and parses `definition.json` out of it. Shared by every
+ * reader below so each mints and revokes its own short-lived token rather
+ * than holding one open across a batch of assets. */
+async function readAgentWorkflowStep(
   tenantId: string,
   assetId: string,
   assetName: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<AgentSource> {
+  fetchImpl: typeof fetch,
+): Promise<AgentWorkflowStep> {
   const tokensPath = `/api/tenants/${encodeURIComponent(tenantId)}/git-tokens`;
   const minted = await fetchImpl(tokensPath, {
     method: "POST",
@@ -97,11 +106,37 @@ export async function readAgentSource(
     if (step === undefined) {
       throw new AgentSourceReadError("this agent's source has no steps to read a prompt from");
     }
-    return {
-      systemPrompt: step.agent.systemPrompt,
-      declaredSources: step.agent.inference.sources,
-    };
+    return step;
   } finally {
     await fetchImpl(`${tokensPath}/${encodeURIComponent(token.id)}`, { method: "DELETE" });
   }
+}
+
+/** Mints a read-only token, fetches the asset's `main`, and parses out the
+ * agent definition its source tree carries. */
+export async function readAgentSource(
+  tenantId: string,
+  assetId: string,
+  assetName: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<AgentSource> {
+  const step = await readAgentWorkflowStep(tenantId, assetId, assetName, fetchImpl);
+  return {
+    systemPrompt: step.agent.systemPrompt,
+    declaredSources: step.agent.inference.sources,
+  };
+}
+
+/** The tool packages an agent's own step pins in `definition.json`. Empty
+ * for an agent whose tools ride bundled into its `workflow.js` closure
+ * instead (Myra's mail/posix factories never surface here — see
+ * `MYRA_TOOL_PACKAGES` in `@corbits/myra/tool-packages`). */
+export async function readAgentToolPackagePins(
+  tenantId: string,
+  assetId: string,
+  assetName: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<readonly AgentToolPackagePin[]> {
+  const step = await readAgentWorkflowStep(tenantId, assetId, assetName, fetchImpl);
+  return step.agent.toolPackagePins ?? [];
 }
