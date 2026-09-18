@@ -3722,6 +3722,13 @@ tr.insights-row-clickable:hover {
   font-weight: 600;
   text-decoration: underline;
 }
+.chat-package-rejection-icon {
+  width: 0.9em;
+  height: 0.9em;
+  margin-right: 0.35rem;
+  vertical-align: -0.1em;
+  color: var(--destructive);
+}
 
 /* Sidebar sections: Workbenches above Chats, each with its own label. */
 .shell-panel-section-label {
