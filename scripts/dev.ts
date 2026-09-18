@@ -49,6 +49,7 @@ function validateConfig(): DevConfig {
   for (const [name, hex] of [
     ["CREDENTIAL_ENCRYPTION_KEY", process.env["CREDENTIAL_ENCRYPTION_KEY"]],
     ["PRINCIPAL_KEY_ENCRYPTION_KEY", process.env["PRINCIPAL_KEY_ENCRYPTION_KEY"]],
+    ["SIDECAR_CREDENTIAL_ENCRYPTION_KEY", process.env["SIDECAR_CREDENTIAL_ENCRYPTION_KEY"]],
   ] as const) {
     if (hex === undefined || hex.trim() === "") {
       fail(`${name} is not set. Set it in .env; see .env.example.`);
