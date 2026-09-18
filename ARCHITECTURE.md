@@ -40,11 +40,12 @@ address.
 
 ## Agents and workflows
 
-Myra (`agents/myra`) is the only agent Workbench ships. There is no
-workflow catalog to browse — Myra creates a workflow, tool, or skill
-dynamically, as code, when a job needs one, and deploys it through the
-stock workflow-deploy route. `tools/*` and `skills/*` are ordinary
-`@corbits/*` packages an agent can pin.
+Myra (`agents/myra`) is the only agent Workbench ships. Her tools are
+Interchange's own tool packages — `@intx/tools-mail` over her mail
+transport and `@intx/tools-posix` over her working tree. The platform has
+no notion of an agent calling the hub API, so Workbench ships no
+hub-calling tool package: Myra writes a workflow or agent as code and the
+person deploys it from Workbench through the stock workflow-deploy route.
 
 ## Data
 

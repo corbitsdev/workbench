@@ -1,7 +1,6 @@
 // Tools: a standalone rail destination listing the tool packages this
-// tenant has published into its own registry — the same
-// `corbits-tools` package-registry asset `registry-publish.ts` writes to.
-// No stock route lists a tenant's MCP servers yet, so this page has
+// tenant has published into its own `corbits-tools` package-registry
+// asset. No stock route lists a tenant's MCP servers yet, so this page has
 // nothing to show for those until one exists.
 
 import {

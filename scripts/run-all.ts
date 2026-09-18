@@ -42,7 +42,6 @@ export function resolveConcurrency(
 const WORKSPACE_ROOTS = [
   "apps/*/package.json",
   "packages/*/package.json",
-  "tools/*/package.json",
   "agents/*/package.json",
   "skills/*/package.json",
   "workflows/*/package.json",

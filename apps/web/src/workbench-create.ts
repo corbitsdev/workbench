@@ -10,7 +10,6 @@ import { readAgentSource } from "./agent-source-read";
 import { deployMyraSource } from "./myra-deploy";
 import { createFetchStockHub } from "./needs-converge";
 import { resolveExistingOffering } from "./onboarding/provider-connect-step";
-import { publishToolPackageRegistry } from "./tools/registry-publish";
 
 export class WorkbenchCreateError extends Error {
   constructor(
@@ -69,9 +68,6 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
   }
 
   try {
-    // Myra's tool pins resolve from the room's own registry, so the
-    // packages have to be there before her definition deploys.
-    await publishToolPackageRegistry(tenantId);
     const offering = await resolveExistingOffering(tenantId);
     if (offering === null) {
       throw new Error("Connect a model provider in Settings before starting a workbench.");

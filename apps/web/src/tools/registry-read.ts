@@ -1,8 +1,6 @@
-// Reads the tenant's published tool packages back off the stock registry
-// surface `registry-publish.ts` writes to: the `corbits-tools`
+// Reads the tenant's published tool packages off its `corbits-tools`
 // package-registry asset's tarball listing. There is no packument route —
-// a tarball entry is only ever `<name>-<version>.tgz` (see
-// `tarballFilenameFor` in `./registry-publish.ts`) — so name/version are
+// a tarball entry is only ever `<name>-<version>.tgz` — so name/version are
 // recovered from the filename and nothing further (description, declared
 // tools) is available without unpacking the tarball itself.
 
