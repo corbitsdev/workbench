@@ -8,6 +8,8 @@ import { reportError } from "@corbits/error-sink";
 import {
   artifactToolsCredentialBinding,
   artifactToolsCredentialUseRequirement,
+  memoryToolsCredentialBinding,
+  memoryToolsCredentialUseRequirement,
 } from "@corbits/myra/workflow-ids";
 
 import { ensureAgentHubCredential } from "./agent-hub-credential";
@@ -102,10 +104,17 @@ export function buildAgentDefinitionJson(args: {
     // `to` only feeds the deploy-time mail.address/mail.send grants; it is
     // not how mail reaches this agent — that happens at its run address.
     triggers: [{ type: "mail", to: args.triggerAddress }],
-    // Resolved at deploy into the `hub` handle the artifact tools use, and
-    // granted to the run on the deployer's authority at its first trigger.
-    credentialBindings: [artifactToolsCredentialBinding(args.slug)],
-    grantRequirements: [artifactToolsCredentialUseRequirement(args.hubCredentialId)],
+    // Resolved at deploy into the `hub` handle the artifact and memory tools
+    // use, and granted to the run on the deployer's authority at its first
+    // trigger. One credential, one binding and one requirement per package.
+    credentialBindings: [
+      artifactToolsCredentialBinding(args.slug),
+      memoryToolsCredentialBinding(args.slug),
+    ],
+    grantRequirements: [
+      artifactToolsCredentialUseRequirement(args.hubCredentialId),
+      memoryToolsCredentialUseRequirement(args.hubCredentialId),
+    ],
     steps: {
       [stepId]: {
         kind: "step",

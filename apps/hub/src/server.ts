@@ -61,7 +61,12 @@ import {
   createMailboxPersist,
   mountMailbox,
 } from "@corbits/mailbox";
-import { createMemory, loadMemoryConfig } from "@corbits/memory";
+import {
+  createMemory,
+  loadMemoryConfig,
+  mountWorkflowMemory,
+  type WorkflowMemoryEnv,
+} from "@corbits/memory";
 import {
   createOAuthTokenRefresher,
   mountOAuthLogin,
@@ -554,27 +559,27 @@ export async function createHubServer({
     });
     app.route(TENANT_PREFIX, agentTokensApp);
   }
+  // A deployed agent has no sidecar token; it presents the bearer this hub
+  // minted for its definition and is scoped to the run it names. One
+  // verifier and one run lookup serve every run-scoped Corbits mount.
+  const verifyAgentToken = createAgentTokenVerifier({ db });
+  const resolveAgentRun = async (runAddress: string) => {
+    if (runAddress === "") return null;
+    const run = await db.query.workflowRun.findFirst({
+      where: eq(workflowRun.address, runAddress),
+    });
+    if (run === undefined || run.principalId === null) return null;
+    return { tenantId: run.tenantId, principalId: run.principalId, runId: run.id };
+  };
+
   {
     const workflowArtifactsApi = new Hono<WorkflowArtifactEnv>();
     const workflowRunAuthenticator = createWorkflowRunAuthenticator({ db });
-    const verifyAgentToken = createAgentTokenVerifier({ db });
     mountWorkflowArtifacts(workflowArtifactsApi, {
       db,
       contentStore: artifactContentStore,
       resolveRunScope: (token, runAddress) => workflowRunAuthenticator.resolve(token, runAddress),
-      // A deployed agent has no sidecar token; it presents the bearer this
-      // hub minted for its definition and is scoped to the run it names.
-      agentToken: {
-        verify: (ctx) => verifyAgentToken(ctx),
-        resolveRun: async (runAddress) => {
-          if (runAddress === "") return null;
-          const run = await db.query.workflowRun.findFirst({
-            where: eq(workflowRun.address, runAddress),
-          });
-          if (run === undefined || run.principalId === null) return null;
-          return { tenantId: run.tenantId, principalId: run.principalId, runId: run.id };
-        },
-      },
+      agentToken: { verify: (ctx) => verifyAgentToken(ctx), resolveRun: resolveAgentRun },
     });
     app.route("/api/workflow-artifacts", workflowArtifactsApi);
   }
@@ -689,13 +694,22 @@ export async function createHubServer({
 
   {
     const memoryApp = new Hono<TenantEnv>();
-    createMemory({
+    const memory = createMemory({
       app: memoryApp,
       config: loadMemoryConfig(),
       grantStore,
       conditionRegistry: grantConditionRegistry,
     });
     app.route("/", memoryApp);
+
+    // The same plane, reached by a deployed agent's bearer rather than a
+    // browser session, and scoped to the run the bearer names.
+    const workflowMemoryApi = new Hono<WorkflowMemoryEnv>();
+    mountWorkflowMemory(workflowMemoryApi, {
+      memory,
+      agentToken: { verify: (ctx) => verifyAgentToken(ctx), resolveRun: resolveAgentRun },
+    });
+    app.route("/api/workflow-memory", workflowMemoryApi);
   }
 
   {
