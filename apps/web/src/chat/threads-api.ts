@@ -422,10 +422,9 @@ export type RoomParticipant = {
   readonly id: string;
   readonly kind: "person" | "agent";
   readonly name: string;
+  /** For an agent, its current live run's address — empty when none is
+   * live, which `sendToRoom` filters out. */
   readonly address: string;
-  /** Present for agents: the deployment's anchor run, what a send is
-   * addressed to. */
-  readonly runId?: string;
 };
 
 const PrincipalPage = type({
@@ -445,7 +444,7 @@ const PrincipalPage = type({
  * appears after its first run, so the run listing is what makes an agent
  * addressable from the moment it is deployed into the room. */
 export async function listRoomParticipants(tenantId: string): Promise<readonly RoomParticipant[]> {
-  const [page, runs] = await Promise.all([
+  const [page, chatAgents] = await Promise.all([
     getJson(`/api/tenants/${encodeURIComponent(tenantId)}/principals?limit=100`, PrincipalPage),
     listChatAgents(tenantId),
   ]);
@@ -457,12 +456,11 @@ export async function listRoomParticipants(tenantId: string): Promise<readonly R
       name: principal.displayName,
       address: principal.email ?? principal.refId,
     }));
-  const agents = runs.map((run): RoomParticipant => ({
-    id: run.runId,
+  const agents = chatAgents.map((agent): RoomParticipant => ({
+    id: agent.id,
     kind: "agent",
-    name: run.name,
-    address: run.address,
-    runId: run.runId,
+    name: agent.name,
+    address: agent.liveAddress ?? "",
   }));
   return [...people, ...agents];
 }
