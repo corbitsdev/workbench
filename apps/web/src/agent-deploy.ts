@@ -87,15 +87,11 @@ export function buildAgentDefinitionJson(args: {
   systemPrompt: string;
   triggerAddress: string;
   declaredSources: readonly { readonly provider: string; readonly model: string }[];
-  schedule?: string;
 }): unknown {
   const stepId = "run";
   return {
     id: args.slug,
-    triggers: [
-      { type: "mail", to: args.triggerAddress },
-      ...(args.schedule !== undefined ? [{ type: "schedule", cron: args.schedule }] : []),
-    ],
+    triggers: [{ type: "mail", to: args.triggerAddress }],
     steps: {
       [stepId]: {
         kind: "step",
@@ -206,7 +202,6 @@ export function agentSlugFromSourceAssetName(assetName: string): string | null {
 export type NewAgentInput = {
   readonly name: string;
   readonly systemPrompt: string;
-  readonly schedule?: string;
   /** The agent's address slug, when a caller already knows it (e.g.
    * redeploying or re-joining an existing agent) — used verbatim instead
    * of being re-derived from `name`, so the asset name stays stable. */
@@ -260,7 +255,6 @@ export async function deployAgentSource(
     systemPrompt,
     triggerAddress: `${slug}@${tenant.domain}`,
     declaredSources: offering.declaredSources,
-    ...(args.input.schedule !== undefined ? { schedule: args.input.schedule } : {}),
   });
   const commitSha = await pushAgentSource(
     args.tenantId,

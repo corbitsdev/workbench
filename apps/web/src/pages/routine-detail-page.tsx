@@ -1,6 +1,6 @@
-// `/workflows/<definitionId>` — a scheduled definition's own page: name,
-// cron sentence, pause, run now, and its runs (with expandable event logs,
-// from stock's `GET /workflows/runs?definitionId=` and `GET
+// `/workflows/<definitionId>` — a deployed definition's own page: name,
+// pause, run now, and its runs (with expandable event logs, from stock's
+// `GET /workflows/runs?definitionId=` and `GET
 // /workflows/runs/:runId/events` — `vendor/intx/hub-api/src/routes/runs.ts`).
 // The id is the definition id.
 import {
@@ -29,7 +29,6 @@ import type { GlobalRoutineRow } from "../global-routines";
 import { Link } from "../navigation";
 import { WORKFLOWS_PATH_PREFIX } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
-import { scheduleSentence } from "./routines-page";
 
 const RunsPageSchema = paginatedSchema(WorkflowRunResponse);
 type RunRow = typeof WorkflowRunResponse.infer;
@@ -198,7 +197,6 @@ export function RoutineDetailPage({
   readonly onRunNow: () => Promise<void>;
 }) {
   const enabled = row.definition.status === "deployed";
-  const sentence = scheduleSentence(row.definition.cron);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
@@ -206,7 +204,6 @@ export function RoutineDetailPage({
           { label: "Workflows", href: WORKFLOWS_PATH_PREFIX },
           { label: row.definition.name },
         ]}
-        subtitle={sentence}
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -226,7 +223,6 @@ export function RoutineDetailPage({
           <div>
             <h1 className="m-0 text-xl font-semibold">{row.definition.name}</h1>
             <p className="mt-2 text-sm text-[var(--ui-fg-muted)]">{row.tenantName}</p>
-            <p className="mt-4 text-lg">{sentence}</p>
           </div>
           <RoutineRunsSection tenantId={row.tenantId} definitionId={row.definition.definitionId} />
         </div>

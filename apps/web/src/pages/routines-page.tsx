@@ -1,6 +1,5 @@
-// Workflows: an ops table of authored workflow definitions that carry a
-// ScheduleTrigger, including paused (`stopped`) ones. Pause/resume and
-// run-now are the only writes; schedules are authored on the definition.
+// Workflows: an ops table of deployed workflow definitions, including
+// paused (`stopped`) ones. Pause/resume and run-now are the only writes.
 import {
   EmptyState,
   RichEmptyState,
@@ -14,7 +13,6 @@ import {
   TableRow,
 } from "@corbits/react-ui";
 import { Clock } from "@/lib/icons";
-import { cronSentence } from "@corbits/workflows/client";
 
 import { useGlobalRoutines, useRoutineActions } from "../global-routines";
 import type { GlobalRoutineRow } from "../global-routines";
@@ -23,10 +21,6 @@ import { Link } from "../navigation";
 import { StageTopBar } from "../shell/stage-top-bar";
 
 export type { GlobalRoutineRow } from "../global-routines";
-
-export function scheduleSentence(cron: string): string {
-  return cronSentence(cron) ?? cron;
-}
 
 export function GlobalRoutinesList({
   rows,
@@ -41,8 +35,8 @@ export function GlobalRoutinesList({
     return (
       <RichEmptyState
         icon={<Clock />}
-        title="No scheduled workflows yet"
-        description="A workflow with a schedule shows up here. Pause, resume, or run it now."
+        title="No workflows yet"
+        description="A deployed workflow shows up here. Pause, resume, or run it now."
       />
     );
   }
@@ -51,7 +45,6 @@ export function GlobalRoutinesList({
       <TableHeader>
         <TableRow>
           <TableHead>Routine</TableHead>
-          <TableHead>Schedule</TableHead>
           <TableHead>On</TableHead>
           <TableHead>Actions</TableHead>
         </TableRow>
@@ -75,9 +68,6 @@ export function GlobalRoutinesList({
                   </Link>
                   <span className="text-xs text-[var(--ui-fg-muted)]">{row.tenantName}</span>
                 </span>
-              </TableCell>
-              <TableCell>
-                <span className="text-sm">{scheduleSentence(row.definition.cron)}</span>
               </TableCell>
               <TableCell>
                 <Switch
@@ -106,7 +96,7 @@ export function RoutinesRoute() {
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
         crumbs={[{ label: "Workflows" }]}
-        subtitle="Scheduled workflows. Pause, resume, or run now."
+        subtitle="Deployed workflows. Pause, resume, or run now."
       />
       <div className="stage-content flex min-h-0 flex-1 flex-col overflow-y-auto">
         {routinesQuery.kind === "loading" ? (

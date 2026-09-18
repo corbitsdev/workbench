@@ -5,10 +5,9 @@
 // assets (`GET /assets?kind=workflow`) for a display name, exactly the two
 // stock reads `vendor/intx/hub-api/src/routes/workflows.ts` exposes.
 //
-// Stock's deployment row carries no schedule: a `ScheduleTrigger`'s cron
-// lives in the deployed source's `workflow.json`, unreachable from either
-// listing read, so `cron` always reports "manual" here — honest rather than
-// guessed — until an upstream read exposes it. Run-now and pause/resume have
+// The `schedule` trigger is reserved on Interchange but unimplemented — no
+// scheduler fires it — so this reads deployments as plain workflows, with
+// no schedule concept. Run-now and pause/resume have
 // no backing stock route either (`/deployments` is list/create only; no
 // per-deployment PATCH or trigger route exists), so both stay rejected
 // promises with a message naming the missing route, same pattern as before.
@@ -27,7 +26,6 @@ export const ScheduledWorkflowDefinition = type({
   name: "string",
   tenantId: "string",
   status: "'deployed' | 'stopped'",
-  cron: "string",
   createdAt: "string",
   updatedAt: "string",
 });
@@ -90,7 +88,6 @@ export async function listScheduledWorkflows(
       name: nameByAssetId.get(deployment.definitionAssetId) ?? "Untitled workflow",
       tenantId: deployment.tenantId,
       status: deployment.status === "deployed" ? "deployed" : "stopped",
-      cron: "manual",
       createdAt: deployment.createdAt,
       updatedAt: deployment.createdAt,
     }));
