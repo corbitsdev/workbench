@@ -29,16 +29,18 @@ function errorText(cause: unknown): string {
 function Composer({
   placeholder,
   busy,
+  disabled,
   onSend,
 }: {
   readonly placeholder: string;
   readonly busy: boolean;
+  readonly disabled?: boolean;
   readonly onSend: (text: string) => void;
 }) {
   const [text, setText] = useState("");
   const send = () => {
     const trimmed = text.trim();
-    if (trimmed === "" || busy) return;
+    if (trimmed === "" || busy || disabled) return;
     setText("");
     onSend(trimmed);
   };
@@ -49,6 +51,7 @@ function Composer({
         rows={3}
         placeholder={placeholder}
         aria-label={placeholder}
+        disabled={disabled}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey) {
@@ -57,7 +60,7 @@ function Composer({
           }
         }}
       />
-      <Button variant="primary" disabled={busy || text.trim() === ""} onClick={send}>
+      <Button variant="primary" disabled={busy || disabled || text.trim() === ""} onClick={send}>
         {busy ? "Sending…" : "Send"}
       </Button>
     </div>
@@ -75,6 +78,16 @@ function NewChat({
   const agentsQuery = useQuery({
     queryKey: chatKeys.agents(tenantId),
     queryFn: () => listChatAgents(tenantId),
+    // Keep polling while the chosen agent has no live run yet, so the
+    // composer unlocks itself once a redeploy finishes.
+    refetchInterval: (query) => {
+      const agentsData = query.state.data;
+      if (agentsData === undefined) return false;
+      const defaultAgent = agentsData.find(
+        (agent) => agent.name === MYRA_SOURCE_CONFIG.displayName,
+      );
+      return (defaultAgent ?? agentsData[0])?.liveAddress === null ? 3000 : false;
+    },
   });
   const agents = useMemo<readonly ChatAgent[]>(() => agentsQuery.data ?? [], [agentsQuery.data]);
   const [selected, setSelected] = useState<string>("");
@@ -89,8 +102,9 @@ function NewChat({
   });
 
   const defaultAgent = agents.find((agent) => agent.name === MYRA_SOURCE_CONFIG.displayName);
-  const chosen = agents.find((agent) => agent.runId === selected) ?? defaultAgent ?? agents[0];
+  const chosen = agents.find((agent) => agent.id === selected) ?? defaultAgent ?? agents[0];
   const error: unknown = start.error ?? agentsQuery.error;
+  const isLive = chosen?.liveAddress !== null && chosen?.liveAddress !== undefined;
 
   return (
     <PageShell width="prose" className="page-fill">
@@ -98,12 +112,12 @@ function NewChat({
       <label className="chat-agent-picker">
         <span>Agent</span>
         <Select
-          value={chosen?.runId ?? ""}
+          value={chosen?.id ?? ""}
           aria-label="Agent"
           onChange={(event) => setSelected(event.target.value)}
         >
           {agents.map((agent) => (
-            <option key={agent.runId} value={agent.runId}>
+            <option key={agent.id} value={agent.id}>
               {agent.name}
             </option>
           ))}
@@ -118,8 +132,13 @@ function NewChat({
         <p className="chat-thread-error">{errorText(error)}</p>
       )}
       <Composer
-        placeholder="Message your agent — or @tag one"
+        placeholder={
+          isLive
+            ? `Message ${chosen?.name ?? MYRA_SOURCE_CONFIG.displayName}`
+            : `${chosen?.name ?? MYRA_SOURCE_CONFIG.displayName} is starting…`
+        }
         busy={start.isPending}
+        disabled={!isLive}
         onSend={(text) => {
           const agent = agentFromMention(text, agents) ?? chosen;
           if (agent === undefined) return;
@@ -143,6 +162,9 @@ function ChatTranscript({
   const chatQuery = useQuery({
     queryKey: chatKeys.one(tenantId, chatId),
     queryFn: () => readChat(tenantId, chatId),
+    // The agent may be mid-redeploy with no live run; keep polling until
+    // one comes up so the composer unlocks on its own.
+    refetchInterval: (query) => (query.state.data?.agent.liveAddress === null ? 3000 : false),
   });
   const chat = chatQuery.data;
 
@@ -201,8 +223,13 @@ function ChatTranscript({
       </div>
       {reply.error === null ? null : <p className="chat-thread-error">{errorText(reply.error)}</p>}
       <Composer
-        placeholder={`Reply to ${chat.agentName}`}
+        placeholder={
+          chat.agent.liveAddress === null
+            ? `${chat.agentName} is starting…`
+            : `Message ${chat.agentName}`
+        }
         busy={reply.isPending}
+        disabled={chat.agent.liveAddress === null}
         onSend={(text) => reply.mutate(text)}
       />
     </PageShell>
