@@ -34,14 +34,21 @@ import { ShellChromeProvider } from "./shell/shell-chrome-provider";
 function OnboardingGate({
   navigate,
   user,
+  onSignOut,
 }: {
   readonly navigate: Navigate;
   readonly user: SessionUser;
+  readonly onSignOut: () => void;
 }) {
+  // The provider step's hub calls are queries and mutations too, so
+  // onboarding needs its own client just like the shell does.
+  const queryClient = useMemo(() => createAppQueryClient(onSignOut), [onSignOut]);
   return (
-    <NavigationProvider navigate={navigate}>
-      <OnboardingPage user={user} />
-    </NavigationProvider>
+    <QueryClientProvider client={queryClient}>
+      <NavigationProvider navigate={navigate}>
+        <OnboardingPage user={user} />
+      </NavigationProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -159,7 +166,7 @@ export function App({
           return <Redirect to="/" from={path} navigate={navigate} />;
         }
         if (path === ONBOARDING_PATH) {
-          return <OnboardingGate navigate={navigate} user={session.user} />;
+          return <OnboardingGate navigate={navigate} user={session.user} onSignOut={onSignOut} />;
         }
         return <Shell path={path} navigate={navigate} user={session.user} onSignOut={onSignOut} />;
     }
