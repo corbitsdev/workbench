@@ -98,6 +98,8 @@ export function buildMyraDefinitionJson(
 ): unknown {
   return {
     id: ASSISTANT_WORKFLOW_ID,
+    // `to` only feeds the deploy-time mail.address/mail.send grants; Myra is
+    // actually reached at her run address, minted at deploy time.
     triggers: [{ type: "mail", to: triggerAddress }],
     steps: {
       [ASSISTANT_STEP_ID]: {

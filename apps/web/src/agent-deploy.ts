@@ -91,6 +91,8 @@ export function buildAgentDefinitionJson(args: {
   const stepId = "run";
   return {
     id: args.slug,
+    // `to` only feeds the deploy-time mail.address/mail.send grants; it is
+    // not how mail reaches this agent — that happens at its run address.
     triggers: [{ type: "mail", to: args.triggerAddress }],
     steps: {
       [stepId]: {
@@ -253,6 +255,8 @@ export async function deployAgentSource(
   const workflowJson = buildAgentDefinitionJson({
     slug,
     systemPrompt,
+    // Grant configuration only, not a routable address: the hub mints the
+    // agent's real address (its run address) at deploy time.
     triggerAddress: `${slug}@${tenant.domain}`,
     declaredSources: offering.declaredSources,
   });
