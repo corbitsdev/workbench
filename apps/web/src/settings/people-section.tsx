@@ -1,11 +1,5 @@
-// The "People" settings section: every human (`kind: "user"`) principal on
-// this bench, with suspend/reactivate/remove/role actions over the native
-// `/api/tenants/:tenantId/principals` and `/roles` routes. Agent and
-// workflow principals are machine identities, not people to manage here —
-// Roles/Grants sections list every kind since those assign to machines
-// too. Never renders a raw principal id or a raw agent refId — see
-// `identity.ts`. New humans join only when an operator creates them
-// through native APIs.
+// Agent/workflow principals are machine identities, not people to manage
+// here — Roles/Grants list every kind since those assign to machines too.
 
 import {
   Badge,

@@ -1,13 +1,5 @@
-// Whether the People/Roles/Grants/Credentials sections belong in the
-// settings nav at all, decided the way the rest of this surface's og
-// pages already gate access: never a disabled tab, just an absent one.
-// There's no capability listing to read this off of, so this probes the
-// one grant-checked route that requires no grant of its own —
-// `evaluate` — for the resource each section is built on.
-// A 200 whose effect is not `allow` is an authenticated deny. A thrown
-// probe (network, 5xx) is `error`, never `denied` — collapsing those
-// together made the gated nav vanish as if the principal were
-// unauthorized.
+// A thrown probe (network, 5xx) is `error`, never `denied` — collapsing
+// those together made the gated nav vanish as if unauthorized.
 
 import { evaluate } from "./tenancy-api";
 

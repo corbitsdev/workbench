@@ -1,8 +1,3 @@
-// The People/Roles/Grants sections' one seam to Interchange's native
-// tenancy routes (see vendor/intx/hub-api/src/routes/{principals,roles,
-// grants}.ts). Every fetch goes through a function here, and every response
-// is parsed with an arktype schema from `@intx/types` at the boundary — the
-// same convention `@/bench`'s api.ts already holds.
 
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
@@ -93,10 +88,8 @@ export function removePrincipal(tenantId: string, principalId: string): Promise<
 
 export type InviteMemberInput = typeof InviteMember.infer;
 
-/** Invites an existing platform user to this tenant by email over the
- * stock `/members/invite` route — creates an `invited`-status principal
- * and optionally assigns a role. The invited user must already have an
- * account; there is no separate invite-by-email-only flow. */
+// The invited user must already have an account — no invite-by-email-only
+// flow exists.
 export function inviteMember(tenantId: string, input: InviteMemberInput): Promise<Principal> {
   return request(`/api/tenants/${tenantId}/members/invite`, PrincipalResponse, {
     method: "POST",
@@ -204,12 +197,8 @@ export function revokeGrant(tenantId: string, grantId: string): Promise<void> {
   });
 }
 
-/**
- * Probes whether the signed-in principal can act on a resource — the one
- * grant-checked route that itself requires no grant (see the tenancy
- * inventory), so it doubles as the permission check that decides whether
- * People/Roles/Grants show up in the settings nav at all.
- */
+// The one grant-checked route that itself requires no grant, so it
+// doubles as the check deciding whether People/Roles/Grants show up.
 export function evaluate(
   tenantId: string,
   principalId: string,

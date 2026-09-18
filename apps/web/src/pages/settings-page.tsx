@@ -1,11 +1,5 @@
-// Thin mount of `@/settings`'s shell: the package owns the section
-// registry (Account / Everyone groups, icons, tenancy gates — see
-// `resolveSettingsSectionGroups`); this file only adapts the app's
-// bench-selection state (see ../bench-context.tsx) and the URL into the
-// shape the package expects. `/settings` defaults to the first allowed
-// section; `/settings/:section` deep-links directly to it. The section nav
-// renders here in the stage, beside the active section (`settings-nav.tsx`)
-// — master-detail, the list is never repeated in the section panel.
+// Thin mount: this file only adapts the app's bench-selection state and
+// the URL into the shape `@/settings`'s shell expects.
 
 import { flattenSettingsSections, resolveActiveSection, SettingsShell } from "@/settings";
 import { PageShell } from "@corbits/react-ui";
@@ -41,13 +35,8 @@ export function SettingsRoute({
     activeSection === undefined ? null : settingsEntityIdFromPath(path, activeSection.id);
   const requestedSectionExists =
     requestedId !== null && sections.some((section) => section.id === requestedId);
-  // A gated section (People/Roles/Grants/Credentials) is absent from
-  // `sections` while its probe is still resolving, same as when it's
-  // genuinely denied — wait for every gate to settle before treating a
-  // miss as final, or a deep link to an about-to-be-allowed section would
-  // bounce away before its probe finishes. `error` is settled: the
-  // registry withholds the section and the nav shows a couldn't-check
-  // state rather than pretending the principal is unauthorized.
+  // Wait for every gate to settle before treating a miss as final, or a
+  // deep link to an about-to-be-allowed section would bounce away early.
   const accessSettled =
     access.people !== "loading" &&
     access.roles !== "loading" &&
