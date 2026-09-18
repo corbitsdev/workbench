@@ -2156,6 +2156,14 @@ select:disabled,
   color: var(--muted-foreground);
 }
 
+/* Inline validation inside a connect form (e.g. an Ollama model Ollama
+   doesn't actually report) — same treatment as `.chat-thread-error`. */
+.onboarding-inline-error {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  color: var(--destructive);
+}
+
 /* The secondary three providers, tucked behind a subtle expander so the
    primary six-card row is what a person sees first — same square-cornered
    chrome as the rest of the wizard, not a popover. Full-width so it reads
