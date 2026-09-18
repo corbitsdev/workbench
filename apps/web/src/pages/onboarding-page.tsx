@@ -26,6 +26,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ensurePrimaryTenant, runPortableClientBootstrap } from "../client-bootstrap";
 import { createFetchStockHub, findOwnedTenants } from "../needs-converge";
 import { deployMyraSource } from "../myra-deploy";
+import { publishToolPackageRegistry } from "../tools/registry-publish";
 import { useNavigate } from "../navigation";
 import { triggerFirstLoginProvisioning } from "../onboarding";
 import { OnboardingLayout } from "../onboarding/onboarding-layout";
@@ -152,20 +153,27 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     tenantDomain: string,
     offering: ExistingOffering,
   ): Promise<void> {
-    return deployMyraSource({
-      tenantId,
-      tenantDomain,
-      sourceOfferingIds: offering.sourceOfferingIds,
-      defaultSourceOfferingId: offering.defaultSourceOfferingId,
-    }).then(
-      (myraDeploy) => setState({ phase: "installing", myraDeploy }),
-      (error: unknown) => {
-        setState({
-          phase: "error",
-          message: error instanceof Error ? error.message : "Publishing Myra's source hit a snag.",
-        });
-      },
-    );
+    // Myra's pins resolve from the tenant registry, so the tool packages
+    // must be there before her definition deploys.
+    return publishToolPackageRegistry(tenantId)
+      .then(() =>
+        deployMyraSource({
+          tenantId,
+          tenantDomain,
+          sourceOfferingIds: offering.sourceOfferingIds,
+          defaultSourceOfferingId: offering.defaultSourceOfferingId,
+        }),
+      )
+      .then(
+        (myraDeploy) => setState({ phase: "installing", myraDeploy }),
+        (error: unknown) => {
+          setState({
+            phase: "error",
+            message:
+              error instanceof Error ? error.message : "Publishing Myra's source hit a snag.",
+          });
+        },
+      );
   }
 
   // Step 4: the installer itself, run once a `myraDeploy` is in hand. A
