@@ -34,7 +34,6 @@ function scheduled(
     assetId: "ast_def",
     name: "Daily dig",
     tenantId: "t1",
-    cron: "0 9 * * *",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     ...partial,
