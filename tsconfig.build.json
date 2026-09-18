@@ -8,13 +8,7 @@
       "path": "./apps/sidecar/tsconfig.src.json"
     },
     {
-      "path": "./packages/agent-events/tsconfig.src.json"
-    },
-    {
       "path": "./packages/approvals/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/artifact-ui/tsconfig.src.json"
     },
     {
       "path": "./packages/collections/tsconfig.src.json"
@@ -27,9 +21,6 @@
     },
     {
       "path": "./packages/inference-catalog/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/tool-registry-publish/tsconfig.src.json"
     },
     {
       "path": "./packages/url-path/tsconfig.src.json"

@@ -15,7 +15,7 @@ import { AssetServiceError } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
 
-import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
+import { CORBITS_TOOLS_REGISTRY } from "../src/tool-registry";
 
 import {
   buildAgentDefinitionWorkflow,

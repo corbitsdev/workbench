@@ -25,7 +25,7 @@ import { agentDefinitionSourceTree, AGENT_DEFINITION_ENTRY_PATH } from "../src/d
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import { definitionFrom, SOURCE_TREE_PATHS } from "./source-tree";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
-import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
+import { CORBITS_TOOLS_REGISTRY } from "../src/tool-registry";
 
 const TENANT_ID = "tnt_1";
 const RUN_ID = "run_1";

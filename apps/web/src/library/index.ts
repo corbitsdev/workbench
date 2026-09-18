@@ -1,4 +1,4 @@
-export * from "@corbits/artifact-ui/types";
+export * from "./artifact-summary";
 export { sortArtifacts, filterArtifacts } from "./sort-filter";
 export type { ArtifactSort } from "./sort-filter";
 export { ArtifactCard } from "./artifact-card";
@@ -9,8 +9,8 @@ export {
   libraryKindSegmentFromPath,
   libraryArtifactPath,
   libraryArtifactIdFromPath,
-} from "@corbits/artifact-ui/kind-filter";
-export type { LibraryKindSegment } from "@corbits/artifact-ui/kind-filter";
+} from "./kind-filter";
+export type { LibraryKindSegment } from "./kind-filter";
 export { workflowRunIdFromSource } from "./provenance";
 export {
   ARTIFACT_RENDERER_KINDS,

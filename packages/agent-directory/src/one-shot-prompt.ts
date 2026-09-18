@@ -4,7 +4,7 @@
 // soon as the run starts; this module turns the event stream into an
 // awaitable promise for a caller that has no later-delivery surface.
 import { and, eq } from "drizzle-orm";
-import { connectorReplyContent, messageRunEnded } from "@corbits/agent-events";
+import { connectorReplyContent, messageRunEnded } from "./agent-events";
 import { reportError } from "@corbits/error-sink";
 import {
   deliverWhenRoutable,

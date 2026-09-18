@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { ArtifactCard } from "../../src/library/artifact-card";
-import type { ArtifactSummary } from "@corbits/artifact-ui/types";
+import type { ArtifactSummary } from "../../src/library/artifact-summary";
 
 function artifact(overrides: Partial<ArtifactSummary> & { readonly id: string }): ArtifactSummary {
   return {

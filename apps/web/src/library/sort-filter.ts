@@ -1,4 +1,4 @@
-import type { ArtifactSummary } from "@corbits/artifact-ui/types";
+import type { ArtifactSummary } from "./artifact-summary";
 
 export type ArtifactSort = "newest" | "oldest";
 

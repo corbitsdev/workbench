@@ -6,8 +6,9 @@
 // package's names are checked here against the strictest limit.
 import { describe, expect, test } from "bun:test";
 import path from "node:path";
+import { existsSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { encodeToolName } from "@intx/inference";
-import { CORBITS_TOOL_PACKAGE_DIRS } from "./registry";
 
 const OPENAI_LIMIT = { provider: "openai", maxLength: 64 } as const;
 
@@ -24,10 +25,27 @@ function isBundle(value: unknown): value is Bundle {
   );
 }
 
+const TOOLS_ROOT = path.resolve(import.meta.dir, "../../../../tools");
+
+async function toolPackageDirs(): Promise<string[]> {
+  const entries = await readdir(TOOLS_ROOT, { withFileTypes: true });
+  return entries
+    .filter(
+      (entry) =>
+        entry.isDirectory() && existsSync(path.join(TOOLS_ROOT, entry.name, "package.json")),
+    )
+    .map((entry) => entry.name);
+}
+
 describe("corbits tool packages fit the 64-char OpenAI-compatible tool-name cap", () => {
-  for (const dir of CORBITS_TOOL_PACKAGE_DIRS) {
-    test(path.basename(dir), async () => {
-      const mod = (await import(path.join(dir, "src", "index.ts"))) as Record<string, unknown>;
+  test("every tools/* package's qualified tool names encode within the cap", async () => {
+    const dirs = await toolPackageDirs();
+    expect(dirs.length).toBeGreaterThan(0);
+    for (const dir of dirs) {
+      const mod = (await import(path.join(TOOLS_ROOT, dir, "src", "index.ts"))) as Record<
+        string,
+        unknown
+      >;
       const bundles = Object.values(mod).filter(isBundle);
       expect(bundles.length).toBeGreaterThan(0);
       for (const bundle of bundles) {
@@ -36,6 +54,6 @@ describe("corbits tool packages fit the 64-char OpenAI-compatible tool-name cap"
           expect(() => encodeToolName(qualified, OPENAI_LIMIT)).not.toThrow();
         }
       }
-    });
-  }
+    }
+  });
 });
