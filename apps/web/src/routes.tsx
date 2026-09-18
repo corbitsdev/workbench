@@ -63,8 +63,8 @@ const MissionControlRoute = lazy(async () => ({
 const NewWorkbenchPickerRoute = lazy(async () => ({
   default: (await import("./pages/new-workbench-picker")).NewWorkbenchPickerRoute,
 }));
-const ChatPage = lazy(async () => ({
-  default: (await import("./pages/chat-page")).ChatPage,
+const WorkbenchRoomRoute = lazy(async () => ({
+  default: (await import("./pages/workbench-room-page")).WorkbenchRoomRoute,
 }));
 const ChatThreadRoute = lazy(async () => ({
   default: (await import("./pages/chat-thread-page")).ChatThreadRoute,
@@ -275,9 +275,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: WORKBENCH_PATH_PREFIX,
     label: "Workbenches",
     icon: <ChatCircle />,
-    render: (path: string, navigate: (to: string) => void) => (
-      <ChatPage path={path} navigate={navigate} />
-    ),
+    render: (path: string) => <WorkbenchRoomRoute path={path} />,
   },
   {
     path: "/inbox",

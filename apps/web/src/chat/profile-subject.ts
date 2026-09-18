@@ -3,7 +3,12 @@
 
 import { isAgentAddress } from "./wire/mentions";
 
-import type { ParticipantRecord } from "./api";
+/** The identity fields a profile card needs — any participant row with an
+ * address and a handle. */
+export type ProfileParticipant = {
+  readonly address: string;
+  readonly handle: string;
+};
 
 export type ProfileSubject = {
   readonly kind: "agent" | "member";
@@ -25,7 +30,7 @@ function initialsOf(source: string): string {
   return initials.length > 0 ? initials : "?";
 }
 
-export function profileSubjectFromParticipant(participant: ParticipantRecord): ProfileSubject {
+export function profileSubjectFromParticipant(participant: ProfileParticipant): ProfileSubject {
   const isAgent = isAgentAddress(participant.address);
   const displayName = isAgent ? `@${participant.handle}` : participant.handle;
   return {

@@ -3,11 +3,7 @@
 // whose mock counterpart had no working backend (mark-read, mute, archive,
 // share) simply has no builder and so contributes no items.
 
-import {
-  patchWorkbenchSettings,
-  profileSubjectFromParticipant,
-  WORKBENCHES_MUTATED_EVENT,
-} from "@/chat";
+import { profileSubjectFromParticipant } from "@/chat";
 import type { ProfileSubject } from "@/chat";
 import { contextMenuItem, contextMenuSeparator } from "@/shell/context-menu/lib";
 import type { ContextMenu, ContextMenuEntry } from "@/shell/context-menu/lib";
@@ -20,8 +16,6 @@ import {
   MoonStars,
   PencilSimple,
   PlayCircle,
-  PushPin,
-  PushPinSlash,
   SignOut,
   SlidersHorizontal,
   UserCircle,
@@ -64,7 +58,6 @@ async function copyLink(path: string, label: string): Promise<void> {
 
 function workbenchMenu(
   target: Extract<ShellContextMenuTarget, { type: "workbench" }>,
-  actions: ShellContextMenuActions,
 ): ContextMenu {
   const entries: ContextMenuEntry[] = [
     contextMenuItem({
@@ -74,34 +67,6 @@ function workbenchMenu(
       onSelect: () => requestWorkbenchRename(target.id),
     }),
   ];
-  if (actions.tenantId !== null) {
-    const tenantId = actions.tenantId;
-    entries.push(
-      contextMenuItem({
-        id: "pin",
-        label: target.pinned ? "Unpin workbench" : "Pin workbench",
-        icon: target.pinned ? <PushPinSlash /> : <PushPin />,
-        onSelect: () => {
-          void patchWorkbenchSettings(tenantId, target.id, {
-            "chat/pinned": !target.pinned,
-          }).then(
-            () => {
-              // Settings persist without this, but the sidebar list caches
-              // its workbench fetch — without a mutation signal the pin
-              // has zero visible effect (no reorder, no glyph refresh).
-              window.dispatchEvent(
-                new CustomEvent(WORKBENCHES_MUTATED_EVENT, {
-                  detail: { tenantId },
-                }),
-              );
-              toast(target.pinned ? "Workbench unpinned" : "Workbench pinned");
-            },
-            () => toast("Couldn't update the workbench"),
-          );
-        },
-      }),
-    );
-  }
   entries.push(
     contextMenuSeparator,
     contextMenuItem({
@@ -287,7 +252,7 @@ export function shellContextMenuFor(
 ): ContextMenu {
   switch (target.type) {
     case "workbench":
-      return workbenchMenu(target, actions);
+      return workbenchMenu(target);
     case "profile":
       return profileMenu(target, actions);
     case "routine":

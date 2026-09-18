@@ -335,3 +335,175 @@ export function subscribeToInbox(tenantId: string, onChange: () => void): () => 
     source.close();
   };
 }
+
+// ---------------------------------------------------------------------
+// Rooms: a workbench is a child tenant, and its room conversation is that
+// tenant's mailbox. Reads are the same stock mailbox routes as a chat,
+// scoped to the child tenant id; participants are the child tenant's
+// principals.
+// ---------------------------------------------------------------------
+
+export type RoomParticipant = {
+  readonly id: string;
+  readonly kind: "person" | "agent";
+  readonly name: string;
+  readonly address: string;
+  /** Present for agents: the deployment's anchor run, what a send is
+   * addressed to. */
+  readonly runId?: string;
+};
+
+const PrincipalPage = type({
+  data: type({
+    id: "string",
+    kind: "string",
+    refId: "string",
+    displayName: "string",
+    "email?": "string",
+    status: "string",
+  }).array(),
+  nextCursor: "string | null",
+});
+
+/** Everyone in the room: the child tenant's principals plus its live
+ * deployments' run addresses. A deployment's workflow principal only
+ * appears after its first run, so the run listing is what makes an agent
+ * addressable from the moment it is deployed into the room. */
+export async function listRoomParticipants(tenantId: string): Promise<readonly RoomParticipant[]> {
+  const [page, runs] = await Promise.all([
+    getJson(`/api/tenants/${encodeURIComponent(tenantId)}/principals?limit=100`, PrincipalPage),
+    listChatAgents(tenantId),
+  ]);
+  const people = page.data
+    .filter((principal) => principal.status !== "removed" && principal.kind === "user")
+    .map((principal): RoomParticipant => ({
+      id: principal.id,
+      kind: "person",
+      name: principal.displayName,
+      address: principal.email ?? principal.refId,
+    }));
+  const agents = runs.map((run): RoomParticipant => ({
+    id: run.runId,
+    kind: "agent",
+    name: run.name,
+    address: run.address,
+    runId: run.runId,
+  }));
+  return [...people, ...agents];
+}
+
+export type RoomMessage = {
+  readonly id: string;
+  /** The turn's Message-ID: what a reply in its sub-thread threads onto. */
+  readonly messageId: string;
+  readonly author: "me" | "other";
+  readonly authorName: string;
+  readonly body: string;
+  readonly at: string;
+  /** Native in-reply-to children: the room's sub-threads. */
+  readonly replies: readonly RoomMessage[];
+};
+
+function authorName(address: string): string {
+  const local = address.split("@")[0]?.replace(/^.*</, "") ?? address;
+  return local.length > 0 ? local : address;
+}
+
+type RoomTurn = {
+  readonly id: string;
+  readonly messageId: string;
+  readonly parentId: string | undefined;
+  readonly author: "me" | "other";
+  readonly authorName: string;
+  readonly body: string;
+  readonly at: string;
+};
+
+/** One folder of the room mailbox: the person's own turns live in `Sent`,
+ * everyone else's in `INBOX`. Unlike a chat, a room keeps every message —
+ * a person-to-person turn is as much part of the room as an agent's. */
+async function readRoomFolder(tenantId: string, folder: "INBOX" | "Sent"): Promise<RoomTurn[]> {
+  const page = await getJson(`${mailboxPath(tenantId)}?folder=${folder}&limit=100`, InboxPage);
+  return page.messages.map((message) => ({
+    id: `${folder}:${String(message.uid)}`,
+    messageId: message.envelope.messageId,
+    parentId: message.envelope.inReplyTo ?? message.envelope.references.at(-1),
+    author: folder === "Sent" ? ("me" as const) : ("other" as const),
+    authorName: folder === "Sent" ? "You" : authorName(message.envelope.from),
+    body: frameBody(message.raw),
+    at: message.envelope.date,
+  }));
+}
+
+/** The room timeline: every root turn oldest first, its in-reply-to chain
+ * nested beneath it as the room's sub-threads. */
+export async function readRoom(tenantId: string): Promise<readonly RoomMessage[]> {
+  const [inbox, sent] = await Promise.all([
+    readRoomFolder(tenantId, "INBOX"),
+    readRoomFolder(tenantId, "Sent"),
+  ]);
+  const turns = [...inbox, ...sent].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  const known = new Set(turns.map((turn) => turn.messageId));
+  const children = new Map<string, RoomTurn[]>();
+  const roots: RoomTurn[] = [];
+  for (const turn of turns) {
+    const parentId = turn.parentId;
+    if (parentId === undefined || !known.has(parentId)) {
+      roots.push(turn);
+      continue;
+    }
+    children.set(parentId, [...(children.get(parentId) ?? []), turn]);
+  }
+  const build = (turn: RoomTurn): RoomMessage => ({
+    id: turn.id,
+    messageId: turn.messageId,
+    author: turn.author,
+    authorName: turn.authorName,
+    body: turn.body,
+    at: turn.at,
+    replies: (children.get(turn.messageId) ?? []).map(build),
+  });
+  return roots.map(build);
+}
+
+/** The one send seam for a room: a single mailbox send addressed to every
+ * agent in it. The hub triggers each addressed run and keeps the Sent
+ * copy, so the person's own turn comes back out of the mailbox like any
+ * other. */
+export async function sendToRoom(input: {
+  readonly roomTenantId: string;
+  readonly agents: readonly RoomParticipant[];
+  readonly content: string;
+  /** The turn this reply threads onto — a sub-thread's parent. */
+  readonly inReplyTo?: string;
+}): Promise<void> {
+  const to = input.agents.map((agent) => agent.address).filter((address) => address.includes("@"));
+  if (to.length === 0) {
+    throw new ChatApiError("No agent is in this workbench yet, so there is nobody to send to.");
+  }
+  let response: Response;
+  try {
+    response = await fetch(`${mailboxPath(input.roomTenantId)}/send`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        to,
+        subject: input.content.slice(0, 60),
+        body: input.content,
+        ...(input.inReplyTo !== undefined ? { inReplyTo: input.inReplyTo } : {}),
+      }),
+    });
+  } catch (cause) {
+    throw new ChatApiError(cause instanceof Error ? cause.message : String(cause));
+  }
+  if (!response.ok) {
+    throw new ChatApiError(
+      `The workbench could not be reached (${String(response.status)}).`,
+      response.status,
+    );
+  }
+  const parsed = SendAccepted(await response.json().catch(() => undefined));
+  if (parsed instanceof type.errors) {
+    throw new ChatApiError(`Unexpected send response: ${parsed.summary}`);
+  }
+}

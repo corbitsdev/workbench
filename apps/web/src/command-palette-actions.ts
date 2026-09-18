@@ -22,9 +22,7 @@ import { createPendingDialogRequest } from "@/shell/layout";
 import { CHAT_STRINGS } from "@/chat";
 import { WORKBENCH_PATH_PREFIX } from "./workbench-path";
 import { NEW_WORKBENCH_PATH } from "./routes";
-import { listAgentDefinitions } from "./agents-api";
-import { openAgentDmChat } from "./agent-dm-launch";
-import { findMyraDefinition } from "./myra-workbench";
+import { NEW_CHAT_PATH } from "./chat-path";
 import { requestLibraryUpload } from "./library-upload";
 
 export const NEW_SKILL_EVENT = "workbench:skills:create";
@@ -142,10 +140,8 @@ export async function runActionCommand(
       return;
     }
     case "talk-to-myra": {
-      if (ctx.tenantId === null) return;
-      const myra = findMyraDefinition(await listAgentDefinitions(ctx.tenantId));
-      if (myra === undefined) return;
-      await openAgentDmChat(ctx.tenantId, myra.id, ctx.navigate);
+      // A chat with Myra is a mail thread now, composed on /chats/new.
+      ctx.navigate(NEW_CHAT_PATH);
       return;
     }
     case "go-workbenches": {
