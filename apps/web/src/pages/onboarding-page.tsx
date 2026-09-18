@@ -11,7 +11,7 @@
 //      tenant already resolves one (inherited, or a previous run of
 //      this step), skip straight past; otherwise ask the operator to
 //      connect exactly one provider credential (`ProviderConnectStep`);
-//   3. publish Myra's tarball-sourced deploy input for that offering
+//   3. push Myra's source tree and build its deploy input for that offering
 //      (`deployMyraSource`) and hand it to `bootstrapClientSession` as
 //      `myraDeploy`.
 //
