@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { headlineFor } from "./headline";
+import { argumentsSummaryFor, headlineFor } from "./headline";
 
 test("falls back to a generic label when the tool definition carries neither", () => {
   expect(headlineFor({}, {})).toBe("Run a tool");
@@ -87,4 +87,40 @@ test("workflow_deploy falls back to the bare assetId when packageName is missing
       { assetId: "asset_daily_digest", commitSha: "abcdef1234567890" },
     ),
   ).toBe("Deploy workflow asset_daily_digest @ abcdef1 — tools: none declared");
+});
+
+test("argumentsSummaryFor: write_file reads as its path plus a content preview", () => {
+  expect(
+    argumentsSummaryFor(
+      { name: "write_file" },
+      { path: "/reports/summary.md", content: "# Q3 recap\n\nRevenue grew..." },
+    ),
+  ).toBe('/reports/summary.md: "# Q3 recap\n\nRevenue grew..."');
+});
+
+test("argumentsSummaryFor: write_file truncates a long content preview to ~120 characters", () => {
+  const content = "x".repeat(200);
+  const summary = argumentsSummaryFor({ name: "write_file" }, { path: "/a.txt", content });
+  expect(summary).toBe(`/a.txt: "${"x".repeat(120)}…"`);
+});
+
+test("argumentsSummaryFor: write_file with no content shows just the path", () => {
+  expect(argumentsSummaryFor({ name: "write_file" }, { path: "/a.txt" })).toBe("/a.txt");
+});
+
+test("argumentsSummaryFor: other tools render a compact key: value list", () => {
+  expect(
+    argumentsSummaryFor({ name: "send_email" }, { to: "alice@example.com", subject: "Hi" }),
+  ).toBe("to: alice@example.com, subject: Hi");
+});
+
+test("argumentsSummaryFor: truncates a long generic argument list", () => {
+  const summary = argumentsSummaryFor({ name: "send_email" }, { body: "y".repeat(200) });
+  expect(summary?.length).toBe(121); // 120 chars + the ellipsis
+  expect(summary?.endsWith("…")).toBe(true);
+});
+
+test("argumentsSummaryFor: undefined when there are no arguments to show", () => {
+  expect(argumentsSummaryFor({ name: "send_email" }, {})).toBeUndefined();
+  expect(argumentsSummaryFor({ name: "send_email" }, null)).toBeUndefined();
 });

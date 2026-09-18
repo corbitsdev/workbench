@@ -40,6 +40,17 @@ export function ApprovalRow({
       <div>
         <span className="workbench-info-cell-primary">{item.headline}</span>
         <br />
+        {item.toolName !== undefined && (
+          <>
+            {/* Arguments are untrusted agent output: rendered as plain text
+             * nodes only, never as markup. */}
+            <span className="workbench-info-cell-context">
+              {item.toolName}
+              {item.argumentsSummary !== undefined ? `: ${item.argumentsSummary}` : ""}
+            </span>
+            <br />
+          </>
+        )}
         <span className="workbench-info-cell-context">
           {item.agentName} · {formatRelativeTime(item.createdAt)}
         </span>

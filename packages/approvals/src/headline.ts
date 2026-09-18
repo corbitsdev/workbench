@@ -73,3 +73,67 @@ export function headlineFor(toolDefinition: unknown, toolArguments: unknown): st
       : undefined;
   return title === undefined ? headline : `${headline}: "${title}"`;
 }
+
+/** The bare tool name off a toolDefinition snapshot, for a row that wants to
+ * name the call apart from its (possibly generic) description. */
+export function toolNameFor(toolDefinition: unknown): string | undefined {
+  return typeof toolDefinition === "object" && toolDefinition !== null
+    ? stringField(toolDefinition, "name")
+    : undefined;
+}
+
+const ARGUMENT_PREVIEW_LIMIT = 120;
+
+function truncate(text: string, limit = ARGUMENT_PREVIEW_LIMIT): string {
+  return text.length > limit ? `${text.slice(0, limit)}…` : text;
+}
+
+function formatArgumentValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value === null || value === undefined) return "";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+// `write_file`'s call is read as its target path plus a preview of what it
+// writes there -- the two facts a person approving it actually needs, not
+// the raw argument bag.
+function writeFileArgumentsSummary(toolArguments: object): string | undefined {
+  const path = stringField(toolArguments, "path");
+  if (path === undefined) return undefined;
+  const content = (toolArguments as Record<string, unknown>).content;
+  const preview = typeof content === "string" ? `: "${truncate(content)}"` : "";
+  return `${path}${preview}`;
+}
+
+const ARGUMENT_SUMMARY_RENDERERS: Readonly<
+  Record<string, (toolArguments: object) => string | undefined>
+> = {
+  write_file: writeFileArgumentsSummary,
+};
+
+function genericArgumentsSummary(toolArguments: object): string | undefined {
+  const entries = Object.entries(toolArguments as Record<string, unknown>);
+  if (entries.length === 0) return undefined;
+  return truncate(
+    entries.map(([key, value]) => `${key}: ${formatArgumentValue(value)}`).join(", "),
+  );
+}
+
+/** A compact, human-scannable rendering of a call's arguments -- a
+ * registered per-tool renderer wins when it can (e.g. `write_file`'s path +
+ * content preview), else a truncated `key: value` list. `undefined` when
+ * there is nothing to show, so a caller can render "tool name only". */
+export function argumentsSummaryFor(
+  toolDefinition: unknown,
+  toolArguments: unknown,
+): string | undefined {
+  if (typeof toolArguments !== "object" || toolArguments === null) return undefined;
+  const toolName = toolNameFor(toolDefinition);
+  const renderer = toolName !== undefined ? ARGUMENT_SUMMARY_RENDERERS[toolName] : undefined;
+  return renderer?.(toolArguments) ?? genericArgumentsSummary(toolArguments);
+}
