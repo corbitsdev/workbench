@@ -6,11 +6,17 @@ destroys one — Interchange's `SidecarProvisioner` contract.
 
 ## The shipped backends
 
-| id        | Where a sidecar runs                    | Isolation                                      | Requires                                                | Package                        |
-| --------- | ---------------------------------------- | ----------------------------------------------- | -------------------------------------------------------- | ------------------------------- |
-| `process` | A child process of the hub, same host    | Process only — shared kernel, filesystem, user  | nothing                                                   | `packages/process-provisioner`  |
-| `docker`  | A container on the hub's host            | Container — own filesystem and network namespace | `DOCKER_PROVISIONER_IMAGE`, a local `docker` CLI          | `packages/docker-provisioner`   |
-| `e2b`     | A remote [E2B](https://e2b.dev) sandbox  | VM — separate machine                            | `E2B_API_KEY`, `E2B_TEMPLATE`, a publicly reachable hub   | `packages/e2b-sandbox-sidecar`  |
+| id        | Where a sidecar runs                    | Isolation                                      | Requires                                                | Module                                   |
+| --------- | ---------------------------------------- | ----------------------------------------------- | -------------------------------------------------------- | ----------------------------------------- |
+| `process` | A child process of the hub, same host    | Process only — shared kernel, filesystem, user  | nothing                                                   | `apps/hub/src/provisioners/process.ts`    |
+| `docker`  | A container on the hub's host            | Container — own filesystem and network namespace | `DOCKER_PROVISIONER_IMAGE`, a local `docker` CLI          | `apps/hub/src/provisioners/docker.ts`     |
+| `e2b`     | A remote [E2B](https://e2b.dev) sandbox  | VM — separate machine                            | `E2B_API_KEY`, `E2B_TEMPLATE`, a publicly reachable hub   | `apps/hub/src/provisioners/e2b.ts`        |
+
+The docker backend's sidecar image builds from `apps/sidecar-docker/`; the
+e2b backend's sandbox template builds from `apps/sidecar-e2b/template/`.
+Both are asset-only apps the hub does not import — `buildSidecarProvisioner`
+in `apps/hub/src/server.ts` imports the provisioner logic straight from
+`apps/hub/src/provisioners/`.
 
 `process` is the default: with `SIDECAR_PROVISIONERS` unset, the hub
 registers it alone, so one server runs many tenants with no operator
@@ -49,11 +55,12 @@ reaches its own rung and below, never above.
 
 ## Adding a backend
 
-1. Implement a `SidecarBackend` (copy `packages/process-provisioner`) —
-   idempotence, generation fencing, and destroy tombstones come from
-   `@corbits/sandbox-sidecar`'s shared core.
-2. Add its id to `SIDECAR_PROVISIONER_IDS` in `apps/hub/src/config.ts`,
+1. Implement a `SidecarBackend` (copy `apps/hub/src/provisioners/process.ts`)
+   — idempotence, generation fencing, and destroy tombstones come from
+   `apps/hub/src/provisioners/sandbox-sidecar.ts`'s shared core.
+2. Add a case to `buildSidecarProvisioner` in `apps/hub/src/server.ts`,
    with its own required settings parsed there.
-3. Add a case to `buildSidecarProvisioner` in `apps/hub/src/index.ts`.
+3. If the backend needs its own image or template assets, add them to a
+   new `apps/sidecar-<backend>/` app; the hub itself never imports it.
 
 No other hub surgery is needed.

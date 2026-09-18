@@ -80,13 +80,13 @@ import { createWorkflowAuthorRegistry, createWorkflowAuthorRoutes } from "@corbi
 import {
   createSidecarProvisioner as createE2BSidecarProvisioner,
   readProvisionerConfig as readE2BProvisionerConfig,
-} from "@corbits/e2b-sandbox-sidecar";
-import { createDockerSidecarProvisioner } from "@corbits/docker-provisioner";
+} from "./provisioners/e2b";
+import { createDockerSidecarProvisioner } from "./provisioners/docker";
 import {
   createProcessSidecarProvisioner,
   readProcessProvisionerConfig,
   type ProcessProvisionerRole,
-} from "@corbits/process-provisioner";
+} from "./provisioners/process";
 import {
   InlineContentStore,
   mountArtifacts,

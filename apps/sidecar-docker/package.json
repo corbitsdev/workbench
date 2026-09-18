@@ -1,0 +1,8 @@
+{
+  "name": "@workbench/sidecar-docker",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Docker image build for the docker SidecarProvisioner backend (apps/hub/src/provisioners/docker.ts)",
+  "license": "SEE LICENSE IN ../../LICENSE.md",
+  "type": "module"
+}
