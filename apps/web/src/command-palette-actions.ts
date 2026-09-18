@@ -44,8 +44,7 @@ export type ActionCommandId =
   | "toggle-theme"
   | "close-canvas"
   | "talk-to-myra"
-  | "go-workbenches"
-  | "go-insights";
+  | "go-workbenches";
 
 export type ActionCommand = {
   readonly id: ActionCommandId;
@@ -84,11 +83,6 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
     id: "go-workbenches",
     title: "Go to workbenches",
     subtitle: "Home · conversation list",
-  },
-  {
-    id: "go-insights",
-    title: "Go to insights",
-    subtitle: "Settings · still routable",
   },
 ];
 
@@ -146,10 +140,6 @@ export async function runActionCommand(
     }
     case "go-workbenches": {
       ctx.navigate(WORKBENCH_PATH_PREFIX);
-      return;
-    }
-    case "go-insights": {
-      ctx.navigate("/insights");
       return;
     }
   }
