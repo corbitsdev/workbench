@@ -24,3 +24,18 @@ knows, so this is what lets an agent hand a task to another agent in the
 workbench. The mail tools have no `cc` field, so the roster also tells
 agents to copy the person on a handoff by naming them as another `to`
 recipient.
+
+## Primary-thread root resolution
+
+`readHubSnapshot`'s caller resolves a workbench's primary-thread root from
+the recorded `primaryThreadMessageId`, falling back to `mail[0]` only for
+mail sent before that id existed. The mailbox list is assumed oldest-first;
+if the hub ever returns newest-first or unordered rows the fallback
+mistargets, so the recorded id stays authoritative.
+
+## Sub-thread fork replay
+
+`forkSubThread` treats a fork as already sent when parent + subject +
+recipients + body match a recorded row, returning its native Message-ID
+instead of resending. Rows recorded before recipients/body were stored
+match on parent + subject only, to preserve their exactly-once replay.

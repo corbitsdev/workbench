@@ -1,18 +1,7 @@
-// Convergence for the portable client manifest: stock writes only, after
-// gap checks. Group workbench creation sequence per workbench: stock
-// `POST /api/tenants { parentId }` → send the primary-thread first message
-// (the workbench's chat, only when the caller supplied its exact content)
-// → fork sub-threads as needed via `forkSubThread`. DMs are never created
-// here — they derive from participant-filtered threads over stock mail
-// snapshots the caller supplies, via `deriveDmThreads` in threads.ts.
-//
-// Creation idempotency rides native Message-IDs the hub stamps and returns:
-// the primary thread id is recorded on the child-tenant row and fork links
-// in the thread store, beside created ids — never a custom key. Reads stay
-// stock routes (mailbox list); writes stay stock routes (tenant create,
-// member invite, workflow deploy, run-mail send). Per-agent mailbox search
-// and full thread reads stay typed upstream gaps until the hub exposes
-// stock routes for them.
+// Stock writes only, after gap checks. Creation idempotency rides native
+// Message-IDs the hub stamps and returns — never a custom key. DMs are
+// never created here; they derive from participant-filtered threads via
+// `deriveDmThreads` in threads.ts.
 
 import { type } from "arktype";
 
@@ -90,18 +79,11 @@ export type StockHub = {
   listMyPrincipals(): Promise<MyMembership[]>;
   getTenant(id: string): Promise<HubTenant | null>;
   listPrincipals(tenantId: string): Promise<HubPrincipal[]>;
-  /** Omitting `parentId` mints a top-level tenant with the caller as its
-   * owner — the stock route the first-signup installer step uses to
-   * create the primary tenant; a workbench child tenant always supplies
-   * it. */
+  // Omitting `parentId` mints a top-level tenant with the caller as
+  // owner; a workbench child tenant always supplies it.
   createTenant(input: { name: string; slug: string; parentId?: string }): Promise<HubTenant>;
-  /**
-   * Invites by email and assigns `role` (a system role name, e.g.
-   * "member") in the same op — the stock invite route's `roleId` is the
-   * only way an invited principal gets any grant at all; without it the
-   * principal lands with zero roles and every subsequent read 403s
-   * (/ fix).
-   */
+  // `roleId` is the only way an invited principal gets any grant at all;
+  // without it every subsequent read 403s.
   inviteMember(tenantId: string, input: { email: string; role: string }): Promise<void>;
   deployWorkflow(tenantId: string, input: WorkflowDeployInput): Promise<void>;
   /** Whether a live (non-released, non-failed) deployment is anchored to
@@ -221,10 +203,8 @@ export type ConvergeReport = {
   primaryThreads: PrimaryThread[];
 };
 
-/** Ensures the group workbench child tenant exists (stock `POST
- * /api/tenants { parentId }` when the stored id no longer resolves) and
- * invites its email members. Returns the converged tenant id, whether it
- * was just created, and its stored record. */
+/** Re-resolves the stored tenant id before creating one — the store can
+ * point at a tenant the hub no longer has. */
 async function convergeWorkbenchTenant(
   hub: StockHub,
   store: ChildTenantStore,
@@ -258,10 +238,8 @@ async function convergeWorkbenchTenant(
   return { tenantId: created.id, created: true };
 }
 
-/** Sends the workbench's primary-thread first message — the workbench's
- * chat — exactly when the caller supplied its content and no native
- * Message-ID is recorded yet. A recorded id means the send already
- * happened: never resend, never mint a custom key. */
+/** A recorded Message-ID means the send already happened — never resend,
+ * never mint a custom key. */
 async function convergePrimaryThread(
   hub: StockHub,
   store: ChildTenantStore,
@@ -351,13 +329,8 @@ export async function convergeNeedsList(
     if (stored === undefined) continue;
     const mail = await hub.listRunMail({ tenantId: stored.tenantId });
     const grouped = deriveThreads(mail);
-    // Ordering assumption: the stock mailbox list returns rows oldest-first,
-    // so mail[0] is the primary-thread first message. The recorded
-    // primaryThreadMessageId (written at send time) is authoritative and this
-    // fallback only covers mail sent before the id was recorded; if the hub
-    // ever returns newest-first or unordered rows, the root mistargets and
-    // the real sub-threads misclassify — until the hub documents ordering,
-    // prefer the recorded id.
+    // The recorded id is authoritative; mail[0] is only a fallback for mail
+    // sent before it was recorded (see docs/chat-mail-threading.md).
     const rootMessageId = stored.primaryThreadMessageId ?? mail[0]?.messageId;
     if (rootMessageId === undefined) continue;
     primaryThreads.push({
@@ -388,14 +361,9 @@ export type ForkSubThreadInput = {
   body: string;
 };
 
-/** Forks a sub-thread off a primary-thread message: the fork ancestry
- * (parent as In-Reply-To closing the References chain) rides the sent
- * first message natively, and the linkage is recorded in the client-held
- * thread store beside created ids. A fork already recorded for the same
- * parent + subject + recipients + body returns its native Message-ID
- * instead of resending; any of those differing (including an edited body)
- * sends anew. Rows recorded before recipients/body were stored match on
- * parent + subject only, preserving their exactly-once replay. */
+/** Replays by native Message-ID when parent + subject + recipients + body
+ * match an already-recorded fork; any difference sends anew. See
+ * docs/chat-mail-threading.md. */
 export async function forkSubThread(
   storage: StringStorage,
   hub: StockHub,
@@ -492,13 +460,8 @@ const RolePageShape = type({
   nextCursor: "string | null",
 });
 
-/**
- * Resolves a system role name (e.g. "member") to its per-tenant role id
- * over the stock roles route. A tenant's system roles are seeded by
- * `createTenant` itself, so this never needs to page past the first
- * roles listing in practice — the route is still cursor-shaped, so this
- * follows it rather than assuming a single page.
- */
+// Resolves a system role name (e.g. "member") to its per-tenant role id;
+// still pages the cursor-shaped route rather than assuming a single page.
 async function resolveRoleId(
   fetchImpl: typeof fetch,
   tenantId: string,
@@ -564,9 +527,8 @@ function parseBoundary<T>(
   return parsed;
 }
 
-/** Follows every page of a `{ data, nextCursor }` stock listing — the hub
- * caps pages at its own limit, so reading only the first page would
- * silently mistarget accounts past ~100 principals or memberships. */
+// The hub caps pages at its own limit, so stopping at page one would
+// silently mistarget accounts past ~100 rows.
 async function fetchAllPages<T>(
   fetchImpl: typeof fetch,
   basePath: string,
@@ -587,10 +549,8 @@ async function fetchAllPages<T>(
   }
 }
 
-/** Builds the StockHub port over stock routes only: tenant bootstrap,
- * member invite, workflow deploy, and run-mail send/list under the tenant
- * mailbox surface. Per-agent mailbox search and full thread reads stay
- * typed upstream gaps until the hub exposes stock routes for them. */
+// Per-agent mailbox search and full thread reads stay typed upstream gaps
+// until the hub exposes stock routes for them.
 export function createFetchStockHub(fetchImpl: typeof fetch = fetch): StockHub {
   return {
     async listMyPrincipals() {
