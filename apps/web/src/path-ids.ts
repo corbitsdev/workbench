@@ -48,10 +48,6 @@ function entityIdFromTopLevelPath(path: string, prefix: string): string | null {
   return segment === null ? null : decodedOrNull(segment);
 }
 
-export function agentIdFromPath(path: string): string | null {
-  return entityIdFromTopLevelPath(path, AGENTS_PATH_PREFIX);
-}
-
 export function skillIdFromPath(path: string): string | null {
   return entityIdFromTopLevelPath(path, SKILLS_PATH_PREFIX);
 }

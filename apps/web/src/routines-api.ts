@@ -18,6 +18,8 @@ import { useQuery } from "@tanstack/react-query";
 import { WorkflowDeploymentResponse } from "@intx/types";
 import type { APIQuery } from "@/lib/api-query";
 import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@/lib/api-query";
+import { isAgentDeploySourceAssetName } from "@/agent-deploy";
+import { MYRA_SOURCE_CONFIG } from "@/myra-source";
 
 export const ScheduledWorkflowDefinition = type({
   definitionId: "string",
@@ -57,6 +59,15 @@ async function fetchJSON<T>(path: string, schema: (data: unknown) => T | type.er
   return parsed;
 }
 
+/** Myra's own deploy source and every agent `agent-deploy.ts` created are
+ * `workflow`-kind assets too, but they're chat partners, not workflows —
+ * excluded by the same asset naming the chat/deploy pipeline already owns
+ * (`MYRA_SOURCE_CONFIG.assetName`, `agent-<slug>-source`), so this list
+ * never depends on runtime agent state to stay accurate. */
+function isAgentAssetName(name: string): boolean {
+  return name === MYRA_SOURCE_CONFIG.assetName || isAgentDeploySourceAssetName(name);
+}
+
 /** Every workflow deployment on this tenant, named from the backing
  * workflow asset. A deployment whose asset can't be resolved still lists,
  * under a placeholder name, rather than disappearing. */
@@ -68,16 +79,21 @@ export async function listScheduledWorkflows(
     fetchJSON(workflowAssetsPath(tenantId), WorkflowAssetsSchema),
   ]);
   const nameByAssetId = new Map(assets.map((asset) => [asset.id, asset.name]));
-  return deployments.map((deployment) => ({
-    definitionId: deployment.id,
-    assetId: deployment.definitionAssetId,
-    name: nameByAssetId.get(deployment.definitionAssetId) ?? "Untitled workflow",
-    tenantId: deployment.tenantId,
-    status: deployment.status === "deployed" ? "deployed" : "stopped",
-    cron: "manual",
-    createdAt: deployment.createdAt,
-    updatedAt: deployment.createdAt,
-  }));
+  return deployments
+    .filter((deployment) => {
+      const name = nameByAssetId.get(deployment.definitionAssetId);
+      return name === undefined || !isAgentAssetName(name);
+    })
+    .map((deployment) => ({
+      definitionId: deployment.id,
+      assetId: deployment.definitionAssetId,
+      name: nameByAssetId.get(deployment.definitionAssetId) ?? "Untitled workflow",
+      tenantId: deployment.tenantId,
+      status: deployment.status === "deployed" ? "deployed" : "stopped",
+      cron: "manual",
+      createdAt: deployment.createdAt,
+      updatedAt: deployment.createdAt,
+    }));
 }
 
 /** No stock route reruns a deployment on demand yet. */
