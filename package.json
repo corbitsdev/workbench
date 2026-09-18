@@ -19,6 +19,7 @@
     "fmt:check": "oxfmt --check apps packages tools agents workflows scripts e2e",
     "build": "bun run scripts/run-all.ts build",
     "test": "bun run scripts/run-all.ts test",
+    "test:e2e": "bun test e2e",
     "dev": "bun run scripts/dev.ts",
     "setup": "bun scripts/db-setup.ts",
     "setup:memory": "bun run scripts/setup-memory.ts",
@@ -43,14 +44,10 @@
     "puppeteer-core": "^25.7.0",
     "typescript": "6.0.3",
     "@intx/hub-sessions": "workspace:*",
-    "@intx/authz": "0.3.0",
-    "@intx/harness": "workspace:*",
     "@intx/hub-common": "0.3.0",
-    "@corbits/tool-registry-publish": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "hono": "catalog:",
-    "drizzle-orm": "catalog:",
-    "postgres": "catalog:"
+    "drizzle-orm": "catalog:"
   },
   "engines": {
     "bun": ">=1.2.0"

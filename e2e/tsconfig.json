@@ -2,6 +2,7 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "types": ["bun"],
+    "customConditions": ["bun"],
     "noEmit": true
   },
   "include": ["**/*.ts"]

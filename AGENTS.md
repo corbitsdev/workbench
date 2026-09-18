@@ -72,7 +72,6 @@ Env flags (unset behavior):
 | `HUB_DATA_DIR`                                              | hub boot fails — required runtime config                                                        |
 | `CI`                                                        | set by GitHub Actions; not a caller flag                                                        |
 | `E2E_PROVIDER` / `E2E_PROVIDER_API_KEY` / `OLLAMA_BASE_URL` | live-inference e2e stays on the noop/stub path                                                  |
-| `CHROME_PATH`                                               | browser walkthrough falls back to platform defaults, fails if none exist                        |
 
 ## Tests
 
