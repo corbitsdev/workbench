@@ -1,16 +1,17 @@
 # Running fully local (Ollama)
 
 Workbench can run with no cloud LLM key at all, using a local
-[Ollama](https://ollama.com) instance as the inference provider. Connect
-the Ollama provider from the UI — its connect card asks for a base URL
-instead of a token and needs no key. Set `OLLAMA_BASE_URL` in `.env` too
-(e.g. `http://localhost:11434`, or a tailscale-tunneled origin): `bun run
+[Ollama](https://ollama.com) instance as the inference provider. On the
+first sign-in, pick "Ollama (local)": it asks for the base URL (default
+`http://localhost:11434/v1`) and a model name you have pulled, and needs
+no key. It rides Interchange's stock `openai-compatible` plugin. Set
+`OLLAMA_BASE_URL` in `.env` too (e.g. `http://localhost:11434`): `bun run
 dev` reads it to also mount the memory plane against the same origin when
 `EMBED_BASE_URL` is unset.
 
-Tool-heavy turns (anything that calls `mcp_list_tools`, dispatches a task,
-or chains several tool calls) take noticeably longer on small local
-models. That is a model-capability limit, not a platform bug.
+Tool-heavy turns (several tool calls in one turn) take noticeably longer
+on small local models. That is a model-capability limit, not a platform
+bug.
 
 ## Migrations after pulling
 
