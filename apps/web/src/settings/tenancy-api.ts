@@ -9,6 +9,7 @@ import type { ArkErrors } from "arktype";
 import {
   EvaluateResult,
   GrantResponse,
+  InviteMember,
   PrincipalResponse,
   RoleResponse,
   paginatedSchema,
@@ -88,6 +89,19 @@ export function removePrincipal(tenantId: string, principalId: string): Promise<
     (data) => data as void,
     { method: "DELETE" },
   );
+}
+
+export type InviteMemberInput = typeof InviteMember.infer;
+
+/** Invites an existing platform user to this tenant by email over the
+ * stock `/members/invite` route — creates an `invited`-status principal
+ * and optionally assigns a role. The invited user must already have an
+ * account; there is no separate invite-by-email-only flow. */
+export function inviteMember(tenantId: string, input: InviteMemberInput): Promise<Principal> {
+  return request(`/api/tenants/${tenantId}/members/invite`, PrincipalResponse, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 // -- Roles ---------------------------------------------------------------

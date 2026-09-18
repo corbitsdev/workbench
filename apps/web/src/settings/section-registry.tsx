@@ -18,13 +18,14 @@
 // `resolveSettingsSectionGroups` — the domain model of "what settings
 // exist and who can see them" lives here, not in an app.
 
-import { Key, ListBullets, Shield, Star, User, Users } from "@/lib/icons";
+import { Cpu, Key, ListBullets, Shield, Star, User, Users } from "@/lib/icons";
 
 import { AccountSection } from "./account-section";
 import type { TenancyAccess } from "./access";
 import { AuditSection } from "./audit-section";
 import { CredentialsSection } from "./credentials-section";
 import { GrantsSection } from "./grants-section";
+import { ModelsSection } from "./models-section";
 import { PeopleSection } from "./people-section";
 import { RolesSection } from "./roles-section";
 import type { SettingsSection, SettingsSectionGroup } from "./shell";
@@ -100,6 +101,16 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
         gate: "grants",
         advanced: true,
         render: (ctx) => <GrantsSection tenantId={ctx.tenantId} />,
+      },
+      {
+        // Read-only: this workbench's providers and resolved model
+        // catalog, over the same stock routes credentials/inference
+        // already read. No gate — model:*/provider:* read is the same
+        // grant every member needs to chat at all.
+        id: "models",
+        title: SETTINGS_STRINGS.modelsSectionTitle,
+        icon: Cpu,
+        render: (ctx) => <ModelsSection tenantId={ctx.tenantId} />,
       },
       {
         id: "audit",
