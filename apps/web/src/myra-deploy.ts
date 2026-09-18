@@ -5,6 +5,14 @@ import { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "@corbits/myra/workflow
 import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
 import { type } from "arktype";
 
+import {
+  artifactToolsCredentialBinding,
+  ensureAgentHubCredential,
+  grantArtifactToolsCredentialUse,
+  resolveAgentHubCredentialId,
+  resolveLiveDeploymentId,
+} from "./agent-hub-credential";
+
 import { MYRA_SOURCE_CONFIG } from "./myra-source";
 import type { WorkflowDeployInput } from "./needs-list";
 import type { DeclaredSource } from "./onboarding/provider-connect-step";
@@ -82,6 +90,8 @@ export function buildMyraDefinitionJson(
 ): unknown {
   return {
     id: ASSISTANT_WORKFLOW_ID,
+    // Resolved at deploy into the `hub` handle the artifact tools use.
+    credentialBindings: [artifactToolsCredentialBinding(ASSISTANT_WORKFLOW_ID)],
     // `to` only feeds the deploy-time mail.address/mail.send grants; Myra is
     // actually reached at her run address, minted at deploy time.
     triggers: [{ type: "mail", to: triggerAddress }],
@@ -231,6 +241,12 @@ export async function deployMyraSource(
   fetchImpl: typeof fetch = fetch,
 ): Promise<WorkflowDeployInput> {
   const assetId = await ensureMyraSourceAsset(args.tenantId, fetchImpl);
+  // Minted before the push: the definition's credential binding resolves
+  // this credential by name at deploy time, so it must already exist.
+  await ensureAgentHubCredential(
+    { tenantId: args.tenantId, definitionId: ASSISTANT_WORKFLOW_ID },
+    fetchImpl,
+  );
   const commitSha = await pushMyraSource(
     args.tenantId,
     assetId,
@@ -244,4 +260,33 @@ export async function deployMyraSource(
     sourceOfferingIds: args.sourceOfferingIds,
     defaultSourceOfferingId: args.defaultSourceOfferingId,
   });
+}
+
+/**
+ * Authorizes Myra's deployed run to use her hub credential. Separate from
+ * `deployMyraSource` because the deployment does not exist until the caller
+ * has sent the deploy input; it is safe to call again, and answers
+ * `"no-principal-yet"` while stock has not minted the run's principal.
+ */
+export async function authorizeMyraHubCredential(
+  args: { readonly tenantId: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<"granted" | "no-principal-yet" | "no-deployment"> {
+  const assetId = await ensureMyraSourceAsset(args.tenantId, fetchImpl);
+  const deploymentId = await resolveLiveDeploymentId(
+    { tenantId: args.tenantId, assetId },
+    fetchImpl,
+  );
+  if (deploymentId === null) return "no-deployment";
+  // Never re-mints: rotating here would invalidate the token the deploy
+  // already delivered to the running agent.
+  const credentialId = await resolveAgentHubCredentialId(
+    { tenantId: args.tenantId, definitionId: ASSISTANT_WORKFLOW_ID },
+    fetchImpl,
+  );
+  if (credentialId === null) return "no-deployment";
+  return await grantArtifactToolsCredentialUse(
+    { tenantId: args.tenantId, deploymentId, credentialId },
+    fetchImpl,
+  );
 }

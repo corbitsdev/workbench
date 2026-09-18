@@ -33,6 +33,7 @@
     "build": "bun run scripts/build-bundle.ts"
   },
   "dependencies": {
+    "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#b8f1941a3720da8627012a48d7d0b91271b19052",
     "@intx/tools-mail": "0.3.0",
     "@intx/tools-posix": "0.3.0"
   },

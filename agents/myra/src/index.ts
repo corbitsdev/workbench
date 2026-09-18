@@ -13,6 +13,7 @@ import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import { mail } from "@intx/tools-mail/sidecar-bundle";
 import { posix } from "@intx/tools-posix/sidecar-bundle";
+import { artifacts } from "@corbits/artifacts/sidecar-bundle";
 
 import { ASSISTANT_STEP_ID } from "./workflow-ids";
 
@@ -25,10 +26,15 @@ export const ASSISTANT_DESCRIPTION =
   "A general-purpose assistant that answers questions, drafts " +
   "text, and reasons through problems for the team";
 
-// Upstream's own tool packages, the only kind of tool Interchange has:
-// mail over the agent's transport and posix over its working tree. Neither
-// calls a hub API — nothing in the platform gives an agent that reach.
-export const MYRA_TOOL_FACTORIES = [mail, posix] as unknown as readonly AnnotatedToolFactory[];
+// Tool packages in the shape Interchange has: mail over the agent's
+// transport, posix over its working tree, and artifacts through the hub
+// credential the deploy binds — the agent itself holds no client code and
+// no secret.
+export const MYRA_TOOL_FACTORIES = [
+  mail,
+  posix,
+  artifacts,
+] as unknown as readonly AnnotatedToolFactory[];
 
 /** Everything the definition needs that is per-deployment data. */
 export interface MyraWorkflowInput {

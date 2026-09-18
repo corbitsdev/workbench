@@ -7,6 +7,7 @@
 // service, no ledger table, just the hub doing the work itself.
 import { runMigrations } from "@intx/db";
 import { sql } from "drizzle-orm";
+import { applyAgentTokenMigrations } from "@corbits/agent-token/migrations";
 import { applyCronMigrations } from "@corbits/cron";
 import { createMailboxDb, runMailboxMigrations } from "@corbits/mailbox";
 import { runArtifactMigrations } from "@corbits/artifacts";
@@ -40,8 +41,8 @@ function databaseUrlFrom(config: HubMigrateConfig): string {
 
 /**
  * Apply the platform schema plus every mounted Corbits package's own
- * migration, in the order the hub mounts them: cron, mailbox, artifacts,
- * memory. `@corbits/webhooks` owns no table of its own, so it has no
+ * migration, in the order the hub mounts them: cron, agent tokens, mailbox,
+ * artifacts, memory. `@corbits/webhooks` owns no table of its own, so it has no
  * migration step. `db` is the same drizzle handle the rest
  * of the hub uses, so `runArtifactMigrations` (which takes a drizzle
  * db, not a URL) shares the one connection pool rather than opening
@@ -60,6 +61,7 @@ export async function migrateHub(
     await runMigrations(config, { schema });
   }
   await applyCronMigrations(databaseUrl, { tenantSchema: schema });
+  await applyAgentTokenMigrations(databaseUrl, { tenantSchema: schema });
 
   const mailboxDb = createMailboxDb(databaseUrl);
   try {

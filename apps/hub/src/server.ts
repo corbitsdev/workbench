@@ -75,6 +75,7 @@ import {
   exchangeXaiCode,
   refreshXaiTokens,
 } from "@corbits/xai-provider";
+import { createAgentTokenVerifier, mountAgentTokens } from "@corbits/agent-token";
 import { createCronTicker, createRunTriggerCronDeliver, mountCron } from "@corbits/cron";
 import {
   createHubMailboxAuthorizeSender,
@@ -522,12 +523,37 @@ export async function createHubServer({
     app.route(TENANT_PREFIX, artifactsApi);
   }
   {
+    const agentTokensApp = new Hono<TenantEnv>();
+    mountAgentTokens(agentTokensApp, {
+      db,
+      requireGrant: (ctx, tenantId) => {
+        const c = ctx as { get(key: "tenant"): { id: string } };
+        return c.get("tenant").id === tenantId;
+      },
+    });
+    app.route("/", agentTokensApp);
+  }
+  {
     const workflowArtifactsApi = new Hono<WorkflowArtifactEnv>();
     const workflowRunAuthenticator = createWorkflowRunAuthenticator({ db });
+    const verifyAgentToken = createAgentTokenVerifier({ db });
     mountWorkflowArtifacts(workflowArtifactsApi, {
       db,
       contentStore: artifactContentStore,
       resolveRunScope: (token, runAddress) => workflowRunAuthenticator.resolve(token, runAddress),
+      // A deployed agent has no sidecar token; it presents the bearer this
+      // hub minted for its definition and is scoped to the run it names.
+      agentToken: {
+        verify: (ctx) => verifyAgentToken(ctx),
+        resolveRun: async (runAddress) => {
+          if (runAddress === "") return null;
+          const run = await db.query.workflowRun.findFirst({
+            where: eq(workflowRun.address, runAddress),
+          });
+          if (run === undefined || run.principalId === null) return null;
+          return { tenantId: run.tenantId, principalId: run.principalId, runId: run.id };
+        },
+      },
     });
     app.route("/api/workflow-artifacts", workflowArtifactsApi);
   }
