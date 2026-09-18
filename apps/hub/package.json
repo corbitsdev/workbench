@@ -20,7 +20,7 @@
     "@corbits/error-sink": "workspace:*",
     "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#65590a85fa143251b3ac20ba2eca92fc35e70e51",
     "@corbits/memory": "github:corbitsdev/corbits-memory#e74da20f148a302dff5400915fe504ee2395e913",
-    "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core#f818dcb6dc5e08319a12cd154ca63e5eed61a947",
+    "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core#f186ed0e14e8fc3bacb32efa1caabb02d9d5cafd",
     "@corbits/url-path": "workspace:*",
     "@corbits/webhooks": "github:corbitsdev/webhooks#3f4f83147fd826d3aec5bcac7ef4b0ae7f75c00d",
     "@corbits/workflows": "workspace:*",
