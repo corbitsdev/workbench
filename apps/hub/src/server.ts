@@ -478,6 +478,9 @@ export async function createHubServer({
       bus: mailboxBus,
     }),
   };
+  // The sidecar router captured `lookups` before this wrapper existed; an
+  // agent's outbound mail must also land in principal inboxes.
+  lookups.persistMail = mailboxLookups.persistMail;
 
   const artifactContentStore = InlineContentStore;
 
