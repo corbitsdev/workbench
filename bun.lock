@@ -30,9 +30,9 @@
         "typescript": "6.0.3",
       },
     },
-    "agents/assistant": {
-      "name": "@corbits/assistant-workflow",
-      "version": "0.0.2",
+    "agents/myra": {
+      "name": "@corbits/myra",
+      "version": "0.0.3",
       "dependencies": {
         "@corbits/catalog-tools": "0.1.1",
         "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
@@ -157,9 +157,9 @@
         "@corbits/agent-directory": "workspace:*",
         "@corbits/approvals": "workspace:*",
         "@corbits/artifact-ui": "workspace:*",
-        "@corbits/assistant-workflow": "workspace:*",
         "@corbits/connections": "workspace:*",
         "@corbits/error-sink": "workspace:*",
+        "@corbits/myra": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
         "@corbits/url-path": "workspace:*",
         "@corbits/workflows": "workspace:*",
@@ -359,11 +359,11 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/agent-directory": "workspace:*",
-        "@corbits/assistant-workflow": "workspace:*",
         "@corbits/connections": "workspace:*",
         "@corbits/error-sink": "workspace:*",
         "@corbits/hub-api-client": "workspace:*",
         "@corbits/migration-runner": "workspace:*",
+        "@corbits/myra": "workspace:*",
         "@corbits/webhook-triggers": "workspace:*",
         "@corbits/workflows": "workspace:*",
         "@intx/agent": "workspace:*",
@@ -1187,8 +1187,6 @@
 
     "@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#5309a15", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/hub-api": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-5309a15", "sha512-zGHkq++juclUrOd0O8/Z5ziTldmJZ6gqyH/c9cs5S10UPU4gqn8CHwq174SiJXY0ujJ3cNpJXnrr+0fcqlfQ1w=="],
 
-    "@corbits/assistant-workflow": ["@corbits/assistant-workflow@workspace:agents/assistant"],
-
     "@corbits/capability-tools": ["@corbits/capability-tools@workspace:tools/capability"],
 
     "@corbits/catalog-tools": ["@corbits/catalog-tools@workspace:tools/catalog"],
@@ -1234,6 +1232,8 @@
     "@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#9e6f213", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "@intx/workflow": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-9e6f213", "sha512-utnM4ZT2zmslcPXYWAAqxlDNLcpGsXFiTOtj8h7+OXnhCP0Eaw8yl25+yCTyHpvt3jcdeG4h5uFsSj7ou0BZCA=="],
 
     "@corbits/migration-runner": ["@corbits/migration-runner@workspace:packages/migration-runner"],
+
+    "@corbits/myra": ["@corbits/myra@workspace:agents/myra"],
 
     "@corbits/oauth-core": ["@corbits/oauth-core@github:corbitsdev/corbits-oauth-core#e1e69e6", { "dependencies": { "arktype": "2.2.3" } }, "corbitsdev-corbits-oauth-core-e1e69e6", "sha512-wUrD73iVyk/Dtb4yRn3hCh6N8syfsEvAkRz4XYqT0FIB3sYDSMYEWHcDMJx9nq64my/HBOeN1J6PHIOtpjhtPg=="],
 

@@ -1,7 +1,7 @@
 // Myra's deploy source, pinned to what this hub can actually install
 // today.
 //
-// `@corbits/assistant-workflow` (agents/assistant) is `private: true`
+// `@corbits/myra` (agents/myra) is `private: true`
 // and unpublished, so `WorkflowDefinitionRegistrySource` (the `registry`
 // variant) has no external npm registry to resolve it from yet — that is
 // its job. The package also exports builder functions
@@ -39,7 +39,7 @@ const parsed = MyraSourceConfig({
   // tenant's own asset.
   assetName: "myra-deploy-source",
   displayName: "Myra",
-  // The rendered package's own name — never `@corbits/assistant-workflow`
+  // The rendered package's own name — never `@corbits/myra`
   // itself, which names the real, un-deployable workspace package this
   // module explicitly does not source from (see the module doc above).
   packageName: "@workbench-onboarding/myra",

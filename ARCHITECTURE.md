@@ -39,7 +39,7 @@ address.
 
 ## Agents and workflows
 
-Myra (`agents/assistant`) is the only agent Workbench ships. There is no
+Myra (`agents/myra`) is the only agent Workbench ships. There is no
 workflow catalog to browse — Myra creates a workflow, tool, or skill
 dynamically, as code, when a job needs one, and deploys it through the
 stock workflow-deploy route. `tools/*` and `skills/*` are ordinary

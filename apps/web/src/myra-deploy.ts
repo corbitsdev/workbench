@@ -16,7 +16,7 @@ import {
   ASSISTANT_SYSTEM_PROMPT,
   ASSISTANT_TOOL_PACKAGE_PINS,
   ASSISTANT_WORKFLOW_ID,
-} from "@corbits/assistant-workflow/prompt";
+} from "@corbits/myra/prompt";
 import { renderWorkflowSourceTree } from "@corbits/workflows/client";
 import { type } from "arktype";
 
@@ -171,14 +171,14 @@ function tarballFilename(): string {
 const ASSISTANT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 
 /**
- * The exact `WorkflowDefinition` JSON `@corbits/assistant-workflow`'s
+ * The exact `WorkflowDefinition` JSON `@corbits/myra`'s
  * `buildAssistantWorkflow` would produce for a single-step, mail-triggered,
  * unbounded-turn assistant — hand-built here rather than calling that
  * function, because `buildAssistantWorkflow` goes through `@intx/workflow`'s
  * `defineWorkflow`/`step`, which pull in `@intx/agent`'s Node-bound runtime
  * (file locking) that a browser bundle cannot resolve (confirmed by a failed
- * `apps/web` build importing `@corbits/assistant-workflow` directly).
- * `apps/web/src/myra-deploy.test.ts` and `agents/assistant`'s own
+ * `apps/web` build importing `@corbits/myra` directly).
+ * `apps/web/src/myra-deploy.test.ts` and `agents/myra`'s own
  * `validate-push.test.ts`-style round-trip both guard this shape against
  * drift from `defineWorkflow`'s own normalization
  * (`vendor/intx/workflow/src/definition/workflow.ts`'s `normalize`/

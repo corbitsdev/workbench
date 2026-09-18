@@ -1,7 +1,7 @@
 // The create-agent-definition surface: a tenant member submits a
 // name/handle/description/system-prompt/model, and this route
 // materializes it exactly the way the platform's own starter agents
-// (`@corbits/assistant-workflow`, `@corbits/chat`'s workbench host) are
+// (`@corbits/myra`, `@corbits/chat`'s workbench host) are
 // materialized — a `workflow`-kind asset carrying a single-step
 // definition as a source codebase (see `./definition-asset.ts`),
 // projected onto a first-class `workflow_definition` row. No git subprocess: `AssetService.populateAsset` writes the

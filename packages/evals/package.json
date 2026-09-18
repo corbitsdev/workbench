@@ -14,11 +14,11 @@
   },
   "dependencies": {
     "@corbits/agent-directory": "workspace:*",
-    "@corbits/assistant-workflow": "workspace:*",
     "@corbits/connections": "workspace:*",
     "@corbits/error-sink": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
     "@corbits/migration-runner": "workspace:*",
+    "@corbits/myra": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
     "@corbits/workflows": "workspace:*",
     "@intx/agent": "workspace:*",

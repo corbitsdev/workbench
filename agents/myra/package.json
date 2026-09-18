@@ -1,12 +1,12 @@
 {
-  "name": "@corbits/assistant-workflow",
-  "version": "0.0.2",
+  "name": "@corbits/myra",
+  "version": "0.0.3",
   "description": "Mail-triggered conversational workflow with a general-purpose assistant agent",
   "license": "LGPL-2.1-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "agents/assistant"
+    "directory": "agents/myra"
   },
   "files": [
     "src",
