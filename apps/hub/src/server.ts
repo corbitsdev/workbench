@@ -51,11 +51,9 @@ import { Hono } from "hono";
 // Everything above this line is upstream Interchange's server.ts, verbatim;
 // see AGENTS.md's "plain Interchange tenant" ruling.
 import {
-  buildMailFrame,
   createInMemoryMailboxEventBus,
   createMailboxDb,
   createMailboxPersist,
-  generateMailboxMessageId,
   mountMailbox,
 } from "@corbits/mailbox";
 import { createMemory, loadMemoryConfig } from "@corbits/memory";
@@ -65,6 +63,8 @@ import {
   createHubPersistMailWithSessionEnsure,
 } from "./mailbox-persist";
 import { captureMailboxRequest, createMailboxDeliver } from "./mailbox-send";
+import { createCronDeliver } from "./cron-deliver";
+import { reportError } from "@corbits/error-sink";
 import { installWebhooks, type HookMailRouter } from "@corbits/webhooks";
 import {
   createProcessSidecarProvisioner,
@@ -546,6 +546,22 @@ export async function createHubServer({
     app.route(`${TENANT_PREFIX}/mailbox`, mailboxApp);
   }
 
+  // The router every system-originated trigger (webhook, cron) goes
+  // through. `HookMailRouter` types its payloads as `unknown` at the
+  // package boundary; this just narrows them back to `sidecarRouter`'s own
+  // types on the way through, with no behavior change.
+  const systemTriggerMailRouter: HookMailRouter = {
+    routeMail: (address, rawMessage, authenticatedSender, messageId) =>
+      sidecarRouter.routeMail(address, rawMessage, authenticatedSender, messageId),
+    sendRunGrants: (address, runId, stepGrants, senderIdentities) =>
+      sidecarRouter.sendRunGrants(
+        address,
+        runId,
+        stepGrants as Parameters<typeof sidecarRouter.sendRunGrants>[2],
+        senderIdentities as Parameters<typeof sidecarRouter.sendRunGrants>[3],
+      ),
+  };
+
   let cronTicker: { start(): void; stop(): void } | undefined;
   {
     const cronApp = new Hono<TenantEnv>();
@@ -561,28 +577,29 @@ export async function createHubServer({
     cronTicker = createCronTicker({
       db,
       intervalMs: 60_000,
-      senderAddressFor: (tenantId) => `cron@${tenantId}`,
-      deliver: async (message) => {
-        const tenantId = message.from.slice("cron@".length);
-        const [tenantRow] = await db
-          .select({ domain: tenantTable.domain })
-          .from(tenantTable)
-          .where(eq(tenantTable.id, tenantId))
-          .limit(1);
-        if (tenantRow === undefined) {
-          throw new Error(`no tenant "${tenantId}" to address cron mail from`);
-        }
-        const from = `cron@${tenantRow.domain}`;
-        await mailboxLookups.persistMail({
-          senderAddress: from,
-          recipients: message.to,
-          raw: buildMailFrame({
-            from,
-            to: message.to.join(", "),
-            subject: message.subject,
-            body: message.body,
-            messageId: generateMailboxMessageId(from),
-          }),
+      deliver: createCronDeliver({
+        router: systemTriggerMailRouter,
+        materialize: createMailTriggeredRunGrantsMaterializer({
+          db,
+          principalKeyStore,
+          grantStore,
+        }),
+        tenantDomain: async (tenantId) => {
+          const [tenantRow] = await db
+            .select({ domain: tenantTable.domain })
+            .from(tenantTable)
+            .where(eq(tenantTable.id, tenantId))
+            .limit(1);
+          if (tenantRow === undefined) {
+            throw new Error(`no tenant "${tenantId}" to address cron mail from`);
+          }
+          return tenantRow.domain;
+        },
+      }),
+      onDeliveryError: (error, schedule) => {
+        reportError(error, {
+          operation: "hub.cron.deliver",
+          extra: { scheduleId: schedule.id, tenantId: schedule.tenantId },
         });
       },
     });
@@ -600,27 +617,12 @@ export async function createHubServer({
     app.route("/", memoryApp);
   }
 
-  // `HookMailRouter` types its payloads as `unknown` at the package
-  // boundary; this just narrows them back to `sidecarRouter`'s own types
-  // on the way through, with no behavior change.
-  const webhookMailRouter: HookMailRouter = {
-    routeMail: (address, rawMessage, authenticatedSender, messageId) =>
-      sidecarRouter.routeMail(address, rawMessage, authenticatedSender, messageId),
-    sendRunGrants: (address, runId, stepGrants, senderIdentities) =>
-      sidecarRouter.sendRunGrants(
-        address,
-        runId,
-        stepGrants as Parameters<typeof sidecarRouter.sendRunGrants>[2],
-        senderIdentities as Parameters<typeof sidecarRouter.sendRunGrants>[3],
-      ),
-  };
-
   await installWebhooks({
     app,
     db,
     credentialCipher,
     principalKeyStore,
-    router: webhookMailRouter,
+    router: systemTriggerMailRouter,
   });
 
   // End of Corbits mount block.

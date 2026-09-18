@@ -11,17 +11,16 @@ import { cronScheduleTable } from "./schema";
 export type CronDb<TSchema extends Record<string, unknown> = Record<string, unknown>> =
   PostgresJsDatabase<TSchema>;
 
+/** A due schedule handed to the host. The sender identity is the host's to
+ * decide: only the host knows which addresses its mail transport
+ * authorizes, so this package names the tenant and never invents an
+ * address for it. */
 export type DeliverCronMail = (message: {
   to: string[];
   subject: string;
   body: string;
-  from: string;
+  tenantId: string;
 }) => Promise<void> | void;
-
-export type CronSenderAddress = (tenantId: string) => string;
-
-/** The system sender address a tenant's cron mail comes from. */
-export const cronSenderAddress: CronSenderAddress = (tenantId) => `cron@${tenantId}.internal`;
 
 export type CreateCronTickerOpts<
   TSchema extends Record<string, unknown> = Record<string, unknown>,
@@ -29,7 +28,8 @@ export type CreateCronTickerOpts<
   db: CronDb<TSchema>;
   deliver: DeliverCronMail;
   intervalMs: number;
-  senderAddressFor?: CronSenderAddress;
+  /** Told about a delivery that failed, so the host can report it. */
+  onDeliveryError?: (error: unknown, schedule: { id: string; tenantId: string }) => void;
 };
 
 export type CronTicker = {
@@ -56,7 +56,7 @@ function isDue(
 async function tick<TSchema extends Record<string, unknown>>(
   db: CronDb<TSchema>,
   deliver: DeliverCronMail,
-  senderAddressFor: CronSenderAddress,
+  onDeliveryError: (error: unknown, schedule: { id: string; tenantId: string }) => void,
 ) {
   await db.transaction(async (tx) => {
     const now = new Date();
@@ -70,12 +70,19 @@ async function tick<TSchema extends Record<string, unknown>>(
       .for("update", { skipLocked: true });
 
     for (const row of candidates.filter((row) => isDue(row, now))) {
-      await deliver({
-        to: [row.toAddress],
-        subject: row.subject,
-        body: row.body,
-        from: senderAddressFor(row.tenantId),
-      });
+      // One schedule's failed delivery is its own: the tick still advances
+      // every due row, so a permanently undeliverable schedule cannot block
+      // the rest of the table or re-fire every minute forever.
+      try {
+        await deliver({
+          to: [row.toAddress],
+          subject: row.subject,
+          body: row.body,
+          tenantId: row.tenantId,
+        });
+      } catch (error) {
+        onDeliveryError(error, { id: row.id, tenantId: row.tenantId });
+      }
       await tx
         .update(cronScheduleTable)
         .set({ lastFiredAt: now })
@@ -88,13 +95,13 @@ async function tick<TSchema extends Record<string, unknown>>(
 export function createCronTicker<TSchema extends Record<string, unknown>>(
   opts: CreateCronTickerOpts<TSchema>,
 ): CronTicker {
-  const senderAddressFor = opts.senderAddressFor ?? cronSenderAddress;
+  const onDeliveryError = opts.onDeliveryError ?? (() => undefined);
   let timer: ReturnType<typeof setInterval> | undefined;
   let inFlight: Promise<void> | undefined;
 
   const runTick = () => {
     if (inFlight !== undefined) return;
-    inFlight = tick(opts.db, opts.deliver, senderAddressFor).finally(() => {
+    inFlight = tick(opts.db, opts.deliver, onDeliveryError).finally(() => {
       inFlight = undefined;
     });
   };
