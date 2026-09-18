@@ -770,7 +770,7 @@ function safeAddr(raw: string | undefined, fallback: string): string {
  * which is not wired with a reader -- still delivers; a part that needs bytes
  * with no reader is refused loudly rather than silently dropped.
  */
-async function buildInboundMessageFromMail(
+export async function buildInboundMessageFromMail(
   mail: Mail,
   mailPartReader: MailPartReader | undefined,
 ): Promise<InboundMessage> {
