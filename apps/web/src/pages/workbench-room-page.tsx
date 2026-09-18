@@ -24,6 +24,7 @@ import { Composer } from "@/chat/composer";
 import { Markdown } from "@/chat/markdown";
 import { MessageAttachments } from "@/chat/message-attachments";
 import { resolveMessagePackage } from "@/chat/deployable-package";
+import { stripRoster } from "@/chat/room-roster";
 import {
   ancestorChain,
   listRoomParticipants,
@@ -64,7 +65,11 @@ function RoomMessageRow({
   const displayName = resolveParticipantName(message, participants);
   const matched = participants.find((participant) => participant.address === message.address);
   const kind = message.author !== "me" && matched?.kind === "agent" ? "agent" : "person";
-  const { pkg, renderedBody } = resolveMessagePackage(message.attachments, message.body);
+  // The person's own send carries a trailing roster block so agents in the
+  // room can hand off to each other; it's never something a person should
+  // see echoed back at them.
+  const body = message.author === "me" ? stripRoster(message.body) : message.body;
+  const { pkg, renderedBody } = resolveMessagePackage(message.attachments, body);
   return (
     <div className="chat-thread-message" data-author={message.author}>
       <span className="shell-ch-avatar">

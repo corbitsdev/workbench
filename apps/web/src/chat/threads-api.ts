@@ -19,6 +19,7 @@ import { reportError } from "@corbits/error-sink";
 import { agentSlugFromSourceAssetName } from "../agent-deploy";
 import { listTopLevelRuns } from "../agents-api";
 import { MYRA_SOURCE_CONFIG } from "../myra-source";
+import { appendRoster } from "./room-roster";
 
 export class ChatApiError extends Error {
   constructor(
@@ -763,7 +764,10 @@ export function ancestorChain(
 /** The one send seam for a room: a single mailbox send addressed to every
  * agent in it. The hub triggers each addressed run and keeps the Sent
  * copy, so the person's own turn comes back out of the mailbox like any
- * other. */
+ * other. The body carries a trailing roster of every agent's name and
+ * run address (the same rows the Participants panel reads), so an agent
+ * can hand a task to another agent in the room — the hub only delivers to
+ * a run address, which only the client otherwise knows. */
 export async function sendToRoom(input: {
   readonly roomTenantId: string;
   readonly agents: readonly RoomParticipant[];
@@ -771,10 +775,15 @@ export async function sendToRoom(input: {
   /** The turn this reply threads onto — a sub-thread's parent. */
   readonly inReplyTo?: string;
 }): Promise<void> {
-  const to = input.agents.map((agent) => agent.address).filter((address) => address.includes("@"));
-  if (to.length === 0) {
+  const live = input.agents.filter((agent) => agent.address.includes("@"));
+  if (live.length === 0) {
     throw new ChatApiError("No agent is in this workbench yet, so there is nobody to send to.");
   }
+  const to = live.map((agent) => agent.address);
+  const body = appendRoster(
+    input.content,
+    live.map((agent) => ({ name: agent.name, address: agent.address })),
+  );
   let response: Response;
   try {
     response = await fetch(`${mailboxPath(input.roomTenantId)}/send`, {
@@ -783,7 +792,7 @@ export async function sendToRoom(input: {
       body: JSON.stringify({
         to,
         subject: input.content.slice(0, 60),
-        body: input.content,
+        body,
         ...(input.inReplyTo !== undefined ? { inReplyTo: input.inReplyTo } : {}),
       }),
     });
