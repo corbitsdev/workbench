@@ -4,6 +4,7 @@ import {
   agentDeploySourceAssetName,
   agentSlugFromSourceAssetName,
   buildAgentDefinitionJson,
+  buildScheduledRunBody,
 } from "./agent-deploy";
 
 describe("buildAgentDefinitionJson", () => {
@@ -31,6 +32,20 @@ describe("buildAgentDefinitionJson", () => {
     expect(projection.id).toBe(buildInput.workflowId);
     expect(projection.triggers[0]?.to).toBe(buildInput.triggerAddress);
     expect(Object.values(projection.steps)[0]?.agent.systemPrompt).toBe(buildInput.systemPrompt);
+  });
+});
+
+describe("buildScheduledRunBody", () => {
+  test("asks the agent to mail the deploying person's address", () => {
+    const body = buildScheduledRunBody("alice@example.test");
+    expect(body).toContain("alice@example.test");
+    expect(body).toContain("`to` list");
+  });
+
+  test("falls back to a bare reply instruction when no address is known", () => {
+    const body = buildScheduledRunBody(undefined);
+    expect(body).not.toContain("@");
+    expect(body).toContain("Reply with the result.");
   });
 });
 
