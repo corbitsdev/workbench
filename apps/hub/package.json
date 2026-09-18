@@ -20,7 +20,7 @@
     "@corbits/cron": "workspace:*",
     "@corbits/error-sink": "workspace:*",
     "@corbits/inference-catalog": "workspace:*",
-    "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#8cb5db9625254b58ff9bcb2f1e5324b54ac439b6",
+    "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#de61a3c0bed546ded8ece8a791c928cf484ef5c4",
     "@corbits/memory": "github:corbitsdev/corbits-memory#e74da20f148a302dff5400915fe504ee2395e913",
     "@corbits/url-path": "workspace:*",
     "@corbits/webhooks": "github:corbitsdev/webhooks#570bd52688920c0ce018a8fbcd046199fa4125dd",
