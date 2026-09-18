@@ -42,6 +42,7 @@ import {
   workflowDefinitionAssetIdFromPath,
 } from "./path-ids";
 import { WORKBENCH_PATH_PREFIX, isWorkbenchPath } from "./workbench-path";
+import { CHATS_PATH_PREFIX, isChatPath } from "./chat-path";
 import {
   LegacyLibraryRedirect,
   LegacySettingsAgentsRedirect,
@@ -63,6 +64,9 @@ const NewWorkbenchPickerRoute = lazy(async () => ({
 }));
 const ChatPage = lazy(async () => ({
   default: (await import("./pages/chat-page")).ChatPage,
+}));
+const ChatThreadRoute = lazy(async () => ({
+  default: (await import("./pages/chat-thread-page")).ChatThreadRoute,
 }));
 const RoutinesRoute = lazy(async () => ({
   default: (await import("./pages/routines-page")).RoutinesRoute,
@@ -207,6 +211,9 @@ export type AppRoute = {
  * so the sidebar footer row stays lit on a detail screen.
  */
 export function matchesRoute(routePath: string, path: string): boolean {
+  if (routePath === CHATS_PATH_PREFIX) {
+    return isChatPath(path);
+  }
   if (routePath === WORKBENCH_PATH_PREFIX) {
     return isWorkbenchPath(path) || path === "/";
   }
@@ -267,6 +274,14 @@ export const APP_ROUTES: readonly AppRoute[] = [
     label: CHAT_STRINGS.newWorkbenchAction,
     icon: <ChatCircle />,
     render: () => <NewWorkbenchPickerRoute />,
+  },
+  {
+    path: CHATS_PATH_PREFIX,
+    label: "Chats",
+    icon: <ChatCircle />,
+    render: (path: string, navigate: (to: string) => void) => (
+      <ChatThreadRoute path={path} navigate={navigate} />
+    ),
   },
   {
     path: WORKBENCH_PATH_PREFIX,
