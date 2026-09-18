@@ -1,10 +1,7 @@
-// Capability-add is a read-modify-write of the definition's asset: two
-// concurrent POSTs that both snapshot the same workflow.json and then
-// each write their own pin would last-write-wins clobber the other
-//. This module owns that mutation so both the tenant-session
-// route and the workflow-run route retry the loser against the latest
-// snapshot instead of silently dropping an add. The lock itself lives
-// in `./asset-write.ts` so sibling RMW routes share it.
+// Capability-add is a read-modify-write of the definition's asset. This
+// module owns the mutation so a concurrent writer retries against the
+// latest snapshot instead of clobbering it; the lock lives in
+// `./asset-write.ts` so sibling RMW routes share it.
 
 import type { PinnedSkillIndexEntry } from "@corbits/skills-tools";
 import type { DB } from "@intx/db";
@@ -46,13 +43,8 @@ export type CommitAgentCapabilityAddResult = {
   model?: string;
 };
 
-/**
- * Applies one capability add against the definition's current asset,
- * retrying when a concurrent writer moved the snapshot between this
- * call's read and its write. The per-asset lock makes that stale check
- * atomic so the loser reapplies on the winner's tree instead of
- * clobbering it.
- */
+/** Applies one capability add, retrying when a concurrent writer moved the
+ * snapshot between this call's read and its write. */
 export async function commitAgentCapabilityAdd(
   args: CommitAgentCapabilityAddArgs,
 ): Promise<CommitAgentCapabilityAddResult> {
@@ -95,20 +87,14 @@ async function prepareCapabilityAdd(
 ): Promise<PreparedCapabilityAdd> {
   let nextWorkflowJson: string;
   let message: string;
-  // Pins read out of the snapshot itself — the asset's stanza is the
-  // source of truth, so a concurrent writer's pins survive a retry
-  // against the latest snapshot instead of being clobbered by a stale
-  // side-table read.
+  // Read out of the snapshot itself, so a concurrent writer's pins survive
+  // a retry instead of being clobbered by a stale side-table read.
   let skills = readPinnedSkillNames(workflowJson);
 
   switch (args.body.kind) {
     case "toolPackage": {
-      // A package already pinned keeps its stored version: re-adding it
-      // (e.g. a person re-clicking "add" on something already listed) is
-      // a no-op on the version, never a silent bump to whatever the
-      // registry's newest tarball happens to be today. Only a name with
-      // no existing pin resolves fresh against the registry. An explicit
-      // bump is a distinct, explicit input this does not add.
+      // A package already pinned keeps its stored version — re-adding it
+      // is a no-op, never a silent bump to the registry's newest tarball.
       const packageName = args.body.name;
       const existingPin = readAgentCapabilities(workflowJson).toolPackagePins.find(
         (pin) => pin.name === packageName,

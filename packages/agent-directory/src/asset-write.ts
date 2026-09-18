@@ -1,12 +1,7 @@
-// Same-asset definition edits are read-modify-write: two concurrent
-// routes that snapshot the same workflow.json and then each write their
-// own field would last-write-wins clobber the other. This
-// module serializes those writers and retries the loser against the
-// latest snapshot.
-//
-// The lock is an in-process promise chain keyed by asset id. Hub is a
-// single replica, so that chain is the lock — not a Redis or Postgres
-// advisory lock, and not safe across multiple hub replicas.
+// Same-asset definition edits are read-modify-write; this module serializes
+// concurrent writers and retries the loser against the latest snapshot. The
+// lock is an in-process promise chain keyed by asset id — correct only
+// because hub is a single replica, not safe across multiple.
 
 import type { AssetService } from "@intx/hub-sessions";
 
@@ -48,12 +43,8 @@ export type CommitLatestAgentAssetSnapshotArgs<T> = {
   write: (prepared: { workflowJson: string; message: string }) => Promise<void>;
 };
 
-/**
- * Applies one mutation against the definition's current asset, retrying
- * when a concurrent writer moved the snapshot between this call's read
- * and its write. The per-asset lock makes that stale check atomic so
- * the loser reapplies on the winner's tree instead of clobbering it.
- */
+/** Applies one mutation against the definition's current asset, retrying
+ * when a concurrent writer moved the snapshot between read and write. */
 export async function commitLatestAgentAssetSnapshot<T>(
   args: CommitLatestAgentAssetSnapshotArgs<T>,
 ): Promise<T> {

@@ -1,22 +1,8 @@
-// A runtime tool-package pin must resolve to a concrete,
-// published version — never the npm "any version" range `*` — so a new
-// tarball landing in the tenant's registry never silently changes what
-// an already-deployed specialist runs. `withAgentToolPackagePin` (see
-// `./agent-workflow.ts`) rejects `"*"` at its own boundary; this module
-// is the one place a caller that only has a package *name* (guided
-// capability-add, `create_agent`'s own tool-package pins) resolves it to
-// the version to pin instead.
-//
-// The tenant's usable tool packages are published as npm-style tarballs
-// into its (possibly inherited) `corbits-tools` `package-registry`
-// asset — the exact same asset `@intx/tool-packaging`'s
-// `AssetRegistrySource` reads from at deploy-assembly time
-// (`vendor/intx/hub-sessions/src/session-service.ts`'s `buildAndResolve`).
-// Reading the tarball listing directly here, rather than re-deriving a
-// packument, keeps this resolver a plain filename scan: exactly the
-// same `tarballCoversPackage` filter the web app's own registry publisher
-// (`apps/web/src/tools/registry-publish.ts`) uses to decide whether a
-// registry carries a given package.
+// A runtime tool-package pin must resolve to a concrete, published version
+// — never the npm "any version" range `*` — so a new tarball landing in
+// the registry never silently changes what an already-deployed specialist
+// runs. This is the one place a caller with only a package name resolves
+// it to a pinnable version.
 import semver from "semver";
 
 import type { DB } from "@intx/db";
@@ -41,11 +27,9 @@ export type ResolvePinnedVersionDeps = {
   readonly assetService: AssetService;
 };
 
-/** The `<name>-<version>.tgz` filename convention the web app's registry
- * publisher writes into a registry's `tarballs/` tree. Returns `null`
- * for a filename that does not cover `packageName` or does not parse as
- * a valid semver version — a defensively-shaped filename is treated as
- * absent rather than crashing the resolution. */
+/** Parses the `<name>-<version>.tgz` filename convention. Returns `null`
+ * for a filename that doesn't cover `packageName` or parse as semver,
+ * treated as absent rather than crashing resolution. */
 function versionFromTarballFilename(filename: string, packageName: string): string | null {
   if (!tarballCoversPackage(filename, packageName)) return null;
   const prefix = `${packageName.replace(/^@/, "").replace("/", "-")}-`;
@@ -53,26 +37,16 @@ function versionFromTarballFilename(filename: string, packageName: string): stri
   return semver.valid(version) !== null ? version : null;
 }
 
-/** The highest version in `versions`, preferring a stable (non-prerelease)
- * version whenever one exists — a prerelease only wins when the registry
- * carries no stable version for the package at all. Without this, a
- * `2.0.0-rc.1` tarball would outrank an already-published `1.9.0` purely
- * because prerelease identifiers still sort after a lower release under
- * plain semver comparison for a higher major/minor/patch, silently
- * pinning a pre-release build a person never asked for. */
+/** The highest version, preferring stable over prerelease — without this a
+ * `2.0.0-rc.1` could silently outrank a published `1.9.0`. */
 function highestPreferringStable(versions: readonly string[]): string | undefined {
   const stable = versions.filter((version) => semver.prerelease(version) === null);
   const candidates = stable.length > 0 ? stable : versions;
   return candidates.slice().sort(semver.compare).at(-1);
 }
 
-/**
- * Resolves `packageName` against the tenant's (possibly inherited)
- * `corbits-tools` registry against the given, already-loaded tarball
- * `filenames` listing (see `createPinnedVersionResolver` for the case
- * where the caller wants that listing loaded once and reused across
- * several package names).
- */
+/** Resolves `packageName` against an already-loaded tarball `filenames`
+ * listing. See `createPinnedVersionResolver` to reuse the listing. */
 function resolveFromFilenames(
   filenames: readonly string[],
   packageName: string,
@@ -87,17 +61,9 @@ function resolveFromFilenames(
   return { name: packageName, version: highest };
 }
 
-/**
- * Builds a resolver against the tenant's (possibly inherited)
- * `corbits-tools` registry that loads the registry asset and its tarball
- * listing at most once — the first `resolve` call pays for the ancestor
- * walk and the listing round trip, every subsequent call against the
- * same resolver reuses that listing. `resolvePinnedVersion` below is the
- * one-name convenience wrapper; a caller resolving several names in one
- * request (e.g. `create_agent`'s own `toolPackagePins`) should build one
- * resolver and call it once per name instead, so a five-pin create still
- * costs one ancestor walk and one listing, not five.
- */
+/** Builds a resolver that loads the registry's tarball listing at most
+ * once, reused across every call. Prefer this over `resolvePinnedVersion`
+ * when resolving several names in one request. */
 export function createPinnedVersionResolver(
   deps: ResolvePinnedVersionDeps,
   tenantId: string,
@@ -129,27 +95,10 @@ export function createPinnedVersionResolver(
   };
 }
 
-/**
- * Resolves `packageName` against the tenant's (possibly inherited)
- * `corbits-tools` registry to `{ name, version }`, `version` always the
- * highest published STABLE semver among the registry's tarballs for that
- * package (a prerelease wins only when the registry carries no stable
- * version at all) — never `*`, so a runtime pin is reproducible: a later
- * tarball landing in the registry changes what a *new* pin resolves to,
- * never what an already-deployed definition's stored pin resolves to.
- *
- * Throws `CapabilityOutOfInventoryError` — the same fail-closed error
- * `assertCapabilityInInventory` throws for any other out-of-inventory
- * addition, so every caller's existing `CapabilityOutOfInventoryError`
- * -> 4xx mapping (`./routes.ts`, `./workflow-capability-routes.ts`)
- * covers this case with no new wiring — when the tenant has no visible
- * `corbits-tools` registry, or that registry carries no tarball for
- * `packageName`.
- *
- * Resolving several names for one tenant in the same request? Build a
- * `createPinnedVersionResolver` once instead — this wrapper always pays
- * for its own ancestor walk and listing round trip.
- */
+/** Resolves `packageName` to `{ name, version }`, the highest published
+ * stable semver, never `*`. Throws `CapabilityOutOfInventoryError` when
+ * unresolvable. Build a `createPinnedVersionResolver` instead for several
+ * names in one request. */
 export async function resolvePinnedVersion(
   deps: ResolvePinnedVersionDeps,
   tenantId: string,
