@@ -55,9 +55,18 @@ export function deployablePackage(
 /** Strips wrapping backticks/colon and returns the canonical file name the
  * text names, or null when it names neither of the two contract files. */
 function namedFile(text: string): string | null {
-  const stripped = text.trim().replace(/^`+/, "").replace(/`+$/, "").replace(/:$/, "").trim();
-  if (/^package\.json$/i.test(stripped)) return PACKAGE_MANIFEST_NAME;
-  if (/^definition\.json$/i.test(stripped)) return AGENT_DEFINITION_NAME;
+  // A label may be a comment (`// x`, `# x`) and a path (`Scribe/x`); only
+  // the final segment names the file.
+  const stripped = text
+    .trim()
+    .replace(/^(\/\/|#)\s*/, "")
+    .replace(/^`+/, "")
+    .replace(/`+$/, "")
+    .replace(/:$/, "")
+    .trim();
+  const base = stripped.split("/").pop() ?? "";
+  if (/^package\.json$/i.test(base)) return PACKAGE_MANIFEST_NAME;
+  if (/^definition\.json$/i.test(base)) return AGENT_DEFINITION_NAME;
   return null;
 }
 
@@ -110,6 +119,19 @@ function findNamedFencedBlocks(lines: readonly string[]): Map<string, FencedBloc
     }
     const end = Math.min(index + 1, lines.length);
     index = end;
+    // A comment label on the fence's first line (`// Scribe/definition.json`)
+    // names the file too; it is not part of the file.
+    if (name === null) {
+      const firstContent = contentLines.findIndex((content) => content.trim() !== "");
+      const first = contentLines[firstContent] ?? "";
+      if (/^\s*(\/\/|#)/.test(first)) {
+        const fromComment = namedFile(first);
+        if (fromComment !== null) {
+          name = fromComment;
+          contentLines.splice(0, firstContent + 1);
+        }
+      }
+    }
     if (name !== null && !found.has(name)) {
       found.set(name, {
         content: contentLines.join("\n"),
