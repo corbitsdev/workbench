@@ -1,7 +1,5 @@
 // Builds and publishes Myra's deployable definition entirely over stock
-// routes: ensure the `workflow`-kind asset exists, mint a short-lived push
-// token, push the rendered source tree into the asset's git repo, revoke
-// the token, and hand back the `WorkflowDeployInput` pinned to that commit.
+// routes, ending with a `WorkflowDeployInput` pinned to the pushed commit.
 import { ASSISTANT_SYSTEM_PROMPT } from "@corbits/myra/prompt";
 import { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "@corbits/myra/workflow-ids";
 import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
@@ -75,23 +73,9 @@ export async function ensureMyraSourceAsset(
   return existing.id;
 }
 
-/**
- * The function-free projection of what `@corbits/myra`'s `buildMyraWorkflow`
- * produces, written to the asset's `definition.json` for readers — the entry
- * itself is a bundle no reader can slice apart. Hand-built here rather than
- * by calling that function, because it goes through `@intx/workflow`'s
- * `defineWorkflow`/`step`, which pull in `@intx/agent`'s Node-bound runtime
- * (file locking) that a browser bundle cannot resolve.
- *
- * It mirrors `defineWorkflow`'s own normalization
- * (`vendor/intx/workflow/src/definition/workflow.ts`'s `normalize`/
- * `applyDefaultInputStep`, and `primitives.ts`'s `step`): a single step with
- * no `after` gets `input: { from: "trigger.payload" }`; `triggers:
- * "unbounded"` (not the numeric default) gets `drainBehavior: "wait"`; a
- * bare `trigger` becomes a one-element `triggers` array. `toolFactories` is
- * empty and `toolPackagePins` is empty on purpose: the real factories ride
- * the bundle, and JSON cannot carry a function.
- */
+// Hand-built rather than calling `buildMyraWorkflow` directly, since that
+// pulls in a Node-bound runtime a browser bundle can't resolve. See
+// docs/myra-definition-json.md.
 export function buildMyraDefinitionJson(
   triggerAddress: string,
   declaredSources: readonly DeclaredSource[],
