@@ -31,13 +31,12 @@ type PostgresFactory = (options: {
   onnotice: () => undefined;
 }) => SqlClient;
 
-// Resolved dynamically rather than imported statically: this script's
-// own tsconfig has no "bun" condition, which is what lets `postgres`
-// and apps/hub's own source resolve under the hub's tsconfig. Loading
-// both through Bun's own runtime resolver instead keeps this script
-// out of that cross-project typecheck entirely.
+// The driver is the hub's dependency, so it resolves from apps/hub rather
+// than from this script's own directory.
+const hubDir = new URL("../apps/hub/", import.meta.url).pathname;
+
 async function loadPostgres(): Promise<PostgresFactory> {
-  const resolved = Bun.resolveSync("postgres", import.meta.dir);
+  const resolved = Bun.resolveSync("postgres", hubDir);
   const loaded = (await import(resolved)) as { default: PostgresFactory };
   return loaded.default;
 }
