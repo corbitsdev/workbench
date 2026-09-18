@@ -1,10 +1,6 @@
-// A guided tour of the shell, started only by explicit user action (a
-// command or menu item calling `openFirstRunTour`) — never automatically on
-// landing, which used to drop its overlay right over the chat `/` redirects
-// onto. "Seen" is a localStorage flag keyed by user id (mirrors
-// `command-palette-recents.ts`'s defensive access) so a shared browser
-// profile never re-shows it as "new" for the wrong account, and finishing or
-// skipping both mark it seen — there is no "remind me later".
+// "Seen" is a localStorage flag keyed by user id, so a shared browser
+// profile never re-shows it as "new" for the wrong account. No "remind me
+// later" — finishing or skipping both mark it seen.
 
 import Joyride, { ACTIONS, type CallBackProps, STATUS, type Step } from "react-joyride";
 import { reportError } from "@corbits/error-sink";
@@ -62,10 +58,8 @@ const STEPS: readonly Step[] = [
 export function FirstRunTour({ userId }: { readonly userId: string }) {
   const run = useFirstRunTourOpen();
 
-  // Dismissing has to unmount Joyride, not just remember the dismissal:
-  // a running Joyride keeps two portals appended to `document.body` and
-  // an overlay over the app, and those portal containers are managed
-  // outside React's tree.
+  // Must unmount Joyride, not just remember the dismissal — its portal
+  // containers are managed outside React's tree.
   function handleCallback(data: CallBackProps) {
     // The tooltip's close (X) button fires action "close" without ever
     // moving status to FINISHED or SKIPPED, so it has to be treated as a

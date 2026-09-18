@@ -48,11 +48,7 @@ export function artifactCountsPath(tenantId: string): string {
   return `/api/tenants/${tenantId}/artifacts/counts`;
 }
 
-/**
- * POST multipart upload against the tenant artifacts surface. Returns the
- * created detail rows on 201; throws with status on non-2xx so the page can
- * surface an honest failure.
- */
+// Throws with status on non-2xx so the page can surface an honest failure.
 export async function uploadArtifactFiles(
   tenantId: string,
   files: readonly File[],
@@ -88,12 +84,7 @@ export async function uploadArtifactFiles(
   return body.artifacts;
 }
 
-/**
- * PUT `/api/tenants/:tenantId/artifacts/:id` — the artifact
- * editor's one save path now that co-edit presence is gone. Throws with
- * status on non-2xx so the host can render an honest failed-save state
- * instead of silently pretending the write landed.
- */
+// Throws with status on non-2xx, never silently pretends the write landed.
 export async function saveArtifactContent(
   tenantId: string,
   artifactId: string,
@@ -121,10 +112,8 @@ export async function saveArtifactContent(
   return (await response.json()) as ArtifactDetail;
 }
 
-/** True when the hub answered "artifacts plane not configured" (503) —
- * read off the query's own status field, never string-matched out of a
- * rendered message (that copy is display-boundary plain by design and
- * carries no status text to match against). */
+// Read off the query's status field, never string-matched out of the
+// rendered message.
 export function isArtifactsUnavailableStatus(status: number | undefined): boolean {
   return status === 503;
 }
@@ -136,17 +125,9 @@ export function artifactUploadToast(names: readonly string[]): string {
     : `Uploaded ${names.length} files`;
 }
 
-/**
- * The bulk/context-menu operation set this file adopts from the shared
- * selection system — deliberately just the one real, already-
- * shippable operation: every other candidate (delete, move, rename,
- * download) has no backend route or store method behind it yet (see
- * `packages/artifacts-hub/src/routes.ts` and `@corbits/artifacts`'
- * `ArtifactStore`), so wiring a button for any of them would be exactly the
- * dead/no-op control this adoption is required to avoid. `BulkActionBar`
- * and the shell context menu's `artifact` target both read this same
- * constant, which is what the parity test asserts against.
- */
+// Deliberately just the one shippable operation: delete/move/rename/
+// download have no backend route yet, and a button with nothing behind
+// it is exactly the dead control this adoption avoids.
 export const LIBRARY_BULK_OPERATION_IDS = ["copy-link"] as const;
 
 /** `/artifacts/a/:id` — the one canonical deep link a file has. */
@@ -172,14 +153,8 @@ export function copyArtifactLinksActionLabel(count: number): string {
   return count > 1 ? `Copy ${count} links` : "Copy link";
 }
 
-/**
- * The MIME type of a file artifact's out-of-band upload blob, read off
- * `source.upload.mimeType` — present on every artifact minted through
- * `createFileArtifact` (`@corbits/artifacts`), regardless of whether the
- * hub could inline its bytes into `content` as text. Null for an artifact
- * with no upload backing at all (e.g. a co-edited doc), which is the only
- * case where an empty `content` genuinely means "nothing here yet."
- */
+// Null for an artifact with no upload backing at all — the only case
+// where an empty `content` genuinely means "nothing here yet."
 export function uploadMimeTypeFromSource(source: Record<string, unknown>): string | null {
   const upload = source.upload;
   if (typeof upload !== "object" || upload === null) return null;

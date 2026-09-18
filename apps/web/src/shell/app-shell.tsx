@@ -1,15 +1,5 @@
-// The app frame: one sidebar (the workbench list and shared chrome — see
-// `sidebar.tsx`), the main pane a route renders into, and the optional
-// canvas. Every route in `../routes.tsx` mounts inside this same frame —
-// there is no per-route shell variant and no sidebar collapse. The
-// conversation lives in the main stage; the canvas is auxiliary (profiles
-// and similar) and opens on use, then closes internally.
-//
-// Canvas state is NOT owned here — it has to be visible to the command
-// palette too (a sibling of this component, not a descendant — see
-// `shell-chrome-provider.tsx`), so `ShellChromeProvider` owns it above both
-// and this component only reads it through the same hooks page code
-// already uses.
+// Canvas state is NOT owned here — see `shell-chrome-provider.tsx` for why
+// it has to be visible to the command palette too.
 
 import { lazy, Suspense, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { ArtifactSaveState } from "@/library";
@@ -92,10 +82,8 @@ export function AppShell({
   const canvasFocus = useCanvasColumnFocus();
   const { selectedTenantId: tenantId } = useBench();
 
-  // A text-kind artifact's save state (single-user editing, no co-edit
-  // presence), carried with the id it belongs to: state for any other id is
-  // ignored during render, so a stale "Saved · v3" can never leak into a
-  // newly opened artifact and nothing has to be reset when one changes.
+  // Carried with the id it belongs to, so a stale "Saved · v3" can never
+  // leak into a newly opened artifact.
   const [savedFor, setSavedFor] = useState<{
     readonly id: string;
     readonly state: ArtifactSaveState;
