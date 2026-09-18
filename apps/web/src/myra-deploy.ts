@@ -116,7 +116,9 @@ export function buildMyraDefinitionJson(
           capabilities: [],
           // The probe approves exactly these `(provider, model)` pairs, so
           // they must name what the deploy's offering chain resolves to.
-          inference: { sources: declaredSources.map((source) => ({ ...source })) },
+          inference: {
+            sources: declaredSources.map((source) => ({ ...source })),
+          },
           toolPackagePins: ASSISTANT_TOOL_PACKAGE_PINS,
         },
         drainBehavior: "wait",
@@ -142,7 +144,8 @@ async function withPushToken<T>(
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      name: "myra-deploy",
+      // Active token names are unique per user; concurrent attempts must not collide.
+      name: `myra-deploy-${crypto.randomUUID()}`,
       resource: `asset:${assetId}`,
       refPattern: "refs/heads/main",
       // The ref advertisement before a push is a read, so a push-only
@@ -161,7 +164,9 @@ async function withPushToken<T>(
   try {
     return await push(token.secret);
   } finally {
-    await fetchImpl(`${tokensPath}/${encodeURIComponent(token.id)}`, { method: "DELETE" });
+    await fetchImpl(`${tokensPath}/${encodeURIComponent(token.id)}`, {
+      method: "DELETE",
+    });
   }
 }
 
