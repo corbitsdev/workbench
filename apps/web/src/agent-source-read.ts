@@ -4,7 +4,10 @@
 // There is no stock file-read route for a workflow asset (only
 // package-registry tarballs get one), so this fetches `main` over the
 // asset's smart-HTTP git remote with a short-lived read-only token.
-import { parseWorkflowSourceEntry, WORKFLOW_SOURCE_ENTRY_PATH } from "@corbits/workflows/client";
+import {
+  parseWorkflowSourceDefinition,
+  WORKFLOW_SOURCE_DEFINITION_PATH,
+} from "@corbits/workflows/client";
 import { type } from "arktype";
 
 import { fetchSourceFile } from "./git-fetch";
@@ -78,12 +81,12 @@ export async function readAgentSource(
     globalThis.location.origin,
   ).toString();
   try {
-    const entryModule = await fetchSourceFile({
+    const definitionFile = await fetchSourceFile({
       url,
       token: token.secret,
-      filepath: WORKFLOW_SOURCE_ENTRY_PATH,
+      filepath: WORKFLOW_SOURCE_DEFINITION_PATH,
     });
-    const workflowJson = parseWorkflowSourceEntry(entryModule, assetId);
+    const workflowJson = parseWorkflowSourceDefinition(definitionFile, assetId);
     const parsed = AgentWorkflowJsonShape(JSON.parse(workflowJson));
     if (parsed instanceof type.errors) {
       throw new AgentSourceReadError(

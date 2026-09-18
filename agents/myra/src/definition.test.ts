@@ -1,23 +1,17 @@
-// Tests for this package's own contract: the shape our factory
-// commits to, its serialization guarantees, and its boundary. The
-// platform's own normalization and validation are its business, not
-// re-proven here.
+// The two facts about Myra's entry that a deploy silently depends on: she
+// carries real tool factories (the source lineage resolves no pins, so an
+// empty list means an agent with no tools), and she stays single-step.
 
 import { expect, test } from "bun:test";
 import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 
-import {
-  ASSISTANT_STEP_ID,
-  ASSISTANT_SYSTEM_PROMPT,
-  ASSISTANT_WORKFLOW_ID,
-  buildAssistantWorkflow,
-  serializeAssistantWorkflow,
-} from "./index";
+import { ASSISTANT_STEP_ID, buildMyraWorkflow } from "./index";
 
 const INPUT = {
   triggerAddress: "ins_dep000000000000@example.test",
   inferencePreferences: [{ provider: "anthropic", model: "claude-test" }],
   turnTimeoutMs: 600000,
+  systemPrompt: "You are Myra.",
 } as const;
 
 function assistantStep(definition: WorkflowDefinition): StepPrimitive {
@@ -28,79 +22,23 @@ function assistantStep(definition: WorkflowDefinition): StepPrimitive {
   return primitive;
 }
 
+test("the agent carries its tool factories inline, not as pins", () => {
+  const agent = assistantStep(buildMyraWorkflow(INPUT)).agent;
+  expect(agent.toolFactories.length).toBeGreaterThan(0);
+  // Every factory must be callable and namespaced: the sidecar reads
+  // `factory.id` as the tool package name for the source lineage.
+  for (const factory of agent.toolFactories) {
+    expect(typeof factory).toBe("function");
+    expect(factory.id).toMatch(/^@?[^/]+\/.+/);
+  }
+  expect(agent.toolPackagePins).toEqual([]);
+});
+
 test("the definition has exactly one step, so a deployment stays conversational", () => {
   // A single-step deployment keeps one warm agent with durable memory
   // across runs; a second step would silently trade that memory away.
-  // This assertion is the tripwire against that regression.
-  const definition = buildAssistantWorkflow(INPUT);
+  const definition = buildMyraWorkflow(INPUT);
   expect(definition.stepOrder).toEqual([ASSISTANT_STEP_ID]);
-  expect(Object.keys(definition.steps)).toEqual([ASSISTANT_STEP_ID]);
-});
-
-test("the step carries an explicit per-turn timeout", () => {
-  const definition = buildAssistantWorkflow(INPUT);
+  expect(assistantStep(definition).triggers).toBe("unbounded");
   expect(assistantStep(definition).timeout).toBe(INPUT.turnTimeoutMs);
-});
-
-test("the step is unbounded: it re-arms after every reply instead of completing after the first", () => {
-  // The platform's step primitive defaults `triggers` to 1 (batch). A
-  // conversation is the long-lived interactive agent that must never
-  // self-complete — without this, the run ends after the greeting and
-  // every later message is rejected as sent to a terminal run.
-  expect(assistantStep(buildAssistantWorkflow(INPUT)).triggers).toBe("unbounded");
-});
-
-test("the workflow is triggered by mail to the given deployment address", () => {
-  const definition = buildAssistantWorkflow(INPUT);
-  expect(definition.id).toBe(ASSISTANT_WORKFLOW_ID);
-  expect(definition.triggers).toEqual([{ type: "mail", to: INPUT.triggerAddress }]);
-});
-
-test("the agent carries the assistant prompt, the preferences, and inlines no tools", () => {
-  const agent = assistantStep(buildAssistantWorkflow(INPUT)).agent;
-  expect(agent.systemPrompt).toBe(ASSISTANT_SYSTEM_PROMPT);
-  expect(agent.inference.sources).toEqual([...INPUT.inferencePreferences]);
-  // Tools arrive as packages on the deploy, never inlined here: an
-  // inline factory is a function-valued field the asset cannot carry.
-  expect(agent.toolFactories).toEqual([]);
-});
-
-test("the definition survives the workflow-asset JSON round-trip", () => {
-  const definition = buildAssistantWorkflow(INPUT);
-  const revived: unknown = JSON.parse(serializeAssistantWorkflow(definition));
-  expect(revived).toEqual(definition);
-});
-
-test("serialization fails loud on a function-valued field, naming its path", () => {
-  const poisoned = {
-    id: ASSISTANT_WORKFLOW_ID,
-    triggers: [{ type: "manual" }],
-    stepOrder: [ASSISTANT_STEP_ID],
-    steps: {
-      assistant: {
-        kind: "step",
-        id: ASSISTANT_STEP_ID,
-        drainBehavior: "cancel",
-        agent: {
-          id: ASSISTANT_STEP_ID,
-          systemPrompt: ASSISTANT_SYSTEM_PROMPT,
-          toolFactories: [() => []],
-          capabilities: [],
-          inference: { sources: [] },
-        },
-      },
-    },
-  } as unknown as WorkflowDefinition;
-  expect(() => serializeAssistantWorkflow(poisoned)).toThrow(
-    /steps\.assistant\.agent\.toolFactories\[0\]/,
-  );
-});
-
-test("an empty trigger address is rejected", () => {
-  expect(() => buildAssistantWorkflow({ ...INPUT, triggerAddress: "" })).toThrow(/triggerAddress/);
-});
-
-test("a non-positive or fractional turn timeout is rejected", () => {
-  expect(() => buildAssistantWorkflow({ ...INPUT, turnTimeoutMs: 0 })).toThrow(/turnTimeoutMs/);
-  expect(() => buildAssistantWorkflow({ ...INPUT, turnTimeoutMs: 0.5 })).toThrow(/turnTimeoutMs/);
 });

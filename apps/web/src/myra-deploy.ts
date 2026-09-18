@@ -3,9 +3,8 @@
 // token, push the rendered source tree into the asset's git repo, revoke
 // the token, and hand back the `WorkflowDeployInput` pinned to that commit.
 import { ASSISTANT_SYSTEM_PROMPT } from "@corbits/myra/prompt";
-import { ASSISTANT_TOOL_PACKAGE_PINS } from "@corbits/myra/tool-packages";
 import { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "@corbits/myra/workflow-ids";
-import { renderWorkflowSourceTree } from "@corbits/workflows/client";
+import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
 import { type } from "arktype";
 
 import { MYRA_SOURCE_CONFIG } from "./myra-source";
@@ -79,21 +78,21 @@ export async function ensureMyraSourceAsset(
 const ASSISTANT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 
 /**
- * The exact `WorkflowDefinition` JSON `@corbits/myra`'s
- * `buildAssistantWorkflow` would produce for a single-step, mail-triggered,
- * unbounded-turn assistant — hand-built here rather than calling that
- * function, because `buildAssistantWorkflow` goes through `@intx/workflow`'s
+ * The function-free projection of what `@corbits/myra`'s `buildMyraWorkflow`
+ * produces, written to the asset's `definition.json` for readers — the entry
+ * itself is a bundle no reader can slice apart. Hand-built here rather than
+ * by calling that function, because it goes through `@intx/workflow`'s
  * `defineWorkflow`/`step`, which pull in `@intx/agent`'s Node-bound runtime
- * (file locking) that a browser bundle cannot resolve (confirmed by a failed
- * `apps/web` build importing `@corbits/myra` directly).
- * `apps/web/src/myra-deploy.test.ts` and `agents/myra`'s own
- * `validate-push.test.ts`-style round-trip both guard this shape against
- * drift from `defineWorkflow`'s own normalization
+ * (file locking) that a browser bundle cannot resolve.
+ *
+ * It mirrors `defineWorkflow`'s own normalization
  * (`vendor/intx/workflow/src/definition/workflow.ts`'s `normalize`/
  * `applyDefaultInputStep`, and `primitives.ts`'s `step`): a single step with
  * no `after` gets `input: { from: "trigger.payload" }`; `triggers:
  * "unbounded"` (not the numeric default) gets `drainBehavior: "wait"`; a
- * bare `trigger` becomes a one-element `triggers` array.
+ * bare `trigger` becomes a one-element `triggers` array. `toolFactories` is
+ * empty and `toolPackagePins` is empty on purpose: the real factories ride
+ * the bundle, and JSON cannot carry a function.
  */
 export function buildMyraDefinitionJson(
   triggerAddress: string,
@@ -119,7 +118,7 @@ export function buildMyraDefinitionJson(
           inference: {
             sources: declaredSources.map((source) => ({ ...source })),
           },
-          toolPackagePins: ASSISTANT_TOOL_PACKAGE_PINS,
+          toolPackagePins: [],
         },
         drainBehavior: "wait",
         timeout: ASSISTANT_TURN_TIMEOUT_MS,
@@ -179,11 +178,21 @@ export async function pushMyraSource(
   declaredSources: readonly DeclaredSource[],
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
-  const tree = renderWorkflowSourceTree({
+  const triggerAddress = `assistant@${tenantDomain}`;
+  // Half a megabyte of bundled entry text, needed only during setup — kept
+  // out of the app's entry chunk the same way the git client is.
+  const { MYRA_BUNDLE_BUILD_EXPORT, MYRA_WORKFLOW_BUNDLE } = await import("@corbits/myra/bundle");
+  const tree = renderBundledWorkflowSourceTree({
     packageName: MYRA_SOURCE_CONFIG.packageName,
-    workflowJson: JSON.stringify(
-      buildMyraDefinitionJson(`assistant@${tenantDomain}`, declaredSources),
-    ),
+    bundle: MYRA_WORKFLOW_BUNDLE,
+    buildExport: MYRA_BUNDLE_BUILD_EXPORT,
+    buildInput: {
+      triggerAddress,
+      inferencePreferences: declaredSources.map((source) => ({ ...source })),
+      turnTimeoutMs: ASSISTANT_TURN_TIMEOUT_MS,
+      systemPrompt: ASSISTANT_SYSTEM_PROMPT,
+    },
+    workflowJson: JSON.stringify(buildMyraDefinitionJson(triggerAddress, declaredSources)),
   });
   const url = new URL(
     `/api/tenants/${encodeURIComponent(tenantId)}/assets/${MYRA_SOURCE_CONFIG.assetKind}/${MYRA_SOURCE_CONFIG.assetName}.git`,

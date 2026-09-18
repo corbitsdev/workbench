@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 
 import {
-  parseWorkflowSourceEntry,
   readWorkflowSourceDefinition,
+  renderBundledWorkflowSourceTree,
   renderWorkflowSourceTree,
   RetiredWorkflowEnvelopeError,
   WORKFLOW_SOURCE_ENTRY,
@@ -10,13 +10,23 @@ import {
 
 const WORKFLOW_JSON = JSON.stringify({ id: "wf_agent_research-buddy" });
 
-test("the rendered tree is a manifest naming the entry plus the entry itself", () => {
+function readerFor(tree: Readonly<Record<string, string>>) {
+  return {
+    readAssetBlob: (params: { assetId: string; path: string }) => {
+      const content = tree[params.path];
+      if (content === undefined) return Promise.reject(new Error(`no blob at ${params.path}`));
+      return Promise.resolve(new TextEncoder().encode(content));
+    },
+  };
+}
+
+test("the rendered tree is a manifest, the entry, and the definition projection", () => {
   const tree = renderWorkflowSourceTree({
     packageName: "@workbench-agent/research-buddy",
     workflowJson: WORKFLOW_JSON,
   });
 
-  expect(Object.keys(tree).sort()).toEqual(["package.json", "workflow.js"]);
+  expect(Object.keys(tree).sort()).toEqual(["definition.json", "package.json", "workflow.js"]);
   const manifest = JSON.parse(tree["package.json"] as string) as {
     name: string;
     interchange: { workflow: string };
@@ -25,28 +35,23 @@ test("the rendered tree is a manifest naming the entry plus the entry itself", (
   expect(manifest.interchange.workflow).toBe(WORKFLOW_SOURCE_ENTRY);
 });
 
-test("the definition round-trips through the entry module", () => {
-  const tree = renderWorkflowSourceTree({
+test("a bundled entry evaluates the bundle's build export and still projects the definition", async () => {
+  const tree = renderBundledWorkflowSourceTree({
     packageName: "@workbench-agent/research-buddy",
+    bundle: "export function build(input) { return { id: input.id }; }",
+    buildExport: "build",
+    buildInput: { id: "wf_agent_research-buddy" },
     workflowJson: WORKFLOW_JSON,
   });
 
-  expect(parseWorkflowSourceEntry(tree["workflow.js"] as string, "ast_1")).toBe(WORKFLOW_JSON);
+  // The entry is code the platform evaluates, so the projection — not a
+  // slice of the entry — is what readers get back.
+  expect(tree["workflow.js"]).toContain('export default build({"id":"wf_agent_research-buddy"});');
+  expect(await readWorkflowSourceDefinition(readerFor(tree), "ast_1")).toBe(WORKFLOW_JSON);
 });
 
-test("a bare workflow.json envelope parses as the named retirement error", () => {
-  expect(() => parseWorkflowSourceEntry(WORKFLOW_JSON, "ast_1")).toThrow(
-    RetiredWorkflowEnvelopeError,
-  );
-});
-
-test("an asset with no entry module reads as the named retirement error", async () => {
-  const reader = {
-    readAssetBlob: (params: { assetId: string; path: string }) =>
-      Promise.reject(new Error(`asset ${params.assetId} has no blob at ${params.path}`)),
-  };
-
-  await expect(readWorkflowSourceDefinition(reader, "ast_1")).rejects.toThrow(
+test("an asset with no definition projection reads as the named retirement error", async () => {
+  await expect(readWorkflowSourceDefinition(readerFor({}), "ast_1")).rejects.toThrow(
     RetiredWorkflowEnvelopeError,
   );
 });
@@ -56,10 +61,6 @@ test("reading a source-form asset answers its serialized definition", async () =
     packageName: "@workbench-agent/research-buddy",
     workflowJson: WORKFLOW_JSON,
   });
-  const reader = {
-    readAssetBlob: (params: { assetId: string; path: string }) =>
-      Promise.resolve(new TextEncoder().encode(tree[params.path] as string)),
-  };
 
-  expect(await readWorkflowSourceDefinition(reader, "ast_1")).toBe(WORKFLOW_JSON);
+  expect(await readWorkflowSourceDefinition(readerFor(tree), "ast_1")).toBe(WORKFLOW_JSON);
 });

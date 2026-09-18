@@ -20,7 +20,7 @@ import {
   type WorkflowSkillPinRunScope,
   type WorkflowRunAuthenticator,
 } from "./workflow-skill-pin-routes";
-import { agentDefinitionSourceTree, AGENT_DEFINITION_ENTRY_PATH } from "./definition-asset";
+import { agentDefinitionSourceTree, AGENT_DEFINITION_JSON_PATH } from "./definition-asset";
 import type { PinnedSkillIndexResolver } from "./routes";
 import { definitionFrom, SOURCE_TREE_PATHS, storedDefinitionBytesWithSkills } from "./source-tree";
 
@@ -47,7 +47,7 @@ function storedDefinitionBytes(): Uint8Array {
       }),
     ),
   });
-  return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
+  return new TextEncoder().encode(tree[AGENT_DEFINITION_JSON_PATH]);
 }
 
 function readAssetBlobFor(workflowBytes: Uint8Array): AssetService["readAssetBlob"] {

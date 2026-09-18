@@ -1,73 +1,85 @@
-// The assistant workflow: a single-step, mail-triggered conversational
-// definition whose agent is a general-purpose assistant for a team
-// workspace — it answers questions, drafts text, and reasons through
-// problems, rather than repeating what it is told.
+// Myra's workflow entry: a single-step, mail-triggered conversational
+// definition whose agent carries its tool factories inline.
 //
-// This package is installable data. It imports only published platform
-// packages, and nothing imports it statically: a host publishes the
-// serialized definition as a workflow asset and deploys it through the
-// platform's deploy machinery; the execution host materializes it at
-// runtime from the deploy alone.
-//
-// Tool-package pins: `@intx/agent`'s `defineAgent`
-// still does not accept a `toolPackagePins` field on its authoring-time
-// config — it is vendored, read-only source for this change — so the
-// agent below is built directly against `AgentDefinition`'s own type,
-// which already carries the field, matching
-// `workflows/collateral-generation`'s precedent. `@corbits/memory`
-// is pinned so this deployment can search, add, and list the
-// tenant's firm memory (`memory_search`/`memory_add`/`memory_list`) — a
-// published dependency, not a workbench-built tool package, resolved
-// through its own `interchange.tools` surface the same way any other
-// pin is; whether the pin *resolves* at deploy time still depends on an
-// operator publishing it to a registry the host's tool-package resolver
-// can reach (see `apps/hub/src/index.ts`'s `toolPackageRegistries`
-// wiring).
+// This module is never imported by a browser bundle. It is the entrypoint
+// `scripts/build-bundle.ts` bundles into one self-contained ESM file that
+// the deploy pushes as the asset's `workflow.js`; the sidecar's
+// source-deploy path evaluates that closure and runs `req.agent.toolFactories`
+// directly, so the factories must be real functions here rather than
+// `toolPackagePins` the source lineage never resolves.
 
-import type { AgentDefinition, InferencePreference } from "@intx/agent";
+import type { AgentDefinition, AnnotatedToolFactory, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
+import { memoryAdd, memoryList, memorySearch } from "@corbits/memory/tools";
+import { accessTools } from "@corbits/access-tools";
+import { agentDirectoryTools } from "@corbits/agent-directory-tools";
+import { capabilityTools } from "@corbits/capability-tools";
+import { catalogTools } from "@corbits/catalog-tools";
+import { interactionTools } from "@corbits/interaction-tools";
+import { skillsManageTools, skillsQueryTools } from "@corbits/skills-tools";
+import { workflowAuthoringTools } from "@corbits/workflow-authoring-tools";
 
-import { ASSISTANT_SYSTEM_PROMPT } from "./system-prompt";
-import { ASSISTANT_TOOL_PACKAGE_PINS } from "./tool-packages";
 import { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "./workflow-ids";
 
 export { ASSISTANT_SYSTEM_PROMPT } from "./system-prompt";
 export { ASSISTANT_TOOL_PACKAGE_PINS } from "./tool-packages";
 export { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "./workflow-ids";
 
-/**
- * Everything the definition needs that is per-deployment data. The
- * trigger address names a specific deployment's inbox, so a definition
- * built here is per-deployment by construction.
- */
-export interface AssistantWorkflowInput {
+/** The description the agent step carries; mirrored by the JSON projection
+ * the deploy writes beside the entry, so both must stay identical. */
+export const ASSISTANT_DESCRIPTION =
+  "A general-purpose assistant that answers questions, drafts " +
+  "text, and reasons through problems for the team";
+
+// Each factory declares its own env requirements, so the union has no
+// common `EnvReq`; the runtime `validateEnv` is the load-bearing check.
+export const MYRA_TOOL_FACTORIES = [
+  memoryAdd,
+  memorySearch,
+  memoryList,
+  capabilityTools,
+  agentDirectoryTools,
+  catalogTools,
+  skillsQueryTools,
+  skillsManageTools,
+  interactionTools,
+  workflowAuthoringTools,
+  accessTools,
+] as unknown as readonly AnnotatedToolFactory[];
+
+/** Everything the definition needs that is per-deployment data. */
+export interface MyraWorkflowInput {
   /** The deployment's mail address; each inbound mail is one run. */
   readonly triggerAddress: string;
   /** Provider/model preferences, in order; resolved at deploy time. */
   readonly inferencePreferences: readonly InferencePreference[];
   /** Per-turn timeout in milliseconds, enforced on the single step. */
   readonly turnTimeoutMs: number;
+  /** The prompt this deployment runs with. */
+  readonly systemPrompt: string;
 }
 
 /**
- * Builds the assistant definition. Exactly one step, on purpose: the
- * single-step shape is what makes a deployment conversational (the
- * execution host keeps one warm agent with durable memory across
- * runs). A second step would silently trade that memory away, so the
- * step count is contract, not style.
+ * Builds Myra's definition. Exactly one step, on purpose: the single-step
+ * shape is what makes a deployment conversational (the execution host keeps
+ * one warm agent with durable memory across runs). A second step would
+ * silently trade that memory away, so the step count is contract, not style.
  *
  * The step always sets an explicit `timeout` — the singular `agent:`
- * shorthand sets none, and a wedged inference call would then hang a
- * run forever. Tools are never inlined on the definition: they arrive
- * as packages on the deploy, keeping the definition pure data.
+ * shorthand sets none, and a wedged inference call would then hang a run
+ * forever. `toolPackagePins` is empty because the source lineage resolves
+ * no manifest: the factories above are the whole tool surface.
  */
-export function buildAssistantWorkflow(input: AssistantWorkflowInput): WorkflowDefinition {
+export function buildMyraWorkflow(input: MyraWorkflowInput): WorkflowDefinition {
   if (input.triggerAddress === "") {
-    throw new Error("buildAssistantWorkflow requires a non-empty triggerAddress");
+    throw new Error("buildMyraWorkflow requires a non-empty triggerAddress");
+  }
+  if (input.systemPrompt === "") {
+    throw new Error("buildMyraWorkflow requires a non-empty systemPrompt");
   }
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
-    throw new Error("buildAssistantWorkflow requires turnTimeoutMs to be a positive integer");
+    throw new Error("buildMyraWorkflow requires turnTimeoutMs to be a positive integer");
   }
   return defineWorkflow({
     id: ASSISTANT_WORKFLOW_ID,
@@ -76,63 +88,16 @@ export function buildAssistantWorkflow(input: AssistantWorkflowInput): WorkflowD
       assistant: step({
         agent: {
           id: ASSISTANT_STEP_ID,
-          description:
-            "A general-purpose assistant that answers questions, drafts " +
-            "text, and reasons through problems for the team",
-          systemPrompt: ASSISTANT_SYSTEM_PROMPT,
-          toolFactories: [],
+          description: ASSISTANT_DESCRIPTION,
+          systemPrompt: input.systemPrompt,
+          toolFactories: MYRA_TOOL_FACTORIES,
           capabilities: [],
           inference: { sources: input.inferencePreferences },
-          toolPackagePins: ASSISTANT_TOOL_PACKAGE_PINS,
+          toolPackagePins: [],
         } satisfies AgentDefinition,
         timeout: input.turnTimeoutMs,
         triggers: "unbounded",
       }),
     },
   });
-}
-
-/**
- * Serializes a definition to the JSON a workflow asset carries. The
- * definition must survive the asset round-trip byte-faithfully, so
- * anything JSON would silently drop or mangle — functions, undefined,
- * symbols, bigints, non-finite numbers, class instances — is a loud
- * error naming the offending path instead of a corrupted asset.
- */
-export function serializeAssistantWorkflow(definition: WorkflowDefinition): string {
-  assertJsonPortable(definition, "definition");
-  return JSON.stringify(definition);
-}
-
-function assertJsonPortable(value: unknown, path: string): void {
-  if (value === null) return;
-  switch (typeof value) {
-    case "string":
-    case "boolean":
-      return;
-    case "number":
-      if (!Number.isFinite(value)) {
-        throw new Error(`${path} is a non-finite number; JSON drops it`);
-      }
-      return;
-    case "object":
-      break;
-    default:
-      throw new Error(
-        `${path} is a ${typeof value}, which does not survive JSON ` + "serialization",
-      );
-  }
-  if (Array.isArray(value)) {
-    value.forEach((element, index) => {
-      assertJsonPortable(element, `${path}[${index}]`);
-    });
-    return;
-  }
-  const proto: unknown = Object.getPrototypeOf(value);
-  if (proto !== Object.prototype && proto !== null) {
-    throw new Error(`${path} is a non-plain object; JSON would flatten it lossily`);
-  }
-  for (const [key, entry] of Object.entries(value)) {
-    assertJsonPortable(entry, `${path}.${key}`);
-  }
 }

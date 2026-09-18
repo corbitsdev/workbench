@@ -4,9 +4,9 @@
 // routes use.
 
 import {
-  AGENT_DEFINITION_ENTRY_PATH,
+  AGENT_DEFINITION_JSON_PATH,
   agentDefinitionSourceTree,
-  parseAgentDefinitionEntry,
+  parseAgentDefinitionJson,
 } from "./definition-asset";
 import {
   buildAgentDefinitionWorkflow,
@@ -14,16 +14,16 @@ import {
   serializeAgentDefinitionWorkflow,
 } from "./agent-workflow";
 
-/** The two files a definition's asset tree carries, in render order. */
-export const SOURCE_TREE_PATHS = ["package.json", AGENT_DEFINITION_ENTRY_PATH];
+/** The files a definition's asset tree carries, in render order. */
+export const SOURCE_TREE_PATHS = ["package.json", "workflow.js", AGENT_DEFINITION_JSON_PATH];
 
 /** The serialized definition a written source tree carries. */
 export function definitionFrom(files: Record<string, string | Uint8Array> | undefined): string {
-  const entry = files?.[AGENT_DEFINITION_ENTRY_PATH];
-  if (typeof entry !== "string") {
-    throw new Error("the written tree carries no entry module");
+  const definitionJson = files?.[AGENT_DEFINITION_JSON_PATH];
+  if (typeof definitionJson !== "string") {
+    throw new Error("the written tree carries no definition projection");
   }
-  return parseAgentDefinitionEntry(new TextEncoder().encode(entry), "ast_1");
+  return parseAgentDefinitionJson(new TextEncoder().encode(definitionJson), "ast_1");
 }
 
 /** A stored definition that already pins skills — the state every
@@ -44,5 +44,5 @@ export function storedDefinitionBytesWithSkills(...names: string[]): Uint8Array 
       names.map((name) => ({ name, description: `What ${name} does.` })),
     ),
   });
-  return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
+  return new TextEncoder().encode(tree[AGENT_DEFINITION_JSON_PATH]);
 }
