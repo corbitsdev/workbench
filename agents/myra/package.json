@@ -16,7 +16,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./prompt": "./src/system-prompt.ts"
+    "./prompt": "./src/system-prompt.ts",
+    "./tool-packages": "./src/tool-packages.ts",
+    "./workflow-ids": "./src/workflow-ids.ts"
   },
   "publishConfig": {
     "access": "public"
