@@ -1,8 +1,8 @@
 // The route table: one entry per screen, consumed by the command palette
 // (label) and the route switch (render), so navigation and pages cannot
 // drift apart. The sidebar itself lists workbenches (conversations), not
-// routes — the first-run footer reaches Routines, Files, Skills, Agents,
-// and Plugins; Insights joins that rail only given honest usage.
+// routes — the first-run footer reaches Routines, Files, Skills, and
+// Agents; Insights joins that rail only given honest usage.
 // Insights and Settings stay reachable by deep link and the
 // palette even when they are off the rail. Conversation deep links
 // (`/w/:workbenchId`) stay routable; `/` is the Myra land hop (ensure +
@@ -23,7 +23,6 @@ import {
   FlowArrow,
   FolderOpen,
   Lightning,
-  PuzzlePiece,
   Robot,
   SlidersHorizontal,
   SquaresFour,
@@ -50,7 +49,7 @@ import {
 
 // Each signed-in page is a dynamic import so Vite emits one chunk per
 // screen. Static imports here pulled chat-ui, artifact-ui, settings-ui,
-// plugins-ui, and insights into a single 1.2 MB SPA.
+// and insights into a single 1.2 MB SPA.
 
 const HomeRoute = lazy(async () => ({
   default: (await import("./pages/home-page")).HomeRoute,
@@ -78,9 +77,6 @@ const SkillsRoute = lazy(async () => ({
 }));
 const InsightsRoute = lazy(async () => ({
   default: (await import("./pages/insights-page")).InsightsRoute,
-}));
-const PluginsRoute = lazy(async () => ({
-  default: (await import("./pages/plugins-page")).PluginsRoute,
 }));
 const SettingsRoute = lazy(async () => ({
   default: (await import("./pages/settings-page")).SettingsRoute,
@@ -137,9 +133,6 @@ const SLUG_SEGMENT = "/:slug";
 
 export const AGENT_DETAIL_PATH = `${AGENTS_PATH_PREFIX}${SLUG_SEGMENT}`;
 export const SKILL_DETAIL_PATH = `${SKILLS_PATH_PREFIX}${SLUG_SEGMENT}`;
-// Plugin detail (`/plugins/:slug`) is parked with. removed
-// the "still being built" stub so gallery/palette click-throughs do not
-// promise a page that is only a placeholder.
 
 /**
  * Routines are addressed by id, not by slug. DESIGN.md allows a slug in a
@@ -207,9 +200,7 @@ export type AppRoute = {
  * conversation deep links (which also match when Myra land `/` is active)
  * and the slug-addressed detail routes (`/agents/:slug`). Other routes are
  * exact path matches. A roster prefix still matches its own nested paths,
- * so the sidebar footer row stays lit on a detail screen. Plugins is exact
- * only: until lands a real detail page, a slug under `/plugins` is
- * unroutable rather than a stub.
+ * so the sidebar footer row stays lit on a detail screen.
  */
 export function matchesRoute(routePath: string, path: string): boolean {
   if (routePath === WORKBENCH_PATH_PREFIX) {
@@ -385,16 +376,6 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <InsightsRoute path={path} />,
   },
   {
-    // First-run footer rail destination. No `/plugins/:slug` until
-    // (unlinked the stub).
-    path: "/plugins",
-    label: "Plugins",
-    icon: <PuzzlePiece />,
-    render: (path: string, navigate: (to: string) => void) => (
-      <PluginsRoute path={path} navigate={navigate} />
-    ),
-  },
-  {
     path: SETTINGS_PATH,
     label: "Settings",
     icon: <SlidersHorizontal />,
@@ -415,7 +396,7 @@ function routesInOrder(paths: readonly string[]): readonly AppRoute[] {
 /**
  * Everything the command palette treats as a product destination (its
  * "Pages" group). The first-run sidebar footer reaches Routines / Files /
- * Skills / Agents / Plugins (and Insights only given honest
+ * Skills / Agents (and Insights only given honest
  * usage); Insights and Settings stay palette- and
  * deep-link-reachable even when they are off the rail.
  */
@@ -424,7 +405,6 @@ export const NAV_ROUTES: readonly AppRoute[] = routesInOrder([
   "/files",
   "/skills",
   "/agents",
-  "/plugins",
   "/insights",
   SETTINGS_PATH,
 ]);

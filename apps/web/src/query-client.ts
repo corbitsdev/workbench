@@ -82,10 +82,7 @@ export const tenantKeys = {
    * (see `pending-approvals.ts`). */
   runView: (tenantId: string, runId: string) => ["tenant", tenantId, "runs", runId] as const,
   routines: (tenantId: string) => ["tenant", tenantId, "routines"] as const,
-  availableCatalogWorkflows: (tenantId: string) =>
-    ["tenant", tenantId, "routines", "available"] as const,
   skills: (tenantId: string) => ["tenant", tenantId, "skills"] as const,
-  mcpServers: (tenantId: string) => ["tenant", tenantId, "mcp-servers"] as const,
   routineRuns: (tenantId: string, routineId: string) =>
     ["tenant", tenantId, "routines", routineId, "runs"] as const,
   routineRunHistories: (tenantId: string) => ["tenant", tenantId, "routine-run-histories"] as const,

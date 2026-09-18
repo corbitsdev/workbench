@@ -1,6 +1,6 @@
 // The one sidebar. Header: the brand mark, then create + search. Body:
 // Agents and Channels — nothing page-scoped ever renders here. Footer: the
-// first-run rail is Routines, Files, Skills, Agents, Plugins; Insights
+// first-run rail is Routines, Files, Skills, Agents; Insights
 // joins only when the existing run reads return real items (never a
 // fabricated row, never a new analytics store). Below the rail:
 // the account row — avatar + name, the whole row is the trigger for a menu
@@ -37,7 +37,6 @@ import {
   FolderOpen,
   Lightning,
   Plus,
-  PuzzlePiece,
   Robot,
   SignOut,
   Repeat,
@@ -109,7 +108,7 @@ export function Sidebar({
 
       {/* Mission Control is pinned above the footer rail as its own row
           (DESIGN.md's Shell & Navigation) — not a button inside the
-          first-run rail, which stays Routines/Files/Skills/Agents/Plugins. */}
+          first-run rail, which stays Routines/Files/Skills/Agents. */}
       <div className="shell-sidebar-mission-control">
         <button
           type="button"
@@ -124,7 +123,7 @@ export function Sidebar({
       </div>
 
       <SidebarPanelFooter>
-        {/* Footer order: Routines, Files, Skills, Agents, Plugins, then
+        {/* Footer order: Routines, Files, Skills, Agents, then
             Insights only when that existing read proves real items, then
             the account row anchors everything else (settings, feedback,
             log out) in its pop-up menu — a single footer, never two
@@ -168,16 +167,6 @@ export function Sidebar({
         >
           <Robot />
           <span>Agents</span>
-        </button>
-        <button
-          type="button"
-          className="shell-sidebar-footer-row"
-          data-active={matchesRoute("/plugins", path) ? "true" : undefined}
-          aria-current={matchesRoute("/plugins", path) ? "page" : undefined}
-          onClick={() => onNavigate("/plugins")}
-        >
-          <PuzzlePiece />
-          <span>Plugins</span>
         </button>
         {showInsights ? (
           <button

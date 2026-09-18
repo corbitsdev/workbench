@@ -1,11 +1,6 @@
 // Routines: an ops table of authored workflow definitions that carry a
 // ScheduleTrigger, including paused (`stopped`) ones. Pause/resume and
 // run-now are the only writes; schedules are authored on the definition.
-// The "Available" section is scoped to the current bench only
-// — adding a catalog workflow is a single-tenant write, unlike the
-// scheduled roster above, which aggregates every bench the account
-// belongs to.
-import { useQuery } from "@tanstack/react-query";
 import {
   EmptyState,
   RichEmptyState,
@@ -24,64 +19,10 @@ import { cronSentence } from "@corbits/workflows/client";
 import { useGlobalRoutines, useRoutineActions } from "../global-routines";
 import type { GlobalRoutineRow } from "../global-routines";
 import { routineDetailPath } from "../global-routines";
-import { useBench } from "../bench-context";
-import { tenantKeys } from "../query-client";
-import { listAvailableCatalogWorkflows, type AvailableCatalogWorkflow } from "../routines-api";
 import { Link } from "../navigation";
-import { PLUGINS_PATH_PREFIX } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
-import {
-  AVAILABLE_SECTION_SUBTITLE,
-  AVAILABLE_SECTION_TITLE,
-  CONNECT_LINK_LABEL,
-  missingConnectionsReason,
-} from "./routines-available-strings";
 
 export type { GlobalRoutineRow } from "../global-routines";
-
-export function AvailableCatalogWorkflowsSection({ tenantId }: { readonly tenantId: string }) {
-  const query = useQuery({
-    queryKey: tenantKeys.availableCatalogWorkflows(tenantId),
-    queryFn: () => listAvailableCatalogWorkflows(tenantId),
-  });
-
-  if (query.isLoading) return null;
-  const items: readonly AvailableCatalogWorkflow[] = query.data ?? [];
-  if (items.length === 0) return null;
-
-  return (
-    <div className="flex flex-col gap-2 border-b border-[var(--ui-border)] p-4">
-      <div className="flex flex-col">
-        <h2 className="text-sm font-medium">{AVAILABLE_SECTION_TITLE}</h2>
-        <p className="text-xs text-[var(--ui-fg-muted)]">{AVAILABLE_SECTION_SUBTITLE}</p>
-      </div>
-      <ul className="flex flex-col gap-2">
-        {items.map((entry) => {
-          return (
-            <li
-              key={entry.assetName}
-              data-ctx-available-workflow={entry.assetName}
-              className="flex items-center justify-between gap-3 rounded-md border border-[var(--ui-border)] p-3"
-            >
-              <div className="flex flex-col gap-1">
-                <span className="text-sm font-medium">{entry.displayName}</span>
-                <span className="text-xs text-[var(--ui-fg-muted)]">{entry.description}</span>
-                {!entry.connectionsSatisfied ? (
-                  <span className="flex items-center gap-2 text-xs text-[var(--ui-fg-muted)]">
-                    {missingConnectionsReason(entry.missingConnections)}
-                    <Link to={PLUGINS_PATH_PREFIX} className="underline">
-                      {CONNECT_LINK_LABEL}
-                    </Link>
-                  </span>
-                ) : null}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
 
 export function scheduleSentence(cron: string): string {
   return cronSentence(cron) ?? cron;
@@ -160,7 +101,6 @@ export function RoutinesRoute() {
   const routinesQuery = useGlobalRoutines();
   const actions = useRoutineActions();
   const rows = routinesQuery.kind === "ready" ? routinesQuery.data : [];
-  const { selectedTenantId } = useBench();
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -169,9 +109,6 @@ export function RoutinesRoute() {
         subtitle="Scheduled workflows. Pause, resume, or run now."
       />
       <div className="stage-content flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {selectedTenantId !== null ? (
-          <AvailableCatalogWorkflowsSection tenantId={selectedTenantId} />
-        ) : null}
         {routinesQuery.kind === "loading" ? (
           <div className="flex flex-1 items-center justify-center p-6">
             <EmptyState icon={<Clock />} title="Loading routines…" />

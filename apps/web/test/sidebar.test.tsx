@@ -181,14 +181,13 @@ describe("Sidebar", () => {
     expect(markup).not.toContain("shell-rail-item");
   });
 
-  test("first-run footer rail is Routines, Files, Skills, Agents, Plugins, then the account row — no Insights or Inbox", () => {
+  test("first-run footer rail is Routines, Files, Skills, Agents, then the account row — no Insights or Inbox", () => {
     const markup = renderSidebar("/w");
     expect(footerRowLabelsFromMarkup(markup)).toEqual([
       "Routines",
       "Files",
       "Skills",
       "Agents",
-      "Plugins",
     ]);
     expect(markup).toContain("data-ctx-account");
     expect(markup).not.toContain(">Inbox<");
@@ -213,35 +212,16 @@ describe("Sidebar", () => {
       "Files",
       "Skills",
       "Agents",
-      "Plugins",
     ]);
     act(() => root.unmount());
     container.remove();
   });
 
-  test("marks the Plugins row current on /plugins", () => {
-    const onPlugins = renderSidebar("/plugins");
-    expect(footerRowLabelsFromMarkup(onPlugins)).toEqual([
-      "Routines",
-      "Files",
-      "Skills",
-      "Agents",
-      "Plugins",
-    ]);
-    expect(onPlugins).toMatch(
-      /shell-sidebar-footer-row"[^>]*data-active="true"[^>]*>[\s\S]*?>Plugins</,
-    );
-    const elsewhere = renderSidebar("/w");
-    expect(elsewhere).not.toMatch(/>Plugins<[\s\S]{0,80}aria-current="page"/);
-  });
-
-  test("Insights and Plugins remain reachable by URL and command palette", () => {
+  test("Insights remains reachable by URL and command palette", () => {
     const palettePaths = NAV_ROUTES.map((route) => route.path);
     const routedPaths = APP_ROUTES.map((route) => route.path);
     expect(palettePaths).toContain("/insights");
-    expect(palettePaths).toContain("/plugins");
     expect(routedPaths).toContain("/insights");
-    expect(routedPaths).toContain("/plugins");
   });
 
   test("marks the Routines row current for its own route only", () => {
@@ -261,7 +241,6 @@ describe("Sidebar", () => {
       "Files",
       "Skills",
       "Agents",
-      "Plugins",
       "Insights",
     ]);
     const insights = [...container.querySelectorAll(".shell-sidebar-footer-row")].find(
@@ -280,13 +259,12 @@ describe("Sidebar", () => {
       "Files",
       "Skills",
       "Agents",
-      "Plugins",
     ]);
     act(() => root.unmount());
     container.remove();
   });
 
-  // the global pages (Plugins, Insights) used to be the one place
+  // the global pages (Insights) used to be the one place
   // the sidebar dropped the workbench list — reaching a conversation from
   // there took an extra hop back through `/`. The list is not page-scoped
   // (see `workbench-list.tsx`'s own header comment), so it renders exactly
@@ -346,7 +324,7 @@ describe("Sidebar", () => {
       return { container, root };
     }
 
-    for (const path of ["/plugins", "/insights"]) {
+    for (const path of ["/insights"]) {
       test(`renders the same workbench rows on ${path} as on a chat route, with none active`, async () => {
         const { container, root } = await mountAt(path);
 
@@ -363,7 +341,7 @@ describe("Sidebar", () => {
 
     test("selecting a row from a global page navigates to that conversation", async () => {
       const navigated: string[] = [];
-      const { container, root } = await mountAt("/plugins", (to) => navigated.push(to));
+      const { container, root } = await mountAt("/insights", (to) => navigated.push(to));
 
       const row = container.querySelector<HTMLButtonElement>(".shell-ch-row");
       await act(async () => {

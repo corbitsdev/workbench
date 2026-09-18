@@ -110,7 +110,7 @@ function stagePageTitle(markup: string): string | undefined {
 }
 
 /** The first-run footer rail marks its own destination current: Routines,
- * Files, Skills, Agents, and Plugins are text rows with `aria-current="page"`
+ * Files, Skills, and Agents are text rows with `aria-current="page"`
  * on the lit one. Insights joins only given honest usage, and
  * stays reachable by URL and palette instead until then. Settings lives
  * beside the account row, so its route lights nothing in the chrome - the
@@ -129,7 +129,6 @@ const FOOTER_LABELS: Record<string, string> = {
   "/files": "Files",
   "/skills": "Skills",
   "/agents": "Agents",
-  "/plugins": "Plugins",
 };
 
 describe("route table", () => {
@@ -152,18 +151,16 @@ describe("route table", () => {
       "/skills",
       "/settings/skills",
       "/insights",
-      "/plugins",
       "/settings",
     ]);
   });
 
-  test("palette pages are Routines, Files, Skills, Agents, Plugins, Insights, Settings", () => {
+  test("palette pages are Routines, Files, Skills, Agents, Insights, Settings", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
       "Routines",
       "Files",
       "Skills",
       "Agents",
-      "Plugins",
       "Insights",
       "Settings",
     ]);
@@ -227,25 +224,12 @@ describe("route table", () => {
     expect(routeFor("/routines/rtn_1")).toBe(ROUTINE_DETAIL_PATH);
   });
 
-  test("the Plugins roster owns only its bare path", () => {
-    const routeFor = (path: string) =>
-      APP_ROUTES.find((candidate) => matchesRoute(candidate.path, path))?.path;
-    expect(routeFor("/plugins")).toBe("/plugins");
-    // No stub detail: a slug under /plugins is unroutable, not a
-    // "still being built" placeholder.
-    expect(routeFor("/plugins/linear")).toBeUndefined();
-    expect(routeFor("/plugins/Linear")).toBeUndefined();
-    expect(routeFor("/plugins/linear/settings")).toBeUndefined();
-  });
-
   test("a malformed percent-escape resolves without throwing", () => {
     const routeFor = (path: string) =>
       APP_ROUTES.find((candidate) => matchesRoute(candidate.path, path))?.path;
-    expect(routeFor("/plugins/%")).toBeUndefined();
     // A segment that cannot be decoded names no routine, so the detail
     // route declines it and the roster answers instead.
     expect(routeFor("/routines/%E0%A4%A")).toBe("/routines");
-    expect(matchesRoute("/plugins", "/plugins/%")).toBe(false);
     expect(matchesRoute(ROUTINE_DETAIL_PATH, "/routines/%E0%A4%A")).toBe(false);
     expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/%2Ftriage-bot")).toBe(false);
     // A workflow detail path reuses workflowDefinitionAssetIdFromPath
@@ -263,7 +247,6 @@ describe("route table", () => {
   test("a detail path keeps its roster's sidebar row lit", () => {
     expect(matchesRoute("/agents", "/agents/triage-bot")).toBe(true);
     expect(matchesRoute("/skills", "/skills/pr-review")).toBe(true);
-    expect(matchesRoute("/plugins", "/plugins/linear")).toBe(false);
     expect(matchesRoute("/routines", "/routines/weekly-digest")).toBe(true);
   });
 
@@ -355,16 +338,6 @@ describe("routes render", () => {
     expect(activeFooterLabel(markup)).toBe("Skills");
   });
 
-  // the plugin detail stub ("still being built") is gone until
-  // ships a real page. A slug under /plugins must not promise one.
-  test("/plugins/<slug> is not-found, never a still-being-built stub", async () => {
-    const markup = await renderApp("/plugins/linear");
-    expect(markup).toContain("Page not found");
-    expect(markup).not.toContain("still being built");
-    expect(markup).not.toContain("Back to Plugins");
-    expect(activeFooterLabel(markup)).toBeUndefined();
-  });
-
   test("a routine segment that resolves to nothing still titles itself and lights Routines", async () => {
     // Routines is a real page now, not a placeholder: with no routine
     // behind the segment it says so and offers the way back, rather than
@@ -380,14 +353,7 @@ describe("routes render", () => {
     expect(markup).toContain("Page not found");
   });
 
-  test("an unconsumable path under Plugins renders not-found, never the roster", async () => {
-    const markup = await renderApp("/plugins/Not-A-Slug");
-    expect(markup).toContain("Page not found");
-    expect(activeFooterLabel(markup)).toBeUndefined();
-  });
-
   test("a malformed percent-escape renders a screen instead of crashing", async () => {
-    expect(await renderApp("/plugins/%")).toContain("Page not found");
     expect(await renderApp("/routines/%E0%A4%A")).toContain('data-testid="shell-sidebar"');
   });
 

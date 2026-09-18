@@ -2,21 +2,17 @@
 // ScheduleTrigger: list, run-now, and pause/resume. Pause/resume is the
 // same agent-directory status PUT seed uses (`stopped` / `deployed`).
 //
-// the hub routes `listScheduledWorkflows` and
-// `runScheduledWorkflowNow`/`listAvailableCatalogWorkflows` used to call
-// (`@corbits/workflows`'s deleted `./schedule/scheduled-route.ts`) are
-// gone. Owner ruling: schedule state derives from stock reads client-side
-// or stays a package-internal pure function — no hub route. Stock's
-// `GET /workflows/definitions` (`vendor/intx/hub-api`) exposes no wire
-// projection, so there is no stock-derivable way to know which
-// definitions carry a `ScheduleTrigger` or what its cron is, and
-// `listAvailableCatalogWorkflows`'s connection-satisfaction read has no
-// stock equivalent either. Both resolve to an empty list rather than
-// fetch a route that no longer exists (same pattern as `tenantKeys`'
-// `routineActivity` comment in `query-client.ts` for its deleted
-// `feed=fires` route): the Routines roster and Available section render
-// their existing empty states until an upstream ask lands. See the
-// PR for exactly what is missing.
+// the hub route `listScheduledWorkflows`/`runScheduledWorkflowNow` used
+// to call (`@corbits/workflows`'s deleted `./schedule/scheduled-route.ts`)
+// is gone. Owner ruling: schedule state derives from stock reads
+// client-side or stays a package-internal pure function — no hub route.
+// Stock's `GET /workflows/definitions` (`vendor/intx/hub-api`) exposes no
+// wire projection, so there is no stock-derivable way to know which
+// definitions carry a `ScheduleTrigger` or what its cron is. It resolves
+// to an empty list rather than fetch a route that no longer exists (same
+// pattern as `tenantKeys`' `routineActivity` comment in `query-client.ts`
+// for its deleted `feed=fires` route): the Routines roster renders its
+// existing empty state until an upstream ask lands.
 
 import { type } from "arktype";
 import { useQuery } from "@tanstack/react-query";
@@ -38,35 +34,11 @@ export const ScheduledWorkflowDefinition = type({
 
 export type ScheduledWorkflowDefinition = typeof ScheduledWorkflowDefinition.infer;
 
-export const AvailableCatalogWorkflow = type({
-  assetName: "string",
-  displayName: "string",
-  description: "string",
-  requiredConnections: "string[]",
-  missingConnections: "string[]",
-  connectionsSatisfied: "boolean",
-});
-
-export type AvailableCatalogWorkflow = typeof AvailableCatalogWorkflow.infer;
-
 /** no route exists at this path any more — kept as a documented
  * dead address, not a live fetch target, for any caller that still reads
  * it for logging/keys. */
 export function scheduledWorkflowsPath(tenantId: string): string {
   return `/api/tenants/${tenantId}/workflows/scheduled`;
-}
-
-/** no route exists at this path any more — see the file header. */
-export function availableCatalogWorkflowsPath(tenantId: string): string {
-  return `/api/tenants/${tenantId}/workflows/available`;
-}
-
-/** always empty — see the file header for why there is no
- * stock-derivable replacement yet. */
-export function listAvailableCatalogWorkflows(
-  _tenantId: string,
-): Promise<readonly AvailableCatalogWorkflow[]> {
-  return Promise.resolve([]);
 }
 
 export function scheduledWorkflowRunPath(tenantId: string, definitionId: string): string {

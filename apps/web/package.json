@@ -20,7 +20,6 @@
     "@corbits/agent-directory": "workspace:*",
     "@corbits/approvals": "workspace:*",
     "@corbits/artifact-ui": "workspace:*",
-    "@corbits/connections": "workspace:*",
     "@corbits/error-sink": "workspace:*",
     "@corbits/myra": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",

@@ -1,6 +1,6 @@
 // Shared fetch+parse wrapper for every settings-ui API seam
-// (credentials-api.ts, connections-api.ts, access-policy-api.ts,
-// granola-webhook-api.ts): the same envelope-first error message on every
+// (credentials-api.ts, access.ts, tenancy-api.ts): the same
+// envelope-first error message on every
 // non-2xx response, matching `apps/web/src/onboarding.ts`'s
 // `readErrorEnvelope` — the hub's own `{error:{userMessage, refId}}` body
 // wins when present, and the fallback names what was happening ("while

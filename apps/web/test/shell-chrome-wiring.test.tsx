@@ -33,7 +33,6 @@ import {
   useOpenProfileInCanvas,
   useOpenRoutineInCanvas,
 } from "../src/shell/canvas-availability";
-import { ProviderHealthProvider } from "../src/shell/provider-health-context";
 import { ShellChromeProvider } from "../src/shell/shell-chrome-provider";
 import { TestQueryProvider } from "./test-query-provider";
 
@@ -114,14 +113,12 @@ function Harness() {
     <TestQueryProvider>
       <NavigationProvider navigate={noop}>
         <BenchProvider>
-          <ProviderHealthProvider>
-            <ShellChromeProvider path="/inbox" navigate={noop}>
-              <PaletteActionsProbe />
-              <AppShell path="/inbox" user={user} onSignOut={noop}>
-                {"Inbox"}
-              </AppShell>
-            </ShellChromeProvider>
-          </ProviderHealthProvider>
+          <ShellChromeProvider path="/inbox" navigate={noop}>
+            <PaletteActionsProbe />
+            <AppShell path="/inbox" user={user} onSignOut={noop}>
+              {"Inbox"}
+            </AppShell>
+          </ShellChromeProvider>
         </BenchProvider>
       </NavigationProvider>
     </TestQueryProvider>
@@ -225,11 +222,9 @@ function RouteHarness({ path }: { readonly path: string }) {
     <TestQueryProvider>
       <NavigationProvider navigate={noop}>
         <BenchProvider>
-          <ProviderHealthProvider>
-            <ShellChromeProvider path={path} navigate={noop}>
-              <CanvasSlotsProbe />
-            </ShellChromeProvider>
-          </ProviderHealthProvider>
+          <ShellChromeProvider path={path} navigate={noop}>
+            <CanvasSlotsProbe />
+          </ShellChromeProvider>
         </BenchProvider>
       </NavigationProvider>
     </TestQueryProvider>

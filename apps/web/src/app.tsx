@@ -22,7 +22,6 @@ import { APP_ROUTES, LOGIN_PATH, matchesRoute, ONBOARDING_PATH } from "./routes"
 import type { SessionState, SessionUser } from "./session";
 import { AppShell } from "./shell/app-shell";
 import { ComposerInsertionProvider } from "./shell/composer-insertion";
-import { ProviderHealthProvider } from "./shell/provider-health-context";
 import { ShellChromeProvider } from "./shell/shell-chrome-provider";
 
 /** Any signed-out request for a path other than `/login` itself bounces
@@ -89,17 +88,15 @@ function Shell({
     <QueryClientProvider client={queryClient}>
       <NavigationProvider navigate={navigate} onSignOut={onSignOut} user={user}>
         <BenchProvider>
-          <ProviderHealthProvider>
-            <ComposerInsertionProvider>
-              <ShellChromeProvider path={path} navigate={navigate}>
-                <CommandPaletteProvider path={path} navigate={navigate}>
-                  <AppShell path={path} user={user} onSignOut={onSignOut}>
-                    {route === undefined ? <NotFoundPage /> : route.render(path, navigate)}
-                  </AppShell>
-                </CommandPaletteProvider>
-              </ShellChromeProvider>
-            </ComposerInsertionProvider>
-          </ProviderHealthProvider>
+          <ComposerInsertionProvider>
+            <ShellChromeProvider path={path} navigate={navigate}>
+              <CommandPaletteProvider path={path} navigate={navigate}>
+                <AppShell path={path} user={user} onSignOut={onSignOut}>
+                  {route === undefined ? <NotFoundPage /> : route.render(path, navigate)}
+                </AppShell>
+              </CommandPaletteProvider>
+            </ShellChromeProvider>
+          </ComposerInsertionProvider>
         </BenchProvider>
       </NavigationProvider>
     </QueryClientProvider>
