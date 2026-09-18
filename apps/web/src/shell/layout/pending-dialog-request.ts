@@ -1,10 +1,5 @@
-// Generalizes the pending-flag pattern `library-upload.ts` already uses for
-// cross-route dialog triggers: a caller may fire "open this dialog" from a
-// page other than the one that owns it, before that page (and its
-// window-event listener) has mounted. Dispatching the event immediately in
-// that case is a race the listener always loses. Recording a one-shot
-// pending flag and consuming it once the target page mounts avoids both the
-// race and a setTimeout guess at when the listener will be ready.
+// Avoids dispatching before the target page's listener mounts (a race it
+// always loses) without a setTimeout guess at when it'll be ready.
 
 export type PendingDialogRequest = {
   /** On-route: dispatch immediately. Off-route: record the pending flag and

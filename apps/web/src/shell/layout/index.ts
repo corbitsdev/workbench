@@ -1,8 +1,5 @@
-// `@/shell/layout`: the generic shell mechanics a second Interchange
-// deployment needs — the responsive breakpoint rules and the hook that reads
-// them, the canvas column state machine, per-route scroll reset, and the
-// pending-dialog-request pattern for cross-route dialog triggers. Route
-// tables and app-specific policy stay in the consuming app.
+// Generic shell mechanics a second Interchange deployment would need.
+// Route tables and app-specific policy stay in the consuming app.
 
 export {
   canvasColumnAllowed,

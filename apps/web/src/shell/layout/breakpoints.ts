@@ -1,7 +1,5 @@
-// The shell's layout modes and the two widths that separate them, kept free
-// of the DOM so the rules stay testable and so `use-shell-layout.ts` is the
-// only place that touches `matchMedia`. The sidebar is always present; the
-// canvas column is the one region that gives way as the viewport narrows.
+// Kept free of the DOM so the rules stay testable; `use-shell-layout.ts`
+// is the only place that touches `matchMedia`.
 
 export type ShellLayoutMode = "expanded" | "compact" | "narrow";
 

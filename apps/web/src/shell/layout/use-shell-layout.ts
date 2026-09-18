@@ -1,11 +1,6 @@
-// The shell's layout mode, read from the same media queries the stylesheet
-// would use rather than from a resize listener: the browser evaluates the
-// query and fires `change` only when the answer actually changes, so a drag
-// across the whole viewport produces two state updates instead of hundreds.
-//
-// Rendering to static markup (the route tests) never runs effects and has no
-// `window`, so it sees the initial "expanded" assumption — which is what a
-// server-rendered shell should assume before it has a viewport to measure.
+// Media queries, not a resize listener: `change` fires only when the
+// answer changes, so a full-viewport drag produces two updates, not
+// hundreds.
 
 import { useSyncExternalStore } from "react";
 
