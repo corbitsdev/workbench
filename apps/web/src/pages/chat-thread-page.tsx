@@ -238,7 +238,7 @@ function ChatTranscript({
 
   return (
     <PageShell width="prose" className="page-fill">
-      <h1 className="chat-thread-title">{chat.title}</h1>
+      <h1 className="chat-thread-title">{chat.agentName}</h1>
       <div className="chat-thread-messages">
         {chat.messages.map((message) => {
           const { pkg, renderedBody } = resolveMessagePackage(message.attachments, message.body);
