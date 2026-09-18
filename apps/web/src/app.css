@@ -3668,6 +3668,61 @@ tr.insights-row-clickable:hover {
   gap: 0.4rem;
 }
 
+/* A message's attachments: a package gets a Deploy card, anything else a
+   quiet file list. */
+.chat-attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+}
+.chat-attachment-name {
+  font-family: var(--font-mono, monospace);
+}
+.chat-attachment-type {
+  margin-left: 0.5rem;
+  color: var(--muted-foreground);
+}
+.chat-deploy-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 0.5rem);
+  background: var(--card);
+}
+.chat-deploy-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.chat-deploy-card-name {
+  font-weight: 600;
+}
+.chat-deploy-card-note,
+.chat-deploy-card-error {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
+.chat-deploy-card-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--destructive);
+}
+.chat-deploy-card-link {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
 /* Sidebar sections: Workbenches above Chats, each with its own label. */
 .shell-panel-section-label {
   padding: 0.25rem 0.5rem;

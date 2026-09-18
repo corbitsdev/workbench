@@ -11,6 +11,7 @@ import { ApprovalRow } from "@/chat/approval-row";
 import { IdentityAvatar } from "@/chat/avatar";
 import { Composer } from "@/chat/composer";
 import { Markdown } from "@/chat/markdown";
+import { MessageAttachments } from "@/chat/message-attachments";
 import {
   agentFromMention,
   listChatAgents,
@@ -203,6 +204,7 @@ function ChatTranscript({
             </span>
             <div className="chat-thread-body">
               <Markdown text={message.body} />
+              <MessageAttachments tenantId={tenantId} attachments={message.attachments} />
             </div>
           </div>
         ))}

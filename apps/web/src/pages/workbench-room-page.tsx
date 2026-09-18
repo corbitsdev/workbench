@@ -22,6 +22,7 @@ import { ApprovalRow } from "@/chat/approval-row";
 import { IdentityAvatar } from "@/chat/avatar";
 import { Composer } from "@/chat/composer";
 import { Markdown } from "@/chat/markdown";
+import { MessageAttachments } from "@/chat/message-attachments";
 import {
   ancestorChain,
   listRoomParticipants,
@@ -48,10 +49,12 @@ function errorText(cause: unknown): string {
 function RoomMessageRow({
   message,
   participants,
+  roomTenantId,
   onReply,
 }: {
   readonly message: RoomMessage;
   readonly participants: readonly RoomParticipant[];
+  readonly roomTenantId: string;
   /** Undefined in the sub-thread panel, where a row is read-only context. */
   readonly onReply?: (message: RoomMessage) => void;
 }) {
@@ -71,6 +74,7 @@ function RoomMessageRow({
       </span>
       <div className="chat-thread-body">
         <Markdown text={message.body} />
+        <MessageAttachments tenantId={roomTenantId} attachments={message.attachments} />
         {onReply === undefined ? null : (
           <button type="button" className="room-replies-link" onClick={() => onReply(message)}>
             Reply
@@ -317,6 +321,7 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
                     key={message.id}
                     message={message}
                     participants={participants.data ?? []}
+                    roomTenantId={roomTenantId}
                     onReply={(target) => setOpenThread(target.messageId)}
                   />
                 ))}
@@ -355,6 +360,7 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
                   key={message.id}
                   message={message}
                   participants={participants.data ?? []}
+                  roomTenantId={roomTenantId}
                 />
               ))}
             </div>

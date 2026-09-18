@@ -12,7 +12,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { ApiQueryError } from "@/lib/api-query";
 import { deployAgentSource, type DeployedAgent, type NewAgentInput } from "./agent-deploy";
-import { chatKeys } from "./chat-path";
+import { chatKeys, roomKeys } from "./chat-path";
 import { tenantKeys } from "./query-client";
 
 export type AgentDefinition = typeof WorkflowDefinitionResponse.infer;
@@ -89,7 +89,10 @@ export function useDeployAgentMutation(tenantId: string) {
       deployAgentSource({ tenantId, input }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: tenantKeys.agentDirectory(tenantId) });
+      void queryClient.invalidateQueries({ queryKey: tenantKeys.visibleAgents(tenantId) });
       void queryClient.invalidateQueries({ queryKey: chatKeys.agents(tenantId) });
+      // A deploy from a room transcript adds a participant to that room.
+      void queryClient.invalidateQueries({ queryKey: roomKeys.participants(tenantId) });
     },
   });
 }
