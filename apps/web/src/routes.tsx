@@ -1,7 +1,5 @@
-// One entry per screen, consumed by both the command palette and the
-// route switch, so navigation and pages cannot drift apart. Every
-// retired path lives in `RETIRED_PREFIXES` below, resolved before a
-// screen mounts — never a route entry whose only job is to bounce.
+// One entry per screen, consumed by both the palette and the route switch,
+// so navigation and pages cannot drift apart.
 
 import {
   ChatCircle,

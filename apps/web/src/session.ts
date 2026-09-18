@@ -1,7 +1,5 @@
-// The one session boundary: a single probe of better-auth's get-session
-// endpoint decides whether the app mounts the shell or the auth screen, and
-// the email+password calls live beside it so every /api/auth path is written
-// in exactly one file.
+// The one session boundary: a probe of better-auth's get-session endpoint
+// decides shell vs. auth screen; every /api/auth path lives in this file.
 
 import { type } from "arktype";
 

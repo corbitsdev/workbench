@@ -1,7 +1,5 @@
-// The interface's one seam to the hub: relative /api paths on the origin the
-// bundle was served from, validated at the boundary with the platform's own
-// response schemas so a shape change surfaces as an error state, never as
-// undefined leaking into a page.
+// Every response is validated at the boundary with the platform's own
+// schemas, so a shape change surfaces as an error state, never `undefined`.
 
 import {
   ApprovalResponse,

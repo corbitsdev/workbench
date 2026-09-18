@@ -1,7 +1,5 @@
-// Stock writes only, after gap checks. Creation idempotency rides native
-// Message-IDs the hub stamps and returns — never a custom key. DMs are
-// never created here; they derive from participant-filtered threads via
-// `deriveDmThreads` in threads.ts.
+// Stock writes only, after gap checks. DMs are never created here; they
+// derive from participant-filtered threads via `deriveDmThreads`.
 
 import { type } from "arktype";
 
@@ -147,10 +145,8 @@ export class StockHubRequestError extends Error {
   }
 }
 
-/** Every tenant the signed-in user owns (active `owner` role), regardless
- * of whether it is a top-level home or a workbench child — the shared
- * read behind both the primary-tenant gap check and the first-signup
- * installer's "does a primary tenant already exist" probe. */
+/** Shared read behind the primary-tenant gap check and the first-signup
+ * "does a primary tenant already exist" probe. */
 export async function findOwnedTenants(hub: StockHub): Promise<HubTenant[]> {
   const memberships = await hub.listMyPrincipals();
   const activeOwned = memberships.filter(

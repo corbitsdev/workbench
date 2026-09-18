@@ -1,5 +1,4 @@
-// The browser side of the first-login hook: a read-only probe that never
-// mints anything. Setup counts as done only once the primary tenant has
+// A read-only probe: setup counts as done only once the primary tenant has
 // Myra live, so an install that failed midway resumes instead of landing
 // in an empty shell.
 
@@ -36,10 +35,8 @@ export async function hasActiveCredential(tenantId: string): Promise<ActiveCrede
   }
 }
 
-// The hub's user-facing error envelope: `userMessage` is
-// consumer language, safe to render as-is; `refId` is what a person can
-// quote back for support. Never a raw `message`/stack/file-path field —
-// those stay in the hub's own logger.
+// `userMessage` is safe to render as-is; never a raw `message`/stack/
+// file-path field — those stay in the hub's own logger.
 const ErrorEnvelope = type({
   error: { code: "string", userMessage: "string", refId: "string" },
 });
