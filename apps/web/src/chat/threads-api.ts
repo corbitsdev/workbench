@@ -16,6 +16,7 @@ import { type } from "arktype";
 import { WorkflowDeploymentResponse } from "@intx/types";
 import { reportError } from "@corbits/error-sink";
 
+import { agentSlugFromSourceAssetName } from "../agent-deploy";
 import { listTopLevelRuns } from "../agents-api";
 import { MYRA_SOURCE_CONFIG } from "../myra-source";
 
@@ -90,11 +91,18 @@ export type ChatSummary = {
 };
 
 /** Myra is the one default agent; her deploy asset name is not a display
- * name anyone should have to read. */
-function displayAgentName(definitionName: string): string {
-  return definitionName === MYRA_SOURCE_CONFIG.assetName
-    ? MYRA_SOURCE_CONFIG.displayName
-    : definitionName;
+ * name anyone should have to read. Any other agent's deploy asset name
+ * encodes its slug (`agent-<slug>-source`), which renders title-cased with
+ * hyphens as spaces ("echo-bot" -> "Echo Bot"). */
+export function displayAgentName(definitionName: string): string {
+  if (definitionName === MYRA_SOURCE_CONFIG.assetName) return MYRA_SOURCE_CONFIG.displayName;
+  const slug = agentSlugFromSourceAssetName(definitionName);
+  if (slug === null) return definitionName;
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((word) => word[0]?.toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 /** Myra is always in a new workbench and never a pickable option. */
