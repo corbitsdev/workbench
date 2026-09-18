@@ -11,10 +11,9 @@ import {
 import { type } from "arktype";
 
 import { fetchSourceFile } from "./git-fetch";
+import { withGitToken } from "./git-token";
 
 export class AgentSourceReadError extends Error {}
-
-const GitTokenMintShape = type({ id: "string", secret: "string" });
 
 const ToolPackagePinShape = type({ name: "string", version: "string" });
 
@@ -33,14 +32,6 @@ const AgentWorkflowJsonShape = type({
 });
 
 const READ_TOKEN_LIFETIME_MS = 10 * 60 * 1000;
-
-async function readErrorBody(response: Response): Promise<string> {
-  const body: unknown = await response.json().catch(() => undefined);
-  const envelope = type({
-    error: { code: "string", userMessage: "string", refId: "string" },
-  })(body);
-  return envelope instanceof type.errors ? `HTTP ${response.status}` : envelope.error.userMessage;
-}
 
 /** An existing agent's deploy source, in the shape `deployAgentSource`'s
  * `NewAgentInput` needs plus the sources it declares for inference. */
@@ -63,53 +54,36 @@ async function readAgentWorkflowStep(
   assetName: string,
   fetchImpl: typeof fetch,
 ): Promise<AgentWorkflowStep> {
-  const tokensPath = `/api/tenants/${encodeURIComponent(tenantId)}/git-tokens`;
-  const minted = await fetchImpl(tokensPath, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      name: `agent-read-${crypto.randomUUID()}`,
-      resource: `asset:${assetId}`,
-      refPattern: "refs/heads/main",
-      actions: ["can_read"],
-      expiresAt: new Date(Date.now() + READ_TOKEN_LIFETIME_MS).toISOString(),
-    }),
-  });
-  if (!minted.ok) {
-    throw new AgentSourceReadError(`minting a read token failed: ${await readErrorBody(minted)}`);
-  }
-  const token = GitTokenMintShape(await minted.json());
-  if (token instanceof type.errors) {
-    throw new AgentSourceReadError(
-      `the read token came back an unexpected shape: ${token.summary}`,
-    );
-  }
-
   const url = new URL(
     `/api/tenants/${encodeURIComponent(tenantId)}/assets/workflow/${assetName}.git`,
     globalThis.location.origin,
   ).toString();
-  try {
-    const definitionFile = await fetchSourceFile({
-      url,
-      token: token.secret,
-      filepath: WORKFLOW_SOURCE_DEFINITION_PATH,
-    });
-    const workflowJson = parseWorkflowSourceDefinition(definitionFile, assetId);
-    const parsed = AgentWorkflowJsonShape(JSON.parse(workflowJson));
-    if (parsed instanceof type.errors) {
-      throw new AgentSourceReadError(
-        `this agent's source came back an unexpected shape: ${parsed.summary}`,
-      );
-    }
-    const step = Object.values(parsed.steps)[0];
-    if (step === undefined) {
-      throw new AgentSourceReadError("this agent's source has no steps to read a prompt from");
-    }
-    return step;
-  } finally {
-    await fetchImpl(`${tokensPath}/${encodeURIComponent(token.id)}`, { method: "DELETE" });
-  }
+  return withGitToken({
+    tenantId,
+    assetId,
+    actions: ["can_read"],
+    lifetimeMs: READ_TOKEN_LIFETIME_MS,
+    fetchImpl,
+    use: async (token) => {
+      const definitionFile = await fetchSourceFile({
+        url,
+        token,
+        filepath: WORKFLOW_SOURCE_DEFINITION_PATH,
+      });
+      const workflowJson = parseWorkflowSourceDefinition(definitionFile, assetId);
+      const parsed = AgentWorkflowJsonShape(JSON.parse(workflowJson));
+      if (parsed instanceof type.errors) {
+        throw new AgentSourceReadError(
+          `this agent's source came back an unexpected shape: ${parsed.summary}`,
+        );
+      }
+      const step = Object.values(parsed.steps)[0];
+      if (step === undefined) {
+        throw new AgentSourceReadError("this agent's source has no steps to read a prompt from");
+      }
+      return step;
+    },
+  });
 }
 
 /** Mints a read-only token, fetches the asset's `main`, and parses out the
