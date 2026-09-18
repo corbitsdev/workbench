@@ -4,7 +4,7 @@
 // There is no stock file-read route for a workflow asset (only
 // package-registry tarballs get one), so this fetches `main` over the
 // asset's smart-HTTP git remote with a short-lived read-only token.
-import { parseWorkflowSourceEntry, WORKFLOW_SOURCE_ENTRY_PATH } from "@corbits/workflows";
+import { parseWorkflowSourceEntry, WORKFLOW_SOURCE_ENTRY_PATH } from "@corbits/workflows/client";
 import { type } from "arktype";
 
 import { fetchSourceFile } from "./git-fetch";
