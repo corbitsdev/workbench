@@ -23,9 +23,6 @@
       "path": "./packages/collections/tsconfig.src.json"
     },
     {
-      "path": "./packages/credential-providers/tsconfig.src.json"
-    },
-    {
       "path": "./packages/cron/tsconfig.src.json"
     },
     {
@@ -75,9 +72,6 @@
     },
     {
       "path": "./tools/linear/tsconfig.src.json"
-    },
-    {
-      "path": "./tools/manus/tsconfig.src.json"
     },
     {
       "path": "./tools/reddit/tsconfig.src.json"

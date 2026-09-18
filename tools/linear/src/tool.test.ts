@@ -14,10 +14,10 @@ const CALL: ToolCall = {
 /**
  * A fake `credentials` capability mirroring the REAL provider a Linear
  * binding resolves through in production:
- * `@corbits/credential-providers`'s `http-raw-authorization` plugin, not
+ * `@corbits/credential-header`'s `http-raw-authorization` preset, not
  * `@intx/harness`'s Bearer-prefixed `http` provider. Linear's API expects
  * the raw key verbatim in `authorization` (see
- * `@corbits/credential-providers`'s `createHttpRawAuthorizationCredentialProvider`);
+ * `@corbits/credential-header`'s `rawAuthorizationCredentialProvider`);
  * a bound `secret` resolves to a mediated `fetch` that injects it
  * unprefixed and delegates to `globalThis.fetch`. An unbound handle
  * throws, matching the real gate's "no credential is bound to handle"

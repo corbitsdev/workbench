@@ -15,6 +15,8 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/credential-header": "github:corbitsdev/corbits-credential-header#eee7b7eb79755fd1ddc3eb2b9a57c4e50982e293",
+    "@corbits/credential-mcp": "github:corbitsdev/corbits-credential-mcp#fb9ec3a6754348cd33c388c70c0830b8844c83de",
     "@intx/agent": "workspace:*",
     "@intx/authz": "0.3.0",
     "@intx/crypto": "0.3.0",
