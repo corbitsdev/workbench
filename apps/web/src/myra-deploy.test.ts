@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildMyraDeployInput, MyraDeployError, packTarball } from "./myra-deploy";
+import { buildMyraDeployInput, MyraDeployError } from "./myra-deploy";
 import { MYRA_SOURCE_CONFIG } from "./myra-source";
 
 describe("buildMyraDeployInput", () => {
-  test("maps a published asset and the operator's offering pick to a WorkflowDeployInput", () => {
+  test("maps the pushed commit and the operator's offering pick to a source-tree deploy", () => {
     const input = buildMyraDeployInput({
       assetId: "ast_123",
+      commitSha: "abc123",
       sourceOfferingIds: ["off_1", "off_2"],
       defaultSourceOfferingId: "off_2",
     });
@@ -15,12 +16,11 @@ describe("buildMyraDeployInput", () => {
       source: {
         kind: "asset",
         assetId: "ast_123",
-        package: { format: "tarball" },
+        package: { format: "source", commitSha: "abc123" },
       },
       entry: MYRA_SOURCE_CONFIG.entryPath,
       sourceOfferingIds: ["off_1", "off_2"],
       defaultSourceOfferingId: "off_2",
-      pin: `${MYRA_SOURCE_CONFIG.packageName}@${MYRA_SOURCE_CONFIG.packageVersion}`,
     });
   });
 
@@ -28,6 +28,7 @@ describe("buildMyraDeployInput", () => {
     expect(() =>
       buildMyraDeployInput({
         assetId: "ast_123",
+        commitSha: "abc123",
         sourceOfferingIds: [],
         defaultSourceOfferingId: "off_1",
       }),
@@ -38,26 +39,10 @@ describe("buildMyraDeployInput", () => {
     expect(() =>
       buildMyraDeployInput({
         assetId: "ast_123",
+        commitSha: "abc123",
         sourceOfferingIds: ["off_1"],
         defaultSourceOfferingId: "off_2",
       }),
     ).toThrow(MyraDeployError);
-  });
-});
-
-describe("packTarball", () => {
-  test("writes USTAR headers whose checksum verifies and whose typeflag survives", async () => {
-    const tarball = await packTarball({ "package.json": "{}" });
-    const tar = new Uint8Array(
-      await new Response(
-        new Blob([tarball as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new DecompressionStream("gzip")),
-      ).arrayBuffer(),
-    );
-    const header = tar.slice(0, 512);
-    let expected = 0;
-    for (let i = 0; i < 512; i++) expected += i >= 148 && i < 156 ? 0x20 : header[i]!;
-    const stored = parseInt(new TextDecoder().decode(header.slice(148, 154)), 8);
-    expect(stored).toBe(expected);
-    expect(String.fromCharCode(header[156]!)).toBe("0");
   });
 });
