@@ -1,7 +1,7 @@
 // The product table `@corbits/webhook-triggers` owns: a trigger row
 // per external-webhook-to-workflow binding, living in this package's
 // own `webhook_triggers` Postgres schema, fully siloed from the
-// platform's `public` schema — see docs/package-migrations.md.
+// platform's `public` schema (see `./migrations.ts`).
 //
 // `tenant_id` and `created_by` (a real Interchange principal id — see
 // `management-routes.ts`'s `createdBy: principal.id`) are hard foreign

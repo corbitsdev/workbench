@@ -35,7 +35,7 @@
       "path": "./packages/inference-catalog/tsconfig.src.json"
     },
     {
-      "path": "./packages/migration-runner/tsconfig.src.json"
+      "path": "./packages/ollama-adapter/tsconfig.src.json"
     },
     {
       "path": "./packages/tool-registry-publish/tsconfig.src.json"
