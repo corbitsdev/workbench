@@ -1,9 +1,6 @@
-// The client-side composer behind every approval surface: the platform's
-// pending list, named through the run view and the account's own
-// membership. What matters here is that a run is named once no matter how
-// many approvals it raised, that a refused list read is shown as a failure
-// rather than an empty queue, and that the chat card's status read speaks
-// the same display model.
+// Covers: a run is named once no matter how many approvals it raised, a
+// refused list read shows as a failure not an empty queue, and the chat
+// card's status read speaks the same display model.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { QueryClient } from "@tanstack/react-query";

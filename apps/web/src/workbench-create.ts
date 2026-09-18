@@ -1,8 +1,5 @@
-// Creating a workbench is creating a child tenant and deploying an agent
-// into it: the stock member invite only takes a real user's email, and a
-// child tenant's deploy route rejects the parent's inherited asset, so an
-// agent joins a workbench by being deployed there — with the child's own
-// resolved offering, which does inherit.
+// An agent joins a workbench by being deployed into the child tenant
+// itself — its deploy route rejects the parent's inherited asset.
 
 import { isMyraAgent, listWorkbenchParticipants, sendToWorkbench } from "@/chat/threads-api";
 import { agentSlugFromSourceAssetName, deployAgentSource } from "./agent-deploy";

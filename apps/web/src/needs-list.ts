@@ -130,11 +130,8 @@ const ChildTenantRecordSchema = type({
   localId: "string > 0",
   tenantId: "string > 0",
   kind: "'workbench'",
-  // The workbench's primary thread: the native Message-ID of the first
-  // conversation.message sent in the child tenant. Recorded beside the
-  // created id so a retry never resends — idempotency rides this id.
-  // Workbench metadata beyond Subject/List-ID (icon, prefs) lives here
-  // too: client-held, never a server table.
+  // Recorded so a retry never resends — idempotency rides this id.
+  // Workbench metadata beyond Subject/List-ID lives here too, client-held.
   "primaryThreadMessageId?": "string > 0",
   "icon?": "string > 0",
   "prefs?": "Record<string, unknown>",
@@ -192,11 +189,8 @@ const ThreadLinkSchema = type({
   // submission route accepts threading headers.
   "inReplyTo?": "string > 0",
   "references?": type("string > 0").array(),
-  // The forked subject, recipients, and body, so a retry of the same fork
-  // replays its recorded Message-ID while a different subject, recipient
-  // set, or edited body off the same parent sends anew. Rows written before
-  // recipients/body were recorded carry neither and match on parent+subject
-  // only, preserving their exactly-once replay.
+  // A retry of the same fork replays its recorded Message-ID; a different
+  // subject/recipients/body off the same parent sends anew.
   "subject?": "string > 0",
   "to?": type("string").array(),
   "body?": "string",
