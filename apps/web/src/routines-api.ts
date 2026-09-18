@@ -138,6 +138,7 @@ export function useTenantQuery<T>(
   key: readonly unknown[],
   enabled: boolean,
   fetcher: () => Promise<T>,
+  refetchInterval?: (data: T | undefined) => number | false,
 ): APIQuery<T> {
   const result = useQuery({
     queryKey: key,
@@ -152,6 +153,12 @@ export function useTenantQuery<T>(
         throw cause;
       }
     },
+    ...(refetchInterval !== undefined
+      ? {
+          refetchInterval: (query: { state: { data: T | undefined } }) =>
+            refetchInterval(query.state.data),
+        }
+      : {}),
   });
   return toAPIQuery(result);
 }

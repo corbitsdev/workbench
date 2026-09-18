@@ -19,24 +19,45 @@ import {
   TableRow,
 } from "@corbits/react-ui";
 import { Robot } from "@/lib/icons";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { QueryView } from "@/lib/api-query";
 import { chatKeys, chatPath } from "../chat-path";
-import { listChatAgents, type ChatAgent } from "@/chat/threads-api";
+import { isAgentNotRunning, listChatAgents, type ChatAgent } from "@/chat/threads-api";
+import { redeployRoomAgent } from "../workbench-create";
 import { useBench } from "../bench-context";
 import { Link } from "../navigation";
 import { useTenantQuery } from "../routines-api";
 import { StageTopBar } from "../shell/stage-top-bar";
 
 /**
- * One agent's roster row: `Live` once it has a live run address, `Starting`
- * while a deploy is still landing one (mid-first-deploy or mid-redeploy).
+ * One agent's roster row: `Live` once it has a live run address, `starting`
+ * while a deploy is still landing one (mid-first-deploy or mid-redeploy),
+ * `not-running` once its latest deployment has gone terminal (a hub
+ * restart releases every prior allocation) — a restart is then the only
+ * way forward.
  */
-export function agentRosterStatus(agent: Pick<ChatAgent, "liveAddress">): "live" | "starting" {
-  return agent.liveAddress === null ? "starting" : "live";
+export function agentRosterStatus(
+  agent: Pick<ChatAgent, "liveAddress" | "latestStatus">,
+): "live" | "starting" | "not-running" {
+  if (agent.liveAddress !== null) return "live";
+  return isAgentNotRunning(agent) ? "not-running" : "starting";
 }
 
-export function AgentsRosterList({ agents }: { readonly agents: readonly ChatAgent[] }) {
+export function AgentsRosterList({
+  tenantId,
+  agents,
+}: {
+  readonly tenantId: string;
+  readonly agents: readonly ChatAgent[];
+}) {
+  const queryClient = useQueryClient();
+  const restart = useMutation({
+    mutationFn: (agent: ChatAgent) => redeployRoomAgent(tenantId, agent),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: chatKeys.agents(tenantId) });
+    },
+  });
   if (agents.length === 0) {
     return (
       <RichEmptyState
@@ -68,15 +89,42 @@ export function AgentsRosterList({ agents }: { readonly agents: readonly ChatAge
                   {status === "live" ? (
                     <StatusDot label="Live" live tone="emphasis" size="xs" />
                   ) : null}
-                  <Badge tone={status === "live" ? "success" : "neutral"} className="normal-case">
-                    {status === "live" ? "Live" : "Starting"}
+                  <Badge
+                    tone={
+                      status === "live"
+                        ? "success"
+                        : status === "not-running"
+                          ? "warning"
+                          : "neutral"
+                    }
+                    className="normal-case"
+                  >
+                    {status === "live"
+                      ? "Live"
+                      : restart.isPending && restart.variables?.id === agent.id
+                        ? "Starting…"
+                        : status === "not-running"
+                          ? "Not running"
+                          : "Starting"}
                   </Badge>
                 </span>
               </TableCell>
               <TableCell>
-                <Button asChild variant="outline" size="sm">
-                  <Link to={chatPath(agent.id)}>Chat</Link>
-                </Button>
+                <span className="inline-flex items-center gap-2">
+                  {status === "not-running" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={restart.isPending}
+                      onClick={() => restart.mutate(agent)}
+                    >
+                      Restart
+                    </Button>
+                  ) : null}
+                  <Button asChild variant="outline" size="sm">
+                    <Link to={chatPath(agent.id)}>Chat</Link>
+                  </Button>
+                </span>
               </TableCell>
             </TableRow>
           );
@@ -92,6 +140,9 @@ export function AgentsRoute() {
     chatKeys.agents(selectedTenantId ?? "none"),
     selectedTenantId !== null,
     () => listChatAgents(selectedTenantId as string),
+    // Keep polling while any agent is not live, so a released→deployed
+    // (or a restart landing) transition is seen without a reload.
+    (agents) => ((agents?.some((agent) => agent.liveAddress === null) ?? false) ? 3000 : false),
   );
 
   return (
@@ -111,7 +162,7 @@ export function AgentsRoute() {
           ) : (
             <div className="px-4 pb-5 sm:px-7">
               <QueryView query={agentsQuery} label="your agents" skeleton="rows">
-                {(agents) => <AgentsRosterList agents={agents} />}
+                {(agents) => <AgentsRosterList tenantId={selectedTenantId} agents={agents} />}
               </QueryView>
             </div>
           )}
