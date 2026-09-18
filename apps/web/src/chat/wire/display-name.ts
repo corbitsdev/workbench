@@ -9,11 +9,9 @@
 // person" reads it the same way — never a scattered `description ?? name`
 // (or worse, a raw address/run id) reimplemented per call site.
 //
-// Lives in `@/chat/wire` (mirrored from `@corbits/chat`, which
-// `@corbits/agent-directory` still depends on for its own copy of
+// Lives in `@/chat/wire` (mirrored from `@corbits/chat`'s
 // `workbench-host-naming`) so this browser-facing surface never needs a
-// server-only chat import; `@corbits/agent-directory/client.ts` keeps its
-// own re-export of `deriveDisplayName`/`humanizeSlug` for its callers.
+// server-only chat import.
 import { type } from "arktype";
 import { ID_LEAK_PATTERN } from "./id-leak-guard";
 
