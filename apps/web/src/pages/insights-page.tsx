@@ -38,7 +38,14 @@ import { workbenchesQueryKey, listWorkbenches } from "@/chat/workbench-tenants";
 import { useBench } from "../bench-context";
 import { resolveWorkbenchInsightsScope } from "../insights-workbench-scope";
 import { parseInsightsPath } from "../insights-path";
-import { insightsTopLevelRunsPath, TopLevelRunsSchema, type InsightsRun } from "../insights-api";
+import {
+  insightsTopLevelRunsPath,
+  insightsRunEventsPath,
+  RunEventsSchema,
+  runFailureMessage,
+  TopLevelRunsSchema,
+  type InsightsRun,
+} from "../insights-api";
 import {
   computeInsightsStats,
   durationLabel,
@@ -496,7 +503,77 @@ export function InsightsRunsHistory({
   );
 }
 
-export function InsightsRunDetail({ run }: { readonly run: InsightsRun | null }) {
+/** The failed run's own explanation plus a link to its full event log,
+ * fetched from the stock `GET .../runs/:runId/events` route only for a
+ * failed run — a healthy run has nothing to explain. */
+function RunFailureDetail({
+  tenantId,
+  runId,
+}: {
+  readonly tenantId: string;
+  readonly runId: string;
+}) {
+  const events = useAPIQuery(insightsRunEventsPath(tenantId, runId), RunEventsSchema);
+  const [showEvents, setShowEvents] = useState(false);
+
+  if (events.kind === "loading") return <Skeleton className="h-24 w-full" />;
+  if (events.kind !== "ready") {
+    return (
+      <RichEmptyState
+        title="Couldn't load this run's events"
+        description="Something went wrong on our side. Try again in a moment."
+        {...(events.kind === "error"
+          ? { actions: [{ label: "Retry", onClick: events.retry }] }
+          : {})}
+      />
+    );
+  }
+
+  const message = runFailureMessage(events.data.events);
+
+  return (
+    <section className="insights-panel">
+      <h3>Failure</h3>
+      <p className="text-sm text-destructive">
+        {message ?? "This run failed, but no event carried a specific error message."}
+      </p>
+      <button
+        type="button"
+        className="font-semibold text-primary-emphasis"
+        onClick={() => setShowEvents((value) => !value)}
+      >
+        {showEvents ? "Hide events" : "View events"}
+      </button>
+      {showEvents ? (
+        <Table aria-label="Run events" className="insights-data-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Seq</TableHead>
+              <TableHead>Type</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {events.data.events.map((event) => (
+              <TableRow key={event.seq}>
+                <TableCell>{event.seq}</TableCell>
+                <TableCell>{event.type}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      ) : null}
+    </section>
+  );
+}
+
+export function InsightsRunDetail({
+  run,
+  tenantId,
+}: {
+  readonly run: InsightsRun | null;
+  readonly tenantId: string | null;
+}) {
+  const failed = run !== null && insightsRunStatus(run) === "failed";
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
@@ -526,6 +603,9 @@ export function InsightsRunDetail({ run }: { readonly run: InsightsRun | null })
                 description="This run may have fallen out of the 100 most recent, or it never existed."
               />
             ) : null}
+            {failed && tenantId !== null ? (
+              <RunFailureDetail tenantId={tenantId} runId={run.id} />
+            ) : null}
           </div>
         </PageShell>
       </div>
@@ -537,6 +617,7 @@ export function InsightsPage({
   path,
   runs,
   routines,
+  tenantId = null,
 }: {
   readonly path: string;
   readonly runs: APIQuery<{
@@ -544,6 +625,7 @@ export function InsightsPage({
     nextCursor: string | null;
   }>;
   readonly routines: APIQuery<readonly ScheduledWorkflowDefinition[]>;
+  readonly tenantId?: string | null;
 }) {
   const navigate = useNavigate();
   const { mode, runId } = parseInsightsPath(path);
@@ -569,7 +651,7 @@ export function InsightsPage({
 
   if (mode === "run" && runId !== null) {
     const run = runsData.find((r) => r.id === runId) ?? null;
-    return <InsightsRunDetail run={run} />;
+    return <InsightsRunDetail run={run} tenantId={tenantId} />;
   }
 
   if (mode === "runs") {
@@ -728,7 +810,14 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
     );
   }
 
-  return <InsightsPage path={currentPath} runs={runsForPage} routines={routinesForPage} />;
+  return (
+    <InsightsPage
+      path={currentPath}
+      runs={runsForPage}
+      routines={routinesForPage}
+      tenantId={selectedTenantId}
+    />
+  );
 }
 
 /** Resolves the workbench-scoped route's own workbench list — split out of
