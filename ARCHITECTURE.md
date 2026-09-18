@@ -50,10 +50,10 @@ stock workflow-deploy route. `tools/*` and `skills/*` are ordinary
 
 Custom tables — `webhook-triggers`, `agent-directory`, and so on — live
 on their own Postgres schema, each with foreign keys back to
-Interchange's `tenant`/`principal` tables in `public`. See
-[docs/package-migrations.md](docs/package-migrations.md) for how a
-package's own migrations are written and applied. Anything Interchange
-already does natively is deleted rather than kept as a parallel path.
+Interchange's `tenant`/`principal` tables in `public`. Each package ships
+one idempotent migration, which the hub applies itself at boot. Anything
+Interchange already does natively is deleted rather than kept as a
+parallel path.
 
 ## Vendoring
 
