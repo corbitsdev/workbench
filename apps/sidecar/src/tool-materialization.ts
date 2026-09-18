@@ -1,19 +1,9 @@
-// Tool-package materialization for the sidecar.
-//
-// The deploy-tree reader, the `@intx/tool-packaging` loader
-// construction, `applyAtomic`, and the active-deploy-id persistence
-// ladder live here so the workflow-process child's substrate factory
-// (`workflow-substrate-factory.ts`) reaches this implementation without
-// the portable orchestration package depending on the sidecar's tool
-// runtime. Keeping this in `apps/sidecar` (and out of
-// `@intx/workflow-host`) preserves that package's host-agnostic
-// layering: the child IS the sidecar binary, so the sidecar's tool
-// runtime is already present in the child's address space.
-//
-// The module is deliberately free of any `@intx/harness` reactor
-// dependency so the workflow-process child's boot graph does not pull
-// in `@intx/harness`'s transport/reactor stack -- a forbidden-import
-// guard enforces that boundary.
+// Lives in apps/sidecar (not @intx/workflow-host) to keep that package
+// host-agnostic; the child IS the sidecar binary, so its tool runtime is
+// already present. Kept free of @intx/harness so the workflow-process
+// child's boot graph doesn't pull in its reactor stack (enforced by a
+// forbidden-import guard).
+// See docs/sidecar-tool-package-durability.md for the deploy-id persist protocol.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -35,23 +25,13 @@ import { readRegistries, resolveHostPlatform } from "./sidecar-materialization-c
 
 const logger = getLogger(["sidecar", "harness-builder"]);
 
-// Sentinel `previousDeployId` for an instance that has never applied
-// a deploy successfully. Encoded as a literal string so the value
-// travels through `applyAtomic`'s `ApplyAtomicFailure.previousDeployId`
-// channel unchanged; the hub treats it as "no prior deploy" rather
-// than as a real id.
+// Sentinel the hub treats as "no prior deploy" rather than a real id.
 const NO_PRIOR_DEPLOY_ID = "none";
 
 /**
- * A loaded tool factory paired with the identity of the package it came
- * from. `collectFactories` flattens every package's factories into one list
- * but preserves this association per factory, because the per-bundle
- * credential assembly downstream needs two things the bare factory (which
- * carries only its bundle id) cannot supply: the package name, to derive the
- * consumer identity (`toolConsumer(packageName)`) that Gate 2 checks, and the
- * package's declared credential handles, to reconcile against the delivered
- * bindings. `declaredCredentials` is the package-level set, repeated on each
- * of that package's factories.
+ * Keeps package identity attached per factory because the per-bundle
+ * credential assembly needs the package name and declared handles that a
+ * bare factory (which carries only its bundle id) cannot supply.
  */
 export interface StepToolFactory {
   readonly packageName: string;
@@ -70,24 +50,12 @@ interface MaterializedToolPackages {
 // builder.
 export async function materializeToolPackages(args: {
   rawManifestBytes: string | undefined;
-  /**
-   * `assetId` → workspace-relative mount path, parsed from the deploy
-   * pack's `deploy/asset-mounts.json`. The loader resolves
-   * `kind: "asset"` manifest entries against this map.
-   */
+  /** assetId -> workspace-relative mount path from deploy/asset-mounts.json. */
   assetMounts: ReadonlyMap<string, string>;
   storeDir: string;
   /**
-   * Workspace root the loader resolves `kind: "asset"` tarball mounts
-   * against (`<assetRoot>/<mountPath>/...`). Defaults to
-   * `<storeDir>/workspace` -- the default workspace layout, where the
-   * deploy flow stages asset packs into the same dir the agent runs in.
-   *
-   * The workflow-process child overrides this: it stages assets in the
-   * step's LEGACY agent dir workspace (where the hub's asset-pack push
-   * lands them) but roots the per-step apply-state + agent `env.workdir`
-   * under a distinct per-step store dir, so the loader's asset source
-   * and the apply-state root are two different directories.
+   * Defaults to <storeDir>/workspace. The workflow-process child overrides
+   * this to keep its asset source and apply-state root as separate directories.
    */
   assetRoot?: string;
   agentAddress: string;
@@ -98,33 +66,18 @@ export async function materializeToolPackages(args: {
   if (args.rawManifestBytes === undefined) {
     return { factories: [], pluginFactories: [] };
   }
-  // Capture into a local so closures below see a `string` (the property
-  // narrowing on args.rawManifestBytes does not survive the nested
-  // function boundary, even though the property is readonly).
+  // Local capture: readonly-property narrowing doesn't survive the nested
+  // closure boundary below.
   const rawManifestBytes = args.rawManifestBytes;
 
-  // The apply-state tree (`tool-packages/`) shares the agent's
-  // storeDir root with the workspace tree the tool factories run
-  // against. Factories execute with `cwd: env.workdir`; the loader
-  // and the agent runtime both rely on factories not writing outside
-  // their workspace. A factory that walks `..` out of the workspace
-  // could touch the apply-state tree. The substrate trusts factories
-  // to honor that boundary — a misbehaving factory is treated as a
-  // security regression against the package, not a sandboxing gap to
-  // close at this layer.
+  // Shares storeDir with the factories' own workspace; the substrate trusts
+  // factories not to write outside cwd rather than sandboxing this boundary.
   const instanceDir = path.join(args.storeDir, "tool-packages");
   await fs.promises.mkdir(instanceDir, { recursive: true });
 
   const activeIdFile = path.join(instanceDir, "active-deploy-id");
   const activeIdDirtyFile = `${activeIdFile}.dirty`;
-  // The dirty marker is written by `persistActiveDeployId`'s catch
-  // path when the commit persist (the normal write + fsync + dir
-  // fsync) failed on the prior apply and even the no-fsync fallback
-  // failed. Its presence means the staged deploy was committed but the
-  // recorded `active-deploy-id` is stale, and the marker carries the id
-  // that belongs there. Read it first so a degraded prior boot doesn't
-  // surface as `previousDeployId="none"` and silently demote the
-  // committed deploy to "fresh instance".
+  // See docs/sidecar-tool-package-durability.md for the dirty-marker protocol.
   let previousDeployId = NO_PRIOR_DEPLOY_ID;
   try {
     const dirtyRaw = (await fs.promises.readFile(activeIdDirtyFile, "utf-8")).trim();
@@ -148,15 +101,8 @@ export async function materializeToolPackages(args: {
   const attemptId = crypto.randomUUID();
   const newDeployId = crypto.randomUUID();
 
-  // Validate the manifest at the loader boundary. Both JSON parse
-  // failures and arktype schema failures route through the same
-  // `manifest.invalid` category so the hub sees a single failure
-  // shape for malformed manifests regardless of the specific defect.
-  // The helper persists the rejected bytes + the failure payload to
-  // the durable audit, then returns the Error for the caller to throw.
-  // Returning instead of throwing lets the caller use `throw await ...`,
-  // which TypeScript narrows control flow against without any
-  // dead-code suffix at the call site.
+  // Returns rather than throws so the caller can `throw await ...`, which
+  // TypeScript narrows control flow against with no dead-code suffix.
   const rejectManifestInvalid = async (reason: string): Promise<Error> => {
     const occurredAt = new Date().toISOString();
     logger.warn`tool-package apply rejected for ${args.agentAddress}: manifest.invalid — ${reason}`;
@@ -205,8 +151,7 @@ export async function materializeToolPackages(args: {
     instanceDir,
     assetRoot: args.assetRoot ?? path.join(args.storeDir, "workspace"),
     assetMounts: args.assetMounts,
-    // Step tool packages never source from git; only workflow-definition
-    // closures carry git entries.
+    // Only workflow-definition closures carry git entries.
     gitDirs: new Map(),
     attemptId,
     previousDeployId,
@@ -214,41 +159,21 @@ export async function materializeToolPackages(args: {
   });
   if (result.status === "failed") {
     logger.warn`tool-package apply rejected for ${args.agentAddress}: ${result.category} — ${result.message}`;
-    // A failed apply never wrote `active-deploy-id`: `applyAtomic`
-    // stages into a per-deploy-id directory and the commit is the
-    // persist below, which only runs on success. So the prior deploy is
-    // trivially still live and `result.previousDeployId` carries the
-    // unchanged prior id. There is no committed-but-failed swap to
-    // reconcile here — that case existed only under the old rename
-    // protocol.
+    // A failed apply never wrote active-deploy-id, so the prior deploy is
+    // trivially still live.
     await writeRejectedApplyAudit({
       storeDir: args.storeDir,
       attemptId: result.attemptId,
-      // The raw bytes from disk, not the arktype-narrowed object.
-      // Re-serializing `validated` would drop unknown-tolerated
-      // fields, normalize key order, and lose whitespace — exactly
-      // the original-input evidence a future investigator needs to
-      // reproduce the failure against a newer validator.
+      // Raw bytes from disk, not the arktype-narrowed object — preserves
+      // whitespace/key order/unknown fields for replay against a newer validator.
       manifestBytes: rawManifestBytes,
       failure: result,
     });
     throw new Error(`tool-package apply rejected (${result.category}): ${result.message}`);
   }
 
-  // Apply staged: the loader built the new deploy at
-  // `packages/<newDeployId>/`. Persisting the new active id is the
-  // commit — the single write that advances the live deploy from the
-  // prior id to this one. If the write or its fsync fails (disk full,
-  // EIO, EROFS), the on-disk state has diverged from the recorded id:
-  // `persistActiveDeployIdWithFallback` has already written the new id
-  // through its no-fsync / dirty-marker degradation ladder, so the new
-  // deploy is logically committed, but the id was not durably flushed.
-  // Record this as `apply.previous-rotation.failed` — for that category
-  // `previousDeployId` carries the **new** deploy id (the one now live)
-  // so the durable audit records the on-disk truth. Write the audit
-  // entry, then throw so the harness tears down: the durability gap
-  // means the next apply cannot trust `previousDeployId` until the next
-  // boot reconciles via the dirty marker.
+  // Persisting the id is the commit. On a degraded persist, throw so the
+  // harness tears down — see docs/sidecar-tool-package-durability.md.
   const persistOutcome = await persistActiveDeployIdWithFallback(
     instanceDir,
     activeIdFile,
@@ -292,19 +217,10 @@ export async function materializeToolPackages(args: {
  * previousDeployId="none" and treat the committed deploy as belonging
  * to a fresh, deploy-less instance.
  *
- * Dir-fsync is best-effort durability hardening, not part of the
- * apply's structural success contract. Some filesystems (notably
- * FAT/exFAT, certain network mounts) do not support fsync on a
- * directory handle and will surface EINVAL / ENOTSUP. The deploy is
- * already staged on disk and the deploy-id file's own fsync has
- * landed; tearing the harness down at this point would force a
- * restart for a degraded-durability condition the operator has no
- * way to act on. Log it and continue.
+ * Dir-fsync is best-effort: some filesystems (FAT/exFAT, some network
+ * mounts) don't support it and surface EINVAL/ENOTSUP, which shouldn't
+ * force a restart when the deploy-id file's own fsync already landed.
  */
-// Version prefix for the active-deploy-id file. A future format
-// change (e.g. carrying additional fields alongside the id) bumps
-// this and the reader rejects unknown prefixes loudly instead of
-// silently treating an unrecognized payload as a deploy id.
 const ACTIVE_DEPLOY_ID_VERSION = "v1";
 const ACTIVE_DEPLOY_ID_PREFIX = `${ACTIVE_DEPLOY_ID_VERSION}:`;
 
@@ -315,19 +231,9 @@ export function parseActiveDeployId(raw: string, sourcePath: string): string {
       `active-deploy-id file ${sourcePath} is empty; expected ${ACTIVE_DEPLOY_ID_PREFIX}<deploy-id>`,
     );
   }
-  // Pre-versioning files carried just the raw deploy id. Accept those
-  // for backward compatibility so an upgrade does not require an
-  // operator-driven state rewrite, but require the prefix on any
-  // file the new code writes.
-  //
-  // Deprecation horizon: this branch exists to ease the v1: cutover
-  // from pre-versioning files. Once every deployed sidecar has been
-  // restarted at least once on a version that writes the prefix, the
-  // un-prefixed branch can be deleted and an un-prefixed file should
-  // be rejected as garbage. The horizon is "remove after a few
-  // sidecar minor versions have shipped that write the prefix"; the
-  // exact cutover is an operational decision, not a code-encoded
-  // one.
+  // Accepts pre-versioning unprefixed files so upgrade needs no operator
+  // rewrite; delete this branch once every sidecar has restarted on a
+  // version that writes the prefix (see docs/sidecar-tool-package-durability.md).
   if (raw.startsWith(ACTIVE_DEPLOY_ID_PREFIX)) {
     const id = raw.slice(ACTIVE_DEPLOY_ID_PREFIX.length);
     if (id.length === 0) {
@@ -379,19 +285,8 @@ async function persistActiveDeployId(
 }
 
 /**
- * Remove a stale `.dirty` sibling of the active-deploy-id file. Called
- * after either the fsync'd primary persist or the no-fsync fallback
- * persist successfully writes a fresh active-deploy-id; in both cases a
- * pre-existing marker carries a now-stale id that would otherwise
- * shadow the recorded id on the next boot (the boot reader prefers the
- * marker when present).
- *
- * Best-effort: a failure to remove the marker leaves the next boot
- * reading the now-redundant marker (which carries a stale id), so the
- * divergence is bounded to a noisier log path. ENOENT is the normal
- * case when no prior failure had written a marker.
- *
- * Exported for direct unit testing of the cleanup contract.
+ * Best-effort: a leftover marker would otherwise shadow the recorded id on
+ * the next boot, since the boot reader prefers it when present.
  */
 export async function clearDirtyMarker(activeIdFile: string, reason: string): Promise<void> {
   try {
@@ -403,22 +298,7 @@ export async function clearDirtyMarker(activeIdFile: string, reason: string): Pr
   }
 }
 
-/**
- * Wrap `persistActiveDeployId` with a degradation ladder: try the
- * normal fsync'd write first, and on failure try a no-fsync write +
- * write of a sibling `.dirty` marker so the next boot can reconcile.
- *
- * Returns `{ degraded: false }` on full success. Returns
- * `{ degraded: true, error }` when the primary persist failed; the
- * caller records an `apply.previous-rotation.failed` audit entry and
- * throws on the back of it.
- *
- * If the fallback persist also fails, on-disk state will diverge from
- * the recorded id for one boot cycle. Boot-time reconciliation reads
- * the dirty marker and prefers it.
- *
- * Exported for direct unit testing of the dirty-marker contract.
- */
+// See docs/sidecar-tool-package-durability.md for the degradation ladder.
 export async function persistActiveDeployIdWithFallback(
   instanceDir: string,
   activeIdFile: string,
@@ -449,31 +329,7 @@ export async function persistActiveDeployIdWithFallback(
   }
 }
 
-/**
- * Persist the rejected manifest and the failure payload to the agent's
- * on-disk audit trail. The destination is
- * `<storeDir>/audit/rejected-applies/<attemptId>/`, two files:
- *
- *   - `manifest.json`  — the manifest bytes that were rejected, written
- *                        verbatim — for every failure category, these
- *                        are the original on-disk bytes the sidecar
- *                        read from `deploy/tool-packages-manifest.json`
- *                        (corrupt JSON, wrong-shape JSON, or a
- *                        validator-accepted manifest the loader later
- *                        rejected). Persisting the raw bytes lets a
- *                        future investigator replay the same input
- *                        against a newer validator without losing
- *                        whitespace, key order, or tolerated fields
- *                        the validator narrowed away.
- *   - `error.json`     — `{ attemptId, previousDeployId, category,
- *                          message, package?, occurredAt }`
- *
- * The files live in the agent's storeDir so a future
- * git-commit-of-audit-entries pass can pick them up without rerouting
- * the data. v1 writes them directly to disk; the formal git-commit
- * step (turning these into a signed audit-trail commit on the
- * agent-state repo) is a separate plumbing piece.
- */
+// See docs/sidecar-tool-package-durability.md for the audit trail format.
 async function writeRejectedApplyAudit(args: {
   storeDir: string;
   attemptId: string;
@@ -489,15 +345,8 @@ async function writeRejectedApplyAudit(args: {
 }): Promise<void> {
   const dir = path.join(args.storeDir, "audit", "rejected-applies", args.attemptId);
   await fs.promises.mkdir(dir, { recursive: true });
-  // fsync the files and their parent directory before returning so the
-  // rejection's evidence is durable before the caller throws and tears
-  // the apply down. Otherwise, a crash after the throw begins
-  // propagating but before the audit bytes hit disk would leave a
-  // rejected apply the sidecar cannot prove the manifest for on replay.
-  // fsync failures are downgraded to warnings: the bytes are written
-  // either way, and a refusing fsync (rare networked-FS failure mode)
-  // should not turn into a second cascading failure on an already-
-  // failing apply.
+  // Fsynced before the caller throws so a crash right after doesn't lose
+  // the evidence; fsync failures downgrade to warnings, not a second failure.
   await fsyncWriteFile(path.join(dir, "manifest.json"), args.manifestBytes);
   await fsyncWriteFile(path.join(dir, "error.json"), JSON.stringify(args.failure, null, 2));
   try {
