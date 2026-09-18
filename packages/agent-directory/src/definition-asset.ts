@@ -1,14 +1,5 @@
 // Every read and write of an agent definition's asset tree goes through
-// here, so this lineage has exactly one notion of what a definition's
-// asset holds: the source codebase `@corbits/workflows`'s `./source`
-// renders, never the retired `workflow.json` envelope the push validator
-// now refuses.
-//
-// The rendered package's name never leaves the asset — the tree is a
-// standalone codebase the sidecar evaluates, not something anyone
-// installs — so it only has to be a valid, stable npm name. A
-// definition's handle is already lowercase-kebab (see `./validation.ts`),
-// which makes it one.
+// here: the source codebase, never the retired `workflow.json` envelope.
 
 import {
   parseWorkflowSourceEntry,
@@ -57,25 +48,15 @@ export function parseAgentDefinitionEntry(entryModule: Uint8Array, assetId: stri
   return parseWorkflowSourceEntry(new TextDecoder().decode(entryModule), assetId);
 }
 
-/** The `WorkflowDeployer` seam this package needs — never the whole
- * registry surface, just the one call that deploys a commit through the
- * native source pipeline (install -> sidecar probe -> gate -> freeze).
- * The composition root (`apps/hub`) injects the SAME deployer
- * `@corbits/workflows`'s `./authoring`'s own registry calls; this
- * package never reimplements install/probe/gate/freeze itself. */
+/** The `WorkflowDeployer` seam this package needs — just the one deploy
+ * call, never the whole registry surface; this package never reimplements
+ * install/probe/gate/freeze itself. */
 export type AgentDefinitionDeployer = Pick<WorkflowDeployer, "deploy">;
 
-/**
- * Writes a definition's serialized workflow into its asset tree, then
+/** Writes a definition's serialized workflow into its asset tree, then
  * deploys the resulting commit through the native source pipeline — the
- * one sequence every content-mutating route in this package needs
- * (create, restore, capability add, instructions edit, skills edit).
- * Replaces the old write-then-`DefinitionFreezer.freeze`/`refreeze`
- * pair: a deploy IS a freeze, plus the install/probe/gate a bare freeze
- * skipped. Throws `WorkflowAuthorError` on rejection — `not_found`,
- * `invalid` (rejected package/definition), or `unavailable` (sidecar
- * unreachable) — for the caller's route to translate into its response.
- */
+ * one sequence every content-mutating route in this package needs. Throws
+ * `WorkflowAuthorError` for the caller's route to translate. */
 export async function writeAndDeployAgentDefinition(args: {
   assetService: AssetService;
   deployer: AgentDefinitionDeployer;
@@ -110,10 +91,7 @@ export async function writeAndDeployAgentDefinition(args: {
 }
 
 /** The HTTP status a `WorkflowAuthorError` from `writeAndDeployAgentDefinition`
- * should surface as — the same mapping `@corbits/workflows`'s `./authoring`'s
- * own `workflow-routes.ts` uses for the native deploy surface, reused here
- * so a sidecar-unavailable deploy reads as the same 502 envelope shape
- * everywhere a deploy can fail. */
+ * should surface as, matching the native deploy surface's own mapping. */
 export function statusForAgentDefinitionDeployError(
   reason: WorkflowAuthorError["reason"],
 ): 400 | 403 | 404 | 409 | 502 {

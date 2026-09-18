@@ -1,14 +1,6 @@
-// A workflow definition's person-facing display name, derived once here
-// so every caller that decides "what does this agent look like to a
-// person" reads it the same way — never a scattered `description ?? name`
-// (or worse, a raw address/run id) reimplemented per call site.
-//
-// Lives in `@corbits/chat` rather than `@corbits/agent-directory` (which
-// originated this logic) because `@corbits/agent-directory`
-// itself depends on `@corbits/chat` (`workbench-host-naming`); a reverse
-// dependency would be circular. `@corbits/agent-directory/client.ts`
-// re-exports `deriveDisplayName`/`humanizeSlug` from here for its existing
-// callers rather than keeping a second copy that could drift.
+// A workflow definition's person-facing display name, derived once here so
+// every caller reads it the same way — never a scattered `description ??
+// name` reimplemented per call site.
 import { type } from "arktype";
 import { ID_LEAK_PATTERN } from "./id-leak-guard";
 
@@ -17,13 +9,8 @@ const DisplayNameSource = type({
   "description?": "string | null",
 });
 
-/** kebab-case identifier -> Title Case words: `"research-analyst"` ->
- * `"Research Analyst"`. Words that aren't hyphen-separated (a name that
- * already reads as prose) pass through with only their case fixed up, so
- * this is safe to run over a definition's raw `name` unconditionally —
- * PROVIDED that `name` is never an internal id in disguise; see
- * `deriveDisplayName`'s own guard for why the raw run-id case never
- * reaches this function at all. */
+/** kebab-case identifier -> Title Case words. Safe over a definition's raw
+ * `name` only because `deriveDisplayName` guards out an internal id first. */
 export function humanizeSlug(slug: string): string {
   return slug
     .split(/[-_\s]+/)
@@ -32,21 +19,10 @@ export function humanizeSlug(slug: string): string {
     .join(" ");
 }
 
-/**
- * The display name a definition should render as: its own description
- * when one was set at creation, otherwise a humanized reading of its
- * immutable slug. A whitespace-only description reads as absent — never
- * a blank display name — since it carries nothing a person actually
- * typed. Throws on a shape that isn't at least `{ name }` — this is a
- * trust boundary, not a formatting helper, so a malformed record fails
- * loudly rather than rendering "undefined".
- *
- * Also throws when `name` is itself an internal-id shape (`run_…`,
- * `wfd_…`, …, see `./id-leak-guard`) — the product rule is that a person
- * never sees an internal identifier, so a caller that reaches this
- * function with a run id where a definition's slug belongs gets a loud
- * failure instead of a Title-Cased leak like "Run 737a058d…".
- */
+/** The display name a definition should render as: its description when
+ * set, otherwise a humanized slug. Throws on a malformed shape or when
+ * `name`/`description` is itself an internal id, rather than rendering
+ * a leak like "Run 737a058d…". */
 export function deriveDisplayName(definition: {
   readonly name: string;
   readonly description?: string | null;
@@ -85,8 +61,7 @@ export type UserFacingAgentDefinition = {
 export type WithDisplayName<T> = T & { readonly displayName: string };
 
 /** Projects `deriveDisplayName` onto a definition, keeping every other
- * field untouched — the read-boundary derivation done once here rather
- * than as scattered `??` fallbacks in UI code. */
+ * field untouched. */
 export function withDisplayName<T extends UserFacingAgentDefinition>(
   definition: T,
 ): WithDisplayName<T> {

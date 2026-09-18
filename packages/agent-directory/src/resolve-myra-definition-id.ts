@@ -1,9 +1,6 @@
-// Resolves Myra's own workflow-definition id for a tenant — the one
-// piece of DB wiring every one-shot Myra caller in this codebase needs
-// (this package's own `agent-definition-drafting.ts`), each of which
-// takes it as an injected `resolveMyraDefinitionId` port rather than
-// importing this module directly, so a test can stub it without
-// touching a database.
+// Resolves Myra's own workflow-definition id for a tenant. Callers take it
+// as an injected port rather than importing this module directly, so a
+// test can stub it without touching a database.
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { workflowDefinition } from "@intx/db/schema";
@@ -21,11 +18,8 @@ export class MyraDefinitionUnresolvableError extends Error {
   }
 }
 
-/**
- * Queries `workflowDefinition` by Myra's seeded asset name and
- * `tenantId` — there is no "current tenant's Myra" foreign key
- * anywhere else to join through.
- */
+/** Queries `workflowDefinition` by Myra's seeded asset name and `tenantId`
+ * — there is no "current tenant's Myra" FK to join through. */
 export async function resolveMyraDefinitionIdFromDb(
   db: DB["db"],
   tenantId: string,

@@ -1,16 +1,6 @@
-// Shared fetch plumbing for a run-authenticated tool client — every tool
-// bundle that calls a hub route mounted behind `WorkflowRunAuthenticator`
-// (sidecar bearer token + run address, never a human session) needs the
-// same two headers and the same `{ error: { code, userMessage } }`
-// envelope parse. Before this module existed, `@corbits/workflow-
-// authoring-tools`' and `@corbits/capability-tools`' own `client.ts`
-// files each reimplemented both slightly differently (arktype-validated
-// vs. ad hoc field access). This is that one shared seam.
-//
-// Browser-safe: no `@intx/*`, `drizzle-orm`, `hono`, or `postgres` — pure
-// fetch/arktype, exported from `@corbits/workflows/client` alongside the
-// rest of this package's browser-safe surface, because a tool bundle runs
-// inside the sidecar's workflow-host, not the hub server.
+// Shared fetch plumbing for a run-authenticated tool client, so every tool
+// bundle behind `WorkflowRunAuthenticator` shares the same headers and
+// error-envelope parse instead of reimplementing both.
 import { type } from "arktype";
 
 export interface RunBearerClientConfig {

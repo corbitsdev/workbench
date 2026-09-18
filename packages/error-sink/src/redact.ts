@@ -1,9 +1,6 @@
-// Strips obvious secrets before a report reaches any transport:
-// a key that looks like a credential is replaced outright, and every
-// string value -- messages, stack traces, anything nested in `extra` --
-// is scanned for bearer tokens and authorization-header fragments.
-// Heuristic, not a full secret-scanning engine: the bar is "never ships
-// an obvious secret", not "catches every possible one".
+// Strips obvious secrets before a report reaches any transport. Heuristic,
+// not a full secret-scanning engine: the bar is "never ships an obvious
+// secret", not "catches every possible one".
 const SECRET_KEY_PATTERN =
   /token|secret|password|passwd|api[-_]?key|apikey|credential|authorization|cookie/i;
 
@@ -24,22 +21,15 @@ const SECRET_VALUE_PATTERNS: readonly RegExp[] = [
 // closing paren, a stack-frame's `:12:5)`, ...).
 const ASSIGNMENT_VALUE = "[\\w.+/=%-]+";
 
-// `token=`, `access_token=`, ... assignments: covers both a raw OAuth
-// callback URL's query string (`?access_token=...`) and the same shape
-// typed into a free-text error message. Only the value is replaced so the
-// param name -- and the rest of the URL/message -- stays readable for
-// debugging. These names are unambiguous: outside of a credential they
-// don't ordinarily show up as a bare `name=value` assignment at all.
+// Covers `token=`/`access_token=`/... assignments in a URL or free-text
+// message. Only the value is replaced so the rest stays readable.
 const SENSITIVE_ASSIGNMENT_PATTERN = new RegExp(
   `\\b(access_token|refresh_token|id_token|api[-_]?key|apikey|secret|password|passwd|token|credential)(\\s*=\\s*)(${ASSIGNMENT_VALUE})`,
   "gi",
 );
 
-// `code` and `key` are NOT unambiguous -- `code=404`, logfmt's
-// `code=DB_TIMEOUT`, and `key=user:1234:profile` are everyday non-secret
-// shapes. The only place they reliably mean "secret" is a URL query string
-// (an OAuth `code`, a `key=` API credential passed as a param), so these
-// two are scoped to right after a literal `?` or `&`.
+// `code`/`key` are ambiguous elsewhere (`code=404`, `key=user:1234:...`), so
+// these two are scoped to right after a literal `?` or `&`.
 const QUERY_PARAM_SENSITIVE_ASSIGNMENT_PATTERN = new RegExp(
   `([?&])(code|key)(\\s*=\\s*)(${ASSIGNMENT_VALUE})`,
   "gi",

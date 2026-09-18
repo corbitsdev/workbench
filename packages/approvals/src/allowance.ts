@@ -1,24 +1,9 @@
-// Read-only tool calls ride the grant allowance instead of
-// per-call approval. An `approval: "ask"` tool call parks as a pending
-// approval row the moment the sidecar registers its suspension
-// (`registerSignalCorrelation`); this module is the allowance gate that
-// runs right after that registration. A call whose tool carries a
-// declarative allowance annotation, classifies as read-only for THESE
-// arguments, and whose resolved resource (`repo:<owner/name>`,
-// `room:<id>`, `mcp:<slug>`, ...) an existing `allow` grant in the
-// tenant's grant store covers is auto-approved through the native
-// resolve machinery — the approval row still exists and flips to
-// "approved", so the decision is ledgered, but no card ever needs a
-// human. Every other call — unannotated tools, write classifications,
-// uncovered resources, classification failures — keeps today's parked
-// behavior unchanged.
-//
-// Classification is registry-declarative: an annotation is keyed by the
-// qualified tool name the approval row carries and supplies its own
-// `classify` (which may verify a downstream claim live, e.g. an MCP
-// server's `readOnlyHint`). Nothing here matches tool names ad hoc at
-// the call site, and coverage is always resolved through the real grant
-// rows (`@intx/authz`'s `evaluateGrants`), never a parallel store.
+// Read-only tool calls ride the grant allowance instead of per-call
+// approval: a call whose tool declares an allowance, classifies read-only
+// for these arguments, and whose resource an existing grant covers is
+// auto-approved through the native resolve machinery — the approval row
+// still exists and flips to "approved", so the decision is ledgered, but no
+// card needs a human. Everything else keeps today's parked behavior.
 import { evaluateGrants } from "@intx/authz";
 import type { GrantRule } from "@intx/types/authz";
 
@@ -26,13 +11,9 @@ export type AllowanceClassification =
   | { readonly readOnly: true; readonly resource: string }
   | { readonly readOnly: false };
 
-/**
- * One tool's declarative allowance annotation. `classify` receives the
- * parked call's arguments and answers whether THIS invocation is
- * read-only and which resource it touches; `grantAction` names the
- * action the covering grant must allow on that resource (the action the
- * standing grant was minted with, e.g. `"read"`).
- */
+/** One tool's declarative allowance: `classify` answers whether this call is
+ * read-only and which resource it touches; `grantAction` names the action a
+ * covering grant must allow on that resource. */
 export type ToolAllowance = {
   /** Qualified tool name exactly as the approval row records it. */
   readonly tool: string;
@@ -76,12 +57,8 @@ export type AllowanceDecision =
         | "classification_failed";
     };
 
-/**
- * The pure allowance decision: park unless the tool is annotated, the
- * call classifies read-only, and an `allow` grant in `grants` covers
- * the classified resource under the annotation's action. Fails closed —
- * a throwing classifier parks rather than rides.
- */
+/** The pure allowance decision. Fails closed — a throwing classifier parks
+ * rather than rides. */
 export async function evaluateToolAllowance(args: {
   registry: ToolAllowanceRegistry;
   tenantId: string;
@@ -132,11 +109,8 @@ export type GrantAllowanceGateDeps = {
   findRegisteredApproval(correlationId: string): Promise<RegisteredApprovalRef | null>;
   /** The tenant's live grant rows — role- and principal-scoped alike. */
   listTenantGrants(tenantId: string): Promise<GrantRule[]>;
-  /**
-   * Resolves the approval "approved" through the native resolve
-   * machinery with allowance (null-principal) authority. Returns whether
-   * the resolution actually landed — a false is logged, never thrown.
-   */
+  /** Resolves the approval "approved" with allowance (null-principal)
+   * authority; a false is logged, never thrown. */
   autoApprove(args: {
     approvalId: string;
     tenantId: string;
@@ -154,13 +128,8 @@ type RegisterApprovalArgs = {
   };
 };
 
-/**
- * Wraps a `registerSignalCorrelation` lookup: after the base
- * registration co-writes the pending approval, evaluates the allowance
- * and auto-approves a riding call. Never throws into the registration
- * path — an allowance failure leaves the approval parked, which is the
- * safe (status quo) outcome.
- */
+/** Wraps a registration to evaluate the allowance and auto-approve a riding
+ * call. Never throws into the registration path. */
 export function withGrantAllowance<Args extends RegisterApprovalArgs>(
   base: (args: Args) => Promise<void>,
   deps: GrantAllowanceGateDeps,

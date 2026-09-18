@@ -1,36 +1,6 @@
-// The sanctioned path for a workflow-process child to create a NEW
-// agent definition in its own tenant and list the tenant's taskable
-// agents — the execution half of `@corbits/agent-directory-tools`'
-// `create_agent`/`list_agents` (Myra's manager tools), mirroring
-// `./workflow-capability-routes.ts`: a workflow child has no browser
-// session, only its sidecar bearer token and its own run address, so
-// it authenticates through a `WorkflowRunAuthenticator` rather than the
-// tenant-session pipeline `./routes.ts` uses.
-//
-// Mounted OUTSIDE the tenant prefix for that reason. Identity NEVER
-// rides in a request body or path: the tenant and principal every
-// write is scoped to come from the authenticated run alone.
-//
-// Scope, deliberately different from `./workflow-capability-routes.ts`'s
-// "own definition only" rule: creating a definition has no existing
-// row to scope self-ness against, so this surface is scoped to the
-// caller's own TENANT instead — a run may create any number of new
-// definitions in its own tenant, never in another.
-//
-// Authorization decision (same shape as `./workflow-capability-routes.ts`'s,
-// see that file's own comment for the full reasoning this mirrors):
-// this route carries no `requireGrant` check. The calling tool
-// (`@corbits/agent-directory-tools`' `create_agent`) declares
-// `approval: "ask"` (`@intx/agent`'s native per-invocation gate), so
-// the reactor suspends the call as a pending approval and renders it
-// in-chat BEFORE this route ever runs — a human already had to approve
-// the specific agent being created. This route still enforces,
-// unconditionally: (1) the caller's run must resolve to a live
-// tenant/principal/run via the sidecar-token + run-address check
-// below, and (2) any `toolPackagePins` named in the create body must
-// fail closed against the tenant's live capability inventory
-// (`assertCapabilityInInventory`, unchanged from the tenant-session
-// route's own guided-capability-add check).
+// The sanctioned path for a workflow-process child to create a new agent
+// definition. No `requireGrant` check: the tool declares `approval: "ask"`,
+// so a human already approved the agent before this route runs.
 import { type } from "arktype";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
@@ -64,9 +34,7 @@ export type WorkflowAgentCreateEnv = {
   Variables: { workflowCapabilityScope: WorkflowCapabilityRunScope };
 };
 
-// Mirrors `./validation.ts`'s `HANDLE_PATTERN` exactly — this route's
-// handle is bound by the same lowercase-kebab rule the asset service
-// enforces at creation, same as the tenant-session route's own field.
+// Mirrors `./validation.ts`'s `HANDLE_PATTERN` exactly.
 const HANDLE_PATTERN = type(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 
 const CreateWorkflowAgentDefinitionInput = type({
@@ -78,16 +46,9 @@ const CreateWorkflowAgentDefinitionInput = type({
   "toolPackagePins?": type("string > 0").array(),
 });
 
-/**
- * A definition this listing offers as a taskable/pickable conversational
- * agent for Myra to know about — the same shape `apps/hub`'s
- * `listMyraConversationalAgents` builds, replicated here directly
- * against `workflowDefinition` rather than imported: `apps/hub` is the
- * composition root and depends on this package, so importing its
- * listing helper back would invert that dependency. Deployed, not an
- * automatable catalog workflow, and not a workbench host's own silent
- * anchor definition.
- */
+/** A definition this listing offers as a taskable conversational agent.
+ * Replicated here rather than imported, since importing `apps/hub`'s
+ * listing helper back would invert the dependency. */
 function isConversationalAgentDefinition(definition: { readonly name: string }): boolean {
   return !isAutomatableWorkflowName(definition.name);
 }
@@ -148,19 +109,14 @@ export function createWorkflowAgentCreateRoutes(
       );
     }
 
-    // Resolved once, unconditionally: every branch below already needed
-    // it (the pin check when pins are named, the baseline lookup when
-    // they aren't), and it is now also the source of truth for `model`
-    // validation just below.
+    // Resolved once: also the source of truth for `model` validation below.
     const inventory = await deps.capabilityInventory.resolve({
       tenantId: scope.tenantId,
       principalId: scope.principalId,
     });
 
     if (body.toolPackagePins !== undefined && body.toolPackagePins.length > 0) {
-      // Throws `CapabilityOutOfInventoryError`, caught by `app.onError`
-      // above — fail closed against exactly the inventory this call
-      // just fetched, never a stale or wider one, for every named pin.
+      // Throws `CapabilityOutOfInventoryError`, caught by `app.onError`.
       for (const name of body.toolPackagePins) {
         assertCapabilityInInventory({ kind: "toolPackage", name }, inventory);
       }
@@ -174,9 +130,8 @@ export function createWorkflowAgentCreateRoutes(
     }
 
     const skills = body.skills ?? [];
-    // Mutably built for the same `exactOptionalPropertyTypes` reason
-    // `./routes.ts`'s `POST /` caller builds its own core input this
-    // way: an absent `model`/`toolPackagePins` must be an absent key.
+    // Mutably built: `exactOptionalPropertyTypes` needs an absent
+    // `model`/`toolPackagePins` to be an absent key.
     const coreInput: {
       -readonly [K in keyof CreateAgentDefinitionCoreInput]: CreateAgentDefinitionCoreInput[K];
     } = {
@@ -189,13 +144,9 @@ export function createWorkflowAgentCreateRoutes(
       skills,
     };
 
-    // `body.model` is free text a language-model tool call supplied —
-    // untrusted input at a trust boundary (AGENTS.md). A name the
-    // tenant's own catalog doesn't offer can never resolve at launch,
-    // so it is never baked in verbatim: fall back to the tenant's
-    // catalog default and say so, rather than creating a dead agent
-    //. A name the catalog does offer is used exactly as
-    // asked, no fallback consulted.
+    // `body.model` is untrusted tool-call input. A name outside the
+    // catalog falls back to the tenant default and says so, rather than
+    // creating a dead agent.
     let modelNote: string | null = null;
     if (body.model !== undefined) {
       const knownModel = inventory.models.some((entry) => entry.canonicalName === body.model);
@@ -214,9 +165,7 @@ export function createWorkflowAgentCreateRoutes(
     if (body.toolPackagePins !== undefined && body.toolPackagePins.length > 0) {
       coreInput.toolPackagePins = body.toolPackagePins;
     } else {
-      // No pins named: the specialist still gets the baseline set this
-      // tenant can resolve, so a created "research agent" can actually
-      // search, remember, and ask.
+      // No pins named: still gets the baseline set this tenant can resolve.
       const baseline = baselineAgentToolPins(inventory);
       if (baseline.length > 0) coreInput.toolPackagePins = baseline;
     }

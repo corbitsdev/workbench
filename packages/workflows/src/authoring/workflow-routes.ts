@@ -1,21 +1,6 @@
-// The sanctioned path for a workflow-process child to author, republish,
-// or read back a workflow-kind asset, mirroring `@corbits/skills`' own
-// `createWorkflowSkillRoutes`: a workflow child has no browser session,
-// only its sidecar bearer token and the run's address, so it
-// authenticates through a `WorkflowRunAuthenticator` rather than the
-// tenant-session pipeline a human-facing route would use.
-//
-// Mounted OUTSIDE the tenant prefix for that reason. Identity NEVER rides
-// in a request body: the tenant and principal every write is scoped to
-// come from the authenticated run alone, so a model's tool arguments can
-// never name a different tenant or write into another principal's
-// workflow asset.
-//
-// Deployment is NOT here: `@corbits/workflow-authoring-tools` calls stock
-// `POST /api/tenants/:tenantId/workflows/deployments` with the run bearer
-// instead. What remains is the git half — reading and writing the asset
-// repo's trees — which no run-bearer credential can do against stock git
-// smart-HTTP today.
+// The sanctioned path for a workflow-process child to author, republish, or
+// read back a workflow-kind asset, authenticated through
+// `WorkflowRunAuthenticator`. Deployment goes through the stock route instead.
 import { type } from "arktype";
 import { Hono } from "hono";
 import { makeErrorEnvelope } from "@corbits/error-sink";
@@ -153,11 +138,8 @@ export function createWorkflowAuthorRoutes(
     return c.json({ data: snapshot });
   });
 
-  // A preview of `/:assetId/deploy` — a STATIC read of the
-  // already-committed source at `commitSha` (package name, entry, file
-  // list, any statically-declared tool pins). Never calls install/probe/
-  // gate/freeze, so it cannot deploy anything; a human approves the real
-  // `workflow_deploy` call with this committed source already visible.
+  // A static read of the already-committed source at `commitSha`. Never
+  // calls install/probe/gate/freeze, so it cannot deploy anything.
   app.post("/:assetId/deploy/preview", async (c) => {
     const body = DeployPreviewBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
