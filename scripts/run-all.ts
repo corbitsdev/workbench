@@ -92,6 +92,23 @@ async function runJob(job: Job, script: string): Promise<number> {
   return code;
 }
 
+// `e2e/` is not a workspace package, so `discover` never finds it — the
+// root `test` script runs it as one extra step once every package's own
+// suite is green. DB-backed suites under `e2e/` gate themselves on
+// DATABASE_URL (see `e2e/lib/db-gate.ts`) and print their own loud skip
+// banner, so this only needs to decide whether to spend the process launch
+// on them at all.
+async function runE2e(): Promise<number> {
+  if (process.env["DATABASE_URL"] === undefined || process.env["DATABASE_URL"] === "") {
+    console.log(
+      "test:e2e: DATABASE_URL is not set; skipping e2e/ (its suites would skip themselves anyway).",
+    );
+    return 0;
+  }
+  const proc = Bun.spawn(["bun", "test", "e2e"], { stdout: "inherit", stderr: "inherit" });
+  return proc.exited;
+}
+
 if (import.meta.main) {
   const scriptArg = process.argv[2];
   if (!scriptArg) {
@@ -111,6 +128,10 @@ if (import.meta.main) {
   const jobs = await discover(script);
   if (jobs.length === 0) {
     console.log(`${script}: no workspace packages define it yet`);
+    if (script === "test") {
+      const e2eCode = await runE2e();
+      process.exit(e2eCode === 0 ? 0 : 1);
+    }
     process.exit(0);
   }
 
@@ -135,6 +156,9 @@ if (import.meta.main) {
   }
 
   await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, () => worker()));
+
+  const e2eCode = script === "test" ? await runE2e() : 0;
+  if (e2eCode !== 0) failures.push("e2e");
 
   if (failures.length > 0) {
     console.error(`${script} failed in ${failures.length} package(s): ${failures.join(", ")}`);

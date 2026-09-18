@@ -10,7 +10,7 @@
     "tsBuildInfoFile": "tsconfig.tsbuildinfo",
     "rootDir": "../.."
   },
-  "include": ["src", "test"],
+  "include": ["src"],
   "exclude": [],
   "references": [
     {

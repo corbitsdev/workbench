@@ -14,11 +14,12 @@
   "scripts": {
     "check": "bun run typecheck && bun run lint && bun run fmt:check && bun run test",
     "typecheck": "bun run scripts/typecheck.ts",
-    "lint": "oxlint apps packages tools agents workflows scripts test e2e",
-    "fmt": "oxfmt apps packages tools agents workflows scripts test e2e",
-    "fmt:check": "oxfmt --check apps packages tools agents workflows scripts test e2e",
+    "lint": "oxlint apps packages tools agents workflows scripts e2e",
+    "fmt": "oxfmt apps packages tools agents workflows scripts e2e",
+    "fmt:check": "oxfmt --check apps packages tools agents workflows scripts e2e",
     "build": "bun run scripts/run-all.ts build",
     "test": "bun run scripts/run-all.ts test",
+    "test:e2e": "bun test e2e",
     "dev": "bun run scripts/dev.ts",
     "setup": "bun scripts/db-setup.ts",
     "setup:memory": "bun run scripts/setup-memory.ts",
@@ -41,7 +42,12 @@
     "oxlint": "1.83.0",
     "oxfmt": "0.68.0",
     "puppeteer-core": "^25.7.0",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "@intx/hub-sessions": "workspace:*",
+    "@intx/hub-common": "0.3.0",
+    "@intx/hub-api": "workspace:*",
+    "hono": "catalog:",
+    "drizzle-orm": "catalog:"
   },
   "engines": {
     "bun": ">=1.2.0"
