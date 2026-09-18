@@ -356,14 +356,10 @@ export function createMultistepCredentialsRouter(): MultistepCredentialsRouter {
 }
 
 /**
- * Wraps RepoStore so a successful writeTreePreservingPrefix against a
- * workflow-run repo schedules a coalesced pack push: at most one push per
- * (repoId, ref) in flight, with writes arriving mid-push marking the slot
- * dirty for one more run rather than queuing N pushes. The shipped-tip
- * cursor advances only after the hub's ack, so a reconnect-cancelled
- * transfer is re-shipped whole on the next createPack rather than leaving
- * a gap. A failed push latches on the slot and re-throws on the next write
- * to that (repoId, ref) instead of being swallowed.
+ * Wraps RepoStore so a workflow-run write schedules a coalesced pack push:
+ * at most one push per (repoId, ref) in flight, with mid-push writes
+ * marking the slot dirty for one more run. The cursor advances only after
+ * the hub's ack, and a failed push latches and re-throws on the next write.
  */
 export type WorkflowRunPackPushingRepoStoreOpts = {
   underlying: RepoStore;

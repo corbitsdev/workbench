@@ -1,11 +1,8 @@
 // Materializes a probe's frozen closure on the sidecar host (I/O only, no
 // author-code eval) before the airlocked child evaluates it. Lives in
-// apps/sidecar so @intx/workflow-host stays free of a @intx/tool-packaging
-// dependency; the portable packages only see the injected
-// MaterializeWorkflowClosure seam. Phases 1-2 only (no applyAtomic): a
-// probe is ephemeral, so the durable-deploy bookkeeping doesn't apply.
-// loadManifest runs with an emptied topLevel so it lays out every closure
-// entry without importing (evaluating) any of them.
+// apps/sidecar so @intx/workflow-host stays free of @intx/tool-packaging.
+// loadManifest runs with an emptied topLevel so it lays out every entry
+// without importing (evaluating) any of them.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";

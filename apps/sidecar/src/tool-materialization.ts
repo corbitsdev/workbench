@@ -207,19 +207,10 @@ export async function materializeToolPackages(args: {
 }
 
 /**
- * Write the active deploy id to `activeIdFile` and fsync both the
- * file's own data/metadata and the parent directory entry. POSIX does
- * not guarantee a parent-directory entry is durably linked from a
- * file's own fsync alone, so the dir handle is opened and synced
- * separately. Without that, a crash between a deploy's commit and the
- * next boot could leave the staged deploy directory present while
- * active-deploy-id is not yet visible — the next apply would then read
- * previousDeployId="none" and treat the committed deploy as belonging
- * to a fresh, deploy-less instance.
- *
- * Dir-fsync is best-effort: some filesystems (FAT/exFAT, some network
- * mounts) don't support it and surface EINVAL/ENOTSUP, which shouldn't
- * force a restart when the deploy-id file's own fsync already landed.
+ * POSIX doesn't guarantee a parent-directory entry is durably linked from a
+ * file's own fsync alone, so the dir handle is synced separately. Dir-fsync
+ * itself is best-effort: some filesystems reject it (FAT/exFAT), which
+ * shouldn't force a restart when the file's own fsync already landed.
  */
 const ACTIVE_DEPLOY_ID_VERSION = "v1";
 const ACTIVE_DEPLOY_ID_PREFIX = `${ACTIVE_DEPLOY_ID_VERSION}:`;
