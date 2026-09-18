@@ -1,15 +1,7 @@
 // Builds the single-step, folded workflow definition a hand-authored
-// agent materializes as: exactly the shape `@corbits/chat`'s own
-// `buildWorkbenchHostWorkflow`/`@corbits/myra`'s
-// `buildAssistantWorkflow` produce, but with the system prompt and
-// model left to the caller instead of fixed at build time — this is
-// the one difference that makes a defined-by-a-person agent possible
-// alongside the platform's own fixed starter agents.
-//
-// This package is installable data, exactly like `@corbits/chat`'s
-// workbench-host builder: nothing imports it statically, and a host
-// publishes the serialized definition as a workflow asset before
-// deploying or launching it.
+// agent materializes as, with the system prompt and model left to the
+// caller instead of fixed at build time — the one difference that makes a
+// person-defined agent possible alongside the platform's fixed starters.
 
 import { defineAgent } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
@@ -35,24 +27,16 @@ import { createPinnedVersionResolver } from "./tool-package-version";
 
 export const AGENT_DEFINITION_STEP_ID = "agent";
 
-/**
- * The tool package that turns a name in the `<available_skills>` index
- * into an actual skill body at run time. A definition that pins skills
- * must pin this too, or its prompt would tell the model to call a
- * `skills_load` tool that does not exist.
- */
+/** Turns a name in the `<available_skills>` index into an actual skill body
+ * at run time. A definition that pins skills must pin this too. */
 export const SKILLS_TOOL_PACKAGE_PIN = {
   name: "@corbits/skills-tools",
   version: "0.0.9",
 } as const;
 
-/**
- * The parts of a serialized definition the pinned-skills reindex
- * rewrites: every step agent's system prompt and its tool-package pins.
- * Undeclared keys pass through, so re-serializing a validated definition
- * preserves the trigger, the step timeouts, the inference sources, and
- * everything else the builder put there.
- */
+/** The parts of a serialized definition the pinned-skills reindex rewrites.
+ * Undeclared keys pass through, so re-serializing preserves everything else
+ * the builder put there. */
 const DefinitionWithAgentSteps = type({
   steps: {
     "[string]": type({
@@ -91,12 +75,8 @@ function withSkillsToolPin(
   return pinsSkills ? [...others, { ...SKILLS_TOOL_PACKAGE_PIN }] : others;
 }
 
-/**
- * Rewrites every step agent so it advertises exactly `entries`: an
- * `<available_skills>` index in the system prompt, and the skills tool
- * bundle among its tool-package pins. Replaces whatever a previous push
- * left, so re-pinning is idempotent and unpinning removes both.
- */
+/** Rewrites every step agent to advertise exactly `entries`. Replaces
+ * whatever a previous push left, so re-pinning is idempotent. */
 export function reindexPinnedSkills(
   workflowJson: string,
   entries: readonly PinnedSkillIndexEntry[],
@@ -118,14 +98,9 @@ export function reindexPinnedSkills(
   return JSON.stringify(definition);
 }
 
-/** Reads a definition's pinned skill names back out of its serialized
- * `workflow.json` — the `<available_skills>` stanza `reindexPinnedSkills`
- * writes into the step agent's system prompt. The asset is the source of
- * truth for pins: every writer of pins (create, skills edit, capability
- * add, run pin) reindexes the stanza in the same commit it deploys, so a
- * reader never needs side state beside the definition row. Every builder
- * in this codebase produces exactly one step, so the definition's one
- * step is unambiguous regardless of the step's own key. */
+/** Reads pinned skill names back out of the `<available_skills>` stanza
+ * `reindexPinnedSkills` writes. The asset is the source of truth — every
+ * pin writer reindexes in the same commit it deploys. */
 export function readPinnedSkillNames(workflowJson: string): readonly string[] {
   const raw: unknown = JSON.parse(workflowJson);
   const definition = DefinitionWithAgentSteps(raw);
@@ -157,12 +132,8 @@ export function readPinnedSkillNames(workflowJson: string): readonly string[] {
   return names;
 }
 
-/** Reads a definition's system prompt back out of its serialized
- * `workflow.json` — the raw text a person edits in the Assistant
- * settings section, before `reindexPinnedSkills` appends the
- * `<available_skills>` index on top of it at save time. Every builder
- * in this codebase produces exactly one step, so the definition's one
- * step is unambiguous regardless of the step's own key. */
+/** Reads the raw system prompt a person edits, before `reindexPinnedSkills`
+ * appends the `<available_skills>` index at save time. */
 export function readAgentSystemPrompt(workflowJson: string): string {
   const raw: unknown = JSON.parse(workflowJson);
   const definition = DefinitionWithAgentSteps(raw);
@@ -197,19 +168,15 @@ export function withAgentSystemPrompt(workflowJson: string, systemPrompt: string
   return JSON.stringify(definition);
 }
 
-/** A definition's guided-capability-add surface: the tool packages it
- * pins directly (beyond whatever `reindexPinnedSkills` pins for
- * skills — see `SKILLS_TOOL_PACKAGE_PIN`) and the model it resolves
- * against, read back out of its serialized `workflow.json`. */
+/** A definition's guided-capability-add surface: its directly pinned tool
+ * packages and the model it resolves against. */
 export type AgentDefinitionCapabilities = {
   readonly toolPackagePins: readonly ToolPackagePin[];
   readonly model?: string;
 };
 
-/** Reads a definition's current guided-capability state out of its
- * serialized `workflow.json` — the same fields `withAgentToolPackagePin`/
- * `withAgentModel` write, read back for the settings surface's
- * "Capabilities" list and for merging an additive pin. */
+/** Reads the same fields `withAgentToolPackagePin`/`withAgentModel` write,
+ * for the settings surface's "Capabilities" list. */
 export function readAgentCapabilities(workflowJson: string): AgentDefinitionCapabilities {
   const raw: unknown = JSON.parse(workflowJson);
   const definition = DefinitionWithAgentSteps(raw);
@@ -228,19 +195,9 @@ export function readAgentCapabilities(workflowJson: string): AgentDefinitionCapa
     : { toolPackagePins: step.agent.toolPackagePins ?? [] };
 }
 
-/**
- * A tool-package pin resolved to a concrete, published version — never
- * the npm "any version" range `*`. `ToolPackagePin` itself (the wire
- * type `@intx/types/tool-packages` declares) still accepts `*`, because
- * an operator hand-authoring a workflow source file is free to write
- * one; but every RUNTIME site this package writes a pin from
- * (`create_agent`'s tool-package pins, guided capability-add) must name
- * a version the resolver actually offers today — a `*` pin
- * means a later tarball landing in the registry silently changes what
- * an already-deployed specialist runs, with no record of the change.
- * `./tool-package-version.ts`'s `resolvePinnedVersion` is how a caller
- * that only has a package name gets one of these.
- */
+/** A tool-package pin resolved to a concrete, published version — never
+ * `*`. Every runtime pin site must name a version the resolver actually
+ * offers, or a later tarball would silently change what runs. */
 export const NonWildcardToolPackagePin = type({
   name: "string",
   version: "string",
@@ -253,12 +210,8 @@ export const NonWildcardToolPackagePin = type({
 );
 export type NonWildcardToolPackagePin = typeof NonWildcardToolPackagePin.infer;
 
-/** Adds or replaces one tool-package pin by name, leaving every other
- * pin — including the skills bundle `reindexPinnedSkills` manages —
- * untouched. Mirrors `withSkillsToolPin`'s replace-by-name shape,
- * generalized to a caller-supplied pin rather than the fixed skills
- * bundle. Rejects a `"*"` version outright (see `NonWildcardToolPackagePin`) —
- * every runtime caller must supply a concrete, resolved version. */
+/** Adds or replaces one tool-package pin by name, leaving every other pin
+ * untouched. Rejects a `"*"` version outright. */
 export function withAgentToolPackagePin(
   workflowJson: string,
   pin: NonWildcardToolPackagePin,
@@ -283,10 +236,8 @@ export function withAgentToolPackagePin(
   return JSON.stringify(definition);
 }
 
-/** Sets a definition's model preference, leaving every other inference
- * field (and every other step field) untouched. Mirrors the placeholder
- * `buildAgentDefinitionWorkflow` sets at create time (`provider:
- * "catalog"` — resolved fresh at launch, never baked in). */
+/** Sets a definition's model preference, leaving every other field
+ * untouched. `provider: "catalog"` resolves fresh at launch, never baked in. */
 export function withAgentModel(workflowJson: string, model: string): string {
   const raw: unknown = JSON.parse(workflowJson);
   const definition = DefinitionWithAgentSteps(raw);
@@ -301,11 +252,8 @@ export function withAgentModel(workflowJson: string, model: string): string {
   return JSON.stringify(definition);
 }
 
-/** Clears a definition's model preference, leaving every other step field
- * untouched: with no inference source, launch-time resolution falls to
- * whatever catalog default the tenant has seeded — exactly the state a
- * definition created without a model lands in. The inverse of
- * `withAgentModel`, so a person who pinned a model can un-pin it. */
+/** Clears a definition's model preference; launch-time resolution then
+ * falls to the tenant's catalog default. The inverse of `withAgentModel`. */
 export function withoutAgentModel(workflowJson: string): string {
   const raw: unknown = JSON.parse(workflowJson);
   const definition = DefinitionWithAgentSteps(raw);
@@ -336,39 +284,18 @@ export interface AgentDefinitionWorkflowInput {
    * against the live catalog (see `resolveDefinitionSources`), not
    * baked into the definition. */
   readonly model?: string;
-  /**
-   * Tool packages pinned directly on this definition — connector tool
-   * bundles (e.g. `@corbits/example-tools`) a planner-created agent
-   * needs beyond what skills reindexing pins. Additive: undeclared or
-   * empty behaves exactly like a definition built before this field
-   * existed. `defineAgent`'s own `DefineAgentConfig` has no field for
-   * this (only `AgentDefinition` itself carries `toolPackagePins`, as
-   * a passthrough for the sidecar's tool-materialization step — see
-   * `@intx/agent`'s `definition.ts`), so it is set directly on the
-   * definition `defineAgent` returns rather than threaded through the
-   * config, mirroring how `reindexPinnedSkills` sets the same field
-   * post-hoc for skills.
-   */
+  /** Tool packages pinned directly beyond what skills reindexing pins.
+   * Additive: undeclared or empty behaves as before this field existed. */
   readonly toolPackagePins?: readonly ToolPackagePin[];
-  /**
-   * Credential bindings the deployed definition carries at the workflow
-   * level — the same `CredentialBinding[]` shape and the same
-   * `defineWorkflow({ credentialBindings, ... })` field
-   * `workflows/granola-call` pins through (pattern). Additive:
-   * undeclared or empty behaves exactly like a definition built before
-   * this field existed. Required for a `toolPackagePins` entry whose
-   * tool needs a live credential to do anything at runtime — a pin with
-   * no matching binding is inert.
-   */
+  /** Credential bindings at the workflow level. Required for a
+   * `toolPackagePins` entry whose tool needs a live credential — a pin
+   * with no matching binding is inert. */
   readonly credentialBindings?: readonly CredentialBinding[];
 }
 
-/**
- * Builds the definition. Exactly one step, on purpose — the same
- * contract every other folded builder in this codebase holds to: a
- * second step would trade away the conversational, warm-agent memory
- * a folded launch depends on.
- */
+/** Builds the definition. Exactly one step, on purpose — a second step
+ * would trade away the conversational, warm-agent memory a folded launch
+ * depends on. */
 export function buildAgentDefinitionWorkflow(
   input: AgentDefinitionWorkflowInput,
 ): WorkflowDefinition {
@@ -385,11 +312,8 @@ export function buildAgentDefinitionWorkflow(
     tools: [],
     capabilities: [],
     inference: {
-      // `provider` only participates in deploy-hash bookkeeping —
-      // launch-time resolution reads `model` alone and resolves a
-      // provider fresh against the tenant catalog (see
-      // `resolveDefinitionSources`), so a placeholder here costs
-      // nothing real.
+      // `provider` only participates in deploy-hash bookkeeping;
+      // launch-time resolution reads `model` alone.
       sources: input.model !== undefined ? [{ provider: "catalog", model: input.model }] : [],
     },
   });
@@ -423,14 +347,9 @@ export function buildAgentDefinitionWorkflow(
 
 const AGENT_DEFINITION_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 
-/**
- * Serializes a definition to the JSON a workflow asset carries.
- * Re-implemented rather than shared: `assertJsonPortable` is
- * module-private in every builder package that carries a copy of it,
- * by design (see `@corbits/chat`'s `workbench-workflow.ts`), so this
- * copy stays consistent with that convention rather than reaching
- * into another package's internals.
- */
+/** Serializes a definition to the JSON a workflow asset carries. Its own
+ * `assertJsonPortable`, not shared, since that helper is module-private by
+ * convention in every builder package that carries a copy. */
 export function serializeAgentDefinitionWorkflow(definition: WorkflowDefinition): string {
   assertJsonPortable(definition, "definition");
   return JSON.stringify(definition);
@@ -440,10 +359,7 @@ export type CreateAgentDefinitionCoreDeps = {
   readonly db: DB["db"];
   readonly assetService: AssetService;
   /** Deploys the definition's commit through the native source pipeline
-   * (install -> sidecar probe -> gate -> freeze) at create; the
-   * composition root injects the SAME `WorkflowDeployer`
-   * `@corbits/workflows`'s `./authoring`'s registry calls, wrapping
-   * `sessionService.deployWorkflowFromSource`. */
+   * (install -> sidecar probe -> gate -> freeze) at create. */
   readonly deployer: AgentDefinitionDeployer;
   readonly skillIndex: {
     resolve(
@@ -452,33 +368,17 @@ export type CreateAgentDefinitionCoreDeps = {
       names: readonly string[],
     ): Promise<readonly PinnedSkillIndexEntry[]>;
   };
-  /**
-   * Resolves the tenant's current catalog default model — the same
-   * first-connected-provider model `@corbits/chat`'s
-   * `workbenchHostInferencePreferences` derives for a fresh workbench host
-   * (see `createWorkbenchHostInferencePreferencesResolver`) — for a
-   * `create_agent`/`POST /agent-definitions` call that supplies no
-   * `model` of its own. Without this, such a definition's `inference.sources`
-   * stays empty and a later invite launch 409s as `not_launchable`
-   * ("declares no model requirements"); baking a real model in here
-   * makes the definition launchable on its own, no fallback needed at
-   * launch time. Omitted, or a tenant with no connected provider,
-   * leaves the definition exactly as empty as before this dep existed.
-   */
+  /** Resolves the tenant's catalog default model for a create call that
+   * supplies none. Without this, the definition's `inference.sources`
+   * stays empty and a later invite launch 409s as `not_launchable`. */
   readonly tenantDefaultModel?: (tenantId: string) => Promise<string | undefined>;
 };
 
 export type CreateAgentDefinitionCoreInput = {
   readonly tenantId: string;
   readonly principalId: string;
-  /** The tenant's mail domain, which the definition's placeholder mail
-   * trigger is addressed under (`buildAgentDefinitionWorkflow`'s
-   * `tenantDomain`). Supplied by the caller rather than looked up here:
-   * `./routes.ts`'s tenant-session route already has it on the
-   * request's resolved `tenant` context object, and re-querying it here
-   * would be a redundant round trip on every create; `./workflow-create-routes.ts`
-   * resolves it itself from the authenticated run's `tenantId` before
-   * calling in. */
+  /** The tenant's mail domain the placeholder mail trigger addresses
+   * under. Supplied by the caller to avoid a redundant lookup here. */
   readonly tenantDomain: string;
   readonly handle: string;
   readonly name: string;
@@ -486,11 +386,8 @@ export type CreateAgentDefinitionCoreInput = {
   readonly systemPrompt: string;
   readonly model?: string;
   readonly skills: readonly string[];
-  /** Tool packages pinned directly by name (e.g. `@corbits/memory-tools`),
-   * applied via `withAgentToolPackagePin` once per name after the
-   * skills reindex — the one addition beyond what `CreateAgentDefinitionInput`'s
-   * REST boundary accepts (see that type's own comment for why the
-   * person-facing form has no field for this). */
+  /** Tool packages pinned directly by name, applied once per name after
+   * the skills reindex. */
   readonly toolPackagePins?: readonly string[];
 };
 
@@ -498,12 +395,8 @@ export type CreateAgentDefinitionCoreResult = {
   readonly row: typeof workflowDefinition.$inferSelect;
 };
 
-/** Thrown when `input.handle` already names a definition in this
- * tenant — the same "conflict" case `./routes.ts`'s `POST /` answers
- * with a 409, surfaced here as a typed error so both HTTP callers
- * (the tenant-session route and the workflow-run route) can translate
- * it into their own response shape without duplicating the asset-
- * recovery logic that detects it. */
+/** Thrown when `input.handle` already names a definition in this tenant,
+ * so each HTTP caller can translate it into its own response shape. */
 export class DuplicateAgentHandleError extends Error {
   constructor(handle: string) {
     super(`An agent with the handle "${handle}" already exists`);
@@ -511,18 +404,10 @@ export class DuplicateAgentHandleError extends Error {
   }
 }
 
-/**
- * The full create-agent-definition sequence: resolve the tenant's mail
- * domain, build and pin the definition's serialized workflow, materialize
- * it as a `workflow`-kind asset carrying its pinned-skills index in its
- * own stanza, and project it onto a first-class `workflow_definition`
- * row. Factored out
- * of `./routes.ts`'s `POST /` handler so `./workflow-create-routes.ts`
- * (a workflow-run-authenticated surface a tool call reaches, never a
- * person through a form) can create a definition through the exact
- * same materialization the tenant-session route uses — never a second,
- * drifting implementation.
- */
+/** The full create-agent-definition sequence: build and pin the definition,
+ * materialize it as a `workflow`-kind asset, and project it onto a
+ * `workflow_definition` row. Factored out so every caller uses the exact
+ * same materialization, never a second, drifting implementation. */
 export async function createAgentDefinitionCore(
   deps: CreateAgentDefinitionCoreDeps,
   input: CreateAgentDefinitionCoreInput,
@@ -537,18 +422,12 @@ export async function createAgentDefinitionCore(
   const definition = buildAgentDefinitionWorkflow(
     model !== undefined ? { ...baseDefinitionInput, model } : baseDefinitionInput,
   );
-  // The definition's own system prompt is what the caller supplied; the
-  // pinned-skills index and any directly-named tool-package pins are
-  // appended on the way to the asset, so the stored prompt always
-  // describes exactly what the definition currently carries.
   let workflowJson = reindexPinnedSkills(
     serializeAgentDefinitionWorkflow(definition),
     await deps.skillIndex.resolve(input.tenantId, input.principalId, input.skills),
   );
-  // One resolver shared across every named pin: it loads the tenant's
-  // registry asset and tarball listing at most once, so a five-pin
-  // create still costs one ancestor walk and one listing, not five
-  //.
+  // One resolver shared across every named pin, so a five-pin create
+  // still costs one ancestor walk and one listing, not five.
   const resolvePin = createPinnedVersionResolver(
     { db: deps.db, assetService: deps.assetService },
     input.tenantId,
@@ -570,10 +449,8 @@ export async function createAgentDefinitionCore(
     assetId = created.id;
   } catch (cause) {
     if (cause instanceof AssetServiceError && cause.reason === "duplicate_asset") {
-      // A previous attempt may have created the asset row but failed
-      // before populateAsset wrote its source tree — an empty shell that
-      // blocks retries with a misleading conflict. Recover: look up the
-      // existing asset and reuse it only if it has no definition yet.
+      // Recover from a prior attempt's empty-shell asset: reuse it only
+      // if it has no definition yet.
       const existing = await deps.db.query.asset.findFirst({
         where: and(
           eq(asset.tenantId, input.tenantId),
