@@ -10,7 +10,7 @@
       "devDependencies": {
         "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#5309a15d4aa504f132c54b4da08bb672b4903873",
         "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
-        "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#e85b81e4a2e0cc318dd33a4f0f92337b6fac7f38",
+        "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#8cb5db9625254b58ff9bcb2f1e5324b54ac439b6",
         "@corbits/ollama-adapter": "github:corbitsdev/corbits-ollama-adapter#0387eb17bee5ac87530e9c48bb3bffd9a6998ded",
         "@corbits/xai-provider": "github:corbitsdev/corbits-xai-provider#9f2d4bac40ea075df092fef807404a13c638cf14",
         "@intx/crypto": "workspace:*",
@@ -63,7 +63,7 @@
         "@corbits/cron": "workspace:*",
         "@corbits/error-sink": "workspace:*",
         "@corbits/inference-catalog": "workspace:*",
-        "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#e85b81e4a2e0cc318dd33a4f0f92337b6fac7f38",
+        "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#8cb5db9625254b58ff9bcb2f1e5324b54ac439b6",
         "@corbits/memory": "github:corbitsdev/corbits-memory#e74da20f148a302dff5400915fe504ee2395e913",
         "@corbits/url-path": "workspace:*",
         "@corbits/webhooks": "github:corbitsdev/webhooks#570bd52688920c0ce018a8fbcd046199fa4125dd",
@@ -804,7 +804,7 @@
 
     "@corbits/interaction-tools": ["@corbits/interaction-tools@workspace:tools/interaction"],
 
-    "@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#e85b81e", { "dependencies": { "@hono/standard-validator": "0.2.3", "@intx/crypto": "0.3.0", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-e85b81e", "sha512-ATPP/pll1sYG1DLKV1HvtboK8q1tFkqayQqRXdUmRUIsFJx5wqzd8YA1XELjXzLu1P2f2uCMe2CjsJHGv6E90Q=="],
+    "@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#8cb5db9", { "dependencies": { "@hono/standard-validator": "0.2.3", "@intx/crypto": "0.3.0", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-8cb5db9", "sha512-b77mYamcshj2bonxOONi7bT+xCts3sNFRm8cjIVNeRG3JgrVj/KcuXbvMb93YceSq7j03C9cwaojjvJDwkhMRQ=="],
 
     "@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#9e6f213", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "@intx/workflow": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-9e6f213", "sha512-utnM4ZT2zmslcPXYWAAqxlDNLcpGsXFiTOtj8h7+OXnhCP0Eaw8yl25+yCTyHpvt3jcdeG4h5uFsSj7ou0BZCA=="],
 
@@ -2008,7 +2008,13 @@
 
     "@tailwindcss/oxide-wasm32-wasi/tslib": ["tslib@2.8.1", "", { "bundled": true }, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
 
+    "@workbench/hub/@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#5309a15", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/hub-api": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-5309a15", "sha512-zGHkq++juclUrOd0O8/Z5ziTldmJZ6gqyH/c9cs5S10UPU4gqn8CHwq174SiJXY0ujJ3cNpJXnrr+0fcqlfQ1w=="],
+
+    "@workbench/hub/@corbits/codex-provider": ["@corbits/codex-provider@github:corbitsdev/corbits-codex-provider#a1f475f", { "dependencies": { "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core", "@corbits/openai-responses": "github:corbitsdev/corbits-openai-responses", "arktype": "2.2.3" }, "peerDependencies": { "@intx/inference": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-codex-provider-a1f475f", "sha512-D6d0lblWx/4KudfLwQoQGrLB8GKRLP/HVp1cx08L2/hOGZAgH6txLPpeEtBqjl+R520qXSSPfM0kDC+3XNaAfw=="],
+
     "@workbench/hub/@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#e74da20", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "@intx/workflow": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-e74da20", "sha512-/uA9xTcF7XwMXgnR8OZamierzkLG4g4mhw3u9Fl3Uj6ait8pH3wcoQ6V32on1nMdaqtPRdYVFnxof5O+4ZacGA=="],
+
+    "@workbench/hub/@corbits/xai-provider": ["@corbits/xai-provider@github:corbitsdev/corbits-xai-provider#9f2d4ba", { "dependencies": { "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core", "@corbits/openai-responses": "github:corbitsdev/corbits-openai-responses", "arktype": "2.2.3" }, "peerDependencies": { "@intx/inference": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-xai-provider-9f2d4ba", "sha512-ZjvKxGcp+QzCh8zeXHg7kNbtkpR/itZkmQAcdG1aOAOjHaNwfGVpkPc/c/XtwPNsQyaDjF8W9CHb4rH1xI2uCA=="],
 
     "better-call/@better-auth/utils": ["@better-auth/utils@0.5.0", "", { "dependencies": { "@noble/hashes": "^2.0.1" } }, "sha512-BL8W4EfIZFwlu0r54m3v1ztjDhu6dDe/amLTm0xybmbZaNgYUqhD3SjpAsnq0q8YD6/ki4iwIgxJNLP/N3TxiA=="],
 
@@ -2099,6 +2105,14 @@
     "@esbuild-kit/core-utils/esbuild/@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.18.20", "", { "os": "win32", "cpu": "ia32" }, "sha512-Wv7QBi3ID/rROT08SABTS7eV4hX26sVduqDOTe1MvGMjNd3EjOz4b7zeexIR62GTIEKrfJXKL9LFxTYgkyeu7g=="],
 
     "@esbuild-kit/core-utils/esbuild/@esbuild/win32-x64": ["@esbuild/win32-x64@0.18.20", "", { "os": "win32", "cpu": "x64" }, "sha512-kTdfRcSiDfQca/y9QIkng02avJ+NCaQvrMejlsB3RRv5sE9rRoeBPISaZpKxHELzRxZyLvNts1P27W3wV+8geQ=="],
+
+    "@workbench/hub/@corbits/codex-provider/@corbits/oauth-core": ["@corbits/oauth-core@github:corbitsdev/corbits-oauth-core#1b7f9fb", { "dependencies": { "arktype": "2.2.3" } }, "corbitsdev-corbits-oauth-core-1b7f9fb", "sha512-PscyiDAl46umTM44NQPN1q5+PsGUV53Rxr4Wz/Ofz+k9LOOz6FBKamRFtWR8YWdKJt9I8sPOLOyEcMNNN2i+YQ=="],
+
+    "@workbench/hub/@corbits/codex-provider/@corbits/openai-responses": ["@corbits/openai-responses@github:corbitsdev/corbits-openai-responses#7efe000", { "dependencies": { "arktype": "2.2.3" }, "peerDependencies": { "@intx/inference": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-openai-responses-7efe000", "sha512-pH6C8T1WDJjqM+YbnQpofd7HgP5krEj48JCCQK16KI98a6kaz+gffpgdOdQpU3aNVZnFlyADXod1Z4tqUG/3ww=="],
+
+    "@workbench/hub/@corbits/xai-provider/@corbits/oauth-core": ["@corbits/oauth-core@github:corbitsdev/corbits-oauth-core#1b7f9fb", { "dependencies": { "arktype": "2.2.3" } }, "corbitsdev-corbits-oauth-core-1b7f9fb", "sha512-PscyiDAl46umTM44NQPN1q5+PsGUV53Rxr4Wz/Ofz+k9LOOz6FBKamRFtWR8YWdKJt9I8sPOLOyEcMNNN2i+YQ=="],
+
+    "@workbench/hub/@corbits/xai-provider/@corbits/openai-responses": ["@corbits/openai-responses@github:corbitsdev/corbits-openai-responses#7efe000", { "dependencies": { "arktype": "2.2.3" }, "peerDependencies": { "@intx/inference": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-openai-responses-7efe000", "sha512-pH6C8T1WDJjqM+YbnQpofd7HgP5krEj48JCCQK16KI98a6kaz+gffpgdOdQpU3aNVZnFlyADXod1Z4tqUG/3ww=="],
 
     "cross-spawn/which/isexe": ["isexe@2.0.0", "", {}, "sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw=="],
 
