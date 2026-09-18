@@ -8,8 +8,7 @@ import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { describeApiError } from "@/lib/api-query";
 import type { APIQuery } from "@/lib/api-query";
 
-import type { Principal } from "./api";
-import { isBenchMembership, useBench } from "./bench-context";
+import { useBench } from "./bench-context";
 import { WORKFLOWS_PATH_PREFIX } from "./path-ids";
 import { tenantKeys } from "./query-client";
 import {
@@ -35,17 +34,13 @@ function useMemberBenches(): {
   readonly kind: "loading" | "ready";
   readonly benches: readonly { tenantId: string; tenantName: string }[];
 } {
-  const { memberships } = useBench();
-  const allMemberships: readonly Principal[] =
-    memberships.kind === "ready" ? memberships.data.data : [];
-  // No kinds lookup: a bench is a named membership, and the Routines
-  // roster aggregates per bench. Raw-id tenancies never host routines.
+  const { memberships, benchMemberships } = useBench();
+  // The Routines roster aggregates per bench; `useBench`'s
+  // `benchMemberships` is already the top-level subset — a room (a named
+  // child tenant) never hosts routines here.
   const benches = useMemo(
-    () =>
-      allMemberships
-        .filter((m) => isBenchMembership(m))
-        .map((m) => ({ tenantId: m.tenantId, tenantName: m.tenantName })),
-    [allMemberships],
+    () => benchMemberships.map((m) => ({ tenantId: m.tenantId, tenantName: m.tenantName })),
+    [benchMemberships],
   );
   if (memberships.kind !== "ready") return { kind: "loading", benches: [] };
   return { kind: "ready", benches };

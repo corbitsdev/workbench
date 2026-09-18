@@ -7,6 +7,7 @@ import {
   ApprovalResponse,
   AssetWithOriginResponse,
   PrincipalSummary,
+  TenantResponse,
   UserProfile,
   WorkflowRunSummary,
   paginatedSchema,
@@ -22,6 +23,7 @@ import { pathToQueryKey } from "./query-client";
 export const ProfileSchema = UserProfile;
 export const PrincipalsSchema = paginatedSchema(PrincipalSummary);
 export const TenantApprovalsSchema = paginatedSchema(ApprovalResponse);
+export const TenantDetailSchema = TenantResponse;
 
 // `GET /api/tenants/:tenantId/assets` returns a bare array of
 // `AssetWithOriginResponse` rows (not the paginated envelope), so the schema
@@ -73,6 +75,7 @@ export const ArtifactCountsSchema = type({
 
 export type Profile = typeof UserProfile.infer;
 export type Principal = typeof PrincipalSummary.infer;
+export type TenantDetail = typeof TenantResponse.infer;
 export type WorkflowRun = typeof WorkflowRunSummary.infer;
 export type Approval = typeof ApprovalResponse.infer;
 export type AssetRow = typeof AssetWithOriginResponse.infer;
@@ -179,6 +182,31 @@ export function rejectApproval(
     ApprovalResponse,
     message === undefined ? {} : { message },
   );
+}
+
+/**
+ * One-shot fetch of `GET /api/tenants/:id` — the only place `parentId`
+ * comes from. A bench is a top-level tenant (`parentId === null`); a room
+ * is a named child tenant, so the raw-id/name heuristic can never tell them
+ * apart. `bench-context.tsx` fans this out per membership with
+ * `useQueries` to decide which memberships are benches.
+ */
+export async function fetchTenantDetail(tenantId: string): Promise<TenantDetail> {
+  const response = await fetch(`/api/tenants/${encodeURIComponent(tenantId)}`, {
+    headers: { accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new ApiQueryError(
+      `The server answered ${response.status}.`,
+      response.status,
+      `tenant ${tenantId}`,
+    );
+  }
+  const parsed = TenantDetailSchema(await response.json());
+  if (parsed instanceof type.errors) {
+    throw new ApiQueryError(`Unexpected tenant response shape: ${parsed.summary}`);
+  }
+  return parsed;
 }
 
 /**

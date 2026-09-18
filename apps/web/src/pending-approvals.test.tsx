@@ -37,6 +37,17 @@ const benchState: BenchState = {
       nextCursor: null,
     },
   },
+  benchMemberships: [
+    {
+      principalId: "prn_1",
+      tenantId: TENANT_ID,
+      tenantName: "Growth Team Bench",
+      tenantSlug: "growth-team-bench",
+      kind: "user",
+      status: "active",
+      roles: [],
+    },
+  ],
   selectedTenantId: TENANT_ID,
   selectedPrincipalId: "prn_1",
   selectTenant: () => undefined,
