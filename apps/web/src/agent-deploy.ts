@@ -4,7 +4,7 @@
 // the stock `POST /workflows/deployments`. Generalized over {name,
 // displayName, systemPrompt} so the create-agent panel can deploy any
 // agent through the one path the platform actually backs.
-import { renderWorkflowSourceTree } from "@corbits/workflows/client";
+import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
 import { type } from "arktype";
 import { WorkflowDeploymentResponse } from "@intx/types";
 
@@ -151,19 +151,42 @@ async function withPushToken<T>(
   }
 }
 
-/** Renders this agent's built definition as a source tree and pushes it to
- * its asset's `main`. Returns the commit sha the deploy pins to. */
+/** Renders this agent's built definition as the same bundled source tree
+ * Myra deploys (`pushMyraSource`) — the bundle's `buildMyraWorkflow` is
+ * generic over which agent it builds — and pushes it to the asset's `main`.
+ * Returns the commit sha the deploy pins to. */
 export async function pushAgentSource(
   tenantId: string,
   assetId: string,
   assetName: string,
   packageName: string,
-  workflowJson: unknown,
+  args: {
+    readonly slug: string;
+    readonly systemPrompt: string;
+    readonly triggerAddress: string;
+    readonly declaredSources: readonly { readonly provider: string; readonly model: string }[];
+  },
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
-  const tree = renderWorkflowSourceTree({
+  const { MYRA_BUNDLE_BUILD_EXPORT, MYRA_WORKFLOW_BUNDLE } = await import("@corbits/myra/bundle");
+  const tree = renderBundledWorkflowSourceTree({
     packageName,
-    workflowJson: JSON.stringify(workflowJson),
+    bundle: MYRA_WORKFLOW_BUNDLE,
+    buildExport: MYRA_BUNDLE_BUILD_EXPORT,
+    buildInput: {
+      workflowId: args.slug,
+      triggerAddress: args.triggerAddress,
+      inferencePreferences: args.declaredSources.map((source) => ({ ...source })),
+      systemPrompt: args.systemPrompt,
+    },
+    workflowJson: JSON.stringify(
+      buildAgentDefinitionJson({
+        slug: args.slug,
+        systemPrompt: args.systemPrompt,
+        triggerAddress: args.triggerAddress,
+        declaredSources: args.declaredSources,
+      }),
+    ),
   });
   const url = new URL(
     `/api/tenants/${encodeURIComponent(tenantId)}/assets/workflow/${assetName}.git`,
@@ -284,20 +307,15 @@ export async function deployAgentSource(
   }
 
   const assetId = await ensureAgentSourceAsset(args.tenantId, assetName, name, fetchImpl);
-  const workflowJson = buildAgentDefinitionJson({
-    slug,
-    systemPrompt,
-    // Grant configuration only, not a routable address: the hub mints the
-    // agent's real address (its run address) at deploy time.
-    triggerAddress: `${slug}@${tenant.domain}`,
-    declaredSources: offering.declaredSources,
-  });
+  // Grant configuration only, not a routable address: the hub mints the
+  // agent's real address (its run address) at deploy time.
+  const triggerAddress = `${slug}@${tenant.domain}`;
   const commitSha = await pushAgentSource(
     args.tenantId,
     assetId,
     assetName,
     packageName,
-    workflowJson,
+    { slug, systemPrompt, triggerAddress, declaredSources: offering.declaredSources },
     fetchImpl,
   );
 

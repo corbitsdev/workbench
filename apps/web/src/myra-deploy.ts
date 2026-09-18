@@ -186,6 +186,7 @@ export async function pushMyraSource(
     bundle: MYRA_WORKFLOW_BUNDLE,
     buildExport: MYRA_BUNDLE_BUILD_EXPORT,
     buildInput: {
+      workflowId: ASSISTANT_WORKFLOW_ID,
       triggerAddress,
       inferencePreferences: declaredSources.map((source) => ({ ...source })),
       systemPrompt: ASSISTANT_SYSTEM_PROMPT,

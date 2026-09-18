@@ -30,19 +30,6 @@ function manifestFor(packageName: string): string {
   )}\n`;
 }
 
-/** The source tree a serialized, function-free definition renders into:
- * the entry re-exports the JSON verbatim. */
-export function renderWorkflowSourceTree(args: {
-  packageName: string;
-  workflowJson: string;
-}): WorkflowSourceTree {
-  return {
-    [WORKFLOW_SOURCE_MANIFEST_PATH]: manifestFor(args.packageName),
-    [WORKFLOW_SOURCE_ENTRY_PATH]: `export default ${args.workflowJson};\n`,
-    [WORKFLOW_SOURCE_DEFINITION_PATH]: `${args.workflowJson}\n`,
-  };
-}
-
 /** The source tree a bundled entry renders into. `bundle` is one
  * self-contained ESM module exporting `buildExport`; the trailing call
  * supplies the per-deploy values and is what the platform evaluates.

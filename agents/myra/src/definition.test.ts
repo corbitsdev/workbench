@@ -5,9 +5,10 @@
 import { expect, test } from "bun:test";
 import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 
-import { ASSISTANT_STEP_ID, buildMyraWorkflow } from "./index";
+import { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID, buildMyraWorkflow } from "./index";
 
 const INPUT = {
+  workflowId: ASSISTANT_WORKFLOW_ID,
   triggerAddress: "ins_dep000000000000@example.test",
   inferencePreferences: [{ provider: "anthropic", model: "claude-test" }],
   systemPrompt: "You are Myra.",
