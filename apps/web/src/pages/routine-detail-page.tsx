@@ -1,8 +1,3 @@
-// `/workflows/<definitionId>` — a deployed definition's own page: name,
-// pause, run now, and its runs (with expandable event logs, from stock's
-// `GET /workflows/runs?definitionId=` and `GET
-// /workflows/runs/:runId/events` — `vendor/intx/hub-api/src/routes/runs.ts`).
-// The id is the definition id.
 import {
   Badge,
   Button,
