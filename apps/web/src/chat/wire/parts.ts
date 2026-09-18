@@ -1,4 +1,4 @@
-// Mirrored from packages/chat/src (CL-8148 T5b): apps/web and @/chat
+// Mirrored from packages/chat/src: apps/web and @/chat
 // must not import @corbits/chat, a server-only package. This is the browser-
 // facing half of the same wire contract the hub's chat routes still speak;
 // once the hub moves onto native mail threads (T5a/T5c) this file becomes
@@ -14,7 +14,7 @@ export const TextPart = type({
   kind: "'text'",
   text: "string",
   /** Set only on the undelivered-turn notice `postUndeliveredNotice`
-   * posts in an unreachable agent's own voice (CL-6332) — the client's
+   * posts in an unreachable agent's own voice — the client's
    * one signal that this particular text bubble is a failed turn's
    * notice, not an ordinary reply, so it renders the failed-turn strip
    * (`PrFailedTurnStrip`) instead of a plain bubble. Absent on every
@@ -27,7 +27,7 @@ export const TextPart = type({
   "turnFailedReason?": "'model_unavailable' | 'tools_unsupported'",
   /** Set only on the cancelled-turn notice `postCancelledNotice`
    * (`./workbench-service.ts`) posts in the cancelled agent's own voice
-   * (CL-7201) — distinct from `turnFailed`: a user cancelling a turn is
+   * — distinct from `turnFailed`: a user cancelling a turn is
    * not a failure, and the frontend renders it with its own honest copy
    * rather than `FailedTurnStrip`'s "didn't reply" framing. Absent on
    * every other text part. */
@@ -64,7 +64,7 @@ export type BlockPart = typeof BlockPart.infer;
 // content the codec is encoding fresh). Exactly one of those two must be
 // present. `artifactId` is an orthogonal, optional link back to a Library
 // artifact (see `@corbits/artifacts`) — set when this file is also a
-// persisted Library row (e.g. a workflow finalize tool's output, CL-6000),
+// persisted Library row (e.g. a workflow finalize tool's output),
 // independent of whether the bytes themselves also live in chat's own blob
 // store.
 export const FilePart = type({

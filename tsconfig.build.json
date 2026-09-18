@@ -20,9 +20,6 @@
       "path": "./packages/code-review/tsconfig.src.json"
     },
     {
-      "path": "./packages/codex-provider/tsconfig.src.json"
-    },
-    {
       "path": "./packages/collections/tsconfig.src.json"
     },
     {
@@ -41,25 +38,13 @@
       "path": "./packages/error-sink/tsconfig.src.json"
     },
     {
-      "path": "./packages/gotenberg-render/tsconfig.src.json"
-    },
-    {
       "path": "./packages/hub-api-client/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/inbox/tsconfig.src.json"
     },
     {
       "path": "./packages/inference-catalog/tsconfig.src.json"
     },
     {
       "path": "./packages/migration-runner/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/mocks/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/notify/tsconfig.src.json"
     },
     {
       "path": "./packages/ollama-adapter/tsconfig.src.json"
@@ -78,9 +63,6 @@
     },
     {
       "path": "./packages/workflows/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/xai-provider/tsconfig.src.json"
     },
     {
       "path": "./skills/skills/tsconfig.src.json"

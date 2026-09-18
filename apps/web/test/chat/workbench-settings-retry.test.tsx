@@ -1,4 +1,4 @@
-// CL-6105: WorkbenchSettingsSurface moved off a hand-rolled retry-less state
+// WorkbenchSettingsSurface moved off a hand-rolled retry-less state
 // onto `@/lib/api-query`'s `APIQuery` + `QueryView` — a failed settings
 // load now offers the shared Retry affordance, and a 401 renders as
 // sign-in-required rather than the generic error copy. This stands in for

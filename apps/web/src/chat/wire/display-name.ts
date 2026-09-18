@@ -1,4 +1,4 @@
-// Mirrored from packages/chat/src (CL-8148 T5b): apps/web and @/chat
+// Mirrored from packages/chat/src: apps/web and @/chat
 // must not import @corbits/chat, a server-only package. This is the browser-
 // facing half of the same wire contract the hub's chat routes still speak;
 // once the hub moves onto native mail threads (T5a/T5c) this file becomes
@@ -50,7 +50,7 @@ export function humanizeSlug(slug: string): string {
  * `wfd_…`, …, see `./id-leak-guard`) — the product rule is that a person
  * never sees an internal identifier, so a caller that reaches this
  * function with a run id where a definition's slug belongs gets a loud
- * failure instead of a Title-Cased leak like "Run 737a058d…" (CL-6471).
+ * failure instead of a Title-Cased leak like "Run 737a058d…".
  */
 export function deriveDisplayName(definition: {
   readonly name: string;

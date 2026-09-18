@@ -1,5 +1,5 @@
-// The Personal Settings / Shared Settings section registry (CL-6089, CL-
-// 6116): the grouping, ordering, icons, and tenancy gates every Interchange
+// The Personal Settings / Shared Settings section registry: the
+// grouping, ordering, icons, and tenancy gates every Interchange
 // deployment gets when it mounts this package's settings surface. The
 // single-concept collapse folded Personal/Workspace into one account-scoped
 // group and one shared group — there is one workbench per account now, so
@@ -13,7 +13,7 @@
 // account, so its rename/purpose/icon form and member list have no home to
 // keep them separate in. Conversation-scoped settings (agent, capabilities,
 // history) live on the workbench's own settings surface
-// (`@/chat`'s `WorkbenchSettingsSurface`, CL-6084) — not here.
+// (`@/chat`'s `WorkbenchSettingsSurface`) — not here.
 // Consuming apps compose bench context and routing around
 // `resolveSettingsSectionGroups` — the domain model of "what settings
 // exist and who can see them" lives here, not in an app.
@@ -50,7 +50,7 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
     // Re-add only once a hub preference store exists and save actually persists.
     // No Notifications ("chat") section either: toggles with no per-user
     // preference store are fake controls — see notifications-section.tsx
-    // for the re-add condition (CL-6843). Account (General) is the sole
+    // for the re-add condition. Account (General) is the sole
     // Account-group section until those stores exist.
     sections: [
       {
@@ -71,7 +71,7 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
         // Plugins (`/plugins`) is the canonical surface for discovering
         // and connecting a key; this section is management-only for keys
         // that already exist (rotate, name, revoke) — see connections-
-        // section.tsx and the CL-6077 audit this reorganization follows.
+        // section.tsx and the audit this reorganization follows.
         // Leads Shared Settings: a key added here is the thing everyone
         // creating workbenches in this tenancy inherits.
         id: "connections",

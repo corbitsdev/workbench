@@ -1,4 +1,4 @@
-// Mirrored from packages/chat/src (CL-8148 T5b): apps/web and @/chat
+// Mirrored from packages/chat/src: apps/web and @/chat
 // must not import @corbits/chat, a server-only package. This is the browser-
 // facing half of the same wire contract the hub's chat routes still speak;
 // once the hub moves onto native mail threads (T5a/T5c) this file becomes

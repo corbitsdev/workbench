@@ -23,7 +23,6 @@
     "@corbits/assistant-workflow": "workspace:*",
     "@corbits/connections": "workspace:*",
     "@corbits/error-sink": "workspace:*",
-    "@corbits/inbox": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
     "@corbits/url-path": "workspace:*",
     "@corbits/workflows": "workspace:*",

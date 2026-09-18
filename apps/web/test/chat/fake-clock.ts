@@ -1,7 +1,7 @@
 // A synchronous stand-in for `../src/clock.ts`'s `REAL_CLOCK`: `advance`
 // fires every due timer against a virtual clock with no real sleep, so a
 // test asserting a 30ms backstop actually fired takes 0ms of wall time
-// instead of racing CI's CPU-contended shards for those 30ms (CL-7488).
+// instead of racing CI's CPU-contended shards for those 30ms.
 import type { Clock } from "../../src/chat/clock";
 
 export type FakeClock = {

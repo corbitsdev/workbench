@@ -1,4 +1,4 @@
-// Mirrored from packages/chat/src (CL-8148 T5b): apps/web and @/chat
+// Mirrored from packages/chat/src: apps/web and @/chat
 // must not import @corbits/chat, a server-only package. This is the browser-
 // facing half of the same wire contract the hub's chat routes still speak;
 // once the hub moves onto native mail threads (T5a/T5c) this file becomes
@@ -65,7 +65,7 @@ export const StreamBlockData = type({
 }).onDeepUndeclaredKey("delete");
 export type StreamBlockData = typeof StreamBlockData.infer;
 
-// An agent-authored "connect this service" card (CL-6393), the
+// An agent-authored "connect this service" card, the
 // generalization of `connect-github` to every connector and MCP preset:
 // `request_connection` posts one of these instead of a prose deep link.
 // It carries only the framing the agent decided — which service, and the
