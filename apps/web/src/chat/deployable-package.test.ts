@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { deployablePackageFromBody, resolveMessagePackage } from "./deployable-package";
+import {
+  deployablePackageFromBody,
+  isFiveFieldCron,
+  resolveMessagePackage,
+} from "./deployable-package";
 
 const PACKAGE_JSON = `{"name": "echo", "version": "1.0.0"}`;
 const DEFINITION_JSON = `{"name": "Echo", "systemPrompt": "Echo back what you hear."}`;
@@ -47,6 +51,19 @@ describe("deployablePackageFromBody", () => {
       `package.json\n\`\`\`\n${PACKAGE_JSON}\n\`\`\`\n` +
       `definition.json\n\`\`\`\n{"name": ""}\n\`\`\``;
     expect(deployablePackageFromBody(body)).toBeNull();
+  });
+});
+
+describe("isFiveFieldCron", () => {
+  test("accepts exactly five whitespace-separated fields", () => {
+    expect(isFiveFieldCron("0 9 * * *")).toBe(true);
+    expect(isFiveFieldCron("  */5   *  *  *  *  ")).toBe(true);
+  });
+
+  test("rejects anything else", () => {
+    expect(isFiveFieldCron("not a cron")).toBe(false);
+    expect(isFiveFieldCron("* * * *")).toBe(false);
+    expect(isFiveFieldCron("* * * * * *")).toBe(false);
   });
 });
 
