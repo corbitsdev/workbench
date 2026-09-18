@@ -1,11 +1,8 @@
-// Tools: a standalone rail destination listing what this tenant can call —
-// Interchange tool packages, read from the same capability inventory the
-// Agents detail view's "Add a capability" picker already uses
-// (`listCapabilityInventory`, `packages/agent-directory`'s package-registry
-// read). There is no connect flow here: pinning a tool package to an agent
-// happens on that agent's own detail page. No stock route lists a tenant's
-// MCP servers yet, so this page has nothing to show for those until one
-// exists.
+// Tools: a standalone rail destination listing the tool packages this
+// tenant has published into its own registry — the same
+// `corbits-tools` package-registry asset `registry-publish.ts` writes to.
+// No stock route lists a tenant's MCP servers yet, so this page has
+// nothing to show for those until one exists.
 
 import {
   PageShell,
@@ -17,46 +14,19 @@ import {
   TableHeader,
   TableRow,
 } from "@corbits/react-ui";
+import { QueryView } from "@/lib/api-query";
 import { Plugs } from "@/lib/icons";
-import { WorkbenchLoadingState } from "@/chat";
-import { useCallback, useEffect, useState } from "react";
 
-import { listCapabilityInventory, type CapabilityInventory } from "../agents-api";
+import { useToolPackages } from "../tools/registry-read";
 import { useBench } from "../bench-context";
 import { StageTopBar } from "../shell/stage-top-bar";
 
-type ToolsState =
-  | { readonly status: "loading" }
-  | { readonly status: "ready"; readonly inventory: CapabilityInventory }
-  | { readonly status: "error"; readonly message: string };
-
-function messageOf(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
-
 /**
- * The tenant's installed tool packages, over the same capability inventory
- * the Agents detail view reads. `tenantId` is the tenant every read is
- * scoped to.
+ * The tenant's published tool packages, read off the stock registry asset.
+ * `tenantId` is the tenant every read is scoped to.
  */
 export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
-  const [state, setState] = useState<ToolsState>({ status: "loading" });
-
-  const reload = useCallback(async () => {
-    if (tenantId === null) return;
-    setState({ status: "loading" });
-    try {
-      const inventory = await listCapabilityInventory(tenantId);
-      setState({ status: "ready", inventory });
-    } catch (cause) {
-      setState({ status: "error", message: messageOf(cause) });
-    }
-  }, [tenantId]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
+  const query = useToolPackages(tenantId);
   const crumbs = [{ label: "Tools" }];
 
   function stage(body: React.ReactNode) {
@@ -78,56 +48,43 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
     );
   }
 
-  if (state.status === "loading") {
-    return stage(<WorkbenchLoadingState title="Loading tools…" />);
-  }
-
-  if (state.status === "error") {
-    return stage(
-      <RichEmptyState
-        icon={<Plugs />}
-        title="Couldn't load your tools"
-        description="Something went wrong on our side. Try again in a moment."
-        actions={[{ label: "Retry", onClick: () => void reload() }]}
-      />,
-    );
-  }
-
-  const { toolPackages } = state.inventory;
-
-  if (toolPackages.length === 0) {
-    return stage(
-      <RichEmptyState
-        icon={<Plugs />}
-        title="No tools yet"
-        description="A tool package gives every agent in this workbench a new capability. Install one to see it here."
-      />,
-    );
-  }
-
   return stage(
-    <div className="px-4 pb-5 sm:px-7">
-      <Table aria-label="Tools">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Tool package</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {toolPackages.map((tool) => (
-            <TableRow key={tool.name}>
-              <TableCell className="font-medium">{tool.name}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>,
+    <QueryView query={query} label="your tools" skeleton="rows">
+      {(toolPackages) =>
+        toolPackages.length === 0 ? (
+          <RichEmptyState
+            icon={<Plugs />}
+            title="No tools yet"
+            description="A tool package gives every agent in this workbench a new capability. Publish one to see it here."
+          />
+        ) : (
+          <div className="px-4 pb-5 sm:px-7">
+            <Table aria-label="Tools">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tool package</TableHead>
+                  <TableHead>Version</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {toolPackages.map((tool) => (
+                  <TableRow key={tool.filename}>
+                    <TableCell className="font-medium">{tool.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{tool.version}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )
+      }
+    </QueryView>,
   );
 }
 
 /**
  * Tools roster mount at `/tools`: a thin adapter that resolves which
- * workbench's inventory is listed. The stage chrome lives on `ToolsPage`.
+ * workbench's registry is listed. The stage chrome lives on `ToolsPage`.
  */
 export function ToolsRoute() {
   const { selectedTenantId } = useBench();

@@ -289,18 +289,3 @@ export function useDeployAgentMutation(tenantId: string) {
     },
   });
 }
-
-// The guided capability-add surface: only what this tenant actually has.
-const CapabilityInventoryWire = type({
-  toolPackages: type({ name: "string" }).array(),
-  skills: type({ name: "string" }).array(),
-  models: type({ canonicalName: "string" }).array(),
-});
-export type CapabilityInventory = typeof CapabilityInventoryWire.infer;
-
-export function listCapabilityInventory(tenantId: string): Promise<CapabilityInventory> {
-  return getJSON(
-    `/api/tenants/${tenantId}/agent-definitions/capabilities/inventory`,
-    CapabilityInventoryWire,
-  );
-}
