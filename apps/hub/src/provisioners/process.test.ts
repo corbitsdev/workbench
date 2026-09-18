@@ -18,17 +18,19 @@ import {
 
 const HUB_WS_URL = "ws://127.0.0.1:3000/api/sidecars/ws";
 const SIDECAR_ENTRY = "/srv/workbench/apps/sidecar/src/index.ts";
+const SIDECAR_KEY = "22".repeat(32);
 
 describe("readProcessProvisionerConfig", () => {
   test("an unconfigured environment resolves this repository's sidecar entry and the running bun", () => {
     const config = readProcessProvisionerConfig({
-      env: {},
+      env: { SIDECAR_CREDENTIAL_ENCRYPTION_KEY: SIDECAR_KEY },
       dataDir: "/srv/hub-data/process-provisioner",
       hubWebSocketUrl: HUB_WS_URL,
     });
 
     expect(config.sidecarEntryPath).toEndWith("/apps/sidecar/src/index.ts");
     expect(config.runtimePath).toBe(process.execPath);
+    expect(config.sidecarCredentialEncryptionKey).toBe(SIDECAR_KEY);
     expect(config.allocationsDir).toBe("/srv/hub-data/process-provisioner/allocations");
     expect(config.stateFilePath).toBe("/srv/hub-data/process-provisioner/state.json");
     expect(config.hubWebSocketUrl).toBe(HUB_WS_URL);
@@ -39,6 +41,7 @@ describe("readProcessProvisionerConfig", () => {
       env: {
         PROCESS_PROVISIONER_SIDECAR_ENTRY: "/opt/sidecar/index.js",
         PROCESS_PROVISIONER_RUNTIME: "/usr/bin/node",
+        SIDECAR_CREDENTIAL_ENCRYPTION_KEY: SIDECAR_KEY,
       },
       dataDir: "/srv/hub-data/process-provisioner",
       hubWebSocketUrl: HUB_WS_URL,
@@ -51,7 +54,7 @@ describe("readProcessProvisionerConfig", () => {
   test("a relative data dir fails loudly instead of resolving against the cwd", () => {
     expect(() =>
       readProcessProvisionerConfig({
-        env: {},
+        env: { SIDECAR_CREDENTIAL_ENCRYPTION_KEY: SIDECAR_KEY },
         dataDir: ".data/hub/process-provisioner",
         hubWebSocketUrl: HUB_WS_URL,
       }),
@@ -61,7 +64,17 @@ describe("readProcessProvisionerConfig", () => {
   test("an empty override is a misconfiguration, not an unset key", () => {
     expect(() =>
       readProcessProvisionerConfig({
-        env: { PROCESS_PROVISIONER_RUNTIME: "" },
+        env: { PROCESS_PROVISIONER_RUNTIME: "", SIDECAR_CREDENTIAL_ENCRYPTION_KEY: SIDECAR_KEY },
+        dataDir: "/srv/hub-data/process-provisioner",
+        hubWebSocketUrl: HUB_WS_URL,
+      }),
+    ).toThrow("invalid process provisioner environment");
+  });
+
+  test("a hub without the sidecar key cannot provision at all", () => {
+    expect(() =>
+      readProcessProvisionerConfig({
+        env: {},
         dataDir: "/srv/hub-data/process-provisioner",
         hubWebSocketUrl: HUB_WS_URL,
       }),
@@ -76,6 +89,7 @@ async function configIn(dataDir: string): Promise<ProcessProvisionerConfig> {
     allocationsDir: resolve(dataDir, "allocations"),
     stateFilePath: resolve(dataDir, "state.json"),
     hubWebSocketUrl: HUB_WS_URL,
+    sidecarCredentialEncryptionKey: SIDECAR_KEY,
   };
 }
 
@@ -131,6 +145,7 @@ describe("createProcessSidecarProvisioner", () => {
       resolve(config.allocationsDir, "alloc-1", "gen-1", "data"),
     );
     expect(spawn?.env["PATH"]).toBe(process.env["PATH"]);
+    expect(spawn?.env["SIDECAR_CREDENTIAL_ENCRYPTION_KEY"]).toBe(SIDECAR_KEY);
   });
 
   test("ensure records the pid so a restarted hub can still find the unit", async () => {
