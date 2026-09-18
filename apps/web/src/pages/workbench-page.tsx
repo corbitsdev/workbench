@@ -264,7 +264,8 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
 
   // Invalidates rather than patches: the stream carries no thread
   // identity. Also invalidates approvals, since a parked ask sends no
-  // mail but still ticks the stream.
+  // mail but still ticks the stream. An agent reply may have saved an
+  // artifact too, so the panel and library counts stay in sync.
   useEffect(
     () =>
       subscribeToInbox(workbenchTenantId, () => {
@@ -272,6 +273,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
         void queryClient.invalidateQueries({
           queryKey: tenantKeys.pendingApprovals(workbenchTenantId),
         });
+        void queryClient.invalidateQueries({ queryKey: tenantKeys.artifacts(workbenchTenantId) });
       }),
     [workbenchTenantId, queryClient],
   );
