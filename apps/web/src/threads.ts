@@ -1,10 +1,5 @@
-// Thread-native derivation: DMs are participant-filtered threads over
-// supplied stock mail snapshots — never tenants, never custom
-// idempotency keys. Creation idempotency rides the native Message-ID the
-// hub stamps and returns; the client only ever dedupes replays by that id.
-// The message shape mirrors the stock `@intx/mime` parse output
-// (messageId, inReplyTo, references, listId, cc), so these pure helpers
-// apply unchanged once stock mailbox search/thread reads land.
+// DMs are participant-filtered threads, never tenants, never custom
+// idempotency keys — the client only dedupes by the hub's native Message-ID.
 
 export type ThreadMessage = {
   readonly messageId: string;
@@ -62,13 +57,9 @@ function parentIdOf(message: ThreadMessage, knownIds: Set<string>): string | und
   return undefined;
 }
 
-/** Groups supplied messages into threads: shared List-ID wins (M:N via
- * the List-ID header where the hub carries it), then In-Reply-To/References
- * chains, then normalized-subject fallback scoped to a single participant
- * set — two reply-less groups sharing a subject but talking to different
- * correspondents never merge (each 1:1 pair keeps its own thread), while
- * same-participant groups with matching subjects still join. Input order
- * decides roots. */
+/** Shared List-ID wins, then In-Reply-To/References chains, then
+ * normalized-subject scoped to a single participant set — two reply-less
+ * groups sharing a subject never merge across different correspondents. */
 export function deriveThreads(messages: readonly ThreadMessage[]): Thread[] {
   const knownIds = new Set(messages.map((message) => message.messageId));
   const parent = new Map<string, string>();
@@ -174,10 +165,9 @@ export type ForkReference = {
   readonly references: string[];
 };
 
-/** Builds the native fork ancestry for a sub-thread first message: the
- * parent becomes In-Reply-To and closes the References chain. Pure and
- * ready for the stock submission route once it accepts headers; until
- * then the linkage rides the client-held thread store beside created ids. */
+/** Parent becomes In-Reply-To and closes the References chain. Pure; the
+ * linkage still rides the client-held thread store until a stock route
+ * accepts these headers directly. */
 export function buildForkReference(parent: {
   readonly messageId: string;
   readonly references?: readonly string[];
@@ -187,11 +177,8 @@ export function buildForkReference(parent: {
   return { inReplyTo: parent.messageId, references: ancestry };
 }
 
-/** Native Message-ID replay check: a returned id already recorded for its
- * intent means the send already happened — never resend, never mint a
- * custom key. Kept as the single shared definition of that rule (rather
- * than inlining `includes` at each send site) so every send wrapper
- * compares returned ids against recorded ones through one tested helper. */
+// The single shared definition of the replay rule, so every send wrapper
+// compares ids through one tested helper rather than inlining `includes`.
 export function isDuplicateMessageId(
   seenMessageIds: readonly string[],
   messageId: string,

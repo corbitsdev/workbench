@@ -316,10 +316,7 @@ export function CommandPaletteProvider({
     [artifactsQuery],
   );
 
-  // Order matches the mock's buildCmdkEntries: Commands, Agents &
-  // Channels, Pages, then the unscoped catalogs (Runs, Workflows,
-  // Skills, Artifacts), with People & agents last among the palette's
-  // groups.
+  // Order matches the mock's buildCmdkEntries.
   const sources = useMemo<readonly PaletteSource[]>(
     () => [
       {
