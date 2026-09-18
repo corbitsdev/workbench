@@ -626,8 +626,15 @@ const PrincipalPage = type({
 /** Everyone in the room: the child tenant's principals plus its live
  * deployments' run addresses. A deployment's workflow principal only
  * appears after its first run, so the run listing is what makes an agent
- * addressable from the moment it is deployed into the room. */
-export async function listRoomParticipants(tenantId: string): Promise<readonly RoomParticipant[]> {
+ * addressable from the moment it is deployed into the room. `tenantDomain`
+ * is the room tenant's own domain (already fetched by the caller) — a
+ * person's routable mailbox address is `<refId>@<tenantDomain>`, exactly
+ * what the hub builds and the mailbox delivers to; their email and refId
+ * alone are never routable. */
+export async function listRoomParticipants(
+  tenantId: string,
+  tenantDomain: string,
+): Promise<readonly RoomParticipant[]> {
   const [page, chatAgents] = await Promise.all([
     getJson(`/api/tenants/${encodeURIComponent(tenantId)}/principals?limit=100`, PrincipalPage),
     listChatAgents(tenantId),
@@ -638,7 +645,7 @@ export async function listRoomParticipants(tenantId: string): Promise<readonly R
       id: principal.id,
       kind: "person",
       name: principal.displayName,
-      address: principal.email ?? principal.refId,
+      address: `${principal.refId}@${tenantDomain}`,
     }));
   const agents = chatAgents.map((agent): RoomParticipant => ({
     id: agent.id,
@@ -674,6 +681,14 @@ function authorName(address: string): string {
   return local.length > 0 ? local : address;
 }
 
+/** Case-insensitive whole-address match: the mailbox lowercases local parts
+ * on the wire, so a sent message's header `from` (mixed case) and envelope
+ * `from` (lowercase) both name the same participant. Never lowercases
+ * stored data — comparison only. */
+export function sameAddress(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
 /** A turn's display name: the matching room participant's name, else the
  * address local part — never the raw run/email address. */
 export function resolveParticipantName(
@@ -682,7 +697,7 @@ export function resolveParticipantName(
 ): string {
   if (message.author === "me") return message.authorName;
   return (
-    participants.find((participant) => participant.address === message.address)?.name ??
+    participants.find((participant) => sameAddress(participant.address, message.address))?.name ??
     message.authorName
   );
 }
@@ -695,7 +710,9 @@ export function resolveAvatarName(
   message: Pick<RoomMessage, "author" | "authorName" | "address">,
   participants: readonly RoomParticipant[],
 ): string {
-  const matched = participants.find((participant) => participant.address === message.address);
+  const matched = participants.find((participant) =>
+    sameAddress(participant.address, message.address),
+  );
   return matched?.name ?? resolveParticipantName(message, participants);
 }
 

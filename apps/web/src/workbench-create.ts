@@ -112,7 +112,7 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
 
   if (input.openingMessage !== undefined && input.openingMessage !== "") {
     try {
-      const participants = await listRoomParticipants(tenantId);
+      const participants = await listRoomParticipants(tenantId, domain);
       const agents = participants.filter((participant) => participant.kind === "agent");
       // A deployment's run address exists only once the deploy settles; a
       // room whose agent has not surfaced yet keeps the opening message
