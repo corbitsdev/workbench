@@ -38,8 +38,8 @@ function writeStoredTenantId(tenantId: string): void {
 
 /** True for a membership the shell may treat as a bench: a top-level
  * tenant, i.e. one whose `GET /api/tenants/:id` reports `parentId: null`.
- * Rooms are named child tenants (`needs-converge.ts`'s `POST /api/tenants
- * { parentId }`), so a name-based heuristic can never tell a room from a
+ * Workbenches are named child tenants (`needs-converge.ts`'s `POST /api/tenants
+ * { parentId }`), so a name-based heuristic can never tell a workbench from a
  * bench — only the tenant's own parent can. `parentByTenantId` holds
  * `undefined` for a tenant whose detail hasn't loaded yet, which this
  * treats as "not (yet known to be) a bench" rather than guessing. */

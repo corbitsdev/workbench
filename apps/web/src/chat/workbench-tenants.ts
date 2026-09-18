@@ -1,6 +1,6 @@
 // A workbench is a child tenant, so listing workbenches is listing the
 // bench's children over the stock tenant routes. This is the whole
-// workbench-listing surface the rest of the app reads — the room itself
+// workbench-listing surface the rest of the app reads — the workbench itself
 // lives in the child tenant's mailbox (`threads-api.ts`).
 
 import { createFetchStockHub, findOwnedTenants } from "../needs-converge";

@@ -1,6 +1,6 @@
-// A workbench is a child tenant, and its room is that tenant's mailbox:
+// A workbench is a child tenant, and its workbench is that tenant's mailbox:
 // the timeline is the tenant's mail threads, participants are its
-// principals, and a message is addressed to every agent in the room. The
+// principals, and a message is addressed to every agent in the workbench. The
 // left info column folds in what Mission Control used to show for a
 // bench overall — here scoped to this one workbench: latest activity,
 // relevant artifacts, and pending approvals with approve/deny. Sub-threads
@@ -24,43 +24,43 @@ import { Composer } from "@/chat/composer";
 import { Markdown } from "@/chat/markdown";
 import { MessageAttachments } from "@/chat/message-attachments";
 import { resolveMessagePackage } from "@/chat/deployable-package";
-import { stripRoster } from "@/chat/room-roster";
+import { stripRoster } from "@/chat/workbench-roster";
 import {
   ancestorChain,
-  listRoomParticipants,
-  readRoom,
+  listWorkbenchParticipants,
+  readWorkbench,
   resolveAvatarName,
   resolveParticipantName,
   sameAddress,
-  sendToRoom,
+  sendToWorkbench,
   subscribeToInbox,
-  type RoomMessage,
-  type RoomParticipant,
+  type WorkbenchMessage,
+  type WorkbenchParticipant,
 } from "@/chat/threads-api";
 import { ArtifactListPageSchema, useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { createFetchStockHub } from "../needs-converge";
 import { usePendingApprovals } from "../pending-approvals";
-import { roomKeys } from "../chat-path";
+import { workbenchKeys } from "../chat-path";
 import { StageTopBar } from "../shell/stage-top-bar";
-import { redeployRoomAgent } from "../workbench-create";
+import { redeployWorkbenchAgent } from "../workbench-create";
 import { workbenchIdFromPath } from "../workbench-path";
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-function RoomMessageRow({
+function WorkbenchMessageRow({
   message,
   participants,
-  roomTenantId,
+  workbenchTenantId,
   onReply,
 }: {
-  readonly message: RoomMessage;
-  readonly participants: readonly RoomParticipant[];
-  readonly roomTenantId: string;
+  readonly message: WorkbenchMessage;
+  readonly participants: readonly WorkbenchParticipant[];
+  readonly workbenchTenantId: string;
   /** Undefined in the sub-thread panel, where a row is read-only context. */
-  readonly onReply?: (message: RoomMessage) => void;
+  readonly onReply?: (message: WorkbenchMessage) => void;
 }) {
   // Avatars read off the participant's real name — the person's own
   // included, never the "You" transcript label — falling back to the
@@ -71,7 +71,7 @@ function RoomMessageRow({
   );
   const kind = message.author !== "me" && matched?.kind === "agent" ? "agent" : "person";
   // The person's own send carries a trailing roster block so agents in the
-  // room can hand off to each other; it's never something a person should
+  // workbench can hand off to each other; it's never something a person should
   // see echoed back at them.
   const body = message.author === "me" ? stripRoster(message.body) : message.body;
   const { pkg, renderedBody } = resolveMessagePackage(message.attachments, body);
@@ -86,9 +86,13 @@ function RoomMessageRow({
       </span>
       <div className="chat-thread-body">
         <Markdown text={renderedBody} />
-        <MessageAttachments tenantId={roomTenantId} attachments={message.attachments} pkg={pkg} />
+        <MessageAttachments
+          tenantId={workbenchTenantId}
+          attachments={message.attachments}
+          pkg={pkg}
+        />
         {onReply === undefined ? null : (
-          <button type="button" className="room-replies-link" onClick={() => onReply(message)}>
+          <button type="button" className="workbench-replies-link" onClick={() => onReply(message)}>
             Reply
           </button>
         )}
@@ -97,9 +101,13 @@ function RoomMessageRow({
   );
 }
 
-function ParticipantList({ participants }: { readonly participants: readonly RoomParticipant[] }) {
+function ParticipantList({
+  participants,
+}: {
+  readonly participants: readonly WorkbenchParticipant[];
+}) {
   return (
-    <ul className="room-participants" aria-label="In this workbench">
+    <ul className="workbench-participants" aria-label="In this workbench">
       {participants.map((participant) => (
         <li key={participant.id} data-kind={participant.kind}>
           <span className="shell-ch-avatar">
@@ -118,88 +126,88 @@ function ParticipantList({ participants }: { readonly participants: readonly Roo
 
 /** The left info column: what Mission Control used to show, scoped to this
  * one workbench — its latest activity, its relevant artifacts, and what's
- * pending on it — plus the participant roster already read for the room. */
-function RoomInfoColumn({
-  roomTenantId,
+ * pending on it — plus the participant roster already read for the workbench. */
+function WorkbenchInfoColumn({
+  workbenchTenantId,
   latestMessage,
   participants,
 }: {
-  readonly roomTenantId: string;
-  readonly latestMessage: RoomMessage | undefined;
-  readonly participants: readonly RoomParticipant[];
+  readonly workbenchTenantId: string;
+  readonly latestMessage: WorkbenchMessage | undefined;
+  readonly participants: readonly WorkbenchParticipant[];
 }) {
   const anyAgentLive = participants.some((p) => p.kind === "agent" && p.address !== "");
-  const approvalsQuery = usePendingApprovals(roomTenantId, {
+  const approvalsQuery = usePendingApprovals(workbenchTenantId, {
     refetchInterval: anyAgentLive ? 3000 : false,
   });
   const artifactsQuery = useAPIQuery(
-    `/api/tenants/${roomTenantId}/artifacts`,
+    `/api/tenants/${workbenchTenantId}/artifacts`,
     ArtifactListPageSchema,
   );
   const pendingApprovals = approvalsQuery.kind === "ready" ? approvalsQuery.data : null;
 
   return (
-    <aside className="room-info-column" aria-label="Workbench details">
-      <section className="room-info-panel">
-        <div className="room-info-panel-header">
+    <aside className="workbench-info-column" aria-label="Workbench details">
+      <section className="workbench-info-panel">
+        <div className="workbench-info-panel-header">
           <h2>Latest activity</h2>
         </div>
         {latestMessage === undefined ? (
-          <p className="room-info-empty-note">Nothing yet — say something to get started.</p>
+          <p className="workbench-info-empty-note">Nothing yet — say something to get started.</p>
         ) : (
-          <p className="room-info-cell-context">
+          <p className="workbench-info-cell-context">
             {resolveParticipantName(latestMessage, participants)} ·{" "}
             {formatRelativeTime(latestMessage.at)}
           </p>
         )}
       </section>
 
-      <section className="room-info-panel">
-        <div className="room-info-panel-header">
+      <section className="workbench-info-panel">
+        <div className="workbench-info-panel-header">
           <h2>Approvals</h2>
         </div>
         {approvalsQuery.kind === "loading" ? <Skeleton className="h-16 w-full" /> : null}
         {approvalsQuery.kind === "error" ? (
-          <p className="room-info-empty-note">{approvalsQuery.message}</p>
+          <p className="workbench-info-empty-note">{approvalsQuery.message}</p>
         ) : null}
         {pendingApprovals !== null && pendingApprovals.length === 0 ? (
-          <p className="room-info-empty-note">Nothing waiting on you.</p>
+          <p className="workbench-info-empty-note">Nothing waiting on you.</p>
         ) : null}
         {pendingApprovals !== null && pendingApprovals.length > 0 ? (
-          <ul className="room-info-approval-list">
+          <ul className="workbench-info-approval-list">
             {pendingApprovals.map((item) => (
-              <ApprovalRow key={item.id} item={item} tenantId={roomTenantId} />
+              <ApprovalRow key={item.id} item={item} tenantId={workbenchTenantId} />
             ))}
           </ul>
         ) : null}
       </section>
 
-      <section className="room-info-panel">
-        <div className="room-info-panel-header">
+      <section className="workbench-info-panel">
+        <div className="workbench-info-panel-header">
           <h2>Artifacts</h2>
         </div>
         {artifactsQuery.kind === "loading" ? <Skeleton className="h-16 w-full" /> : null}
         {artifactsQuery.kind === "error" ? (
-          <p className="room-info-empty-note">{artifactsQuery.message}</p>
+          <p className="workbench-info-empty-note">{artifactsQuery.message}</p>
         ) : null}
         {artifactsQuery.kind === "ready" && artifactsQuery.data.artifacts.length === 0 ? (
-          <p className="room-info-empty-note">No artifacts yet.</p>
+          <p className="workbench-info-empty-note">No artifacts yet.</p>
         ) : null}
         {artifactsQuery.kind === "ready" && artifactsQuery.data.artifacts.length > 0 ? (
-          <ul className="room-info-artifact-list">
+          <ul className="workbench-info-artifact-list">
             {artifactsQuery.data.artifacts.slice(0, 5).map((artifact) => (
               <li key={artifact.id}>
-                <span className="room-info-cell-primary">{artifact.title}</span>
+                <span className="workbench-info-cell-primary">{artifact.title}</span>
                 <br />
-                <span className="room-info-cell-context">{artifact.kind}</span>
+                <span className="workbench-info-cell-context">{artifact.kind}</span>
               </li>
             ))}
           </ul>
         ) : null}
       </section>
 
-      <section className="room-info-panel">
-        <div className="room-info-panel-header">
+      <section className="workbench-info-panel">
+        <div className="workbench-info-panel-header">
           <h2>Participants</h2>
         </div>
         <ParticipantList participants={participants} />
@@ -215,17 +223,18 @@ function RoomInfoColumn({
  * render (and any refetch that finds the same agent still released) from
  * firing it twice. */
 function AgentRedeployer({
-  roomTenantId,
+  workbenchTenantId,
   agent,
 }: {
-  readonly roomTenantId: string;
+  readonly workbenchTenantId: string;
   readonly agent: { readonly id: string; readonly name: string; readonly assetName: string };
 }) {
   const queryClient = useQueryClient();
   const started = useRef(false);
   const redeploy = useMutation({
-    mutationFn: () => redeployRoomAgent(roomTenantId, agent),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: roomKeys.scope(roomTenantId) }),
+    mutationFn: () => redeployWorkbenchAgent(workbenchTenantId, agent),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: workbenchKeys.scope(workbenchTenantId) }),
     onError: (cause) => toast(errorText(cause)),
   });
   if (!started.current && !redeploy.isPending && !redeploy.isSuccess) {
@@ -235,44 +244,44 @@ function AgentRedeployer({
   return null;
 }
 
-function Room({ roomTenantId }: { readonly roomTenantId: string }) {
+function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }) {
   const queryClient = useQueryClient();
   const [openThread, setOpenThread] = useState<string | null>(null);
 
   const tenant = useQuery({
-    queryKey: roomKeys.tenant(roomTenantId),
-    queryFn: () => createFetchStockHub().getTenant(roomTenantId),
+    queryKey: workbenchKeys.tenant(workbenchTenantId),
+    queryFn: () => createFetchStockHub().getTenant(workbenchTenantId),
   });
   const participants = useQuery({
-    queryKey: roomKeys.participants(roomTenantId),
-    queryFn: () => listRoomParticipants(roomTenantId, tenant.data?.domain ?? ""),
-    // The room tenant's domain is read first; a person's mailbox address
+    queryKey: workbenchKeys.participants(workbenchTenantId),
+    queryFn: () => listWorkbenchParticipants(workbenchTenantId, tenant.data?.domain ?? ""),
+    // The workbench tenant's domain is read first; a person's mailbox address
     // depends on it, so participants wait for it rather than racing it.
     enabled: tenant.data !== undefined,
-    // Poll while any agent has no live run yet, so the room notices its own
+    // Poll while any agent has no live run yet, so the workbench notices its own
     // redeploy finishing without a manual refresh.
     refetchInterval: (query) =>
       (query.state.data ?? []).some((p) => p.kind === "agent" && p.address === "") ? 3000 : false,
   });
   const timeline = useQuery({
-    queryKey: roomKeys.timeline(roomTenantId),
-    queryFn: () => readRoom(roomTenantId),
+    queryKey: workbenchKeys.timeline(workbenchTenantId),
+    queryFn: () => readWorkbench(workbenchTenantId),
   });
 
-  // The room mailbox stream is the only signal that an agent answered; it
+  // The workbench mailbox stream is the only signal that an agent answered; it
   // carries no thread identity, so it invalidates rather than patches.
   useEffect(
     () =>
-      subscribeToInbox(roomTenantId, () => {
-        void queryClient.invalidateQueries({ queryKey: roomKeys.scope(roomTenantId) });
+      subscribeToInbox(workbenchTenantId, () => {
+        void queryClient.invalidateQueries({ queryKey: workbenchKeys.scope(workbenchTenantId) });
       }),
-    [roomTenantId, queryClient],
+    [workbenchTenantId, queryClient],
   );
 
   const agents = (participants.data ?? []).filter((participant) => participant.kind === "agent");
   // Released by a hub restart: the asset is still here but nothing is live.
   const releasedAgents = agents.filter(
-    (agent): agent is RoomParticipant & { assetName: string } =>
+    (agent): agent is WorkbenchParticipant & { assetName: string } =>
       agent.address === "" && agent.assetName !== undefined,
   );
   const startingAgent = releasedAgents[0];
@@ -284,13 +293,14 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
       readonly content: string;
       readonly inReplyTo?: string;
     }) =>
-      sendToRoom({
-        roomTenantId,
+      sendToWorkbench({
+        workbenchTenantId,
         participants: participants.data ?? [],
         content,
         ...(inReplyTo !== undefined ? { inReplyTo } : {}),
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: roomKeys.scope(roomTenantId) }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: workbenchKeys.scope(workbenchTenantId) }),
   });
 
   const messages = timeline.data ?? [];
@@ -316,27 +326,27 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
       {releasedAgents.map((agent) => (
         <AgentRedeployer
           key={agent.id}
-          roomTenantId={roomTenantId}
+          workbenchTenantId={workbenchTenantId}
           agent={{ id: agent.id, name: agent.name, assetName: agent.assetName }}
         />
       ))}
       <StageTopBar crumbs={[{ label: tenant.data?.name ?? "Workbench" }]} />
-      <div className="room-layout">
-        <RoomInfoColumn
-          roomTenantId={roomTenantId}
+      <div className="workbench-layout">
+        <WorkbenchInfoColumn
+          workbenchTenantId={workbenchTenantId}
           latestMessage={latestMessage}
           participants={participants.data ?? []}
         />
-        <div className="room-main">
-          <div className="room-main-scroll">
+        <div className="workbench-main">
+          <div className="workbench-main-scroll">
             <PageShell width="prose" className="page-fill">
               <div className="chat-thread-messages">
                 {messages.map((message) => (
-                  <RoomMessageRow
+                  <WorkbenchMessageRow
                     key={message.id}
                     message={message}
                     participants={participants.data ?? []}
-                    roomTenantId={roomTenantId}
+                    workbenchTenantId={workbenchTenantId}
                     onReply={(target) => setOpenThread(target.messageId)}
                   />
                 ))}
@@ -346,7 +356,7 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
               )}
             </PageShell>
           </div>
-          <div className="room-main-composer">
+          <div className="workbench-main-composer">
             <PageShell width="prose" className="page-fill">
               <Composer
                 placeholder={
@@ -362,8 +372,8 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
           </div>
         </div>
         {opened === undefined ? null : (
-          <aside className="room-subthread" aria-label="Replies">
-            <div className="room-subthread-head">
+          <aside className="workbench-subthread" aria-label="Replies">
+            <div className="workbench-subthread-head">
               <h2>Replies</h2>
               <Button variant="ghost" size="sm" onClick={() => setOpenThread(null)}>
                 Close
@@ -371,11 +381,11 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
             </div>
             <div className="chat-thread-messages">
               {openedChain.map((message) => (
-                <RoomMessageRow
+                <WorkbenchMessageRow
                   key={message.id}
                   message={message}
                   participants={participants.data ?? []}
-                  roomTenantId={roomTenantId}
+                  workbenchTenantId={workbenchTenantId}
                 />
               ))}
             </div>
@@ -396,11 +406,11 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
   );
 }
 
-export function WorkbenchRoomRoute({ path }: { readonly path: string }) {
+export function WorkbenchRoute({ path }: { readonly path: string }) {
   const { selectedTenantId } = useBench();
-  const roomTenantId = workbenchIdFromPath(path);
+  const workbenchTenantId = workbenchIdFromPath(path);
 
-  if (selectedTenantId === null || roomTenantId === null) {
+  if (selectedTenantId === null || workbenchTenantId === null) {
     return (
       <PageShell width="full" className="page-fill">
         <EmptyState
@@ -411,5 +421,5 @@ export function WorkbenchRoomRoute({ path }: { readonly path: string }) {
       </PageShell>
     );
   }
-  return <Room roomTenantId={roomTenantId} />;
+  return <Workbench workbenchTenantId={workbenchTenantId} />;
 }

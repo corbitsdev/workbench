@@ -19,7 +19,7 @@ in `apps/web`, and exists only because `@intx/log` wasn't adopted there
 yet — not because LogTape can't run in a browser.
 
 So this package adds only what `@intx/log` was missing: a fixed
-structured-error shape (`operation`, optional `tenantId`/`roomId`/
+structured-error shape (`operation`, optional `tenantId`/`workbenchId`/
 `agentId`, and a `refId`) plus a redaction pass, delivered through
 `getLogger(["errors"])`. Reaching OTEL/Sentry later is a LogTape sink
 registered once via `@intx/log`'s own `configureSync`/`setup` — no call

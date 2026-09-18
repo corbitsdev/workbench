@@ -3,7 +3,7 @@
 // shape: one `getConnectState` read on mount, then live
 // `subscribeConnectState` folds, keyed by the block's `connectorId`
 // rather than the message id since the state is the tenant's, not the
-// room's. With no port (or while loading), the card renders the
+// workbench's. With no port (or while loading), the card renders the
 // disconnected key-paste-free framing with a disabled-by-inaction
 // connect that goes nowhere, matching the "no port, no feature"
 // fallback every other block uses.

@@ -1,6 +1,6 @@
 // ad-hoc ("Just start talking") benches mint as "New Workbench" and
 // used to stay that way in the sidebar. Prefab templates already name the
-// room after the template title; this helper turns the person's first message
+// workbench after the template title; this helper turns the person's first message
 // into a short sidebar title so blank benches get the same treatment once
 // that message is known (at create) — without inventing a second rename API.
 // Callers apply the result through `patchWorkbenchSettings` the same way the
@@ -34,7 +34,7 @@ export function titleFromFirstMessage(
 
 /**
  * What an ad-hoc auto-name should PATCH as `chat/name`: the derived title when
- * the room is still the generic "New Workbench" placeholder, otherwise
+ * the workbench is still the generic "New Workbench" placeholder, otherwise
  * `undefined` so callers leave prefab (and already-renamed) titles alone.
  */
 export function autoNameFromFirstMessage(

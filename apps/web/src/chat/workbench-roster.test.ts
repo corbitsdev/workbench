@@ -1,16 +1,16 @@
 import { describe, expect, test } from "bun:test";
 
-import { appendRoster, stripRoster } from "./room-roster";
+import { appendRoster, stripRoster } from "./workbench-roster";
 
 describe("appendRoster / stripRoster", () => {
   test("round-trips a message through append and strip", () => {
     const body = "Please pass this to the scribe.";
     const withRoster = appendRoster(body, [
-      { name: "Scribe", address: "run_abc@room.example", kind: "agent" },
-      { name: "Myra", address: "run_def@room.example", kind: "agent" },
+      { name: "Scribe", address: "run_abc@example.com", kind: "agent" },
+      { name: "Myra", address: "run_def@example.com", kind: "agent" },
     ]);
     expect(withRoster).toBe(
-      "Please pass this to the scribe.\n\nParticipants:\nScribe <run_abc@room.example>\nMyra <run_def@room.example>",
+      "Please pass this to the scribe.\n\nParticipants:\nScribe <run_abc@example.com>\nMyra <run_def@example.com>",
     );
     expect(stripRoster(withRoster)).toBe(body);
   });

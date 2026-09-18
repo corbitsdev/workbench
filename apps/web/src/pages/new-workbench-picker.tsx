@@ -1,6 +1,6 @@
 // A new workbench is a child tenant plus the agents you put in it. This
 // screen is the prompt box: say what you want and hit Enter, or open an
-// empty room and add people and agents as you go.
+// empty workbench and add people and agents as you go.
 
 import { Button, toast } from "@corbits/react-ui";
 import { useDismissablePopover } from "@corbits/react-ui/hooks/use-dismissable-popover";
@@ -37,7 +37,7 @@ export function describeWorkbenchCreateFailure(cause: unknown, refId?: string): 
 const PROMPT_PLACEHOLDER = "What do you want your Workbench to do?";
 const AGENT_LISTBOX_ID = "new-workbench-agent-listbox";
 
-/** A room's name is its opening ask, trimmed — an empty room is just
+/** A workbench's name is its opening ask, trimmed — an empty workbench is just
  * "Workbench" until it is renamed. */
 function workbenchName(prompt: string): string {
   const trimmed = prompt.trim();
@@ -129,8 +129,8 @@ export function NewWorkbenchPickerRoute() {
         ...(selectedTenantId !== null ? { tenantId: selectedTenantId } : {}),
       });
       toast(describeWorkbenchCreateFailure(cause, refId));
-      // The room exists once a later stage fails; the toast says to retry
-      // from the room, so go there.
+      // The workbench exists once a later stage fails; the toast says to retry
+      // from the workbench, so go there.
       if (cause instanceof WorkbenchCreateError && cause.tenantId !== undefined) {
         void queryClient.invalidateQueries({
           queryKey: chatKeys.childTenants(variables.benchTenantId),

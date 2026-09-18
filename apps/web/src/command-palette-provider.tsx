@@ -220,7 +220,7 @@ export function CommandPaletteProvider({
   // simplest honest thing a single command-palette entry can do without
   // reinventing a picker. Absent entirely for the common one-workbench
   // account, same principle the old dock used to hide itself by. Benches
-  // are top-level memberships (`useBench`'s `benchMemberships`) — a room
+  // are top-level memberships (`useBench`'s `benchMemberships`) — a workbench
   // (a named child tenant) can never be cycled to.
   const workbenchMemberships = benchMemberships;
   const nextWorkbench =

@@ -1,4 +1,4 @@
-// The one composer surface for a chat thread and a workbench room alike:
+// The one composer surface for a chat thread and a workbench workbench alike:
 // Enter sends, Shift+Enter inserts a newline, and a right-hand action rail
 // carries Send. There is no Stop action — neither `threads-api.ts` nor the
 // hub API expose a way to cancel a running turn, so cancellation is not

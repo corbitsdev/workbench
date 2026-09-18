@@ -311,13 +311,13 @@ export async function convergeNeedsList(
       if (principal.kind === "workflow") {
         throw new StockHubCapabilityError(
           "project-workflow-principal",
-          `Stock Interchange cannot carry workflow ${principal.refId} into a child room by refId.`,
+          `Stock Interchange cannot carry workflow ${principal.refId} into a child workbench by refId.`,
         );
       }
       if (principal.roles.some((role) => role !== "member")) {
         throw new StockHubCapabilityError(
           "principal-roles",
-          "The stock member invite route cannot assign the requested child-room roles.",
+          "The stock member invite route cannot assign the requested child-workbench roles.",
         );
       }
       if (principal.email === undefined) {

@@ -253,7 +253,7 @@ export function computeReorderPatches(
       earlierPriority = lowerBound + 1;
       laterPriority = upperBound - 1;
     } else if (gap >= 1) {
-      // Not enough integer room to stay strictly inside the fixed
+      // Not enough integer margin to stay strictly inside the fixed
       // neighbors' priorities — sit on the boundary values themselves
       // (tying with a fixed neighbor id-tiebreaks, same as today) rather
       // than spill past them.

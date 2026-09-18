@@ -1,4 +1,4 @@
-// Canvas host surface for stage content: whether the shell has room for the
+// Canvas host surface for stage content: whether the shell has space for the
 // fourth column, how main-stage chat opens auxiliary canvas content
 // (profiles, artifacts) without owning the canvas column itself, and — for
 // AppShell's own render, which no longer owns this state — what the canvas

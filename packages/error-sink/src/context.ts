@@ -6,7 +6,7 @@ import { type } from "arktype";
 export const ErrorContext = type({
   operation: "string > 0",
   "tenantId?": "string > 0",
-  "roomId?": "string > 0",
+  "workbenchId?": "string > 0",
   "agentId?": "string > 0",
   "refId?": "string > 0",
   "extra?": "Record<string, unknown>",

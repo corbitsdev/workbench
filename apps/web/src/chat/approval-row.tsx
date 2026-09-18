@@ -1,5 +1,5 @@
 // One pending approval with its approve/deny buttons. Shared by the
-// workbench room's info column and the chat transcript, so a person can
+// workbench workbench's info column and the chat transcript, so a person can
 // answer an agent's ask wherever they are looking when it lands.
 
 import { Button, formatRelativeTime, toast } from "@corbits/react-ui";
@@ -36,15 +36,15 @@ export function ApprovalRow({
   const pending = resolveMutation.isPending ? resolveMutation.variables : null;
 
   return (
-    <li className="room-info-approval-row">
+    <li className="workbench-info-approval-row">
       <div>
-        <span className="room-info-cell-primary">{item.headline}</span>
+        <span className="workbench-info-cell-primary">{item.headline}</span>
         <br />
-        <span className="room-info-cell-context">
+        <span className="workbench-info-cell-context">
           {item.agentName} · {formatRelativeTime(item.createdAt)}
         </span>
       </div>
-      <div className="room-info-row-actions">
+      <div className="workbench-info-row-actions">
         <Button
           variant="ghost"
           size="sm"

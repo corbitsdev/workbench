@@ -9,7 +9,7 @@
 //
 // Inbox is gone (owner decision: tasks + approvals don't flow
 // into workbenches). Mission Control is gone too — its pending-approvals
-// and activity panels now live inside each workbench's own room.
+// and activity panels now live inside each workbench's own workbench.
 //
 // No bench switcher: a workbench IS an agent conversation now,
 // one per account, so there is nothing to switch between in the common

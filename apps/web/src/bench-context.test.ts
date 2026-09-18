@@ -16,31 +16,31 @@ function membership(overrides: Partial<Principal> & { tenantId: string }): Princ
 }
 
 /** `null` = a top-level tenant (a bench); a string = its parent's id (a
- * room, or any other child tenant). Missing entries model a tenant whose
+ * workbench, or any other child tenant). Missing entries model a tenant whose
  * detail hasn't loaded yet. */
 function parents(entries: Record<string, string | null>): ReadonlyMap<string, string | null> {
   return new Map(Object.entries(entries));
 }
 
 describe("resolveSelection", () => {
-  test("a bench sorting first wins over a room, regardless of name", () => {
+  test("a bench sorting first wins over a workbench, regardless of name", () => {
     const memberships = [
       membership({ tenantId: "tnt_bench", tenantName: "Growth Team" }),
-      membership({ tenantId: "tnt_room", tenantName: "Launch Planning" }),
+      membership({ tenantId: "tnt_workbench", tenantName: "Launch Planning" }),
     ];
-    const parentByTenantId = parents({ tnt_bench: null, tnt_room: "tnt_bench" });
+    const parentByTenantId = parents({ tnt_bench: null, tnt_workbench: "tnt_bench" });
 
     const resolved = resolveSelection(memberships, null, parentByTenantId);
 
     expect(resolved?.tenantId).toBe("tnt_bench");
   });
 
-  test("a room sorting first is skipped in favor of the first bench", () => {
+  test("a workbench sorting first is skipped in favor of the first bench", () => {
     const memberships = [
-      membership({ tenantId: "tnt_room", tenantName: "Launch Planning" }),
+      membership({ tenantId: "tnt_workbench", tenantName: "Launch Planning" }),
       membership({ tenantId: "tnt_bench", tenantName: "Growth Team" }),
     ];
-    const parentByTenantId = parents({ tnt_room: "tnt_bench", tnt_bench: null });
+    const parentByTenantId = parents({ tnt_workbench: "tnt_bench", tnt_bench: null });
 
     const resolved = resolveSelection(memberships, null, parentByTenantId);
 
@@ -59,14 +59,14 @@ describe("resolveSelection", () => {
     expect(resolved?.tenantId).toBe("tnt_bench_b");
   });
 
-  test("a stored selection naming a room falls through to the first bench — a room can never be selected even when it is the stored id", () => {
+  test("a stored selection naming a workbench falls through to the first bench — a workbench can never be selected even when it is the stored id", () => {
     const memberships = [
-      membership({ tenantId: "tnt_room" }),
+      membership({ tenantId: "tnt_workbench" }),
       membership({ tenantId: "tnt_bench" }),
     ];
-    const parentByTenantId = parents({ tnt_room: "tnt_bench", tnt_bench: null });
+    const parentByTenantId = parents({ tnt_workbench: "tnt_bench", tnt_bench: null });
 
-    const resolved = resolveSelection(memberships, "tnt_room", parentByTenantId);
+    const resolved = resolveSelection(memberships, "tnt_workbench", parentByTenantId);
 
     expect(resolved?.tenantId).toBe("tnt_bench");
   });
@@ -80,9 +80,9 @@ describe("resolveSelection", () => {
     expect(resolved?.tenantId).toBe("tnt_bench");
   });
 
-  test("undefined when every membership is a room", () => {
-    const memberships = [membership({ tenantId: "tnt_room" })];
-    const parentByTenantId = parents({ tnt_room: "tnt_primary" });
+  test("undefined when every membership is a workbench", () => {
+    const memberships = [membership({ tenantId: "tnt_workbench" })];
+    const parentByTenantId = parents({ tnt_workbench: "tnt_primary" });
 
     const resolved = resolveSelection(memberships, null, parentByTenantId);
 

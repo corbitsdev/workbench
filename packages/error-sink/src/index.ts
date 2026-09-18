@@ -44,8 +44,8 @@ export function reportError(error: unknown, context: ErrorContextInput): string 
     if (safeContext?.tenantId !== undefined) {
       properties.tenantId = safeContext.tenantId;
     }
-    if (safeContext?.roomId !== undefined) {
-      properties.roomId = safeContext.roomId;
+    if (safeContext?.workbenchId !== undefined) {
+      properties.workbenchId = safeContext.workbenchId;
     }
     if (safeContext?.agentId !== undefined) {
       properties.agentId = safeContext.agentId;

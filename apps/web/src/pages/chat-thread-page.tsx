@@ -26,7 +26,7 @@ import {
   type ChatAgent,
 } from "@/chat/threads-api";
 import { MYRA_SOURCE_CONFIG } from "../myra-source";
-import { describeRestartFailure, redeployRoomAgent } from "../workbench-create";
+import { describeRestartFailure, redeployWorkbenchAgent } from "../workbench-create";
 import { useBench } from "../bench-context";
 import { chatIdFromPath, chatKeys, chatPath, NEW_CHAT_PATH } from "../chat-path";
 import { usePendingApprovals } from "../pending-approvals";
@@ -71,7 +71,7 @@ function NewChat({
   });
 
   const restart = useMutation({
-    mutationFn: (agent: ChatAgent) => redeployRoomAgent(tenantId, agent),
+    mutationFn: (agent: ChatAgent) => redeployWorkbenchAgent(tenantId, agent),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: chatKeys.agents(tenantId) });
     },
@@ -206,7 +206,7 @@ function ChatTranscript({
   const restart = useMutation({
     mutationFn: () => {
       if (chat === undefined) throw new Error("no agent to restart");
-      return redeployRoomAgent(tenantId, chat.agent);
+      return redeployWorkbenchAgent(tenantId, chat.agent);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: chatKeys.agents(tenantId) });
@@ -264,7 +264,7 @@ function ChatTranscript({
         })}
       </div>
       {approvals.length === 0 ? null : (
-        <ul className="room-info-approval-list" aria-label={`${chat.agentName} is asking`}>
+        <ul className="workbench-info-approval-list" aria-label={`${chat.agentName} is asking`}>
           {approvals.map((item) => (
             <ApprovalRow key={item.id} item={item} tenantId={tenantId} />
           ))}

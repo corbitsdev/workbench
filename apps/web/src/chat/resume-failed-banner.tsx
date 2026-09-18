@@ -1,5 +1,5 @@
 // Mid-turn reopen whose catch-up fetch (`fetchRunningTurn`) fails
-// must not leave the room looking idle. This soft banner names the gap,
+// must not leave the workbench looking idle. This soft banner names the gap,
 // quotes a `reportError` ref id, and offers Retry — never a silent
 // `.catch(() => undefined)`.
 import { Button } from "@corbits/react-ui";

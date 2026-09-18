@@ -2540,7 +2540,7 @@ tr.insights-row-clickable:hover {
 }
 
 /* Dashboard-density header/cell treatment for the insights data tables —
-   scoped to this wrapper class so react-ui's roomier Table defaults stand
+   scoped to this wrapper class so react-ui's more spacious Table defaults stand
    everywhere else. */
 .insights-data-table th {
   font-size: 0.68rem;
@@ -3613,48 +3613,48 @@ tr.insights-row-clickable:hover {
   }
 }
 
-/* A workbench room's left info column: activity, artifacts, approvals and
+/* A workbench workbench's left info column: activity, artifacts, approvals and
    participants, stacked as quiet panels beside the running chat. */
-.room-info-panel {
+.workbench-info-panel {
   padding: 0.9rem 1rem;
   border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   background: var(--card, var(--background));
   min-width: 0;
 }
-.room-info-panel + .room-info-panel {
+.workbench-info-panel + .workbench-info-panel {
   margin-top: 1rem;
 }
-.room-info-panel-header {
+.workbench-info-panel-header {
   display: flex;
   align-items: baseline;
   gap: 0.6rem;
   margin-bottom: 0.6rem;
 }
-.room-info-panel-header h2 {
+.workbench-info-panel-header h2 {
   margin: 0;
   font-size: 0.85rem;
   font-weight: 700;
 }
-.room-info-empty-note {
+.workbench-info-empty-note {
   margin: 0;
   font-size: 0.8rem;
   color: var(--muted-foreground);
 }
-.room-info-cell-primary {
+.workbench-info-cell-primary {
   font-size: 0.85rem;
   font-weight: 700;
 }
-.room-info-cell-context {
+.workbench-info-cell-context {
   font-size: 0.7rem;
   color: var(--muted-foreground);
 }
-.room-info-row-actions {
+.workbench-info-row-actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.4rem;
 }
-.room-info-approval-list,
-.room-info-artifact-list {
+.workbench-info-approval-list,
+.workbench-info-artifact-list {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -3662,7 +3662,7 @@ tr.insights-row-clickable:hover {
   padding: 0;
   list-style: none;
 }
-.room-info-approval-row {
+.workbench-info-approval-row {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
@@ -3870,15 +3870,15 @@ tr.insights-row-clickable:hover {
   }
 }
 
-/* A workbench room: a left info column (activity, artifacts, approvals,
+/* A workbench workbench: a left info column (activity, artifacts, approvals,
    participants), the running chat in the main column, and an optional
    sub-thread panel on the right. */
-.room-layout {
+.workbench-layout {
   display: flex;
   min-height: 0;
   flex: 1;
 }
-.room-info-column {
+.workbench-info-column {
   display: flex;
   flex-direction: column;
   width: 18rem;
@@ -3889,28 +3889,28 @@ tr.insights-row-clickable:hover {
   border-right: 1px solid var(--border);
 }
 @media (max-width: 1100px) {
-  .room-info-column {
+  .workbench-info-column {
     display: none;
   }
 }
-.room-main {
+.workbench-main {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 0;
 }
-.room-main-scroll {
+.workbench-main-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
 }
-.room-main-composer {
+.workbench-main-composer {
   flex-shrink: 0;
   border-top: 1px solid var(--border);
   padding: 0.75rem 0;
 }
-.room-participants {
+.workbench-participants {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
@@ -3920,12 +3920,12 @@ tr.insights-row-clickable:hover {
   font-size: 0.82rem;
   color: var(--muted-foreground);
 }
-.room-participants > li {
+.workbench-participants > li {
   display: flex;
   align-items: center;
   gap: 0.35rem;
 }
-.room-replies-link {
+.workbench-replies-link {
   display: block;
   margin-top: 0.35rem;
   padding: 0;
@@ -3935,10 +3935,10 @@ tr.insights-row-clickable:hover {
   color: var(--muted-foreground);
   cursor: pointer;
 }
-.room-replies-link:hover {
+.workbench-replies-link:hover {
   color: var(--foreground);
 }
-.room-subthread {
+.workbench-subthread {
   display: flex;
   flex-direction: column;
   width: 22rem;
@@ -3947,13 +3947,13 @@ tr.insights-row-clickable:hover {
   padding: 1rem;
   border-left: 1px solid var(--border);
 }
-.room-subthread-head {
+.workbench-subthread-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 0.75rem;
 }
-.room-subthread-head > h2 {
+.workbench-subthread-head > h2 {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;

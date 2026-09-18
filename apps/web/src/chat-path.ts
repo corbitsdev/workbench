@@ -12,13 +12,13 @@ export const chatKeys = {
   childTenants: (tenantId: string) => ["tenant", tenantId, "child-tenants"] as const,
 };
 
-/** One key factory per room (a workbench child tenant), so a send
- * invalidates the room's timeline and roster together. */
-export const roomKeys = {
-  scope: (tenantId: string) => ["room", tenantId] as const,
-  tenant: (tenantId: string) => ["room", tenantId, "tenant"] as const,
-  participants: (tenantId: string) => ["room", tenantId, "participants"] as const,
-  timeline: (tenantId: string) => ["room", tenantId, "timeline"] as const,
+/** One key factory per workbench (a workbench child tenant), so a send
+ * invalidates the workbench's timeline and roster together. */
+export const workbenchKeys = {
+  scope: (tenantId: string) => ["workbench", tenantId] as const,
+  tenant: (tenantId: string) => ["workbench", tenantId, "tenant"] as const,
+  participants: (tenantId: string) => ["workbench", tenantId, "participants"] as const,
+  timeline: (tenantId: string) => ["workbench", tenantId, "timeline"] as const,
 };
 
 export const CHATS_PATH_PREFIX = "/chats";
