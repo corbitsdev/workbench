@@ -42,6 +42,7 @@ import { useBench } from "../bench-context";
 import { createFetchStockHub } from "../needs-converge";
 import { usePendingApprovals } from "../pending-approvals";
 import { workbenchKeys } from "../chat-path";
+import { tenantKeys } from "../query-client";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { redeployWorkbenchAgent } from "../workbench-create";
 import { workbenchIdFromPath } from "../workbench-path";
@@ -136,9 +137,13 @@ function WorkbenchInfoColumn({
   readonly latestMessage: WorkbenchMessage | undefined;
   readonly participants: readonly WorkbenchParticipant[];
 }) {
-  const anyAgentLive = participants.some((p) => p.kind === "agent" && p.address !== "");
+  // Poll only while an agent in this workbench is still starting (released,
+  // no live address yet) — the same window `participants` itself polls for.
+  // Once every agent is live, the inbox subscription's invalidation is the
+  // only trigger, so one mailbox event issues one read, not two.
+  const anyAgentStarting = participants.some((p) => p.kind === "agent" && p.address === "");
   const approvalsQuery = usePendingApprovals(workbenchTenantId, {
-    refetchInterval: anyAgentLive ? 3000 : false,
+    refetchInterval: anyAgentStarting ? 3000 : false,
   });
   const artifactsQuery = useAPIQuery(
     `/api/tenants/${workbenchTenantId}/artifacts`,
@@ -269,11 +274,17 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
   });
 
   // The workbench mailbox stream is the only signal that an agent answered; it
-  // carries no thread identity, so it invalidates rather than patches.
+  // carries no thread identity, so it invalidates rather than patches. An
+  // agent that parks on an ask sends no mail, but the same stream ticks over
+  // its turn, so the approvals read invalidates here too instead of the info
+  // column polling it continuously while any agent is simply live.
   useEffect(
     () =>
       subscribeToInbox(workbenchTenantId, () => {
         void queryClient.invalidateQueries({ queryKey: workbenchKeys.scope(workbenchTenantId) });
+        void queryClient.invalidateQueries({
+          queryKey: tenantKeys.pendingApprovals(workbenchTenantId),
+        });
       }),
     [workbenchTenantId, queryClient],
   );

@@ -185,10 +185,13 @@ function ChatTranscript({
   );
 
   // Only this agent's asks belong in this transcript; the bench-wide list
-  // is filtered down to the run address this chat talks to.
+  // is filtered down to the run address this chat talks to. Polling only
+  // covers the same "agent still starting" window `chatQuery` polls for —
+  // once live, the inbox subscription's invalidation above is the only
+  // trigger, so a single mailbox event issues one read, not two.
   const liveAddress = chat?.agent.liveAddress ?? null;
   const approvalsQuery = usePendingApprovals(tenantId, {
-    refetchInterval: liveAddress !== null ? 3000 : false,
+    refetchInterval: liveAddress === null ? 3000 : false,
   });
   const approvals =
     approvalsQuery.kind === "ready" && liveAddress !== null
