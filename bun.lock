@@ -36,7 +36,7 @@
       "name": "@corbits/myra",
       "version": "0.0.3",
       "dependencies": {
-        "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#b8f1941a3720da8627012a48d7d0b91271b19052",
+        "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#9152ba5d55f1bdc88f992c5de54f01760992541b",
         "@intx/tools-mail": "0.3.0",
         "@intx/tools-posix": "0.3.0",
       },
@@ -57,7 +57,7 @@
         "@chat-adapter/state-memory": "^4.35.0",
         "@corbits/agent-token": "github:corbitsdev/corbits-agent-token#a4d45821abe7ac2a0387f6036255ed4d7ec1b17c",
         "@corbits/approvals": "workspace:*",
-        "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#b8f1941a3720da8627012a48d7d0b91271b19052",
+        "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#9152ba5d55f1bdc88f992c5de54f01760992541b",
         "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
         "@corbits/cron": "github:corbitsdev/corbits-cron#c60e62e0459fbb48c4eccb2e97b3ceb8e7d0d47e",
         "@corbits/error-sink": "workspace:*",
@@ -1831,7 +1831,7 @@
 
     "@corbits/mailbox/hono-openapi": ["hono-openapi@1.3.1", "", { "peerDependencies": { "@hono/standard-validator": "^0.2.0", "@standard-community/standard-json": "^0.3.5", "@standard-community/standard-openapi": "^0.2.9", "@types/json-schema": "^7.0.15", "hono": "^4.11.2", "openapi-types": "^12.1.3" }, "optionalPeers": ["@hono/standard-validator", "hono"] }, "sha512-NLVeVkhKZ3drmQNEIPac8HX8Y54uf1hJAgIM/7MfDsaeVVmB+QILWQxx5x3R3NvRHgedcbEbOCGY2uR7WQYyMw=="],
 
-    "@corbits/myra/@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#b8f1941", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/agent": "^0.3.0", "@intx/hub-api": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-b8f1941", "sha512-E0C+sT66mWfi7Tj24pIpz9fSaIwxmyPz+wOXGAptIdsVSM3dC/q5AwYDUO+u1hZRKmbQD18Xh+LxNQzYo4c8JA=="],
+    "@corbits/myra/@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#9152ba5", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/agent": "^0.3.0", "@intx/hub-api": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-9152ba5", "sha512-ZE2BLMND2elhGfvXBgkJlSD7x/WO6uTfloLajtXvneyuRKzaeXHXfqIKSVxC6NY9Qetyu4dOqZUPoeJBZopKKQ=="],
 
     "@corbits/xai-provider/@corbits/oauth-core": ["@corbits/oauth-core@github:corbitsdev/corbits-oauth-core#f186ed0", { "dependencies": { "@intx/db": "^0.3.0", "@intx/hub-api": "^0.3.0", "@intx/hub-common": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "2.2.3", "drizzle-orm": "^0.45.2", "hono": "^4.11.9" } }, "corbitsdev-corbits-oauth-core-f186ed0", "sha512-wjKVTa26EoUqg8biyC4CumDi6y1hBck6xJTB/oEaTkc1lQ3Foum89KoXGHSvact+N1j9uwLGFEnOfgYp2FFi5Q=="],
 
@@ -1851,7 +1851,7 @@
 
     "@tailwindcss/oxide-wasm32-wasi/tslib": ["tslib@2.8.1", "", { "bundled": true }, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
 
-    "@workbench/hub/@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#b8f1941", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/agent": "^0.3.0", "@intx/hub-api": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-b8f1941", "sha512-E0C+sT66mWfi7Tj24pIpz9fSaIwxmyPz+wOXGAptIdsVSM3dC/q5AwYDUO+u1hZRKmbQD18Xh+LxNQzYo4c8JA=="],
+    "@workbench/hub/@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#9152ba5", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/agent": "^0.3.0", "@intx/hub-api": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-9152ba5", "sha512-ZE2BLMND2elhGfvXBgkJlSD7x/WO6uTfloLajtXvneyuRKzaeXHXfqIKSVxC6NY9Qetyu4dOqZUPoeJBZopKKQ=="],
 
     "@workbench/hub/@corbits/codex-provider": ["@corbits/codex-provider@github:corbitsdev/corbits-codex-provider#a1f475f", { "dependencies": { "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core", "@corbits/openai-responses": "github:corbitsdev/corbits-openai-responses", "arktype": "2.2.3" }, "peerDependencies": { "@intx/inference": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-codex-provider-a1f475f", "sha512-D6d0lblWx/4KudfLwQoQGrLB8GKRLP/HVp1cx08L2/hOGZAgH6txLPpeEtBqjl+R520qXSSPfM0kDC+3XNaAfw=="],
 
