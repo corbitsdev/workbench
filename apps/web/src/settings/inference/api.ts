@@ -44,6 +44,7 @@ import {
   ModelResponse,
   ProviderResponse,
   UpdateModelOffering,
+  UpdateModelProvider,
   paginatedSchema,
 } from "@intx/types";
 
@@ -234,6 +235,48 @@ export function updateOwnOffering(
     { method: "PATCH", body: JSON.stringify(patch) },
     fetchImpl,
   );
+}
+
+/** Patches a tenant-owned model-provider's base URL — the row inference
+ * actually dials, distinct from anything a credential's own metadata says. */
+export function updateModelProviderBaseURL(
+  tenantId: string,
+  providerId: string,
+  baseURL: string,
+  fetchImpl: FetchImpl = fetch,
+): Promise<typeof ModelProviderResponse.infer> {
+  return request(
+    `/api/tenants/${tenantId}/catalog/providers/${providerId}`,
+    ModelProviderResponse,
+    "updating that provider's base URL",
+    { method: "PATCH", body: JSON.stringify(UpdateModelProvider.assert({ baseURL })) },
+    fetchImpl,
+  );
+}
+
+/** Repoints an offering at a different model tag. There is no `modelId`
+ * patch on the stock offering route (only priority/tags/capabilities/
+ * disabled — see `vendor/intx/hub-api/src/routes/model-offerings.ts`), and
+ * a model's `canonicalName` is immutable once created, so changing "the
+ * model" means minting (or reusing) a model row for the new tag and
+ * swapping the offering for one that points at it, carrying over its
+ * priority so it keeps its place in resolution. */
+export async function repointOfferingModel(
+  tenantId: string,
+  offering: typeof ModelOfferingResponse.infer,
+  canonicalName: string,
+  modelDisplayName: string | null,
+  fetchImpl: FetchImpl = fetch,
+): Promise<typeof ModelOfferingResponse.infer> {
+  const modelId = await ensureModel(tenantId, canonicalName, modelDisplayName, fetchImpl);
+  if (modelId === offering.modelId) return offering;
+  await requestVoid(
+    `/api/tenants/${tenantId}/catalog/offerings/${offering.id}`,
+    "retiring the offering's old model tag",
+    { method: "DELETE" },
+    fetchImpl,
+  );
+  return ensureOffering(tenantId, modelId, offering.providerId, offering.priority, fetchImpl);
 }
 
 /** The provider identity a credential and a catalog entry hang off. */
