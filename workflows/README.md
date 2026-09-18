@@ -1,10 +1,10 @@
 # Workflow packages
 
 Owner ruling (2026-09-17, LESS IS MORE): the shipped workflow catalog is
-deleted. Myra (`agents/assistant`) creates workflows dynamically for a
+deleted. Myra (`agents/myra`) creates workflows dynamically for a
 tenant's own needs; there is no seeded catalog of ready-made workflows
 any more. The `echo` fixture workflow is gone too — the e2e smoke suites
-now deploy Myra's own `agents/assistant` definition to prove the
+now deploy Myra's own `agents/myra` definition to prove the
 mail-triggered contract works.
 
 Each subdirectory is a deployable workflow package: an Interchange

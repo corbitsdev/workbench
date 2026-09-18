@@ -1,6 +1,6 @@
 // Builds the single-step, folded workflow definition a hand-authored
 // agent materializes as: exactly the shape `@corbits/chat`'s own
-// `buildWorkbenchHostWorkflow`/`@corbits/assistant-workflow`'s
+// `buildWorkbenchHostWorkflow`/`@corbits/myra`'s
 // `buildAssistantWorkflow` produce, but with the system prompt and
 // model left to the caller instead of fixed at build time — this is
 // the one difference that makes a defined-by-a-person agent possible

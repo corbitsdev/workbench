@@ -16,7 +16,7 @@
 // only here, so there is no second copy for them to drift from.
 import { type } from "arktype";
 
-import assistantPkg from "../../../agents/assistant/package.json";
+import assistantPkg from "../../../agents/myra/package.json";
 
 const CorbitsWorkflowBlock = type({
   assetName: "string > 0",

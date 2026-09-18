@@ -6,7 +6,7 @@ builder.
 
 ## Myra
 
-Myra (`agents/assistant`) is the one agent Workbench ships. She isn't a
+Myra (`agents/myra`) is the one agent Workbench ships. She isn't a
 template you configure — she's a coworker you talk to. Ask her for a
 capability the team doesn't have yet, and she writes it: a new tool, a
 new skill, or a scheduled workflow, deployed as code, granted only the
