@@ -1,21 +1,12 @@
-// Shared sidecar-local materialization config helpers.
-//
-// The sidecar's per-step tool-package apply path
-// (`tool-materialization.ts`) and the workflow-probe closure
-// materializer (`workflow-closure-materialization.ts`) both resolve the
-// same two boundary inputs before they construct a `@intx/tool-packaging`
-// loader: the operator's registry map, and the host platform token pair
-// asserted against npm's `os`/`cpu` namespaces. Centralizing them here
-// keeps both call sites reading one source of truth rather than
-// duplicating the env parsing and the platform allowlists.
+// Shared by tool-materialization.ts and workflow-closure-materialization.ts
+// so both loader-boundary inputs (registry map, host platform) come from
+// one source of truth rather than duplicated env parsing and allowlists.
 
 import { type } from "arktype";
 import type { HostPlatform, RegistryConfig } from "@intx/tool-packaging";
 
-// Boundary validator for the SIDECAR_TOOL_REGISTRIES env var. The
-// env-wire shape carries `name` alongside the registry config so an
-// operator can author the JSON as a flat array; the boundary collapses
-// the array into a Map keyed by name before handing it to the loader.
+// name rides alongside the config so an operator authors a flat JSON array;
+// this collapses it into a Map keyed by name for the loader.
 const RegistryConfigEnvEntry = type({
   name: "string",
   url: "string",
@@ -31,13 +22,8 @@ export function readRegistries(): ReadonlyMap<string, RegistryConfig> {
   if (raw === undefined) {
     return new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
   }
-  // Distinguish unset from empty. An operator setting the var to an
-  // empty string almost always indicates misconfig (CI secret
-  // expansion failed, a templater dropped the value). Falling through
-  // to the npmjs default at that point silently routes tool packages
-  // through public npm, which is precisely the misroute a custom
-  // registry pin was meant to prevent. Surface the gap loudly; the
-  // recovery is `unset SIDECAR_TOOL_REGISTRIES`, not `=""`.
+  // An empty string almost always means misconfig; falling through to the
+  // npmjs default would silently route packages through public npm.
   if (raw.trim() === "") {
     throw new Error(
       "SIDECAR_TOOL_REGISTRIES is set but empty — unset the variable to use the default npmjs registry",
@@ -71,21 +57,9 @@ export function readRegistries(): ReadonlyMap<string, RegistryConfig> {
   return out;
 }
 
-// npm's `os` token namespace, mirrored from Node's `process.platform`
-// enum. Any value outside this set means the host is running a Node
-// build the loader's platform filter would silently mis-route — a
-// pinned package whose `os` list excludes the host would not be
-// excluded if `process.platform` is a token npm has never heard of.
-// Validate at the boundary so an unknown platform fails the boot
-// instead of producing a quiet, host-shaped mis-resolution at apply
-// time.
-//
-// UPGRADE TAX: Node periodically adds platforms (and Bun ships
-// extensions of its own). A Node/Bun major bump that lands a new
-// `process.platform` value will fail boot until this allowlist is
-// refreshed against the upstream enum. Sidecar operators upgrading
-// the runtime should expect this as part of the cutover, not as a
-// surprise regression.
+// Validated at the boundary so an unknown process.platform token fails
+// boot instead of silently mis-routing the loader's os filter. A Node/Bun
+// major bump adding a new platform value will fail boot until refreshed.
 const KNOWN_PROCESS_PLATFORMS = new Set<NodeJS.Platform>([
   "aix",
   "android",
@@ -100,12 +74,7 @@ const KNOWN_PROCESS_PLATFORMS = new Set<NodeJS.Platform>([
   "netbsd",
 ]);
 
-// npm's `cpu` token namespace, mirrored from Node's `process.arch`
-// enum. Same rationale as KNOWN_PROCESS_PLATFORMS — an unknown arch
-// would mis-route the loader's filter without surfacing the gap.
-// Same upgrade tax applies: Node has added `loong64` and `riscv64`
-// in recent releases, and future arch additions will need to be
-// added here when the sidecar is rebuilt against them.
+// Same rationale as KNOWN_PROCESS_PLATFORMS, for process.arch.
 const KNOWN_PROCESS_ARCHS = new Set<NodeJS.Architecture>([
   "arm",
   "arm64",
@@ -135,14 +104,7 @@ function assertKnownHostArch(arch: NodeJS.Architecture): void {
   }
 }
 
-/**
- * Resolve the host platform token pair the `@intx/tool-packaging` loader
- * filters manifest entries against, asserting each token is one npm
- * recognizes before returning it. Both consumers (`tool-materialization.ts`
- * and `workflow-closure-materialization.ts`) resolve the host through this
- * one helper so the allowlists and the fail-loud gate live in a single
- * place.
- */
+/** Both consumers resolve the host through this one helper so the allowlists and gate live in one place. */
 export function resolveHostPlatform(): HostPlatform {
   assertKnownHostPlatform(process.platform);
   assertKnownHostArch(process.arch);
