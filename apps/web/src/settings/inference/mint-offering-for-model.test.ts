@@ -1,13 +1,16 @@
-// `repointOfferingModel` is a non-obvious two-step (ensure model, then
-// delete+recreate the offering) because the stock offering PATCH has no
+// `mintOfferingForModel` is a non-obvious two-step (ensure a model row,
+// then a fresh offering) because the stock offering PATCH has no
 // `modelId` field and a model's `canonicalName` is immutable — see
-// api.ts's doc on the function. Covers the two cases that make it
-// non-trivial: a same-name edit is a no-op (no DELETE/POST at all), and a
-// real change carries the offering's priority over to the new row.
+// api.ts's doc on the function. It deliberately never deletes the old
+// offering itself (a deployed Myra run may still pin it); that is the
+// caller's job once a redeploy moves off it. Covers the two cases that
+// make the mint step non-trivial: a same-name edit is a no-op, and a real
+// change carries the offering's priority over to the new row without
+// touching the old one.
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { repointOfferingModel } from "./api";
+import { mintOfferingForModel } from "./api";
 
 const TENANT_ID = "tnt_1";
 const NOW = "2026-01-01T00:00:00.000Z";
@@ -35,7 +38,7 @@ const OFFERING = {
   updatedAt: NOW,
 };
 
-describe("repointOfferingModel", () => {
+describe("mintOfferingForModel", () => {
   test("is a no-op when the canonical name resolves to the offering's own model", async () => {
     const calls: { method: string; path: string }[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -68,13 +71,13 @@ describe("repointOfferingModel", () => {
       throw new Error(`unexpected call: ${method} ${path}`);
     }) as typeof fetch;
 
-    const result = await repointOfferingModel(TENANT_ID, OFFERING, "qwen2.5:14b", "qwen2.5:14b");
+    const result = await mintOfferingForModel(TENANT_ID, OFFERING, "qwen2.5:14b", "qwen2.5:14b");
 
     expect(result).toBe(OFFERING);
     expect(calls.some((call) => call.method === "DELETE")).toBe(false);
   });
 
-  test("deletes the old offering and recreates it at the same priority for a new model", async () => {
+  test("mints a sibling offering at the same priority for a new model, without deleting the old one", async () => {
     const calls: { method: string; path: string }[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const method = init?.method ?? "GET";
@@ -94,9 +97,6 @@ describe("repointOfferingModel", () => {
           { status: 201 },
         );
       }
-      if (method === "DELETE" && path.endsWith(`/catalog/offerings/${OFFERING.id}`)) {
-        return new Response(null, { status: 204 });
-      }
       if (method === "POST" && path.endsWith("/catalog/offerings")) {
         const body = JSON.parse(String(init?.body)) as { modelId: string; priority: number };
         return new Response(
@@ -112,10 +112,12 @@ describe("repointOfferingModel", () => {
       throw new Error(`unexpected call: ${method} ${path}`);
     }) as typeof fetch;
 
-    const result = await repointOfferingModel(TENANT_ID, OFFERING, "qwen2.5:32b", "qwen2.5:32b");
+    const result = await mintOfferingForModel(TENANT_ID, OFFERING, "qwen2.5:32b", "qwen2.5:32b");
 
+    expect(result.id).toBe("offering_2");
     expect(result.modelId).toBe("model_2");
     expect(result.priority).toBe(OFFERING.priority);
-    expect(calls.map((call) => call.method)).toEqual(["POST", "DELETE", "POST"]);
+    expect(calls.map((call) => call.method)).toEqual(["POST", "POST"]);
+    expect(calls.some((call) => call.method === "DELETE")).toBe(false);
   });
 });
