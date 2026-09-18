@@ -57,6 +57,9 @@ import {
   mountMailbox,
 } from "@corbits/mailbox";
 import { createMemory, loadMemoryConfig } from "@corbits/memory";
+import { mountOAuthLogin } from "@corbits/oauth-core/hub";
+import { CODEX_PROVIDER, codexOAuthConfig, exchangeCodexCode } from "@corbits/codex-provider";
+import { XAI_PROVIDER, xaiOAuthConfig, exchangeXaiCode } from "@corbits/xai-provider";
 import { createCronTicker, createRunTriggerCronDeliver, mountCron } from "@corbits/cron";
 import {
   createHubMailboxAuthorizeSender,
@@ -630,6 +633,41 @@ export async function createHubServer({
       conditionRegistry: grantConditionRegistry,
     });
     app.route("/", memoryApp);
+  }
+
+  {
+    // "Continue with Codex"/"Continue with xAI": the whole loopback PKCE
+    // flow runs here, so the verifier and the callback listener never
+    // leave this process and the browser only learns a credential id.
+    const oauthLoginApi = new Hono<TenantEnv>();
+    const requireGrant = createRequireGrant({
+      grantStore,
+      conditionRegistry: grantConditionRegistry,
+    });
+    mountOAuthLogin(oauthLoginApi, {
+      db,
+      cipher: credentialCipher,
+      requireGrant: requireGrant("credential:*", "create"),
+      providers: {
+        [CODEX_PROVIDER]: {
+          oauthConfig: codexOAuthConfig,
+          exchange: (code, verifier, now) => exchangeCodexCode(code, verifier, now),
+          // The Codex backend rejects inference without this header value.
+          metadata: (tokens) =>
+            "accountId" in tokens && typeof tokens.accountId === "string"
+              ? { accountId: tokens.accountId }
+              : {},
+        },
+        [XAI_PROVIDER]: {
+          oauthConfig: xaiOAuthConfig,
+          exchange: (code, verifier, now) => exchangeXaiCode(code, verifier, now),
+        },
+      },
+      onError: (error, { provider }) => {
+        reportError(error, { operation: "hub.oauth-login", extra: { provider } });
+      },
+    });
+    app.route(TENANT_PREFIX, oauthLoginApi);
   }
 
   await installWebhooks({

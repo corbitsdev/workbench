@@ -35,7 +35,7 @@ const INPUT = {
   providerName: "anthropic",
   plugin: "anthropic" as const,
   baseURL: "https://api.anthropic.com",
-  apiKey: "sk-test",
+  credential: { apiKey: "sk-test" },
   priority: 2,
 };
 

@@ -49,3 +49,21 @@ both are set a reranker outage degrades search quietly instead of
 breaking it.
 
 See `.env.example` for every memory-plane variable.
+
+## Signing in to Codex and xAI
+
+Both are subscription providers with no API key: onboarding offers
+"Continue with Codex" and "Continue with xAI", and the hub runs the whole
+loopback OAuth flow in its own process — the browser only ever sees the
+authorize URL and, at the end, the id of the credential the hub stored.
+Each provider pins its own loopback port (1455 for Codex, 1456 for xAI),
+so those ports must be free on the machine running the hub, and the
+browser must be on that same machine.
+
+Serving inference with one of those credentials also needs the matching
+adapter in the sidecar, which is what `SIDECAR_ADAPTER_MANIFEST` in
+`.env.example` is for; the hub forwards it to every sidecar it spawns.
+Leave it unset to run without those two providers.
+
+Nothing refreshes an expired OAuth credential today. When one lapses, sign
+in again from Settings to replace it.

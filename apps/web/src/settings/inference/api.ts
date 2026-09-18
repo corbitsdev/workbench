@@ -236,13 +236,20 @@ export function updateOwnOffering(
   );
 }
 
-export type ShadowOfferingInput = {
-  readonly canonicalName: string;
-  readonly modelDisplayName: string | null;
+/** The provider identity a credential and a catalog entry hang off. */
+export type ProviderIdentity = {
   readonly providerName: string;
   readonly plugin: typeof ModelProviderPlugin.infer;
   readonly baseURL: string;
-  readonly apiKey: string;
+};
+
+export type ShadowOfferingInput = ProviderIdentity & {
+  readonly canonicalName: string;
+  readonly modelDisplayName: string | null;
+  /** The key to store, or the id of a credential the hub already stored —
+   * an OAuth login mints its own row hub-side, so the browser never sees
+   * a token to pass here. */
+  readonly credential: { readonly apiKey: string } | { readonly credentialId: string };
   /** The exact priority of the offering being shadowed — this row takes
    * over its slot in resolution (`listVisibleOfferings`'s leaf-wins-by-name
    * cascade), so it must sort exactly where that offering did, never
@@ -348,8 +355,10 @@ async function ensureCredential(
   input: ShadowOfferingInput,
   fetchImpl: FetchImpl,
 ): Promise<string> {
-  const providerRow = await ensureCredentialProvider(tenantId, input, fetchImpl);
-  const credentialName = `${input.providerName}-workbench`;
+  if ("credentialId" in input.credential) return input.credential.credentialId;
+  const apiKey = input.credential.apiKey;
+  const providerRow = await ensureProviderRow(tenantId, input, fetchImpl);
+  const credentialName = credentialNameFor(input.providerName);
   const created = await fetchImpl(`/api/tenants/${tenantId}/credentials`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -358,7 +367,7 @@ async function ensureCredential(
         providerId: providerRow,
         name: credentialName,
         type: "api_key",
-        secret: input.apiKey,
+        secret: apiKey,
       }),
     ),
   });
@@ -393,10 +402,17 @@ async function ensureCredential(
   return existing.id;
 }
 
-async function ensureCredentialProvider(
+/** The one credential name a workbench files a provider's key or token under. */
+export function credentialNameFor(providerName: string): string {
+  return `${providerName}-workbench`;
+}
+
+/** Mints (or resolves) this workbench's own `provider` row, the row a
+ * credential must reference before it can be stored. */
+export async function ensureProviderRow(
   tenantId: string,
-  input: ShadowOfferingInput,
-  fetchImpl: FetchImpl,
+  input: ProviderIdentity,
+  fetchImpl: FetchImpl = fetch,
 ): Promise<string> {
   const created = await fetchImpl(`/api/tenants/${tenantId}/providers`, {
     method: "POST",

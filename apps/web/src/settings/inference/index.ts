@@ -7,7 +7,15 @@ export {
   shadowOffering,
   updateOwnOffering,
 } from "./api";
-export type { ModelInfo, ModelOfferingInfo, ShadowOfferingInput } from "./api";
+export { credentialNameFor, ensureProviderRow } from "./api";
+export type { ModelInfo, ModelOfferingInfo, ProviderIdentity, ShadowOfferingInput } from "./api";
+export {
+  cancelProviderLogin,
+  readProviderLogin,
+  startProviderLogin,
+  type LoginState,
+  type StartedLogin,
+} from "./oauth-login";
 export {
   buildEffectiveInferenceRows,
   chatCapableModels,

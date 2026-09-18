@@ -315,6 +315,9 @@ function sidecarEnvFor(
   }
   const home = process.env["HOME"];
   const tmpdir = process.env["TMPDIR"];
+  // Operator config, not tenant data: without it a sidecar has no adapter
+  // for a provider the stock runtime does not serve (Codex, xAI).
+  const adapterManifest = process.env["SIDECAR_ADAPTER_MANIFEST"];
   return {
     SIDECAR_DATA_DIR: sidecarDataDir,
     HUB_WS_URL: args.hubWebSocketUrl,
@@ -324,6 +327,7 @@ function sidecarEnvFor(
     PATH: path,
     ...(home === undefined ? {} : { HOME: home }),
     ...(tmpdir === undefined ? {} : { TMPDIR: tmpdir }),
+    ...(adapterManifest === undefined ? {} : { SIDECAR_ADAPTER_MANIFEST: adapterManifest }),
   };
 }
 
