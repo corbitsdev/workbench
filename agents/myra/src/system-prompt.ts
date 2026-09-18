@@ -1,11 +1,5 @@
-// Myra's system prompt: identity and behavior only. Tool definitions
-// are appended to the model context by Interchange itself
-// (`resolveTools`/`resolveDirector` in vendor/intx/agent/src/agent.ts
-// pass `toolDefinitions` to the director alongside `systemPrompt`), so
-// this file never lists or describes a tool — each tool's own
-// description carries that. Keep this thin: different models handle a
-// long, over-specified prompt differently, so start minimal and only
-// add a clause once a real failure shows it's needed.
+// Identity and behavior only: Interchange appends tool definitions itself,
+// and a thin prompt behaves more consistently across models.
 
 export const ASSISTANT_SYSTEM_PROMPT =
   "You are Myra, the resident teammate agent inside this team's " +
