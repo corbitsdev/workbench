@@ -1,25 +1,9 @@
-// The `@corbits/capability-tools` bundle: `request_capability`, an
-// agent's in-chat way to ask for a tool package, skill, or model it
-// doesn't have yet. Declared `approval: "ask"` (`@intx/agent`'s native
-// per-invocation gate, `@intx/agent/src/tool.ts`) — the reactor
-// suspends the call as a pending approval BEFORE this bundle's `run` ever
-// executes, renders it in-chat as an approve/deny card, and only resumes
-// into `run` once a human allows it. This bundle's own code never sees
-// or controls that gate; it only has to make the resulting card and
-// result message read honestly.
-//
-// `definitionId` is threaded onto `env` by the sidecar's per-step env
-// builder (`apps/sidecar/src/workflow-substrate-factory/step-env.ts`,
-//), the same ground `@corbits/memory-tools`' `hubMemoryUrl`/
-// `sidecarToken`/`address` are threaded from — resolved at the
-// substrate factory from the deploying definition's own id
-// (`WORKFLOW_DEFINITION_REPO_ID`). `WorkflowCapabilityEnv` below
-// declares `definitionId` as a required env key exactly the way
-// `WorkflowMemoryEnv` declares its three.
-//
-// See `./client.ts` for the workflow-run-authenticated capabilities
-// route (`@corbits/agent-directory`'s `createWorkflowCapabilityRoutes`,
-// also) this bundle's execution calls.
+// `request_capability` is declared `approval: "ask"`, so the reactor
+// suspends it as a pending approval before `run` ever executes; this
+// bundle never sees or controls that gate. `definitionId` is threaded onto
+// `env` by the sidecar's per-step env builder, the same ground
+// @corbits/memory-tools' env keys come from. See ./client.ts for the
+// workflow-run-authenticated route this bundle's execution calls.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
@@ -142,16 +126,7 @@ async function runRequestCapability(
   }
 }
 
-/**
- * The `@corbits/capability-tools` bundle factory: one tool,
- * `approval: "ask"`, four env keys — the self-service capability
- * request path. `description` is written to read as an approval card
- * headline (`@corbits/approvals`' `headlineFor` uses a tool's
- * `description` verbatim, appending `arguments.title` in quotes when the
- * model supplies one) — encouraging the model to fill `title` with a
- * short human label makes the resulting card read naturally, e.g.
- * "<Agent> wants to add a capability: \"GitHub tools\" — Allow?".
- */
+/** `description` is written to read as an approval-card headline, which appends `arguments.title` verbatim when supplied. */
 export const capabilityTools = defineTool<WorkflowCapabilityEnv>({
   id: "@corbits/capability-tools/cap",
   requires: ["hubCapabilitiesUrl", "sidecarToken", "address", "definitionId"],

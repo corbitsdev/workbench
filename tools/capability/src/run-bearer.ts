@@ -1,11 +1,6 @@
-// Shared fetch plumbing for a run-authenticated tool client — every tool
-// bundle that calls a hub route mounted behind a workflow-run
-// authenticator (sidecar bearer token + run address, never a human
-// session) needs the same two headers and the same
-// `{ error: { code, userMessage } }` envelope parse. Kept local to this
-// package (rather than imported from Workbench's own `@corbits/workflows`,
-// which is private and carries a full server dependency graph) so this
-// bundle installs standalone in any Interchange-backed hub.
+// Kept local rather than imported from Workbench's private @corbits/workflows
+// (full server dependency graph) so this bundle installs standalone in any
+// Interchange-backed hub.
 import { type } from "arktype";
 
 export interface RunBearerClientConfig {
