@@ -29,7 +29,10 @@ import {
 } from "@corbits/react-ui";
 import { Lightning, Plus } from "@/lib/icons";
 import { WorkbenchLoadingState } from "@/chat";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+
+import { tenantKeys } from "../query-client";
 
 import { rowActivationProps } from "../activatable-row";
 import { consumePendingNewSkill } from "../command-palette-actions";
@@ -67,28 +70,26 @@ export function SkillsPage({
   readonly tenantId: string | null;
   readonly navigate?: (to: string) => void;
 }) {
-  const [state, setState] = useState<RegistryState>({ status: "loading" });
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
-  const [createOpen, setCreateOpen] = useState(false);
+  // The "New skill" hop from elsewhere is consumed once, as the page mounts.
+  const [createOpen, setCreateOpen] = useState(() => consumePendingNewSkill());
+
+  const registry = useQuery({
+    queryKey: tenantKeys.skills(tenantId ?? "none"),
+    queryFn: () => (tenantId === null ? Promise.resolve([]) : listSkills(tenantId)),
+    enabled: tenantId !== null,
+  });
+  const state: RegistryState = registry.isError
+    ? { status: "error", message: messageOf(registry.error) }
+    : registry.data === undefined
+      ? { status: "loading" }
+      : { status: "ready", skills: registry.data };
 
   const reload = useCallback(async () => {
     if (tenantId === null) return;
-    setState({ status: "loading" });
-    try {
-      const skills = await listSkills(tenantId);
-      setState({ status: "ready", skills });
-    } catch (cause) {
-      setState({ status: "error", message: messageOf(cause) });
-    }
-  }, [tenantId]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  useEffect(() => {
-    if (consumePendingNewSkill()) setCreateOpen(true);
-  }, []);
+    await queryClient.invalidateQueries({ queryKey: tenantKeys.skills(tenantId) });
+  }, [queryClient, tenantId]);
 
   useEffect(() => {
     const onCreate = () => setCreateOpen(true);

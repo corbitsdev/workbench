@@ -17,7 +17,10 @@ import { PageShell, RichEmptyState, Section, formatRelativeTime } from "@corbits
 import { Lightning } from "@/lib/icons";
 import { WorkbenchLoadingState } from "@/chat";
 import { ApiQueryError, describeApiError } from "@/lib/api-query";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, type ReactNode } from "react";
+
+import { tenantKeys } from "../query-client";
 
 import { useBench } from "../bench-context";
 import { SKILLS_PATH_PREFIX, skillIdFromPath } from "../path-ids";
@@ -44,32 +47,28 @@ export function SkillDetailPage({
   readonly name: string;
   readonly now?: number;
 }) {
-  const [state, setState] = useState<PageState>({ status: "loading" });
+  const queryClient = useQueryClient();
+  const queryKey = [...tenantKeys.skills(tenantId ?? "none"), name] as const;
+  const detail = useQuery({
+    queryKey,
+    queryFn: async () => (await loadSkill(tenantId ?? "", name)).skill,
+    enabled: tenantId !== null,
+  });
+
+  // The failure is the page state — missing and error render distinct
+  // honest copy, so neither is reported beyond what the reader already sees.
+  const state: PageState = detail.isError
+    ? statusOf(detail.error) === 404
+      ? { status: "missing" }
+      : { status: "error", message: describeApiError(detail.error, "loading this skill") }
+    : detail.data === undefined
+      ? { status: "loading" }
+      : { status: "ready", skill: detail.data };
 
   const read = useCallback(async (): Promise<void> => {
-    if (tenantId === null) return;
-    setState({ status: "loading" });
-    try {
-      const { skill } = await loadSkill(tenantId, name);
-      setState({ status: "ready", skill });
-    } catch (cause) {
-      // report-error-ignore: the failure is the page state — missing vs
-      // error renders distinct honest copy, so there is nothing to report
-      // beyond what the user already sees.
-      setState(
-        statusOf(cause) === 404
-          ? { status: "missing" }
-          : {
-              status: "error",
-              message: describeApiError(cause, "loading this skill"),
-            },
-      );
-    }
-  }, [tenantId, name]);
-
-  useEffect(() => {
-    void read();
-  }, [read]);
+    await queryClient.invalidateQueries({ queryKey });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- queryKey is derived from tenantId + name
+  }, [queryClient, tenantId, name]);
 
   const crumbs = [{ label: "Skills", href: SKILLS_PATH_PREFIX }, { label: name }];
 

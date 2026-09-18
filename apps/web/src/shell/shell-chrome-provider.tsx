@@ -75,7 +75,8 @@ export function ShellChromeProvider({
       // deep link, so the stage never keeps a foreign conversation.
       setCanvasState(clearCanvasForTenantSwitch());
       if (isWorkbenchPath(path) && workbenchIdFromPath(path) !== null) {
-        navigate(workbenchPath(null));
+        // On a microtask so the hop never updates the router mid-render.
+        queueMicrotask(() => navigate(workbenchPath(null)));
       }
     }
   } else if (appliedRoutePrefix !== routePrefix) {

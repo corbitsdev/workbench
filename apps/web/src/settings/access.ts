@@ -45,4 +45,3 @@ export function coalesceSectionAccess(previous: SectionAccess, next: SectionAcce
   }
   return next;
 }
-

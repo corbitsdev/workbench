@@ -3,10 +3,13 @@
 // the router store publishes the new path on a microtask, so nothing is
 // updated mid-render.
 
+import { useRef } from "react";
+
 import type { Navigate } from "./navigation";
 
-/** Idempotent across re-renders: the hop only fires while the current path
- * still differs from the target. */
+/** Scheduled from render on a microtask, and at most once per target: the
+ * hop leaves this render alone (nothing is updated mid-render) yet still
+ * lands before the browser paints the route it is leaving. */
 export function Redirect({
   to,
   from,
@@ -16,8 +19,10 @@ export function Redirect({
   readonly from: string;
   readonly navigate: Navigate;
 }) {
-  if (from !== new URL(to, window.location.origin).pathname) {
-    navigate(to);
+  const sent = useRef<string | null>(null);
+  if (sent.current !== to && from !== new URL(to, window.location.origin).pathname) {
+    sent.current = to;
+    queueMicrotask(() => navigate(to));
   }
   return null;
 }

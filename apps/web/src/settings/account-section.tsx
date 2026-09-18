@@ -31,9 +31,7 @@ import { SETTINGS_STRINGS } from "./strings";
 const FEEDBACK_URL = `${webPackage.repository.url}/issues`;
 
 export function AccountSection({ onSignOut }: { readonly onSignOut?: () => void }) {
-  const query = toAPIQuery<Account>(
-    useQuery({ queryKey: ["me", "account"], queryFn: getAccount }),
-  );
+  const query = toAPIQuery<Account>(useQuery({ queryKey: ["me", "account"], queryFn: getAccount }));
 
   return (
     <>
