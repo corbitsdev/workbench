@@ -15,7 +15,11 @@ import { mail } from "@intx/tools-mail/sidecar-bundle";
 import { posix } from "@intx/tools-posix/sidecar-bundle";
 import { artifacts } from "@corbits/artifacts/sidecar-bundle";
 
-import { ASSISTANT_STEP_ID } from "./workflow-ids";
+import {
+  ASSISTANT_STEP_ID,
+  artifactToolsCredentialBinding,
+  artifactToolsCredentialUseRequirement,
+} from "./workflow-ids";
 
 export { ASSISTANT_SYSTEM_PROMPT } from "./system-prompt";
 export { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "./workflow-ids";
@@ -47,6 +51,10 @@ export interface MyraWorkflowInput {
   readonly inferencePreferences: readonly InferencePreference[];
   /** The prompt this deployment runs with. */
   readonly systemPrompt: string;
+  /** The tenant credential holding this agent's hub token, minted by the
+   * deployer before the source is pushed. The definition binds it to the
+   * artifact tools and requires its use on the deployer's authority. */
+  readonly hubCredentialId: string;
 }
 
 /**
@@ -71,9 +79,14 @@ export function buildMyraWorkflow(input: MyraWorkflowInput): WorkflowDefinition 
   if (input.systemPrompt === "") {
     throw new Error("buildMyraWorkflow requires a non-empty systemPrompt");
   }
+  if (input.hubCredentialId === "") {
+    throw new Error("buildMyraWorkflow requires a non-empty hubCredentialId");
+  }
   return defineWorkflow({
     id: input.workflowId,
     trigger: { type: "mail", to: input.triggerAddress },
+    credentialBindings: [artifactToolsCredentialBinding(input.workflowId)],
+    grantRequirements: [artifactToolsCredentialUseRequirement(input.hubCredentialId)],
     steps: {
       assistant: step({
         agent: {
