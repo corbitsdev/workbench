@@ -1,21 +1,16 @@
-// Agents: the global roster — every agent definition this bench
-// has, one row per definition (name, description, workbenches currently
-// using it), with a detail panel that fetches the definition's model on
-// demand (`getAgentCapabilities`, the same route the per-workbench
-// Assistant editor reads). Create runs through `CreateAgentPanel`, the
-// same `createAgentDefinition` (`@corbits/agent-directory`) call the
-// per-workbench Assistant tab uses. Editing instructions/capabilities
-// stays there (`@/chat`'s `AgentsSection`) — this page is
-// roster-only, never a second instructions editor.
+// Agents: the global roster — every deployed workflow this bench has, one
+// row per definition (name, description, address, status, runs) — plus a
+// create path that deploys a new one (`CreateAgentPanel`, over the stock
+// workflow-deploy route). Editing an existing agent's instructions has no
+// stock route anymore, so this page is observe-only: roster, detail, and
+// create — never a second instructions editor.
 
 import {
   Badge,
-  BulkActionBar,
   Button,
   PageShell,
   RichEmptyState,
   SelectionCheckbox,
-  Skeleton,
   StatusDot,
   Table,
   TableBody,
@@ -23,34 +18,30 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  toast,
   useListSelection,
 } from "@corbits/react-ui";
 import type { BadgeTone, SelectionCheckboxState } from "@corbits/react-ui";
-import { Archive, ArrowSquareOut, Plus, Robot } from "@/lib/icons";
+import { ArrowSquareOut, Plus, Robot } from "@/lib/icons";
 import { detailPath } from "@/command-palette";
-import { useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { describeApiError, QueryView } from "@/lib/api-query";
 
 import {
-  getAgentCapabilities,
+  getAgentRun,
   listTopLevelRuns,
-  setAgentDefinitionStatus,
   useAgentDirectory,
-  type AgentCapabilities,
   type AgentDefinition,
   type AgentInstance,
-  type CatalogModel,
 } from "../agents-api";
+import type { DeployedAgent } from "../agent-deploy";
 import { purposeAgentDefinitions, type AgentDefinitionWithDisplayName } from "../agents-directory";
 import { useBench } from "../bench-context";
 import { isAdditiveSelectClick } from "../activatable-row";
 import { Link } from "../navigation";
 import { useBenchActivity } from "../shell/bench-activity";
 import { AGENTS_PATH_PREFIX, agentIdFromPath } from "../path-ids";
-import { tenantKeys } from "../query-client";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { workbenchSettingsPath } from "../workbench-path";
 import { CreateAgentPanel } from "./create-agent-panel";
@@ -120,157 +111,6 @@ export function runsInLast7Days(
   ).length;
 }
 
-export type ArchiveDefinitionsResult = {
-  readonly succeededIds: readonly string[];
-  readonly failedIds: readonly string[];
-};
-
-/**
- * Archives every selected id independently — `Promise.allSettled`, never
- * `Promise.all`, so one id failing server-side can't hide (or roll back)
- * the ids that already succeeded. The caller invalidates its queries and
- * toasts off the returned counts regardless of whether anything failed.
- */
-export async function archiveDefinitions(
-  ids: readonly string[],
-  archive: (id: string) => Promise<unknown>,
-): Promise<ArchiveDefinitionsResult> {
-  const results = await Promise.allSettled(ids.map((id) => archive(id)));
-  const succeededIds: string[] = [];
-  const failedIds: string[] = [];
-  results.forEach((result, index) => {
-    const id = ids[index];
-    if (id === undefined) return;
-    if (result.status === "fulfilled") succeededIds.push(id);
-    else failedIds.push(id);
-  });
-  return { succeededIds, failedIds };
-}
-
-/** The toast copy for a bulk archive — an honest count either way, never
- * a blanket success/failure message that could describe a partial run. */
-export function archiveResultToast({ succeededIds, failedIds }: ArchiveDefinitionsResult): string {
-  const total = succeededIds.length + failedIds.length;
-  if (failedIds.length === 0) {
-    return succeededIds.length === 1
-      ? "Archived 1 agent"
-      : `Archived ${succeededIds.length} agents`;
-  }
-  if (succeededIds.length === 0) {
-    return failedIds.length === 1 ? "Couldn't archive that agent" : "Couldn't archive those agents";
-  }
-  return `Archived ${succeededIds.length} of ${total} — the rest failed`;
-}
-
-/** The short model name for a definition's capabilities — fetched lazily,
- * per row, the same route (and the same plain fetch-effect, no react-query
- * client required) `AgentDetailPanel` below already uses. A fetch failure
- * must not reuse the muted em-dash empty fields use. */
-export type AgentModelCellState =
-  | { readonly status: "loading" }
-  | { readonly status: "ready"; readonly data: AgentCapabilities }
-  | { readonly status: "error"; readonly message: string };
-
-function catalogModelLabel(
-  canonical: string,
-  catalog: readonly {
-    readonly canonicalName: string;
-    readonly displayName?: string | null;
-  }[],
-): string {
-  const match = catalog.find((model) => model.canonicalName === canonical);
-  return match?.displayName ?? canonical;
-}
-
-/** Settled Model-column content — an unset model reads as "Default"; a
- * fetch failure is a distinct error, never the same label. A set model
- * maps through the tenant catalog's displayName, the same
- * `displayName ?? canonicalName` reading settings already uses — never
- * an invented label, and never a rewrite of an unset model to the
- * tenant default. */
-export function agentModelSettledContent(
-  state:
-    | { readonly status: "ready"; readonly data: AgentCapabilities }
-    | { readonly status: "error"; readonly message: string },
-  catalog: readonly {
-    readonly canonicalName: string;
-    readonly displayName?: string | null;
-  }[],
-):
-  | { readonly kind: "model"; readonly label: string }
-  | { readonly kind: "error"; readonly message: string } {
-  if (state.status === "error") {
-    return { kind: "error", message: state.message };
-  }
-  const canonical = state.data.model;
-  if (canonical === undefined) {
-    return { kind: "model", label: "Default" };
-  }
-  return { kind: "model", label: catalogModelLabel(canonical, catalog) };
-}
-
-/** Presentational half of the Model column — exported so tests can assert
- * the failure glyph without waiting on the per-row fetch effect. */
-export function AgentModelCellView({
-  state,
-  catalog,
-}: {
-  readonly state: AgentModelCellState;
-  readonly catalog: readonly {
-    readonly canonicalName: string;
-    readonly displayName?: string | null;
-  }[];
-}) {
-  if (state.status === "loading") {
-    return <Skeleton className="h-4 w-14" />;
-  }
-  const settled = agentModelSettledContent(state, catalog);
-  if (settled.kind === "error") {
-    return (
-      <span className="text-xs text-destructive" role="alert">
-        {settled.message}
-      </span>
-    );
-  }
-  return <span className="text-xs text-muted-foreground">{settled.label}</span>;
-}
-
-function AgentModelCell({
-  tenantId,
-  definitionId,
-  catalog,
-}: {
-  readonly tenantId: string;
-  readonly definitionId: string;
-  readonly catalog: readonly CatalogModel[];
-}) {
-  const [capabilities, setCapabilities] = useState<AgentModelCellState>({
-    status: "loading",
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-    setCapabilities({ status: "loading" });
-    getAgentCapabilities(tenantId, definitionId)
-      .then((data) => {
-        if (!cancelled) setCapabilities({ status: "ready", data });
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) {
-          setCapabilities({
-            status: "error",
-            message: describeApiError(cause, "loading this agent's model"),
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId, definitionId]);
-
-  return <AgentModelCellView state={capabilities} catalog={catalog} />;
-}
-
 /** Settled Runs · 7d content — a failed top-level-runs fetch is never the
  * same as an honest count of zero. */
 export function agentRunsSettledContent(
@@ -324,42 +164,12 @@ export function workbenchesByDefinition(
 }
 
 function AgentDetailPanel({
-  tenantId,
   definition,
   workbenches,
-  catalog,
 }: {
-  readonly tenantId: string;
   readonly definition: AgentDefinitionWithDisplayName;
   readonly workbenches: readonly DefinitionWorkbenchInstance[];
-  readonly catalog: readonly CatalogModel[];
 }) {
-  const [capabilities, setCapabilities] = useState<
-    | { readonly status: "loading" }
-    | { readonly status: "ready"; readonly data: AgentCapabilities }
-    | { readonly status: "error"; readonly message: string }
-  >({ status: "loading" });
-
-  useEffect(() => {
-    let cancelled = false;
-    setCapabilities({ status: "loading" });
-    getAgentCapabilities(tenantId, definition.id)
-      .then((data) => {
-        if (!cancelled) setCapabilities({ status: "ready", data });
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) {
-          setCapabilities({
-            status: "error",
-            message: describeApiError(cause, "loading this agent's model"),
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId, definition.id]);
-
   return (
     <aside className="flex min-h-0 min-w-0 flex-col gap-4 border-l border-border bg-card p-4">
       <div>
@@ -378,20 +188,6 @@ function AgentDetailPanel({
             <Badge tone={DEFINITION_STATUS_TONE[definition.status]} className="normal-case">
               {DEFINITION_STATUS_LABEL[definition.status]}
             </Badge>
-          </dd>
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <dt className="text-muted-foreground">Model</dt>
-          <dd>
-            {capabilities.status === "loading" ? <Skeleton className="h-4 w-16" /> : null}
-            {capabilities.status === "error" ? (
-              <span className="text-destructive">{capabilities.message}</span>
-            ) : null}
-            {capabilities.status === "ready"
-              ? capabilities.data.model === undefined
-                ? "Default"
-                : catalogModelLabel(capabilities.data.model, catalog)
-              : null}
           </dd>
         </div>
         <div className="flex flex-col gap-1">
@@ -453,15 +249,12 @@ export function AgentsPage({
   workbenches,
   instances,
   instancesError = null,
-  models = [],
   now = Date.now(),
   selectedId,
   onSelect,
   createOpen,
   onCreateOpenChange,
   onCreated,
-  onArchiveSelected,
-  skillsError,
 }: {
   readonly tenantId: string | null;
   readonly definitions: readonly AgentDefinitionWithDisplayName[];
@@ -470,20 +263,12 @@ export function AgentsPage({
   /** When the top-level-runs fetch failed — Status/Runs · 7d must not pretend
    * the history is empty. */
   readonly instancesError?: string | null;
-  /** Tenant catalog used to map a stored canonical model id to its
-   * person-readable displayName. Empty when the catalog failed independently
-   * — the column then shows the canonical, never an invented name. */
-  readonly models?: readonly CatalogModel[];
   readonly now?: number;
   readonly selectedId: string | null;
   readonly onSelect: (id: string | null) => void;
   readonly createOpen: boolean;
   readonly onCreateOpenChange: (open: boolean) => void;
-  readonly onCreated: (definition: AgentDefinition) => void;
-  readonly onArchiveSelected: (ids: readonly string[]) => void;
-  /** Set when the directory's attached-skills batch failed; distinct from
-   * agents that simply have no skills pinned. */
-  readonly skillsError?: string;
+  readonly onCreated: (deployment: DeployedAgent) => void;
 }) {
   const selected = definitions.find((d) => d.id === selectedId) ?? null;
   const definitionIds = useMemo(
@@ -511,16 +296,11 @@ export function AgentsPage({
       <div className="flex min-h-0 flex-1">
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
           <PageShell width="full" className="page-fill">
-            {skillsError !== undefined ? (
-              <p className="px-4 pb-3 text-sm text-destructive sm:px-7" role="alert">
-                Could not load agent skills: {skillsError}
-              </p>
-            ) : null}
             {definitions.length === 0 ? (
               <RichEmptyState
                 icon={<Robot />}
                 title="No agents yet"
-                description="Create an agent — a name, a system prompt, and optionally a model — and it appears here and in the sidebar, ready to start a workbench."
+                description="Create an agent — a name and a system prompt — and it appears here and in the sidebar, ready to start a workbench."
               />
             ) : (
               <div className="px-4 pb-5 sm:px-7">
@@ -542,9 +322,8 @@ export function AgentsPage({
                         />
                       </TableHead>
                       <TableHead>Agent</TableHead>
-                      <TableHead className="hidden lg:table-cell">Description</TableHead>
+                      <TableHead className="hidden lg:table-cell">Address</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="hidden lg:table-cell">Model</TableHead>
                       <TableHead className="hidden text-right lg:table-cell">Runs · 7d</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -559,6 +338,9 @@ export function AgentsPage({
                       );
                       const status =
                         runs.kind === "error" ? null : agentRosterStatus(definition, instances);
+                      const ownRun = instances.find(
+                        (instance) => instance.definitionId === definition.id,
+                      );
                       return (
                         <TableRow
                           key={definition.id}
@@ -595,12 +377,8 @@ export function AgentsPage({
                               {definition.displayName}
                             </span>
                           </TableCell>
-                          <TableCell className="hidden text-muted-foreground lg:table-cell">
-                            {definition.description !== null &&
-                            definition.description !== undefined &&
-                            definition.description !== ""
-                              ? definition.description
-                              : "—"}
+                          <TableCell className="hidden font-mono text-xs text-muted-foreground lg:table-cell">
+                            {ownRun?.address ?? "—"}
                           </TableCell>
                           <TableCell>
                             {status === null ? (
@@ -619,17 +397,6 @@ export function AgentsPage({
                               </span>
                             )}
                           </TableCell>
-                          <TableCell className="hidden lg:table-cell">
-                            {tenantId !== null ? (
-                              <AgentModelCell
-                                tenantId={tenantId}
-                                definitionId={definition.id}
-                                catalog={models}
-                              />
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
                           <TableCell className="hidden text-right tabular-nums text-muted-foreground lg:table-cell">
                             {runs.kind === "error" ? (
                               <span className="text-destructive">—</span>
@@ -646,13 +413,11 @@ export function AgentsPage({
             )}
           </PageShell>
         </div>
-        {selected !== null && tenantId !== null ? (
+        {selected !== null ? (
           <div className="hidden w-[min(24rem,40%)] shrink-0 md:flex md:flex-col">
             <AgentDetailPanel
-              tenantId={tenantId}
               definition={selected}
               workbenches={workbenches.get(selected.id) ?? []}
-              catalog={models}
             />
           </div>
         ) : null}
@@ -662,29 +427,12 @@ export function AgentsPage({
           open={createOpen}
           onOpenChange={onCreateOpenChange}
           tenantId={tenantId}
-          onCreated={(definition) => {
+          onCreated={(deployment) => {
             onCreateOpenChange(false);
-            onSelect(definition.id);
-            onCreated(definition);
+            onCreated(deployment);
           }}
         />
       ) : null}
-      <BulkActionBar count={selection.selectedCount} onClear={selection.clear}>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          data-bulk-action="archive"
-          onClick={() => {
-            const ids = [...selection.selectedIds];
-            selection.clear();
-            onArchiveSelected(ids);
-          }}
-        >
-          <Archive aria-hidden="true" />
-          Archive
-        </Button>
-      </BulkActionBar>
     </div>
   );
 }
@@ -697,7 +445,6 @@ export function AgentsRoute({
   readonly navigate: (to: string) => void;
 }) {
   const { selectedTenantId } = useBench();
-  const queryClient = useQueryClient();
   const directory = useAgentDirectory(selectedTenantId ?? undefined);
   const activity = useBenchActivity(selectedTenantId);
   // Powers the roster's Status and "Runs · 7d" columns. A failed fetch must
@@ -751,7 +498,6 @@ export function AgentsRoute({
       instancesError={
         runsQuery.isError ? describeApiError(runsQuery.error, "loading run history") : null
       }
-      models={directory.data.models}
       selectedId={selectedId}
       onSelect={(id) =>
         navigate(
@@ -760,31 +506,15 @@ export function AgentsRoute({
       }
       createOpen={createOpen}
       onCreateOpenChange={setCreateOpen}
-      onCreated={() => {
-        void queryClient.invalidateQueries({
-          queryKey: tenantKeys.agentDirectory(selectedTenantId),
-        });
+      onCreated={(deployment) => {
+        // The directory query already invalidated (`useDeployAgentMutation`);
+        // resolve this deployment's own run to learn its definitionId so the
+        // roster can select the row that just appeared.
+        void getAgentRun(selectedTenantId, deployment.id).then(
+          (run) => navigate(`${AGENTS_PATH_PREFIX}/${encodeURIComponent(run.definitionId)}`),
+          () => undefined,
+        );
       }}
-      onArchiveSelected={(ids) => {
-        if (ids.length === 0) return;
-        void archiveDefinitions(ids, (id) =>
-          setAgentDefinitionStatus(selectedTenantId, id, "stopped"),
-        ).then((result) => {
-          // Invalidate regardless of outcome: a partial failure still
-          // archived some ids server-side, so the roster must not keep
-          // showing them as active.
-          void queryClient.invalidateQueries({
-            queryKey: tenantKeys.agentDirectory(selectedTenantId),
-          });
-          void queryClient.invalidateQueries({
-            queryKey: ["agent-top-level-runs", selectedTenantId],
-          });
-          toast(archiveResultToast(result));
-        });
-      }}
-      {...(directory.data.skillsError !== undefined
-        ? { skillsError: directory.data.skillsError }
-        : {})}
     />
   );
 }

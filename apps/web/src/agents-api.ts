@@ -9,18 +9,20 @@
 
 import {
   ModelResponse,
+  RunApprovalsResponse,
   WorkflowDefinitionResponse,
+  WorkflowRunHealth,
   WorkflowRunResponse,
   paginatedSchema,
 } from "@intx/types";
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { APIQuery } from "@/lib/api-query";
 import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@/lib/api-query";
 import { isChatPickerModelName } from "./settings/inference/model-capability";
-import { parseErrorEnvelope } from "@corbits/error-sink";
+import { deployAgentSource, type DeployedAgent, type NewAgentInput } from "./agent-deploy";
 import { tenantKeys } from "./query-client";
 
 export type AgentDefinition = typeof WorkflowDefinitionResponse.infer;
@@ -57,43 +59,6 @@ async function getJSON<T>(path: string, schema: Validator<T>): Promise<T> {
     throw new ApiQueryError(`The server answered ${response.status}.`, response.status, path);
   }
   const parsed = schema(await response.json().catch(() => undefined));
-  if (parsed instanceof type.errors) {
-    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
-  }
-  return parsed;
-}
-
-async function postJSON<T>(
-  path: string,
-  schema: Validator<T>,
-  body: unknown,
-  method: "POST" | "PUT" | "DELETE" = "POST",
-): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(path, {
-      method,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  } catch (cause) {
-    throw new ApiQueryError(
-      cause instanceof Error ? cause.message : String(cause),
-      undefined,
-      path,
-    );
-  }
-  const json: unknown = await response.json().catch(() => undefined);
-  if (!response.ok) {
-    const envelope = parseErrorEnvelope(json);
-    throw new ApiQueryError(
-      envelope?.error.userMessage ?? `The server answered ${response.status}.`,
-      response.status,
-      path,
-      envelope?.error.refId,
-    );
-  }
-  const parsed = schema(json);
   if (parsed instanceof type.errors) {
     throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
   }
@@ -145,217 +110,52 @@ export function listCatalogModels(tenantId: string): Promise<readonly CatalogMod
   );
 }
 
-const AgentDefinitionDraftResponse = type({
-  draft: {
-    systemPrompt: "string",
-    "description?": "string",
-    "modelPreference?": "string",
-    "toolPackagePins?": "string[]",
-    "skills?": "string[]",
-  },
-});
-export type AgentDefinitionDraft = typeof AgentDefinitionDraftResponse.infer.draft;
-
-/**
- * Asks Myra to draft a starting system prompt (and optionally a
- * refined description, a model pick, and skills) from a name and a
- * plain-language purpose — the create-agent panel's "Create & chat"
- * flow. Hits `@corbits/agent-directory`'s
- * `POST .../planner/agent-definitions/draft`; never deploys anything
- * itself. A caller that gets a rejected promise here (Myra unavailable,
- * the draft timing out, an unparseable or out-of-inventory reply, or a
- * concurrent draft already in flight) should let the person write the
- * system prompt by hand rather than retry silently — see that route's
- * own fail-closed posture.
- */
-export function draftAgentDefinition(
-  tenantId: string,
-  input: { readonly name: string; readonly purpose?: string },
-): Promise<AgentDefinitionDraft> {
-  return postJSON(
-    `/api/tenants/${tenantId}/planner/agent-definitions/draft`,
-    AgentDefinitionDraftResponse,
-    input,
-  ).then((body) => body.draft);
-}
-
-export type CreateAgentDefinitionInput = {
-  readonly name: string;
-  readonly handle: string;
-  readonly description?: string;
-  readonly systemPrompt: string;
-  readonly model?: string;
-  readonly skills?: readonly string[];
-  /** Tool packages to pin by name (no version — the create route
-   * resolves each to `*`). Used by a template-driven create, never by
-   * the hand-authored create form, which has no field for it. */
-  readonly toolPackagePins?: readonly string[];
-};
-
-const CreatedAgentDefinition = WorkflowDefinitionResponse.and({
-  skills: "string[]",
-});
-
-export function createAgentDefinition(
-  tenantId: string,
-  input: CreateAgentDefinitionInput,
-): Promise<AgentDefinition & { readonly skills: readonly string[] }> {
-  return postJSON(`/api/tenants/${tenantId}/agent-definitions`, CreatedAgentDefinition, input);
-}
-
-const AgentCapabilitiesResponse = type({
-  name: "string",
-  "model?": "string",
-});
-export type AgentCapabilities = typeof AgentCapabilitiesResponse.infer;
-
-/** `GET /api/tenants/:t/agent-definitions/:id` — the same route
- * `@/chat`'s per-workbench Agents section reads for its model
- * picker. Fetched lazily, per definition, only once its row is expanded on
- * the Agents roster — the paginated definitions list itself carries no
- * model field. */
-export function getAgentCapabilities(
-  tenantId: string,
-  definitionId: string,
-): Promise<AgentCapabilities> {
+/** A single top-level run's own detail — `GET /workflows/runs/:runId`. For
+ * a deployment's anchor run (which is what `AgentInstance` already lists),
+ * this is the same record; fetched again here only right after a fresh
+ * deploy, before the roster's own listing has picked it up. */
+export function getAgentRun(tenantId: string, runId: string): Promise<AgentInstance> {
   return getJSON(
-    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}`,
-    AgentCapabilitiesResponse,
+    `/api/tenants/${tenantId}/workflows/runs/${encodeURIComponent(runId)}`,
+    WorkflowRunResponse,
   );
 }
 
-/** `GET /agent-definitions/by-name/:slug` — one definition resolved by its
- * immutable slug, server-side. A slug-addressed page reads this instead of
- * scanning the paginated definitions listing, so an agent past that
- * listing's ceiling still answers on its own URL. */
-export function getAgentDefinitionBySlug(tenantId: string, slug: string): Promise<AgentDefinition> {
+export type AgentRunHealth = typeof WorkflowRunHealth.infer;
+
+/** `GET /workflows/runs/:runId/health` — liveness/readiness for a live run. */
+export function getAgentRunHealth(tenantId: string, runId: string): Promise<AgentRunHealth> {
   return getJSON(
-    `/api/tenants/${tenantId}/agent-definitions/by-name/${encodeURIComponent(slug)}`,
-    WorkflowDefinitionResponse,
+    `/api/tenants/${tenantId}/workflows/runs/${encodeURIComponent(runId)}/health`,
+    WorkflowRunHealth,
   );
 }
 
-const AgentDefinitionDetailResponse = type({
-  name: "string",
-  systemPrompt: "string",
-  "model?": "string",
-  skills: "string[]",
-});
-export type AgentDefinitionDetail = typeof AgentDefinitionDetailResponse.infer;
+const RunEvent = type({ seq: "number", type: "string", body: "Record<string, unknown>" });
+export type AgentRunEvent = typeof RunEvent.infer;
+const RunEventsResponse = type({ runId: "string", events: RunEvent.array() });
 
-/** Everything the agent detail page edits, read from the one route that
- * owns a definition's authored state (`GET /agent-definitions/:id`): its
- * display name, its system prompt, its pinned skills, and the model it
- * resolves against. `name` here is the display name the definition's row
- * carries, never its immutable slug. */
-export function getAgentDefinitionDetail(
+/** `GET /workflows/runs/:runId/events` — the run's committed, seq-ordered
+ * event log. */
+export function getAgentRunEvents(
   tenantId: string,
-  definitionId: string,
-): Promise<AgentDefinitionDetail> {
+  runId: string,
+): Promise<readonly AgentRunEvent[]> {
   return getJSON(
-    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}`,
-    AgentDefinitionDetailResponse,
-  );
+    `/api/tenants/${tenantId}/workflows/runs/${encodeURIComponent(runId)}/events`,
+    RunEventsResponse,
+  ).then((page) => page.events);
 }
 
-/** Replaces a definition's display name and system prompt in one write —
- * the same route the per-workbench Assistant editor saves through, never
- * a second write path of this page's own. */
-export function updateAgentInstructions(
-  tenantId: string,
-  definitionId: string,
-  input: { readonly name: string; readonly systemPrompt: string },
-): Promise<{ readonly name: string; readonly systemPrompt: string }> {
-  return postJSON(
-    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}`,
-    type({ name: "string", systemPrompt: "string" }),
-    input,
-    "PUT",
-  );
-}
+export type AgentRunApprovals = typeof RunApprovalsResponse.infer;
 
-const AgentCapabilitiesWriteResponse = type({
-  skills: "string[]",
-  "model?": "string",
-});
-
-/** Sets the model a definition resolves against, through the guided
- * capability-add route — which re-checks the name against the tenant's
- * live catalog, so a model this bench cannot actually reach is refused
- * rather than written. */
-export function setAgentModel(
-  tenantId: string,
-  definitionId: string,
-  canonicalName: string,
-): Promise<{ readonly model?: string }> {
-  return postJSON(
-    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}/capabilities`,
-    AgentCapabilitiesWriteResponse,
-    { kind: "model", canonicalName },
-  );
-}
-
-/** Un-pins a definition's model, returning it to the bench default. Its own
- * verb rather than `setAgentModel("")`: "no model" is not a name the
- * capability route's inventory check could ever accept. */
-export function clearAgentModel(
-  tenantId: string,
-  definitionId: string,
-): Promise<{ readonly model?: string }> {
-  return postJSON(
-    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}/capabilities/model`,
-    AgentCapabilitiesWriteResponse,
-    {},
-    "DELETE",
-  );
-}
-
-/** Archives (`stopped`) or restores (`deployed`) a definition. Nothing is
- * deleted either way — an archived agent keeps its row, its asset, and its
- * history, and simply stops appearing anywhere a person can launch it. */
-export function setAgentDefinitionStatus(
-  tenantId: string,
-  definitionId: string,
-  status: "deployed" | "stopped",
-): Promise<{ readonly status: string }> {
-  return postJSON(
-    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}/status`,
-    type({ id: "string", status: "string" }),
-    { status },
-    "PUT",
-  );
-}
-
-const DefinitionSkillsMap = type({ skills: { "[string]": "string[]" } });
-
-/** Every attached-skill list for the given definitions, keyed by definition
- * id. Call sites treat failure as its own outcome (`skillsError`) rather than
- * coercing to `{}` — empty attachments and a failed read are different. */
-export function listAgentSkills(
-  tenantId: string,
-  definitionIds: readonly string[],
-): Promise<Record<string, readonly string[]>> {
-  if (definitionIds.length === 0) return Promise.resolve({});
-  const ids = encodeURIComponent(definitionIds.join(","));
+/** `GET /workflows/runs/:runId/approvals` — the run's approval decisions,
+ * newest first. */
+export function getAgentRunApprovals(tenantId: string, runId: string): Promise<AgentRunApprovals> {
   return getJSON(
-    `/api/tenants/${tenantId}/agent-definitions/skills?ids=${ids}`,
-    DefinitionSkillsMap,
-  ).then((page) => page.skills);
-}
-
-/** Replaces one definition's attached skills wholesale — an empty array
- * detaches every skill, never a partial patch. */
-export function updateAgentSkills(
-  tenantId: string,
-  definitionId: string,
-  skills: readonly string[],
-): Promise<readonly string[]> {
-  return postJSON(
-    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}/skills`,
-    type({ skills: "string[]" }),
-    { skills },
-    "PUT",
-  ).then((body) => body.skills);
+    `/api/tenants/${tenantId}/workflows/runs/${encodeURIComponent(runId)}/approvals`,
+    RunApprovalsResponse,
+  );
 }
 
 export type AgentDirectoryData = {
@@ -363,33 +163,19 @@ export type AgentDirectoryData = {
   readonly definitions: readonly AgentDefinition[];
   readonly instances: readonly AgentInstance[];
   readonly models: readonly CatalogModel[];
-  /** Attached skills per definition id. Missing entries read as "none". */
-  readonly definitionSkills: Record<string, readonly string[]>;
   /** Set when the model catalog failed independently; definitions and
    * instances still load so the page stays usable. */
   readonly modelsError?: string;
-  /** Set when the attached-skills batch failed independently; definitions
-   * and instances still load. Distinct from an empty `definitionSkills`
-   * map — failure must never read as "no skills attached". */
-  readonly skillsError?: string;
 };
 
 type ModelsOutcome =
   | { readonly ok: true; readonly models: readonly CatalogModel[] }
   | { readonly ok: false; readonly message: string };
 
-type SkillsOutcome =
-  | {
-      readonly ok: true;
-      readonly definitionSkills: Record<string, readonly string[]>;
-    }
-  | { readonly ok: false; readonly message: string };
-
 /**
  * Loads a bench's agent directory. Definitions and instances are required;
- * the model catalog and each definition's attached skills are best-effort
- * so either failing alone never blanks the page. Failures surface as
- * `modelsError` / `skillsError` rather than silent empty collections.
+ * the model catalog is best-effort so its failure alone never blanks the
+ * page — surfaced as `modelsError` rather than a silent empty catalog.
  * `instances` comes from `listTopLevelRuns`, which already excludes every
  * non-top-level run (workbench host, invited agent) server-side — the
  * native `GET /workflows/runs` listing's own predicate — so this page
@@ -408,34 +194,21 @@ export async function loadAgentDirectory(tenantId: string): Promise<AgentDirecto
     ),
   ]);
 
-  const skillsOutcome = await listAgentSkills(
-    tenantId,
-    definitions.map((definition) => definition.id),
-  ).then(
-    (definitionSkills): SkillsOutcome => ({ ok: true, definitionSkills }),
-    (cause: unknown): SkillsOutcome => ({
-      ok: false,
-      message: cause instanceof Error ? cause.message : String(cause),
-    }),
-  );
-
   return {
     tenantId,
     definitions,
     instances,
     models: modelsOutcome.ok ? modelsOutcome.models : [],
-    definitionSkills: skillsOutcome.ok ? skillsOutcome.definitionSkills : {},
     ...(modelsOutcome.ok ? {} : { modelsError: modelsOutcome.message }),
-    ...(skillsOutcome.ok ? {} : { skillsError: skillsOutcome.message }),
   };
 }
 
 /**
  * Loads a bench's full agent directory. One query owns definitions +
- * instances + models + skills (models and skills are best-effort inside
- * `loadAgentDirectory`, surfacing `modelsError` / `skillsError`) so the
- * page keeps a single loading/error envelope. Pass no reloadKey —
- * invalidate `tenantKeys.agentDirectory(tenantId)` after create.
+ * instances + models (models are best-effort inside `loadAgentDirectory`,
+ * surfacing `modelsError`) so the page keeps a single loading/error
+ * envelope. Pass no reloadKey — invalidate `tenantKeys.agentDirectory(tenantId)`
+ * after create.
  */
 export function useAgentDirectory(tenantId: string | undefined): APIQuery<AgentDirectoryData> {
   const result = useQuery({
@@ -459,4 +232,60 @@ export function useAgentDirectory(tenantId: string | undefined): APIQuery<AgentD
     },
   });
   return toAPIQuery(result);
+}
+
+/** A selected agent run's liveness/readiness, polled only while a detail
+ * view has it open — `enabled` gates the fetch on a run actually existing. */
+export function useAgentRunHealth(
+  tenantId: string | null,
+  runId: string | null,
+): APIQuery<AgentRunHealth> {
+  const result = useQuery({
+    queryKey: ["agent-run-health", tenantId, runId] as const,
+    enabled: tenantId !== null && runId !== null,
+    queryFn: () => getAgentRunHealth(tenantId as string, runId as string),
+  });
+  return toAPIQuery(result);
+}
+
+/** A selected agent run's committed event log. */
+export function useAgentRunEvents(
+  tenantId: string | null,
+  runId: string | null,
+): APIQuery<readonly AgentRunEvent[]> {
+  const result = useQuery({
+    queryKey: ["agent-run-events", tenantId, runId] as const,
+    enabled: tenantId !== null && runId !== null,
+    queryFn: () => getAgentRunEvents(tenantId as string, runId as string),
+  });
+  return toAPIQuery(result);
+}
+
+/** A selected agent run's approval decisions, newest first. */
+export function useAgentRunApprovals(
+  tenantId: string | null,
+  runId: string | null,
+): APIQuery<AgentRunApprovals> {
+  const result = useQuery({
+    queryKey: ["agent-run-approvals", tenantId, runId] as const,
+    enabled: tenantId !== null && runId !== null,
+    queryFn: () => getAgentRunApprovals(tenantId as string, runId as string),
+  });
+  return toAPIQuery(result);
+}
+
+/**
+ * Deploys a hand-authored agent through the stock workflow-deploy path
+ * (`agent-deploy.ts`), then invalidates the bench's agent directory so the
+ * roster picks up the new deployment without a manual refetch.
+ */
+export function useDeployAgentMutation(tenantId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: NewAgentInput): Promise<DeployedAgent> =>
+      deployAgentSource({ tenantId, input }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: tenantKeys.agentDirectory(tenantId) });
+    },
+  });
 }

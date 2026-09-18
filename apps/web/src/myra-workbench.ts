@@ -1,7 +1,7 @@
 // Default Myra chat: the product land surface. Composition only — the
 // find-or-create logic itself is `@/chat`'s generic
 // `createDefaultAgentWorkbench`; this file's job is to name Myra as the
-// configured agent and wire it to this app's agent-definitions fetch.
+// configured agent and wire it to this app's workflow-definitions fetch.
 
 import { createDefaultAgentWorkbench, findDefinitionByAssetName } from "@/chat";
 import { WORKFLOW_CATALOG } from "@corbits/workflows/catalog";
