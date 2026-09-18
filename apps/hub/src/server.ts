@@ -7,7 +7,7 @@ import {
   resolveFrameSenderKey,
   resolveSenderKey,
 } from "@intx/db";
-import { tenant as tenantTable } from "@intx/db/schema";
+import { principal as principalTable, tenant as tenantTable } from "@intx/db/schema";
 import { eq } from "drizzle-orm";
 import { createEnvKeyCredentialCipher, sha256 } from "@intx/crypto";
 import { hexDecode, hexEncode, type SidecarCapabilityRule } from "@intx/types";
@@ -64,6 +64,7 @@ import {
   createHubMailboxAuthorizeSender,
   createHubPersistMailWithSessionEnsure,
 } from "./mailbox-persist";
+import { captureMailboxRequest, createMailboxDeliver } from "./mailbox-send";
 import { installWebhooks, type HookMailRouter } from "@corbits/webhooks";
 import { createWorkflowAuthorRegistry, createWorkflowAuthorRoutes } from "@corbits/workflows";
 import {
@@ -511,6 +512,8 @@ export async function createHubServer({
   }
   {
     const mailboxApp = new Hono<TenantEnv>();
+    // Registered before the routes: Hono runs handlers in registration order.
+    mailboxApp.use("/me/inbox/send", captureMailboxRequest());
     mountMailbox(mailboxApp, {
       db: mailboxDb,
       bus: mailboxBus,
@@ -518,6 +521,8 @@ export async function createHubServer({
         const c = ctx as { get(key: "tenant" | "principal"): { id: string } };
         return { tenantId: c.get("tenant").id, principalId: c.get("principal").id };
       },
+      // The address stock itself stamps on a person's outbound mail, so a
+      // Sent copy and the agent's reply share one identity.
       senderAddressFor: async (principal) => {
         const [tenantRow] = await db
           .select({ domain: tenantTable.domain })
@@ -527,15 +532,17 @@ export async function createHubServer({
         if (tenantRow === undefined) {
           throw new Error(`no tenant "${principal.tenantId}" to address a mailbox sender from`);
         }
-        return `${principal.principalId}@${tenantRow.domain}`;
+        const [principalRow] = await db
+          .select({ refId: principalTable.refId })
+          .from(principalTable)
+          .where(eq(principalTable.id, principal.principalId))
+          .limit(1);
+        if (principalRow === undefined) {
+          throw new Error(`no principal "${principal.principalId}" to address a mailbox sender as`);
+        }
+        return `${principalRow.refId}@${tenantRow.domain}`;
       },
-      deliver: async (message) => {
-        await mailboxLookups.persistMail({
-          senderAddress: message.from,
-          recipients: message.to,
-          raw: message.raw,
-        });
-      },
+      deliver: createMailboxDeliver({ app, persistMail: mailboxLookups.persistMail }),
     });
     app.route(`${TENANT_PREFIX}/mailbox`, mailboxApp);
   }
