@@ -115,7 +115,6 @@ function ArtifactRows({
           </TableHead>
           <TableHead>Title</TableHead>
           <TableHead>Kind</TableHead>
-          <TableHead>Owner</TableHead>
           <TableHead>Updated</TableHead>
         </TableRow>
       </TableHeader>
@@ -161,7 +160,6 @@ function ArtifactRows({
               <TableCell className="text-muted-foreground">
                 {artifactKindLabel(artifact.kind)}
               </TableCell>
-              <TableCell className="text-muted-foreground">{artifact.ownerName ?? "—"}</TableCell>
               <TableCell className="text-muted-foreground">
                 {formatRelativeTime(artifact.updatedAt ?? artifact.createdAt, now)}
               </TableCell>
@@ -233,7 +231,6 @@ function PreviewPane({
           {detail !== null ? (
             <p className="truncate text-xs text-muted-foreground">
               {artifactKindLabel(detail.kind)}
-              {detail.ownerName !== null ? ` · ${detail.ownerName}` : ""}
               {` · Version ${detail.version}`}
             </p>
           ) : null}

@@ -10,7 +10,6 @@ function artifact(overrides: Partial<ArtifactSummary> & { readonly id: string })
   return {
     title: "Untitled",
     kind: "document",
-    ownerName: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
   };
@@ -22,7 +21,6 @@ describe("ArtifactSummary", () => {
       id: "art_1",
       title: "Q3 report",
       kind: "deck",
-      ownerName: "Ada",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     expect(parsed).not.toBeInstanceOf(Error);
