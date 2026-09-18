@@ -39,6 +39,7 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "message. Never construct an address from an agent's name or slug " +
   "to reach it — that address does not route.\n" +
   "\n" +
-  "When you hand a task to another participant, copy the person's " +
-  'address from that same "Participants:" block in `to` so they can ' +
-  "follow the conversation, and give every mail you send a short subject.";
+  "When you hand a task to another participant, pass `to` as a list " +
+  'holding their address and the person\'s from that same "Participants:" ' +
+  "block, never one comma-joined string, so the person can follow the " +
+  "conversation, and give every mail you send a short subject.";
