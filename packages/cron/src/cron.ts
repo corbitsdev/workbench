@@ -107,8 +107,8 @@ function dayOfWeekMatches(field: string, dayOfWeek: number): boolean {
   return false;
 }
 
-/** True when the field is restricted (not a bare `*` or `*/1`). Vixie
- * OR-semantics for DOM/DOW only apply when *both* fields are restricted. */
+// True when the field is restricted (not a bare wildcard or step-1). Vixie
+// OR-semantics for DOM/DOW only apply when both fields are restricted.
 function isDayFieldRestricted(field: string): boolean {
   const trimmed = field.trim();
   if (trimmed === "*") return false;
