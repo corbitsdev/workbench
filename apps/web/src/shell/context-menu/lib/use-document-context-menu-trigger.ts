@@ -13,18 +13,9 @@ export type ContextMenuTriggerOptions = {
   readonly onOpen: (x: number, y: number, menu: ContextMenu, origin: Element | null) => void;
 };
 
-/**
- * Wires the single document-level `contextmenu` listener the whole app
- * shares. A native right-click still wins over ours for text inputs, and an
- * open dialog (including the command palette) always wins over opening a
- * context menu underneath it — see `dialog-guard`. `resolve` returning an
- * empty menu is the same as opting out: the native menu shows instead of an
- * empty popover.
- *
- * Deliberately right-click only. This app's `Link` already gives Ctrl/Cmd
- * click its native meaning (open in a new tab), so layering a second,
- * conflicting meaning onto it here would cost more than it gives back.
- */
+// An empty `resolve` result is the same as opting out: the native menu
+// shows instead of an empty popover. Right-click only, deliberately —
+// this app's `Link` already gives Ctrl/Cmd-click its native meaning.
 export function useDocumentContextMenuTrigger(options: ContextMenuTriggerOptions): void {
   const { resolve, onOpen } = options;
   useEffect(() => {

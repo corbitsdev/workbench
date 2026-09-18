@@ -1,7 +1,5 @@
-// One item builder per target type. Every item here calls a real backend or
-// a real, already-shipped shell affordance — nothing toast-only. A target
-// whose mock counterpart had no working backend (mark-read, mute, archive,
-// share) simply has no builder and so contributes no items.
+// Nothing toast-only: a target with no working backend simply has no
+// builder and contributes no items.
 
 import { profileSubjectFromParticipant } from "@/chat";
 import type { ProfileSubject } from "@/chat";
@@ -173,12 +171,8 @@ function insightsRunMenu(
   };
 }
 
-/**
- * Same operation set the Files bulk action bar offers: copy
- * every acted-on file's canonical link. `target.ids` is either the single
- * right-clicked row, or the whole active selection when the row is part of
- * one — see `SHELL_CONTEXT_MENU_TARGETS`.
- */
+// `target.ids` is either the single right-clicked row, or the whole active
+// selection when the row is part of one.
 function artifactMenu(target: Extract<ShellContextMenuTarget, { type: "artifact" }>): ContextMenu {
   const count = target.ids.length;
   return {

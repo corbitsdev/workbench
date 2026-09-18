@@ -14,10 +14,7 @@ export type ContextMenuState = {
   readonly hide: () => void;
 };
 
-/** Open/position state for a single context menu instance. Pure state — no
- * DOM listeners here, so it composes with any trigger source (the document
- * delegate in `use-document-context-menu-trigger`, or a row's own
- * `onContextMenu`). */
+// Pure state, no DOM listeners, so it composes with any trigger source.
 export function useContextMenuState(): ContextMenuState {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
