@@ -1,9 +1,5 @@
-// Thin wiring module that constructs `createWorkflowSupervisor` with
-// this sidecar's host-specific bindings: the existing mail-bus
-// instance, the sidecar's Ed25519 signing keypair, the substrate
-// RepoStore handle, and `Bun.spawn` as the subprocess spawner. Any
-// logic that would benefit a future alternative-sidecar
-// implementation lives inside `@intx/workflow-host`, not here.
+// Thin wiring for createWorkflowSupervisor's sidecar-specific bindings; any
+// logic reusable by a future alternative sidecar belongs in @intx/workflow-host, not here.
 
 import { rm, stat } from "node:fs/promises";
 import { join as pathJoin } from "node:path";
@@ -100,14 +96,9 @@ const logger = getLogger(["interchange", "sidecar", "workflow-host-wiring"]);
 const ED25519_PUBLIC_KEY_BYTES = 32;
 
 /**
- * Project an run address into the substrate-safe id of its
- * workflow-run repo. Both deploy branches key `{ kind: "workflow-run",
- * id }` by this slug, and the supervisor principal's `anchorRunId`
- * must equal that id for the workflow-run kind handler's authz check to
- * pass. The derivation is owned by `@intx/workflow-deploy` so the hub's
- * read routes reconstruct the identical id; this thin delegator keeps
- * the sidecar's call sites readable while the rationale and the
- * substrate `SAFE_REPO_ID` contract live with the shared function.
+ * Projects a run address into its workflow-run repo's substrate-safe id.
+ * Owned by `@intx/workflow-deploy` so the hub's read routes reconstruct the
+ * identical id; this is a thin delegator for readability at the call sites.
  *
  * The name keeps "Deployment" deliberately: it derives the deploy-phase
  * routing slug (the workflow-run repo id an address projects to), not a
@@ -117,14 +108,7 @@ export function deriveDeploymentId(agentAddress: string): string {
   return deriveWorkflowRunRepoId(agentAddress);
 }
 
-/**
- * The durable per-deployment store the sidecar checks a source-ref deployment's
- * source assets out into. A SIBLING of the closure instance dir, not a child:
- * `materializeDeploymentClosure` reclaims the closure dir on every apply and
- * restore, but never this store, so the checked-out assets survive a restart
- * and re-materialization needs no re-delivery. The store is reclaimed on
- * redeploy (at the deploy call site) and on undeploy.
- */
+/** A sibling of the closure instance dir, never reclaimed by apply/restore, so checked-out assets survive a restart. */
 function deploymentSourceAssetRoot(dataDir: string, deploymentId: string): string {
   return pathJoin(dataDir, "workflow-definition-sources", deploymentId);
 }
@@ -180,17 +164,7 @@ async function isExistingDir(dir: string): Promise<boolean> {
   }
 }
 
-/**
- * Resolve the durable source-asset store root and `assetId -> mountPath` map a
- * pinned deployment materializes its `kind:"asset"` closure entries from,
- * asserting every referenced asset's mount directory is present on disk. This
- * is a cheap early gate for a missing checkout; the loader still SRI-verifies
- * each tarball's bytes at materialization. Derived purely from the pin, so the
- * deploy path and the boot-time restore path (which has only the pin, no
- * re-delivery) resolve the identical mounts. A missing mount is a broken
- * deployment the hub must re-drive, so it fails loud rather than materializing
- * against an absent store.
- */
+/** Cheap early gate for a missing checkout (the loader still SRI-verifies bytes); a missing mount fails loud since the hub must re-drive it. */
 export async function resolveDeploymentAssetMounts(
   dataDir: string,
   deploymentId: string,
@@ -222,15 +196,7 @@ export async function resolveDeploymentAssetMounts(
   return { assetRoot, assetMounts, gitDirs };
 }
 
-/**
- * Read a substrate-config byte cap (`SIDECAR_CACHE_MAX_BYTES` /
- * `SIDECAR_REGISTRY_MAX_TARBALL_BYTES`) from the multi-step substrate env and
- * parse it to a positive finite number. The boot edge resolves these once and
- * threads them through the substrate env; a source-ref deploy needs them to
- * size the tarball cache and per-fetch cap when it materializes the frozen
- * workflow closure. A missing or non-numeric value is a boot-edge wiring bug,
- * so it fails loud rather than defaulting.
- */
+/** A missing or non-numeric byte cap is a boot-edge wiring bug, so it fails loud rather than defaulting. */
 function requireSubstrateByteCap(env: Record<string, string>, key: string): number {
   const raw = env[key];
   if (raw === undefined) {
@@ -247,54 +213,20 @@ function requireSubstrateByteCap(env: Record<string, string>, key: string): numb
   return parsed;
 }
 
-/**
- * Hub principal the deploy router presents when it writes a step's
- * grants into the agent-state repo on the sidecar's substrate. The
- * agent-state kind handler gates `writeTree` as hub-only; the deploy
- * router is the local stand-in for the hub on the sidecar's disk, so it
- * claims the hub principal for this single bookkeeping write. The child
- * reads the same repo via the working-tree path (`getRepoDir`), which is
- * not authorize-gated.
- */
+/** The deploy router is the local stand-in for the hub on the sidecar's disk, so it claims the hub principal for this write since agent-state gates writeTree as hub-only. */
 const GRANTS_WRITE_PRINCIPAL: Principal = { kind: "hub" };
 
-/**
- * Per-deploy address/repo strategy. The single-step launched-agent
- * deploy and the derived multi-step deploy disagree on how the per-step
- * mail address and agent-state repo id are computed; both
- * `deriveStepAddress` (consumed by the supervisor's credentialsSnapshot
- * assembly for the step's mail address) and `deriveStepRepoId` (consumed
- * by the same assembly to locate each step's grants) must agree on the
- * choice, so they are minted together.
- */
+/** Single-step and multi-step deploys disagree on how the address/repo id are computed, so the two derivations are minted together to stay in sync. */
 type StepStrategy = {
   deriveStepAddress: DeriveStepAddress;
   deriveStepRepoId: DeriveStepRepoId;
 };
 
 /**
- * Decide the per-step address/repo strategy from the projection's step
- * count.
- *
- * `stepOrder.length === 1` is the single-agent deploy: the sole
- * step keeps the deploy's own mail address, so its grants live in the
- * agent-state repo keyed by `parseAgentId(address)`. The spawned child
- * reads the agent's grants from where the run's identity already
- * lives, and the deploy frame's run address is preserved (the
- * workflow-run repo stays keyed by `deriveWorkflowRunRepoId(address)`).
- *
- * Any other step count is a derived multi-step deploy: each step gets a
- * derived `<runId>-<stepId>` mail address (via the router's
- * `multistepDeriveStepAddress`) and a derived agent-state repo under the
- * default `<runId>-<stepId>` convention.
- *
- * NOTE: the supervisor's `deriveStepAddress` feeds the credentials
- * snapshot's per-step mail `address` and the grants-repo derivation. It
- * does NOT feed the child's on-disk tool read (`stepDeployTreeDir` in
- * `step-agent-tools.ts`), which re-derives the step address from the
- * deployment mailbox address independently. The deploy tree must
- * therefore be staged at the address `stepDeployTreeDir` computes,
- * regardless of this strategy's address choice.
+ * A single-step deploy keeps the deploy's own mail address; any other step
+ * count derives a `<runId>-<stepId>` address/repo per step. Note this does
+ * NOT feed step-agent-tools.ts's stepDeployTreeDir, which re-derives the
+ * step address independently — the deploy tree must still be staged there.
  */
 function createStepStrategy(args: {
   legacyAddress: string;
@@ -304,12 +236,7 @@ function createStepStrategy(args: {
   if (args.stepOrder.length === 1) {
     return {
       deriveStepAddress: () => args.legacyAddress,
-      // `parseAgentId` is deferred into the closure rather than computed
-      // eagerly: the supervisor only invokes `deriveStepRepoId` while
-      // assembling the credentialsSnapshot inside `spawn()`, so a
-      // malformed address surfaces at the same point the rest of the
-      // spawn path would fault rather than ahead of the deploy router's
-      // other boundary checks.
+      // Deferred into the closure so a malformed address surfaces at the same point the rest of spawn() would fault.
       deriveStepRepoId: () => ({
         kind: "agent-state",
         id: parseAgentId(args.legacyAddress),
@@ -412,23 +339,10 @@ export type AssembleRunCredentialsSnapshotOpts = {
 };
 
 /**
- * Resolve a run's credentials snapshot for the `onRunStart` grants
- * barrier from its per-run grants file.
- *
- * Every legitimate run birth path writes `runs/<runId>/grants.json` in
- * the deployment's workflow-run repo before the run dispatches -- the
- * external trigger route and the mail-triggered path both ship a
- * `run.grants` frame the sidecar writes, and a spawned child inherits its
- * parent's grants directly at spawn without reaching this barrier. The
- * per-run file IS the run's snapshot: the run's single flat grant set is
- * applied uniformly across every step, keyed on each step's address.
- *
- * A missing file is therefore not an internal run inheriting deploy-time
- * grants -- it is a run that reached its barrier with no grants written,
- * so it FAILS CLOSED here rather than running under-authorized. A file
- * that exists but is malformed also throws (via `readRunGrants`), for the
- * same reason: the file's presence implies a grants frame was delivered,
- * so a structural failure is a boundary bug, not a default.
+ * Every legitimate run birth path writes `runs/<runId>/grants.json` before
+ * the run dispatches, so a missing file means the run reached its barrier
+ * with no grants written; this fails closed rather than running
+ * under-authorized. A malformed file also throws for the same reason.
  */
 export async function assembleRunCredentialsSnapshot(
   opts: AssembleRunCredentialsSnapshotOpts,
@@ -456,49 +370,18 @@ export async function assembleRunCredentialsSnapshot(
   return { steps };
 }
 
-// The supervisor's `binaryPath` binding resolves to the sidecar's
-// own `bin/workflow-child` script via `import.meta.resolve` against
-// the `@intx/sidecar-app` package. The script lives next to this
-// wiring module (`../bin/workflow-child`); resolving it statically
-// at wiring-module load time keeps the production spawn surface
-// independent of any runtime env override. Tests inject a sentinel
-// path via the `binaryPath` opts override; production wiring
-// closes over this constant.
+// Resolved statically at module load so the production spawn surface is
+// independent of any runtime env override; tests inject a sentinel path
+// via the binaryPath opts override instead.
 const SIDECAR_WORKFLOW_CHILD_BINARY: string = (() => {
   const url = import.meta.resolve("../bin/workflow-child");
   return fileURLToPath(url);
 })();
 
-/**
- * Child fd the supervisor inherits the event-channel pipe on. The
- * supervisor's spawn-time convention is:
- *
- *   fd 0 stdin  -- downstream control channel (supervisor -> child)
- *   fd 1 stdout -- upstream control channel (child -> supervisor)
- *   fd 2 stderr -- inherited so child diagnostics land on the
- *                  sidecar's stderr
- *   fd 3        -- event-channel write side (child writes
- *                  HMAC-authenticated InferenceEvent frames here;
- *                  the supervisor reads the parent end as a
- *                  `FrameReader`)
- *
- * The child opens fd 3 via `EVENT_CHANNEL_FD` in
- * `@intx/workflow-host`'s `from-process-env`. The two ends of the
- * pipe are provisioned by `Bun.spawn`'s `stdio` slot: setting
- * `stdio[3] = "pipe"` makes Bun mint a pipe pair where the child
- * inherits the write half at fd 3 and the parent receives the read
- * half as a numeric fd at `proc.stdio[3]` in its own address space.
- */
+/** fd 0/1 are the control channel, fd 2 is inherited stderr, fd 3 is the event-channel pipe Bun.spawn's stdio[3]="pipe" provisions. */
 const CHILD_EVENT_CHANNEL_FD = 3;
 
-/**
- * Wrap a Bun `FileSink` as the supervisor's `NdjsonWriter`. The
- * supervisor's control-channel sender writes one JSON line per
- * frame (already including the trailing newline); the writer is
- * responsible for passing the bytes through to the child's stdin
- * without buffering across frames so each frame surfaces on the
- * far side as soon as `write()` resolves.
- */
+/** Passes each already-newline-terminated frame through without buffering, so it surfaces as soon as write() resolves. */
 function ndjsonWriterFromFileSink(sink: Bun.FileSink): NdjsonWriter {
   return {
     async write(line: string): Promise<void> {
