@@ -6,6 +6,7 @@ import {
   createFetchStockHub,
   forkSubThread,
   StockHubCapabilityError,
+  StockHubRequestError,
   type HubSnapshot,
   type MailMessage,
   type StockHub,
@@ -700,6 +701,36 @@ describe("stock-only fetch hub", () => {
       return new Response(JSON.stringify(payload), { status: 200 });
     }) as typeof fetch;
   }
+
+  function stubFetchRejecting(body: unknown, status: number): typeof fetch {
+    return (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+  }
+
+  test("a failed request carries the hub's error code and message", async () => {
+    const hub = createFetchStockHub(
+      stubFetchRejecting({ error: { code: "invalid_workflow", message: "entry threw" } }, 409),
+    );
+
+    const error = await hub
+      .deployWorkflow("tnt_1", {
+        source: {
+          kind: "asset",
+          assetId: "ast_1",
+          package: { format: "source", commitSha: "abc" },
+        },
+        entry: "./workflow.js",
+        sourceOfferingIds: ["off_1"],
+        defaultSourceOfferingId: "off_1",
+      })
+      .then(
+        () => null,
+        (cause: unknown) => cause,
+      );
+    expect(error).toBeInstanceOf(StockHubRequestError);
+    expect((error as StockHubRequestError).message).toBe(
+      "Stock request deployWorkflow failed with HTTP 409. invalid_workflow: entry threw",
+    );
+  });
 
   test("mailbox search and thread reads stay typed upstream gaps", async () => {
     const hub = createFetchStockHub(stubFetch([], {}));
