@@ -1,8 +1,5 @@
-// Short-lived git tokens scoped to one asset — the mint/use/revoke shape
-// every reader and pusher of an asset's smart-HTTP git remote needs.
-// Pulled out of `agent-source-read.ts` and `agent-deploy.ts`'s copies so a
-// new caller (skill content) mints and revokes through the same helper
-// rather than a third copy of this dance.
+// The mint/use/revoke shape every reader/pusher of an asset's git remote
+// needs, pulled out of duplicate copies so a new caller shares this one.
 import { type } from "arktype";
 
 export class GitTokenError extends Error {}

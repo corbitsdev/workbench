@@ -12,11 +12,8 @@ export const NavigateContext = createContext<Navigate>(() => {
   throw new Error("navigation used outside NavigationProvider");
 });
 
-/** Absent outside a signed-in shell (the onboarding wizard has no account
- * menu, no settings surface) — `undefined` rather than a throwing default,
- * so a reader like `AccountSection` (mounted in package tests with no
- * provider at all) can simply omit the Sign out action instead of
- * crashing. */
+// `undefined` rather than a throwing default so a reader mounted without a
+// provider (e.g. in package tests) can omit Sign out instead of crashing.
 export const SignOutContext = createContext<(() => void) | undefined>(undefined);
 
 /** Same availability rule as `SignOutContext`: present in the signed-in
