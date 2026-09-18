@@ -12,9 +12,10 @@ handful of domain packages built on top.
   deploy/run) plus one composition block that adds Corbits libraries —
   `@corbits/mailbox` (chat), `@corbits/memory` (recall), `@corbits/artifacts`
   (files), `@corbits/cron` (scheduling) — and the remaining in-repo
-  packages: `connections` (credential catalog and OAuth), `webhook-triggers`
-  (inbound webhook ingress), `workflows` (author routes), and
-  `agent-directory`.
+  packages: `webhook-triggers` (inbound webhook ingress), `workflows`
+  (author routes), and `agent-directory`. Credentials are stored through
+  Interchange's own stock credential routes; nothing in this repo wraps
+  or replaces them.
 - **`apps/sidecar`** — a byte-for-byte copy of Interchange's own sidecar.
   It executes workflow runs and agent turns on the hub's behalf; Workbench
   makes no local changes to it.
@@ -47,8 +48,8 @@ stock workflow-deploy route. `tools/*` and `skills/*` are ordinary
 
 ## Data
 
-Custom tables — `connections`, `webhook-triggers`, `agent-directory`, and
-so on — live on their own Postgres schema, each with foreign keys back to
+Custom tables — `webhook-triggers`, `agent-directory`, and so on — live
+on their own Postgres schema, each with foreign keys back to
 Interchange's `tenant`/`principal` tables in `public`. See
 [docs/package-migrations.md](docs/package-migrations.md) for how a
 package's own migrations are written and applied. Anything Interchange

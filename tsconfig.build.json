@@ -65,9 +65,6 @@
       "path": "./tools/catalog/tsconfig.src.json"
     },
     {
-      "path": "./tools/connections/tsconfig.src.json"
-    },
-    {
       "path": "./tools/github/tsconfig.src.json"
     },
     {
@@ -81,9 +78,6 @@
     },
     {
       "path": "./tools/manus/tsconfig.src.json"
-    },
-    {
-      "path": "./tools/mcp/tsconfig.src.json"
     },
     {
       "path": "./tools/reddit/tsconfig.src.json"

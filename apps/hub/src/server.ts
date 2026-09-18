@@ -93,18 +93,6 @@ import {
   artifactMatchesLibraryKindSegment,
   LIBRARY_KIND_SEGMENTS,
 } from "@corbits/artifact-ui/kind-filter";
-import {
-  createConnectionRoutes,
-  createMcpOAuthRoutes,
-  createMcpServerRoutes,
-  createOAuthConnectRoutes,
-  createTenantConnectCredential,
-  createWorkflowConnectionRoutes,
-  DEFAULT_RETURN_PATH_ALLOWLIST,
-  listMcpServerConnections,
-} from "@corbits/connections";
-import { createProviderHealthStore } from "@corbits/connections/provider-health";
-import { CONNECTOR_REGISTRY, MCP_PRESETS } from "./native-connector-registry";
 import type { DB } from "@intx/db";
 import { sidecar, workflowRun } from "@intx/db/schema";
 import path from "node:path";
@@ -118,7 +106,7 @@ const grantConditionRegistry: ConditionRegistry = {
 };
 
 // The one concrete `WorkflowRunAuthenticator` every workflow-run-authenticated
-// Corbits surface below takes structurally (connections, workflow-authoring,
+// Corbits surface below takes structurally (workflow-authoring,
 // `@corbits/artifacts`' `mountWorkflowArtifacts`): a sidecar bearer token +
 // run address resolve to the tenant/principal/run it names.
 function createWorkflowRunAuthenticator(deps: { db: DB["db"] }) {
@@ -676,80 +664,6 @@ export async function createHubServer({
     }),
   );
 
-  const hubUrl = process.env["BASE_URL"] ?? `http://localhost:${String(port)}`;
-  const providerHealthStore = createProviderHealthStore();
-  app.route(
-    `${TENANT_PREFIX}/connections`,
-    createConnectionRoutes({
-      hubUrl,
-      registry: CONNECTOR_REGISTRY,
-      requireGrant: createRequireGrant({ grantStore, conditionRegistry: grantConditionRegistry }),
-      log: (line) => log.info`${line}`,
-      oauthEnv: {
-        huggingfaceClientId: process.env["HUGGINGFACE_OAUTH_CLIENT_ID"],
-        githubAppClientId: process.env["GITHUB_APP_CLIENT_ID"],
-        githubAppClientSecret: process.env["GITHUB_APP_CLIENT_SECRET"],
-        gmailClientId: process.env["GMAIL_CLIENT_ID"],
-        gmailClientSecret: process.env["GMAIL_CLIENT_SECRET"],
-      },
-      providerHealth: providerHealthStore,
-      probeBaseUrls:
-        process.env["GITHUB_API_BASE_URL"] !== undefined
-          ? { github: process.env["GITHUB_API_BASE_URL"] }
-          : {},
-    }),
-  );
-  app.route(
-    `${TENANT_PREFIX}/connections/oauth`,
-    createOAuthConnectRoutes<TenantEnv>({
-      hubUrl,
-      log: (line) => log.info`${line}`,
-      credentialCipher,
-      registry: CONNECTOR_REGISTRY,
-      oauthEnv: {
-        huggingfaceClientId: process.env["HUGGINGFACE_OAUTH_CLIENT_ID"],
-        githubAppClientId: process.env["GITHUB_APP_CLIENT_ID"],
-        githubAppClientSecret: process.env["GITHUB_APP_CLIENT_SECRET"],
-        gmailClientId: process.env["GMAIL_CLIENT_ID"],
-        gmailClientSecret: process.env["GMAIL_CLIENT_SECRET"],
-      },
-      connectCredential: createTenantConnectCredential({
-        hubUrl,
-        log: (line) => log.info`${line}`,
-        registry: CONNECTOR_REGISTRY,
-        providerHealth: providerHealthStore,
-      }),
-      defaultReturnPath: "/settings/connections",
-      returnPathAllowlist: [...DEFAULT_RETURN_PATH_ALLOWLIST, "/plugins", "/w/"],
-    }),
-  );
-  app.route(
-    `${TENANT_PREFIX}/mcp-servers`,
-    createMcpServerRoutes({
-      hubUrl,
-      requireGrant: createRequireGrant({ grantStore, conditionRegistry: grantConditionRegistry }),
-      log: (line) => log.info`${line}`,
-      presets: MCP_PRESETS,
-    }),
-  );
-  app.route(
-    `${TENANT_PREFIX}/mcp-servers/oauth`,
-    createMcpOAuthRoutes({
-      hubUrl,
-      requireGrant: createRequireGrant({ grantStore, conditionRegistry: grantConditionRegistry }),
-      log: (line) => log.info`${line}`,
-      credentialCipher,
-      presets: MCP_PRESETS,
-      returnPathAllowlist: [...DEFAULT_RETURN_PATH_ALLOWLIST, "/plugins", "/w/"],
-    }),
-  );
-  app.route(
-    "/api/workflow-connections",
-    createWorkflowConnectionRoutes({
-      authenticator: createWorkflowRunAuthenticator({ db }),
-      listMcpServers: (tenantId) => listMcpServerConnections(db, tenantId),
-    }),
-  );
   // ---------------------------------------------------------------------
   // End of Corbits mount block.
   // ---------------------------------------------------------------------
