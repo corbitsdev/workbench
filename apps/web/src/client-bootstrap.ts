@@ -1,8 +1,5 @@
-// Drives the client's needs-list against a stock Interchange hub using
-// only stock routes — no workbench server proxies, tables, or mounts.
-// Persists created child tenant ids scoped by hub origin and account, so a
-// reinstall reclaims by id, never by slug. A missing stock capability
-// carries a typed gap in the result instead of throwing.
+// Uses only stock routes — no workbench server proxies, tables, or mounts.
+// Persisted child tenant ids let a reinstall reclaim by id, never by slug.
 
 import { WORKFLOW_CATALOG } from "@corbits/workflows/catalog";
 

@@ -1,7 +1,5 @@
-// Every product-made save commits under the hub's fixed git identity, a
-// machine account — shown as the product's own name, never that internal
-// one, until per-principal attribution is plumbed through. A commit from
-// outside the product keeps the real author name git recorded.
+// Product-made saves commit under the hub's fixed machine identity, shown
+// as the product's own name until per-principal attribution lands.
 
 const HUB_GIT_AUTHOR = "interchange-hub";
 

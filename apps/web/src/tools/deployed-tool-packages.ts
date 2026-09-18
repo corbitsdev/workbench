@@ -1,7 +1,5 @@
-// Read off what agents actually carry, rather than a registry that outlives
-// the packages it once held. Myra's tools are bundled, not pinned in
-// `definition.json`, so her package.json dependencies are the source of
-// truth instead of a literal copy that could drift.
+// Read off what agents actually carry, not a registry that outlives them.
+// Myra's tools are bundled, so her package.json is the source of truth.
 
 import { useQuery } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";

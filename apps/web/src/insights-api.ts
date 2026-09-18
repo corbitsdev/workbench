@@ -29,10 +29,8 @@ export const TopLevelRunsSchema = paginatedSchema(InsightsRunSchema);
 // `listTopLevelRuns` uses for this route.
 const TOP_LEVEL_RUNS_LIMIT = 100;
 
-// The native listing's own predicate already excludes every non-top-level
-// run, so this page never derives that exclusion itself. See
-// docs/insights-native-runs.md for the accepted-loss differences from the
-// deleted `feed=fires` feed.
+// The native listing already excludes every non-top-level run. See
+// docs/insights-native-runs.md for the accepted-loss differences.
 export function insightsTopLevelRunsPath(tenantId: string): string {
   return `/api/tenants/${tenantId}/workflows/runs?limit=${TOP_LEVEL_RUNS_LIMIT}`;
 }
