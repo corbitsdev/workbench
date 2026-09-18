@@ -3,6 +3,7 @@
 // empty room and add people and agents as you go.
 
 import { Button, toast } from "@corbits/react-ui";
+import { useDismissablePopover } from "@corbits/react-ui/hooks/use-dismissable-popover";
 import { PaperPlaneRight } from "@/lib/icons";
 import { CHAT_STRINGS, WorkbenchLoadingState } from "@/chat";
 import { isMyraAgent, listChatAgents } from "@/chat/threads-api";
@@ -16,6 +17,7 @@ import { createWorkbench, WorkbenchCreateError } from "../workbench-create";
 import { useNavigate } from "../navigation";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { workbenchPath } from "../workbench-path";
+import { CreateAgentPanel } from "./create-agent-panel";
 
 const GENERIC_CREATE_FAILURE = "Something went wrong creating this workbench. Try again.";
 
@@ -33,6 +35,7 @@ export function describeWorkbenchCreateFailure(cause: unknown, refId?: string): 
 }
 
 const PROMPT_PLACEHOLDER = "What do you want your Workbench to do?";
+const AGENT_LISTBOX_ID = "new-workbench-agent-listbox";
 
 /** A room's name is its opening ask, trimmed — an empty room is just
  * "Workbench" until it is renamed. */
@@ -47,7 +50,21 @@ export function NewWorkbenchPickerRoute() {
   const { selectedTenantId } = useBench();
   const [prompt, setPrompt] = useState("");
   const [selectedAgentIds, setSelectedAgentIds] = useState<readonly string[]>([]);
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const [createAgentOpen, setCreateAgentOpen] = useState(false);
+  const [agentQuery, setAgentQuery] = useState("");
+  const [activeAgentIndex, setActiveAgentIndex] = useState(0);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const {
+    rootRef: agentPickerRootRef,
+    triggerRef: agentPickerTriggerRef,
+    close: dismissAgentPicker,
+  } = useDismissablePopover<HTMLDivElement, HTMLButtonElement>({
+    closeOnEscape: false,
+    open: agentPickerOpen,
+    onOpenChange: setAgentPickerOpen,
+  });
 
   const agentsQuery = useQuery({
     queryKey: ["bench-agents", selectedTenantId],
@@ -58,11 +75,30 @@ export function NewWorkbenchPickerRoute() {
     () => (agentsQuery.data ?? []).filter((agent) => !isMyraAgent(agent)),
     [agentsQuery.data],
   );
+  const filteredAgents = useMemo(() => {
+    const query = agentQuery.trim().toLocaleLowerCase();
+    return query === ""
+      ? pickableAgents
+      : pickableAgents.filter((agent) => agent.name.toLocaleLowerCase().includes(query));
+  }, [pickableAgents, agentQuery]);
+  const selectedAgents = pickableAgents.filter((agent) => selectedAgentIds.includes(agent.id));
 
   function toggleAgent(id: string) {
     setSelectedAgentIds((current) =>
       current.includes(id) ? current.filter((existing) => existing !== id) : [...current, id],
     );
+  }
+
+  function closeAgentPicker() {
+    setAgentQuery("");
+    setActiveAgentIndex(0);
+    dismissAgentPicker();
+  }
+
+  function openAgentPicker() {
+    setAgentPickerOpen(true);
+    setAgentQuery("");
+    setActiveAgentIndex(0);
   }
 
   const create = useMutation({
@@ -174,6 +210,136 @@ export function NewWorkbenchPickerRoute() {
                 </div>
               </div>
               <div className="new-workbench-prompt-actions">
+                <div className="new-workbench-agent-selection">
+                  <span>In the room</span>
+                  {selectedAgents.map((agent) => (
+                    <span key={agent.id} className="new-workbench-agent-chip">
+                      {agent.name}
+                      <button
+                        type="button"
+                        aria-label={`Remove ${agent.name}`}
+                        onClick={() => toggleAgent(agent.id)}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  {agentsQuery.isLoading ? (
+                    <span className="new-workbench-agent-status">Loading agents…</span>
+                  ) : agentsQuery.isError ? (
+                    <span className="new-workbench-agent-status" role="status">
+                      Couldn&apos;t load agents. You can still start without one.
+                    </span>
+                  ) : (
+                    <div ref={agentPickerRootRef} className="new-workbench-agent-picker">
+                      <button
+                        ref={agentPickerTriggerRef}
+                        type="button"
+                        className="new-workbench-add-agent"
+                        aria-controls={AGENT_LISTBOX_ID}
+                        aria-expanded={agentPickerOpen}
+                        onClick={() => (agentPickerOpen ? closeAgentPicker() : openAgentPicker())}
+                      >
+                        + Add agent
+                      </button>
+                      {agentPickerOpen ? (
+                        <div className="new-workbench-agent-popover">
+                          <input
+                            autoFocus
+                            className="new-workbench-agent-search"
+                            type="search"
+                            placeholder="Find an agent…"
+                            value={agentQuery}
+                            role="combobox"
+                            aria-autocomplete="list"
+                            aria-controls={AGENT_LISTBOX_ID}
+                            aria-expanded="true"
+                            aria-activedescendant={
+                              filteredAgents[activeAgentIndex] === undefined
+                                ? undefined
+                                : `new-workbench-agent-${filteredAgents[activeAgentIndex].id}`
+                            }
+                            onChange={(event) => {
+                              setAgentQuery(event.target.value);
+                              setActiveAgentIndex(0);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "ArrowDown") {
+                                event.preventDefault();
+                                setActiveAgentIndex((current) =>
+                                  Math.min(current + 1, filteredAgents.length - 1),
+                                );
+                              }
+                              if (event.key === "ArrowUp") {
+                                event.preventDefault();
+                                setActiveAgentIndex((current) => Math.max(current - 1, 0));
+                              }
+                              if (event.key === "Enter") {
+                                // Implicit form submission would otherwise
+                                // fire on a miss, creating a workbench the
+                                // operator did not ask for.
+                                event.preventDefault();
+                                const activeAgent = filteredAgents[activeAgentIndex];
+                                if (activeAgent !== undefined) {
+                                  toggleAgent(activeAgent.id);
+                                }
+                              }
+                              if (event.key === "Escape") {
+                                event.preventDefault();
+                                closeAgentPicker();
+                              }
+                            }}
+                          />
+                          {filteredAgents.length === 0 ? (
+                            <p className="new-workbench-agent-empty">
+                              {pickableAgents.length === 0
+                                ? "No agents are available yet."
+                                : "No agents match that search."}
+                            </p>
+                          ) : (
+                            <div id={AGENT_LISTBOX_ID} role="listbox" aria-label="Available agents">
+                              {filteredAgents.map((agent, index) => {
+                                const selected = selectedAgentIds.includes(agent.id);
+                                return (
+                                  <button
+                                    key={agent.id}
+                                    id={`new-workbench-agent-${agent.id}`}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={selected}
+                                    className={
+                                      index === activeAgentIndex
+                                        ? "new-workbench-agent-option is-active"
+                                        : "new-workbench-agent-option"
+                                    }
+                                    onMouseMove={() => setActiveAgentIndex(index)}
+                                    onClick={() => toggleAgent(agent.id)}
+                                  >
+                                    <span className="new-workbench-agent-option-name">
+                                      {agent.name}
+                                    </span>
+                                    {selected ? <span aria-hidden="true">✓</span> : null}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="mt-2 w-full justify-start border-t border-border"
+                            onClick={() => {
+                              closeAgentPicker();
+                              setCreateAgentOpen(true);
+                            }}
+                          >
+                            + Create agent
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
                 <Button
                   type="submit"
                   aria-label="Start this workbench"
@@ -184,22 +350,6 @@ export function NewWorkbenchPickerRoute() {
                 </Button>
               </div>
             </form>
-
-            {pickableAgents.length > 0 && (
-              <fieldset className="new-workbench-agent-picker">
-                <legend>Bring existing agents into this room</legend>
-                {pickableAgents.map((agent) => (
-                  <label key={agent.id} className="new-workbench-agent-option">
-                    <input
-                      type="checkbox"
-                      checked={selectedAgentIds.includes(agent.id)}
-                      onChange={() => toggleAgent(agent.id)}
-                    />
-                    {agent.name}
-                  </label>
-                ))}
-              </fieldset>
-            )}
 
             <button
               type="button"
@@ -213,6 +363,21 @@ export function NewWorkbenchPickerRoute() {
           </>
         )}
       </div>
+      {selectedTenantId !== null && createAgentOpen ? (
+        <CreateAgentPanel
+          key={selectedTenantId}
+          open={createAgentOpen}
+          onOpenChange={setCreateAgentOpen}
+          tenantId={selectedTenantId}
+          onCreated={(deployment) => {
+            void queryClient.invalidateQueries({
+              queryKey: ["bench-agents", selectedTenantId],
+            });
+            setSelectedAgentIds((current) => [...current, deployment.definitionAssetId]);
+            promptRef.current?.focus();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
