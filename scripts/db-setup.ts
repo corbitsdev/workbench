@@ -217,7 +217,7 @@ export async function setupDatabase(
 // would leave those tables behind. Always dropped alongside the target
 // schema so a reset is a true clean slate for every installed
 // package's tables, not only the platform's.
-const PACKAGE_SCHEMAS = ["mailbox", "cron", "webhook_triggers", "memory"] as const;
+const PACKAGE_SCHEMAS = ["mailbox", "cron", "memory", "artifacts"] as const;
 
 /**
  * Drop the target schema and everything in it (platform tables and

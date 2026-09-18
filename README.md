@@ -19,8 +19,10 @@ bun run dev
 
 `bun run dev` starts the hub and the web dev server, applies migrations,
 and signs up a local admin (`alice@example.com` / `password123` unless
-`HUB_ADMIN_EMAIL` / `HUB_ADMIN_PASSWORD` are set). Connect an inference
-provider from the UI; keys are never read from the environment.
+`HUB_ADMIN_EMAIL` / `HUB_ADMIN_PASSWORD` are set). The first sign-in asks
+for one inference provider; keys are never read from the environment. A
+local [Ollama](https://ollama.com) works with no key, see
+[docs/local-dev.md](docs/local-dev.md).
 
 `bun run reset` wipes local state. It refuses anything but a local database.
 
@@ -31,8 +33,7 @@ provider from the UI; keys are never read from the environment.
 | `apps/`       | `hub` (API), `web` (React client), `sidecar` (execution host)    |
 | `packages/`   | Corbits libraries                                                |
 | `tools/`      | `@corbits/*` agent tool packages                                 |
-| `agents/`     | `@corbits/assistant` (Myra)                                      |
-| `skills/`     | `@corbits/*` skill packages                                      |
+| `agents/`     | `@corbits/myra`, the one shipped agent                           |
 | `vendor/intx` | Hand-copied Interchange packages, see [VENDORED.md](VENDORED.md) |
 
 ## Develop
@@ -47,5 +48,5 @@ Conventions live in [AGENTS.md](AGENTS.md).
 ## License
 
 The application is GPLv2 with the [AI Exception](GPLv2-AI-Exception.md);
-see [LICENSE.md](LICENSE.md). Libraries under `packages/`, `tools/`,
-`agents/`, and `skills/` are LGPL-2.1.
+see [LICENSE.md](LICENSE.md). Libraries under `packages/`, `tools/`, and
+`agents/` are LGPL-2.1.
