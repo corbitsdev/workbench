@@ -78,10 +78,10 @@ describe("stage breadcrumbs", () => {
   test("a single-level page still declares its title as a trail", () => {
     const markup = renderToStaticMarkup(
       <NavigationProvider navigate={noop}>
-        <StageTopBar crumbs={[{ label: "Plugins" }]} />
+        <StageTopBar crumbs={[{ label: "Tools" }]} />
       </NavigationProvider>,
     );
-    expect(markup).toContain('aria-current="page">Plugins</span>');
+    expect(markup).toContain('aria-current="page">Tools</span>');
     expect(markup).not.toContain("<a ");
   });
 

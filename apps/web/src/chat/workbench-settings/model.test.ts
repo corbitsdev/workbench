@@ -63,16 +63,16 @@ describe("workbenchSettingsSections", () => {
     ]);
   });
 
-  test("Myra/Keys & plugins/Inference are gone as distinct nav ids", () => {
+  test("Myra/Keys & tools/Inference are gone as distinct nav ids", () => {
     const ids = workbenchSettingsSections("workbench").map((s) => s.id);
     expect(ids).not.toContain("assistant");
-    expect(ids).not.toContain("keys-plugins");
+    expect(ids).not.toContain("keys-tools");
     expect(ids).not.toContain("inference");
   });
 
-  test("Plugins is global-only now — no workbench-scoped nav id", () => {
-    expect(workbenchSettingsSections("workbench").map((s) => s.id)).not.toContain("plugins");
-    expect(workbenchSettingsSections("chat", true).map((s) => s.id)).not.toContain("plugins");
+  test("Tools is global-only now — no workbench-scoped nav id", () => {
+    expect(workbenchSettingsSections("workbench").map((s) => s.id)).not.toContain("tools");
+    expect(workbenchSettingsSections("chat", true).map((s) => s.id)).not.toContain("tools");
   });
 
   test("Capacity is gone — sidecar placement is Interchange's own concern now", () => {

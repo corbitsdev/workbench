@@ -150,17 +150,19 @@ describe("route table", () => {
       "/skills/:slug",
       "/skills",
       "/settings/skills",
+      "/tools",
       "/insights",
       "/settings",
     ]);
   });
 
-  test("palette pages are Routines, Files, Skills, Agents, Insights, Settings", () => {
+  test("palette pages are Routines, Files, Skills, Agents, Tools, Insights, Settings", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
       "Routines",
       "Files",
       "Skills",
       "Agents",
+      "Tools",
       "Insights",
       "Settings",
     ]);

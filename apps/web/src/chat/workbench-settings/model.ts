@@ -5,15 +5,15 @@
 // Agents is now the one place an agent participant's persona,
 // capabilities, and history are edited — a click-through master-detail,
 // not a separate "Myra" nav item duplicating the same editor for one
-// hardcoded agent. Keys & plugins and Inference are gone as distinct
+// hardcoded agent. Keys & tools and Inference are gone as distinct
 // sections: inference provider+model assignment moves onto the Agents
 // detail view, per agent, fed from the tenant-wide provider pool.
 //
-// Plugins are global-only for now (owner ruling): the workbench-scoped
-// `plugins` section that used to live here is removed — connect/manage
-// plugins from the bench-level Plugins page instead. Per-workbench
+// Tools are global-only for now (owner ruling): the workbench-scoped
+// `tools` section that used to live here is removed — connect/manage
+// tools from the bench-level Tools page instead. Per-workbench
 // credential rows written by that old section are left in place (nothing
-// reads or writes them now); see the Plugins page for the surviving
+// reads or writes them now); see the Tools page for the surviving
 // surface.
 
 import { CHAT_STRINGS } from "../strings";

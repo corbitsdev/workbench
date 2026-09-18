@@ -15,6 +15,6 @@ describe("detailPath", () => {
   });
 
   test("the id fallback survives a segment that needs escaping", () => {
-    expect(detailPath("/plugins", { slug: "Not A Slug", id: "a/b" })).toBe("/plugins/a%2Fb");
+    expect(detailPath("/tools", { slug: "Not A Slug", id: "a/b" })).toBe("/tools/a%2Fb");
   });
 });

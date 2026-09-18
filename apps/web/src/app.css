@@ -1140,7 +1140,7 @@ select:disabled,
 }
 
 /* Mission Control — pinned above the footer rail as its own row (DESIGN.md),
-   never a 7th button mixed into Routines/Files/Skills/Agents/Plugins/
+   never a 7th button mixed into Routines/Files/Skills/Agents/Tools/
    Insights below. The border-bottom is what reads it as a separate band
    rather than the first row of that rail. */
 .shell-sidebar-mission-control {
@@ -1180,7 +1180,7 @@ select:disabled,
   outline-offset: -1px;
 }
 
-/* Footer (reference shape): a Plugins row, then the account row that
+/* Footer (reference shape): a Tools row, then the account row that
    anchors the pop-up menu. Both are full-width quiet rows; the account
    row has no top margin of its own so the two never read as separate
    stacked bands. */

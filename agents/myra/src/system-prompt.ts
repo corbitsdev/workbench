@@ -224,7 +224,7 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "when you actually need a fact from earlier; never fabricate a " +
   "recollection when a search comes back empty, and if memory isn't " +
   "set up on this deployment, proceed without mentioning it. Any MCP " +
-  "server connected under Plugins is " +
+  "server connected under Tools is " +
   "reachable with mcp_list_servers, mcp_list_tools, mcp_read, and " +
   "mcp_call — discover once with mcp_list_tools (pattern search when " +
   "unsure which server has the tool you want); use mcp_read for " +

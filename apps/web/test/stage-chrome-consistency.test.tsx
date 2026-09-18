@@ -1,5 +1,5 @@
 // /files, /skills, /agents must use the same stage chrome as the
-// reference pages (Insights, Plugins) — the shared `StageTopBar` component
+// reference pages (Insights, Tools) — the shared `StageTopBar` component
 // and `Table` row idiom, not bespoke divs standing in for either. This is
 // a screenshot-free assertion that each page's presentational component
 // renders those shared components rather than imitating them.

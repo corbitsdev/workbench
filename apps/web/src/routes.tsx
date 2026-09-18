@@ -23,6 +23,7 @@ import {
   FlowArrow,
   FolderOpen,
   Lightning,
+  Plugs,
   Robot,
   SlidersHorizontal,
   SquaresFour,
@@ -74,6 +75,9 @@ const AgentsRoute = lazy(async () => ({
 }));
 const SkillsRoute = lazy(async () => ({
   default: (await import("./pages/skills-page")).SkillsRoute,
+}));
+const ToolsRoute = lazy(async () => ({
+  default: (await import("./pages/tools-page")).ToolsRoute,
 }));
 const InsightsRoute = lazy(async () => ({
   default: (await import("./pages/insights-page")).InsightsRoute,
@@ -370,6 +374,12 @@ export const APP_ROUTES: readonly AppRoute[] = [
     ),
   },
   {
+    path: "/tools",
+    label: "Tools",
+    icon: <Plugs />,
+    render: () => <ToolsRoute />,
+  },
+  {
     path: "/insights",
     label: "Insights",
     icon: <ChartBar />,
@@ -405,6 +415,7 @@ export const NAV_ROUTES: readonly AppRoute[] = routesInOrder([
   "/files",
   "/skills",
   "/agents",
+  "/tools",
   "/insights",
   SETTINGS_PATH,
 ]);

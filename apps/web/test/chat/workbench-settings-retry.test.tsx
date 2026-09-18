@@ -2,8 +2,8 @@
 // onto `@/lib/api-query`'s `APIQuery` + `QueryView` — a failed settings
 // load now offers the shared Retry affordance, and a 401 renders as
 // sign-in-required rather than the generic error copy. This stands in for
-// both this package's LoadState consumers (surface.tsx and
-// plugins-section.tsx share the same fetch-and-render pattern).
+// both this package's LoadState consumers (surface.tsx and the
+// Tools page share the same fetch-and-render pattern).
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";

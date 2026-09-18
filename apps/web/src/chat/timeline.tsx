@@ -615,8 +615,8 @@ function EventLine({
           collapsedText
         ) : connectedDisplayName !== undefined ? (
           <>
-            {CHAT_STRINGS.eventConnectionConnectedBeforePlugins(connectedDisplayName)}
-            <a href="/plugins">{CHAT_STRINGS.eventConnectionConnectedPlugins}</a>
+            {CHAT_STRINGS.eventConnectionConnectedBeforeTools(connectedDisplayName)}
+            <a href="/tools">{CHAT_STRINGS.eventConnectionConnectedTools}</a>
           </>
         ) : (
           friendlyEventText(part, participants, agentDisplayNames)
@@ -1357,7 +1357,7 @@ function MessagePartsInner({
    * connection" action — undefined renders no affordance at
    * all, the same "no port, no feature" contract every other optional
    * action here follows. No chat-ui component owns routing: the host
-   * decides where "fix" goes (Plugins' connect panel today). */
+   * decides where "fix" goes (Tools' connect panel today). */
   readonly onFixConnection?: () => void;
   readonly approvalActions?: ApprovalActions;
   /** Host round-trip for the generic "connect-service" card. Undefined

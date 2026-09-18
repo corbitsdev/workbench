@@ -69,7 +69,7 @@ describe("system / error / connect rows hide social chrome", () => {
     expectNoSocialChrome(el);
   });
 
-  test("connection.connected settle notice links Plugins to /plugins", async () => {
+  test("connection.connected settle notice links Tools to /tools", async () => {
     const el = await mount([
       {
         id: "settle_1",
@@ -87,10 +87,10 @@ describe("system / error / connect rows hide social chrome", () => {
 
     const line = el.querySelector(".chat-event-line");
     expect(line).not.toBeNull();
-    expect(line?.textContent).toContain("GitHub connected successfully. Manage in Plugins");
-    const pluginsLink = line?.querySelector('a[href="/plugins"]');
-    expect(pluginsLink).not.toBeNull();
-    expect(pluginsLink?.textContent).toBe("Plugins");
+    expect(line?.textContent).toContain("GitHub connected successfully. Manage in Tools");
+    const toolsLink = line?.querySelector('a[href="/tools"]');
+    expect(toolsLink).not.toBeNull();
+    expect(toolsLink?.textContent).toBe("Tools");
     expectNoSocialChrome(el);
   });
 
