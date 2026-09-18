@@ -12,12 +12,12 @@ check` (typecheck, lint, fmt check, test) is the one gate CI runs.
 
 The platform schema (`public`) comes entirely from `@intx/db`'s own
 migrations — this repo authors no SQL for it. Every package that owns
-product tables gets its own Postgres schema, its own literal-SQL migration
-list, and its own ledger table tracking which of its migrations have run;
-`scripts/db-setup.ts` applies the platform's migrations and then each
-installed package's, in an explicit order. See
-[docs/package-migrations.md](docs/package-migrations.md) for the exact
-rules and shapes. Custom tables are hard-removed when retired — no drop
+product tables gets its own Postgres schema and one literal-SQL migration,
+every statement `IF NOT EXISTS` so it needs no ledger table; the hub
+applies the platform's migrations and then each mounted package's own,
+in an explicit order, once at boot (`apps/hub/src/migrate.ts`).
+`scripts/db-setup.ts` just creates the database if missing and calls the
+same function. Custom tables are hard-removed when retired — no drop
 migrations, no dead columns kept around; a schema cutover means resetting
 the local database, not writing a data migration.
 

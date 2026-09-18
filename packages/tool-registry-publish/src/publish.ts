@@ -33,7 +33,7 @@ export function sha512Integrity(bytes: Uint8Array): string {
   return `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
 }
 
-/** Structurally compatible with `@corbits/hub-api-client`'s `ApiCall` — declared locally so this package never depends on it, which depends on this one. */
+/** A `fetch`-shaped call the caller supplies, declared locally so this package never depends on a hub API client package. */
 export type ApiCall = (
   method: string,
   path: string,

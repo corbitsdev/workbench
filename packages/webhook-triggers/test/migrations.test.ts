@@ -1,9 +1,8 @@
 // DB-gated: skipped when no DATABASE_URL is reachable (a fresh
 // checkout still runs the unit gates), and turned into a loud failure
-// by CI=true so the suite can never silently vanish from CI —
-// mirroring `@corbits/chat`'s own migrations test. Runs against its
-// own scratch database, never the developer's or the walking-skeleton
-// suite's, so a failure here can never corrupt either.
+// by CI=true so the suite can never silently vanish from CI.
+// Runs against its own scratch database, never the developer's or the
+// walking-skeleton suite's, so a failure here can never corrupt either.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import postgres from "postgres";
 
@@ -20,8 +19,6 @@ function scratchUrlFor(e2eUrl: string): string {
 
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
-
-const migrationNames = ["0001_webhook_trigger"];
 
 describeIfDb("applyWebhookTriggersMigrations", () => {
   const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused");
@@ -57,13 +54,12 @@ describeIfDb("applyWebhookTriggersMigrations", () => {
     }
   }, 20000);
 
-  test("applies the trigger table into its own schema and is idempotent on a second run", async () => {
-    const first = await applyWebhookTriggersMigrations(scratchUrl);
-    expect(first.applied).toEqual(migrationNames);
-
-    const second = await applyWebhookTriggersMigrations(scratchUrl);
-    expect(second.applied).toEqual([]);
-    expect(second.alreadyApplied.sort()).toEqual([...migrationNames].sort());
+  test("applies the trigger table into its own schema and is idempotent on a second run, even concurrently", async () => {
+    await applyWebhookTriggersMigrations(scratchUrl);
+    await Promise.all([
+      applyWebhookTriggersMigrations(scratchUrl),
+      applyWebhookTriggersMigrations(scratchUrl),
+    ]);
 
     const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
     try {
@@ -81,69 +77,5 @@ describeIfDb("applyWebhookTriggersMigrations", () => {
     } finally {
       await sql.end();
     }
-  });
-});
-
-// Separate database from the suite above: two replicas racing the same
-// ledger must not collide with the idempotency test's own already-applied
-// rows, and must start from a schema that has never seen this migration
-// set before.
-describeIfDb("applyWebhookTriggersMigrations concurrency", () => {
-  const scratchUrl = scratchUrlFor(databaseUrl ?? "postgres://localhost:5432/unused").replace(
-    "_webhook_triggers_migrations_test",
-    "_webhook_triggers_migrations_concurrent_test",
-  );
-  const scratchDatabase = new URL(scratchUrl).pathname.replace(/^\//, "");
-
-  beforeAll(async () => {
-    const maintenanceUrl = new URL(scratchUrl);
-    maintenanceUrl.pathname = "/postgres";
-    const maintenance = postgres(maintenanceUrl.toString(), {
-      max: 1,
-      onnotice: () => undefined,
-    });
-    try {
-      await maintenance.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
-      await maintenance.unsafe(`CREATE DATABASE "${scratchDatabase}"`);
-    } finally {
-      await maintenance.end();
-    }
   }, 20000);
-
-  afterAll(async () => {
-    const maintenanceUrl = new URL(scratchUrl);
-    maintenanceUrl.pathname = "/postgres";
-    const maintenance = postgres(maintenanceUrl.toString(), {
-      max: 1,
-      onnotice: () => undefined,
-    });
-    try {
-      await maintenance.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
-    } finally {
-      await maintenance.end();
-    }
-  }, 20000);
-
-  test("two replicas booting concurrently both complete without either crashing on a duplicate ledger insert", async () => {
-    const [first, second] = await Promise.all([
-      applyWebhookTriggersMigrations(scratchUrl),
-      applyWebhookTriggersMigrations(scratchUrl),
-    ]);
-
-    const appliedNames = [...first.applied, ...second.applied].sort();
-    expect(new Set(appliedNames).size).toBe(appliedNames.length);
-    expect([...appliedNames, ...first.alreadyApplied, ...second.alreadyApplied].sort()).toEqual(
-      migrationNames.flatMap((name) => [name, name]).sort(),
-    );
-
-    const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
-    try {
-      const ledgerRows = await sql.unsafe(
-        `SELECT name FROM "webhook_triggers"."webhook_triggers_migrations" ORDER BY name`,
-      );
-      expect(ledgerRows.map((row) => String(row["name"]))).toEqual(migrationNames);
-    } finally {
-      await sql.end();
-    }
-  }, 10000);
 });

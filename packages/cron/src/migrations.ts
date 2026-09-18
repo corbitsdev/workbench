@@ -1,1 +1,1 @@
-export { applyCronMigrations, type ApplyCronMigrationsReport } from "./schema";
+export { applyCronMigrations } from "./schema";

@@ -9,13 +9,7 @@ export {
   type CronField,
   type ZonedParts,
 } from "./cron";
-export {
-  cronScheduleTable,
-  cronMigrations,
-  applyCronMigrations,
-  type CronMigration,
-  type ApplyCronMigrationsReport,
-} from "./schema";
+export { cronScheduleTable, applyCronMigrations } from "./schema";
 export {
   createCronTicker,
   cronSenderAddress,

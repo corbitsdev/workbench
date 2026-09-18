@@ -33,7 +33,8 @@ never seeds data on a client's behalf.
 - **Parse at every trust boundary.** arktype schemas for env, request
   bodies, and external data; never `as T` untrusted input.
 - **Custom DB tables live on their own Postgres schema**, with foreign keys
-  back to Interchange's tenant/principal tables.
+  back to Interchange's tenant/principal tables. Each package ships one
+  idempotent migration, which the hub applies itself at boot.
 - **Ancestor-walkable except grants.** Credentials, tools, and definitions
   inherit down the tenant tree; grants never do.
 - **This repo is public.** No secrets or credentials, ever — `.env.example`
@@ -107,5 +108,3 @@ passing; rebuilding coverage for the area it covered happens under CL-8150.
   disagrees with it is wrong until a review changes the doc
 - [docs/GLOSSARY.md](docs/GLOSSARY.md) — product-term to platform-term mapping
 - [docs/local-dev.md](docs/local-dev.md) — running fully local with Ollama
-- [docs/package-migrations.md](docs/package-migrations.md) — how a
-  package's own database migrations are written and applied

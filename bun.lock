@@ -59,7 +59,6 @@
         "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
         "@corbits/cron": "workspace:*",
         "@corbits/error-sink": "workspace:*",
-        "@corbits/hub-api-client": "workspace:*",
         "@corbits/inference-catalog": "workspace:*",
         "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#e85b81e4a2e0cc318dd33a4f0f92337b6fac7f38",
         "@corbits/memory": "github:corbitsdev/corbits-memory#e74da20f148a302dff5400915fe504ee2395e913",
@@ -288,17 +287,6 @@
         "@intx/log": "0.3.0",
       },
     },
-    "packages/hub-api-client": {
-      "name": "@corbits/hub-api-client",
-      "version": "0.0.1",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "packages/inference-catalog": {
       "name": "@corbits/inference-catalog",
       "version": "0.1.0",
@@ -313,18 +301,6 @@
       },
       "peerDependencies": {
         "@intx/types": "0.3.0",
-      },
-    },
-    "packages/migration-runner": {
-      "name": "@corbits/migration-runner",
-      "version": "0.0.1",
-      "dependencies": {
-        "@intx/log": "0.3.0",
-        "postgres": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
       },
     },
     "packages/tool-registry-publish": {
@@ -356,7 +332,6 @@
       "dependencies": {
         "@corbits/collections": "workspace:*",
         "@corbits/error-sink": "workspace:*",
-        "@corbits/migration-runner": "workspace:*",
         "@corbits/workflows": "workspace:*",
         "@intx/crypto": "0.3.0",
         "@intx/db": "workspace:*",
@@ -1043,8 +1018,6 @@
 
     "@corbits/granola-tools": ["@corbits/granola-tools@workspace:tools/granola"],
 
-    "@corbits/hub-api-client": ["@corbits/hub-api-client@workspace:packages/hub-api-client"],
-
     "@corbits/inference-catalog": ["@corbits/inference-catalog@workspace:packages/inference-catalog"],
 
     "@corbits/interaction-tools": ["@corbits/interaction-tools@workspace:tools/interaction"],
@@ -1054,8 +1027,6 @@
     "@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#e85b81e", { "dependencies": { "@hono/standard-validator": "0.2.3", "@intx/crypto": "0.3.0", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-e85b81e", "sha512-ATPP/pll1sYG1DLKV1HvtboK8q1tFkqayQqRXdUmRUIsFJx5wqzd8YA1XELjXzLu1P2f2uCMe2CjsJHGv6E90Q=="],
 
     "@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#9e6f213", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "@intx/workflow": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-9e6f213", "sha512-utnM4ZT2zmslcPXYWAAqxlDNLcpGsXFiTOtj8h7+OXnhCP0Eaw8yl25+yCTyHpvt3jcdeG4h5uFsSj7ou0BZCA=="],
-
-    "@corbits/migration-runner": ["@corbits/migration-runner@workspace:packages/migration-runner"],
 
     "@corbits/myra": ["@corbits/myra@workspace:agents/myra"],
 

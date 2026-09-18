@@ -59,11 +59,9 @@ for how a pin resolves through it).
 
 **Never imports:**
 
-- `@corbits/hub-api-client` — the dependency direction runs the other
-  way (`@corbits/onboarding` calls `publishCorbitsToolsRegistry` via this
-  package's re-export), so
-  this package declares its own structurally-compatible `ApiCall` type
-  rather than importing `@corbits/hub-api-client`'s.
+- Any hub API client package — a caller supplies its own `fetch`-shaped
+  `ApiCall`, so this package declares that type structurally rather than
+  importing it from anywhere.
 - `HubApiError` or any operator-facing error-wrapping convention — every
   failure here is a plain `Error`; wrapping it as an actionable
   `HubApiError` (problem + fix) is the calling setup step's job, not this

@@ -1,9 +1,4 @@
-export {
-  applyWebhookTriggersMigrations,
-  webhookTriggersMigrations,
-  type ApplyWebhookTriggersMigrationsReport,
-  type WebhookTriggersMigration,
-} from "./migrations";
+export { applyWebhookTriggersMigrations, webhookTriggersMigrationSql } from "./migrations";
 export { webhookTrigger, type WebhookTriggerRow } from "./schema";
 export {
   createDrizzleWebhookTriggerStore,

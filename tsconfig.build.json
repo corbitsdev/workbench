@@ -29,13 +29,7 @@
       "path": "./packages/error-sink/tsconfig.src.json"
     },
     {
-      "path": "./packages/hub-api-client/tsconfig.src.json"
-    },
-    {
       "path": "./packages/inference-catalog/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/migration-runner/tsconfig.src.json"
     },
     {
       "path": "./packages/tool-registry-publish/tsconfig.src.json"
