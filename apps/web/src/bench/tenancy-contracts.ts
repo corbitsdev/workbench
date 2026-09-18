@@ -22,19 +22,14 @@ export const DmWorkbenchFlag = type({
 });
 export type DmWorkbenchFlag = typeof DmWorkbenchFlag.infer;
 
-/**
- * Build the auto-name for a DM from the counterparty's display name.
- * Never invents a third-party name — caller supplies the resolved label.
- */
+// Never invents a third-party name — caller supplies the resolved label.
 export function dmWorkbenchName(counterpartyDisplayName: string): string {
   const trimmed = counterpartyDisplayName.trim();
   return trimmed.length > 0 ? trimmed : "Direct message";
 }
 
-/**
- * Spec for creating a DM workbench. The workbench runtime still lives in the
- * owning tenant; this is the product shape the create path must honor.
- */
+// The workbench runtime still lives in the owning tenant; this is the
+// product shape the create path must honor.
 export function createDmWorkbenchSpec(args: {
   readonly counterpartyDisplayName: string;
   readonly memberUserIds: readonly [string, string];
@@ -65,11 +60,8 @@ export type ParentValidationResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly code: string; readonly message: string };
 
-/**
- * Validate parentId for sub-workbench creation. Cycle-safe for create
- * (new id does not exist yet). Rejects unknown parents. Does not grant-
- * check — caller must verify owner (or create-child) separately.
- */
+// Cycle-safe for create (new id doesn't exist yet). Does not grant-check
+// — caller must verify owner separately.
 export async function validateParentId(
   parentId: string | null | undefined,
   lookup: TenantParentLookup,
@@ -87,12 +79,8 @@ export async function validateParentId(
   return { ok: true };
 }
 
-/**
- * Detect whether setting `childId`'s parent to `newParentId` would create
- * a cycle. Walks ancestors of newParentId; if childId appears, reject.
- * Used for any future reparent path; create paths pass a not-yet-existing
- * childId and always pass.
- */
+// For any future reparent path; create paths pass a not-yet-existing
+// childId and always pass.
 export async function wouldCreateParentCycle(
   childId: string,
   newParentId: string,
@@ -110,18 +98,13 @@ export async function wouldCreateParentCycle(
   return false;
 }
 
-/**
- * Roles the product may assign or display. Rejects invented roles so UI
- * never drifts from Interchange.
- */
+// Rejects invented roles so UI never drifts from Interchange.
 export function isInterchangeRole(value: string): value is InterchangeRole {
   return (INTERCHANGE_ROLES as readonly string[]).includes(value);
 }
 
-/**
- * Same-parent shared-workbench projection: both tenants must share a parent
- * (or one is the parent of the other). External cross-org is out of scope.
- */
+// Both tenants must share a parent (or one is the parent of the other).
+// External cross-org is out of scope.
 export async function canShareWorkbenchWithinParent(
   tenantA: string,
   tenantB: string,
