@@ -17,6 +17,10 @@ const AssetCreatedShape = type({ id: "string" });
 const AssetListShape = type({ id: "string", name: "string" }).array();
 const GitTokenMintShape = type({ id: "string", secret: "string" });
 const TenantDomainShape = type({ domain: "string" });
+// Same shape `session.ts`'s `fetchSession` parses; a person's refId is
+// their better-auth user id, exactly what `threads-api.ts` builds a
+// principal's mailbox address from.
+const SessionUserShape = type({ user: { id: "string" } });
 
 const PUSH_TOKEN_LIFETIME_MS = 10 * 60 * 1000;
 
@@ -241,6 +245,36 @@ function cronPath(tenantId: string): string {
   return `/api/tenants/${encodeURIComponent(tenantId)}/cron`;
 }
 
+/** The scheduled-run mail body: names the person to report to (when known)
+ * so the agent's reply has somewhere routable to go, since the cron
+ * sender itself has no mailbox. */
+export function buildScheduledRunBody(deployerAddress?: string): string {
+  const task = "Do the work your definition describes.";
+  if (deployerAddress === undefined) {
+    return `This is your scheduled run. ${task} Reply with the result.`;
+  }
+  return `This is your scheduled run. ${task} Mail the result to ${deployerAddress} (pass it as a single-item \`to\` list) with a short, descriptive subject.`;
+}
+
+/** The deploying person's mailbox address — same source `session.ts`'s
+ * `fetchSession` reads, same shape `threads-api.ts` builds a person
+ * participant's address from (`<refId>@<tenantDomain>`). Best-effort: a
+ * session probe that fails or comes back signed-out just means the
+ * scheduled run's body falls back to naming nobody, never a failed
+ * deploy over it. */
+async function resolveDeployerAddress(
+  tenantDomain: string,
+  fetchImpl: typeof fetch,
+): Promise<string | undefined> {
+  const response = await fetchImpl("/api/auth/get-session", {
+    headers: { accept: "application/json" },
+  }).catch(() => undefined);
+  if (response === undefined || !response.ok) return undefined;
+  const body: unknown = await response.json().catch(() => undefined);
+  const parsed = SessionUserShape(body);
+  return parsed instanceof type.errors ? undefined : `${parsed.user.id}@${tenantDomain}`;
+}
+
 /** Creates a `@corbits/cron` schedule row addressed at a deployed agent's
  * run — the only way an agent fires on a cadence, since Interchange's
  * `schedule` trigger is reserved but unimplemented. */
@@ -248,8 +282,10 @@ async function scheduleAgentRun(
   tenantId: string,
   expression: string,
   runAddress: string,
+  tenantDomain: string,
   fetchImpl: typeof fetch,
 ): Promise<void> {
+  const deployerAddress = await resolveDeployerAddress(tenantDomain, fetchImpl);
   const created = await fetchImpl(cronPath(tenantId), {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -257,7 +293,7 @@ async function scheduleAgentRun(
       expression,
       toAddress: runAddress,
       subject: "Scheduled run",
-      body: "This is your scheduled run. Do the work your definition describes and reply with the result.",
+      body: buildScheduledRunBody(deployerAddress),
     }),
   });
   if (!created.ok) {
@@ -346,6 +382,7 @@ export async function deployAgentSource(
       // The deployment id is the top-level run id (already `run_…`), and
       // the run address is that id at the tenant domain.
       `${parsed.id}@${tenant.domain}`,
+      tenant.domain,
       fetchImpl,
     );
   }
