@@ -29,8 +29,7 @@ import {
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
 import { ChatCircleDots, Plus, Robot } from "@/lib/icons";
-import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { CHAT_STRINGS, type Workbench } from "@/chat";
 import { runOutcomeStatus, runStatusLabel, withListingAbandoned } from "@corbits/workflows/client";
@@ -153,26 +152,23 @@ function ApprovalRow({
   readonly tenantId: string;
 }) {
   const queryClient = useQueryClient();
-  const [pending, setPending] = useState<"approve" | "deny" | null>(null);
-
-  async function resolve(action: "approve" | "deny") {
-    setPending(action);
-    try {
-      if (action === "approve") await approveApproval(tenantId, item.id);
-      else await rejectApproval(tenantId, item.id);
-      await queryClient.invalidateQueries({
+  const resolveMutation = useMutation({
+    mutationFn: (action: "approve" | "deny") =>
+      action === "approve" ? approveApproval(tenantId, item.id) : rejectApproval(tenantId, item.id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
         queryKey: tenantKeys.pendingApprovals(tenantId),
       });
-    } catch (cause) {
+    },
+    onError: (cause, action) => {
       toast(
         cause instanceof Error
           ? cause.message
           : `Couldn't ${action === "approve" ? "approve" : "deny"} that request.`,
       );
-    } finally {
-      setPending(null);
-    }
-  }
+    },
+  });
+  const pending = resolveMutation.isPending ? resolveMutation.variables : null;
 
   return (
     <TableRow>
@@ -187,7 +183,7 @@ function ApprovalRow({
             variant="ghost"
             size="sm"
             disabled={pending !== null}
-            onClick={() => void resolve("deny")}
+            onClick={() => resolveMutation.mutate("deny")}
           >
             {pending === "deny" ? "Denying…" : "Deny"}
           </Button>
@@ -195,7 +191,7 @@ function ApprovalRow({
             variant="primary"
             size="sm"
             disabled={pending !== null}
-            onClick={() => void resolve("approve")}
+            onClick={() => resolveMutation.mutate("approve")}
           >
             {pending === "approve" ? "Approving…" : "Approve"}
           </Button>
