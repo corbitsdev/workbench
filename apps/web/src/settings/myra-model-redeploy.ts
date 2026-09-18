@@ -67,16 +67,23 @@ export function swapDeclaredOffering(
 } | null {
   const index = before.sourceOfferingIds.indexOf(oldOfferingId);
   if (index === -1) return null;
+  const swappedIds = before.sourceOfferingIds.map((id) =>
+    id === oldOfferingId ? newOfferingId : id,
+  );
+  const swappedSources = before.declaredSources.map((source, position) =>
+    position === index ? { provider, model: newCanonicalName } : source,
+  );
+  // The new offering is minted before the current list is read, so it can
+  // already be present; the hub rejects a chain that names an id twice.
+  const firstSeen = (id: string, position: number) => swappedIds.indexOf(id) === position;
   return {
-    sourceOfferingIds: before.sourceOfferingIds.map((id) =>
-      id === oldOfferingId ? newOfferingId : id,
-    ),
+    sourceOfferingIds: swappedIds.filter(firstSeen),
     defaultSourceOfferingId:
       before.defaultSourceOfferingId === oldOfferingId
         ? newOfferingId
         : before.defaultSourceOfferingId,
-    declaredSources: before.declaredSources.map((source, position) =>
-      position === index ? { provider, model: newCanonicalName } : source,
+    declaredSources: swappedSources.filter((_, position) =>
+      firstSeen(swappedIds[position] ?? "", position),
     ),
   };
 }

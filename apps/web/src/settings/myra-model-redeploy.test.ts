@@ -45,6 +45,33 @@ describe("swapDeclaredOffering", () => {
     expect(result?.sourceOfferingIds).toEqual(["off_new", "off_b", "off_c"]);
   });
 
+  test("drops the duplicate when the new offering is already declared", () => {
+    // The new offering is minted before the current list is read, so the
+    // swap would otherwise declare it twice and the hub rejects that.
+    const before = {
+      sourceOfferingIds: ["off_old", "off_new"],
+      defaultSourceOfferingId: "off_old",
+      declaredSources: [
+        { provider: "openai-compatible" as const, model: "qwen2.5:7b" },
+        { provider: "openai-compatible" as const, model: "llama3.2:1b" },
+      ],
+    };
+
+    const result = swapDeclaredOffering(
+      before,
+      "off_old",
+      "off_new",
+      "openai-compatible",
+      "llama3.2:1b",
+    );
+
+    expect(result).toEqual({
+      sourceOfferingIds: ["off_new"],
+      defaultSourceOfferingId: "off_new",
+      declaredSources: [{ provider: "openai-compatible", model: "llama3.2:1b" }],
+    });
+  });
+
   test("returns null when the old offering id isn't declared at all", () => {
     const result = swapDeclaredOffering(
       BEFORE,
