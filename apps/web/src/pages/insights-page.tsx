@@ -682,7 +682,7 @@ function InsightsWorkbenchPage({
         <PageShell width="full" className="page-fill">
           <RichEmptyState
             icon={<ChartBar />}
-            title="This workbench's activity lives in its room"
+            title="This workbench's activity lives in its own conversation"
             description="Open the workbench to read its conversation."
           />
         </PageShell>

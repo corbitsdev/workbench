@@ -29,5 +29,5 @@ with no separate integration per server.
 ## Chat is mail
 
 Talking to Myra, or to a teammate, is an ordinary mail thread — no
-separate "chat" concept to learn, no bespoke room model. What you send
+separate "chat" concept to learn, no bespoke conversation model. What you send
 lands in an inbox; what she does happens through approvals you can see.

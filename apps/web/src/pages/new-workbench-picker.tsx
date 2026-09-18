@@ -27,9 +27,9 @@ export function describeWorkbenchCreateFailure(cause: unknown, refId?: string): 
   if (!(cause instanceof WorkbenchCreateError)) return GENERIC_CREATE_FAILURE;
   const message =
     cause.stage === "opening-message"
-      ? "Workbench created, but we couldn't send the opening message. Try again from the room."
+      ? "Workbench created, but we couldn't send the opening message. Try again from the workbench."
       : cause.stage === "deploy"
-        ? "Workbench created, but its agent couldn't be deployed into it. Try again from the room."
+        ? "Workbench created, but its agent couldn't be deployed into it. Try again from the workbench."
         : GENERIC_CREATE_FAILURE;
   return refId === undefined ? message : `${message} Reference: ${refId}`;
 }
@@ -219,7 +219,7 @@ export function NewWorkbenchPickerRoute() {
               </div>
               <div className="new-workbench-prompt-actions">
                 <div className="new-workbench-agent-selection">
-                  <span>In the room</span>
+                  <span>In the workbench</span>
                   {selectedAgents.map((agent) => (
                     <span key={agent.id} className="new-workbench-agent-chip">
                       {agent.name}

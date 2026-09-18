@@ -28,7 +28,7 @@ Top to bottom:
    opens `/new`.
 2. **Bench list** — one recency list of conversations, pins first.
    Agent DMs (`kind: chat`, one per agent) mix with channels
-   (`kind: workbench` rooms). Not two labeled empty sections, and not
+   (`kind: workbench`). Not two labeled empty sections, and not
    a list titled Workbenches. Search is built into the list itself.
    Nothing page-scoped ever renders in this body; it lists
    conversations, not product sections.
@@ -77,7 +77,7 @@ empty channel with no host, then instantiate the picked Workbench
 Definition — the agents, block workflows, and pending tools it names
 (Myra joins only when the definition names her; Code review's three
 reviewers do not) — and run its ordered onboarding walkthrough as an
-in-room card the room itself posts, never a side effect of hosting an
+in-workbench card the workbench itself posts, never a side effect of hosting an
 agent. The card reads live connection state and flips straight to the
 repo pick, so there is one walkthrough, not a separate already-connected
 dialog. The sidebar `+` opens this route. First-run after credential
@@ -353,13 +353,13 @@ personal-access-token paste, then the same card flips to pick
 repositories. A GitHub App / hosted OAuth Connect as the welcome mat is
 tracked separately (out of scope), not the shipped card.
 
-The room's own onboarding card renders as a scene, not a member's
+The workbench's own onboarding card renders as a scene, not a member's
 message: no author row, the job as its title with the promise beneath,
 and the walkthrough's steps listed with the current one marked in
 words. Once repos are recorded the card shows the Reviewing state —
 what it's reviewing now — with a change-repos link back to the picker,
 never still offering Connect. Consecutive agent-joined rows collapse
-into one line naming everyone, so a template room opens on the scene
+into one line naming everyone, so a template workbench opens on the scene
 and the reviewers' own introductions, never a join dump.
 
 ## State Pills
