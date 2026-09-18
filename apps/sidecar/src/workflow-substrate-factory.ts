@@ -856,59 +856,27 @@ export function createSidecarRunChild(deps: SidecarRunChildDeps): RunChildWorkfl
 }
 
 /**
- * Construct the `RunSuspendableChild` callback the suspendable-spawn
- * adapter delegates to. The park-aware analog of
- * {@link createSidecarRunChild}: instead of awaiting the child's terminal,
- * it returns a live {@link SuspendableChildHandle} the caller (`runOnTrigger`)
- * drives across the body's approval parks.
- *
- * Park surfacing: the built env's `onPark` sink translates the child body's
- * control-plane parks into the handle's `next()` stream. An `"approval"`
- * park is queued for the caller to proxy up on the same correlation; the
- * caller's granted decision returns through `resume`, which delivers it on
- * the child's own signal channel so the parked step unblocks. A body that
- * parks on a control-plane `"input"` channel is a nested onTrigger re-arm
- * the suspendable seam does not service -- the caller proxies approvals
- * only, so nothing would ever deliver that input and the child would park
- * forever. Rather than drop the park and hang, `onPark` surfaces it as a
- * hard error on `next()` and tears the child down locally so the section run
- * ends loudly (failed).
- *
- * Signal-channel lifecycle: unlike `createSidecarRunChild`, which stops the
- * channel in a `finally` around a single awaited terminal, this keeps the
- * channel alive across every park (so `resume` can deliver) and ties its
- * teardown to the run's terminal -- the one lifecycle moment every path
- * funnels through (normal completion, a parent-abort local teardown, an
- * illegal-input-park local teardown, or a runtime failure). Tearing down
- * per-`next()` would leak the channel when a parent abort makes `runOnTrigger`
- * stop calling `next()` mid-park.
- *
- * Abort propagation: the parent-supplied `signal` tears the body down through
- * `createSuspendableChildHandle`'s local-teardown seam -- the in-process body
- * runs under the `workflow-process` principal and cannot sign the control-plane
- * `CancelRequested` a durable cancel needs, so on abort its own step fails and
- * the run settles `failed` (not `cancelled`), and the terminal-tied teardown
- * runs.
+ * The park-aware analog of {@link createSidecarRunChild}: returns a live
+ * handle instead of awaiting a terminal. A body parking on a control-plane
+ * "input" channel (a nested onTrigger the suspendable seam can't service)
+ * surfaces as a hard error on next() rather than hanging forever. The
+ * signal channel stays alive across every park and is tied to the run's
+ * terminal, not per-next(), or a parent abort mid-park would leak it.
  */
 export function createSidecarSpawnSuspendableChild(deps: SidecarRunChildDeps): RunSuspendableChild {
   const directors = deps.directors ?? createDefaultDirectorRegistry();
   const clock = deps.clock ?? defaultClock;
   const newId = deps.newId ?? defaultNewId;
-  // No `controlPlanePrincipal`: an in-process body tears down through the shared
-  // handle's local-abort seam (`createSuspendableChildHandle`), not a durable
-  // `CancelRequested`, so it never writes a control-plane cancel this repo store
-  // would have to sign. Run-body events use the workflow-process `principal`.
+  // No controlPlanePrincipal: teardown goes through the shared handle's
+  // local-abort seam, not a durable CancelRequested.
   const repoStore = createWorkflowRunRepoStore({
     substrate: deps.substrate,
     repoId: deps.workflowRunRepoId,
     principal: deps.principal,
     ref: deps.workflowRunRef,
   });
-  // A body's own `childWorkflow` grandchildren spawn terminal-only: the
-  // suspendable seam is exercised only by onTrigger sections, and
-  // `buildChildRunEnv` wires the body env's `spawnChild` (not
-  // `spawnSuspendableChild`), so a nested onTrigger inside a body fails loud
-  // rather than silently spawning.
+  // Body grandchildren spawn terminal-only: buildChildRunEnv wires spawnChild,
+  // not spawnSuspendableChild, so a nested onTrigger fails loud.
   const runChild = createSidecarRunChild(deps);
 
   return async (
@@ -939,15 +907,8 @@ export function createSidecarSpawnSuspendableChild(deps: SidecarRunChildDeps): R
       definition,
       childRunId,
       parentRunId,
-      // The live event sink is always threaded (both a body step and a
-      // grandchild childWorkflow step run a real agent). The body's own steps
-      // and its childWorkflow grandchildren, built via the internal
-      // `createSidecarRunChild(deps)` above, both run through the tool-bearing
-      // `deps.invokeStep`.
       onEvent,
-      // The run's live credential-material cell so the body's inference resolves
-      // its source secret against the parent's current delivery; a grandchild
-      // spawned from the body inherits it through the recursive spawnChild.
+      // A grandchild spawned from the body inherits this through the recursive spawnChild.
       ...(credentialMaterial !== undefined ? { materialCell: credentialMaterial } : {}),
     });
 
@@ -965,32 +926,11 @@ export function createSidecarSpawnSuspendableChild(deps: SidecarRunChildDeps): R
 }
 
 /**
- * Read the parent run's grants, cap them to what `definition` declares, and
- * persist the capped set as the child run's own `runs/<childRunId>/grants.json`
- * -- the file the next spawn hop (a childWorkflow grandchild) reads back as its
- * ceiling. Returns the capped grants so a caller building a fresh child env can
- * also key its credentials snapshot on them.
- *
- * `definition` MUST be the PRE-rewrite body, its childWorkflow grandchildren
- * still INLINE: `collectDeclaredResources` skips a `{ ref }` body, so a
- * rewritten definition would drop the grandchild's declared resources and
- * under-authorize it. Every birth path materializes a run's grants file, so a
- * missing parent file is a defect, not a run that legitimately holds none --
- * fail closed. The cap only removes rules (the parent stays the ceiling),
- * matching the top level's "authority bounded by declared capabilities" model.
- *
- * The grants file is WRITE-ONCE per run: a run's authorization ceiling is fixed
- * at its birth, so this reads back an existing `runs/<childRunId>/grants.json`
- * rather than rewriting it. Re-writing on a resume re-drive is not just
- * redundant, it is CORRUPTING: `writeChildRunGrants` commits at the shallow
- * `runs/<childRunId>/` prefix through a substrate writer separate from the
- * runtime's event-log writer, so a re-write racing the runtime's replay
- * re-appends on the shared repo regresses another run's event seq (a
- * single-writer-invariant violation), and its wholesale subtree-delete drops the
- * run's committed `events/`/`blobs/` (the prefix read is non-recursive, so the
- * merge cannot carry them forward). The read-back returns the same capped set
- * the birth-time write persisted, so a fresh child-env caller keys its
- * credentials snapshot on identical grants either way.
+ * definition must be the pre-rewrite body (grandchildren still inline), or
+ * collectDeclaredResources would under-authorize a rewritten { ref } body.
+ * Write-once per run: a resume re-drive reads back the existing grants
+ * file rather than rewriting it, since a re-write would race the runtime's
+ * replay and corrupt the shared repo's event seq.
  */
 async function capAndPersistChildGrants(args: {
   deps: SidecarRunChildDeps;
