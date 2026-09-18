@@ -7,6 +7,7 @@
 import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
 import { type } from "arktype";
 import { WorkflowDeploymentResponse } from "@intx/types";
+import { reportError } from "@corbits/error-sink";
 
 import { resolveExistingOffering } from "./onboarding/provider-connect-step";
 import { isValidSlug, slugify } from "@/lib/slug";
@@ -266,11 +267,23 @@ async function resolveDeployerAddress(
   tenantDomain: string,
   fetchImpl: typeof fetch,
 ): Promise<string | undefined> {
-  const response = await fetchImpl("/api/auth/get-session", {
-    headers: { accept: "application/json" },
-  }).catch(() => undefined);
-  if (response === undefined || !response.ok) return undefined;
-  const body: unknown = await response.json().catch(() => undefined);
+  let response: Response;
+  try {
+    response = await fetchImpl("/api/auth/get-session", {
+      headers: { accept: "application/json" },
+    });
+  } catch (cause) {
+    reportError(cause, { operation: "agent_deploy_resolve_deployer_address" });
+    return undefined;
+  }
+  if (!response.ok) return undefined;
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (cause) {
+    reportError(cause, { operation: "agent_deploy_resolve_deployer_address" });
+    return undefined;
+  }
   const parsed = SessionUserShape(body);
   return parsed instanceof type.errors ? undefined : `${parsed.user.id}@${tenantDomain}`;
 }
