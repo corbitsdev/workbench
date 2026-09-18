@@ -21,6 +21,8 @@ function manualChunks(id: string): string | undefined {
   return undefined;
 }
 
+const hubOrigin = process.env.BASE_URL ?? "http://localhost:3000";
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -37,7 +39,14 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api": process.env.BASE_URL ?? "http://localhost:3000",
+      "/api": {
+        target: hubOrigin,
+        // Better Auth trusts only the hub's own origin, so the dev server
+        // presents itself as the hub rather than as localhost:5173.
+        configure(proxy) {
+          proxy.on("proxyReq", (proxyReq) => proxyReq.setHeader("origin", hubOrigin));
+        },
+      },
     },
   },
 });
