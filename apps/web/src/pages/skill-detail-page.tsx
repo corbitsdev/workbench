@@ -1,32 +1,44 @@
 // The skill detail page at `/skills/<name>`.
 //
-// this used to be a full editor over `@corbits/skills`' own
-// registry — description/body editing with diff review, restore-by-
-// version off that asset's git history, a "pinned by" list, and a
-// private/shared visibility toggle. That registry (and the workflow
-// routes it served) was deleted: skills are native `kind:"skill"` hub
-// assets now, and the stock asset routes (`@intx/hub-api`'s
-// `routes/assets.ts`) carry only metadata — id, name, displayName,
-// creator, timestamps. There is no stock route yet to read a skill's
-// SKILL.md content, its version history, who has it pinned, or a
-// scope/visibility flag, so none of that can be rendered here without
-// vendoring a replacement surface. This page is scoped down to what the
-// stock routes actually carry until one exists — see the PR body
-// for the gap.
-import { PageShell, RichEmptyState, Section, formatRelativeTime } from "@corbits/react-ui";
+// this used to be a full editor over `@corbits/skills`' own registry —
+// description/body editing with diff review, restore-by-version off that
+// asset's git history, a "pinned by" list, and a private/shared visibility
+// toggle. That registry (and the workflow routes it served) was deleted:
+// skills are native `kind:"skill"` hub assets now, and the stock asset
+// routes (`@intx/hub-api`'s `routes/assets.ts`) carry only metadata — id,
+// name, displayName, creator, timestamps. There is still no stock route
+// for a skill's version history, pinned-by list, or scope/visibility
+// flag, so those stay out of this page. Its `SKILL.md` content, though,
+// is readable and writable the same way agent source is: over the
+// asset's own smart-HTTP git remote with a short-lived token (see
+// `skill-source.ts`).
+import {
+  Button,
+  PageShell,
+  RichEmptyState,
+  Section,
+  Textarea,
+  formatRelativeTime,
+  toast,
+} from "@corbits/react-ui";
 import { Lightning } from "@/lib/icons";
 import { WorkbenchLoadingState } from "@/chat";
 import { ApiQueryError, describeApiError } from "@/lib/api-query";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useState, type ReactNode } from "react";
 
 import { tenantKeys } from "../query-client";
 
 import { useBench } from "../bench-context";
 import { SKILLS_PATH_PREFIX, skillIdFromPath } from "../path-ids";
 import { skillDisplayName } from "../skill-display-name";
+import { readSkillSource, writeSkillSource } from "../skill-source";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { loadSkill, type SkillSummary } from "../skills-api";
+
+function errorText(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
 
 type PageState =
   | { readonly status: "loading" }
@@ -128,17 +140,95 @@ export function SkillDetailPage({
         </p>
       </header>
 
-      <Section
-        title="Skill content"
-        description="Not readable here yet: there is no stock Interchange route for a skill's SKILL.md content."
-      >
-        <p className="text-sm text-muted-foreground">
-          This skill's description, instructions, version history, and pinned-by list lived in the
-          workbench-specific skill registry removed by. They will return once a stock route for
-          reading and writing skill content exists.
-        </p>
-      </Section>
+      <SkillSourceEditor tenantId={tenantId} skill={skill} />
     </div>,
+  );
+}
+
+/** SKILL.md's editor: a read `useQuery`, handed off to a `SkillDraftEditor`
+ * keyed on the fetched content so its draft state seeds once per value
+ * read rather than through an effect. */
+function SkillSourceEditor({
+  tenantId,
+  skill,
+}: {
+  readonly tenantId: string;
+  readonly skill: SkillSummary;
+}) {
+  const queryClient = useQueryClient();
+  const sourceKey = [...tenantKeys.skills(tenantId), skill.assetId, "source"] as const;
+  const source = useQuery({
+    queryKey: sourceKey,
+    queryFn: () => readSkillSource(tenantId, skill.assetId, skill.name),
+  });
+
+  const save = useMutation({
+    mutationFn: (content: string) => writeSkillSource(tenantId, skill.assetId, skill.name, content),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: sourceKey });
+      toast("Saved SKILL.md");
+    },
+    onError: (cause) => toast(`Couldn't save SKILL.md: ${errorText(cause)}`),
+  });
+
+  if (source.isError) {
+    return (
+      <Section title="SKILL.md">
+        <RichEmptyState
+          icon={<Lightning />}
+          title="Couldn't load SKILL.md"
+          description={errorText(source.error)}
+          actions={[{ label: "Retry", onClick: () => void source.refetch() }]}
+        />
+      </Section>
+    );
+  }
+
+  return (
+    <Section title="SKILL.md" description="This skill's instructions, read from its own repo.">
+      {source.data === undefined ? (
+        <Textarea value="" disabled className="min-h-[320px] font-mono text-[0.8125rem]" />
+      ) : (
+        <SkillDraftEditor
+          key={source.data}
+          initial={source.data}
+          saving={save.isPending}
+          onSave={(content) => save.mutate(content)}
+        />
+      )}
+    </Section>
+  );
+}
+
+/** The draft textarea and Save button for one fetched `SKILL.md` value.
+ * Keyed by its caller on that value, so `useState(initial)` seeds once
+ * per fetch/save cycle rather than through an effect. */
+function SkillDraftEditor({
+  initial,
+  saving,
+  onSave,
+}: {
+  readonly initial: string;
+  readonly saving: boolean;
+  readonly onSave: (content: string) => void;
+}) {
+  const [draft, setDraft] = useState(initial);
+  const dirty = draft !== initial;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        className="min-h-[320px] font-mono text-[0.8125rem]"
+        placeholder="# Skill instructions"
+      />
+      <div>
+        <Button type="button" onClick={() => onSave(draft)} disabled={!dirty || saving}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </div>
   );
 }
 

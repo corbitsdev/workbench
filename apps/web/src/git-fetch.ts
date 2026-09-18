@@ -4,7 +4,7 @@
 // pkt-lines fine, so no hand-rolled wire code is needed here.
 import LightningFS from "@isomorphic-git/lightning-fs";
 import { Buffer } from "buffer";
-import git from "isomorphic-git";
+import git, { Errors } from "isomorphic-git";
 import http from "isomorphic-git/http/web";
 
 globalThis.Buffer ??= Buffer;
@@ -13,33 +13,67 @@ export class GitFetchError extends Error {}
 
 const MAIN_REF = "refs/heads/main";
 
+async function cloneAndFetchMain(args: {
+  url: string;
+  token: string;
+}): Promise<{ fs: InstanceType<typeof LightningFS>; dir: string }> {
+  const fs = new LightningFS(`workbench-fetch-${crypto.randomUUID()}`, { wipe: true });
+  const dir = "/repo";
+  await fs.promises.mkdir(dir);
+  await git.init({ fs, dir, defaultBranch: "main" });
+  await git.fetch({
+    fs,
+    http,
+    dir,
+    url: args.url,
+    ref: MAIN_REF,
+    // The hub's git server advertises no `shallow` capability, so a
+    // depth-limited fetch is rejected outright; fetch the full branch.
+    singleBranch: true,
+    tags: false,
+    headers: { Authorization: `Bearer ${args.token}` },
+  });
+  return { fs, dir };
+}
+
 /** Fetches `main` and returns `filepath`'s contents as text. */
 export async function fetchSourceFile(args: {
   url: string;
   token: string;
   filepath: string;
 }): Promise<string> {
-  const fs = new LightningFS(`workbench-fetch-${crypto.randomUUID()}`, { wipe: true });
-  const dir = "/repo";
-  await fs.promises.mkdir(dir);
-  await git.init({ fs, dir, defaultBranch: "main" });
   try {
-    await git.fetch({
-      fs,
-      http,
-      dir,
-      url: args.url,
-      ref: MAIN_REF,
-      // The hub's git server advertises no `shallow` capability, so a
-      // depth-limited fetch is rejected outright; fetch the full branch.
-      singleBranch: true,
-      tags: false,
-      headers: { Authorization: `Bearer ${args.token}` },
-    });
+    const { fs, dir } = await cloneAndFetchMain(args);
     const oid = await git.resolveRef({ fs, dir, ref: "FETCH_HEAD" });
     const { blob } = await git.readBlob({ fs, dir, oid, filepath: args.filepath });
     return new TextDecoder().decode(blob);
   } catch (cause) {
+    throw new GitFetchError(cause instanceof Error ? cause.message : String(cause));
+  }
+}
+
+/** Fetches `main` and returns `filepath`'s contents as text, or `""` when
+ * the branch has no commits yet or the file isn't in it — the two shapes
+ * a freshly created, still-empty asset takes. Any other failure (auth,
+ * network, a malformed repo) still throws. */
+export async function fetchSourceFileOrEmpty(args: {
+  url: string;
+  token: string;
+  filepath: string;
+}): Promise<string> {
+  try {
+    const { fs, dir } = await cloneAndFetchMain(args);
+    let oid: string;
+    try {
+      oid = await git.resolveRef({ fs, dir, ref: "FETCH_HEAD" });
+    } catch (cause) {
+      if (cause instanceof Errors.NotFoundError) return "";
+      throw cause;
+    }
+    const { blob } = await git.readBlob({ fs, dir, oid, filepath: args.filepath });
+    return new TextDecoder().decode(blob);
+  } catch (cause) {
+    if (cause instanceof Errors.NotFoundError) return "";
     throw new GitFetchError(cause instanceof Error ? cause.message : String(cause));
   }
 }
