@@ -2,11 +2,12 @@
 // first message (agent picked in the select, or by @tagging one in the
 // message itself); `/chats/:id` is the transcript plus a reply box.
 
-import { Button, EmptyState, PageShell, Select, Textarea } from "@corbits/react-ui";
+import { Button, EmptyState, PageShell, Select } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
+import { Composer } from "@/chat/composer";
 import { Markdown } from "@/chat/markdown";
 import {
   agentFromMention,
@@ -24,47 +25,6 @@ import { chatIdFromPath, chatKeys, chatPath, NEW_CHAT_PATH } from "../chat-path"
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
-}
-
-function Composer({
-  placeholder,
-  busy,
-  disabled,
-  onSend,
-}: {
-  readonly placeholder: string;
-  readonly busy: boolean;
-  readonly disabled?: boolean;
-  readonly onSend: (text: string) => void;
-}) {
-  const [text, setText] = useState("");
-  const send = () => {
-    const trimmed = text.trim();
-    if (trimmed === "" || busy || disabled) return;
-    setText("");
-    onSend(trimmed);
-  };
-  return (
-    <div className="chat-composer">
-      <Textarea
-        value={text}
-        rows={3}
-        placeholder={placeholder}
-        aria-label={placeholder}
-        disabled={disabled}
-        onChange={(event) => setText(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            send();
-          }
-        }}
-      />
-      <Button variant="primary" disabled={busy || disabled || text.trim() === ""} onClick={send}>
-        {busy ? "Sending…" : "Send"}
-      </Button>
-    </div>
-  );
 }
 
 function NewChat({
