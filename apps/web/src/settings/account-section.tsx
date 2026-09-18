@@ -1,11 +1,6 @@
-// Personal Settings' opening section: a glanceable Account card (avatar,
-// name, email — copyable — and Sign out), the same name/email/verified
-// readout as before tucked below as a quieter subsection (still read-only —
-// there is no native profile-update route; see `vendor/intx/hub-api/src/
-// routes` — only tenants and principals carry a PATCH), an Appearance card
-// wired to `@corbits/react-ui`'s three-state ThemeProvider. The Agent card
-// (a display-only Timezone row) was removed — nothing there could be
-// changed until a hub preference store exists to write it to.
+// Name/email readout is read-only: no native profile-update route exists.
+// The Agent card was removed — nothing there could change until a hub
+// preference store exists to write it to.
 
 import {
   Avatar,
@@ -74,11 +69,8 @@ async function copyEmail(email: string): Promise<void> {
   }
 }
 
-/**
- * The account panel's markup on its own, taking already-resolved display
- * fields — kept separate from `AccountSection` for the same reason
- * `BenchSectionView` is: directly renderable in tests without a fetch stub.
- */
+// Kept separate from `AccountSection`, like `BenchSectionView`, so it's
+// directly renderable in tests without a fetch stub.
 export function AccountSectionView({
   id,
   name,

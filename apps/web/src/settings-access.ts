@@ -1,11 +1,6 @@
-// Settings section-nav gating, deduplicated: col2's nav band and the
-// settings stage both mount independently and both need the same four
-// tenancy probes (People/Roles/Grants/Credentials). Riding the app's shared
-// QueryClient — instead of each mount calling `@/settings`'s bare
-// `useTenancyAccess`, which fetches on every mount with no cache — means
-// two mounted consumers share one in-flight request and one cached result.
-// The package stays free of TanStack Query: this only injects the
-// package's probe into the app's cache, the package never imports Query.
+// Rides the app's shared QueryClient so col2's nav band and the settings
+// stage share one in-flight request instead of each fetching on mount.
+// The `@/settings` package itself stays free of TanStack Query.
 
 import { coalesceSectionAccess, probeSectionAccess } from "@/settings";
 import type { TenancyAccess } from "@/settings";
@@ -33,11 +28,8 @@ function coalesceTenancyAccess(
   };
 }
 
-/** One shared probe per (tenant, principal), not one per mounted consumer.
- * `null` ids report `loading` — the same "not shown yet, never disabled"
- * contract `@/settings`'s own hook holds. A thrown evaluate
- * (network/5xx) is `error`, not `denied`; a refetch failure keeps the
- * last allow/deny so gated nav does not vanish as if unauthorized. */
+// A thrown evaluate is `error`, not `denied`; a refetch failure keeps the
+// last allow/deny so gated nav doesn't vanish as if unauthorized.
 export function useSettingsAccess(
   tenantId: string | null,
   principalId: string | null,

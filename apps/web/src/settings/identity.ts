@@ -1,16 +1,6 @@
-// Pure helpers for the People section's one identity gap: `PrincipalResponse`
-// gives agent principals no identity resolution, so `displayName` falls back
-// server-side to the raw `refId` (see `resolveIdentities` in
-// vendor/intx/hub-api/src/routes/principals.ts). The UI floor forbids ever
-// showing that raw value as the label a person reads — this derives a
-// humane stand-in from it and keeps the raw value available for a tooltip
-// only, never as visible text.
-//
-// `PRINCIPAL_KIND_LABEL` and `PRINCIPAL_KIND_ORDER` live here too, shared by
-// every picker that lists principals (Grants' target select and filter).
-// Grants assign to people, agents, *and* workflows. Roles' assignment picker
-// is scoped to user-kind principals only: agents/workflows are
-// machine identities that belong on separate surfaces.
+// An agent principal's `displayName` falls back server-side to a raw
+// `refId`; the UI floor forbids showing that raw value, so this derives a
+// humane stand-in and keeps the raw value for a tooltip only.
 
 import { SETTINGS_STRINGS } from "./strings";
 
@@ -29,12 +19,7 @@ function looksRaw(value: string): boolean {
   return RAW_LOOKING_PATTERN.test(value);
 }
 
-/**
- * Strips the plumbing off a raw agent address or id — scheme, host,
- * underscore-prefixed type tags — down to whatever's left of a human name,
- * title-cased. Falls back to a plain "Unnamed agent" when nothing
- * recognizable survives.
- */
+// Falls back to "Unnamed agent" when nothing recognizable survives.
 function derivePrincipalLabel(raw: string): string {
   const segment =
     raw

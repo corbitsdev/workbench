@@ -1,8 +1,5 @@
-// The "Grants" settings section: what each role or person is allowed,
-// denied, or asked about, and on what — filterable, creatable, revocable
-// over the native `/api/tenants/:tenantId/grants` route. The resource
-// vocabulary has no listing endpoint of its own (see the tenancy
-// inventory's gap list); `resource-vocabulary.ts` carries it as a constant.
+// The resource vocabulary has no listing endpoint of its own;
+// `resource-vocabulary.ts` carries it as a constant instead.
 
 import {
   Badge,
