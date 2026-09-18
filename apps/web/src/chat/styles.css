@@ -963,6 +963,9 @@
   border-radius: var(--ui-radius-sm, 0.25rem);
   padding: 0.05rem 0.3rem;
   font-size: 0.85em;
+  /* An unbroken token (a long path, hash, URL) wraps inside the message
+     column instead of pushing it wider. */
+  overflow-wrap: anywhere;
 }
 
 .chat-md-code-block {
@@ -971,6 +974,9 @@
   background: var(--muted, color-mix(in srgb, var(--foreground) 8%, transparent));
   border-radius: var(--ui-radius-sm, 0.25rem);
   overflow-x: auto;
+  /* The block itself never grows past its flex column ancestors; a long
+     unbroken line scrolls inside this box instead. */
+  max-width: 100%;
   font-size: 0.85em;
 }
 
