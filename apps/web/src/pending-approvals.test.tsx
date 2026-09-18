@@ -13,7 +13,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { createChatApprovalActions } from "./approval-actions";
 import { BenchContext, type BenchState } from "./bench-context";
 import { NavigationProvider } from "./navigation";
-import { MissionControlRoute } from "./pages/mission-control-page";
 import { usePendingApprovals } from "./pending-approvals";
 import { TestQueryProvider } from "./test-query-provider";
 
@@ -182,11 +181,16 @@ describe("usePendingApprovals", () => {
       if (path === `/api/tenants/${TENANT_ID}/approvals`) {
         return json({ error: { code: "forbidden", message: "no" } }, 403);
       }
-      if (path.includes("/insights/activity")) return json({ days: [] });
       return undefined;
     });
 
-    const el = await mount(<MissionControlRoute navigate={() => undefined} />);
+    function ApprovalsFailure() {
+      const approvals = usePendingApprovals(TENANT_ID);
+      if (approvals.kind === "error") return <p>Couldn't load approvals: {approvals.message}</p>;
+      return <p>Nothing waiting on you</p>;
+    }
+
+    const el = await mount(<ApprovalsFailure />);
 
     expect(el.textContent).toContain("Couldn't load approvals");
     expect(el.textContent).not.toContain("Nothing waiting on you");

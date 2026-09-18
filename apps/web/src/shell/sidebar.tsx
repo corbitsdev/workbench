@@ -1,14 +1,15 @@
-// The one sidebar. Header: the brand mark, then create + search. Body:
-// Agents and Channels — nothing page-scoped ever renders here. Footer: the
-// primary rail is Artifacts, Skills, Tools, Workflows, Agents. Below the
-// rail: a single Settings row (icon + label) — Insights, the account menu
-// (avatar, name, sign out), and everything else now live inside Settings
-// itself, not as separate sidebar affordances.
+// The one sidebar. Header: the brand mark, then a create dropdown + search.
+// Body: Agents and Channels — nothing page-scoped ever renders here.
+// Footer: the primary rail is Artifacts, Skills, Tools, Workflows, Agents.
+// Below the rail: a single Settings row (icon + label) — Insights, the
+// account menu (avatar, name, sign out), and everything else now live
+// inside Settings itself, not as separate sidebar affordances.
 // Always present; there is no collapse affordance and no second nav column.
 // Approvals belong in the conversation, not as a standing band here.
 //
 // Inbox is gone (owner decision: tasks + approvals don't flow
-// into workbenches).
+// into workbenches). Mission Control is gone too — its pending-approvals
+// and activity panels now live inside each workbench's own room.
 //
 // No bench switcher: a workbench IS an agent conversation now,
 // one per account, so there is nothing to switch between in the common
@@ -18,7 +19,16 @@
 // (`command-palette-actions.ts`), which only appears once memberships
 // resolve to more than one workbench.
 
-import { Button, SidebarPanel, SidebarPanelBody, SidebarPanelFooter } from "@corbits/react-ui";
+import {
+  Button,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
+  SidebarPanel,
+  SidebarPanelBody,
+  SidebarPanelFooter,
+} from "@corbits/react-ui";
 import {
   FlowArrow,
   FolderOpen,
@@ -27,11 +37,14 @@ import {
   Plus,
   Robot,
   SlidersHorizontal,
-  SquaresFour,
 } from "@/lib/icons";
+import { useState } from "react";
 
+import { useBench } from "../bench-context";
 import { NEW_CHAT_PATH } from "../chat-path";
-import { matchesRoute, MISSION_CONTROL_PATH, SETTINGS_PATH } from "../routes";
+import { CreateAgentPanel } from "../pages/create-agent-panel";
+import { AGENTS_PATH_PREFIX } from "../path-ids";
+import { matchesRoute, NEW_WORKBENCH_PATH, SETTINGS_PATH } from "../routes";
 import { SidebarBrandMark } from "./brand-mark";
 import { WorkbenchList } from "./workbench-list";
 
@@ -42,6 +55,9 @@ export function Sidebar({
   readonly path: string;
   readonly onNavigate: (to: string) => void;
 }) {
+  const { selectedTenantId } = useBench();
+  const [createAgentOpen, setCreateAgentOpen] = useState(false);
+
   return (
     <SidebarPanel
       className="shell-sidebar"
@@ -50,19 +66,34 @@ export function Sidebar({
     >
       {/* Owner's shape: logo with "+" on the first row, the search box
           (inside the list) below, then Agents and Channels. No
-          header icon cluster — search is the box. */}
+          header icon cluster — search is the box. The "+" now opens a
+          dropdown (New Agent / New Chat / New Workbench) instead of
+          jumping straight to New chat. */}
       <div className="shell-sidebar-brand-row">
         <SidebarBrandMark />
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label="New chat"
-          title="New chat"
-          onClick={() => onNavigate(NEW_CHAT_PATH)}
-          data-tour="new-workbench-button"
-        >
-          <Plus />
-        </Button>
+        <Menu>
+          <MenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Create new"
+              title="Create new"
+              data-tour="new-workbench-button"
+            >
+              <Plus />
+            </Button>
+          </MenuTrigger>
+          <MenuContent align="end">
+            <MenuItem
+              disabled={selectedTenantId === null}
+              onSelect={() => setCreateAgentOpen(true)}
+            >
+              New Agent
+            </MenuItem>
+            <MenuItem onSelect={() => onNavigate(NEW_CHAT_PATH)}>New Chat</MenuItem>
+            <MenuItem onSelect={() => onNavigate(NEW_WORKBENCH_PATH)}>New Workbench</MenuItem>
+          </MenuContent>
+        </Menu>
       </div>
       {/* Agents and Channels labels render inside the list, below its
           search box (owner's order: logo · search · sections · rows). */}
@@ -71,21 +102,14 @@ export function Sidebar({
         <WorkbenchList path={path} onNavigate={onNavigate} />
       </SidebarPanelBody>
 
-      {/* Mission Control is pinned above the footer rail as its own row
-          (DESIGN.md's Shell & Navigation) — not a button inside the
-          primary rail, which stays Artifacts/Skills/Tools/Workflows/Agents. */}
-      <div className="shell-sidebar-mission-control">
-        <button
-          type="button"
-          className="shell-sidebar-mission-control-row"
-          data-active={matchesRoute(MISSION_CONTROL_PATH, path) ? "true" : undefined}
-          aria-current={matchesRoute(MISSION_CONTROL_PATH, path) ? "page" : undefined}
-          onClick={() => onNavigate(MISSION_CONTROL_PATH)}
-        >
-          <SquaresFour />
-          <span>Mission Control</span>
-        </button>
-      </div>
+      {selectedTenantId === null ? null : (
+        <CreateAgentPanel
+          open={createAgentOpen}
+          onOpenChange={setCreateAgentOpen}
+          tenantId={selectedTenantId}
+          onCreated={() => onNavigate(AGENTS_PATH_PREFIX)}
+        />
+      )}
 
       <SidebarPanelFooter>
         {/* Footer order: Artifacts, Skills, Tools, Workflows, Agents, then

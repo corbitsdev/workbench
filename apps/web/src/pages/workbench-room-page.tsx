@@ -1,9 +1,20 @@
 // A workbench is a child tenant, and its room is that tenant's mailbox:
 // the timeline is the tenant's mail threads, participants are its
-// principals, and a message is addressed to every agent in the room.
-// Sub-threads are native in-reply-to chains, shown in a side panel.
+// principals, and a message is addressed to every agent in the room. The
+// left info column folds in what Mission Control used to show for a
+// bench overall — here scoped to this one workbench: latest activity,
+// relevant artifacts, and pending approvals with approve/deny. Sub-threads
+// are native in-reply-to chains, shown in a side panel.
 
-import { Button, EmptyState, PageShell, Textarea } from "@corbits/react-ui";
+import {
+  Button,
+  EmptyState,
+  PageShell,
+  Skeleton,
+  Textarea,
+  formatRelativeTime,
+  toast,
+} from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -18,9 +29,12 @@ import {
   type RoomMessage,
   type RoomParticipant,
 } from "@/chat/threads-api";
+import { approveApproval, ArtifactListPageSchema, rejectApproval, useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { createFetchStockHub } from "../needs-converge";
+import { usePendingApprovals, type PendingApproval } from "../pending-approvals";
 import { roomKeys } from "../chat-path";
+import { tenantKeys } from "../query-client";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { workbenchIdFromPath } from "../workbench-path";
 
@@ -113,6 +127,152 @@ function ParticipantList({ participants }: { readonly participants: readonly Roo
   );
 }
 
+function ApprovalRow({
+  item,
+  tenantId,
+}: {
+  readonly item: PendingApproval;
+  readonly tenantId: string;
+}) {
+  const queryClient = useQueryClient();
+  const resolveMutation = useMutation({
+    mutationFn: (action: "approve" | "deny") =>
+      action === "approve" ? approveApproval(tenantId, item.id) : rejectApproval(tenantId, item.id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: tenantKeys.pendingApprovals(tenantId),
+      });
+    },
+    onError: (cause, action) => {
+      toast(
+        cause instanceof Error
+          ? cause.message
+          : `Couldn't ${action === "approve" ? "approve" : "deny"} that request.`,
+      );
+    },
+  });
+  const pending = resolveMutation.isPending ? resolveMutation.variables : null;
+
+  return (
+    <li className="room-info-approval-row">
+      <div>
+        <span className="room-info-cell-primary">{item.headline}</span>
+        <br />
+        <span className="room-info-cell-context">
+          {item.agentName} · {formatRelativeTime(item.createdAt)}
+        </span>
+      </div>
+      <div className="room-info-row-actions">
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={pending !== null}
+          onClick={() => resolveMutation.mutate("deny")}
+        >
+          {pending === "deny" ? "Denying…" : "Deny"}
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={pending !== null}
+          onClick={() => resolveMutation.mutate("approve")}
+        >
+          {pending === "approve" ? "Approving…" : "Approve"}
+        </Button>
+      </div>
+    </li>
+  );
+}
+
+/** The left info column: what Mission Control used to show, scoped to this
+ * one workbench — its latest activity, its relevant artifacts, and what's
+ * pending on it — plus the participant roster already read for the room. */
+function RoomInfoColumn({
+  roomTenantId,
+  latestMessage,
+  participants,
+}: {
+  readonly roomTenantId: string;
+  readonly latestMessage: RoomMessage | undefined;
+  readonly participants: readonly RoomParticipant[];
+}) {
+  const approvalsQuery = usePendingApprovals(roomTenantId);
+  const artifactsQuery = useAPIQuery(
+    `/api/tenants/${roomTenantId}/artifacts`,
+    ArtifactListPageSchema,
+  );
+  const pendingApprovals = approvalsQuery.kind === "ready" ? approvalsQuery.data : null;
+
+  return (
+    <aside className="room-info-column" aria-label="Workbench details">
+      <section className="room-info-panel">
+        <div className="room-info-panel-header">
+          <h2>Latest activity</h2>
+        </div>
+        {latestMessage === undefined ? (
+          <p className="room-info-empty-note">Nothing yet — say something to get started.</p>
+        ) : (
+          <p className="room-info-cell-context">
+            {latestMessage.author === "me" ? "You" : latestMessage.authorName} ·{" "}
+            {formatRelativeTime(latestMessage.at)}
+          </p>
+        )}
+      </section>
+
+      <section className="room-info-panel">
+        <div className="room-info-panel-header">
+          <h2>Approvals</h2>
+        </div>
+        {approvalsQuery.kind === "loading" ? <Skeleton className="h-16 w-full" /> : null}
+        {approvalsQuery.kind === "error" ? (
+          <p className="room-info-empty-note">{approvalsQuery.message}</p>
+        ) : null}
+        {pendingApprovals !== null && pendingApprovals.length === 0 ? (
+          <p className="room-info-empty-note">Nothing waiting on you.</p>
+        ) : null}
+        {pendingApprovals !== null && pendingApprovals.length > 0 ? (
+          <ul className="room-info-approval-list">
+            {pendingApprovals.map((item) => (
+              <ApprovalRow key={item.id} item={item} tenantId={roomTenantId} />
+            ))}
+          </ul>
+        ) : null}
+      </section>
+
+      <section className="room-info-panel">
+        <div className="room-info-panel-header">
+          <h2>Artifacts</h2>
+        </div>
+        {artifactsQuery.kind === "loading" ? <Skeleton className="h-16 w-full" /> : null}
+        {artifactsQuery.kind === "error" ? (
+          <p className="room-info-empty-note">{artifactsQuery.message}</p>
+        ) : null}
+        {artifactsQuery.kind === "ready" && artifactsQuery.data.artifacts.length === 0 ? (
+          <p className="room-info-empty-note">No artifacts yet.</p>
+        ) : null}
+        {artifactsQuery.kind === "ready" && artifactsQuery.data.artifacts.length > 0 ? (
+          <ul className="room-info-artifact-list">
+            {artifactsQuery.data.artifacts.slice(0, 5).map((artifact) => (
+              <li key={artifact.id}>
+                <span className="room-info-cell-primary">{artifact.title}</span>
+                <br />
+                <span className="room-info-cell-context">{artifact.kind}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
+
+      <section className="room-info-panel">
+        <div className="room-info-panel-header">
+          <h2>Participants</h2>
+        </div>
+        <ParticipantList participants={participants} />
+      </section>
+    </aside>
+  );
+}
+
 function Room({ roomTenantId }: { readonly roomTenantId: string }) {
   const queryClient = useQueryClient();
   const [openThread, setOpenThread] = useState<string | null>(null);
@@ -159,6 +319,7 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
   });
 
   const messages = timeline.data ?? [];
+  const latestMessage = [...messages].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
   const opened = messages.find((message) => message.id === openThread);
   const failure: unknown = timeline.error ?? participants.error;
 
@@ -178,26 +339,38 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar crumbs={[{ label: tenant.data?.name ?? "Workbench" }]} />
       <div className="room-layout">
-        <PageShell width="prose" className="page-fill">
-          <ParticipantList participants={participants.data ?? []} />
-          <div className="chat-thread-messages">
-            {messages.map((message) => (
-              <RoomMessageRow
-                key={message.id}
-                message={message}
-                onOpenReplies={(target) => setOpenThread(target.id)}
-              />
-            ))}
+        <RoomInfoColumn
+          roomTenantId={roomTenantId}
+          latestMessage={latestMessage}
+          participants={participants.data ?? []}
+        />
+        <div className="room-main">
+          <div className="room-main-scroll">
+            <PageShell width="prose" className="page-fill">
+              <div className="chat-thread-messages">
+                {messages.map((message) => (
+                  <RoomMessageRow
+                    key={message.id}
+                    message={message}
+                    onOpenReplies={(target) => setOpenThread(target.id)}
+                  />
+                ))}
+              </div>
+              {send.error === null ? null : (
+                <p className="chat-thread-error">{errorText(send.error)}</p>
+              )}
+            </PageShell>
           </div>
-          {send.error === null ? null : (
-            <p className="chat-thread-error">{errorText(send.error)}</p>
-          )}
-          <RoomComposer
-            placeholder="Message this workbench"
-            busy={send.isPending}
-            onSend={(text) => send.mutate({ content: text })}
-          />
-        </PageShell>
+          <div className="room-main-composer">
+            <PageShell width="prose" className="page-fill">
+              <RoomComposer
+                placeholder="Message this workbench"
+                busy={send.isPending}
+                onSend={(text) => send.mutate({ content: text })}
+              />
+            </PageShell>
+          </div>
+        </div>
         {opened === undefined ? null : (
           <aside className="room-subthread" aria-label="Replies">
             <div className="room-subthread-head">
