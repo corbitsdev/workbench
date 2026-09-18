@@ -13,6 +13,7 @@ import {
   resolveRendererKindFromMediaType,
 } from "@/library";
 import { artifactPreviewPath, type ArtifactDetail } from "./api";
+import { base64ToUtf8 } from "./chat/threads-api";
 import type { CanvasArtifactContent } from "./shell/canvas-availability";
 
 /** Decodes a Library artifact detail into the canvas's typed content — the
@@ -76,7 +77,7 @@ export function artifactContentFromBlob(
     id: blobId,
     title: part.name,
     rendererKind,
-    content: atob(contentBase64),
+    content: base64ToUtf8(contentBase64),
   };
 }
 

@@ -224,12 +224,19 @@ async function getJson<T>(path: string, schema: (value: unknown) => T | type.err
   return parsed;
 }
 
+/** Base64 to text as UTF-8. `atob` alone yields one char per byte, which
+ * turns any non-ASCII body into mojibake. */
+export function base64ToUtf8(base64: string): string {
+  const binary = atob(base64);
+  return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
+}
+
 /** The readable text of an RFC 5322 frame: the bytes after the header
  * section, or the first `text/plain` part of a multipart one. */
 export function frameBody(raw: string): string {
   let decoded: string;
   try {
-    decoded = atob(raw);
+    decoded = base64ToUtf8(raw);
   } catch {
     return "";
   }
@@ -263,7 +270,7 @@ function textPart(entity: string): string | undefined {
 export function frameAttachments(raw: string): readonly MailAttachment[] {
   let decoded: string;
   try {
-    decoded = atob(raw);
+    decoded = base64ToUtf8(raw);
   } catch (cause) {
     reportError(cause, { operation: "chat_frame_attachments" });
     return [];
@@ -295,7 +302,7 @@ function attachmentParts(entity: string): MailAttachment[] {
 
 function decodeBase64(body: string): string {
   try {
-    return atob(body.replace(/\s+/g, ""));
+    return base64ToUtf8(body.replace(/\s+/g, ""));
   } catch (cause) {
     reportError(cause, { operation: "chat_attachment_decode" });
     return "";
@@ -312,7 +319,7 @@ function extractAddress(raw: string): string {
 function toHeaderAddresses(raw: string): string[] {
   let decoded: string;
   try {
-    decoded = atob(raw);
+    decoded = base64ToUtf8(raw);
   } catch {
     return [];
   }
