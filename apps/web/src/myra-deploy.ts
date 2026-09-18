@@ -6,6 +6,8 @@ import {
   ASSISTANT_WORKFLOW_ID,
   artifactToolsCredentialBinding,
   artifactToolsCredentialUseRequirement,
+  memoryToolsCredentialBinding,
+  memoryToolsCredentialUseRequirement,
 } from "@corbits/myra/workflow-ids";
 import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
 import { type } from "arktype";
@@ -90,10 +92,17 @@ export function buildMyraDefinitionJson(
 ): unknown {
   return {
     id: ASSISTANT_WORKFLOW_ID,
-    // Resolved at deploy into the `hub` handle the artifact tools use, and
-    // granted to the run on the deployer's authority at its first trigger.
-    credentialBindings: [artifactToolsCredentialBinding(ASSISTANT_WORKFLOW_ID)],
-    grantRequirements: [artifactToolsCredentialUseRequirement(hubCredentialId)],
+    // Resolved at deploy into the `hub` handle the artifact and memory tools
+    // use, and granted to the run on the deployer's authority at its first
+    // trigger. One credential, one binding and one requirement per package.
+    credentialBindings: [
+      artifactToolsCredentialBinding(ASSISTANT_WORKFLOW_ID),
+      memoryToolsCredentialBinding(ASSISTANT_WORKFLOW_ID),
+    ],
+    grantRequirements: [
+      artifactToolsCredentialUseRequirement(hubCredentialId),
+      memoryToolsCredentialUseRequirement(hubCredentialId),
+    ],
     // `to` only feeds the deploy-time mail.address/mail.send grants; Myra is
     // actually reached at her run address, minted at deploy time.
     triggers: [{ type: "mail", to: triggerAddress }],

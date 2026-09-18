@@ -14,11 +14,14 @@ import type { WorkflowDefinition } from "@intx/workflow";
 import { mail } from "@intx/tools-mail/sidecar-bundle";
 import { posix } from "@intx/tools-posix/sidecar-bundle";
 import { artifacts } from "@corbits/artifacts/sidecar-bundle";
+import { memory } from "@corbits/memory/sidecar-bundle";
 
 import {
   ASSISTANT_STEP_ID,
   artifactToolsCredentialBinding,
   artifactToolsCredentialUseRequirement,
+  memoryToolsCredentialBinding,
+  memoryToolsCredentialUseRequirement,
 } from "./workflow-ids";
 
 export { ASSISTANT_SYSTEM_PROMPT } from "./system-prompt";
@@ -31,13 +34,14 @@ export const ASSISTANT_DESCRIPTION =
   "text, and reasons through problems for the team";
 
 // Tool packages in the shape Interchange has: mail over the agent's
-// transport, posix over its working tree, and artifacts through the hub
-// credential the deploy binds — the agent itself holds no client code and
-// no secret.
+// transport, posix over its working tree, and artifacts and memory through
+// the hub credential the deploy binds — the agent itself holds no client
+// code and no secret.
 export const MYRA_TOOL_FACTORIES = [
   mail,
   posix,
   artifacts,
+  memory,
 ] as unknown as readonly AnnotatedToolFactory[];
 
 /** Everything the definition needs that is per-deployment data. */
@@ -53,7 +57,8 @@ export interface MyraWorkflowInput {
   readonly systemPrompt: string;
   /** The tenant credential holding this agent's hub token, minted by the
    * deployer before the source is pushed. The definition binds it to the
-   * artifact tools and requires its use on the deployer's authority. */
+   * artifact and memory tools and requires its use on the deployer's
+   * authority. */
   readonly hubCredentialId: string;
 }
 
@@ -85,8 +90,14 @@ export function buildMyraWorkflow(input: MyraWorkflowInput): WorkflowDefinition 
   return defineWorkflow({
     id: input.workflowId,
     trigger: { type: "mail", to: input.triggerAddress },
-    credentialBindings: [artifactToolsCredentialBinding(input.workflowId)],
-    grantRequirements: [artifactToolsCredentialUseRequirement(input.hubCredentialId)],
+    credentialBindings: [
+      artifactToolsCredentialBinding(input.workflowId),
+      memoryToolsCredentialBinding(input.workflowId),
+    ],
+    grantRequirements: [
+      artifactToolsCredentialUseRequirement(input.hubCredentialId),
+      memoryToolsCredentialUseRequirement(input.hubCredentialId),
+    ],
     steps: {
       assistant: step({
         agent: {
