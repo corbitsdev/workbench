@@ -23,12 +23,26 @@ import {
   TableHeader,
   TableRow,
 } from "@corbits/react-ui";
+import { reportError } from "@corbits/error-sink";
 import type { CredentialType } from "@intx/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { QueryView, toAPIQuery } from "@/lib/api-query";
-import { readProviderLogin, startProviderLogin } from "@/settings/inference";
+import {
+  deleteOwnOffering,
+  listOwnModelProviders,
+  listOwnModels,
+  listOwnOfferings,
+  mintOfferingForModel,
+  readProviderLogin,
+  startProviderLogin,
+  updateModelProviderBaseURL,
+  type ModelOfferingResponse,
+  type ModelProviderResponse,
+  type ModelResponse,
+} from "@/settings/inference";
+import { redeployMyraForModelChange } from "@/settings/myra-model-redeploy";
 import { tenantKeys } from "@/query-client";
 import {
   createCredential,
@@ -43,6 +57,29 @@ import {
 } from "./credentials-api";
 import { SETTINGS_STRINGS } from "./strings";
 
+type CatalogProvider = typeof ModelProviderResponse.infer;
+type CatalogOffering = typeof ModelOfferingResponse.infer;
+
+/** The tenant-owned catalog provider a credential authenticates, if any —
+ * the row inference actually dials (base URL) and reads the model from,
+ * as opposed to the credential's own opaque metadata. */
+function linkedCatalogProvider(
+  credential: Credential,
+  catalogProviders: readonly CatalogProvider[],
+): CatalogProvider | null {
+  return catalogProviders.find((provider) => provider.credentialId === credential.id) ?? null;
+}
+
+/** The one offering this repo's connect flow (`shadowOffering`) mints per
+ * provider — first match is enough since the edit dialog only ever shows
+ * one model field. */
+function linkedCatalogOffering(
+  provider: CatalogProvider,
+  catalogOfferings: readonly CatalogOffering[],
+): CatalogOffering | null {
+  return catalogOfferings.find((offering) => offering.providerId === provider.id) ?? null;
+}
+
 /** The registered OAuth provider a credential was minted by, as
  * `@corbits/oauth-core` records it; absent on a pasted key. */
 function oauthProviderOf(credential: Credential): string | null {
@@ -55,6 +92,9 @@ function oauthProviderOf(credential: Credential): string | null {
 type CredentialsData = {
   readonly credentials: readonly Credential[];
   readonly providers: readonly Provider[];
+  readonly catalogProviders: readonly CatalogProvider[];
+  readonly catalogOfferings: readonly CatalogOffering[];
+  readonly catalogModels: readonly (typeof ModelResponse.infer)[];
 };
 
 export function CredentialsSection({ tenantId }: { readonly tenantId: string | null }) {
@@ -68,21 +108,40 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
   const result = useQuery<CredentialsData>({
     queryKey: tenantKeys.credentials(tenantId ?? "none"),
     queryFn: async (): Promise<CredentialsData> => {
-      if (tenantId === null) return { credentials: [], providers: [] };
-      const [credentials, providers] = await Promise.all([
-        listCredentials(tenantId),
-        listProviders(tenantId),
-      ]);
-      return { credentials, providers };
+      if (tenantId === null) {
+        return {
+          credentials: [],
+          providers: [],
+          catalogProviders: [],
+          catalogOfferings: [],
+          catalogModels: [],
+        };
+      }
+      const [credentials, providers, catalogProviders, catalogOfferings, catalogModels] =
+        await Promise.all([
+          listCredentials(tenantId),
+          listProviders(tenantId),
+          listOwnModelProviders(tenantId),
+          listOwnOfferings(tenantId),
+          listOwnModels(tenantId),
+        ]);
+      return { credentials, providers, catalogProviders, catalogOfferings, catalogModels };
     },
     enabled: tenantId !== null,
   });
   const query = toAPIQuery(result);
   const providers = result.data?.providers ?? [];
+  const catalogProviders = result.data?.catalogProviders ?? [];
+  const catalogOfferings = result.data?.catalogOfferings ?? [];
+  const catalogModels = result.data?.catalogModels ?? [];
 
   function reload() {
     if (tenantId === null) return;
     void queryClient.invalidateQueries({ queryKey: tenantKeys.credentials(tenantId) });
+    // The catalog rows this dialog can now rewrite are read by the
+    // Inference settings section and by chat's model resolution — both
+    // key off the resolved catalog, so a credential edit must bust it too.
+    void queryClient.invalidateQueries({ queryKey: ["tenant", tenantId, "settings-models"] });
   }
 
   const create = useMutation({
@@ -142,7 +201,7 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
   });
 
   const update = useMutation({
-    mutationFn: (input: {
+    mutationFn: async (input: {
       readonly credentialId: string;
       readonly name: string;
       readonly description: string;
@@ -150,15 +209,55 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
       readonly model: string;
     }) => {
       if (tenantId === null) throw new Error("no workbench selected");
-      return updateCredential(tenantId, input.credentialId, {
+      await updateCredential(tenantId, input.credentialId, {
         name: input.name,
         description: input.description,
-        metadata: { baseURL: input.baseURL, model: input.model },
       });
+      const credential = result.data?.credentials.find((row) => row.id === input.credentialId);
+      const provider =
+        credential === undefined ? null : linkedCatalogProvider(credential, catalogProviders);
+      if (provider === null) return;
+      if (input.baseURL.length > 0 && input.baseURL !== provider.baseURL) {
+        await updateModelProviderBaseURL(tenantId, provider.id, input.baseURL);
+      }
+      const offering = linkedCatalogOffering(provider, catalogOfferings);
+      const currentModel = catalogModels.find((row) => row.id === offering?.modelId);
+      if (
+        offering !== null &&
+        input.model.length > 0 &&
+        input.model !== currentModel?.canonicalName
+      ) {
+        const newOffering = await mintOfferingForModel(
+          tenantId,
+          offering,
+          input.model,
+          input.model,
+        );
+        if (newOffering.id !== offering.id) {
+          // Myra's own deployed run pins the old offering id — moving her onto
+          // the new one first, then retiring the old one, is the only order
+          // that never leaves a live run pointed at a dead offering. A failed
+          // redeploy throws here and both offerings are left in place.
+          await redeployMyraForModelChange({
+            tenantId,
+            oldOfferingId: offering.id,
+            newOfferingId: newOffering.id,
+            provider: provider.plugin,
+            newCanonicalName: input.model,
+          });
+          await deleteOwnOffering(tenantId, offering.id);
+        }
+      }
     },
     onSuccess: () => {
       setEditing(null);
       reload();
+    },
+    onError: (cause: unknown) => {
+      reportError(cause, {
+        operation: "settings.credentials.update",
+        tenantId: tenantId ?? "none",
+      });
     },
   });
 
@@ -171,6 +270,16 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
     },
     onSuccess: reload,
   });
+
+  const editingProvider =
+    editing === null ? null : linkedCatalogProvider(editing, catalogProviders);
+  const editingOffering =
+    editingProvider === null ? null : linkedCatalogOffering(editingProvider, catalogOfferings);
+  const editingModel = catalogModels.find((row) => row.id === editingOffering?.modelId) ?? null;
+  const editingLinkage: EditCredentialLinkage | null =
+    editingProvider === null
+      ? null
+      : { baseURL: editingProvider.baseURL, model: editingModel?.canonicalName ?? "" };
 
   if (tenantId === null) {
     return (
@@ -219,6 +328,7 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
           />
           <EditCredentialDialog
             credential={editing}
+            linked={editingLinkage}
             onOpenChange={(open) => {
               if (!open) setEditing(null);
             }}
@@ -409,22 +519,24 @@ type EditCredentialInput = {
   readonly model: string;
 };
 
-function readMetadataString(metadata: Credential["metadata"], key: string): string {
-  if (metadata === null || metadata === undefined) return "";
-  const value = (metadata as Record<string, unknown>)[key];
-  return typeof value === "string" ? value : "";
-}
+/** The catalog values this credential's linked provider/offering carry
+ * today, or `null` when the credential has no linked provider — the dialog
+ * shows base URL/model fields only in the linked case. */
+type EditCredentialLinkage = {
+  readonly baseURL: string;
+  readonly model: string;
+};
 
-// `Base URL`/`Model` are this form's own convention, round-tripped
-// through the credential's opaque `metadata` field.
 function EditCredentialDialog({
   credential,
+  linked,
   onOpenChange,
   onSave,
   submitting,
   error = null,
 }: {
   readonly credential: Credential | null;
+  readonly linked: EditCredentialLinkage | null;
   readonly onOpenChange: (open: boolean) => void;
   readonly onSave: (input: EditCredentialInput) => void;
   readonly submitting: boolean;
@@ -442,8 +554,8 @@ function EditCredentialDialog({
     setLoadedFor(credential.id);
     setName(credential.name);
     setDescription(credential.description ?? "");
-    setBaseURL(readMetadataString(credential.metadata, "baseURL"));
-    setModel(readMetadataString(credential.metadata, "model"));
+    setBaseURL(linked?.baseURL ?? "");
+    setModel(linked?.model ?? "");
   }
 
   const canSubmit = credential !== null && name.trim().length > 0;
@@ -475,24 +587,31 @@ function EditCredentialDialog({
               <span>{SETTINGS_STRINGS.credentialsNameLabel}</span>
               <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
             </label>
-            <label className="settings-form-field">
-              <span>{SETTINGS_STRINGS.credentialsBaseUrlLabel}</span>
-              <Input
-                type="url"
-                value={baseURL}
-                onChange={(event) => setBaseURL(event.target.value)}
-                placeholder="http://localhost:11434"
-              />
-            </label>
-            <label className="settings-form-field">
-              <span>{SETTINGS_STRINGS.credentialsModelLabel}</span>
-              <Input
-                type="text"
-                value={model}
-                onChange={(event) => setModel(event.target.value)}
-                placeholder="qwen2.5:14b"
-              />
-            </label>
+            {linked !== null && (
+              <>
+                <label className="settings-form-field">
+                  <span>{SETTINGS_STRINGS.credentialsBaseUrlLabel}</span>
+                  <Input
+                    type="url"
+                    value={baseURL}
+                    onChange={(event) => setBaseURL(event.target.value)}
+                    placeholder="http://localhost:11434"
+                  />
+                </label>
+                <label className="settings-form-field">
+                  <span>{SETTINGS_STRINGS.credentialsModelLabel}</span>
+                  <Input
+                    type="text"
+                    value={model}
+                    onChange={(event) => setModel(event.target.value)}
+                    placeholder="qwen2.5:14b"
+                  />
+                  <span className="settings-field-hint">
+                    {SETTINGS_STRINGS.credentialsModelChangeNotice}
+                  </span>
+                </label>
+              </>
+            )}
             {error !== null && (
               <p className="settings-inline-error" role="alert">
                 {error}

@@ -3,12 +3,16 @@ export {
   getResolvedCatalog,
   listOwnModelProviders,
   listOwnModels,
+  deleteOwnOffering,
   listOwnOfferings,
+  mintOfferingForModel,
   shadowOffering,
+  updateModelProviderBaseURL,
   updateOwnOffering,
 } from "./api";
 export { credentialNameFor, ensureProviderRow } from "./api";
 export type { ModelInfo, ModelOfferingInfo, ProviderIdentity, ShadowOfferingInput } from "./api";
+export type { ModelOfferingResponse, ModelProviderResponse, ModelResponse } from "@intx/types";
 export {
   cancelProviderLogin,
   readProviderLogin,

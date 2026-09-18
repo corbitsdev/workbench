@@ -91,10 +91,6 @@ export function deleteCredential(tenantId: string, credentialId: string): Promis
 export type UpdateCredentialInput = {
   readonly name?: string;
   readonly description?: string;
-  /** `baseURL`/`model` are this form's own convention for a local,
-   * Ollama-style credential — the stock route stores whatever object is
-   * sent here as opaque `metadata`, nothing more. */
-  readonly metadata?: { readonly baseURL?: string; readonly model?: string };
 };
 
 export function updateCredential(
