@@ -34,6 +34,7 @@ import {
   createReconciliationScheduler,
   DEFAULT_SIDECAR_ALLOCATION_CONCURRENCY,
   pushCredentialReconcile,
+  pushSourceUpdates,
   WORKSPACE_BUILTINS_REGISTRY,
   type SidecarLookups,
   type SidecarProvisioner,
@@ -57,9 +58,23 @@ import {
   mountMailbox,
 } from "@corbits/mailbox";
 import { createMemory, loadMemoryConfig } from "@corbits/memory";
-import { mountOAuthLogin } from "@corbits/oauth-core/hub";
-import { CODEX_PROVIDER, codexOAuthConfig, exchangeCodexCode } from "@corbits/codex-provider";
-import { XAI_PROVIDER, xaiOAuthConfig, exchangeXaiCode } from "@corbits/xai-provider";
+import {
+  createOAuthTokenRefresher,
+  mountOAuthLogin,
+  type OAuthLoginProviders,
+} from "@corbits/oauth-core/hub";
+import {
+  CODEX_PROVIDER,
+  codexOAuthConfig,
+  exchangeCodexCode,
+  refreshCodexTokens,
+} from "@corbits/codex-provider";
+import {
+  XAI_PROVIDER,
+  xaiOAuthConfig,
+  exchangeXaiCode,
+  refreshXaiTokens,
+} from "@corbits/xai-provider";
 import { createCronTicker, createRunTriggerCronDeliver, mountCron } from "@corbits/cron";
 import {
   createHubMailboxAuthorizeSender,
@@ -570,6 +585,7 @@ export async function createHubServer({
   };
 
   let cronTicker: { start(): void; stop(): void } | undefined;
+  let oauthTokenRefresher: { start(): void; stop(): void } | undefined;
   {
     const cronApp = new Hono<TenantEnv>();
     mountCron(cronApp, {
@@ -644,30 +660,67 @@ export async function createHubServer({
       grantStore,
       conditionRegistry: grantConditionRegistry,
     });
+    const oauthProviders: OAuthLoginProviders = {
+      [CODEX_PROVIDER]: {
+        oauthConfig: codexOAuthConfig,
+        exchange: (code: string, verifier: string, now: number) =>
+          exchangeCodexCode(code, verifier, now),
+        // The account id the refresher carries forward lives on the
+        // credential, so the prior tokens need only supply the secret.
+        refresh: (refreshSecret: string, now: number) =>
+          refreshCodexTokens(refreshSecret, now, { access: "", refresh: refreshSecret }),
+        // The Codex backend rejects inference without this header value.
+        metadata: (tokens) =>
+          "accountId" in tokens && typeof tokens.accountId === "string"
+            ? { accountId: tokens.accountId }
+            : {},
+      },
+      [XAI_PROVIDER]: {
+        oauthConfig: xaiOAuthConfig,
+        exchange: (code: string, verifier: string, now: number) =>
+          exchangeXaiCode(code, verifier, now),
+        refresh: (refreshSecret: string, now: number) => refreshXaiTokens(refreshSecret, now),
+      },
+    };
     mountOAuthLogin(oauthLoginApi, {
       db,
       cipher: credentialCipher,
       requireGrant: requireGrant("credential:*", "create"),
-      providers: {
-        [CODEX_PROVIDER]: {
-          oauthConfig: codexOAuthConfig,
-          exchange: (code, verifier, now) => exchangeCodexCode(code, verifier, now),
-          // The Codex backend rejects inference without this header value.
-          metadata: (tokens) =>
-            "accountId" in tokens && typeof tokens.accountId === "string"
-              ? { accountId: tokens.accountId }
-              : {},
-        },
-        [XAI_PROVIDER]: {
-          oauthConfig: xaiOAuthConfig,
-          exchange: (code, verifier, now) => exchangeXaiCode(code, verifier, now),
-        },
-      },
+      providers: oauthProviders,
       onError: (error, { provider }) => {
         reportError(error, { operation: "hub.oauth-login", extra: { provider } });
       },
     });
     app.route(TENANT_PREFIX, oauthLoginApi);
+
+    // Stock Interchange has no serving-time refresh hook, so a subscription
+    // token that lapses between inference calls would simply fail the next
+    // one; this renews it a little before expiry instead.
+    oauthTokenRefresher = createOAuthTokenRefresher({
+      db,
+      cipher: credentialCipher,
+      providers: oauthProviders,
+      intervalMs: 60_000,
+      onRefreshed: ({ tenantId, credentialId }) => {
+        // The same push the stock credentials route fires after a secret
+        // rotation, so running sidecars get the new material.
+        void pushSourceUpdates(db, sidecarRouter, tenantId, credentialCipher).catch(
+          (error: unknown) => {
+            reportError(error, {
+              operation: "hub.oauth-refresh.push",
+              extra: { tenantId, credentialId },
+            });
+          },
+        );
+      },
+      onError: (error, { provider, credentialId }) => {
+        reportError(error, {
+          operation: "hub.oauth-refresh",
+          extra: { provider: provider ?? "", credentialId: credentialId ?? "" },
+        });
+      },
+    });
+    oauthTokenRefresher.start();
   }
 
   await installWebhooks({
