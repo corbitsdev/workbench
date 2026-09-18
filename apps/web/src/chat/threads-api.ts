@@ -413,9 +413,11 @@ export async function readChat(tenantId: string, chatId: string): Promise<ChatTh
 export function subscribeToInbox(tenantId: string, onChange: () => void): () => void {
   const source = new EventSource(`${mailboxPath(tenantId)}/events`);
   const handler = () => onChange();
-  source.addEventListener("message", handler);
+  // The stream writes named `mailbox` frames; the default `message` event
+  // never fires for those.
+  source.addEventListener("mailbox", handler);
   return () => {
-    source.removeEventListener("message", handler);
+    source.removeEventListener("mailbox", handler);
     source.close();
   };
 }
