@@ -208,7 +208,39 @@ export type NewAgentInput = {
    * redeploying or re-joining an existing agent) — used verbatim instead
    * of being re-derived from `name`, so the asset name stays stable. */
   readonly slug?: string;
+  /** A five-field cron expression: on success, a `@corbits/cron` schedule
+   * row is created addressed at this deploy's run, so the ticker mails it
+   * on that cadence. */
+  readonly schedule?: string;
 };
+
+function cronPath(tenantId: string): string {
+  return `/api/tenants/${encodeURIComponent(tenantId)}/cron`;
+}
+
+/** Creates a `@corbits/cron` schedule row addressed at a deployed agent's
+ * run — the only way an agent fires on a cadence, since Interchange's
+ * `schedule` trigger is reserved but unimplemented. */
+async function scheduleAgentRun(
+  tenantId: string,
+  expression: string,
+  runAddress: string,
+  fetchImpl: typeof fetch,
+): Promise<void> {
+  const created = await fetchImpl(cronPath(tenantId), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      expression,
+      toAddress: runAddress,
+      subject: "Scheduled run",
+      body: "This is your scheduled run. Do the work your definition describes and reply with the result.",
+    }),
+  });
+  if (!created.ok) {
+    throw new AgentDeployError(`scheduling this agent failed: ${await readErrorBody(created)}`);
+  }
+}
 
 export type DeployedAgent = typeof WorkflowDeploymentResponse.infer;
 
@@ -288,6 +320,16 @@ export async function deployAgentSource(
   const parsed = WorkflowDeploymentResponse(await deployed.json());
   if (parsed instanceof type.errors) {
     throw new AgentDeployError(`this deployment came back an unexpected shape: ${parsed.summary}`);
+  }
+  if (args.input.schedule !== undefined) {
+    await scheduleAgentRun(
+      args.tenantId,
+      args.input.schedule,
+      // The deployment id is the top-level run id (already `run_…`), and
+      // the run address is that id at the tenant domain.
+      `${parsed.id}@${tenant.domain}`,
+      fetchImpl,
+    );
   }
   return parsed;
 }

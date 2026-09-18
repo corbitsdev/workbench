@@ -3,11 +3,12 @@
 // agent never calls the hub; anything else is a plain file list.
 
 import { Button } from "@corbits/react-ui";
+import { cronSentence } from "@corbits/workflows/client";
 
 import { useDeployAgentMutation } from "../agents-api";
 import { chatPath } from "../chat-path";
 import { Link } from "../navigation";
-import type { DeployablePackage } from "./deployable-package";
+import { isFiveFieldCron, type DeployablePackage } from "./deployable-package";
 import type { MailAttachment } from "./threads-api";
 
 function errorText(cause: unknown): string {
@@ -50,6 +51,8 @@ function DeployPackageCard({
 }) {
   const deploy = useDeployAgentMutation(tenantId);
   const deployed = deploy.data;
+  const scheduleValid = pkg.schedule === undefined || isFiveFieldCron(pkg.schedule);
+  const sentence = pkg.schedule !== undefined && scheduleValid ? cronSentence(pkg.schedule) : null;
   return (
     <div className="chat-deploy-card">
       <div className="chat-deploy-card-text">
@@ -57,16 +60,23 @@ function DeployPackageCard({
         {pkg.description === undefined ? null : (
           <span className="chat-deploy-card-note">{pkg.description}</span>
         )}
+        {sentence !== null ? <span className="chat-deploy-card-note">{sentence}</span> : null}
+        {pkg.schedule !== undefined && !scheduleValid ? (
+          <span className="chat-deploy-card-error">
+            {`This package's schedule ("${pkg.schedule}") isn't a valid five-field cron string.`}
+          </span>
+        ) : null}
       </div>
       {deployed === undefined ? (
         <Button
           variant="primary"
           size="sm"
-          disabled={deploy.isPending}
+          disabled={deploy.isPending || !scheduleValid}
           onClick={() =>
             deploy.mutate({
               name: pkg.name,
               systemPrompt: pkg.systemPrompt,
+              ...(pkg.schedule !== undefined ? { schedule: pkg.schedule } : {}),
             })
           }
         >

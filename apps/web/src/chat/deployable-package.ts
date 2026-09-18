@@ -1,6 +1,6 @@
 // The one contract between an agent that writes a package and the client
 // that deploys it: a reply carrying `package.json` plus a
-// `definition.json` of {name, systemPrompt, description?} —
+// `definition.json` of {name, systemPrompt, description?, schedule?} —
 // either as mail attachments, or (since `@intx/tools-mail`'s `mail_send`
 // has no attachments parameter) as two labelled fenced code blocks in the
 // message body. The client renders the source tree itself
@@ -16,7 +16,15 @@ const AgentDefinition = type({
   name: "string",
   systemPrompt: "string",
   "description?": "string",
+  "schedule?": "string",
 });
+
+/** A cron string this pipeline accepts: exactly five whitespace-separated
+ * fields. No third-party parser — the fields are validated for shape only,
+ * `@corbits/cron`'s `isValidCronExpression` is the semantic check. */
+export function isFiveFieldCron(schedule: string): boolean {
+  return schedule.trim().split(/\s+/).length === 5;
+}
 
 export type DeployablePackage = typeof AgentDefinition.infer;
 

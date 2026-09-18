@@ -6,11 +6,13 @@
 // stock reads `vendor/intx/hub-api/src/routes/workflows.ts` exposes.
 //
 // The `schedule` trigger is reserved on Interchange but unimplemented — no
-// scheduler fires it — so this reads deployments as plain workflows, with
-// no schedule concept. Run-now and pause/resume have
-// no backing stock route either (`/deployments` is list/create only; no
-// per-deployment PATCH or trigger route exists), so both stay rejected
-// promises with a message naming the missing route, same pattern as before.
+// scheduler fires it — so a schedule here is a `@corbits/cron` row addressed
+// at the deployment's live run, joined in from `GET /cron` by that address
+// (the same `run_<id>@<domain>` join `chat/threads-api.ts` does against
+// `listTopLevelRuns`). Run-now and pause/resume have no backing stock route
+// either (`/deployments` is list/create only; no per-deployment PATCH or
+// trigger route exists), so both stay rejected promises with a message
+// naming the missing route, same pattern as before.
 
 import { type } from "arktype";
 import { useQuery } from "@tanstack/react-query";
@@ -18,6 +20,7 @@ import { WorkflowDeploymentResponse } from "@intx/types";
 import type { APIQuery } from "@/lib/api-query";
 import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@/lib/api-query";
 import { isAgentDeploySourceAssetName } from "@/agent-deploy";
+import { listTopLevelRuns } from "@/agents-api";
 import { MYRA_SOURCE_CONFIG } from "@/myra-source";
 
 export const ScheduledWorkflowDefinition = type({
@@ -28,9 +31,26 @@ export const ScheduledWorkflowDefinition = type({
   status: "'deployed' | 'stopped'",
   createdAt: "string",
   updatedAt: "string",
+  /** The cron expression firing this deployment's live run, or null when no
+   * `@corbits/cron` row is addressed at it. */
+  schedule: "string | null",
 });
 
 export type ScheduledWorkflowDefinition = typeof ScheduledWorkflowDefinition.infer;
+
+export const CronSchedule = type({
+  id: "string",
+  tenantId: "string",
+  expression: "string",
+  toAddress: "string",
+  subject: "string",
+  body: "string",
+  createdAt: "string",
+});
+
+export type CronSchedule = typeof CronSchedule.infer;
+
+const CronSchedulesResponse = type({ schedules: CronSchedule.array() });
 
 const DeploymentsSchema = WorkflowDeploymentResponse.array();
 const WorkflowAssetSchema = type({ id: "string", name: "string" });
@@ -42,6 +62,16 @@ function deploymentsPath(tenantId: string): string {
 
 function workflowAssetsPath(tenantId: string): string {
   return `/api/tenants/${tenantId}/assets?kind=workflow&inherited=false`;
+}
+
+function cronPath(tenantId: string): string {
+  return `/api/tenants/${tenantId}/cron`;
+}
+
+/** Every cron schedule saved on this tenant. */
+export async function listCronSchedules(tenantId: string): Promise<readonly CronSchedule[]> {
+  const parsed = await fetchJSON(cronPath(tenantId), CronSchedulesResponse);
+  return parsed.schedules;
 }
 
 async function fetchJSON<T>(path: string, schema: (data: unknown) => T | type.errors): Promise<T> {
@@ -72,25 +102,36 @@ function isAgentAssetName(name: string): boolean {
 export async function listScheduledWorkflows(
   tenantId: string,
 ): Promise<readonly ScheduledWorkflowDefinition[]> {
-  const [deployments, assets] = await Promise.all([
+  const [deployments, assets, runs, schedules] = await Promise.all([
     fetchJSON(deploymentsPath(tenantId), DeploymentsSchema),
     fetchJSON(workflowAssetsPath(tenantId), WorkflowAssetsSchema),
+    listTopLevelRuns(tenantId),
+    listCronSchedules(tenantId),
   ]);
   const nameByAssetId = new Map(assets.map((asset) => [asset.id, asset.name]));
+  // A deployment's own id is its anchor run's id (see `chat/threads-api.ts`'s
+  // `listChatAgents`), so this is the same join that resolves a chat agent's
+  // live address.
+  const addressByRunId = new Map(runs.map((run) => [run.id, run.address]));
+  const expressionByAddress = new Map(schedules.map((row) => [row.toAddress, row.expression]));
   return deployments
     .filter((deployment) => {
       const name = nameByAssetId.get(deployment.definitionAssetId);
       return name === undefined || !isAgentAssetName(name);
     })
-    .map((deployment) => ({
-      definitionId: deployment.id,
-      assetId: deployment.definitionAssetId,
-      name: nameByAssetId.get(deployment.definitionAssetId) ?? "Untitled workflow",
-      tenantId: deployment.tenantId,
-      status: deployment.status === "deployed" ? "deployed" : "stopped",
-      createdAt: deployment.createdAt,
-      updatedAt: deployment.createdAt,
-    }));
+    .map((deployment) => {
+      const address = addressByRunId.get(deployment.id);
+      return {
+        definitionId: deployment.id,
+        assetId: deployment.definitionAssetId,
+        name: nameByAssetId.get(deployment.definitionAssetId) ?? "Untitled workflow",
+        tenantId: deployment.tenantId,
+        status: deployment.status === "deployed" ? "deployed" : "stopped",
+        createdAt: deployment.createdAt,
+        updatedAt: deployment.createdAt,
+        schedule: address === undefined ? null : (expressionByAddress.get(address) ?? null),
+      };
+    });
 }
 
 /** No stock route reruns a deployment on demand yet. */

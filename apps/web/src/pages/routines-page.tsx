@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@corbits/react-ui";
+import { cronSentence } from "@corbits/workflows/client";
 import { Clock } from "@/lib/icons";
 
 import { useGlobalRoutines, useRoutineActions } from "../global-routines";
@@ -21,6 +22,13 @@ import { Link } from "../navigation";
 import { StageTopBar } from "../shell/stage-top-bar";
 
 export type { GlobalRoutineRow } from "../global-routines";
+
+/** A schedule's human sentence, the raw expression when it can't be
+ * described, or "Not scheduled" when the deployment carries no cron row. */
+export function scheduleSentence(schedule: string | null): string {
+  if (schedule === null) return "Not scheduled";
+  return cronSentence(schedule) ?? schedule;
+}
 
 export function GlobalRoutinesList({
   rows,
@@ -45,6 +53,7 @@ export function GlobalRoutinesList({
       <TableHeader>
         <TableRow>
           <TableHead>Routine</TableHead>
+          <TableHead>Schedule</TableHead>
           <TableHead>On</TableHead>
           <TableHead>Actions</TableHead>
         </TableRow>
@@ -68,6 +77,9 @@ export function GlobalRoutinesList({
                   </Link>
                   <span className="text-xs text-[var(--ui-fg-muted)]">{row.tenantName}</span>
                 </span>
+              </TableCell>
+              <TableCell>
+                <span className="text-sm">{scheduleSentence(row.definition.schedule)}</span>
               </TableCell>
               <TableCell>
                 <Switch
