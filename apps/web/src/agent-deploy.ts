@@ -19,7 +19,6 @@ const GitTokenMintShape = type({ id: "string", secret: "string" });
 const TenantDomainShape = type({ domain: "string" });
 
 const PUSH_TOKEN_LIFETIME_MS = 10 * 60 * 1000;
-const AGENT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 
 async function readErrorBody(response: Response): Promise<string> {
   const body: unknown = await response.json().catch(() => undefined);
@@ -111,7 +110,9 @@ export function buildAgentDefinitionJson(args: {
           toolPackagePins: [],
         },
         drainBehavior: "wait",
-        timeout: AGENT_TURN_TIMEOUT_MS,
+        // No `timeout`: it stays armed across an approval park, so any
+        // finite value aborts a run waiting on a person to answer an
+        // ask-gated tool call (see agents/myra/src/index.ts).
         triggers: "unbounded",
         input: { from: "trigger.payload" },
       },

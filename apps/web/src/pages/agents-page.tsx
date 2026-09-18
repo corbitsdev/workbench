@@ -17,14 +17,16 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  toast,
 } from "@corbits/react-ui";
 import { Robot } from "@/lib/icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { reportError } from "@corbits/error-sink";
 
 import { QueryView } from "@/lib/api-query";
 import { chatKeys, chatPath } from "../chat-path";
 import { isAgentNotRunning, listChatAgents, type ChatAgent } from "@/chat/threads-api";
-import { redeployRoomAgent } from "../workbench-create";
+import { describeRestartFailure, redeployRoomAgent } from "../workbench-create";
 import { useBench } from "../bench-context";
 import { Link } from "../navigation";
 import { useTenantQuery } from "../routines-api";
@@ -56,6 +58,10 @@ export function AgentsRosterList({
     mutationFn: (agent: ChatAgent) => redeployRoomAgent(tenantId, agent),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: chatKeys.agents(tenantId) });
+    },
+    onError: (cause) => {
+      reportError(cause, { operation: "agent_restart", tenantId });
+      toast(describeRestartFailure(cause));
     },
   });
   if (agents.length === 0) {

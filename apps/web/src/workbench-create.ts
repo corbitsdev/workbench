@@ -124,6 +124,17 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
   return tenantId;
 }
 
+const GENERIC_RESTART_FAILURE = "Couldn't restart this agent. Try again.";
+
+/** Allow-lists what is safe to show verbatim: only the authored stage
+ * copy, never a raw request path or schema summary. */
+export function describeRestartFailure(cause: unknown): string {
+  if (!(cause instanceof WorkbenchCreateError)) return GENERIC_RESTART_FAILURE;
+  return cause.stage === "deploy"
+    ? "This agent couldn't be deployed. Try again."
+    : GENERIC_RESTART_FAILURE;
+}
+
 /** A hub restart releases every process-provisioned deployment; this
  * redeploys one room agent through the same path `createWorkbench` used,
  * re-running it against the tenant its asset already lives in. */

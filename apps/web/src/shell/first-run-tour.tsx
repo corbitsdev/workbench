@@ -86,6 +86,11 @@ export function FirstRunTour({ userId }: { readonly userId: string }) {
       continuous
       showSkipButton
       disableOverlayClose
+      // The overlay otherwise swallows every click outside the spotlight —
+      // real app chrome (e.g. a roster row's Chat link) is reachable at
+      // any point in the shell, tour running or not, so clicks must pass
+      // through to it rather than land on the tour's own backdrop.
+      spotlightClicks
       spotlightPadding={6}
       callback={handleCallback}
       styles={{
