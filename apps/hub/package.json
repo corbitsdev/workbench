@@ -21,7 +21,7 @@
     "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#65590a85fa143251b3ac20ba2eca92fc35e70e51",
     "@corbits/memory": "github:corbitsdev/corbits-memory#e74da20f148a302dff5400915fe504ee2395e913",
     "@corbits/url-path": "workspace:*",
-    "@corbits/webhooks": "github:corbitsdev/webhooks#5c9e7d8fad13ebfbc747d01981ed4b0b44b810cd",
+    "@corbits/webhooks": "github:corbitsdev/webhooks#936cae080deb6a4259927900471dbb584d73eb73",
     "@corbits/workflows": "workspace:*",
     "@corbits/xai-provider": "github:corbitsdev/corbits-xai-provider#9f2d4bac40ea075df092fef807404a13c638cf14",
     "@intx/authz": "0.3.0",
