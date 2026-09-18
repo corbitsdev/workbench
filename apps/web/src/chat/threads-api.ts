@@ -1,16 +1,6 @@
-// Chats are mail threads. One chat has exactly one agent, and both sides
-// of it are durable mail: the person sends from their own mailbox
-// (`POST /mailbox/me/inbox/send`), which keeps a Sent copy and hands the
-// frame to the hub, and the agent's reply lands in the same mailbox's
-// INBOX. This file is the only seam between the chat UI and that surface —
-// nothing here touches a chat-specific hub route, because none exist.
-//
-// A chat is identified by its agent's definition asset id, not a run id —
-// every hub restart releases the old run and redeploys under a new one, so
-// keying on a run id would 409 the moment it turns terminal. An agent's
-// address set spans every run it has ever had (releases included), which is
-// what keeps a chat's history intact across a redeploy; sends resolve the
-// current live run's address at send time.
+// Chats are mail threads (see docs/chat-mail-threading.md). Keyed by the
+// agent's definition asset id, not a run id, since a redeploy retires the
+// run id and would 409 a keyed-on-run chat.
 
 import { type } from "arktype";
 import { WorkflowDeploymentResponse } from "@intx/types";
@@ -44,17 +34,13 @@ export type ChatAgent = {
   /** The address of the agent's currently live run, or null when none is
    * live (mid-redeploy). */
   readonly liveAddress: string | null;
-  /** The newest deployment's status for this agent's asset — `undefined`
-   * when it has never been deployed. `"pending"`/`"recovering"` mean a run
-   * is on the way up; a terminal status (`released`, `failed`,
-   * `destroy_failed`, `stopped`) means nothing is running and nothing is
-   * coming unless someone restarts it. */
+  // A terminal status means nothing is running and nothing is coming
+  // unless someone restarts it.
   readonly latestStatus: string | undefined;
 };
 
 const LIVE_DEPLOYMENT_STATUSES = new Set(["deployed", "pending", "recovering"]);
-/** A deployment status that means a run is on the way up but not live yet
- * — distinct from a terminal status, which means nothing is running. */
+// On the way up but not live yet, distinct from a terminal status.
 export const STARTING_DEPLOYMENT_STATUSES = new Set(["pending", "recovering"]);
 
 const DeploymentsSchema = WorkflowDeploymentResponse.array();
@@ -91,10 +77,8 @@ export type ChatSummary = {
   readonly lastMessageId: string;
 };
 
-/** Myra is the one default agent; her deploy asset name is not a display
- * name anyone should have to read. Any other agent's deploy asset name
- * encodes its slug (`agent-<slug>-source`), which renders title-cased with
- * hyphens as spaces ("echo-bot" -> "Echo Bot"). */
+// Myra's deploy asset name is not a display name anyone should read;
+// every other agent's slug renders title-cased ("echo-bot" -> "Echo Bot").
 export function displayAgentName(definitionName: string): string {
   if (definitionName === MYRA_SOURCE_CONFIG.assetName) return MYRA_SOURCE_CONFIG.displayName;
   const slug = agentSlugFromSourceAssetName(definitionName);
@@ -125,11 +109,8 @@ function workflowAssetsPath(tenantId: string): string {
   return `/api/tenants/${encodeURIComponent(tenantId)}/assets?kind=workflow&inherited=false`;
 }
 
-/** Every agent the person has ever had a deployment of, keyed by its
- * definition asset id. Deployments list every anchor run ever created for
- * an asset (releases included, most recent first), joined here against the
- * run listing for each run's address and against the workflow assets for a
- * display name. */
+// Deployments list every anchor run ever created (releases included, newest
+// first), joined against runs for addresses and assets for a display name.
 export async function listChatAgents(tenantId: string): Promise<readonly ChatAgent[]> {
   const [deployments, assets, runs] = await Promise.all([
     getJson(deploymentsPath(tenantId), DeploymentsSchema),
@@ -174,10 +155,7 @@ export async function listChatAgents(tenantId: string): Promise<readonly ChatAge
   });
 }
 
-/** True once an agent's latest deployment has gone terminal (or it has
- * never been deployed) — nothing is running and nothing is coming up on
- * its own; a restart is the only way forward. False while a run is live or
- * still on its way up (`pending`/`recovering`). */
+// True once terminal (or never deployed): nothing is coming up on its own.
 export function isAgentNotRunning(agent: Pick<ChatAgent, "liveAddress" | "latestStatus">): boolean {
   if (agent.liveAddress !== null) return false;
   return agent.latestStatus === undefined || !STARTING_DEPLOYMENT_STATUSES.has(agent.latestStatus);
@@ -474,12 +452,8 @@ export type ChatThread = {
   readonly messages: readonly ChatMessage[];
 };
 
-/** A chat is always titled by its agent's display name — never by mail
- * metadata, which can be a run address or other addressing detail nobody
- * should have to read. `agentName` is `undefined` only when the agent
- * couldn't be resolved at all, in which case the title falls back to the
- * person's own opening turn (never an agent reply, so a chat never titles
- * itself off what the agent said). */
+// Falls back to the person's own opening turn (never an agent reply) only
+// when the agent couldn't be resolved at all.
 export function chatTitle(turns: readonly MailTurn[], agentName: string | undefined): string {
   if (agentName !== undefined) return agentName;
   const first = turns.find((turn) => turn.author === "me");
@@ -525,11 +499,8 @@ export async function listChats(tenantId: string): Promise<readonly ChatSummary[
     .sort((a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt));
 }
 
-// ---------------------------------------------------------------------
-// Reply-ready: a chat is unread until it has been opened at its newest
-// message. Tracked per-viewer in localStorage — a convenience, not data of
-// record, so a missing/blocked store just falls back to "ready".
-// ---------------------------------------------------------------------
+// Reply-ready: tracked per-viewer in localStorage, a convenience not data
+// of record, so a missing/blocked store just falls back to "ready".
 
 const CHAT_SEEN_KEY_PREFIX = "workbench:chat-seen:";
 
@@ -598,12 +569,7 @@ export function subscribeToInbox(tenantId: string, onChange: () => void): () => 
   };
 }
 
-// ---------------------------------------------------------------------
-// Workbenches: a workbench is a child tenant, and its workbench conversation is that
-// tenant's mailbox. Reads are the same stock mailbox routes as a chat,
-// scoped to the child tenant id; participants are the child tenant's
-// principals.
-// ---------------------------------------------------------------------
+// Workbenches: see docs/chat-mail-threading.md.
 
 export type WorkbenchParticipant = {
   readonly id: string;
@@ -629,14 +595,8 @@ const PrincipalPage = type({
   nextCursor: "string | null",
 });
 
-/** Everyone in the workbench: the child tenant's principals plus its live
- * deployments' run addresses. A deployment's workflow principal only
- * appears after its first run, so the run listing is what makes an agent
- * addressable from the moment it is deployed into the workbench. `tenantDomain`
- * is the workbench tenant's own domain (already fetched by the caller) — a
- * person's routable mailbox address is `<refId>@<tenantDomain>`, exactly
- * what the hub builds and the mailbox delivers to; their email and refId
- * alone are never routable. */
+// A deployment's workflow principal only appears after its first run, so
+// the run listing is what makes an agent addressable from deploy time.
 export async function listWorkbenchParticipants(
   tenantId: string,
   tenantDomain: string,
@@ -687,10 +647,8 @@ function authorName(address: string): string {
   return local.length > 0 ? local : address;
 }
 
-/** Case-insensitive whole-address match: the mailbox lowercases local parts
- * on the wire, so a sent message's header `from` (mixed case) and envelope
- * `from` (lowercase) both name the same participant. Never lowercases
- * stored data — comparison only. */
+// Case-insensitive: the mailbox lowercases local parts on the wire, so a
+// header `from` (mixed case) and envelope `from` (lowercase) still match.
 export function sameAddress(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }
@@ -708,10 +666,7 @@ export function resolveParticipantName(
   );
 }
 
-/** A turn's avatar name: the matching participant's real name, including
- * the person's own — never the "You" transcript label, which stays for the
- * row's own text elsewhere. Falls back to `resolveParticipantName` when no
- * participant matches the turn's address. */
+// Never the "You" transcript label, which stays for the row's own text.
 export function resolveAvatarName(
   message: Pick<WorkbenchMessage, "author" | "authorName" | "address">,
   participants: readonly WorkbenchParticipant[],
@@ -755,10 +710,8 @@ async function readWorkbenchFolder(
   }));
 }
 
-/** The workbench timeline: every turn oldest first, flat — no turn is ever
- * dropped from the main list. A turn whose in-reply-to names a known
- * message keeps that as `parentMessageId`, metadata for the sub-thread
- * panel to walk the ancestor chain of whichever turn the person opened. */
+// Flat, oldest first — no turn is ever dropped from the main list.
+// `parentMessageId` is metadata for the sub-thread panel only.
 export async function readWorkbench(tenantId: string): Promise<readonly WorkbenchMessage[]> {
   const [inbox, sent] = await Promise.all([
     readWorkbenchFolder(tenantId, "INBOX"),
@@ -799,14 +752,8 @@ export function ancestorChain(
   return chain;
 }
 
-/** The one send seam for a workbench: a single mailbox send addressed to every
- * agent in it. The hub triggers each addressed run and keeps the Sent
- * copy, so the person's own turn comes back out of the mailbox like any
- * other. The body carries a trailing roster of every agent's name and
- * run address plus the person's own (the same rows the Participants panel
- * reads), so an agent can hand a task to another agent in the workbench — the
- * hub only delivers to a run address, which only the client otherwise
- * knows — and can copy the person on that handoff so they can follow it. */
+// The one send seam for a workbench (see docs/chat-mail-threading.md for
+// the roster mechanism).
 export async function sendToWorkbench(input: {
   readonly workbenchTenantId: string;
   readonly participants: readonly WorkbenchParticipant[];

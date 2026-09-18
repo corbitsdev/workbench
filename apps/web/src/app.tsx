@@ -1,7 +1,6 @@
-// The whole interface as a pure function of the current path and session
-// state. The entry point owns the browser history and the one session probe;
-// screens that talk to the hub only mount once the session is confirmed, so
-// a signed-out browser fires no authenticated request anywhere.
+// The entry point owns the browser history and the one session probe;
+// screens mount only once the session is confirmed, so a signed-out
+// browser fires no authenticated request anywhere.
 
 import { Button, EmptyState } from "@corbits/react-ui";
 import { WorkbenchLoadingState } from "@/chat";
@@ -25,12 +24,8 @@ import { AppShell } from "./shell/app-shell";
 import { ComposerInsertionProvider } from "./shell/composer-insertion";
 import { ShellChromeProvider } from "./shell/shell-chrome-provider";
 
-/**
- * Onboarding renders above the shell entirely — no rail, no col2, no bench
- * dock, nothing that implies a workbench already exists. An account the
- * hub reports as setup-required must never see "Select a workbench"; the
- * setup screen is the only thing on screen until it hands off to `/`.
- */
+// Renders above the shell entirely — no rail, no dock, nothing that
+// implies a workbench already exists, until it hands off to `/`.
 function OnboardingGate({
   navigate,
   user,
@@ -63,13 +58,9 @@ function Shell({
   readonly user: SessionUser;
   readonly onSignOut: () => void;
 }) {
-  // One client per signed-in shell mount — above BenchProvider so principals
-  // and every tenant-scoped page share the same cache. Wired to the same
-  // `onSignOut` the account menu uses: any query or mutation that
-  // discovers the session is no longer valid (a hub restarted on an empty
-  // DB, a cookie for a deleted user, an expired session) routes the whole
-  // shell back to login instead of leaving one panel stuck showing "sign
-  // in required" beside chrome that still renders as if signed in.
+  // One client per shell mount so every tenant-scoped page shares the same
+  // cache; wired to `onSignOut` so a session going invalid anywhere routes
+  // the whole shell back to login, not just one stuck panel.
   const queryClient = useMemo(() => createAppQueryClient(onSignOut), [onSignOut]);
   const route = APP_ROUTES.find((candidate) => matchesRoute(candidate.path, path));
   return (
@@ -91,12 +82,6 @@ function Shell({
   );
 }
 
-/**
- * The whole interface as a pure function of the current path and session
- * state. The entry point owns the browser history and the one session probe;
- * screens that talk to the hub only mount once the session is confirmed, so
- * a signed-out browser fires no authenticated request anywhere.
- */
 export function App({
   path,
   navigate,

@@ -1,14 +1,5 @@
-// The one browser-side logger: every ad-hoc `console.*` call in
-// apps/web and chat-ui routes through this instead, so a user's actions
-// are traceable end-to-end through one category+level shape instead of
-// scattered, differently-worded console lines. Two jobs: an in-memory
-// ring buffer any surface can flush (a devtools panel, a future
-// diagnostics beacon), and a console mirror gated by level so a
-// production console isn't flooded with routine debug/info trace lines.
-//
-// This module is the sanctioned exception to the `no-console` lint rule
-// — every other file under `src/` calls `getLogger` instead of
-// `console.*` directly.
+// The sanctioned exception to the `no-console` lint rule — every other
+// file calls `getLogger` instead of `console.*` directly.
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 

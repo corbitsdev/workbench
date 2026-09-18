@@ -1,10 +1,5 @@
-// A workbench is a child tenant, and its workbench is that tenant's mailbox:
-// the timeline is the tenant's mail threads, participants are its
-// principals, and a message is addressed to every agent in the workbench. The
-// left info column folds in what Mission Control used to show for a
-// bench overall — here scoped to this one workbench: latest activity,
-// relevant artifacts, and pending approvals with approve/deny. Sub-threads
-// are native in-reply-to chains, shown in a side panel.
+// See docs/chat-mail-threading.md. The left info column folds in what
+// Mission Control used to show, scoped to this one workbench.
 
 import {
   Button,
@@ -137,10 +132,8 @@ function WorkbenchInfoColumn({
   readonly latestMessage: WorkbenchMessage | undefined;
   readonly participants: readonly WorkbenchParticipant[];
 }) {
-  // Poll only while an agent in this workbench is still starting (released,
-  // no live address yet) — the same window `participants` itself polls for.
-  // Once every agent is live, the inbox subscription's invalidation is the
-  // only trigger, so one mailbox event issues one read, not two.
+  // Poll only while an agent is still starting; once live, the inbox
+  // subscription's invalidation is the only trigger.
   const anyAgentStarting = participants.some((p) => p.kind === "agent" && p.address === "");
   const approvalsQuery = usePendingApprovals(workbenchTenantId, {
     refetchInterval: anyAgentStarting ? 3000 : false,
@@ -221,12 +214,8 @@ function WorkbenchInfoColumn({
   );
 }
 
-/** Redeploys one released agent (asset present, no live run — a hub
- * restart releases every process-provisioned deployment). Renders nothing;
- * one instance per released agent, keyed by asset id, so a mount's own ref
- * plus the mutation's `isPending`/`isSuccess` keep StrictMode's double
- * render (and any refetch that finds the same agent still released) from
- * firing it twice. */
+// Renders nothing; a mount's own ref plus the mutation's `isPending`/
+// `isSuccess` keep StrictMode's double render from firing it twice.
 function AgentRedeployer({
   workbenchTenantId,
   agent,
@@ -273,11 +262,9 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
     queryFn: () => readWorkbench(workbenchTenantId),
   });
 
-  // The workbench mailbox stream is the only signal that an agent answered; it
-  // carries no thread identity, so it invalidates rather than patches. An
-  // agent that parks on an ask sends no mail, but the same stream ticks over
-  // its turn, so the approvals read invalidates here too instead of the info
-  // column polling it continuously while any agent is simply live.
+  // Invalidates rather than patches: the stream carries no thread
+  // identity. Also invalidates approvals, since a parked ask sends no
+  // mail but still ticks the stream.
   useEffect(
     () =>
       subscribeToInbox(workbenchTenantId, () => {

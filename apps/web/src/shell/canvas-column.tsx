@@ -1,23 +1,8 @@
-// Column 4: the optional canvas. Collapsed, it takes no space at all — the
-// main pane gets the width back — and open, it hosts targeted auxiliary
-// content: profile cards, and typed artifact renderers opened
-// from a chat artifact chip or the Library page. Primary workbench
-// conversation lives in the main stage, not here.
-//
-// co-edit presence is gone. A "doc"-kind, editable artifact
-// renders `@/library`'s `ArtifactTextEditor` as a plain
-// single-user controlled textarea, debounced-saved through the artifacts
-// HTTP route; every other kind stays the read-only `ArtifactRenderer`. No
-// co-viewer cursors, no shared doc — that capability returns, if it does,
-// on top of the preserved `@corbits/presence` library, not here.
-//
-// The collapse/expand motion lives entirely in `shell.css` as a CSS
-// transition on `transform`/`opacity` (plus width, so the main pane
-// actually reflows) triggered by the `data-open` attribute — never a JS
-// animation — so rapid toggling is inherently interruptible: the browser
-// just reverses whichever transition is already in flight, there is no
-// queue to get stuck. `prefers-reduced-motion` is handled the same way, in
-// CSS, by shortening the transition to near-zero.
+// Collapse/expand is a CSS transition on `data-open`, never JS animation,
+// so rapid toggling is inherently interruptible — no queue to get stuck.
+
+// No co-edit presence: a "doc"-kind artifact is a plain single-user
+// textarea. That capability, if it returns, lives on `@corbits/presence`.
 
 import {
   Button,
@@ -64,11 +49,8 @@ export function CanvasColumn({
    * one seam to the artifacts PUT route. Absent for a non-editable artifact. */
   readonly onSaveArtifact?: (content: string) => void;
 }) {
-  // `inert` rather than `aria-hidden`: a collapsed column has to be out of
-  // both the accessibility tree and the tab order, and `aria-hidden` alone
-  // only does the first — a focusable descendant inside an `aria-hidden`
-  // subtree is an ARIA violation, and the browser moves focus out of an
-  // `inert` subtree for us when it closes.
+  // `inert`, not `aria-hidden` alone: `aria-hidden` doesn't remove a
+  // focusable descendant from the tab order.
   return (
     <div className="shell-canvas-column" data-open={open} data-focus={focus} inert={!open}>
       <div className="shell-canvas-inner">
@@ -135,14 +117,8 @@ function mentionAction(
   };
 }
 
-/** Shared header row for every canvas pane: an optional leading back
- * control, an optional title, an optional pane-specific `trailing` slot,
- * and — for the panes that use them — the mock's focus-cycle control and
- * its explicit close. `onBack` and the focus/close controls are mutually
- * exclusive in practice (a pane is either master-detail-driven, like the
- * routine pane, or focus/close-driven, like profile and artifact), but
- * both are optional so this one component covers every canvas pane's
- * header rather than each pane hand-rolling its own. */
+// `onBack` and the focus/close controls are mutually exclusive in
+// practice, but both stay optional so one component covers every pane.
 export function CanvasPaneHeader({
   title,
   onBack,
@@ -244,12 +220,8 @@ function profileActions(
   // pause endpoint exists anywhere in the hub) — omitted rather than left
   // as a no-op that pretends to do something.
   if (profile.kind === "agent") {
-    // No "Edit agent" hop here: `ProfileSubject` (chat-ui's
-    // `profile-subject.ts`) carries only address/handle/displayName, never
-    // a workbench id, so this card has no way to resolve the agent's own
-    // workbench settings. The global `/settings/agents` tab this used to
-    // target is gone — rather than hop to a dead route, the action is
-    // dropped until a subject carries enough context to land somewhere real.
+    // No "Edit agent" hop: `ProfileSubject` carries no workbench id, and
+    // the global `/settings/agents` tab this used to target is gone.
     return [
       message,
       mention,
@@ -265,11 +237,8 @@ function profileActions(
     ];
   }
 
-  // No "Grants" hop here: settings-ui's Grants section has no deep-link
-  // filter to land on this person's rules specifically, and a profile
-  // card action that lands on the unfiltered, everyone's-rules list is
-  // worse than not offering it — same reasoning the agent branch above
-  // uses to drop "Edit agent".
+  // No "Grants" hop: no deep-link filter exists, and landing on the
+  // unfiltered everyone's-rules list is worse than not offering it.
   return [
     message,
     mention,
@@ -324,11 +293,9 @@ function ProfileCanvasPane({
   );
 }
 
-/** Whether this render shows `ArtifactTextEditor` instead of the static
- * `ArtifactRenderer`: the artifact has to be a text kind. Whether the
- * resulting pane is interactive is `artifact.canEdit`, checked separately:
- * a viewer without write access still gets `ArtifactTextEditor` in its
- * own `readOnly` mode, just with keystrokes ignored. */
+/** Whether the pane is interactive is `artifact.canEdit`, checked
+ * separately — a read-only viewer still gets the editor, just in
+ * `readOnly` mode. */
 function showsTextEditor(artifact: CanvasArtifactContent): boolean {
   return artifact.rendererKind === "doc";
 }

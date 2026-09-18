@@ -1,12 +1,6 @@
-// Owns the shell chrome state that has to be visible above both the command
-// palette and the shell frame: canvas state (open/profile/focus).
-// CommandPaletteProvider and AppShell are siblings in app.tsx's Shell — a
-// palette action that "closes the canvas" has to mutate the same state
-// AppShell renders from, not a second copy scoped to AppShell's own
-// subtree. This is the one place that state lives; AppShell consumes it
-// through the same hooks page code already uses (`useCloseCanvas`, ...)
-// plus the shell-only read (`useCanvasColumnOpen`) it needs for its own
-// render.
+// Sits above CommandPaletteProvider and AppShell (siblings) so a palette
+// action that closes the canvas mutates the same state AppShell renders
+// from, not a second copy scoped to its own subtree.
 
 import { useCallback, useState, type ReactNode } from "react";
 
@@ -59,10 +53,8 @@ export function ShellChromeProvider({
     initialCanvasColumnState<ProfileSubject, CanvasArtifactContent, RoutinePanelSubject>,
   );
 
-  // The last scope and rail surface we applied, adjusted during render
-  // rather than from an effect — the canvas must never paint a frame
-  // holding another workbench's content. The initial null→ready tenant
-  // resolve is not a switch.
+  // Adjusted during render, not an effect: the canvas must never paint a
+  // frame holding another workbench's content.
   const [appliedTenantId, setAppliedTenantId] = useState<string | null>(selectedTenantId);
   const routePrefix = inAppRoutePrefix(path);
   const [appliedRoutePrefix, setAppliedRoutePrefix] = useState(routePrefix);

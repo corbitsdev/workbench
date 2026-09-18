@@ -44,11 +44,7 @@ function toChoices(models: readonly ModelInfo[], limit: number): readonly Failed
     });
 }
 
-/**
- * Two-to-four tenant-available chat models for the failed-turn strip
- * picker — the same connected, chat-capable filter Settings' agent
- * model select uses, capped so the strip stays a quiet inline row.
- */
+// Capped so the strip stays a quiet inline row.
 export function failedTurnModelChoices(
   models: readonly ModelInfo[],
   limit = FAILED_TURN_MODEL_PICKER_LIMIT,
@@ -56,11 +52,7 @@ export function failedTurnModelChoices(
   return toChoices(chatCapableModels(models), limit);
 }
 
-/**
- * Same picker as {@link failedTurnModelChoices}, restricted to offerings
- * that advertise function-calling — the recovery set when the failure
- * was that the current model cannot use tools.
- */
+// The recovery set when the failure was that the model can't use tools.
 export function failedTurnToolCapableModelChoices(
   models: readonly ModelInfo[],
   limit = FAILED_TURN_MODEL_PICKER_LIMIT,

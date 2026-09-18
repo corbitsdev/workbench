@@ -1,22 +1,5 @@
-// The command palette's `>` action commands: everything the shell mock's
-// `buildCmdkEntries` lists under "Commands" that this app can actually wire
-// today. Skills still use the off-route-safe pending-flag pattern
-// `library-upload.ts` established: the palette can fire from any page,
-// before the target page (and its window-event listener) has mounted, so
-// a same-tick `dispatchEvent` would be a race the listener always loses.
-// `pending-dialog-request.ts` generalizes that pattern; the target page
-// (skills-page.tsx) consumes the pending flag on mount. Skills moved from
-// its own route into a Settings section and back out to its own
-// rail destination — "New skill" lands on `/skills`. "New task"
-// and the Inbox page it used to open are gone (owner decision):
-// tasks are dispatched by Myra from inside a workbench now.
-//
-// Workbench creation is not one of those — there is no dialog to race, no
-// page to mount first: "new-workbench" navigates straight to the template
-// picker (`/new`, — superseding its direct mint), the same
-// hop the sidebar's own "+" control uses. A second "new-agent" row that
-// said and did the same thing was dropped. "New thread" is out
-// of scope (killed by owner decision).
+// "New skill" uses the pending-flag pattern from `pending-dialog-request.ts`
+// since the palette can fire before the target page's listener mounts.
 
 import { createPendingDialogRequest } from "@/shell/layout";
 import { CHAT_STRINGS } from "@/chat";
@@ -54,10 +37,8 @@ export type ActionCommand = {
   readonly subtitle: string;
 };
 
-/** Static catalog: id, title, subtitle. Matches the mock's action-command
- * titles, with "Install skill" relabeled "New skill" to match the shell's
- * current skills model: a person authors a skill into the workbench's own
- * registry (`skills-api.ts`) rather than installing one from a catalog. */
+// "Install skill" relabeled "New skill": a person authors a skill into
+// the workbench's own registry rather than installing from a catalog.
 export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "new-workbench",
@@ -101,13 +82,8 @@ export type ActionCommandContext = {
   readonly closeCanvas: () => void;
 };
 
-/**
- * Runs one action command. "new-workbench" opens the template picker (see
- * the module doc); "new-skill" still goes through a pending flag when the
- * palette fires it off-route (see the module doc), so the target page's
- * own mount effect opens the dialog instead of a dispatch racing against
- * that page's not-yet-mounted listener.
- */
+// "new-skill" goes through a pending flag off-route, so the target page's
+// mount effect opens the dialog instead of racing a dispatch.
 export async function runActionCommand(
   id: ActionCommandId,
   ctx: ActionCommandContext,

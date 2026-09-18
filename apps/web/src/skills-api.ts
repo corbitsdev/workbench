@@ -1,16 +1,6 @@
-// The Skills settings section's one seam to the hub's skill assets.
-//
-// the workbench-specific skill registry this used to call
-// (`@corbits/skills`, mounted at `/api/tenants/:tenantId/skills`) was
-// deleted — skills are native `kind:"skill"` hub assets now, listed and
-// created through the stock asset routes (`@intx/hub-api`'s
-// `routes/assets.ts`). Those routes carry only asset metadata (id, name,
-// displayName, creator, timestamps): there is no stock route yet to
-// read or write a skill's SKILL.md content (description/body), its
-// version history, its scope, or who has it pinned. `description` below
-// always reads back empty and `updateSkill`/`setSkillScope`/version
-// history are gone outright rather than vendored over a route that
-// doesn't exist — see the PR body for this gap.
+// Skills are native `kind:"skill"` hub assets, listed via the stock asset
+// routes. Those carry only metadata, so `description` always reads back
+// empty and there is no update/scope/version-history route yet.
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
@@ -133,13 +123,8 @@ export async function loadSkill(
   return { skill };
 }
 
-/**
- * Creates a skill asset's metadata only — a bare `kind:"skill"` asset
- * row and its (empty) backing repo. There is no stock route yet to
- * populate its SKILL.md body/description in the same call;
- * the caller must fill those in through whatever surface eventually
- * covers skill content.
- */
+// Creates metadata only — no stock route yet populates SKILL.md content
+// in the same call.
 export function createSkill(
   tenantId: string,
   input: { readonly name: string; readonly displayName?: string },

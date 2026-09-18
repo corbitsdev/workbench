@@ -1,10 +1,5 @@
-// The tenant's tool roster, read off what its agents actually carry rather
-// than a registry that outlives the packages it once held. An agent's tool
-// packages live in two places: pinned in its deployed `definition.json`
-// (`readAgentToolPackagePins`), or — for Myra — bundled straight into her
-// `workflow.js` closure, which never shows up in that file. Her package.json
-// dependencies are the source of truth for that bundle instead of a literal
-// copy that could drift from it.
+// Read off what agents actually carry, not a registry that outlives them.
+// Myra's tools are bundled, so her package.json is the source of truth.
 
 import { useQuery } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
@@ -46,10 +41,8 @@ async function toolPackagesOf(
   }
 }
 
-/** Every tool package carried by one of the tenant's live agent deployments,
- * grouped by package name and joined against which agents carry it. An
- * agent whose definition can't be read contributes nothing rather than
- * failing the whole roster. */
+/** An agent whose definition can't be read contributes nothing, rather
+ * than failing the whole roster. */
 async function listDeployedToolPackages(tenantId: string): Promise<readonly DeployedToolPackage[]> {
   const agents = liveAgentsOf(await listChatAgents(tenantId));
   const perAgent = await Promise.all(

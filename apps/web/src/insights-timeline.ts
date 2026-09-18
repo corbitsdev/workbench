@@ -18,11 +18,8 @@ export const INSIGHTS_TIMELINE_DAYS = 14;
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/**
- * Buckets `runs` into the last `days` UTC days ending on `now`'s day, oldest
- * first. Runs outside the window are dropped; days with no runs still appear
- * as zero-count buckets so the strip never collapses.
- */
+// Days with no runs still appear as zero-count buckets so the strip
+// never collapses.
 export function bucketRunsByDay(
   runs: readonly WorkflowRun[],
   days: number = INSIGHTS_TIMELINE_DAYS,

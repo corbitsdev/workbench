@@ -1,15 +1,5 @@
-// The portable client bootstrap: one call that drives the client's
-// needs-list against a stock Interchange hub using only stock routes — no
-// workbench server proxies, tables, or mounts. Auth owns the primary
-// tenant; this lane converges everything beneath it (top-level Myra,
-// workbench child tenants plus each workbench's primary thread) and
-// persists the child tenant ids it created in client storage scoped by
-// hub origin and account, so a reinstall reclaims by id, never by slug.
-// DMs are participant-filtered threads derived client-side, never tenants.
-// Myra's definition refId resolves from the client workflow catalog, and
-// deployment source/offering ids only ever come from explicit caller
-// config — this module never guesses them. When stock Interchange lacks a
-// capability the result carries the typed gap instead of throwing.
+// Uses only stock routes — no workbench server proxies, tables, or mounts.
+// Persisted child tenant ids let a reinstall reclaim by id, never by slug.
 
 import { WORKFLOW_CATALOG } from "@corbits/workflows/catalog";
 
@@ -44,12 +34,8 @@ function primaryTenantSlug(account: ClientBootstrapAccount): string {
   return base !== undefined && base.length > 0 ? base : `home-${account.id}`;
 }
 
-/** First-signup installer step: mints the account's primary
- * tenant over the stock `POST /api/tenants` route (no `parentId`, so the
- * caller becomes its owner) when it does not already own one. This is
- * the "0→1" ruling's execution — never hub boot, never a CLI — and it
- * never mints a second root: an account that already owns a top-level
- * tenant is left alone. */
+/** The "0→1" ruling's execution — never hub boot, never a CLI. Never
+ * mints a second root: an account that already owns one is left alone. */
 export async function ensurePrimaryTenant(
   account: ClientBootstrapAccount,
   hub: StockHub,
@@ -62,10 +48,7 @@ export async function ensurePrimaryTenant(
   });
 }
 
-/** The seeded assistant asset, productized as Myra — the same wire
- * identifier the hub seed deploys under and the catalog resolves to the
- * "Myra" display name. Resolved from the catalog at runtime, never
- * hardcoded at the call site. */
+// Resolved from the catalog at runtime, never hardcoded at the call site.
 export function resolveMyraDefinitionRefId(): string | undefined {
   return WORKFLOW_CATALOG.find((entry) => entry.displayName === "Myra")?.assetName;
 }
@@ -154,10 +137,8 @@ export async function bootstrapClientSession(
   });
   const store = childTenantStore(deps.storage, deps.hubScope, account.id);
   try {
-    // The common case (an account that already owns its primary tenant)
-    // never pays for a primary-tenant existence probe: convergence is
-    // attempted directly, and only a "primary-tenant-bootstrap" gap — the
-    // first-signup case — triggers the one-time mint-then-retry below.
+    // The common case never pays for a primary-tenant existence probe;
+    // only the first-signup gap triggers the mint-then-retry below.
     const report = await convergeNeedsList(manifest, deps.hub, store).catch(
       async (cause: unknown) => {
         if (
@@ -199,10 +180,8 @@ export async function bootstrapClientSession(
   }
 }
 
-/** One shared landing for the bootstrap outcome at both entry points
- * (first-open in main, signup in the onboarding page): a converged lane
- * logs at info, a stock gap or any other failure logs at warn — never
- * shown, never gating the shell. */
+// A converged lane logs at info, any failure at warn — never shown,
+// never gating the shell.
 export function logBootstrapResult(log: ClientLogger, result: ClientBootstrapResult): void {
   if (result.kind === "ready") {
     log.info("Portable client bootstrap converged", {
@@ -229,10 +208,8 @@ export function logBootstrapThrown(log: ClientLogger, error: unknown): void {
   });
 }
 
-/** The bootstrap with its production ports already attached: stock fetch
- * hub, browser localStorage, current origin as hub scope. Both bootstrap
- * entry points (first-open in main, signup in the onboarding page) call
- * this one helper so the ports can never drift between them. */
+// Both bootstrap entry points call this one helper so production ports
+// can never drift between them.
 export function runPortableClientBootstrap(
   account: ClientBootstrapAccount,
   overrides?: {

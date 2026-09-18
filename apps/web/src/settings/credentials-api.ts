@@ -50,11 +50,8 @@ export function listProviders(tenantId: string): Promise<readonly Provider[]> {
   );
 }
 
-/** Mints a plain, non-inference provider row named after the credential
- * a person is about to store — the stock credentials route requires a
- * `providerId`, and a bare "add a key" form has no provider of its own
- * to point at yet. `plugin: "custom"` marks it as this form's own,
- * generic kind rather than an inference adapter. */
+// The stock credentials route requires a `providerId`, and a bare "add a
+// key" form has no provider of its own yet — this mints one.
 export function createProvider(tenantId: string, name: string): Promise<Provider> {
   return request(`/api/tenants/${tenantId}/providers`, ProviderResponse, "creating that provider", {
     method: "POST",

@@ -1,9 +1,5 @@
-// The agent-create panel: name + system prompt, deployed through the stock
-// workflow-deploy path (`../agent-deploy.ts`) the same way Myra deploys
-// herself. There is no drafting assist and no per-agent model/skills pin
-// here — the routes that backed those were removed from the hub; the
-// agent's model resolves from the tenant's existing inference offering,
-// exactly as Myra's own deploy does.
+// No drafting assist or per-agent model/skills pin: the routes that backed
+// those were removed from the hub.
 
 import {
   Button,

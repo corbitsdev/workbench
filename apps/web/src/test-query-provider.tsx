@@ -1,7 +1,5 @@
-// Shared providers for component tests that touch useAPIQuery / BenchProvider
-// / ThemeToggle. retry:false + gcTime:0 keep failures loud and cache-free;
-// ThemeProvider is the production root (main.tsx) so shell chrome that calls
-// useTheme can render under the same contract.
+// retry:false + gcTime:0 keep test failures loud and cache-free; matches
+// main.tsx's ThemeProvider so shell chrome renders under the same contract.
 
 import { ThemeProvider } from "@corbits/react-ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

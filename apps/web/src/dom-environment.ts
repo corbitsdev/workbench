@@ -1,8 +1,5 @@
-// A DOM for the tests that need one. Without it every UI test in this app is
-// limited to `renderToStaticMarkup`, which never runs an effect — so hooks,
-// listeners and focus behaviour could only be reasoned about, not asserted.
-// Registered through `bunfig.toml`'s preload so it is in place before any
-// test module imports React.
+// Without a real DOM, tests are limited to `renderToStaticMarkup`, which
+// never runs an effect. Registered via `bunfig.toml`'s preload.
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 

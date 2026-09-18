@@ -2,11 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { isAdditiveSelectClick, isRowActivationKey, rowActivationProps } from "./activatable-row";
 
-// `isAdditiveSelectClick`'s Mac/non-Mac branch reads `navigator.platform`,
-// which happy-dom's `GlobalRegistrator` reports as whatever the *host* OS
-// is — Darwin-flavored on a Mac, something else on Linux CI. Each test
-// below pins the platform it means to exercise instead of inheriting the
-// host's, so both branches are deterministic on any OS.
+// happy-dom reports `navigator.platform` as the host OS, so each test pins
+// the platform it means to exercise to stay deterministic on any OS.
 const originalPlatform = Object.getOwnPropertyDescriptor(navigator, "platform");
 
 function stubPlatform(platform: string): void {

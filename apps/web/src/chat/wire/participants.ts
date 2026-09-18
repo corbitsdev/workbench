@@ -1,19 +1,7 @@
-// Mirrored from packages/chat/src: apps/web and @/chat
-// must not import @corbits/chat, a server-only package. This is the browser-
-// facing half of the same wire contract the hub's chat routes still speak;
-// once the hub moves onto native mail threads (T5a/T5c) this file becomes
-// the one source of truth and packages/chat's copy goes away.
+// Mirrored from packages/chat/src (see docs/chat-wire-contract.md).
 
-// Workbench participant records: the settings-backed source of mention
-// handles. `chat/participants` (see `routes.ts`'s `ChatNamespaceSchemas`)
-// holds `ParticipantRecord[]` — an address plus the short,
-// unique-within-workbench handle a mention actually types (`@echo`), never
-// the unusable instance-id local part (`@ins_cd03d8e3...`). Reading
-// tolerates a bare address string too — a participant seeded before this
-// record shape existed, or a caller PATCHing `chat/participants` with
-// plain addresses — always upgrading it to a record on the way out (its
-// handle defaults to the address's own local part); writing always
-// produces records, never bare strings.
+// Reading tolerates a bare address string (pre-rollout data) and upgrades it
+// to a record; writing always produces records, never bare strings.
 
 import { type } from "arktype";
 import { localPartOf } from "./agent-address";
@@ -46,24 +34,14 @@ function parseParticipantEntry(entry: unknown): ParticipantRecord {
   return result;
 }
 
-/**
- * Parses a whole `chat/participants` setting value into records,
- * tolerant of the mixed shape a workbench written before and after this
- * rollout might carry: some entries bare strings, some already records.
- * Anything other than an array is treated as no participants at all.
- */
+// Tolerant of a workbench with a mix of pre- and post-rollout entries.
 export function parseParticipants(raw: unknown): ParticipantRecord[] {
   if (!Array.isArray(raw)) return [];
   return raw.map(parseParticipantEntry);
 }
 
-/**
- * A short, word-safe handle derived from a workflow definition's name —
- * e.g. "Echo Bot" -> "echo-bot" — lowercased, non-alphanumeric runs
- * collapsed to a single hyphen, and leading/trailing hyphens trimmed.
- * Falls back to the given address's own local part when the name yields
- * nothing usable (e.g. a name of all punctuation, or empty).
- */
+// Falls back to the address's local part when the name yields nothing
+// usable (e.g. all punctuation).
 export function handleFromName(name: string, fallbackAddress: string): string {
   const slug = name
     .trim()
@@ -73,11 +51,7 @@ export function handleFromName(name: string, fallbackAddress: string): string {
   return slug.length > 0 ? slug : localPartOf(fallbackAddress);
 }
 
-/**
- * De-duplicates a candidate handle against the handles already in use in
- * a workbench: "echo" becomes "echo-2", then "echo-3", etc. — the first
- * suffix not already taken.
- */
+// "echo" becomes "echo-2", then "echo-3" — the first suffix not taken.
 export function dedupeHandle(handle: string, taken: ReadonlySet<string>): string {
   if (!taken.has(handle)) return handle;
   let suffix = 2;
@@ -85,12 +59,8 @@ export function dedupeHandle(handle: string, taken: ReadonlySet<string>): string
   return `${handle}-${suffix}`;
 }
 
-/**
- * Appends a new participant to an existing record list, de-duplicating
- * the desired handle against every handle already in the workbench.
- * Same-address retries return the existing list by identity so a caller
- * can tell "already present" apart from "appended a row".
- */
+// Returns the existing list by identity on a same-address retry, so a
+// caller can tell "already present" from "appended".
 export function addParticipant(
   existing: readonly ParticipantRecord[],
   address: string,
@@ -104,12 +74,8 @@ export function addParticipant(
   return [...existing, { address, handle }];
 }
 
-/**
- * Drops a participant from an existing record list by address — the
- * inverse of `addParticipant`. Returns the same array reference when
- * the address names no participant, so a caller can tell "nothing
- * changed" apart from "removed the last matching entry" by identity.
- */
+// Returns the same array reference when the address names no participant,
+// so a caller can tell "nothing changed" by identity.
 export function removeParticipant(
   existing: readonly ParticipantRecord[],
   address: string,

@@ -1,7 +1,5 @@
-// Mid-turn reopen whose catch-up fetch (`fetchRunningTurn`) fails
-// must not leave the workbench looking idle. This soft banner names the gap,
-// quotes a `reportError` ref id, and offers Retry — never a silent
-// `.catch(() => undefined)`.
+// A failed catch-up fetch must not leave the workbench looking idle —
+// never a silent `.catch(() => undefined)`.
 import { Button } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
 import { CHAT_STRINGS } from "./strings";

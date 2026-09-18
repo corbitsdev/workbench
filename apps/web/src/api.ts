@@ -1,7 +1,5 @@
-// The interface's one seam to the hub: relative /api paths on the origin the
-// bundle was served from, validated at the boundary with the platform's own
-// response schemas so a shape change surfaces as an error state, never as
-// undefined leaking into a page.
+// Every response is validated at the boundary with the platform's own
+// schemas, so a shape change surfaces as an error state, never `undefined`.
 
 import {
   ApprovalResponse,
@@ -25,11 +23,8 @@ export const PrincipalsSchema = paginatedSchema(PrincipalSummary);
 export const TenantApprovalsSchema = paginatedSchema(ApprovalResponse);
 export const TenantDetailSchema = TenantResponse;
 
-// `GET /api/tenants/:tenantId/assets` returns a bare array of
-// `AssetWithOriginResponse` rows (not the paginated envelope), so the schema
-// validates the array directly. These tenant assets — workflows, skills,
-// package registries, agent state — are the real, listable store the Library
-// page renders as artifacts.
+// Returns a bare array, not the paginated envelope, so this validates the
+// array directly.
 export const AssetsSchema = AssetWithOriginResponse.array();
 
 // Real Library plane: paginated list from GET /api/tenants/:id/artifacts.
@@ -83,26 +78,17 @@ export type ArtifactListItem = typeof ArtifactListItemSchema.infer;
 export type ArtifactListPage = typeof ArtifactListPageSchema.infer;
 export type ArtifactDetail = typeof ArtifactRowSchema.infer;
 export type ArtifactCounts = typeof ArtifactCountsSchema.infer;
-/**
- * The envelope paginatedSchema validates, stated structurally: the generic
- * schema's inferred type carries an arktype inference artifact that rejects
- * plain literals, so pages and tests use this equivalent shape instead.
- */
+// Stated structurally because the generic schema's inferred type rejects
+// plain literals.
 type Paginated<T> = { data: T[]; nextCursor: string | null };
 export type PrincipalsPage = Paginated<Principal>;
 
 /** An arktype schema, seen as the validating call every `Type` provides. */
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
-/**
- * Fetches one hub endpoint and reports exactly what happened: loading, no
- * session (401), a failure, or validated data. Pass a module-level schema so
- * identity stays stable; the schema never enters the query key.
- *
- * Empty paths are disabled and never fetch — the boundary owns the gate so
- * call sites that still pass `""` when a tenant is unresolved cannot hit
- * the network with a broken URL.
- */
+// Pass a module-level schema so identity stays stable. Empty paths are
+// disabled and never fetch, so a call site with an unresolved tenant
+// can't hit the network with a broken URL.
 export function useAPIQuery<T>(
   path: string,
   schema: Validator<T>,
@@ -133,11 +119,7 @@ export function useAPIQuery<T>(
   return toAPIQuery(result);
 }
 
-/**
- * A one-shot POST against a hub route, parsed the same way `useAPIQuery`
- * parses its GETs: loud on a non-2xx status and on a response shape that
- * doesn't match the schema, never a silent fallback.
- */
+// Loud on a non-2xx status or a shape mismatch, never a silent fallback.
 async function postJSON<T>(path: string, schema: Validator<T>, body: unknown): Promise<T> {
   let response: Response;
   try {
@@ -184,13 +166,8 @@ export function rejectApproval(
   );
 }
 
-/**
- * One-shot fetch of `GET /api/tenants/:id` — the only place `parentId`
- * comes from. A bench is a top-level tenant (`parentId === null`); a workbench
- * is a named child tenant, so the raw-id/name heuristic can never tell them
- * apart. `bench-context.tsx` fans this out per membership with
- * `useQueries` to decide which memberships are benches.
- */
+// The only place `parentId` comes from — a bench is a top-level tenant,
+// so a raw-id/name heuristic can never tell it apart from a workbench.
 export async function fetchTenantDetail(tenantId: string): Promise<TenantDetail> {
   const response = await fetch(`/api/tenants/${encodeURIComponent(tenantId)}`, {
     headers: { accept: "application/json" },
@@ -209,24 +186,13 @@ export async function fetchTenantDetail(tenantId: string): Promise<TenantDetail>
   return parsed;
 }
 
-/**
- * Sandboxed HTML preview URL for a Library artifact — the same
- * path an `<iframe sandbox>` in the canvas or Library detail pane loads,
- * and the "Open in new tab" affordance's `href`. Server-side (`GET
- * .../artifacts/:id/preview` in `@corbits/artifacts-hub`) answers 415 for
- * a non-HTML artifact.
- */
+// The server answers 415 for a non-HTML artifact.
 export function artifactPreviewPath(tenantId: string, artifactId: string): string {
   return `/api/tenants/${tenantId}/artifacts/${encodeURIComponent(artifactId)}/preview`;
 }
 
-/**
- * One-shot fetch of a Library artifact's detail — the same
- * `GET /api/tenants/:id/artifacts/:artifactId` read `LibraryRoute` uses via
- * `useAPIQuery`, but as a plain promise for callers that aren't a mounted
- * component (a chat artifact chip's open handler). Never falls back to
- * blob bytes: an `artifactId` always resolves through this Library read.
- */
+// A plain promise for callers that aren't a mounted component. Never
+// falls back to blob bytes: an `artifactId` always resolves through here.
 export async function fetchArtifactDetail(
   tenantId: string,
   artifactId: string,

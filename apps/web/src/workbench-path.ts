@@ -1,12 +1,6 @@
-// Workbench deep links live at `/w/:workbenchId`. The retired `/chat` prefix
-// still resolves here so old bookmarks and in-flight links land on the
-// same surface instead of a dead route. A workbench's settings are a full
-// stage surface (never a dialog — workbenches are tenants), routed at the
-// `/settings` sub-path of its deep link, optionally followed by the
-// section id (`/settings/:section`) and a section's own sub-selection
-// (`/settings/:section/:entityId`) — same pattern as `path-ids.ts`'s
-// `/settings/:section` and `settingsEntityIdFromPath` for the app-level
-// Settings page.
+// The retired `/chat` prefix still resolves to `/w/:workbenchId` so old
+// bookmarks land on the same surface instead of a dead route. Settings is
+// a full stage surface, never a dialog, since a workbench is a tenant.
 
 import { decodedOrNull } from "@corbits/url-path";
 
@@ -73,10 +67,8 @@ export function workbenchPath(workbenchId: string | null): string {
   return `${WORKBENCH_PATH_PREFIX}/${encodeURIComponent(workbenchId)}`;
 }
 
-/** Canonical path for a workbench's settings stage surface, optionally
- * scoped to a section (`/w/:id/settings/:section`) and that section's own
- * sub-selection (`/w/:id/settings/:section/:entityId`) for a deep link
- * straight to an agent (or similar) detail. */
+/** Canonical settings path, optionally scoped to a section and its own
+ * sub-selection, for a deep link straight to a detail like an agent. */
 export function workbenchSettingsPath(
   workbenchId: string,
   section?: WorkbenchSettingsSectionId,
@@ -89,15 +81,9 @@ export function workbenchSettingsPath(
   return `${withSection}/${encodeURIComponent(entityId)}`;
 }
 
-/** Extract the section id from `/w/:id/settings/:section` (or
- * `/settings/:section/:entityId`, or its legacy `/chat` equivalent) —
- * `undefined` for bare `/settings`, a non-settings path, a malformed
- * escape, or a segment that isn't one of `WorkbenchSettingsSectionId`'s own
- * values. Only the first segment after `/settings/` is the section, so a
- * trailing entity id does not change the section. An unrecognized id reads
- * the same as no section at all: the settings surface already falls back
- * to its first section then, the same contract `settingsSectionIdFromPath`
- * in `path-ids.ts` relies on its caller for. */
+/** `undefined` for bare `/settings`, a malformed escape, or an unrecognized
+ * section id — the caller falls back to the first section, same contract
+ * as `settingsSectionIdFromPath` in `path-ids.ts`. */
 export function workbenchSettingsSectionFromPath(
   path: string,
 ): WorkbenchSettingsSectionId | undefined {
@@ -115,12 +101,8 @@ export function workbenchSettingsSectionFromPath(
   return decoded;
 }
 
-/** Extract a section's own sub-selection from
- * `/w/:id/settings/:sectionId/:entityId` (or the legacy `/chat`
- * equivalent) — `null` when the path isn't under that section, or carries
- * no sub-id. Mirrors `settingsEntityIdFromPath` in `path-ids.ts`, but
- * locates the settings suffix the same way `workbenchSettingsSectionFromPath`
- * does (`indexOf`), because workbench paths are not rooted at `/settings`. */
+/** Mirrors `settingsEntityIdFromPath` in `path-ids.ts`, but locates the
+ * settings suffix by `indexOf` since workbench paths aren't rooted at it. */
 export function workbenchSettingsEntityIdFromPath(path: string, sectionId: string): string | null {
   const sectionPrefix = `${SETTINGS_SUFFIX}/${sectionId}/`;
   const index = path.indexOf(sectionPrefix);

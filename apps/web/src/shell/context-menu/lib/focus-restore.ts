@@ -1,8 +1,5 @@
-// Radix's DropdownMenu restores focus to its trigger on close. Our trigger
-// is an inert, unfocusable 1px anchor at the click point — restoring focus
-// to it is a no-op that drops focus to `<body>`. This module finds the real
-// element worth focusing instead: the right-clicked row itself, or its
-// nearest focusable ancestor.
+// Our trigger is an inert 1px anchor, so Radix's default focus-restore
+// drops to `<body>`. This finds the real element worth focusing instead.
 
 const FOCUSABLE_SELECTOR = "a[href], button, input, select, textarea, [tabindex]";
 

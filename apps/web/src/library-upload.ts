@@ -1,17 +1,11 @@
-// Library pageBand Upload is a cross-route action: the shell may fire it from
-// another path before LibraryPage is mounted. When already on /artifacts, open
-// the picker immediately; otherwise record a one-shot pending flag the page
-// consumes on mount. Keeps shell ↔ page coupling to this tiny module.
+// The shell may fire this before LibraryPage is mounted; off-route it
+// records a one-shot pending flag the page consumes on mount.
 
 export const LIBRARY_UPLOAD_EVENT = "workbench:library:upload";
 
 let pendingUpload = false;
 
-/**
- * Request the Library file picker. On-route: dispatch the window event the
- * mounted page listens for. Off-route: set a pending flag and navigate so the
- * page opens the picker after mount — no setTimeout race.
- */
+// Off-route sets a pending flag and navigates, avoiding a setTimeout race.
 export function requestLibraryUpload(args: {
   readonly alreadyOnLibrary: boolean;
   readonly navigateToLibrary: () => void;

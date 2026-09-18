@@ -1,19 +1,6 @@
-// The canvas column's state as pure transitions, separate from
-// `breakpoints.ts`'s allow/disallow rule — profile demand and the viewport's
-// veto are independent inputs; `resolveCanvasVisibility` is the one place
-// they combine.
-//
-// Canvas is auxiliary only (profiles and similar targeted surfaces). Primary
-// channel conversation lives in the main stage via route (`/`, `/c`, `/c/:id`).
-// There is no permanent toggle: canvas opens when auxiliary content is targeted
-// and closes when that content is dismissed.
-//
-// `TProfile` is whatever subject the host app's canvas renders (a
-// ProfileCard subject, or anything else worth targeting); `TArtifact` is
-// whatever typed content pane the host renders alongside it (a document, a
-// sheet, or anything else); `TRoutine` is a third, equally exclusive slot
-// for a routine editor/detail pane. This module owns only the open/focus/
-// mutual-exclusion transitions, never the shape of what's shown.
+// Pure transitions, separate from `breakpoints.ts`'s allow/disallow rule:
+// profile demand and the viewport's veto are independent inputs;
+// `resolveCanvasVisibility` is the one place they combine.
 
 export type CanvasColumnState<TProfile, TArtifact, TRoutine> = {
   readonly open: boolean;

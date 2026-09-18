@@ -1,7 +1,6 @@
-// Reads one file out of a hub asset repo from the browser, mirroring
-// `git-push.ts`'s in-memory clone but for the read side: isomorphic-git's
-// own upload-pack wire (unlike its receive-pack) parses the hub's
-// pkt-lines fine, so no hand-rolled wire code is needed here.
+// Mirrors `git-push.ts`'s in-memory clone for the read side; isomorphic-git's
+// own upload-pack wire parses the hub's pkt-lines fine, so no hand-rolled
+// wire code is needed here.
 import LightningFS from "@isomorphic-git/lightning-fs";
 import { Buffer } from "buffer";
 import git, { Errors } from "isomorphic-git";
@@ -58,10 +57,8 @@ export async function fetchSourceFile(args: {
   }
 }
 
-/** Fetches `main` and returns `filepath`'s contents as text, or `""` when
- * the branch has no commits yet or the file isn't in it — the two shapes
- * a freshly created, still-empty asset takes. Any other failure (auth,
- * network, a malformed repo) still throws. */
+/** Returns `""` for a freshly created, still-empty asset (no commits, or
+ * file not in it); any other failure still throws. */
 export async function fetchSourceFileOrEmpty(args: {
   url: string;
   token: string;

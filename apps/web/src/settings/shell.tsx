@@ -1,8 +1,5 @@
-// The settings surface's shell: renders the active section's panel only.
-// Section nav is a master-detail list — it lives in the host's own col2
-// (see `resolveSettingsSectionGroups`), never repeated in the stage.
-// Everything about what a section shows and how it saves lives in the
-// section's own `render`, never here.
+// Renders the active section's panel only — nav is master-detail, never
+// repeated in the stage.
 
 import { EmptyState } from "@corbits/react-ui";
 import type { Icon } from "@/lib/icons";
@@ -10,10 +7,7 @@ import type { ReactElement } from "react";
 
 import { SETTINGS_STRINGS } from "./strings";
 
-/** Whatever shared context a section needs to do its own fetching: the
- * bench currently selected in the app's chrome, and the signed-in account's
- * principal on that bench (for permission probes). A section with no use
- * for either (Account, today) simply ignores the field. */
+// A section with no use for a field (Account, today) simply ignores it.
 export type SettingsContext = {
   readonly tenantId: string | null;
   readonly principalId: string | null;
@@ -25,10 +19,8 @@ export type SettingsContext = {
    * `/settings/agents/:definitionId`), so a section with its own
    * master-detail can restore the right selection on a deep link. */
   readonly entityId?: string | null;
-  /** Ends the signed-in session — the same callback the shell's account
-   * menu calls. Absent where the host has no sign-out concept of its own
-   * (a package test rendering a section standalone); a section that
-   * offers a Sign out action simply hides it when this is undefined. */
+  // Absent where the host has no sign-out concept; a section with a
+  // Sign out action simply hides it when undefined.
   readonly onSignOut?: () => void;
 };
 
@@ -38,10 +30,7 @@ export type SettingsSection = {
   /** Leading icon for a host's own section nav (col2). */
   readonly icon: Icon;
   readonly render: (ctx: SettingsContext) => ReactElement;
-  /** Tucks this section under a collapsed "Advanced" disclosure at the
-   * bottom of its group's nav, instead of listing it as a peer section —
-   * for sections whose mechanics (roles, grants, audit) nobody should have
-   * to parse just to find the thing they actually came for. */
+  // Tucked under a collapsed "Advanced" disclosure, not a peer section.
   readonly advanced?: boolean;
 };
 
@@ -62,12 +51,8 @@ export function flattenSettingsSections(
   return groups.flatMap((group) => group.sections);
 }
 
-/**
- * The section a shell should treat as active: the requested id if it names
- * a real section, otherwise the first section — never a crash, and never a
- * blank nav. `sections` is validated non-empty by the caller; an empty
- * registry is a distinct, deliberate empty state.
- */
+// Falls back to the first section rather than crashing or showing a blank
+// nav; an empty registry is a distinct, deliberate empty state.
 export function resolveActiveSection(
   sections: readonly SettingsSection[],
   requestedId: string | null,

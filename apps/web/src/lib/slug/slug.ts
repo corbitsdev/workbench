@@ -5,14 +5,8 @@ export const SLUG_MAX_LENGTH = 64;
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-/**
- * Derive a slug from a display name: accents folded to ASCII, everything
- * that is not a letter or digit collapsed into a single hyphen, and the
- * result capped at `SLUG_MAX_LENGTH` without leaving a trailing hyphen. A
- * name with nothing sluggable in it (punctuation, emoji, a non-Latin
- * script) yields the empty string — the caller decides what to do with a
- * name that cannot name a URL.
- */
+// A name with nothing sluggable (punctuation, emoji, non-Latin script)
+// yields the empty string — the caller decides what to do with it.
 export function slugify(name: string): string {
   const ascii = name
     .normalize("NFKD")

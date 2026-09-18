@@ -1,9 +1,5 @@
 // Deploys a hand-authored agent the same way Myra deploys herself
-// (`myra-deploy.ts`): a `workflow`-kind asset holding a rendered source
-// tree, pushed over the stock git smart-HTTP route, then deployed through
-// the stock `POST /workflows/deployments`. Generalized over {name,
-// displayName, systemPrompt} so the create-agent panel can deploy any
-// agent through the one path the platform actually backs.
+// (`myra-deploy.ts`), generalized over {name, displayName, systemPrompt}.
 import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
 import { type } from "arktype";
 import { WorkflowDeploymentResponse } from "@intx/types";
@@ -156,10 +152,8 @@ async function withPushToken<T>(
   }
 }
 
-/** Renders this agent's built definition as the same bundled source tree
- * Myra deploys (`pushMyraSource`) — the bundle's `buildMyraWorkflow` is
- * generic over which agent it builds — and pushes it to the asset's `main`.
- * Returns the commit sha the deploy pins to. */
+// The bundle's `buildMyraWorkflow` is generic over which agent it builds.
+// Returns the commit sha the deploy pins to.
 export async function pushAgentSource(
   tenantId: string,
   assetId: string,
@@ -219,11 +213,8 @@ export function isAgentDeploySourceAssetName(name: string): boolean {
   return AGENT_DEPLOY_SOURCE_ASSET_NAME.test(name);
 }
 
-/** The inverse of `agentDeploySourceAssetName`: recovers the slug this
- * pipeline deployed an asset under, so a caller re-deploying an existing
- * agent can reuse its slug instead of re-deriving one from its display
- * name. Null when the name isn't this pipeline's `agent-<slug>-source`
- * shape. */
+/** Lets a caller re-deploying an existing agent reuse its slug instead of
+ * re-deriving one from its display name. */
 export function agentSlugFromSourceAssetName(assetName: string): string | null {
   const match = AGENT_DEPLOY_SOURCE_ASSET_NAME.exec(assetName);
   return match?.[1] ?? null;
@@ -257,12 +248,8 @@ export function buildScheduledRunBody(deployerAddress?: string): string {
   return `This is your scheduled run. ${task} Mail the result to ${deployerAddress} (pass it as a single-item \`to\` list) with a short, descriptive subject.`;
 }
 
-/** The deploying person's mailbox address — same source `session.ts`'s
- * `fetchSession` reads, same shape `threads-api.ts` builds a person
- * participant's address from (`<refId>@<tenantDomain>`). Best-effort: a
- * session probe that fails or comes back signed-out just means the
- * scheduled run's body falls back to naming nobody, never a failed
- * deploy over it. */
+// Best-effort: a failed or signed-out session probe just means the
+// scheduled run's body falls back to naming nobody, never a failed deploy.
 async function resolveDeployerAddress(
   tenantDomain: string,
   fetchImpl: typeof fetch,
@@ -316,13 +303,8 @@ async function scheduleAgentRun(
 
 export type DeployedAgent = typeof WorkflowDeploymentResponse.infer;
 
-/**
- * Deploys a hand-authored agent: ensures its source asset, pushes its
- * rendered definition, resolves the tenant's existing inference offering
- * (the same one Myra's own deploy resolves through), and deploys through
- * the stock `POST /workflows/deployments`. Fails closed when no provider is
- * connected yet — there is no offering to deploy against.
- */
+// Fails closed when no provider is connected yet — there is no offering
+// to deploy against.
 export async function deployAgentSource(
   args: { readonly tenantId: string; readonly input: NewAgentInput },
   fetchImpl: typeof fetch = fetch,

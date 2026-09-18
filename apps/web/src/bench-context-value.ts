@@ -1,10 +1,6 @@
-// The context object itself, apart from the provider that fills it.
-// `createContext` mints a fresh object every time its module runs, and a
-// module that also exports a component is a React Refresh boundary that a
-// hot update re-executes without re-executing its importers — the provider
-// would then publish one context while `useBench` still reads the previous
-// one. Holding it in a component-free module keeps a single identity for
-// every reader.
+// Held in a component-free module, since a module with a component is a
+// React Refresh boundary — a hot re-execution would mint a new context the
+// provider publishes while `useBench` still reads the old one.
 
 import type { APIQuery } from "@/lib/api-query";
 import { createContext } from "react";
@@ -13,11 +9,8 @@ import type { Principal, PrincipalsPage } from "./api";
 
 export type BenchState = {
   readonly memberships: APIQuery<PrincipalsPage>;
-  /** The subset of `memberships` this account may treat as a bench: a
-   * top-level tenant (`parentId === null`, per `GET /api/tenants/:id`).
-   * Empty while any membership's tenant detail is still loading — every
-   * consumer that used to filter `memberships` with `isBenchMembership`
-   * reads this instead, so a workbench can never sneak into a bench list. */
+  /** Top-level tenants only; every consumer reads this instead of filtering
+   * `memberships` itself, so a workbench can't sneak into a bench list. */
   readonly benchMemberships: readonly Principal[];
   readonly selectedTenantId: string | null;
   readonly selectedPrincipalId: string | null;

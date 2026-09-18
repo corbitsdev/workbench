@@ -37,12 +37,8 @@ export function Root() {
     [navigate],
   );
 
-  // The first-login hook: once per session that reaches signed-in, ask
-  // the hub's native setup-status route whether any bench exists yet. An
-  // empty hub reports setup-required so we route into the setup screen;
-  // a hub with tenants loads the shell normally. Read-only on purpose
-  // — this never mints anything. A failure blocks the shell
-  // entirely rather than leaving the user silently benchless.
+  // Read-only on purpose — never mints anything. A failure blocks the
+  // shell rather than leaving the user silently benchless.
   const [provisioningError, setProvisioningError] = useState<{
     message: string;
     refId?: string | undefined;
@@ -78,12 +74,8 @@ export function Root() {
     });
   }, []);
 
-  // Per-user storage when signed in so theme preference follows the account;
-  // signed-out / loading share the anonymous host key. Not synced to the
-  // preferences store: @corbits/react-ui's ThemeProvider owns mode
-  // entirely internally (localStorage read/write on setMode/cycleMode) and
-  // exposes no onChange hook or externally-supplied initial value a host
-  // could observe or override without forking the component.
+  // Per-user storage key so theme follows the account; not synced to the
+  // preferences store since ThemeProvider owns mode entirely internally.
   const themeStorageKey =
     session.kind === "signed-in" ? `corbits-theme:${session.user.id}` : "corbits-theme";
 

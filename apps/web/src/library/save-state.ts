@@ -1,8 +1,5 @@
-// The canvas artifact pane's save-state line — never a fake autosave claim.
-// "Saved · v12" is only ever rendered once the artifact's PUT route has
-// actually answered with that version; until then the host renders "Saving…" or "Unsaved
-// changes" honestly instead of guessing that a debounced write already
-// landed.
+// Never a fake autosave claim: "Saved · v12" renders only once the PUT
+// route has actually answered with that version.
 
 export type ArtifactSaveState =
   | { readonly kind: "read-only" }

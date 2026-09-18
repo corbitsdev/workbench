@@ -1,23 +1,5 @@
-// The one sidebar. Header: the brand mark, then a create dropdown + search.
-// Body: Agents and Channels — nothing page-scoped ever renders here.
-// Footer: the primary rail is Artifacts, Skills, Tools, Workflows, Agents.
-// Below the rail: a single Settings row (icon + label) — Insights, the
-// account menu (avatar, name, sign out), and everything else now live
-// inside Settings itself, not as separate sidebar affordances.
-// Always present; there is no collapse affordance and no second nav column.
-// Approvals belong in the conversation, not as a standing band here.
-//
-// Inbox is gone (owner decision: tasks + approvals don't flow
-// into workbenches). Mission Control is gone too — its pending-approvals
-// and activity panels now live inside each workbench's own workbench.
-//
-// No bench switcher: a workbench IS an agent conversation now,
-// one per account, so there is nothing to switch between in the common
-// case. A multi-bench install still resolves and routes correctly (see
-// `bench-context.tsx`) — it just has no dedicated chrome slot. The one
-// escape hatch is the command palette's hidden "Switch workbench" action
-// (`command-palette-actions.ts`), which only appears once memberships
-// resolve to more than one workbench.
+// No bench switcher: a multi-bench install still resolves via the command
+// palette's hidden "Switch workbench" action.
 
 import {
   Button,

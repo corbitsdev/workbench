@@ -1,24 +1,6 @@
-// Turning a turn's tool calls into something a person can read.
-//
-// The wire carries a tool call as an identifier plus an argument bag plus
-// whatever the tool handed back (`ToolTracePart` in `@/chat/wire/parts`,
-// assembled by the chat orchestrator from `inferenceDoneBlocks` /
-// `toolDoneResult`). None of those three is fit to show anyone: the
-// identifier is a symbol (`slack__post_message`, or an Interchange qualified
-// id `@scope/package/export:tool`), the arguments are JSON, and the result
-// is usually a content-block array. This module is the one place that
-// translates all three into plain sentences — "Posted a message in Slack",
-// "Searched memory for "outbound"" — so no surface downstream ever has to
-// reach for `JSON.stringify` to say what happened. The phrase uses the
-// segment after the last colon (the end tool name); a leftover path is a
-// provider only when it maps onto a known brand, never `@corbits` or a
-// package stem like `memory-tools`.
-//
-// Both the live strip (`turn-activity.tsx`, mid-turn) and the persisted
-// transcript (`timeline.tsx`) render through here, which is why a phrase
-// comes in two tenses: the same call reads "Searching the web for
-// "pricing"" while it runs and "Searched the web for "pricing"" once it
-// settles.
+// Translates a tool call into a plain sentence, so no downstream surface
+// reaches for `JSON.stringify`. Two tenses since both the live strip and
+// the persisted transcript render through here.
 
 import type { Part, ToolTracePart } from "./wire/parts";
 
@@ -120,10 +102,8 @@ export type ProviderTile = {
   readonly color: string;
 };
 
-/** Brand mark for the chip's leading tile — two letters and the provider's
- * own color, the way the mock's `[Li #5E6AD2]` / `[GH #24292f]` read. Only
- * providers a person would recognise on sight get a fixed brand color;
- * anything else is not a brand — the chip uses an action glyph. */
+// Only providers a person would recognise on sight get a fixed brand
+// color; anything else uses an action glyph.
 const PROVIDER_TILES: Record<string, ProviderTile> = {
   github: { initials: "GH", color: "#24292f" },
   gitlab: { initials: "GL", color: "#fc6d26" },
@@ -244,21 +224,9 @@ function splitQualifiedName(name: string): {
   return { leftover: undefined, toolName: name };
 }
 
-/**
- * Splits a tool identifier into the provider it belongs to and the words
- * describing what it does.
- *
- * `mcp_read`/`mcp_call` are the generic MCP dispatch tools
- * (`tools/mcp/src/tool.ts`): every downstream call arrives under
- * one of those two names, with the tool it actually invoked sitting in its
- * `{server, tool}` arguments — so those are read first, or a whole
- * conversation's worth of calls would all read alike.
- *
- * Interchange qualified ids (`@scope/package/export:tool`) take the
- * segment after the last `:`. A leftover path is a provider only when a
- * segment or `-tools` stem is a known brand; `memory`, `ad`, and
- * `ask-user` never are.
- */
+// `mcp_read`/`mcp_call` are generic MCP dispatch tools: the tool actually
+// invoked sits in `{server, tool}` args, so those are read first — or a
+// whole conversation's calls would all read alike.
 export function resolveToolIdentity(name: string, input: unknown): ToolIdentity {
   const args = asRecord(input);
   if (name === "mcp_read" || name === "mcp_call") {
@@ -305,11 +273,8 @@ function hostname(url: string): string | undefined {
   return host.replace(/^www\./, "");
 }
 
-/**
- * The one argument worth putting in the sentence, as the clause that
- * carries it. Precedence is explicit and ordered — a search tool given
- * both a query and a path is describing the query.
- */
+// Precedence is explicit and ordered — a search tool given both a query
+// and a path is describing the query.
 function argumentClause(input: unknown): string | undefined {
   const args = asRecord(input);
   if (args === undefined) return undefined;
@@ -429,11 +394,8 @@ function domainHead(words: readonly string[], verb: string, tense: Tense): strin
   return undefined;
 }
 
-/**
- * What this tool call did, as a sentence — in the tense its status calls
- * for. Never contains the tool's identifier, its argument JSON, or an
- * internal id.
- */
+// Never contains the tool's identifier, its argument JSON, or an internal
+// id.
 export function describeToolCall(name: string, input: unknown, tense: Tense): string {
   const identity = resolveToolIdentity(name, input);
   const clause = argumentClause(input);
@@ -481,12 +443,8 @@ function decodeOutput(output: unknown): unknown {
   }
 }
 
-/**
- * Pulls readable prose out of whatever a tool handed back. Tool results
- * arrive as a string, as MCP content blocks, or as an arbitrary object;
- * only the first two carry anything worth showing a person, and this
- * returns undefined rather than stringifying the third.
- */
+// Returns undefined for an arbitrary-object result rather than
+// stringifying it.
 export function plainTextOfOutput(output: unknown): string | undefined {
   const decoded = decodeOutput(output);
   if (typeof decoded === "string") {
@@ -536,11 +494,8 @@ function looksLikeContentBlocks(output: unknown): boolean {
   });
 }
 
-/**
- * The detail a row opens onto: plain text, always. A failure keeps its
- * first line — the reason, said plainly — and never goes silent: a tool
- * that fails without saying why still says that much.
- */
+// A failure keeps its first line and never goes silent, even when the
+// tool didn't say why.
 export function summarizeToolOutput(
   status: ToolActivityStatus,
   output: unknown,
@@ -614,13 +569,8 @@ export type TimelinePartGroup =
       readonly key: string;
     };
 
-/**
- * Splits a message's parts into render groups, clustering every run of
- * consecutive tool calls together. The cluster renders as a stack of
- * chips, one per call — never folded into a summary line — so this is
- * purely about keeping tool calls next to each other in the flow, not
- * about hiding them.
- */
+// Clusters consecutive tool calls into a stack of chips, never folded
+// into a summary line.
 export function groupTimelineParts(
   parts: readonly Part[],
   keyPrefix: string,

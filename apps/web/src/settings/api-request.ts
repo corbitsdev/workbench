@@ -1,13 +1,6 @@
-// Shared fetch+parse wrapper for every settings-ui API seam
-// (credentials-api.ts, access.ts, tenancy-api.ts): the same
-// envelope-first error message on every
-// non-2xx response, matching `apps/web/src/onboarding.ts`'s
-// `readErrorEnvelope` — the hub's own `{error:{userMessage, refId}}` body
-// wins when present, and the fallback names what was happening ("while
-// loading credentials") rather than the raw route, which nobody reading a
-// settings panel should ever have to see. Each seam keeps its own `Error`
-// subclass so a catch site can still tell which API failed; only the
-// request shape is shared here.
+// Fallback message names what was happening, never the raw route, which
+// nobody reading a settings panel should have to see. Each seam keeps its
+// own `Error` subclass so a catch site can tell which API failed.
 
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
@@ -16,11 +9,8 @@ const ErrorEnvelope = type({
   error: { code: "string", userMessage: "string", refId: "string" },
 });
 
-/**
- * Resolves a non-2xx response's message: the hub's own envelope
- * `userMessage` when the body carries one, otherwise a generic, path-free
- * sentence naming the status and what the caller was doing.
- */
+// The hub's own envelope `userMessage` wins when present, otherwise a
+// generic, path-free sentence.
 export function readErrorEnvelope(status: number, body: unknown, verb: string): string {
   const envelope = ErrorEnvelope(body);
   return envelope instanceof type.errors

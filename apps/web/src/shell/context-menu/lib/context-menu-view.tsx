@@ -10,19 +10,9 @@ import {
 import { restoreFocus } from "./focus-restore";
 import type { ContextMenu } from "./menu";
 
-/**
- * Renders a `ContextMenu` at a fixed screen point using react-ui's
- * `Menu` (Radix `DropdownMenu`) rather than a hand-rolled popover: Radix
- * already owns anchored positioning that stays on screen, focus management,
- * arrow-key navigation, and closing on Escape or an outside click, and it
- * shares its dismissable-layer stack with react-ui's `Dialog` — the same
- * stack the command palette's dialog uses — so a context menu never
- * out-races a dialog on Escape. The only custom part is anchoring the
- * (Radix-required) trigger to the click point instead of a visible button:
- * that anchor is an inert, unfocusable point, so Radix's default
- * close-focus-the-trigger behavior is overridden to focus `restoreFocusTo`
- * (the row that was right-clicked) instead.
- */
+// Uses react-ui's Radix-backed `Menu`, not a hand-rolled popover: it
+// shares a dismissable-layer stack with the command palette's dialog, so
+// a context menu never out-races it on Escape.
 export function ContextMenuView({
   x,
   y,

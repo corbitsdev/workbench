@@ -1,7 +1,4 @@
-// Reads an existing agent's deploy source back out of its workflow asset,
-// so the new-workbench picker can re-push the same definition into a
-// child tenant (agent-deploy.ts already generalizes that push+deploy).
-// There is no stock file-read route for a workflow asset (only
+// No stock file-read route exists for a workflow asset (only
 // package-registry tarballs get one), so this fetches `main` over the
 // asset's smart-HTTP git remote with a short-lived read-only token.
 import {
@@ -44,10 +41,8 @@ export type AgentToolPackagePin = { readonly name: string; readonly version: str
 
 type AgentWorkflowStep = (typeof AgentWorkflowJsonShape.infer)["steps"][string];
 
-/** Mints a read-only token, fetches the asset's `main` over its smart-HTTP
- * git remote, and parses `definition.json` out of it. Shared by every
- * reader below so each mints and revokes its own short-lived token rather
- * than holding one open across a batch of assets. */
+// Each reader mints and revokes its own short-lived token rather than
+// holding one open across a batch of assets.
 async function readAgentWorkflowStep(
   tenantId: string,
   assetId: string,
@@ -101,11 +96,8 @@ export async function readAgentSource(
   };
 }
 
-/** The tool packages an agent's own step pins in `definition.json`. Empty
- * for an agent whose tools ride bundled into its `workflow.js` closure
- * instead (Myra's mail/posix factories never surface here — see
- * `deployed-tool-packages.ts`'s `MYRA_TOOL_PACKAGES`, derived from
- * `@corbits/myra/package.json`'s own dependencies). */
+/** Empty for an agent whose tools ride bundled into its `workflow.js`
+ * closure instead — see `deployed-tool-packages.ts`'s `MYRA_TOOL_PACKAGES`. */
 export async function readAgentToolPackagePins(
   tenantId: string,
   assetId: string,

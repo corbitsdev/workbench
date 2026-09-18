@@ -1,9 +1,4 @@
-// The "Models" settings section: a read-only view of this workbench's
-// credential providers (`GET /api/tenants/:t/providers`, the same stock
-// route `credentials-section.tsx` reads) and its resolved model catalog
-// (`GET /api/tenants/:t/models`, `createModelDiscoveryRoutes` — the same
-// read `resolveModelSources` would act on at launch). No write path here;
-// changing an offering's priority or restricting it belongs to the
+// No write path here; changing an offering's priority belongs to the
 // catalog-management routes this section deliberately doesn't touch.
 
 import {

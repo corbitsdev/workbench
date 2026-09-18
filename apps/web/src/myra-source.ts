@@ -1,9 +1,6 @@
-// Myra's deploy source: a `workflow`-kind asset holding the three-file
-// codebase `renderBundledWorkflowSourceTree` emits, pushed over the stock
-// git smart-HTTP route and deployed as a source tree at that commit. That is
-// the one variant the stock deploy route can anchor from a browser: it
-// requires a `workflow`-kind asset, and a `workflow` asset only takes its
-// code by git push.
+// The stock deploy route requires a `workflow`-kind asset, and a
+// `workflow` asset only takes its code by git push — the one variant it
+// can anchor from a browser.
 import { type } from "arktype";
 
 export const MyraSourceConfig = type({

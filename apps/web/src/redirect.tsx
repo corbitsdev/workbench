@@ -1,7 +1,5 @@
-// A screen that only exists to forward. The hop happens during render, not
-// from an effect, so the route it leaves never paints a frame of its own —
-// the router store publishes the new path on a microtask, so nothing is
-// updated mid-render.
+// Hops during render, not from an effect, so the route it leaves never
+// paints a frame of its own.
 
 import { useRef } from "react";
 

@@ -1,11 +1,5 @@
-// The host port behind the generic service connect card —
-// the `ConnectGithubActions` shape generalized to any connector or MCP
-// preset. The block's data carries only agent-authored framing; every
-// live fact — connected or not, and which connect affordance the
-// deployment actually supports (hosted OAuth, one-click keyless, or a
-// pasted key) — is resolved here by the host against the tenant's real
-// connections, so an agent can never author a verdict or steer the
-// auth mode.
+// Every live fact — connected or not, which auth mode applies — is
+// resolved by the host, never authored by the agent.
 
 export type ConnectAffordance = "oauth" | "keyless" | "api-key";
 
@@ -31,12 +25,8 @@ export interface ConnectServiceActions {
     connectorId: string,
     listener: (query: ConnectServiceQuery) => void,
   ): () => void;
-  /**
-   * Re-reads live connect state for every subscribed connector and fans
-   * it to those listeners. ChatWorkspace calls this when a parsed
-   * `chat.settings` event lands so a mounted card flips without
-   * remounting.
-   */
+  // Called on a `chat.settings` event so a mounted card flips without
+  // remounting.
   notifySettingsChanged(): Promise<void>;
   /** One-click connect: starts the hosted OAuth hand-off (navigating
    * away and back) or completes a keyless preset in place. */

@@ -1,7 +1,5 @@
-// The closed, curated block registry: agents author data, this client owns
-// the code. `BlockPartView` parses the wire envelope at the render boundary
-// and routes each known type to its view; anything unknown or malformed
-// renders a labeled fallback card instead of raw JSON or a crash.
+// Closed and curated: agents author data, this client owns the code.
+// Unknown or malformed renders a labeled fallback, never raw JSON.
 
 import type { Block } from "../wire/blocks";
 import { parseBlock } from "../wire/blocks";

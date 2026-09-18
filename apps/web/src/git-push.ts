@@ -1,7 +1,5 @@
-// Pushes a small flat file tree into a hub asset repo from the browser.
-// isomorphic-git builds the objects and the pack; the receive-pack wire
-// exchange is spoken directly because the hub answers `report-status`
-// as raw pkt-lines, which isomorphic-git's own push cannot read.
+// The receive-pack wire exchange is spoken directly because the hub
+// answers `report-status` as raw pkt-lines isomorphic-git's push can't read.
 import LightningFS from "@isomorphic-git/lightning-fs";
 import { Buffer } from "buffer";
 import git from "isomorphic-git";

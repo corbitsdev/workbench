@@ -9,11 +9,8 @@ import type { ReactNode } from "react";
 import type { APIQuery } from "./envelope";
 import { describeApiError } from "./envelope";
 
-/** Which shape a loading `QueryView` should hint at, close enough to the
- * real content's footprint to keep layout shift small — not a skeleton
- * framework, just the handful of shapes host pages actually need. `"block"`
- * (the default) is a fixed placeholder for surfaces that are neither a list
- * nor a single record. */
+// Not a skeleton framework — just the handful of shapes host pages
+// actually need.
 export type QuerySkeletonVariant = "block" | "rows" | "detail";
 
 /** A handful of list-row placeholders, sized near a real row. */
@@ -80,12 +77,8 @@ export function QueryView<T>({
    * real content so it doesn't jump when data lands. Ignored when
    * `loadingContent` is set. */
   readonly skeleton?: QuerySkeletonVariant;
-  /** Overrides the loading render entirely — a page-level wait (a whole
-   * stage or panel's primary content, not a row hint) should pass its own
-   * warm loader here rather than take the `"block"` skeleton slab, which
-   * this package can't render itself: `@/chat`'s
-   * `WorkbenchLoadingState` depends on this package, so `QueryView` can
-   * never import it back without a cycle. */
+  // `@/chat`'s `WorkbenchLoadingState` depends on this package, so
+  // `QueryView` can never import it back without a cycle.
   readonly loadingContent?: ReactNode;
   readonly children: (data: T) => ReactNode;
 }) {

@@ -1,10 +1,6 @@
-// A guided tour of the shell, started only by explicit user action (a
-// command or menu item calling `openFirstRunTour`) — never automatically on
-// landing, which used to drop its overlay right over the chat `/` redirects
-// onto. "Seen" is a localStorage flag keyed by user id (mirrors
-// `command-palette-recents.ts`'s defensive access) so a shared browser
-// profile never re-shows it as "new" for the wrong account, and finishing or
-// skipping both mark it seen — there is no "remind me later".
+// "Seen" is a localStorage flag keyed by user id, so a shared browser
+// profile never re-shows it as "new" for the wrong account. No "remind me
+// later" — finishing or skipping both mark it seen.
 
 import Joyride, { ACTIONS, type CallBackProps, STATUS, type Step } from "react-joyride";
 import { reportError } from "@corbits/error-sink";
@@ -54,23 +50,16 @@ const STEPS: readonly Step[] = [
   },
 ];
 
-/**
- * Mounted once from `AppShell`. Renders nothing until `openFirstRunTour` is
- * called — never on its own, so a fresh landing on `/` never drops this
- * overlay over the chat the person was just redirected onto.
- */
+// Renders nothing until `openFirstRunTour` is called — never on its own,
+// so landing on `/` never drops this overlay unprompted.
 export function FirstRunTour({ userId }: { readonly userId: string }) {
   const run = useFirstRunTourOpen();
 
-  // Dismissing has to unmount Joyride, not just remember the dismissal:
-  // a running Joyride keeps two portals appended to `document.body` and
-  // an overlay over the app, and those portal containers are managed
-  // outside React's tree.
+  // Must unmount Joyride, not just remember the dismissal — its portal
+  // containers are managed outside React's tree.
   function handleCallback(data: CallBackProps) {
-    // The tooltip's close (X) button fires action "close" without ever
-    // moving status to FINISHED or SKIPPED, so it has to be treated as a
-    // dismissal in its own right — otherwise closing the tour this way
-    // never closes it.
+    // The close (X) button fires action "close" without moving status to
+    // FINISHED or SKIPPED, so it must be treated as dismissal here too.
     if (
       data.status === STATUS.FINISHED ||
       data.status === STATUS.SKIPPED ||
@@ -90,10 +79,8 @@ export function FirstRunTour({ userId }: { readonly userId: string }) {
       continuous
       showSkipButton
       disableOverlayClose
-      // The overlay otherwise swallows every click outside the spotlight —
-      // real app chrome (e.g. a roster row's Chat link) is reachable at
-      // any point in the shell, tour running or not, so clicks must pass
-      // through to it rather than land on the tour's own backdrop.
+      // Without this, the overlay swallows clicks outside the spotlight —
+      // real app chrome must stay reachable while the tour runs.
       spotlightClicks
       spotlightPadding={6}
       callback={handleCallback}

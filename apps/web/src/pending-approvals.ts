@@ -1,11 +1,5 @@
-// What's waiting on a person, composed on the client from Interchange's own
-// approval and run views. The platform's `GET /approvals` carries ids, the
-// tool snapshot and a status; the name of the agent that is asking lives on
-// the run view (`definitionName`), the bench's name on the account's
-// membership, and the human headline comes from `@corbits/approvals`'
-// `headlineFor`. Composing those three here is what lets this app render an
-// approval without a raw id ever reaching a rendered string, and without a
-// sibling read of its own on the hub.
+// Composes approval + run + membership views client-side so this app
+// renders an approval without a raw id ever reaching a rendered string.
 
 import { ApprovalResponse, WorkflowRunResponse } from "@intx/types";
 import { useQueries } from "@tanstack/react-query";
@@ -53,12 +47,8 @@ function runViewPath(tenantId: string, runId: string): string {
   return `/api/tenants/${tenantId}/runs/${runId}`;
 }
 
-/**
- * The display name of the agent behind a run. Answers `UNNAMED_AGENT` rather
- * than failing when the run view is unreadable — a per-deployment approver
- * can hold the grant to resolve an approval without holding the read grant
- * on its run.
- */
+// Answers `UNNAMED_AGENT` rather than failing when the run view is
+// unreadable — an approver can lack the read grant on the run itself.
 async function fetchAgentName(tenantId: string, runId: string): Promise<string> {
   const response = await fetch(runViewPath(tenantId, runId), {
     headers: { accept: "application/json" },
@@ -81,11 +71,8 @@ function composeApproval(row: ApprovalRow, agentName: string): ApprovalDisplay {
   };
 }
 
-/**
- * Every approval pending on this bench, newest-first as the platform lists
- * them. One naming read per distinct run, cached by react-query, so a run
- * with several pending asks is named once.
- */
+// One naming read per distinct run, cached by react-query, so a run with
+// several pending asks is named once.
 export function usePendingApprovals(
   tenantId: string | null,
   options?: { readonly refetchInterval?: number | false },
@@ -131,12 +118,8 @@ export function usePendingApprovals(
   };
 }
 
-/**
- * How many things need this bench's attention right now — the count the
- * shell's chip and the second column's signal render. `null` while unknown
- * (no bench selected yet, or the read hasn't resolved), so a caller never
- * mistakes "still loading" for "zero pending."
- */
+// `null` while unknown, so a caller never mistakes "still loading" for
+// "zero pending."
 export function usePendingApprovalCount(tenantId: string | null): number | null {
   const list = useAPIQuery(
     tenantId === null ? "" : pendingApprovalsPath(tenantId),
@@ -151,12 +134,8 @@ export type ApprovalDetailResult =
   | { readonly kind: "not-found" }
   | { readonly kind: "error"; readonly message: string };
 
-/**
- * The chat approve card's live status read: one approval, in any status,
- * through the same composer the list uses. The grant this read is refused
- * on (403) is the same per-deployment grant approve and reject are gated
- * on, so a refusal here is proof the viewer cannot act on it.
- */
+// A 403 here is proof the viewer cannot act on it — the same
+// per-deployment grant approve/reject are gated on.
 export async function getApprovalDetail(
   tenantId: string,
   approvalId: string,

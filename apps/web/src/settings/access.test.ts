@@ -1,7 +1,5 @@
-// ACL evaluate probes decide whether People/Roles/Grants/Credentials belong
-// in the settings nav. A 200 with effect !== allow is an authenticated deny;
-// a thrown probe (network, 5xx) is not — it must not collapse to "denied"
-// or those sections vanish as if the principal were unauthorized.
+// A thrown probe (network, 5xx) must not collapse to "denied", or a
+// section would vanish as if the principal were unauthorized.
 
 import { afterEach, describe, expect, test } from "bun:test";
 

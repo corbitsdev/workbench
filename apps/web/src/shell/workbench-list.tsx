@@ -1,7 +1,5 @@
-// The sidebar's two labeled sections, in this order and never mixed:
-// Workbenches (the bench's child tenants, a "#" glyph each) above Chats
-// (one agent each, an initials circle each, newest first). Agent
-// membership is a workbench concept; a chat has exactly one agent.
+// Two sections, in this order and never mixed: Workbenches above Chats.
+// Agent membership is a workbench concept; a chat has exactly one agent.
 
 import { EmptyState, Input, Skeleton } from "@corbits/react-ui";
 import { Check, Hash, MagnifyingGlass } from "@/lib/icons";

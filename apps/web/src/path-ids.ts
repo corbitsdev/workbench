@@ -1,11 +1,5 @@
-// Path-id helpers for settings and top-level roster deep links. Shared by
-// the shell (col2 section nav) and the settings sections (stage detail) so
-// neither layer owns the other. Same pattern as workbench-path.ts. Agents
-// and Skills were Settings sections for a stretch at
-// `/settings/agents/:id` and `/settings/skills/:id`; //
-// moved both back out to their own top-level rail destinations —
-// `/agents/:id` and `/skills/:id`, via `agentIdFromPath`/`skillIdFromPath`
-// below.
+// Agents and Skills were Settings sections for a stretch; both moved back
+// out to their own top-level rail destinations (`/agents/:id`, `/skills/:id`).
 
 import { isValidSlug, type Slug } from "@/lib/slug";
 import { decodedOrNull } from "@corbits/url-path";
@@ -19,13 +13,9 @@ export const WORKFLOWS_PATH_PREFIX = "/workflows";
 export const INSIGHTS_PATH_PREFIX = "/insights";
 export const INSIGHTS_RUNS_PATH = `${INSIGHTS_PATH_PREFIX}/runs`;
 
-/** The slug a detail path carries — `null` unless the path is exactly
- * `<prefix>/<slug>`. Validation reads the raw segment: a slug carries no
- * percent-escape and no character that needs one, so decoding could only
- * turn a malformed URL into a `URIError` mid-render. An id-shaped segment
- * (`wfd_1`, `skill_1`) is not a slug either, so id deep links keep
- * resolving to their roster rather than to a slug-addressed detail
- * screen. */
+/** `null` unless the path is exactly `<prefix>/<slug>`. Reads the raw
+ * segment — decoding a slug could only turn a malformed URL into a
+ * `URIError` mid-render, and an id-shaped segment isn't a slug either. */
 export function detailSlugFromPath(path: string, prefix: string): Slug | null {
   const segment = rawSegmentFromTopLevelPath(path, prefix);
   if (segment === null) return null;
@@ -52,10 +42,8 @@ export function skillIdFromPath(path: string): string | null {
   return entityIdFromTopLevelPath(path, SKILLS_PATH_PREFIX);
 }
 
-/** The segment `/workflows/<segment>` addresses: a routine id (the
- * canonical address) or a name-derived slug the detail route resolves and
- * redirects to the id. `null` for the bare roster path, a path outside
- * Workflows, or a segment whose percent-escapes cannot be decoded. */
+/** A routine id (canonical) or a name-derived slug the detail route
+ * resolves and redirects to the id. */
 export function routineSegmentFromPath(path: string): string | null {
   return entityIdFromTopLevelPath(path, WORKFLOWS_PATH_PREFIX);
 }

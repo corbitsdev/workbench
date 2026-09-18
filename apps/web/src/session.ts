@@ -1,7 +1,5 @@
-// The one session boundary: a single probe of better-auth's get-session
-// endpoint decides whether the app mounts the shell or the auth screen, and
-// the email+password calls live beside it so every /api/auth path is written
-// in exactly one file.
+// The one session boundary: a probe of better-auth's get-session endpoint
+// decides shell vs. auth screen; every /api/auth path lives in this file.
 
 import { type } from "arktype";
 
@@ -21,11 +19,8 @@ export type SessionState =
   | { readonly kind: "error"; readonly message: string }
   | { readonly kind: "signed-in"; readonly user: SessionUser };
 
-/**
- * Asks the hub whether this browser has a session. better-auth answers 200
- * with a JSON `null` body when there is none, so "signed out" is a normal
- * response here — never a 401 in the log.
- */
+// better-auth answers 200 with a JSON `null` body when there's no
+// session, so "signed out" is normal here, never a 401 in the log.
 export async function fetchSession(): Promise<SessionState> {
   try {
     const response = await fetch("/api/auth/get-session", {
@@ -41,12 +36,8 @@ export async function fetchSession(): Promise<SessionState> {
     const body: unknown = await response.json();
     if (body === null) return { kind: "signed-out" };
     const parsed = SessionPayload(body);
-    // A session payload that parses but is missing its user (or is
-    // shaped unrecognizably) means the hub answered without a session
-    // this app can use — a restarted hub on an empty DB, or a cookie for
-    // a user that no longer exists. That is "no session", not a genuine
-    // connectivity failure: it routes to the login screen exactly like a
-    // 401 or a `null` body, never to the "connection lost" error state.
+    // An unrecognizable payload means "no session" (restarted hub, dead
+    // cookie), not a connectivity failure — routes to login, not "offline".
     if (parsed instanceof type.errors) return { kind: "signed-out" };
     return { kind: "signed-in", user: parsed.user };
   } catch {
@@ -63,13 +54,8 @@ export type AuthResult =
 
 const FailureBody = type({ message: "string" });
 
-/**
- * better-auth answers a rate-limited request with a bare 429 and an
- * `X-Retry-After` header (seconds). Every auth entry point in this file
- * shares this so sign-in, sign-up, and social sign-in all tell the person
- * what happened and when it's worth trying again, instead of surfacing
- * better-auth's generic "Too many requests" body.
- */
+// Shared so sign-in, sign-up, and social sign-in all tell the person when
+// it's worth retrying, instead of surfacing better-auth's generic body.
 function rateLimitedResult(response: Response): AuthResult {
   const retryAfterSeconds = Number(response.headers.get("x-retry-after"));
   return {
@@ -120,11 +106,8 @@ export function signIn(email: string, password: string): Promise<AuthResult> {
   return postAuth("/api/auth/sign-in/email", { email, password });
 }
 
-/**
- * Creates the account. better-auth requires a display name; like the CLI's
- * admin bootstrap, it starts as the address's local part until the hub grows
- * a profile editor.
- */
+// better-auth requires a display name; starts as the address's local part
+// until the hub grows a profile editor.
 export function signUp(email: string, password: string): Promise<AuthResult> {
   const name = email.split("@")[0] ?? email;
   return postAuth("/api/auth/sign-up/email", { name, email, password });
@@ -133,29 +116,16 @@ export function signUp(email: string, password: string): Promise<AuthResult> {
 const SocialProviderId = type("'google' | 'github'");
 export type SocialProviderId = typeof SocialProviderId.infer;
 
-/**
- * Client config for the sign-in screen's OAuth buttons: the providers
- * this client knows how to draw. Stock Interchange exposes no sign-in
- * discovery endpoint, so the client drives — there is intentionally no
- * fetch here. The hub still decides which of these actually work:
- * better-auth only wires the credential pairs it was given, so an
- * unconfigured click surfaces better-auth's own error on the form.
- */
+// Stock Interchange exposes no sign-in discovery endpoint, so the client
+// drives this list — an unconfigured click surfaces better-auth's own
+// error on the form.
 export const SOCIAL_SIGN_IN_PROVIDERS: readonly SocialProviderId[] = ["google", "github"];
 
 const SocialSignInResponse = type({ url: "string" });
 
-/**
- * Starts better-auth's OAuth redirect flow: better-auth's
- * sign-in/social endpoint does not itself redirect the browser — it
- * answers with the provider's authorization URL as JSON, and the
- * client is the one that navigates there. The provider then redirects
- * back to better-auth's own callback endpoint, which exchanges the
- * code, sets the session cookie, and only then redirects the browser
- * to `callbackURL` — so by the time this SPA reloads there, the normal
- * `fetchSession` probe on mount already finds a signed-in session with
- * no dedicated callback route needed on this side.
- */
+// better-auth's endpoint answers with the authorization URL as JSON
+// rather than redirecting itself; by the time the SPA reloads at
+// `callbackURL`, `fetchSession` on mount already finds a signed-in session.
 export async function signInSocial(provider: SocialProviderId): Promise<AuthResult | null> {
   try {
     const response = await fetch("/api/auth/sign-in/social", {
@@ -195,11 +165,8 @@ export async function signInSocial(provider: SocialProviderId): Promise<AuthResu
   }
 }
 
-/** Fires the server-side sign-out. The UI signs out optimistically
- * regardless of this call's outcome (see `main.tsx`'s `handleSignOut`) —
- * returns whether the server actually cleared the session, so the caller
- * can surface a failure rather than silently leaving a live session
- * behind on the server. */
+// The UI signs out optimistically regardless of outcome; the boolean
+// lets the caller surface a failure instead of leaving a live session.
 export async function signOut(): Promise<boolean> {
   return fetch("/api/auth/sign-out", {
     method: "POST",

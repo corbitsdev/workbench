@@ -1,16 +1,6 @@
-// Personal notification prefs. Delivery still routes through the product
-// inbox / notify stack; these toggles are the operator-facing surface for
-// which classes of activity should surface. No per-user preference store
-// is mounted yet — draft state only, with an honesty note on save.
-//
-// REMOVED FROM THE SETTINGS REGISTRY (see section-registry.tsx):
-// toggles that save nothing are fake controls, not a settings section —
-// honest absence beats that. Re-add the "chat" section to
-// `SETTINGS_SECTION_GROUPS`'s "account" group only once a per-user
-// preference store exists for these fields and Save actually persists
-// them, not before. (Workbench-scoped mute/mentions prefs live on
-// `@/chat`'s workbench settings surface and already persist —
-// that is a different surface.)
+// Removed from the settings registry (see section-registry.tsx): toggles
+// that save nothing are fake controls. Re-add once a per-user preference
+// store exists and Save actually persists them.
 
 import { Button, SettingsPanel } from "@corbits/react-ui";
 import { Check } from "@/lib/icons";

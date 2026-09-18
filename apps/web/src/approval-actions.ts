@@ -1,11 +1,5 @@
-// Builds the `ApprovalActions` port `ChatWorkspace` (`@/chat`)
-// calls for its in-chat approve card. Reuses the exact reads and writes
-// every other approval surface uses -- `getApprovalDetail` in
-// `pending-approvals.ts`, `approveApproval`/`rejectApproval` in `api.ts` --
-// and invalidates the same query keys they invalidate, so approving in chat
-// updates the shell's pending count live, and vice versa. This is the one place that logic belongs: chat-ui
-// owns no `QueryClient`, so the invalidation the design calls for can only
-// run here.
+// chat-ui owns no `QueryClient`, so this is the one place that can
+// invalidate the same query keys every approval surface shares.
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { ApprovalActions, ApprovalDecisionResult } from "@/chat";
@@ -25,9 +19,8 @@ export function createChatApprovalActions(
     void queryClient.invalidateQueries({
       queryKey: tenantKeys.pendingApprovals(tenantId),
     });
-    // Any cached query keyed under this tenant's inbox API paths (list,
-    // detail, counts) — the tasks backend still owns these routes even
-    // though the Inbox page that used to read them is gone.
+    // The tasks backend still owns these inbox routes even though the
+    // Inbox page that used to read them is gone.
     void queryClient.invalidateQueries({
       predicate: (query) => {
         const key = query.queryKey;
@@ -39,14 +32,8 @@ export function createChatApprovalActions(
     });
   }
 
-  /**
-   * Both `approveApproval`/`rejectApproval` hit the same native resolve
-   * route and fail the same way, so both decisions share this mapping. A
-   * 409 (already resolved, run no longer running, or deployment
-   * unavailable -- see `vendor/intx/hub-api/src/routes/approvals.ts`) is
-   * kept distinct from a generic error: it's never something a retry
-   * fixes, only something the card's next status read explains.
-   */
+  // A 409 (already resolved, run no longer running) is kept distinct from
+  // a generic error: never something a retry fixes.
   async function resolve(
     call: () => Promise<Approval>,
     status: "approved" | "rejected",
@@ -55,9 +42,7 @@ export function createChatApprovalActions(
   ): Promise<ApprovalDecisionResult> {
     try {
       // The native route only ever returns 200 with the exact terminal
-      // status this call asked for -- see `resolveApproval` in
-      // `vendor/intx/hub-api/src/routes/approvals.ts` -- so `status` here
-      // is not a guess.
+      // status asked for, so `status` here is not a guess.
       await call();
       invalidate();
       return { kind: "resolved", status };

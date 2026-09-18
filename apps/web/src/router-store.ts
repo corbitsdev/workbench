@@ -1,9 +1,5 @@
-// The browser history as an external store: the path lives outside React,
-// so the shell subscribes with `useSyncExternalStore` instead of an effect
-// that registers a `popstate` listener after the first paint. Retired paths
-// are canonicalized here, before any screen mounts — a bookmark to
-// `/files/a1` becomes `/artifacts/a1` in the URL bar and in the store, and
-// no route entry exists just to bounce it.
+// The path lives outside React (`useSyncExternalStore`, not a `popstate`
+// effect). Retired paths canonicalize here before any screen mounts.
 
 import { redirectTargetFor } from "./routes";
 
@@ -45,12 +41,8 @@ export function getPath(): string {
   return currentPath;
 }
 
-/**
- * Push a new entry and publish the new path. The store keeps the pathname
- * only — every comparison against it (`matchesRoute`, `LOGIN_PATH`,
- * `ONBOARDING_PATH`) expects a bare path — while a query string like
- * `/login?next=...` still reaches the URL bar.
- */
+// The store keeps the pathname only, since every comparison against it
+// expects a bare path; a query string still reaches the URL bar.
 export function navigateTo(to: string): void {
   const url = new URL(to, window.location.origin);
   const canonical = canonicalPath(url.pathname);

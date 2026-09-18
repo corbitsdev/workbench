@@ -1,28 +1,14 @@
-// Mirrored from packages/chat/src: apps/web and @/chat
-// must not import @corbits/chat, a server-only package. This is the browser-
-// facing half of the same wire contract the hub's chat routes still speak;
-// once the hub moves onto native mail threads (T5a/T5c) this file becomes
-// the one source of truth and packages/chat's copy goes away.
+// Mirrored from packages/chat/src (see docs/chat-wire-contract.md).
 
-// The "@ + handle" mention rule: the single wire-level contract between
-// the composer (`@/chat`'s `mentions.ts`, which derives
-// candidates from a workbench's participant records and splices the
-// picked handle into the draft) and this package's own fan-out
-// (`routes.ts`'s `POST /workbenches/:id/messages`). Both sides work off
-// the same `ParticipantRecord[]` (see `participants.ts`), so a message
-// the composer thinks mentions a participant is always exactly the set
-// the server fans a copy to — the handle is the friendly, settings-held
-// mention name, never the instance-id local part.
+// The composer and the server fan-out both derive mentions from the same
+// `ParticipantRecord[]`, so what the composer highlights is always exactly
+// who gets a copy.
 
 import type { Part as PartType } from "./parts";
 import type { ParticipantRecord } from "./participants";
 
-/**
- * A participant is an agent address (mention-fannable) when it has the
- * `local@domain` shape every agent address has and is not a principal.
- * Humans are `prn_…` — bare or `prn_…@tenant.domain` — and read the
- * workbench's own timeline directly, so they are never fanned a copy.
- */
+// Humans (`prn_…`) read the workbench timeline directly and are never
+// fanned a copy; only agent addresses are.
 export function isAgentAddress(participant: string): boolean {
   return participant.includes("@") && !participant.startsWith("prn_");
 }
@@ -31,14 +17,8 @@ function escapeForRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * The participants an ordinary message @mentions, restricted to agent
- * addresses: the fan-out set for `POST /workbenches/:id/messages`. A
- * mention is structural — `@` followed by the participant's own handle
- * at a word boundary, appearing in any `TextPart` of the message — not
- * a full parse of mention syntax; kept minimal per the anchor-mailbox
- * rework's scope.
- */
+// Structural match only (`@handle` at a word boundary) — not a full mention
+// syntax parse.
 export function mentionedParticipants(
   parts: readonly PartType[],
   participants: readonly ParticipantRecord[],

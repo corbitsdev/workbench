@@ -1,23 +1,9 @@
-// Every stage surface renders the same top bar, and every one of them
-// titles itself with a breadcrumb trail: `crumbs` is the single way a page
-// declares where it sits, and `actions` is the single home for its primary
-// controls (a page never keeps a "New …" button in its body). A one-level
-// page passes one crumb; a detail view passes its parent plus itself.
-//
-// Crumbs are routes, not callbacks: every level above the current page
-// carries an `href`, so the trail is deep-linkable and a plain click
-// navigates through the app's own `Link` instead of reloading the shell.
-//
-// `filter` is a page's own per-page filter (DECISIONS.md → Search), rendered
-// through `StageSearch` ahead of `actions` when a page passes one. It is not
-// shell chrome the way it used to be: a page with nothing to filter passes
-// none and gets no magnifier at all. The global command palette (`Cmd+K`)
-// is a separate surface entirely — see `command-palette-provider.tsx` —
-// mounted on its own rather than out of this bar.
-//
-// `@corbits/react-ui`'s `TopBarBreadcrumbs` renders bare `<a href>`, which
-// would drop the SPA out from under the click, so the trail lives here
-// until react-ui takes a link-render slot.
+// Crumbs are routes, not callbacks, so the trail is deep-linkable. The
+// trail lives here (not `TopBarBreadcrumbs`) since react-ui's version
+// renders bare `<a href>`, which would drop the SPA under the click.
+
+// `filter` is per-page (DECISIONS.md -> Search), not shell chrome — a page
+// with nothing to filter gets no magnifier at all.
 
 import { Fragment, type ReactNode } from "react";
 

@@ -6,22 +6,9 @@ import { decodedOrNull } from "@corbits/url-path";
 
 import { INSIGHTS_PATH_PREFIX, INSIGHTS_RUNS_PATH } from "./path-ids";
 
-/**
- * `/insights/workbench/:workbenchId` is its own dedicated route — a
- * conversation's own scoped view, resolved by `InsightsWorkbenchPage`, never
- * a sub-mode of the landing. Every other path stays the cross-workbench
- * default landing: no per-mode branch needed there, since scoping happens
- * in InsightsRoute (which tenantId every query below targets), not here.
- * A stale `/insights/workbench/:tenantId` link (that route is retired,
- * hard cut) falls through to the plain landing default below rather than
- * matching anything.
- *
- * A malformed percent-escape in the id segment reads as the plain landing
- * default too, never as a detail mode with no entity to show — `mode:
- * "workbench"` (or `"run"`) with a `null` id would otherwise render that
- * mode's own scoped, permanently-empty dashboard instead of falling back
- * to the landing view any other unresolvable path already gets.
- */
+// A malformed percent-escape or stale/retired path falls through to the
+// plain landing default, never to a detail mode with a `null` id that
+// would render a permanently-empty dashboard.
 export function parseInsightsPath(path: string): {
   mode: "landing" | "runs" | "run" | "workbench";
   runId: string | null;

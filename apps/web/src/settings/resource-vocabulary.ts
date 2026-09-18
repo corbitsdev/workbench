@@ -1,9 +1,5 @@
-// The grant resource/action vocabulary: no hub route exposes this list (see
-// the tenancy inventory's gap list, item 8), so the Grants section carries
-// it here as a typed literal, sourced from
-// `vendor/intx/hub-api/src/routes/grants.ts`'s own resource set. If the hub
-// ever grows a capability-vocabulary endpoint, this constant is the one
-// place to delete in favor of it.
+// No hub route exposes this list, so it's carried here as a typed literal
+// until a capability-vocabulary endpoint exists to delete this in favor of.
 
 export const GRANT_RESOURCES = [
   "principal",
@@ -29,14 +25,8 @@ export const GRANT_RESOURCES = [
 ] as const;
 export type GrantResource = (typeof GRANT_RESOURCES)[number];
 
-/**
- * Plain-language labels for `GRANT_RESOURCES`, written to read in a
- * sentence ("Billing may read on {label}.") and in a table cell. Every
- * consumer of a raw resource slug — the create-grant preview sentence,
- * the grants table, the resource filter, the resource picker — reads
- * from this one map so the copy never drifts between them. The raw slug
- * still survives as a title/tooltip; it is never the visible text.
- */
+// Every consumer of a raw resource slug reads from this one map so the
+// copy never drifts between them.
 export const GRANT_RESOURCE_LABEL: Record<GrantResource, string> = {
   principal: "accounts on this workbench",
   role: "roles",

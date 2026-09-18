@@ -1,19 +1,8 @@
-// The stage top bar's per-page filter (DECISIONS.md → Search): a magnifier
-// that morphs in place into a plain text input scoped to whatever the page
-// is showing — Files filters files, Skills filters skills. It never reaches
-// the global command palette; `Cmd+K` is a separate surface entirely
-// (`command-palette-provider.tsx`), mounted on its own rather than out of
-// this control.
-//
-// A page hands in the filter it already owns (`value`/`onChange`); this
-// component only supplies the chrome — the button, the morph, and the input
-// that drives that state directly. `StageTopBar` renders it only when a page
-// passes a filter, so a page with nothing to filter shows no magnifier.
-//
-// Motion is the width transition authored on `.stage-search` in app.css
-// (react-ui's `--duration-standard` and `--ease-in-out`). Reduced motion
-// needs nothing here: react-ui's stylesheet already collapses every
-// transition duration under `prefers-reduced-motion`.
+// Never reaches the global command palette — `Cmd+K` is a separate
+// surface, mounted on its own.
+
+// Chrome only: a page hands in the filter it already owns. `StageTopBar`
+// renders this only when a page passes a filter.
 
 import { MagnifyingGlass } from "@/lib/icons";
 import { useRef, useState } from "react";

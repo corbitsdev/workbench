@@ -91,10 +91,8 @@ function ArtifactRows({
   const allSelected = artifacts.length > 0 && selection.selectedCount === artifacts.length;
   const headerChecked: SelectionCheckboxState =
     selection.selectedCount === 0 ? false : allSelected ? true : "indeterminate";
-  // `useListSelection` hands back ids in toggle/insertion order, not row
-  // order — a bottom-up shift-select would otherwise join/copy links out of
-  // visible order. Sort against this row order before handing ids to any
-  // bulk operation (copy links here, the context menu's `ids` below).
+  // `useListSelection` hands back ids in toggle order, not row order — a
+  // bottom-up shift-select would otherwise copy links out of visible order.
   const visibleOrder = useMemo(
     () => new Map(artifacts.map((artifact, index) => [artifact.id, index])),
     [artifacts],
@@ -171,13 +169,8 @@ function ArtifactRows({
   );
 }
 
-/**
- * The one cheap provenance fact worth surfacing: a link to the
- * workflow run that produced this artifact, when `source` says so
- * (`workflowRunIdFromSource`). Not a lineage system — every other origin
- * (manual, agent, imported, unknown) renders nothing here rather than
- * guessing.
- */
+// Not a lineage system — every other origin renders nothing rather than
+// guessing.
 function ProvenanceLine({ source }: { readonly source: Record<string, unknown> }) {
   const runId = workflowRunIdFromSource(source);
   if (runId === null) return null;
@@ -211,12 +204,9 @@ function PreviewPane({
     detail !== null && rendererKind === "html" && tenantId !== null
       ? artifactPreviewPath(tenantId, detail.id)
       : undefined;
-  // Empty `content` on a file artifact is ambiguous on its own: it's the
-  // honest "nothing here" for an inline-content artifact, but it's also
-  // what a real upload's row carries when its bytes live out-of-band and
-  // aren't text-decodable (an image, a real PDF, a legacy `.docx`/`.xlsx`).
-  // `source.upload.mimeType` disambiguates — present only when this
-  // artifact really does have stored bytes behind it.
+  // Empty `content` is ambiguous alone (honest "nothing here" vs. a real
+  // upload whose bytes aren't text-decodable); `uploadMimeType`
+  // disambiguates.
   const uploadMimeType = detail !== null ? uploadMimeTypeFromSource(detail.source) : null;
   const contentUnavailable =
     detail !== null &&
@@ -277,18 +267,8 @@ function PreviewPane({
   );
 }
 
-/**
- * The Artifacts stage: a row list of everything this workbench owns, with an
- * in-stage preview when a row is selected. Real data only.
- *
- * Every control the page owns — the workbench lens, the name filter, sort,
- * the rows/grid toggle, Upload — lives in `StageTopBar`'s action slot
- * (DESIGN.md → Pages & Routing: the top nav owns the page's actions, and a
- * page body never floats its own). The name filter drives the stage top
- * bar's own magnifier (`filter` prop) rather than a second input — the
- * magnifier IS this page's filter, never the global palette (DECISIONS.md
- * → Search).
- */
+// Every control lives in `StageTopBar`'s action slot (DESIGN.md -> Pages
+// & Routing) — a page body never floats its own.
 export function LibraryPage({
   artifacts,
   now,
@@ -354,18 +334,12 @@ export function LibraryPage({
   );
 
   const visibleIds = useMemo(() => visible.map((artifact) => artifact.id), [visible]);
-  // A row filtered out of `visibleIds` drops out of `selection.selectedIds`
-  // immediately (the hook reconciles against `ids` on every read) but
-  // `useListSelection` keeps it in its own internal state, so the row comes
-  // back selected if the filter that hid it is cleared. Deliberate: it
-  // matches Finder/Sheets ("clearing a filter doesn't lose your picks") and
-  // needs no bookkeeping here.
+  // Deliberate: matches Finder/Sheets — clearing a filter doesn't lose
+  // your picks, since `useListSelection` keeps them in internal state.
   const selection = useListSelection({ ids: visibleIds });
 
-  // Rows and cards render selection differently — only rows has checkboxes
-  // — so a selection made in one view has nothing to anchor to in the
-  // other. Clearing on view change is simpler than teaching the card view
-  // its own checkboxes for a selection UI it doesn't otherwise need.
+  // Only rows has checkboxes, so a selection has nothing to anchor to in
+  // cards — clearing on view change is simpler than adding card checkboxes.
   const [selectionViewMode, setSelectionViewMode] = useState(viewMode);
   if (selectionViewMode !== viewMode) {
     setSelectionViewMode(viewMode);
@@ -419,21 +393,15 @@ export function LibraryPage({
         actions={
           <>
             {selectedSummary !== null ? (
-              // This clears the open file and returns to the list — an
-              // action, not a filter. It used to say bare "All", which read
-              // as a third option in the scope group right beside it ("All"
-              // vs. "All workbenches"); this label can't be mistaken for
-              // that.
+              // An action, not a filter. Used to say bare "All", which read
+              // as a third scope option next to "All workbenches".
               <Button variant="ghost" size="sm" onClick={() => select(null)}>
                 Back to artifacts
               </Button>
             ) : null}
             {workbenchScope !== null && onScopeChange !== undefined ? (
-              // One control, two states — answers exactly one question
-              // ("whose files"). At lg the bordered segmented group matches
-              // `ViewToggle` in this bar; below lg that group is hidden and
-              // the overflow menu in this same slot is the way to reach
-              // All workbenches.
+              // Below lg the segmented group is hidden; the overflow menu
+              // in this same slot is the way to reach All workbenches.
               <>
                 <div
                   role="group"
@@ -612,11 +580,8 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  // `/artifacts/a/:id` — a chat artifact chip's "Open in Artifacts"
-  // deep link, distinct from the kind-nav segments below. It only ever
-  // sets the initial selection; the user's own clicks stay local state,
-  // the same way kind-nav selection already worked before this route
-  // existed.
+  // Only sets the initial selection; the user's own clicks stay local
+  // state, as kind-nav selection already worked before this route existed.
   const deepLinkedArtifactId = libraryArtifactIdFromPath(path);
   const [selectedId, setSelectedId] = useState<string | null>(deepLinkedArtifactId);
   const [appliedDeepLink, setAppliedDeepLink] = useState(deepLinkedArtifactId);
@@ -626,10 +591,9 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   }
   const kindSegment = deepLinkedArtifactId === null ? libraryKindSegmentFromPath(path) : "";
 
-  // Artifacts' workbench-first lens: the workbench the person just
-  // came from, if `last-workbench.ts` recorded one for this bench, resolved
-  // to its own tenant via the same sidebar-backed activity listing every
-  // other bench-scoped surface already fetches.
+  // The workbench the person just came from, if `last-workbench.ts`
+  // recorded one — resolved via the same activity listing other
+  // bench-scoped surfaces already fetch.
   const activity = useBenchActivity(selectedTenantId);
   const lastWorkbenchId = selectedTenantId === null ? null : readLastWorkbenchId(selectedTenantId);
   const workbenchScope =
@@ -750,11 +714,9 @@ export function LibraryRoute({ path }: { readonly path: string }) {
                   await queryClient.invalidateQueries({
                     queryKey: tenantKeys.artifacts(selectedTenantId),
                   });
-                  // The confirmation names what the server actually stored
-                  // (its own titles), never the local `File` picked — the
-                  // two can differ (e.g. a collision rename), and a sibling
-                  // fix for empty content read-back means this toast must
-                  // only ever repeat the upload response, not assume it.
+                  // Names what the server actually stored, never the local
+                  // `File` picked — the two can differ (e.g. a collision
+                  // rename).
                   toast(artifactUploadToast(uploaded.map((artifact) => artifact.title)));
                 } catch (err) {
                   setUploadError(describeApiError(err, "uploading those files"));

@@ -1,7 +1,5 @@
-// The last line of defence: a render error anywhere in the tree
-// used to leave the reader staring at a blank white page. React only offers
-// this as a class component (no hook equivalent exists), so it's the one
-// class in an otherwise function-component codebase.
+// React offers error boundaries only as a class component (no hook
+// equivalent exists), so this is the one class in the codebase.
 
 import { reportError } from "@corbits/error-sink";
 import { Button, EmptyState } from "@corbits/react-ui";

@@ -1,17 +1,6 @@
-// The skill detail page at `/skills/<name>`.
-//
-// this used to be a full editor over `@corbits/skills`' own registry —
-// description/body editing with diff review, restore-by-version off that
-// asset's git history, a "pinned by" list, and a private/shared visibility
-// toggle. That registry (and the workflow routes it served) was deleted:
-// skills are native `kind:"skill"` hub assets now, and the stock asset
-// routes (`@intx/hub-api`'s `routes/assets.ts`) carry only metadata — id,
-// name, displayName, creator, timestamps. There is still no stock route
-// for a skill's version history, pinned-by list, or scope/visibility
-// flag, so those stay out of this page. Its `SKILL.md` content, though,
-// is readable and writable the same way agent source is: over the
-// asset's own smart-HTTP git remote with a short-lived token (see
-// `skill-source.ts`).
+// No stock route for version history, pinned-by list, or visibility flag,
+// so those stay out of this page. SKILL.md content, though, is readable
+// and writable the same way agent source is (see `skill-source.ts`).
 import {
   Button,
   PageShell,
@@ -232,10 +221,8 @@ function SkillDraftEditor({
   );
 }
 
-/**
- * Mount at `/skills/:name`: resolves the workbench this skill is read from
- * and the name the route carries. The page owns its own stage chrome.
- */
+// Resolves the workbench this skill is read from and the name the route
+// carries.
 export function SkillDetailRoute({ path }: { readonly path: string }) {
   const { selectedTenantId } = useBench();
   const name = skillIdFromPath(path);

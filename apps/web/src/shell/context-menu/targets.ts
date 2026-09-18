@@ -23,12 +23,8 @@ export type ShellContextMenuTarget =
   | {
       readonly type: "artifact";
       readonly id: string;
-      /**
-       * The ids this menu acts on: the row's own id alone, or — when the
-       * right-clicked row is part of a multi-row selection — every
-       * selected id, so a right-click inside an active selection offers
-       * the exact same operation set as the bulk action bar.
-       */
+      // The row's own id alone, or every selected id when the row is part
+      // of a multi-row selection.
       readonly ids: readonly string[];
     };
 
@@ -37,10 +33,8 @@ function attr(element: Element, name: string): string | null {
   return value === null || value === "" ? null : value;
 }
 
-// Order matters: `resolveTarget` returns the first definition whose selector
-// matches anywhere in the ancestor chain, not the nearest match overall — so
-// a target nested inside another (the profile face inside a workbench row)
-// must be listed before its container.
+// Order matters: a nested target must be listed before its container,
+// since `resolveTarget` returns the first match, not the nearest.
 export const SHELL_CONTEXT_MENU_TARGETS: readonly TargetDefinition<ShellContextMenuTarget>[] = [
   {
     selector: "[data-ctx-account]",

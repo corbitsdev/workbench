@@ -1,11 +1,5 @@
-// Insights over the native `GET /workflows/runs` top-level listing: KPI
-// row, "running now" strip, recent purpose runs, and runs history grouped
-// by definition. The stock observability routes
-// (`vendor/intx/hub-api/src/routes/observability.ts`'s four GET routes)
-// are unimplemented stubs — each returns 501 — so this page is entirely
-// native `WorkflowRunResponse` data, already fetched the same way
-// `mission-control-page.tsx` and `routines-api.ts` read runs elsewhere in
-// this app.
+// The stock observability routes are unimplemented 501 stubs, so this
+// page is entirely native `WorkflowRunResponse` data.
 
 import {
   Badge,
@@ -76,11 +70,8 @@ export function formatWhen(iso: string): string {
   });
 }
 
-/** A platform workflow run's status (`WorkflowRunStatus`) doesn't spell
- * react-ui's `RunStatus` vocabulary the same way — normalize onto it here
- * so the badge tone always comes from `RUN_STATUS_TONE`, the one source
- * every run-status tone reads from, rather than a second opinion invented
- * on this page. */
+// Normalizes onto react-ui's `RunStatus` vocabulary so the tone always
+// comes from `RUN_STATUS_TONE`, never a second opinion invented here.
 const WORKFLOW_RUN_STATUS_ALIAS: Readonly<Record<WorkflowRunStatus, RunStatus>> = {
   deployed: "completed",
   running: "running",
@@ -174,10 +165,8 @@ function runsDetailLabel(stats: { readonly running: number; readonly errored: nu
 
 const ELAPSED_TICK_MS = 1_000;
 
-/** Ticks once a second while `enabled` — the clock the elapsed label next to
- * the pulsing `StatusDot` reads from, so it counts up like the live indicator
- * beside it instead of freezing at whatever instant this component mounted
- * or last re-rendered for an unrelated reason. */
+// So the elapsed label counts up like the live indicator, instead of
+// freezing at whatever instant this component last rendered.
 function useTickingNow(enabled: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -188,13 +177,9 @@ function useTickingNow(enabled: boolean): number {
   return now;
 }
 
-/** A run actually in flight right now (`status: running | updating`) —
- * liveness is not a windowed property, so this filters the full run set,
- * never the range-filtered one. A persisted `endedAt` means the fire
- * already finished, even if `status` still reads `running`. A live fire
- * with an in-flight turn stays in flight however old it is; without an
- * explicit no-in-flight signal, missing `turns` is not abandonment.
- */
+// Liveness is not a windowed property, so this filters the full run set,
+// never the range-filtered one. A persisted `endedAt` means the fire
+// already finished, even if `status` still reads `running`.
 export function isRunningNow(run: InsightsRun, now: number = Date.now()): boolean {
   const outcome = runOutcomeStatus(withListingAbandoned(run, now), now);
   return outcome === "running" || outcome === "updating";
@@ -204,22 +189,16 @@ function insightsRunStatus(run: InsightsRun, now: number = Date.now()): string {
   return runOutcomeStatus(withListingAbandoned(run, now), now) ?? run.status;
 }
 
-/** Wall-clock time since a run started, in the same "2m 12s" form as the
- * rest of this page (`durationLabel`) — never a fabricated live counter. */
+// Wall-clock time since start, never a fabricated live counter.
 export function elapsedLabel(createdAt: string, now: number): string {
   const startMs = Date.parse(createdAt);
   if (Number.isNaN(startMs)) return "—";
   return durationLabel(Math.max(0, now - startMs));
 }
 
-/**
- * "Running now" — a horizontally scrolling strip of the runs actually in
- * flight this instant (`status: running | updating`), not a fabricated
- * live-metrics ticker. Renders nothing when nothing is running, same
- * convention as react-ui's `WorkflowDock`: an empty "nothing running" strip
- * is a permanent fixture reporting the normal case, not an empty state worth
- * showing.
- */
+// Renders nothing when nothing is running — same convention as react-ui's
+// `WorkflowDock`: an empty strip reports the normal case, not an empty
+// state worth showing.
 function RunningNowStrip({
   runs,
   onOpenRun,
@@ -312,10 +291,8 @@ function InsightsLanding({
   onOpenRuns,
 }: {
   readonly runs: readonly InsightsRun[];
-  /** The feed's own `nextCursor` (`limit=100` fetch, see
-   * `insightsTopLevelRunsPath`) — non-null means more runs exist than the
-   * 100 fetched, so the KPIs below disclose the cap instead of silently
-   * presenting a truncated series as complete. */
+  // Non-null means more runs exist than fetched, so KPIs disclose the cap
+  // instead of presenting a truncated series as complete.
   readonly runsNextCursor: string | null;
   readonly routines: readonly ScheduledWorkflowDefinition[];
   readonly loading: boolean;
@@ -700,16 +677,8 @@ export function InsightsPage({
   );
 }
 
-/**
- * Insights scoped to one workbench — `/insights/workbench/:workbenchId`
- * resolves the workbench's own workbench tenant (see
- * `../insights-workbench-scope.ts`) and titles the page by the WORKBENCH name,
- * never the tenant's. A true legacy workbench (tenancy `null`) and an id
- * absent from the bench's own workbench list (a stale
- * `/insights/workbench/:tenantId` link, or any other mis-wired id — that
- * route is retired) both get an honest empty state instead of a doomed
- * tenant-scoped fetch.
- */
+// Titles the page by the workbench name, never the tenant's. A legacy or
+// mis-wired id gets an honest empty state instead of a doomed fetch.
 function InsightsWorkbenchPage({
   workbenchesLoading,
   resolution,

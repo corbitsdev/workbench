@@ -1,8 +1,5 @@
-// Which typed renderer an artifact's content plays through — the canvas
-// pane, the Library detail preview, and a chat artifact chip's opened blob
-// all resolve to one of these before `ArtifactRenderer` ever sees them, so
-// the renderer itself never has to know whether it was picked by a Library
-// `kind` string or a chat `Part`'s MIME type.
+// Resolved before `ArtifactRenderer` ever sees it, so the renderer never
+// has to know whether it was picked by a Library `kind` or a MIME type.
 
 import { titleExtension } from "./title-extension";
 
@@ -10,13 +7,8 @@ export const ARTIFACT_RENDERER_KINDS = ["doc", "sheet", "pdf", "html", "unsuppor
 
 export type ArtifactRendererKind = (typeof ARTIFACT_RENDERER_KINDS)[number];
 
-/**
- * Renderer selection for a Library artifact — reuses the same
- * kind/extension mapping as the Library kind nav (`kind-filter.ts`), so a
- * card that files under "Sheet" always previews through the sheet
- * renderer. Routines have no typed renderer in this phase — they fall
- * back honestly to "unsupported" rather than guessing at a shape.
- */
+// Reuses the same mapping as the Library kind nav, so a card filed under
+// "Sheet" always previews through the sheet renderer.
 export function resolveArtifactRendererKind(artifact: {
   readonly kind: string;
   readonly title: string;
@@ -46,12 +38,8 @@ const SHEET_MEDIA_TYPES = new Set([
 ]);
 const PDF_MEDIA_TYPES = new Set(["application/pdf"]);
 
-/**
- * Renderer selection for a chat `Part`'s file attachment — no Library
- * `kind` exists for a blob that was never diverted into an artifact, so
- * this reads the MIME type first and falls back to the filename
- * extension exactly like the Library mapping does for a bare "file" kind.
- */
+// No Library `kind` exists for a blob never diverted into an artifact, so
+// this reads MIME type first, falling back to extension.
 export function resolveRendererKindFromMediaType(
   mediaType: string,
   filename: string,
@@ -68,11 +56,8 @@ export function resolveRendererKindFromMediaType(
   return "unsupported";
 }
 
-/** Whether a chat blob's bytes can be shown as text at all — gates whether
- * `chat-artifact-open.ts` even attempts to decode them. `.xls`/`.xlsx`
- * are binary spreadsheet formats, not CSV, so they resolve to the sheet
- * renderer by extension but are excluded here — decoding their bytes as
- * UTF-8 text would just show binary noise. */
+// `.xls`/`.xlsx` resolve to the sheet renderer by extension but are
+// excluded here: decoding their binary bytes as UTF-8 shows only noise.
 export function isTextDecodableMediaType(mediaType: string): boolean {
   const mime = mediaType.trim().toLowerCase();
   if (mime === "application/vnd.ms-excel") return false;

@@ -15,11 +15,8 @@ export function runDeepLinkTarget(run: { readonly id: string }): string {
   return runDetailPath(run.id);
 }
 
-/** Insights scoped to one workbench — the target for the
- * conversation action bar's "Insights" entry point. The route resolves the
- * workbench's own workbench tenant itself (see `../insights-workbench-scope.ts`)
- * rather than trusting a tenant id from the caller, since the caller here
- * only ever has the workbench id at hand. */
+/** The route resolves the tenant itself (see `insights-workbench-scope.ts`)
+ * since the caller here only ever has the workbench id. */
 export function workbenchInsightsPath(workbenchId: string): string {
   return `${INSIGHTS_PATH_PREFIX}/workbench/${encodeURIComponent(workbenchId)}`;
 }

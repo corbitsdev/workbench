@@ -1,9 +1,5 @@
-// One diff renderer for every surface that shows "what changed": the
-// save-confirmation step and the version comparison on a detail page both
-// mount this, so a diff always reads the same way. The line script comes
-// from `@/lib/text-diff`; this file is only its presentation, and it
-// computes the script exactly once per render — the change summary is read
-// off the same result the rows come from.
+// Computes the diff script exactly once per render — the change summary
+// reads off the same result the rows come from.
 
 import { Badge, Table, TableBody, TableCell, TableRow } from "@corbits/react-ui";
 import { diffText } from "@/lib/text-diff";

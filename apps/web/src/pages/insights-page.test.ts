@@ -66,10 +66,8 @@ describe("isRunningNow", () => {
     ).toBe(false);
   });
 
-  // Warm-keep: a routine's delivery agent stays deployed
-  // after it replies, so workflow_run.status lingers on `running`. Past the
-  // fire window that is not an in-flight job — Insights must not keep it in
-  // "Running now" forever.
+  // Warm-keep: status lingers on `running` after a reply, but past the
+  // fire window it's not in-flight — must not stay "Running now" forever.
   test("endedAt drops in-flight immediately, even while status is still running inside the window", () => {
     expect(
       isRunningNow(

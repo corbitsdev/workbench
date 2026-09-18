@@ -1,9 +1,5 @@
-// Agents: a roster and nothing else — display name, live/starting status,
-// and a Chat action per agent. Everything this page used to carry (a
-// detail panel, run health/events/approvals, bulk archive) leaned on hub
-// routes or state no longer worth a whole screen; a chat with the agent is
-// the one action anyone actually used. Create-agent lives in the sidebar's
-// "+" menu, not here.
+// A roster and nothing else — a chat with the agent is the one action
+// anyone actually used. Create-agent lives in the sidebar's "+" menu.
 
 import {
   Badge,
@@ -32,13 +28,9 @@ import { Link } from "../navigation";
 import { useTenantQuery } from "../routines-api";
 import { StageTopBar } from "../shell/stage-top-bar";
 
-/**
- * One agent's roster row: `Live` once it has a live run address, `starting`
- * while a deploy is still landing one (mid-first-deploy or mid-redeploy),
- * `not-running` once its latest deployment has gone terminal (a hub
- * restart releases every prior allocation) — a restart is then the only
- * way forward.
- */
+// `not-running` once the latest deployment has gone terminal (a hub
+// restart releases every prior allocation) — restart is the only way
+// forward.
 export function agentRosterStatus(
   agent: Pick<ChatAgent, "liveAddress" | "latestStatus">,
 ): "live" | "starting" | "not-running" {

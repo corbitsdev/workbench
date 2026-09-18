@@ -171,10 +171,9 @@ function ChatTranscript({
   // data, not a fetch of its own.
   if (chat !== undefined) markChatSeen(chatId, chat.lastMessageId);
 
-  // The inbox stream is the only signal that an agent has answered; it
-  // carries no chat identity, so it invalidates rather than patches. An
-  // agent that parks on an ask sends no mail, but the same stream ticks
-  // over its turn, so the approvals read is refreshed alongside.
+  // Invalidates rather than patches: the inbox stream carries no chat
+  // identity. Also refreshes approvals, since a parked ask sends no mail
+  // but still ticks the same stream.
   useEffect(
     () =>
       subscribeToInbox(tenantId, () => {
@@ -184,11 +183,9 @@ function ChatTranscript({
     [tenantId, queryClient],
   );
 
-  // Only this agent's asks belong in this transcript; the bench-wide list
-  // is filtered down to the run address this chat talks to. Polling only
-  // covers the same "agent still starting" window `chatQuery` polls for —
-  // once live, the inbox subscription's invalidation above is the only
-  // trigger, so a single mailbox event issues one read, not two.
+  // Polling only covers the same "agent still starting" window `chatQuery`
+  // polls for — once live, the inbox subscription's invalidation is the
+  // only trigger.
   const liveAddress = chat?.agent.liveAddress ?? null;
   const approvalsQuery = usePendingApprovals(tenantId, {
     refetchInterval: liveAddress === null ? 3000 : false,

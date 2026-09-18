@@ -1,8 +1,5 @@
-// Tools: a standalone rail destination listing the tool packages the
-// tenant's live agent deployments actually carry — read off each agent's
-// deployed `definition.json` (plus Myra's bundled mail/posix, which never
-// lands in that file). No stock route lists a tenant's MCP servers yet, so
-// this page has nothing to show for those until one exists.
+// No stock route lists a tenant's MCP servers yet, so this page has
+// nothing to show for those until one exists.
 
 import {
   PageShell,
@@ -21,10 +18,7 @@ import { useDeployedToolPackages } from "../tools/deployed-tool-packages";
 import { useBench } from "../bench-context";
 import { StageTopBar } from "../shell/stage-top-bar";
 
-/**
- * The tool packages the tenant's live agent deployments carry.
- * `tenantId` is the tenant every read is scoped to.
- */
+// `tenantId` is the tenant every read is scoped to.
 export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
   const query = useDeployedToolPackages(tenantId);
   const crumbs = [{ label: "Tools" }];
@@ -89,10 +83,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
   );
 }
 
-/**
- * Tools roster mount at `/tools`: a thin adapter that resolves which
- * workbench's registry is listed. The stage chrome lives on `ToolsPage`.
- */
+// A thin adapter that resolves which workbench's registry is listed.
 export function ToolsRoute() {
   const { selectedTenantId } = useBench();
 

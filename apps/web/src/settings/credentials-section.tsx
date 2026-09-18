@@ -1,9 +1,5 @@
-// The "Credentials" settings section: a plain list-plus-create surface
-// over Interchange's own stock credential routes
-// (`vendor/intx/hub-api/src/routes/credentials.ts`) — the only way a key
-// gets stored in this repo. No connector registry, no OAuth connect
-// flow, no per-provider card: just the credentials this bench owns,
-// named and typed, with a form to add one and a button to delete it.
+// The stock credential routes are the only way a key gets stored in this
+// repo — no connector registry, no OAuth flow, no per-provider card.
 
 import {
   Button,
@@ -348,10 +344,8 @@ function readMetadataString(metadata: Credential["metadata"], key: string): stri
   return typeof value === "string" ? value : "";
 }
 
-/** Edits a credential through the stock `PATCH` route. `Base URL` and
- * `Model` are this form's own metadata convention for a local, Ollama-style
- * credential — they round-trip through the credential's opaque `metadata`
- * field, nothing platform-specific. */
+// `Base URL`/`Model` are this form's own convention, round-tripped
+// through the credential's opaque `metadata` field.
 function EditCredentialDialog({
   credential,
   onOpenChange,

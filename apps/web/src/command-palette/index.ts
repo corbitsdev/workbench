@@ -1,14 +1,5 @@
-// `@/command-palette`: what the global command palette can show.
-// `buildStaticCommands` turns the app shell's own route table into commands.
-// `searchEntities` is the pure match/paginate core over already-fetched
-// entity lists (workbenches, routines, agents — any source the consumer wires);
-// `useEntitySearch` is the one piece of React this package owns — debouncing
-// a typed query and fetching those lists, because that timing and caching is
-// inseparable from the pagination it resets. `parsePaletteQuery` and
-// `buildCommandPaletteGroups` are the prefix-scope and grouping rules the
-// shell mock's `buildCmdkEntries` encodes; `recents` is the small Recents
-// store. Rendering — the overlay, the keyboard contract, the
-// grouped/loading/empty/load-more states — stays a react-ui concern.
+// Rendering — the overlay, keyboard contract, grouped/loading/empty
+// states — stays a react-ui concern; this package owns only the data.
 export { buildStaticCommands, matchesQuery } from "./static-commands";
 export type { StaticCommand, StaticRoute } from "./static-commands";
 

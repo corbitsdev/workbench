@@ -1,7 +1,4 @@
-// Pure state mapping for the approve card: turns the live status read plus
-// any in-flight decision into exactly what the view renders. Kept free of
-// React so the branch logic (actable vs. spectator vs. resolved vs. the
-// forbidden-read branch) is unit-testable without a DOM.
+// Kept free of React so the branch logic is unit-testable without a DOM.
 
 import type {
   ApprovalLiveStatus,
@@ -20,22 +17,16 @@ export type ApproveCardView =
       readonly deciding: DecisionInFlight;
       readonly error: string | null;
     }
-  /** The read succeeded but couldn't establish the viewer may act (or the
-   * read never returned a live status at all, e.g. hosts that only carry
-   * the fixed disabled framing) -- status and the platform's own detail
-   * shown, no buttons. */
+  // Read succeeded but couldn't establish the viewer may act: status and
+  // detail shown, no buttons.
   | {
       readonly kind: "spectator";
       readonly status: ApprovalLiveStatus;
       readonly detail: PlatformApprovalDetail;
     }
-  /** The read itself was forbidden, so the platform's own detail never
-   * arrived. Buttons render anyway: the refusal a person needs to see is
-   * the one their own decision earns, surfaced inline from approve/reject,
-   * not a disabled card they cannot ask about. There is deliberately no
-   * `detail` here: this is the one case where buttons show without it, so
-   * the view must never let the block's agent-authored `body`/`title`
-   * stand in as if it were that detail. */
+  // Read was forbidden; buttons render anyway so the refusal a person
+  // needs to see is the one their own decision earns. No `detail`: the
+  // view must never substitute the agent-authored body/title for it.
   | {
       readonly kind: "undetermined";
       readonly deciding: DecisionInFlight;
@@ -45,10 +36,8 @@ export type ApproveCardView =
       readonly kind: "resolved";
       readonly status: ApprovalLiveStatus;
       readonly detail: PlatformApprovalDetail;
-      /** Set when this render followed a decision call that came back
-       * `"conflict"` (HTTP 409): the card re-synced and found the approval
-       * already resolved by someone/something else, rather than by this
-       * click -- worth a calmer, more specific note than the bare status. */
+      // Set on an HTTP 409 conflict: resolved by someone/something else,
+      // not this click.
       readonly resolvedElsewhere: boolean;
     }
   | { readonly kind: "not-found" }
@@ -65,16 +54,9 @@ export function isTerminalStatus(status: ApprovalLiveStatus): boolean {
   return TERMINAL_STATUSES.includes(status);
 }
 
-/**
- * Derives what the card shows. `wired` is false when the host gave no
- * `ApprovalActions` port at all -- the pre-round-trip fallback: static
- * framing, fixed disabled buttons, no fetch ever attempted.
- *
- * `resolvedElsewhere` only ever marks a genuinely resolved render: it has
- * no effect unless `live` is itself `"ready"` with a terminal status, so a
- * stale flag left over from an earlier decision can never fabricate a
- * resolution.
- */
+// `resolvedElsewhere` has no effect unless `live` is already `"ready"`
+// with a terminal status, so a stale flag can never fabricate a
+// resolution.
 export function deriveApproveCardView(args: {
   readonly wired: boolean;
   readonly live: ApprovalStatusQuery;

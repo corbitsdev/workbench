@@ -1,9 +1,5 @@
-// The hub seams this app still needs for agents: definitions (for the
-// sidebar's own-agent-DM listing in `shell/bench-activity.ts`), top-level
-// runs (for `chat/threads-api.ts`'s live-address resolution), and the
-// create-agent deploy mutation. The Agents page itself now reads through
-// `chat/threads-api.ts`'s `listChatAgents` — the same chat-partner listing
-// — so this file no longer carries a roster/detail data model of its own.
+// The Agents page reads through `chat/threads-api.ts`'s `listChatAgents`;
+// this file carries no roster/detail data model of its own.
 
 import { WorkflowDefinitionResponse, WorkflowRunResponse, paginatedSchema } from "@intx/types";
 import { type } from "arktype";
@@ -21,10 +17,8 @@ export type AgentInstance = typeof WorkflowRunResponse.infer;
 const DefinitionsPage = paginatedSchema(WorkflowDefinitionResponse);
 const InstancesPage = paginatedSchema(WorkflowRunResponse);
 
-// The REST pagination ceiling (see `vendor/intx/hub-api/src/pagination.ts`).
-// A bench with more agents or instances than this needs real pagination on
-// this page, not raised here — tracked as a known limit, not silently
-// worked around.
+// The REST pagination ceiling; a bench past this needs real pagination,
+// not a raised limit here.
 const PAGE_LIMIT = 100;
 
 type Validator<T> = (data: unknown) => T | ArkErrors;
@@ -60,28 +54,16 @@ export function listAgentDefinitions(tenantId: string): Promise<readonly AgentDe
   ).then((page) => page.data);
 }
 
-/**
- * The tenant's genuine top-level deployment runs — every non-top-level
- * run (workbench host, invited agent, task) excluded server-side by the
- * native `GET /workflows/runs` listing's own predicate (`address IS NOT
- * NULL AND anchorRunId = id`), the same one `isTopLevelRun` uses.
- * Single-tenant (accepted loss): the deleted route expanded the
- * requested tenant to its whole descendant subtree via
- * `getDescendantTenants`; the native listing filters one tenant, so a
- * workspace parent sees only its own runs, not its child workbenches'.
- */
+// Single-tenant (accepted loss): the native listing filters one tenant, so
+// a workspace parent sees only its own runs, not its child workbenches'.
 export function listTopLevelRuns(tenantId: string): Promise<readonly AgentInstance[]> {
   return getJSON(`/api/tenants/${tenantId}/workflows/runs?limit=${PAGE_LIMIT}`, InstancesPage).then(
     (page) => page.data,
   );
 }
 
-/**
- * Deploys a hand-authored agent through the stock workflow-deploy path
- * (`agent-deploy.ts`), then invalidates the bench's agent directory and
- * chat-agent roster so both pick up the new deployment without a manual
- * refetch.
- */
+// Invalidates the bench's agent directory and chat-agent roster so both
+// pick up the new deployment without a manual refetch.
 export function useDeployAgentMutation(tenantId: string) {
   const queryClient = useQueryClient();
   return useMutation({

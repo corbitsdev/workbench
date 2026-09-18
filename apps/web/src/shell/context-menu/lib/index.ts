@@ -1,12 +1,5 @@
-// `@/shell/context-menu/lib`: the deployment-agnostic half of the global
-// right-click context-menu system. Resolving a DOM event to a typed target
-// (`target-resolver`), deciding whether a modal overlay should suppress it
-// (`dialog-guard`), the open/position state machine
-// (`use-context-menu-state`), the single document listener that drives it
-// (`use-document-context-menu-trigger`), returning focus to the right-clicked
-// row on close (`focus-restore`), and the react-ui-backed presentation
-// (`context-menu-view`) all apply to any Interchange app with typed rows to
-// right-click on. What counts as a target and which items it offers is
+// The deployment-agnostic half of the global right-click context-menu
+// system. What counts as a target and which items it offers is
 // product-specific and stays with the consumer.
 
 export { resolveTarget } from "./target-resolver";

@@ -1,8 +1,5 @@
-// the URL bar is the source of truth for where you are.
-// `TestRoot` mirrors `main.tsx`'s `Root` history wiring (same pattern as
-// `test/auth.test.tsx`'s `ProbedApp`) so these tests drive real
-// `pushState`/`popstate` traffic instead of asserting against a bare
-// `navigate` prop.
+// `TestRoot` mirrors `main.tsx`'s `Root` history wiring so these tests
+// drive real `pushState`/`popstate` traffic, not a bare `navigate` prop.
 
 import { ThemeProvider } from "@corbits/react-ui";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -36,10 +33,8 @@ const user: SessionUser = {
   email: "ada@example.com",
 };
 
-/** Set by `TestRoot` on every render so a test can drive the exact
- * `handleSignedIn` wiring `main.tsx`'s `Root` gives `AuthScreen` — reading
- * `next=` off the live URL at call time — without simulating a real
- * `LoginForm` submission end to end. */
+// Lets a test drive the exact `handleSignedIn` wiring `Root` gives
+// `AuthScreen` without simulating a real `LoginForm` submission.
 let capturedHandleSignedIn: ((user: SessionUser) => void) | null = null;
 
 function TestRoot({ initialSession }: { readonly initialSession: SessionState }) {

@@ -1,8 +1,3 @@
-// The "Roles" settings section: this bench's roles (system roles marked and
-// immutable), create/rename/delete for custom roles, and assigning or
-// unassigning a role to a principal — all over the native
-// `/api/tenants/:tenantId/roles` and `/principals/:id/roles/:id` routes.
-
 import {
   Badge,
   Button,
@@ -283,10 +278,8 @@ export function RoleAssignments({
   const [principalId, setPrincipalId] = useState("");
   const [roleId, setRoleId] = useState("");
 
-  // Scope both picker and assignments to user-kind principals only.
-  // Agents and workflows are machine identities — the "Person" picker and
-  // its assignment table should match the People section's member roster,
-  // not the full tenant-wide principal list.
+  // The "Person" picker should match People's member roster, not the
+  // full tenant-wide principal list.
   const people = principals.filter((p) => p.kind === "user");
 
   const assignments = people.flatMap((principal) =>

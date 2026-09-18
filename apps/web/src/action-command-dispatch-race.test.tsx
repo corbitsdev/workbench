@@ -1,14 +1,6 @@
-// Regression test for the off-route create-dialog race: firing a palette
-// action command ("New skill") from a page other than its target route used
-// to dispatch the shared "create" event synchronously, then navigate — but
-// the target page's window-event listener only registers once it mounts,
-// which happens on the next render after navigate's setState. The event
-// fired and was gone before anyone was listening.
-//
-// runActionCommand now goes through a pending-flag (pending-dialog-request.ts,
-// the same pattern library-upload.ts already used for "Upload artifact"):
-// off-route, it records the flag and navigates; the target page consumes it
-// on mount instead of relying on a same-tick dispatch.
+// Regression: firing a palette action off-route used to dispatch a "create"
+// event before the target page's listener mounted. Now it goes through a
+// pending-flag (pending-dialog-request.ts) the target page consumes on mount.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -50,11 +42,8 @@ describe("runActionCommand off-route dispatch ordering", () => {
     });
     expect(navigated).toEqual(["/skills"]);
 
-    // Only now (mirroring main.tsx's setState-based navigate re-rendering
-    // the route switch on the next tick) does the section actually mount.
-    // The section reads the stock skill-asset list on mount; serve it an
-    // empty one so the test exercises the pending-flag path, not a
-    // network failure.
+    // Serve an empty skill-asset list so the test exercises the
+    // pending-flag path, not a network failure.
     globalThis.fetch = (async () =>
       new Response(JSON.stringify([]), {
         status: 200,
