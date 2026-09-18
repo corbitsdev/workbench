@@ -25,7 +25,7 @@ import { Lightning } from "@/lib/icons";
 import { WorkbenchLoadingState } from "@/chat";
 import { ApiQueryError, describeApiError } from "@/lib/api-query";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 
 import { tenantKeys } from "../query-client";
 
@@ -145,10 +145,9 @@ export function SkillDetailPage({
   );
 }
 
-/** SKILL.md's editor: a read `useQuery` that seeds a local draft, and a
- * Save `useMutation` that pushes the draft back over the asset's git
- * remote and invalidates the read. Save stays disabled until the draft
- * differs from what was last read. */
+/** SKILL.md's editor: a read `useQuery`, handed off to a `SkillDraftEditor`
+ * keyed on the fetched content so its draft state seeds once per value
+ * read rather than through an effect. */
 function SkillSourceEditor({
   tenantId,
   skill,
@@ -163,11 +162,6 @@ function SkillSourceEditor({
     queryFn: () => readSkillSource(tenantId, skill.assetId, skill.name),
   });
 
-  const [draft, setDraft] = useState("");
-  useEffect(() => {
-    if (source.data !== undefined) setDraft(source.data);
-  }, [source.data]);
-
   const save = useMutation({
     mutationFn: (content: string) => writeSkillSource(tenantId, skill.assetId, skill.name, content),
     onSuccess: async () => {
@@ -176,8 +170,6 @@ function SkillSourceEditor({
     },
     onError: (cause) => toast(`Couldn't save SKILL.md: ${errorText(cause)}`),
   });
-
-  const dirty = source.data !== undefined && draft !== source.data;
 
   if (source.isError) {
     return (
@@ -194,25 +186,49 @@ function SkillSourceEditor({
 
   return (
     <Section title="SKILL.md" description="This skill's instructions, read from its own repo.">
-      <div className="flex flex-col gap-3">
-        <Textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          disabled={source.isLoading}
-          className="min-h-[320px] font-mono text-[0.8125rem]"
-          placeholder="# Skill instructions"
+      {source.data === undefined ? (
+        <Textarea value="" disabled className="min-h-[320px] font-mono text-[0.8125rem]" />
+      ) : (
+        <SkillDraftEditor
+          key={source.data}
+          initial={source.data}
+          saving={save.isPending}
+          onSave={(content) => save.mutate(content)}
         />
-        <div>
-          <Button
-            type="button"
-            onClick={() => save.mutate(draft)}
-            disabled={!dirty || save.isPending}
-          >
-            {save.isPending ? "Saving…" : "Save"}
-          </Button>
-        </div>
-      </div>
+      )}
     </Section>
+  );
+}
+
+/** The draft textarea and Save button for one fetched `SKILL.md` value.
+ * Keyed by its caller on that value, so `useState(initial)` seeds once
+ * per fetch/save cycle rather than through an effect. */
+function SkillDraftEditor({
+  initial,
+  saving,
+  onSave,
+}: {
+  readonly initial: string;
+  readonly saving: boolean;
+  readonly onSave: (content: string) => void;
+}) {
+  const [draft, setDraft] = useState(initial);
+  const dirty = draft !== initial;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        className="min-h-[320px] font-mono text-[0.8125rem]"
+        placeholder="# Skill instructions"
+      />
+      <div>
+        <Button type="button" onClick={() => onSave(draft)} disabled={!dirty || saving}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </div>
   );
 }
 
