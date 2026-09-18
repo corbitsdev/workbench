@@ -35,7 +35,8 @@ const DeploymentShape = type({
   definitionAssetId: "string",
   status: "string",
 });
-const DeploymentsPage = type({ data: DeploymentShape.array() });
+// The stock deployments route returns a bare array, not a `data` page.
+const DeploymentsList = DeploymentShape.array();
 const PrincipalsPage = type({
   data: PrincipalShape.array(),
   nextCursor: "string | null",
@@ -278,8 +279,8 @@ export async function resolveLiveDeploymentId(
   if (!listed.ok) {
     throw new AgentHubCredentialError("listing this workbench's deployments failed");
   }
-  const page = await readJson(listed, DeploymentsPage, "this workbench's deployments");
-  const live = page.data.find(
+  const deployments = await readJson(listed, DeploymentsList, "this workbench's deployments");
+  const live = deployments.find(
     (deployment) =>
       deployment.definitionAssetId === args.assetId &&
       !TERMINAL_DEPLOYMENT_STATUSES.has(deployment.status),
