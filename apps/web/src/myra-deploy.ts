@@ -143,7 +143,9 @@ async function withPushToken<T>(
       name: "myra-deploy",
       resource: `asset:${assetId}`,
       refPattern: "refs/heads/main",
-      actions: ["can_push"],
+      // The ref advertisement before a push is a read, so a push-only
+      // token is refused at info/refs.
+      actions: ["can_read", "can_push"],
       expiresAt: new Date(Date.now() + PUSH_TOKEN_LIFETIME_MS).toISOString(),
     }),
   });
