@@ -57,7 +57,6 @@
         "@corbits/artifact-ui": "workspace:*",
         "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#5309a15d4aa504f132c54b4da08bb672b4903873",
         "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
-        "@corbits/credential-providers": "workspace:*",
         "@corbits/cron": "workspace:*",
         "@corbits/error-sink": "workspace:*",
         "@corbits/hub-api-client": "workspace:*",
@@ -101,6 +100,8 @@
         "workflow-child": "./bin/workflow-child",
       },
       "dependencies": {
+        "@corbits/credential-header": "github:corbitsdev/corbits-credential-header#eee7b7eb79755fd1ddc3eb2b9a57c4e50982e293",
+        "@corbits/credential-mcp": "github:corbitsdev/corbits-credential-mcp#fb9ec3a6754348cd33c388c70c0830b8844c83de",
         "@intx/agent": "workspace:*",
         "@intx/authz": "0.3.0",
         "@intx/crypto": "0.3.0",
@@ -252,18 +253,6 @@
     "packages/collections": {
       "name": "@corbits/collections",
       "version": "0.0.1",
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/credential-providers": {
-      "name": "@corbits/credential-providers",
-      "version": "0.0.1",
-      "dependencies": {
-        "@intx/harness": "workspace:*",
-        "@intx/types": "workspace:*",
-      },
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
@@ -520,7 +509,6 @@
         "arktype": "catalog:",
       },
       "devDependencies": {
-        "@corbits/credential-providers": "workspace:*",
         "@intx/authz": "0.3.0",
         "@intx/crypto": "0.3.0",
         "@intx/db": "workspace:*",
@@ -556,26 +544,10 @@
         "arktype": "catalog:",
       },
       "devDependencies": {
-        "@corbits/credential-providers": "workspace:*",
         "@intx/authz": "0.3.0",
         "@intx/crypto": "0.3.0",
         "@intx/db": "workspace:*",
         "@intx/harness": "workspace:*",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
-      },
-    },
-    "tools/manus": {
-      "name": "@corbits/manus-tools",
-      "version": "0.0.12",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -1057,7 +1029,9 @@
 
     "@corbits/collections": ["@corbits/collections@workspace:packages/collections"],
 
-    "@corbits/credential-providers": ["@corbits/credential-providers@workspace:packages/credential-providers"],
+    "@corbits/credential-header": ["@corbits/credential-header@github:corbitsdev/corbits-credential-header#eee7b7e", { "peerDependencies": { "@intx/harness": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-credential-header-eee7b7e", "sha512-jCgdLZDxHSqL7PJo/xwp/xTCXTBdBgTQb4ZMBwRYCS6x29j8EPtuQiX0mvzZPRXVi02cmz45Shbc2/xQsjZ1oQ=="],
+
+    "@corbits/credential-mcp": ["@corbits/credential-mcp@github:corbitsdev/corbits-credential-mcp#fb9ec3a", { "peerDependencies": { "@intx/harness": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-credential-mcp-fb9ec3a", "sha512-Co4jR+L3pfBbVYY7I6jRftoHeSb5+LCxzEEaAhVLYA3aY2PrPHZV37+DWxj3fcK/KdzboqbT3XSnqU8DyHRU9Q=="],
 
     "@corbits/cron": ["@corbits/cron@workspace:packages/cron"],
 
@@ -1078,8 +1052,6 @@
     "@corbits/linear-tools": ["@corbits/linear-tools@workspace:tools/linear"],
 
     "@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#e85b81e", { "dependencies": { "@hono/standard-validator": "0.2.3", "@intx/crypto": "0.3.0", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-e85b81e", "sha512-ATPP/pll1sYG1DLKV1HvtboK8q1tFkqayQqRXdUmRUIsFJx5wqzd8YA1XELjXzLu1P2f2uCMe2CjsJHGv6E90Q=="],
-
-    "@corbits/manus-tools": ["@corbits/manus-tools@workspace:tools/manus"],
 
     "@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#9e6f213", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "@intx/workflow": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-9e6f213", "sha512-utnM4ZT2zmslcPXYWAAqxlDNLcpGsXFiTOtj8h7+OXnhCP0Eaw8yl25+yCTyHpvt3jcdeG4h5uFsSj7ou0BZCA=="],
 
