@@ -280,7 +280,7 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
     }) =>
       sendToRoom({
         roomTenantId,
-        agents,
+        participants: participants.data ?? [],
         content,
         ...(inReplyTo !== undefined ? { inReplyTo } : {}),
       }),

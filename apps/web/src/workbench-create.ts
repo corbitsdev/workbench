@@ -118,7 +118,7 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
       // room whose agent has not surfaced yet keeps the opening message
       // for the person to send from the room itself.
       if (agents.length > 0) {
-        await sendToRoom({ roomTenantId: tenantId, agents, content: input.openingMessage });
+        await sendToRoom({ roomTenantId: tenantId, participants, content: input.openingMessage });
       }
     } catch (cause) {
       throw failure(cause, "opening-message", tenantId);

@@ -37,4 +37,8 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "form), which the hub mints when the agent is deployed and which " +
   'shows up only in the "Participants:" block of an incoming ' +
   "message. Never construct an address from an agent's name or slug " +
-  "to reach it — that address does not route.";
+  "to reach it — that address does not route.\n" +
+  "\n" +
+  "When you hand a task to another participant, copy the person's " +
+  'address from that same "Participants:" block in `to` so they can ' +
+  "follow the conversation.";

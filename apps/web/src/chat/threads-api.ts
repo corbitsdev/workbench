@@ -777,25 +777,35 @@ export function ancestorChain(
  * agent in it. The hub triggers each addressed run and keeps the Sent
  * copy, so the person's own turn comes back out of the mailbox like any
  * other. The body carries a trailing roster of every agent's name and
- * run address (the same rows the Participants panel reads), so an agent
- * can hand a task to another agent in the room — the hub only delivers to
- * a run address, which only the client otherwise knows. */
+ * run address plus the person's own (the same rows the Participants panel
+ * reads), so an agent can hand a task to another agent in the room — the
+ * hub only delivers to a run address, which only the client otherwise
+ * knows — and can copy the person on that handoff so they can follow it. */
 export async function sendToRoom(input: {
   readonly roomTenantId: string;
-  readonly agents: readonly RoomParticipant[];
+  readonly participants: readonly RoomParticipant[];
   readonly content: string;
   /** The turn this reply threads onto — a sub-thread's parent. */
   readonly inReplyTo?: string;
 }): Promise<void> {
-  const live = input.agents.filter((agent) => agent.address.includes("@"));
+  const live = input.participants.filter(
+    (participant) => participant.kind === "agent" && participant.address.includes("@"),
+  );
   if (live.length === 0) {
     throw new ChatApiError("No agent is in this workbench yet, so there is nobody to send to.");
   }
   const to = live.map((agent) => agent.address);
-  const body = appendRoster(
-    input.content,
-    live.map((agent) => ({ name: agent.name, address: agent.address })),
+  const people = input.participants.filter(
+    (participant) => participant.kind === "person" && participant.address.includes("@"),
   );
+  const body = appendRoster(input.content, [
+    ...people.map((person) => ({
+      name: person.name,
+      address: person.address,
+      kind: "person" as const,
+    })),
+    ...live.map((agent) => ({ name: agent.name, address: agent.address, kind: "agent" as const })),
+  ]);
   let response: Response;
   try {
     response = await fetch(`${mailboxPath(input.roomTenantId)}/send`, {
