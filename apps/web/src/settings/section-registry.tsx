@@ -5,7 +5,7 @@
 // group and one shared group — there is one workbench per account now, so
 // a "workspace-scoped" setting and an "account-scoped" one are the same
 // tenant's settings. Shared Settings is the multiplayer-sharing surface:
-// it leads with what everyone inherits (shared keys/connections, then
+// it leads with what everyone inherits (shared credentials, then
 // People), and tucks the access-control mechanics (Roles, Grants, Audit)
 // under a collapsed Advanced disclosure — nobody should have to parse
 // grants and roles just to find where a shared API key lives. Bench dies
@@ -23,7 +23,7 @@ import { Key, ListBullets, Shield, Star, User, Users } from "@/lib/icons";
 import { AccountSection } from "./account-section";
 import type { TenancyAccess } from "./access";
 import { AuditSection } from "./audit-section";
-import { ConnectionsSection } from "./connections-section";
+import { CredentialsSection } from "./credentials-section";
 import { GrantsSection } from "./grants-section";
 import { PeopleSection } from "./people-section";
 import { RolesSection } from "./roles-section";
@@ -68,17 +68,15 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
     label: SETTINGS_STRINGS.groupEveryoneLabel,
     sections: [
       {
-        // Plugins (`/plugins`) is the canonical surface for discovering
-        // and connecting a key; this section is management-only for keys
-        // that already exist (rotate, name, revoke) — see connections-
-        // section.tsx and the audit this reorganization follows.
         // Leads Shared Settings: a key added here is the thing everyone
-        // creating workbenches in this tenancy inherits.
-        id: "connections",
-        title: SETTINGS_STRINGS.connectionsSectionTitle,
+        // creating workbenches in this tenancy inherits. A plain list
+        // and create form over the stock credentials route — nothing
+        // provider-specific lives here.
+        id: "credentials",
+        title: SETTINGS_STRINGS.credentialsSectionTitle,
         icon: Key,
         gate: "credentials",
-        render: (ctx) => <ConnectionsSection tenantId={ctx.tenantId} />,
+        render: (ctx) => <CredentialsSection tenantId={ctx.tenantId} />,
       },
       {
         id: "people",

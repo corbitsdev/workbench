@@ -2,8 +2,8 @@
 // `StageTopBar`'s `crumbs` — a title trail whose every level above the
 // current page is a real route — and puts its primary controls in the
 // `actions` slot. This suite covers the trail's markup and navigation, the
-// action slot, and the two reference adopters (Plugins, Skills) declaring
-// their nav through it.
+// action slot, and the reference adopter (Skills) declaring its nav
+// through it.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -12,11 +12,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { NavigationProvider } from "../src/navigation";
-import { BenchProvider } from "../src/bench-context";
-import { PluginsRoute } from "../src/pages/plugins-page";
 import { SkillDetailPage } from "../src/pages/skill-detail-page";
 import { SkillsPage } from "../src/pages/skills-page";
-import { ProviderHealthProvider } from "../src/shell/provider-health-context";
 import { StageTopBar } from "../src/shell/stage-top-bar";
 import { TestQueryProvider } from "./test-query-provider";
 
@@ -240,60 +237,5 @@ describe("Skills declares its nav through the top-bar contract", () => {
       parent?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
     expect(navigated).toContain("/skills");
-  });
-});
-
-describe("Plugins declares its nav through the top-bar contract", () => {
-  test("the gallery titles itself and keeps New skill in the action slot", async () => {
-    globalThis.fetch = ((input: RequestInfo | URL) => {
-      const path = String(input);
-      if (path.includes("/api/me/principals"))
-        return Promise.resolve(
-          json({
-            data: [
-              {
-                principalId: "prn_1",
-                tenantId: TENANT,
-                tenantName: "Corbits Bench",
-                tenantSlug: "corbits-bench",
-                kind: "user",
-                status: "active",
-                roles: [],
-              },
-            ],
-            nextCursor: null,
-          }),
-        );
-      if (path.includes("/connections/provider-health"))
-        return Promise.resolve(json({ providers: {}, connectedProviderCount: 0 }));
-      if (path.includes("/credentials/resolve/")) return Promise.resolve(json(null, 404));
-      if (path.includes(`/api/tenants/${TENANT}/assets`))
-        return Promise.resolve(json([SKILL_ASSET]));
-      return Promise.resolve(json({ data: [], nextCursor: null }));
-    }) as typeof fetch;
-
-    const el = await render(
-      <TestQueryProvider>
-        <NavigationProvider navigate={noop}>
-          <BenchProvider>
-            <ProviderHealthProvider>
-              <PluginsRoute path="/plugins" navigate={noop} />
-            </ProviderHealthProvider>
-          </BenchProvider>
-        </NavigationProvider>
-      </TestQueryProvider>,
-    );
-
-    const bar = el.querySelector('[data-testid="stage-top-bar"]');
-    expect(bar?.querySelector('[aria-current="page"]')?.textContent).toBe("Plugins");
-
-    const skillsTab = [...el.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Skills") === true,
-    );
-    await act(async () => {
-      skillsTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    const actions = el.querySelector('[data-testid="stage-top-bar-actions"]');
-    expect(actions?.textContent).toContain("New skill");
   });
 });

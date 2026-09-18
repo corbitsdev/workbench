@@ -1,25 +1,20 @@
-// Two product tables `@corbits/webhook-triggers` owns: a trigger row
-// per external-webhook-to-workflow binding, and a short-lived lease
-// row (`repoReviewLease`) closing a concurrency race in the GitHub
-// connect card's start-reviewing step (`./repo-review-lease.ts`).
-// Both live in this package's own `webhook_triggers` Postgres schema,
-// fully siloed from the platform's `public` schema — see
-// docs/package-migrations.md.
+// The product table `@corbits/webhook-triggers` owns: a trigger row
+// per external-webhook-to-workflow binding, living in this package's
+// own `webhook_triggers` Postgres schema, fully siloed from the
+// platform's `public` schema — see docs/package-migrations.md.
 //
-// `tenant_id` (both tables) and `webhook_trigger.created_by` (a real
-// Interchange principal id — see `management-routes.ts`'s
-// `createdBy: principal.id`) are hard foreign keys into Interchange's
-// own `tenant`/`principal` tables: `hostTenant`/`hostPrincipal`
-// below are declared, never migrated, just far enough to carry the FK,
-// same pattern as `@corbits/artifacts`'s `src/schema.ts`.
-// `repo_review_lease` carries no FK beyond `tenant_id`: "repo" is a
-// GitHub identity Interchange has no row for at all.
+// `tenant_id` and `created_by` (a real Interchange principal id — see
+// `management-routes.ts`'s `createdBy: principal.id`) are hard foreign
+// keys into Interchange's own `tenant`/`principal` tables:
+// `hostTenant`/`hostPrincipal` below are declared, never migrated,
+// just far enough to carry the FK, same pattern as
+// `@corbits/artifacts`'s `src/schema.ts`.
 //
 // The signing secret is encrypted at rest via Interchange's
 // `CredentialCipher` seam — see `./store.ts` for the encrypt/decrypt
 // wiring and `./signature.ts` for the security-model note on what that
 // does and does not close.
-import { boolean, pgSchema, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, pgSchema, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const webhookTriggersSchema = pgSchema("webhook_triggers");
 
@@ -57,30 +52,3 @@ export const webhookTrigger = webhookTriggersSchema.table("webhook_trigger", {
 });
 
 export type WebhookTriggerRow = typeof webhookTrigger.$inferSelect;
-
-/**
- * A short-lived lease serializing `startReviewingRepos`' per-repo
- * mint-grant-and-create-trigger work: two concurrent calls
- * for the same `(tenantId, repo)` can both read "not set up yet"
- * before either write lands, so the lease is acquired first and is
- * the sole thing preventing both from proceeding. Never a record of
- * *completion* — only ever "someone claimed responsibility for this
- * repo's setup as of `leasedAt`" — so it can never assert something
- * untrue the way a stale "done" marker could. See
- * `./repo-review-lease.ts` for the acquire/release/steal-if-stale
- * semantics this table backs.
- */
-export const repoReviewLease = webhookTriggersSchema.table(
-  "repo_review_lease",
-  {
-    id: text("id").primaryKey(),
-    tenantId: text("tenant_id")
-      .notNull()
-      .references(() => hostTenant.id, { onDelete: "cascade" }),
-    repo: text("repo").notNull(),
-    leasedAt: timestamp("leased_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [uniqueIndex("repo_review_lease_tenant_repo_unique").on(t.tenantId, t.repo)],
-);
-
-export type RepoReviewLeaseRow = typeof repoReviewLease.$inferSelect;

@@ -12,7 +12,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { AppShell } from "../src/shell/app-shell";
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
-import { ProviderHealthProvider } from "../src/shell/provider-health-context";
 import { ShellChromeProvider } from "../src/shell/shell-chrome-provider";
 import { TestQueryProvider } from "./test-query-provider";
 
@@ -81,13 +80,11 @@ describe("app shell no longer shows the background setup note", () => {
         <TestQueryProvider>
           <NavigationProvider navigate={noop}>
             <BenchProvider>
-              <ProviderHealthProvider>
-                <ShellChromeProvider path="/inbox" navigate={noop}>
-                  <AppShell path="/inbox" user={user} onSignOut={noop}>
-                    {"Inbox"}
-                  </AppShell>
-                </ShellChromeProvider>
-              </ProviderHealthProvider>
+              <ShellChromeProvider path="/inbox" navigate={noop}>
+                <AppShell path="/inbox" user={user} onSignOut={noop}>
+                  {"Inbox"}
+                </AppShell>
+              </ShellChromeProvider>
             </BenchProvider>
           </NavigationProvider>
         </TestQueryProvider>,

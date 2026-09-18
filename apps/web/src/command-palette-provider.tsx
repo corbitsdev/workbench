@@ -32,8 +32,7 @@ import { NAV_ROUTES } from "./routes";
 import { ArtifactListPageSchema, useAPIQuery } from "./api";
 import { isBenchMembership, useBench } from "./bench-context";
 import { useCloseCanvas } from "./shell/canvas-availability";
-import { listMcpServers } from "@/tools";
-import { AGENTS_PATH_PREFIX, PLUGINS_PATH_PREFIX, SKILLS_PATH_PREFIX } from "./path-ids";
+import { AGENTS_PATH_PREFIX, SKILLS_PATH_PREFIX } from "./path-ids";
 import { listScheduledWorkflows, runScheduledWorkflowNow, useTenantQuery } from "./routines-api";
 import { listSkills } from "./skills-api";
 import { tenantKeys } from "./query-client";
@@ -238,14 +237,6 @@ export function CommandPaletteProvider({
     open && selectedTenantId !== null,
     () => listSkills(selectedTenantId ?? ""),
   );
-  // Connected MCP servers for this bench. Until lands a real
-  // `/plugins/<slug>` page, selecting one opens the Plugins gallery
-  // rather than a "still being built" stub.
-  const mcpServersQuery = useTenantQuery(
-    tenantKeys.mcpServers(selectedTenantId ?? ""),
-    open && selectedTenantId !== null,
-    () => listMcpServers(selectedTenantId ?? ""),
-  );
   const artifactsQuery = useAPIQuery(
     selectedTenantId === null || !open ? "" : `/api/tenants/${selectedTenantId}/artifacts`,
     ArtifactListPageSchema,
@@ -375,18 +366,6 @@ export function CommandPaletteProvider({
     [skillsQuery],
   );
 
-  const pluginItems = useMemo<readonly PaletteResultItem[]>(
-    () =>
-      mcpServersQuery.kind === "ready"
-        ? mcpServersQuery.data.map((server) => ({
-            id: `entity:plugins:${server.slug}`,
-            title: server.name,
-            subtitle: "Connected plugin",
-          }))
-        : [],
-    [mcpServersQuery],
-  );
-
   const libraryItems = useMemo<readonly PaletteResultItem[]>(
     () =>
       artifactsQuery.kind === "ready"
@@ -420,7 +399,6 @@ export function CommandPaletteProvider({
       { id: "pages", heading: "Pages", kind: "pages", items: pageItems },
       { id: "routines", heading: "Routines", items: routineItems },
       { id: "skills", heading: "Skills", items: skillItems },
-      { id: "plugins", heading: "Plugins", items: pluginItems },
       { id: "library", heading: "Files", items: libraryItems },
       {
         id: "people",
@@ -429,16 +407,7 @@ export function CommandPaletteProvider({
         items: agentItems,
       },
     ],
-    [
-      actionItems,
-      workbenchItems,
-      pageItems,
-      routineItems,
-      skillItems,
-      pluginItems,
-      libraryItems,
-      agentItems,
-    ],
+    [actionItems, workbenchItems, pageItems, routineItems, skillItems, libraryItems, agentItems],
   );
 
   const recentItems = useMemo<readonly PaletteResultItem[]>(
@@ -522,13 +491,6 @@ export function CommandPaletteProvider({
         // A skill's name is its slug: the Skills API keys every route on it.
         navigate(detailPath(SKILLS_PATH_PREFIX, { slug: skillId, id: skillId }));
         pushRecent({ kind: "skills", id, title, subtitle: "Skill" });
-      } else if (id.startsWith("entity:plugins:")) {
-        const slug = id.slice("entity:plugins:".length);
-        const title = pluginItems.find((item) => item.id === id)?.title ?? slug;
-        // No plugin detail page yet (parked). Land on the gallery
-        // instead of the removed stub.
-        navigate(PLUGINS_PATH_PREFIX);
-        pushRecent({ kind: "plugins", id, title, subtitle: "Plugin" });
       } else if (id.startsWith("entity:library:")) {
         const artifactId = id.slice("entity:library:".length);
         const title = libraryItems.find((item) => item.id === id)?.title ?? "Files";
@@ -548,7 +510,6 @@ export function CommandPaletteProvider({
       agentItems,
       routineItems,
       skillItems,
-      pluginItems,
       libraryItems,
       nextWorkbench,
       selectTenant,

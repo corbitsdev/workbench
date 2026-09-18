@@ -48,12 +48,11 @@ function errorResult(callId: string, message: string, detail?: unknown): ToolRes
   };
 }
 
-// The wire shape `@corbits/chat`'s orchestrator parses
-// (`@corbits/connections`' `parseMissingCredentialDetail`) to render the
+// The wire shape `@corbits/chat`'s orchestrator parses to render the
 // live connect-service card. Written literally rather than imported: a
-// sandboxed tool package stays free of a dependency on the hub-side
-// connections package for one constant shape both sides already agree on
-// by convention, the same way `toolDoneResult` narrows `event.type`
+// sandboxed tool package stays free of a dependency on a hub-side
+// package for one constant shape both sides already agree on by
+// convention, the same way `toolDoneResult` narrows `event.type`
 // without importing a shared literal.
 function missingCredentialDetail(connectorId: string) {
   return { kind: "missing-credential", connectorId } as const;

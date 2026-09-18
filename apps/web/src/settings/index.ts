@@ -15,14 +15,7 @@ export { AuditSection } from "./audit-section";
 export { PeopleSection, PeopleTable } from "./people-section";
 export { RolesSection, RolesTable, RoleAssignments, CreateRoleDialog } from "./roles-section";
 export { GrantsSection, GrantsTable, CreateGrantDialog } from "./grants-section";
-export {
-  ConnectionsSection,
-  ConnectorRowList,
-  ConnectorCredentialDialog,
-  oauthStartHref,
-} from "./connections-section";
-
-export { GranolaWebhookCard } from "./granola-webhook-card";
+export { CredentialsSection } from "./credentials-section";
 
 export { CopyButton, CopyableCodeRow, WebhookSecretPanel } from "./webhook-secret-panel";
 
@@ -62,22 +55,11 @@ export {
   CredentialsApiError,
   listCredentials,
   listProviders,
+  createProvider,
   createCredential,
   deleteCredential,
 } from "./credentials-api";
 export type { Credential, Provider, CreateCredentialInput } from "./credentials-api";
-
-export {
-  ConnectionsApiError,
-  completeConnectorCredential,
-  disconnectConnector,
-  fetchOAuthConfigured,
-} from "./connections-api";
-
-export { connectorStatus } from "./connections-status";
-export type { ConnectorStatus, ConnectorStatusResult } from "./connections-status";
-
-export { CONNECTOR_PINNED_WORKFLOWS } from "./connections-pinned-by";
 
 export { SETTINGS_STRINGS } from "./strings";
 

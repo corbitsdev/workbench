@@ -52,7 +52,7 @@ describe("resolveSettingsSectionGroups", () => {
       { id: "account", sections: ["account"] },
       {
         id: "everyone",
-        sections: ["connections", "people", "roles", "grants", "audit"],
+        sections: ["credentials", "people", "roles", "grants", "audit"],
       },
     ]);
   });
@@ -104,13 +104,13 @@ describe("resolveSettingsSectionGroups", () => {
       { id: "account", sections: ["account"] },
       {
         id: "everyone",
-        sections: ["connections", "roles", "grants", "audit"],
+        sections: ["credentials", "roles", "grants", "audit"],
       },
     ]);
     expect(groups.find((group) => group.id === "everyone")?.accessProbeFailed).toBe(true);
   });
 
-  test("Roles, Grants, and Audit are tucked under Advanced; Connections and People are not", () => {
+  test("Roles, Grants, and Audit are tucked under Advanced; Credentials and People are not", () => {
     const sections = resolveSettingsSectionGroups(allowed).find(
       (group) => group.id === "everyone",
     )?.sections;
@@ -120,7 +120,7 @@ describe("resolveSettingsSectionGroups", () => {
       "audit",
     ]);
     expect(sections?.filter((section) => section.advanced !== true).map((s) => s.id)).toEqual([
-      "connections",
+      "credentials",
       "people",
     ]);
   });

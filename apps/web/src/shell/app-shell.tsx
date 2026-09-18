@@ -34,7 +34,6 @@ import {
   useCloseCanvas,
   useToggleCanvasFocus,
 } from "./canvas-availability";
-import { ProviderHealthBanner } from "./provider-health-banner";
 import { Sidebar } from "./sidebar";
 import { ShellContextMenu } from "./context-menu/shell-context-menu";
 
@@ -136,7 +135,6 @@ export function AppShell({
       <Sidebar path={path} user={user} onNavigate={navigate} onSignOut={onSignOut} />
       <div className="shell-main" ref={mainRef}>
         <div className="shell-main-content">
-          <ProviderHealthBanner path={path} />
           {routeHasNoStageTopBar(path) ? (
             <StageTopBar
               crumbs={[{ label: routeLabel(path) }]}

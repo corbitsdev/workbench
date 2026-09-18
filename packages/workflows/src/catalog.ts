@@ -86,12 +86,9 @@ export type WorkflowCatalogEntry = {
   /** One honest sentence: what this workflow actually does. No metrics, no hype. */
   readonly whatItDoes: string;
   /**
-   * Connector ids this workflow's tool packages call — either a native
-   * connector (`@corbits/connections/registry`'s `CONNECTOR_REGISTRY`)
-   * or an MCP preset slug a person connects under Plugins
-   * (`@corbits/connections/mcp-presets`' `MCP_PRESETS`), which is the
-   * only way some integrations (Attio) are reachable here at all. Empty
-   * for workflows with no external connector dependency.
+   * Connector ids this workflow's tool packages call — a stored
+   * credential's provider name. Empty for workflows with no external
+   * connector dependency.
    */
   readonly requiredConnections: readonly string[];
   /** A short, honest one-line readout of what a run actually produces —

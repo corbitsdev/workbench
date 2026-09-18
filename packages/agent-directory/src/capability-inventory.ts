@@ -19,15 +19,10 @@ export type CapabilityModelEntry = { readonly canonicalName: string };
 
 /**
  * The pins every created specialist carries unless the caller names its
- * own: search (via the workbench's MCP connections), firm memory, and
- * the ask_user interaction card. A specialist without these is a name
- * with a prompt — a "research agent" that cannot search.
+ * own: firm memory and the ask_user interaction card. A specialist
+ * without these is a name with a prompt.
  */
-export const BASELINE_AGENT_TOOL_PINS = [
-  "@corbits/mcp-tools",
-  "@corbits/memory",
-  "@corbits/interaction-tools",
-] as const;
+export const BASELINE_AGENT_TOOL_PINS = ["@corbits/memory", "@corbits/interaction-tools"] as const;
 
 /** The baseline pins this tenant can actually resolve — a package the
  * registry does not carry is dropped, never pinned to fail at launch. */

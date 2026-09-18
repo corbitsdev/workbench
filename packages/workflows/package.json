@@ -29,7 +29,6 @@
     "hono": "catalog:"
   },
   "devDependencies": {
-    "@corbits/connections": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

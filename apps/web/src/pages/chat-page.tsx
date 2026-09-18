@@ -12,7 +12,6 @@ import { useCallback, useEffect, useMemo } from "react";
 
 import { fetchArtifactDetail } from "../api";
 import { createChatApprovalActions } from "../approval-actions";
-import { createChatConnectServiceActions } from "../connect-service-actions";
 import { useBench } from "../bench-context";
 import { useSignOut, useSessionUser } from "../navigation";
 
@@ -32,11 +31,7 @@ import {
 } from "../workbench-path";
 import { reportWorkbenchNotFound } from "../workbench-not-found-event";
 import { recordLastWorkbenchId } from "../last-workbench";
-import { ONBOARDING_PATH, MISSION_CONTROL_PATH, NEW_WORKBENCH_PATH } from "../routes";
-import {
-  useProviderHealthBanner,
-  useRequestPluginsConnect,
-} from "../shell/provider-health-context";
+import { MISSION_CONTROL_PATH, NEW_WORKBENCH_PATH } from "../routes";
 import { useOpenArtifactInCanvas, useOpenProfileInCanvas } from "../shell/canvas-availability";
 import { useRegisterComposerInsert } from "../shell/composer-insertion";
 import { StageTopBar } from "../shell/stage-top-bar";
@@ -103,35 +98,10 @@ export function ChatPage({
     () => (tenantId === null ? undefined : createChatApprovalActions(tenantId, queryClient)),
     [tenantId, queryClient],
   );
-  const connectServiceActions = useMemo(
-    () => (tenantId === null ? undefined : createChatConnectServiceActions(tenantId, path)),
-    [tenantId, path],
-  );
-
-  // The in-chat "Fix this connection" affordance's deep link —
-  // the exact same hop the shell banner's own "Fix it" takes, reusing
-  // `providerHealthBanner`'s current provider (chat-ui only sees a
-  // classified reply's prose, never which provider it named — see
-  // `inference-failure.ts`'s own header) rather than inventing a second
-  // routing decision. Falls back to a bare Plugins visit if the banner's
-  // provider isn't currently known (an edge case: the health poll hasn't
-  // landed yet, or the incident already cleared between the reply and
-  // the click).
-  const providerHealthBanner = useProviderHealthBanner();
-  const requestPluginsConnect = useRequestPluginsConnect();
-
-  const handleFixConnection = useCallback(() => {
-    if (providerHealthBanner === null) {
-      navigate("/plugins");
-      return;
-    }
-    if (providerHealthBanner.zeroWorkingProviders) {
-      navigate(ONBOARDING_PATH);
-      return;
-    }
-    requestPluginsConnect(providerHealthBanner.provider);
-    navigate("/plugins");
-  }, [providerHealthBanner, requestPluginsConnect, navigate]);
+  // The in-chat "Fix this connection" affordance's deep link — Settings
+  // is where a credential now lives (the stock credentials route), so
+  // there is no provider-specific hop left to make.
+  const handleFixConnection = useCallback(() => navigate("/settings"), [navigate]);
 
   // whether this tenant can actually run inference — never
   // whether a `model_provider` row merely exists, since seeding mints
@@ -246,7 +216,6 @@ export function ChatPage({
       {...(hasUsableModel !== undefined ? { hasUsableModel } : {})}
       onConnectModel={handleConnectModel}
       {...(approvalActions !== undefined ? { approvalActions } : {})}
-      {...(connectServiceActions !== undefined ? { connectServiceActions } : {})}
       onWorkbenchNotFound={reportWorkbenchNotFound}
       onGoToMissionControl={() => navigate(MISSION_CONTROL_PATH)}
       onNewWorkbench={() => navigate(NEW_WORKBENCH_PATH)}

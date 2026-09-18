@@ -34,7 +34,6 @@
     "@intx/db": "workspace:*",
     "@intx/crypto": "workspace:*",
     "@intx/log": "workspace:*",
-    "@corbits/connections": "workspace:*",
     "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#e85b81e4a2e0cc318dd33a4f0f92337b6fac7f38",
     "@intx/mime": "0.3.0",
     "@intx/types": "0.3.0",

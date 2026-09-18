@@ -19,7 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import type { APIQuery } from "@/lib/api-query";
 import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@/lib/api-query";
-import { isChatPickerModelName } from "@corbits/connections/model-capability";
+import { isChatPickerModelName } from "./settings/inference/model-capability";
 import { parseErrorEnvelope } from "@corbits/error-sink";
 import { tenantKeys } from "./query-client";
 

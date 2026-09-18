@@ -46,16 +46,6 @@ export const webhookTriggersMigrations: readonly WebhookTriggersMigration[] = [
 
       CREATE UNIQUE INDEX IF NOT EXISTS "webhook_trigger_tenant_definition_name_unique"
         ON "webhook_triggers"."webhook_trigger" ("tenant_id", "workflow_definition_id", "name");
-
-      CREATE TABLE IF NOT EXISTS "webhook_triggers"."repo_review_lease" (
-        "id" text PRIMARY KEY,
-        "tenant_id" text NOT NULL REFERENCES "public"."tenant" ("id") ON DELETE CASCADE,
-        "repo" text NOT NULL,
-        "leased_at" timestamptz NOT NULL DEFAULT now()
-      );
-
-      CREATE UNIQUE INDEX IF NOT EXISTS "repo_review_lease_tenant_repo_unique"
-        ON "webhook_triggers"."repo_review_lease" ("tenant_id", "repo");
     `,
   },
 ];
