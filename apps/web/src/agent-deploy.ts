@@ -5,6 +5,11 @@ import { type } from "arktype";
 import { WorkflowDeploymentResponse } from "@intx/types";
 import { reportError } from "@corbits/error-sink";
 
+import {
+  artifactToolsCredentialBinding,
+  ensureAgentHubCredential,
+  grantArtifactToolsCredentialUse,
+} from "./agent-hub-credential";
 import { resolveExistingOffering } from "./onboarding/provider-connect-step";
 import { isValidSlug, slugify } from "@/lib/slug";
 
@@ -95,6 +100,8 @@ export function buildAgentDefinitionJson(args: {
     // `to` only feeds the deploy-time mail.address/mail.send grants; it is
     // not how mail reaches this agent — that happens at its run address.
     triggers: [{ type: "mail", to: args.triggerAddress }],
+    // Resolved at deploy into the `hub` handle the artifact tools use.
+    credentialBindings: [artifactToolsCredentialBinding(args.slug)],
     steps: {
       [stepId]: {
         kind: "step",
@@ -338,6 +345,12 @@ export async function deployAgentSource(
   }
 
   const assetId = await ensureAgentSourceAsset(args.tenantId, assetName, name, fetchImpl);
+  // Minted before the push: the definition's credential binding resolves
+  // this credential by name at deploy time, so it must already exist.
+  const credentialId = await ensureAgentHubCredential(
+    { tenantId: args.tenantId, definitionId: slug, assetId },
+    fetchImpl,
+  );
   // Grant configuration only, not a routable address: the hub mints the
   // agent's real address (its run address) at deploy time.
   const triggerAddress = `${slug}@${tenant.domain}`;
@@ -370,6 +383,10 @@ export async function deployAgentSource(
   if (parsed instanceof type.errors) {
     throw new AgentDeployError(`this deployment came back an unexpected shape: ${parsed.summary}`);
   }
+  await grantArtifactToolsCredentialUse(
+    { tenantId: args.tenantId, deploymentId: parsed.id, credentialId },
+    fetchImpl,
+  );
   if (args.input.schedule !== undefined) {
     await scheduleAgentRun(
       args.tenantId,

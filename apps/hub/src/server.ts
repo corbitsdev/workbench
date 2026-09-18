@@ -7,8 +7,12 @@ import {
   resolveFrameSenderKey,
   resolveSenderKey,
 } from "@intx/db";
-import { principal as principalTable, tenant as tenantTable } from "@intx/db/schema";
-import { eq } from "drizzle-orm";
+import {
+  asset as assetTable,
+  principal as principalTable,
+  tenant as tenantTable,
+} from "@intx/db/schema";
+import { and, eq } from "drizzle-orm";
 import { createEnvKeyCredentialCipher, sha256 } from "@intx/crypto";
 import { hexDecode, hexEncode, type SidecarCapabilityRule } from "@intx/types";
 import {
@@ -75,6 +79,7 @@ import {
   exchangeXaiCode,
   refreshXaiTokens,
 } from "@corbits/xai-provider";
+import { createAgentTokenVerifier, mountAgentTokens } from "@corbits/agent-token";
 import { createCronTicker, createRunTriggerCronDeliver, mountCron } from "@corbits/cron";
 import {
   createHubMailboxAuthorizeSender,
@@ -522,12 +527,54 @@ export async function createHubServer({
     app.route(TENANT_PREFIX, artifactsApi);
   }
   {
+    // Minting an agent token is minting a credential, so it is gated by the
+    // same stock grant the credential routes are, not by tenant membership.
+    const agentTokensApp = new Hono<TenantEnv>();
+    const requireAgentTokenGrant = createRequireGrant({
+      grantStore,
+      conditionRegistry: grantConditionRegistry,
+    });
+    mountAgentTokens(agentTokensApp, {
+      db,
+      requireGrant: requireAgentTokenGrant("credential:*", "create"),
+      resolveTenantId: (ctx) => (ctx as { get(key: "tenant"): { id: string } }).get("tenant").id,
+      // A token is scoped to the agent's `workflow` source asset: the
+      // tenant-owned thing that already exists when the workbench mints the
+      // token, before the deploy that would create a run.
+      resolveDefinition: async (tenantId, definitionId) => {
+        const row = await db.query.asset.findFirst({
+          where: and(
+            eq(assetTable.id, definitionId),
+            eq(assetTable.tenantId, tenantId),
+            eq(assetTable.kind, "workflow"),
+          ),
+        });
+        return row !== undefined;
+      },
+    });
+    app.route(TENANT_PREFIX, agentTokensApp);
+  }
+  {
     const workflowArtifactsApi = new Hono<WorkflowArtifactEnv>();
     const workflowRunAuthenticator = createWorkflowRunAuthenticator({ db });
+    const verifyAgentToken = createAgentTokenVerifier({ db });
     mountWorkflowArtifacts(workflowArtifactsApi, {
       db,
       contentStore: artifactContentStore,
       resolveRunScope: (token, runAddress) => workflowRunAuthenticator.resolve(token, runAddress),
+      // A deployed agent has no sidecar token; it presents the bearer this
+      // hub minted for its definition and is scoped to the run it names.
+      agentToken: {
+        verify: (ctx) => verifyAgentToken(ctx),
+        resolveRun: async (runAddress) => {
+          if (runAddress === "") return null;
+          const run = await db.query.workflowRun.findFirst({
+            where: eq(workflowRun.address, runAddress),
+          });
+          if (run === undefined || run.principalId === null) return null;
+          return { tenantId: run.tenantId, principalId: run.principalId, runId: run.id };
+        },
+      },
     });
     app.route("/api/workflow-artifacts", workflowArtifactsApi);
   }

@@ -19,8 +19,9 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "hard-to-undo effect, such as sending mail on someone else's " +
   "behalf.\n" +
   "\n" +
-  "You have mail and a working tree, and nothing else reaches the " +
-  "workbench itself. To stand up a new agent or workflow, write the " +
+  "You have mail, a working tree, and artifacts — the workbench's " +
+  "own shared library, where you save work worth keeping and read " +
+  "back what is already there. To stand up a new agent or workflow, write the " +
   "package in your working tree, then reply with its two files as " +
   "fenced code blocks, each labelled with its filename on the line " +
   'above the fence — a "package.json" plus a "definition.json" holding {"name", ' +
