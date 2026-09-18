@@ -1,17 +1,5 @@
-// The live "what is the agent doing right now" strip for an in-flight
-// turn: `chat.agent` events already carry the vendored Interchange
-// `InferenceEvent` union verbatim (see `streaming-reply.ts`'s header for
-// the wire path), but that module only ever reads `inference.text.delta`
-// and the turn-boundary events — every tool call, thinking delta, and
-// retry is dropped on the floor. This module is the trust boundary that
-// narrows those other event shapes (`inference.tool_call.*`, `tool.*`,
-// `inference.thinking.delta`, `inference.retry` — see
-// `@intx/types/src/runtime.ts`'s `InferenceEvent`) and the pure
-// state machine that turns them into one turn's activity list, plus the
-// hook and presentational strip that render it. v1 is live-only: the
-// strip disappears the moment the turn ends (`nextTurnActivityState`
-// returns `null`), same as `streaming-reply.ts`'s reply text — no
-// persisted trace yet.
+// v1 is live-only: the strip disappears the moment the turn ends, same as
+// `streaming-reply.ts`'s reply text — no persisted trace yet.
 
 import { useEffect, useState } from "react";
 
@@ -110,15 +98,9 @@ function parseToolDone(data: unknown): { callId: string; isError: boolean } | nu
   return { callId, isError: result.isError === true };
 }
 
-/**
- * `inference.thinking.delta`'s `data.partial.thinking` is cumulative, same
- * as `partial.text` (see `PartialMessage` in
- * `@intx/types/src/runtime.ts`) — so the ordinary case replaces the
- * char count outright. `thinking` is typed optional on `PartialMessage`;
- * if a future adapter omits it on the delta event, falling back to the
- * per-delta `token`'s length keeps the counter moving (as an increment,
- * not a replacement, since `token` is only ever the new fragment).
- */
+// `partial.thinking` is cumulative, so the ordinary case replaces the char
+// count outright; a future adapter omitting it falls back to `token`'s
+// length as an increment instead.
 function parseThinkingDelta(
   data: unknown,
 ): { kind: "cumulative" | "increment"; charCount: number } | null {
@@ -143,11 +125,8 @@ function parseRetry(data: unknown): { attempt: number } | null {
   return typeof attempt === "number" ? { attempt } : null;
 }
 
-/** Records (or refines) one tool call, opening a new running row if
- * `callId` hasn't been seen yet this turn. Never touches `startedAtMs`,
- * `status`, or `doneAtMs` on an existing entry — `inference.tool_call.end`
- * and `tool.start` only ever add the arguments a row already opened by an
- * earlier event was missing. */
+// Never touches `startedAtMs`/`status`/`doneAtMs` on an existing entry —
+// a later event only ever fills in arguments an earlier one was missing.
 function upsertToolCall(
   toolCalls: readonly ToolCallActivity[],
   call: {
@@ -195,18 +174,9 @@ function settleToolCall(
   );
 }
 
-/**
- * The current turn's whole activity state machine, pure: `reactor.start`
- * clears it (a fresh turn owns none of the previous turn's chips),
- * `reactor.done`/`reactor.error`/`inference.done`/`inference.error`
- * finalize it to `null` (the turn is over), and every tool-call,
- * thinking, and retry event in between updates the open state — opening
- * one implicitly if none exists yet, so activity that arrives before a
- * `reactor.start` (or in a test driving events directly) is never
- * silently dropped. Kept separate from the `useState` that holds it in
- * `useTurnActivity`, matching `nextStreamingReplyState`'s split in
- * `streaming-reply.ts`.
- */
+// Opens the activity implicitly if none exists yet, so an event arriving
+// before `reactor.start` is never silently dropped. Kept pure and separate
+// from the `useState` that holds it, matching `nextStreamingReplyState`.
 export function nextTurnActivityState(
   current: TurnActivityState,
   event: { readonly eventType: string; readonly data: unknown },
@@ -309,25 +279,13 @@ export function nextTurnActivityState(
   return { ...base, thinking };
 }
 
-/** How long an open turn may sit with no consumed event before the strip
- * clears itself — the backstop for a turn whose `reactor.done`/
- * `inference.done` (or `.error`) never arrives (agent down, SSE dropped
- * mid-reconnect), mirroring `streaming-reply.ts`'s
- * `PENDING_REPLY_CLEAR_MS`. */
+// Backstop for a turn whose done/error event never arrives (agent down,
+// SSE dropped mid-reconnect), mirroring `streaming-reply.ts`.
 const TURN_ACTIVITY_STALE_MS = 120_000;
 
-/**
- * Owns the turn-activity state end to end, mirroring
- * `useStreamingReply`'s shape exactly: feed it every stream event and it
- * tracks the active turn's tool calls, thinking, and retries, clearing
- * the moment the turn ends. `workbenchId` resets it immediately on a
- * workbench switch — activity from the workbench just left belongs to that
- * workbench, not the new one. `staleMs` (default `TURN_ACTIVITY_STALE_MS`)
- * is a test seam, mirroring `useTypingIndicator`'s own configurable
- * timeout. `clock` (default `REAL_CLOCK`) is the same kind of seam for the
- * wall-clock reads and the backstop timer itself — a test drives both
- * synchronously with a fake clock instead of sleeping on the real one.
- */
+// `workbenchId` resets state immediately on a workbench switch — activity
+// from the one just left doesn't belong to the new one. `staleMs`/`clock`
+// are test seams so a test can drive time synchronously.
 export function useTurnActivity(
   workbenchId: string | null,
   staleMs: number = TURN_ACTIVITY_STALE_MS,
@@ -370,12 +328,8 @@ function elapsedSeconds(startedAtMs: number, endMs: number): number {
   return Math.max(0, Math.round((endMs - startedAtMs) / 1000));
 }
 
-/**
- * This turn's tool calls as the rows the conversation renders everywhere
- * else — same sentences, same statuses. A call still running says so in
- * the present tense and carries how long it has been going; a settled one
- * drops the timer, since a finished step's duration is noise.
- */
+// A running call carries how long it's been going; a settled one drops
+// the timer, since a finished step's duration is noise.
 export function toolActivityRows(
   activity: NonNullable<TurnActivityState>,
   nowMs: number,
@@ -397,12 +351,7 @@ export function toolActivityRows(
   });
 }
 
-/**
- * The live strip: one row per tool call this turn, a "Thinking…" row while
- * thinking deltas are flowing, and a retry note if the model's own request
- * needed one. Renders nothing once the turn ends — the persisted message
- * takes over from there, in the same row idiom.
- */
+// Renders nothing once the turn ends — the persisted message takes over.
 export function TurnActivityStrip({ activity }: { readonly activity: TurnActivityState }) {
   const hasRunningToolCall = activity?.toolCalls.some((call) => call.status === "running") ?? false;
   const [, forceTick] = useState(0);
