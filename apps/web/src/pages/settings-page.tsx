@@ -9,10 +9,10 @@
 
 import { flattenSettingsSections, resolveActiveSection, SettingsShell } from "@/settings";
 import { PageShell } from "@corbits/react-ui";
-import { useEffect } from "react";
 
 import { useBench } from "../bench-context";
 import { useSignOut } from "../navigation";
+import { Redirect } from "../redirect";
 import {
   SETTINGS_PATH_PREFIX,
   settingsEntityIdFromPath,
@@ -58,17 +58,15 @@ export function SettingsRoute({
 
   // Bare /settings, and an unknown or gate-denied /settings/:section, both
   // correct to the first allowed section's own URL — never a fallback
-  // rendered under a URL the section nav disagrees with. Depends on
-  // `activeSectionId` (a primitive), not `activeSection` (a fresh object
-  // every render, since `resolveSettingsSectionGroups` isn't memoized) —
-  // otherwise an unrelated re-render (e.g. BenchProvider persisting the
-  // resolved tenant id) would refire this and double-navigate.
-  useEffect(() => {
-    if (activeSectionId === null) return;
-    if (requestedId !== null && requestedSectionExists) return;
-    if (requestedId !== null && !accessSettled) return;
-    navigate(`${SETTINGS_PATH_PREFIX}/${activeSectionId}`);
-  }, [requestedId, requestedSectionExists, accessSettled, activeSectionId, navigate]);
+  // rendered under a URL the section nav disagrees with.
+  if (
+    activeSectionId !== null &&
+    (requestedId === null || (!requestedSectionExists && accessSettled))
+  ) {
+    return (
+      <Redirect to={`${SETTINGS_PATH_PREFIX}/${activeSectionId}`} from={path} navigate={navigate} />
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">

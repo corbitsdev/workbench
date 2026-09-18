@@ -7,7 +7,7 @@
 // `window`, so it sees the initial "expanded" assumption — which is what a
 // server-rendered shell should assume before it has a viewport to measure.
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 import {
   NARROW_MAX_WIDTH,
@@ -19,21 +19,32 @@ import {
 const NARROW_QUERY = `(max-width: ${NARROW_MAX_WIDTH - 1}px)`;
 const COMPACT_QUERY = `(max-width: ${COMPACT_MAX_WIDTH - 1}px)`;
 
+function subscribe(onChange: () => void): () => void {
+  const narrow = window.matchMedia(NARROW_QUERY);
+  const compact = window.matchMedia(COMPACT_QUERY);
+  narrow.addEventListener("change", onChange);
+  compact.addEventListener("change", onChange);
+  return () => {
+    narrow.removeEventListener("change", onChange);
+    compact.removeEventListener("change", onChange);
+  };
+}
+
+// The snapshot is the mode string itself, so repeated reads compare equal
+// and never loop — a fresh object here would re-render forever.
+function getSnapshot(): ShellLayoutMode {
+  return shellLayoutModeFromMatches(
+    window.matchMedia(NARROW_QUERY).matches,
+    window.matchMedia(COMPACT_QUERY).matches,
+  );
+}
+
+/** A viewport-less render (the route tests) gets the same "expanded"
+ * assumption a server-rendered shell should make before it can measure. */
+function getServerSnapshot(): ShellLayoutMode {
+  return "expanded";
+}
+
 export function useShellLayoutMode(): ShellLayoutMode {
-  const [mode, setMode] = useState<ShellLayoutMode>("expanded");
-
-  useEffect(() => {
-    const narrow = window.matchMedia(NARROW_QUERY);
-    const compact = window.matchMedia(COMPACT_QUERY);
-    const sync = () => setMode(shellLayoutModeFromMatches(narrow.matches, compact.matches));
-    sync();
-    narrow.addEventListener("change", sync);
-    compact.addEventListener("change", sync);
-    return () => {
-      narrow.removeEventListener("change", sync);
-      compact.removeEventListener("change", sync);
-    };
-  }, []);
-
-  return mode;
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }

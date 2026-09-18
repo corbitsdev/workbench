@@ -8,16 +8,12 @@
 // open her conversation) for a bench with a workbench already, or the
 // guided first-workbench describe screen for a bench with none — never a
 // Home dashboard.
-// Approvals has no page — the Activity band owns them. Agents
-// and Skills are their own rail destinations again — they spent
-// a stretch as Settings sections and `/settings/agents[/:id]` /
-// `/settings/skills[/:id]` stay routable only as redirects back here, so
-// old links and bookmarks still land somewhere real. Library was renamed
-// Files, then Workbench renamed Routines to Workflows and Files to
-// Artifacts — `/routines` and `/files` (and the older `/library`) all
-// redirect to their current homes. Inbox is gone too (tasks + approvals
-// don't flow into workbenches); `/inbox` stays routable only as a
-// redirect to `/`.
+// Approvals has no page — the Activity band owns them. Agents and Skills
+// are their own rail destinations again. Every path this app has retired
+// along the way (`/settings/agents`, `/routines`, `/files`, `/library`,
+// `/inbox`, `/mission-control`) lives in `RETIRED_PREFIXES` below, which
+// the router resolves before a screen mounts — never a route entry whose
+// only job is to bounce.
 
 import {
   ChatCircle,
@@ -31,7 +27,7 @@ import {
 } from "@/lib/icons";
 import { CHAT_STRINGS } from "@/chat";
 import type { Slug } from "@/lib/slug";
-import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
+import { lazy, type ReactElement, type ReactNode } from "react";
 
 import {
   AGENTS_PATH_PREFIX,
@@ -42,12 +38,6 @@ import {
 } from "./path-ids";
 import { WORKBENCH_PATH_PREFIX, isWorkbenchPath } from "./workbench-path";
 import { CHATS_PATH_PREFIX, isChatPath } from "./chat-path";
-import {
-  LegacyRedirect,
-  LegacyLibraryRedirect,
-  LegacySettingsAgentsRedirect,
-  LegacySettingsSkillsRedirect,
-} from "./pages/legacy-settings-redirects";
 
 // Each signed-in page is a dynamic import so Vite emits one chunk per
 // screen. Static imports here pulled chat-ui, artifact-ui, settings-ui,
@@ -204,15 +194,10 @@ export function matchesRoute(routePath: string, path: string): boolean {
   }
   if (
     routePath === "/workflows" ||
-    routePath === "/routines" ||
-    routePath === "/library" ||
     routePath === "/artifacts" ||
-    routePath === "/files" ||
     routePath === "/insights" ||
     routePath === "/agents" ||
     routePath === "/skills" ||
-    routePath === "/settings/agents" ||
-    routePath === "/settings/skills" ||
     routePath === SETTINGS_PATH
   ) {
     return path === routePath || path.startsWith(`${routePath}/`);
@@ -220,12 +205,29 @@ export function matchesRoute(routePath: string, path: string): boolean {
   return routePath === path;
 }
 
-/** Bounces old `/inbox` links and bookmarks home (: the Inbox page
- * is gone — tasks and approvals don't flow into a workbench). */
-function InboxRedirect({ navigate }: { readonly navigate: (to: string) => void }) {
-  useEffect(() => {
-    navigate("/");
-  }, [navigate]);
+/** Every retired path prefix and where it lives now. Resolved by the router
+ * before a screen mounts, so a bookmark never renders a page just to bounce
+ * off it. */
+const RETIRED_PREFIXES: readonly (readonly [string, string])[] = [
+  ["/mission-control", "/"],
+  ["/inbox", "/"],
+  ["/routines", "/workflows"],
+  ["/files", "/artifacts"],
+  ["/library", "/artifacts"],
+  ["/settings/agents", "/agents"],
+  ["/settings/skills", "/skills"],
+];
+
+/** The current home for a retired path, `null` for a path that is still its
+ * own. A deep-linked id is carried across (`/files/a1` → `/artifacts/a1`). */
+export function redirectTargetFor(path: string): string | null {
+  for (const [oldPrefix, newPrefix] of RETIRED_PREFIXES) {
+    if (path === oldPrefix) return newPrefix;
+    if (path.startsWith(`${oldPrefix}/`)) {
+      const rest = path.slice(oldPrefix.length + 1);
+      return newPrefix === "/" ? "/" : `${newPrefix}/${rest}`;
+    }
+  }
   return null;
 }
 
@@ -236,16 +238,6 @@ export const APP_ROUTES: readonly AppRoute[] = [
     icon: <ChatCircle />,
     render: () => <HomeRoute />,
     hasStageTopBar: false,
-  },
-  {
-    // Mission Control is gone — pending approvals and activity live in the
-    // workbench view now; old links and bookmarks bounce home.
-    path: "/mission-control",
-    label: "Mission Control",
-    icon: <ChatCircle />,
-    render: (path: string, navigate: (to: string) => void) => (
-      <LegacyRedirect path={path} navigate={navigate} oldPrefix="/mission-control" newPrefix="/" />
-    ),
   },
   {
     path: NEW_WORKBENCH_PATH,
@@ -268,14 +260,6 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <WorkbenchRoomRoute path={path} />,
   },
   {
-    path: "/inbox",
-    label: "Inbox",
-    icon: <ChatCircle />,
-    render: (_path: string, navigate: (to: string) => void) => (
-      <InboxRedirect navigate={navigate} />
-    ),
-  },
-  {
     // Detail routes come before their roster: the roster prefix matches
     // everything beneath it, so the more specific slug route has to be
     // found first.
@@ -291,20 +275,6 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: () => <WorkflowsRoute />,
   },
   {
-    // Old `/routines` links and bookmarks (its rename) land here.
-    path: "/routines",
-    label: "Workflows",
-    icon: <FlowArrow />,
-    render: (path: string, navigate: (to: string) => void) => (
-      <LegacyRedirect
-        path={path}
-        navigate={navigate}
-        oldPrefix="/routines"
-        newPrefix="/workflows"
-      />
-    ),
-  },
-  {
     // The renamed, remounted Library page — "Library" stays out
     // of user-facing copy, but the underlying artifact machinery
     // (`library-page.tsx`, `libraryArtifactIdFromPath`, …) keeps its name.
@@ -312,24 +282,6 @@ export const APP_ROUTES: readonly AppRoute[] = [
     label: "Artifacts",
     icon: <FolderOpen />,
     render: (path: string) => <ArtifactsRoute path={path} />,
-  },
-  {
-    // Old `/files` links and bookmarks (its rename) land here.
-    path: "/files",
-    label: "Artifacts",
-    icon: <FolderOpen />,
-    render: (path: string, navigate: (to: string) => void) => (
-      <LegacyRedirect path={path} navigate={navigate} oldPrefix="/files" newPrefix="/artifacts" />
-    ),
-  },
-  {
-    // Old `/library` links and bookmarks (its rename) land here.
-    path: "/library",
-    label: "Artifacts",
-    icon: <FolderOpen />,
-    render: (path: string, navigate: (to: string) => void) => (
-      <LegacyLibraryRedirect path={path} navigate={navigate} />
-    ),
   },
   {
     path: AGENT_DETAIL_PATH,
@@ -348,16 +300,6 @@ export const APP_ROUTES: readonly AppRoute[] = [
     ),
   },
   {
-    // Agents spent through as a Settings section — this
-    // entry keeps old `/settings/agents[/:id]` links routable.
-    path: "/settings/agents",
-    label: "Agents",
-    icon: <Robot />,
-    render: (path: string, navigate: (to: string) => void) => (
-      <LegacySettingsAgentsRedirect path={path} navigate={navigate} />
-    ),
-  },
-  {
     path: SKILL_DETAIL_PATH,
     label: "Skill",
     icon: <Lightning />,
@@ -368,16 +310,6 @@ export const APP_ROUTES: readonly AppRoute[] = [
     label: "Skills",
     icon: <Lightning />,
     render: (_path: string, navigate: (to: string) => void) => <SkillsRoute navigate={navigate} />,
-  },
-  {
-    // Skills spent through as a Settings section — this
-    // entry keeps old `/settings/skills[/:id]` links routable.
-    path: "/settings/skills",
-    label: "Skills",
-    icon: <Lightning />,
-    render: (path: string, navigate: (to: string) => void) => (
-      <LegacySettingsSkillsRedirect path={path} navigate={navigate} />
-    ),
   },
   {
     path: "/tools",

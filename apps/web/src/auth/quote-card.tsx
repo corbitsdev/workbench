@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export const QuoteSchema = type({
   quote: "string",
@@ -54,16 +54,18 @@ function nextIndex(): number {
  * localStorage) — it does not cycle while the page is open.
  */
 export function QuoteCard() {
-  const [index] = useState(nextIndex);
-
-  useEffect(() => {
+  // Picked and persisted once, as the card mounts — the rotation advances
+  // per page load, never while the page is open.
+  const [index] = useState(() => {
+    const next = nextIndex();
     try {
-      localStorage.setItem(STORAGE_KEY, String(index));
+      localStorage.setItem(STORAGE_KEY, String(next));
     } catch {
       // localStorage unavailable (private mode / blocked) — rotation just
       // restarts from the first quote next load.
     }
-  }, [index]);
+    return next;
+  });
 
   const current = QUOTES[index % QUOTES.length];
   if (current === undefined) return null;

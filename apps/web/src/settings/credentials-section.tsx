@@ -26,10 +26,11 @@ import {
   TableRow,
 } from "@corbits/react-ui";
 import type { CredentialType } from "@intx/types";
-import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
-import type { APIQuery } from "@/lib/api-query";
-import { QueryView, UnauthenticatedError, describeQueryError } from "@/lib/api-query";
+import { QueryView, toAPIQuery } from "@/lib/api-query";
+import { tenantKeys } from "@/query-client";
 import {
   createCredential,
   createProvider,
@@ -42,41 +43,39 @@ import {
 } from "./credentials-api";
 import { SETTINGS_STRINGS } from "./strings";
 
+type CredentialsData = {
+  readonly credentials: readonly Credential[];
+  readonly providers: readonly Provider[];
+};
+
 export function CredentialsSection({ tenantId }: { readonly tenantId: string | null }) {
-  const [query, setQuery] = useState<APIQuery<readonly Credential[]>>({ kind: "loading" });
-  const [reloadKey, setReloadKey] = useState(0);
+  const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
-  const [providers, setProviders] = useState<readonly Provider[]>([]);
+
+  // Credentials and their providers load together: creating one needs the
+  // provider row for the typed name, so a split read would race the form.
+  const result = useQuery<CredentialsData>({
+    queryKey: tenantKeys.credentials(tenantId ?? "none"),
+    queryFn: async (): Promise<CredentialsData> => {
+      if (tenantId === null) return { credentials: [], providers: [] };
+      const [credentials, providers] = await Promise.all([
+        listCredentials(tenantId),
+        listProviders(tenantId),
+      ]);
+      return { credentials, providers };
+    },
+    enabled: tenantId !== null,
+  });
+  const query = toAPIQuery(result);
+  const providers = result.data?.providers ?? [];
 
   function reload() {
-    setReloadKey((value) => value + 1);
-  }
-
-  useEffect(() => {
     if (tenantId === null) return;
-    let cancelled = false;
-    setQuery({ kind: "loading" });
-    Promise.all([listCredentials(tenantId), listProviders(tenantId)])
-      .then(([credentials, providerRows]) => {
-        if (cancelled) return;
-        setProviders(providerRows);
-        setQuery({ kind: "ready", data: credentials });
-      })
-      .catch((cause: unknown) => {
-        if (cancelled) return;
-        if (cause instanceof UnauthenticatedError) {
-          setQuery({ kind: "unauthenticated" });
-          return;
-        }
-        setQuery({ kind: "error", message: describeQueryError(cause), retry: reload });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId, reloadKey]);
+    void queryClient.invalidateQueries({ queryKey: tenantKeys.credentials(tenantId) });
+  }
 
   if (tenantId === null) {
     return (
@@ -114,7 +113,7 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
 
   return (
     <QueryView query={query} label={SETTINGS_STRINGS.credentialsLoadError}>
-      {(credentials) => (
+      {({ credentials }) => (
         <SettingsPanel
           title={SETTINGS_STRINGS.credentialsSectionTitle}
           description={SETTINGS_STRINGS.credentialsSectionDescription}

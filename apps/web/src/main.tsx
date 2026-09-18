@@ -3,7 +3,7 @@ import "./app.css";
 import "./tailwind.css";
 
 import { ThemeProvider, Toaster, toast } from "@corbits/react-ui";
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 
 import { getLogger } from "@/lib/client-log";
@@ -11,6 +11,7 @@ import { AppErrorBoundary } from "./app-error-boundary";
 import { App } from "./app";
 import { validatedNextPath } from "./login-next";
 import { triggerFirstLoginProvisioning } from "./onboarding";
+import { getPath, navigateTo, subscribeToPath } from "./router-store";
 import { ONBOARDING_PATH } from "./routes";
 import { fetchSession, signOut } from "./session";
 import type { SessionState, SessionUser } from "./session";
@@ -18,20 +19,10 @@ import type { SessionState, SessionUser } from "./session";
 const log = getLogger("web.session");
 
 function Root() {
-  const [path, setPath] = useState(window.location.pathname);
-  useEffect(() => {
-    const handlePopState = () => setPath(window.location.pathname);
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
-  const navigate = useCallback((to: string) => {
-    window.history.pushState(null, "", to);
-    // `path` state is pathname-only (every comparison against it —
-    // `matchesRoute`, `LOGIN_PATH`, `ONBOARDING_PATH` — expects a bare
-    // path); a query string like `/login?next=...` still lands on the
-    // URL bar via `pushState` above, just not in this state.
-    setPath(new URL(to, window.location.origin).pathname);
-  }, []);
+  // History lives outside React (`./router-store`), so the path is a
+  // subscription, not an effect that starts listening after first paint.
+  const path = useSyncExternalStore(subscribeToPath, getPath);
+  const navigate = navigateTo;
 
   const [session, setSession] = useState<SessionState>({ kind: "loading" });
   const probe = useCallback(() => {

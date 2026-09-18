@@ -8,7 +8,7 @@
 // This is a plain controlled textarea, debounced-saved through `onSave`
 // (the host wires that to the artifacts HTTP route's PUT). Single-user
 // editing only; no live co-viewer cursors, no shared doc, no awareness.
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { formatSaveStateLine, type ArtifactSaveState } from "./save-state";
 
@@ -42,16 +42,14 @@ export function ArtifactTextEditor({
   const [value, setValue] = useState(content);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(
-    () => () => {
-      if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
-    },
-    [],
-  );
-
   return (
     <div className="shell-artifact-text-editor">
       <textarea
+        // The pending debounced save dies with the textarea — a ref cleanup
+        // rather than an effect that exists only to unmount.
+        ref={() => () => {
+          if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
+        }}
         className="shell-artifact-text-editor-body"
         value={value}
         readOnly={readOnly}

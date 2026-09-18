@@ -9,8 +9,6 @@
 // together made the gated nav vanish as if the principal were
 // unauthorized.
 
-import { useEffect, useState } from "react";
-
 import { evaluate } from "./tenancy-api";
 
 export type SectionAccess = "loading" | "allowed" | "denied" | "error";
@@ -46,46 +44,4 @@ export function coalesceSectionAccess(previous: SectionAccess, next: SectionAcce
     return previous;
   }
   return next;
-}
-
-function useResourceAccess(
-  tenantId: string | null,
-  principalId: string | null,
-  resource: string,
-): SectionAccess {
-  const [access, setAccess] = useState<SectionAccess>("loading");
-
-  useEffect(() => {
-    if (tenantId === null || principalId === null) {
-      setAccess("loading");
-      return;
-    }
-    let cancelled = false;
-    setAccess("loading");
-    void probeSectionAccess(tenantId, principalId, resource).then((next) => {
-      if (!cancelled) setAccess(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId, principalId, resource]);
-
-  return access;
-}
-
-/** One probe per section, run in parallel — a section stays out of the nav
- * until its probe resolves `allowed`, so a slow probe reads as "not shown
- * yet", never as a visible-but-disabled tab. A failed probe is `error`,
- * not `denied`: the registry withholds the section but marks the group so
- * a host can show a couldn't-check state instead of looking unauthorized. */
-export function useTenancyAccess(
-  tenantId: string | null,
-  principalId: string | null,
-): TenancyAccess {
-  return {
-    people: useResourceAccess(tenantId, principalId, "principal"),
-    roles: useResourceAccess(tenantId, principalId, "role"),
-    grants: useResourceAccess(tenantId, principalId, "grant"),
-    credentials: useResourceAccess(tenantId, principalId, "credential"),
-  };
 }

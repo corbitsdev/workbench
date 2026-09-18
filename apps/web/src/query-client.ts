@@ -99,6 +99,10 @@ export const tenantKeys = {
   // `invalidateQueries({ queryKey: tenantKeys.artifacts(tenantId) })` after
   // an upload covers both the list and the kind-nav counts.
   artifactCounts: (tenantId: string) => ["tenant", tenantId, "artifacts", "counts"] as const,
+  credentials: (tenantId: string) => ["tenant", tenantId, "credentials"] as const,
+  principals: (tenantId: string) => ["tenant", tenantId, "principals"] as const,
+  roles: (tenantId: string) => ["tenant", tenantId, "roles"] as const,
+  grants: (tenantId: string) => ["tenant", tenantId, "grants"] as const,
   /** Settings section-nav gating (People/Roles/Grants/Credentials). Keyed
    * so col2's nav band and the settings stage — mounted in separate
    * subtrees — share one cached probe instead of each firing its own. */

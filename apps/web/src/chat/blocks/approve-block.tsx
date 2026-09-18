@@ -13,7 +13,8 @@
 
 import { Button, toast } from "@corbits/react-ui";
 import type { ApproveBlockData } from "../wire/blocks";
-import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { CHAT_STRINGS } from "../strings";
 import { BlockCard } from "./block-card";
@@ -119,78 +120,90 @@ export function ApproveBlockView({
   readonly data: ApproveBlockData;
   readonly actions?: ApprovalActions;
 }) {
-  const [live, setLive] = useState<ApprovalStatusQuery>({ kind: "loading" });
-  const [deciding, setDeciding] = useState<DecisionInFlight>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [resolvedElsewhere, setResolvedElsewhere] = useState(false);
-  const [allowingStanding, setAllowingStanding] = useState(false);
 
-  useEffect(() => {
-    if (actions === undefined) return;
-    let cancelled = false;
-    setLive({ kind: "loading" });
-    setResolvedElsewhere(false);
-    actions.getStatus(data.approvalId).then((result) => {
-      if (!cancelled) setLive(result);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [actions, data.approvalId]);
+  const status = useQuery<ApprovalStatusQuery>({
+    queryKey: ["approval-status", data.approvalId],
+    queryFn: () =>
+      actions === undefined
+        ? Promise.resolve<ApprovalStatusQuery>({ kind: "loading" })
+        : actions.getStatus(data.approvalId),
+    enabled: actions !== undefined,
+  });
+  const live: ApprovalStatusQuery = status.data ?? { kind: "loading" };
+
+  // Never trust a decision response (or a local guess) over the platform's
+  // own state — every outcome, success or failure alike, re-reads the
+  // status above and renders only what comes back.
+  const decideMutation = useMutation({
+    mutationFn: (kind: "approve" | "reject") => {
+      if (actions === undefined) throw new Error("approval actions unavailable");
+      const call = kind === "approve" ? actions.approve : actions.reject;
+      return call(data.approvalId);
+    },
+    onSuccess: (result, kind) => {
+      if (result.kind === "resolved") {
+        setResolvedElsewhere(false);
+        toast(
+          kind === "approve"
+            ? CHAT_STRINGS.blockApproveStatusApproved
+            : CHAT_STRINGS.blockApproveStatusRejected,
+        );
+      } else if (result.kind === "conflict") {
+        // Someone/something else resolved this first. There is nothing to
+        // retry — the refreshed terminal status speaks, with a calmer note
+        // than a bare error.
+        setResolvedElsewhere(true);
+      } else {
+        setResolvedElsewhere(false);
+        setDecisionError(
+          result.kind === "forbidden"
+            ? CHAT_STRINGS.blockApproveActionForbidden
+            : CHAT_STRINGS.blockApproveActionError,
+        );
+      }
+    },
+    onSettled: () => {
+      void status.refetch();
+    },
+  });
+
+  const allowStandingMutation = useMutation({
+    mutationFn: () => {
+      if (actions?.allowStanding === undefined) {
+        throw new Error("standing approval unavailable");
+      }
+      return actions.allowStanding(data.approvalId);
+    },
+    onSuccess: (result) => {
+      if (result.kind === "resolved") {
+        toast(CHAT_STRINGS.blockApproveStatusApproved);
+      } else if (result.kind !== "conflict") {
+        setDecisionError(
+          result.kind === "forbidden"
+            ? CHAT_STRINGS.blockApproveActionForbidden
+            : CHAT_STRINGS.blockApproveActionError,
+        );
+      }
+    },
+    onSettled: () => {
+      void status.refetch();
+    },
+  });
+
+  const deciding: DecisionInFlight = decideMutation.isPending ? decideMutation.variables : null;
+  const allowingStanding = allowStandingMutation.isPending;
 
   function decide(kind: "approve" | "reject") {
     if (actions === undefined) return;
-    setDeciding(kind);
     setDecisionError(null);
-    const call = kind === "approve" ? actions.approve : actions.reject;
-    call(data.approvalId)
-      .then((result) => {
-        if (result.kind === "resolved") {
-          setResolvedElsewhere(false);
-          toast(
-            kind === "approve"
-              ? CHAT_STRINGS.blockApproveStatusApproved
-              : CHAT_STRINGS.blockApproveStatusRejected,
-          );
-        } else if (result.kind === "conflict") {
-          // Someone/something else resolved this first. There is nothing
-          // to retry -- re-sync below and let the refreshed terminal
-          // status speak, with a calmer note than a bare error.
-          setResolvedElsewhere(true);
-        } else {
-          setResolvedElsewhere(false);
-          setDecisionError(
-            result.kind === "forbidden"
-              ? CHAT_STRINGS.blockApproveActionForbidden
-              : CHAT_STRINGS.blockApproveActionError,
-          );
-        }
-        // Never trust the decision response (or a local guess) over the
-        // platform's own state -- re-read it after every outcome, success
-        // or failure alike, and render only what comes back.
-        return actions.getStatus(data.approvalId).then(setLive);
-      })
-      .finally(() => setDeciding(null));
+    decideMutation.mutate(kind);
   }
 
   function allowStanding() {
     if (actions?.allowStanding === undefined) return;
-    setAllowingStanding(true);
-    actions
-      .allowStanding(data.approvalId)
-      .then((result) => {
-        if (result.kind === "resolved") {
-          toast(CHAT_STRINGS.blockApproveStatusApproved);
-        } else if (result.kind !== "conflict") {
-          setDecisionError(
-            result.kind === "forbidden"
-              ? CHAT_STRINGS.blockApproveActionForbidden
-              : CHAT_STRINGS.blockApproveActionError,
-          );
-        }
-        return actions.getStatus(data.approvalId).then(setLive);
-      })
-      .finally(() => setAllowingStanding(false));
+    allowStandingMutation.mutate();
   }
 
   const view = deriveApproveCardView({

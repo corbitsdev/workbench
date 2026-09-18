@@ -369,9 +369,11 @@ export function LibraryPage({
   // — so a selection made in one view has nothing to anchor to in the
   // other. Clearing on view change is simpler than teaching the card view
   // its own checkboxes for a selection UI it doesn't otherwise need.
-  useEffect(() => {
+  const [selectionViewMode, setSelectionViewMode] = useState(viewMode);
+  if (selectionViewMode !== viewMode) {
+    setSelectionViewMode(viewMode);
     selection.clear();
-  }, [viewMode, selection.clear]);
+  }
 
   const openPicker = useCallback(() => {
     if (uploading === true) return;
@@ -620,9 +622,11 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   // existed.
   const deepLinkedArtifactId = libraryArtifactIdFromPath(path);
   const [selectedId, setSelectedId] = useState<string | null>(deepLinkedArtifactId);
-  useEffect(() => {
+  const [appliedDeepLink, setAppliedDeepLink] = useState(deepLinkedArtifactId);
+  if (appliedDeepLink !== deepLinkedArtifactId) {
+    setAppliedDeepLink(deepLinkedArtifactId);
     if (deepLinkedArtifactId !== null) setSelectedId(deepLinkedArtifactId);
-  }, [deepLinkedArtifactId]);
+  }
   const kindSegment = deepLinkedArtifactId === null ? libraryKindSegmentFromPath(path) : "";
 
   // Artifacts' workbench-first lens: the workbench the person just
@@ -654,14 +658,14 @@ export function LibraryRoute({ path }: { readonly path: string }) {
       : `/api/tenants/${scopeTenantId}/artifacts/${encodeURIComponent(selectedId)}`;
   const detail = useAPIQuery(detailPath, ArtifactDetailSchema);
 
-  // Drop selection when the filtered list no longer contains the id.
-  useEffect(() => {
-    if (selectedId === null || page.kind !== "ready") return;
+  // A selection the filtered list no longer contains is dropped during
+  // render, so the detail pane never paints for a row that is not there.
+  if (selectedId !== null && page.kind === "ready") {
     const stillThere = mapArtifactListToSummaries(page.data.artifacts)
       .filter((row) => artifactMatchesLibraryKindSegment(row, kindSegment))
       .some((row) => row.id === selectedId);
     if (!stillThere) setSelectedId(null);
-  }, [page, selectedId, kindSegment]);
+  }
 
   if (selectedTenantId === null) {
     return (

@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { searchEntities } from "./entity-search";
@@ -57,14 +58,8 @@ export function useEntitySearch({
 }: UseEntitySearchOptions): UseEntitySearchResult {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [offset, setOffset] = useState(0);
-  const [fetched, setFetched] = useState<ReadonlyMap<string, readonly SearchableEntity[]> | null>(
-    null,
-  );
-  const [fetching, setFetching] = useState(false);
-  const [error, setError] = useState(false);
-  const fetchToken = useRef(0);
-  // Hold the latest fetchers without making the fetch effect depend on
-  // their identity — callers (and tests) are free to hand in fresh arrow
+  // Hold the latest fetchers without making the search depend on their
+  // identity — callers (and tests) are free to hand in fresh arrow
   // functions each render without restarting the search or looping.
   const fetchersRef = useRef(sources);
   fetchersRef.current = sources;
@@ -84,37 +79,27 @@ export function useEntitySearch({
     return () => clearTimeout(timer);
   }, [query, enabled, debounceMs]);
 
-  useEffect(() => {
-    if (debouncedQuery.trim().length === 0) {
-      setFetched(null);
-      setFetching(false);
-      setError(false);
-      return;
-    }
-    const token = ++fetchToken.current;
-    setFetching(true);
-    setError(false);
-    const current = fetchersRef.current;
-    void Promise.all(current.map((source) => source.fetch()))
-      .then((results) => {
-        if (token !== fetchToken.current) return;
-        const map = new Map<string, readonly SearchableEntity[]>();
-        for (let i = 0; i < current.length; i++) {
-          const source = current[i];
-          if (!source) continue;
-          map.set(source.category, results[i] ?? []);
-        }
-        setFetched(map);
-        setFetching(false);
-      })
-      .catch(() => {
-        if (token !== fetchToken.current) return;
-        setError(true);
-        setFetching(false);
-      });
-  }, [debouncedQuery]);
+  // One fetch per committed search, cached across pages of it. A failure in
+  // any source surfaces as `error` rather than a partial result set.
+  const search = useQuery({
+    queryKey: ["entity-search", debouncedQuery],
+    enabled: debouncedQuery.trim().length > 0,
+    queryFn: async (): Promise<ReadonlyMap<string, readonly SearchableEntity[]>> => {
+      const current = fetchersRef.current;
+      const results = await Promise.all(current.map((source) => source.fetch()));
+      const map = new Map<string, readonly SearchableEntity[]>();
+      for (let i = 0; i < current.length; i++) {
+        const source = current[i];
+        if (!source) continue;
+        map.set(source.category, results[i] ?? []);
+      }
+      return map;
+    },
+  });
 
-  const loading = pending || fetching;
+  const fetched = debouncedQuery.trim().length === 0 ? null : (search.data ?? null);
+  const error = search.isError;
+  const loading = pending || (debouncedQuery.trim().length > 0 && search.isFetching);
 
   if (fetched === null || debouncedQuery.trim().length === 0) {
     // Nothing is fetched yet, so there is no next page to load — a no-op

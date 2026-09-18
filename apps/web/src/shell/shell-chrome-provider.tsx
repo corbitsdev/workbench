@@ -8,7 +8,7 @@
 // plus the shell-only read (`useCanvasColumnOpen`) it needs for its own
 // render.
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 
 import type { ProfileSubject } from "@/chat";
 import {
@@ -59,42 +59,33 @@ export function ShellChromeProvider({
     initialCanvasColumnState<ProfileSubject, CanvasArtifactContent, RoutinePanelSubject>,
   );
 
-  // Tracks the last workbench scope we applied so a real switch (A→B) can
-  // drop canvas state without treating the initial null→ready resolve as a
-  // switch.
-  const previousTenantIdRef = useRef<string | null>(selectedTenantId);
-  const previousRoutePrefixRef = useRef(inAppRoutePrefix(path));
+  // The last scope and rail surface we applied, adjusted during render
+  // rather than from an effect — the canvas must never paint a frame
+  // holding another workbench's content. The initial null→ready tenant
+  // resolve is not a switch.
+  const [appliedTenantId, setAppliedTenantId] = useState<string | null>(selectedTenantId);
+  const routePrefix = inAppRoutePrefix(path);
+  const [appliedRoutePrefix, setAppliedRoutePrefix] = useState(routePrefix);
 
-  // A switch clears auxiliary canvas content and leaves any conversation
-  // deep link so the stage does not keep a foreign conversation under the
-  // new scope.
-  useEffect(() => {
-    const previousTenantId = previousTenantIdRef.current;
-    if (
-      previousTenantId !== null &&
-      selectedTenantId !== null &&
-      previousTenantId !== selectedTenantId
-    ) {
-      previousTenantIdRef.current = selectedTenantId;
+  if (appliedTenantId !== selectedTenantId) {
+    setAppliedTenantId(selectedTenantId);
+    setAppliedRoutePrefix(routePrefix);
+    if (appliedTenantId !== null && selectedTenantId !== null) {
+      // A switch drops auxiliary canvas content and leaves any conversation
+      // deep link, so the stage never keeps a foreign conversation.
       setCanvasState(clearCanvasForTenantSwitch());
       if (isWorkbenchPath(path) && workbenchIdFromPath(path) !== null) {
-        navigate(workbenchPath(null));
+        // On a microtask so the hop never updates the router mid-render.
+        queueMicrotask(() => navigate(workbenchPath(null)));
       }
-      return;
     }
-    previousTenantIdRef.current = selectedTenantId;
-  }, [path, selectedTenantId, navigate]);
-
-  // Leaving a rail surface dismisses auxiliary canvas content so a compact
-  // viewport that hid the column cannot resurrect it when the shell expands
-  // again. Nested detail and query-only changes share a prefix and keep the
-  // pane.
-  useEffect(() => {
-    const nextPrefix = inAppRoutePrefix(path);
-    if (previousRoutePrefixRef.current === nextPrefix) return;
-    previousRoutePrefixRef.current = nextPrefix;
+  } else if (appliedRoutePrefix !== routePrefix) {
+    // Leaving a rail surface dismisses auxiliary canvas content so a compact
+    // viewport that hid the column cannot resurrect it when the shell
+    // expands again. Nested detail and query-only changes share a prefix.
+    setAppliedRoutePrefix(routePrefix);
     setCanvasState((state) => closeCanvasContent(state));
-  }, [path]);
+  }
 
   const openProfile = useCallback((subject: ProfileSubject) => {
     setCanvasState((state) => openProfileInCanvas(state, subject));

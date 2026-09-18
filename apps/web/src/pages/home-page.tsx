@@ -5,7 +5,6 @@
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
 
 import { WorkbenchLoadingState } from "@/chat";
 import { listChats } from "@/chat/threads-api";
@@ -13,6 +12,7 @@ import { listChats } from "@/chat/threads-api";
 import { useBench } from "../bench-context";
 import { chatKeys, chatPath, NEW_CHAT_PATH } from "../chat-path";
 import { useNavigate } from "../navigation";
+import { Redirect } from "../redirect";
 
 export function HomeRoute() {
   const navigate = useNavigate();
@@ -22,12 +22,6 @@ export function HomeRoute() {
     enabled: selectedTenantId !== null,
     queryFn: () => listChats(selectedTenantId ?? ""),
   });
-
-  const newest = chats.data?.[0];
-  useEffect(() => {
-    if (chats.data === undefined) return;
-    navigate(newest === undefined ? NEW_CHAT_PATH : chatPath(newest.id));
-  }, [chats.data, newest, navigate]);
 
   if (memberships.kind === "error" || chats.isError) {
     const cause: unknown = chats.error;
@@ -51,6 +45,12 @@ export function HomeRoute() {
         />
       </PageShell>
     );
+  }
+
+  if (chats.data !== undefined) {
+    const newest = chats.data[0];
+    const to = newest === undefined ? NEW_CHAT_PATH : chatPath(newest.id);
+    return <Redirect to={to} from="/" navigate={navigate} />;
   }
 
   return (

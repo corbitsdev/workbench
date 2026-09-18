@@ -1,5 +1,3 @@
-import { useEffect, useRef } from "react";
-
 // 8x8 ordered Bayer threshold matrix (same as the corbits dither shader).
 // prettier-ignore
 const BAYER = [
@@ -39,10 +37,9 @@ const ASSET = "/images/hero-dither.png"; // same-origin source image
  * static frame, re-evaluated when the OS setting toggles).
  */
 export function DitherBackground({ className }: { className?: string }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = ref.current;
+  // The animation belongs to the canvas element, so it starts and stops with
+  // it: a ref callback with a cleanup, never an effect reaching for a ref.
+  const attach = (canvas: HTMLCanvasElement | null) => {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -254,11 +251,11 @@ export function DitherBackground({ className }: { className?: string }) {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pointermove", onMove);
     };
-  }, []);
+  };
 
   return (
     <canvas
-      ref={ref}
+      ref={attach}
       aria-hidden
       className={className}
       style={{

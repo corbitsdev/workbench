@@ -6,7 +6,7 @@
 
 import { isRawIdentifier } from "@/bench";
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { APIQuery } from "@/lib/api-query";
@@ -84,12 +84,12 @@ export function BenchProvider({ children }: { readonly children: ReactNode }) {
   const resolved =
     memberships.kind === "ready" ? resolveSelection(memberships.data.data, stored) : undefined;
 
-  useEffect(() => {
-    if (resolved !== undefined && resolved.tenantId !== stored) {
-      writeStoredTenantId(resolved.tenantId);
-      setStored(resolved.tenantId);
-    }
-  }, [resolved, stored]);
+  // The resolved bench is the stored one: written during render so no
+  // consumer reads a selection the store disagrees with.
+  if (resolved !== undefined && resolved.tenantId !== stored) {
+    writeStoredTenantId(resolved.tenantId);
+    setStored(resolved.tenantId);
+  }
 
   const value = useMemo<BenchState>(
     () => ({
