@@ -1,18 +1,6 @@
-// The create-agent-definition surface: a tenant member submits a
-// name/handle/description/system-prompt/model, and this route
-// materializes it exactly the way the platform's own starter agents
-// (`@corbits/myra`, `@corbits/chat`'s workbench host) are
-// materialized — a `workflow`-kind asset carrying a single-step
-// definition as a source codebase (see `./definition-asset.ts`),
-// projected onto a first-class `workflow_definition` row. No git subprocess: `AssetService.populateAsset` writes the
-// commit in-process, the same seam `createAsset` used to hydrate a
-// workbench host's asset lives beside.
-//
-// The definition lands with the schema's own default status
-// ("deployed") and a non-null assetId, which is exactly what
-// `ChatPlatform.listInvitableDefinitions`/`launchInvite` require to
-// treat it as launchable — a freshly created agent is invitable and
-// launchable the moment this route returns, no separate "deploy" step.
+// The create-agent-definition surface: materializes a submitted definition
+// as a `workflow`-kind asset. Lands `deployed` with a non-null assetId, so
+// a freshly created agent is invitable and launchable immediately.
 
 import { type } from "arktype";
 import { and, eq } from "drizzle-orm";
@@ -70,12 +58,8 @@ import { listVisibleAgentDefinitions } from "./visible-definitions";
 import { reportError } from "@corbits/error-sink";
 import { makeErrorEnvelope } from "@corbits/error-sink";
 
-/**
- * Resolves the pinned skill names a definition carries into the
- * name-and-description index its system prompt advertises. Required, not
- * optional: a definition pushed without a resolved index would carry
- * pins its agent has no way to discover.
- */
+/** Resolves pinned skill names into the name-and-description index the
+ * system prompt advertises. Required, not optional. */
 export type PinnedSkillIndexResolver = {
   resolve(
     tenantId: string,
@@ -102,17 +86,13 @@ export type CreateAgentDefinitionRoutesDeps = {
   capabilityInventory: CapabilityInventoryProvider;
   requireGrant: RequireGrant;
   /** Deploys the definition's commit through the native source pipeline
-   * on every content write; the composition root injects the SAME
-   * `WorkflowDeployer` `@corbits/workflows`'s `./authoring`'s registry
-   * calls. */
+   * on every content write. */
   deployer: AgentDefinitionDeployer;
   tenantDefaultModel?: CreateAgentDefinitionCoreDeps["tenantDefaultModel"];
 };
 
-/** The same 404 shape a missing definition gets — deliberately reused
- * for a workbench host's definition too (see `hostGuardedRow`), so a
- * caller cannot distinguish "no such definition" from "that id names a
- * workbench host" by response shape alone. */
+/** The same 404 shape reused for a workbench host's definition (see
+ * `hostGuardedRow`), so response shape can't distinguish the two. */
 function definitionNotFound(definitionId: string) {
   return makeErrorEnvelope({
     code: "not_found",
@@ -120,14 +100,8 @@ function definitionNotFound(definitionId: string) {
   });
 }
 
-/**
- * A workbench host is a single-step workflow definition exactly like a
- * hand-authored agent, but it is the workbench's own silent anchor, never
- * a participant a person edits through this surface — rewriting its
- * system prompt would turn a silent anchor into a responder. Refused
- * the same way a missing definition is: 404, not 403, so the row's
- * existence isn't leaked either.
- */
+/** A workbench host is never editable through this surface. Refused the
+ * same way a missing definition is: 404, not 403. */
 function hostGuardedRow(
   row: { readonly name: string; readonly assetId: string | null } | undefined,
 ): row is { readonly name: string; readonly assetId: string } {
@@ -185,11 +159,8 @@ export function createAgentDefinitionRoutes({
     const principal = c.get("principal");
 
     const skills = body.skills ?? [];
-    // `CreateAgentDefinitionCoreInput`'s optional fields are declared
-    // under `exactOptionalPropertyTypes`, so an absent `description`/
-    // `model` must be an absent key, not a key set to `undefined` —
-    // built up mutably rather than as one literal, mirroring
-    // `apps/hub`'s own `deployAgentDefinition` caller of this same core.
+    // Built up mutably, not as one literal: `exactOptionalPropertyTypes`
+    // needs an absent `description`/`model` to be an absent key.
     const coreInput: {
       -readonly [K in keyof CreateAgentDefinitionCoreInput]: CreateAgentDefinitionCoreInput[K];
     } = {
@@ -264,12 +235,8 @@ export function createAgentDefinitionRoutes({
             ),
           });
           if (row === undefined || row.assetId === null) return null;
-          // Pins read out of the asset's own stanza: the bulk read
-          // survives the side table's deletion by going to the same
-          // source `GET /:definitionId` reads. One unreadable asset
-          // (a pre-cutover retired envelope, a missing blob) must not
-          // fail the whole batch — skip that id, report it, serve the
-          // healthy ones.
+          // One unreadable asset must not fail the whole batch — skip,
+          // report, serve the healthy ones.
           const workflowJson = await readAgentDefinitionWorkflowJson(assetService, row.assetId);
           const skills = readPinnedSkillNames(workflowJson);
           return [definitionId, skills] as const;
@@ -291,10 +258,8 @@ export function createAgentDefinitionRoutes({
     return c.json({ skills });
   });
 
-  // Feeds the settings surface's guided capability-add picker with only
-  // what this tenant actually has — the same source `POST
-  // /:definitionId/capabilities` re-checks fail-closed on the add itself,
-  // so a name this call doesn't list can never be added either.
+  // Feeds the guided capability-add picker with only what this tenant has;
+  // the add route re-checks fail-closed against the same source.
   app.get("/capabilities/inventory", requireGrant("workflow-definition:*", "read"), async (c) => {
     const tenant = c.get("tenant");
     const principal = c.get("principal");
@@ -305,23 +270,16 @@ export function createAgentDefinitionRoutes({
     return c.json(inventory);
   });
 
-  // Every agent this tenant can open a direct chat with — its own agent
-  // definitions plus every ancestor's: the sidebar's unified
-  // recency-sorted stream reads this list, keyed by `tenantId` per row
-  // so a click can mint the DM in the agent's actual owning tenant, not
-  // the caller's.
+  // Every agent this tenant can open a direct chat with, keyed by
+  // `tenantId` per row so a click mints the DM in the right tenant.
   app.get("/visible", requireGrant("workflow-definition:*", "read"), async (c) => {
     const tenant = c.get("tenant");
     const definitions = await listVisibleAgentDefinitions(db, tenant.id);
     return c.json({ definitions });
   });
 
-  // A definition's kebab `name` is its immutable, URL-facing slug
-  //, so a slug-addressed detail screen resolves through this
-  // route rather than scanning a page of the definitions listing — an
-  // agent past the listing's pagination ceiling still answers on its own
-  // URL. Grant-checked tenant-wide because there is no definition id to
-  // scope to until the lookup itself has run.
+  // Resolves the immutable slug directly rather than scanning the
+  // listing, so an agent past its pagination ceiling still resolves.
   app.get("/by-name/:name", requireGrant("workflow-definition:*", "read"), async (c) => {
     const tenant = c.get("tenant");
     const name = c.req.param("name");
@@ -622,13 +580,8 @@ export function createAgentDefinitionRoutes({
     },
   );
 
-  // Un-pinning a model is its own verb, not `POST /capabilities` with an
-  // empty name: that route's whole contract is "a name from this tenant's
-  // live inventory", and "no model at all" is not a name. Clearing returns
-  // the definition to resolving whatever catalog default the tenant has
-  // seeded, which is where a definition created without a model already
-  // sits — so "Bench default" is a state a person can get back to, not a
-  // one-way door.
+  // Its own verb, not `POST /capabilities` with an empty name: clearing
+  // returns to the tenant's catalog default, a real reachable state.
   app.delete(
     "/:definitionId/capabilities/model",
     requireGrant(idResource("workflow-definition", "definitionId"), "update"),
@@ -684,34 +637,8 @@ export function createAgentDefinitionRoutes({
     },
   );
 
-  // Archive and restore: a definition's status is the whole lifecycle a
-  // person controls from the agent detail page. `stopped` drops it out of
-  // every launchable listing (`listVisibleAgentDefinitions`,
-  // `listInvitableDefinitions`) while leaving the row, its asset, and its
-  // git history untouched — which is what makes the same route, with
-  // `deployed`, a restore rather than a re-create.
-  //
-  // The invariant this route relies on, and the two other writers of
-  // `workflow_definition.status` in this build:
-  //
-  //   1. Row creation. `@intx/hub-sessions`' `ensureWorkflowDefinitionForAsset`
-  //      inserts with the column default (`deployed`) under
-  //      `onConflictDoNothing` on `(assetId, wireHash)` — so re-deploying
-  //      the same definition body over an archived row is a no-op and can
-  //      never silently un-archive it. Editing an agent through this
-  //      package's own routes only repopulates the asset and never
-  //      re-projects a definition row at all.
-  //   2. `apps/hub`'s `undeployAgentDefinition`, which writes `stopped` —
-  //      the same direction as archiving, so the two cannot fight.
-  //
-  // The one way an archived agent reappears as launchable is a deploy of a
-  // CHANGED body over the same asset: a new `wireHash` misses the unique
-  // constraint and inserts a SECOND definition row, `deployed` by default,
-  // beside the archived one. Nothing in this build takes that path for a
-  // hand-authored agent (only `createAgentDefinitionCore` and Interchange's
-  // own selector deploys call the ensure), but it is a real hole in the
-  // status-as-lifecycle model rather than a hypothetical one, and archiving
-  // by row status is what makes it reachable.
+  // Archive and restore. See docs/agent-definition-status-lifecycle.md for
+  // the invariant this relies on and a known hole in the model.
   app.put(
     "/:definitionId/status",
     requireGrant(idResource("workflow-definition", "definitionId"), "update"),

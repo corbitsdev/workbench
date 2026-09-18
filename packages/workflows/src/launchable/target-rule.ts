@@ -1,8 +1,5 @@
-// The follow-latest rule, pure — no `drizzle-orm`, no `@intx/db`, so this
-// half of `./target.ts` is safe on `@corbits/workflows/client` and
-// testable without a database. `./target.ts` is the DB-touching half
-// (`resolveLaunchableDefinition`) that queries rows and hands them to
-// `pickLaunchableDefinition` below.
+// The follow-latest rule, pure — no `drizzle-orm`, no `@intx/db` — so this
+// half is browser-safe and testable without a database.
 export type LaunchableDefinitionRejection =
   | "not_found"
   | "unfrozen"
@@ -22,14 +19,8 @@ export type LaunchableDefinitionResolver = (
   definitionAssetId: string,
 ) => Promise<LaunchableDefinitionResolution>;
 
-/**
- * The columns the pick needs from one `workflow_definition` row joined
- * to its current `workflow_definition_version` — the row the deploy
- * freeze stamps `approved_wire_hash`, `grant_snapshot`, and
- * `wire_projection` onto (`@intx/db`'s `loadFrozenGrantSnapshot` reads
- * the same row). Declared as a plain shape so the ordering rule below
- * is testable without a database.
- */
+/** The columns the pick needs from one `workflow_definition` row, declared
+ * as a plain shape so the ordering rule is testable without a database. */
 export type LaunchableDefinitionCandidate = {
   readonly id: string;
   readonly tenantId: string;
@@ -40,11 +31,8 @@ export type LaunchableDefinitionCandidate = {
   readonly createdAt: Date;
 };
 
-/** A deploy freeze stamps `approvedWireHash`, `grantSnapshot`, and
- * `wireProjection` onto a definition's current version atomically — this
- * is the one predicate for "did that freeze land," shared by the
- * follow-latest rule below and `../detail/definition-lifecycle.ts`'s
- * lifecycle derivation. */
+/** The one predicate for "did a deploy freeze land," shared by the
+ * follow-latest rule and the definition-lifecycle derivation. */
 export function isFrozen(candidate: {
   readonly approvedWireHash: string | null;
   readonly grantSnapshot: unknown;
@@ -59,16 +47,9 @@ export function isFrozen(candidate: {
   );
 }
 
-/**
- * The follow-latest rule, pure: among every definition row minted for
- * one asset (across tenants — the caller passes them all so a
- * cross-tenant reference can be named as such rather than read as
- * "missing"), the newest row in `tenantId` that is `deployed` AND
- * frozen wins. The rejection reason is the most specific one the rows
- * support: no rows at all → `not_found`; rows, none in this tenant →
- * `cross_tenant`; in-tenant rows, none deployed → `not_deployed`;
- * deployed rows, none frozen → `unfrozen`.
- */
+/** The follow-latest rule: the newest row in `tenantId` that is `deployed`
+ * and frozen wins. The rejection reason is the most specific the rows
+ * support, so a cross-tenant reference is named as such, not "missing." */
 export function pickLaunchableDefinition(
   candidates: readonly LaunchableDefinitionCandidate[],
   tenantId: string,
@@ -80,10 +61,7 @@ export function pickLaunchableDefinition(
   if (deployed.length === 0) return { ok: false, reason: "not_deployed" };
   const frozen = deployed.filter(isFrozen);
   if (frozen.length === 0) return { ok: false, reason: "unfrozen" };
-  // Newest wins; a `createdAt` tie (redeploys minted in the same request,
-  // at timestamp granularity that doesn't separate them) breaks on `id`
-  // desc so the pick is a deterministic total order, never array-input
-  // order — the one tiebreak this rule uses, everywhere it's used.
+  // A `createdAt` tie breaks on `id` desc for a deterministic total order.
   const newest = [...frozen].sort((a, b) => {
     const byCreatedAt = b.createdAt.getTime() - a.createdAt.getTime();
     if (byCreatedAt !== 0) return byCreatedAt;
@@ -99,13 +77,8 @@ export function pickLaunchableDefinition(
   };
 }
 
-/**
- * The typed refusal a route answers with when a routine's target does
- * not resolve — one code per reason so a UI or Myra can branch on it,
- * and a sentence a person can act on. A cross-tenant asset is reported
- * as not found: naming another tenant's asset must not confirm it
- * exists.
- */
+/** The typed refusal a route answers with when a routine's target does not
+ * resolve. A cross-tenant asset reports as not found. */
 export function routineTargetRejection(reason: LaunchableDefinitionRejection): {
   readonly status: 404 | 409;
   readonly code: string;
@@ -136,12 +109,8 @@ export function routineTargetRejection(reason: LaunchableDefinitionRejection): {
   }
 }
 
-/**
- * Thrown by a launcher when a routine fires and its target no longer
- * resolves: the fire fails closed (recorded as a failed run by the
- * scheduler's own bookkeeping) instead of running whatever row happens
- * to exist.
- */
+/** Thrown by a launcher when a routine fires and its target no longer
+ * resolves — fails closed rather than running whatever row exists. */
 export class RoutineTargetUnresolvableError extends Error {
   readonly reason: LaunchableDefinitionRejection;
   readonly definitionAssetId: string;

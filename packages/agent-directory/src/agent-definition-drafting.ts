@@ -1,24 +1,6 @@
-// Myra-backed agent-definition drafting: turns a name and a
-// plain-language "what should this agent do?" description into a
-// machine-checked draft via one one-shot Myra call — the third consumer
-// of the inventory-assembly + strict-reply-schema +
-// fail-closed-inventory-validation pattern this package's own
-// `planner-run.ts` already establishes. Every failure mode — Myra
-// unresolvable, the run timing out or failing, an unparseable reply, an
-// out-of-inventory model/tool package/skill pick — propagates as its
-// own honest, specific error; nothing here fabricates a draft or falls
-// back to a template.
-//
-// This module only proposes — it never deploys. The caller (the create-
-// agent panel's `POST .../planner/agent-definitions/draft` client call)
-// takes the validated draft and submits it through
-// `@corbits/agent-directory`'s own sanctioned REST create path, exactly
-// like a hand-authored agent. `toolPackagePins` rides in the draft's
-// validated shape, bounded the same way `./create-bounds.ts` bounds a
-// planner `{create}` step's pins, even though that REST boundary has no
-// field for it yet (see `@corbits/agent-directory`'s own `validation.ts`
-// comment) — a caller with a deploy path that does accept pins (this
-// package's own `{create}` branch) can use the draft unchanged.
+// Myra-backed agent-definition drafting: turns a name and a plain-language
+// description into a machine-checked draft via one one-shot Myra call.
+// This module only proposes; the caller submits it through the create path.
 
 import { type } from "arktype";
 
@@ -32,27 +14,13 @@ const MAX_REPLY_EXCERPT = 400;
 const MAX_SYSTEM_PROMPT_LENGTH = 8000;
 const MAX_DESCRIPTION_LENGTH = 500;
 
-/** `@corbits/capability-tools`' package name — the
- * `request_capability` bundle every drafted agent gets pinned by
- * default (see `validateAgentDefinitionDraftReplyAgainstInventory`'s
- * default-pin step below), the same way a definition that pins skills
- * always gets `@corbits/skills-tools` alongside them
- * (`@corbits/agent-directory`'s `reindexPinnedSkills`) — self-service
- * capability requests are a baseline capability every drafted agent
- * should carry, not something Myra has to remember to choose. Only
- * added when the tenant's own inventory actually offers it (a tenant
- * whose hub build has it un-pinnable, or which never seeded it, gets
- * no dangling pin). Kept a literal here (rather than importing
- * `@corbits/capability-tools`) the same way this module already treats
- * every inventory entry as a bare name string, never a package
- * dependency. */
+/** The `request_capability` bundle every drafted agent gets pinned by
+ * default, so self-service capability requests aren't something Myra has
+ * to remember to choose. Only added when the tenant's inventory offers it. */
 const CAPABILITY_REQUEST_TOOL_PACKAGE = "@corbits/capability-tools";
 
-/** Adds `CAPABILITY_REQUEST_TOOL_PACKAGE` to a draft's resolved
- * `toolPackagePins` whenever the tenant's inventory offers it and it
- * isn't already there. Applied to every draft unconditionally — Myra's
- * own `toolPackagePins` choice never has to include it for the drafted
- * agent to carry it. */
+/** Adds `CAPABILITY_REQUEST_TOOL_PACKAGE` when the inventory offers it and
+ * it isn't already there. Applied to every draft unconditionally. */
 function withDefaultCapabilityRequestPin(
   toolPackagePins: readonly string[],
   inventory: PlannerInventory,
@@ -80,14 +48,9 @@ const BoundedDescription = type("string > 0").narrow((value, ctx) =>
     : ctx.mustBe(`at most ${MAX_DESCRIPTION_LENGTH} characters`),
 );
 
-/**
- * Myra's reply shape: the system prompt to deploy the agent with, plus
- * everything optional — a refined one-line description, a model pick
- * from the tenant's catalog, up to `BoundedDedupedToolPackageNameArray`'s
- * cardinality of tool package pins, and skill names to attach. Nothing
- * here is deployed until `validateAgentDefinitionDraftReplyAgainstInventory`
- * proves every reference was actually offered.
- */
+/** Myra's reply shape. Nothing here is deployed until
+ * `validateAgentDefinitionDraftReplyAgainstInventory` proves every
+ * reference was actually offered. */
 export const AgentDefinitionDraftReply = type({
   systemPrompt: BoundedSystemPrompt,
   "description?": BoundedDescription,
@@ -97,9 +60,7 @@ export const AgentDefinitionDraftReply = type({
 });
 export type AgentDefinitionDraftReply = typeof AgentDefinitionDraftReply.infer;
 
-/** The validated, deploy-ready shape `propose` resolves with — every
- * optional collection defaulted to `[]` so a caller never has to
- * distinguish "Myra proposed none" from "the field was omitted". */
+/** The validated, deploy-ready shape `propose` resolves with. */
 export type AgentDefinitionDraft = {
   readonly systemPrompt: string;
   readonly description?: string;
@@ -139,11 +100,8 @@ export class MyraAgentDefinitionDraftingUnavailableError extends Error {
   }
 }
 
-/** Parses `raw` as an `AgentDefinitionDraftReply`, throwing
- * `AgentDefinitionDraftReplyUnparseableError` on malformed JSON, a shape
- * that doesn't match, an empty/oversized system prompt or description,
- * or a `toolPackagePins` array over cardinality/with a duplicate. Never
- * partially trusts a near-miss. */
+/** Parses `raw` as an `AgentDefinitionDraftReply`, throwing on malformed
+ * JSON, a bad shape, or an over-cardinality/duplicate pins array. */
 export function parseAgentDefinitionDraftReply(raw: string): AgentDefinitionDraftReply {
   let json: unknown;
   try {
@@ -164,15 +122,8 @@ export function parseAgentDefinitionDraftReply(raw: string): AgentDefinitionDraf
   return parsed;
 }
 
-/**
- * Asserts every reference a validated-shape `AgentDefinitionDraftReply`
- * makes actually appears in `inventory` — the inventory that was
- * actually offered to Myra — then returns the deploy-ready
- * `AgentDefinitionDraft` (optional collections defaulted to `[]`).
- * Throws `AgentDefinitionDraftReferenceOutOfInventoryError` on the first
- * violation found: an out-of-catalog `modelPreference`, an
- * out-of-inventory tool package pin, or an out-of-inventory skill name.
- */
+/** Asserts every reference the reply makes actually appears in the
+ * inventory offered to Myra, then returns the deploy-ready draft. */
 export function validateAgentDefinitionDraftReplyAgainstInventory(
   reply: AgentDefinitionDraftReply,
   inventory: PlannerInventory,
@@ -238,17 +189,15 @@ export type AgentDefinitionDraftingPort = {
     readonly tenantId: string;
     readonly principalId: string;
     readonly name: string;
-    /** Omitted entirely for a name-only "Get started" — the drafting
-     * flow still runs (see `buildAgentDefinitionDraftPrompt`), never a
-     * template fallback. */
+    /** Omitted for a name-only "Get started" — drafting still runs,
+     * never a template fallback. */
     readonly purpose?: string;
   }): Promise<AgentDefinitionDraft>;
 };
 
-/** `purpose` is optional — "Get started" with just a name is a supported
- * happy path (the person teaches the agent in the conversation once it's
- * created), so this still asks Myra for a real draft rather than a
- * template: a different framing, not a different code path. */
+/** `purpose` is optional — a name-only "Get started" is a real happy path,
+ * so this still asks Myra for a real draft: a different framing, not a
+ * different code path. */
 function buildAgentDefinitionDraftPrompt(
   name: string,
   purpose: string | undefined,
@@ -333,15 +282,9 @@ function buildAgentDefinitionDraftPrompt(
   ].join("\n");
 }
 
-/**
- * Builds an `AgentDefinitionDraftingPort` backed by one one-shot Myra
- * call: resolve Myra's definition for the tenant, assemble the
- * inventory she may reference, ask her to turn the name + purpose into
- * an `AgentDefinitionDraftReply`, and never trust that reply beyond what
- * `parseAgentDefinitionDraftReply` and
- * `validateAgentDefinitionDraftReplyAgainstInventory` can prove about
- * it.
- */
+/** Builds an `AgentDefinitionDraftingPort` backed by one one-shot Myra
+ * call, never trusting the reply beyond what the parse/validate pair
+ * proves about it. */
 export function createMyraAgentDefinitionDrafting(
   deps: AgentDefinitionDraftingRunnerDeps,
 ): AgentDefinitionDraftingPort {

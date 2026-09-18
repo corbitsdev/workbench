@@ -1,19 +1,6 @@
-// Deploy-layer metadata for every seeded workflow package: display name,
-// whether it's schedulable as a routine, where its result actually lands
-// (a channel vs. the creator's Inbox only), required connections, and
-// optional trigger-input fields. Interchange's `defineWorkflow` has no
-// automatable/display-name concept of its own.
-//
-// `assetName`/`displayName`/`automatable` are read straight off each
-// `workflows/*/package.json`'s `corbits.workflow` block via a static JSON
-// import below — resolved at build time (Vite, tsc, and Bun all support
-// `resolveJsonModule`), never at runtime, so this stays importable from
-// the browser bundle. There is nothing left to keep "in lockstep": the
-// package.json block IS the value this module reads, not a copy of it.
-// The remaining fields (`conversational`, `deliveryMode`, `whatItDoes`,
-// `requiredConnections`, `exampleOutput`, `typicalDuration`,
-// `triggerFields`) have no npm-visible home of their own — they exist
-// only here, so there is no second copy for them to drift from.
+// Deploy-layer metadata for every seeded workflow package, since
+// Interchange's `defineWorkflow` has no automatable/display-name concept.
+// Read straight off each package's `corbits.workflow` block, no second copy.
 import { type } from "arktype";
 
 import assistantPkg from "../../../agents/myra/package.json";
@@ -38,13 +25,8 @@ function workflowBlock(pkg: {
   return parsed;
 }
 
-/**
- * One named field a mail trigger reads by name — the create-time UI's only
- * source of truth for what a workflow's trigger actually expects (see a
- * workflow's own system prompt / intake tool for the underlying contract
- * this mirrors). `key` is the exact field name a trigger payload carries —
- * never relabeled or humanized before it reaches the workflow.
- */
+/** One named field a mail trigger reads by name — the create-time UI's only
+ * source of truth for what a workflow's trigger expects. */
 export const WorkflowTriggerField = type({
   key: "/^[a-zA-Z][a-zA-Z0-9]*$/",
   // Explicit, never defaulted: `"text"` renders a plain input and
@@ -72,16 +54,8 @@ export type WorkflowCatalogEntry = {
    * `assistant`/Myra definition is `true`.
    */
   readonly conversational: boolean;
-  /**
-   * Where a run's result actually lands — the honest end-to-end
-   * contract a routine's "Deliver results to" step depends on. Every
-   * entry states this plainly, whether or not it is automatable:
-   * `"workbench"` posts into the picked delivery workbench's thread —
-   * every catalog entry today; `"inbox"` never posts to a workbench at
-   * all — its result reaches only the creator's Inbox, so a create/run
-   * flow for it must never collect or require a deliveryWorkbenchId that
-   * would otherwise be silently discarded.
-   */
+  /** Where a run's result lands: `"workbench"` posts into the picked
+   * delivery workbench's thread; `"inbox"` reaches only the creator's Inbox. */
   readonly deliveryMode: "workbench" | "inbox";
   /** One honest sentence: what this workflow actually does. No metrics, no hype. */
   readonly whatItDoes: string;
@@ -96,20 +70,14 @@ export type WorkflowCatalogEntry = {
   readonly exampleOutput: string;
   /** A short, honestly-hedged hint — never fabricated precision. */
   readonly typicalDuration: string;
-  /**
-   * Named trigger inputs a person can fill in at create time (the routine
-   * create stepper) or on a manual run — omitted entirely for workflows
-   * whose trigger carries no human-supplied content (see each entry's own
-   * comment for why). Order is display order.
-   */
+  /** Named trigger inputs a person can fill in at create time or on a
+   * manual run, in display order. Omitted when there's nothing to fill in. */
   readonly triggerFields?: readonly WorkflowTriggerField[];
 };
 
-/**
- * Every known workbench workflow package, keyed by the asset name seed
- * deploys under. Agent definitions created at runtime are never listed
- * here, so they cannot pass the automatable filter by accident.
- */
+/** Every known workbench workflow package. Agent definitions created at
+ * runtime are never listed here, so they cannot pass the automatable
+ * filter by accident. */
 export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   {
     ...workflowBlock(assistantPkg),
@@ -140,27 +108,16 @@ export function isAutomatableWorkflowName(name: string): boolean {
   return byAssetName.get(name)?.automatable === true;
 }
 
-/**
- * Whether a workflow definition name is fit to offer as a DM/chat target
- * (the sidebar's agent rows, a taskable-agent picker, …) rather than a
- * triggered automation utility. A name absent from this catalog is an
- * agent-directory-created definition — "Agent definitions created at
- * runtime are never listed here" (see `WORKFLOW_CATALOG`'s own comment) —
- * and is always conversational; a name present here is conversational
- * only when its entry says so (`assistant`/Myra, the only entry today).
- */
+/** Whether a workflow name is fit to offer as a DM/chat target. A name
+ * absent from the catalog is agent-directory-created and always
+ * conversational; a catalog entry is conversational only when it says so. */
 export function isConversationalWorkflowName(name: string): boolean {
   const entry = byAssetName.get(name);
   return entry === undefined || entry.conversational;
 }
 
-/**
- * Whether a routine on this workflow needs a `deliveryWorkbenchId` at
- * all — `false` only for a known `"inbox"`-delivering entry (see
- * `WorkflowCatalogEntry.deliveryMode`). An unknown name defaults `true`
- * (workbench required): the safe, prior-behavior default when a workflow
- * isn't catalog-known at all.
- */
+/** Whether a routine on this workflow needs a `deliveryWorkbenchId`. An
+ * unknown name defaults to `true` (workbench required). */
 export function deliveryWorkbenchRequiredForWorkflowName(name: string): boolean {
   return byAssetName.get(name)?.deliveryMode !== "inbox";
 }
@@ -199,22 +156,10 @@ export type TriggerFieldsValidation =
   | { readonly ok: true }
   | { readonly ok: false; readonly message: string };
 
-/**
- * The create-time boundary check for a routine's stored `input`
- *: inputs bind at USE, never at creation, so a required
- * field with no value at all in `input` is never a create-time
- * rejection — a workflow with a required trigger field can still be
- * created with it left open until someone actually runs it. Only a
- * value the caller explicitly provided gets checked,
- * and only for basic shape (a non-empty string) — a key present but
- * blank is a caller bug, not an open input, and still rejected.
- * `kind: "agent"` resolution (does a provided value name a real
- * taskable definition) is a separate, still-eager check a host layers
- * on top (`apps/hub/src/index.ts`'s `routineInputValid`) since it
- * needs a tenant DB lookup this function can't do. Fire-time
- * validation (a host's own launcher definition checks) remains the
- * authoritative required-field gate.
- */
+/** Create-time boundary check for a routine's stored `input`. Inputs bind at
+ * use, never at creation, so a missing required field is not rejected here
+ * — only a caller-provided but blank value is. Fire-time validation remains
+ * the authoritative required-field gate. */
 export function validateTriggerFieldsAtCreate(
   fields: readonly WorkflowTriggerField[],
   input: Record<string, unknown>,

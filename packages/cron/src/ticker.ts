@@ -1,10 +1,7 @@
-// Turns due cron schedules into mail. Every tick opens one transaction,
-// claims whatever rows are due with `SELECT ... FOR UPDATE SKIP LOCKED` (so
-// two tickers racing the same table never double-fire a row), delivers
-// each, and stamps `last_fired_at`. A schedule that missed several ticks
-// (the process was down, the poll was slow) fires once for the most recent
-// due minute, never once per missed tick — `last_fired_at` is only ever
-// "did this fire since its last fire," not a queue to drain.
+// Turns due cron schedules into mail. `SELECT ... FOR UPDATE SKIP LOCKED`
+// means two tickers racing the same table split due rows rather than
+// double-fire; a schedule that missed several ticks fires once for the
+// most recent due minute, never once per missed tick.
 import { eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
@@ -40,12 +37,8 @@ export type CronTicker = {
   stop(): void;
 };
 
-/**
- * A schedule's next fire time: `nextCronFireAfter` from its `last_fired_at`
- * when it has fired before, or from `created_at` when it never has — a
- * freshly saved schedule is due at its first matching minute after
- * creation, not retroactively for every minute since the epoch.
- */
+/** A freshly saved schedule is due at its first matching minute after
+ * creation, not retroactively for every minute since the epoch. */
 function isDue(
   row: { expression: string; lastFiredAt: Date | null; createdAt: Date },
   now: Date,

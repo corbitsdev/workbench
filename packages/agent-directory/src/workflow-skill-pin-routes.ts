@@ -1,26 +1,6 @@
-// Gives a running workflow (Myra) a way to pin a skill onto ANY
-// definition in its own tenant — the execution half of a `pin_skill`
-// tool the workbench-tools side wires up, mirroring this package's own
-// `createWorkflowCapabilityRoutes`: a workflow child has
-// no browser session, only its sidecar bearer token and its own run
-// address, so it authenticates through a `WorkflowRunAuthenticator`
-// rather than the tenant-session pipeline `./routes.ts` uses. Mounted
-// OUTSIDE tenant-session middleware.
-//
-// Unlike `workflow-capability-routes.ts` (self-DEFINITION scoped: a run
-// may only touch its own agent definition), this surface is
-// self-TENANT scoped: the caller may pin a skill onto any definition
-// that belongs to its own tenant, including a definition someone else
-// authored. That is deliberately wider, for the same reason
-// `workflow-dispatch-routes.ts`'s file header gives for skipping
-// `requireGrant`: `@corbits/skills-tools`' `pin_skill` tool declares
-// `approval: "ask"`, so the reactor suspends every call as a pending
-// approval and renders it in-chat before this route ever runs — a
-// human already approved this exact pin. The human is the authorizer
-// here, not a grant row; this route still enforces, unconditionally,
-// that the target definition belongs to the authenticated run's own
-// tenant and is never a workbench host (the same host guard
-// `workflow-capability-routes.ts` applies).
+// Gives a running workflow (Myra) a way to pin a skill onto any definition
+// in its own tenant. `pin_skill` declares `approval: "ask"`, so a human
+// already approved this exact pin before the route runs.
 import { type } from "arktype";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
@@ -45,11 +25,8 @@ import type {
   WorkflowRunAuthenticator as WorkflowCapabilityRunAuthenticator,
 } from "./workflow-capability-routes";
 
-/** Structurally the same run scope `workflow-capability-routes.ts`
- * resolves — reused by type alias rather than a fresh declaration, since
- * this route lives in the same package and there is no cycle risk to
- * avoid (contrast `workflow-dispatch-routes.ts`, which is in a different
- * package and redeclares the shape for that reason). */
+/** The same run scope `workflow-capability-routes.ts` resolves, reused by
+ * type alias since both live in this package. */
 export type WorkflowSkillPinRunScope = WorkflowCapabilityRunScope;
 export type WorkflowRunAuthenticator = WorkflowCapabilityRunAuthenticator;
 
@@ -64,10 +41,8 @@ function definitionNotFound(definitionId: string) {
   });
 }
 
-/** Same host-guard `./routes.ts`/`./workflow-capability-routes.ts`
- * apply: a workbench host is never a target a workflow run may mutate
- * through this surface either. Duplicated rather than imported since
- * `workflow-capability-routes.ts` does not export its own copy. */
+/** Same host-guard as `./routes.ts`, duplicated since
+ * `workflow-capability-routes.ts` doesn't export its own copy. */
 function hostGuardedRow(
   row: { readonly name: string; readonly assetId: string | null } | undefined,
 ): row is { readonly name: string; readonly assetId: string } {
@@ -85,9 +60,7 @@ export type CreateWorkflowSkillPinRoutesDeps = {
   skillIndex: PinnedSkillIndexResolver;
   authenticator: WorkflowRunAuthenticator;
   /** Deploys the definition's commit through the native source pipeline
-   * after the rewrite; the composition root injects the SAME
-   * `WorkflowDeployer` `@corbits/workflows`'s `./authoring`'s registry
-   * calls. */
+   * after the rewrite. */
   deployer: AgentDefinitionDeployer;
 };
 

@@ -1,15 +1,5 @@
-// The HTTP surface for Myra-backed agent-definition drafting
-//: tenant-scoped, `requireGrant`-gated, personal to the
-// requesting principal, request parsing via arktype at the boundary,
-// route registration only. Error copy at this boundary is plain
-// language for the person who typed the description; the technical
-// detail every fail-closed error class carries goes to the server log
-// instead.
-//
-// Relocated out of `@corbits/task-planner` (deleted along with the
-// rest of the tasks primitive) because this drafting flow was never a
-// task concept — it backs the "Describe" step of agent creation
-// (`CreateAgentPanel` and onboarding), which stays.
+// The HTTP surface for Myra-backed agent-definition drafting. Error copy is
+// plain language for the person who typed the description; detail is logged.
 import { type } from "arktype";
 import { Hono } from "hono";
 
@@ -37,14 +27,8 @@ const CreateAgentDefinitionDraftBody = type({
 
 export type CreateAgentDefinitionDraftRoutesDeps = {
   requireGrant: RequireGrant;
-  /**
-   * The agent-definition drafting port — omitted entirely on
-   * a host that hasn't wired Myra drafting up yet, in which case this
-   * route 404s rather than pretending to draft and always failing.
-   * The route never touches `./agent-definition-drafting.ts`'s
-   * runner/inventory machinery directly, so it stays testable with a
-   * plain stub — no database, no one-shot runner.
-   */
+  /** Omitted on a host that hasn't wired Myra drafting up yet, in which
+   * case the route answers 503 instead of pretending to draft. */
   draftAgentDefinition?(input: {
     readonly tenantId: string;
     readonly principalId: string;
@@ -53,13 +37,9 @@ export type CreateAgentDefinitionDraftRoutesDeps = {
   }): Promise<AgentDefinitionDraft>;
 };
 
-/** Every fail-closed error the agent-definition drafting path can throw
- * — Myra unresolvable, the run timing out or failing, an unparseable
- * reply, or an out-of-inventory model/tool package/skill reference —
- * reads as the same honest "couldn't draft" 422 to the person who typed
- * the description: from their point of view it is still "Myra's draft
- * didn't work out," never a REST-shaped bad request they authored
- * themselves. */
+/** Every fail-closed error the drafting path can throw reads as the same
+ * honest "couldn't draft" 422, never a REST-shaped bad request the person
+ * authored themselves. */
 function isDraftingFailure(err: unknown): boolean {
   return (
     err instanceof MyraAgentDefinitionDraftingUnavailableError ||

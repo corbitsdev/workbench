@@ -1,27 +1,13 @@
-// The guided-capability-add fail-closed check: an addition to a
-// definition's tools/skills/model is only ever accepted if it names
-// something the tenant's live inventory actually offers. This mirrors
-// this codebase's other inventory-validation ports (parse the
-// addition, then check its one reference against a `Set` built from the
-// inventory that was actually offered) exactly — but the caller
-// deploys through this package's own builder, so importing its
-// inventory type back here would cycle. `CapabilityInventory` below is
-// the same shape stripped to what a single addition needs to check
-// against; the composition root (`apps/hub`) wires it from the exact
-// same listers the drafting inventory uses, so the two inventories one
-// tenant sees are never allowed to drift apart even though the types
-// are declared twice.
+// The guided-capability-add fail-closed check: an addition is only
+// accepted if it names something the tenant's live inventory offers.
 import { type } from "arktype";
 
 export type CapabilityToolPackageEntry = { readonly name: string };
 export type CapabilitySkillEntry = { readonly name: string };
 export type CapabilityModelEntry = { readonly canonicalName: string };
 
-/**
- * The pins every created specialist carries unless the caller names its
- * own: firm memory and the ask_user interaction card. A specialist
- * without these is a name with a prompt.
- */
+/** The pins every created specialist carries unless the caller names its
+ * own. A specialist without these is a name with a prompt. */
 export const BASELINE_AGENT_TOOL_PINS = ["@corbits/memory", "@corbits/interaction-tools"] as const;
 
 /** The baseline pins this tenant can actually resolve — a package the
@@ -59,11 +45,7 @@ export const AddCapabilityInput = type({
   .or(type({ kind: "'model'", canonicalName: "string > 0" }));
 export type AddCapabilityInput = typeof AddCapabilityInput.infer;
 
-/**
- * Asserts `addition` names something `inventory` actually offers. Throws
- * `CapabilityOutOfInventoryError` on the first (only) violation — never
- * partially trusted, exactly like the other inventory checks this mirrors.
- */
+/** Asserts `addition` names something `inventory` actually offers. */
 export function assertCapabilityInInventory(
   addition: AddCapabilityInput,
   inventory: CapabilityInventory,

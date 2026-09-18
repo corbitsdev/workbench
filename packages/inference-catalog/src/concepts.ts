@@ -1,25 +1,5 @@
 // The concept vocabulary: the words an agent uses to ask for a model.
-//
-// Pure data, no branching and no network, so it is importable on its own —
-// the `CATALOG_SEEDS` idiom. It is deliberately not a table: this is product
-// vocabulary that ships with the build and has to be reviewable in a diff,
-// and a table would be a second store for something the bench policy row
-// already parameterizes. A bench deviates through its policy's concept
-// ceilings and allow/deny lists, never by forking the vocabulary.
-//
-// Ceilings are USD per million tokens, input and output kept separate — a
-// blended number would hide which axis a workload actually spends on. They
-// are soft by default: a model over ceiling is flagged and sorted last, not
-// dropped, so a bench whose only provider is expensive still gets an answer.
-//
-// Capabilities are `@intx/types`' vocabulary, the one `model_offering`
-// stores and source resolution filters on. It is narrower than the pinned
-// catalog's: `long-context` and `prompt-caching` are baked onto catalog
-// offerings but are not storable capability values, so no concept can filter
-// on them. Where a concept wanted "handles a huge input", its reference mix
-// carries that meaning instead — a 10M-token input mix ranks the model that
-// is cheap on enormous inputs first, which is the decision the capability
-// was standing in for.
+// Design rationale: docs/inference-concepts.md.
 import type { Capability } from "@intx/types";
 
 /** The token mix that defines "cheapest" for a concept, in millions of

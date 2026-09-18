@@ -1,7 +1,5 @@
-// A definition's `workflow`-kind asset carries its own git history. The
-// git history IS the version store here: no separate versions table, and
-// restoring a version re-commits an older commit's blobs onto the default
-// ref rather than rewriting history.
+// A definition's `workflow`-kind asset carries its own git history as the
+// version store; restoring re-commits an older commit's blobs onto the ref.
 import fs from "node:fs";
 import git from "isomorphic-git";
 

@@ -1,16 +1,5 @@
-// The catalog shape chain resolution works on: the platform's own model
-// discovery response (`GET /api/tenants/:tenantId/models`), parsed.
-//
-// That route already does the parts that belong to the platform — the
-// ancestor walk, shadowing, disable suppression, and picking each
-// offering's active price per currency — so this package restates none of
-// them. It declares the wire shape once, as an arktype schema a caller
-// parses an untrusted response with, and flattens it into the per-offering
-// rows the resolver ranks.
-//
-// Nothing here reaches a database. The types are the platform's response,
-// not its tables, which is what lets this package ship to a workflow child
-// with no server dependency at all.
+// The catalog shape chain resolution works on: the platform's model
+// discovery response, parsed. Nothing here reaches a database.
 import { type } from "arktype";
 
 import { Capability } from "./capabilities";
