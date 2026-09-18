@@ -1,15 +1,17 @@
-// The browser side of the first-login hook: reads the client converge
-// state instead of a hub-served setup-status route — a hub with
-// zero owned tenants means setup-required so the UI routes into the setup
-// wizard; any owned tenant means a bench exists and the shell loads
-// normally. Read-only on purpose: provisioning itself back onto
-// the hub is T6/T7's surface, so this never mints anything — a failed
-// read blocks the shell loudly rather than leaving the user silently
-// benchless.
+// The browser side of the first-login hook: a read-only probe that never
+// mints anything. Setup counts as done only once the primary tenant has
+// Myra live, so an install that failed midway resumes instead of landing
+// in an empty shell.
 
 import { type } from "arktype";
 import { reportError } from "@corbits/error-sink";
-import { createFetchStockHub, findOwnedTenants } from "./needs-converge";
+import { resolveMyraDefinitionRefId } from "./client-bootstrap";
+import {
+  createFetchStockHub,
+  findOwnedTenants,
+  hasActiveMyraPrincipal,
+  type StockHub,
+} from "./needs-converge";
 
 /** Any credential row this bench actually has stored — the cheap
  * pre-skip read the home page's first-workbench flow uses to tell "no
@@ -74,10 +76,18 @@ export type ProvisionOutcome =
       readonly refId?: string;
     };
 
-export async function triggerFirstLoginProvisioning(): Promise<ProvisionOutcome> {
+export async function triggerFirstLoginProvisioning(
+  hub: StockHub = createFetchStockHub(),
+): Promise<ProvisionOutcome> {
   try {
-    const owned = await findOwnedTenants(createFetchStockHub());
-    return owned.length === 0 ? { kind: "needs-onboarding" } : { kind: "existing-member" };
+    const owned = await findOwnedTenants(hub);
+    const primary = owned.find((tenant) => tenant.parentId === null);
+    if (primary === undefined) return { kind: "needs-onboarding" };
+    const principals = await hub.listPrincipals(primary.id);
+    const myraRefId = resolveMyraDefinitionRefId() ?? "myra";
+    return hasActiveMyraPrincipal(principals, myraRefId)
+      ? { kind: "existing-member" }
+      : { kind: "needs-onboarding" };
   } catch (cause) {
     const refId = reportError(cause, { operation: "first_login_provisioning" });
     return { kind: "error", message: FALLBACK_ERROR_MESSAGE, refId };
