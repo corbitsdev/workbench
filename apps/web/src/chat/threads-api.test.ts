@@ -38,6 +38,7 @@ function meTurn(subject: string, body: string) {
   return {
     id: "Sent:1",
     messageId: "m1",
+    parentId: undefined,
     address: "run_alice@example.com",
     author: "me" as const,
     subject,

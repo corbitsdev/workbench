@@ -248,7 +248,9 @@ function ChatTranscript({
                 <IdentityAvatar
                   kind={message.author === "me" ? "person" : "agent"}
                   name={message.authorName}
-                  principalId={message.author === "me" ? (selectedPrincipalId ?? "me") : chat.id}
+                  principalId={
+                    message.author === "me" ? (selectedPrincipalId ?? "me") : chat.agent.id
+                  }
                 />
               </span>
               <div className="chat-thread-body">
