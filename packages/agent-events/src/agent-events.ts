@@ -110,9 +110,7 @@ export function toolDoneResult(
   const isError = (result as { isError?: unknown }).isError === true;
   // `detail` rides alongside `content` on the underlying `ToolResult`
   // (`@intx/types/runtime`) as the side channel for structured metadata
-  // that isn't meant for the model's own eyes — a missing-credential
-  // signal (`@corbits/connections`' `parseMissingCredentialDetail`)
-  // being the one caller today.
+  // that isn't meant for the model's own eyes.
   const detail = (result as { detail?: unknown }).detail;
   return { callId, content, isError, detail };
 }

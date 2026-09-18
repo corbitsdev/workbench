@@ -57,13 +57,11 @@ export function tarballsCoverRequiredSeedPackages(filenames: Iterable<string>): 
  */
 export const CORBITS_TOOL_PACKAGE_DIRS: readonly string[] = [
   new URL("../../../tools/capability", import.meta.url).pathname,
-  new URL("../../../tools/connections", import.meta.url).pathname,
   new URL("../../../tools/catalog", import.meta.url).pathname,
   new URL("../../../tools/agent-directory", import.meta.url).pathname,
   new URL("../../../tools/access", import.meta.url).pathname,
   new URL("../../../tools/interaction", import.meta.url).pathname,
   new URL("../../../tools/skills-tools", import.meta.url).pathname,
-  new URL("../../../tools/mcp", import.meta.url).pathname,
   new URL("../../../tools/tools-skills", import.meta.url).pathname,
   new URL("../../../tools/github", import.meta.url).pathname,
   new URL("../../../tools/web-search", import.meta.url).pathname,

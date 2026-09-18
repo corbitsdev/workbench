@@ -12,8 +12,7 @@
 // every price is either real or reported as unknown. Nothing here invents a
 // model, and nothing here reports a price of zero for something unpriced.
 //
-// All three tools read only, so none declares an `approval` key — the same
-// call `@corbits/connections-tools` makes for `list_connections`.
+// All three tools read only, so none declares an `approval` key.
 //
 // The chain is resolved here, in the workflow child, from two stock tenant
 // reads (see `client.ts`). Nothing about a kind of work, a price, or a
@@ -39,8 +38,7 @@ export const LIST_MODEL_CONCEPTS_TOOL = "list_model_concepts";
 export const PICK_MODELS_TOOL = "pick_models";
 export const ESTIMATE_RUN_COST_TOOL = "estimate_run_cost";
 
-/** Env this bundle needs beyond `BaseEnv`: the run's hub-reach credential,
- * mirroring `@corbits/connections-tools`' `WorkflowConnectionEnv`. */
+/** Env this bundle needs beyond `BaseEnv`: the run's hub-reach credential. */
 export interface WorkflowCatalogEnv extends BaseEnv {
   readonly hubCatalogUrl: string;
   /** The run's own tenant — the `:tenantId` segment of a stock route. */

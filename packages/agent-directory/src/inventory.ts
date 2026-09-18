@@ -4,10 +4,9 @@
 // seam): this package owns the shape and the assembly, never the
 // listing logic itself — a tenant's usable agents, tool packages,
 // skills, and models are each already owned by another package
-// (`@corbits/tasks`' definition list, `@corbits/connections`'
-// registry ∩ credentials, `@corbits/skills`' registry, the tenant
-// model catalog route), so task-planner only defines the seam those
-// listers plug into.
+// (`@corbits/tasks`' definition list, the stock credentials route,
+// `@corbits/skills`' registry, the tenant model catalog route), so
+// task-planner only defines the seam those listers plug into.
 //
 // Memory folds into `listUsableToolPackages` rather than getting its
 // own lister: memory is consumed by an agent as a tool package pin

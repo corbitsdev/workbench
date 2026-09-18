@@ -31,8 +31,6 @@
   },
   "devDependencies": {
     "@corbits/agent-directory-tools": "workspace:*",
-    "@corbits/connections": "workspace:*",
-    "@corbits/connections-tools": "workspace:*",
     "@corbits/interaction-tools": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
