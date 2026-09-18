@@ -28,6 +28,7 @@
         "jiti": "^2.7.0",
         "oxfmt": "0.68.0",
         "oxlint": "1.83.0",
+        "postgres": "catalog:",
         "puppeteer-core": "^25.7.0",
         "typescript": "6.0.3",
       },

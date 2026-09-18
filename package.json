@@ -45,7 +45,8 @@
     "@intx/hub-sessions": "workspace:*",
     "@intx/authz": "0.3.0",
     "@intx/harness": "workspace:*",
-    "drizzle-orm": "catalog:"
+    "drizzle-orm": "catalog:",
+    "postgres": "catalog:"
   },
   "engines": {
     "bun": ">=1.2.0"
