@@ -29,6 +29,7 @@ import {
   ancestorChain,
   listRoomParticipants,
   readRoom,
+  resolveAvatarName,
   resolveParticipantName,
   sendToRoom,
   subscribeToInbox,
@@ -60,9 +61,10 @@ function RoomMessageRow({
   /** Undefined in the sub-thread panel, where a row is read-only context. */
   readonly onReply?: (message: RoomMessage) => void;
 }) {
-  // Avatars read off the participant's display name (Myra → "M"), never the
-  // run address local part a mail turn otherwise carries.
-  const displayName = resolveParticipantName(message, participants);
+  // Avatars read off the participant's real name — the person's own
+  // included, never the "You" transcript label — falling back to the
+  // address local part a mail turn otherwise carries.
+  const avatarName = resolveAvatarName(message, participants);
   const matched = participants.find((participant) => participant.address === message.address);
   const kind = message.author !== "me" && matched?.kind === "agent" ? "agent" : "person";
   // The person's own send carries a trailing roster block so agents in the
@@ -75,7 +77,7 @@ function RoomMessageRow({
       <span className="shell-ch-avatar">
         <IdentityAvatar
           kind={kind}
-          name={displayName}
+          name={avatarName}
           principalId={matched?.id ?? message.address}
         />
       </span>
