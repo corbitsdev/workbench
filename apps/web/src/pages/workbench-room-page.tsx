@@ -23,6 +23,7 @@ import { IdentityAvatar } from "@/chat/avatar";
 import { Composer } from "@/chat/composer";
 import { Markdown } from "@/chat/markdown";
 import { MessageAttachments } from "@/chat/message-attachments";
+import { resolveMessagePackage } from "@/chat/deployable-package";
 import {
   ancestorChain,
   listRoomParticipants,
@@ -63,6 +64,7 @@ function RoomMessageRow({
   const displayName = resolveParticipantName(message, participants);
   const matched = participants.find((participant) => participant.address === message.address);
   const kind = message.author !== "me" && matched?.kind === "agent" ? "agent" : "person";
+  const { pkg, renderedBody } = resolveMessagePackage(message.attachments, message.body);
   return (
     <div className="chat-thread-message" data-author={message.author}>
       <span className="shell-ch-avatar">
@@ -73,8 +75,8 @@ function RoomMessageRow({
         />
       </span>
       <div className="chat-thread-body">
-        <Markdown text={message.body} />
-        <MessageAttachments tenantId={roomTenantId} attachments={message.attachments} />
+        <Markdown text={renderedBody} />
+        <MessageAttachments tenantId={roomTenantId} attachments={message.attachments} pkg={pkg} />
         {onReply === undefined ? null : (
           <button type="button" className="room-replies-link" onClick={() => onReply(message)}>
             Reply

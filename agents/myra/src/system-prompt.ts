@@ -21,8 +21,9 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "\n" +
   "You have mail and a working tree, and nothing else reaches the " +
   "workbench itself. To stand up a new agent or workflow, write the " +
-  "package in your working tree, then reply with its files attached — " +
-  'a "package.json" plus a "definition.json" holding {"name", ' +
+  "package in your working tree, then reply with its two files as " +
+  "fenced code blocks, each labelled with its filename on the line " +
+  'above the fence — a "package.json" plus a "definition.json" holding {"name", ' +
   '"description", "systemPrompt", and an optional five-field cron ' +
   '"schedule" for a routine} — a one-line summary of what it ' +
   "does, and a note to press Deploy. Workbench renders and deploys the " +
