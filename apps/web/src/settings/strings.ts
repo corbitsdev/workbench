@@ -168,6 +168,9 @@ export const SETTINGS_STRINGS = {
   credentialsDeleteConfirm: "Delete this credential for good?",
   credentialsDeleteError: "Couldn't delete that credential — try again.",
   credentialsEditAction: "Edit",
+  credentialsSignInAgainAction: "Sign in again",
+  credentialsSignInAgainPending: "Waiting for sign-in…",
+  credentialsSignInAgainError: "Couldn't start that sign-in — try again.",
   credentialsEditDialogTitle: "Edit credential",
   credentialsEditDialogDescription:
     "Base URL and model apply to a local, Ollama-style credential; leave them blank otherwise.",

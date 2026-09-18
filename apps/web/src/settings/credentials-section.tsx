@@ -1,5 +1,7 @@
 // The stock credential routes are the only way a key gets stored in this
-// repo — no connector registry, no OAuth flow, no per-provider card.
+// repo — no connector registry, no per-provider card. A credential minted
+// by signing in is renewed by signing in again, through the same hub-hosted
+// login the onboarding step uses.
 
 import {
   Button,
@@ -26,6 +28,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { QueryView, toAPIQuery } from "@/lib/api-query";
+import { readProviderLogin, startProviderLogin } from "@/settings/inference";
 import { tenantKeys } from "@/query-client";
 import {
   createCredential,
@@ -40,6 +43,15 @@ import {
 } from "./credentials-api";
 import { SETTINGS_STRINGS } from "./strings";
 
+/** The registered OAuth provider a credential was minted by, as
+ * `@corbits/oauth-core` records it; absent on a pasted key. */
+function oauthProviderOf(credential: Credential): string | null {
+  const metadata: unknown = credential.metadata;
+  if (typeof metadata !== "object" || metadata === null) return null;
+  const value = (metadata as Record<string, unknown>).oauthProvider;
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
 type CredentialsData = {
   readonly credentials: readonly Credential[];
   readonly providers: readonly Provider[];
@@ -49,6 +61,7 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Credential | null>(null);
+  const [loginId, setLoginId] = useState<string | null>(null);
 
   // Credentials and their providers load together: creating one needs the
   // provider row for the typed name, so a split read would race the form.
@@ -91,6 +104,41 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
       setCreateOpen(false);
       reload();
     },
+  });
+
+  // Re-signing in files the tokens under the same credential name, so the
+  // hub replaces the material in place and every offering keeps pointing at it.
+  const signIn = useMutation({
+    mutationFn: (credential: Credential) => {
+      const provider = oauthProviderOf(credential);
+      if (tenantId === null || provider === null) {
+        throw new Error("that credential was not created by signing in");
+      }
+      return startProviderLogin(tenantId, {
+        provider,
+        providerId: credential.providerId,
+        credentialName: credential.name,
+      });
+    },
+    onSuccess: (started) => {
+      setLoginId(started.loginId);
+      window.open(started.authorizeUrl, "_blank", "noopener,noreferrer");
+    },
+  });
+
+  const login = useQuery({
+    queryKey: tenantKeys.credentials(tenantId ?? "none").concat("oauth-login", loginId ?? ""),
+    enabled: tenantId !== null && loginId !== null,
+    queryFn: async () => {
+      if (tenantId === null || loginId === null) throw new Error("no sign-in in flight");
+      const state = await readProviderLogin(tenantId, loginId);
+      if (state.status !== "pending") {
+        setLoginId(null);
+        reload();
+      }
+      return state;
+    },
+    refetchInterval: (query) => (query.state.data?.status === "pending" ? 2000 : false),
   });
 
   const update = useMutation({
@@ -150,10 +198,17 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
               {SETTINGS_STRINGS.credentialsDeleteError}
             </p>
           )}
+          {signIn.error === null || signIn.error === undefined ? null : (
+            <p className="settings-inline-error" role="alert">
+              {SETTINGS_STRINGS.credentialsSignInAgainError}
+            </p>
+          )}
           <CredentialsTable
             credentials={credentials}
+            signingIn={signIn.isPending || login.data?.status === "pending"}
             onEdit={setEditing}
             onDelete={(credential) => del.mutate(credential)}
+            onSignIn={(credential) => signIn.mutate(credential)}
           />
           <CreateCredentialDialog
             open={createOpen}
@@ -179,12 +234,16 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
 
 function CredentialsTable({
   credentials,
+  signingIn,
   onEdit,
   onDelete,
+  onSignIn,
 }: {
   readonly credentials: readonly Credential[];
+  readonly signingIn: boolean;
   readonly onEdit: (credential: Credential) => void;
   readonly onDelete: (credential: Credential) => void;
+  readonly onSignIn: (credential: Credential) => void;
 }) {
   if (credentials.length === 0) {
     return (
@@ -211,6 +270,18 @@ function CredentialsTable({
             <TableCell>{credential.type}</TableCell>
             <TableCell>{credential.status}</TableCell>
             <TableCell className="settings-actions-cell">
+              {credential.type === "oauth_token" && oauthProviderOf(credential) !== null ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={signingIn}
+                  onClick={() => onSignIn(credential)}
+                >
+                  {signingIn
+                    ? SETTINGS_STRINGS.credentialsSignInAgainPending
+                    : SETTINGS_STRINGS.credentialsSignInAgainAction}
+                </Button>
+              ) : null}
               <Button variant="outline" size="sm" onClick={() => onEdit(credential)}>
                 {SETTINGS_STRINGS.credentialsEditAction}
               </Button>
