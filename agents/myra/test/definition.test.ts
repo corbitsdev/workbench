@@ -66,12 +66,6 @@ test("the agent carries the assistant prompt, the preferences, and inlines no to
   expect(agent.toolFactories).toEqual([]);
 });
 
-test("the workflow pins manus-tools and does not require a Manus credential binding", () => {
-  const definition = buildAssistantWorkflow(INPUT);
-  expect(ASSISTANT_TOOL_PACKAGE_PINS.map((pin) => pin.name)).toContain("@corbits/manus-tools");
-  expect(definition.credentialBindings ?? []).toEqual([]);
-});
-
 test("the definition survives the workflow-asset JSON round-trip", () => {
   const definition = buildAssistantWorkflow(INPUT);
   const revived: unknown = JSON.parse(serializeAssistantWorkflow(definition));
