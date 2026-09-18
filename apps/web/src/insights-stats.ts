@@ -36,58 +36,32 @@ export type InsightsStats = {
 /** Cap recent-run table rows so the page stays scannable. */
 export const INSIGHTS_RECENT_LIMIT = 12;
 
-/**
- * Purpose runs only. `insights-page.tsx` sources `runs` from
- * `insightsTopLevelRunsPath` (see `./insights-api.ts`), the native `GET
- * /workflows/runs` top-level listing whose own predicate already
- * excludes every non-top-level run — no workbench-host anchors exist to
- * filter post-cutover, so this is now an identity pass kept for
- * callers that still name it explicitly.
- */
+// Identity pass: the native `GET /workflows/runs` feed already excludes
+// non-top-level runs, kept only for callers that still name it explicitly.
 export function purposeRunsForInsights(runs: readonly InsightsRun[]): readonly InsightsRun[] {
   return runs;
 }
 
-/**
- * A run's human-facing name: its routine's name when the feed
- * attributed one, honestly falling back to the definition name for a run
- * with no routine attribution — e.g. every row of the native
- * `GET /workflows/runs` listing, which carries no
- * `routineName`, or a directly launched workflow. Never mapped from a
- * client-side lookup table.
- */
+// Falls back to definition name since the native feed carries no
+// `routineName`; never mapped from a client-side lookup table.
 export function runDisplayName(run: InsightsRun): string {
   return run.routineName ?? run.definitionName;
 }
 
-/**
- * Keep runs whose `createdAt` falls inside `[fromIso, toIso]` (inclusive).
- * Invalid timestamps are dropped so KPIs never invent rows.
- */
+// Keeps runs whose `createdAt` falls inside `[fromIso, toIso]`; invalid
+// timestamps are dropped so KPIs never invent rows.
 export type DefinitionRunGroup = {
-  /** `routineId` when the newest run in the group fired from one,
-   * else `definitionId` — two different routines sharing one
-   * definition (e.g. two workbench-digest schedules) never merge into
-   * one group. The native `GET /workflows/runs` feed carries
-   * no routine attribution, so in practice this is always `definitionId`
-   * until a fires equivalent exists — the `routineId` branch is kept for
-   * that feed, not removed. */
+  /** `routineId` when set, else `definitionId` — kept distinct so two
+   * routines sharing one definition never merge into one group. */
   readonly groupKey: string;
   readonly displayName: string;
   /** Newest run first. */
   readonly runs: readonly InsightsRun[];
 };
 
-/**
- * "Run history" grouping for the Insights runs page: the same feed already
- * fetched for the flat list, bucketed by routine (falling back to
- * definition, for a run with no routine parent) and sorted newest-run
- * first — a client-side grouping of already-fetched data, no new endpoint.
- * With the native feed every row lacks routine attribution, so every
- * group is definition-keyed today; the routine branch rejoins once a
- * fires equivalent exists. Group order follows each group's own newest
- * run, newest overall first.
- */
+// Client-side grouping of already-fetched runs, no new endpoint. Every
+// group is definition-keyed today since the native feed lacks routine
+// attribution; the routine branch rejoins once a fires equivalent exists.
 export function groupRunsByDefinition(runs: readonly InsightsRun[]): readonly DefinitionRunGroup[] {
   const byGroupKey = new Map<string, InsightsRun[]>();
   for (const run of runs) {

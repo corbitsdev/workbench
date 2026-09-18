@@ -1,18 +1,6 @@
-// The Routines page's seam to stock workflow deployments: list, run-now,
-// pause/resume. `@corbits/workflows`'s deleted `./schedule/scheduled-route.ts`
-// (and the hub route it backed) is gone; this reads the stock deployments
-// listing (`GET /workflows/deployments`) joined against the tenant's workflow
-// assets (`GET /assets?kind=workflow`) for a display name, exactly the two
-// stock reads `vendor/intx/hub-api/src/routes/workflows.ts` exposes.
-//
-// The `schedule` trigger is reserved on Interchange but unimplemented — no
-// scheduler fires it — so a schedule here is a `@corbits/cron` row addressed
-// at the deployment's live run, joined in from `GET /cron` by that address
-// (the same `run_<id>@<domain>` join `chat/threads-api.ts` does against
-// `listTopLevelRuns`). Run-now and pause/resume have no backing stock route
-// either (`/deployments` is list/create only; no per-deployment PATCH or
-// trigger route exists), so both stay rejected promises with a message
-// naming the missing route, same pattern as before.
+// The Routines page's seam to stock workflow deployments. See
+// docs/routines-scheduling.md for the schedule join and why run-now/
+// pause/resume stay rejected promises.
 
 import { type } from "arktype";
 import { useQuery } from "@tanstack/react-query";
@@ -87,11 +75,8 @@ async function fetchJSON<T>(path: string, schema: (data: unknown) => T | type.er
   return parsed;
 }
 
-/** Myra's own deploy source and every agent `agent-deploy.ts` created are
- * `workflow`-kind assets too, but they're chat partners, not workflows —
- * excluded by the same asset naming the chat/deploy pipeline already owns
- * (`MYRA_SOURCE_CONFIG.assetName`, `agent-<slug>-source`), so this list
- * never depends on runtime agent state to stay accurate. */
+// Myra and every deployed agent are `workflow`-kind assets too, but they're
+// chat partners, not workflows — excluded by name, not runtime state.
 function isAgentAssetName(name: string): boolean {
   return name === MYRA_SOURCE_CONFIG.assetName || isAgentDeploySourceAssetName(name);
 }
@@ -165,13 +150,8 @@ export function setScheduledWorkflowStatus(
   );
 }
 
-/**
- * Tenant-scoped query via TanStack Query. Keys must be stable arrays that
- * already include the tenant id under the `["tenant", tenantId, ...]`
- * convention so a bench switch can `removeQueries` the whole prefix.
- * When `enabled` is false the previous result is not kept on screen — TQ
- * drops the active fetch and the adapter reports loading until re-enabled.
- */
+// Keys must be stable arrays under `["tenant", tenantId, ...]` so a bench
+// switch can `removeQueries` the whole prefix.
 export function useTenantQuery<T>(
   key: readonly unknown[],
   enabled: boolean,

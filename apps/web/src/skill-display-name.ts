@@ -1,8 +1,5 @@
-// Person-facing title for a skill roster/detail surface. The registry id
-// stays the kebab slug; what a person reads is either an explicit
-// `displayTitle` (or the native skill asset's `displayName`, which the
-// stock asset routes carry as of) or a Title Case reading of that
-// slug.
+// The registry id stays the kebab slug; a person reads an explicit
+// `displayTitle`/`displayName`, or a Title Case reading of the slug.
 import { humanizeSlug } from "@/chat/wire/display-name";
 
 export function skillDisplayName(skill: {
