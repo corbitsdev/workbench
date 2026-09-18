@@ -1237,20 +1237,10 @@ export function createSidecarDeployRouter(deps: {
   }
 
   /**
-   * Provision one step of a multi-step deploy WITHOUT spawning. The hub
-   * stages each step's deploy tree before firing the deployment-level
-   * workflow frame; a full-closure deploy pack still needs an initialized
-   * agent-state repo to apply into and the hub key recorded to verify the
-   * pack commit signature. This does exactly those two things -- the same
-   * harness-free `initRepo` + `recordHubKey` seam the single-step head uses
-   * -- and constructs no supervisor or child. The deployment-level workflow
-   * frame (fired once after every step is provisioned) spawns the child,
-   * which reads each step's staged deploy tree from disk.
-   *
-   * Returns the sidecar's principal public key so the link's
-   * `agent.deploy.ack` carries a key, matching the multi-step ack. A
-   * per-step address is workflow-derived and records no `agent_instance`
-   * key, so the hub discards this value.
+   * Provisions one step of a multi-step deploy WITHOUT spawning (same
+   * initRepo + recordHubKey seam the single-step head uses), since a
+   * full-closure deploy pack needs an initialized repo before the
+   * deployment-level workflow frame spawns the child.
    */
   async function provisionStep(frame: AgentDeployFrame): Promise<DeployRouterResult> {
     await deps.sessions.initRepo(frame.agentAddress);
@@ -1264,19 +1254,10 @@ export function createSidecarDeployRouter(deps: {
     frame: AgentDeployFrame,
     projection: NonNullable<AgentDeployFrame["workflow"]>,
   ): Promise<DeployRouterResult> {
-    // Reject a re-deploy of an address already live OR mid-deploy in this
-    // process BEFORE touching any durable state. The durable writes below (the
-    // run record, the materialized closure, step grants) are destructive
-    // overwrites of state owned by whatever deployment currently holds the
-    // address; overwriting is only legal when this deploy owns the address.
-    // `activeSupervisors` catches an address whose deploy has completed;
-    // `reservingDeployAddresses` catches one whose deploy is still in flight.
-    // The map is populated only after `spawn` succeeds, so the has-check alone
-    // leaves a window in which two frames both pass and the loser's catch below
-    // deletes the winner's live record; the reservation set closes it. A
-    // re-deploy after `undeploy` passes: `undeploy` drops the
-    // `activeSupervisors` entry, and a failed or completed deploy has already
-    // cleared its reservation.
+    // activeSupervisors catches a completed deploy; reservingDeployAddresses
+    // catches one still in flight, closing the window before spawn populates
+    // the map, where two frames could both pass and the loser deletes the
+    // winner's live record.
     if (
       activeSupervisors.has(frame.agentAddress) ||
       reservingDeployAddresses.has(frame.agentAddress)
@@ -1288,9 +1269,7 @@ export function createSidecarDeployRouter(deps: {
 
     const runId = deriveDeploymentId(frame.agentAddress);
 
-    // Resolve the sidecar data dir once: the run record, the materialized
-    // closure, and the per-step scratch all root under it. Required for any
-    // deployment that spawns a child.
+    // The run record, materialized closure, and per-step scratch all root under this.
     const dataDir = stepStateDataDir;
     if (typeof dataDir !== "string" || dataDir.length === 0) {
       throw new Error(
@@ -1298,39 +1277,12 @@ export function createSidecarDeployRouter(deps: {
       );
     }
 
-    // Claim the deployment slug BEFORE any durable write so a colliding runId
-    // (two distinct addresses projecting to the same slug) is rejected before
-    // the closure, the step grants, or the supervisor touch disk -- the
-    // router's "no repo state touched before rejection" guarantee. The claim is
-    // released on any failure below; a successful deploy keeps it (the undeploy
-    // hook releases it at teardown). The spawn core owns unwinding the
-    // supervisor and registrations it stands up; the slug is the caller's.
+    // Claimed before any durable write so a colliding runId is rejected before disk is touched; released on failure, kept on success (undeploy releases it).
     claimSlug(runId, frame.agentAddress);
-    // Hold the single-flight reservation across the async body below and clear
-    // it in the finally. Everything above is synchronous and throws before any
-    // durable write, so the reservation is only needed from the first await
-    // here onward; the top-of-method guard already consults this set for a
-    // concurrent frame, and claimSlug/runId derivation above cannot yield
-    // control before this point.
     reservingDeployAddresses.add(frame.agentAddress);
     try {
-      // Source-ref apply -- the only deploy lineage. Materialize EXACTLY the
-      // hub's frozen dependency `closure` and evaluate the PINNED CODE to the
-      // workflow definition; the deploy frame carries no inline definition to
-      // trust. The closure is applied byte-for-byte (concrete versions +
-      // integrity SRIs); the sidecar never re-resolves the pin at apply time.
-      // The re-evaluated projection IS the runnable definition, and the child's
-      // load-boundary re-verify recomputes the wire hash over the closure and
-      // fails closed if it diverges from the hub-approved hash, so a closure
-      // that no longer projects to the approved content cannot deploy.
-      //
-      // Check the frame's inline source assets out into the durable
-      // per-deployment store the closure materializes from. Reclaim the store
-      // first so a redeploy drops assets no longer referenced. This runs only on
-      // the DEPLOY path -- restore re-reads the store the deploy persisted, with
-      // no re-delivery -- so the checkout lives here, not in
-      // `materializeDeploymentClosure` (which also runs on restore). A
-      // registry-sourced pin delivers no assets and only clears the store.
+      // Materializes the hub's frozen closure byte-for-byte (never re-resolves the pin); the child's load-boundary re-verify fails closed if it diverges from the hub-approved hash.
+      // Reclaims the store first so a redeploy drops unreferenced assets; runs only on the deploy path since restore re-reads what deploy persisted, with no re-delivery.
       const assetStore = deploymentSourceAssetRoot(dataDir, runId);
       const gitStore = deploymentSourceGitRoot(dataDir, runId);
       await rm(assetStore, { recursive: true, force: true });
@@ -1344,9 +1296,7 @@ export function createSidecarDeployRouter(deps: {
           maxAssetPayloadBytes: MAX_INLINE_ASSET_PAYLOAD_BYTES,
         });
       }
-      // Safe to reclaim the instance dir inside the helper: this deploy is
-      // single-flight-guarded (the reservation above) and the child is not yet
-      // spawned, so no live reader holds it.
+      // Safe: this deploy is single-flight-guarded and the child is not yet spawned, so no live reader holds the instance dir.
       const applied = await materializeDeploymentClosure(dataDir, runId, projection.sourceRef);
       const validatedDefinition = WorkflowProjectionDefinition(
         projectLiveToInert(applied.definition),
@@ -1358,21 +1308,13 @@ export function createSidecarDeployRouter(deps: {
       }
       const effectiveDefinition = validatedDefinition;
 
-      // Structural invariants the wire arktype does not cover (non-empty
-      // stepOrder, every stepOrder entry backed by a `steps` entry AND a
-      // `sources` entry), checked against the closure-derived definition -- the
-      // frame carries none to cover. Mirrors the restore path.
+      // Checked against the closure-derived definition since the wire arktype doesn't cover it and the frame carries none. Mirrors the restore path.
       validateWorkflowProjection({
         definition: effectiveDefinition,
         sources: projection.sources,
       });
 
-      // Source-admission gate: reject a deploy where any step pins an inference
-      // provider this sidecar cannot build. Every source in a step's failover
-      // chain must be buildable -- a chain with an unbuildable tail would fail
-      // only after the reactor failed over onto it -- so this iterates the whole
-      // list. The throw propagates back through the deploy frame so the hub's
-      // `deployWorkflow` rejects synchronously at deploy time.
+      // Every source in a step's failover chain must be buildable, since an unbuildable tail would fail only after the reactor failed over onto it.
       for (const stepId of effectiveDefinition.stepOrder) {
         const chain = projection.sources[stepId];
         if (chain !== undefined) {
