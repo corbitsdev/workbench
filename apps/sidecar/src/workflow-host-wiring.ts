@@ -399,16 +399,7 @@ function ndjsonReaderFromReadableStream(stream: ReadableStream<Uint8Array>): Ndj
   };
 }
 
-/**
- * Wrap the parent-side read fd of the event-channel pipe as the
- * supervisor's `FrameReader`. The child publishes one HMAC-
- * authenticated envelope per `FileSink.write()` and the supervisor's
- * `receiveEventChannel` parses each yielded `Uint8Array` as one
- * complete envelope. The pipe is a byte stream; this reader yields
- * each raw chunk the kernel delivers and trusts the sender's
- * one-write-per-envelope discipline. The buffer-overflow / framing
- * discipline lives in `receiveEventChannel`'s parser.
- */
+/** Yields each raw chunk the kernel delivers and trusts one-write-per-envelope; framing discipline lives in receiveEventChannel's parser. */
 function frameReaderFromFd(fd: number): FrameReader {
   const stream = Bun.file(fd).stream();
   return {
@@ -483,17 +474,9 @@ export type CreateSidecarWorkflowSupervisorOpts = {
   workflowRunRef: string;
   /** Deployment id baked into principal claims and address derivation. */
   runId: string;
-  /**
-   * Decrypted credential material for the deployment's tools (from the deploy
-   * frame). Delivered to the child on the pre-trigger barrier. Absent when the
-   * deployment binds no credentials.
-   */
+  /** Decrypted credential material delivered to the child on the pre-trigger barrier; absent when the deployment binds no credentials. */
   credentialDelivery?: CredentialDelivery;
-  /**
-   * Step count of the deployed `WorkflowDefinition` (`stepOrder.length`).
-   * Threaded into the child's spawn-time env so its deploy-tree read
-   * collapses onto the head for a single-step deployment.
-   */
+  /** Threaded into the child's spawn-time env so its deploy-tree read collapses onto the head for a single-step deployment. */
   stepCount: number;
   /** Every step id (including loop-body ids) the onRunStart grants sink walks to assemble the per-run credentialsSnapshot. */
   stepOrder: readonly string[];
@@ -505,140 +488,48 @@ export type CreateSidecarWorkflowSupervisorOpts = {
   deriveStepRepoId?: DeriveStepRepoId;
   /** Substrate-config keys propagated to the child via spawn-time env. */
   substrateEnv: Record<string, string>;
-  /**
-   * Dynamic spawn-env fragment the supervisor recomputes on every spawn and
-   * recycle respawn (e.g. a live-rotated inference-source list). Its keys
-   * layer over `substrateEnv`. See the `dynamicSpawnEnv` supervisor binding.
-   */
+  /** Recomputed on every spawn and recycle respawn (e.g. a live-rotated inference-source list); layers over substrateEnv. */
   dynamicSpawnEnv: () => Record<string, string>;
-  /**
-   * Override the subprocess spawner. Tests inject a deterministic
-   * mock; production defaults to the `Bun.spawn`-backed
-   * `defaultSubprocessSpawner`.
-   */
+  /** Tests inject a deterministic mock; production defaults to defaultSubprocessSpawner. */
   subprocessSpawner?: SubprocessSpawner;
   /** Override the `bin/workflow-child` path. */
   binaryPath?: string;
-  /**
-   * Optional per-message dispatch-timing observer, forwarded verbatim to
-   * the supervisor's `onDispatchTiming` binding. Absent in production;
-   * the deploy router wires it (off a benchmark env gate) only for the
-   * Phase 4.7 latency gate, which needs the supervisor to emit the
-   * per-message infra round-trip from inside the sidecar subprocess.
-   */
+  /** Absent in production; the deploy router wires this (off a benchmark env gate) only for the Phase 4.7 latency gate. */
   onDispatchTiming?: (mark: DispatchTimingMark) => void;
-  /**
-   * D2 §10c forced-repack A/B toggle, forwarded verbatim to the
-   * supervisor's `repackEveryMessages` binding. Absent in production;
-   * the deploy router wires it (off the same benchmark env gate) only
-   * for the D2 attribution run.
-   */
+  /** Absent in production; the deploy router wires this (off the same benchmark env gate) only for the D2 attribution run. */
   repackEveryMessages?: { everyMessages: number };
-  /**
-   * Consumed-dedup retention horizon (ms), forwarded to the
-   * supervisor's `consumedRetentionMs` binding. The boot edge resolves
-   * the operator's `CONSUMED_RETENTION_MS` config; absent, the
-   * supervisor applies `DEFAULT_CONSUMED_RETENTION_MS` (24h).
-   */
+  /** Boot edge resolves the operator's CONSUMED_RETENTION_MS; absent, the supervisor applies its own 24h default. */
   consumedRetentionMs?: number;
-  /**
-   * Spawn ready-handshake timeout (ms), forwarded to the supervisor's
-   * `readyTimeoutMs` binding. The boot edge resolves the operator's
-   * `CHILD_READY_TIMEOUT_MS` config; absent, the supervisor applies
-   * `DEFAULT_READY_TIMEOUT_MS` (30s).
-   */
+  /** Boot edge resolves the operator's CHILD_READY_TIMEOUT_MS; absent, the supervisor applies its own 30s default. */
   readyTimeoutMs?: number;
-  /**
-   * Control-plane suspension sink forwarded to the supervisor's
-   * `onSuspensionRegister` binding. The supervisor stamps `runId` +
-   * `agentAddress` and invokes this when a workflow-process child reports a
-   * `park.notify`; production wiring routes it to the hub link so a
-   * `signal.correlation.register` frame reaches the hub. Absent means the
-   * deployment registers no suspensions.
-   */
+  /** Invoked when a child reports park.notify; production wiring routes it to the hub link's signal.correlation.register. */
   onSuspensionRegister?: (registration: SuspensionRegistration) => void;
-  /**
-   * Self-termination sink forwarded to the supervisor's `onSelfTerminate`
-   * binding. The supervisor invokes it when it drives itself to a terminal
-   * phase (crash-loop latch, channel crash, recycle failure); production wiring
-   * routes it to the deploy router's address reclaim. Absent means a
-   * self-termination is not surfaced to the host.
-   */
+  /** Invoked on a terminal phase (crash-loop, channel crash, recycle failure); production routes it to the deploy router's address reclaim. */
   onSelfTerminate?: (info: { phase: "stopped" | "crash-looping"; reason: string }) => void;
-  /**
-   * Predicate consulted at the `onRunStart` grants barrier: returns `true`
-   * for a runId whose `run.grants` write was attempted and FAILED, so the
-   * per-run grants file the run needs never landed. The barrier fails such a
-   * run loudly rather than starting it under-authorized. This is a
-   * fast-fail with a precise cause: an absent grants file already fails the
-   * barrier closed on its own (every run birth path writes the file before
-   * dispatch, so its absence is a defect), and this predicate lets a run
-   * whose write is KNOWN to have failed reject with that specific reason
-   * instead of a generic missing-file error. Absent means no run is
-   * poisoned.
-   */
+  /** Lets a run whose grants write is KNOWN to have failed reject with that specific reason instead of a generic missing-file error. */
   isRunPoisoned?: (runId: string) => boolean;
 };
 
 export type SidecarWorkflowSupervisor = {
   supervisor: WorkflowSupervisor;
-  /**
-   * Hand a delivered inbound message off to the supervisor's mail
-   * subscription. The returned promise resolves once the message is durably
-   * accepted and rejects when it was not, so the hub-link can send a
-   * `mail.inbound.ack` only on resolution (resolve = ack, reject = withhold).
-   */
+  /** Resolves once durably accepted (so the hub-link can send mail.inbound.ack only then) and rejects otherwise. */
   routeInbound(message: Uint8Array): Promise<void>;
   /** Snapshot accessor that proxies the supervisor's credentials view. */
   getCredentialsSnapshot(): CredentialsSnapshot | null;
-  /**
-   * The per-run grants barrier the supervisor awaits before firing a run's
-   * trigger. Rejects for a poisoned run (its `run.grants` write failed) and
-   * otherwise resolves the run's credentials snapshot. Exposed so the barrier
-   * can be exercised without driving a full spawn.
-   */
+  /** The per-run grants barrier; rejects for a poisoned run, exposed so it can be exercised without driving a full spawn. */
   onRunStart(args: { runId: string; anchorRunId: string }): Promise<CredentialsSnapshot>;
 };
 
-/**
- * Env key the multi-step branch uses to carry each step's ordered
- * inference-source failover chain from `frame.workflow.sources` down to
- * the workflow-process child. The substrate factory's `buildEnv` reads
- * this and resolves a step's chain at step invocation, feeding it to the
- * reactor for forward-only failover; the supervisor itself is opaque to
- * the value (it is plumbed through `bindings.substrateEnv` verbatim).
- *
- * Listed here so the router and the future substrate-factory consumer
- * spell the key the same way without a magic-string trip hazard.
- */
+/** Listed here so the router and the substrate-factory consumer spell this env key the same way without a magic-string trip hazard. */
 export const STEP_INFERENCE_SOURCES_ENV_KEY = "STEP_INFERENCE_SOURCES";
 
-/**
- * Spawn-env key carrying every spawned body's per-step inference-source pins as
- * a JSON `{ [definitionId]: { [stepId]: InferenceSource[] } }` map. The sidecar
- * decrypts the sealed body sources from the run record and serializes the
- * plaintext here so the run child resolves a body's sources without holding the
- * sidecar's cipher key. Mirrors `STEP_INFERENCE_SOURCES` for the top level.
- */
+/** Carries every spawned body's per-step inference-source pins as plaintext JSON so the child resolves them without the sidecar's cipher key. */
 export const WORKFLOW_BODY_SOURCES_ENV_KEY = "WORKFLOW_BODY_SOURCES";
 
-/**
- * A single env value cannot exceed the OS argument-string ceiling
- * (`MAX_ARG_STRLEN`, 128 KiB on Linux); an over-long value makes the child
- * `execve` fail opaquely at spawn. `WORKFLOW_BODY_SOURCES` sums over every body
- * at every depth, so the deploy path validates the serialized size against this
- * bound and rejects an over-large deployment loudly at deploy time rather than
- * letting a much-later spawn fail. Held below the ceiling with headroom for the
- * rest of the env block.
- */
+/** Below the OS argument-string ceiling (128 KiB on Linux) with headroom, so an over-large deployment is rejected loudly at deploy time, not at a much-later spawn's execve. */
 const WORKFLOW_BODY_SOURCES_MAX_BYTES = 96 * 1024;
 
-/**
- * Build the record's `bodySources` map from the deploy frame's referenced body
- * definitions (the flat set of onTrigger sections and childWorkflow children,
- * each already source-pinned by the hub). `undefined` when the deployment
- * references no bodies, so the record omits the field.
- */
+/** `undefined` when the deployment references no bodies, so the record omits the field. */
 function buildBodySourcesMap(
   referenced: NonNullable<AgentDeployFrame["workflow"]>["referencedDefinitions"],
 ): WorkflowRunRecord["bodySources"] {
@@ -653,39 +544,12 @@ function buildBodySourcesMap(
 }
 
 /**
- * Validate the wire-projected workflow definition at the deploy-router
- * boundary. The arktype `AgentDeployFrame` validator enforces the
- * wire shape (`id` is non-empty, `stepOrder` is `string[]`, `steps`
- * is an object, `sources` covers every `stepOrder` entry); this
- * function takes `unknown`-typed inputs so it can also gate callers
- * that bypass the wire boundary, and it enforces the invariants the
- * router and the downstream supervisor rely on:
- *
- *   - `definition.id` is a non-empty string. The arktype shape
- *     already enforces this on the wire; the re-check here protects
- *     bypass callers and keeps the failure shape consistent with the
- *     other invariants this function owns.
- *   - `definition.stepOrder` is non-empty. The wire shape admits
- *     `[]`; a zero-step workflow has no semantics here.
- *   - Every `stepOrder` entry matches `STEP_ID_PATTERN` so per-step
- *     mail-address derivation never needs escaping at the substrate
- *     boundary.
- *   - Every `stepOrder` entry has a corresponding `steps[id]` entry.
- *     The wire shape lets `steps[id]` be `unknown` and lets the
- *     entry be absent; presence is required so the workflow-process
- *     child can resolve each step's primitive at run time.
- *   - Every `stepOrder` entry has a corresponding `sources[id]`
- *     entry, and that entry is a non-empty array (the step's ordered
- *     failover chain). The arktype narrow already enforces both; the
- *     re-check here surfaces a structured router-side error instead of
- *     an arktype validation failure at the wire boundary, which keeps
- *     the failure shape consistent with the rest of the validations
- *     this function owns. An empty chain would leave the reactor with
- *     no initial source, so it is rejected here rather than deferred to
- *     a deep-stack child failure.
- *
- * A rejection here surfaces as a thrown `Error` the link's deploy
- * frame caller converts into a structured failure reply.
+ * Takes `unknown`-typed inputs (unlike the arktype `AgentDeployFrame`
+ * validator) so it can also gate callers that bypass the wire boundary:
+ * non-empty id, non-empty stepOrder, every step id matches
+ * STEP_ID_PATTERN, every stepOrder entry has a steps[id] and a non-empty
+ * sources[id] chain. A rejection surfaces as a thrown Error the link's
+ * deploy frame caller converts into a structured failure reply.
  */
 export function validateWorkflowProjection(projection: {
   definition: { id: unknown; stepOrder: unknown; steps: unknown };
