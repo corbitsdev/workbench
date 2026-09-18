@@ -1,19 +1,8 @@
-// Skills: a standalone rail destination, over the workbench's
-// real skill registry (`@corbits/skills`, via `../skills-api.ts`). Used to
-// be a Settings section; the owner moved it back out to its own
-// page — this is the only surface left, there is no Settings duplicate.
-// This replaced the session-local store shipped before that: a
-// skill now lives in a native `kind:"skill"` hub asset the moment it is
-// created, and its version history is that asset's git history.
+// A skill lives in a native `kind:"skill"` hub asset the moment it's
+// created; its version history is that asset's git history.
 //
-// Two states a skill can be in, both visible in the "Who can see it"
-// column:
-//   private  — visible only to the person who wrote it (the default)
-//   shared   — visible to the whole workbench
-//
-// There is no external catalog: skills are authored in this workbench.
-// This page lists them; a single skill — its editor, its versions, its
-// visibility toggle — lives on its own page (`skill-detail-page.tsx`).
+// Two states visible in "Who can see it": private (default) or shared
+// with the whole workbench. No external catalog — skills are authored here.
 
 import {
   PageShell,
@@ -55,14 +44,8 @@ function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-/**
- * The Skills roster over one workbench's skill registry, with its own
- * top-nav contract: the trail says where the reader is and the
- * top bar's action slot is the only home for "New skill". `tenantId` is the
- * registry every read is scoped to; opening a row navigates to that skill's
- * own page at `/skills/<name>`, which is where editing, versions,
- * and diffs live — this page never renders a skill inline.
- */
+// Opening a row navigates to `/skills/<name>`: editing, versions, and
+// diffs live there, never rendered inline here.
 export function SkillsPage({
   tenantId,
   navigate,
@@ -238,12 +221,7 @@ export function SkillsPage({
   );
 }
 
-/**
- * Skills roster mount at `/skills`: a thin adapter that resolves
- * which workbench's registry is listed. The stage chrome (breadcrumb trail,
- * action slot) belongs to `SkillsPage`; a single skill has its own route
- * (`/skills/<name>`, `skill-detail-page.tsx`).
- */
+// A thin adapter that resolves which workbench's registry is listed.
 export function SkillsRoute({ navigate }: { readonly navigate: (to: string) => void }) {
   const { selectedTenantId } = useBench();
 

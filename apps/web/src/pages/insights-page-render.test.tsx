@@ -1,12 +1,5 @@
-// A malformed percent-escape on an Insights deep link (`/insights/runs/%`)
-// must render the same landing dashboard any other unrecognized Insights
-// path gets — never a blank page (see `insights-path.ts`'s
-// `parseInsightsPath`, which InsightsPage calls with the exact same `path`
-// prop this test passes). deleted the usage/activity/tools/latency/
-// scope-switcher props `InsightsPage` used to take along with
-// `packages/insights` itself — `InsightsWorkbenchPage`'s workbench-scoped
-// mode now lives entirely in `InsightsRoute`, so a `/insights/workbench/...`
-// path is out of scope for this component-level test.
+// A malformed percent-escape on a deep link must render the same landing
+// dashboard any other unrecognized path gets — never a blank page.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -112,11 +105,8 @@ describe("InsightsPage 'Running now' strip", () => {
     expect(el.textContent).toContain("Weekly digest");
   });
 
-  // Liveness is not a windowed property: a run that started long ago and is
-  // still running must not disappear from the strip or read 0 in the
-  // "Running now" KPI just because it started long before this page's
-  // recent-runs slice. Persist has not settled (`endedAt` absent), so the
-  // fire is live — not remapped to completed by the abandoned-fire window.
+  // Liveness is not a windowed property: a run started long ago must not
+  // disappear from the strip or the "Running now" KPI.
   test("a run started 8 days ago that is still running stays in the strip and the KPI", () => {
     const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
     const el = render("/insights", {

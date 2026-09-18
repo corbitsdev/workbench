@@ -1,14 +1,6 @@
-// The create-skill dialog.
-//
-// this used to hand a full SKILL.md (name/description/body, or
-// an uploaded file) to the workbench's own skill registry, which parsed
-// and stored it. That registry is gone — skills are native `kind:"skill"`
-// hub assets now, and the stock asset routes (`@intx/hub-api`'s
-// `routes/assets.ts`) accept only a bare `{ kind, name, displayName }` on
-// create: there is no stock route yet to write a skill's SKILL.md content
-// in the same call. This dialog is scoped down to match: it names the
-// asset only, and hands off; writing the skill's actual instructions
-// happens through whatever surface eventually covers skill content.
+// Scoped down to naming the asset only: the stock asset routes accept a
+// bare `{ kind, name, displayName }`, with no stock route yet to write a
+// skill's SKILL.md content in the same call.
 import {
   Button,
   Dialog,

@@ -1,23 +1,14 @@
-// The setup gate: the screen a signed-in
-// session lands on when the hub reports setup-required. It reads the
-// hub's native setup-status route, and a hub that already has tenants
-// bounces straight into the shell (`/`). An empty hub drives the
-// browser installer itself, as one converge loop over stock routes,
-// asking the operator only where a human input is genuinely required:
+// The setup gate: a hub with tenants bounces straight to the shell; an
+// empty hub drives the browser installer itself, asking the operator only
+// where a human input is genuinely required (see steps below).
 //
-//   1. mint the account's primary tenant (stock `POST /api/tenants`) if
-//      it does not already own one;
-//   2. resolve a catalog offering to deploy Myra against — if the
-//      tenant already resolves one (inherited, or a previous run of
-//      this step), skip straight past; otherwise ask the operator to
-//      connect exactly one provider credential (`ProviderConnectStep`);
-//   3. push Myra's source tree and build its deploy input for that offering
-//      (`deployMyraSource`) and hand it to `bootstrapClientSession` as
-//      `myraDeploy`.
+//   1. mint the account's primary tenant if it doesn't already own one;
+//   2. resolve a catalog offering, asking to connect a provider credential
+//      only if none is already resolved;
+//   3. push Myra's source tree and deploy it.
 //
-// A converged install lands on `/`; a stock capability gap this loop did
-// not anticipate, or a hard failure at any step, renders here with a
-// retry — a gap is not "ready".
+// A stock capability gap this loop didn't anticipate, or a hard failure,
+// renders here with a retry — a gap is not "ready".
 import { Button, EmptyState } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
 import { WorkbenchLoadingState } from "@/chat";
@@ -86,11 +77,8 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     checkStatus();
   }, [checkStatus]);
 
-  // Step 1: mint the primary tenant if this account does not already
-  // own one, then move to the offering-resolution step. Stays a
-  // separate phase from "installing" (which still runs the full
-  // `bootstrapClientSession` converge for the rest of the needs list)
-  // because a credential connect needs a tenant id to write against.
+  // A separate phase from "installing" because a credential connect
+  // needs a tenant id to write against.
   useEffect(() => {
     if (state.phase !== "resolving-tenant") return;
     let cancelled = false;
@@ -144,10 +132,8 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     // out of this effect's dependency list.
   }, [state.phase, user]);
 
-  // Step 3: publish Myra's deploy input for the resolved offering, then
-  // hand off to the installing phase. Shared by both the
-  // already-resolved-offering path (above) and the operator-connected
-  // path (`ProviderConnectStep`'s `onConnected` below).
+  // Shared by both the already-resolved-offering path and the
+  // operator-connected path.
   function publishAndInstall(
     tenantId: string,
     tenantDomain: string,
