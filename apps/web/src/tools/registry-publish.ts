@@ -164,7 +164,7 @@ function buildToolPackageTree(
     ),
   };
   for (const [sourcePath, contents] of Object.entries(TOOL_PACKAGE_SOURCE_FILES)) {
-    if (!sourcePath.startsWith(prefix)) continue;
+    if (!sourcePath.startsWith(prefix) || /\.test\.tsx?$/.test(sourcePath)) continue;
     tree[sourcePath.slice(prefix.length)] = contents;
   }
   return { name: manifest.name, version: manifest.version, tree };
