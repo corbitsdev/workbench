@@ -22,14 +22,14 @@
 import { type } from "arktype";
 import { Part } from "./parts";
 
-const RoomMessageSender = type({
+const WorkbenchMessageSender = type({
   name: "string | null",
   address: "string",
 });
 
 /**
  * The full rendered timeline row a `chat.message` event carries —
- * everything `postRoomMessage`'s caller already has in hand from the
+ * everything `postWorkbenchMessage`'s caller already has in hand from the
  * insert it just did, so a subscriber never needs to refetch the
  * message it was just told about. `ref` names the workbench the row
  * lives on; the mail headers ride along only when the row was actually
@@ -43,7 +43,7 @@ export const ChatMessageEventData = type({
   ref: type({ kind: "'workbench'", id: "string" }),
   createdAt: "string",
   threadId: "string | null",
-  sender: RoomMessageSender,
+  sender: WorkbenchMessageSender,
   parts: Part.array(),
   "messageId?": "string",
   "inReplyTo?": "string",

@@ -17,7 +17,7 @@ export type BenchState = {
    * top-level tenant (`parentId === null`, per `GET /api/tenants/:id`).
    * Empty while any membership's tenant detail is still loading — every
    * consumer that used to filter `memberships` with `isBenchMembership`
-   * reads this instead, so a room can never sneak into a bench list. */
+   * reads this instead, so a workbench can never sneak into a bench list. */
   readonly benchMemberships: readonly Principal[];
   readonly selectedTenantId: string | null;
   readonly selectedPrincipalId: string | null;

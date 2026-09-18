@@ -19,7 +19,7 @@ import { reportError } from "@corbits/error-sink";
 import { agentSlugFromSourceAssetName } from "../agent-deploy";
 import { listTopLevelRuns } from "../agents-api";
 import { MYRA_SOURCE_CONFIG } from "../myra-source";
-import { appendRoster } from "./room-roster";
+import { appendRoster } from "./workbench-roster";
 
 export class ChatApiError extends Error {
   constructor(
@@ -593,18 +593,18 @@ export function subscribeToInbox(tenantId: string, onChange: () => void): () => 
 }
 
 // ---------------------------------------------------------------------
-// Rooms: a workbench is a child tenant, and its room conversation is that
+// Workbenches: a workbench is a child tenant, and its workbench conversation is that
 // tenant's mailbox. Reads are the same stock mailbox routes as a chat,
 // scoped to the child tenant id; participants are the child tenant's
 // principals.
 // ---------------------------------------------------------------------
 
-export type RoomParticipant = {
+export type WorkbenchParticipant = {
   readonly id: string;
   readonly kind: "person" | "agent";
   readonly name: string;
   /** For an agent, its current live run's address — empty when none is
-   * live, which `sendToRoom` filters out. */
+   * live, which `sendToWorkbench` filters out. */
   readonly address: string;
   /** The workflow asset's raw name — only present for a `kind: "agent"`
    * row; what a released agent's redeploy re-reads/re-pushes source by. */
@@ -623,31 +623,31 @@ const PrincipalPage = type({
   nextCursor: "string | null",
 });
 
-/** Everyone in the room: the child tenant's principals plus its live
+/** Everyone in the workbench: the child tenant's principals plus its live
  * deployments' run addresses. A deployment's workflow principal only
  * appears after its first run, so the run listing is what makes an agent
- * addressable from the moment it is deployed into the room. `tenantDomain`
- * is the room tenant's own domain (already fetched by the caller) — a
+ * addressable from the moment it is deployed into the workbench. `tenantDomain`
+ * is the workbench tenant's own domain (already fetched by the caller) — a
  * person's routable mailbox address is `<refId>@<tenantDomain>`, exactly
  * what the hub builds and the mailbox delivers to; their email and refId
  * alone are never routable. */
-export async function listRoomParticipants(
+export async function listWorkbenchParticipants(
   tenantId: string,
   tenantDomain: string,
-): Promise<readonly RoomParticipant[]> {
+): Promise<readonly WorkbenchParticipant[]> {
   const [page, chatAgents] = await Promise.all([
     getJson(`/api/tenants/${encodeURIComponent(tenantId)}/principals?limit=100`, PrincipalPage),
     listChatAgents(tenantId),
   ]);
   const people = page.data
     .filter((principal) => principal.status !== "removed" && principal.kind === "user")
-    .map((principal): RoomParticipant => ({
+    .map((principal): WorkbenchParticipant => ({
       id: principal.id,
       kind: "person",
       name: principal.displayName,
       address: `${principal.refId}@${tenantDomain}`,
     }));
-  const agents = chatAgents.map((agent): RoomParticipant => ({
+  const agents = chatAgents.map((agent): WorkbenchParticipant => ({
     id: agent.id,
     kind: "agent",
     name: agent.name,
@@ -657,7 +657,7 @@ export async function listRoomParticipants(
   return [...people, ...agents];
 }
 
-export type RoomMessage = {
+export type WorkbenchMessage = {
   readonly id: string;
   /** The turn's Message-ID: what a reply in its sub-thread threads onto. */
   readonly messageId: string;
@@ -665,7 +665,7 @@ export type RoomMessage = {
   readonly authorName: string;
   readonly body: string;
   readonly at: string;
-  /** The sender's raw address — matched against room participants for a
+  /** The sender's raw address — matched against workbench participants for a
    * display name; falls back to `authorName` (the address local part) when
    * no participant matches. */
   readonly address: string;
@@ -689,11 +689,11 @@ export function sameAddress(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }
 
-/** A turn's display name: the matching room participant's name, else the
+/** A turn's display name: the matching workbench participant's name, else the
  * address local part — never the raw run/email address. */
 export function resolveParticipantName(
-  message: Pick<RoomMessage, "author" | "authorName" | "address">,
-  participants: readonly RoomParticipant[],
+  message: Pick<WorkbenchMessage, "author" | "authorName" | "address">,
+  participants: readonly WorkbenchParticipant[],
 ): string {
   if (message.author === "me") return message.authorName;
   return (
@@ -707,8 +707,8 @@ export function resolveParticipantName(
  * row's own text elsewhere. Falls back to `resolveParticipantName` when no
  * participant matches the turn's address. */
 export function resolveAvatarName(
-  message: Pick<RoomMessage, "author" | "authorName" | "address">,
-  participants: readonly RoomParticipant[],
+  message: Pick<WorkbenchMessage, "author" | "authorName" | "address">,
+  participants: readonly WorkbenchParticipant[],
 ): string {
   const matched = participants.find((participant) =>
     sameAddress(participant.address, message.address),
@@ -716,7 +716,7 @@ export function resolveAvatarName(
   return matched?.name ?? resolveParticipantName(message, participants);
 }
 
-type RoomTurn = {
+type WorkbenchTurn = {
   readonly id: string;
   readonly messageId: string;
   readonly parentId: string | undefined;
@@ -728,10 +728,13 @@ type RoomTurn = {
   readonly attachments: readonly MailAttachment[];
 };
 
-/** One folder of the room mailbox: the person's own turns live in `Sent`,
- * everyone else's in `INBOX`. Unlike a chat, a room keeps every message —
- * a person-to-person turn is as much part of the room as an agent's. */
-async function readRoomFolder(tenantId: string, folder: "INBOX" | "Sent"): Promise<RoomTurn[]> {
+/** One folder of the workbench mailbox: the person's own turns live in `Sent`,
+ * everyone else's in `INBOX`. Unlike a chat, a workbench keeps every message —
+ * a person-to-person turn is as much part of the workbench as an agent's. */
+async function readWorkbenchFolder(
+  tenantId: string,
+  folder: "INBOX" | "Sent",
+): Promise<WorkbenchTurn[]> {
   const page = await getJson(`${mailboxPath(tenantId)}?folder=${folder}&limit=100`, InboxPage);
   return page.messages.map((message) => ({
     id: `${folder}:${String(message.uid)}`,
@@ -746,14 +749,14 @@ async function readRoomFolder(tenantId: string, folder: "INBOX" | "Sent"): Promi
   }));
 }
 
-/** The room timeline: every turn oldest first, flat — no turn is ever
+/** The workbench timeline: every turn oldest first, flat — no turn is ever
  * dropped from the main list. A turn whose in-reply-to names a known
  * message keeps that as `parentMessageId`, metadata for the sub-thread
  * panel to walk the ancestor chain of whichever turn the person opened. */
-export async function readRoom(tenantId: string): Promise<readonly RoomMessage[]> {
+export async function readWorkbench(tenantId: string): Promise<readonly WorkbenchMessage[]> {
   const [inbox, sent] = await Promise.all([
-    readRoomFolder(tenantId, "INBOX"),
-    readRoomFolder(tenantId, "Sent"),
+    readWorkbenchFolder(tenantId, "INBOX"),
+    readWorkbenchFolder(tenantId, "Sent"),
   ]);
   const turns = [...inbox, ...sent].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   const known = new Set(turns.map((turn) => turn.messageId));
@@ -774,11 +777,11 @@ export async function readRoom(tenantId: string): Promise<readonly RoomMessage[]
 /** The ancestor chain of a turn, oldest first, ending with the turn itself
  * — what the sub-thread panel shows for the turn the person opened. */
 export function ancestorChain(
-  messages: readonly RoomMessage[],
+  messages: readonly WorkbenchMessage[],
   messageId: string,
-): readonly RoomMessage[] {
+): readonly WorkbenchMessage[] {
   const byMessageId = new Map(messages.map((message) => [message.messageId, message]));
-  const chain: RoomMessage[] = [];
+  const chain: WorkbenchMessage[] = [];
   let current = byMessageId.get(messageId);
   const seen = new Set<string>();
   while (current !== undefined && !seen.has(current.messageId)) {
@@ -790,17 +793,17 @@ export function ancestorChain(
   return chain;
 }
 
-/** The one send seam for a room: a single mailbox send addressed to every
+/** The one send seam for a workbench: a single mailbox send addressed to every
  * agent in it. The hub triggers each addressed run and keeps the Sent
  * copy, so the person's own turn comes back out of the mailbox like any
  * other. The body carries a trailing roster of every agent's name and
  * run address plus the person's own (the same rows the Participants panel
- * reads), so an agent can hand a task to another agent in the room — the
+ * reads), so an agent can hand a task to another agent in the workbench — the
  * hub only delivers to a run address, which only the client otherwise
  * knows — and can copy the person on that handoff so they can follow it. */
-export async function sendToRoom(input: {
-  readonly roomTenantId: string;
-  readonly participants: readonly RoomParticipant[];
+export async function sendToWorkbench(input: {
+  readonly workbenchTenantId: string;
+  readonly participants: readonly WorkbenchParticipant[];
   readonly content: string;
   /** The turn this reply threads onto — a sub-thread's parent. */
   readonly inReplyTo?: string;
@@ -825,7 +828,7 @@ export async function sendToRoom(input: {
   ]);
   let response: Response;
   try {
-    response = await fetch(`${mailboxPath(input.roomTenantId)}/send`, {
+    response = await fetch(`${mailboxPath(input.workbenchTenantId)}/send`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

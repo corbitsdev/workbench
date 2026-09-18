@@ -139,7 +139,7 @@ export function closeCanvasContent<TProfile, TArtifact, TRoutine>(
 }
 
 /** What actually renders: demand-driven open state, gated by whether the
- *  current viewport has room for a fourth column at all. */
+ *  current viewport has space for a fourth column at all. */
 export function resolveCanvasVisibility<TProfile, TArtifact, TRoutine>(
   state: CanvasColumnState<TProfile, TArtifact, TRoutine>,
   allowed: boolean,

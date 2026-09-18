@@ -51,7 +51,7 @@ describe("shellLayoutModeFromMatches", () => {
 });
 
 describe("canvasColumnAllowed", () => {
-  test("only expanded has room for a fourth column", () => {
+  test("only expanded has space for a fourth column", () => {
     expect(canvasColumnAllowed("expanded")).toBe(true);
     expect(canvasColumnAllowed("compact")).toBe(false);
     expect(canvasColumnAllowed("narrow")).toBe(false);

@@ -29,11 +29,11 @@ beforeEach(() => installCapturingSink());
 afterEach(() => resetSync());
 
 describe("reportError context capture", () => {
-  test("carries operation, tenant/room/agent ids, and a quotable refId", () => {
+  test("carries operation, tenant/workbench/agent ids, and a quotable refId", () => {
     const refId = reportError(new Error("boom"), {
       operation: "resolveFallbackWorkbenchId",
       tenantId: "tenant_1",
-      roomId: "room_1",
+      workbenchId: "workbench_1",
       agentId: "agent_1",
     });
 
@@ -41,7 +41,7 @@ describe("reportError context capture", () => {
     const properties = records[0]?.properties as Record<string, unknown>;
     expect(properties.operation).toBe("resolveFallbackWorkbenchId");
     expect(properties.tenantId).toBe("tenant_1");
-    expect(properties.roomId).toBe("room_1");
+    expect(properties.workbenchId).toBe("workbench_1");
     expect(properties.agentId).toBe("agent_1");
     expect(properties.refId).toBe(refId);
     expect(typeof refId).toBe("string");

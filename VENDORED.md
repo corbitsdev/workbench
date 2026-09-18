@@ -27,22 +27,22 @@ Pinned to [faremeter/interchange](https://github.com/faremeter/interchange)
 
 | Vendored path                 | What it is                                                              | Owner  | Kill date  |
 | ------------------------------ | ------------------------------------------------------------------------ | ------ | ---------- |
-| `apps/sidecar`                 | Copy of upstream's sidecar app; apps are never npm-published. Two local deltas: `workflow-substrate-factory.ts` registers `@corbits/credential-header`'s and `@corbits/credential-mcp`'s providers alongside `builtinCredentialProviders()`; `bin/workflow-child` and `bin/workflow-probe-child` run under plain `bun` instead of upstream's `intx-src` resolve condition | sawyer | 2026-11-03 |
-| `vendor/intx/agent`            | `@intx/agent` at a newer commit than npm has published                    | sawyer | 2026-11-03 |
-| `vendor/intx/db`                | `@intx/db`, with one local serving-time credential-refresh delta          | sawyer | 2026-11-03 |
-| `vendor/intx/harness`           | `@intx/harness` at a newer commit than npm has published                  | sawyer | 2026-11-03 |
-| `vendor/intx/hub-agent`         | `@intx/hub-agent`, with a local OAuth-login-over-websocket delta          | sawyer | 2026-11-03 |
-| `vendor/intx/hub-api`           | `@intx/hub-api`, with local approval and workflow-deploy-bearer routes    | sawyer | 2026-11-03 |
-| `vendor/intx/hub-sessions`      | `@intx/hub-sessions`, with several local run/pack-acceptance fixes        | sawyer | 2026-11-03 |
-| `vendor/intx/inference`         | `@intx/inference`, with one local Google file-upload compile fix          | sawyer | 2026-11-03 |
-| `vendor/intx/mail-memory`       | `@intx/mail-memory` at a newer commit than npm has published              | sawyer | 2026-11-03 |
-| `vendor/intx/mailbox`           | `@intx/mailbox`, never yet published to npm                               | sawyer | 2026-11-03 |
-| `vendor/intx/mime`              | `@intx/mime` at a newer commit than npm has published                     | sawyer | 2026-11-03 |
-| `vendor/intx/types`             | `@intx/types`, with one local model-provider-plugin enum addition         | sawyer | 2026-11-03 |
-| `vendor/intx/hub-common`        | `@intx/hub-common` at a newer commit than npm has published               | sawyer | 2026-11-03 |
-| `vendor/intx/workflow`          | `@intx/workflow`, with one local step-timeout-budget delta                | sawyer | 2026-11-03 |
-| `vendor/intx/workflow-deploy`   | `@intx/workflow-deploy` at a newer commit than npm has published          | sawyer | 2026-11-03 |
-| `vendor/intx/workflow-host`     | `@intx/workflow-host`, with one local step-grants-collapse delta          | sawyer | 2026-11-03 |
+| `apps/sidecar`                 | Copy of upstream's sidecar app; apps are never npm-published. Two local deltas: `workflow-substrate-factory.ts` registers `@corbits/credential-header`'s and `@corbits/credential-mcp`'s providers alongside `builtinCredentialProviders()`; `bin/workflow-child` and `bin/workflow-probe-child` run under plain `bun` instead of upstream's `intx-src` resolve condition | maintainers | 2026-11-03 |
+| `vendor/intx/agent`            | `@intx/agent` at a newer commit than npm has published                    | maintainers | 2026-11-03 |
+| `vendor/intx/db`                | `@intx/db`, with one local serving-time credential-refresh delta          | maintainers | 2026-11-03 |
+| `vendor/intx/harness`           | `@intx/harness` at a newer commit than npm has published                  | maintainers | 2026-11-03 |
+| `vendor/intx/hub-agent`         | `@intx/hub-agent`, with a local OAuth-login-over-websocket delta          | maintainers | 2026-11-03 |
+| `vendor/intx/hub-api`           | `@intx/hub-api`, with local approval and workflow-deploy-bearer routes    | maintainers | 2026-11-03 |
+| `vendor/intx/hub-sessions`      | `@intx/hub-sessions`, with several local run/pack-acceptance fixes        | maintainers | 2026-11-03 |
+| `vendor/intx/inference`         | `@intx/inference`, with one local Google file-upload compile fix          | maintainers | 2026-11-03 |
+| `vendor/intx/mail-memory`       | `@intx/mail-memory` at a newer commit than npm has published              | maintainers | 2026-11-03 |
+| `vendor/intx/mailbox`           | `@intx/mailbox`, never yet published to npm                               | maintainers | 2026-11-03 |
+| `vendor/intx/mime`              | `@intx/mime` at a newer commit than npm has published                     | maintainers | 2026-11-03 |
+| `vendor/intx/types`             | `@intx/types`, with one local model-provider-plugin enum addition         | maintainers | 2026-11-03 |
+| `vendor/intx/hub-common`        | `@intx/hub-common` at a newer commit than npm has published               | maintainers | 2026-11-03 |
+| `vendor/intx/workflow`          | `@intx/workflow`, with one local step-timeout-budget delta                | maintainers | 2026-11-03 |
+| `vendor/intx/workflow-deploy`   | `@intx/workflow-deploy` at a newer commit than npm has published          | maintainers | 2026-11-03 |
+| `vendor/intx/workflow-host`     | `@intx/workflow-host`, with one local step-grants-collapse delta          | maintainers | 2026-11-03 |
 
 npm's published `0.3.0` predates this pin for every row above, so each is
 re-vendored at the same commit rather than mixed pins; the root

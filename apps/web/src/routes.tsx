@@ -48,8 +48,8 @@ const HomeRoute = lazy(async () => ({
 const NewWorkbenchPickerRoute = lazy(async () => ({
   default: (await import("./pages/new-workbench-picker")).NewWorkbenchPickerRoute,
 }));
-const WorkbenchRoomRoute = lazy(async () => ({
-  default: (await import("./pages/workbench-room-page")).WorkbenchRoomRoute,
+const WorkbenchRoute = lazy(async () => ({
+  default: (await import("./pages/workbench-page")).WorkbenchRoute,
 }));
 const ChatThreadRoute = lazy(async () => ({
   default: (await import("./pages/chat-thread-page")).ChatThreadRoute,
@@ -242,7 +242,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: WORKBENCH_PATH_PREFIX,
     label: "Workbenches",
     icon: <ChatCircle />,
-    render: (path: string) => <WorkbenchRoomRoute path={path} />,
+    render: (path: string) => <WorkbenchRoute path={path} />,
   },
   {
     // Detail routes come before their roster: the roster prefix matches

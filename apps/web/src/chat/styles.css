@@ -594,7 +594,7 @@
 }
 
 /* Mock `.messages`: tight column, modest horizontal pad.
-   `gap` is the visible breathing room between groups; `align-items`
+   `gap` is the visible breathing space between groups; `align-items`
    keeps every group at full width so its own left gutter (2.9rem) reads
    consistently. `flex-shrink: 0` on the group (below) is what stops a
    flex column from collapsing two groups onto the same line when content
@@ -842,7 +842,7 @@
   flex-shrink: 0;
 }
 
-/* Wraps a message sender's avatar with room for the shared-workbench
+/* Wraps a message sender's avatar with workbench for the shared-workbench
    tenant-monogram badge, positioned bottom-right — only
    rendered when the server annotates the sender with a
    `tenantMonogram` (see `resolveMessageSenderTenant` in
@@ -1674,7 +1674,7 @@
   color: var(--destructive);
 }
 
-/* The room's onboarding scene card: one constant header (what this room
+/* The workbench's onboarding scene card: one constant header (what this workbench
    is for, the promise under it, where you are in the walkthrough) above a
    body that flips between connect, pick, and reviewing. Step state is
    carried in words inside each row, never by color alone — DESIGN.md
@@ -1874,7 +1874,7 @@
   }
 }
 
-/* Composer chrome — a single bordered input row with room to breathe.
+/* Composer chrome — a single bordered input row with space to breathe.
    Docked at the chat column's full working width, independent of the
    72ch prose measure the bubble text uses; the @ / slash popover then
    matches that same full-width box. */

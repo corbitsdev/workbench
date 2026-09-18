@@ -286,7 +286,7 @@ function profileActions(
 }
 
 /** Shared workbenches are not listed: membership of another principal in
- * a room has no stock read, so the card shows none rather than guessing. */
+ * a workbench has no stock read, so the card shows none rather than guessing. */
 function useSharedWorkbenches(): readonly ProfileCardChannel[] {
   return [];
 }

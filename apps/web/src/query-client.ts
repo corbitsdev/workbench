@@ -79,7 +79,7 @@ export const tenantKeys = {
   all: (tenantId: string) => ["tenant", tenantId] as const,
   /** `GET /api/tenants/:id` — the only source of `parentId`, so this is the
    * key `bench-context.tsx` fans out per membership to tell a bench
-   * (`parentId === null`) apart from a room (a named child tenant). */
+   * (`parentId === null`) apart from a workbench (a named child tenant). */
   detail: (tenantId: string) => ["tenant", tenantId, "detail"] as const,
   pendingApprovals: (tenantId: string) => ["tenant", tenantId, "approvals"] as const,
   /** One agent-name read per run, shared by every approval that run raised

@@ -36,7 +36,7 @@ function useMemberBenches(): {
 } {
   const { memberships, benchMemberships } = useBench();
   // The Routines roster aggregates per bench; `useBench`'s
-  // `benchMemberships` is already the top-level subset — a room (a named
+  // `benchMemberships` is already the top-level subset — a workbench (a named
   // child tenant) never hosts routines here.
   const benches = useMemo(
     () => benchMemberships.map((m) => ({ tenantId: m.tenantId, tenantName: m.tenantName })),

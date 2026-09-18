@@ -26,7 +26,7 @@ import { reportError } from "@corbits/error-sink";
 import { QueryView } from "@/lib/api-query";
 import { chatKeys, chatPath } from "../chat-path";
 import { isAgentNotRunning, listChatAgents, type ChatAgent } from "@/chat/threads-api";
-import { describeRestartFailure, redeployRoomAgent } from "../workbench-create";
+import { describeRestartFailure, redeployWorkbenchAgent } from "../workbench-create";
 import { useBench } from "../bench-context";
 import { Link } from "../navigation";
 import { useTenantQuery } from "../routines-api";
@@ -55,7 +55,7 @@ export function AgentsRosterList({
 }) {
   const queryClient = useQueryClient();
   const restart = useMutation({
-    mutationFn: (agent: ChatAgent) => redeployRoomAgent(tenantId, agent),
+    mutationFn: (agent: ChatAgent) => redeployWorkbenchAgent(tenantId, agent),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: chatKeys.agents(tenantId) });
     },

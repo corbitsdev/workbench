@@ -8,7 +8,7 @@ import { DitherBackground } from "../auth/dither-background";
  * visual continuity with the sign-in screen: a form column on the left and
  * a dithered brand panel on the right (hidden on small screens). Wider than
  * the auth form column — the credential step's provider picker and the
- * guidance cards need more room than a login form does.
+ * guidance cards need more space than a login form does.
  */
 export function OnboardingLayout({ children }: { readonly children: ReactNode }) {
   return (

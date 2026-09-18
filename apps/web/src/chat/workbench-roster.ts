@@ -1,8 +1,8 @@
-// A room mail send has no way to hand off between agents: the hub only
-// delivers to run addresses, which only the client knows (a room's
+// A workbench mail send has no way to hand off between agents: the hub only
+// delivers to run addresses, which only the client knows (a workbench's
 // Participants panel already reads them off the deployment/run listing).
-// Appending them as a trailing block on every room send gives every agent
-// in the room everyone else's address, so one agent can mail another
+// Appending them as a trailing block on every workbench send gives every agent
+// in the workbench everyone else's address, so one agent can mail another
 // directly. Agent-to-agent mail goes run to run and never lands in the
 // person's mailbox on its own, so the block also carries the person's own
 // address and a line telling agents to copy it on any handoff — the mail

@@ -4,9 +4,9 @@ import { agentDeploySourceAssetName } from "../agent-deploy";
 import { MYRA_SOURCE_CONFIG } from "../myra-source";
 import {
   displayAgentName,
-  listRoomParticipants,
+  listWorkbenchParticipants,
   resolveAvatarName,
-  type RoomParticipant,
+  type WorkbenchParticipant,
 } from "./threads-api";
 
 const realFetch = globalThis.fetch;
@@ -33,8 +33,8 @@ describe("displayAgentName", () => {
   });
 });
 
-describe("listRoomParticipants", () => {
-  test("a person's address is their refId at the room's own domain, never email or bare refId", async () => {
+describe("listWorkbenchParticipants", () => {
+  test("a person's address is their refId at the workbench's own domain, never email or bare refId", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
       if (path.includes("/principals")) {
@@ -60,12 +60,12 @@ describe("listRoomParticipants", () => {
       throw new Error(`unexpected fetch: ${path}`);
     }) as typeof fetch;
 
-    const participants = await listRoomParticipants("tnt_1", "room.example");
+    const participants = await listWorkbenchParticipants("tnt_1", "example.com");
     expect(participants).toContainEqual({
       id: "prin_1",
       kind: "person",
       name: "Alice",
-      address: "Mk9tHH@room.example",
+      address: "Mk9tHH@example.com",
     });
   });
 });
@@ -74,7 +74,7 @@ describe("resolveAvatarName", () => {
   // A person's roster address is `<refId>@<domain>`, mixed case as stored;
   // the mailbox lowercases local parts on the wire, so a header `from`
   // stays mixed case while the envelope `from` comes back lowercase.
-  const participants: readonly RoomParticipant[] = [
+  const participants: readonly WorkbenchParticipant[] = [
     { id: "p1", kind: "person", name: "alice", address: "Mk9tHH@example.com" },
     { id: "a1", kind: "agent", name: "Myra", address: "myra@example.com" },
   ];

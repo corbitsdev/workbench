@@ -1,4 +1,4 @@
-// The one warm loader every page/room-level wait in this app renders —
+// The one warm loader every page/workbench-level wait in this app renders —
 // a bare skeleton/spinner/grey
 // slab is never the right answer for "we don't know how long this takes":
 // one honest headline plus a small rotating tip reads as useful rather than
@@ -41,7 +41,7 @@ function WorkbenchLoadingTip() {
 }
 
 /**
- * The shared page/room-level loading treatment: one honest headline (never
+ * The shared page/workbench-level loading treatment: one honest headline (never
  * an internal stage name — "Starting the runtime…" tells the reader
  * nothing they can act on) plus a rotating tip. Delays its own mount by
  * `delayMs` so a wait that resolves quickly never flashes an intermediate

@@ -186,7 +186,7 @@ export function rejectApproval(
 
 /**
  * One-shot fetch of `GET /api/tenants/:id` — the only place `parentId`
- * comes from. A bench is a top-level tenant (`parentId === null`); a room
+ * comes from. A bench is a top-level tenant (`parentId === null`); a workbench
  * is a named child tenant, so the raw-id/name heuristic can never tell them
  * apart. `bench-context.tsx` fans this out per membership with
  * `useQueries` to decide which memberships are benches.

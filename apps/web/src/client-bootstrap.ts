@@ -125,8 +125,9 @@ export const UPSTREAM_GAP_NOTES: Record<StockHubCapability, string> = {
   "deploy-workflow-inputs":
     "Myra is absent and the client was not given the exact stock source and offering ids — supply myraDeploy from client config.",
   "project-workflow-principal":
-    "Stock Interchange cannot carry a workflow identity into a child room by refId, so workbench member setup waits on an upstream capability.",
-  "principal-roles": "The stock member invite route cannot assign the requested child-room roles.",
+    "Stock Interchange cannot carry a workflow identity into a child workbench by refId, so workbench member setup waits on an upstream capability.",
+  "principal-roles":
+    "The stock member invite route cannot assign the requested child-workbench roles.",
   "agent-mailbox-reads":
     "Stock Interchange exposes no per-agent mailbox search, so participant-filtered thread derivation waits on a stock search route.",
   "thread-fork-context":
