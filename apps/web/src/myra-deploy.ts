@@ -10,6 +10,7 @@ import { type } from "arktype";
 
 import { MYRA_SOURCE_CONFIG } from "./myra-source";
 import type { WorkflowDeployInput } from "./needs-list";
+import type { DeclaredSource } from "./onboarding/provider-connect-step";
 
 export class MyraDeployError extends Error {}
 
@@ -94,7 +95,10 @@ const ASSISTANT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
  * "unbounded"` (not the numeric default) gets `drainBehavior: "wait"`; a
  * bare `trigger` becomes a one-element `triggers` array.
  */
-export function buildMyraDefinitionJson(triggerAddress: string): unknown {
+export function buildMyraDefinitionJson(
+  triggerAddress: string,
+  declaredSources: readonly DeclaredSource[],
+): unknown {
   return {
     id: ASSISTANT_WORKFLOW_ID,
     triggers: [{ type: "mail", to: triggerAddress }],
@@ -110,11 +114,9 @@ export function buildMyraDefinitionJson(triggerAddress: string): unknown {
           systemPrompt: ASSISTANT_SYSTEM_PROMPT,
           toolFactories: [],
           capabilities: [],
-          // Cosmetic label only (see `InferencePreference`'s own doc
-          // comment in `@intx/agent`): deploy-time inference actually
-          // resolves from the deploy's `sourceOfferingIds`, never from
-          // this field.
-          inference: { sources: [{ provider: "stock", model: "stock" }] },
+          // The probe approves exactly these `(provider, model)` pairs, so
+          // they must name what the deploy's offering chain resolves to.
+          inference: { sources: declaredSources.map((source) => ({ ...source })) },
           toolPackagePins: ASSISTANT_TOOL_PACKAGE_PINS,
         },
         drainBehavior: "wait",
@@ -169,11 +171,14 @@ export async function pushMyraSource(
   tenantId: string,
   assetId: string,
   tenantDomain: string,
+  declaredSources: readonly DeclaredSource[],
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   const tree = renderWorkflowSourceTree({
     packageName: MYRA_SOURCE_CONFIG.packageName,
-    workflowJson: JSON.stringify(buildMyraDefinitionJson(`assistant@${tenantDomain}`)),
+    workflowJson: JSON.stringify(
+      buildMyraDefinitionJson(`assistant@${tenantDomain}`, declaredSources),
+    ),
   });
   const url = new URL(
     `/api/tenants/${encodeURIComponent(tenantId)}/assets/${MYRA_SOURCE_CONFIG.assetKind}/${MYRA_SOURCE_CONFIG.assetName}.git`,
@@ -224,11 +229,18 @@ export async function deployMyraSource(
     tenantDomain: string;
     sourceOfferingIds: readonly string[];
     defaultSourceOfferingId: string;
+    declaredSources: readonly DeclaredSource[];
   },
   fetchImpl: typeof fetch = fetch,
 ): Promise<WorkflowDeployInput> {
   const assetId = await ensureMyraSourceAsset(args.tenantId, fetchImpl);
-  const commitSha = await pushMyraSource(args.tenantId, assetId, args.tenantDomain, fetchImpl);
+  const commitSha = await pushMyraSource(
+    args.tenantId,
+    assetId,
+    args.tenantDomain,
+    args.declaredSources,
+    fetchImpl,
+  );
   return buildMyraDeployInput({
     assetId,
     commitSha,

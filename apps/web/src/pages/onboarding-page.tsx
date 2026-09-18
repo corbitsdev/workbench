@@ -162,6 +162,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
           tenantDomain,
           sourceOfferingIds: offering.sourceOfferingIds,
           defaultSourceOfferingId: offering.defaultSourceOfferingId,
+          declaredSources: offering.declaredSources,
         }),
       )
       .then(
