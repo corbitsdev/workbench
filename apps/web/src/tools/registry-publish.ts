@@ -1,15 +1,12 @@
 // Publishes every `tools/*` package's raw TypeScript source as an
 // npm-shaped tarball into the tenant's `corbits-tools` package-registry
-// asset — the same ensure-asset-then-PUT-tarball plumbing
-// `myra-deploy.ts` already uses for Myra's own workflow source, and the
-// same `packTarball` (Interchange's stock tool-package resolver installs
-// and runs a tool package straight from its packed source, so no bundling
-// step is needed here either). `tools/*` directories are read directly
-// off the workspace at build time via `import.meta.glob`, so a new
-// `tools/*` package is picked up without editing a directory list here.
+// asset. Interchange's stock tool-package resolver installs and runs a
+// tool package straight from its packed source, so no bundling step is
+// needed. `tools/*` directories are read off the workspace at build time
+// via `import.meta.glob`, so a new package is picked up automatically.
 import { type } from "arktype";
 
-import { packTarball } from "../myra-deploy";
+import { packTarball } from "./tarball";
 
 export const CORBITS_TOOLS_REGISTRY = "corbits-tools";
 

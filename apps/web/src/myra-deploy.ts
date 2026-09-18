@@ -1,16 +1,7 @@
 // Builds and publishes Myra's deployable definition entirely over stock
-// routes. See `myra-source.ts` for why this is the one
-// deploy-source variant that installs today.
-//
-// Three steps, each a stock route: ensure the `package-registry` asset
-// exists (`POST /api/tenants/:id/assets`, tolerating the 409 an
-// already-provisioned tenant reports); pack the built assistant
-// definition as an npm-shaped tarball and PUT it in
-// (`PUT /api/tenants/:id/assets/:assetId/tarballs/:filename`); hand back
-// the `WorkflowDeployInput` the caller passes to `convergeNeedsList`.
-// The pure offering-ids → deploy-input mapping (`buildMyraDeployInput`)
-// is split out so it can be unit-tested without a fetch or a real
-// gzip/tar round-trip.
+// routes: ensure the `workflow`-kind asset exists, mint a short-lived push
+// token, push the rendered source tree into the asset's git repo, revoke
+// the token, and hand back the `WorkflowDeployInput` pinned to that commit.
 import { ASSISTANT_SYSTEM_PROMPT } from "@corbits/myra/prompt";
 import { ASSISTANT_TOOL_PACKAGE_PINS } from "@corbits/myra/tool-packages";
 import { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "@corbits/myra/workflow-ids";
@@ -19,12 +10,15 @@ import { type } from "arktype";
 
 import { MYRA_SOURCE_CONFIG } from "./myra-source";
 import type { WorkflowDeployInput } from "./needs-list";
+import type { DeclaredSource } from "./onboarding/provider-connect-step";
 
 export class MyraDeployError extends Error {}
 
 const AssetCreatedShape = type({ id: "string" });
 const AssetListShape = type({ id: "string", name: "string" }).array();
-const TarballPutShape = type({ commit: "string", integrity: "string" });
+const GitTokenMintShape = type({ id: "string", secret: "string" });
+
+const PUSH_TOKEN_LIFETIME_MS = 10 * 60 * 1000;
 
 async function readErrorBody(response: Response): Promise<string> {
   const body: unknown = await response.json().catch(() => undefined);
@@ -34,9 +28,8 @@ async function readErrorBody(response: Response): Promise<string> {
   return envelope instanceof type.errors ? `HTTP ${response.status}` : envelope.error.userMessage;
 }
 
-/** Idempotently ensures the `package-registry` asset Myra's tarball is
- * published into, mirroring `the deleted onboarding package's `ensureWorkflowAsset`
- * 409-then-list pattern. */
+/** Idempotently ensures the `workflow` asset Myra's source is pushed
+ * into: create it, or on 409 find the existing one by name. */
 export async function ensureMyraSourceAsset(
   tenantId: string,
   fetchImpl: typeof fetch = fetch,
@@ -83,90 +76,6 @@ export async function ensureMyraSourceAsset(
   return existing.id;
 }
 
-// -- tar/gzip: a minimal, dependency-free USTAR + gzip writer for the
-// exact two small text files `renderWorkflowSourceTree` emits. No new
-// package: the browser's own `CompressionStream("gzip")` does the
-// compression; only the tar container needs hand-rolling. --
-
-const TAR_BLOCK_SIZE = 512;
-
-function tarChecksumPlaceholder(): string {
-  return "        "; // 8 spaces, per the USTAR header spec
-}
-
-function padOctal(value: number, width: number): string {
-  return value.toString(8).padStart(width - 1, "0") + "\0";
-}
-
-/** One USTAR header block plus its content, padded to a 512-byte
- * boundary — everything `tar.Parser`'s auto-detected gzip+ustar read
- * needs for a single regular-file entry. */
-function tarEntry(path: string, content: Uint8Array): Uint8Array {
-  if (path.length >= 100) {
-    throw new MyraDeployError(
-      `tar entry path ${JSON.stringify(path)} is too long for a USTAR header`,
-    );
-  }
-  const header = new Uint8Array(TAR_BLOCK_SIZE);
-  const encoder = new TextEncoder();
-  const writeField = (offset: number, value: string): void => {
-    header.set(encoder.encode(value), offset);
-  };
-  writeField(0, path);
-  writeField(100, padOctal(0o644, 8));
-  writeField(108, padOctal(0, 8));
-  writeField(116, padOctal(0, 8));
-  writeField(124, padOctal(content.length, 12));
-  writeField(136, padOctal(0, 12));
-  writeField(148, tarChecksumPlaceholder());
-  writeField(156, "0"); // typeflag: regular file
-  writeField(257, "ustar\0");
-  writeField(263, "00");
-
-  let checksum = 0;
-  for (const byte of header) checksum += byte;
-  // The 8-byte checksum field is 6 octal digits, NUL, space; anything
-  // longer spills into the typeflag byte and fails every reader's check.
-  writeField(148, checksum.toString(8).padStart(6, "0") + "\0 ");
-
-  const paddedLength = Math.ceil(content.length / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
-  const body = new Uint8Array(paddedLength);
-  body.set(content);
-
-  const entry = new Uint8Array(header.length + body.length);
-  entry.set(header, 0);
-  entry.set(body, header.length);
-  return entry;
-}
-
-/** Packs a `{ path: contents }` tree (as `renderWorkflowSourceTree`
- * returns) into an npm-shaped tar archive rooted at `package/`, then
- * gzips it. */
-export async function packTarball(tree: Readonly<Record<string, string>>): Promise<Uint8Array> {
-  const encoder = new TextEncoder();
-  const entries: Uint8Array[] = [];
-  for (const [path, contents] of Object.entries(tree)) {
-    entries.push(tarEntry(`package/${path}`, encoder.encode(contents)));
-  }
-  const endOfArchive = new Uint8Array(TAR_BLOCK_SIZE * 2);
-  const totalLength = entries.reduce((sum, entry) => sum + entry.length, 0) + endOfArchive.length;
-  const tar = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const entry of entries) {
-    tar.set(entry, offset);
-    offset += entry.length;
-  }
-  tar.set(endOfArchive, offset);
-
-  const gzipStream = new Blob([tar]).stream().pipeThrough(new CompressionStream("gzip"));
-  return new Uint8Array(await new Response(gzipStream).arrayBuffer());
-}
-
-function tarballFilename(): string {
-  const safeName = MYRA_SOURCE_CONFIG.packageName.replace(/[^A-Za-z0-9_.@+-]/g, "-");
-  return `${safeName}-${MYRA_SOURCE_CONFIG.packageVersion}.tgz`;
-}
-
 const ASSISTANT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 
 /**
@@ -186,7 +95,10 @@ const ASSISTANT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
  * "unbounded"` (not the numeric default) gets `drainBehavior: "wait"`; a
  * bare `trigger` becomes a one-element `triggers` array.
  */
-export function buildMyraDefinitionJson(triggerAddress: string): unknown {
+export function buildMyraDefinitionJson(
+  triggerAddress: string,
+  declaredSources: readonly DeclaredSource[],
+): unknown {
   return {
     id: ASSISTANT_WORKFLOW_ID,
     triggers: [{ type: "mail", to: triggerAddress }],
@@ -202,11 +114,9 @@ export function buildMyraDefinitionJson(triggerAddress: string): unknown {
           systemPrompt: ASSISTANT_SYSTEM_PROMPT,
           toolFactories: [],
           capabilities: [],
-          // Cosmetic label only (see `InferencePreference`'s own doc
-          // comment in `@intx/agent`): deploy-time inference actually
-          // resolves from the deploy's `sourceOfferingIds`, never from
-          // this field.
-          inference: { sources: [{ provider: "stock", model: "stock" }] },
+          // The probe approves exactly these `(provider, model)` pairs, so
+          // they must name what the deploy's offering chain resolves to.
+          inference: { sources: declaredSources.map((source) => ({ ...source })) },
           toolPackagePins: ASSISTANT_TOOL_PACKAGE_PINS,
         },
         drainBehavior: "wait",
@@ -219,48 +129,75 @@ export function buildMyraDefinitionJson(triggerAddress: string): unknown {
   };
 }
 
-/** Renders Myra's built assistant definition, packs it, and PUTs it into
- * the given `package-registry` asset. Returns the published filename
- * (`pin`'s `name@version` names the package inside it; the filename
- * itself never leaves this module). */
-export async function publishMyraTarball(
+/** Mints a push-only token scoped to `main`, runs `push` with it, and
+ * revokes the token afterwards whatever the push's outcome. */
+async function withPushToken<T>(
   tenantId: string,
   assetId: string,
-  tenantDomain: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<void> {
-  const tree = renderWorkflowSourceTree({
-    packageName: MYRA_SOURCE_CONFIG.packageName,
-    workflowJson: JSON.stringify(buildMyraDefinitionJson(`assistant@${tenantDomain}`)),
+  fetchImpl: typeof fetch,
+  push: (token: string) => Promise<T>,
+): Promise<T> {
+  const tokensPath = `/api/tenants/${encodeURIComponent(tenantId)}/git-tokens`;
+  const minted = await fetchImpl(tokensPath, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "myra-deploy",
+      resource: `asset:${assetId}`,
+      refPattern: "refs/heads/main",
+      // The ref advertisement before a push is a read, so a push-only
+      // token is refused at info/refs.
+      actions: ["can_read", "can_push"],
+      expiresAt: new Date(Date.now() + PUSH_TOKEN_LIFETIME_MS).toISOString(),
+    }),
   });
-  const tarball = await packTarball(tree);
-  const filename = tarballFilename();
-  const response = await fetchImpl(
-    `/api/tenants/${encodeURIComponent(tenantId)}/assets/${encodeURIComponent(assetId)}/tarballs/${encodeURIComponent(filename)}`,
-    {
-      method: "PUT",
-      headers: { "content-type": "application/octet-stream" },
-      body: new Blob([tarball as Uint8Array<ArrayBuffer>]),
-    },
-  );
-  if (!response.ok) {
-    throw new MyraDeployError(`publishing Myra's tarball failed: ${await readErrorBody(response)}`);
+  if (!minted.ok) {
+    throw new MyraDeployError(`minting a push token failed: ${await readErrorBody(minted)}`);
   }
-  const parsed = TarballPutShape(await response.json());
-  if (parsed instanceof type.errors) {
-    throw new MyraDeployError(
-      `Myra's tarball upload came back an unexpected shape: ${parsed.summary}`,
-    );
+  const token = GitTokenMintShape(await minted.json());
+  if (token instanceof type.errors) {
+    throw new MyraDeployError(`the push token came back an unexpected shape: ${token.summary}`);
+  }
+  try {
+    return await push(token.secret);
+  } finally {
+    await fetchImpl(`${tokensPath}/${encodeURIComponent(token.id)}`, { method: "DELETE" });
   }
 }
 
+/** Renders Myra's built definition as a source tree and pushes it to the
+ * asset's `main`. Returns the commit sha the deploy pins to. */
+export async function pushMyraSource(
+  tenantId: string,
+  assetId: string,
+  tenantDomain: string,
+  declaredSources: readonly DeclaredSource[],
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const tree = renderWorkflowSourceTree({
+    packageName: MYRA_SOURCE_CONFIG.packageName,
+    workflowJson: JSON.stringify(
+      buildMyraDefinitionJson(`assistant@${tenantDomain}`, declaredSources),
+    ),
+  });
+  const url = new URL(
+    `/api/tenants/${encodeURIComponent(tenantId)}/assets/${MYRA_SOURCE_CONFIG.assetKind}/${MYRA_SOURCE_CONFIG.assetName}.git`,
+    globalThis.location.origin,
+  ).toString();
+  // Loaded on demand: the git client only runs during setup, so it stays
+  // out of the main bundle.
+  const { pushSourceTree } = await import("./git-push");
+  return withPushToken(tenantId, assetId, fetchImpl, (token) =>
+    pushSourceTree({ url, token, tree, message: "Publish Myra's definition" }),
+  );
+}
+
 /** The pure mapping this module exists to get right: the operator's
- * offering pick plus the asset this tenant just published into, turned
- * into the exact `WorkflowDeployInput` `convergeNeedsList` needs. Split
- * out from the fetch/tar plumbing above so it is unit-testable on its
- * own. */
+ * offering pick plus the commit just pushed, turned into the exact
+ * `WorkflowDeployInput` `convergeNeedsList` needs. */
 export function buildMyraDeployInput(args: {
   assetId: string;
+  commitSha: string;
   sourceOfferingIds: readonly string[];
   defaultSourceOfferingId: string;
 }): WorkflowDeployInput {
@@ -276,16 +213,15 @@ export function buildMyraDeployInput(args: {
     source: {
       kind: "asset",
       assetId: args.assetId,
-      package: { format: "tarball" },
+      package: { format: "source", commitSha: args.commitSha },
     },
     entry: MYRA_SOURCE_CONFIG.entryPath,
     sourceOfferingIds: [...args.sourceOfferingIds],
     defaultSourceOfferingId: args.defaultSourceOfferingId,
-    pin: `${MYRA_SOURCE_CONFIG.packageName}@${MYRA_SOURCE_CONFIG.packageVersion}`,
   };
 }
 
-/** Orchestrates the three steps above and returns the `myraDeploy` input
+/** Orchestrates the steps above and returns the `myraDeploy` input
  * ready to hand to `bootstrapClientSession`/`convergeNeedsList`. */
 export async function deployMyraSource(
   args: {
@@ -293,13 +229,21 @@ export async function deployMyraSource(
     tenantDomain: string;
     sourceOfferingIds: readonly string[];
     defaultSourceOfferingId: string;
+    declaredSources: readonly DeclaredSource[];
   },
   fetchImpl: typeof fetch = fetch,
 ): Promise<WorkflowDeployInput> {
   const assetId = await ensureMyraSourceAsset(args.tenantId, fetchImpl);
-  await publishMyraTarball(args.tenantId, assetId, args.tenantDomain, fetchImpl);
+  const commitSha = await pushMyraSource(
+    args.tenantId,
+    assetId,
+    args.tenantDomain,
+    args.declaredSources,
+    fetchImpl,
+  );
   return buildMyraDeployInput({
     assetId,
+    commitSha,
     sourceOfferingIds: args.sourceOfferingIds,
     defaultSourceOfferingId: args.defaultSourceOfferingId,
   });

@@ -69,22 +69,38 @@ export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
 // The credential row requires a secret; Ollama ignores whatever is sent.
 const LOCAL_PLACEHOLDER_KEY = "ollama";
 
+/** A `(plugin, canonicalName)` pair, the identity the deploy gate approves
+ * an inference source under. */
+export type DeclaredSource = {
+  readonly provider: ModelProviderPlugin;
+  readonly model: string;
+};
+
 export type ExistingOffering = {
   readonly sourceOfferingIds: readonly string[];
   readonly defaultSourceOfferingId: string;
+  /** Same order as `sourceOfferingIds`; Myra declares these so the probe
+   * approves exactly what the offering chain resolves to. */
+  readonly declaredSources: readonly DeclaredSource[];
 };
 
 /** Every visible offering becomes a source; the lowest priority is the default. */
 export async function resolveExistingOffering(tenantId: string): Promise<ExistingOffering | null> {
   const models = await getResolvedCatalog(tenantId);
   const offerings = models
-    .flatMap((model) => model.offerings)
+    .flatMap((model) =>
+      model.offerings.map((offering) => ({ ...offering, model: model.canonicalName })),
+    )
     .sort((a, b) => a.priority - b.priority);
   const defaultSourceOfferingId = offerings[0]?.offeringId;
   if (defaultSourceOfferingId === undefined) return null;
   return {
     sourceOfferingIds: offerings.map((offering) => offering.offeringId),
     defaultSourceOfferingId,
+    declaredSources: offerings.map((offering) => ({
+      provider: offering.plugin,
+      model: offering.model,
+    })),
   };
 }
 
@@ -125,8 +141,9 @@ export function ProviderConnectStep({
     }
     setSubmitting(true);
     try {
+      const canonicalName = isLocal ? modelName.trim() : option.canonicalName;
       const created = await shadowOffering(tenantId, {
-        canonicalName: isLocal ? modelName.trim() : option.canonicalName,
+        canonicalName,
         modelDisplayName: isLocal ? modelName.trim() : option.modelDisplayName,
         providerName: option.label,
         plugin: option.plugin,
@@ -137,6 +154,7 @@ export function ProviderConnectStep({
       onConnected({
         sourceOfferingIds: [created.id],
         defaultSourceOfferingId: created.id,
+        declaredSources: [{ provider: option.plugin, model: canonicalName }],
       });
     } catch (cause) {
       const refId = reportError(cause, {
