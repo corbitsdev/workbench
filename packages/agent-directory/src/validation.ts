@@ -2,7 +2,7 @@
 // boundary before anything touches the asset service.
 
 import { type } from "arktype";
-import { skillNameSchema } from "@corbits/skills";
+import { skillNameSchema } from "@corbits/skills-tools";
 
 // Mirrors `@intx/hub-sessions`' `ASSET_NAME_PATTERN` exactly (not
 // imported: the constant is internal to that package). A definition's
@@ -25,7 +25,7 @@ function boundedNonBlankString(max: number) {
 }
 
 // A pinned skill names a row in the tenant's skill registry
-// (`@corbits/skills`), so it is bound by exactly the registry's own name
+// (`@corbits/skills-tools`), so it is bound by exactly the registry's own name
 // rule — the same kebab-case, `<=64`-char shape the hub's `skill` kind
 // handler requires of a SKILL.md's frontmatter. A name outside it could
 // never resolve to a real skill, so rejecting it here beats storing a
@@ -102,7 +102,7 @@ export type UpdateDefinitionStatusInput = typeof UpdateDefinitionStatusInput.inf
 
 /** The body of a request that restores a definition to an earlier
  * commit on its own asset history — the same `commitSha` shape
- * `@corbits/skills`' restore route takes, kept plain-text ("history",
+ * `@corbits/skills-tools`' restore route takes, kept plain-text ("history",
  * never "commit SHA") everywhere a person reads it; the sha only
  * appears in a tooltip. */
 export const RestoreDefinitionInput = type({ commitSha: "string > 0" });

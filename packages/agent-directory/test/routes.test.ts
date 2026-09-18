@@ -1440,7 +1440,7 @@ test("a create request indexes its pinned skills into the stored system prompt",
   expect(prompt).toContain("skills_load");
   // The prompt tells the model to call `skills_load`, so the bundle that
   // provides it must be pinned on the same push.
-  expect(pinsFrom(workflowJson)).toEqual([{ name: "@corbits/tools-skills", version: "0.0.4" }]);
+  expect(pinsFrom(workflowJson)).toEqual([{ name: "@corbits/skills-tools", version: "0.0.9" }]);
 });
 
 test("pinning a skill the registry cannot resolve is a 400, not a 500", async () => {

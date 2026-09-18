@@ -26,7 +26,7 @@ import {
   AVAILABLE_SKILLS_OPEN_TAG,
   withAvailableSkills,
   type PinnedSkillIndexEntry,
-} from "@corbits/skills";
+} from "@corbits/skills-tools";
 import { type } from "arktype";
 import semver from "semver";
 
@@ -42,8 +42,8 @@ export const AGENT_DEFINITION_STEP_ID = "agent";
  * `skills_load` tool that does not exist.
  */
 export const SKILLS_TOOL_PACKAGE_PIN = {
-  name: "@corbits/tools-skills",
-  version: "0.0.4",
+  name: "@corbits/skills-tools",
+  version: "0.0.9",
 } as const;
 
 /**

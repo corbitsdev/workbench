@@ -2,14 +2,14 @@ import { expect, test } from "bun:test";
 import type { ToolCall } from "@intx/types/runtime";
 
 import {
-  skillsTools,
+  skillsManageTools,
   CREATE_SKILL_TOOL,
   LIST_SKILLS_TOOL,
   PIN_SKILL_TOOL,
   READ_SKILL_TOOL,
   UPDATE_SKILL_TOOL,
   type WorkflowSkillsWriteEnv,
-} from "./tool";
+} from "./manage-tools";
 
 function testEnv(): WorkflowSkillsWriteEnv {
   return {
@@ -35,7 +35,7 @@ async function withFetch<T>(impl: typeof fetch, run: () => Promise<T>): Promise<
 }
 
 test("declares exactly the five skills tools", () => {
-  const bundle = skillsTools(testEnv());
+  const bundle = skillsManageTools(testEnv());
   expect(bundle.definitions.map((d) => d.name)).toEqual([
     LIST_SKILLS_TOOL,
     READ_SKILL_TOOL,
@@ -46,7 +46,7 @@ test("declares exactly the five skills tools", () => {
 });
 
 test("requires the sanctioned workflow-skills-write env keys", () => {
-  expect(skillsTools.requires).toEqual([
+  expect(skillsManageTools.requires).toEqual([
     "hubSkillsUrl",
     "hubAgentDirectoryUrl",
     "sidecarToken",
@@ -55,7 +55,7 @@ test("requires the sanctioned workflow-skills-write env keys", () => {
 });
 
 test('the two reads and the two grant-free writes (create_skill, update_skill) carry no approval gate; pin_skill, which changes another agent\'s own behavior, keeps approval: "ask"', () => {
-  expect(skillsTools.definitions).toEqual([
+  expect(skillsManageTools.definitions).toEqual([
     { name: LIST_SKILLS_TOOL },
     { name: READ_SKILL_TOOL },
     { name: CREATE_SKILL_TOOL },
@@ -65,7 +65,7 @@ test('the two reads and the two grant-free writes (create_skill, update_skill) c
 });
 
 test("read_skill rejects a call missing the name without calling out", async () => {
-  const bundle = skillsTools(testEnv());
+  const bundle = skillsManageTools(testEnv());
   const result = await bundle.run(callFor(READ_SKILL_TOOL, {}), new AbortController().signal);
   expect(result.isError).toBe(true);
   expect(result.content).toMatch(/invalid input/);
@@ -76,7 +76,7 @@ test("read_skill rejects a call missing the name without calling out", async () 
 // each fails closed with an explicit error instead of a fabricated
 // result.
 test("read_skill surfaces the missing stock route as an honest tool error", async () => {
-  const bundle = skillsTools(testEnv());
+  const bundle = skillsManageTools(testEnv());
   const result = await bundle.run(
     callFor(READ_SKILL_TOOL, { name: "triage" }),
     new AbortController().signal,
@@ -86,14 +86,14 @@ test("read_skill surfaces the missing stock route as an honest tool error", asyn
 });
 
 test("list_skills surfaces the missing stock route as an honest tool error, never an empty list", async () => {
-  const bundle = skillsTools(testEnv());
+  const bundle = skillsManageTools(testEnv());
   const result = await bundle.run(callFor(LIST_SKILLS_TOOL, {}), new AbortController().signal);
   expect(result.isError).toBe(true);
   expect(result.content).toMatch(/no stock Interchange HTTP route/);
 });
 
 test("create_skill rejects a call missing a required field without calling out", async () => {
-  const bundle = skillsTools(testEnv());
+  const bundle = skillsManageTools(testEnv());
   const result = await bundle.run(
     callFor(CREATE_SKILL_TOOL, { name: "triage", body: "b" }),
     new AbortController().signal,
@@ -103,7 +103,7 @@ test("create_skill rejects a call missing a required field without calling out",
 });
 
 test("create_skill surfaces the missing stock route as an honest tool error, never a fabricated success", async () => {
-  const bundle = skillsTools(testEnv());
+  const bundle = skillsManageTools(testEnv());
   const result = await bundle.run(
     callFor(CREATE_SKILL_TOOL, {
       name: "triage",
@@ -117,7 +117,7 @@ test("create_skill surfaces the missing stock route as an honest tool error, nev
 });
 
 test("update_skill surfaces the missing stock route as an honest tool error, never a fabricated success", async () => {
-  const bundle = skillsTools(testEnv());
+  const bundle = skillsManageTools(testEnv());
   const result = await bundle.run(
     callFor(UPDATE_SKILL_TOOL, { name: "triage", body: "New body." }),
     new AbortController().signal,
@@ -127,7 +127,7 @@ test("update_skill surfaces the missing stock route as an honest tool error, nev
 });
 
 test("pin_skill reports the definition's full pinned-skill list after the pin", async () => {
-  const bundle = skillsTools(testEnv());
+  const bundle = skillsManageTools(testEnv());
   let seenUrl: string | undefined;
   let seenBody: unknown;
   const result = await withFetch(
@@ -152,7 +152,7 @@ test("pin_skill reports the definition's full pinned-skill list after the pin", 
 });
 
 test("pin_skill rejects a call missing skillName without calling out", async () => {
-  const bundle = skillsTools(testEnv());
+  const bundle = skillsManageTools(testEnv());
   const result = await bundle.run(
     callFor(PIN_SKILL_TOOL, { definitionId: "def_1" }),
     new AbortController().signal,

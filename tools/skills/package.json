@@ -1,12 +1,12 @@
 {
-  "name": "@corbits/tools-skills",
-  "version": "0.0.4",
-  "description": "skills_list / skills_search / skills_load as an @intx/agent tool bundle: calls the sanctioned workflow-skills HTTP surface (@corbits/skills) with the sidecar's own bearer token and the run's own address, and fails closed rather than returning an empty registry",
+  "name": "@corbits/skills-tools",
+  "version": "0.0.9",
+  "description": "SKILL.md authoring, the pinned-skills prompt index, and the list_skills/read_skill/create_skill/update_skill/pin_skill + skills_list/skills_search/skills_load @intx/agent tool bundles, over native kind:\"skill\" hub assets and @corbits/agent-directory's definition_skills store",
   "license": "LGPL-2.1-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/corbitsdev/workbench.git",
-    "directory": "tools/tools-skills"
+    "directory": "tools/skills"
   },
   "files": [
     "src",

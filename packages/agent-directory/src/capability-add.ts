@@ -6,7 +6,7 @@
 // snapshot instead of silently dropping an add. The lock itself lives
 // in `./asset-write.ts` so sibling RMW routes share it.
 
-import type { PinnedSkillIndexEntry } from "@corbits/skills";
+import type { PinnedSkillIndexEntry } from "@corbits/skills-tools";
 import type { DB } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
 

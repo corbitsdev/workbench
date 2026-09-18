@@ -39,7 +39,7 @@ import type { DB } from "@intx/db";
 import { tenant, workflowDefinition } from "@intx/db/schema";
 import type { AssetService } from "@intx/hub-sessions";
 
-import { skillNameSchema } from "@corbits/skills";
+import { skillNameSchema } from "@corbits/skills-tools";
 import { isAutomatableWorkflowName } from "@corbits/workflows/catalog";
 
 import {

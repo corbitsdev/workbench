@@ -41,9 +41,6 @@
       "path": "./packages/workflows/tsconfig.src.json"
     },
     {
-      "path": "./skills/skills/tsconfig.src.json"
-    },
-    {
       "path": "./tools/access/tsconfig.src.json"
     },
     {
@@ -71,10 +68,7 @@
       "path": "./tools/reddit/tsconfig.src.json"
     },
     {
-      "path": "./tools/skills-tools/tsconfig.src.json"
-    },
-    {
-      "path": "./tools/tools-skills/tsconfig.src.json"
+      "path": "./tools/skills/tsconfig.src.json"
     },
     {
       "path": "./tools/web-search/tsconfig.src.json"

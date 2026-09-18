@@ -5,7 +5,7 @@
 // listing logic itself — a tenant's usable agents, tool packages,
 // skills, and models are each already owned by another package
 // (`@corbits/tasks`' definition list, the stock credentials route,
-// `@corbits/skills`' registry, the tenant model catalog route), so
+// `@corbits/skills-tools`' registry, the tenant model catalog route), so
 // task-planner only defines the seam those listers plug into.
 //
 // Memory folds into `listUsableToolPackages` rather than getting its
