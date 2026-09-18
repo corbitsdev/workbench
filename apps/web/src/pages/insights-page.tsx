@@ -33,7 +33,7 @@ import { useEffect, useState } from "react";
 
 import { workflowRunStatuses, type WorkflowRunStatus } from "@intx/types";
 import { SignedOutNotice, type APIQuery } from "@/lib/api-query";
-import { workbenchesQueryKey, listWorkbenches } from "@/chat";
+import { workbenchesQueryKey, listWorkbenches } from "@/chat/workbench-tenants";
 
 import { useBench } from "../bench-context";
 import { resolveWorkbenchInsightsScope } from "../insights-workbench-scope";
@@ -57,7 +57,6 @@ import {
   useTenantQuery,
   type ScheduledWorkflowDefinition,
 } from "../routines-api";
-import { WorkbenchTimelineRoute } from "./workbench-timeline";
 
 export function formatWhen(iso: string): string {
   const date = new Date(iso);
@@ -630,17 +629,11 @@ export function InsightsPage({
  * tenant-scoped fetch.
  */
 function InsightsWorkbenchPage({
-  workbenchId,
   workbenchesLoading,
   resolution,
-  benchTenantId,
-  onOpenRun,
 }: {
-  readonly workbenchId: string;
   readonly workbenchesLoading: boolean;
   readonly resolution: ReturnType<typeof resolveWorkbenchInsightsScope>;
-  readonly benchTenantId: string | null;
-  readonly onOpenRun: (id: string) => void;
 }) {
   if (workbenchesLoading) {
     return (
@@ -687,10 +680,10 @@ function InsightsWorkbenchPage({
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageShell width="full" className="page-fill">
-          <WorkbenchTimelineRoute
-            benchTenantId={benchTenantId}
-            workbenchId={workbenchId}
-            onOpenRun={onOpenRun}
+          <RichEmptyState
+            icon={<ChartBar />}
+            title="This workbench's activity lives in its room"
+            description="Open the workbench to read its conversation."
           />
         </PageShell>
       </div>
@@ -744,7 +737,6 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
 function InsightsWorkbenchPageRoute({
   workbenchId,
   benchTenantId,
-  onOpenRun,
 }: {
   readonly workbenchId: string;
   readonly benchTenantId: string | null;
@@ -752,15 +744,7 @@ function InsightsWorkbenchPageRoute({
 }) {
   const { workbenches, chats, isLoading } = useWorkbenchAndChatLists(benchTenantId);
   const resolution = resolveWorkbenchInsightsScope([...workbenches, ...chats], workbenchId);
-  return (
-    <InsightsWorkbenchPage
-      workbenchId={workbenchId}
-      workbenchesLoading={isLoading}
-      resolution={resolution}
-      benchTenantId={benchTenantId}
-      onOpenRun={onOpenRun}
-    />
-  );
+  return <InsightsWorkbenchPage workbenchesLoading={isLoading} resolution={resolution} />;
 }
 
 function useWorkbenchAndChatLists(tenantId: string | null) {

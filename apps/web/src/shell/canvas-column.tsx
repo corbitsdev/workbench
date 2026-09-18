@@ -30,14 +30,12 @@ import {
   type ProfileCardChannel,
 } from "@corbits/react-ui";
 import { ArtifactRenderer, ArtifactTextEditor, type ArtifactSaveState } from "@/library";
-import type { ProfileSubject, SharedWorkbenchSummary } from "@/chat";
+import type { ProfileSubject } from "@/chat";
 import { ArrowsIn, ArrowsOut, ArrowSquareOut, CaretLeft, UserCircle, X } from "@/lib/icons";
-import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import { useBench } from "../bench-context";
-import { workbenchPath } from "../workbench-path";
-import { ensureProfileDm, loadSharedWorkbenches } from "../profile-relations";
+import { NEW_CHAT_PATH } from "../chat-path";
 import type { CanvasArtifactContent, RoutinePanelSubject } from "./canvas-availability";
 import { useInsertIntoComposer } from "./composer-insertion";
 
@@ -103,36 +101,22 @@ export function CanvasColumn({
   );
 }
 
-/**
- * Open-or-create the DM with `profile` and land on it. `tenantId === null`
- * (bench not resolved yet) has nothing to message against — an honest toast,
- * matching `mentionAction`'s pattern, rather than a silent no-op. The panel
- * only closes once the DM is actually resolved: `setPending` drives the
- * button's in-flight label so a slow create isn't mistaken for nothing
- * having happened.
- */
+/** Messaging someone is composing a chat thread with them: land on the
+ * composer rather than minting anything here. */
 function messageAction(
   tenantId: string | null,
   profile: ProfileSubject,
   onNavigate: (path: string) => void,
   onClose: () => void,
-  setPending: (pending: boolean) => void,
 ): () => void {
   return () => {
     if (tenantId === null) {
       toast(`Open a workbench to message @${profile.handle}`);
       return;
     }
-    setPending(true);
-    void ensureProfileDm(tenantId, profile).then((result) => {
-      setPending(false);
-      if (result.kind === "ready") {
-        onNavigate(workbenchPath(result.workbenchId));
-        onClose();
-      } else {
-        toast(result.message);
-      }
-    });
+    // A DM is a chat thread now: compose it on /chats/new.
+    onNavigate(NEW_CHAT_PATH);
+    onClose();
   };
 }
 
@@ -239,14 +223,12 @@ function profileActions(
   onClose: () => void,
   onNavigate: (path: string) => void,
   insertIntoComposer: (text: string) => boolean,
-  messagePending: boolean,
-  setMessagePending: (pending: boolean) => void,
 ): readonly ProfileCardAction[] {
   const message: ProfileCardAction = {
     id: "message",
-    label: messagePending ? "Messaging…" : "Message",
+    label: "Message",
     tone: "primary",
-    onClick: messageAction(tenantId, profile, onNavigate, onClose, setMessagePending),
+    onClick: messageAction(tenantId, profile, onNavigate, onClose),
   };
   const mention: ProfileCardAction = {
     id: "mention",
@@ -303,46 +285,10 @@ function profileActions(
   ];
 }
 
-function toProfileCardWorkbenches(
-  workbenches: readonly SharedWorkbenchSummary[],
-): readonly ProfileCardChannel[] {
-  return workbenches.map((workbench) => ({
-    id: workbench.id,
-    name: workbench.title,
-    href: workbenchPath(workbench.id),
-  }));
-}
-
-/** Shared workbenches between the viewer and `profile` — refetched
- * whenever the open profile changes, dropped if a later change races past
- * an in-flight fetch. Pinned skills are intentionally never populated: no
- * agent carries any real skill-attachment data yet (tracked in), so
- * showing them would be fabricated, not deferred. */
-function useSharedWorkbenches(
-  tenantId: string | null,
-  viewerPrincipalId: string | null,
-  profile: ProfileSubject,
-): readonly SharedWorkbenchSummary[] {
-  const [workbenches, setWorkbenches] = useState<readonly SharedWorkbenchSummary[]>([]);
-
-  useEffect(() => {
-    setWorkbenches([]);
-    if (tenantId === null || viewerPrincipalId === null) return;
-    let cancelled = false;
-    void loadSharedWorkbenches(tenantId, viewerPrincipalId, profile).then(
-      (result) => {
-        if (!cancelled) setWorkbenches(result);
-      },
-      () => {
-        if (!cancelled) setWorkbenches([]);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId, viewerPrincipalId, profile.address]);
-
-  return workbenches;
+/** Shared workbenches are not listed: membership of another principal in
+ * a room has no stock read, so the card shows none rather than guessing. */
+function useSharedWorkbenches(): readonly ProfileCardChannel[] {
+  return [];
 }
 
 function ProfileCanvasPane({
@@ -358,14 +304,9 @@ function ProfileCanvasPane({
   readonly onToggleFocus: () => void;
   readonly onNavigate: (path: string) => void;
 }) {
-  const { selectedTenantId, selectedPrincipalId } = useBench();
+  const { selectedTenantId } = useBench();
   const insertIntoComposer = useInsertIntoComposer();
-  const [messagePending, setMessagePending] = useState(false);
-  // A new subject means any in-flight "Messaging…" belonged to the last one.
-  useEffect(() => {
-    setMessagePending(false);
-  }, [profile.address]);
-  const sharedWorkbenches = useSharedWorkbenches(selectedTenantId, selectedPrincipalId, profile);
+  const sharedWorkbenches = useSharedWorkbenches();
 
   return (
     <div className="shell-profile-pane">
@@ -376,16 +317,8 @@ function ProfileCanvasPane({
         initials={profile.initials}
         statusLabel={profile.kind === "agent" ? "Agent" : "Member"}
         avatarTone={profile.kind === "agent" ? "agent" : "neutral"}
-        actions={profileActions(
-          profile,
-          selectedTenantId,
-          onClose,
-          onNavigate,
-          insertIntoComposer,
-          messagePending,
-          setMessagePending,
-        )}
-        sharedChannels={toProfileCardWorkbenches(sharedWorkbenches)}
+        actions={profileActions(profile, selectedTenantId, onClose, onNavigate, insertIntoComposer)}
+        sharedChannels={sharedWorkbenches}
       />
     </div>
   );

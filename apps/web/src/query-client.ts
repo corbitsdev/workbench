@@ -5,8 +5,8 @@
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 
 import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";
-import { workbenchesQueryKey } from "@/chat";
-import type { WorkbenchKind } from "@/chat";
+import { workbenchesQueryKey } from "@/chat/workbench-tenants";
+import type { WorkbenchKind } from "@/chat/workbench-tenants";
 
 /**
  * Retry policy shared by every query in the app: no session and a

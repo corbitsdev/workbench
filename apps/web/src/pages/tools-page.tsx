@@ -21,7 +21,7 @@ import { Plugs } from "@/lib/icons";
 import { WorkbenchLoadingState } from "@/chat";
 import { useCallback, useEffect, useState } from "react";
 
-import { listCapabilityInventory, type CapabilityInventory } from "../chat/api";
+import { listCapabilityInventory, type CapabilityInventory } from "../agents-api";
 import { useBench } from "../bench-context";
 import { StageTopBar } from "../shell/stage-top-bar";
 

@@ -8,8 +8,15 @@
 // `/settings/:section` and `settingsEntityIdFromPath` for the app-level
 // Settings page.
 
-import { isWorkbenchSettingsSectionId, type WorkbenchSettingsSectionId } from "@/chat";
 import { decodedOrNull } from "@corbits/url-path";
+
+/** The settings sub-paths a workbench deep link still resolves. */
+export const WORKBENCH_SETTINGS_SECTION_IDS = ["general", "members", "agents", "danger"] as const;
+export type WorkbenchSettingsSectionId = (typeof WORKBENCH_SETTINGS_SECTION_IDS)[number];
+
+function isWorkbenchSettingsSectionId(value: string): value is WorkbenchSettingsSectionId {
+  return (WORKBENCH_SETTINGS_SECTION_IDS as readonly string[]).includes(value);
+}
 
 export const WORKBENCH_PATH_PREFIX = "/w";
 const LEGACY_CHAT_PATH_PREFIX = "/chat";
