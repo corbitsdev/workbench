@@ -29,9 +29,6 @@ function metaLine(
   now: number | undefined,
 ): string {
   const parts: string[] = [];
-  if (artifact.ownerName !== null && artifact.ownerName !== "") {
-    parts.push(artifact.ownerName);
-  }
   if (meta?.sourceChannel !== undefined && meta.sourceChannel !== null) {
     parts.push(meta.sourceChannel);
   }

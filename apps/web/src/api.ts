@@ -39,7 +39,7 @@ export const ArtifactListItemSchema = type({
   source: "Record<string, unknown>",
   version: "number",
   ownerPrincipalId: "string | null",
-  ownerName: "string | null",
+  metadata: "Record<string, unknown> | null",
   archivedAt: "string | null",
   createdAt: "string",
   updatedAt: "string",

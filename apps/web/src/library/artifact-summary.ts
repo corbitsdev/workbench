@@ -11,7 +11,6 @@ export const ArtifactSummary = type({
    * "csv", "one-pager". Never a closed union: the hub cannot enumerate every
    * kind a workflow might one day emit. */
   kind: "string",
-  ownerName: "string | null",
   createdAt: "string",
   "updatedAt?": "string | null",
 });

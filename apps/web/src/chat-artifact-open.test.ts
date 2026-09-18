@@ -66,7 +66,7 @@ function artifactDetail(overrides: Partial<ArtifactDetail>): ArtifactDetail {
     source: { origin: "workflow", runId: "run_1" },
     version: 1,
     ownerPrincipalId: null,
-    ownerName: null,
+    metadata: null,
     archivedAt: null,
     createdAt: "2026-08-01T00:00:00.000Z",
     updatedAt: "2026-08-01T00:00:00.000Z",

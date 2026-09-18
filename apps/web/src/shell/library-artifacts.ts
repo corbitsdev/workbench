@@ -17,7 +17,6 @@ export type ArtifactListRow = {
   readonly id: string;
   readonly kind: string;
   readonly title: string;
-  readonly ownerName: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -34,7 +33,6 @@ export function artifactListRowToSummary(row: ArtifactListRow): ArtifactSummary 
     id: row.id,
     title: row.title,
     kind: row.kind,
-    ownerName: row.ownerName,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
