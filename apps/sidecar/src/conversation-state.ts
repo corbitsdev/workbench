@@ -1,127 +1,8 @@
-// Durable conversation state for the warm single-step agent (design §3c,
-// §4 Phase D1).
-//
-// A long-lived single-step agent holds its multi-turn conversation in
-// the reactor's in-memory turn buffer, backed by a per-step isogit
-// `ContextStore`. That store is rooted per run/attempt, so it is lost
-// the moment the warm agent's child is killed and respawned: the
-// rebuilt agent loads a fresh, empty per-run store and the conversation
-// continuity is gone.
-//
-// This module makes the warm agent's conversation DURABLE in the
-// workflow-run substrate (the single-writer proxy `RepoStore`, written
-// through the supervisor). The durable copy lives under the workflow-run
-// repo at a stable per-agent path (`agent-state/<agentKey>/...`), sibling
-// to the per-run event log under `runs/<runId>/...` and NOT confused with
-// it. On a new run (and after a child respawn, once the warm agent is
-// rebuilt lazily) the conversation is restored from the substrate into
-// the agent's local store BEFORE the agent's reactor loads, so multi-turn
-// continuity holds across runs and across respawn.
-//
-// Two-tier on-disk layout (design §4, Phase D1). The prior design wrote
-// the WHOLE conversation as a single `conversation.json` blob on every
-// message. That re-serialized and re-hashed every prior turn per message,
-// so the per-message durable cost grew O(N) in the turn count -- O(N^2)
-// over a conversation. D1 replaces it with an append-only, bucket-sharded
-// write-ahead log plus a periodic compacted checkpoint:
-//
-//   agent-state/<agentKey>/
-//     checkpoint.json        compacted full snapshot (turns + metadata)
-//     checkpoint.meta.json   { checkpointSeq: <boundary>, turnCount,
-//                              tokenUsage, pendingOperations,
-//                              connectorState }
-//     wal/<bucket>/<seq>.json  one per-boundary delta blob keyed by mirror
-//                              BOUNDARY seq, carrying that boundary's
-//                              0-or-more new turns plus the freshest metadata
-//
-// The WAL is keyed by mirror BOUNDARY, not by turn: each `mirrorToSubstrate`
-// writes exactly one entry, even when the boundary added no new turns. That
-// makes metadata (pendingOperations, tokenUsage, connectorState) persist on
-// EVERY boundary -- a turnless-but-metadata-mutating boundary still commits
-// a zero-turn entry, so restore never reconstructs stale metadata. (Keying
-// the entry by turn dropped metadata on turnless boundaries, which regressed
-// the byte-for-byte metadata-equivalence invariant; per-boundary keying is
-// the fix.)
-//
-// `bucket = floor(boundarySeq / WAL_BUCKET_SIZE)` (B = 128) bounds any
-// single directory's tree-object size so no commit re-hashes a tree that
-// grows with N (a flat `wal/<seq>.json` directory would itself be O(N) per
-// commit). Compaction every CHECKPOINT_INTERVAL boundaries (K = 64, i.e.
-// once the live WAL reaches K entries) folds the WAL into a fresh
-// `checkpoint.json` (capturing the freshest metadata in checkpoint.meta) and
-// truncates the WAL, so between checkpoints the WAL holds at most K entries
-// and per-boundary durable cost is ~O(1) amortized. K and B are constants
-// here; the design flags them as measurement-tunable.
-//
-// Restore = load `checkpoint.json` (folded turns + its metadata) then replay
-// the WAL tail in boundary-seq order, concatenating each boundary's turns
-// and taking the LATEST entry's metadata (the last WAL entry wins; the
-// checkpoint's metadata is the base when the WAL is empty). This is pure
-// state reconstruction from recorded outputs -- never re-inference. It
-// rebuilds the EXACT turn list + metadata the old whole-blob mirror would
-// have restored.
-//
-// Substrate-merge constraint (load-bearing, design §4 "Substrate-merge
-// note"). `writeTreePreservingPrefix`'s `merge` callback receives only
-// the DIRECT CHILDREN of `preservePrefix`, and the substrate's
-// `clearPrefix` step recursively removes the whole `preservePrefix`
-// subtree before writing the merge's returned set (paths outside the
-// prefix pass through untouched). A WAL blob is two levels below
-// `agent-state/<key>/`, so:
-//
-//   - WAL append uses `preservePrefix = agent-state/<key>/wal/<bucket>/`.
-//     The bucket's existing blobs ARE direct children, so the merge
-//     pre-image is exactly that bucket and the append adds one entry --
-//     no isogit side-read, and the checkpoint / other buckets are
-//     untouched (outside the prefix).
-//   - Checkpoint write + WAL truncate uses `preservePrefix =
-//     agent-state/<key>/`. The top-level checkpoint files are direct
-//     children; the merge returns ONLY those files and NO `wal/...`
-//     paths, so the recursive `clearPrefix` at `agent-state/<key>/` drops
-//     the entire WAL subtree in the same atomic commit. The truncate
-//     needs no nested read: omitting the WAL paths from the returned set
-//     IS the truncate.
-//
-// Persistence sink (the riskiest part, design §6). The connector router's
-// `snapshot()` / `restore()` surface and the harness's
-// `createWrappedStorageOverrides` are reused, but the persistence sink is
-// repointed from the agent's local isogit store to the workflow-run
-// substrate. Both the WAL append and the checkpoint write route through
-// the proxy `writeTreePreservingPrefix`; because the supervisor is the
-// single writer and serializes every write to the workflow-run ref under
-// a per-repo lock, and the `agent-state/<key>/...` prefix is disjoint from
-// the run-event prefix (`runs/<runId>/events/`), the conversation write
-// never races nor clobbers the run-event log -- both pass through the same
-// single writer, and the preserve-prefix merge leaves every other subtree
-// byte-for-byte intact.
-//
-// Timing (design §4 Phase D1, invariant 1). This is a STRUCTURE-only
-// change. The mirror is still `await`ed synchronously at the same run
-// boundary (`onRunBoundary` -> `mirrorToSubstrate`), so every turn is
-// still durably committed before the next message is processed. D1
-// changes WHAT the write does (O(1) append instead of O(N) whole-blob),
-// not WHEN it happens. The run log is NOT yet a durable backstop for the
-// turn (it carries a constant ref, design rev-2 FACT 1), so the
-// conversation copy here remains the sole durable copy of the agent's
-// per-turn output -- which is exactly why D1 keeps the write synchronous.
-// The async flusher, run-log enrichment, and crash reconciliation are
-// later, conditional phases (D2-D4), not done here.
-//
-// Commit granularity (greybeard's pick, design §3c open question). The
-// design calls for connector-state-change-driven commits via the router's
-// `onStateChanged` hook. The warm-agent path drives the connector router
-// through `seedInbound`: each mail-derived inbound message routes and
-// commits its thread state before the agent's send, so `onStateChanged`
-// fires and enqueues a change-driven mirror. The run-boundary mirror (per
-// message) still runs unconditionally, so the two triggers are
-// complementary -- the seed persists the connector state promptly, the
-// boundary persists the turn delta.
-//
-// Defensive: a restore that finds a checkpoint or WAL but cannot
-// parse/replay it THROWS (a lost or corrupt conversation on respawn is a
-// correctness failure, not a silently-fresh start). A mirror write failure
-// surfaces so a dropped durability write is visible rather than leaving
-// the next respawn to read a stale snapshot.
+// Makes a warm single-step agent's multi-turn conversation durable in the
+// workflow-run substrate (not the agent's per-run isogit store, which is
+// lost on child respawn), so continuity survives across runs and respawns.
+// See docs/sidecar-conversation-durability.md for the on-disk layout,
+// substrate-merge constraints, and timing/failure guarantees.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -168,30 +49,14 @@ const CHECKPOINT_INTERVAL = 64;
  */
 const WAL_BUCKET_SIZE = 128;
 
-/**
- * Metadata carried alongside the checkpoint and stamped onto every WAL
- * entry. Small and bounded -- it is NOT the O(N) cost; the turn array is.
- * Stamping the latest metadata on each WAL entry lets the restore replay
- * recover the exact non-turn reactor state without a separate metadata
- * log: the last replayed entry's metadata wins. Because every mirror
- * boundary writes exactly one WAL entry (even a turnless one), the latest
- * metadata is ALWAYS captured durably -- a turnless boundary still commits
- * its advanced metadata as a zero-turn entry.
- */
+/** Metadata stamped onto every WAL entry so restore recovers reactor state without a separate log. */
 const SnapshotMetadata = type({
   pendingOperations: "unknown[]",
   tokenUsage: TokenUsage,
   connectorState: ConnectorThreadState.or("null"),
 });
 
-/**
- * On-disk shape of the compacted checkpoint blob committed at
- * `agent-state/<agentKey>/checkpoint.json`. Carries the folded turn
- * history (turns 0..checkpointSeq-1) plus the non-turn reactor metadata.
- * Validated on read because it crosses back into the program from the
- * substrate working tree -- a corrupt or partially-written checkpoint must
- * surface at the boundary, never be half-applied into the agent.
- */
+/** Compacted checkpoint blob; validated on read so a corrupt or partial file surfaces rather than half-applies. */
 const CheckpointSnapshot = type({
   turns: "unknown[]",
   pendingOperations: "unknown[]",
@@ -199,17 +64,7 @@ const CheckpointSnapshot = type({
   connectorState: ConnectorThreadState.or("null"),
 });
 
-/**
- * On-disk shape of `agent-state/<agentKey>/checkpoint.meta.json`. The
- * checkpoint pointer the restore path reads first to learn the boundary seq
- * the checkpoint folded to (`checkpointSeq`) -- and therefore which WAL
- * boundary seqs remain to replay -- plus the folded turn count
- * (`turnCount`, = `checkpoint.json`'s turn array length) and the freshest
- * metadata at fold time. `checkpointSeq` counts MIRROR BOUNDARIES, not
- * turns: a boundary may carry zero or many turns, so the boundary count and
- * the turn count diverge in general (they coincide only when every boundary
- * adds exactly one turn).
- */
+/** Checkpoint pointer restore reads first; checkpointSeq counts mirror boundaries, not turns, since a boundary may carry zero or many turns. */
 const CheckpointMeta = type({
   checkpointSeq: "number",
   turnCount: "number",
@@ -218,16 +73,7 @@ const CheckpointMeta = type({
   connectorState: ConnectorThreadState.or("null"),
 });
 
-/**
- * On-disk shape of one WAL entry blob at
- * `agent-state/<agentKey>/wal/<bucket>/<seq>.json`. One entry per MIRROR
- * BOUNDARY (keyed by boundary `seq`, not turn index). Records the 0-or-more
- * new turns that boundary added (the O(1) append payload -- it never
- * carries prior turns) plus the latest non-turn metadata snapshot. The
- * append is UNCONDITIONAL: a turnless boundary still writes one entry with
- * `turns: []` so its advanced metadata is durably committed (the invariant
- * the per-turn keying broke -- metadata must persist on EVERY boundary).
- */
+/** One entry per mirror boundary (not per turn); a turnless boundary still writes `turns: []` so its metadata persists. */
 const WalEntry = type({
   seq: "number",
   turns: "unknown[]",
@@ -287,55 +133,15 @@ export interface DurableConversationStore {
    * isogit store the non-warm path uses.
    */
   readonly storage: ContextStore & AuditStore;
-  /**
-   * Pull the prior conversation from the substrate (checkpoint + WAL-tail
-   * replay) into the local store so the agent's reactor `load()` sees it.
-   * Called before the warm agent is built (lazy first build and respawn
-   * rebuild). Returns `true` when prior state was found and applied,
-   * `false` when none exists yet (the genuine first-ever run). A read that
-   * finds a checkpoint or WAL but cannot parse/replay it throws -- a
-   * corrupt durable copy is a correctness failure that must not silently
-   * start the agent fresh.
-   */
+  /** Restore prior conversation from the substrate before the agent builds; throws on a corrupt copy rather than starting fresh. */
   restoreFromSubstrate(): Promise<boolean>;
-  /**
-   * Commit the local store's new turn(s) to the substrate as O(1) WAL
-   * appends, folding into a fresh checkpoint when the WAL reaches the
-   * compaction interval. Called synchronously at the run boundary (after
-   * the agent's send settles). A write failure surfaces.
-   */
+  /** Commit new turns as an O(1) WAL append, compacting into a checkpoint at the compaction interval. */
   mirrorToSubstrate(): Promise<void>;
-  /**
-   * Advance the connector router from a received inbound message so the
-   * warm agent's reply path has thread state. Runs the router's pure
-   * `route()` then `commit()`: a `start` seeds threadRoot / lastMessageId /
-   * replyTo from the message; a `continue` advances lastMessageId / replyTo
-   * and carries prior speakers into `cc`. The advanced connector state is
-   * flushed into the local store's metadata so the run-boundary mirror
-   * persists it and a respawn restore re-seeds the router. A `passthrough`
-   * decision -- no active-thread match, or an unparseable sender -- advances
-   * nothing. Called before the warm agent's send so `composeReply()` can
-   * compose a threaded reply. A metadata write failure surfaces.
-   */
+  /** Advances connector thread state from an inbound message so composeReply can address a threaded reply. */
   seedInbound(message: InboundMessage): Promise<void>;
-  /**
-   * Produce the threading headers for a reply on the active connector
-   * thread (the router's `composeReply`). Throws
-   * `NoActiveConnectorThreadError` when no thread has been seeded. The warm
-   * mail loop's reply drain reads this to address its outbound reply.
-   */
+  /** Threading headers for a reply on the active connector thread; throws NoActiveConnectorThreadError with none seeded. */
   composeReply(): ConnectorReplyParts;
-  /**
-   * Advance the connector thread after a reply was sent. Forwards to the
-   * router's `onReplySent` (which moves `lastMessageId` to the sent reply's
-   * Message-ID so the next inbound continuation matches) and flushes the
-   * advanced connector state into the local store's metadata the same way
-   * `seedInbound` does, so `lastMessageId` persists across turns and across a
-   * child respawn. Called by the warm mail loop's reply drain after its
-   * outbound send settles. Throws `NoActiveConnectorThreadError` when no
-   * thread is active -- advancing outbound state has no meaning without a
-   * seeded thread. A metadata write failure surfaces.
-   */
+  /** Advances thread state after a reply is sent so the next inbound continuation matches lastMessageId. */
   onReplySent(receipt: SendReceipt): Promise<void>;
 }
 
@@ -379,22 +185,11 @@ export async function createDurableConversationStore(
   // checkpointBoundarySeq) and when to compact.
   let checkpointBoundarySeq = 0;
 
-  // Serialize the shared-counter critical section. Both `mirrorToSubstrate`
-  // and `restoreFromSubstrate` read and advance the three counts above, and
-  // either can re-enter the other: `connectorRouter.restore()` can fire
-  // `onStateChanged` synchronously, which enqueues a mirror. A single
-  // per-instance tail runs every such op one-at-a-time regardless of entry
-  // point, so two overlapping runs cannot read the same boundary seq and
-  // emit two WAL entries at it. Modeled on `runRepoOp` in the hub-agent
-  // session manager: the stored tail swallows rejections so one failed op
-  // does not poison the chain, while each caller still observes its own op's
-  // result (or rejection) through the returned promise.
-  //
-  // This serializes mirror-vs-mirror and mirror-vs-restore only. It does NOT
-  // address the reactor-vs-mirror peek-snapshot window documented on
-  // `runMirror` below (nothing must append to the reactor's turn array
-  // between its last writeTurns and the mirror's peekTurns) -- that is a
-  // different concurrency axis and is out of scope here.
+  // Serializes the shared-counter critical section: mirror and restore can
+  // re-enter each other (connectorRouter.restore() can fire onStateChanged
+  // synchronously), so a single tail prevents two overlapping runs from
+  // emitting two WAL entries at the same boundary seq. Does not address the
+  // separate reactor-vs-mirror peek-snapshot window documented on runMirror.
   let stateOpTail: Promise<unknown> = Promise.resolve();
   function serializeStateOp<T>(op: () => Promise<T>): Promise<T> {
     const result = stateOpTail.then(op, op);
@@ -471,14 +266,9 @@ export async function createDurableConversationStore(
     // so a future change-driven mirror carries the right base.
     await baseStorage.writeTurns(reconstructed.turns);
     baseStorage.setConnectorState(reconstructed.connectorState);
-    // Establish the committed counts BEFORE restoring the connector state.
-    // `connectorRouter.restore()` can fire `onStateChanged` synchronously
-    // (when the restored state differs from current), which enqueues a
-    // mirror. Serialization already chains that mirror behind this restore,
-    // but setting the counts first keeps them correct even if that ordering
-    // guarantee is ever weakened. The counts reflect the substrate state
-    // `reconstructed` was read from, which is durable independent of the
-    // local-store commit below.
+    // Set counts before restoring connector state: restore() can fire
+    // onStateChanged synchronously and enqueue a mirror, so this keeps the
+    // counts correct even if the serialization ordering is ever weakened.
     mirroredBoundaryCount = reconstructed.boundaryCount;
     mirroredTurnCount = reconstructed.totalTurns;
     checkpointBoundarySeq = reconstructed.checkpointBoundarySeq;
@@ -493,15 +283,7 @@ export async function createDurableConversationStore(
     return true;
   }
 
-  /**
-   * Append one WAL entry for a mirror boundary (its 0-or-more new turns +
-   * the current metadata) to its bucket. The merge pre-image is exactly
-   * that bucket's existing blobs (direct children of `wal/<bucket>/`), so
-   * the append is the bucket's blobs plus the one new entry -- O(bucket
-   * size), independent of N. The append is the SINGLE synchronous write per
-   * boundary; the entry is keyed by boundary `seq` so a turnless boundary
-   * still commits its metadata as a zero-turn entry.
-   */
+  /** Appends one WAL entry to its bucket; O(bucket size), independent of total turn count N. */
   async function appendWalEntry(
     boundarySeq: number,
     turns: unknown[],
@@ -533,14 +315,7 @@ export async function createDurableConversationStore(
     );
   }
 
-  /**
-   * Fold the full conversation into a fresh checkpoint and truncate the
-   * WAL in one atomic commit at `preservePrefix = agent-state/<key>/`. The
-   * merge returns ONLY the two checkpoint files and NO `wal/...` paths;
-   * because the substrate's `clearPrefix` recursively removes the whole
-   * `agent-state/<key>/` subtree before writing the returned set, omitting
-   * the WAL paths IS the truncate.
-   */
+  /** Folds the conversation into a fresh checkpoint and truncates the WAL atomically by omitting wal/ paths from the merge return. */
   async function writeCheckpoint(
     boundarySeq: number,
     turns: unknown[],
@@ -556,11 +331,7 @@ export async function createDurableConversationStore(
       tokenUsage: metadata.tokenUsage,
       connectorState: metadata.connectorState,
     };
-    // `metadata` is the freshest snapshot (the current local-store
-    // metadata, identical to the last appended WAL entry's metadata), so
-    // the fold captures the latest metadata into checkpoint.meta -- a
-    // restore from the post-fold checkpoint sees the same metadata the
-    // pre-fold WAL tail would have yielded.
+    // metadata is the freshest snapshot, so a post-fold restore sees the same metadata the pre-fold WAL tail would have yielded.
     const meta = {
       checkpointSeq: boundarySeq,
       turnCount: turns.length,
@@ -584,18 +355,10 @@ export async function createDurableConversationStore(
   }
 
   async function runMirror(): Promise<void> {
-    // Slice the new turns from the reactor's in-memory array (retained
-    // by the local single-writer store at the last writeTurns) instead
-    // of re-reading and re-parsing the whole turns.jsonl every
-    // boundary; only the bounded metadata.json is read from disk. This
-    // rests on a sequencing invariant the store cannot enforce: nothing
-    // mutates the reactor's turn array between its last writeTurns and
-    // this read. The mirror runs at onRunBoundary after send() settles,
-    // and the reactor only appends inside a cycle (each ending in
-    // writeTurns), so peekTurns() equals the on-disk state here.
-    // Serializing the mirror entry points keeps two mirrors from
-    // overlapping this read, but the reactor must still not append
-    // between its writeTurns and this peek -- that axis is not serialized.
+    // Reads the reactor's in-memory turn array rather than re-parsing
+    // turns.jsonl every boundary; relies on the reactor never appending
+    // between its last writeTurns and this peek, which serialization here
+    // does not itself enforce.
     const turns = baseStorage.peekTurns();
     const metadata = await baseStorage.loadMetadata();
 
@@ -613,15 +376,9 @@ export async function createDurableConversationStore(
       mirroredTurnCount = reconstructed?.totalTurns ?? 0;
     }
 
-    // ONE WAL entry per mirror boundary, UNCONDITIONALLY -- even when no new
-    // turns were added since the last mirror. The entry carries the
-    // 0-or-more new turns plus the freshest metadata snapshot, so a
-    // turnless-but-metadata-mutating boundary (e.g. a throwing send that
-    // still advanced tokenUsage/pendingOperations, since onRunBoundary runs
-    // in a finally) still durably commits its metadata. The payload is the
-    // turn DELTA plus bounded metadata -- never the whole conversation, so
-    // the O(N^2) growth stays gone. This is the single synchronous write
-    // per boundary on the reply path.
+    // One WAL entry per boundary, unconditionally, so a turnless boundary
+    // (e.g. a throwing send that still advanced tokenUsage) still commits
+    // its metadata; the payload is the turn delta, never the whole conversation.
     const newTurns = turns.slice(mirroredTurnCount);
     const boundarySeq = mirroredBoundaryCount;
     await appendWalEntry(boundarySeq, newTurns, metadata);
@@ -659,15 +416,9 @@ export async function createDurableConversationStore(
     }
   }
 
-  // Advance the connector router from a received inbound message and flush
-  // the resulting connector state into the local store's metadata. `commit`
-  // fires the router's `onStateChanged`, which enqueues a change-driven
-  // mirror behind this op on the shared serialization tail; because that
-  // mirror reads the connector state from the local store's metadata (not
-  // from the router), the metadata write below is what makes the seeded
-  // state reach the substrate. The write preserves the reactor's staged
-  // pendingOperations / tokenUsage -- a seed advances only connectorState.
-  // A passthrough decision advances nothing and writes nothing.
+  // commit() fires onStateChanged, enqueuing a change-driven mirror that reads
+  // connector state from local-store metadata, so the write below is what
+  // makes the seeded state reach the substrate.
   async function runSeed(message: InboundMessage): Promise<void> {
     const decision = routeOrPassthrough(message);
     connectorRouter.commit(decision);
@@ -684,17 +435,8 @@ export async function createDurableConversationStore(
     });
   }
 
-  // Advance the connector thread after a reply was sent and flush the
-  // resulting connector state into the local store's metadata. `onReplySent`
-  // moves `lastMessageId` to the reply's Message-ID and fires the router's
-  // `onStateChanged`, which enqueues a change-driven mirror behind this op on
-  // the shared serialization tail; because that mirror reads the connector
-  // state from the local store's metadata (not from the router), the metadata
-  // write below is what makes the advanced state reach the substrate. The
-  // write preserves the reactor's staged pendingOperations / tokenUsage -- an
-  // outbound advance touches only connectorState. `onReplySent` throws when no
-  // thread is active, which surfaces to the reply drain's failure callback
-  // rather than persisting a phantom advance.
+  // Same metadata-write pattern as runSeed; onReplySent throws when no thread
+  // is active so a phantom advance is never persisted.
   async function runReplySent(receipt: SendReceipt): Promise<void> {
     connectorRouter.onReplySent(receipt);
 
@@ -734,16 +476,7 @@ export interface DurableConversationRegistryOpts {
   signer: (payload: string) => Promise<string>;
 }
 
-/**
- * Per-agent durable-conversation store registry (design §3c). One store
- * per warm agent key, built lazily and reused across runs in the same
- * child. The first `acquire` for a key builds the store and restores its
- * prior conversation snapshot from the substrate -- the path that runs on
- * the lazy first build AND on the respawn rebuild, so the warm agent
- * resumes its conversation across child respawn. The registry is empty
- * after a respawn (it lives in the child's address space); the substrate
- * is the durable mirror that survives.
- */
+/** Per-agent store registry, built lazily and reused across runs; empty after a respawn since the substrate is what survives. */
 export interface DurableConversationRegistry {
   acquire(key: string): Promise<DurableConversationStore>;
   get(key: string): DurableConversationStore;
@@ -782,13 +515,9 @@ export function createDurableConversationRegistry(
         principal: opts.principal,
         agentKey: key,
       });
-      // Restore the prior conversation BEFORE the store is observable (and
-      // before the warm agent's reactor `load()` reads it). On a genuine
-      // first-ever run this is a no-op (no checkpoint/WAL yet); on a
-      // respawn rebuild it pulls the pre-respawn conversation back from the
-      // substrate (checkpoint + WAL replay). A restore failure surfaces --
-      // a lost conversation on respawn is a correctness failure, not a
-      // silently-fresh start.
+      // Restore before the store is observable; a no-op on first-ever run,
+      // otherwise pulls the pre-respawn conversation back. A restore failure
+      // surfaces rather than silently starting fresh.
       await store.restoreFromSubstrate();
       stores.set(key, store);
       building.delete(key);
@@ -820,15 +549,7 @@ interface SnapshotMetadataValue {
   connectorState: ConnectorThreadState | null;
 }
 
-/**
- * The reconstructed conversation plus the bookkeeping the mirror path needs
- * to resume appending. `totalTurns` is the full turn count (checkpoint +
- * WAL). `boundaryCount` is the number of mirror boundaries durably
- * committed (checkpoint's folded boundaries + replayed WAL entries) -- the
- * next WAL entry uses this as its boundary seq. `checkpointBoundarySeq` is
- * the boundary seq the checkpoint folded to (the first WAL boundary seq to
- * expect), so the mirror knows the live WAL length and when to compact.
- */
+/** Reconstructed conversation plus the boundary/turn bookkeeping the mirror path needs to resume appending. */
 export interface ReconstructedConversation extends LoadedSnapshot {
   totalTurns: number;
   boundaryCount: number;
@@ -836,20 +557,11 @@ export interface ReconstructedConversation extends LoadedSnapshot {
 }
 
 /**
- * Reconstruct the warm agent's conversation from the two-tier on-disk
- * layout under `agentStateDir` (`<repoDir>/agent-state/<agentKey>/`): the
- * compacted `checkpoint.json` turns followed by the replayed WAL tail.
- * Pure read against the substrate working tree -- no inference, no commit.
- * Returns `null` when neither a checkpoint nor any WAL exists (the genuine
- * first-ever run). The latest metadata source wins (the last replayed WAL
- * entry, or the checkpoint when the WAL is empty), mirroring how each
- * mirror stamps the current metadata. Throws on any corrupt/unparseable
- * blob or a WAL seq gap -- a damaged durable copy must surface, never
- * silently start the agent fresh or drop a turn.
- *
- * Exported so a reader (durability test, recovery audit) reconstructs the
- * conversation through the SAME code path the warm agent's restore uses,
- * rather than re-deriving the WAL/checkpoint fold independently.
+ * Pure read: checkpoint turns + replayed WAL tail. Returns `null` on a
+ * genuine first-ever run; throws on any corrupt blob or WAL seq gap rather
+ * than silently starting fresh or dropping a turn. Exported so a reader
+ * (durability test, recovery audit) uses the same reconstruction path the
+ * warm agent's restore does.
  */
 export async function reconstructDurableConversation(
   agentStateDir: string,
@@ -950,14 +662,7 @@ async function readCheckpointFromDir(
   };
 }
 
-/**
- * Read and seq-order the per-boundary WAL entries for boundary seqs >=
- * `fromSeq` from `<agentStateDir>/wal/<bucket>/`. Throws on any unparseable
- * or out-of-shape WAL blob -- a corrupt WAL must surface, never be skipped.
- * Throws on a gap in the boundary seq sequence: a missing seq means a lost
- * append, which would silently drop a boundary's turns + metadata from the
- * reconstruction.
- */
+/** Reads and seq-orders WAL entries >= fromSeq; throws on a corrupt blob or a seq gap rather than silently dropping a boundary. */
 async function readWalTailFromDir(
   agentStateDir: string,
   agentKey: string,

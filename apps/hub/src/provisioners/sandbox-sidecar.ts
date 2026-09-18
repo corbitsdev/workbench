@@ -1,8 +1,5 @@
-// Backend-agnostic sidecar allocation lifecycle: state store and
-// ensure/destroy convergence for a SidecarProvisioner. A backend supplies
-// only the SidecarBackend port (start/stop/find) and identity
-// (id/apiVersion/bindingFingerprint); this module owns everything else a
-// SidecarProvisioner needs to behave correctly under concurrent and
+// Backend-agnostic lifecycle: a backend supplies only start/stop/find and
+// identity; this module owns correctness under concurrent and
 // out-of-order ensure()/destroy() calls.
 import { randomBytes } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
@@ -39,13 +36,7 @@ export interface SidecarBackend {
   findUnitsByAllocation(allocationId: string): Promise<readonly string[]>;
 }
 
-/**
- * A backend throws this from startUnit()/stopUnit() to report a
- * classified failure — its own error code and whether it is worth
- * retrying — rather than a generic Error. The core forwards code/message/
- * retryable straight into the rejected EnsureSidecarResult/
- * DestroySidecarResult.
- */
+/** Lets a backend report a classified, retryable-or-not failure instead of a generic Error. */
 export class BackendOperationError extends Error {
   readonly code: string;
   readonly retryable: boolean;
@@ -59,12 +50,10 @@ export class BackendOperationError extends Error {
 }
 
 /**
- * The isolation a sidecar backend gives the code it runs, as a ladder: a
- * container also isolates the process, and a VM also isolates the
- * container. A backend declares every rung it reaches as `available` and
- * every rung above it as `blocked`, so a deployment that requires
- * `isolation:vm` fails closed on the process backend instead of quietly
- * landing on a shared kernel.
+ * A ladder: a container also isolates the process, a VM also isolates the
+ * container. A backend declares every rung it reaches as available so a
+ * deployment requiring isolation:vm fails closed rather than landing quietly
+ * on a shared kernel.
  */
 export const SIDECAR_ISOLATION_LEVELS = ["process", "container", "vm"] as const;
 
@@ -372,10 +361,8 @@ export type CreateSidecarProvisionerOpts = {
   readonly apiVersion: 1;
   readonly bindingFingerprint: string;
   /**
-   * Capabilities this backend declares to the hub's capability policy.
-   * Empty declares nothing, which matches any deployment that states no
-   * capability requirement -- the behaviour every allocation had before
-   * Interchange replaced the placement model with capability selection.
+   * Empty matches any deployment stating no requirement — the behaviour
+   * every allocation had before capability selection replaced placement.
    */
   readonly capabilities: readonly SidecarCapabilityDeclaration[];
   readonly backend: SidecarBackend;
@@ -441,13 +428,9 @@ export function createSidecarProvisioner(opts: CreateSidecarProvisionerOpts): Si
         false,
       );
     }
-    // Removes any other unit still labeled for this allocation: an older
-    // generation's unit this ensure() is superseding, a duplicate left
-    // behind by a concurrent ensure() that lost the race to record its
-    // unit, or a unit from a prior process that crashed between starting
-    // the unit and recordUnit(). All three look identical from here — "a
-    // unit for this allocation that isn't the one we just recorded" — so
-    // one sweep by allocation covers all of them.
+    // Covers three cases indistinguishable from here (superseded generation,
+    // a losing concurrent ensure(), a crash between startUnit and
+    // recordUnit) with one sweep by allocation.
     await sweepObsoleteUnits(backend, request.allocationId, externalRef);
     return { kind: "accepted", externalRef };
   }
@@ -513,13 +496,7 @@ export function createSidecarProvisioner(opts: CreateSidecarProvisionerOpts): Si
   };
 }
 
-/**
- * Stops every unit labeled for this allocation other than the one just
- * confirmed current, best-effort: a sweep failure is logged to stderr
- * rather than failing the ensure() it runs alongside, since the
- * allocation itself is already correctly ensured by this point and an
- * orphaned unit is a leak, not a correctness bug.
- */
+/** Best-effort: a sweep failure only leaks a unit, so it's logged rather than failing ensure(). */
 async function sweepObsoleteUnits(
   backend: SidecarBackend,
   allocationId: string,

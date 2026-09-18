@@ -1,15 +1,6 @@
-// A minimal client for the workflow-run-authenticated capabilities
-// surface a running agent calls to add itself a tool package, skill, or
-// model — authenticated via `createWorkflowRunAuthenticator` (sidecar
-// bearer token + run address), never a human browser session.
-//
-// Intx gap: a run's own `kind: "workflow"` principal is never seeded a
-// `workflow-definition: <its own id>/update` grant, so the
-// workflow-capability route skips a grant-store check for the narrow
-// own-definition case, relying instead on `request_capability`'s
-// `approval: "ask"` gate having already put a human in front of the
-// call before this client is ever invoked — see the route's own
-// file-level comment for the full authorization reasoning.
+// A run's own workflow principal is never seeded a self-update grant, so
+// this route skips the grant-store check and relies on request_capability's
+// approval:"ask" gate having already put a human in front of the call.
 import { type } from "arktype";
 import {
   runBearerHeaders,

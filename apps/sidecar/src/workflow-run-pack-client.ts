@@ -1,17 +1,6 @@
-// Workflow-run pack push client.
-//
 // Sits between the boot-edge substrate facade and the hub-link's
-// `pushWorkflowRunPack` wire surface. The facade fires this client
-// after a successful supervisor-authored `writeTreePreservingPrefix`
-// against a `workflow-run` repo; the client builds the new pack via
-// `RepoStore.createPack` under the supervisor principal and ships it
-// over the hub link. The hub routes the pack to its workflow-run
-// receiver because `repoId.kind === "workflow-run"`.
-//
-// The client does NOT mint a fresh signing key, transferId, or
-// principal kind. The principal is the same `WorkflowRunSupervisorPrincipal`
-// shape the supervisor uses for `writeTreePreservingPrefix`; the
-// transferId is minted inside `HubLink.pushWorkflowRunPack`.
+// pushWorkflowRunPack wire surface, fired after a successful
+// writeTreePreservingPrefix against a workflow-run repo.
 
 import { type } from "arktype";
 
@@ -25,20 +14,9 @@ import type { HubLink } from "@intx/hub-agent";
 const logger = getLogger(["interchange", "sidecar", "workflow-run-pack-client"]);
 
 export type WorkflowRunPackClient = {
-  /**
-   * Build a pack of the workflow-run repo at `ref` and ship it to the
-   * hub. Resolves on the hub's `repo.pack.ack`; rejects on
-   * `repo.pack.reject`, on a disconnect that cancels the in-flight
-   * transfer, or on a substrate-side `createPack` failure. The push
-   * failure shape is intentionally loud per the project's
-   * defensive-coding rule.
-   */
+  /** Resolves on the hub's repo.pack.ack; rejects loud on reject, disconnect, or a substrate createPack failure. */
   push(opts: { agentAddress: string; repoId: RepoId; ref: string }): Promise<void>;
-  /**
-   * Seed the acknowledged-tip state after the Hub restores a ref into a fresh
-   * worker. This prevents a reconnect from trying to re-send an empty delta at
-   * the restored tip; the next real local commit remains incremental from it.
-   */
+  /** Prevents a reconnect from re-sending an empty delta at the restored tip. */
   markRestored(repoId: RepoId, ref: string, commitSha: string): void;
 };
 
@@ -52,18 +30,9 @@ export function createWorkflowRunPackClient(
 ): WorkflowRunPackClient {
   const { substrate, hubLink } = opts;
 
-  // Shadow of the substrate's shipped-tip cursor, keyed by `(repoId.id, ref)`.
-  // This client is the SOLE caller of `commitPackedTip` for the workflow-run
-  // kind, so its own record of "the last commitSha I acked" cannot drift from
-  // the substrate cursor. It exists to answer one question `createPack` cannot
-  // answer to its caller: is the current ref tip already shipped? When the tip
-  // equals the last acked sha there is nothing un-acked to ship, and building
-  // a pack would produce an empty delta whose declared tip is not in the pack
-  // -- which the hub rejects as `sha_mismatch`. Skipping the wire send in that
-  // case is what makes a re-drive of an already-shipped tip a clean no-op
-  // rather than a spurious rejection. The reconnect re-drive path
-  // (`notifyAddressRoutable`) can legitimately fire for a slot whose commits
-  // already landed on an earlier attempt, so this guard is load-bearing.
+  // Answers a question createPack can't: is the tip already shipped? Skips
+  // the wire send when it is, since an empty-delta pack the hub rejects as
+  // sha_mismatch would otherwise turn a re-drive into a spurious rejection.
   const lastAckedSha = new Map<string, string>();
   function ackKey(repoId: RepoId, ref: string): string {
     return `${repoId.id}/${ref}`;
@@ -89,10 +58,7 @@ export function createWorkflowRunPackClient(
         kind: "supervisor",
         anchorRunId: repoId.id,
       };
-      // Nothing to ship when the local tip is already the last acked tip:
-      // the run's commits landed on a prior push. Return without a wire send
-      // so a re-drive of an already-shipped tip is a clean no-op instead of
-      // an empty-delta pack the hub rejects.
+      // Nothing to ship if the run's commits already landed on a prior push.
       const tip = await substrate.resolveRef(principal, repoId, ref);
       if (tip !== null && tip === lastAckedSha.get(ackKey(repoId, ref))) {
         return;
@@ -105,26 +71,15 @@ export function createWorkflowRunPackClient(
         ref,
         commitSha,
       });
-      // `pushWorkflowRunPack` resolves only on the hub's
-      // `repo.pack.ack` and rejects on a reject or a reconnect that
-      // cancels the transfer. Advancing the substrate's shipped-tip
-      // cursor here — after the ack, never at build time — is what
-      // lets a cancelled transfer be re-shipped: a rejected push throws
-      // before this line, so the cursor stays put and the next
-      // `createPack` re-includes the un-acked commits.
+      // Advanced only after the ack (never at build time) so a cancelled
+      // transfer leaves the cursor put and gets re-shipped on retry.
       substrate.commitPackedTip(repoId, ref, commitSha);
       lastAckedSha.set(ackKey(repoId, ref), commitSha);
     },
   };
 }
 
-/**
- * Mapping registry the boot-edge substrate facade consults to resolve
- * `repoId.id` (the workflow-run runId, which the deploy router
- * derives by slugging the agent's mail address) back into the
- * agentAddress carried on every outbound pack frame. Populated by the
- * deploy router as each `agent.deploy` frame lands.
- */
+/** Resolves repoId.id (the workflow-run runId) back into the agentAddress carried on outbound pack frames. */
 export type DeploymentAddressRegistry = {
   record(runId: string, agentAddress: string): void;
   resolve(runId: string): string | null;
@@ -146,40 +101,18 @@ export function createDeploymentAddressRegistry(): DeploymentAddressRegistry {
   };
 }
 
-/**
- * Handler the multi-step deploy router installs on the
- * `MultistepMailRouter` after a supervisor's `spawn` succeeds. The
- * handler hands a delivered inbound mail off to the per-deployment
- * supervisor's `routeInbound`, which dispatches into the workflow-host
- * mail-bus the multi-step child's `awaitSignal` subscribes against.
- */
+/** Dispatches into the workflow-host mail-bus the multi-step child's awaitSignal subscribes against. */
 export type MultistepMailHandler = (message: Uint8Array) => Promise<void>;
 
 /**
- * Per-deployment-address mail handler registry the sidecar hub-link
- * consults before falling back to `transport.deliver`. The multi-step
- * deploy router registers a handler against the deployment's mail
- * address after `wired.supervisor.spawn` succeeds, so an inbound
- * `mail.inbound` frame for that address dispatches into the
- * supervisor's mail-bus subscription rather than the
- * never-provisioned-for-this-address transport mailbox.
- *
- * The registry is owned at the sidecar's host layer (not inside the
- * workflow-host library) because the routing decision is between
- * "legacy single-agent path" and "supervisor mail-bus path" -- two
- * concrete sidecar host concerns. The workflow-host package stays
- * agnostic to which transport surface its mail-bus rides on.
+ * Kept at the sidecar host layer (not inside workflow-host) since the
+ * routing decision — legacy single-agent path vs supervisor mail-bus —
+ * is a concrete host concern the portable package stays agnostic to.
  */
 export type MultistepMailRouter = {
   register(address: string, handler: MultistepMailHandler): void;
   unregister(address: string): void;
-  /**
-   * Dispatch `message` to the handler registered for `address`. Returns
-   * `null` when no handler is registered (the caller logs and drops, and
-   * sends no ack). Otherwise returns the handler's durable settlement: a
-   * promise that resolves once the message is durably accepted and rejects
-   * when it was not, so the caller acks only on resolution.
-   */
+  /** Returns null when unregistered (caller logs and drops, sends no ack). */
   tryRoute(address: string, message: Uint8Array): Promise<void> | null;
 };
 
@@ -200,17 +133,7 @@ export function createMultistepMailRouter(): MultistepMailRouter {
   };
 }
 
-/**
- * Per-deployment signal-delivery handler the multi-step deploy router
- * installs against the `MultistepSignalRouter` after a supervisor's
- * `spawn` succeeds. The handler hands the signal off to the supervisor's
- * `deliverSignal`, which sends a `signal.deliver` control IPC frame to
- * the workflow-process child. Routing every workflow-run signal through
- * the child keeps the workflow-run repo's single-writer invariant
- * intact -- the child is the only writer of `runs/<runId>/events/` on
- * the sidecar side, so the pack-push pipeline that propagates the
- * commit to the hub never races against a concurrent host-side write.
- */
+/** Routing every signal through the child preserves the workflow-run repo's single-writer invariant. */
 export type MultistepSignalHandler = (args: {
   runId: string;
   signalName: string;
@@ -218,20 +141,7 @@ export type MultistepSignalHandler = (args: {
   payload: unknown;
 }) => Promise<void>;
 
-/**
- * Per-deployment-address signal handler registry the sidecar hub-link
- * consults on every inbound `signal.deliver` frame. The deploy router
- * registers a handler against the deployment's mail address after
- * `wired.supervisor.spawn` succeeds, for single-step and multi-step
- * deployments alike; the handler dispatches the signal into the
- * supervisor's `deliverSignal`.
- *
- * The registry lives at the sidecar's host layer (not inside the
- * workflow-host library) for the same boundary reason as
- * `MultistepMailRouter`: the routing decision is a concrete sidecar
- * host concern, and the workflow-host package stays agnostic to which
- * transport surface its supervisor handle rides on.
- */
+// Same boundary reason as MultistepMailRouter.
 export type MultistepSignalRouter = {
   register(address: string, handler: MultistepSignalHandler): void;
   unregister(address: string): void;
@@ -269,18 +179,9 @@ export function createMultistepSignalRouter(): MultistepSignalRouter {
 }
 
 /**
- * Per-deployment grants-write handler the deploy router installs against
- * the `MultistepGrantsRouter` after a supervisor's `spawn` succeeds. The
- * handler writes the run's grants to `runs/<runId>/grants.json` inside the
- * deployment's `workflow-run` repo -- sibling to the run's
- * `runs/<runId>/events/` subtree. The write is awaited so the frame's FIFO
- * completion means the grants are durable on disk before the next frame is
- * processed.
- *
- * `senderIdentities` carries the run's authorized senders' hub-vouched keys,
- * co-delivered on the same `run.grants` frame. The handler caches each one
- * before the grants write, so a grant that lands durably is never missing the
- * key its recipient needs to verify the sender's mail.
+ * The write is awaited so FIFO completion means grants are durable before
+ * the next frame processes. senderIdentities are cached before the write so
+ * a durable grant is never missing the key to verify the sender's mail.
  */
 export type MultistepGrantsHandler = (args: {
   runId: string;
@@ -288,21 +189,7 @@ export type MultistepGrantsHandler = (args: {
   senderIdentities?: readonly SenderIdentity[];
 }) => Promise<void>;
 
-/**
- * Per-deployment-address grants handler registry the sidecar hub-link
- * consults on every inbound `run.grants` frame. The deploy router
- * registers a handler against the deployment's mail address after
- * `wired.supervisor.spawn` succeeds, for single-step and multi-step
- * deployments alike; the handler writes the run's grants into the
- * deployment's workflow-run repo.
- *
- * The registry lives at the sidecar's host layer (not inside the
- * workflow-host library) for the same boundary reason as
- * `MultistepMailRouter` / `MultistepSignalRouter`: the routing decision
- * is a concrete sidecar host concern, and the workflow-host package
- * stays agnostic to which transport surface its supervisor handle rides
- * on.
- */
+// Same boundary reason as MultistepMailRouter / MultistepSignalRouter.
 export type MultistepGrantsRouter = {
   register(address: string, handler: MultistepGrantsHandler): void;
   unregister(address: string): void;
@@ -339,34 +226,10 @@ export function createMultistepGrantsRouter(): MultistepGrantsRouter {
   };
 }
 
-/**
- * Per-deployment drain handler the multi-step deploy router installs
- * against the `MultistepDrainRouter` after a supervisor's `spawn`
- * succeeds. The handler hands the drain opts off to the supervisor's
- * `drain`, which sends a `drain` control IPC frame to the
- * workflow-process child and arms one `drainTimeout` accumulator per
- * in-flight run. Cancel-mode in-flight steps abort as the child's
- * controller signal flips; wait-mode steps continue. Each accumulator
- * commits a signed `CancelRequested{origin: "supervisor-drain"}`
- * against the workflow-run repo when the deadline expires.
- */
+/** Each drainTimeout accumulator commits a signed CancelRequested against the workflow-run repo at deadline. */
 export type MultistepDrainHandler = (args: { deadlineMs: number }) => Promise<void>;
 
-/**
- * Per-deployment-address drain handler registry the sidecar hub-link
- * consults on every inbound `drain.deliver` frame. The deploy router
- * registers a handler against the deployment's mail address after
- * `wired.supervisor.spawn` succeeds, for single-step and multi-step
- * deployments alike; the handler dispatches into the supervisor's
- * `drain`.
- *
- * The registry lives at the sidecar's host layer (not inside the
- * workflow-host library) for the same boundary reason as
- * `MultistepMailRouter` / `MultistepSignalRouter`: the routing decision
- * is a concrete sidecar host concern, and the workflow-host package
- * stays agnostic to which transport surface its supervisor handle
- * rides on.
- */
+// Same boundary reason as MultistepMailRouter / MultistepSignalRouter.
 export type MultistepDrainRouter = {
   register(address: string, handler: MultistepDrainHandler): void;
   unregister(address: string): void;
@@ -395,34 +258,13 @@ export function createMultistepDrainRouter(): MultistepDrainRouter {
   };
 }
 
-/**
- * Per-deployment sources-rotation handler the deploy router installs
- * against the `MultistepSourcesRouter` after a supervisor's `spawn`
- * succeeds -- but ONLY for a single-step (warm launched-agent)
- * deployment. The handler hands the rotated list off to the supervisor's
- * `deliverSources`, which sends a `sources-updated` control IPC frame to
- * the workflow-process child, where the warm agent's live sources are
- * swapped in place. A multi-step deployment has no single warm agent to
- * rotate, so the router registers no handler for it and an inbound
- * `sources.update` for a multi-step address is unrouted.
- */
+/** Only for single-step (warm launched-agent) deployments; multi-step has no single warm agent to rotate. */
 export type MultistepSourcesHandler = (args: {
   sources: InferenceSource[];
   defaultSource: string;
 }) => Promise<void>;
 
-/**
- * Per-deployment-address sources-rotation handler registry. Only a
- * single-step warm deployment registers a handler (after
- * `wired.supervisor.spawn` succeeds); a multi-step deployment never
- * does, so `tryRoute` resolves a rotation only for a registered
- * single-step address and returns `false` for any other.
- *
- * The registry lives at the sidecar's host layer for the same boundary
- * reason as the mail/signal/drain routers: the routing decision is a
- * concrete sidecar host concern, and the workflow-host package stays
- * agnostic to which transport surface its supervisor handle rides on.
- */
+// Same boundary reason as the mail/signal/drain routers.
 export type MultistepSourcesRouter = {
   register(address: string, handler: MultistepSourcesHandler): void;
   unregister(address: string): void;
@@ -445,19 +287,10 @@ export function createMultistepSourcesRouter(): MultistepSourcesRouter {
     },
     async tryRoute(frame) {
       const handler = handlers.get(frame.agentAddress);
-      // Registration check first: an unregistered (multi-step or torn-down)
-      // address is unrouted -- reported as `false`, its payload never
-      // inspected, because it would not be acted on regardless.
       if (handler === undefined) return false;
-      // Validate the rotation BEFORE dispatch. This is the only inbound
-      // router that validates its frame, and deliberately so: a bad list
-      // (duplicate ids, or a default that is not the head element) would
-      // reach the child's control-channel receiver and crash it on
-      // `SourcesUpdatedData`'s narrow -- the sources-updated frame is the
-      // only inbound frame carrying a crash-on-invalid narrow downstream,
-      // and the only one that is request/ack. Rejecting here throws, and
-      // the hub-link turns the throw into a truthful `session.error`
-      // instead of acking and detonating the child.
+      // Validated before dispatch, unlike other routers: a bad frame would
+      // crash the child's control-channel receiver on SourcesUpdatedData's
+      // narrow. Throwing here turns it into a session.error instead.
       const validated = SourcesUpdatedData({
         sources: frame.sources,
         defaultSource: frame.defaultSource,
@@ -475,31 +308,15 @@ export function createMultistepSourcesRouter(): MultistepSourcesRouter {
 }
 
 /**
- * Per-deployment credential-delivery handler the deploy router installs
- * against the `MultistepCredentialsRouter` after a supervisor's `spawn`
- * succeeds. The handler hands the delivery to the supervisor's
- * `deliverCredentials`, which sends a `credentials-updated` control IPC frame
- * to the workflow-process child, where the material cell is swapped in place.
- *
- * Unlike sources rotation, this registers for ANY deployment (single- or
- * multi-step): the material cell is per-child and read by every step's tool
- * capabilities, so there is no single-warm-agent restriction. There is no
- * durable persist -- credential material never touches disk (it is re-resolved
- * by the hub on reconnect).
+ * Unlike sources rotation, registers for any deployment: the material cell
+ * is per-child. No durable persist — material never touches disk.
  */
 export type MultistepCredentialsHandler = (args: {
   delivery: CredentialDelivery;
   revoke?: string[];
 }) => Promise<void>;
 
-/**
- * Per-deployment-address credential-delivery handler registry. Mirrors
- * `MultistepSourcesRouter`: `credentials.update` is a REQUEST/ACK frame, so a
- * registered address that throws surfaces as a `session.error` and an
- * unregistered address returns `false` (unrouted). Lives at the sidecar host
- * layer for the same boundary reason -- the workflow-host package stays
- * agnostic to the transport surface its supervisor rides on.
- */
+/** Mirrors MultistepSourcesRouter: request/ack, so a throw surfaces as session.error. */
 export type MultistepCredentialsRouter = {
   register(address: string, handler: MultistepCredentialsHandler): void;
   unregister(address: string): void;
@@ -522,14 +339,9 @@ export function createMultistepCredentialsRouter(): MultistepCredentialsRouter {
     },
     async tryRoute(frame) {
       const handler = handlers.get(frame.agentAddress);
-      // Registration check first: an unregistered (torn-down) address is
-      // unrouted -- reported as `false`, its payload never inspected.
       if (handler === undefined) return false;
-      // Validate the delivery BEFORE dispatch: a malformed delivery would
-      // reach the child's control-channel receiver and crash it on
-      // `CredentialsUpdateFrame`'s narrow. Rejecting here throws, and the
-      // hub-link turns the throw into a truthful `session.error` instead of
-      // acking and detonating the child.
+      // Validated before dispatch: a malformed delivery would crash the
+      // child's control-channel receiver instead of surfacing as session.error.
       const validated = CredentialDelivery(frame.delivery);
       if (validated instanceof type.errors) {
         throw new Error(validated.summary);
@@ -544,61 +356,10 @@ export function createMultistepCredentialsRouter(): MultistepCredentialsRouter {
 }
 
 /**
- * Boot-edge facade around the substrate-shaped `RepoStore`. Forwards
- * every method to the underlying store; intercepts the
- * `writeTreePreservingPrefix` return path so a successful write
- * against a `workflow-run` repo schedules a workflow-run pack push.
- * Writes against any other `repoId.kind` (today, only `agent-state`
- * via the deploy-applier path) flow through unchanged.
- *
- * Pack-push coalescing: the facade returns from
- * `writeTreePreservingPrefix` as soon as the LOCAL commit lands and
- * schedules an asynchronous pack push for `(repoId.id, ref)`. At
- * most one push per (repoId, ref) is in flight at a time. Writes
- * that arrive while a push is in flight are NOT enqueued as
- * additional pushes; instead they mark the slot as "dirty", and the
- * loop runs one more push after the current one settles. This means
- * a burst of N writes against the same ref produces at most 2
- * pushes (the one already running when the burst starts, plus one
- * more for everything that arrived during it), rather than N
- * serial round-trips' worth of hub-ack latency. The push body
- * captures the current local ref tip at the moment it runs, so the
- * single pack it builds covers every commit landed since the prior
- * ACKED tip -- the substrate's incremental `createPack` walks the
- * chain from the cursor `commitPackedTip` last committed on an ack
- * forward, so the receiver still sees every commit transition.
- *
- * Single-writer + FIFO correctness: the underlying substrate
- * serialises local writes via `withRepoLock`, so commits land on
- * disk in submission order. The hub's `receivePack` validates each
- * commit's parent against its existing-commits set; as long as the
- * pack carries the full chain from prior acked tip to current tip,
- * every intermediate commit is validated by the receiver. Coalescing
- * multiple local commits into one network push therefore preserves
- * the receive-time CAS invariant while collapsing N hub round-trips
- * into 1.
- *
- * Reconnect-safe re-shipping: the substrate advances its shipped-tip
- * cursor on the ack (`push` calls `commitPackedTip` only after
- * `pushWorkflowRunPack` resolves), never at build time. A transfer a
- * reconnect cancels before its ack therefore leaves the cursor where
- * it was, so the retry loop's next `createPack` re-includes the
- * un-acked commits and the receiver gets a self-consistent chain
- * rather than a pack whose base commit it never received.
- *
- * Failure surfacing: a failed push latches its error on the
- * per-(repoId, ref) slot's `lastError` field. The next call to
- * `writeTreePreservingPrefix` on that (repoId, ref) re-throws the
- * latched error before doing its own work, keeping failures loud
- * rather than swallowed by the fire-and-forget pipeline. The
- * defensive-coding rule says errors must surface; this is how they
- * surface from a coalescing writer.
- *
- * Flush: callers that need a hub-visible barrier (shutdown,
- * integration tests that read hub-side state) call
- * `flushWorkflowRunPushes(repoId, ref)` to await the per-(repoId,
- * ref) slot to drain (both the in-flight push and any follow-up
- * triggered by writes that arrived during it).
+ * Wraps RepoStore so a workflow-run write schedules a coalesced pack push:
+ * at most one push per (repoId, ref) in flight, with mid-push writes
+ * marking the slot dirty for one more run. The cursor advances only after
+ * the hub's ack, and a failed push latches and re-throws on the next write.
  */
 export type WorkflowRunPackPushingRepoStoreOpts = {
   underlying: RepoStore;
@@ -606,48 +367,17 @@ export type WorkflowRunPackPushingRepoStoreOpts = {
   registry: DeploymentAddressRegistry;
 };
 
-/**
- * The wrapped store plus a side-channel API for waiting on the
- * per-(repoId.id, ref) pack-push pipeline to drain. The `RepoStore`
- * shape is unchanged so call sites that consume `RepoStore` keep
- * working; `flushWorkflowRunPushes` is opt-in for code that
- * genuinely needs hub-side visibility (shutdown, integration tests,
- * end-to-end benchmarks). Call sites that don't need it pay zero
- * cost.
- */
+/** RepoStore shape is unchanged; flushWorkflowRunPushes is opt-in for callers needing hub-side visibility. */
 export type WorkflowRunPackPushingRepoStore = RepoStore & {
-  /**
-   * Await the pack-push pipeline for `(repoId.id, ref)` to drain.
-   * Resolves once no push is in flight and no follow-up push is
-   * pending; rejects if the most recent push failed (the same
-   * latched error the next `writeTreePreservingPrefix` call would
-   * surface).
-   */
+  /** Resolves once the (repoId.id, ref) pipeline drains; rejects on the same latched error a write would surface. */
   flushWorkflowRunPushes: (repoId: RepoId, ref: string) => Promise<void>;
   /**
-   * Re-drive any workflow-run push for `agentAddress` that a disconnect
-   * cancelled. Called when the hub-link observes the deployment address
-   * become routable again after an authenticated reconnect. For each slot bound
-   * to `agentAddress` whose last push attempt failed (its `lastError` is
-   * latched), it re-arms the coalescing loop so a fresh `createPack` re-ships
-   * the un-acked commits -- the liveness path a synchronous single-step run
-   * lacks, because it has no later local write to re-set `dirty`.
-   *
-   * A re-ship that fails again re-latches without self-retrying, so a
-   * genuinely unrecoverable failure still surfaces loudly on the next local
-   * write rather than spinning. It is gated on the address being routable
-   * again (the caller only fires post-reconnect) so the re-ship cannot race
-   * ahead of the hub re-routing the address.
+   * Re-arms a slot a disconnect cancelled — the liveness path a synchronous
+   * single-step run lacks, since it has no later local write to re-set dirty.
+   * Gated on post-reconnect so the re-ship can't race ahead of hub re-routing.
    */
   notifyAddressRoutable: (agentAddress: string) => void;
-  /**
-   * Block workflow-run pushes for `agentAddress` until the next
-   * `notifyAddressRoutable`. Called when the hub-link observes its WS drop:
-   * the address's hub route is gone until the authenticated reconnect restores
-   * it, so a push shipped in the interim is dropped by the hub as
-   * "unrouted". Holding the push at the block -- rather than shipping and
-   * failing -- is what lets the reconnect re-ship wait for route restoration.
-   */
+  /** Holds pushes rather than shipping-and-failing, so a WS-drop address waits for reconnect before shipping. */
   markAddressUnroutable: (agentAddress: string) => void;
 };
 
@@ -670,16 +400,8 @@ export function createWorkflowRunPackPushingRepoStore(
     return `${repoId.kind}/${repoId.id}/${ref}`;
   }
 
-  // Addresses whose hub route was dropped and has not been re-established by a
-  // authenticated reconnect. Absent means routable -- the steady state, and the
-  // first-connect state (a deployment routes via its `agent.deploy`, not a
-  // reconnect, so it is never blocked before its first push). An address is
-  // added on `markAddressUnroutable` (WS disconnect) and removed on
-  // `notifyAddressRoutable` (reconnect sent). A push for a blocked address
-  // is held: the coalescing loop pauses with `dirty` still set rather than
-  // shipping to a hub that has not yet re-routed the address -- which is what
-  // makes the reconnect re-ship wait for route restoration instead of racing
-  // ahead of it and being dropped as "unrouted".
+  // Absent means routable. A blocked address's push holds with dirty still
+  // set, rather than racing ahead of hub re-routing and being dropped.
   const blockedAddresses = new Set<string>();
 
   function notifySettled(slot: Slot): void {
@@ -690,17 +412,11 @@ export function createWorkflowRunPackPushingRepoStore(
 
   function startLoop(slot: Slot, repoId: RepoId, ref: string): void {
     if (slot.inFlight !== null) return;
-    // Hold the push while the address is not routable (dropped, awaiting the
-    // authenticated reconnect). Leave `dirty` set and start no loop: the loop
-    // resumes when `notifyAddressRoutable` clears the block and re-arms it.
-    // Shipping now would race ahead of the hub re-routing the address, and
-    // the frames would be dropped as "unrouted".
     if (blockedAddresses.has(slot.agentAddress)) return;
     slot.inFlight = (async () => {
       while (slot.dirty) {
-        // Re-check routability each iteration: a disconnect mid-drain must
-        // pause the loop rather than push into a severed link. Leave `dirty`
-        // set so the post-reconnect resume re-ships.
+        // Re-checked each iteration: a disconnect mid-drain must pause
+        // rather than push into a severed link.
         if (blockedAddresses.has(slot.agentAddress)) break;
         slot.dirty = false;
         try {
@@ -736,11 +452,7 @@ export function createWorkflowRunPackPushingRepoStore(
       };
       slots.set(key, slot);
     } else {
-      // The agentAddress is derived from a stable per-deployment
-      // mapping; refreshing it on every call keeps the slot in sync
-      // if the registry ever re-resolves the same runId to
-      // a different address (today it does not, but the contract is
-      // "look up at push time", not "cache forever").
+      // Refreshed every call, not cached: the contract is "look up at push time".
       slot.agentAddress = agentAddress;
     }
     slot.dirty = true;
@@ -756,33 +468,16 @@ export function createWorkflowRunPackPushingRepoStore(
   }
 
   function markAddressUnroutable(agentAddress: string): void {
-    // The hub route for this address just dropped (WS disconnect). Block its
-    // pushes until the authenticated reconnect re-routes it. A push already
-    // in-flight when the link dropped rejects through `packSender.cancelAll`
-    // and latches its error; the block stops the coalescing loop from
-    // immediately re-shipping on the fresh (not-yet-registered) connection.
     blockedAddresses.add(agentAddress);
   }
 
   function notifyAddressRoutable(agentAddress: string): void {
-    // The authenticated reconnect re-routed this address on the hub. Clear the
-    // block and re-drive so a push the disconnect cancelled -- or one held
-    // while the block was up -- ships now. This is the liveness path a
-    // synchronous single-step run lacks: with all its events in one batch it
-    // has no later local write to re-arm the coalescing loop, so the drop
-    // would otherwise strand it forever.
     blockedAddresses.delete(agentAddress);
     for (const slot of slots.values()) {
       if (slot.agentAddress !== agentAddress) continue;
-      // Re-drive a slot that has pending work (`dirty`, e.g. a push held at
-      // the block) OR whose last attempt failed (`lastError` latched by the
-      // disconnect-cancel). A slot that is clean and already acked
-      // (`!dirty && lastError === null`) has nothing un-shipped -- the
-      // `packClient.push` empty-delta guard would skip it anyway, but not
-      // re-arming it avoids a pointless loop spin. Re-arming `dirty` and
-      // restarting is safe against double-ship: `startLoop` no-ops when a
-      // push is already in flight, and the per-(repoId, ref) serialization in
-      // the hub-link's `pushWorkflowRunPack` prevents overlapping transfers.
+      // Skip a clean, already-acked slot to avoid a pointless loop spin.
+      // Re-arming is safe against double-ship: startLoop no-ops if a push
+      // is already in flight.
       if (!slot.dirty && slot.lastError === null) continue;
       slot.dirty = true;
       startLoop(slot, slot.repoId, slot.ref);

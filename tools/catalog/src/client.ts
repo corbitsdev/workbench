@@ -1,19 +1,7 @@
-// What this bundle reads, and from where.
-//
-// Both reads are STOCK Interchange tenant routes, addressed with the
-// workflow run's own bearer credential (sidecar token plus run address),
-// which the hub resolves to this run's principal and tenant:
-//
-//   GET /api/tenants/:tenantId/models  — the bench's resolved model
-//       catalog. The ancestor walk, shadowing, disable suppression and
-//       each offering's active price per currency are all the platform's
-//       own work; this package restates none of it.
-//   GET /api/tenants/:tenantId         — the bench itself, for the model
-//       policy in its `config` blob under `corbits.modelPolicy`.
-//
-// There is no `/api/workflow-inference-catalog` mirror any more, and no
-// hub-side chain resolution: the chain is computed here, in the workflow
-// child, from those two reads.
+// Both reads are stock Interchange tenant routes; no hub-side chain
+// resolution or Workbench-specific mirror any more — the chain is computed
+// here, in the workflow child, from the models list and the tenant's
+// corbits.modelPolicy config blob.
 import { type } from "arktype";
 import { DiscoveredModel } from "@corbits/inference-catalog/catalog";
 import { readModelPolicy, type BenchModelPolicy } from "@corbits/inference-catalog/policy";

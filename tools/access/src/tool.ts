@@ -1,19 +1,7 @@
-// The `@corbits/access-tools` bundle: `list_principals` and
-// `list_grants` (plain reads, no approval) plus `grant_access` and
-// `revoke_access` (`approval: "ask"` — `@intx/agent`'s native
-// per-invocation gate suspends the call as a pending approval BEFORE
-// this bundle's `run` ever executes, exactly like
-// `@corbits/capability-tools`'s `request_capability`). Lets Myra create
-// scoped grants for the specialist agents she stands up, gated behind a
-// human approving each grant.
-//
-// `hubAccessUrl`/`sidecarToken`/`address` are threaded onto `env` by the
-// sidecar's per-step env builder, the same ground every other manager-
-// tools bundle's own env keys are threaded from.
-//
-// See `./client.ts` for the stock Interchange tenant routes this bundle's
-// execution calls with the run bearer, and for the delegation ceiling it
-// enforces before it grants anything.
+// grant_access/revoke_access carry approval: "ask" (like request_capability),
+// letting Myra create scoped grants for specialist agents gated behind a
+// human approving each one. See ./client.ts for the delegation ceiling
+// enforced before anything is granted.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
