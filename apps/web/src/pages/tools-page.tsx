@@ -83,10 +83,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
   );
 }
 
-/**
- * Tools roster mount at `/tools`: a thin adapter that resolves which
- * workbench's registry is listed. The stage chrome lives on `ToolsPage`.
- */
+// A thin adapter that resolves which workbench's registry is listed.
 export function ToolsRoute() {
   const { selectedTenantId } = useBench();
 

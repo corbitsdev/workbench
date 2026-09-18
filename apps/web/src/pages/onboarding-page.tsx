@@ -1,14 +1,7 @@
-// The setup gate: a hub with tenants bounces straight to the shell; an
-// empty hub drives the browser installer itself, asking the operator only
-// where a human input is genuinely required (see steps below).
-//
-//   1. mint the account's primary tenant if it doesn't already own one;
-//   2. resolve a catalog offering, asking to connect a provider credential
-//      only if none is already resolved;
-//   3. push Myra's source tree and deploy it.
-//
-// A stock capability gap this loop didn't anticipate, or a hard failure,
-// renders here with a retry — a gap is not "ready".
+// The setup gate: an empty hub drives the installer itself (mint tenant,
+// resolve an offering, deploy Myra), asking the operator only where input
+// is genuinely required. A gap this loop can't cross renders here with a
+// retry, not a silent "ready".
 import { Button, EmptyState } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
 import { WorkbenchLoadingState } from "@/chat";

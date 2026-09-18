@@ -1,8 +1,6 @@
 // A skill lives in a native `kind:"skill"` hub asset the moment it's
-// created; its version history is that asset's git history.
-//
-// Two states visible in "Who can see it": private (default) or shared
-// with the whole workbench. No external catalog — skills are authored here.
+// created; its version history is that asset's git history. No external
+// catalog — skills are authored here, private by default or shared.
 
 import {
   PageShell,

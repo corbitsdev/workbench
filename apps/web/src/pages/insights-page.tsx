@@ -291,10 +291,8 @@ function InsightsLanding({
   onOpenRuns,
 }: {
   readonly runs: readonly InsightsRun[];
-  /** The feed's own `nextCursor` (`limit=100` fetch, see
-   * `insightsTopLevelRunsPath`) — non-null means more runs exist than the
-   * 100 fetched, so the KPIs below disclose the cap instead of silently
-   * presenting a truncated series as complete. */
+  // Non-null means more runs exist than fetched, so KPIs disclose the cap
+  // instead of presenting a truncated series as complete.
   readonly runsNextCursor: string | null;
   readonly routines: readonly ScheduledWorkflowDefinition[];
   readonly loading: boolean;

@@ -221,10 +221,8 @@ function SkillDraftEditor({
   );
 }
 
-/**
- * Mount at `/skills/:name`: resolves the workbench this skill is read from
- * and the name the route carries. The page owns its own stage chrome.
- */
+// Resolves the workbench this skill is read from and the name the route
+// carries.
 export function SkillDetailRoute({ path }: { readonly path: string }) {
   const { selectedTenantId } = useBench();
   const name = skillIdFromPath(path);
