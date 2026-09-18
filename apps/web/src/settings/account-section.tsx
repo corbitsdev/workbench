@@ -3,9 +3,9 @@
 // readout as before tucked below as a quieter subsection (still read-only —
 // there is no native profile-update route; see `vendor/intx/hub-api/src/
 // routes` — only tenants and principals carry a PATCH), an Appearance card
-// wired to `@corbits/react-ui`'s three-state ThemeProvider, and an Agent
-// card whose Timezone row is display-only until a hub preference store
-// exists to write it to.
+// wired to `@corbits/react-ui`'s three-state ThemeProvider. The Agent card
+// (a display-only Timezone row) was removed — nothing there could be
+// changed until a hub preference store exists to write it to.
 
 import {
   Avatar,
@@ -50,7 +50,6 @@ export function AccountSection({ onSignOut }: { readonly onSignOut?: () => void 
         )}
       </QueryView>
       <AppearanceSection />
-      <AgentGeneralSection />
     </>
   );
 }
@@ -185,23 +184,6 @@ export function AppearanceSection() {
           <option value="dark">{SETTINGS_STRINGS.themeDark}</option>
         </Select>
       </label>
-    </SettingsPanel>
-  );
-}
-
-/** Timezone row: display-only, derived from the browser — there is no hub
- * preference store yet for a per-user timezone override, so this shows the
- * auto-detected zone honestly instead of a dropdown that saves nothing. */
-export function AgentGeneralSection() {
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return (
-    <SettingsPanel title={SETTINGS_STRINGS.generalAgentGroupTitle}>
-      <div className="settings-form-field settings-form-field-inline">
-        <span>{SETTINGS_STRINGS.agentTimezoneLabel}</span>
-        <span className="settings-static-value">
-          {SETTINGS_STRINGS.agentTimezoneAutoDetect(timezone)}
-        </span>
-      </div>
     </SettingsPanel>
   );
 }

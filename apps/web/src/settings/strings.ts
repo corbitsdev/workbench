@@ -46,10 +46,6 @@ export const SETTINGS_STRINGS = {
   themeLight: "Light",
   themeDark: "Dark",
 
-  generalAgentGroupTitle: "Agent",
-  agentTimezoneLabel: "Timezone",
-  agentTimezoneAutoDetect: (timezone: string) => `Auto-detect (${timezone})`,
-
   peopleSectionTitle: "People",
   peopleSectionDescription: "Everyone with a seat on this workbench.",
   peopleLoadError: "this workbench's people",

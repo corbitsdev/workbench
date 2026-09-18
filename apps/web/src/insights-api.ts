@@ -77,3 +77,43 @@ const TOP_LEVEL_RUNS_LIMIT = 100;
 export function insightsTopLevelRunsPath(tenantId: string): string {
   return `/api/tenants/${tenantId}/workflows/runs?limit=${TOP_LEVEL_RUNS_LIMIT}`;
 }
+
+/** One run's event log, from the stock
+ * `GET /workflows/runs/:runId/events` route. `body` is left unparsed
+ * (`unknown`) since its shape varies by event type — `runFailureMessage`
+ * below is the one place that reaches into it. */
+export const RunEventSchema = type({
+  seq: "number",
+  type: "string",
+  body: "unknown",
+});
+
+export const RunEventsSchema = type({
+  runId: "string",
+  events: RunEventSchema.array(),
+});
+export type RunEvent = typeof RunEventSchema.infer;
+export type RunEvents = typeof RunEventsSchema.infer;
+
+export function insightsRunEventsPath(tenantId: string, runId: string): string {
+  return `/api/tenants/${tenantId}/workflows/runs/${encodeURIComponent(runId)}/events`;
+}
+
+/** The failed run's own explanation: the last `RunFailed`/`StepFailed`
+ * event's `error.message`, read defensively since `body` is unparsed. Null
+ * when no failure event carries a message — the caller falls back to a
+ * generic notice rather than showing nothing. */
+export function runFailureMessage(events: readonly RunEvent[]): string | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event === undefined) continue;
+    if (event.type !== "RunFailed" && event.type !== "StepFailed") continue;
+    const body = event.body;
+    if (typeof body !== "object" || body === null) continue;
+    const error = (body as Record<string, unknown>)["error"];
+    if (typeof error !== "object" || error === null) continue;
+    const message = (error as Record<string, unknown>)["message"];
+    if (typeof message === "string") return message;
+  }
+  return null;
+}

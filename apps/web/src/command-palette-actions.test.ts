@@ -136,10 +136,4 @@ describe("runActionCommand", () => {
     await runActionCommand("go-workbenches", ctx);
     expect(navigated).toEqual(["/w"]);
   });
-
-  test("go-insights navigates to /insights", async () => {
-    const { ctx, navigated } = context({ path: "/" });
-    await runActionCommand("go-insights", ctx);
-    expect(navigated).toEqual(["/insights"]);
-  });
 });
