@@ -1,7 +1,6 @@
-// The one place a tool call's raw identifier/args/result gets translated
-// into a plain sentence, so no downstream surface reaches for
-// `JSON.stringify`. Two tenses (running vs. settled) since both the live
-// strip and the persisted transcript render through here.
+// Translates a tool call into a plain sentence, so no downstream surface
+// reaches for `JSON.stringify`. Two tenses since both the live strip and
+// the persisted transcript render through here.
 
 import type { Part, ToolTracePart } from "./wire/parts";
 
@@ -103,10 +102,8 @@ export type ProviderTile = {
   readonly color: string;
 };
 
-/** Brand mark for the chip's leading tile — two letters and the provider's
- * own color, the way the mock's `[Li #5E6AD2]` / `[GH #24292f]` read. Only
- * providers a person would recognise on sight get a fixed brand color;
- * anything else is not a brand — the chip uses an action glyph. */
+// Only providers a person would recognise on sight get a fixed brand
+// color; anything else uses an action glyph.
 const PROVIDER_TILES: Record<string, ProviderTile> = {
   github: { initials: "GH", color: "#24292f" },
   gitlab: { initials: "GL", color: "#fc6d26" },

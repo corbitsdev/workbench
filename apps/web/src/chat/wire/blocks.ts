@@ -78,12 +78,7 @@ export type BlockParseResult =
   | { readonly ok: true; readonly block: Block }
   | { readonly ok: false; readonly type: string; readonly summary: string };
 
-/**
- * Parse a `BlockPart` envelope into a typed block at the render boundary.
- * An unknown type or invalid data yields an `ok: false` result for the
- * caller's fallback card — never a throw, so one malformed block can't take
- * down a timeline.
- */
+// Never throws, so one malformed block can't take down a timeline.
 export function parseBlock(envelope: BlockPart["block"]): BlockParseResult {
   switch (envelope.type) {
     case "approve": {

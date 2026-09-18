@@ -83,11 +83,7 @@ export const Part = TextPart.or(ReasoningPart)
   .or(EventPart);
 export type Part = typeof Part.infer;
 
-/**
- * Parse untrusted data as a `Part`, throwing a precise error rather than
- * returning malformed or partially-trusted data. The only supported way
- * to bring external JSON into the `Part` type.
- */
+// The only supported way to bring external JSON into the `Part` type.
 export function parsePart(data: unknown): Part {
   const result = Part(data);
   if (result instanceof type.errors) {

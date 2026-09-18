@@ -19,10 +19,8 @@ export type PlatformApprovalDetail = {
    * it"). Falls back to the generic "Approve" when the host's read doesn't
    * carry one. */
   readonly actionVerb?: string;
-  /** One-line, platform-authored consequence of taking the action (e.g.
-   * "Merging goes further than posting a review -- it puts the change
-   * live."). Replaces a risk-level badge, which only ever repeated the
-   * agent's own framing back at the human deciding against it. */
+  // Replaces a risk-level badge, which only repeated the agent's own
+  // framing back at the human deciding against it.
   readonly consequence?: string;
   readonly standingConsent?: StandingConsentOffer;
 };

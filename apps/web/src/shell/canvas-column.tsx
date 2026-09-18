@@ -117,14 +117,8 @@ function mentionAction(
   };
 }
 
-/** Shared header row for every canvas pane: an optional leading back
- * control, an optional title, an optional pane-specific `trailing` slot,
- * and — for the panes that use them — the mock's focus-cycle control and
- * its explicit close. `onBack` and the focus/close controls are mutually
- * exclusive in practice (a pane is either master-detail-driven, like the
- * routine pane, or focus/close-driven, like profile and artifact), but
- * both are optional so this one component covers every canvas pane's
- * header rather than each pane hand-rolling its own. */
+// `onBack` and the focus/close controls are mutually exclusive in
+// practice, but both stay optional so one component covers every pane.
 export function CanvasPaneHeader({
   title,
   onBack,
@@ -226,12 +220,8 @@ function profileActions(
   // pause endpoint exists anywhere in the hub) — omitted rather than left
   // as a no-op that pretends to do something.
   if (profile.kind === "agent") {
-    // No "Edit agent" hop here: `ProfileSubject` (chat-ui's
-    // `profile-subject.ts`) carries only address/handle/displayName, never
-    // a workbench id, so this card has no way to resolve the agent's own
-    // workbench settings. The global `/settings/agents` tab this used to
-    // target is gone — rather than hop to a dead route, the action is
-    // dropped until a subject carries enough context to land somewhere real.
+    // No "Edit agent" hop: `ProfileSubject` carries no workbench id, and
+    // the global `/settings/agents` tab this used to target is gone.
     return [
       message,
       mention,

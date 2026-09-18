@@ -1,6 +1,4 @@
-// No bench switcher: a workbench IS an agent conversation now, one per
-// account, so there's nothing to switch between in the common case. A
-// multi-bench install still resolves (`bench-context.tsx`) via the command
+// No bench switcher: a multi-bench install still resolves via the command
 // palette's hidden "Switch workbench" action.
 
 import {

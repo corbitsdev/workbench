@@ -1,7 +1,4 @@
-// Pure state mapping for the approve card: turns the live status read plus
-// any in-flight decision into exactly what the view renders. Kept free of
-// React so the branch logic (actable vs. spectator vs. resolved vs. the
-// forbidden-read branch) is unit-testable without a DOM.
+// Kept free of React so the branch logic is unit-testable without a DOM.
 
 import type {
   ApprovalLiveStatus,

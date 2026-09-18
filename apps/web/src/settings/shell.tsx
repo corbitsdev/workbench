@@ -1,8 +1,5 @@
-// The settings surface's shell: renders the active section's panel only.
-// Section nav is a master-detail list — it lives in the host's own col2
-// (see `resolveSettingsSectionGroups`), never repeated in the stage.
-// Everything about what a section shows and how it saves lives in the
-// section's own `render`, never here.
+// Renders the active section's panel only — nav is master-detail, never
+// repeated in the stage.
 
 import { EmptyState } from "@corbits/react-ui";
 import type { Icon } from "@/lib/icons";

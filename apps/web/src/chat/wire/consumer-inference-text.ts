@@ -55,11 +55,7 @@ export function isClassifiedInferenceFailureText(text: string): boolean {
   return CLASSIFIED_INFERENCE_FAILURE_PREAMBLES.some((preamble) => text.startsWith(preamble));
 }
 
-/**
- * Bench-list / sidebar preview copy: never the full failure
- * paragraph, never HTTP/raw provider dumps — a short consumer sentence
- * when the text is a classified failure.
- */
+// Never the full failure paragraph or raw provider dumps.
 export function activityPreviewText(raw: string): string {
   const facing = consumerFacingInferenceText(raw);
   return facing;

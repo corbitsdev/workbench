@@ -304,11 +304,8 @@ export function useTurnActivity(
     setActivity(null);
   }
 
-  // Reset (clear + re-arm) on every event that actually changes the
-  // activity object — an ignored event never resets the clock, since
-  // nothing about the open turn changed. A dropped stream leaves
-  // `activity` referentially stable forever, so this timer is the only
-  // thing that ever clears it in that case.
+  // This timer is the only thing that clears `activity` if the stream
+  // drops and leaves it referentially stable forever.
   useEffect(() => {
     if (activity === null) return;
     const timer = clock.setTimeout(() => {

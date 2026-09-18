@@ -164,10 +164,8 @@ export function ToolActivityGroup({ rows }: { readonly rows: readonly ToolActivi
   );
 }
 
-/**
- * The mid-turn strip: the same rows, plus the two things that only exist
- * while a turn is open — the model thinking, and a retried request.
- */
+// Plus the two things that only exist while a turn is open: thinking and
+// a retried request.
 export function LiveToolActivity({
   rows,
   thinking,

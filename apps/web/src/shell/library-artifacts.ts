@@ -1,11 +1,3 @@
-// The Library page's one seam to the hub's real artifacts plane:
-// `GET /api/tenants/:tenantId/artifacts` (list) and
-// `GET /api/tenants/:tenantId/artifacts/:id` (detail), plus
-// `POST .../artifacts/upload` for file ingest and
-// `GET .../artifacts/counts` for the kind nav's counts.
-//
-// This module owns pure mapping + upload helper so the page stays thin and
-// the shape contract has its own tests. The old asset-shim path is gone.
 
 import type { ArtifactSummary } from "@/library";
 import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";

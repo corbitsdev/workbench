@@ -34,11 +34,8 @@ export type ChatAgent = {
   /** The address of the agent's currently live run, or null when none is
    * live (mid-redeploy). */
   readonly liveAddress: string | null;
-  /** The newest deployment's status for this agent's asset — `undefined`
-   * when it has never been deployed. `"pending"`/`"recovering"` mean a run
-   * is on the way up; a terminal status (`released`, `failed`,
-   * `destroy_failed`, `stopped`) means nothing is running and nothing is
-   * coming unless someone restarts it. */
+  // A terminal status means nothing is running and nothing is coming
+  // unless someone restarts it.
   readonly latestStatus: string | undefined;
 };
 
