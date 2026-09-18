@@ -1,14 +1,6 @@
 // The sanctioned path for a workflow-process child to create a new agent
-// definition and list the tenant's taskable agents, authenticated through
-// `WorkflowRunAuthenticator` since a workflow child has no browser session.
-// Mounted outside the tenant prefix; identity never rides in the body or
-// path. Scoped to the caller's own tenant rather than "own definition
-// only" — there's no existing row to scope against for a create.
-//
-// No `requireGrant` check: the calling tool declares `approval: "ask"`, so
-// a human already approved the specific agent being created before this
-// route runs. This route still enforces the sidecar-token/run-address
-// check and fails closed on any named `toolPackagePins`.
+// definition. No `requireGrant` check: the tool declares `approval: "ask"`,
+// so a human already approved the agent before this route runs.
 import { type } from "arktype";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";

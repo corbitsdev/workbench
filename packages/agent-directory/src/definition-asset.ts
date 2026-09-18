@@ -1,7 +1,5 @@
 // Every read and write of an agent definition's asset tree goes through
-// here, so this lineage has exactly one notion of what a definition's
-// asset holds — the source codebase, never the retired `workflow.json`
-// envelope.
+// here: the source codebase, never the retired `workflow.json` envelope.
 
 import {
   parseWorkflowSourceEntry,

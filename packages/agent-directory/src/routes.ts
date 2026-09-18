@@ -1,8 +1,6 @@
-// The create-agent-definition surface: materializes a submitted
-// name/handle/description/system-prompt/model as a `workflow`-kind asset
-// carrying a single-step definition, projected onto a `workflow_definition`
-// row. Lands `deployed` with a non-null assetId, so a freshly created agent
-// is invitable and launchable immediately, with no separate deploy step.
+// The create-agent-definition surface: materializes a submitted definition
+// as a `workflow`-kind asset. Lands `deployed` with a non-null assetId, so
+// a freshly created agent is invitable and launchable immediately.
 
 import { type } from "arktype";
 import { and, eq } from "drizzle-orm";

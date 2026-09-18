@@ -1,8 +1,5 @@
 // A runtime tool-package pin must resolve to a concrete, published version
-// — never the npm "any version" range `*` — so a new tarball landing in
-// the registry never silently changes what an already-deployed specialist
-// runs. This is the one place a caller with only a package name resolves
-// it to a pinnable version.
+// — never `*` — so a new tarball never silently changes a deployed pin.
 import semver from "semver";
 
 import type { DB } from "@intx/db";

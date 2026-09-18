@@ -1,9 +1,6 @@
 // Assembles the compact "here is everything you may reference" fact sheet
-// that rides inside the planner prompt. Every source is host-injected —
-// this package owns only the shape and assembly, never the listing logic.
-// Memory folds into `listUsableToolPackages` as an ordinary tool package
-// pin, but `memoryAvailable` is still surfaced as its own top-level fact
-// so the planner prompt can state it plainly.
+// for the planner prompt. Every source is host-injected — this package owns
+// only the shape and assembly, never the listing logic.
 
 import type { CredentialBinding } from "@intx/types";
 import { sanitizeInventoryText } from "./sanitize-inventory-text";

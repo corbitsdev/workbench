@@ -1,8 +1,6 @@
-// A synchronous wrapper around one provisioned run's opening turn:
-// prepare, send the prompt, wait for exactly one reply, tear down the
-// subscription AND the launched run itself. Other launchers return as
-// soon as the run starts; this module turns the event stream into an
-// awaitable promise for a caller that has no later-delivery surface.
+// A synchronous wrapper around one provisioned run's opening turn: send,
+// await exactly one reply, tear down the run — for a caller with no
+// later-delivery surface.
 import { and, eq } from "drizzle-orm";
 import { connectorReplyContent, messageRunEnded } from "./agent-events";
 import { reportError } from "@corbits/error-sink";

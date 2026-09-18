@@ -1,7 +1,5 @@
-// Defense-in-depth against a hostile or careless free-text field riding
-// inside the planner prompt: `JSON.stringify` already prevents breaking out
-// of the JSON structure, but a long imperative block can still sit inside a
-// legitimately-quoted string trying to socially-engineer the model.
+// Defense-in-depth against a free-text field riding inside the planner
+// prompt: a quoted string can still carry an imperative block.
 
 /** Strips newlines/control characters to a single space and truncates to
  * `maxLen`. */

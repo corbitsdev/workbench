@@ -1,9 +1,6 @@
 // Myra-backed agent-definition drafting: turns a name and a plain-language
 // description into a machine-checked draft via one one-shot Myra call.
-// Every failure mode propagates as its own specific error; nothing here
-// fabricates a draft or falls back to a template. This module only
-// proposes — the caller submits the validated draft through the
-// sanctioned REST create path, exactly like a hand-authored agent.
+// This module only proposes; the caller submits it through the create path.
 
 import { type } from "arktype";
 

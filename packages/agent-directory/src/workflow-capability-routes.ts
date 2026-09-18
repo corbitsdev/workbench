@@ -1,9 +1,6 @@
 // The sanctioned path for a workflow-process child to add itself a
-// capability, authenticated through `WorkflowRunAuthenticator` since a
-// workflow child has no browser session. Mounted outside the tenant prefix
-// at `/api/workflow-capabilities`; identity never rides in the body or
-// path beyond definitionId. No grant-store check — see
-// docs/workflow-capability-authorization.md for why and what still gates it.
+// capability, authenticated through `WorkflowRunAuthenticator`. No
+// grant-store check — see docs/workflow-capability-authorization.md.
 import { type } from "arktype";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";

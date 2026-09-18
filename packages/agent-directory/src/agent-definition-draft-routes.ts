@@ -1,7 +1,5 @@
-// The HTTP surface for Myra-backed agent-definition drafting: tenant-scoped,
-// `requireGrant`-gated, personal to the requesting principal. Error copy is
-// plain language for the person who typed the description; technical detail
-// goes to the server log instead.
+// The HTTP surface for Myra-backed agent-definition drafting. Error copy is
+// plain language for the person who typed the description; detail is logged.
 import { type } from "arktype";
 import { Hono } from "hono";
 

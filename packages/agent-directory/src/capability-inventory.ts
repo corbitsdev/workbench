@@ -1,8 +1,5 @@
 // The guided-capability-add fail-closed check: an addition is only
 // accepted if it names something the tenant's live inventory offers.
-// `CapabilityInventory` is declared separately from the drafting
-// inventory's own type to avoid a cycle, but the composition root wires
-// both from the same listers so they never drift apart.
 import { type } from "arktype";
 
 export type CapabilityToolPackageEntry = { readonly name: string };

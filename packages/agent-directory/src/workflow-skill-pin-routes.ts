@@ -1,11 +1,6 @@
 // Gives a running workflow (Myra) a way to pin a skill onto any definition
-// in its own tenant, authenticated through `WorkflowRunAuthenticator`.
-// Mounted outside tenant-session middleware. Unlike
-// `workflow-capability-routes.ts` (self-definition scoped), this is
-// self-tenant scoped, deliberately wider: `pin_skill` declares `approval:
-// "ask"`, so a human already approved this exact pin before the route
-// runs. Still enforces that the target belongs to the caller's own tenant
-// and is never a workbench host.
+// in its own tenant. `pin_skill` declares `approval: "ask"`, so a human
+// already approved this exact pin before the route runs.
 import { type } from "arktype";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";

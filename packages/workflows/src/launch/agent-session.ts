@@ -1,7 +1,5 @@
-// Every native launcher must write the `sessionId` it mints into
-// `agent_session` itself, through this one shared helper, so mail and spans
-// persist against a real session from a run's first turn. Rationale for the
-// two-step write: docs/agent-session-provisioning.md.
+// Every native launcher writes the `sessionId` it mints here, so mail and
+// spans persist from a run's first turn. See docs/agent-session-provisioning.md.
 import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { agentSession, workflowRun, workflowRunLaunchSpec } from "@intx/db/schema";

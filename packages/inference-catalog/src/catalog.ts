@@ -1,7 +1,5 @@
-// The catalog shape chain resolution works on: the platform's own model
-// discovery response, parsed. Restates none of the platform's own logic
-// (ancestor walk, shadowing, price selection); nothing here reaches a
-// database, which is what lets this ship to a workflow child.
+// The catalog shape chain resolution works on: the platform's model
+// discovery response, parsed. Nothing here reaches a database.
 import { type } from "arktype";
 
 import { Capability } from "./capabilities";

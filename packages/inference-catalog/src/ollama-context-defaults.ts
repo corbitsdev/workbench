@@ -1,7 +1,5 @@
 // Per-model context-window and output-token defaults for locally served
-// Ollama models, needed because neither the OpenAI-shaped adapter nor
-// Ollama's own endpoint errors when truncating a real conversation to a
-// small built-in default. See docs/ollama-context-defaults.md.
+// Ollama models. See docs/ollama-context-defaults.md.
 import type { OllamaAdapterConfig, OllamaAdapterOverride } from "@corbits/ollama-adapter";
 
 export type OllamaModelDefaults = Readonly<Record<string, OllamaAdapterOverride>>;

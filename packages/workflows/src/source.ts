@@ -1,8 +1,6 @@
-// The one shape a `workflow`-kind asset may carry: a source codebase (a
-// `package.json` declaring `interchange.workflow` plus its entry module)
-// rather than a bare serialized definition, per upstream's push validator.
-// `renderWorkflowSourceTree` and `parseWorkflowSourceEntry` are its one
-// producer and one consumer, so the bytes round-trip exactly.
+// The one shape a `workflow`-kind asset may carry: a source codebase, per
+// upstream's push validator. `renderWorkflowSourceTree` and
+// `parseWorkflowSourceEntry` are its one producer and consumer.
 
 /** The entry module's path inside the asset tree. */
 export const WORKFLOW_SOURCE_ENTRY_PATH = "workflow.js";

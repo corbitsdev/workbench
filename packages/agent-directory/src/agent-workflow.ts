@@ -1,7 +1,5 @@
-// Builds the single-step, folded workflow definition a hand-authored
-// agent materializes as, with the system prompt and model left to the
-// caller instead of fixed at build time — the one difference that makes a
-// person-defined agent possible alongside the platform's fixed starters.
+// Builds the single-step, folded workflow definition a hand-authored agent
+// materializes as, with system prompt and model left to the caller.
 
 import { defineAgent } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";

@@ -1,8 +1,6 @@
 // Deploy-layer metadata for every seeded workflow package, since
 // Interchange's `defineWorkflow` has no automatable/display-name concept.
-// `assetName`/`displayName`/`automatable` are read straight off each
-// package's `corbits.workflow` block via a build-time JSON import, so
-// there's no second copy of those three to drift.
+// Read straight off each package's `corbits.workflow` block, no second copy.
 import { type } from "arktype";
 
 import assistantPkg from "../../../agents/myra/package.json";

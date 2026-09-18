@@ -1,7 +1,6 @@
 // Same-asset definition edits are read-modify-write; this module serializes
-// concurrent writers and retries the loser against the latest snapshot. The
-// lock is an in-process promise chain keyed by asset id — correct only
-// because hub is a single replica, not safe across multiple.
+// writers with an in-process lock keyed by asset id — correct only for a
+// single hub replica.
 
 import type { AssetService } from "@intx/hub-sessions";
 

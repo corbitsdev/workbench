@@ -1,8 +1,6 @@
 // The workflow-authoring registry: an agent's in-tenant surface for
 // publishing, republishing, and reading back a `kind:"workflow"` hub asset.
-// Deploying is not this registry's job. Design rationale (why the `hub`
-// principal, why head-sha reads bypass `AssetService`):
-// docs/workflow-authoring-registry.md.
+// See docs/workflow-authoring-registry.md.
 import { authorize } from "@intx/authz";
 import type { ConditionRegistry, GrantStore } from "@intx/types/authz";
 import {

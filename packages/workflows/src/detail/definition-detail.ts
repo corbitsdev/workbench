@@ -1,8 +1,5 @@
-// The wire shape a workflow's own page reads. Pure/browser-safe. The client
-// renders directly off `@intx/hub-api`'s stock definitions list, which
-// exposes only these fields — no manifest metadata, no wire projection, no
-// grant/credential-binding read. That's a real gap, not a design choice
-// made here.
+// The wire shape a workflow's own page reads. Pure/browser-safe. Mirrors
+// `@intx/hub-api`'s stock definitions list, which exposes only these fields.
 import { type } from "arktype";
 
 export const WorkflowDefinitionDetail = type({

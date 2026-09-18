@@ -1,9 +1,5 @@
-// A person must never see an internal identifier. This has recurred
-// repeatedly as one-off display-time patches; this module is the one place
-// every id-generating prefix is named, so a new leak is a missed test run
-// rather than a missed grep. Matched with `_`, space, or `-` as the
-// separator, since `humanizeSlug`'s Title Case reading turns an underscore
-// into a space.
+// The one place every id-generating prefix is named, so a display-time leak
+// is a missed test run rather than a missed grep.
 const ID_PREFIX_WORDS = ["run", "wfd", "tnt", "prn", "ast", "gtk"] as const;
 
 export const ID_LEAK_PATTERN = new RegExp(

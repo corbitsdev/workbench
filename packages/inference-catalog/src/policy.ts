@@ -1,7 +1,5 @@
 // A bench's model policy: what it is willing to spend, and on which models.
-// Lives in the bench's own tenant `config` blob under `corbits.modelPolicy`,
-// read/written through the stock tenant routes — no product table, no
-// Workbench-only route. A bench with no key uses EMPTY_POLICY.
+// Lives in tenant `config` under `corbits.modelPolicy` — no product table.
 import { type } from "arktype";
 import { ProviderPreference } from "@intx/types";
 

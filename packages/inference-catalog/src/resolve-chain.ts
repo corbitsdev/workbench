@@ -1,9 +1,5 @@
-// Chain resolution: what this bench can reach for a given kind of work,
-// cheapest first, with fallbacks. Pure — callers hand in catalog reads, so
-// this never touches credentials or a database. Answers with an ordered
-// chain, never a single model, and reuses `resolveModelSources`'s own
-// capability predicate and priority tiebreakers so a returned chain can
-// never be rejected downstream by upstream's own rules.
+// Chain resolution: what this bench can reach for a kind of work, cheapest
+// first, with fallbacks. Pure — never touches credentials or a database.
 import type { Capability, ProviderPreference } from "@intx/types";
 
 import type { CatalogOffering, CatalogPricingRow } from "./catalog";

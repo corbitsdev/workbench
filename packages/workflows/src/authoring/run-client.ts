@@ -1,8 +1,6 @@
-// Shared fetch plumbing for a run-authenticated tool client — every tool
-// bundle behind `WorkflowRunAuthenticator` needs the same two headers and
-// error-envelope parse; previously each tool package reimplemented both
-// slightly differently. Browser-safe, since a tool bundle runs inside the
-// sidecar's workflow-host, not the hub server.
+// Shared fetch plumbing for a run-authenticated tool client, so every tool
+// bundle behind `WorkflowRunAuthenticator` shares the same headers and
+// error-envelope parse instead of reimplementing both.
 import { type } from "arktype";
 
 export interface RunBearerClientConfig {

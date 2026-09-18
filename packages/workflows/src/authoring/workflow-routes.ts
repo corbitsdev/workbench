@@ -1,9 +1,6 @@
 // The sanctioned path for a workflow-process child to author, republish, or
 // read back a workflow-kind asset, authenticated through
-// `WorkflowRunAuthenticator` since a workflow child has no browser session.
-// Mounted outside the tenant prefix; identity never rides in the request
-// body — tenant and principal always come from the authenticated run.
-// Deployment is not here; it goes through the stock deployments route.
+// `WorkflowRunAuthenticator`. Deployment goes through the stock route instead.
 import { type } from "arktype";
 import { Hono } from "hono";
 import { makeErrorEnvelope } from "@corbits/error-sink";

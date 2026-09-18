@@ -1,7 +1,5 @@
-// Capability-add is a read-modify-write of the definition's asset. This
-// module owns the mutation so a concurrent writer retries against the
-// latest snapshot instead of clobbering it; the lock lives in
-// `./asset-write.ts` so sibling RMW routes share it.
+// Capability-add is a read-modify-write of the definition's asset; the lock
+// lives in `./asset-write.ts` so sibling RMW routes share it.
 
 import type { PinnedSkillIndexEntry } from "@corbits/skills-tools";
 import type { DB } from "@intx/db";

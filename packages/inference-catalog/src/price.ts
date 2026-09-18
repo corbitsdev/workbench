@@ -1,7 +1,5 @@
-// The catalog stores per-token prices as decimal strings; this is the one
-// place that converts them to USD per million tokens. A missing row or
-// price component yields `known: false` with null numbers, never zero — a
-// fabricated zero would read as free and win every cheapest-first sort.
+// Converts decimal-string per-token prices to USD/million. A missing row
+// yields `known: false`, never a fabricated zero that wins cheapest-first.
 import type { CatalogPricingRow } from "./catalog";
 
 export const DEFAULT_CURRENCY = "USD";
