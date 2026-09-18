@@ -28,20 +28,10 @@ async function exists(filePath: string): Promise<boolean> {
 }
 
 /**
- * Load the sidecar's persisted Ed25519 signing keypair, minting a fresh
- * one on first boot.
- *
- * The 32-byte seed in `ed25519.private` is the sole source of truth for
- * the sidecar's identity; the public key is always derived from it. The
- * `ed25519.public` file is an identity anchor, not a cache: on every load
- * it is cross-checked against the seed-derived public key. A mismatch
- * means either the seed or the public file was corrupted or swapped (a
- * bad backup restore, disk bitrot, an operator fat-finger). Rather than
- * trusting the file and advertising a public key the sidecar cannot sign
- * with -- which would make every signature fail verification at the hub,
- * far from the root cause -- we fail loudly here at boot. We cannot tell
- * which of the two files rotted, so we halt and let an operator decide
- * (restore the seed, or remove the directory to mint a fresh identity).
+ * The seed file is the sole source of identity; the public file is cross
+ * checked against it on every load, not trusted as a cache, so a corrupted
+ * or swapped file fails loud at boot instead of silently failing signature
+ * verification at the hub later.
  */
 export async function loadOrMintSidecarKeypair(signingDir: string): Promise<KeyPair> {
   const privateKeyPath = path.join(signingDir, PRIVATE_KEY_FILENAME);

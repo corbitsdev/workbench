@@ -1,11 +1,6 @@
-// The `ask_user` tool: poses an interview question in-thread as an
-// interactive `question` block (`@corbits/chat`'s `blocks.ts`) instead of
-// prose bullet options, then ends the turn. A Workbench agent is an
-// unbounded interactive step — every inbound mail is its next turn — so
-// "ask a person" is native as "post the question and stop," not a
-// structural park: the person's answer, posted as an ordinary reply in the
-// same channel (`packages/chat/src/routes.ts`'s block-response route,
-// which sends it as a plain message), arrives as the next turn's own
+// A Workbench agent is an unbounded interactive step — every inbound mail
+// is its next turn — so "ask a person" is native as "post the question and
+// stop," not a structural park: the answer arrives as the next turn's
 // inbound message, not as this call's result.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
@@ -49,18 +44,7 @@ function clientConfig(env: AskUserEnv): AskUserClientConfig {
   };
 }
 
-/**
- * `ask_user`'s `run`: posts the question card, then answers the call with a
- * short instruction telling the model to end its turn — the person's answer
- * is not this call's result, it is the next turn's inbound message. No gate,
- * no correlation id, no park: a Workbench agent's next mail is already its
- * next turn, so posting and stopping IS "asking a person" here.
- *
- * `postQuestion` stamps `questionIdForCall(call.id)` (derived from the
- * tool-call id, not minted per attempt) on the outbound question card, so a
- * crash-retry of the same call re-posts the same id and the write path
- * returns the existing card rather than a duplicate.
- */
+/** Posts the question then tells the model to end its turn; postQuestion keys the card on the call id so a crash-retry re-posts the same id, not a duplicate. */
 async function runAskUser(env: AskUserEnv, call: ToolCall): Promise<ToolResult> {
   const parsed = AskUserInput(call.arguments);
   if (parsed instanceof type.errors) {

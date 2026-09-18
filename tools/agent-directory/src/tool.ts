@@ -1,25 +1,8 @@
-// The `@corbits/agent-directory-tools` bundle: Myra's manager tools —
-// `list_agents`, a plain read of the tenant's taskable agents, and
-// `create_agent`, which materializes a brand-new specialist agent
-// definition and, by default, opens that specialist its own `kind: chat`
-// 1:1 (mint-dm) — never inviting into Myra's current DM. Neither tool
-// carries an `approval` key: creation is free and the reactor never parks
-// the call. Creation plus the default mint is tenant-internal — a new
-// definition in the caller's own tenant, then (unless opted out) a fresh
-// chat for that definition. `toolPackagePins` on that definition are pins
-// the user asked Myra to set, not a capability grant that needs a
-// per-invocation gate. State-changing MCP tools and run-now/execution
-// stay gated on their own declarations.
-//
-// `hubAgentDirectoryUrl`/`hubChatUrl`/`sidecarToken`/`address` are
-// threaded onto `env` by the sidecar's per-step env builder, the same
-// ground `@corbits/memory-tools`'/`@corbits/capability-tools`' own env
-// keys are threaded from.
-//
-// See `./client.ts` for the workflow-run-authenticated routes this
-// bundle's execution calls: `@corbits/agent-directory`'s
-// `createWorkflowAgentCreateRoutes` and `@corbits/chat`'s
-// `createWorkflowParticipantRoutes` (mint-dm + invite).
+// Neither tool carries an approval key: creation is tenant-internal and
+// free (a new definition plus, by default, its own DM rather than an
+// invite into Myra's current one) — toolPackagePins here are pins the user
+// asked Myra to set, not a capability grant needing a per-invocation gate.
+// See ./client.ts for the workflow-run-authenticated routes this calls.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";

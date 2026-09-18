@@ -1,22 +1,9 @@
-// The `@corbits/catalog-tools` bundle: `list_model_concepts`,
-// `pick_models`, and `estimate_run_cost`.
-//
-// The rule the whole bundle exists to enforce: an agent asks for a model by
-// what the work needs — a kind of work, or the capabilities the work
-// requires — and never by name. A model named from memory is a guess about
-// a bench the agent cannot see; a concept is a question this bench can
-// answer from its own connected providers, its own capability data, and its
-// own prices.
-//
-// Every answer is an ordered chain, head first and fallbacks behind it, and
-// every price is either real or reported as unknown. Nothing here invents a
-// model, and nothing here reports a price of zero for something unpriced.
-//
-// All three tools read only, so none declares an `approval` key.
-//
-// The chain is resolved here, in the workflow child, from two stock tenant
-// reads (see `client.ts`). Nothing about a kind of work, a price, or a
-// bench's policy is computed by a Workbench-specific hub route.
+// Enforces asking for a model by what the work needs, never by name — a
+// named model is a guess about a bench the agent can't see. Every answer is
+// an ordered chain with real or unknown prices, never an invented model or
+// a zero price. All three tools are read-only (no approval key); the chain
+// is resolved here from two stock tenant reads (see client.ts), not a
+// Workbench-specific hub route.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";

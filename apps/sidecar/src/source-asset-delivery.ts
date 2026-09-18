@@ -1,14 +1,6 @@
-// Sidecar-side delivery of a workflow closure's source assets.
-//
-// A `WorkflowSourceAssetMount` carries a git pack for one hub asset. How that
-// pack is materialized depends on how the closure references the asset:
-//   - a tarball-format entry reads a `.tgz` blob from a plain-file checkout
-//     (`applyAssetPack`), keyed by an `assetId -> mountPath` map; and
-//   - a source-format entry checks a subtree out of the git objects, so the
-//     pack is indexed into a RETAINED `.git` (a "gitDir"), keyed by an
-//     `assetId -> gitDir` map the loader hands `materializeGitEntry`.
-// One asset can be referenced both ways; a source-format workflow closure
-// references only source entries, so it produces only gitDirs.
+// Sidecar-side delivery of a workflow closure's source assets. A tarball
+// entry checks out a plain-file mount; a source entry indexes the pack
+// into a retained gitDir. One asset can be referenced both ways.
 
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -28,18 +20,9 @@ const logger = getLogger(["sidecar", "source-asset-delivery"]);
 const SAFE_ASSET_ID = /^[a-zA-Z0-9_.-]+$/;
 
 /**
- * Index a delivered asset pack into `gitDir` and RETAIN the object store, so a
- * source subtree can be checked out from it. Builds into a sibling temp `.git`
- * and RENAMES it into place, so the durable store is complete-or-absent: a crash
- * mid-materialization leaves only the temp, never a partial `gitDir` that the
- * dir-exists check `resolveDeploymentAssetMounts` runs on restore would trust.
- * The rename is same-filesystem (the temp is a sibling under `gitDir`'s parent).
- *
- * On a rename conflict (a stale `gitDir` from a torn prior attempt) the freshly
- * built store wins: the existing dir is removed and the temp renamed over it, so
- * a re-delivery at a new commit never keeps the old content. A secondary rm
- * failure is logged so it does not silently mask state; the primary error is
- * rethrown.
+ * Builds into a sibling temp .git and renames into place so the durable
+ * store is complete-or-absent: a crash mid-materialization never leaves a
+ * partial gitDir the restore dir-exists check would trust.
  */
 export async function indexAssetPackIntoGitDir(args: {
   pack: Uint8Array;
@@ -68,16 +51,12 @@ export async function indexAssetPackIntoGitDir(args: {
   try {
     await fsp.rename(tempDir, gitDir);
   } catch (err) {
-    // Only a "destination already exists" failure means a torn prior attempt we
-    // may supersede; any other rename error (EXDEV, EACCES, ENOSPC, EIO) must
-    // NOT destroy a possibly-good prior store -- clean up only the fresh temp
-    // and surface it.
+    // Only "destination exists" means a torn prior attempt to supersede;
+    // any other rename error must not destroy a possibly-good prior store.
     if (!isDestinationExistsError(err)) {
       await cleanupTemp();
       throw err;
     }
-    // The final path already holds a store (a torn prior attempt): rebuild
-    // wins, so drop the stale store and rename the fresh one over it.
     await fsp.rm(gitDir, { recursive: true, force: true });
     try {
       await fsp.rename(tempDir, gitDir);
@@ -119,24 +98,15 @@ export function assetReferenceFormats(
 
 /** The absolute gitDir a source asset's objects are indexed into. */
 export function sourceAssetGitDir(gitDirRoot: string, assetId: string): string {
-  // Reject an all-dots assetId (".", "..", ...) before the join. SAFE_ASSET_ID
-  // permits "." as a character, so a bare ".." would otherwise escape the
-  // per-asset dir (`path.join(root, "..")` is root's parent) and "." would
-  // resolve to the shared root itself. Mirrors `applyAssetPack`'s all-dots
-  // segment guard.
+  // SAFE_ASSET_ID permits "." as a character, so an all-dots id must be
+  // rejected separately or it escapes/aliases the per-asset dir.
   if (!SAFE_ASSET_ID.test(assetId) || /^\.+$/.test(assetId)) {
     throw new Error(`source-asset delivery: unsafe assetId ${JSON.stringify(assetId)}`);
   }
   return path.join(gitDirRoot, assetId);
 }
 
-/**
- * The single cap on the total inline (base64) source-asset payload a workflow
- * closure may deliver in one frame. Both the probe and the deploy pass this to
- * `materializeWorkflowAssets`; a git-sourced asset that grows past it is the
- * signal to move that path's asset delivery to a streamed transfer. One
- * constant so the two paths cannot drift.
- */
+/** Shared by probe and deploy so the two paths cannot drift; exceeding it signals moving to a streamed transfer. */
 export const MAX_INLINE_ASSET_PAYLOAD_BYTES = 32 * 1024 * 1024;
 
 /**
@@ -173,10 +143,7 @@ export async function materializeWorkflowAssets(args: {
       );
     }
     seen.add(asset.assetId);
-    // The frame delivers one mount per asset the closure references, so a
-    // delivered asset with no closure entry is a hub/frame inconsistency.
-    // Fail loud rather than silently ignore it (while still counting its
-    // payload toward the cap above).
+    // An asset with no closure entry is a hub/frame inconsistency; fail loud.
     const refs = formats.get(asset.assetId);
     if (refs === undefined) {
       throw new Error(

@@ -1,17 +1,8 @@
-// The `@corbits/workflow-authoring-tools` bundle: `workflow_author`,
-// `workflow_republish`, `workflow_source_read`, and `workflow_deploy` — an
-// agent's way to write a workflow code package into a `kind: "workflow"`
-// hub asset, read it back, and deploy it through Interchange's native
-// source pipeline. The first three carry no `approval: "ask"`: writing
-// source is not a side effect (docs/workflow-model.md, "Authority
-// boundaries"). `workflow_deploy` does — deploying is what makes a
-// workflow selectable as a routine target, so a human sees the deploy
-// intent and approves it before the tool call ever reaches the hub (// still owns showing the probed capability surface on that approval card;
-// today's snapshot is the tool call's own arguments).
-//
-// A thrown error here is the honest result: `@intx/agent`'s tool runner
-// converts a rejected `run` into `ToolResult { isError: true }` carrying
-// the message, so the model sees exactly what the hub refused and why.
+// The first three tools carry no approval: "ask" since writing source is not
+// a side effect (docs/workflow-model.md, "Authority boundaries");
+// workflow_deploy does, since deploying makes a workflow selectable as a
+// routine target. A thrown error surfaces as ToolResult{isError:true} so the
+// model sees exactly what the hub refused.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
@@ -174,16 +165,7 @@ async function runDeploy(env: WorkflowAuthoringEnv, call: ToolCall): Promise<Too
   );
 }
 
-/**
- * The bundle id's middle segment is not the package name, unlike every
- * other `@corbits/*-tools` bundle: `<id>:<tool name>` is what goes on the
- * provider wire, `@`, `/`, `:` and `-` each encode to three characters
- * there (`@intx/inference`'s `encodeToolName`), and
- * `@corbits/workflow-authoring-tools/<anything>:workflow_source_read`
- * cannot fit OpenAI's 64-character cap. `defineTool` only requires the
- * `@scope/pkg/name` shape; `apps/web/src/tools/registry-publish.test.ts`'s
- * tool-name-limits test is what this id satisfies.
- */
+/** id's middle segment is shortened (not the package name): `<id>:<tool name>` on the wire must fit OpenAI's 64-char cap. */
 export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
   id: "@corbits/workflow_authoring/wf",
   requires: ["hubWorkflowAuthoringUrl", "tenantId", "sidecarToken", "address"],

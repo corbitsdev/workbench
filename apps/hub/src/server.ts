@@ -48,13 +48,8 @@ import { upgradeWebSocket, websocket } from "hono/bun";
 import { setup, getLogger } from "@intx/log";
 import { Hono } from "hono";
 
-// ---------------------------------------------------------------------
-// Everything above this line is upstream Interchange's own
-// apps/hub/src/server.ts, verbatim. Corbits libraries are mounted in one
-// delimited block below, after createApp(...) and before the function's
-// return -- see AGENTS.md's "Workbench is a plain Interchange tenant"
-// ruling. Nothing else in this file is Workbench-specific.
-// ---------------------------------------------------------------------
+// Everything above this line is upstream Interchange's server.ts, verbatim;
+// see AGENTS.md's "plain Interchange tenant" ruling.
 import {
   buildMailFrame,
   createInMemoryMailboxEventBus,
@@ -464,14 +459,8 @@ export async function createHubServer({
     }),
   });
 
-  // ---------------------------------------------------------------------
   // Corbits mount block -- everything Workbench adds to the stock hub.
-  // Each library gets its own Hono<TenantEnv> routed under the tenant
-  // prefix (or "/" when the library's own routes already carry that
-  // prefix), reusing the app's own db/grantStore/credentialCipher/router.
-  // See AGENTS.md: "any other hub mount is cutover debt with a Linear
-  // issue, never a pattern to extend."
-  // ---------------------------------------------------------------------
+  // See AGENTS.md: any other hub mount is cutover debt, never a pattern to extend.
   const TENANT_PREFIX = "/api/tenants/:tenantId";
   const corbitsDatabaseUrl = `postgres://${encodeURIComponent(process.env["DB_USER"] ?? "postgres")}:${encodeURIComponent(process.env["DB_PASSWORD"] ?? "postgres")}@${process.env["DB_HOST"] ?? "localhost"}:${String(Number(process.env["DB_PORT"] ?? 5432))}/${process.env["DB_NAME"] ?? "interchange"}`;
   const { db: mailboxDb } = createMailboxDb(corbitsDatabaseUrl);
@@ -639,9 +628,7 @@ export async function createHubServer({
     router: webhookMailRouter,
   });
 
-  // ---------------------------------------------------------------------
   // End of Corbits mount block.
-  // ---------------------------------------------------------------------
 
   log.info("Starting server on port {port}", { port });
 
