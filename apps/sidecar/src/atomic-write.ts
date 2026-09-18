@@ -1,10 +1,6 @@
-// Atomic, durable file replacement for the sidecar's non-rebuildable
-// on-disk records. Distinct from the cache's rebuildable temp+rename
-// (no fsync, a lost write just forces a re-fetch) and from
-// `fsyncWriteFile`'s in-place fsync write (no atomicity, a torn write
-// leaves a half-file): this is the tier for a sole restore source that
-// must survive both a process kill and a power loss without ever
-// exposing a torn record.
+// For a sole restore source that must survive a process kill or power
+// loss without ever exposing a torn record — stronger than the cache's
+// rebuildable temp+rename or fsyncWriteFile's non-atomic in-place write.
 
 import { open, rename, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -20,27 +16,10 @@ export interface AtomicWriteOptions {
 }
 
 /**
- * Replace `path` with `contents` atomically and durably. The bytes land
- * in a fresh per-write temp file that is fsynced and then `rename`d over
- * `path`; because rename is atomic within a directory, a reader only
- * ever observes the prior complete file or the new complete file, never
- * a torn one. The fsync before the rename is what extends that
- * guarantee past process death to OS crash / power loss: without it, the
- * ext4 delayed-allocation window can surface the renamed path as a
- * zero-length file after a power loss.
- *
- * The parent directory is fsynced after the rename so the new link is
- * itself durable, but a filesystem that rejects directory fsync
- * (FAT/exFAT, some network mounts) only degrades durability -- the file
- * is already renamed and fsynced -- so that failure is logged, not
- * thrown.
- *
- * `mode` is applied on the temp file's creation, so it takes effect on
- * every write. A plain in-place overwrite of an existing file would
- * silently keep the original file's mode instead.
- *
- * The temp file follows `createTarballCache`'s `.tmp.<pid>.<rand>`
- * naming convention for consistency across the sidecar's staged writes.
+ * fsync before rename extends atomicity past process death to power loss
+ * (without it, ext4 delayed allocation can surface a zero-length file).
+ * Directory fsync failure (FAT/exFAT, some network mounts) only degrades
+ * durability, so it's logged, not thrown.
  */
 export async function writeFileAtomicDurable(
   path: string,
@@ -58,10 +37,7 @@ export async function writeFileAtomicDurable(
     }
     await rename(tmp, path);
   } catch (cause) {
-    // The write failed and is about to rethrow; unlink the temp so a
-    // failed write leaves no orphan. Best-effort: the temp may never
-    // have been created, and a second failure here must not mask the
-    // original cause.
+    // Best-effort cleanup: must not mask the original cause on a second failure.
     await unlink(tmp).catch(() => undefined);
     throw cause;
   }
@@ -79,18 +55,9 @@ export async function writeFileAtomicDurable(
 }
 
 /**
- * Remove `path` durably: unlink it, then fsync the parent directory so the
- * removal survives a power loss. A raw `unlink` leaves the directory-entry
- * removal in the OS's delayed-metadata window, so a power loss can resurrect
- * the file -- for a cache whose on-disk entry is the restore source, a
- * resurrected entry re-stales the cache. Idempotent: a file already absent is a
- * completed removal, so ENOENT on the unlink is success.
- *
- * The parent-directory fsync mirrors `writeFileAtomicDurable`, including its
- * degrade: a filesystem that rejects directory fsync (FAT/exFAT, some network
- * mounts) only weakens durability -- the file is already unlinked -- so that
- * failure is logged, not thrown. It runs unconditionally so a prior removal
- * that unlinked but died before the fsync is made durable on the next attempt.
+ * Fsyncs the parent dir after unlink so the removal survives a power loss —
+ * without it a resurrected file would re-stale a cache whose entry this is
+ * the restore source for. Idempotent: ENOENT on unlink is success.
  */
 export async function removeFileAtomicDurable(path: string): Promise<void> {
   try {
