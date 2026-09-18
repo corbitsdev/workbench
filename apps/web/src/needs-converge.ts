@@ -528,12 +528,21 @@ async function resolveRoleId(
   return found.id;
 }
 
+const HubErrorEnvelope = type({
+  error: { code: "string", "message?": "string", "userMessage?": "string" },
+});
+
 async function readJson(response: Response, operation: string): Promise<unknown> {
   if (!response.ok) {
+    const envelope = HubErrorEnvelope(await response.json().catch(() => undefined));
+    const reason =
+      envelope instanceof type.errors
+        ? ""
+        : ` ${envelope.error.code}: ${envelope.error.userMessage ?? envelope.error.message ?? ""}`;
     throw new StockHubRequestError(
       operation,
       response.status,
-      `Stock request ${operation} failed with HTTP ${response.status}.`,
+      `Stock request ${operation} failed with HTTP ${response.status}.${reason}`,
     );
   }
   return (await response.json()) as unknown;
