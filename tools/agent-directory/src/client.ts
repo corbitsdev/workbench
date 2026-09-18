@@ -1,21 +1,7 @@
-// A minimal client for the two workflow-run-authenticated surfaces
-// `create_agent`/`list_agents` reach: `@corbits/agent-directory`'s
-// `createWorkflowAgentCreateRoutes` (`POST/GET .../definitions`) and
-// `@corbits/chat`'s `createWorkflowParticipantRoutes`
-// (`POST .../participants/invite`) — this bundle's execution half,
-// mirroring `@corbits/capability-tools`' `client.ts` exactly: same
-// auth-header shape, same error-handling, same arktype-response-parsing
-// pattern.
-//
-// Two hub URLs, deliberately not one: `hubAgentDirectoryUrl` reaches
-// `@corbits/agent-directory`'s workflow-create-routes,
-// `hubChatUrl` reaches `@corbits/chat`'s workflow-participant-routes.
-// They are very likely the same physical hub origin in every real
-// deployment, but this bundle never assumes that — each surface
-// declares its own env key, mirroring how every other tool bundle in
-// this codebase (`@corbits/memory-tools`'s `hubMemoryUrl`,
-// `@corbits/capability-tools`'s `hubCapabilitiesUrl`) declares its own
-// `hub<X>Url` rather than a shared value.
+// Two hub URLs, deliberately not one: the two surfaces are very likely the
+// same physical hub origin in every real deployment, but this bundle never
+// assumes that, mirroring how every other tool bundle here declares its
+// own hub<X>Url rather than a shared value.
 import { type } from "arktype";
 
 export interface AgentDirectoryToolClientConfig {
