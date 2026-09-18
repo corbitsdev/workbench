@@ -1,27 +1,13 @@
-// Boundary readers for the sidecar's env-config inputs.
-//
-// Centralizing the readers here keeps env-validation rules in one
-// place — `SIDECAR_CACHE_MAX_BYTES` must be a positive finite
-// number, with a 10 GiB default — even though the sidecar only
-// invokes the reader at one site today (the orchestrator boot in
-// `apps/sidecar/src/index.ts`). The harness builder receives the
-// resolved value through `DefaultHarnessBuilderConfig` rather than
-// re-reading env, so the boundary stays at the boot edge.
+// Boundary readers for the sidecar's env-config inputs, centralized so
+// validation rules live in one place at the boot edge.
 
 import { AdapterManifest } from "@intx/inference";
 import { hexDecode } from "@intx/types";
 
 const DEFAULT_CACHE_MAX_BYTES = 10 * 1024 * 1024 * 1024;
 
-// The operator key the sidecar seals its at-rest credential material under
-// (inference-source apiKeys, and the tool credential material store). A
-// SEPARATE key from the hub's `CREDENTIAL_ENCRYPTION_KEY`: the sidecar seals a
-// local store on a host it does not control as tightly, so a sidecar
-// disk-plus-key compromise must not also decrypt the hub's credential
-// database, and the two keys rotate independently. Required at boot: a missing
-// key fails loudly here rather than letting the sidecar run and persist secrets
-// it cannot protect. 32 bytes, hex -- e.g. `openssl rand -hex 32`, the same
-// shape as the hub's key.
+// Separate from the hub's CREDENTIAL_ENCRYPTION_KEY, so a sidecar
+// disk-plus-key compromise can't also decrypt the hub's database.
 export function readCredentialEncryptionKey(): Uint8Array {
   const raw = process.env["SIDECAR_CREDENTIAL_ENCRYPTION_KEY"];
   if (raw === undefined || raw.trim() === "") {
@@ -40,11 +26,7 @@ export function readCacheMaxBytes(): number {
   return n;
 }
 
-// Mirrors the hub's `DEFAULT_HUB_MAX_TARBALL_BYTES`. The sidecar's
-// HTTP-registry fetcher enforces this cap on every upstream registry
-// tarball pull. An operator pointing the sidecar at a third-party
-// registry whose curated tarballs run larger should raise the cap
-// explicitly via `SIDECAR_REGISTRY_MAX_TARBALL_BYTES`.
+// Mirrors the hub's DEFAULT_HUB_MAX_TARBALL_BYTES.
 const DEFAULT_REGISTRY_MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 
 export function readRegistryMaxTarballBytes(): number {
@@ -57,19 +39,8 @@ export function readRegistryMaxTarballBytes(): number {
   return n;
 }
 
-// Operator-configured custom inference adapter manifest. The value is
-// TRUSTED operator input read only from this process's environment;
-// `import(specifier)` is arbitrary code execution, so a specifier must
-// never originate from deploy or tenant data — the agent deploy tree
-// carries only a `provider` key, never a specifier. The shape is
-// arktype-validated here (and re-validated at the workflow-child spawn
-// boundary as defense in depth), but the value itself is trusted.
-//
-// Unset or whitespace-only means "no custom adapters", a valid
-// configuration — the sidecar then resolves only the statically-linked
-// built-ins. A present-but-malformed value fails loud at boot: an
-// opaque `JSON.parse` SyntaxError is rethrown naming the env key, and
-// the parsed value is asserted against `AdapterManifest`.
+// Trusted operator input only: import(specifier) is arbitrary code
+// execution, so a specifier must never originate from deploy or tenant data.
 export function readAdapterManifest(): AdapterManifest {
   const raw = process.env["SIDECAR_ADAPTER_MANIFEST"];
   if (raw === undefined || raw.trim() === "") return [];
