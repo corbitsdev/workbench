@@ -21,11 +21,14 @@ async function cloneAndFetchMain(args: {
   const dir = "/repo";
   await fs.promises.mkdir(dir);
   await git.init({ fs, dir, defaultBranch: "main" });
+  // isomorphic-git needs a configured remote to derive its refspec; a bare
+  // `url` on a fresh repo fails with "Could not find a fetch refspec".
+  await git.addRemote({ fs, dir, remote: "origin", url: args.url });
   await git.fetch({
     fs,
     http,
     dir,
-    url: args.url,
+    remote: "origin",
     ref: MAIN_REF,
     // The hub's git server advertises no `shallow` capability, so a
     // depth-limited fetch is rejected outright; fetch the full branch.
