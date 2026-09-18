@@ -1,14 +1,5 @@
 // A platform run's status the way surfaces should show it, and its words.
-// Warm-keep leaves a fire's delivery agent deployed after it
-// replies, so `workflow_run.status` never settles out of `running` on its
-// own. Insights, Mission Control, and the shell activity feed all read a
-// listing-shaped payload through here rather than badging the raw column,
-// so a lingering `running` status past `FIRE_RUNNING_WINDOW_MS` reads as
-// completed instead of still in flight. Originally
-// `@corbits/routines`' `health.ts`/`run-language.ts`; carried over verbatim
-// when routines were cut over to native `ScheduleTrigger` definitions
-// — every surface that reads a run's displayed status still
-// needs the same reading.
+// See docs/run-outcome-status.md.
 
 /** One turn on a listing-shaped payload — enough to tell in-flight from settled. */
 export type ListingTurn = {
@@ -40,15 +31,8 @@ function nestedTurns(run: Record<string, unknown> | undefined): readonly unknown
   return Array.isArray(turns) ? turns : undefined;
 }
 
-/**
- * How long an *abandoned* fire may linger as `running` with no `endedAt`
- * before it is read as completed (warm-keep). A finished
- * fire is supposed to land `completed`/`failed`/`cancelled` plus `endedAt`
- * via `markTerminal`; this window is last-resort for a fire already known
- * abandoned that never got that write. It is never applied to a live
- * in-flight fire — a tool loop can outlast ten minutes, and persist has
- * not settled yet.
- */
+/** How long an abandoned fire may linger as `running` with no `endedAt`
+ * before it reads as completed. See docs/run-outcome-status.md. */
 export const FIRE_RUNNING_WINDOW_MS = 10 * 60 * 1000;
 
 type InFlightSignal = "yes" | "no" | "unknown";
@@ -61,10 +45,7 @@ function runHasNoInFlightTurn(run: Record<string, unknown> | undefined): boolean
   return run?.hasInFlightTurn === false;
 }
 
-/**
- * Absent `turns` / `hasInFlightTurn` is unknown, not "no in-flight turn".
- * Treating omit as empty reverts the live-tool-loop 10-minute false-complete.
- */
+/** Absent `turns`/`hasInFlightTurn` is unknown, not "no in-flight turn". */
 function listingInFlightSignal(listing: ListingRun): InFlightSignal {
   if (listing.hasInFlightTurn === true || runHasInFlightTurn(listing.run)) {
     return "yes";
@@ -80,23 +61,14 @@ function listingInFlightSignal(listing: ListingRun): InFlightSignal {
   return "unknown";
 }
 
-/**
- * A listing row has an in-flight turn when the producer said so
- * (`hasInFlightTurn`) or attached a running turn (top-level `turns` or
- * nested on `run`). A finished turn (`endedAt` set, or status other than
- * `running`) does not count. Omitted fields are unknown, not false.
- */
+/** A listing row has an in-flight turn when the producer said so or attached
+ * a running turn. Omitted fields are unknown, not false. */
 export function listingHasInFlightTurn(listing: ListingRun): boolean {
   return listingInFlightSignal(listing) === "yes";
 }
 
-/**
- * Abandoned only when the producer explicitly said there is no in-flight
- * turn — an empty `turns` array after a real query, or `hasInFlightTurn:
- * false` — and the fire is older than `FIRE_RUNNING_WINDOW_MS`. Omitting
- * those fields is not a no; a live tool-loop listing that has not attached
- * them must stay running.
- */
+/** Abandoned only when the producer explicitly said there is no in-flight
+ * turn and the fire is older than `FIRE_RUNNING_WINDOW_MS`. */
 export function listingAbandoned(listing: ListingRun, now: number): boolean {
   if (listingInFlightSignal(listing) !== "no") return false;
   const startedAt = Date.parse(listing.createdAt);
@@ -110,16 +82,8 @@ export function withListingAbandoned<T extends ListingRun>(listing: T, now: numb
   return { ...listing, abandoned: true };
 }
 
-/**
- * `runOutcomeStatus` for a platform run whose status lives at the top
- * level (`workflow_run.status`). Insights, Mission Control, and the shell
- * activity feed all see that shape. `endedAt` is the persist-path signal
- * that the fire already finished. A listing-shaped payload with an
- * in-flight turn stays `running` however old it is; one that explicitly
- * says there is no in-flight turn is abandoned past
- * `FIRE_RUNNING_WINDOW_MS` and remapped to `completed`. Omitting those
- * fields is not a no.
- */
+/** `runOutcomeStatus` for a platform run whose status lives at the top level
+ * (`workflow_run.status`). See docs/run-outcome-status.md. */
 export function runOutcomeStatus(
   run: {
     readonly createdAt: string;

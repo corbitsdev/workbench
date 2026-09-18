@@ -1,68 +1,19 @@
-// Every Workbench launch path provisions through Interchange's
-// `prepareProvisionedDeployment` with a `sessionId` it mints itself, but
-// nothing writes that id into `agent_session` (vendor-owned,
-// `vendor/intx/db/src/schema/sessions.ts`) — the table
-// `resolveRunSessionId` (`vendor/intx/hub-sessions/src/hub-session-lookups.ts`)
-// reads to route a run's outbound mail. Every launcher must do this
-// itself, through this one shared helper, so mail and spans persist
-// against a real session from the run's first turn.
-//
-// Timing matters: `workflow_run.principal_id` (the FK `agent_session`
-// keys on) is still null the instant `prepareProvisionedDeployment`
-// returns — a provisioned anchor is born "deployed" with no principal,
-// and only the run's first trigger reconciles one onto it (Interchange's
-// `anchorWithPrincipal`, `vendor/intx/db/src/workflow-run-store.ts`).
-// Pre-creating the run's principal to dodge this is not an option either:
-// Interchange's own grant materialization
-// (`vendor/intx/hub-api/src/run-grant-materialization.ts`) inserts the
-// principal row `onConflictDoNothing` and treats a conflict as "grants
-// already committed", throwing rather than re-materializing — so nothing
-// upstream of that first trigger may write the principal first.
-//
-// `recordAgentSessionAtProvision` writes the row immediately after
-// `prepareProvisionedDeployment` returns, keyed on the deploying
-// principal (`sourceAuthorityPrincipalId`) since the run principal does
-// not exist yet — every other field the launcher already knows or can
-// read straight off the fresh run row. `ensureRunSession` re-keys onto
-// the run's own principal once one is anchored, moving `principal_id`
-// without ever touching the session id; it is called from every seam
-// that might be a run's first mail-routable moment (chat's `sendMail`,
-// the vendored `persistMail` a heartbeat run's first outbound mail
-// hits), and is a true upsert so a missing row — a run deployed
-// straight through Interchange's own
-// `POST /api/tenants/:id/workflows/deployments` route never gets the
-// eager write above — is created rather than treated as a bug.
+// Every native launcher must write the `sessionId` it mints into
+// `agent_session` itself, through this one shared helper, so mail and spans
+// persist against a real session from a run's first turn. Rationale for the
+// two-step write: docs/agent-session-provisioning.md.
 import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { agentSession, workflowRun, workflowRunLaunchSpec } from "@intx/db/schema";
 import type { EventCollectorRegistry } from "@intx/hub-sessions";
 
-/**
- * The one port every launcher threads the same wrapped
- * `EventCollectorRegistry` through (`apps/hub/src/index.ts`'s
- * `eventCollectors`) — never a second registry construction. `create`
- * is what actually makes `inference_turn`/`turn_part` rows exist for a
- * run; `abandon` tears the collector down when a run's session
- * ends; `has` lets a caller check whether a collector already exists
- * before creating a second one.
- */
+/** The one port every launcher threads the same wrapped
+ * `EventCollectorRegistry` through, never a second registry construction. */
 export type EventCollectorPort = Pick<EventCollectorRegistry, "create" | "abandon" | "has">;
 
-/**
- * The one shared write every native launcher calls right after its own
- * `prepareProvisionedDeployment` returns — a run row exists
- * the instant that call resolves, so the session it will use is known
- * then too: the launch-spec `sessionId` it just minted, `tenantId` and
- * `definitionId` read fresh off the new `workflow_run` row (Interchange
- * resolves the asset id the caller passed to a real `workflow_definition`
- * row internally; callers never see that id themselves), and the
- * deploying principal (`sourceAuthorityPrincipalId`) standing in for the
- * run's own principal, which does not exist yet. `onConflictDoNothing`
- * makes a second call for the same run id a no-op. Every launcher threads
- * the same wrapped `EventCollectorRegistry` through here so the run's
- * `inference_turn`/`turn_part` rows have somewhere to land from its very
- * first turn.
- */
+/** The one shared write every native launcher calls right after
+ * `prepareProvisionedDeployment` returns. See
+ * docs/agent-session-provisioning.md#why-timing-forces-a-two-step-write. */
 export async function recordAgentSessionAtProvision(params: {
   readonly db: DB["db"];
   readonly eventCollectors: Pick<EventCollectorPort, "create" | "has">;
@@ -99,26 +50,8 @@ export async function recordAgentSessionAtProvision(params: {
   }
 }
 
-/**
- * True upsert of a run's `agent_session`, keyed by the run's own
- * principal once Interchange anchors one (`anchorWithPrincipal`, the
- * run's first trigger). Before that, `recordAgentSessionAtProvision`
- * records the row under the deploying principal for a Workbench-launched
- * run — but a run deployed straight through Interchange's own
- * `POST /api/tenants/:id/workflows/deployments` route (the e2e suites,
- * or any other API client) never passes through a Workbench launcher, so
- * that eager write never runs for it, and no `agent_session` row exists
- * yet when this seam is first reached. By the time persist/dispatch call
- * this, though, the run is anchored (`runRow.principalId` is set), so
- * everything needed to create the row is on hand: this inserts it rather
- * than treating the missing row as a bug. The launch-spec row is still
- * the source of truth for which session id belongs to this run — its
- * absence means a launcher provisioned this run without going through
- * the shared path, which is a bug, not a state to paper over. Also
- * creates the run's event collector if none is live for its address (a
- * fresh process has no in-memory collectors regardless of what is on
- * disk).
- */
+/** True upsert of a run's `agent_session`, keyed by the run's own principal
+ * once Interchange anchors one. See docs/agent-session-provisioning.md. */
 export async function ensureRunSession(params: {
   readonly db: DB["db"];
   readonly eventCollectors: Pick<EventCollectorPort, "create" | "has">;
@@ -174,12 +107,8 @@ export async function ensureRunSession(params: {
   return sessionId;
 }
 
-/**
- * Marks a run's `agent_session` ended — called only from the places that
- * already know the run died: a chat relaunch (the old run's session) or
- * a one-shot prompt's teardown. No sweeper; a run nobody reacts to stays
- * `active` until something does.
- */
+/** Marks a run's `agent_session` ended. No sweeper; a run nobody reacts to
+ * stays `active` until something does. */
 export async function endAgentSessionForPrincipal(
   db: DB["db"],
   principalId: string,
@@ -191,17 +120,9 @@ export async function endAgentSessionForPrincipal(
     .where(eq(agentSession.principalId, principalId));
 }
 
-/**
- * Same as `endAgentSessionForPrincipal`, keyed by the run's own id
- * instead — for a caller (e.g. a one-shot prompt's teardown, or a chat
- * relaunch replacing a terminal run) that only ever held the run id,
- * never minted or looked up its principal. Also abandons the outgoing
- * run's event collector, through the same shared
- * `EventCollectorPort` every launcher threads — one mechanism for
- * ending a run's session. No-ops for a run row already gone, or one
- * never triggered (no principal, hence no session was ever recorded
- * for it).
- */
+/** Same as `endAgentSessionForPrincipal`, keyed by run id, plus abandons the
+ * run's event collector. No-ops for a run row already gone or never
+ * triggered. */
 export async function endAgentSessionForRun(
   db: DB["db"],
   anchorRunId: string,

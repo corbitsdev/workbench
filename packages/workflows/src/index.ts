@@ -1,8 +1,4 @@
-// @corbits/workflows server entry — everything: the source-tree
-// renderer/reader and agent-authored-workflow authoring. There are no
-// hub-mounted definition detail or scheduled-workflow routes — the
-// client reads stock `@intx/hub-api` routes directly and this package
-// only exposes pure, browser-safe shaping. Browser code imports
+// @corbits/workflows server entry. Browser code imports
 // `@corbits/workflows/client` instead (see ./client.ts).
 export * from "./source";
 export * from "./detail/index";

@@ -1,35 +1,8 @@
 // The workflow-authoring registry: an agent's in-tenant surface for
-// publishing a workflow codebase as a native `kind:"workflow"` hub asset,
-// republishing it, and reading it back. Every write is gated by two
-// independent checks — own-tenant scoping (resolved from the DB row,
-// mirroring `@corbits/skills`' `requireOwnTenant`) and an explicit
-// grant-store authorization call (`asset:*`/create for a new asset,
-// `asset:<id>`/write for a republish, `asset:<id>`/read for a source read)
-// — and by `validateWorkflowSourceTree` before anything reaches
-// `RepoStore`. Deploying is not this registry's job: an agent deploys a
-// committed workflow asset through stock `POST
-// /api/tenants/:tenantId/workflows/deployments` with the run bearer
-//.
-//
-// `populateAsset` is called with `principal: { kind: "hub" }`, the same
-// principal `@corbits/skills`' `writeSkillMd` uses. This is deliberate,
-// not a shortcut: `workflowKindHandler.workflowAuthorize`
-// (`@intx/hub-sessions`) only recognizes three principal kinds for a
-// workflow-asset write — `hub` (full access), `sidecar` (read-only,
-// explicitly denied `writeTree`), and `user` (gated by git-token-shaped
-// bearer claims this sidecar-authenticated caller never carries). There is
-// no fourth "workflow-run" principal kind the substrate understands, so a
-// real per-write authorization decision has to be made HERE, by this
-// registry, against the grant store and the resolved caller identity —
-// exactly what the checks below do — before the already-authorized write
-// is handed to the substrate as a hub-mediated commit.
-//
-// Head-sha reads (`expectedHeadSha`, `readSource`) go through `RepoStore`
-// directly: `AssetService` exposes blob and directory reads pinned to a
-// ref but never the sha that ref resolves to, and `listAssetBlobs` lists
-// blobs only (no subtrees), so a full tree walk needs
-// `RepoStore.openCommittedReads`. The repo id is the asset id under the
-// `workflow` kind, exactly as `AssetService` composes it internally.
+// publishing, republishing, and reading back a `kind:"workflow"` hub asset.
+// Deploying is not this registry's job. Design rationale (why the `hub`
+// principal, why head-sha reads bypass `AssetService`):
+// docs/workflow-authoring-registry.md.
 import { authorize } from "@intx/authz";
 import type { ConditionRegistry, GrantStore } from "@intx/types/authz";
 import {
@@ -95,14 +68,9 @@ export type WorkflowDeployResult = {
   readonly status: "deployed" | "pending";
 };
 
-/**
- * The apps/hub-supplied seam onto the same operation the native `POST
- * /workflows/deployments` route drives (`prepareProvisionedDeployment`),
- * with catalog offering ids resolved server-side. An agent authoring a
- * workflow does not use it — it calls the stock route directly with the
- * run bearer; the hub's own on-demand catalog-block deploy
- * does.
- */
+/** The apps/hub-supplied seam onto `prepareProvisionedDeployment`, used by
+ * the hub's own on-demand catalog-block deploy, not by an authoring agent
+ * (which calls the stock route with the run bearer). */
 export type WorkflowDeployer = {
   deploy(params: {
     tenantId: string;
@@ -247,17 +215,9 @@ async function collectTree(
   }
 }
 
-/**
- * A best-effort, read-only render of an inert `export default
- * {...}` object literal in an entry module — the shape a folded/single-step
- * workflow package's entry commonly takes. Deliberately NOT a JS parser or
- * evaluator (the source is untrusted agent output and must never be
- * executed): strips the `export default` prefix and a trailing `;`, then
- * accepts the remainder only if `JSON.parse` on it (after quoting bare
- * object keys, the one common non-JSON literal shape) succeeds. Any import,
- * function call, or other executable construct fails this and the caller
- * falls back to listing files only.
- */
+/** Best-effort, read-only render of an inert `export default {...}` object
+ * literal. Deliberately not a JS parser or evaluator — the source is
+ * untrusted agent output and must never be executed. */
 function tryReadInertDefaultExport(source: string): unknown {
   const trimmed = source.trim();
   const match = /^export\s+default\s+([\s\S]*?);?\s*$/.exec(trimmed);
