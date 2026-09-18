@@ -78,11 +78,6 @@ import {
 } from "@corbits/webhook-triggers";
 import { createWorkflowAuthorRegistry, createWorkflowAuthorRoutes } from "@corbits/workflows";
 import {
-  createSidecarProvisioner as createE2BSidecarProvisioner,
-  readProvisionerConfig as readE2BProvisionerConfig,
-} from "./provisioners/e2b";
-import { createDockerSidecarProvisioner } from "./provisioners/docker";
-import {
   createProcessSidecarProvisioner,
   readProcessProvisionerConfig,
   type ProcessProvisionerRole,
@@ -112,7 +107,6 @@ import { createProviderHealthStore } from "@corbits/connections/provider-health"
 import { CONNECTOR_REGISTRY, MCP_PRESETS } from "./native-connector-registry";
 import type { DB } from "@intx/db";
 import { sidecar, workflowRun } from "@intx/db/schema";
-import { type } from "arktype";
 import path from "node:path";
 
 // The same condition registry `mountHubRoutes` builds by default when no
@@ -149,44 +143,22 @@ function createWorkflowRunAuthenticator(deps: { db: DB["db"] }) {
   };
 }
 
-// SIDECAR_PROVISIONERS: comma-separated backend ids to register for
-// exclusive-sidecar placement. Unset or empty registers "process" alone,
-// so a single-server install works with no operator configuration.
-const SidecarProvisionersEnv = type({
-  "SIDECAR_PROVISIONERS?": type("string"),
-});
-
-function buildSidecarProvisioner(
-  id: "process" | "docker" | "e2b",
+function buildProcessSidecarProvisioner(
   hubDataDir: string,
   hubWebSocketUrl: string,
   role: ProcessProvisionerRole,
 ): SidecarProvisioner {
-  switch (id) {
-    case "process":
-      return createProcessSidecarProvisioner({
-        role,
-        config: readProcessProvisionerConfig({
-          env: process.env,
-          dataDir: path.resolve(
-            hubDataDir,
-            role === "probe" ? "process-provisioner-probe" : "process-provisioner",
-          ),
-          hubWebSocketUrl,
-        }),
-      });
-    case "docker":
-      return createDockerSidecarProvisioner({
-        config: {
-          image: process.env["DOCKER_PROVISIONER_IMAGE"] ?? "",
-          stateFilePath: path.resolve(hubDataDir, "docker-provisioner", "state.json"),
-        },
-      });
-    case "e2b":
-      return createE2BSidecarProvisioner({
-        config: readE2BProvisionerConfig(process.env, path.resolve(hubDataDir, "e2b-provisioner")),
-      });
-  }
+  return createProcessSidecarProvisioner({
+    role,
+    config: readProcessProvisionerConfig({
+      env: process.env,
+      dataDir: path.resolve(
+        hubDataDir,
+        role === "probe" ? "process-provisioner-probe" : "process-provisioner",
+      ),
+      hubWebSocketUrl,
+    }),
+  });
 }
 
 export type CreateHubServerOpts = {
@@ -354,30 +326,12 @@ export async function createHubServer({
   const hubSidecarWebSocketUrl =
     process.env["HUB_SIDECAR_WEBSOCKET_URL"] ?? `ws://127.0.0.1:${String(port)}/api/sidecars/ws`;
 
-  const parsedProvisionerIds = SidecarProvisionersEnv(process.env);
-  const provisionerIdsRaw: string =
-    parsedProvisionerIds instanceof type.errors
-      ? ""
-      : (parsedProvisionerIds.SIDECAR_PROVISIONERS ?? "");
-  const provisionerIds = provisionerIdsRaw
-    .split(",")
-    .map((id) => id.trim())
-    .filter(
-      (id): id is "process" | "docker" | "e2b" =>
-        id === "process" || id === "docker" || id === "e2b",
-    );
-  const resolvedProvisionerIds =
-    provisionerIds.length > 0 ? provisionerIds : (["process"] as const);
-  const deploymentProvisioners =
-    sidecarProvisioners ??
-    resolvedProvisionerIds.map((id) =>
-      buildSidecarProvisioner(id, hubDataDir, hubSidecarWebSocketUrl, "deployment"),
-    );
-  const probeProvisioners =
-    probeSidecarProvisioners ??
-    resolvedProvisionerIds.map((id) =>
-      buildSidecarProvisioner(id, hubDataDir, hubSidecarWebSocketUrl, "probe"),
-    );
+  const deploymentProvisioners = sidecarProvisioners ?? [
+    buildProcessSidecarProvisioner(hubDataDir, hubSidecarWebSocketUrl, "deployment"),
+  ];
+  const probeProvisioners = probeSidecarProvisioners ?? [
+    buildProcessSidecarProvisioner(hubDataDir, hubSidecarWebSocketUrl, "probe"),
+  ];
 
   const sidecarPlugins = createSidecarPluginRegistry({
     provisioners: deploymentProvisioners,

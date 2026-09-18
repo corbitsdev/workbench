@@ -61,8 +61,7 @@ export type ReadProcessProvisionerConfigArgs = {
   /**
    * The HUB's own state directory for this backend, derived from
    * `HUB_DATA_DIR` by the caller — never an environment variable an
-   * operator could point somewhere unrelated. Matches how the docker and
-   * e2b backends receive theirs.
+   * operator could point somewhere unrelated.
    */
   readonly dataDir: string;
   readonly hubWebSocketUrl: string;
@@ -171,10 +170,9 @@ const TERMINATION_POLL_MS = 100;
 
 /**
  * Implements `SidecarBackend` (see `./sandbox-sidecar`) by running one
- * `apps/sidecar` process per allocation on the hub host itself. This is
- * the backend an install with no `SIDECAR_PROVISIONERS` configured gets,
- * so one server hosts many chats and workflows with no container runtime
- * and no remote sandbox account.
+ * `apps/sidecar` process per allocation on the hub host itself, the only
+ * sidecar backend, so one server hosts many chats and workflows with no
+ * container runtime and no remote sandbox account.
  *
  * Layout under the hub's data dir, one directory per started unit:
  *
@@ -471,11 +469,10 @@ export type CreateProcessSidecarProvisionerOpts = {
 };
 
 /**
- * The default sidecar backend: every allocation is a child process of the
+ * The only sidecar backend: every allocation is a child process of the
  * hub on the same host. Idempotence, generation fencing, and destroy
- * tombstones come from `./sandbox-sidecar`'s shared core, exactly as they
- * do for the docker and e2b backends — this module supplies only the
- * OS-level unit.
+ * tombstones come from `./sandbox-sidecar`'s shared core — this module
+ * supplies only the OS-level unit.
  *
  * The binding fingerprint pins the two facts that decide what a
  * provisioned sidecar actually is: which entry point runs, and which hub
