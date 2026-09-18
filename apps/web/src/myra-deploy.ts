@@ -125,7 +125,9 @@ function tarEntry(path: string, content: Uint8Array): Uint8Array {
 
   let checksum = 0;
   for (const byte of header) checksum += byte;
-  writeField(148, padOctal(checksum, 8).slice(0, 7) + "\0 ");
+  // The 8-byte checksum field is 6 octal digits, NUL, space; anything
+  // longer spills into the typeflag byte and fails every reader's check.
+  writeField(148, checksum.toString(8).padStart(6, "0") + "\0 ");
 
   const paddedLength = Math.ceil(content.length / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
   const body = new Uint8Array(paddedLength);
