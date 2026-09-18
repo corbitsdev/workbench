@@ -239,15 +239,7 @@ function toGrantRule(row: GrantRow): GrantRule {
  * itself hold. */
 export class DelegationCeilingError extends Error {}
 
-/**
- * A caller may only grant/revoke authority it already holds itself, or
- * `grant:*`/`create` alone would let any principal escalate past its own
- * reach. Stock `POST /grants` has no such check, so this enforces it
- * client-side with the same `evaluateGrants` engine the hub authorizes
- * with. Two known fidelity gaps against a true server-side check:
- * role-derived grants aren't visible through the stock listing, and the
- * read-then-write isn't atomic.
- */
+/** Enforces client-side that a caller may only grant/revoke authority it already holds, since stock POST /grants has no such check. */
 export async function firstActionOutsideCeiling(
   config: AccessToolClientConfig,
   resource: string,
