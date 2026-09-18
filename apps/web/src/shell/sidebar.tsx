@@ -95,6 +95,7 @@ export function Sidebar({
           aria-label={CHAT_STRINGS.newWorkbenchAction}
           title={CHAT_STRINGS.newWorkbenchAction}
           onClick={() => onNavigate(NEW_WORKBENCH_PATH)}
+          data-tour="new-workbench-button"
         >
           <Plus />
         </Button>
@@ -102,7 +103,7 @@ export function Sidebar({
       {/* Agents and Channels labels render inside the list, below its
           search box (owner's order: logo · search · sections · rows). */}
 
-      <SidebarPanelBody>
+      <SidebarPanelBody data-tour="sidebar-list">
         <WorkbenchList path={path} onNavigate={onNavigate} />
       </SidebarPanelBody>
 
@@ -223,6 +224,7 @@ export function Sidebar({
             aria-label="Settings"
             title="Settings"
             data-active={matchesRoute(SETTINGS_PATH, path) ? "true" : undefined}
+            data-tour="settings-button"
             onClick={() => onNavigate(SETTINGS_PATH)}
           >
             <SlidersHorizontal />

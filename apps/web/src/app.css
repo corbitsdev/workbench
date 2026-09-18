@@ -2243,6 +2243,16 @@ select:disabled,
   animation: onboarding-phase-in var(--duration-large, 300ms) var(--ease-out, ease) both;
 }
 
+/* The wait phases drop the usual title/subtitle/form stack for the shared
+   centered loader — a form-column question reads oddly for a step with
+   nothing to ask. */
+.onboarding-phase--loading {
+  display: flex;
+  min-height: 20rem;
+  align-items: center;
+  justify-content: center;
+}
+
 @keyframes onboarding-phase-in {
   from {
     opacity: 0;

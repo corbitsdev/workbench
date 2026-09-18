@@ -36,6 +36,7 @@ import {
 } from "./canvas-availability";
 import { Sidebar } from "./sidebar";
 import { ShellContextMenu } from "./context-menu/shell-context-menu";
+import { FirstRunTour } from "./first-run-tour";
 
 const CanvasColumn = lazy(async () => ({
   default: (await import("./canvas-column")).CanvasColumn,
@@ -169,6 +170,7 @@ export function AppShell({
         </Suspense>
       ) : null}
       <ShellContextMenu onSignOut={onSignOut} />
+      <FirstRunTour userId={user.id} />
     </div>
   );
 }

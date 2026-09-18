@@ -216,12 +216,13 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   if (state.phase === "checking" || state.phase === "resolving-tenant") {
     return (
       <OnboardingLayout>
-        <div className="onboarding-phase" key="checking">
-          <h1 className="onboarding-title">Checking your workbench</h1>
-          <p className="onboarding-subtitle">One moment.</p>
-          <div className="onboarding-content">
-            <WorkbenchLoadingState delayMs={0} title="Checking your workbench…" />
-          </div>
+        <div className="onboarding-phase onboarding-phase--loading" key="checking">
+          <WorkbenchLoadingState
+            delayMs={0}
+            title={
+              state.phase === "checking" ? "Checking your workbench…" : "Creating your workbench…"
+            }
+          />
         </div>
       </OnboardingLayout>
     );
@@ -267,12 +268,13 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   if (state.phase === "publishing-myra" || state.phase === "installing") {
     return (
       <OnboardingLayout>
-        <div className="onboarding-phase" key="installing">
-          <h1 className="onboarding-title">Setting up your workbench</h1>
-          <p className="onboarding-subtitle">One moment.</p>
-          <div className="onboarding-content">
-            <WorkbenchLoadingState delayMs={0} title="Setting up your workbench…" />
-          </div>
+        <div className="onboarding-phase onboarding-phase--loading" key="installing">
+          <WorkbenchLoadingState
+            delayMs={0}
+            title={
+              state.phase === "publishing-myra" ? "Connecting your model…" : "Getting Myra ready…"
+            }
+          />
         </div>
       </OnboardingLayout>
     );

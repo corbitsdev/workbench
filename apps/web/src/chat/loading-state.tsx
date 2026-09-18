@@ -9,6 +9,7 @@
 // all, which is what keeps a fast round-trip from flashing chrome the
 // reader has no time to read.
 
+import { CorbitsMark } from "@corbits/react-ui";
 import { useEffect, useState } from "react";
 
 import { CHAT_STRINGS } from "./strings";
@@ -82,6 +83,7 @@ export function WorkbenchLoadingState({
 
   return (
     <div className={classNames.join(" ")} role="status">
+      <CorbitsMark decorative className="chat-workbench-loading-brand" />
       <span className="chat-workbench-loading-mark" aria-hidden="true">
         <span></span>
         <span></span>
