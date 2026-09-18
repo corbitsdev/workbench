@@ -42,7 +42,7 @@ Pinned to [faremeter/interchange](https://github.com/faremeter/interchange)
 | `vendor/intx/hub-common`        | `@intx/hub-common` at a newer commit than npm has published               | maintainers | 2026-11-03 |
 | `vendor/intx/workflow`          | `@intx/workflow`, with one local step-timeout-budget delta                | maintainers | 2026-11-03 |
 | `vendor/intx/workflow-deploy`   | `@intx/workflow-deploy` at a newer commit than npm has published          | maintainers | 2026-11-03 |
-| `vendor/intx/workflow-host`     | `@intx/workflow-host`, with one local step-grants-collapse delta          | maintainers | 2026-11-03 |
+| `vendor/intx/workflow-host`     | `@intx/workflow-host`, with a local step-grants-collapse delta and a temporary delta omitting an empty inbound `Subject` header instead of passing it through empty (kill condition: upstream tolerates an empty Subject, INTR-577) | maintainers | 2026-11-03 |
 
 npm's published `0.3.0` predates this pin for every row above, so each is
 re-vendored at the same commit rather than mixed pins; the root
