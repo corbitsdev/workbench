@@ -13,7 +13,15 @@ const AgentDefinition = type({
   name: "string",
   systemPrompt: "string",
   "description?": "string",
+  "schedule?": "string",
 });
+
+/** A cron string this pipeline accepts: exactly five whitespace-separated
+ * fields. No third-party parser — the fields are validated for shape only,
+ * `cronSentence` (from `@corbits/workflows/client`) is the semantic check. */
+export function isFiveFieldCron(schedule: string): boolean {
+  return schedule.trim().split(/\s+/).length === 5;
+}
 
 export type DeployablePackage = typeof AgentDefinition.infer;
 
