@@ -5,6 +5,8 @@
 // resolved offering, which does inherit.
 
 import { listRoomParticipants, sendToRoom } from "@/chat/threads-api";
+import { deployAgentSource } from "./agent-deploy";
+import { readAgentSource } from "./agent-source-read";
 import { deployMyraSource } from "./myra-deploy";
 import { createFetchStockHub } from "./needs-converge";
 import { resolveExistingOffering } from "./onboarding/provider-connect-step";
@@ -39,6 +41,13 @@ export type CreateWorkbenchInput = {
   readonly benchTenantId: string;
   readonly name: string;
   readonly openingMessage?: string;
+  /** Existing bench agents to re-deploy into the room alongside Myra:
+   * their source asset id, name, and asset name (for reading it back). */
+  readonly pickedAgents?: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly assetName: string;
+  }[];
 };
 
 /** Returns the new room's tenant id — its deep link is `/w/<id>`. */
@@ -75,6 +84,17 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
       declaredSources: offering.declaredSources,
     });
     await hub.deployWorkflow(tenantId, deployInput);
+
+    // Each picked bench agent joins the room the same way Myra does: its
+    // source is read back out of the bench and re-pushed into the child,
+    // since a child's deploy rejects the parent's inherited asset outright.
+    for (const picked of input.pickedAgents ?? []) {
+      const source = await readAgentSource(input.benchTenantId, picked.id, picked.assetName);
+      await deployAgentSource({
+        tenantId,
+        input: { name: picked.name, systemPrompt: source.systemPrompt },
+      });
+    }
   } catch (cause) {
     throw failure(cause, "deploy");
   }
