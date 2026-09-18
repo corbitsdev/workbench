@@ -25,6 +25,7 @@ import {
   ancestorChain,
   listRoomParticipants,
   readRoom,
+  resolveParticipantName,
   sendToRoom,
   subscribeToInbox,
   type RoomMessage,
@@ -211,7 +212,7 @@ function RoomInfoColumn({
           <p className="room-info-empty-note">Nothing yet — say something to get started.</p>
         ) : (
           <p className="room-info-cell-context">
-            {latestMessage.author === "me" ? "You" : latestMessage.authorName} ·{" "}
+            {resolveParticipantName(latestMessage, participants)} ·{" "}
             {formatRelativeTime(latestMessage.at)}
           </p>
         )}

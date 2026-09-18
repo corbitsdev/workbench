@@ -223,11 +223,31 @@ function extractAddress(raw: string): string {
   return (/<([^>]+)>/.exec(raw)?.[1] ?? raw).trim();
 }
 
+/** Addresses on a frame's `To:` header, unfolded and parsed straight from
+ * `raw` — the fallback for a person turn, whose `envelope.to` the mailbox
+ * currently reports empty (library fix in flight). */
+function toHeaderAddresses(raw: string): string[] {
+  let decoded: string;
+  try {
+    decoded = atob(raw);
+  } catch {
+    return [];
+  }
+  const headers = decoded.replace(/\r\n/g, "\n").split("\n\n")[0] ?? "";
+  const unfolded = headers.replace(/\n[ \t]+/g, " ");
+  const to = /^to:\s*(.+)$/im.exec(unfolded)?.[1];
+  return to === undefined ? [] : to.split(",").map((address) => address.trim());
+}
+
 /** The run address on a message, from whichever side (from/to) carries
  * one — a plain address, not just its local part, so it can be matched
  * against an agent's full address set. */
-function participantAddress(envelope: { from: string; to: readonly string[] }): string | undefined {
-  return [envelope.from, ...envelope.to]
+function participantAddress(
+  envelope: { from: string; to: readonly string[] },
+  raw: string,
+): string | undefined {
+  const to = envelope.to.length > 0 ? envelope.to : toHeaderAddresses(raw);
+  return [envelope.from, ...to]
     .map(extractAddress)
     .find((address) => address.split("@")[0]?.startsWith("run_"));
 }
@@ -248,7 +268,7 @@ type MailTurn = {
 async function readFolder(tenantId: string, folder: "INBOX" | "Sent"): Promise<MailTurn[]> {
   const page = await getJson(`${mailboxPath(tenantId)}?folder=${folder}&limit=100`, InboxPage);
   return page.messages.flatMap((message) => {
-    const address = participantAddress(message.envelope);
+    const address = participantAddress(message.envelope, message.raw);
     if (address === undefined) return [];
     return [
       {
@@ -353,8 +373,10 @@ export type ChatThread = {
   readonly messages: readonly ChatMessage[];
 };
 
+/** The chat title is always the person's own opening turn — never an
+ * agent reply — so a chat never titles itself off what the agent said. */
 function chatTitle(turns: readonly MailTurn[], agentName: string): string {
-  const first = turns[0];
+  const first = turns.find((turn) => turn.author === "me");
   if (first === undefined) return agentName;
   return first.subject.length > 0 ? first.subject : first.body.slice(0, 60);
 }
@@ -496,6 +518,10 @@ export type RoomMessage = {
   readonly authorName: string;
   readonly body: string;
   readonly at: string;
+  /** The sender's raw address — matched against room participants for a
+   * display name; falls back to `authorName` (the address local part) when
+   * no participant matches. */
+  readonly address: string;
   /** In-reply-to parent, when this turn named one and it matched a known
    * message — metadata for the sub-thread panel, never used to hide a turn
    * from the main timeline. */
@@ -507,12 +533,26 @@ function authorName(address: string): string {
   return local.length > 0 ? local : address;
 }
 
+/** A turn's display name: the matching room participant's name, else the
+ * address local part — never the raw run/email address. */
+export function resolveParticipantName(
+  message: Pick<RoomMessage, "author" | "authorName" | "address">,
+  participants: readonly RoomParticipant[],
+): string {
+  if (message.author === "me") return message.authorName;
+  return (
+    participants.find((participant) => participant.address === message.address)?.name ??
+    message.authorName
+  );
+}
+
 type RoomTurn = {
   readonly id: string;
   readonly messageId: string;
   readonly parentId: string | undefined;
   readonly author: "me" | "other";
   readonly authorName: string;
+  readonly address: string;
   readonly body: string;
   readonly at: string;
 };
@@ -528,6 +568,7 @@ async function readRoomFolder(tenantId: string, folder: "INBOX" | "Sent"): Promi
     parentId: message.envelope.inReplyTo ?? message.envelope.references.at(-1),
     author: folder === "Sent" ? ("me" as const) : ("other" as const),
     authorName: folder === "Sent" ? "You" : authorName(message.envelope.from),
+    address: extractAddress(message.envelope.from),
     body: frameBody(message.raw),
     at: message.envelope.date,
   }));
@@ -549,6 +590,7 @@ export async function readRoom(tenantId: string): Promise<readonly RoomMessage[]
     messageId: turn.messageId,
     author: turn.author,
     authorName: turn.authorName,
+    address: turn.address,
     body: turn.body,
     at: turn.at,
     parentMessageId:
