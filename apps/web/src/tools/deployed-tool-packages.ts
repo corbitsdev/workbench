@@ -2,12 +2,13 @@
 // than a registry that outlives the packages it once held. An agent's tool
 // packages live in two places: pinned in its deployed `definition.json`
 // (`readAgentToolPackagePins`), or — for Myra — bundled straight into her
-// `workflow.js` closure, which never shows up in that file (see
-// `MYRA_TOOL_PACKAGES`).
+// `workflow.js` closure, which never shows up in that file. Her package.json
+// dependencies are the source of truth for that bundle instead of a literal
+// copy that could drift from it.
 
 import { useQuery } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
-import { MYRA_TOOL_PACKAGES } from "@corbits/myra/tool-packages";
+import myraPackage from "@corbits/myra/package.json";
 
 import { toAPIQuery, type APIQuery } from "@/lib/api-query";
 
@@ -20,6 +21,13 @@ export type DeployedToolPackage = {
   /** Agents carrying this package, by display name, deduped and sorted. */
   readonly agentNames: readonly string[];
 };
+
+/** Myra's bundled tools: every `@intx/tools-*` dependency her package.json
+ * declares, at the version it pins there. */
+const MYRA_TOOL_PACKAGES: readonly { readonly name: string; readonly version: string }[] =
+  Object.entries(myraPackage.dependencies as Record<string, string>)
+    .filter(([name]) => name.startsWith("@intx/tools-"))
+    .map(([name, version]) => ({ name, version }));
 
 function liveAgentsOf(agents: readonly ChatAgent[]): readonly ChatAgent[] {
   return agents.filter((agent) => agent.liveAddress !== null);

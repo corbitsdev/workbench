@@ -22,7 +22,7 @@
     "./prompt": "./src/system-prompt.ts",
     "./workflow-ids": "./src/workflow-ids.ts",
     "./bundle": "./src/bundle.ts",
-    "./tool-packages": "./src/tool-packages.ts"
+    "./package.json": "./package.json"
   },
   "publishConfig": {
     "access": "public"

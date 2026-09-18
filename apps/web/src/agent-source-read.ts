@@ -130,7 +130,8 @@ export async function readAgentSource(
 /** The tool packages an agent's own step pins in `definition.json`. Empty
  * for an agent whose tools ride bundled into its `workflow.js` closure
  * instead (Myra's mail/posix factories never surface here — see
- * `MYRA_TOOL_PACKAGES` in `@corbits/myra/tool-packages`). */
+ * `deployed-tool-packages.ts`'s `MYRA_TOOL_PACKAGES`, derived from
+ * `@corbits/myra/package.json`'s own dependencies). */
 export async function readAgentToolPackagePins(
   tenantId: string,
   assetId: string,
