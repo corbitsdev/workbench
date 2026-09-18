@@ -75,8 +75,6 @@ export async function ensureMyraSourceAsset(
   return existing.id;
 }
 
-const ASSISTANT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
-
 /**
  * The function-free projection of what `@corbits/myra`'s `buildMyraWorkflow`
  * produces, written to the asset's `definition.json` for readers — the entry
@@ -121,7 +119,6 @@ export function buildMyraDefinitionJson(
           toolPackagePins: [],
         },
         drainBehavior: "wait",
-        timeout: ASSISTANT_TURN_TIMEOUT_MS,
         triggers: "unbounded",
         input: { from: "trigger.payload" },
       },
@@ -189,7 +186,6 @@ export async function pushMyraSource(
     buildInput: {
       triggerAddress,
       inferencePreferences: declaredSources.map((source) => ({ ...source })),
-      turnTimeoutMs: ASSISTANT_TURN_TIMEOUT_MS,
       systemPrompt: ASSISTANT_SYSTEM_PROMPT,
     },
     workflowJson: JSON.stringify(buildMyraDefinitionJson(triggerAddress, declaredSources)),

@@ -22,6 +22,9 @@ import { tenantKeys } from "./query-client";
  * field on it holds an identifier a person would have to decode. */
 export type ApprovalDisplay = {
   readonly id: string;
+  /** The live run address of the agent that is asking. The chat page filters
+   * on it to show only the asks its own agent raised. */
+  readonly agentAddress: string;
   readonly agentName: string;
   readonly headline: string;
   readonly arguments: Record<string, unknown>;
@@ -69,6 +72,7 @@ async function fetchAgentName(tenantId: string, runId: string): Promise<string> 
 function composeApproval(row: ApprovalRow, agentName: string): ApprovalDisplay {
   return {
     id: row.id,
+    agentAddress: row.agentAddress,
     agentName,
     headline: headlineFor(row.toolDefinition, row.toolArguments),
     arguments: row.toolArguments,
