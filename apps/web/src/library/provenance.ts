@@ -1,9 +1,5 @@
-// The one cheap provenance fact Library detail is worth showing: the
-// workflow run that produced an artifact, when its `source` says so
-// (`@corbits/artifacts`' `normalizeSource` — `{ origin: "workflow", runId }`
-// written by `packages/artifacts-hub`'s workflow finalize route). This is a
-// link, not a lineage system — every other origin, or a `source` shaped any
-// other way, reads as "nothing to show" rather than guessed at.
+// A link, not a lineage system — every other `source` shape reads as
+// "nothing to show" rather than guessed at.
 
 /** The workflow run id behind an artifact, or null when its `source` isn't
  * a recognized workflow origin. */

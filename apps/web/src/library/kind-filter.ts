@@ -1,9 +1,5 @@
-// Pure helpers for the Artifacts kind nav (`/artifacts`,
-// `/artifacts/document`, …) — this module's own names keep the "library"
-// vocabulary (it's the internal name for the artifact store), but
-// `LIBRARY_PATH` tracks the app's real mount point: `/library` and
-// `/files` both stay routable only as redirects to `/artifacts` — see
-// `legacy-settings-redirects.tsx`.
+// Names here keep the "library" vocabulary (the internal name for the
+// artifact store), but `LIBRARY_PATH` tracks the app's real mount point.
 
 import { decodedOrNull } from "@corbits/url-path";
 
@@ -46,16 +42,8 @@ export function libraryArtifactIdFromPath(path: string): string | null {
   return decodedOrNull(rest);
 }
 
-/**
- * Whether an artifact belongs under a library kind nav segment
- * (`document` | `sheet` | `pdf` | `routine`). Empty segment matches all.
- *
- * Mapping:
- * - document → kind `document`, or kind `file` with .doc/.txt/.md title
- * - sheet → kind `csv-export` | `sheet`, or kind `file` with .xls/.csv title
- * - pdf → kind `pdf`, or kind `file` with .pdf title
- * - routine → kind `routine` only
- */
+// Empty segment matches all; see `resolveArtifactRendererKind` for the
+// same kind/extension mapping this reuses.
 export function artifactMatchesLibraryKindSegment(
   artifact: Pick<ArtifactSummary, "kind" | "title">,
   segment: string,

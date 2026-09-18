@@ -1,13 +1,6 @@
-// The editable half of a text-kind artifact's canvas pane. Built on top of
-// `ArtifactRenderer`'s read-only surface rather than replacing it:
-// `ArtifactRenderer` still owns every other kind, and a viewer with no
-// write access still renders through it read-only. This component only
-// ever mounts for a "doc"-kind artifact once the host has already decided
-// the viewer can edit — it never makes that call itself.
-//
-// This is a plain controlled textarea, debounced-saved through `onSave`
-// (the host wires that to the artifacts HTTP route's PUT). Single-user
-// editing only; no live co-viewer cursors, no shared doc, no awareness.
+// Only mounts once the host has already decided the viewer can edit — it
+// never makes that call itself. Single-user only: no co-viewer cursors,
+// no shared doc, no awareness.
 import { useRef, useState } from "react";
 
 import { formatSaveStateLine, type ArtifactSaveState } from "./save-state";
@@ -25,13 +18,9 @@ export interface ArtifactTextEditorProps {
   readonly onSave: (content: string) => void;
 }
 
-/**
- * The host must remount this component (`key={artifact.id}`) when the open
- * artifact changes — the same convention `ArtifactRenderer` doesn't need
- * because it's stateless, but this component's local `value` buffer is not:
- * without a remount, switching artifacts while one has unsaved keystrokes
- * would carry them onto the new artifact's content.
- */
+// The host must remount this (`key={artifact.id}`) on artifact change:
+// unlike stateless `ArtifactRenderer`, this has a local `value` buffer
+// that would otherwise carry unsaved keystrokes onto the new content.
 export function ArtifactTextEditor({
   content,
   title,

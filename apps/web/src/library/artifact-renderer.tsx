@@ -1,11 +1,5 @@
-// Typed, read-only renderers for artifact content — one per
-// `ArtifactRendererKind` (see `renderer-kind.ts`), dispatched by
-// `ArtifactRenderer`. Every host (canvas pane, Library detail preview, an
-// opened chat blob) renders through this one component so a kind's shape
-// only has one implementation.
-//
-// Read-only phase: no editing affordances here at all — the
-// multiplayer-editing half is substrate to build on top of this.
+// Every host renders through this one component so a kind's shape only
+// has one implementation. Read-only phase: no editing affordances here.
 
 import { CsvTable } from "@corbits/react-ui";
 import { FileDashed } from "@/lib/icons";
@@ -14,32 +8,17 @@ import type { ArtifactRendererKind } from "./renderer-kind";
 export type ArtifactRenderProps = {
   readonly rendererKind: ArtifactRendererKind;
   readonly title: string;
-  /** Empty string is a legitimate, honestly-rendered "nothing here" —
-   * never distinguished from "not fetched yet" (the host's own loading
-   * state handles that before this component ever mounts). */
+  // Empty string is a legitimate "nothing here" — never distinguished
+  // from "not fetched yet", which the host's loading state handles first.
   readonly content: string;
-  /**
-   * True when `content` is empty NOT because the artifact is genuinely
-   * blank, but because its real bytes are stored out-of-band (a file
-   * upload) in a format this renderer can't decode as text — a binary
-   * `.docx`/`.xlsx`, an image, a real PDF. Empty `content` alone can't
-   * carry that distinction, so the host that fetched the artifact passes
-   * it explicitly. Swaps the per-kind "no content yet" copy for an honest
-   * "couldn't read this file" message — the artifact was NOT uploaded
-   * empty, its contents just can't be shown here.
-   */
+  // True when `content` is empty because the real bytes are out-of-band
+  // and undecodable, not because the artifact is genuinely blank — swaps
+  // in an honest "couldn't read this file" message instead.
   readonly contentUnavailable?: boolean;
-  /** Overrides the default "unsupported" copy with something specific to
-   * why this content can't be shown (e.g. a binary MIME type). */
   readonly unavailableReason?: string;
-  /**
-   * The sandboxed preview route (`GET .../artifacts/:id/preview`) for a
-   * `"html"`-kind artifact — the `<iframe sandbox="allow-scripts">`'s
-   * `src`. Absent when the host has no server-backed preview for this
-   * content (e.g. a chat blob that was never diverted into a Library
-   * artifact), in which case the pane falls back to an honest
-   * "unsupported" message rather than rendering raw markup unsandboxed.
-   */
+  // Absent when the host has no server-backed preview, in which case the
+  // pane falls back to "unsupported" rather than rendering raw markup
+  // unsandboxed.
   readonly previewSrc?: string;
 };
 
@@ -52,10 +31,8 @@ type DocLine =
   | { readonly kind: "bullet"; readonly text: string }
   | { readonly kind: "paragraph"; readonly text: string };
 
-/** Minimal, dependency-free markdown-lite: headings and bullet lists read
- * as structure, everything else is a paragraph. Not a markdown compiler —
- * inline emphasis/links pass through as literal text, which is honest
- * given no markdown-parser dependency is in scope for this phase. */
+// Not a markdown compiler — inline emphasis/links pass through as
+// literal text.
 function parseDocLines(content: string): readonly DocLine[] {
   return content
     .split("\n")
@@ -143,10 +120,8 @@ function SheetRenderer({
   return <CsvTable text={content} caption="Sheet contents" />;
 }
 
-/** No PDF-rendering dependency is in scope for this phase — a page-styled
- * frame around the artifact's stored text is the honest read: it shows
- * whatever text content exists (e.g. an extracted body) without claiming
- * to be a real paginated PDF viewer. */
+// No PDF-rendering dependency in scope — shows the stored text honestly
+// without claiming to be a real paginated viewer.
 function PdfRenderer({
   title,
   content,
@@ -175,14 +150,9 @@ function PdfRenderer({
   );
 }
 
-/**
- * Live sandboxed preview of a self-contained HTML artifact. `allow-scripts`
- * with NO `allow-same-origin` puts the framed document in an opaque unique
- * origin: it can run inline script, but it cannot read this app's cookies
- * or storage, call back into the hub API, or navigate the parent — the
- * server's own `Content-Security-Policy: sandbox allow-scripts` header
- * enforces the same posture even if an attribute got stripped somewhere.
- */
+// `allow-scripts` with NO `allow-same-origin`: the framed document runs
+// inline script but can't read this app's cookies/storage or call the hub
+// API. The server's CSP header enforces the same posture as a backstop.
 function HtmlPreviewRenderer({
   title,
   previewSrc,
