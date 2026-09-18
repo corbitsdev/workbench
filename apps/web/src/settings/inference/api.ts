@@ -405,6 +405,9 @@ async function ensureCredentialProvider(
       CreateProvider.assert({
         name: input.providerName,
         plugin: input.plugin,
+        // Credential material is pinned to this origin at deploy time; without
+        // it the deployment never becomes ready.
+        apiBaseUrl: input.baseURL,
       }),
     ),
   });
