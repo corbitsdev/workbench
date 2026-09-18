@@ -17,7 +17,7 @@ import {
 } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Markdown } from "@/chat/markdown";
 import {
@@ -38,6 +38,7 @@ import { usePendingApprovals, type PendingApproval } from "../pending-approvals"
 import { roomKeys } from "../chat-path";
 import { tenantKeys } from "../query-client";
 import { StageTopBar } from "../shell/stage-top-bar";
+import { redeployRoomAgent } from "../workbench-create";
 import { workbenchIdFromPath } from "../workbench-path";
 
 function errorText(cause: unknown): string {
@@ -47,16 +48,18 @@ function errorText(cause: unknown): string {
 function RoomComposer({
   placeholder,
   busy,
+  disabled,
   onSend,
 }: {
   readonly placeholder: string;
   readonly busy: boolean;
+  readonly disabled?: boolean;
   readonly onSend: (text: string) => void;
 }) {
   const [text, setText] = useState("");
   const send = () => {
     const trimmed = text.trim();
-    if (trimmed === "" || busy) return;
+    if (trimmed === "" || busy || disabled) return;
     setText("");
     onSend(trimmed);
   };
@@ -67,6 +70,7 @@ function RoomComposer({
         rows={3}
         placeholder={placeholder}
         aria-label={placeholder}
+        disabled={disabled}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey) {
@@ -75,7 +79,7 @@ function RoomComposer({
           }
         }}
       />
-      <Button variant="primary" disabled={busy || text.trim() === ""} onClick={send}>
+      <Button variant="primary" disabled={busy || disabled || text.trim() === ""} onClick={send}>
         {busy ? "Sending…" : "Send"}
       </Button>
     </div>
@@ -84,17 +88,22 @@ function RoomComposer({
 
 function RoomMessageRow({
   message,
+  participants,
   onReply,
 }: {
   readonly message: RoomMessage;
+  readonly participants: readonly RoomParticipant[];
   /** Undefined in the sub-thread panel, where a row is read-only context. */
   readonly onReply?: (message: RoomMessage) => void;
 }) {
+  // Avatars read off the participant's display name (Myra → "M"), never the
+  // run address local part a mail turn otherwise carries.
+  const displayName = resolveParticipantName(message, participants);
   return (
     <div className="chat-thread-message" data-author={message.author}>
       <span className="shell-ch-avatar">
         <span className="shell-ch-initial" aria-hidden="true">
-          {message.author === "me" ? "You" : agentInitials(message.authorName)}
+          {message.author === "me" ? "You" : agentInitials(displayName)}
         </span>
       </span>
       <div className="chat-thread-body">
@@ -272,6 +281,33 @@ function RoomInfoColumn({
   );
 }
 
+/** Redeploys one released agent (asset present, no live run — a hub
+ * restart releases every process-provisioned deployment). Renders nothing;
+ * one instance per released agent, keyed by asset id, so a mount's own ref
+ * plus the mutation's `isPending`/`isSuccess` keep StrictMode's double
+ * render (and any refetch that finds the same agent still released) from
+ * firing it twice. */
+function AgentRedeployer({
+  roomTenantId,
+  agent,
+}: {
+  readonly roomTenantId: string;
+  readonly agent: { readonly id: string; readonly name: string; readonly assetName: string };
+}) {
+  const queryClient = useQueryClient();
+  const started = useRef(false);
+  const redeploy = useMutation({
+    mutationFn: () => redeployRoomAgent(roomTenantId, agent),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: roomKeys.scope(roomTenantId) }),
+    onError: (cause) => toast(errorText(cause)),
+  });
+  if (!started.current && !redeploy.isPending && !redeploy.isSuccess) {
+    started.current = true;
+    redeploy.mutate();
+  }
+  return null;
+}
+
 function Room({ roomTenantId }: { readonly roomTenantId: string }) {
   const queryClient = useQueryClient();
   const [openThread, setOpenThread] = useState<string | null>(null);
@@ -283,6 +319,10 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
   const participants = useQuery({
     queryKey: roomKeys.participants(roomTenantId),
     queryFn: () => listRoomParticipants(roomTenantId),
+    // Poll while any agent has no live run yet, so the room notices its own
+    // redeploy finishing without a manual refresh.
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some((p) => p.kind === "agent" && p.address === "") ? 3000 : false,
   });
   const timeline = useQuery({
     queryKey: roomKeys.timeline(roomTenantId),
@@ -300,6 +340,12 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
   );
 
   const agents = (participants.data ?? []).filter((participant) => participant.kind === "agent");
+  // Released by a hub restart: the asset is still here but nothing is live.
+  const releasedAgents = agents.filter(
+    (agent): agent is RoomParticipant & { assetName: string } =>
+      agent.address === "" && agent.assetName !== undefined,
+  );
+  const startingAgent = releasedAgents[0];
   const send = useMutation({
     mutationFn: ({
       content,
@@ -337,6 +383,13 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {releasedAgents.map((agent) => (
+        <AgentRedeployer
+          key={agent.id}
+          roomTenantId={roomTenantId}
+          agent={{ id: agent.id, name: agent.name, assetName: agent.assetName }}
+        />
+      ))}
       <StageTopBar crumbs={[{ label: tenant.data?.name ?? "Workbench" }]} />
       <div className="room-layout">
         <RoomInfoColumn
@@ -352,6 +405,7 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
                   <RoomMessageRow
                     key={message.id}
                     message={message}
+                    participants={participants.data ?? []}
                     onReply={(target) => setOpenThread(target.messageId)}
                   />
                 ))}
@@ -364,8 +418,13 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
           <div className="room-main-composer">
             <PageShell width="prose" className="page-fill">
               <RoomComposer
-                placeholder="Message this workbench"
+                placeholder={
+                  startingAgent === undefined
+                    ? "Message this workbench"
+                    : `${startingAgent.name} is starting…`
+                }
                 busy={send.isPending}
+                disabled={startingAgent !== undefined}
                 onSend={(text) => send.mutate({ content: text })}
               />
             </PageShell>
@@ -381,12 +440,21 @@ function Room({ roomTenantId }: { readonly roomTenantId: string }) {
             </div>
             <div className="chat-thread-messages">
               {openedChain.map((message) => (
-                <RoomMessageRow key={message.id} message={message} />
+                <RoomMessageRow
+                  key={message.id}
+                  message={message}
+                  participants={participants.data ?? []}
+                />
               ))}
             </div>
             <RoomComposer
-              placeholder="Reply in this thread"
+              placeholder={
+                startingAgent === undefined
+                  ? "Reply in this thread"
+                  : `${startingAgent.name} is starting…`
+              }
               busy={send.isPending}
+              disabled={startingAgent !== undefined}
               onSend={(text) => send.mutate({ content: text, inReplyTo: opened.messageId })}
             />
           </aside>

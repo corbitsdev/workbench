@@ -470,6 +470,9 @@ export type RoomParticipant = {
   /** For an agent, its current live run's address — empty when none is
    * live, which `sendToRoom` filters out. */
   readonly address: string;
+  /** The workflow asset's raw name — only present for a `kind: "agent"`
+   * row; what a released agent's redeploy re-reads/re-pushes source by. */
+  readonly assetName?: string;
 };
 
 const PrincipalPage = type({
@@ -506,6 +509,7 @@ export async function listRoomParticipants(tenantId: string): Promise<readonly R
     kind: "agent",
     name: agent.name,
     address: agent.liveAddress ?? "",
+    assetName: agent.assetName,
   }));
   return [...people, ...agents];
 }
