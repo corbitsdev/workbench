@@ -1,24 +1,7 @@
 // The one entry point every catch block calls instead of swallowing a
-// failure (the owner ruling this package exists to enforce).
-//
-// `@intx/log` (LogTape underneath) is already the repo's one logging
-// concept -- 65+ `getLogger`/`log.error` call sites across apps/hub and a
-// dozen packages -- and it already has a pluggable-sink seam and
-// universal runtime support (Node, Bun, browsers). This package adds
-// only what that seam is missing: a fixed structured-error convention
-// (operation, optional tenant/room/agent identifiers, and a `refId` a
-// person can quote to support -- the same pattern
-// `packages/onboarding/src/routes.ts`'s `reportOnboardingError` already
-// establishes) plus a redaction pass, so no call site hand-rolls that
-// shape or leaks a secret into a log line. Reaching OTEL/Sentry later is
-// a LogTape sink registered once via `@intx/log`'s `configureSync`/
-// `setup` -- nothing here changes when that happens.
-//
-// The guarantee that makes this safe to sprinkle into any catch block:
-// `reportError` itself never throws. A malformed context degrades to
-// `operation: "unknown"` rather than rejecting the report outright, and
-// a throwing sink is LogTape's own concern to isolate -- this function's
-// own try/catch is the last line of defense either way.
+// failure. Builds on `@intx/log` (the repo's one logging concept) with a
+// fixed structured-error convention and a redaction pass, so no call site
+// hand-rolls that shape or leaks a secret into a log line.
 import { getLogger } from "@intx/log";
 import { type } from "arktype";
 import { ErrorContext, type ErrorContext as ErrorContextInput } from "./context";

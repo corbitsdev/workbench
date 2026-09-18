@@ -1,31 +1,5 @@
 // What a deployment can actually do, resolved from the pinned catalog at the
-// moment an offering is created.
-//
-// `model_offering.capabilities` is the column every capability filter reads —
-// this package's chain resolution and the platform's own source resolution
-// alike. Nothing populated it before, so it was empty everywhere and no
-// capability question had an answer. This module is where the answer comes
-// from, and it only ever reports capabilities the pinned catalog observed on
-// the wire:
-//
-//   exact-deployment  — this exact (baseURL, model) was probed. Use its list.
-//   same-model-wire   — the model was probed on other deployments that speak
-//                       the same wire, and this one is a relay of it. Use the
-//                       INTERSECTION across those deployments, so a relay
-//                       never claims more than every probed deployment of
-//                       that model demonstrated.
-//   unknown           — no probe covers it. Empty list, said plainly.
-//
-// An empty list is the honest answer for a local or open-weight deployment
-// nobody has probed, and it is deliberately not softened with a per-adapter
-// baseline: "an OpenAI-compatible endpoint serves plain text" is false for
-// the embedding models such endpoints also serve, and a wrong capability tag
-// routes real work to a model that cannot do it.
-// The pinned catalog's own vocabulary is a superset of what the platform can
-// store: it bakes `long-context` and `prompt-caching`, which `@intx/types`'
-// `Capability` — the arktype guarding the offerings API and the column — does
-// not accept. Everything this module reports is filtered down to the storable
-// vocabulary, so a seed never posts a value the hub will reject.
+// moment an offering is created. Full rationale: docs/offering-capabilities.md.
 import { catalogProviders } from "@intx/inference-catalog";
 import { WIRE_CAPABILITIES, type Capability } from "@intx/types";
 
@@ -43,11 +17,8 @@ export type DeploymentIdentity = {
   readonly canonicalName: string;
 };
 
-/** OpenAI Direct and every openai-compatible relay speak one wire, so a model
- * probed on one is speaking the same protocol on the other. The Anthropic and
- * Google adapters each speak their own wire: a relay serving a Claude model
- * over the OpenAI wire genuinely offers less than the native adapter does, so
- * their probes never carry across. */
+/** OpenAI Direct and every openai-compatible relay speak one wire; other
+ * adapters speak their own, since a relay genuinely offers less. */
 function wireFamily(plugin: string): string {
   return plugin === "openai" || plugin === "openai-compatible" ? "openai-wire" : plugin;
 }

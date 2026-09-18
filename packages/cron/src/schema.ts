@@ -25,14 +25,8 @@ function quoteIdentifier(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
-/**
- * The package's one idempotent migration, built against
- * `tenantSchema.tenant` — `"public"` in every real deployment; a test
- * harness that runs the platform migrations into a scratch schema
- * passes that schema instead so the FK targets its own `tenant` row,
- * not the real one. Every statement is `IF NOT EXISTS`, so no ledger
- * table is needed to know what has already run.
- */
+/** Builds the FK against `tenantSchema.tenant` — `"public"` in every real
+ * deployment, a scratch schema in tests. */
 function cronMigrationSql(tenantSchema: string): string {
   const tenantTable = `${quoteIdentifier(tenantSchema)}."tenant"`;
   return `
@@ -51,11 +45,8 @@ function cronMigrationSql(tenantSchema: string): string {
   `;
 }
 
-/**
- * Apply the package's migration against `databaseUrl`, idempotently
- * (every statement is `IF NOT EXISTS`) and inside one advisory-locked
- * transaction so concurrent hub replicas cannot race the same DDL.
- */
+/** Applies the migration idempotently, inside one advisory-locked
+ * transaction so concurrent hub replicas cannot race the same DDL. */
 export async function applyCronMigrations(
   databaseUrl: string,
   options?: { tenantSchema?: string },

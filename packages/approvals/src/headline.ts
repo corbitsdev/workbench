@@ -1,9 +1,6 @@
-// The one display concern this package owns: the human-readable line an
-// approval is described by. Pure string work over the tool snapshot an
-// approval already carries, with no database or server dependency, so the
-// browser can compose the same headline the hub-side tools do — hence its
-// own module and `./headline` export rather than living beside the
-// grant-allowance gate.
+// The human-readable line an approval is described by. Pure string work, no
+// database dependency, so the browser can compose the same headline the
+// hub-side tools do.
 
 function stringField(source: object, field: string): string | undefined {
   if (!(field in source)) return undefined;
@@ -27,17 +24,9 @@ function toolPackagePinsField(
   );
 }
 
-/**
- * `workflow_deploy` (`@corbits/workflow-authoring-tools`) parks an
- * approval whose arguments carry the packageName/toolPackagePins a prior
- * `wf_deploy_preview` call (a static read of the committed source)
- * reported, passed through. This renders that directly rather than
- * falling back to the tool's generic description, so the approval card
- * names the real package and tools instead of a bare asset id. It does
- * NOT show grants/capabilities: those are stamped by the native
- * install+probe+gate `workflow_deploy` itself runs, which has no
- * no-freeze preview yet.
- */
+/** Renders the packageName/toolPackagePins a prior `wf_deploy_preview` call
+ * reported, so the card names the real package instead of a bare asset id.
+ * Does not show grants/capabilities: those have no preview yet. */
 function workflowDeployHeadline(toolArguments: object): string | undefined {
   const commitSha = stringField(toolArguments, "commitSha");
   if (commitSha === undefined) return undefined;
@@ -51,31 +40,17 @@ function workflowDeployHeadline(toolArguments: object): string | undefined {
   return `Deploy workflow ${packageName} @ ${sha7} — tools: ${toolsText}`;
 }
 
-/**
- * Per-tool headline renderers, keyed by tool name — a tool kind that wants
- * its approval card to name what it will actually do, rather than fall
- * back to its generic description, registers itself here instead of
- * growing another `if (toolName === ...)` branch in `headlineFor`.
- * Returning `undefined` (missing required args) falls through to the
- * generic description/title rendering below.
- */
+/** Per-tool headline renderers, keyed by tool name — registering here avoids
+ * another `if (toolName === ...)` branch in `headlineFor`. */
 const TOOL_HEADLINE_RENDERERS: Readonly<
   Record<string, (toolArguments: object) => string | undefined>
 > = {
   workflow_deploy: workflowDeployHeadline,
 };
 
-/**
- * Builds the headline for an approval. A registered per-tool renderer
- * (`TOOL_HEADLINE_RENDERERS`) wins when the tool call's own arguments
- * carry what it needs. Otherwise prefers the tool's own `description` —
- * written by the tool's author to be human-readable — over its bare
- * `name`, which is a machine identifier. When the live call's arguments
- * carry a `title` (a tool author's own convention for per-invocation
- * context, e.g. "finalize this piece of collateral titled X"), it is
- * appended so the headline reflects what THIS approval is actually
- * about, not just which tool is asking.
- */
+/** Builds the headline for an approval: a registered per-tool renderer wins
+ * when it can, else the tool's `description` (falling back to its bare
+ * `name`), with any call-supplied `title` appended. */
 export function headlineFor(toolDefinition: unknown, toolArguments: unknown): string {
   const toolName =
     typeof toolDefinition === "object" && toolDefinition !== null

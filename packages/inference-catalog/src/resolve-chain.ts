@@ -1,17 +1,9 @@
 // Chain resolution: what this bench can reach for a given kind of work,
-// cheapest first, with fallbacks.
-//
-// Pure — every read is done by the caller against the platform's own model
-// discovery route and handed in, so the whole algorithm is exercised with
-// plain literals and no database anywhere near it. It answers
-// with an ordered chain, never a single model: one model is not a fallback
-// plan, and the platform's own source resolution already consumes chains.
-//
-// It also never resolves credentials or builds an InferenceSource. Its
-// output projects to `ModelRequirement[]`, which `resolveModelSources`
-// turns into runnable sources — the capability predicate and the priority
-// tiebreakers here are deliberately the same ones it uses, so a chain this
-// package returns can never be rejected downstream by upstream's own rules.
+// cheapest first, with fallbacks. Pure — callers hand in catalog reads, so
+// this never touches credentials or a database. Answers with an ordered
+// chain, never a single model, and reuses `resolveModelSources`'s own
+// capability predicate and priority tiebreakers so a returned chain can
+// never be rejected downstream by upstream's own rules.
 import type { Capability, ProviderPreference } from "@intx/types";
 
 import type { CatalogOffering, CatalogPricingRow } from "./catalog";
