@@ -1,12 +1,5 @@
-// How a turn's tool calls sit in the conversation.
-//
-// One presentation serves both the live strip (`turn-activity.tsx`) and the
-// persisted transcript (`timeline.tsx`), so a call that reads one way while
-// it runs doesn't restyle itself the moment the turn ends. Chips, not
-// collapsibles: a glyph, one sentence, a status icon, and — only when there
-// is something to show — a disclosure onto plain-text detail. Calls stack
-// one per call; nothing here ever folds several into a count. The sentences
-// come from `tool-activity.ts`; nothing here formats a tool's own data.
+// One presentation serves both the live strip and the persisted
+// transcript, so a call doesn't restyle itself when the turn ends.
 
 import {
   BookBookmark,
@@ -158,12 +151,8 @@ function ToolActivityLine({
   );
 }
 
-/**
- * A run of consecutive tool calls, stacked one chip per call — never
- * folded into a summary line (§12.3: chips are not collapsibles). Each
- * chip keeps its own disclosure onto its detail; there is no group-level
- * trigger and no count of how many calls happened.
- */
+// Never folded into a summary line (DESIGN.md §12.3: chips, not
+// collapsibles) — no group-level trigger, no count.
 export function ToolActivityGroup({ rows }: { readonly rows: readonly ToolActivityRow[] }) {
   if (rows.length === 0) return null;
   return (

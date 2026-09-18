@@ -2,12 +2,7 @@ import type { CSSProperties } from "react";
 
 import { agentInitials } from "@/chat/threads-api";
 
-/* Avatar identity pastels. The palette is token references, not
-   hex: --avatar-1 through --avatar-4 are defined once in this package's
-   stylesheet :root (the proposed upstream contract for @corbits/react-ui's
-   theme) and consumed here by reference, so no product code hardcodes a
-   color value. Numbered like react-ui's --chart-1..5 series — slot order is
-   the deterministic resolution order, not a ranking. */
+// Token references, not hex, so no product code hardcodes a color value.
 export const AVATAR_COLORS = ["--avatar-1", "--avatar-2", "--avatar-3", "--avatar-4"] as const;
 
 export type AvatarColor = (typeof AVATAR_COLORS)[number];
@@ -128,10 +123,8 @@ export function CorbitAvatar({
   );
 }
 
-/** The one avatar element for a `.shell-ch-avatar` slot: a Corbit avatar for
- * an agent, a pastel initials chip (hashed off the person's own principal
- * id, never their name) for a person — visually distinct per DESIGN.md's
- * avatar identity rule. */
+// Person chip color hashes off principal id, never name — DESIGN.md's
+// avatar identity rule.
 export function IdentityAvatar({
   kind,
   name,

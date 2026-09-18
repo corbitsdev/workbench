@@ -1,7 +1,5 @@
-/** How long ago a timestamp was, in the compact form the chat surfaces
- * use for activity: "just now", "12m ago", "3h ago", "5d ago". An
- * absent or unparseable timestamp renders as nothing rather than a
- * placeholder date. */
+// An absent or unparseable timestamp renders as nothing, never a
+// placeholder date.
 export function formatRelativeActivity(iso: string | null): string {
   if (iso === null) return "";
   const date = new Date(iso);

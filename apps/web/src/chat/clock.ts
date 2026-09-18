@@ -1,8 +1,5 @@
-// The one seam `streaming-reply.ts` and `turn-activity.tsx` read wall-clock
-// time and arm backstop timers through, so a test can swap in a fake that
-// advances synchronously instead of sleeping on the real clock — real-timer
-// waits on these hooks' 30ms/60ms backstops are exactly what made them flake
-// under CI's sharded, CPU-contended `bun run test`.
+// A test seam so a fake clock can advance synchronously instead of
+// sleeping — real-timer waits on these backstops flaked under CI.
 export type Clock = {
   readonly now: () => number;
   readonly setTimeout: (callback: () => void, ms: number) => unknown;

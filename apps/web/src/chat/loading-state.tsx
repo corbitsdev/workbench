@@ -1,13 +1,5 @@
-// The one warm loader every page/workbench-level wait in this app renders —
-// a bare skeleton/spinner/grey
-// slab is never the right answer for "we don't know how long this takes":
-// one honest headline plus a small rotating tip reads as useful rather than
-// stalled, and it's the same shape everywhere so a reader learns it once.
-//
-// `delayMs` (default 200) holds the loader itself back: a wait that
-// resolves before the delay elapses never gets an intermediate frame at
-// all, which is what keeps a fast round-trip from flashing chrome the
-// reader has no time to read.
+// `delayMs` (default 200) holds the loader back so a fast round-trip
+// never flashes chrome the reader has no time to read.
 
 import { CorbitsMark } from "@corbits/react-ui";
 import { useEffect, useState } from "react";
@@ -17,11 +9,8 @@ import { CHAT_STRINGS } from "./strings";
 const WORKBENCH_LOADING_TIP_INTERVAL_MS = 4000;
 const DEFAULT_LOADING_DELAY_MS = 200;
 
-/** A small, honest product tip under the loading headline — rotates on a
- * timer regardless of motion preference; the fade between tips is the
- * only thing `prefers-reduced-motion` turns off (the CSS keyframe is
- * scoped to `no-preference`, so a reduced-motion reader still sees each
- * tip in turn, just without the crossfade). */
+// Rotates regardless of motion preference; only the crossfade is scoped
+// to `no-preference` and turns off under `prefers-reduced-motion`.
 function WorkbenchLoadingTip() {
   const tips = CHAT_STRINGS.workbenchLoadingTips;
   const [index, setIndex] = useState(0);
@@ -40,13 +29,7 @@ function WorkbenchLoadingTip() {
   );
 }
 
-/**
- * The shared page/workbench-level loading treatment: one honest headline (never
- * an internal stage name — "Starting the runtime…" tells the reader
- * nothing they can act on) plus a rotating tip. Delays its own mount by
- * `delayMs` so a wait that resolves quickly never flashes an intermediate
- * frame — see this file's doc.
- */
+// Headline is always one honest sentence, never an internal stage name.
 export function WorkbenchLoadingState({
   delayMs = DEFAULT_LOADING_DELAY_MS,
   title = CHAT_STRINGS.workbenchLoadingTitle,
@@ -62,12 +45,9 @@ export function WorkbenchLoadingState({
   const [visible, setVisible] = useState(delayMs <= 0);
 
   useEffect(() => {
-    // A surface that swaps its own `delayMs` — a route that starts out
-    // "still reading" (delayed) and becomes "known to be waiting"
-    // (immediate) — reconciles onto this same element rather than
-    // remounting it, so dropping to 0 has to show the loader outright.
-    // Returning early here instead left the loader hidden for good and
-    // rendered the wait as a blank page.
+    // A route swapping `delayMs` to 0 reconciles onto this same element;
+    // returning early here instead left the loader hidden and the wait
+    // rendered as a blank page.
     if (delayMs <= 0) {
       setVisible(true);
       return;

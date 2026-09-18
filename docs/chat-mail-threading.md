@@ -21,4 +21,6 @@ child tenant id.
 address to the message body (the same rows the Participants panel reads).
 The hub only delivers to a run address, which only the client otherwise
 knows, so this is what lets an agent hand a task to another agent in the
-workbench, or copy a person on the handoff so they can follow it.
+workbench. The mail tools have no `cc` field, so the roster also tells
+agents to copy the person on a handoff by naming them as another `to`
+recipient.

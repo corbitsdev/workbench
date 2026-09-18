@@ -1,14 +1,6 @@
-// A workbench mail send has no way to hand off between agents: the hub only
-// delivers to run addresses, which only the client knows (a workbench's
-// Participants panel already reads them off the deployment/run listing).
-// Appending them as a trailing block on every workbench send gives every agent
-// in the workbench everyone else's address, so one agent can mail another
-// directly. Agent-to-agent mail goes run to run and never lands in the
-// person's mailbox on its own, so the block also carries the person's own
-// address and a line telling agents to copy it on any handoff — the mail
-// tools have no `cc` field, so that means naming it as another `to`
-// recipient. `stripRoster` is the inverse, used only to keep the block out
-// of what a person sees echoed back as their own sent message.
+// See docs/chat-mail-threading.md for the roster mechanism. `stripRoster`
+// is the inverse, used to keep the block out of a person's echoed-back sent
+// message.
 
 const ROSTER_HEADING = "Participants:";
 

@@ -1,10 +1,5 @@
-// The pre-send half of the fix. A tenant whose one seeded
-// `model_provider` row carries no credential (the shape seeding always
-// leaves behind) can't run inference — the composer stays live (a person
-// may still want to leave a note), but this banner says so before they
-// invest a long message in a reply that was never coming, and leads
-// straight into the connect flow that already works
-// (`@/settings`'s `ConnectionsSection`).
+// Says so before a person invests a long message in a reply that was
+// never coming; the composer stays live since they may still want a note.
 import { Button } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
 import { CHAT_STRINGS } from "./strings";
