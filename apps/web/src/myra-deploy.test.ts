@@ -1,7 +1,21 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildMyraDeployInput, MyraDeployError } from "./myra-deploy";
+import { buildMyraDefinitionJson, buildMyraDeployInput, MyraDeployError } from "./myra-deploy";
 import { MYRA_SOURCE_CONFIG } from "./myra-source";
+
+describe("buildMyraDefinitionJson", () => {
+  test("declares the offering chain's sources so the probe approves them", () => {
+    const definition = buildMyraDefinitionJson("assistant@ada.example", [
+      { provider: "openai-compatible", model: "qwen2.5:7b" },
+      { provider: "anthropic", model: "claude-sonnet-5" },
+    ]) as { steps: Record<string, { agent: { inference: { sources: unknown } } }> };
+
+    expect(definition.steps["assistant"]?.agent.inference.sources).toEqual([
+      { provider: "openai-compatible", model: "qwen2.5:7b" },
+      { provider: "anthropic", model: "claude-sonnet-5" },
+    ]);
+  });
+});
 
 describe("buildMyraDeployInput", () => {
   test("maps the pushed commit and the operator's offering pick to a source-tree deploy", () => {
