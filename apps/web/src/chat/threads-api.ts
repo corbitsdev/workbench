@@ -42,9 +42,18 @@ export type ChatAgent = {
   /** The address of the agent's currently live run, or null when none is
    * live (mid-redeploy). */
   readonly liveAddress: string | null;
+  /** The newest deployment's status for this agent's asset — `undefined`
+   * when it has never been deployed. `"pending"`/`"recovering"` mean a run
+   * is on the way up; a terminal status (`released`, `failed`,
+   * `destroy_failed`, `stopped`) means nothing is running and nothing is
+   * coming unless someone restarts it. */
+  readonly latestStatus: string | undefined;
 };
 
 const LIVE_DEPLOYMENT_STATUSES = new Set(["deployed", "pending", "recovering"]);
+/** A deployment status that means a run is on the way up but not live yet
+ * — distinct from a terminal status, which means nothing is running. */
+export const STARTING_DEPLOYMENT_STATUSES = new Set(["pending", "recovering"]);
 
 const DeploymentsSchema = WorkflowDeploymentResponse.array();
 const WorkflowAssetSchema = type({ id: "string", name: "string" }).array();
@@ -121,17 +130,22 @@ export async function listChatAgents(tenantId: string): Promise<readonly ChatAge
   const addressByRunId = new Map(runs.map((run) => [run.id, run.address]));
   const nameByAssetId = new Map(assets.map((asset) => [asset.id, asset.name]));
 
-  const byAsset = new Map<string, { addresses: Set<string>; liveAddress: string | null }>();
+  const byAsset = new Map<
+    string,
+    { addresses: Set<string>; liveAddress: string | null; latestStatus: string | undefined }
+  >();
   for (const deployment of deployments) {
     const address = addressByRunId.get(deployment.id);
     if (address === undefined || address.length === 0) continue;
     const entry = byAsset.get(deployment.definitionAssetId) ?? {
       addresses: new Set<string>(),
       liveAddress: null,
+      latestStatus: undefined,
     };
     entry.addresses.add(address);
-    // Deployments come back newest-first, so the first live one seen per
-    // asset is the current one.
+    // Deployments come back newest-first, so the first one seen per asset
+    // is the latest, and the first live one seen is the current one.
+    if (entry.latestStatus === undefined) entry.latestStatus = deployment.status;
     if (entry.liveAddress === null && LIVE_DEPLOYMENT_STATUSES.has(deployment.status)) {
       entry.liveAddress = address;
     }
@@ -146,8 +160,18 @@ export async function listChatAgents(tenantId: string): Promise<readonly ChatAge
       assetName,
       addresses: [...entry.addresses],
       liveAddress: entry.liveAddress,
+      latestStatus: entry.latestStatus,
     };
   });
+}
+
+/** True once an agent's latest deployment has gone terminal (or it has
+ * never been deployed) — nothing is running and nothing is coming up on
+ * its own; a restart is the only way forward. False while a run is live or
+ * still on its way up (`pending`/`recovering`). */
+export function isAgentNotRunning(agent: Pick<ChatAgent, "liveAddress" | "latestStatus">): boolean {
+  if (agent.liveAddress !== null) return false;
+  return agent.latestStatus === undefined || !STARTING_DEPLOYMENT_STATUSES.has(agent.latestStatus);
 }
 
 /** The agent an `@name` first message picks, matched case-insensitively

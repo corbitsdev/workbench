@@ -14,6 +14,7 @@ import { Markdown } from "@/chat/markdown";
 import { MessageAttachments } from "@/chat/message-attachments";
 import {
   agentFromMention,
+  isAgentNotRunning,
   listChatAgents,
   markChatSeen,
   readChat,
@@ -23,6 +24,7 @@ import {
   type ChatAgent,
 } from "@/chat/threads-api";
 import { MYRA_SOURCE_CONFIG } from "../myra-source";
+import { redeployRoomAgent } from "../workbench-create";
 import { useBench } from "../bench-context";
 import { chatIdFromPath, chatKeys, chatPath, NEW_CHAT_PATH } from "../chat-path";
 import { usePendingApprovals } from "../pending-approvals";
@@ -66,10 +68,19 @@ function NewChat({
     },
   });
 
+  const restart = useMutation({
+    mutationFn: (agent: ChatAgent) => redeployRoomAgent(tenantId, agent),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: chatKeys.agents(tenantId) });
+    },
+  });
+
   const defaultAgent = agents.find((agent) => agent.name === MYRA_SOURCE_CONFIG.displayName);
   const chosen = agents.find((agent) => agent.id === selected) ?? defaultAgent ?? agents[0];
   const error: unknown = start.error ?? agentsQuery.error;
   const isLive = chosen?.liveAddress !== null && chosen?.liveAddress !== undefined;
+  const notRunning = chosen !== undefined && isAgentNotRunning(chosen);
+  const restarting = restart.isPending && restart.variables?.id === chosen?.id;
 
   return (
     <PageShell width="prose" className="page-fill">
@@ -96,11 +107,26 @@ function NewChat({
       {error === null || error === undefined ? null : (
         <p className="chat-thread-error">{errorText(error)}</p>
       )}
+      {restart.error === null || restart.error === undefined ? null : (
+        <p className="chat-thread-error">{errorText(restart.error)}</p>
+      )}
+      {notRunning && !restarting ? (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={restart.isPending}
+          onClick={() => chosen !== undefined && restart.mutate(chosen)}
+        >
+          Restart {chosen?.name}
+        </Button>
+      ) : null}
       <Composer
         placeholder={
           isLive
             ? `Message ${chosen?.name ?? MYRA_SOURCE_CONFIG.displayName}`
-            : `${chosen?.name ?? MYRA_SOURCE_CONFIG.displayName} is starting…`
+            : notRunning
+              ? `${chosen?.name ?? MYRA_SOURCE_CONFIG.displayName} is not running`
+              : `${chosen?.name ?? MYRA_SOURCE_CONFIG.displayName} is starting…`
         }
         busy={start.isPending}
         disabled={!isLive}
@@ -171,6 +197,17 @@ function ChatTranscript({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: chatKeys.scope(tenantId) }),
   });
 
+  const restart = useMutation({
+    mutationFn: () => {
+      if (chat === undefined) throw new Error("no agent to restart");
+      return redeployRoomAgent(tenantId, chat.agent);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: chatKeys.agents(tenantId) });
+      void queryClient.invalidateQueries({ queryKey: chatKeys.one(tenantId, chatId) });
+    },
+  });
+
   if (chatQuery.isError && chat === undefined) {
     return (
       <PageShell width="full" className="page-fill">
@@ -217,11 +254,28 @@ function ChatTranscript({
         </ul>
       )}
       {reply.error === null ? null : <p className="chat-thread-error">{errorText(reply.error)}</p>}
+      {restart.error === null ? null : (
+        <p className="chat-thread-error">{errorText(restart.error)}</p>
+      )}
+      {isAgentNotRunning(chat.agent) && !restart.isPending ? (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={restart.isPending}
+          onClick={() => restart.mutate()}
+        >
+          Restart {chat.agentName}
+        </Button>
+      ) : null}
       <Composer
         placeholder={
-          chat.agent.liveAddress === null
-            ? `${chat.agentName} is starting…`
-            : `Message ${chat.agentName}`
+          chat.agent.liveAddress !== null
+            ? `Message ${chat.agentName}`
+            : restart.isPending
+              ? `${chat.agentName} is starting…`
+              : isAgentNotRunning(chat.agent)
+                ? `${chat.agentName} is not running`
+                : `${chat.agentName} is starting…`
         }
         busy={reply.isPending}
         disabled={chat.agent.liveAddress === null}
