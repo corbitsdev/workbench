@@ -14,7 +14,7 @@ import type { WorkflowDefinition } from "@intx/workflow";
 import { mail } from "@intx/tools-mail/sidecar-bundle";
 import { posix } from "@intx/tools-posix/sidecar-bundle";
 
-import { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "./workflow-ids";
+import { ASSISTANT_STEP_ID } from "./workflow-ids";
 
 export { ASSISTANT_SYSTEM_PROMPT } from "./system-prompt";
 export { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "./workflow-ids";
@@ -32,6 +32,9 @@ export const MYRA_TOOL_FACTORIES = [mail, posix] as unknown as readonly Annotate
 
 /** Everything the definition needs that is per-deployment data. */
 export interface MyraWorkflowInput {
+  /** The definition id: Myra's fixed `ASSISTANT_WORKFLOW_ID`, or a created
+   * agent's slug — the bundle is generic over which agent it builds. */
+  readonly workflowId: string;
   /** The deployment's mail address; each inbound mail is one run. */
   readonly triggerAddress: string;
   /** Provider/model preferences, in order; resolved at deploy time. */
@@ -53,6 +56,9 @@ export interface MyraWorkflowInput {
  * manifest: the factories above are the whole tool surface.
  */
 export function buildMyraWorkflow(input: MyraWorkflowInput): WorkflowDefinition {
+  if (input.workflowId === "") {
+    throw new Error("buildMyraWorkflow requires a non-empty workflowId");
+  }
   if (input.triggerAddress === "") {
     throw new Error("buildMyraWorkflow requires a non-empty triggerAddress");
   }
@@ -60,7 +66,7 @@ export function buildMyraWorkflow(input: MyraWorkflowInput): WorkflowDefinition 
     throw new Error("buildMyraWorkflow requires a non-empty systemPrompt");
   }
   return defineWorkflow({
-    id: ASSISTANT_WORKFLOW_ID,
+    id: input.workflowId,
     trigger: { type: "mail", to: input.triggerAddress },
     steps: {
       assistant: step({
