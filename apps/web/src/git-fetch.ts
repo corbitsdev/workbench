@@ -12,6 +12,9 @@ globalThis.Buffer ??= Buffer;
 export class GitFetchError extends Error {}
 
 const MAIN_REF = "refs/heads/main";
+// Where a single-branch fetch through the `origin` remote lands; isomorphic-git
+// does not write FETCH_HEAD on this filesystem.
+const FETCHED_MAIN_REF = "refs/remotes/origin/main";
 
 async function cloneAndFetchMain(args: {
   url: string;
@@ -47,7 +50,7 @@ export async function fetchSourceFile(args: {
 }): Promise<string> {
   try {
     const { fs, dir } = await cloneAndFetchMain(args);
-    const oid = await git.resolveRef({ fs, dir, ref: "FETCH_HEAD" });
+    const oid = await git.resolveRef({ fs, dir, ref: FETCHED_MAIN_REF });
     const { blob } = await git.readBlob({ fs, dir, oid, filepath: args.filepath });
     return new TextDecoder().decode(blob);
   } catch (cause) {
@@ -68,7 +71,7 @@ export async function fetchSourceFileOrEmpty(args: {
     const { fs, dir } = await cloneAndFetchMain(args);
     let oid: string;
     try {
-      oid = await git.resolveRef({ fs, dir, ref: "FETCH_HEAD" });
+      oid = await git.resolveRef({ fs, dir, ref: FETCHED_MAIN_REF });
     } catch (cause) {
       if (cause instanceof Errors.NotFoundError) return "";
       throw cause;
