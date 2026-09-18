@@ -4,11 +4,30 @@
 //
 // `vite dev` proxies /api to a locally running hub so the interface can be
 // developed against real data without a build step.
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
+
+const myraDir = path.resolve(__dirname, "..", "..", "agents", "myra");
+
+// Myra's deploy source is a bundle of her workflow entry, generated (and
+// gitignored) rather than committed; it has to exist before Vite resolves
+// `@corbits/myra/bundle`. Built in a `bun` subprocess because `Bun.build`
+// is unavailable in the Node process Vite itself runs in.
+function myraWorkflowBundle(): Plugin {
+  return {
+    name: "myra-workflow-bundle",
+    buildStart() {
+      execFileSync("bun", ["run", path.join(myraDir, "scripts", "build-bundle.ts")], {
+        cwd: myraDir,
+        stdio: "inherit",
+      });
+    },
+  };
+}
 
 function manualChunks(id: string): string | undefined {
   if (!id.includes("node_modules")) return undefined;
@@ -24,7 +43,7 @@ function manualChunks(id: string): string | undefined {
 const hubOrigin = process.env.BASE_URL ?? "http://localhost:3000";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [myraWorkflowBundle(), react(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),

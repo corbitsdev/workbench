@@ -12,6 +12,7 @@
     "src",
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx",
+    "bundle",
     "LICENSE",
     "README.md"
   ],
@@ -20,22 +21,28 @@
     ".": "./src/index.ts",
     "./prompt": "./src/system-prompt.ts",
     "./tool-packages": "./src/tool-packages.ts",
-    "./workflow-ids": "./src/workflow-ids.ts"
+    "./workflow-ids": "./src/workflow-ids.ts",
+    "./bundle": "./src/bundle.ts"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "build": "bun run scripts/build-bundle.ts"
   },
   "dependencies": {
-    "@corbits/catalog-tools": "0.1.1",
-    "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3"
+    "@corbits/access-tools": "workspace:*",
+    "@corbits/agent-directory-tools": "workspace:*",
+    "@corbits/capability-tools": "workspace:*",
+    "@corbits/catalog-tools": "workspace:*",
+    "@corbits/interaction-tools": "workspace:*",
+    "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
+    "@corbits/skills-tools": "workspace:*",
+    "@corbits/workflow-authoring-tools": "workspace:*"
   },
   "devDependencies": {
-    "@corbits/agent-directory-tools": "workspace:*",
-    "@corbits/interaction-tools": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   },

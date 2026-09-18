@@ -36,3 +36,6 @@ e2e/browser/shots/
 # `bun pm pack` / `bun run release` tarballs — built on demand, never
 # committed (CL-8167).
 *.tgz
+
+# Generated Myra workflow bundle (built on demand, never committed)
+agents/myra/bundle/
