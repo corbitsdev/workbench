@@ -12,6 +12,7 @@ import { IdentityAvatar } from "@/chat/avatar";
 import { Composer } from "@/chat/composer";
 import { Markdown } from "@/chat/markdown";
 import { MessageAttachments } from "@/chat/message-attachments";
+import { resolveMessagePackage } from "@/chat/deployable-package";
 import {
   agentFromMention,
   isAgentNotRunning,
@@ -230,21 +231,28 @@ function ChatTranscript({
     <PageShell width="prose" className="page-fill">
       <h1 className="chat-thread-title">{chat.title}</h1>
       <div className="chat-thread-messages">
-        {chat.messages.map((message) => (
-          <div key={message.id} className="chat-thread-message" data-author={message.author}>
-            <span className="shell-ch-avatar">
-              <IdentityAvatar
-                kind={message.author === "me" ? "person" : "agent"}
-                name={message.authorName}
-                principalId={message.author === "me" ? (selectedPrincipalId ?? "me") : chat.id}
-              />
-            </span>
-            <div className="chat-thread-body">
-              <Markdown text={message.body} />
-              <MessageAttachments tenantId={tenantId} attachments={message.attachments} />
+        {chat.messages.map((message) => {
+          const { pkg, renderedBody } = resolveMessagePackage(message.attachments, message.body);
+          return (
+            <div key={message.id} className="chat-thread-message" data-author={message.author}>
+              <span className="shell-ch-avatar">
+                <IdentityAvatar
+                  kind={message.author === "me" ? "person" : "agent"}
+                  name={message.authorName}
+                  principalId={message.author === "me" ? (selectedPrincipalId ?? "me") : chat.id}
+                />
+              </span>
+              <div className="chat-thread-body">
+                <Markdown text={renderedBody} />
+                <MessageAttachments
+                  tenantId={tenantId}
+                  attachments={message.attachments}
+                  pkg={pkg}
+                />
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {approvals.length === 0 ? null : (
         <ul className="room-info-approval-list" aria-label={`${chat.agentName} is asking`}>

@@ -8,7 +8,7 @@ import { cronSentence } from "@corbits/workflows/client";
 import { useDeployAgentMutation } from "../agents-api";
 import { chatPath } from "../chat-path";
 import { Link } from "../navigation";
-import { deployablePackage, isFiveFieldCron, type DeployablePackage } from "./deployable-package";
+import { isFiveFieldCron, type DeployablePackage } from "./deployable-package";
 import type { MailAttachment } from "./threads-api";
 
 function errorText(cause: unknown): string {
@@ -18,12 +18,15 @@ function errorText(cause: unknown): string {
 export function MessageAttachments({
   tenantId,
   attachments,
+  pkg,
 }: {
   readonly tenantId: string;
   readonly attachments: readonly MailAttachment[];
+  /** Resolved by the caller via `resolveMessagePackage` — attachments and
+   * body-carried fenced blocks both land here. */
+  readonly pkg: DeployablePackage | null;
 }) {
-  if (attachments.length === 0) return null;
-  const pkg = deployablePackage(attachments);
+  if (pkg === null && attachments.length === 0) return null;
   if (pkg === null) {
     return (
       <ul className="chat-attachment-list" aria-label="Attachments">
