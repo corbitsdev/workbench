@@ -4,28 +4,14 @@
 // browser — the hub serves index.html for every non-/api path, so a full page
 // load lands on the same route.
 
-import { createContext, useContext } from "react";
+import { useContext } from "react";
 import type { ComponentProps, MouseEvent, ReactNode } from "react";
 
+import { NavigateContext, SessionUserContext, SignOutContext } from "./navigation-context";
+import type { Navigate } from "./navigation-context";
 import type { SessionUser } from "./session";
 
-export type Navigate = (to: string) => void;
-
-const NavigateContext = createContext<Navigate>(() => {
-  throw new Error("navigation used outside NavigationProvider");
-});
-
-/** Absent outside a signed-in shell (the onboarding wizard has no account
- * menu, no settings surface) — `undefined` rather than a throwing default,
- * so a reader like `AccountSection` (mounted in package tests with no
- * provider at all) can simply omit the Sign out action instead of
- * crashing. */
-const SignOutContext = createContext<(() => void) | undefined>(undefined);
-
-/** Same availability rule as `SignOutContext`: present in the signed-in
- * shell so surfaces like `ChatPage` can label the reader's own avatar from
- * the auth account, undefined outside that shell. */
-const SessionUserContext = createContext<SessionUser | undefined>(undefined);
+export type { Navigate };
 
 export function NavigationProvider({
   navigate,

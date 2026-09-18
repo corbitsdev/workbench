@@ -6,14 +6,17 @@
 
 import { isRawIdentifier } from "@/bench";
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useMemo, useState } from "react";
+import { useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
-import type { APIQuery } from "@/lib/api-query";
-
 import { PrincipalsSchema, useAPIQuery } from "./api";
-import type { Principal, PrincipalsPage } from "./api";
+import type { Principal } from "./api";
+import { BenchContext } from "./bench-context-value";
+import type { BenchState } from "./bench-context-value";
 import { meKeys, tenantKeys } from "./query-client";
+
+export { BenchContext };
+export type { BenchState };
 
 const STORAGE_KEY = "workbench.selectedTenantId";
 
@@ -33,19 +36,6 @@ function writeStoredTenantId(tenantId: string): void {
     // functionality — the in-memory selection for this session still works.
   }
 }
-
-export type BenchState = {
-  readonly memberships: APIQuery<PrincipalsPage>;
-  readonly selectedTenantId: string | null;
-  readonly selectedPrincipalId: string | null;
-  readonly selectTenant: (tenantId: string) => void;
-  readonly onBenchCreated: (tenantId: string) => void;
-};
-
-/** Exported only so a render test can inject a fixed `BenchState` without
- * standing up `BenchProvider`'s own `/api/me/principals` fetch — every
- * real caller still goes through `useBench`/`BenchProvider`. */
-export const BenchContext = createContext<BenchState | null>(null);
 
 /** The membership this context currently treats as selected: the stored
  * choice if it still names a bench the account belongs to, otherwise the
