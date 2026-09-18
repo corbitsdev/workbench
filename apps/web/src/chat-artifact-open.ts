@@ -1,11 +1,6 @@
-// Turns a chat `FilePart` into the canvas's typed artifact content —
-// `ChatPage`'s glue between the chip-open callback and either of two reads:
-// `artifactId` resolves through the Library artifacts surface (the same
-// `GET /api/tenants/:id/artifacts/:id` `LibraryRoute` reads —
-// `artifactContentFromDetail`), never raw blob bytes. Only a part with no
-// `artifactId` — a plain human upload that never got a Library row — falls
-// back to `chat-ui`'s blob route (see `packages/chat/src/routes.ts`
-// `GET /workbenches/:id/blobs/:blobId`, `artifactContentFromBlob`).
+// A part with an `artifactId` resolves through the Library artifacts
+// surface, never raw blob bytes; only a plain human upload with no
+// Library row falls back to the blob route.
 
 import {
   isTextDecodableMediaType,
@@ -16,10 +11,8 @@ import { artifactPreviewPath, type ArtifactDetail } from "./api";
 import { base64ToUtf8 } from "./chat/threads-api";
 import type { CanvasArtifactContent } from "./shell/canvas-availability";
 
-/** Decodes a Library artifact detail into the canvas's typed content — the
- * same renderer-kind resolution `LibraryPage`'s preview pane uses, so a
- * chip opened from chat and the same artifact opened from Library render
- * identically. */
+/** Same renderer-kind resolution `LibraryPage`'s preview pane uses, so a
+ * chip opened from chat renders identically to Library. */
 export function artifactContentFromDetail(
   tenantId: string,
   detail: ArtifactDetail,
@@ -54,10 +47,8 @@ export function artifactContentFromDetailError(
   };
 }
 
-/** Decodes a base64 blob body into the canvas artifact content for a
- * `FilePart`, given its already-known `name`/`mediaType`. Binary content
- * (a MIME type this UI can't decode as text) renders through the
- * "unsupported" pane with an honest reason rather than raw bytes. */
+/** Binary content this UI can't decode as text renders through the
+ * "unsupported" pane with an honest reason, rather than raw bytes. */
 export function artifactContentFromBlob(
   part: { readonly name: string; readonly mediaType: string },
   blobId: string,
