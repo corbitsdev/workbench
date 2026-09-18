@@ -1,9 +1,5 @@
-// Files' workbench-first lens needs to know which workbench, if
-// any, the user was just inside — a signal `/artifacts` can't carry itself,
-// since it's reached from the sidebar footer, not a workbench sub-route.
-// Recorded per bench (a switch to a different bench must not default to a
-// foreign bench's workbench) and read back once on mount — never a live
-// subscription, so a workbench visited after Files is already open doesn't
+// Recorded per bench and read back once on mount, never a live
+// subscription, so a workbench visited after Files is open doesn't
 // yank the lens out from under the user.
 
 const KEY_PREFIX = "workbench.lastWorkbenchId.";

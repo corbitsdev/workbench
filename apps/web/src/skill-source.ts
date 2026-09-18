@@ -1,7 +1,5 @@
-// A skill asset's SKILL.md content, read and written over its stock
-// smart-HTTP git remote — the same path `agent-source-read.ts` and
-// `agent-deploy.ts` use for workflow assets, mirrored here for `kind:
-// "skill"` assets since the stock asset routes carry only metadata.
+// Mirrors `agent-source-read.ts`/`agent-deploy.ts`'s git path for `kind:
+// "skill"` assets, since the stock asset routes carry only metadata.
 import { fetchSourceFileOrEmpty } from "./git-fetch";
 import { pushSourceTree } from "./git-push";
 import { withGitToken } from "./git-token";
@@ -18,10 +16,8 @@ function skillAssetUrl(tenantId: string, assetName: string): string {
   ).toString();
 }
 
-/** Mints a read-only token and fetches `SKILL.md` off the asset's `main`.
- * Returns `""` for a fresh asset (no commits yet) or one whose `main`
- * doesn't carry `SKILL.md` — neither is an error, both render an empty
- * editor. */
+/** Returns `""` for a fresh asset or one whose `main` lacks `SKILL.md` —
+ * neither is an error, both render an empty editor. */
 export async function readSkillSource(
   tenantId: string,
   assetId: string,
