@@ -29,8 +29,8 @@ describe("summarizeHistoryMessage", () => {
   });
 
   test("a capability addition names what was added", () => {
-    expect(summarizeHistoryMessage("Add @corbits/github-tools to Myra")).toBe(
-      "Added tool: @corbits/github-tools",
+    expect(summarizeHistoryMessage("Add @corbits/example-tools to Myra")).toBe(
+      "Added tool: @corbits/example-tools",
     );
     expect(summarizeHistoryMessage("Add research skill to Myra")).toBe("Added skill: research");
     expect(summarizeHistoryMessage("Set Myra's model to anthropic/claude-sonnet")).toBe(

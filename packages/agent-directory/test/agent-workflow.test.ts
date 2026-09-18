@@ -68,7 +68,7 @@ test("an omitted toolPackagePins leaves the agent with no pins, exactly like a d
 });
 
 test("a supplied toolPackagePins lands on the step's agent verbatim", () => {
-  const pins = [{ name: "@corbits/granola-tools", version: "^1.0.0" }];
+  const pins = [{ name: "@corbits/example-tools", version: "^1.0.0" }];
   const definition = buildAgentDefinitionWorkflow({
     ...INPUT,
     toolPackagePins: pins,

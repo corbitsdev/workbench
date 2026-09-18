@@ -19,12 +19,12 @@ const INVENTORY_SOURCES: InventorySources = {
   async listUsableToolPackages() {
     return [
       {
-        name: "@corbits/granola-tools",
-        connectorId: "granola",
+        name: "@corbits/example-tools",
+        connectorId: "example",
         credentialBinding: {
-          package: "@corbits/granola-tools",
-          handle: "granola",
-          provider: "granola",
+          package: "@corbits/example-tools",
+          handle: "example",
+          provider: "example",
           locator: "tenant",
         },
       },
@@ -43,12 +43,12 @@ const INVENTORY: PlannerInventory = {
   agents: [],
   toolPackages: [
     {
-      name: "@corbits/granola-tools",
-      connectorId: "granola",
+      name: "@corbits/example-tools",
+      connectorId: "example",
       credentialBinding: {
-        package: "@corbits/granola-tools",
-        handle: "granola",
-        provider: "granola",
+        package: "@corbits/example-tools",
+        handle: "example",
+        provider: "example",
         locator: "tenant",
       },
     },
@@ -68,7 +68,7 @@ function buildDeps(
           systemPrompt: "You review incident reports and summarize them.",
           description: "Summarizes incident reports",
           modelPreference: "anthropic/claude-sonnet-5",
-          toolPackagePins: ["@corbits/granola-tools"],
+          toolPackagePins: ["@corbits/example-tools"],
           skills: ["incident-review"],
         }),
         runId: "wfr_draft_1",
@@ -232,7 +232,7 @@ describe("createMyraAgentDefinitionDrafting", () => {
       systemPrompt: "You review incident reports and summarize them.",
       description: "Summarizes incident reports",
       modelPreference: "anthropic/claude-sonnet-5",
-      toolPackagePins: ["@corbits/granola-tools"],
+      toolPackagePins: ["@corbits/example-tools"],
       skills: ["incident-review"],
     });
   });

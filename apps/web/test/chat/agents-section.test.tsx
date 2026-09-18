@@ -582,13 +582,16 @@ describe("Agents section — Capabilities", () => {
   test("lists current tools/skills/model and offers only what's not already attached", async () => {
     const withCapabilities: AgentFixture = {
       ...MYRA,
-      toolPackagePins: [{ name: "@corbits/github-tools", version: "*" }],
+      toolPackagePins: [{ name: "@corbits/example-tools", version: "*" }],
       skills: ["research"],
     };
     stubFetch({
       agents: [withCapabilities],
       capabilityInventory: {
-        toolPackages: [{ name: "@corbits/github-tools" }, { name: "@corbits/granola-tools" }],
+        toolPackages: [
+          { name: "@corbits/example-tools" },
+          { name: "@corbits/other-example-tools" },
+        ],
         skills: [{ name: "research" }, { name: "writing" }],
         models: [{ canonicalName: "anthropic/claude-sonnet" }],
       },
@@ -599,7 +602,7 @@ describe("Agents section — Capabilities", () => {
     await settle();
 
     const listText = el.querySelector(".chat-settings-capability-list")?.textContent;
-    expect(listText).toContain("@corbits/github-tools");
+    expect(listText).toContain("@corbits/example-tools");
     expect(listText).toContain("research");
 
     const choiceSelect = el.querySelectorAll(
@@ -608,14 +611,14 @@ describe("Agents section — Capabilities", () => {
     const toolOptions = Array.from(choiceSelect?.options ?? []).map((option) => option.value);
     // The already-pinned tool package is not offered again; the
     // not-yet-pinned one is.
-    expect(toolOptions).not.toContain("@corbits/github-tools");
-    expect(toolOptions).toContain("@corbits/granola-tools");
+    expect(toolOptions).not.toContain("@corbits/example-tools");
+    expect(toolOptions).toContain("@corbits/other-example-tools");
   });
 
   test("a static capability chip is a plain caption tint, not button chrome", async () => {
     const withCapabilities: AgentFixture = {
       ...MYRA,
-      toolPackagePins: [{ name: "@corbits/github-tools", version: "*" }],
+      toolPackagePins: [{ name: "@corbits/example-tools", version: "*" }],
       skills: [],
     };
     stubFetch({ agents: [withCapabilities] });
@@ -673,7 +676,7 @@ describe("Agents section — Capabilities", () => {
     let addedBody: unknown;
     const { refreshCalls } = stubFetch({
       capabilityInventory: {
-        toolPackages: [{ name: "@corbits/github-tools" }],
+        toolPackages: [{ name: "@corbits/example-tools" }],
         skills: [],
         models: [],
       },
@@ -696,7 +699,7 @@ describe("Agents section — Capabilities", () => {
     )[1] as HTMLSelectElement | null;
     act(() => {
       if (choiceSelect !== null) {
-        choiceSelect.value = "@corbits/github-tools";
+        choiceSelect.value = "@corbits/example-tools";
         choiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
       }
     });
@@ -711,19 +714,19 @@ describe("Agents section — Capabilities", () => {
 
     expect(addedBody).toEqual({
       kind: "toolPackage",
-      name: "@corbits/github-tools",
+      name: "@corbits/example-tools",
     });
     expect(refreshCalls).toEqual(["myra@acme.example"]);
     const badges = Array.from(el.querySelectorAll(".chat-settings-capability-list"))[0]
       ?.textContent;
-    expect(badges).toContain("@corbits/github-tools");
+    expect(badges).toContain("@corbits/example-tools");
   });
 
   test("a rejected capability add shows an inline error and never claims success", async () => {
     stubFetch({
       addCapabilityFails: true,
       capabilityInventory: {
-        toolPackages: [{ name: "@corbits/github-tools" }],
+        toolPackages: [{ name: "@corbits/example-tools" }],
         skills: [],
         models: [],
       },
@@ -738,7 +741,7 @@ describe("Agents section — Capabilities", () => {
     )[1] as HTMLSelectElement | null;
     act(() => {
       if (choiceSelect !== null) {
-        choiceSelect.value = "@corbits/github-tools";
+        choiceSelect.value = "@corbits/example-tools";
         choiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
       }
     });

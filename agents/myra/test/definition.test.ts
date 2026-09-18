@@ -9,7 +9,6 @@ import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 import {
   ASSISTANT_STEP_ID,
   ASSISTANT_SYSTEM_PROMPT,
-  ASSISTANT_TOOL_PACKAGE_PINS,
   ASSISTANT_WORKFLOW_ID,
   buildAssistantWorkflow,
   serializeAssistantWorkflow,

@@ -467,7 +467,7 @@
   padding: 0;
 }
 
-/* A static fact ("this agent has @corbits/github-tools") is not a button
+/* A static fact ("this agent has @corbits/example-tools") is not a button
    and should not wear button chrome — no border, a muted tint fill only,
    never the bordered-and-transparent look `Button variant="outline"` and
    `Badge tone="neutral"` share. */

@@ -17,9 +17,6 @@
       "path": "./packages/artifact-ui/tsconfig.src.json"
     },
     {
-      "path": "./packages/code-review/tsconfig.src.json"
-    },
-    {
       "path": "./packages/collections/tsconfig.src.json"
     },
     {
@@ -53,25 +50,10 @@
       "path": "./tools/catalog/tsconfig.src.json"
     },
     {
-      "path": "./tools/github/tsconfig.src.json"
-    },
-    {
-      "path": "./tools/granola/tsconfig.src.json"
-    },
-    {
       "path": "./tools/interaction/tsconfig.src.json"
     },
     {
-      "path": "./tools/linear/tsconfig.src.json"
-    },
-    {
-      "path": "./tools/reddit/tsconfig.src.json"
-    },
-    {
       "path": "./tools/skills/tsconfig.src.json"
-    },
-    {
-      "path": "./tools/web-search/tsconfig.src.json"
     },
     {
       "path": "./tools/workflow-authoring/tsconfig.src.json"

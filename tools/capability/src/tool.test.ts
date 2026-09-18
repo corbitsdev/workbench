@@ -54,7 +54,7 @@ test("the tool's description reads as a humane approval-card headline", () => {
 test("rejects a call missing a required field without calling out", async () => {
   const bundle = capabilityTools(testEnv());
   const result = await bundle.run(
-    callFor({ kind: "tool-package", name: "@corbits/github-tools" }),
+    callFor({ kind: "tool-package", name: "@corbits/example-tools" }),
     new AbortController().signal,
   );
   expect(result.isError).toBe(true);
@@ -77,7 +77,7 @@ test("on approval, calls the capabilities route with the calling agent's own def
     seenUrl = String(url);
     return new Response(
       JSON.stringify({
-        toolPackagePins: [{ name: "@corbits/github-tools" }],
+        toolPackagePins: [{ name: "@corbits/example-tools" }],
         skills: [],
       }),
     );
@@ -87,15 +87,15 @@ test("on approval, calls the capabilities route with the calling agent's own def
     const result = await bundle.run(
       callFor({
         kind: "tool-package",
-        name: "@corbits/github-tools",
-        why: "I need to open a pull request",
-        title: "GitHub tools",
+        name: "@corbits/example-tools",
+        why: "I need it",
+        title: "Example tools",
       }),
       new AbortController().signal,
     );
     expect(seenUrl).toBe("https://hub.example.com/api/workflow-capabilities/def_1/capabilities");
     expect(result.isError).toBeFalsy();
-    expect(result.content).toBe("Added @corbits/github-tools — I can use it from my next reply.");
+    expect(result.content).toBe("Added @corbits/example-tools — I can use it from my next reply.");
   } finally {
     globalThis.fetch = originalFetch;
   }
