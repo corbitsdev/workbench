@@ -77,7 +77,7 @@ export const CHAT_STRINGS = {
   composerHelpTitle: "Slash commands",
   composerHelpNote: "Not sent as a message",
   composerHelpClose: "Close",
-  runRoutineUnavailable: "Open Routines to create one",
+  runRoutineUnavailable: "Open Workflows to create one",
   unnamedWorkbench: "Untitled conversation",
   newWorkbenchTitle: NEW_WORKBENCH_LABEL,
   unnamedRun: "Untitled agent",

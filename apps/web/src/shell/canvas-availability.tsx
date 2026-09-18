@@ -45,7 +45,7 @@ export type RoutinePanelSubject = {
    * brand-new one (`routineId` omitted or `null`) — routines-page's own
    * "New routine"/"Edit" actions, "Make this a routine", the composer's
    * `/routine` command, and "New routine in this space" (:
-   * browsing/running existing routines moved to the global `/routines`
+   * browsing/running existing routines moved to the global `/workflows`
    * page, so this pane no longer has a list mode). */
   readonly routineId?: string | null;
   /** Seeds the Name/Instruction fields the instant a brand-new panel opens
@@ -60,7 +60,7 @@ export type RoutinePanelSubject = {
    * routine, and its own id is where the routine delivers. Carried through
    * list mode too, so "New routine" picked from the list still binds to
    * the workbench the panel was opened beside. Omitted only when there is no
-   * open conversation to bind to (e.g. a deliberate `/routines` visit),
+   * open conversation to bind to (e.g. a deliberate `/workflows` visit),
    * in which case the panel falls back to this workbench's own default
    * (Myra) workbench — never mints a new one. */
   readonly workbenchId?: string;
@@ -207,7 +207,7 @@ export function useOpenArtifactInCanvas(): (artifact: CanvasArtifactContent) => 
 }
 
 /** Opens (or replaces) the canvas's routine pane — the workbench header's
- * "New routine" action, the `/routines` page's own create button, and an
+ * "New routine" action, the `/workflows` page's own create button, and an
  * existing routine's own "Edit" hop all call this. `routineId: null` starts
  * a brand-new routine; a real id opens that routine for editing. */
 export function useOpenRoutineInCanvas(): (subject: RoutinePanelSubject) => void {

@@ -1,5 +1,5 @@
 // Library pageBand Upload is a cross-route action: the shell may fire it from
-// another path before LibraryPage is mounted. When already on /files, open
+// another path before LibraryPage is mounted. When already on /artifacts, open
 // the picker immediately; otherwise record a one-shot pending flag the page
 // consumes on mount. Keeps shell ↔ page coupling to this tiny module.
 

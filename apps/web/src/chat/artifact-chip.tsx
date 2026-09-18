@@ -7,7 +7,7 @@
 //
 // Opening a chip is a callback the host supplies (mirrors `onOpenProfile`
 // and `onOpenThread` in `timeline.tsx`): this package owns no router. A
-// second, artifactId-only affordance — "Open in Files" — hands the host a
+// second, artifactId-only affordance — "Open in Artifacts" — hands the host a
 // separate callback so it can navigate there directly; it only
 // ever renders when `artifactId` is present, since a blob-only part has no
 // Library row to deep-link to.
@@ -52,8 +52,8 @@ export function ArtifactChip({
         <button
           type="button"
           className="chat-artifact-chip-library"
-          aria-label="Open in Files"
-          title="Open in Files"
+          aria-label="Open in Artifacts"
+          title="Open in Artifacts"
           onClick={() => onOpenInLibrary(part)}
         >
           <FolderOpen />

@@ -111,7 +111,7 @@ function unmount(container: HTMLDivElement, root: Root): void {
 }
 
 describe("unauthenticated deep links redirect to /login with next=", () => {
-  for (const path of ["/files", "/agents", "/skills", "/insights"]) {
+  for (const path of ["/artifacts", "/agents", "/skills", "/insights"]) {
     test(`${path} bounces to /login?next=${encodeURIComponent(path)}`, async () => {
       const { container, root } = await mount(path, { kind: "signed-out" });
       expect(window.location.pathname).toBe("/login");
@@ -124,9 +124,9 @@ describe("unauthenticated deep links redirect to /login with next=", () => {
 
 describe("login round trip", () => {
   test("signing in from a next= redirect returns to that path", async () => {
-    const { container, root } = await mount("/files", { kind: "signed-out" });
+    const { container, root } = await mount("/artifacts", { kind: "signed-out" });
     expect(window.location.pathname).toBe("/login");
-    expect(window.location.search).toBe("?next=%2Ffiles");
+    expect(window.location.search).toBe("?next=%2Fartifacts");
 
     // Drives the exact `handleSignedIn` wiring `main.tsx`'s `Root` gives
     // `AuthScreen` — reading `next=` off the live URL — without simulating
@@ -135,12 +135,12 @@ describe("login round trip", () => {
       capturedHandleSignedIn?.(user);
     });
     await flush();
-    expect(window.location.pathname).toBe("/files");
+    expect(window.location.pathname).toBe("/artifacts");
     unmount(container, root);
   });
 
   test("already-authed visits to /login bounce home", async () => {
-    const { container, root } = await mount("/login?next=%2Ffiles", {
+    const { container, root } = await mount("/login?next=%2Fartifacts", {
       kind: "signed-in",
       user,
     });
@@ -151,7 +151,7 @@ describe("login round trip", () => {
 
 describe("authed deep links render their own page", () => {
   const cases: readonly [string, string][] = [
-    ["/files", "Files"],
+    ["/artifacts", "Artifacts"],
     ["/agents", "Agents"],
     ["/skills", "Skills"],
     ["/insights", "Insights"],
@@ -180,7 +180,7 @@ describe("authed deep links render their own page", () => {
 
 describe("back and forward move through real history", () => {
   test("three navigations, then back/back/forward land on the right URL", async () => {
-    const { container, root } = await mount("/files", {
+    const { container, root } = await mount("/artifacts", {
       kind: "signed-in",
       user,
     });
@@ -206,7 +206,7 @@ describe("back and forward move through real history", () => {
       window.history.back();
     });
     await flush();
-    expect(window.location.pathname).toBe("/files");
+    expect(window.location.pathname).toBe("/artifacts");
 
     await act(async () => {
       window.history.forward();

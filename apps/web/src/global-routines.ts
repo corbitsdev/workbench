@@ -1,6 +1,6 @@
 // Scheduled workflow definitions across every bench the signed-in account
-// belongs to — the aggregation both Routines surfaces read from: the
-// roster at `/routines` and the detail page at `/routines/<definitionId>`.
+// belongs to — the aggregation both Workflows surfaces read from: the
+// roster at `/workflows` and the detail page at `/workflows/<definitionId>`.
 import { toast } from "@corbits/react-ui";
 import { reportError } from "@corbits/error-sink";
 import { useMemo } from "react";
@@ -10,7 +10,7 @@ import type { APIQuery } from "@/lib/api-query";
 
 import type { Principal } from "./api";
 import { isBenchMembership, useBench } from "./bench-context";
-import { ROUTINES_PATH_PREFIX } from "./path-ids";
+import { WORKFLOWS_PATH_PREFIX } from "./path-ids";
 import { tenantKeys } from "./query-client";
 import {
   listScheduledWorkflows,
@@ -28,7 +28,7 @@ export type GlobalRoutineRow = {
 };
 
 export function routineDetailPath(definitionId: string): string {
-  return `${ROUTINES_PATH_PREFIX}/${encodeURIComponent(definitionId)}`;
+  return `${WORKFLOWS_PATH_PREFIX}/${encodeURIComponent(definitionId)}`;
 }
 
 function useMemberBenches(): {

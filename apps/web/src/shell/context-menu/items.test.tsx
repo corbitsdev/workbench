@@ -174,7 +174,7 @@ describe("shellContextMenuFor: routine", () => {
     const navigate = mock((_to: string) => undefined);
     const menu = shellContextMenuFor(target, actions({ navigate }));
     findItem(menu.entries, "open").onSelect();
-    expect(navigate).toHaveBeenCalledWith("/routines/rt-1");
+    expect(navigate).toHaveBeenCalledWith("/workflows/rt-1");
   });
 
   // `runScheduledWorkflowNow` no longer calls a hub route at all
@@ -255,7 +255,7 @@ describe("shellContextMenuFor: artifact", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      `${window.location.origin}/files/a/art_1\n${window.location.origin}/files/a/art_2`,
+      `${window.location.origin}/artifacts/a/art_1\n${window.location.origin}/artifacts/a/art_2`,
     );
     expect(toastMock).toHaveBeenCalledWith("2 links copied");
   });

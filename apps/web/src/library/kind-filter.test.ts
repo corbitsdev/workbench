@@ -9,17 +9,17 @@ import {
 
 describe("libraryKindSegmentFromPath", () => {
   test("returns empty for the bare library path", () => {
-    expect(libraryKindSegmentFromPath("/files")).toBe("");
-    expect(libraryKindSegmentFromPath("/files/")).toBe("");
+    expect(libraryKindSegmentFromPath("/artifacts")).toBe("");
+    expect(libraryKindSegmentFromPath("/artifacts/")).toBe("");
   });
 
-  test("returns the first segment under /files", () => {
-    expect(libraryKindSegmentFromPath("/files/document")).toBe("document");
-    expect(libraryKindSegmentFromPath("/files/pdf/extra")).toBe("pdf");
+  test("returns the first segment under /artifacts", () => {
+    expect(libraryKindSegmentFromPath("/artifacts/document")).toBe("document");
+    expect(libraryKindSegmentFromPath("/artifacts/pdf/extra")).toBe("pdf");
   });
 
-  test("returns empty for a path outside /files", () => {
-    expect(libraryKindSegmentFromPath("/routines")).toBe("");
+  test("returns empty for a path outside /artifacts", () => {
+    expect(libraryKindSegmentFromPath("/workflows")).toBe("");
   });
 });
 
@@ -78,7 +78,7 @@ describe("artifactMatchesLibraryKindSegment", () => {
 describe("libraryArtifactPath / libraryArtifactIdFromPath", () => {
   test("round-trips an artifact id through the deep link", () => {
     const path = libraryArtifactPath("art_1");
-    expect(path).toBe("/files/a/art_1");
+    expect(path).toBe("/artifacts/a/art_1");
     expect(libraryArtifactIdFromPath(path)).toBe("art_1");
   });
 
@@ -88,17 +88,17 @@ describe("libraryArtifactPath / libraryArtifactIdFromPath", () => {
   });
 
   test("is null for a plain kind-nav path, never mistaken for a kind segment", () => {
-    expect(libraryArtifactIdFromPath("/files/document")).toBeNull();
-    expect(libraryArtifactIdFromPath("/files")).toBeNull();
-    expect(libraryArtifactIdFromPath("/routines")).toBeNull();
+    expect(libraryArtifactIdFromPath("/artifacts/document")).toBeNull();
+    expect(libraryArtifactIdFromPath("/artifacts")).toBeNull();
+    expect(libraryArtifactIdFromPath("/workflows")).toBeNull();
   });
 
   test("is null when the artifact segment is empty", () => {
-    expect(libraryArtifactIdFromPath("/files/a/")).toBeNull();
+    expect(libraryArtifactIdFromPath("/artifacts/a/")).toBeNull();
   });
 
   test("a malformed escape reads as no selection, not a throw", () => {
-    expect(() => libraryArtifactIdFromPath("/files/a/%E0%A4%A")).not.toThrow();
-    expect(libraryArtifactIdFromPath("/files/a/%E0%A4%A")).toBeNull();
+    expect(() => libraryArtifactIdFromPath("/artifacts/a/%E0%A4%A")).not.toThrow();
+    expect(libraryArtifactIdFromPath("/artifacts/a/%E0%A4%A")).toBeNull();
   });
 });

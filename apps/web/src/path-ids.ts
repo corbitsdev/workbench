@@ -13,9 +13,8 @@ import { decodedOrNull } from "@corbits/url-path";
 export const SETTINGS_PATH_PREFIX = "/settings";
 export const AGENTS_PATH_PREFIX = "/agents";
 export const SKILLS_PATH_PREFIX = "/skills";
-export const FILES_PATH_PREFIX = "/files";
+export const ARTIFACTS_PATH_PREFIX = "/artifacts";
 export const TOOLS_PATH_PREFIX = "/tools";
-export const ROUTINES_PATH_PREFIX = "/routines";
 export const WORKFLOWS_PATH_PREFIX = "/workflows";
 export const INSIGHTS_PATH_PREFIX = "/insights";
 export const INSIGHTS_RUNS_PATH = `${INSIGHTS_PATH_PREFIX}/runs`;
@@ -57,22 +56,11 @@ export function skillIdFromPath(path: string): string | null {
   return entityIdFromTopLevelPath(path, SKILLS_PATH_PREFIX);
 }
 
-/** The segment `/routines/<segment>` addresses: a routine id (the
+/** The segment `/workflows/<segment>` addresses: a routine id (the
  * canonical address) or a name-derived slug the detail route resolves and
  * redirects to the id. `null` for the bare roster path, a path outside
- * Routines, or a segment whose percent-escapes cannot be decoded. */
+ * Workflows, or a segment whose percent-escapes cannot be decoded. */
 export function routineSegmentFromPath(path: string): string | null {
-  return entityIdFromTopLevelPath(path, ROUTINES_PATH_PREFIX);
-}
-
-/** The workflow definition id `/workflows/<id>` addresses — `null` for the
- * bare prefix or a path outside it. A workflow definition has no slug of
- * its own, so — like a routine — it is addressed by its opaque id.
- * since the detail page now reads stock's `workflow_definition`
- * list directly, this is `workflowDefinition.id`, not `asset.id` (the
- * former Workbench-composed detail route's own address space) — the
- * export name is kept to limit the diff. */
-export function workflowDefinitionAssetIdFromPath(path: string): string | null {
   return entityIdFromTopLevelPath(path, WORKFLOWS_PATH_PREFIX);
 }
 
