@@ -11,9 +11,9 @@ import { configureSync, resetSync } from "@intx/log";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { makeErrorEnvelope, parseErrorEnvelope } from "@corbits/error-sink";
 
-import { MyraAgentDefinitionDraftingUnavailableError } from "../src/agent-definition-drafting";
-import { createAgentDefinitionDraftRoutes } from "../src/agent-definition-draft-routes";
-import { OneShotRunUnreachableError } from "../src/one-shot-prompt";
+import { MyraAgentDefinitionDraftingUnavailableError } from "./agent-definition-drafting";
+import { createAgentDefinitionDraftRoutes } from "./agent-definition-draft-routes";
+import { OneShotRunUnreachableError } from "./one-shot-prompt";
 
 const TENANT = {
   id: "tnt_1",

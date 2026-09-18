@@ -17,11 +17,11 @@ import { createDB, dropSchema, runMigrations, schema } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
 import { CORBITS_TOOLS_REGISTRY } from "../src/tool-registry";
 
-import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../test/database-url";
-import { dbGate } from "../../../test/db-gate";
-import { CapabilityOutOfInventoryError } from "../src/capability-inventory";
-import { resolvePinnedVersion } from "../src/tool-package-version";
+import { dbTargetFromUrl } from "../../scripts/db-setup";
+import { e2eDatabaseUrl } from "../lib/database-url";
+import { dbGate } from "../lib/db-gate";
+import { CapabilityOutOfInventoryError } from "../../packages/agent-directory/src/capability-inventory";
+import { resolvePinnedVersion } from "../../packages/agent-directory/src/tool-package-version";
 
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);

@@ -45,6 +45,9 @@
     "@intx/hub-sessions": "workspace:*",
     "@intx/authz": "0.3.0",
     "@intx/harness": "workspace:*",
+    "@intx/hub-common": "0.3.0",
+    "@corbits/tool-registry-publish": "workspace:*",
+    "hono": "catalog:",
     "drizzle-orm": "catalog:",
     "postgres": "catalog:"
   },

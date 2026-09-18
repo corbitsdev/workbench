@@ -7,12 +7,12 @@ import {
   AGENT_DEFINITION_ENTRY_PATH,
   agentDefinitionSourceTree,
   parseAgentDefinitionEntry,
-} from "../src/definition-asset";
+} from "./definition-asset";
 import {
   buildAgentDefinitionWorkflow,
   reindexPinnedSkills,
   serializeAgentDefinitionWorkflow,
-} from "../src/agent-workflow";
+} from "./agent-workflow";
 
 /** The two files a definition's asset tree carries, in render order. */
 export const SOURCE_TREE_PATHS = ["package.json", AGENT_DEFINITION_ENTRY_PATH];

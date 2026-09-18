@@ -15,17 +15,17 @@ import {
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
   readPinnedSkillNames,
-} from "../src/agent-workflow";
+} from "./agent-workflow";
 import {
   createWorkflowCapabilityRoutes,
   type WorkflowCapabilityRunScope,
   type WorkflowRunAuthenticator,
-} from "../src/workflow-capability-routes";
-import { agentDefinitionSourceTree, AGENT_DEFINITION_ENTRY_PATH } from "../src/definition-asset";
-import type { PinnedSkillIndexResolver } from "../src/routes";
+} from "./workflow-capability-routes";
+import { agentDefinitionSourceTree, AGENT_DEFINITION_ENTRY_PATH } from "./definition-asset";
+import type { PinnedSkillIndexResolver } from "./routes";
 import { definitionFrom, SOURCE_TREE_PATHS } from "./source-tree";
-import type { CapabilityInventoryProvider } from "../src/capability-inventory";
-import { CORBITS_TOOLS_REGISTRY } from "../src/tool-registry";
+import type { CapabilityInventoryProvider } from "./capability-inventory";
+import { CORBITS_TOOLS_REGISTRY } from "./tool-registry";
 
 const TENANT_ID = "tnt_1";
 const RUN_ID = "run_1";

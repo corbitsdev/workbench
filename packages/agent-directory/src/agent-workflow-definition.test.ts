@@ -14,7 +14,7 @@ import {
   serializeAgentDefinitionWorkflow,
   withAgentModel,
   withoutAgentModel,
-} from "../src/agent-workflow";
+} from "./agent-workflow";
 
 const INPUT = {
   handle: "research-buddy",

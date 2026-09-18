@@ -33,12 +33,12 @@ import { createAgentRepoStore, createAssetService } from "@intx/hub-sessions";
 import { generateKeyPair } from "@intx/crypto";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 
-import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { createAgentDefinitionRoutes } from "../src/routes";
-import type { PinnedSkillIndexResolver } from "../src/routes";
-import type { DefinitionAssetHistory } from "../src/definition-history";
-import type { CapabilityInventoryProvider } from "../src/capability-inventory";
-import { dbGate } from "../../../test/db-gate";
+import { dbTargetFromUrl } from "../../scripts/db-setup";
+import { createAgentDefinitionRoutes } from "../../packages/agent-directory/src/routes";
+import type { PinnedSkillIndexResolver } from "../../packages/agent-directory/src/routes";
+import type { DefinitionAssetHistory } from "../../packages/agent-directory/src/definition-history";
+import type { CapabilityInventoryProvider } from "../../packages/agent-directory/src/capability-inventory";
+import { dbGate } from "../lib/db-gate";
 
 const databaseUrl = process.env["DATABASE_URL"];
 const describeIfDb = dbGate(databaseUrl, import.meta.path);

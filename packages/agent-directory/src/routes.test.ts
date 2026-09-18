@@ -22,21 +22,21 @@ import {
   serializeAgentDefinitionWorkflow,
   withAgentToolPackagePin,
   readPinnedSkillNames,
-} from "../src/agent-workflow";
+} from "./agent-workflow";
 import {
   agentDefinitionSourceTree,
   AGENT_DEFINITION_ENTRY_PATH,
   readAgentDefinitionWorkflowJson,
   RetiredWorkflowEnvelopeError,
-} from "../src/definition-asset";
-import { createAgentDefinitionRoutes, SkillIndexResolutionError } from "../src/routes";
-import type { PinnedSkillIndexResolver } from "../src/routes";
+} from "./definition-asset";
+import { createAgentDefinitionRoutes, SkillIndexResolutionError } from "./routes";
+import type { PinnedSkillIndexResolver } from "./routes";
 import {
   createWorkflowSkillPinRoutes,
   type WorkflowRunAuthenticator,
-} from "../src/workflow-skill-pin-routes";
-import type { DefinitionAssetHistory } from "../src/definition-history";
-import type { CapabilityInventoryProvider } from "../src/capability-inventory";
+} from "./workflow-skill-pin-routes";
+import type { DefinitionAssetHistory } from "./definition-history";
+import type { CapabilityInventoryProvider } from "./capability-inventory";
 import { definitionFrom, SOURCE_TREE_PATHS, storedDefinitionBytesWithSkills } from "./source-tree";
 
 /** A `readAssetBlob` that always answers the definition's entry module

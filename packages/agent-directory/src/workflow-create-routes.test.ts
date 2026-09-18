@@ -13,14 +13,14 @@ import type { DB } from "@intx/db";
 import {
   createWorkflowAgentCreateRoutes,
   type CreateWorkflowAgentCreateRoutesDeps,
-} from "../src/workflow-create-routes";
+} from "./workflow-create-routes";
 import type {
   WorkflowCapabilityRunScope,
   WorkflowRunAuthenticator,
-} from "../src/workflow-capability-routes";
-import type { PinnedSkillIndexResolver } from "../src/routes";
-import type { CapabilityInventoryProvider } from "../src/capability-inventory";
-import { CORBITS_TOOLS_REGISTRY } from "../src/tool-registry";
+} from "./workflow-capability-routes";
+import type { PinnedSkillIndexResolver } from "./routes";
+import type { CapabilityInventoryProvider } from "./capability-inventory";
+import { CORBITS_TOOLS_REGISTRY } from "./tool-registry";
 import { definitionFrom, SOURCE_TREE_PATHS } from "./source-tree";
 
 const TENANT_ID = "tnt_1";

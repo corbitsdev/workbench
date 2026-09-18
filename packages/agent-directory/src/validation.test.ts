@@ -5,7 +5,7 @@ import {
   CreateAgentDefinitionInput,
   UpdateAgentSkillsInput,
   UpdateDefinitionStatusInput,
-} from "../src/validation";
+} from "./validation";
 
 const VALID = {
   name: "Research Buddy",

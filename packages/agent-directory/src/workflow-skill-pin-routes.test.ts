@@ -14,14 +14,14 @@ import {
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
   readPinnedSkillNames,
-} from "../src/agent-workflow";
+} from "./agent-workflow";
 import {
   createWorkflowSkillPinRoutes,
   type WorkflowSkillPinRunScope,
   type WorkflowRunAuthenticator,
-} from "../src/workflow-skill-pin-routes";
-import { agentDefinitionSourceTree, AGENT_DEFINITION_ENTRY_PATH } from "../src/definition-asset";
-import type { PinnedSkillIndexResolver } from "../src/routes";
+} from "./workflow-skill-pin-routes";
+import { agentDefinitionSourceTree, AGENT_DEFINITION_ENTRY_PATH } from "./definition-asset";
+import type { PinnedSkillIndexResolver } from "./routes";
 import { definitionFrom, SOURCE_TREE_PATHS, storedDefinitionBytesWithSkills } from "./source-tree";
 
 const TENANT_ID = "tnt_1";

@@ -21,9 +21,12 @@ import { eq } from "drizzle-orm";
 import { createDB, schema, type DB } from "@intx/db";
 import { generateId } from "@intx/hub-common";
 import { resolveRunSessionId } from "@intx/hub-sessions";
-import { dbGate } from "../../../test/db-gate";
+import { dbGate } from "../lib/db-gate";
 
-import { ensureRunSession, recordAgentSessionAtProvision } from "../src/launch/agent-session";
+import {
+  ensureRunSession,
+  recordAgentSessionAtProvision,
+} from "../../packages/workflows/src/launch/agent-session";
 
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
