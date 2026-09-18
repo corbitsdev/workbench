@@ -34,10 +34,8 @@ upstream first, then gets re-vendored.
 Deployment mechanics are not yet settled:
 
 - Target hosting platform and process topology (one hub, how many
-  sidecars, where they run) are undecided.
-- The sidecar provisioner an install uses in production (`process`,
-  `docker`, or `e2b`) is a per-deployment choice — see
-  [docs/sidecar-provisioners.md](docs/sidecar-provisioners.md).
+  sidecars, where they run) are undecided. Sidecars run as child
+  processes of the hub; there is no other provisioner backend.
 - Secrets management for `CREDENTIAL_ENCRYPTION_KEY` and
   `PRINCIPAL_KEY_ENCRYPTION_KEY` in a real deployment is undecided.
 - Migration/rollout ordering across `hub`, `sidecar`, and `web` on deploy

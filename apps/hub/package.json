@@ -48,7 +48,6 @@
     "arktype": "catalog:",
     "better-auth": "catalog:",
     "drizzle-orm": "catalog:",
-    "e2b": "^2.36.1",
     "hono": "catalog:",
     "postgres": "catalog:",
     "simple-icons": "^16.28.0"

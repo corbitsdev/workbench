@@ -107,7 +107,5 @@ passing; rebuilding coverage for the area it covered happens under CL-8150.
   disagrees with it is wrong until a review changes the doc
 - [docs/GLOSSARY.md](docs/GLOSSARY.md) — product-term to platform-term mapping
 - [docs/local-dev.md](docs/local-dev.md) — running fully local with Ollama
-- [docs/sidecar-provisioners.md](docs/sidecar-provisioners.md) — choosing
-  and configuring where sidecars run
 - [docs/package-migrations.md](docs/package-migrations.md) — how a
   package's own database migrations are written and applied
