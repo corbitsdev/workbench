@@ -24,6 +24,7 @@ import { WORKBENCH_PATH_PREFIX } from "./workbench-path";
 import { NEW_WORKBENCH_PATH } from "./routes";
 import { NEW_CHAT_PATH } from "./chat-path";
 import { requestLibraryUpload } from "./library-upload";
+import { openFirstRunTour } from "./shell/first-run-tour-store";
 
 export const NEW_SKILL_EVENT = "workbench:skills:create";
 
@@ -44,7 +45,8 @@ export type ActionCommandId =
   | "toggle-theme"
   | "close-canvas"
   | "talk-to-myra"
-  | "go-workbenches";
+  | "go-workbenches"
+  | "take-tour";
 
 export type ActionCommand = {
   readonly id: ActionCommandId;
@@ -83,6 +85,11 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
     id: "go-workbenches",
     title: "Go to workbenches",
     subtitle: "Home · conversation list",
+  },
+  {
+    id: "take-tour",
+    title: "Take the tour",
+    subtitle: "Guided walkthrough of the shell",
   },
 ];
 
@@ -140,6 +147,10 @@ export async function runActionCommand(
     }
     case "go-workbenches": {
       ctx.navigate(WORKBENCH_PATH_PREFIX);
+      return;
+    }
+    case "take-tour": {
+      openFirstRunTour();
       return;
     }
   }

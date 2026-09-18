@@ -1,21 +1,25 @@
-// A one-time guided tour of the shell, shown the first time a person lands
-// here after setup. "Seen" is a localStorage flag keyed by user id (mirrors
+// A guided tour of the shell, started only by explicit user action (a
+// command or menu item calling `openFirstRunTour`) — never automatically on
+// landing, which used to drop its overlay right over the chat `/` redirects
+// onto. "Seen" is a localStorage flag keyed by user id (mirrors
 // `command-palette-recents.ts`'s defensive access) so a shared browser
-// profile never re-shows it for the wrong account, and finishing or
-// skipping both mark it seen for good — there is no "remind me later".
+// profile never re-shows it as "new" for the wrong account, and finishing or
+// skipping both mark it seen — there is no "remind me later".
 
 import Joyride, { ACTIONS, type CallBackProps, STATUS, type Step } from "react-joyride";
-import { useState } from "react";
 import { reportError } from "@corbits/error-sink";
+import { closeFirstRunTour, useFirstRunTourOpen } from "./first-run-tour-store";
 
 const STORAGE_PREFIX = "workbench.first-run-tour-seen";
 
-function hasSeenTour(userId: string): boolean {
+/** Used only to label the menu item that opens the tour ("Take the tour" vs
+ * "Replay tour") — no longer gates whether the tour runs. */
+export function hasSeenTour(userId: string): boolean {
   try {
     return window.localStorage.getItem(`${STORAGE_PREFIX}:${userId}`) === "true";
   } catch (error) {
     reportError(error, { operation: "first_run_tour_read" });
-    return true; // Storage disabled: never nag with a tour that can't remember itself.
+    return true; // Storage disabled: default to the less presumptuous label.
   }
 }
 
@@ -51,11 +55,12 @@ const STEPS: readonly Step[] = [
 ];
 
 /**
- * Mounted once from `AppShell`. Renders nothing once the tour has already
- * been seen for this user, so it costs nothing on every later visit.
+ * Mounted once from `AppShell`. Renders nothing until `openFirstRunTour` is
+ * called — never on its own, so a fresh landing on `/` never drops this
+ * overlay over the chat the person was just redirected onto.
  */
 export function FirstRunTour({ userId }: { readonly userId: string }) {
-  const [run, setRun] = useState(() => !hasSeenTour(userId));
+  const run = useFirstRunTourOpen();
 
   // Dismissing has to unmount Joyride, not just remember the dismissal:
   // a running Joyride keeps two portals appended to `document.body` and
@@ -65,14 +70,14 @@ export function FirstRunTour({ userId }: { readonly userId: string }) {
     // The tooltip's close (X) button fires action "close" without ever
     // moving status to FINISHED or SKIPPED, so it has to be treated as a
     // dismissal in its own right — otherwise closing the tour this way
-    // never persists and it replays on the next mount.
+    // never closes it.
     if (
       data.status === STATUS.FINISHED ||
       data.status === STATUS.SKIPPED ||
       data.action === ACTIONS.CLOSE
     ) {
       markTourSeen(userId);
-      setRun(false);
+      closeFirstRunTour();
     }
   }
 

@@ -474,11 +474,16 @@ export type ChatThread = {
   readonly messages: readonly ChatMessage[];
 };
 
-/** The chat title is always the person's own opening turn — never an
- * agent reply — so a chat never titles itself off what the agent said. */
-function chatTitle(turns: readonly MailTurn[], agentName: string): string {
+/** A chat is always titled by its agent's display name — never by mail
+ * metadata, which can be a run address or other addressing detail nobody
+ * should have to read. `agentName` is `undefined` only when the agent
+ * couldn't be resolved at all, in which case the title falls back to the
+ * person's own opening turn (never an agent reply, so a chat never titles
+ * itself off what the agent said). */
+export function chatTitle(turns: readonly MailTurn[], agentName: string | undefined): string {
+  if (agentName !== undefined) return agentName;
   const first = turns.find((turn) => turn.author === "me");
-  if (first === undefined) return agentName;
+  if (first === undefined) return "Untitled chat";
   return first.subject.length > 0 ? first.subject : first.body.slice(0, 60);
 }
 
@@ -504,11 +509,12 @@ export async function listChats(tenantId: string): Promise<readonly ChatSummary[
   }
   return [...byAgent.entries()]
     .map(([agentId, rows]) => {
-      const agentName = agents.find((agent) => agent.id === agentId)?.name ?? agentId;
+      const resolvedName = agents.find((agent) => agent.id === agentId)?.name;
+      const agentName = resolvedName ?? agentId;
       const newest = rows[rows.length - 1]!;
       return {
         id: agentId,
-        title: chatTitle(rows, agentName),
+        title: chatTitle(rows, resolvedName),
         agentName,
         preview: newest.body.slice(0, 80),
         lastActivityAt: newest.at,
