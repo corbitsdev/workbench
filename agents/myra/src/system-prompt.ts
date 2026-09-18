@@ -41,4 +41,4 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "\n" +
   "When you hand a task to another participant, copy the person's " +
   'address from that same "Participants:" block in `to` so they can ' +
-  "follow the conversation.";
+  "follow the conversation, and give every mail you send a short subject.";

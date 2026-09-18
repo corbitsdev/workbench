@@ -29,7 +29,7 @@ describe("appendRoster / stripRoster", () => {
     expect(withRoster).toBe(
       "Please pass this to the scribe.\n\n" +
         "Participants:\nSawyer <usr_sawyer@room.example>\nScribe <run_abc@room.example>\n\n" +
-        "Copy usr_sawyer@room.example in `to` on any mail you send another participant, so they can follow along.",
+        "Copy usr_sawyer@room.example in `to` on any mail you send another participant, so they can follow along, and give every mail a short subject.",
     );
     expect(stripRoster(withRoster)).toBe(body);
   });
@@ -41,7 +41,7 @@ describe("appendRoster / stripRoster", () => {
       { name: "Scribe", address: "run_abc@room.example", kind: "agent" },
     ]);
     expect(withRoster).toContain(
-      "Copy usr_sawyer@room.example, usr_alex@room.example in `to` on any mail you send another participant, so they can follow along.",
+      "Copy usr_sawyer@room.example, usr_alex@room.example in `to` on any mail you send another participant, so they can follow along, and give every mail a short subject.",
     );
   });
 });
