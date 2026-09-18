@@ -1445,12 +1445,6 @@ export function createSidecarSubstrateFactory(
         onEvent,
       })(req);
 
-    // The operator gate at deploy time (capability walk approval) and this
-    // runtime grant check (per-step snapshot pushed over control IPC) are
-    // complementary: the walk bounds the toolset, the snapshot decides which
-    // of those the agent may invoke. A fresh invoker is built per invocation
-    // so the adapter subscribes to THIS step's onEvent; the warmCache, when
-    // supplied, is the only warm-keep wiring this binding needs.
     // Mirrors the warm agent's conversation to the substrate after each
     // send settles; absent for a multi-step deploy (no durable registry).
     const onRunBoundary: ((key: string) => Promise<void>) | undefined =
@@ -1469,19 +1463,8 @@ export function createSidecarSubstrateFactory(
           }
         : undefined;
 
-    // Connector reply drain (design §3c). When the deployment is
-    // warm-kept, drive the warm agent's outbound replies through the shared
-    // connector reply drain: on each `connector.reply` the agent emits,
-    // compose a threaded reply from the durable store's connector thread,
-    // send it through the outbound bridge (`bridge.submit`, the same signed-
-    // send path the agent's own supervisor-backed transport uses), then
-    // advance the thread from the receipt. Established once per warm agent
-    // over its lifetime stream; the returned drain handle carries the lifetime
-    // `done` promise the step-invoker folds into the warm entry so eviction
-    // drains it, plus the per-turn settle barrier the warm step gates each
-    // reply turn on. The key is the step identity, the same key the durable
-    // store is filed under. Absent for a multi-step deploy (no durable
-    // registry).
+    // Composes each connector.reply through the durable thread and sends it
+    // over the same signed-send path the agent's own transport uses.
     const driveReplies:
       | ((key: string, stream: AgentEventStream) => ConnectorReplyDrain)
       | undefined =
@@ -1491,14 +1474,7 @@ export function createSidecarSubstrateFactory(
               stream,
               composeReply: () => durableConversation.get(key).composeReply(),
               send: (message) => env.outboundMailBridge.submit(env.spawn.mailboxAddress, message),
-              // Build the full RFC 5322 References chain from the deployment's
-              // committed mailbox: locate the parent by its Message-Id and
-              // return its own References plus its Message-Id, so a reply
-              // carries the whole conversational ancestry rather than a
-              // single element. The reader opens a fresh committed snapshot,
-              // so a parent committed just before this reply is visible. A
-              // parent miss (the first reply on a fresh thread, a malformed
-              // id) returns undefined and the transport derives [inReplyTo].
+              // A parent miss returns undefined and the transport derives [inReplyTo].
               resolveReferences: (inReplyTo) =>
                 resolveMailboxReferences(transportInbound.reader, inReplyTo),
               onReplySent: (receipt) => durableConversation.get(key).onReplySent(receipt),
@@ -1516,11 +1492,7 @@ export function createSidecarSubstrateFactory(
     ) =>
       createWorkflowStepInvoker({
         workflowAuthorize: authorize,
-        // Combine the per-run credential wiring (the live material cell and
-        // the step-grants resolver, ridden in from the run child) with the
-        // sidecar-static provider registry, so `buildStepEnv` attaches a
-        // complete credential context and the agentFactory can assemble each
-        // bundle's consumer-scoped `credentials` capability.
+        // Combines the per-run credential wiring with the sidecar-static providers.
         buildEnv: (buildReq) =>
           buildStepEnv(buildReq, sourcesRef, {
             materialCell: credentialWiring.materialRef,
@@ -1538,29 +1510,11 @@ export function createSidecarSubstrateFactory(
       })(req);
 
     const evaluateGrantsAdapter: GrantEvaluator = async ({ resource, action, stepId, grants }) => {
-      // Merge the step's pinned-tool floor grants (derived and recorded
-      // by the env builder from the step's materialized factories) under
-      // the credentials snapshot's grants. The floor supplies the
-      // `tool:<name>` authority a pinned tool never got from the hub's
-      // capability walk. It is ADDITIVE: `evaluateGrants` ranks by
-      // specificity then effect, so a declared `deny` (priority 2) still
-      // beats the derived `ask`/`allow` and an explicit denial is
-      // honored -- the floor only raises the minimum authority to the
-      // tool's static mark.
-      //
-      // A missing floor entry (`?? []`) contributes no rows: this can
-      // only ever fail MORE closed (a pinned tool the hub also did not
-      // grant stays denied, the pre-#68 behavior), never open a hole, so
-      // it is safe as an additive default. The floor is keyed by base
-      // step id, so a `map` iteration's scoped id resolves to its base
-      // step's floor.
+      // Additive: evaluateGrants ranks by specificity then effect, so a
+      // declared deny still beats the derived ask/allow floor. A missing
+      // entry (?? []) can only fail more closed, never open a hole.
       const floor = toolMarkFloorByStep.get(baseStepId(stepId)) ?? [];
       const result = await evaluateGrants(
-        // The credentialsSnapshot's grants are typed as
-        // `readonly unknown[]` so the workflow-host package does not
-        // depend on the sidecar's grant-rule grammar. The sidecar owns
-        // that grammar; the cast surfaces here at the boundary where
-        // the typed grant shape is known.
         // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- credentialsSnapshot.steps[*].grants is typed unknown[] at the workflow-host boundary; the sidecar owns the GrantRule grammar
         [...(grants as readonly GrantRule[]), ...floor],
         resource,
@@ -1580,57 +1534,27 @@ export function createSidecarSubstrateFactory(
       principal,
       scheduler,
       invokeStep: childInvokeStep,
-      // Plaintext body sources decrypted sidecar-side from the run record; each
-      // body path resolves its own table from here by definition id.
       bodySources: parseBodyInferenceSources(validated.WORKFLOW_BODY_SOURCES),
       dataDir: validated.SIDECAR_DATA_DIR,
       evaluateGrants: evaluateGrantsAdapter,
-      // Shared with the top level's `buildStepEnv`: a spawned child's build
-      // combines it with the run's live material and capped grants.
       credentialProviders,
-      // The shared closure the child re-walks to cap its inherited grants at
-      // its declared capabilities. Source-ref only, so always present here.
+      // Source-ref only, so always present here.
       closurePackageDir: env.spawn.closurePackageDir,
     };
-    // Terminal childWorkflow executor. `run-child` builds the in-memory
-    // resolver from this plus the lifted-body map it extracts after loading
-    // the parent's re-verified definition, so an owned inline child spawns
-    // with no on-disk asset read.
+    // run-child builds the in-memory resolver from this plus the lifted-body
+    // map, so an owned inline child spawns with no on-disk asset read.
     const runChild = createSidecarRunChild(childRunDeps);
 
-    // An onTrigger section runs each event's body as a suspendable child.
-    // Source-ref is the only deploy lineage: `run-child` builds the in-memory
-    // body resolver from this raw executor plus the lifted-body map it extracts
-    // after re-evaluating the parent's closure, so a body resolves in-process
-    // with no on-disk read and no separate per-body re-verify (the parent's
-    // re-verify already covers every inline body).
+    // A body resolves in-process with no on-disk read and no separate
+    // per-body re-verify, since the parent's re-verify covers every inline body.
     const runSuspendableChild = createSidecarSpawnSuspendableChild(childRunDeps);
 
-    // Per-run scratch reclamation for the cold (multi-step) path. The
-    // run-loop fires this once each run reaches its terminal status; it
-    // drops the run's whole `workflow-step-state/<repoId>/runs/<runId>/`
-    // subtree (every step/attempt the run produced), which nothing
-    // reopens after terminal (resume reads the substrate run log, not
-    // local step state).
-    //
-    // Parked-step safety: reclamation keys on the RUN's terminal status,
-    // and a step parked on a signal (`awaiting-signal`) keeps the run
-    // non-terminal, so this never fires while a suspended step's
-    // `attempt-N` store still holds a live pending-op the resume path must
-    // reopen. Any future per-STEP reclamation must preserve that invariant
-    // -- it MUST exclude an `awaiting-signal` step, whose `attempt-N` store
-    // is the exact store a later crash-resume reopens to rehydrate the
-    // gate; dropping it would reproduce the empty-store hang the
-    // resume-attempt recovery closes.
-    //
-    // Built only for the cold path: a warm deploy
-    // roots its single agent's scratch per agent under the disjoint
-    // `warm/` sub-root (reclaimed on undeploy), and the run-loop's own
-    // `warmKeep` gate already suppresses the per-run call there, so
-    // leaving this undefined for warm deploys keeps the path-owning
-    // module's intent explicit. `rm -rf` semantics via `recursive +
-    // force` so a run that never wrote scratch (no buildEnv reached) is
-    // a no-op rather than an ENOENT throw.
+    // Fires once a run reaches terminal, dropping the whole per-run subtree.
+    // Reclamation keys on the run's terminal status, and a signal-parked step
+    // keeps the run non-terminal, so this never fires while a suspended
+    // step's attempt-N store still holds a pending-op resume must reopen.
+    // Built only for the cold path: a warm deploy's scratch lives under the
+    // disjoint warm/ sub-root, reclaimed on undeploy instead.
     const cleanupRunStorage: ((runId: string) => Promise<void>) | undefined = env.spawn.warmKeep
       ? undefined
       : (runId: string) =>
@@ -1643,12 +1567,9 @@ export function createSidecarSubstrateFactory(
             { recursive: true, force: true },
           );
 
-    // Recover a parked correlation's approval snapshot for the child's
-    // re-registration enumeration. Wired unconditionally (unlike
-    // `cleanupRunStorage`, which is cold-only): a warm agent parks on approval
-    // just as a cold one does, and the branch on `warmKeep` selects the durable
-    // read -- cold reads the per-attempt isogit store, warm reconstructs the
-    // agent's durable conversation state from the substrate.
+    // Wired unconditionally, unlike cleanupRunStorage: warm parks the same
+    // way cold does, just reconstructed from the substrate instead of the
+    // per-attempt isogit store.
     const loadParkedApproval: LoadParkedApproval = ({ runId, stepId, attempt, correlationId }) =>
       env.spawn.warmKeep
         ? readWarmParkedApprovalSnapshot({
@@ -1666,14 +1587,8 @@ export function createSidecarSubstrateFactory(
             correlationId,
           });
 
-    // Enumerate a crashed step's durable pending approval operations for the
-    // resume classifier, off the same cold/warm durable read as
-    // `loadParkedApproval`. Where that binding is a lookup by a known
-    // correlationId (answering the supervisor's re-registration), this is the
-    // enumeration the classifier needs when the correlationId never reached the
-    // log -- the crash-across-park case: read the pending operations, project
-    // to the minimal approval records the runtime reconstructs `SignalAwaited`
-    // from.
+    // Covers the crash-across-park case where the correlationId never
+    // reached the log: enumerates pending ops for the resume classifier.
     const readParkedApprovalOps: ReadParkedApprovalOps = async ({ runId, stepId, attempt }) =>
       toParkedApprovalOps(
         env.spawn.warmKeep
@@ -1700,11 +1615,8 @@ export function createSidecarSubstrateFactory(
       initialSources: stepInferenceSources,
       runChild,
       runSuspendableChild,
-      // A loop iteration runs under the inherited env (not `buildChildRunEnv`),
-      // so it is the one body birth path that writes no grants file of its own.
-      // Materialize it here -- capping the container run's grants to the loop
-      // body's declared resources -- so the body's childWorkflow grandchild
-      // spawn is authorized. `definition` is the PRE-rewrite loop body.
+      // A loop iteration runs under the inherited env, so it's the one body
+      // birth path that writes no grants file of its own; materialized here instead.
       materializeLoopIterationGrants: async ({ parentRunId, childRunId, definition }) => {
         await capAndPersistChildGrants({
           deps: childRunDeps,
@@ -1718,8 +1630,6 @@ export function createSidecarSubstrateFactory(
       evaluateGrants: evaluateGrantsAdapter,
       loadParkedApproval,
       readParkedApprovalOps,
-      // The same registry the warm agent's transport registers `watch`
-      // callbacks into; `runWorkflowChild` routes each `mailbox.notify` to it.
       mailboxWatchRegistry,
       ...(cleanupRunStorage !== undefined ? { cleanupRunStorage } : {}),
     };
@@ -1727,14 +1637,5 @@ export function createSidecarSubstrateFactory(
   };
 }
 
-/**
- * Production substrate factory. The sidecar's
- * `bin/workflow-child` binary calls
- * `runWorkflowChildFromProcessEnv(createSubstrate, { substrateConfigKeys: SIDECAR_SUBSTRATE_CONFIG_KEYS })`
- * and the helper invokes this factory with the parsed env. The
- * factory is the default-deps variant of
- * `createSidecarSubstrateFactory`; deployments that need a recording
- * hub sink (tests, alternate hosts) construct their own via
- * `createSidecarSubstrateFactory`.
- */
+/** The default-deps variant; deployments needing a recording hub sink construct their own via createSidecarSubstrateFactory. */
 export const createSubstrate: SubstrateFactory = createSidecarSubstrateFactory();
