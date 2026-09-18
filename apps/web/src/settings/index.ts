@@ -17,8 +17,6 @@ export { RolesSection, RolesTable, RoleAssignments, CreateRoleDialog } from "./r
 export { GrantsSection, GrantsTable, CreateGrantDialog } from "./grants-section";
 export { CredentialsSection } from "./credentials-section";
 
-export { CopyButton, CopyableCodeRow, WebhookSecretPanel } from "./webhook-secret-panel";
-
 export { grantPreviewSentence, expiryIsoFromPreset, expiryLabelFromPreset } from "./grant-preview";
 export type { GrantPreviewInput } from "./grant-preview";
 export { KindCards } from "./kind-cards";

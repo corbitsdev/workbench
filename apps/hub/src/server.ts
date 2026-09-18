@@ -7,8 +7,8 @@ import {
   resolveFrameSenderKey,
   resolveSenderKey,
 } from "@intx/db";
-import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
-import { and, eq } from "drizzle-orm";
+import { tenant as tenantTable } from "@intx/db/schema";
+import { eq } from "drizzle-orm";
 import { createEnvKeyCredentialCipher, sha256 } from "@intx/crypto";
 import { hexDecode, hexEncode, type SidecarCapabilityRule } from "@intx/types";
 import {
@@ -69,13 +69,7 @@ import {
   createHubMailboxAuthorizeSender,
   createHubPersistMailWithSessionEnsure,
 } from "./mailbox-persist";
-import {
-  createDrizzleWebhookTriggerStore,
-  createWebhookIngressRoutes,
-  createWebhookTriggerRoutes,
-  launchWebhookTrigger,
-  createCryptoProviderCache,
-} from "@corbits/webhook-triggers";
+import { installWebhooks, type HookMailRouter } from "@corbits/webhooks";
 import { createWorkflowAuthorRegistry, createWorkflowAuthorRoutes } from "@corbits/workflows";
 import {
   createProcessSidecarProvisioner,
@@ -622,48 +616,28 @@ export async function createHubServer({
     }),
   );
 
-  const webhookTriggerStore = createDrizzleWebhookTriggerStore(db, credentialCipher);
-  const cryptoProviders = createCryptoProviderCache();
-  app.route(
-    `${TENANT_PREFIX}/webhook-triggers`,
-    createWebhookTriggerRoutes({
-      store: webhookTriggerStore,
-      requireGrant: createRequireGrant({ grantStore, conditionRegistry: grantConditionRegistry }),
-      workflowDefinitionInTenant: async (tenantId, definitionId) => {
-        const row = await db.query.workflowDefinition.findFirst({
-          where: and(
-            eq(workflowDefinition.id, definitionId),
-            eq(workflowDefinition.tenantId, tenantId),
-          ),
-          columns: { id: true },
-        });
-        return row !== undefined;
-      },
-    }),
-  );
-  const isSidecarRoutable = (address: string) =>
-    sidecarRouter.getRoutableAddresses().includes(address);
-  app.route(
-    "/api/webhooks",
-    createWebhookIngressRoutes({
-      store: webhookTriggerStore,
-      launch: (trigger, payload) =>
-        launchWebhookTrigger(
-          {
-            db,
-            sidecarRouter,
-            repoStore: agentRepoStore.repoStore,
-            workflowAllocationService,
-            credentialCipher,
-            eventCollectors,
-            isRoutable: isSidecarRoutable,
-            cryptoProviderCache: cryptoProviders,
-          },
-          trigger,
-          payload,
-        ),
-    }),
-  );
+  // `HookMailRouter` types its payloads as `unknown` at the package
+  // boundary; this just narrows them back to `sidecarRouter`'s own types
+  // on the way through, with no behavior change.
+  const webhookMailRouter: HookMailRouter = {
+    routeMail: (address, rawMessage, authenticatedSender, messageId) =>
+      sidecarRouter.routeMail(address, rawMessage, authenticatedSender, messageId),
+    sendRunGrants: (address, runId, stepGrants, senderIdentities) =>
+      sidecarRouter.sendRunGrants(
+        address,
+        runId,
+        stepGrants as Parameters<typeof sidecarRouter.sendRunGrants>[2],
+        senderIdentities as Parameters<typeof sidecarRouter.sendRunGrants>[3],
+      ),
+  };
+
+  await installWebhooks({
+    app,
+    db,
+    credentialCipher,
+    principalKeyStore,
+    router: webhookMailRouter,
+  });
 
   // ---------------------------------------------------------------------
   // End of Corbits mount block.
