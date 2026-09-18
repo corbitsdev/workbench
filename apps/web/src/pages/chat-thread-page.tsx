@@ -7,12 +7,13 @@ import { WarningCircle } from "@/lib/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
+import { IdentityAvatar } from "@/chat/avatar";
 import { Composer } from "@/chat/composer";
 import { Markdown } from "@/chat/markdown";
 import {
   agentFromMention,
-  agentInitials,
   listChatAgents,
+  markChatSeen,
   readChat,
   replyInChat,
   startChat,
@@ -127,6 +128,12 @@ function ChatTranscript({
     refetchInterval: (query) => (query.state.data?.agent.liveAddress === null ? 3000 : false),
   });
   const chat = chatQuery.data;
+  const { selectedPrincipalId } = useBench();
+
+  // Opening the chat clears its reply-ready state — a render-time write
+  // (not an effect) since it's an idempotent mirror of already-fetched
+  // data, not a fetch of its own.
+  if (chat !== undefined) markChatSeen(chatId, chat.lastMessageId);
 
   // The inbox stream is the only signal that an agent has answered; it
   // carries no chat identity, so it invalidates rather than patches.
@@ -171,9 +178,11 @@ function ChatTranscript({
         {chat.messages.map((message) => (
           <div key={message.id} className="chat-thread-message" data-author={message.author}>
             <span className="shell-ch-avatar">
-              <span className="shell-ch-initial" aria-hidden="true">
-                {message.author === "me" ? "You" : agentInitials(message.authorName)}
-              </span>
+              <IdentityAvatar
+                kind={message.author === "me" ? "person" : "agent"}
+                name={message.authorName}
+                principalId={message.author === "me" ? (selectedPrincipalId ?? "me") : chat.id}
+              />
             </span>
             <div className="chat-thread-body">
               <Markdown text={message.body} />

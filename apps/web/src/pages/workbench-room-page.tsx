@@ -18,10 +18,10 @@ import { WarningCircle } from "@/lib/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
+import { IdentityAvatar } from "@/chat/avatar";
 import { Composer } from "@/chat/composer";
 import { Markdown } from "@/chat/markdown";
 import {
-  agentInitials,
   ancestorChain,
   listRoomParticipants,
   readRoom,
@@ -58,12 +58,16 @@ function RoomMessageRow({
   // Avatars read off the participant's display name (Myra → "M"), never the
   // run address local part a mail turn otherwise carries.
   const displayName = resolveParticipantName(message, participants);
+  const matched = participants.find((participant) => participant.address === message.address);
+  const kind = message.author !== "me" && matched?.kind === "agent" ? "agent" : "person";
   return (
     <div className="chat-thread-message" data-author={message.author}>
       <span className="shell-ch-avatar">
-        <span className="shell-ch-initial" aria-hidden="true">
-          {message.author === "me" ? "You" : agentInitials(displayName)}
-        </span>
+        <IdentityAvatar
+          kind={kind}
+          name={displayName}
+          principalId={matched?.id ?? message.address}
+        />
       </span>
       <div className="chat-thread-body">
         <Markdown text={message.body} />
@@ -83,9 +87,11 @@ function ParticipantList({ participants }: { readonly participants: readonly Roo
       {participants.map((participant) => (
         <li key={participant.id} data-kind={participant.kind}>
           <span className="shell-ch-avatar">
-            <span className="shell-ch-initial" aria-hidden="true">
-              {agentInitials(participant.name)}
-            </span>
+            <IdentityAvatar
+              kind={participant.kind}
+              name={participant.name}
+              principalId={participant.id}
+            />
           </span>
           {participant.name}
         </li>
