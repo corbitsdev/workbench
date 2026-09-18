@@ -18,10 +18,9 @@ import {
 } from "@corbits/react-ui";
 import { Select } from "@corbits/react-ui/ui/select";
 import { ChatCircleDots, Copy, SignOut } from "@/lib/icons";
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
-import type { APIQuery } from "@/lib/api-query";
-import { QueryView, UnauthenticatedError, describeQueryError } from "@/lib/api-query";
+import { QueryView, toAPIQuery } from "@/lib/api-query";
 import { resolveAvatarFill } from "@/chat";
 import webPackage from "../../package.json";
 import { getAccount, type Account } from "./api";
@@ -32,33 +31,9 @@ import { SETTINGS_STRINGS } from "./strings";
 const FEEDBACK_URL = `${webPackage.repository.url}/issues`;
 
 export function AccountSection({ onSignOut }: { readonly onSignOut?: () => void }) {
-  const [query, setQuery] = useState<APIQuery<Account>>({ kind: "loading" });
-
-  const load = useCallback(() => {
-    setQuery({ kind: "loading" });
-    let cancelled = false;
-    getAccount()
-      .then((account) => {
-        if (!cancelled) setQuery({ kind: "ready", data: account });
-      })
-      .catch((cause: unknown) => {
-        if (cancelled) return;
-        if (cause instanceof UnauthenticatedError) {
-          setQuery({ kind: "unauthenticated" });
-          return;
-        }
-        setQuery({
-          kind: "error",
-          message: describeQueryError(cause),
-          retry: load,
-        });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => load(), [load]);
+  const query = toAPIQuery<Account>(
+    useQuery({ queryKey: ["me", "account"], queryFn: getAccount }),
+  );
 
   return (
     <>

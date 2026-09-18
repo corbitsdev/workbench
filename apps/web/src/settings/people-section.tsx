@@ -20,10 +20,11 @@ import {
   TableHeader,
   TableRow,
 } from "@corbits/react-ui";
-import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
-import type { APIQuery } from "@/lib/api-query";
-import { QueryView, UnauthenticatedError, describeQueryError } from "@/lib/api-query";
+import { QueryView, toAPIQuery } from "@/lib/api-query";
+import { tenantKeys } from "@/query-client";
 import { reportError } from "@corbits/error-sink";
 import { PRINCIPAL_KIND_LABEL, principalLabel } from "./identity";
 
@@ -59,47 +60,30 @@ type PeopleData = {
 };
 
 export function PeopleSection({ tenantId }: { readonly tenantId: string | null }) {
-  const [query, setQuery] = useState<APIQuery<PeopleData>>({
-    kind: "loading",
-  });
-  const [reloadKey, setReloadKey] = useState(0);
+  const queryClient = useQueryClient();
   const [rowError, setRowError] = useState<string | null>(null);
 
-  function reload() {
-    setReloadKey((value) => value + 1);
-  }
+  // People are the user-kind principals; the role picker needs this tenant's
+  // roles alongside them, so both read under one key every write invalidates.
+  const query = toAPIQuery<PeopleData>(
+    useQuery({
+      queryKey: tenantKeys.principals(tenantId ?? "none"),
+      queryFn: async (): Promise<PeopleData> => {
+        if (tenantId === null) return { people: [], roles: [] };
+        const [principals, roles] = await Promise.all([
+          listPrincipals(tenantId),
+          listRoles(tenantId),
+        ]);
+        return { people: principals.filter((p) => p.kind === "user"), roles };
+      },
+      enabled: tenantId !== null,
+    }),
+  );
 
-  useEffect(() => {
+  function reload() {
     if (tenantId === null) return;
-    let cancelled = false;
-    setQuery({ kind: "loading" });
-    Promise.all([listPrincipals(tenantId), listRoles(tenantId)])
-      .then(([principals, roles]) => {
-        if (!cancelled)
-          setQuery({
-            kind: "ready",
-            data: {
-              people: principals.filter((p) => p.kind === "user"),
-              roles,
-            },
-          });
-      })
-      .catch((cause: unknown) => {
-        if (cancelled) return;
-        if (cause instanceof UnauthenticatedError) {
-          setQuery({ kind: "unauthenticated" });
-          return;
-        }
-        setQuery({
-          kind: "error",
-          message: describeQueryError(cause),
-          retry: reload,
-        });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId, reloadKey]);
+    void queryClient.invalidateQueries({ queryKey: tenantKeys.principals(tenantId) });
+  }
 
   if (tenantId === null) {
     return (

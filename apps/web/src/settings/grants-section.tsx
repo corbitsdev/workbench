@@ -28,10 +28,11 @@ import {
 } from "@corbits/react-ui";
 import { grantEffects, grantOrigins } from "@intx/types";
 import type { GrantEffect, GrantOrigin } from "@intx/types";
-import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 
-import type { APIQuery } from "@/lib/api-query";
-import { QueryView, UnauthenticatedError, describeQueryError } from "@/lib/api-query";
+import { QueryView, toAPIQuery } from "@/lib/api-query";
+import { tenantKeys } from "@/query-client";
 import { PRINCIPAL_KIND_LABEL, PRINCIPAL_KIND_ORDER, principalLabel } from "./identity";
 import { expiryIsoFromPreset, expiryLabelFromPreset, grantPreviewSentence } from "./grant-preview";
 import { KindCards } from "./kind-cards";
@@ -85,44 +86,35 @@ type GrantsData = {
 
 export function GrantsSection({ tenantId }: { readonly tenantId: string | null }) {
   const [filters, setFilters] = useState<GrantFilters>({});
-  const [query, setQuery] = useState<APIQuery<GrantsData>>({
-    kind: "loading",
-  });
-  const [reloadKey, setReloadKey] = useState(0);
+  const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
+  // Filters are part of the key, so narrowing refetches instead of the list
+  // silently keeping the previous filter's rows.
   const filtersKey = JSON.stringify(filters);
 
-  function reload() {
-    setReloadKey((value) => value + 1);
-  }
+  const query = toAPIQuery<GrantsData>(
+    useQuery({
+      queryKey: [...tenantKeys.grants(tenantId ?? "none"), filtersKey],
+      queryFn: async (): Promise<GrantsData> => {
+        if (tenantId === null) return { grants: [], roles: [], principals: [] };
+        const [grants, roles, principals] = await Promise.all([
+          listGrants(tenantId, filters),
+          listRoles(tenantId),
+          listPrincipals(tenantId),
+        ]);
+        return { grants, roles, principals };
+      },
+      enabled: tenantId !== null,
+    }),
+  );
 
-  useEffect(() => {
+  function reload() {
     if (tenantId === null) return;
-    let cancelled = false;
-    setQuery({ kind: "loading" });
-    Promise.all([listGrants(tenantId, filters), listRoles(tenantId), listPrincipals(tenantId)])
-      .then(([grants, roles, principals]) => {
-        if (!cancelled) setQuery({ kind: "ready", data: { grants, roles, principals } });
-      })
-      .catch((cause: unknown) => {
-        if (cancelled) return;
-        if (cause instanceof UnauthenticatedError) {
-          setQuery({ kind: "unauthenticated" });
-          return;
-        }
-        setQuery({
-          kind: "error",
-          message: describeQueryError(cause),
-          retry: reload,
-        });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId, reloadKey, filtersKey]);
+    void queryClient.invalidateQueries({ queryKey: tenantKeys.grants(tenantId) });
+  }
 
   if (tenantId === null) {
     return (
