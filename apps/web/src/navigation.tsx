@@ -1,8 +1,6 @@
-// Client-side navigation, sized to what six flat routes need: a navigate
-// function provided by the entry point, anchors that intercept plain left
-// clicks, and nothing else. Deep links and modified clicks fall through to the
-// browser — the hub serves index.html for every non-/api path, so a full page
-// load lands on the same route.
+// Deep links and modified clicks fall through to the browser — the hub
+// serves index.html for every non-/api path, so a full page load still
+// lands on the same route.
 
 import { useContext } from "react";
 import type { ComponentProps, MouseEvent, ReactNode } from "react";
@@ -49,11 +47,8 @@ export function useSessionUser(): SessionUser | undefined {
   return useContext(SessionUserContext);
 }
 
-/**
- * Intercepts a plain left click on an in-app anchor. Modified clicks (new
- * tab, download) and clicks a handler already cancelled keep their native
- * behavior.
- */
+// Modified clicks (new tab, download) and already-cancelled clicks keep
+// their native behavior.
 export function handleLinkClick(
   event: MouseEvent<HTMLAnchorElement>,
   to: string,
