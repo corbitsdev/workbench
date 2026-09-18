@@ -20,6 +20,7 @@ import { ApiQueryError, describeApiError } from "@/lib/api-query";
 import { reportError } from "@corbits/error-sink";
 
 import { CreateAgentPanel } from "./create-agent-panel";
+import { getAgentRun } from "../agents-api";
 import { useBench } from "../bench-context";
 import {
   createWorkbench,
@@ -472,22 +473,19 @@ export function NewWorkbenchPickerRoute() {
           open={createAgentOpen}
           onOpenChange={setCreateAgentOpen}
           tenantId={selectedTenantId}
-          onCreated={(definition) => {
+          onCreated={(deployment) => {
             if (currentTenantIdRef.current !== selectedTenantId) return;
-            queryClient.setQueryData<Awaited<ReturnType<typeof listTenantInvitableDefinitions>>>(
-              ["tenant", selectedTenantId, "invitable-definitions"],
-              (current) => [
-                ...(current ?? []).filter((agent) => agent.id !== definition.id),
-                {
-                  id: definition.id,
-                  name: definition.name,
-                  ...(definition.description !== null && definition.description !== ""
-                    ? { description: definition.description }
-                    : {}),
-                },
-              ],
-            );
-            setSelectedAgentDefinitionIds((current) => [...current, definition.id]);
+            void getAgentRun(selectedTenantId, deployment.id).then((run) => {
+              if (currentTenantIdRef.current !== selectedTenantId) return;
+              queryClient.setQueryData<Awaited<ReturnType<typeof listTenantInvitableDefinitions>>>(
+                ["tenant", selectedTenantId, "invitable-definitions"],
+                (current) => [
+                  ...(current ?? []).filter((agent) => agent.id !== run.definitionId),
+                  { id: run.definitionId, name: run.definitionName },
+                ],
+              );
+              setSelectedAgentDefinitionIds((current) => [...current, run.definitionId]);
+            });
             promptRef.current?.focus();
           }}
         />
