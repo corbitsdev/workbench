@@ -30,10 +30,11 @@ function rosterBlock(entries: readonly RosterEntry[]): string {
 function ccInstruction(entries: readonly RosterEntry[]): string | undefined {
   const people = entries.filter((entry) => entry.kind === "person");
   if (people.length === 0) return undefined;
-  const addresses = people.map((entry) => entry.address).join(", ");
-  // The subject clause is load-bearing: a mail with an empty Subject ends
-  // the receiving agent's run today.
-  return `Copy ${addresses} in \`to\` on any mail you send another participant, so they can follow along, and give every mail a short subject.`;
+  const quoted = people.map((entry) => `"${entry.address}"`).join(", ");
+  // The list shape and the subject clause are both load-bearing: a
+  // comma-joined `to` string is dropped as one bad recipient, and a mail
+  // with an empty Subject ends the receiving agent's run today.
+  return `When you mail another participant, pass \`to\` as a list with them and the person, e.g. \`to: ["<their address>", ${quoted}]\`, never one comma-joined string, and give every mail a short subject.`;
 }
 
 /** Appends a `Participants:` block listing every entry's name and address,
