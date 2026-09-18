@@ -16,6 +16,7 @@
 
 import { type } from "arktype";
 
+import { MYRA_SOURCE_CONFIG } from "./myra-source";
 import {
   childTenantStore,
   threadLinkStore,
@@ -103,6 +104,10 @@ export type StockHub = {
    */
   inviteMember(tenantId: string, input: { email: string; role: string }): Promise<void>;
   deployWorkflow(tenantId: string, input: WorkflowDeployInput): Promise<void>;
+  /** Whether a live (non-released, non-failed) deployment is anchored to
+   * the tenant's `workflow` asset of that name. Stock mints a deployment's
+   * principal only at its first run, so this is the deploy-time truth. */
+  hasWorkflowDeployment(tenantId: string, assetName: string): Promise<boolean>;
   sendRunMail(input: SendRunMailInput): Promise<{ messageId: string }>;
   listRunMail(input: { tenantId: string }): Promise<MailMessage[]>;
   /** Stock per-agent mailbox search: participant-filtered thread derivation
@@ -115,6 +120,7 @@ export type StockHub = {
 
 export type HubSnapshot = {
   primaryTenant: HubTenant;
+  myraDeployed: boolean;
   primaryPrincipals: HubPrincipal[];
   childTenants: HubTenant[];
   childPrincipals: Record<string, HubPrincipal[]>;
@@ -187,37 +193,24 @@ export async function readHubSnapshot(hub: StockHub): Promise<HubSnapshot> {
     );
   }
   const childTenants = tenants.filter((tenant) => tenant.parentId === primaryTenant.id);
-  const [primaryPrincipals, childRows] = await Promise.all([
+  const [primaryPrincipals, childRows, myraDeployed] = await Promise.all([
     hub.listPrincipals(primaryTenant.id),
     Promise.all(
       childTenants.map(async (tenant) => [tenant.id, await hub.listPrincipals(tenant.id)] as const),
     ),
+    hub.hasWorkflowDeployment(primaryTenant.id, MYRA_SOURCE_CONFIG.assetName),
   ]);
   return {
     primaryTenant,
+    myraDeployed,
     primaryPrincipals,
     childTenants,
     childPrincipals: Object.fromEntries(childRows),
   };
 }
 
-export function hasActiveMyraPrincipal(
-  principals: readonly HubPrincipal[],
-  definitionRefId: string,
-): boolean {
-  const expected = definitionRefId.toLowerCase();
-  return principals.some(
-    (principal) =>
-      principal.kind === "workflow" &&
-      principal.status === "active" &&
-      (principal.refId === definitionRefId ||
-        principal.displayName.toLowerCase() === expected ||
-        principal.displayName.toLowerCase() === "myra"),
-  );
-}
-
-function hasMyra(manifest: NeedsList, snapshot: HubSnapshot): boolean {
-  return hasActiveMyraPrincipal(snapshot.primaryPrincipals, manifest.myra.definitionRefId);
+function hasMyra(_manifest: NeedsList, snapshot: HubSnapshot): boolean {
+  return snapshot.myraDeployed;
 }
 
 export type ConvergeReport = {
@@ -532,6 +525,13 @@ const HubErrorEnvelope = type({
   error: { code: "string", "message?": "string", "userMessage?": "string" },
 });
 
+const WorkflowAssetListShape = type({ id: "string", name: "string" }).array();
+const DeploymentListShape = type({
+  definitionAssetId: "string",
+  status: "string",
+}).array();
+const TERMINAL_DEPLOYMENT_STATUSES = new Set(["released", "failed", "destroy_failed"]);
+
 async function readJson(response: Response, operation: string): Promise<unknown> {
   if (!response.ok) {
     const envelope = HubErrorEnvelope(await response.json().catch(() => undefined));
@@ -643,6 +643,33 @@ export function createFetchStockHub(fetchImpl: typeof fetch = fetch): StockHub {
           body: JSON.stringify(input),
         }),
         "deployWorkflow",
+      );
+    },
+    async hasWorkflowDeployment(tenantId, assetName) {
+      const assets = parseBoundary(
+        WorkflowAssetListShape,
+        await readJson(
+          await fetchImpl(
+            `/api/tenants/${encodeURIComponent(tenantId)}/assets?kind=workflow&inherited=false`,
+          ),
+          "listWorkflowAssets",
+        ),
+        "listWorkflowAssets",
+      );
+      const asset = assets.find((row) => row.name === assetName);
+      if (asset === undefined) return false;
+      const deployments = parseBoundary(
+        DeploymentListShape,
+        await readJson(
+          await fetchImpl(`/api/tenants/${encodeURIComponent(tenantId)}/workflows/deployments`),
+          "listDeployments",
+        ),
+        "listDeployments",
+      );
+      return deployments.some(
+        (deployment) =>
+          deployment.definitionAssetId === asset.id &&
+          !TERMINAL_DEPLOYMENT_STATUSES.has(deployment.status),
       );
     },
     async sendRunMail(input) {

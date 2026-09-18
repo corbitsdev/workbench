@@ -5,13 +5,8 @@
 
 import { type } from "arktype";
 import { reportError } from "@corbits/error-sink";
-import { resolveMyraDefinitionRefId } from "./client-bootstrap";
-import {
-  createFetchStockHub,
-  findOwnedTenants,
-  hasActiveMyraPrincipal,
-  type StockHub,
-} from "./needs-converge";
+import { MYRA_SOURCE_CONFIG } from "./myra-source";
+import { createFetchStockHub, findOwnedTenants, type StockHub } from "./needs-converge";
 
 /** Any credential row this bench actually has stored — the cheap
  * pre-skip read the home page's first-workbench flow uses to tell "no
@@ -83,11 +78,8 @@ export async function triggerFirstLoginProvisioning(
     const owned = await findOwnedTenants(hub);
     const primary = owned.find((tenant) => tenant.parentId === null);
     if (primary === undefined) return { kind: "needs-onboarding" };
-    const principals = await hub.listPrincipals(primary.id);
-    const myraRefId = resolveMyraDefinitionRefId() ?? "myra";
-    return hasActiveMyraPrincipal(principals, myraRefId)
-      ? { kind: "existing-member" }
-      : { kind: "needs-onboarding" };
+    const deployed = await hub.hasWorkflowDeployment(primary.id, MYRA_SOURCE_CONFIG.assetName);
+    return deployed ? { kind: "existing-member" } : { kind: "needs-onboarding" };
   } catch (cause) {
     const refId = reportError(cause, { operation: "first_login_provisioning" });
     return { kind: "error", message: FALLBACK_ERROR_MESSAGE, refId };

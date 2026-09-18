@@ -21,7 +21,7 @@
 import { Button, EmptyState } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
 import { WorkbenchLoadingState } from "@/chat";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ensurePrimaryTenant, runPortableClientBootstrap } from "../client-bootstrap";
 import { createFetchStockHub, findOwnedTenants } from "../needs-converge";
@@ -58,6 +58,7 @@ type GateState =
 export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   const navigate = useNavigate();
   const [state, setState] = useState<GateState>({ phase: "checking" });
+  const installRef = useRef<ReturnType<typeof runPortableClientBootstrap> | null>(null);
 
   // One status read per landing (plus each manual recheck): a hub that
   // already has tenants means setup is done; an empty hub starts the
@@ -183,9 +184,12 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   useEffect(() => {
     if (state.phase !== "installing") return;
     let cancelled = false;
-    void runPortableClientBootstrap(user, {
+    // StrictMode re-runs this effect once; the converge deploys Myra, so a
+    // second concurrent run would deploy her twice. Reuse the in-flight one.
+    installRef.current ??= runPortableClientBootstrap(user, {
       myraDeploy: state.myraDeploy,
-    }).then(
+    });
+    void installRef.current.then(
       (result) => {
         if (cancelled) return;
         if (result.kind === "ready") {
