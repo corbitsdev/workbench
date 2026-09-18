@@ -338,7 +338,7 @@ export interface AgentDefinitionWorkflowInput {
   readonly model?: string;
   /**
    * Tool packages pinned directly on this definition — connector tool
-   * bundles (e.g. `@corbits/granola-tools`) a planner-created agent
+   * bundles (e.g. `@corbits/example-tools`) a planner-created agent
    * needs beyond what skills reindexing pins. Additive: undeclared or
    * empty behaves exactly like a definition built before this field
    * existed. `defineAgent`'s own `DefineAgentConfig` has no field for

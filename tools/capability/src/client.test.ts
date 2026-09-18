@@ -27,7 +27,7 @@ test("addCapability posts to the definition's workflow-run capabilities endpoint
     seenBody = JSON.parse(String(init?.body));
     return new Response(
       JSON.stringify({
-        toolPackagePins: [{ name: "@corbits/github-tools" }],
+        toolPackagePins: [{ name: "@corbits/example-tools" }],
         skills: [],
       }),
     );
@@ -35,7 +35,7 @@ test("addCapability posts to the definition's workflow-run capabilities endpoint
 
   const result = await addCapability(testConfig(fetchImpl), {
     kind: "toolPackage",
-    name: "@corbits/github-tools",
+    name: "@corbits/example-tools",
   });
 
   expect(seenUrl).toBe("https://hub.example.com/api/workflow-capabilities/def_1/capabilities");
@@ -43,9 +43,9 @@ test("addCapability posts to the definition's workflow-run capabilities endpoint
   expect(seenHeaders?.["x-workflow-run-address"]).toBe("run_1@workflow");
   expect(seenBody).toEqual({
     kind: "toolPackage",
-    name: "@corbits/github-tools",
+    name: "@corbits/example-tools",
   });
-  expect(result.toolPackagePins).toEqual([{ name: "@corbits/github-tools" }]);
+  expect(result.toolPackagePins).toEqual([{ name: "@corbits/example-tools" }]);
 });
 
 test("addCapability throws CapabilityOutOfInventoryError on the route's fail-closed 400", async () => {

@@ -50,7 +50,7 @@ function readAssetBlobFor(workflowBytes: Uint8Array): AssetService["readAssetBlo
 const fakeCapabilityInventory: CapabilityInventoryProvider = {
   resolve: () =>
     Promise.resolve({
-      toolPackages: [{ name: "@corbits/github-tools" }],
+      toolPackages: [{ name: "@corbits/example-tools" }],
       skills: [{ name: "research" }],
       models: [{ canonicalName: "anthropic/claude-sonnet" }],
     }),
@@ -162,7 +162,7 @@ function liveDefinitionAsset(initial: Uint8Array): AssetService {
     // fixed version — enough for `resolvePinnedVersion` to resolve
     // without each concurrent-write test needing its own tarball list.
     listAssetBlobs: () =>
-      Promise.resolve(["corbits-github-tools-3.1.0.tgz", "corbits-memory-tools-1.4.0.tgz"]),
+      Promise.resolve(["corbits-example-tools-3.1.0.tgz", "corbits-memory-tools-1.4.0.tgz"]),
   });
 }
 
@@ -618,7 +618,10 @@ test("a create request with toolPackagePins pins each named package at its highe
         return Promise.resolve({ commitSha: "deadbeef" });
       },
       listAssetBlobs: () =>
-        Promise.resolve(["corbits-memory-tools-1.4.0.tgz", "corbits-web-search-tools-2.1.0.tgz"]),
+        Promise.resolve([
+          "corbits-memory-tools-1.4.0.tgz",
+          "corbits-other-example-tools-2.1.0.tgz",
+        ]),
     }),
     withToolPackageRegistryQueries(fakeCreateDb()),
   );
@@ -626,13 +629,13 @@ test("a create request with toolPackagePins pins each named package at its highe
     name: "Scout",
     handle: "scout",
     systemPrompt: "You are Scout.",
-    toolPackagePins: ["@corbits/memory-tools", "@corbits/web-search-tools"],
+    toolPackagePins: ["@corbits/memory-tools", "@corbits/other-example-tools"],
   });
   expect(response.status).toBe(201);
   const workflowJson = definitionFrom(writtenFiles);
   expect(pinsFrom(workflowJson)).toEqual([
     { name: "@corbits/memory-tools", version: "1.4.0" },
-    { name: "@corbits/web-search-tools", version: "2.1.0" },
+    { name: "@corbits/other-example-tools", version: "2.1.0" },
   ]);
 });
 
@@ -1667,7 +1670,7 @@ test("adding a tool package pin merges it into the definition in one commit, nam
         writtenMessage = params.tree.message;
         return Promise.resolve({ commitSha: "deadbeef" });
       },
-      listAssetBlobs: () => Promise.resolve(["corbits-github-tools-3.1.0.tgz"]),
+      listAssetBlobs: () => Promise.resolve(["corbits-example-tools-3.1.0.tgz"]),
     }),
     withToolPackageRegistryQueries(
       fakeInstructionsDb({
@@ -1679,18 +1682,18 @@ test("adding a tool package pin merges it into the definition in one commit, nam
   );
   const response = await postTo(app, "/def_1/capabilities", {
     kind: "toolPackage",
-    name: "@corbits/github-tools",
+    name: "@corbits/example-tools",
   });
   expect(response.status).toBe(200);
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(pinsFrom(definitionFrom(writtenFiles))).toEqual([
-    { name: "@corbits/github-tools", version: "3.1.0" },
+    { name: "@corbits/example-tools", version: "3.1.0" },
   ]);
-  expect(writtenMessage).toBe("Add @corbits/github-tools to research-buddy");
+  expect(writtenMessage).toBe("Add @corbits/example-tools to research-buddy");
   const body = (await response.json()) as {
     toolPackagePins: { name: string; version: string }[];
   };
-  expect(body.toolPackagePins).toEqual([{ name: "@corbits/github-tools", version: "3.1.0" }]);
+  expect(body.toolPackagePins).toEqual([{ name: "@corbits/example-tools", version: "3.1.0" }]);
 });
 
 test("re-adding an already-pinned tool package keeps its stored version after a newer tarball lands", async () => {
@@ -1925,7 +1928,7 @@ test("two concurrent capability-adds on the same definition both land", async ()
   const inventory: CapabilityInventoryProvider = {
     resolve: () =>
       Promise.resolve({
-        toolPackages: [{ name: "@corbits/github-tools" }, { name: "@corbits/memory-tools" }],
+        toolPackages: [{ name: "@corbits/example-tools" }, { name: "@corbits/memory-tools" }],
         skills: [{ name: "research" }],
         models: [{ canonicalName: "anthropic/claude-sonnet" }],
       }),
@@ -1948,7 +1951,7 @@ test("two concurrent capability-adds on the same definition both land", async ()
   const [first, second] = await Promise.all([
     postTo(app, "/def_1/capabilities", {
       kind: "toolPackage",
-      name: "@corbits/github-tools",
+      name: "@corbits/example-tools",
     }),
     postTo(app, "/def_1/capabilities", {
       kind: "toolPackage",
@@ -1962,7 +1965,7 @@ test("two concurrent capability-adds on the same definition both land", async ()
   const names = pinsFrom(workflowJson)
     .map((pin) => pin.name)
     .toSorted();
-  expect(names).toEqual(["@corbits/github-tools", "@corbits/memory-tools"]);
+  expect(names).toEqual(["@corbits/example-tools", "@corbits/memory-tools"]);
 });
 
 test("concurrent PUT instructions and DELETE model both land", async () => {
@@ -2041,7 +2044,7 @@ test("concurrent DELETE model and a capability-add both land", async () => {
     app.request("/def_1/capabilities/model", { method: "DELETE" }),
     postTo(app, "/def_1/capabilities", {
       kind: "toolPackage",
-      name: "@corbits/github-tools",
+      name: "@corbits/example-tools",
     }),
   ]);
   expect(delRes.status).toBe(200);
@@ -2049,7 +2052,7 @@ test("concurrent DELETE model and a capability-add both land", async () => {
 
   const workflowJson = await readAgentDefinitionWorkflowJson(assetService, "ast_1");
   expect(modelFrom(workflowJson)).toBeUndefined();
-  expect(pinsFrom(workflowJson).map((pin) => pin.name)).toContain("@corbits/github-tools");
+  expect(pinsFrom(workflowJson).map((pin) => pin.name)).toContain("@corbits/example-tools");
 });
 
 test("concurrent pin_skill and DELETE model both land", async () => {

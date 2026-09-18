@@ -18,7 +18,7 @@ the addition happens.
 
 On approval, the execution calls the workflow-run capabilities surface
 for the calling agent's own definition. Success comes back as a plain
-result message ("Added @corbits/github-tools — I can use it from my
+result message ("Added @corbits/example-tools — I can use it from my
 next reply."); an out-of-inventory request comes back naming what's
 actually available, never a fabricated success. Any other transport or
 HTTP failure comes back as an honest `isError: true` result.
