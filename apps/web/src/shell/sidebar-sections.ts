@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listChats, subscribeToInbox, type ChatSummary } from "@/chat/threads-api";
+import { chatKeys } from "../chat-path";
 import { createFetchStockHub, findOwnedTenants, type HubTenant } from "../needs-converge";
 
 export type SidebarSections =
@@ -22,37 +23,35 @@ async function listChildTenants(tenantId: string): Promise<readonly HubTenant[]>
   return tenants.filter((tenant) => tenant.parentId === tenantId);
 }
 
-const chatsKey = (tenantId: string) => ["tenant", tenantId, "chats"] as const;
-
 export function useSidebarSections(tenantId: string | null): SidebarSections {
   const key = tenantId ?? "";
   const enabled = tenantId !== null;
   const queryClient = useQueryClient();
 
   const workbenches = useQuery({
-    queryKey: ["tenant", key, "child-tenants"],
+    queryKey: chatKeys.childTenants(key),
     enabled,
     queryFn: () => listChildTenants(key),
   });
   const chats = useQuery({
-    queryKey: chatsKey(key),
+    queryKey: chatKeys.list(key),
     enabled,
     queryFn: () => listChats(key),
   });
 
   // A mailbox event is the only signal that an agent has answered; the
-  // stream carries no chat identity, so the listing is simply refetched.
+  // stream carries no chat identity, so the listing is simply invalidated.
   useEffect(() => {
     if (tenantId === null) return;
     return subscribeToInbox(tenantId, () => {
-      void queryClient.invalidateQueries({ queryKey: chatsKey(tenantId) });
+      void queryClient.invalidateQueries({ queryKey: chatKeys.scope(tenantId) });
     });
   }, [tenantId, queryClient]);
 
   if (tenantId === null) return { kind: "ready", workbenches: [], chats: [] };
   for (const query of [workbenches, chats]) {
     if (query.isError) {
-      const cause = query.error;
+      const cause: unknown = query.error;
       return { kind: "error", message: cause instanceof Error ? cause.message : String(cause) };
     }
   }

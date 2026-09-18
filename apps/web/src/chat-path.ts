@@ -2,6 +2,16 @@
 // `/chats/:id` is one chat, addressed by its mailbox thread root uid (or
 // a local id while the agent has not answered yet).
 
+/** One key factory for every chat read, so a send can invalidate the
+ * listing, the transcript, and the agent roster in one call. */
+export const chatKeys = {
+  scope: (tenantId: string) => ["tenant", tenantId, "chats"] as const,
+  list: (tenantId: string) => ["tenant", tenantId, "chats", "list"] as const,
+  agents: (tenantId: string) => ["tenant", tenantId, "chats", "agents"] as const,
+  one: (tenantId: string, chatId: string) => ["tenant", tenantId, "chats", "one", chatId] as const,
+  childTenants: (tenantId: string) => ["tenant", tenantId, "child-tenants"] as const,
+};
+
 export const CHATS_PATH_PREFIX = "/chats";
 export const NEW_CHAT_PATH = `${CHATS_PATH_PREFIX}/new`;
 

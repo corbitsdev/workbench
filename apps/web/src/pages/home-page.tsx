@@ -4,49 +4,39 @@
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 import { WorkbenchLoadingState } from "@/chat";
 import { listChats } from "@/chat/threads-api";
 
 import { useBench } from "../bench-context";
-import { chatPath, NEW_CHAT_PATH } from "../chat-path";
+import { chatKeys, chatPath, NEW_CHAT_PATH } from "../chat-path";
 import { useNavigate } from "../navigation";
 
 export function HomeRoute() {
   const navigate = useNavigate();
   const { selectedTenantId, memberships } = useBench();
-  const [error, setError] = useState<string | null>(null);
+  const chats = useQuery({
+    queryKey: chatKeys.list(selectedTenantId ?? ""),
+    enabled: selectedTenantId !== null,
+    queryFn: () => listChats(selectedTenantId ?? ""),
+  });
 
+  const newest = chats.data?.[0];
   useEffect(() => {
-    if (selectedTenantId === null) return;
-    let cancelled = false;
-    void listChats(selectedTenantId).then(
-      (chats) => {
-        if (cancelled) return;
-        const newest = chats[0];
-        navigate(newest === undefined ? NEW_CHAT_PATH : chatPath(newest.id));
-      },
-      (cause: unknown) => {
-        if (cancelled) return;
-        setError(cause instanceof Error ? cause.message : String(cause));
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedTenantId, navigate]);
+    if (chats.data === undefined) return;
+    navigate(newest === undefined ? NEW_CHAT_PATH : chatPath(newest.id));
+  }, [chats.data, newest, navigate]);
 
-  if (memberships.kind === "loading") {
-    return (
-      <div className="page-fill shell-route-loading">
-        <WorkbenchLoadingState />
-      </div>
-    );
-  }
-
-  if (memberships.kind === "error" || error !== null) {
-    const message = memberships.kind === "error" ? memberships.message : (error ?? "");
+  if (memberships.kind === "error" || chats.isError) {
+    const cause: unknown = chats.error;
+    const message =
+      memberships.kind === "error"
+        ? memberships.message
+        : cause instanceof Error
+          ? cause.message
+          : String(cause);
     return (
       <PageShell width="full" className="page-fill">
         <EmptyState

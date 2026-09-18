@@ -4,7 +4,8 @@
 
 import { Button, EmptyState, PageShell, Select, Textarea } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 
 import { Markdown } from "@/chat/markdown";
 import {
@@ -16,34 +17,13 @@ import {
   startChat,
   subscribeToInbox,
   type ChatAgent,
-  type ChatThread,
 } from "@/chat/threads-api";
 import { MYRA_SOURCE_CONFIG } from "../myra-source";
 import { useBench } from "../bench-context";
-import { chatIdFromPath, chatPath } from "../chat-path";
+import { chatIdFromPath, chatKeys, chatPath, NEW_CHAT_PATH } from "../chat-path";
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
-}
-
-function useChatAgents(tenantId: string | null): readonly ChatAgent[] {
-  const [agents, setAgents] = useState<readonly ChatAgent[]>([]);
-  useEffect(() => {
-    if (tenantId === null) return;
-    let cancelled = false;
-    void listChatAgents(tenantId).then(
-      (rows) => {
-        if (!cancelled) setAgents(rows);
-      },
-      () => {
-        if (!cancelled) setAgents([]);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId]);
-  return agents;
 }
 
 function Composer({
@@ -91,33 +71,26 @@ function NewChat({
   readonly tenantId: string;
   readonly navigate: (to: string) => void;
 }) {
-  const agents = useChatAgents(tenantId);
+  const queryClient = useQueryClient();
+  const agentsQuery = useQuery({
+    queryKey: chatKeys.agents(tenantId),
+    queryFn: () => listChatAgents(tenantId),
+  });
+  const agents = useMemo<readonly ChatAgent[]>(() => agentsQuery.data ?? [], [agentsQuery.data]);
   const [selected, setSelected] = useState<string>("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const defaultAgent = useMemo(
-    () => agents.find((agent) => agent.name === MYRA_SOURCE_CONFIG.displayName) ?? agents[0],
-    [agents],
-  );
-  const chosen = agents.find((agent) => agent.runId === selected) ?? defaultAgent;
+  const start = useMutation({
+    mutationFn: ({ agent, text }: { readonly agent: ChatAgent; readonly text: string }) =>
+      startChat(tenantId, agent, text),
+    onSuccess: (chatId) => {
+      void queryClient.invalidateQueries({ queryKey: chatKeys.scope(tenantId) });
+      navigate(chatPath(chatId));
+    },
+  });
 
-  const send = (text: string) => {
-    const agent = agentFromMention(text, agents) ?? chosen;
-    if (agent === undefined) {
-      setError("No agent is deployed yet, so there is nobody to chat with.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    void startChat(tenantId, agent, text).then(
-      (chatId) => navigate(chatPath(chatId)),
-      (cause: unknown) => {
-        setBusy(false);
-        setError(errorText(cause));
-      },
-    );
-  };
+  const defaultAgent = agents.find((agent) => agent.name === MYRA_SOURCE_CONFIG.displayName);
+  const chosen = agents.find((agent) => agent.runId === selected) ?? defaultAgent ?? agents[0];
+  const error: unknown = start.error ?? agentsQuery.error;
 
   return (
     <PageShell width="prose" className="page-fill">
@@ -136,8 +109,23 @@ function NewChat({
           ))}
         </Select>
       </label>
-      {error === null ? null : <p className="chat-thread-error">{error}</p>}
-      <Composer placeholder="Message your agent — or @tag one" busy={busy} onSend={send} />
+      {agentsQuery.isSuccess && agents.length === 0 ? (
+        <p className="chat-thread-error">
+          No agent is deployed yet, so there is nobody to chat with.
+        </p>
+      ) : null}
+      {error === null || error === undefined ? null : (
+        <p className="chat-thread-error">{errorText(error)}</p>
+      )}
+      <Composer
+        placeholder="Message your agent — or @tag one"
+        busy={start.isPending}
+        onSend={(text) => {
+          const agent = agentFromMention(text, agents) ?? chosen;
+          if (agent === undefined) return;
+          start.mutate({ agent, text });
+        }}
+      />
     </PageShell>
   );
 }
@@ -151,56 +139,40 @@ function ChatTranscript({
   readonly chatId: string;
   readonly navigate: (to: string) => void;
 }) {
-  const [chat, setChat] = useState<ChatThread | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const queryClient = useQueryClient();
+  const chatQuery = useQuery({
+    queryKey: chatKeys.one(tenantId, chatId),
+    queryFn: () => readChat(tenantId, chatId),
+  });
+  const chat = chatQuery.data;
 
-  const load = useCallback(() => {
-    void readChat(tenantId, chatId).then(
-      (loaded) => {
-        setChat(loaded);
-        setError(null);
-      },
-      (cause: unknown) => setError(errorText(cause)),
-    );
-  }, [tenantId, chatId]);
-
-  useEffect(load, [load]);
-
-  // A local chat becomes a real mail thread the moment the agent answers,
-  // so the inbox stream is also this page's cue to re-address itself.
+  // The inbox stream is the only signal that an agent has answered; it
+  // carries no chat identity, so it invalidates rather than patches.
   useEffect(
     () =>
       subscribeToInbox(tenantId, () => {
-        load();
+        void queryClient.invalidateQueries({ queryKey: chatKeys.scope(tenantId) });
       }),
-    [tenantId, load],
+    [tenantId, queryClient],
   );
 
-  const send = (text: string) => {
-    if (chat === null) return;
-    setBusy(true);
-    void replyInChat(tenantId, chat, text).then(
-      () => {
-        setBusy(false);
-        load();
-      },
-      (cause: unknown) => {
-        setBusy(false);
-        setError(errorText(cause));
-      },
-    );
-  };
+  const reply = useMutation({
+    mutationFn: (text: string) => {
+      if (chat === undefined) throw new Error("no chat to reply in");
+      return replyInChat(tenantId, chat, text);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: chatKeys.scope(tenantId) }),
+  });
 
-  if (error !== null && chat === null) {
+  if (chatQuery.isError && chat === undefined) {
     return (
       <PageShell width="full" className="page-fill">
         <EmptyState
           icon={<WarningCircle />}
           title="Couldn't open that chat"
-          description={error}
+          description={errorText(chatQuery.error)}
           action={
-            <Button variant="outline" onClick={() => navigate("/chats/new")}>
+            <Button variant="outline" onClick={() => navigate(NEW_CHAT_PATH)}>
               Start a new chat
             </Button>
           }
@@ -208,7 +180,7 @@ function ChatTranscript({
       </PageShell>
     );
   }
-  if (chat === null) return <PageShell width="prose" className="page-fill" />;
+  if (chat === undefined) return <PageShell width="prose" className="page-fill" />;
 
   return (
     <PageShell width="prose" className="page-fill">
@@ -227,8 +199,12 @@ function ChatTranscript({
           </div>
         ))}
       </div>
-      {error === null ? null : <p className="chat-thread-error">{error}</p>}
-      <Composer placeholder={`Reply to ${chat.agentName}`} busy={busy} onSend={send} />
+      {reply.error === null ? null : <p className="chat-thread-error">{errorText(reply.error)}</p>}
+      <Composer
+        placeholder={`Reply to ${chat.agentName}`}
+        busy={reply.isPending}
+        onSend={(text) => reply.mutate(text)}
+      />
     </PageShell>
   );
 }
