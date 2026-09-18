@@ -66,7 +66,6 @@ export const CORBITS_TOOL_PACKAGE_DIRS: readonly string[] = [
   new URL("../../../tools/github", import.meta.url).pathname,
   new URL("../../../tools/web-search", import.meta.url).pathname,
   new URL("../../../tools/granola", import.meta.url).pathname,
-  new URL("../../../tools/manus", import.meta.url).pathname,
   new URL("../../../tools/linear", import.meta.url).pathname,
   new URL("../../../tools/workflow-authoring", import.meta.url).pathname,
 ];

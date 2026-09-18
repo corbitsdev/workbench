@@ -28,7 +28,6 @@
     "arktype": "catalog:"
   },
   "devDependencies": {
-    "@corbits/credential-providers": "workspace:*",
     "@intx/authz": "0.3.0",
     "@intx/crypto": "0.3.0",
     "@intx/db": "workspace:*",

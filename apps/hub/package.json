@@ -18,7 +18,6 @@
     "@corbits/artifact-ui": "workspace:*",
     "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#5309a15d4aa504f132c54b4da08bb672b4903873",
     "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
-    "@corbits/credential-providers": "workspace:*",
     "@corbits/cron": "workspace:*",
     "@corbits/error-sink": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
