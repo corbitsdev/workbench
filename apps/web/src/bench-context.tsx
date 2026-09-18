@@ -1,8 +1,5 @@
-// The one place this app decides which bench is "current": a single fetch of
-// `/api/me/principals`, and a selected-tenant id persisted to localStorage so
-// the choice survives a reload. Every page that needs to know the current
-// bench (the chat page, the benches page, the header switcher) reads this
-// context instead of re-deriving "membership[0]" on its own.
+// The one place this app decides which bench is "current" — every page
+// reads this context instead of re-deriving "membership[0]" on its own.
 
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useContext, useMemo, useState } from "react";
@@ -36,13 +33,9 @@ function writeStoredTenantId(tenantId: string): void {
   }
 }
 
-/** True for a membership the shell may treat as a bench: a top-level
- * tenant, i.e. one whose `GET /api/tenants/:id` reports `parentId: null`.
- * Workbenches are named child tenants (`needs-converge.ts`'s `POST /api/tenants
- * { parentId }`), so a name-based heuristic can never tell a workbench from a
- * bench — only the tenant's own parent can. `parentByTenantId` holds
- * `undefined` for a tenant whose detail hasn't loaded yet, which this
- * treats as "not (yet known to be) a bench" rather than guessing. */
+/** True only for a top-level tenant (`parentId: null`) — a name-based
+ * heuristic can never tell a workbench from a bench. Unloaded detail
+ * (`undefined`) reads as "not yet known to be a bench" rather than a guess. */
 export function isBenchMembership(
   membership: Principal,
   parentByTenantId: ReadonlyMap<string, string | null>,
