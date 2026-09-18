@@ -1,8 +1,7 @@
-// Neither tool carries an approval key: creation is tenant-internal and
-// free (a new definition plus, by default, its own DM rather than an
-// invite into Myra's current one) — toolPackagePins here are pins the user
-// asked Myra to set, not a capability grant needing a per-invocation gate.
-// See ./client.ts for the workflow-run-authenticated routes this calls.
+// Three tools, no approval key: listing is read-only, creation is
+// tenant-internal and free (a new, deployed source asset), and messaging
+// an already-deployed specialist is ordinary mail. See ./client.ts for
+// the stock, workflow-run-authenticated routes each one calls.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
@@ -12,18 +11,17 @@ import {
   createAgentDefinition,
   CreateAgentDefinitionError,
   listAgentDefinitions,
-  mintAgentDm,
-  NoOwnWorkbenchError,
+  messageAgent,
   type AgentDirectoryToolClientConfig,
-  type CreateAgentDefinitionRequest,
 } from "./client";
 
 export const LIST_AGENTS_TOOL = "list_agents";
 export const CREATE_AGENT_TOOL = "create_agent";
+export const MESSAGE_AGENT_TOOL = "message_agent";
 
 export interface WorkflowAgentDirectoryEnv extends BaseEnv {
   readonly hubAgentDirectoryUrl: string;
-  readonly hubChatUrl: string;
+  readonly tenantId: string;
   readonly sidecarToken: string;
   readonly address: string;
 }
@@ -31,12 +29,15 @@ export interface WorkflowAgentDirectoryEnv extends BaseEnv {
 const CreateAgentInput = type({
   name: "string > 0",
   systemPrompt: "string > 0",
-  "toolPackagePins?": type("string > 0").array(),
-  "skills?": type("string > 0").array(),
   "modelPreference?": "string > 0",
-  "invite?": "boolean",
 });
 type CreateAgentInput = typeof CreateAgentInput.infer;
+
+const MessageAgentInput = type({
+  address: "string > 0",
+  message: "string > 0",
+});
+type MessageAgentInput = typeof MessageAgentInput.infer;
 
 function errorResult(callId: string, err: unknown): ToolResult {
   return {
@@ -49,47 +50,10 @@ function errorResult(callId: string, err: unknown): ToolResult {
 function clientConfig(env: WorkflowAgentDirectoryEnv): AgentDirectoryToolClientConfig {
   return {
     hubAgentDirectoryUrl: env.hubAgentDirectoryUrl,
-    hubChatUrl: env.hubChatUrl,
+    tenantId: env.tenantId,
     sidecarToken: env.sidecarToken,
     address: env.address,
   };
-}
-
-/** A definition handle derived from its display name — lowercased,
- * non-alphanumeric runs collapsed to a single hyphen, leading/trailing
- * hyphens trimmed — mirroring `@corbits/chat`'s `handleFromName` slug
- * rule closely enough to produce a valid `HANDLE_PATTERN` match without
- * depending on `@corbits/chat` from this bundle. A name that yields
- * nothing usable falls back to a generic handle rather than sending the
- * create route an empty string it would reject. */
-function handleFromAgentName(name: string): string {
-  const slug = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug.length > 0 ? slug : "agent";
-}
-
-function toCreateAgentDefinitionRequest(input: CreateAgentInput): CreateAgentDefinitionRequest {
-  const request: {
-    name: string;
-    handle: string;
-    systemPrompt: string;
-    model?: string;
-    skills?: readonly string[];
-    toolPackagePins?: readonly string[];
-  } = {
-    name: input.name,
-    handle: handleFromAgentName(input.name),
-    systemPrompt: input.systemPrompt,
-  };
-  if (input.modelPreference !== undefined) request.model = input.modelPreference;
-  if (input.skills !== undefined) request.skills = input.skills;
-  if (input.toolPackagePins !== undefined) {
-    request.toolPackagePins = input.toolPackagePins;
-  }
-  return request;
 }
 
 async function runListAgents(env: WorkflowAgentDirectoryEnv, call: ToolCall): Promise<ToolResult> {
@@ -99,11 +63,7 @@ async function runListAgents(env: WorkflowAgentDirectoryEnv, call: ToolCall): Pr
       definitions.length === 0
         ? "No other agents exist in this workbench yet."
         : definitions
-            .map((definition) =>
-              definition.description !== null
-                ? `${definition.name} — ${definition.description} (use this id for routines/dispatch: ${definition.id})`
-                : `${definition.name} (use this id for routines/dispatch: ${definition.id})`,
-            )
+            .map((definition) => `${definition.name} (message this address: ${definition.address})`)
             .join("\n");
     return { callId: call.id, isError: false, content };
   } catch (err) {
@@ -120,75 +80,63 @@ async function runCreateAgent(env: WorkflowAgentDirectoryEnv, call: ToolCall): P
     );
   }
 
-  let created;
   try {
-    created = await createAgentDefinition(
-      clientConfig(env),
-      toCreateAgentDefinitionRequest(parsed),
-    );
+    const created = await createAgentDefinition(clientConfig(env), {
+      name: parsed.name,
+      systemPrompt: parsed.systemPrompt,
+      ...(parsed.modelPreference !== undefined ? { model: parsed.modelPreference } : {}),
+    });
+    const modelSuffix = created.modelNote !== null ? ` ${created.modelNote}` : "";
+    return {
+      callId: call.id,
+      isError: false,
+      content: `Created "${created.name}" and deployed it (message it at ${created.address}).${modelSuffix}`,
+    };
   } catch (err) {
     if (err instanceof CreateAgentDefinitionError) {
       return errorResult(call.id, err);
     }
     return errorResult(call.id, err);
   }
+}
 
-  // Set when the requested `modelPreference` fell outside the tenant's
-  // catalog and the route substituted its default (or left the
-  // definition modelless) instead of baking in a name that can never
-  // resolve — surfaced on every branch below so the model
-  // relays the substitution to the user rather than claiming the
-  // model it originally asked for.
-  const modelSuffix = created.modelNote !== null ? ` ${created.modelNote}` : "";
-
-  // `invite` defaults to `true` — open the specialist's own 1:1 chat.
-  // Pass `false` to create the definition only.
-  const shouldMint = call.arguments["invite"] !== false;
-  if (!shouldMint) {
-    return {
-      callId: call.id,
-      isError: false,
-      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}). It has no chat of its own yet — call again without invite:false to open one.${modelSuffix}`,
-    };
+async function runMessageAgent(
+  env: WorkflowAgentDirectoryEnv,
+  call: ToolCall,
+): Promise<ToolResult> {
+  const parsed = MessageAgentInput(call.arguments);
+  if (parsed instanceof type.errors) {
+    return errorResult(
+      call.id,
+      new Error(`message_agent received invalid input: ${parsed.summary}`),
+    );
   }
-
   try {
-    const minted = await mintAgentDm(clientConfig(env), created.id);
+    await messageAgent(clientConfig(env), parsed);
     return {
       callId: call.id,
       isError: false,
-      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}) and opened its own chat (workbenchId: ${minted.workbenchId}).${modelSuffix}`,
+      content: `Message sent to ${parsed.address}.`,
     };
   } catch (err) {
-    // The agent was genuinely created — that half-success must never
-    // be dropped or reported as a bare error. A completed (not error)
-    // result whose content names the create-succeeded/mint-failed
-    // split, and why, so the model can relay it honestly rather than
-    // claiming either full success or total failure.
-    const reason =
-      err instanceof NoOwnWorkbenchError
-        ? "this workbench could not be identified as the caller's own"
-        : err instanceof Error
-          ? err.message
-          : String(err);
-    return {
-      callId: call.id,
-      isError: false,
-      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}), but could not open its own chat: ${reason}.${modelSuffix}`,
-    };
+    return errorResult(call.id, err);
   }
 }
 
 /**
  * The `@corbits/agent-directory-tools` bundle factory: `list_agents`
- * (read, no approval) and `create_agent` (creation is free; the
- * reactor never parks this call) — Myra's self-service
- * specialist-creation path.
+ * (read, no approval), `create_agent` (creation is free; the reactor
+ * never parks this call), and `message_agent` — Myra's self-service
+ * specialist-creation and dispatch path.
  */
 export const agentDirectoryTools = defineTool<WorkflowAgentDirectoryEnv>({
   id: "@corbits/agent-directory-tools/ad",
-  requires: ["hubAgentDirectoryUrl", "hubChatUrl", "sidecarToken", "address"],
-  definitions: [{ name: LIST_AGENTS_TOOL }, { name: CREATE_AGENT_TOOL }],
+  requires: ["hubAgentDirectoryUrl", "tenantId", "sidecarToken", "address"],
+  definitions: [
+    { name: LIST_AGENTS_TOOL },
+    { name: CREATE_AGENT_TOOL },
+    { name: MESSAGE_AGENT_TOOL },
+  ],
   factory: (env) => ({
     definitions: [
       {
@@ -196,17 +144,17 @@ export const agentDirectoryTools = defineTool<WorkflowAgentDirectoryEnv>({
         description:
           "List the other taskable agents already in this workbench — " +
           "use this before creating a new one, so you never create a " +
-          "duplicate of an agent that already exists.",
+          "duplicate of an agent that already exists, and to find an " +
+          "existing agent's address before messaging it.",
         inputSchema: { type: "object", properties: {} },
       },
       {
         name: CREATE_AGENT_TOOL,
         description:
-          "Create a brand-new specialist agent in this workbench, with " +
-          "its own name and system prompt, and — unless told not to — " +
-          "open that specialist its own 1:1 chat (not an invite into " +
-          "the current DM). Use this only for a genuine, specific " +
-          "need; never speculatively.",
+          "Create and deploy a brand-new specialist agent in this " +
+          "workbench, with its own name, system prompt, and mail " +
+          "address. Use this only for a genuine, specific need; never " +
+          "speculatively.",
         inputSchema: {
           type: "object",
           properties: {
@@ -217,19 +165,6 @@ export const agentDirectoryTools = defineTool<WorkflowAgentDirectoryEnv>({
             systemPrompt: {
               type: "string",
               description: "The new agent's full system prompt.",
-            },
-            toolPackagePins: {
-              type: "array",
-              items: { type: "string" },
-              description:
-                "Tool package names to pin directly onto the new agent " +
-                '(e.g. "@corbits/memory-tools"), if it needs one beyond ' +
-                "what its skills already pull in.",
-            },
-            skills: {
-              type: "array",
-              items: { type: "string" },
-              description: "Skill names to pin onto the new agent.",
             },
             modelPreference: {
               type: "string",
@@ -243,16 +178,26 @@ export const agentDirectoryTools = defineTool<WorkflowAgentDirectoryEnv>({
                 "falls back to the workspace default instead. Omit " +
                 "this field entirely to use that default.",
             },
-            invite: {
-              type: "boolean",
-              description:
-                "Whether to open the new agent's own 1:1 chat " +
-                "immediately after creating it. Defaults to true — " +
-                "pass false to create the agent without opening a chat. " +
-                "Does not invite into the current DM.",
-            },
           },
           required: ["name", "systemPrompt"],
+        },
+      },
+      {
+        name: MESSAGE_AGENT_TOOL,
+        description: "Send a mail message to another agent in this workbench by its address.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            address: {
+              type: "string",
+              description: "The agent's mail address, from list_agents or create_agent.",
+            },
+            message: {
+              type: "string",
+              description: "The message body to send.",
+            },
+          },
+          required: ["address", "message"],
         },
       },
     ],
@@ -262,6 +207,8 @@ export const agentDirectoryTools = defineTool<WorkflowAgentDirectoryEnv>({
           return runListAgents(env, call);
         case CREATE_AGENT_TOOL:
           return runCreateAgent(env, call);
+        case MESSAGE_AGENT_TOOL:
+          return runMessageAgent(env, call);
         default:
           return Promise.resolve(
             errorResult(
