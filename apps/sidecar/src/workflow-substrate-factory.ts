@@ -308,12 +308,9 @@ function createStepStorageSigner(signingKey: {
 }
 
 /**
- * Deliberately rooted outside the workflow-run repo's working tree so it
- * never collides with the run-event log under runs/<runId>/events/.
- * Resume-attempt invariant: a crash-resume must reopen the SAME attempt-N
- * store the step suspended under (recovered via currentAttempt, not
- * assumed to be 1), or the reactor rehydrates an empty gate and hangs.
- * createSidecarStepBuildEnv asserts this loudly on the cold path.
+ * Rooted outside the workflow-run working tree to avoid the run-event log.
+ * A crash-resume must reopen the same attempt-N it suspended under
+ * (recovered via currentAttempt), or the reactor hangs on an empty gate.
  */
 export function stepStorageRoot(args: {
   dataDir: string;
@@ -711,16 +708,7 @@ export function createSidecarStepBuildEnv(
   };
 }
 
-/**
- * Real per-step invoker for a spawned child's steps -- a childWorkflow child
- * and an onTrigger section body alike. It widens the workflow-runtime
- * `StepInvoker` with the child's credentials-backed `authorize` (the seam that
- * resolves each tool call against the run's grants), the child's own per-step
- * inference `sourcesRef` (built fresh per spawn from the env-delivered body
- * sources, disjoint from the top-level's mutable table), and the parent run's
- * `onEvent` funnel (so the child's live inference events reach the hub
- * timeline).
- */
+/** Widens StepInvoker with the child's authorize, its own per-spawn sourcesRef, and the parent's onEvent funnel. */
 export type SidecarChildStepInvoker = (
   req: StepInvokeRequest,
   authorize: WorkflowAuthorizeFn,
@@ -730,29 +718,10 @@ export type SidecarChildStepInvoker = (
 ) => Promise<StepInvokeResult>;
 
 /**
- * Inputs required to construct the sidecar's in-process child runtime.
- * Lifted out of `createSidecarSubstrateFactory` so the implementation
- * is exercisable in isolation (the co-located test wires a hand-built
- * substrate/principal/scheduler/invokeStep against this surface).
- *
- * Sub-namespace scoping: the child runtime is invoked with
- * `runId: childRunId`. The runtime body threads that id through every
- * `repoStore.read/append/subscribe` call, every `blobs.recordOutput`
- * call, and every `signalChannel.deliver/awaitNext` call. The host-
- * adapter implementations (`createWorkflowRunRepoStore`,
- * `createWorkflowRunBlobSubstrate`, `createWorkflowHostSignalChannel`)
- * each compute their on-disk path as `runs/<runId>/...` against the
- * supplied workflow-run repo. The net effect is that the child's
- * events land under `runs/<childRunId>/events/<seq>.json` of the
- * parent's workflow-run repo, sibling to the parent's own
- * `runs/<parentRunId>/...` subtree.
- *
- * Substrate identity: the child reuses the parent's wrapped `RepoStore`
- * (the workflow-run pack-pushing wrap installed by the factory) so a
- * successful child write fires the same hub pack push the parent's
- * writes do. The substrate's signing principal (a workflow-process
- * principal scoped to the parent's anchorRunId) is reused verbatim
- * because the child runs under the same supervisor authority.
+ * Lifted out of createSidecarSubstrateFactory so it's exercisable in
+ * isolation. The child runs with runId: childRunId, so its events land at
+ * runs/<childRunId>/... sibling to the parent's own subtree, reusing the
+ * parent's pack-pushing substrate and signing principal verbatim.
  */
 interface SidecarRunChildDeps {
   /** Wrapped workflow-run substrate (the factory's `substrate`). */
@@ -766,72 +735,22 @@ interface SidecarRunChildDeps {
   /** Host-process scheduler singleton; shared with the parent. */
   scheduler: Scheduler;
   /**
-   * Step invoker the child runtime delegates per-step invocations to.
-   *
-   * The in-process child runs a WorkflowDefinition whose stepIds are
-   * disjoint from the parent's. The parent's
-   * `STEP_INFERENCE_SOURCES`-pinned `buildStepEnv` knows only the
-   * parent's stepIds and throws on any other id; routing the child's
-   * step invocations through that closure surfaces a misleading
-   * "no InferenceSource pinned" error for every child step. Callers
-   * therefore supply a SEPARATE invokeStep for the child. The substrate
-   * factory's default (`childInvokeStep` in
-   * `createSidecarSubstrateFactory`) runs a real, tool-bearing agent
-   * against the child's own staged sources; a test may inject its own.
-   * One invoker serves every spawned child's steps -- a childWorkflow
-   * child, an onTrigger section body, and a body's own grandchildren --
-   * because each of them runs real inference and so must be able to call
-   * tools.
-   *
-   * The invoker receives the child's credentials-backed `authorize`
-   * alongside the request, mirroring the workflow-process child's
-   * `ChildStepInvoker`: the runtime body calls `env.invokeStep` with the
-   * request only, so the invoker -- not the runtime -- is the seam that
-   * gates each tool call against the run's grants.
+   * The child's stepIds are disjoint from the parent's, so routing through
+   * the parent's STEP_INFERENCE_SOURCES-pinned buildStepEnv would throw a
+   * misleading error; callers supply a separate invokeStep instead.
    */
   invokeStep: SidecarChildStepInvoker;
-  /**
-   * Every spawned body's plaintext inference-source table, keyed by definition
-   * id, decrypted sidecar-side from the run record and delivered through the
-   * spawn env. Each body path resolves its own table from here by definition id,
-   * so the child never holds the sidecar cipher key. A body whose id is absent --
-   * a deployment restored from a legacy record written before body sources moved
-   * into the record -- falls back to the on-disk `dataDir` file.
-   */
+  /** Keyed by definition id so the child never holds the sidecar cipher key; a missing id falls back to dataDir. */
   bodySources: BodyInferenceSources;
-  /**
-   * Sidecar data dir. The legacy fallback for a body absent from `bodySources`
-   * reads its `assets/workflow/<childRef>/sources.json`; the terminal
-   * childWorkflow / body paths resolve per-step storage under it. Required.
-   */
+  /** Backs the legacy on-disk sources.json fallback and per-step storage roots. Required. */
   dataDir?: string;
-  /**
-   * Grant evaluator the child's credentials-backed `authorize` delegates
-   * each `(resource, action)` decision to. The parent factory owns the
-   * sidecar's grant-rule grammar and supplies its adapter here so the
-   * child resolves authorization against the same evaluator the parent's
-   * steps use.
-   */
+  /** Supplied by the parent factory so the child authorizes against the same evaluator the parent's steps use. */
   evaluateGrants: GrantEvaluator;
-  /**
-   * Sidecar-static credential provider registry, shared with the top level.
-   * The child's build combines it with the run's live material cell and the
-   * child's capped grants to assemble each bundle's consumer `credentials`
-   * capability, and to resolve its inference source secret against the same
-   * material.
-   */
+  /** Combined with the run's live material cell and capped grants to assemble each bundle's credentials capability. */
   credentialProviders: CredentialProviderRegistry;
   /** Director registry the child runtime uses; defaults to the canonical built-ins. */
   directors?: DirectorRegistry;
-  /**
-   * Sidecar-local directory of the materialized workflow-definition closure
-   * (`env.spawn.closurePackageDir`), the source-ref lineage's only closure.
-   * `buildChildRunEnv` loads the child body's declared plugin tool definitions
-   * from it so a plugin-contributed `tool:<name>` the child loads is declared
-   * when capping the child's inherited grants. A child body that declares no
-   * plugin package needs no closure read; absent on a lineage that stages no
-   * closure.
-   */
+  /** Present only on the source-ref lineage, to declare plugin-contributed tools when capping inherited grants. */
   closurePackageDir?: string;
   /** Clock for timestamp generation; defaults to `() => new Date()`. */
   clock?: () => Date;
@@ -843,21 +762,9 @@ interface SidecarRunChildDeps {
 }
 
 /**
- * Write a spawned child's inherited grants to its own
- * `runs/<childRunId>/grants.json` in the deployment's workflow-run repo.
- *
- * The write goes through the child proxy substrate's
- * `writeTreePreservingPrefix` -- the only write path the proxy forwards
- * to the supervisor. It names the shallow `runs/<childRunId>/` prefix, whose
- * merge input is only that level's flat blobs (the prefix read does not
- * recurse), so the write rebuilds the level with just `grants.json`. This is
- * safe ONLY because the sole caller (`capAndPersistChildGrants`) is write-once:
- * it invokes this only when no grants file exists yet, i.e. at the run's birth
- * before the runtime appends any event, so the `runs/<childRunId>/` subtree is
- * empty and nothing is dropped. Invoking it over a populated run would delete
- * that run's committed `events/`/`blobs/` subtrees. A later event append names
- * the nested `runs/<childRunId>/events/` prefix, so its own subtree-delete does
- * not reach `grants.json` one level up -- the sibling survives.
+ * Safe only because the sole caller is write-once, at the run's birth
+ * before any event append — the shallow runs/<childRunId>/ prefix rebuild
+ * would otherwise delete a populated run's events/blobs subtrees.
  */
 async function writeChildRunGrants(args: {
   substrate: RepoStore;
@@ -883,55 +790,26 @@ async function writeChildRunGrants(args: {
 }
 
 /**
- * Construct the `RunChildWorkflow` callback the spawn-child adapter
- * delegates to. The returned callback, when invoked with the parent
- * runtime's attribution + the parent-allocated `childRunId` + the
- * resolved `WorkflowDefinition`, builds a fresh `WorkflowRuntimeEnv`
- * scoped to `childRunId`, invokes `runtimeRun`, and returns the
- * child's terminal status.
- *
- * Abort propagation: the parent-supplied `signal` is wired to the child
- * run's local-abort seam (`RuntimeRunOptions.localAbort`). If it aborts --
- * mid-flight or pre-aborted -- the child's own cancel controller aborts, an
- * in-flight step fails, and the returned promise resolves with
- * `terminalStatus: "failed"`. There is no durable `CancelRequested`: an
- * in-process child writes through the proxy substrate and cannot sign the
- * supervisor cancel one would require.
- *
- * Resource lifecycle: the child's per-run signal channel handle is
- * `stop()`ped in a finally block so any background `subscribeKind`
- * loop tied to the child's runId tears down before the callback
- * returns. The blob substrate, repo store, and scheduler entries are
- * either per-call (no handle to dispose) or shared with the parent
- * (the scheduler).
+ * No durable CancelRequested: an in-process child aborts through the
+ * runtime's local-abort seam since it cannot sign the supervisor cancel a
+ * control-plane cancel would require. The signal channel handle is
+ * stop()ped in a finally block so no subscribeKind loop outlives the call.
  */
 export function createSidecarRunChild(deps: SidecarRunChildDeps): RunChildWorkflow {
   const directors = deps.directors ?? createDefaultDirectorRegistry();
   const clock = deps.clock ?? defaultClock;
   const newId = deps.newId ?? defaultNewId;
-  // No `controlPlanePrincipal`: an in-process child tears down through the
-  // runtime's local-abort seam (see the `runtimeRun` call below), not a durable
-  // `CancelRequested`, so it never writes a control-plane cancel this repo store
-  // would have to sign. Run-body events use the workflow-process `principal`.
-  // Created once and shared across every child this factory spawns (the
-  // runtime scopes reads/subscribes by runId), so sibling and grandchild
-  // spawns route through one repo-store handle rather than a fresh one each.
+  // No controlPlanePrincipal: teardown goes through the local-abort seam, not
+  // a durable CancelRequested. Shared across every child this factory spawns.
   const repoStore = createWorkflowRunRepoStore({
     substrate: deps.substrate,
     repoId: deps.workflowRunRepoId,
     principal: deps.principal,
     ref: deps.workflowRunRef,
   });
-  // Self-referential `RunChildWorkflow` so a child env's recursive
-  // `spawnChild` (built via `createInMemorySpawnChild` in `buildChildRunEnv`)
-  // can route grandchild spawns back through the same adapter. Each invocation
-  // builds a per-runId env that itself wires a `spawnChild` slot whose
-  // `runChild` is this same `runChild` constant -- the recursion bottoms
-  // out when a rung's `WorkflowDefinition` has no `childWorkflow`
-  // primitive. Sub-namespace scoping continues to hold at every depth
-  // because `childRunId` flows verbatim into the per-rung
-  // `blobs`/`signalChannel`/`runtimeRun` calls, keeping every rung's
-  // events under `runs/<runId>/...` of the parent's workflow-run repo.
+  // Self-referential so a child env's recursive spawnChild routes
+  // grandchild spawns back through this same adapter; recursion bottoms
+  // out when a rung's definition has no childWorkflow primitive.
   const runChild: RunChildWorkflow = async (
     { definition, childRunId, input, parentRunId, signal, depth, maxChildSpawnDepth },
     onEvent,
@@ -955,16 +833,10 @@ export function createSidecarRunChild(deps: SidecarRunChildDeps): RunChildWorkfl
       ...(credentialMaterial !== undefined ? { materialCell: credentialMaterial } : {}),
     });
     try {
-      // Thread this rung's depth/ceiling into the child run so its own
-      // childWorkflow spawns keep counting against the tree-wide bound (the
-      // guard lives in the runtime's runChildWorkflow). Without this the
-      // in-process sidecar recursion would reset to depth 0 each rung.
-      // A parent abort tears the child down through `runtimeRun`'s local-abort
-      // seam, not a control-plane cancel: the in-process child writes through
-      // the workflow-run PROXY substrate, which cannot sign the supervisor
-      // `CancelRequested` a cancel needs (the kind handler refuses a
-      // workflow-process-signed cancel). Local teardown aborts the child's own
-      // controller directly, so an in-flight step fails and the child settles
+      // Threads this rung's depth/ceiling so nested spawns keep counting
+      // against the tree-wide bound rather than resetting to depth 0 per rung.
+      // A parent abort tears down through the local-abort seam, not a
+      // control-plane cancel the proxy substrate cannot sign.
       // `failed` under its own principal -- no durable cancel, no wedge while the
       // parent awaits the terminal below.
       const handle = runtimeRun(rewrittenDefinition, env, {
