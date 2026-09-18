@@ -1,8 +1,5 @@
-// "New skill" uses the off-route-safe pending-flag pattern from
-// `pending-dialog-request.ts`, since the palette can fire before the
-// target page's listener mounts. "New workbench" has no such race — it
-// navigates straight to the template picker. "New task"/"New thread" are
-// out of scope (owner decision).
+// "New skill" uses the pending-flag pattern from `pending-dialog-request.ts`
+// since the palette can fire before the target page's listener mounts.
 
 import { createPendingDialogRequest } from "@/shell/layout";
 import { CHAT_STRINGS } from "@/chat";

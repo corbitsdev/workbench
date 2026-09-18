@@ -23,10 +23,9 @@ export function isAuthInvalidError(error: unknown): boolean {
   return error instanceof ApiQueryError && error.status === 401;
 }
 
-// Without this, a query that 401s renders its own local "sign in
-// required" box while the rest of the shell keeps rendering — the broken
-// half-state this exists to prevent. Caller must make `onAuthInvalid`
-// idempotent.
+// Without this, a query that 401s renders its own "sign in required" box
+// while the rest of the shell keeps rendering. Caller must make
+// `onAuthInvalid` idempotent.
 export function createAppQueryClient(onAuthInvalid: () => void = () => undefined): QueryClient {
   return new QueryClient({
     queryCache: new QueryCache({

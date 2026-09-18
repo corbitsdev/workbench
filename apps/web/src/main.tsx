@@ -1,9 +1,6 @@
-// The mount, and nothing else. This module declares no component on
-// purpose: a module that declares one becomes a React Refresh boundary,
-// and a hot update then re-executes it in place — calling `createRoot` on
-// `#root` a second time and leaving two reconcilers committing into one
-// container. The root itself is kept on the HMR data slot so even a
-// re-execution reuses the single root it already created.
+// No component declared here on purpose: that would make this module a
+// React Refresh boundary, whose hot re-execution would call `createRoot`
+// twice. The root is kept on the HMR data slot to survive re-execution.
 
 import "@corbits/react-ui/styles.css";
 import "./app.css";
