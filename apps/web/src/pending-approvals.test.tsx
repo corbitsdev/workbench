@@ -184,6 +184,59 @@ describe("usePendingApprovals", () => {
     expect(requested.filter((path) => path.includes("/runs/run_1"))).toHaveLength(1);
   });
 
+  test("falls back to the chat roster's name when the run view can't answer", async () => {
+    stubFetch((path) => {
+      if (path === `/api/tenants/${TENANT_ID}/approvals`) {
+        return json({
+          data: [approvalRow({ agentAddress: "researcher@growth" })],
+          nextCursor: null,
+        });
+      }
+      // The approver lacks a read grant on this run -- fetchAgentName reads
+      // it as UNNAMED_AGENT, so the roster join is the only source left.
+      if (path === `/api/tenants/${TENANT_ID}/runs/run_1`) {
+        return json({ error: { code: "forbidden" } }, 403);
+      }
+      if (path === `/api/tenants/${TENANT_ID}/workflows/deployments`) {
+        return json([
+          {
+            id: "run_1",
+            tenantId: TENANT_ID,
+            definitionAssetId: "asset_1",
+            status: "deployed",
+            createdAt: "2026-08-20T08:00:00.000Z",
+            updatedAt: "2026-08-20T08:00:00.000Z",
+          },
+        ]);
+      }
+      if (path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`) {
+        return json([{ id: "asset_1", name: "researcher-bot" }]);
+      }
+      if (path.startsWith(`/api/tenants/${TENANT_ID}/workflows/runs`)) {
+        return json({
+          data: [
+            {
+              id: "run_1",
+              definitionId: "asset_1",
+              definitionName: "researcher-bot",
+              tenantId: TENANT_ID,
+              address: "researcher@growth",
+              status: "running",
+              createdAt: "2026-08-20T08:00:00.000Z",
+              updatedAt: "2026-08-20T08:00:00.000Z",
+            },
+          ],
+          nextCursor: null,
+        });
+      }
+      return undefined;
+    });
+
+    const el = await mount(<ApprovalNames />);
+
+    expect(el.textContent).toContain("researcher-bot in Growth Team Bench");
+  });
+
   test("a refused list read reads as a failure, never as an empty queue", async () => {
     stubFetch((path) => {
       if (path === `/api/tenants/${TENANT_ID}/approvals`) {

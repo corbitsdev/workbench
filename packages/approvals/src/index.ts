@@ -11,4 +11,4 @@ export type {
   ToolAllowance,
   ToolAllowanceRegistry,
 } from "./allowance";
-export { headlineFor } from "./headline";
+export { argumentsSummaryFor, headlineFor, toolNameFor } from "./headline";

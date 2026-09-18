@@ -2,12 +2,14 @@
 // renders an approval without a raw id ever reaching a rendered string.
 
 import { ApprovalResponse, WorkflowRunResponse } from "@intx/types";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { type } from "arktype";
 
 import type { APIQuery } from "@/lib/api-query";
-import { headlineFor } from "@corbits/approvals/headline";
+import { argumentsSummaryFor, headlineFor, toolNameFor } from "@corbits/approvals/headline";
 
+import { chatKeys } from "./chat-path";
+import { listChatAgents } from "./chat/threads-api";
 import { TenantApprovalsSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
 import { tenantKeys } from "./query-client";
@@ -21,6 +23,12 @@ export type ApprovalDisplay = {
   readonly agentAddress: string;
   readonly agentName: string;
   readonly headline: string;
+  /** The tool being called, e.g. `write_file` -- absent only when the route's
+   * tool snapshot carried no name. */
+  readonly toolName?: string;
+  /** A compact, truncated rendering of the call's arguments -- always plain
+   * text, never markup, since the arguments are untrusted agent output. */
+  readonly argumentsSummary?: string;
   readonly arguments: Record<string, unknown>;
   readonly status: "pending" | "approved" | "rejected" | "timeout" | "expired";
   readonly createdAt: string;
@@ -60,11 +68,15 @@ async function fetchAgentName(tenantId: string, runId: string): Promise<string> 
 }
 
 function composeApproval(row: ApprovalRow, agentName: string): ApprovalDisplay {
+  const toolName = toolNameFor(row.toolDefinition);
+  const argumentsSummary = argumentsSummaryFor(row.toolDefinition, row.toolArguments);
   return {
     id: row.id,
     agentAddress: row.agentAddress,
     agentName,
     headline: headlineFor(row.toolDefinition, row.toolArguments),
+    ...(toolName !== undefined ? { toolName } : {}),
+    ...(argumentsSummary !== undefined ? { argumentsSummary } : {}),
     arguments: row.toolArguments,
     status: row.status,
     createdAt: row.createdAt,
@@ -94,15 +106,36 @@ export function usePendingApprovals(
             queryFn: () => fetchAgentName(tenantId, runId),
           })),
   });
+  // The chat roster's join (deployments -> runs -> assets) names an agent by
+  // every address it has ever run under, including a just-created one the
+  // run view above can't resolve (the approver may lack a read grant on that
+  // run). Same query key the chat page uses, so this is usually a cache hit.
+  const roster = useQuery({
+    queryKey: chatKeys.agents(tenantId ?? ""),
+    queryFn: () => listChatAgents(tenantId as string),
+    enabled: tenantId !== null,
+  });
 
   if (list.kind !== "ready") return list;
   // A half-named list would render the placeholder and then swap in real
   // names a tick later; wait instead.
   if (agentNames.some((name) => name.isPending)) return { kind: "loading" };
+  if (roster.isPending) return { kind: "loading" };
 
   const agentNameByRunId = new Map(
     runIds.map((runId, index) => [runId, agentNames[index]?.data ?? UNNAMED_AGENT]),
   );
+  const rosterNameByAddress = new Map<string, string>();
+  for (const agent of roster.data ?? []) {
+    for (const address of agent.addresses) {
+      rosterNameByAddress.set(address, agent.name);
+    }
+  }
+  const nameForRow = (row: ApprovalRow): string => {
+    const fromRun = agentNameByRunId.get(row.runId) ?? UNNAMED_AGENT;
+    if (fromRun !== UNNAMED_AGENT) return fromRun;
+    return rosterNameByAddress.get(row.agentAddress) ?? UNNAMED_AGENT;
+  };
   const membership =
     memberships.kind === "ready"
       ? memberships.data.data.find((row) => row.tenantId === tenantId)
@@ -112,7 +145,7 @@ export function usePendingApprovals(
   return {
     kind: "ready",
     data: rows.map((row) => ({
-      ...composeApproval(row, agentNameByRunId.get(row.runId) ?? UNNAMED_AGENT),
+      ...composeApproval(row, nameForRow(row)),
       ...(benchName !== undefined ? { benchName } : {}),
     })),
   };
