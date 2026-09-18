@@ -54,6 +54,10 @@ export function getPath(): string {
 export function navigateTo(to: string): void {
   const url = new URL(to, window.location.origin);
   const canonical = canonicalPath(url.pathname);
+  // A hop to the path already showing is a no-op, which is what makes a
+  // render-phase `navigate` safe to run twice (StrictMode, a re-render):
+  // it can never stack duplicate history entries.
+  if (canonical === currentPath) return;
   window.history.pushState(null, "", canonical === url.pathname ? to : canonical);
   setPath(canonical);
 }

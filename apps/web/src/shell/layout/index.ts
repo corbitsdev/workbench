@@ -33,7 +33,6 @@ export {
 } from "./canvas-column-state";
 export type { CanvasColumnState } from "./canvas-column-state";
 
-export { useScrollReset } from "./use-scroll-reset";
 
 export { createPendingDialogRequest } from "./pending-dialog-request";
 export type { PendingDialogRequest } from "./pending-dialog-request";

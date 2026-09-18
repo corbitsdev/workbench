@@ -16,7 +16,7 @@
 // transition duration under `prefers-reduced-motion`.
 
 import { MagnifyingGlass } from "@/lib/icons";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 export type StageSearchProps = {
   /** Accessible name for both the button and the input, and the default
@@ -30,18 +30,18 @@ export type StageSearchProps = {
 
 export function StageSearch({ label, value, onChange, placeholder }: StageSearchProps) {
   const [open, setOpen] = useState(value.length > 0);
-  const wasOpen = useRef(open);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  // Set only by the button, so a prefilled filter expands the bar without
+  // stealing focus from whatever the page opened with.
+  const openedByClick = useRef(false);
   // A query the page already carries in (a prefilled filter) keeps the bar
   // expanded even before anyone has focused it.
   const expanded = open || value.length > 0;
 
-  useEffect(() => {
-    if (open) inputRef.current?.focus();
-    if (wasOpen.current && !open) buttonRef.current?.focus();
-    wasOpen.current = open;
-  }, [open]);
+  function collapse() {
+    setOpen(false);
+    buttonRef.current?.focus();
+  }
 
   return (
     <div className="stage-search" data-testid="stage-search" data-expanded={expanded}>
@@ -51,13 +51,20 @@ export function StageSearch({ label, value, onChange, placeholder }: StageSearch
         className="stage-search-button"
         aria-label={label}
         aria-expanded={expanded}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          openedByClick.current = true;
+          setOpen(true);
+        }}
       >
         <MagnifyingGlass aria-hidden="true" />
       </button>
       {expanded ? (
         <input
-          ref={inputRef}
+          ref={(node) => {
+            if (node === null || !openedByClick.current) return;
+            openedByClick.current = false;
+            node.focus();
+          }}
           type="search"
           className="stage-search-input"
           aria-label={label}
@@ -71,7 +78,7 @@ export function StageSearch({ label, value, onChange, placeholder }: StageSearch
             if (event.key !== "Escape") return;
             event.stopPropagation();
             if (value.length > 0) onChange("");
-            else setOpen(false);
+            else collapse();
           }}
         />
       ) : null}

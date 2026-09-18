@@ -11,7 +11,7 @@
 // and this component only reads it through the same hooks page code
 // already uses.
 
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { ArtifactSaveState } from "@/library";
 
 import { WorkbenchLoadingState } from "@/chat";
@@ -23,7 +23,6 @@ import { saveArtifactContent } from "./library-artifacts";
 import { APP_ROUTES, matchesRoute } from "../routes";
 import type { SessionUser } from "../session";
 import { StageTopBar } from "./stage-top-bar";
-import { useScrollReset } from "@/shell/layout";
 import {
   useCanvasColumnArtifact,
   useCanvasColumnAvailable,
@@ -55,6 +54,24 @@ function routeLabel(path: string): string {
   return route?.label ?? "Workbench";
 }
 
+/** Route changes must not inherit the previous page's scroll position. Keyed
+ * on the path, so it remounts per route and resets the scroll container as
+ * its ref attaches. */
+function ScrollToTop({
+  containerRef,
+}: {
+  readonly containerRef: RefObject<HTMLDivElement | null>;
+}) {
+  return (
+    <span
+      hidden
+      ref={() => {
+        if (containerRef.current !== null) containerRef.current.scrollTop = 0;
+      }}
+    />
+  );
+}
+
 export function AppShell({
   path,
   user,
@@ -75,51 +92,46 @@ export function AppShell({
   const canvasFocus = useCanvasColumnFocus();
   const { selectedTenantId: tenantId } = useBench();
 
-  // A text-kind artifact's save state (: single-user editing, no
-  // co-edit presence). Resets to a fresh state the moment the open
-  // artifact changes so a stale "Saved · v3" from a previous artifact can
-  // never leak into a newly opened one.
-  const [artifactSaveState, setArtifactSaveState] = useState<ArtifactSaveState>({
-    kind: "read-only",
-  });
-  const artifactSaveStateForId = useRef<string | null>(null);
-  useEffect(() => {
-    if (canvasArtifact === null || canvasArtifact.rendererKind !== "doc") {
-      artifactSaveStateForId.current = null;
-      setArtifactSaveState({ kind: "read-only" });
-      return;
-    }
-    if (artifactSaveStateForId.current === canvasArtifact.id) return;
-    artifactSaveStateForId.current = canvasArtifact.id;
-    setArtifactSaveState(
-      canvasArtifact.canEdit === true ? { kind: "unsaved" } : { kind: "read-only" },
-    );
-  }, [canvasArtifact]);
+  // A text-kind artifact's save state (single-user editing, no co-edit
+  // presence), carried with the id it belongs to: state for any other id is
+  // ignored during render, so a stale "Saved · v3" can never leak into a
+  // newly opened artifact and nothing has to be reset when one changes.
+  const [savedFor, setSavedFor] = useState<{
+    readonly id: string;
+    readonly state: ArtifactSaveState;
+  } | null>(null);
+  const editableArtifact =
+    canvasArtifact !== null && canvasArtifact.rendererKind === "doc" ? canvasArtifact : null;
+  const artifactSaveState: ArtifactSaveState =
+    editableArtifact === null
+      ? { kind: "read-only" }
+      : savedFor?.id === editableArtifact.id
+        ? savedFor.state
+        : editableArtifact.canEdit === true
+          ? { kind: "unsaved" }
+          : { kind: "read-only" };
 
   const saveArtifact = (content: string) => {
-    if (tenantId === null || canvasArtifact === null) return;
-    const artifactId = canvasArtifact.id;
-    setArtifactSaveState({ kind: "saving" });
+    if (tenantId === null || editableArtifact === null) return;
+    const artifactId = editableArtifact.id;
+    const keepIfCurrent = (state: ArtifactSaveState) => {
+      setSavedFor((previous) =>
+        previous === null || previous.id === artifactId ? { id: artifactId, state } : previous,
+      );
+    };
+    setSavedFor({ id: artifactId, state: { kind: "saving" } });
     void saveArtifactContent(tenantId, artifactId, content).then(
       (saved) => {
-        if (artifactSaveStateForId.current !== artifactId) return;
-        setArtifactSaveState({
-          kind: "saved",
-          version: saved.version,
-          savedAt: Date.now(),
-        });
+        keepIfCurrent({ kind: "saved", version: saved.version, savedAt: Date.now() });
       },
       () => {
-        if (artifactSaveStateForId.current !== artifactId) return;
-        setArtifactSaveState({ kind: "unsaved" });
+        keepIfCurrent({ kind: "unsaved" });
       },
     );
   };
   const closeCanvas = useCloseCanvas();
   const toggleCanvasFocus = useToggleCanvasFocus();
   const mainRef = useRef<HTMLDivElement>(null);
-  // Route changes must not inherit the previous page's scroll position.
-  useScrollReset(mainRef, path);
   const pendingCount = usePendingApprovalCount(tenantId);
   const pendingChip =
     pendingCount === null
@@ -135,6 +147,7 @@ export function AppShell({
     <div className="shell-frame">
       <Sidebar path={path} onNavigate={navigate} />
       <div className="shell-main" ref={mainRef}>
+        <ScrollToTop key={path} containerRef={mainRef} />
         <div className="shell-main-content">
           {routeHasNoStageTopBar(path) ? (
             <StageTopBar
