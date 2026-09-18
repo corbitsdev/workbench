@@ -134,6 +134,20 @@
   min-width: min-content;
 }
 
+/* Settings tables (People, Credentials, Models): scroll their own
+   overflow container rather than letting the panel widen or clipping the
+   Actions column at desktop width — the table itself keeps its natural
+   width and only this wrapper scrolls horizontally. */
+.settings-table-scroll {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.settings-table-scroll table {
+  width: 100%;
+  min-width: 40rem;
+}
+
 .settings-inline-error {
   margin: 0;
   color: var(--destructive);
