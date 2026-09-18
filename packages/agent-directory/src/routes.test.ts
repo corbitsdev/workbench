@@ -25,7 +25,7 @@ import {
 } from "./agent-workflow";
 import {
   agentDefinitionSourceTree,
-  AGENT_DEFINITION_ENTRY_PATH,
+  AGENT_DEFINITION_JSON_PATH,
   readAgentDefinitionWorkflowJson,
   RetiredWorkflowEnvelopeError,
 } from "./definition-asset";
@@ -150,7 +150,7 @@ function liveDefinitionAsset(initial: Uint8Array): AssetService {
       return current;
     },
     populateAsset: async (params) => {
-      const entry = params.tree.files[AGENT_DEFINITION_ENTRY_PATH];
+      const entry = params.tree.files[AGENT_DEFINITION_JSON_PATH];
       if (typeof entry !== "string") {
         throw new Error("populateAsset wrote no entry module");
       }
@@ -180,7 +180,7 @@ function storedDefinitionBytes(systemPrompt = "You are a careful research assist
       }),
     ),
   });
-  return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
+  return new TextEncoder().encode(tree[AGENT_DEFINITION_JSON_PATH]);
 }
 
 /** A stored definition that already pins a model — the state a person
@@ -198,7 +198,7 @@ function storedDefinitionBytesWithModel(model: string): Uint8Array {
       }),
     ),
   });
-  return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
+  return new TextEncoder().encode(tree[AGENT_DEFINITION_JSON_PATH]);
 }
 
 /** The model the one step agent resolves against, or `undefined` when it
@@ -965,7 +965,7 @@ test("GET /:definitionId answers 409, never a 500, for an asset still on the ret
     error: { code: string; userMessage: string };
   };
   expect(body.error.code).toBe("conflict");
-  expect(body.error.userMessage).toContain("workflow.json");
+  expect(body.error.userMessage).toContain("definition.json");
 });
 
 test("PUT /:definitionId answers 409 and writes nothing for an asset still on the retired envelope", async () => {
@@ -1070,14 +1070,14 @@ test("PUT instructions after a newer tarball lands keeps the stored pin version"
     handle: "research-buddy",
     workflowJson: pinned,
   });
-  let current = new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
+  let current = new TextEncoder().encode(tree[AGENT_DEFINITION_JSON_PATH]);
   let writtenEntry: string | undefined;
   let listCalls = 0;
   const app = buildApp(
     fakeAssetService({
       readAssetBlob: async () => current,
       populateAsset: (params) => {
-        const entry = params.tree.files[AGENT_DEFINITION_ENTRY_PATH];
+        const entry = params.tree.files[AGENT_DEFINITION_JSON_PATH];
         if (typeof entry !== "string") {
           throw new Error("populateAsset wrote no entry module");
         }
@@ -1107,7 +1107,7 @@ test("PUT instructions after a newer tarball lands keeps the stored pin version"
   });
   expect(response.status).toBe(200);
   expect(listCalls).toBe(0);
-  expect(pinsFrom(definitionFrom({ [AGENT_DEFINITION_ENTRY_PATH]: writtenEntry ?? "" }))).toEqual([
+  expect(pinsFrom(definitionFrom({ [AGENT_DEFINITION_JSON_PATH]: writtenEntry ?? "" }))).toEqual([
     { name: "@corbits/memory-tools", version: "1.4.0" },
   ]);
 });
@@ -1716,7 +1716,7 @@ test("re-adding an already-pinned tool package keeps its stored version after a 
               ),
               { name: "@corbits/memory-tools", version: "1.4.0" },
             ),
-          })[AGENT_DEFINITION_ENTRY_PATH] as string,
+          })[AGENT_DEFINITION_JSON_PATH] as string,
         ),
       ),
       populateAsset: (params) => {

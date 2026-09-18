@@ -75,7 +75,8 @@ test("the renderer never leaves an envelope-valid workflow.json beside the packa
     workflowJson: WORKFLOW_JSON,
   });
 
-  // The renderer's only two paths are package.json and workflow.js; the
+  // The renderer's only paths are package.json, workflow.js and
+  // definition.json; the
   // retired workflow.json envelope path never appears in its output, so the
   // ambiguous-tree rejection has no way to fire against what we emit.
   expect(Object.keys(tree)).not.toContain("workflow.json");

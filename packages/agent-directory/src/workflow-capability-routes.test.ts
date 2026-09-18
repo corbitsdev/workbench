@@ -21,7 +21,7 @@ import {
   type WorkflowCapabilityRunScope,
   type WorkflowRunAuthenticator,
 } from "./workflow-capability-routes";
-import { agentDefinitionSourceTree, AGENT_DEFINITION_ENTRY_PATH } from "./definition-asset";
+import { agentDefinitionSourceTree, AGENT_DEFINITION_JSON_PATH } from "./definition-asset";
 import type { PinnedSkillIndexResolver } from "./routes";
 import { definitionFrom, SOURCE_TREE_PATHS } from "./source-tree";
 import type { CapabilityInventoryProvider } from "./capability-inventory";
@@ -60,7 +60,7 @@ function storedDefinitionBytes(): Uint8Array {
       }),
     ),
   });
-  return new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
+  return new TextEncoder().encode(tree[AGENT_DEFINITION_JSON_PATH]);
 }
 
 /** A `readAssetBlob` that always answers the definition's entry module

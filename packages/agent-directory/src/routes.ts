@@ -31,8 +31,8 @@ import { commitLatestAgentAssetSnapshot } from "./asset-write";
 import { commitAgentCapabilityAdd } from "./capability-add";
 import {
   agentDefinitionSourceTree,
-  AGENT_DEFINITION_ENTRY_PATH,
-  parseAgentDefinitionEntry,
+  AGENT_DEFINITION_JSON_PATH,
+  parseAgentDefinitionJson,
   readAgentDefinitionWorkflowJson,
   RetiredWorkflowEnvelopeError,
   statusForAgentDefinitionDeployError,
@@ -391,7 +391,7 @@ export function createAgentDefinitionRoutes({
 
       const entryBytes = await history.readBlobAtCommit({
         assetId: row.assetId,
-        path: AGENT_DEFINITION_ENTRY_PATH,
+        path: AGENT_DEFINITION_JSON_PATH,
         commitSha: body.commitSha,
       });
       if (entryBytes === null) {
@@ -403,7 +403,7 @@ export function createAgentDefinitionRoutes({
           404,
         );
       }
-      const restoredWorkflowJson = parseAgentDefinitionEntry(entryBytes, row.assetId);
+      const restoredWorkflowJson = parseAgentDefinitionJson(entryBytes, row.assetId);
 
       // Pins live in the asset's own stanza (reindexed on every write),
       // so restoring a prior commit restores that revision's pins with

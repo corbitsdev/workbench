@@ -1,6 +1,7 @@
 // The one shape a `workflow`-kind asset may carry: a source codebase, per
-// upstream's push validator. `renderWorkflowSourceTree` and
-// `parseWorkflowSourceEntry` are its one producer and consumer.
+// upstream's push validator. Every tree carries the executable entry the
+// platform evaluates plus a `definition.json` projection readers parse —
+// a bundled entry is code, so slicing it back apart is not an option.
 
 /** The entry module's path inside the asset tree. */
 export const WORKFLOW_SOURCE_ENTRY_PATH = "workflow.js";
@@ -8,42 +9,69 @@ export const WORKFLOW_SOURCE_ENTRY_PATH = "workflow.js";
 export const WORKFLOW_SOURCE_ENTRY = `./${WORKFLOW_SOURCE_ENTRY_PATH}`;
 /** The manifest's path inside the asset tree. */
 export const WORKFLOW_SOURCE_MANIFEST_PATH = "package.json";
+/** The JSON projection of the definition, for readers. */
+export const WORKFLOW_SOURCE_DEFINITION_PATH = "definition.json";
 /** The path a pre-retirement asset carried its definition at. */
 export const RETIRED_WORKFLOW_ENVELOPE_PATH = "workflow.json";
 
-const ENTRY_PREFIX = "export default ";
-const ENTRY_SUFFIX = ";\n";
-
 export type WorkflowSourceTree = Readonly<Record<string, string>>;
 
-/** The two-file source tree a serialized definition renders into. */
+function manifestFor(packageName: string): string {
+  return `${JSON.stringify(
+    {
+      name: packageName,
+      version: "0.0.0",
+      private: true,
+      type: "module",
+      interchange: { workflow: WORKFLOW_SOURCE_ENTRY },
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+/** The source tree a serialized, function-free definition renders into:
+ * the entry re-exports the JSON verbatim. */
 export function renderWorkflowSourceTree(args: {
   packageName: string;
   workflowJson: string;
 }): WorkflowSourceTree {
-  const packageJson = {
-    name: args.packageName,
-    version: "0.0.0",
-    private: true,
-    type: "module",
-    interchange: { workflow: WORKFLOW_SOURCE_ENTRY },
-  };
   return {
-    [WORKFLOW_SOURCE_MANIFEST_PATH]: `${JSON.stringify(packageJson, null, 2)}\n`,
-    [WORKFLOW_SOURCE_ENTRY_PATH]: `${ENTRY_PREFIX}${args.workflowJson}${ENTRY_SUFFIX}`,
+    [WORKFLOW_SOURCE_MANIFEST_PATH]: manifestFor(args.packageName),
+    [WORKFLOW_SOURCE_ENTRY_PATH]: `export default ${args.workflowJson};\n`,
+    [WORKFLOW_SOURCE_DEFINITION_PATH]: `${args.workflowJson}\n`,
   };
 }
 
-/** Thrown when an asset still carries the retired bare `workflow.json`
- * envelope, so a route boundary can answer it as a client-visible conflict. */
+/** The source tree a bundled entry renders into. `bundle` is one
+ * self-contained ESM module exporting `buildExport`; the trailing call
+ * supplies the per-deploy values and is what the platform evaluates.
+ * `workflowJson` is the same definition's function-free projection. */
+export function renderBundledWorkflowSourceTree(args: {
+  packageName: string;
+  bundle: string;
+  buildExport: string;
+  buildInput: unknown;
+  workflowJson: string;
+}): WorkflowSourceTree {
+  const call = `${args.buildExport}(${JSON.stringify(args.buildInput)})`;
+  return {
+    [WORKFLOW_SOURCE_MANIFEST_PATH]: manifestFor(args.packageName),
+    [WORKFLOW_SOURCE_ENTRY_PATH]: `${args.bundle}\nexport default ${call};\n`,
+    [WORKFLOW_SOURCE_DEFINITION_PATH]: `${args.workflowJson}\n`,
+  };
+}
+
+/** Thrown when an asset carries no readable `definition.json`, so a route
+ * boundary can answer it as a client-visible conflict. */
 export class RetiredWorkflowEnvelopeError extends Error {
   readonly assetId: string;
 
   constructor(assetId: string, options?: { cause?: unknown }) {
     super(
-      `Asset "${assetId}" still carries the retired ${RETIRED_WORKFLOW_ENVELOPE_PATH} envelope ` +
-        `instead of a ${WORKFLOW_SOURCE_ENTRY_PATH} source entry. Re-author and re-deploy the ` +
-        `definition to write its source tree; nothing can read or edit it until then.`,
+      `Asset "${assetId}" carries no ${WORKFLOW_SOURCE_DEFINITION_PATH} beside its ` +
+        `${WORKFLOW_SOURCE_ENTRY_PATH} source entry. Re-author and re-deploy the definition ` +
+        `to write its source tree; nothing can read or edit it until then.`,
       options,
     );
     this.name = "RetiredWorkflowEnvelopeError";
@@ -51,13 +79,16 @@ export class RetiredWorkflowEnvelopeError extends Error {
   }
 }
 
-/** Recovers the serialized definition from the exact bytes
- * `renderWorkflowSourceTree` emits — a strict slice, never an evaluation. */
-export function parseWorkflowSourceEntry(entryModule: string, assetId: string): string {
-  if (!entryModule.startsWith(ENTRY_PREFIX) || !entryModule.endsWith(ENTRY_SUFFIX)) {
-    throw new RetiredWorkflowEnvelopeError(assetId);
+/** Validates the bytes at `definition.json` are the serialized definition
+ * and answers them verbatim, so callers keep byte-faithful JSON. */
+export function parseWorkflowSourceDefinition(definitionJson: string, assetId: string): string {
+  const trimmed = definitionJson.trim();
+  try {
+    JSON.parse(trimmed);
+  } catch (cause) {
+    throw new RetiredWorkflowEnvelopeError(assetId, { cause });
   }
-  return entryModule.slice(ENTRY_PREFIX.length, entryModule.length - ENTRY_SUFFIX.length);
+  return trimmed;
 }
 
 /** The blob read a source-form asset needs, declared structurally so this
@@ -66,20 +97,20 @@ export type WorkflowSourceBlobReader = {
   readAssetBlob(params: { assetId: string; path: string }): Promise<Uint8Array>;
 };
 
-/** Reads a source-form asset's serialized definition. A missing entry
- * module surfaces as `RetiredWorkflowEnvelopeError`, not a generic not-found. */
+/** Reads a source-form asset's serialized definition. A missing projection
+ * surfaces as `RetiredWorkflowEnvelopeError`, not a generic not-found. */
 export async function readWorkflowSourceDefinition(
   reader: WorkflowSourceBlobReader,
   assetId: string,
 ): Promise<string> {
-  let entryBytes: Uint8Array;
+  let bytes: Uint8Array;
   try {
-    entryBytes = await reader.readAssetBlob({
+    bytes = await reader.readAssetBlob({
       assetId,
-      path: WORKFLOW_SOURCE_ENTRY_PATH,
+      path: WORKFLOW_SOURCE_DEFINITION_PATH,
     });
   } catch (cause) {
     throw new RetiredWorkflowEnvelopeError(assetId, { cause });
   }
-  return parseWorkflowSourceEntry(new TextDecoder().decode(entryBytes), assetId);
+  return parseWorkflowSourceDefinition(new TextDecoder().decode(bytes), assetId);
 }

@@ -2,12 +2,12 @@
 // here: the source codebase, never the retired `workflow.json` envelope.
 
 import {
-  parseWorkflowSourceEntry,
+  parseWorkflowSourceDefinition,
   readWorkflowSourceDefinition,
   renderWorkflowSourceTree,
   RetiredWorkflowEnvelopeError,
+  WORKFLOW_SOURCE_DEFINITION_PATH,
   WORKFLOW_SOURCE_ENTRY,
-  WORKFLOW_SOURCE_ENTRY_PATH,
   type WorkflowSourceBlobReader,
   type WorkflowSourceTree,
   WorkflowAuthorError,
@@ -18,7 +18,7 @@ import type { AssetService } from "@intx/hub-sessions";
 
 export {
   RetiredWorkflowEnvelopeError,
-  WORKFLOW_SOURCE_ENTRY_PATH as AGENT_DEFINITION_ENTRY_PATH,
+  WORKFLOW_SOURCE_DEFINITION_PATH as AGENT_DEFINITION_JSON_PATH,
   WORKFLOW_SOURCE_ENTRY as AGENT_DEFINITION_ENTRY,
 };
 
@@ -43,9 +43,9 @@ export function readAgentDefinitionWorkflowJson(
   return readWorkflowSourceDefinition(reader, assetId);
 }
 
-/** The serialized workflow inside entry-module bytes read at a past commit. */
-export function parseAgentDefinitionEntry(entryModule: Uint8Array, assetId: string): string {
-  return parseWorkflowSourceEntry(new TextDecoder().decode(entryModule), assetId);
+/** The serialized workflow inside definition bytes read at a past commit. */
+export function parseAgentDefinitionJson(definitionJson: Uint8Array, assetId: string): string {
+  return parseWorkflowSourceDefinition(new TextDecoder().decode(definitionJson), assetId);
 }
 
 /** The `WorkflowDeployer` seam this package needs — just the one deploy

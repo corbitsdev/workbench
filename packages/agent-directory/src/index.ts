@@ -25,9 +25,9 @@ export {
 } from "./tool-package-version";
 export {
   agentDefinitionSourceTree,
-  parseAgentDefinitionEntry,
+  parseAgentDefinitionJson,
   readAgentDefinitionWorkflowJson,
-  AGENT_DEFINITION_ENTRY_PATH,
+  AGENT_DEFINITION_JSON_PATH,
   RetiredWorkflowEnvelopeError,
 } from "./definition-asset";
 export {
