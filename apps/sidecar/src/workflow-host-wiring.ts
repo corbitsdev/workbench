@@ -95,15 +95,7 @@ const logger = getLogger(["interchange", "sidecar", "workflow-host-wiring"]);
 // A raw Ed25519 public key is 32 bytes.
 const ED25519_PUBLIC_KEY_BYTES = 32;
 
-/**
- * Projects a run address into its workflow-run repo's substrate-safe id.
- * Owned by `@intx/workflow-deploy` so the hub's read routes reconstruct the
- * identical id; this is a thin delegator for readability at the call sites.
- *
- * The name keeps "Deployment" deliberately: it derives the deploy-phase
- * routing slug (the workflow-run repo id an address projects to), not a
- * run identity, so it survives the run-first identity sweep.
- */
+/** Thin delegator to `@intx/workflow-deploy` so the hub's read routes reconstruct the identical id; named for the deploy-phase routing slug, not a run identity. */
 export function deriveDeploymentId(agentAddress: string): string {
   return deriveWorkflowRunRepoId(agentAddress);
 }
@@ -253,34 +245,10 @@ function createStepStrategy(args: {
 }
 
 /**
- * Write a grant set into the sidecar's substrate as the canonical
- * `{ grants: WireGrantRule[] }` envelope -- the shape
- * `assembleCredentialsSnapshot` validates (`{ grants: unknown[] }`) and
- * the child's `evaluateGrants` adapter narrows to `GrantRule[]`.
- *
- * Two destinations share this write machinery, selected by `runId`:
- *
- *   - `runId` absent (deploy time): write every step's grants into its
- *     own `agent-state` repo at `STEP_GRANTS_PATH`, keyed by the same
- *     `deriveStepRepoId` the supervisor reads with, so read and write
- *     address the same repo. `stepOrder` here is the deployment's whole
- *     flat step-id namespace, not the bare top-level order, because the
- *     supervisor assembles a snapshot entry for every loop-body step too.
- *     The write is on the spawn critical path: a failure rejects the
- *     deploy (the caller's `finally` unwinds the partial state) rather
- *     than spawning a child that would fail every authorize closed
- *     against an empty grant set.
- *
- *   - `runId` present (per-run delivery): write a single
- *     `runs/<runId>/grants.json` into the deployment's `workflow-run`
- *     repo, sibling to that run's `runs/<runId>/events/` subtree. The
- *     `stepOrder` / `deriveStepRepoId` fields are unused in this mode --
- *     the destination is the one workflow-run repo keyed by
- *     `runId`, not a per-step fan-out.
- *
- * Both destinations use the same hub principal and `refs/heads/main`
- * ref: the agent-state kind handler gates `writeTree` as hub-only, and
- * the workflow-run repo pins its run subtree under the same moving ref.
+ * Two destinations selected by `runId`: absent means deploy time (writes
+ * every step's grants into its own agent-state repo, on the spawn critical
+ * path so a failure rejects the deploy); present means per-run delivery
+ * (writes one `runs/<runId>/grants.json`, ignoring stepOrder/deriveStepRepoId).
  */
 async function writeStepGrants(args: {
   repoStore: RepoStore;
@@ -462,19 +430,9 @@ function frameReaderFromFd(fd: number): FrameReader {
 }
 
 /**
- * Real `Bun.spawn`-backed subprocess spawner. Constructs a fresh env
- * carrying exactly the trust anchors and substrate-config keys the
- * supervisor passed in (no inheritance of the sidecar's process env);
- * inherits stdio 0/1/2 as control + stderr; pipes fd 3 for the event
- * channel and surfaces the parent-side read fd as the supervisor's
- * `FrameReader`.
- *
- * Failure modes flow through the returned handle's `exited` promise.
- * A `Bun.spawn` that fails to launch (binary missing, env malformed,
- * `EXEC` error) settles `exited` with a non-zero code; the
- * supervisor's `wireChild` races `exited` against `readyPromise`
- * inside `spawn()` so a spawn-time crash surfaces as a rejected
- * spawn rather than a wedged `starting` state.
+ * Constructs a fresh env with no inheritance of the sidecar's process env.
+ * A launch failure settles `exited` non-zero; the supervisor races that
+ * against `readyPromise` so a spawn-time crash rejects rather than wedging.
  */
 export const defaultSubprocessSpawner: SubprocessSpawner = ({
   binaryPath,
@@ -496,13 +454,7 @@ export const defaultSubprocessSpawner: SubprocessSpawner = ({
     controlReader: ndjsonReaderFromReadableStream(proc.stdout),
     eventReader: frameReaderFromFd(eventFd),
     kill(signal?: number | string): void {
-      // The supervisor's `SubprocessHandle.kill` widens the signal
-      // to `number | string`; Bun's `Subprocess.kill` accepts
-      // `number | NodeJS.Signals`. The supervisor's call sites pass
-      // `"SIGTERM"` / `"SIGKILL"` (recycle path) or no argument
-      // (shutdown path), which Bun handles directly. Cast at the
-      // boundary so the inner call matches Bun's narrower type
-      // without coercing valid input.
+      // Bun's kill() takes NodeJS.Signals, narrower than the supervisor's number|string; cast at the boundary.
       if (signal === undefined) {
         proc.kill();
         return;
@@ -543,28 +495,13 @@ export type CreateSidecarWorkflowSupervisorOpts = {
    * collapses onto the head for a single-step deployment.
    */
   stepCount: number;
-  /**
-   * Every step id in the deployment's flat step-id namespace: its
-   * `stepOrder` plus the step ids of every `loop` body it carries. The
-   * `onRunStart` grants sink walks these to assemble the per-run
-   * credentialsSnapshot, so the sink needs the ids rather than the bare
-   * count -- and it needs the loop-body ids too, because a loop iteration
-   * inherits the parent run's env and authorizes against this same snapshot.
-   */
+  /** Every step id (including loop-body ids) the onRunStart grants sink walks to assemble the per-run credentialsSnapshot. */
   stepOrder: readonly string[];
   /** Deployment's mail address. */
   deploymentMailAddress: string;
   /** Per-step mail-address derivation. */
   deriveStepAddress: DeriveStepAddress;
-  /**
-   * Optional override of the per-step `agent-state` repo identity the
-   * supervisor reads grants from while assembling the
-   * credentialsSnapshot. Defaults to the `<runId>-<stepId>`
-   * convention; the single-step launched-agent deploy supplies a
-   * derivation that returns the legacy agent-state repo so the spawned
-   * child reads grants from the same repo the legacy agent identity
-   * keys.
-   */
+  /** Overrides the default `<runId>-<stepId>` repo id; single-step deploy returns the legacy agent-state repo instead. */
   deriveStepRepoId?: DeriveStepRepoId;
   /** Substrate-config keys propagated to the child via spawn-time env. */
   substrateEnv: Record<string, string>;
