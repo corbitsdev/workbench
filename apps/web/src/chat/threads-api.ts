@@ -1,14 +1,12 @@
-// Chats are mail threads. One chat has exactly one agent: the person
-// triggers the agent's deployment run over the stock
-// `POST /workflows/:runId/mail`, and the agent's reply lands in the
-// person's own `@corbits/mailbox` inbox, threaded by In-Reply-To. This
-// file is the only seam between the chat UI and those two surfaces —
+// Chats are mail threads. One chat has exactly one agent, and both sides
+// of it are durable mail: the person sends from their own mailbox
+// (`POST /mailbox/me/inbox/send`), which keeps a Sent copy and hands the
+// frame to the hub, and the agent's reply lands in the same mailbox's
+// INBOX. This file is the only seam between the chat UI and that surface —
 // nothing here touches a chat-specific hub route, because none exist.
 //
-// The person's own outgoing turns are held client-side: mailbox rows are
-// written for addressed principals only, and a run address is not a
-// mailbox, so a trigger leaves no durable copy anywhere the person can
-// read it back.
+// A chat is identified by its agent's run id: the run is the conversation,
+// and every message in the chat carries that run address on one side.
 
 import { type } from "arktype";
 
@@ -26,7 +24,7 @@ export class ChatApiError extends Error {
 }
 
 export type ChatAgent = {
-  /** The deployment's anchor run id — what a trigger is addressed to. */
+  /** The deployment's anchor run id — what a message is addressed to. */
   readonly runId: string;
   readonly address: string;
   readonly name: string;
@@ -41,8 +39,7 @@ export type ChatMessage = {
 };
 
 export type ChatSummary = {
-  /** Route id: a mailbox thread's root uid, or a local id while the
-   * agent has not answered a brand-new chat yet. */
+  /** Route id: the agent's run id. */
   readonly id: string;
   readonly title: string;
   readonly agentName: string;
@@ -111,14 +108,6 @@ const InboxPage = type({
   messages: type({ uid: "number", envelope: Envelope, raw: "string" }).array(),
 });
 
-/** Thread nodes nest arbitrarily; arktype expresses recursion only through a
- * named scope, so the tree is validated one level at a time as it is walked. */
-const ThreadNode = type({ uid: "number", envelope: Envelope, children: "unknown[]" });
-const ThreadList = type({ threads: "unknown[]" });
-const ThreadOne = type({ thread: "unknown" });
-
-type ThreadNodeShape = typeof ThreadNode.infer;
-
 async function getJson<T>(path: string, schema: (value: unknown) => T | type.errors): Promise<T> {
   let response: Response;
   try {
@@ -134,18 +123,6 @@ async function getJson<T>(path: string, schema: (value: unknown) => T | type.err
     throw new ChatApiError(`Unexpected response shape from ${path}: ${parsed.summary}`);
   }
   return parsed;
-}
-
-function parseNode(value: unknown): ThreadNodeShape {
-  const parsed = ThreadNode(value);
-  if (parsed instanceof type.errors) {
-    throw new ChatApiError(`Unexpected mailbox thread node: ${parsed.summary}`);
-  }
-  return parsed;
-}
-
-function flatten(node: ThreadNodeShape): ThreadNodeShape[] {
-  return [node, ...node.children.map(parseNode).flatMap(flatten)];
 }
 
 /** The readable text of an RFC 5322 frame: the bytes after the header
@@ -173,64 +150,76 @@ export function frameBody(raw: string): string {
   return "";
 }
 
-async function inboxBodies(tenantId: string): Promise<Map<number, string>> {
-  const page = await getJson(`${mailboxPath(tenantId)}?limit=100`, InboxPage);
-  return new Map(page.messages.map((message) => [message.uid, frameBody(message.raw)]));
+function addressRunId(address: string): string | undefined {
+  const local = address.split("@")[0]?.trim().replace(/^.*</, "");
+  return local !== undefined && local.startsWith("run_") ? local : undefined;
 }
 
-// ---------------------------------------------------------------------
-// The person's own turns
-// ---------------------------------------------------------------------
+type MailTurn = {
+  readonly id: string;
+  readonly messageId: string;
+  readonly runId: string;
+  readonly author: "me" | "agent";
+  readonly subject: string;
+  readonly body: string;
+  readonly at: string;
+};
 
-const SentTurn = type({
-  localId: "string",
-  runId: "string",
-  agentName: "string",
-  messageId: "string",
-  body: "string",
-  at: "string",
-});
-const SentTurns = SentTurn.array();
-type SentTurn = typeof SentTurn.infer;
-
-function storageKey(tenantId: string): string {
-  return `workbench.chat.sent.${tenantId}`;
+/** Every chat turn in one folder: the person's own in `Sent`, the agents'
+ * in `INBOX`. A message with no run address on either side is not a chat
+ * turn and is dropped. */
+async function readFolder(tenantId: string, folder: "INBOX" | "Sent"): Promise<MailTurn[]> {
+  const page = await getJson(`${mailboxPath(tenantId)}?folder=${folder}&limit=100`, InboxPage);
+  return page.messages.flatMap((message) => {
+    const runId = [message.envelope.from, ...message.envelope.to]
+      .map(addressRunId)
+      .find((candidate) => candidate !== undefined);
+    if (runId === undefined) return [];
+    return [
+      {
+        id: `${folder}:${String(message.uid)}`,
+        messageId: message.envelope.messageId,
+        runId,
+        author: folder === "Sent" ? ("me" as const) : ("agent" as const),
+        subject: message.envelope.subject,
+        body: frameBody(message.raw),
+        at: message.envelope.date,
+      },
+    ];
+  });
 }
 
-function readSentTurns(tenantId: string): SentTurn[] {
-  const raw = window.localStorage.getItem(storageKey(tenantId));
-  if (raw === null) return [];
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    return [];
-  }
-  const parsed = SentTurns(json);
-  return parsed instanceof type.errors ? [] : parsed;
-}
-
-function writeSentTurn(tenantId: string, turn: SentTurn): void {
-  window.localStorage.setItem(
-    storageKey(tenantId),
-    JSON.stringify([...readSentTurns(tenantId), turn]),
-  );
+async function readTurns(tenantId: string): Promise<MailTurn[]> {
+  const [inbox, sent] = await Promise.all([
+    readFolder(tenantId, "INBOX"),
+    readFolder(tenantId, "Sent"),
+  ]);
+  return [...inbox, ...sent].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
 
 // ---------------------------------------------------------------------
 // Sends
 // ---------------------------------------------------------------------
 
-const TriggerAccepted = type({ runId: "string", address: "string", messageId: "string" });
+const SendAccepted = type({ messageId: "string", uid: "number" });
 
-async function triggerAgent(tenantId: string, runId: string, content: string): Promise<string> {
-  const path = `/api/tenants/${encodeURIComponent(tenantId)}/workflows/${encodeURIComponent(runId)}/mail`;
+async function sendToAgent(
+  tenantId: string,
+  agent: ChatAgent,
+  body: string,
+  inReplyTo: string | undefined,
+): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await fetch(`${mailboxPath(tenantId)}/send`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({
+        to: [agent.address],
+        subject: body.slice(0, 60),
+        body,
+        ...(inReplyTo !== undefined ? { inReplyTo } : {}),
+      }),
     });
   } catch (cause) {
     throw new ChatApiError(cause instanceof Error ? cause.message : String(cause));
@@ -241,188 +230,97 @@ async function triggerAgent(tenantId: string, runId: string, content: string): P
       response.status,
     );
   }
-  const parsed = TriggerAccepted(await response.json().catch(() => undefined));
+  const parsed = SendAccepted(await response.json().catch(() => undefined));
   if (parsed instanceof type.errors) {
-    throw new ChatApiError(`Unexpected trigger response: ${parsed.summary}`);
+    throw new ChatApiError(`Unexpected send response: ${parsed.summary}`);
   }
-  return parsed.messageId;
 }
 
-/** Starts a chat with one agent. Returns the local chat id to route to —
- * the mailbox has no thread for it until the agent answers. */
+/** Starts a chat with one agent. Returns the chat id to route to — the
+ * agent's run id, which the Sent copy already carries. */
 export async function startChat(
   tenantId: string,
   agent: ChatAgent,
   content: string,
 ): Promise<string> {
-  const messageId = await triggerAgent(tenantId, agent.runId, content);
-  const localId = `local-${messageId}`;
-  writeSentTurn(tenantId, {
-    localId,
-    runId: agent.runId,
-    agentName: agent.name,
-    messageId,
-    body: content,
-    at: new Date().toISOString(),
-  });
-  return localId;
+  await sendToAgent(tenantId, agent, content, undefined);
+  return agent.runId;
 }
 
-/** A reply rides the same trigger route: the run is the conversation, and
- * the agent threads its answer onto the chat it is already holding. */
+/** A reply is the same send, threaded onto the chat's newest message. */
 export async function replyInChat(
   tenantId: string,
-  chat: { readonly id: string; readonly runId: string; readonly agentName: string },
+  chat: ChatThread,
   content: string,
 ): Promise<void> {
-  const messageId = await triggerAgent(tenantId, chat.runId, content);
-  writeSentTurn(tenantId, {
-    localId: chat.id,
-    runId: chat.runId,
-    agentName: chat.agentName,
-    messageId,
-    body: content,
-    at: new Date().toISOString(),
-  });
+  await sendToAgent(tenantId, chat.agent, content, chat.lastMessageId);
 }
 
 // ---------------------------------------------------------------------
 // Chat listing and reads
 // ---------------------------------------------------------------------
 
-function addressRunId(address: string): string | undefined {
-  const local = address.split("@")[0]?.trim().replace(/^.*</, "");
-  return local !== undefined && local.startsWith("run_") ? local : undefined;
-}
-
-/** The agent behind one thread: the run address among its participants. */
-function threadRunId(nodes: readonly ThreadNodeShape[]): string | undefined {
-  for (const node of nodes) {
-    for (const address of [node.envelope.from, ...node.envelope.to]) {
-      const runId = addressRunId(address);
-      if (runId !== undefined) return runId;
-    }
-  }
-  return undefined;
-}
-
 export type ChatThread = {
   readonly id: string;
   readonly title: string;
   readonly agentName: string;
-  readonly runId: string;
+  readonly agent: ChatAgent;
+  /** The newest turn's Message-ID: what the next reply threads onto. */
+  readonly lastMessageId: string | undefined;
   readonly messages: readonly ChatMessage[];
 };
 
-type ThreadRead = {
-  readonly nodes: readonly ThreadNodeShape[];
-  readonly root: ThreadNodeShape;
-};
-
-async function listThreadTrees(tenantId: string): Promise<ThreadRead[]> {
-  const page = await getJson(`${mailboxPath(tenantId)}/threads?folder=INBOX`, ThreadList);
-  return page.threads.map((raw) => {
-    const root = parseNode(raw);
-    return { root, nodes: flatten(root) };
-  });
+function chatTitle(turns: readonly MailTurn[], agentName: string): string {
+  const first = turns[0];
+  if (first === undefined) return agentName;
+  return first.subject.length > 0 ? first.subject : first.body.slice(0, 60);
 }
 
-/** Every chat the person has: one per mailbox thread, plus any chat they
- * started that the agent has not answered yet. */
+/** Every chat the person has: one per agent they have exchanged mail
+ * with. */
 export async function listChats(tenantId: string): Promise<readonly ChatSummary[]> {
-  const sent = readSentTurns(tenantId);
-  const trees = await listThreadTrees(tenantId);
-  const answeredRuns = new Set<string>();
-
-  const fromMail: ChatSummary[] = trees.map(({ root, nodes }) => {
-    const runId = threadRunId(nodes);
-    if (runId !== undefined) answeredRuns.add(runId);
-    const newest = nodes[nodes.length - 1] ?? root;
-    const agentName = sent.find((turn) => turn.runId === runId)?.agentName ?? runId ?? "Agent";
-    return {
-      id: String(root.uid),
-      title: root.envelope.subject.length > 0 ? root.envelope.subject : agentName,
-      agentName,
-      preview: newest.envelope.subject,
-      lastActivityAt: newest.envelope.date,
-    };
-  });
-
-  const pending: ChatSummary[] = sent
-    .filter((turn) => !answeredRuns.has(turn.runId))
-    .filter((turn, index, rows) => rows.findIndex((row) => row.localId === turn.localId) === index)
-    .map((turn) => ({
-      id: turn.localId,
-      title: turn.body.slice(0, 60),
-      agentName: turn.agentName,
-      preview: turn.body.slice(0, 80),
-      lastActivityAt: turn.at,
-    }));
-
-  return [...fromMail, ...pending].sort(
-    (a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt),
-  );
+  const [agents, turns] = await Promise.all([listChatAgents(tenantId), readTurns(tenantId)]);
+  const byRun = new Map<string, MailTurn[]>();
+  for (const turn of turns) {
+    byRun.set(turn.runId, [...(byRun.get(turn.runId) ?? []), turn]);
+  }
+  return [...byRun.entries()]
+    .map(([runId, rows]) => {
+      const agentName = agents.find((agent) => agent.runId === runId)?.name ?? runId;
+      const newest = rows[rows.length - 1]!;
+      return {
+        id: runId,
+        title: chatTitle(rows, agentName),
+        agentName,
+        preview: newest.body.slice(0, 80),
+        lastActivityAt: newest.at,
+      };
+    })
+    .sort((a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt));
 }
 
-/** One chat's full transcript: the agent's mail turns merged with the
- * person's own trigger turns, oldest first. */
+/** One chat's full transcript: every mail turn on that agent's run,
+ * oldest first. */
 export async function readChat(tenantId: string, chatId: string): Promise<ChatThread> {
-  const sent = readSentTurns(tenantId);
-  if (chatId.startsWith("local-")) {
-    const turns = sent.filter((turn) => turn.localId === chatId);
-    const first = turns[0];
-    if (first === undefined) throw new ChatApiError("That chat is not on this device.", 404);
-    return {
-      id: chatId,
-      title: first.body.slice(0, 60),
-      agentName: first.agentName,
-      runId: first.runId,
-      messages: turns.map((turn) => ({
-        id: turn.messageId,
-        author: "me",
-        authorName: "You",
-        body: turn.body,
-        at: turn.at,
-      })),
-    };
+  const [agents, turns] = await Promise.all([listChatAgents(tenantId), readTurns(tenantId)]);
+  const agent = agents.find((candidate) => candidate.runId === chatId);
+  if (agent === undefined) {
+    throw new ChatApiError("That agent is no longer deployed.", 404);
   }
-
-  const [page, bodies] = await Promise.all([
-    getJson(
-      `${mailboxPath(tenantId)}/threads/${encodeURIComponent(chatId)}?folder=INBOX`,
-      ThreadOne,
-    ),
-    inboxBodies(tenantId),
-  ]);
-  const root = parseNode(page.thread);
-  const nodes = flatten(root);
-  const runId = threadRunId(nodes) ?? "";
-  const agentName = sent.find((turn) => turn.runId === runId)?.agentName ?? runId;
-
-  const mine = sent.filter((turn) => turn.runId === runId);
-  const messages: ChatMessage[] = [
-    ...mine.map((turn): ChatMessage => ({
-      id: turn.messageId,
-      author: "me",
-      authorName: "You",
+  const rows = turns.filter((turn) => turn.runId === chatId);
+  return {
+    id: chatId,
+    title: chatTitle(rows, agent.name),
+    agentName: agent.name,
+    agent,
+    lastMessageId: rows[rows.length - 1]?.messageId,
+    messages: rows.map((turn) => ({
+      id: turn.id,
+      author: turn.author,
+      authorName: turn.author === "me" ? "You" : agent.name,
       body: turn.body,
       at: turn.at,
     })),
-    ...nodes.map((node): ChatMessage => ({
-      id: String(node.uid),
-      author: "agent",
-      authorName: agentName,
-      body: bodies.get(node.uid) ?? node.envelope.subject,
-      at: node.envelope.date,
-    })),
-  ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-
-  return {
-    id: chatId,
-    title: root.envelope.subject.length > 0 ? root.envelope.subject : agentName,
-    agentName,
-    runId,
-    messages,
   };
 }
 
