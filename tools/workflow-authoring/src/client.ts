@@ -1,23 +1,8 @@
-// Two surfaces, one credential.
-//
-// `deployWorkflow` speaks the STOCK `@intx/hub-api` routes: `GET
-// /api/tenants/:tenantId/models` for the tenant's resolved inference
-// catalog, then `POST /api/tenants/:tenantId/workflows/deployments`. The
-// run bearer authenticates both — `apps/hub/src/workflow-run-tenant-auth.ts`
-// resolves the sidecar token + run address into a principal and tenant
-// across the whole tenant subtree. The tenant id is a path segment on
-// every stock route, so it rides in the client config; it is never
-// trusted as authority, since the hub sets the acting tenant from the
-// authenticated run alone.
-//
-// `authorWorkflow` / `republishWorkflow` / `readWorkflowSource` /
-// `previewDeployWorkflow` still call the Workbench-specific
-// `/api/workflow-workflow-authoring` mount. Their stock equivalent is git
-// smart-HTTP on the asset repo, which no run-bearer credential can reach
-// today: `createGitTokenAuth` accepts only an `itx_pat_`/`itx_svc_` git
-// token, and the stock mint route refuses a caller with no browser
-// session. See for the upstream ask that would let these four
-// follow `deploy` onto stock routes.
+// deployWorkflow speaks stock @intx/hub-api routes; the tenant id rides in
+// the client config as a path segment only, never trusted as authority
+// (the hub sets the acting tenant from the authenticated run alone). The
+// other four calls still hit the Workbench-specific mount because no
+// run-bearer credential can reach stock git smart-HTTP today.
 import { type } from "arktype";
 import { runBearerHeaders, runBearerFetch, type RunBearerClientConfig } from "./run-bearer";
 
@@ -171,17 +156,11 @@ async function throwForStockFailure(response: Response, operation: string): Prom
 }
 
 /**
- * The ordered catalog offering chain a deploy hands the hub, rebuilt on
- * the client from the tenant's resolved model catalog.
- *
- * The deleted `/api/workflow-workflow-authoring/:assetId/deploy` mirror
- * resolved this server-side with `listVisibleOfferings` sorted by
- * `priority`; the stock route takes it from the caller instead. The
- * discovery route already applies the same inheritance, shadowing and
- * disable cascade, and groups its offerings under each model, so the
- * flattened list is re-sorted by priority here to restore the single
- * global ordering the mirror produced. `offeringId` is deduplicated
- * because the stock route rejects a chain with a repeat.
+ * The ordered catalog offering chain a deploy hands the hub. Rebuilt
+ * client-side (the stock route takes it from the caller, unlike the
+ * deleted server-side mirror), re-sorted by priority to restore the single
+ * global ordering, and deduplicated since the stock route rejects a
+ * repeat offeringId.
  */
 export function orderedSourceOfferingIds(
   models: readonly { readonly offerings: readonly OfferingOrdering[] }[],
