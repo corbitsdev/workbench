@@ -1,11 +1,5 @@
-// The generic service connect card — `connect-github`'s
-// first-run card generalized to every connector and MCP preset, in the
-// same `BlockCard` frame. Pure and props-driven like
-// `ConnectGithubBlockView`: the disconnected arm renders one of three
-// affordances the host resolved (one-click OAuth, one-click keyless,
-// key-paste), the connected arm is a plain confirmation, and
-// `./connect-service-block-container.tsx` wires the callbacks to a live
-// `ConnectServiceActions` port.
+// Pure and props-driven; `./connect-service-block-container.tsx` wires
+// the callbacks to a live port.
 
 import { useState } from "react";
 import { Button, Input } from "@corbits/react-ui";

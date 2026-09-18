@@ -1,15 +1,6 @@
-// The approve card renders the PLATFORM's own account of what is being
-// asked -- who, what, with which arguments, read live from the host -- as
-// the authoritative description next to any live Approve/Deny buttons. The
-// agent's own framing (`data.title`/`body`/`risk`) is demoted to
-// contextual color: it renders alongside the platform detail, never in
-// place of it, and never at all when live buttons show with no platform
-// detail available (the "undetermined" 403 fallback -- see
-// `approve-card-state.ts`). Nothing here is a decision: resolved state is
-// always re-rendered from the host's status read, never from the block's
-// own data or from a decision response the card just made. When the host
-// gives no `ApprovalActions` port, the card falls back to its
-// pre-round-trip framing: fixed disabled buttons, no fetch.
+// See docs/chat-wire-contract.md for why the platform's own detail is
+// authoritative. No `ApprovalActions` port: falls back to pre-round-trip
+// framing, fixed disabled buttons, no fetch.
 
 import { Button, toast } from "@corbits/react-ui";
 import type { ApproveBlockData } from "../wire/blocks";

@@ -19,6 +19,25 @@ before being consolidated here, so a new id-generating prefix is a missed
 test run rather than a missed grep. Prefix words mirror `@intx/hub-common`'s
 `generateId` (`PREFIXES` in `packages/hub-common/src/ids.ts`).
 
+## Approve block (`chat/blocks/approve-block.tsx`)
+
+The card renders the platform's own live account of what's being asked as
+the authoritative description next to Approve/Deny; an agent's own framing
+is demoted to contextual color and never shown alone. Resolved state is
+always re-rendered from the host's status read, never from the block's own
+data or a decision response the card just made — nothing here is itself a
+decision.
+
+`@/chat` owns no session or query cache and never fetches/mutates approvals
+itself — the host supplies an `ApprovalActions` port (`chat/blocks/approval-
+actions.ts`), calling the same native approve/reject routes and
+invalidating the same query keys as Inbox, so the card, Inbox, and the
+Activity band stay one source of truth. `forbidden` is distinct from
+`canAct: false`: it means the host's own status read was refused, so the
+card shows Approve/Deny anyway and lets the real decision call's own
+authorization decide, rather than guessing a verdict or rendering
+unverified agent text as the platform's account of the request.
+
 ## Stream events (`chat/wire/stream-events.ts`)
 
 Organizing rule: a subscriber must be able to render, or update its own

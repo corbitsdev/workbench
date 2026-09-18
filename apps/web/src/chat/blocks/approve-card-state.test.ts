@@ -137,10 +137,7 @@ describe("deriveApproveCardView", () => {
   });
 
   test("a forbidden status read keeps the buttons, never demotes to spectator", () => {
-    // A refused status read leaves the card with no platform detail to
-    // show. It still renders buttons: the refusal a person can act on is
-    // the one their own decision returns, surfaced inline, not a silently
-    // disabled card (`forbidden` → `undetermined`, never `spectator`).
+    // `forbidden` -> `undetermined`, never `spectator`.
     const view = deriveApproveCardView({
       wired: true,
       live: { kind: "forbidden" },

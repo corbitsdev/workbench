@@ -1,12 +1,5 @@
-// Wires the presentational `ConnectServiceBlockView` to a live
-// `ConnectServiceActions` port — the `ConnectGithubBlockContainer`
-// shape: one `getConnectState` read on mount, then live
-// `subscribeConnectState` folds, keyed by the block's `connectorId`
-// rather than the message id since the state is the tenant's, not the
-// workbench's. With no port (or while loading), the card renders the
-// disconnected key-paste-free framing with a disabled-by-inaction
-// connect that goes nowhere, matching the "no port, no feature"
-// fallback every other block uses.
+// Keyed by `connectorId`, not the message id, since the state is the
+// tenant's, not the workbench's. No port: "no port, no feature" fallback.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import type { ConnectServiceBlockData } from "../wire/blocks";
