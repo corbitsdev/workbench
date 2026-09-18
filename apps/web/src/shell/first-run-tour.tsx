@@ -43,12 +43,6 @@ const STEPS: readonly Step[] = [
     placement: "bottom",
   },
   {
-    target: '[data-tour="composer"]',
-    title: "Talk to your agent",
-    content: "Type here to send a message, share files, or @mention another agent.",
-    placement: "top",
-  },
-  {
     target: '[data-tour="settings-button"]',
     title: "Settings",
     content: "Manage providers, credentials, and preferences from here.",
