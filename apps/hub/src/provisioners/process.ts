@@ -34,6 +34,7 @@ const DEFAULT_SIDECAR_ENTRY = resolve(
 const Environment = type({
   "PROCESS_PROVISIONER_SIDECAR_ENTRY?": "string > 0",
   "PROCESS_PROVISIONER_RUNTIME?": "string > 0",
+  SIDECAR_CREDENTIAL_ENCRYPTION_KEY: "string > 0",
 });
 
 export type ProcessProvisionerConfig = {
@@ -54,6 +55,8 @@ export type ProcessProvisionerConfig = {
    * binding fingerprint, since a hub moved to a new address is a
    * different backend binding even with the same entry point. */
   readonly hubWebSocketUrl: string;
+  /** The operator key every spawned sidecar seals its at-rest credentials under. */
+  readonly sidecarCredentialEncryptionKey: string;
 };
 
 export type ReadProcessProvisionerConfigArgs = {
@@ -67,7 +70,7 @@ export type ReadProcessProvisionerConfigArgs = {
   readonly hubWebSocketUrl: string;
 };
 
-/** Both env keys are optional: unconfigured, this spawns the repo's own apps/sidecar with the running bun. */
+/** The entry and runtime keys are optional: unconfigured, this spawns the repo's own apps/sidecar with the running bun. */
 export function readProcessProvisionerConfig(
   args: ReadProcessProvisionerConfigArgs,
 ): ProcessProvisionerConfig {
@@ -89,6 +92,7 @@ export function readProcessProvisionerConfig(
     allocationsDir: resolve(args.dataDir, "allocations"),
     stateFilePath: resolve(args.dataDir, "state.json"),
     hubWebSocketUrl: args.hubWebSocketUrl,
+    sidecarCredentialEncryptionKey: parsed.SIDECAR_CREDENTIAL_ENCRYPTION_KEY,
   };
 }
 
@@ -184,7 +188,7 @@ export function createProcessBackend(
     async startUnit(args: StartUnitArgs): Promise<string> {
       const unitDir = unitDirOf(args.allocationId, args.generation);
       const sidecarDataDir = resolve(unitDir, SIDECAR_DATA_DIR_NAME);
-      const env = sidecarEnvFor(args, sidecarDataDir);
+      const env = sidecarEnvFor(args, sidecarDataDir, config.sidecarCredentialEncryptionKey);
       try {
         await mkdir(sidecarDataDir, { recursive: true, mode: 0o700 });
       } catch (error) {
@@ -293,7 +297,11 @@ export function createProcessBackend(
 }
 
 /** A sidecar learns everything else over the wire; nothing else of the hub's env is inherited. */
-function sidecarEnvFor(args: StartUnitArgs, sidecarDataDir: string): Record<string, string> {
+function sidecarEnvFor(
+  args: StartUnitArgs,
+  sidecarDataDir: string,
+  sidecarCredentialEncryptionKey: string,
+): Record<string, string> {
   const path = process.env["PATH"];
   if (path === undefined || path === "") {
     const error = new Error(
@@ -312,6 +320,7 @@ function sidecarEnvFor(args: StartUnitArgs, sidecarDataDir: string): Record<stri
     HUB_WS_URL: args.hubWebSocketUrl,
     SIDECAR_ID: args.sidecarId,
     SIDECAR_TOKEN: args.token,
+    SIDECAR_CREDENTIAL_ENCRYPTION_KEY: sidecarCredentialEncryptionKey,
     PATH: path,
     ...(home === undefined ? {} : { HOME: home }),
     ...(tmpdir === undefined ? {} : { TMPDIR: tmpdir }),
