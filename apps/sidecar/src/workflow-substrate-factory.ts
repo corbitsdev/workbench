@@ -856,12 +856,10 @@ export function createSidecarRunChild(deps: SidecarRunChildDeps): RunChildWorkfl
 }
 
 /**
- * The park-aware analog of {@link createSidecarRunChild}: returns a live
- * handle instead of awaiting a terminal. A body parking on a control-plane
- * "input" channel (a nested onTrigger the suspendable seam can't service)
- * surfaces as a hard error on next() rather than hanging forever. The
- * signal channel stays alive across every park and is tied to the run's
- * terminal, not per-next(), or a parent abort mid-park would leak it.
+ * Park-aware analog of {@link createSidecarRunChild}: returns a live handle.
+ * A body parking on an unserviceable "input" channel is a hard error on
+ * next() rather than hanging; the signal channel stays alive across every
+ * park, tied to the run's terminal rather than per-next().
  */
 export function createSidecarSpawnSuspendableChild(deps: SidecarRunChildDeps): RunSuspendableChild {
   const directors = deps.directors ?? createDefaultDirectorRegistry();
@@ -976,15 +974,7 @@ async function capAndPersistChildGrants(args: {
   return childGrants;
 }
 
-/**
- * Build the per-childRunId `WorkflowRuntimeEnv` a spawned child runs
- * against: inherit the parent's grants, assemble the child's credentials
- * snapshot, and wire the per-run repo store / blob substrate / signal
- * channel plus a recursive `spawnChild`. Returned alongside the child's
- * signal channel so the caller can `stop()` it once the child settles.
- * Shared by the child-drive callers so the env construction lives in one
- * place.
- */
+/** Shared by both child-drive callers so env construction lives in one place; signal channel returned for caller stop(). */
 async function buildChildRunEnv(args: {
   deps: SidecarRunChildDeps;
   directors: ReturnType<typeof createDefaultDirectorRegistry>;
@@ -1327,16 +1317,9 @@ export function createSidecarSubstrateFactory(
       workflowRunRepoId,
     });
 
-    // INBOUND half of mailbox ownership (§3b). One watch registry per child,
-    // created at boot and shared by BOTH the step agent's supervisor-backed
-    // transport (its `watch` registers callbacks here, backing `mail_wait`) and
-    // the child's control loop (which fires each `mailbox.notify` into it). The
-    // registry rides out on the returned bindings so `runWorkflowChild` routes
-    // notifications to this same instance. The child mailbox reader opens a
-    // fresh committed snapshot of the deployment's substrate `INBOX` per read,
-    // over the same substrate handle / repo id / principal / ref the mail-part
-    // reader uses, so a read taken after a `mailbox.notify` observes the message
-    // the supervisor just committed.
+    // One registry per child, shared by the step agent's transport (mail_wait)
+    // and the control loop's mailbox.notify firing, so a read after a notify
+    // observes what the supervisor just committed.
     const mailboxWatchRegistry = createMailboxWatchRegistry();
     const transportInbound: SupervisorBackedTransportInbound = {
       reader: createChildMailboxReader({
@@ -1346,13 +1329,9 @@ export function createSidecarSubstrateFactory(
         ref: validated.WORKFLOW_RUN_REF,
       }),
       watchRegistry: mailboxWatchRegistry,
-      // The child holds no sender-key registry, so signature verification is not
-      // yet possible here; `fetchFull` reports every message's signature status
-      // as "unknown". A future sender-key surface would replace this resolver.
+      // No sender-key registry yet, so every message's signature status is "unknown".
       getCrypto: () => undefined,
-      // The write methods (setFlags / clearFlags / expunge) route through this
-      // bridge to the supervisor, the sole mailbox writer, instead of flushing
-      // the run ref from the child.
+      // Write methods route to the supervisor, the sole mailbox writer.
       mutationBridge: env.mailboxMutationBridge,
     };
 
@@ -1366,13 +1345,6 @@ export function createSidecarSubstrateFactory(
     await hostScheduler.start();
     const scheduler = adaptHostScheduler(hostScheduler);
 
-    // The single-step / top-level path runs a real agent. The per-step
-    // env builder stands up real per-step storage/workdir/audit/directors
-    // rooted under the run (see `createSidecarStepBuildEnv`), resolving
-    // the per-step `InferenceSource` from the pinned table; the real
-    // step-invoker instantiates the step's agent via `createAgent`,
-    // delivers the resolved input as a synthesized inbound message, and
-    // captures the agent's reply as the step output.
     const stepToolCache: StepToolCacheConfig = {
       cacheMaxBytes: parseByteCap(validated.SIDECAR_CACHE_MAX_BYTES, "SIDECAR_CACHE_MAX_BYTES"),
       registryMaxTarballBytes: parseByteCap(
@@ -1381,26 +1353,9 @@ export function createSidecarSubstrateFactory(
       ),
     };
 
-    // The single-step / top-level path runs a real agent with REAL
-    // tools materialized in-child. The per-step env builder stands up
-    // real per-step storage/workdir/audit/directors rooted under the
-    // run (see `createSidecarStepBuildEnv`), resolves the per-step
-    // `InferenceSource`, and materializes the step's pinned
-    // tool-package closure (posix, LSP, mail, ...) from its on-disk
-    // deploy tree -- rooted per step so concurrent steps in one child
-    // never collide on the tarball cache or apply-state. The
-    // tool-bearing `agentFactory` below attaches those factories to the
-    // step's `AgentDefinition` and builds the plugin chain.
-    // Durable-conversation registry for the warm single-step agent
-    // (design §3c). Built only when the deployment is warm-kept: the
-    // sole long-lived agent's conversation must survive child respawn,
-    // so it is mirrored to the workflow-run substrate at a per-agent
-    // path. A multi-step deploy leaves this `undefined` -- its per-step
-    // agents are not warm/long-lived (§3b), so they carry no cross-run
-    // conversation and keep the per-run isogit store. The registry lives
-    // for the child's lifetime; on respawn the child rebuilds it empty
-    // and each store restores its prior snapshot from the substrate on
-    // first acquire.
+    // Built only when warm-kept, since the sole long-lived agent's
+    // conversation must survive child respawn; on respawn the registry
+    // rebuilds empty and each store restores from the substrate on first acquire.
     const conversationSigner = createStepStorageSigner(signingKey);
     const durableConversation: DurableConversationRegistry | undefined = env.spawn.warmKeep
       ? createDurableConversationRegistry({
@@ -1413,14 +1368,8 @@ export function createSidecarSubstrateFactory(
         })
       : undefined;
 
-    // Per-step tool-mark floor grants, keyed by base step id. The step
-    // env builder derives and records each step's floor from its
-    // materialized (pinned) tool factories; the grant evaluator reads it
-    // by base step id and merges it under the credentials snapshot's
-    // grants so a pinned tool authorizes against its own static mark. The
-    // map lives for the factory's (child's) lifetime, so a warm agent's
-    // floor -- recorded on its single first build -- remains available
-    // for every later tool call it makes.
+    // Lives for the child's lifetime so a warm agent's floor, recorded on
+    // its single first build, remains available for every later call.
     const toolMarkFloorByStep = new Map<string, GrantRule[]>();
 
     const buildStepEnv = createSidecarStepBuildEnv({
@@ -1435,43 +1384,21 @@ export function createSidecarSubstrateFactory(
       recordToolMarkFloor: (stepId, grants) => {
         toolMarkFloorByStep.set(stepId, grants);
       },
-      // Source-ref is the only deploy lineage: the child runs each step agent's
-      // own evaluated tool factories (fed from `req.agent.toolFactories`) from
-      // the materialized closure, never a pinned tool-package manifest off a
-      // deploy tree.
+      // Source-ref is the only deploy lineage: never a pinned tool-package manifest off a deploy tree.
       sourceTools: true,
-      // The materialized closure dir the source arm materializes each step
-      // agent's declared plugin packages from. Always present (source-ref only).
+      // Always present (source-ref only).
       closurePackageDir: env.spawn.closurePackageDir,
-      // Activate the warm agent's inbound mail surface: `mail_read` /
-      // `mail_search` / `mail_wait` resolve against the deployment's committed
-      // substrate `INBOX` through this bundle. The spawned-child build below
-      // omits it (a spawned child owns no warm inbound mailbox).
+      // Omitted below for the spawned-child build, which owns no warm inbound mailbox.
       inbound: transportInbound,
       ...(durableConversation !== undefined ? { durableConversation } : {}),
     });
 
-    // The tool-bearing agent factory reads the materialized tool
-    // runtime off the per-step env (set by `buildStepEnv` via
-    // `attachStepTools`), attaches the loaded tool factories to the
-    // step's `AgentDefinition`, builds the plugin chain on
-    // `env.plugins`, and wraps `agent.close()` so every plugin (the LSP
-    // subprocess included) and tool bundle is torn down with the agent
-    // on every exit path. The factory is stateless across steps, so it
-    // is pinned once here and shared by every per-step invoker built
-    // below.
+    // Stateless across steps, so pinned once and shared by every per-step invoker.
     const stepAgentFactory = createToolBearingAgentFactory();
 
-    // The credential provider registry that shapes a delivered credential into
-    // a mediated handle. Built once here from the sidecar-static built-ins (the
-    // origin-pinned http provider) plus the header-shaped presets
-    // (`@corbits/credential-header`, for a provider row whose API expects
-    // the raw secret in `authorization` or an `x-api-key` header instead of
-    // a Bearer-prefixed `authorization`) and the MCP streamable-HTTP
-    // provider (`@corbits/credential-mcp`, for a tenant-connected MCP
-    // server, including its keyless-connection sentinel) — shared by every
-    // per-step build; the per-run material and grants ride in separately at
-    // each invoke.
+    // Built once from the sidecar-static built-ins plus the header and MCP
+    // streamable-HTTP presets; per-run material and grants ride in
+    // separately at each invoke.
     const credentialProviders = createCredentialProviderRegistry([
       ...builtinCredentialProviders(),
       xApiKeyCredentialProvider(),
@@ -1479,29 +1406,12 @@ export function createSidecarSubstrateFactory(
       createMcpStreamableHttpCredentialProvider(),
     ]);
 
-    // Spawned-child step build env (INTR-310). Every spawned child's steps --
-    // a childWorkflow child's and an onTrigger section body's alike -- run real,
-    // TOOL-BEARING agents through the same source-tools arm the top level uses:
-    // the child holds the live re-verified definition, so each step agent
-    // carries live `toolFactories` fed from `req.agent.toolFactories`, and the
-    // source arm materializes declared plugins from the shared closure. Tools
-    // are available wherever inference runs, so a body agent gets the same
-    // build a top-level step agent gets (see the tool-availability invariant in
-    // `packages/workflow/README.md`).
-    //
-    // Built COLD per invocation -- no `durableConversation`/warm hooks (a
-    // fan-out branch and a section body are each a fresh run per spawn) and no
-    // `inbound` (a spawned child owns no warm inbound mailbox; inbound-reading
-    // tools stay inert). The source arm records no tool-mark floor (a source
-    // tool's bare `tool:<name>` grant is already in the credentials snapshot),
-    // so the floor recorder throw-asserts that invariant.
-    //
-    // The source arm also keeps the body's tools scoped correctly by
-    // construction: a body child runs under the PARENT deployment's
-    // `mailboxAddress`/`stepCount`, so a body step whose id collides with a
-    // parent step id would read the PARENT step's tools if tools were resolved
-    // off the deploy tree. Feeding each agent its own evaluated
-    // `req.agent.toolFactories` never consults that tree.
+    // Built cold per invocation (no durableConversation/warm hooks, no
+    // inbound): a spawned child runs its own evaluated toolFactories rather
+    // than resolving off the deploy tree, which also keeps its tools scoped
+    // correctly even when a body step id collides with a parent step id.
+    // The floor recorder throw-asserts no floor is ever recorded here,
+    // since the source arm's bare tool:<name> grant is already in the snapshot.
     const coldChildBuildStepEnv = createSidecarStepBuildEnv({
       dataDir: validated.SIDECAR_DATA_DIR,
       workflowRunRepoId,
@@ -1517,19 +1427,9 @@ export function createSidecarSubstrateFactory(
       sourceTools: true,
       closurePackageDir: env.spawn.closurePackageDir,
     });
-    // Spawned-child step invoker (INTR-310). It runs a real agent through
-    // `createWorkflowStepInvoker`, resolving inference against the child's own
-    // per-step `sourcesRef` (staged at deploy, read fresh per spawn) and
-    // funnelling live events to the parent run's channel. `buildChildRunEnv`
-    // threads in the run's `credentialContext` (the live material cell, the
-    // child's capped grants, the sidecar-static providers), so the build
-    // attaches each bundle's `credentials` capability and the step's inference
-    // resolves its source secret against the run's live material. Absent when no
-    // material was threaded, in which case a tool that declares a credential
-    // consumer fails closed and loud at its own `resolve("credentials")`, never
-    // silently. Wired as `childRunDeps.invokeStep`, so it covers every spawned
-    // child's steps: a childWorkflow child, an onTrigger section body, and a
-    // body's own childWorkflow grandchildren.
+    // Wired as childRunDeps.invokeStep, covering every spawned child's steps.
+    // Absent credentialContext means a credential-consuming tool fails
+    // closed and loud at its own resolve("credentials"), never silently.
     const childInvokeStep: SidecarChildStepInvoker = (
       req,
       authorize,
@@ -1545,47 +1445,14 @@ export function createSidecarSubstrateFactory(
         onEvent,
       })(req);
 
-    // Adapt the workflow-runtime `StepInvoker` shape onto the host's
-    // `ChildStepInvoker` shape. The host's `onEvent` is the child's
-    // per-run event-channel sink: the runtime body passes it per step,
-    // and the chain from here is `onEvent -> child event-channel sender
-    // -> supervisor -> publishWorkflowInferenceEvent -> hub timeline`.
-    //
-    // The `authorize` argument is the child's credentials-backed
-    // authorize closure (`createCredentialsBackedAuthorize`), threaded
-    // in from `run-child.ts`'s runtime env. The step agent's runtime
-    // gates EVERY tool call through `env.authorize` with
-    // `resource = tool:<name>`, `action = "invoke"` (the inference
-    // layer's authz before-tool extension); using the credentials-backed
-    // authorize here means each tool call resolves against the per-step
-    // grant snapshot the supervisor assembled from the agent's
-    // `state/grants.json` and pushed over the control IPC. A tool the
-    // agent's grants do not allow is blocked; a granted tool runs. The
-    // operator gate at deploy time (the capability walk's `tool:<name>`
-    // approval) and this runtime grant check are complementary: the walk
-    // bounds the toolset the deploy may carry, the grant snapshot decides
-    // which of those the agent may invoke at run time.
-    //
-    // A fresh `createWorkflowStepInvoker` is built per invocation so the
-    // adapter subscribes the step agent's event stream to THIS step's
-    // `onEvent`. The per-step env builder and the tool-bearing agent
-    // factory are pinned (closed over above); the event sink and the
-    // authorize closure vary per step.
-    //
-    // The `warmCache` (design §3b) is the run-loop's per-deployment
-    // warm-agent cache, present only for the single-step long-lived
-    // deployment the deploy projection marked a warm candidate. When
-    // supplied, the adapter builds the agent once and reuses it across
-    // messages; when absent, it keeps instantiate-send-teardown per
-    // step. Forwarding it here is the only warm-keep wiring this binding
-    // needs -- the adapter and the run-loop own the rest of the
-    // lifecycle.
-    // Run-boundary durability flush (design §3c). When the deployment is
-    // warm-kept, mirror the warm agent's conversation snapshot to the
-    // workflow-run substrate after each message's send settles. The key
-    // is the step identity, the same key the env builder filed the
-    // durable store under, so the hook resolves the right per-agent
-    // store. Absent for a multi-step deploy (no durable registry).
+    // The operator gate at deploy time (capability walk approval) and this
+    // runtime grant check (per-step snapshot pushed over control IPC) are
+    // complementary: the walk bounds the toolset, the snapshot decides which
+    // of those the agent may invoke. A fresh invoker is built per invocation
+    // so the adapter subscribes to THIS step's onEvent; the warmCache, when
+    // supplied, is the only warm-keep wiring this binding needs.
+    // Mirrors the warm agent's conversation to the substrate after each
+    // send settles; absent for a multi-step deploy (no durable registry).
     const onRunBoundary: ((key: string) => Promise<void>) | undefined =
       durableConversation !== undefined
         ? async (key: string) => {
@@ -1593,11 +1460,8 @@ export function createSidecarSubstrateFactory(
           }
         : undefined;
 
-    // Connector-thread seed (design §3c). When the deployment is warm-kept,
-    // route each mail-derived inbound message onto the warm agent's
-    // connector thread before its send, so the reply path has thread state.
-    // The key is the step identity, the same key the durable store is filed
-    // under. Absent for a multi-step deploy (no durable registry).
+    // Routes each mail-derived inbound message onto the warm agent's
+    // connector thread before send, so the reply path has thread state.
     const seedInbound: ((key: string, message: InboundMessage) => Promise<void>) | undefined =
       durableConversation !== undefined
         ? async (key: string, message: InboundMessage) => {
