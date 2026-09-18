@@ -61,10 +61,12 @@ const STEPS: readonly Step[] = [
  * been seen for this user, so it costs nothing on every later visit.
  */
 export function FirstRunTour({ userId }: { readonly userId: string }) {
-  const [run] = useState(() => !hasSeenTour(userId));
+  const [run, setRun] = useState(() => !hasSeenTour(userId));
 
-  if (!run) return null;
-
+  // Dismissing has to unmount Joyride, not just remember the dismissal:
+  // a running Joyride keeps two portals appended to `document.body` and
+  // an overlay over the app, and those portal containers are managed
+  // outside React's tree.
   function handleCallback(data: CallBackProps) {
     // The tooltip's close (X) button fires action "close" without ever
     // moving status to FINISHED or SKIPPED, so it has to be treated as a
@@ -76,8 +78,11 @@ export function FirstRunTour({ userId }: { readonly userId: string }) {
       data.action === ACTIONS.CLOSE
     ) {
       markTourSeen(userId);
+      setRun(false);
     }
   }
+
+  if (!run) return null;
 
   return (
     <Joyride
