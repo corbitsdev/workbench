@@ -254,14 +254,20 @@ export function updateModelProviderBaseURL(
   );
 }
 
-/** Repoints an offering at a different model tag. There is no `modelId`
- * patch on the stock offering route (only priority/tags/capabilities/
- * disabled — see `vendor/intx/hub-api/src/routes/model-offerings.ts`), and
- * a model's `canonicalName` is immutable once created, so changing "the
- * model" means minting (or reusing) a model row for the new tag and
- * swapping the offering for one that points at it, carrying over its
- * priority so it keeps its place in resolution. */
-export async function repointOfferingModel(
+/** Mints (or reuses) a sibling offering for a different model tag on the
+ * same provider, at the same priority — the first half of a model change.
+ * There is no `modelId` patch on the stock offering route (only priority/
+ * tags/capabilities/disabled — see `vendor/intx/hub-api/src/routes/
+ * model-offerings.ts`), and a model's `canonicalName` is immutable once
+ * created, so "changing the model" means a new offering row, not an edit
+ * of the old one. The old offering is deliberately left alive here: a
+ * deployed Myra run pins `sourceOfferingIds` in its stock launch spec
+ * (`vendor/intx/db/src/schema/workflow-run-launch-spec.ts`) and the
+ * allocation service re-resolves by those exact ids, so deleting the old
+ * offering before Myra is redeployed onto the new one would leave a live
+ * run pointing at a dead offering. The caller redeploys first, then calls
+ * {@link deleteOwnOffering} on the old id only once that succeeds. */
+export async function mintOfferingForModel(
   tenantId: string,
   offering: typeof ModelOfferingResponse.infer,
   canonicalName: string,
@@ -270,13 +276,22 @@ export async function repointOfferingModel(
 ): Promise<typeof ModelOfferingResponse.infer> {
   const modelId = await ensureModel(tenantId, canonicalName, modelDisplayName, fetchImpl);
   if (modelId === offering.modelId) return offering;
-  await requestVoid(
-    `/api/tenants/${tenantId}/catalog/offerings/${offering.id}`,
+  return ensureOffering(tenantId, modelId, offering.providerId, offering.priority, fetchImpl);
+}
+
+/** Deletes a tenant-owned offering — only ever called once nothing still
+ * declares it (see {@link mintOfferingForModel}'s doc). */
+export function deleteOwnOffering(
+  tenantId: string,
+  offeringId: string,
+  fetchImpl: FetchImpl = fetch,
+): Promise<void> {
+  return requestVoid(
+    `/api/tenants/${tenantId}/catalog/offerings/${offeringId}`,
     "retiring the offering's old model tag",
     { method: "DELETE" },
     fetchImpl,
   );
-  return ensureOffering(tenantId, modelId, offering.providerId, offering.priority, fetchImpl);
 }
 
 /** The provider identity a credential and a catalog entry hang off. */

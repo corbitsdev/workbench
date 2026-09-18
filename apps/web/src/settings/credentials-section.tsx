@@ -30,17 +30,19 @@ import { useState } from "react";
 
 import { QueryView, toAPIQuery } from "@/lib/api-query";
 import {
+  deleteOwnOffering,
   listOwnModelProviders,
   listOwnModels,
   listOwnOfferings,
+  mintOfferingForModel,
   readProviderLogin,
-  repointOfferingModel,
   startProviderLogin,
   updateModelProviderBaseURL,
   type ModelOfferingResponse,
   type ModelProviderResponse,
   type ModelResponse,
 } from "@/settings/inference";
+import { redeployMyraForModelChange } from "@/settings/myra-model-redeploy";
 import { tenantKeys } from "@/query-client";
 import {
   createCredential,
@@ -225,7 +227,26 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
         input.model.length > 0 &&
         input.model !== currentModel?.canonicalName
       ) {
-        await repointOfferingModel(tenantId, offering, input.model, input.model);
+        const newOffering = await mintOfferingForModel(
+          tenantId,
+          offering,
+          input.model,
+          input.model,
+        );
+        if (newOffering.id !== offering.id) {
+          // Myra's own deployed run pins the old offering id — moving her onto
+          // the new one first, then retiring the old one, is the only order
+          // that never leaves a live run pointed at a dead offering. A failed
+          // redeploy throws here and both offerings are left in place.
+          await redeployMyraForModelChange({
+            tenantId,
+            oldOfferingId: offering.id,
+            newOfferingId: newOffering.id,
+            provider: provider.plugin,
+            newCanonicalName: input.model,
+          });
+          await deleteOwnOffering(tenantId, offering.id);
+        }
       }
     },
     onSuccess: () => {
@@ -585,6 +606,9 @@ function EditCredentialDialog({
                     onChange={(event) => setModel(event.target.value)}
                     placeholder="qwen2.5:14b"
                   />
+                  <span className="settings-field-hint">
+                    {SETTINGS_STRINGS.credentialsModelChangeNotice}
+                  </span>
                 </label>
               </>
             )}

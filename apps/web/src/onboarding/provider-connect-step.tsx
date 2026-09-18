@@ -133,8 +133,11 @@ export type ExistingOffering = {
 };
 
 /** Every visible offering becomes a source; the lowest priority is the default. */
-export async function resolveExistingOffering(tenantId: string): Promise<ExistingOffering | null> {
-  const models = await getResolvedCatalog(tenantId);
+export async function resolveExistingOffering(
+  tenantId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ExistingOffering | null> {
+  const models = await getResolvedCatalog(tenantId, fetchImpl);
   const offerings = models
     .flatMap((model) =>
       model.offerings.map((offering) => ({ ...offering, model: model.canonicalName })),

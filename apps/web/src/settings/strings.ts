@@ -174,6 +174,7 @@ export const SETTINGS_STRINGS = {
   credentialsEditDialogTitle: "Edit credential",
   credentialsEditDialogDescription:
     "Base URL and model apply to a local, Ollama-style credential; leave them blank otherwise.",
+  credentialsModelChangeNotice: "Changing the model restarts Myra onto it.",
   credentialsBaseUrlLabel: "Base URL",
   credentialsModelLabel: "Model",
   credentialsEditSubmit: "Save",
