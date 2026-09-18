@@ -659,6 +659,27 @@
       "when": 1789000000000,
       "tag": "0094_drop_workflow_definition_schedule_claimed_minute",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1789100000000,
+      "tag": "0095_tenant_domain_lower_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1789100000001,
+      "tag": "0096_workflow_run_dispatch_sender_address",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1789100000002,
+      "tag": "0097_sidecar_destroy_failed",
+      "breakpoints": true
     }
   ]
 }
