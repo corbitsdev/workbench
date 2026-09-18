@@ -7,6 +7,7 @@ import { WarningCircle } from "@/lib/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
+import { ApprovalRow } from "@/chat/approval-row";
 import { IdentityAvatar } from "@/chat/avatar";
 import { Composer } from "@/chat/composer";
 import { Markdown } from "@/chat/markdown";
@@ -23,6 +24,8 @@ import {
 import { MYRA_SOURCE_CONFIG } from "../myra-source";
 import { useBench } from "../bench-context";
 import { chatIdFromPath, chatKeys, chatPath, NEW_CHAT_PATH } from "../chat-path";
+import { usePendingApprovals } from "../pending-approvals";
+import { tenantKeys } from "../query-client";
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -136,14 +139,26 @@ function ChatTranscript({
   if (chat !== undefined) markChatSeen(chatId, chat.lastMessageId);
 
   // The inbox stream is the only signal that an agent has answered; it
-  // carries no chat identity, so it invalidates rather than patches.
+  // carries no chat identity, so it invalidates rather than patches. An
+  // agent that parks on an ask sends no mail, but the same stream ticks
+  // over its turn, so the approvals read is refreshed alongside.
   useEffect(
     () =>
       subscribeToInbox(tenantId, () => {
         void queryClient.invalidateQueries({ queryKey: chatKeys.scope(tenantId) });
+        void queryClient.invalidateQueries({ queryKey: tenantKeys.pendingApprovals(tenantId) });
       }),
     [tenantId, queryClient],
   );
+
+  // Only this agent's asks belong in this transcript; the bench-wide list
+  // is filtered down to the run address this chat talks to.
+  const approvalsQuery = usePendingApprovals(tenantId);
+  const liveAddress = chat?.agent.liveAddress ?? null;
+  const approvals =
+    approvalsQuery.kind === "ready" && liveAddress !== null
+      ? approvalsQuery.data.filter((item) => item.agentAddress === liveAddress)
+      : [];
 
   const reply = useMutation({
     mutationFn: (text: string) => {
@@ -190,6 +205,13 @@ function ChatTranscript({
           </div>
         ))}
       </div>
+      {approvals.length === 0 ? null : (
+        <ul className="room-info-approval-list" aria-label={`${chat.agentName} is asking`}>
+          {approvals.map((item) => (
+            <ApprovalRow key={item.id} item={item} tenantId={tenantId} />
+          ))}
+        </ul>
+      )}
       {reply.error === null ? null : <p className="chat-thread-error">{errorText(reply.error)}</p>}
       <Composer
         placeholder={

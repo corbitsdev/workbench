@@ -18,6 +18,7 @@ import { WarningCircle } from "@/lib/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
+import { ApprovalRow } from "@/chat/approval-row";
 import { IdentityAvatar } from "@/chat/avatar";
 import { Composer } from "@/chat/composer";
 import { Markdown } from "@/chat/markdown";
@@ -31,12 +32,11 @@ import {
   type RoomMessage,
   type RoomParticipant,
 } from "@/chat/threads-api";
-import { approveApproval, ArtifactListPageSchema, rejectApproval, useAPIQuery } from "../api";
+import { ArtifactListPageSchema, useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { createFetchStockHub } from "../needs-converge";
-import { usePendingApprovals, type PendingApproval } from "../pending-approvals";
+import { usePendingApprovals } from "../pending-approvals";
 import { roomKeys } from "../chat-path";
-import { tenantKeys } from "../query-client";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { redeployRoomAgent } from "../workbench-create";
 import { workbenchIdFromPath } from "../workbench-path";
@@ -97,63 +97,6 @@ function ParticipantList({ participants }: { readonly participants: readonly Roo
         </li>
       ))}
     </ul>
-  );
-}
-
-function ApprovalRow({
-  item,
-  tenantId,
-}: {
-  readonly item: PendingApproval;
-  readonly tenantId: string;
-}) {
-  const queryClient = useQueryClient();
-  const resolveMutation = useMutation({
-    mutationFn: (action: "approve" | "deny") =>
-      action === "approve" ? approveApproval(tenantId, item.id) : rejectApproval(tenantId, item.id),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: tenantKeys.pendingApprovals(tenantId),
-      });
-    },
-    onError: (cause, action) => {
-      toast(
-        cause instanceof Error
-          ? cause.message
-          : `Couldn't ${action === "approve" ? "approve" : "deny"} that request.`,
-      );
-    },
-  });
-  const pending = resolveMutation.isPending ? resolveMutation.variables : null;
-
-  return (
-    <li className="room-info-approval-row">
-      <div>
-        <span className="room-info-cell-primary">{item.headline}</span>
-        <br />
-        <span className="room-info-cell-context">
-          {item.agentName} · {formatRelativeTime(item.createdAt)}
-        </span>
-      </div>
-      <div className="room-info-row-actions">
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={pending !== null}
-          onClick={() => resolveMutation.mutate("deny")}
-        >
-          {pending === "deny" ? "Denying…" : "Deny"}
-        </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={pending !== null}
-          onClick={() => resolveMutation.mutate("approve")}
-        >
-          {pending === "approve" ? "Approving…" : "Approve"}
-        </Button>
-      </div>
-    </li>
   );
 }
 
