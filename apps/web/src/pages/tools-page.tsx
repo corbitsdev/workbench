@@ -59,6 +59,9 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
           />
         ) : (
           <div className="px-4 pb-5 sm:px-7">
+            <p className="mb-3 text-sm text-muted-foreground">
+              Packages are read-only here — deploy an agent to add or change one.
+            </p>
             <Table aria-label="Tools">
               <TableHeader>
                 <TableRow>
