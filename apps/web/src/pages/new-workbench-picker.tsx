@@ -5,8 +5,9 @@
 import { Button, toast } from "@corbits/react-ui";
 import { PaperPlaneRight } from "@/lib/icons";
 import { CHAT_STRINGS, WorkbenchLoadingState } from "@/chat";
-import { useRef, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { isMyraAgent, listChatAgents } from "@/chat/threads-api";
+import { useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
 
 import { useBench } from "../bench-context";
@@ -45,7 +46,24 @@ export function NewWorkbenchPickerRoute() {
   const queryClient = useQueryClient();
   const { selectedTenantId } = useBench();
   const [prompt, setPrompt] = useState("");
+  const [selectedAgentIds, setSelectedAgentIds] = useState<readonly string[]>([]);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const agentsQuery = useQuery({
+    queryKey: ["bench-agents", selectedTenantId],
+    queryFn: () => listChatAgents(selectedTenantId!),
+    enabled: selectedTenantId !== null,
+  });
+  const pickableAgents = useMemo(
+    () => (agentsQuery.data ?? []).filter((agent) => !isMyraAgent(agent)),
+    [agentsQuery.data],
+  );
+
+  function toggleAgent(id: string) {
+    setSelectedAgentIds((current) =>
+      current.includes(id) ? current.filter((existing) => existing !== id) : [...current, id],
+    );
+  }
 
   const create = useMutation({
     mutationFn: ({
@@ -59,6 +77,9 @@ export function NewWorkbenchPickerRoute() {
         benchTenantId,
         name: workbenchName(openingMessage ?? ""),
         ...(openingMessage !== undefined ? { openingMessage } : {}),
+        pickedAgents: pickableAgents
+          .filter((agent) => selectedAgentIds.includes(agent.id))
+          .map((agent) => ({ id: agent.id, name: agent.name, assetName: agent.assetName })),
       }),
     onSuccess: (tenantId, variables) => {
       void queryClient.invalidateQueries({
@@ -163,6 +184,22 @@ export function NewWorkbenchPickerRoute() {
                 </Button>
               </div>
             </form>
+
+            {pickableAgents.length > 0 && (
+              <fieldset className="new-workbench-agent-picker">
+                <legend>Bring existing agents into this room</legend>
+                {pickableAgents.map((agent) => (
+                  <label key={agent.id} className="new-workbench-agent-option">
+                    <input
+                      type="checkbox"
+                      checked={selectedAgentIds.includes(agent.id)}
+                      onChange={() => toggleAgent(agent.id)}
+                    />
+                    {agent.name}
+                  </label>
+                ))}
+              </fieldset>
+            )}
 
             <button
               type="button"

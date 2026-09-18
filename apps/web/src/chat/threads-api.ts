@@ -33,6 +33,9 @@ export type ChatAgent = {
    * redeploys, unlike a run id. */
   readonly id: string;
   readonly name: string;
+  /** The workflow asset's raw name — what its source is pushed at, e.g.
+   * for re-reading a deploy source; `name` above may be a display alias. */
+  readonly assetName: string;
   /** Every address this agent has ever run under, releases included. */
   readonly addresses: readonly string[];
   /** The address of the agent's currently live run, or null when none is
@@ -68,6 +71,11 @@ function displayAgentName(definitionName: string): string {
   return definitionName === MYRA_SOURCE_CONFIG.assetName
     ? MYRA_SOURCE_CONFIG.displayName
     : definitionName;
+}
+
+/** Myra is always in a new workbench and never a pickable option. */
+export function isMyraAgent(agent: Pick<ChatAgent, "assetName">): boolean {
+  return agent.assetName === MYRA_SOURCE_CONFIG.assetName;
 }
 
 export function agentInitials(name: string): string {
@@ -115,12 +123,16 @@ export async function listChatAgents(tenantId: string): Promise<readonly ChatAge
     byAsset.set(deployment.definitionAssetId, entry);
   }
 
-  return [...byAsset.entries()].map(([assetId, entry]) => ({
-    id: assetId,
-    name: displayAgentName(nameByAssetId.get(assetId) ?? assetId),
-    addresses: [...entry.addresses],
-    liveAddress: entry.liveAddress,
-  }));
+  return [...byAsset.entries()].map(([assetId, entry]) => {
+    const assetName = nameByAssetId.get(assetId) ?? assetId;
+    return {
+      id: assetId,
+      name: displayAgentName(assetName),
+      assetName,
+      addresses: [...entry.addresses],
+      liveAddress: entry.liveAddress,
+    };
+  });
 }
 
 /** The agent an `@name` first message picks, matched case-insensitively
