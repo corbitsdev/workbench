@@ -1,11 +1,6 @@
-// Wires `@corbits/mailbox`'s `createMailboxPersist` onto the hub's own
-// `persistMail` lookup (`vendor/intx/hub-sessions/src/hub-session-lookups.ts`)
-// so every outbound agent frame also lands a durable `principal_mail` row in
-// each addressed human participant's mailbox, not just `session_mail`.
-//
-// One seam lives here, host-owned by the package's own contract
-// (`persist.ts` in `@corbits/mailbox`): `authorizeSender` decides which
-// sender addresses may write at all.
+// Wires @corbits/mailbox's createMailboxPersist onto the hub's own
+// persistMail lookup so every outbound frame also lands a durable
+// principal_mail row, not just session_mail.
 
 import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
@@ -19,46 +14,10 @@ import { getLogger } from "@intx/log";
 const logger = getLogger(["hub", "mailbox-persist"]);
 
 /**
- * Resolve a `mail.outbound` frame's sender run address to the mailbox
- * authorization the package needs: the tenant the resulting rows belong to,
- * and the mail domain that scopes which recipients are even addressable.
- *
- * Mirrors exactly what `persistMail` itself already does to resolve a sender
- * (`resolveRoutableAddress`, the same routable-address resolver) rather than
- * re-deriving liveness some other way: a sender that is not a live run
- * resolves to `undefined` there and to `null` here, which skips the mailbox
- * write while the frame still goes upstream unchanged.
- *
- * This is a genuine double resolve of the same address across one frame --
- * `baseLookups.persistMail` (vendor-owned, `hub-session-lookups.ts`) resolves
- * `senderAddress` for its own `session_mail` write, and this seam resolves it
- * again for mailbox authorization. `createMailboxPersist` calls `upstream`
- * and `authorizeSender` as two independent stages and hands neither's result
- * to the other, so there is no seam to thread one resolution through without
- * changing the vendor-owned `persistMail` signature itself, which the
- * ground rules rule out. Accepted as the cost of two owners agreeing on one
- * fact from two directions: one extra indexed lookup by address per frame,
- * not per recipient.
- */
-/**
- * Wraps the hub's own `persistMail` (vendor's `baseLookups.persistMail`)
- * so a run's `agent_session` and event collector exist before that write
- * runs: the first inbound mail on a freshly triggered run is often the
- * earliest point the run is mail-routable at all, since
- * `workflow_run.principal_id` only reconciles onto the trigger that just
- * fired. Resolves the frame's own sender address to its run
- * (`resolveRoutableAddress`, the same resolver `persistMail` itself
- * uses) rather than assuming the caller already knows it; a sender that
- * is not a live run resolves to `undefined` and this is a no-op past
- * that point. Best-effort: `ensureRunSession` failing must not swallow
- * the mail upstream is about to persist regardless, so this only
- * degrades to "no session yet" rather than ever throwing past itself.
- *
- * `eventCollectorsRef` is a forward reference (the same pattern this
- * file's other composition-order refs use, e.g. `apps/hub/src/index.ts`'s
- * `grantAllowanceGateRef`): the wrapped `eventCollectors` registry isn't
- * constructed until after `lookups` is, so this only reads `.current`
- * inside the returned closure, never at wiring time.
+ * Ensures a run's agent_session/event collector exist before the first
+ * mail-triggered write reaches it, since workflow_run.principal_id only
+ * reconciles onto the trigger that just fired. Best-effort: a failure
+ * here must not block the mail upstream is about to persist regardless.
  */
 export function createHubPersistMailWithSessionEnsure<R extends readonly unknown[]>(
   db: DB["db"],
@@ -78,22 +37,15 @@ export function createHubPersistMailWithSessionEnsure<R extends readonly unknown
         extra: { senderAddress: args.senderAddress },
       });
     }
-    // The vendored `session_mail` ledger (`upstream`, `baseLookups.persistMail`)
-    // keys on the sender run's principal, which does not exist until the
-    // run's first trigger anchors one — a run's own first outbound mail can
-    // reach this wrapper before that happens. `@corbits/mailbox`'s own write
-    // (this function's caller, `createMailboxPersist`) is keyed on the run
-    // address instead and runs regardless, so it is already the durable
-    // record for this frame; skip the vendored delegate rather than let it
-    // throw "no session for address" past the caller.
+    // The vendored session_mail write keys on the sender's principal, which
+    // doesn't exist yet on a run's first outbound mail; skip it rather than
+    // let it throw, since @corbits/mailbox's own write already persists this
+    // frame.
     if (sender !== undefined && sender.sessionId === null) {
       logger.debug("skipping vendored persistMail for run {runId}: no session yet", {
         runId: sender.id,
         senderAddress: args.senderAddress,
       });
-      // No `session_mail` rows were written for this frame: an empty
-      // result, not a thrown error, so a caller iterating this like
-      // `handleMailPersist` does simply emits no `mail.persisted` events.
       return [] as unknown as R;
     }
     return upstream(args);

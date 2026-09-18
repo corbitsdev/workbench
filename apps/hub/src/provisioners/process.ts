@@ -67,13 +67,7 @@ export type ReadProcessProvisionerConfigArgs = {
   readonly hubWebSocketUrl: string;
 };
 
-/**
- * Parse the process provisioner's configuration. Both environment keys
- * are optional: an unconfigured install spawns this repository's own
- * `apps/sidecar` entry with the running `bun`, which is what makes
- * "no provisioner configured" work on a single server with no operator
- * setup at all.
- */
+/** Both env keys are optional: unconfigured, this spawns the repo's own apps/sidecar with the running bun. */
 export function readProcessProvisionerConfig(
   args: ReadProcessProvisionerConfigArgs,
 ): ProcessProvisionerConfig {
@@ -104,13 +98,7 @@ export type SpawnSidecarProcessArgs = {
   readonly env: Record<string, string>;
 };
 
-/**
- * The narrow OS port this backend needs: start a detached child, ask
- * whether a pid is still alive, and signal it. Injected so the unit
- * suite exercises the full ensure/destroy lifecycle — including
- * generation fencing and directory cleanup — without starting a real
- * sidecar.
- */
+/** Injected so tests exercise the full ensure/destroy lifecycle without starting a real sidecar. */
 export interface SidecarProcessRunner {
   spawn(args: SpawnSidecarProcessArgs): number;
   isAlive(pid: number): boolean;
@@ -118,11 +106,9 @@ export interface SidecarProcessRunner {
 }
 
 /**
- * Bun implementation. The child is spawned with its own stdio inherited
- * from the hub so a local operator sees sidecar logs in the same
- * terminal, and `unref`ed so a hub shutdown is not blocked waiting on
- * it — a still-running sidecar is reconciled (or destroyed) on the next
- * boot from its pid file.
+ * Stdio inherited so a local operator sees sidecar logs in the same
+ * terminal; unref()ed so a hub shutdown doesn't wait on it — a still-running
+ * sidecar is reconciled from its pid file on the next boot.
  */
 export function createBunSidecarProcessRunner(): SidecarProcessRunner {
   return {
@@ -169,24 +155,11 @@ const TERMINATION_GRACE_MS = 5_000;
 const TERMINATION_POLL_MS = 100;
 
 /**
- * Implements `SidecarBackend` (see `./sandbox-sidecar`) by running one
- * `apps/sidecar` process per allocation on the hub host itself, the only
- * sidecar backend, so one server hosts many chats and workflows with no
- * container runtime and no remote sandbox account.
- *
- * Layout under the hub's data dir, one directory per started unit:
- *
- *     <allocationsDir>/<allocationId>/gen-<generation>/sidecar.pid
- *     <allocationsDir>/<allocationId>/gen-<generation>/data/
- *
- * `data/` is that sidecar's own `SIDECAR_DATA_DIR`. The pid file is what
- * makes this backend survive a hub restart: the child handle is gone, but
- * `findUnitsByAllocation` still finds every live unit from disk, so the
- * core can sweep a superseded generation and destroy can still clean up
- * after a unit this process never started. Scoping a unit by generation
- * (rather than one pid file per allocation) is what keeps that sweep
- * honest — a new generation's pid never overwrites the record of the one
- * it is replacing.
+ * One apps/sidecar process per allocation on the hub host — the only
+ * backend. Scoping each unit's directory by generation (not one pid file
+ * per allocation) is what lets this backend survive a hub restart:
+ * findUnitsByAllocation recovers every live unit from disk by pid file,
+ * and a new generation's pid never overwrites the one it supersedes.
  */
 export function createProcessBackend(
   runner: SidecarProcessRunner,
@@ -319,13 +292,7 @@ export function createProcessBackend(
   };
 }
 
-/**
- * The sidecar's own boot config (`apps/sidecar/src/config.ts`) requires
- * `SIDECAR_DATA_DIR`, `HUB_WS_URL`, `SIDECAR_ID`, `SIDECAR_TOKEN` and
- * `PATH`, and forwards `HOME`/`TMPDIR` into each workflow-process child.
- * Nothing else of the hub's environment is inherited: a sidecar learns
- * everything else over the wire.
- */
+/** A sidecar learns everything else over the wire; nothing else of the hub's env is inherited. */
 function sidecarEnvFor(args: StartUnitArgs, sidecarDataDir: string): Record<string, string> {
   const path = process.env["PATH"];
   if (path === undefined || path === "") {
@@ -453,11 +420,10 @@ const PROVISIONER_API_VERSION = 1 as const;
 export const PROCESS_PROVISIONER_ID = "process";
 
 /**
- * Which allocations this instance owns. Interchange adopts a probe's
- * allocation for the deployment when the two provisioners share id, api
- * version and binding fingerprint; that adopt path does not deploy the
- * workflow after the sidecar reconnects at the current pin, so the hub
- * runs a separate probe instance whose fingerprint never matches.
+ * Interchange adopts a probe's allocation for the deployment when both
+ * provisioners share id/apiVersion/fingerprint, which skips redeploying at
+ * the current pin — so the hub runs a probe instance whose fingerprint
+ * never matches.
  */
 export type ProcessProvisionerRole = "deployment" | "probe";
 
@@ -469,15 +435,9 @@ export type CreateProcessSidecarProvisionerOpts = {
 };
 
 /**
- * The only sidecar backend: every allocation is a child process of the
- * hub on the same host. Idempotence, generation fencing, and destroy
- * tombstones come from `./sandbox-sidecar`'s shared core — this module
- * supplies only the OS-level unit.
- *
- * The binding fingerprint pins the two facts that decide what a
- * provisioned sidecar actually is: which entry point runs, and which hub
- * it dials. A change to either is a different backend binding, so
- * allocations bound to the old one are not silently treated as current.
+ * The binding fingerprint pins entry point and hub URL: a change to either
+ * is a different backend binding, so allocations bound to the old one
+ * aren't silently treated as current.
  */
 export function createProcessSidecarProvisioner(
   opts: CreateProcessSidecarProvisionerOpts,
