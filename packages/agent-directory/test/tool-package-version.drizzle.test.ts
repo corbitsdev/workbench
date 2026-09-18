@@ -15,7 +15,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { createDB, dropSchema, runMigrations, schema } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
-import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
+import { CORBITS_TOOLS_REGISTRY } from "../src/tool-registry";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../test/database-url";

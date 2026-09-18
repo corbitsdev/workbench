@@ -9,7 +9,7 @@
 import { expect, test } from "bun:test";
 import type { DB } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
-import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
+import { CORBITS_TOOLS_REGISTRY } from "./tool-registry";
 
 import { CapabilityOutOfInventoryError } from "./capability-inventory";
 import { createPinnedVersionResolver, resolvePinnedVersion } from "./tool-package-version";

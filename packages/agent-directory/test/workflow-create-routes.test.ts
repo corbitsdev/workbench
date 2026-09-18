@@ -20,7 +20,7 @@ import type {
 } from "../src/workflow-capability-routes";
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
-import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
+import { CORBITS_TOOLS_REGISTRY } from "../src/tool-registry";
 import { definitionFrom, SOURCE_TREE_PATHS } from "./source-tree";
 
 const TENANT_ID = "tnt_1";

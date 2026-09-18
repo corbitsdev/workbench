@@ -14,15 +14,16 @@
 // (`vendor/intx/hub-sessions/src/session-service.ts`'s `buildAndResolve`).
 // Reading the tarball listing directly here, rather than re-deriving a
 // packument, keeps this resolver a plain filename scan: exactly the
-// same `tarballCoversPackage` filter `@corbits/tool-registry-publish`
-// already uses to decide whether a registry carries a given package.
+// same `tarballCoversPackage` filter the web app's own registry publisher
+// (`apps/web/src/tools/registry-publish.ts`) uses to decide whether a
+// registry carries a given package.
 import semver from "semver";
 
 import type { DB } from "@intx/db";
 import { resolveAssetByName } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
 
-import { CORBITS_TOOLS_REGISTRY, tarballCoversPackage } from "@corbits/tool-registry-publish";
+import { CORBITS_TOOLS_REGISTRY, tarballCoversPackage } from "./tool-registry";
 
 import { CapabilityOutOfInventoryError } from "./capability-inventory";
 
@@ -40,9 +41,8 @@ export type ResolvePinnedVersionDeps = {
   readonly assetService: AssetService;
 };
 
-/** The `<name>-<version>.tgz` filename convention
- * `tarballFilenameFor`/`packToolPackageTarball` (`@corbits/tool-registry-publish`'s
- * `pack.ts`) write into a registry's `tarballs/` tree. Returns `null`
+/** The `<name>-<version>.tgz` filename convention the web app's registry
+ * publisher writes into a registry's `tarballs/` tree. Returns `null`
  * for a filename that does not cover `packageName` or does not parse as
  * a valid semver version — a defensively-shaped filename is treated as
  * absent rather than crashing the resolution. */

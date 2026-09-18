@@ -23,9 +23,6 @@
       "path": "./packages/inference-catalog/tsconfig.src.json"
     },
     {
-      "path": "./packages/tool-registry-publish/tsconfig.src.json"
-    },
-    {
       "path": "./packages/url-path/tsconfig.src.json"
     },
     {

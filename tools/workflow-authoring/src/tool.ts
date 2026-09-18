@@ -181,7 +181,7 @@ async function runDeploy(env: WorkflowAuthoringEnv, call: ToolCall): Promise<Too
  * there (`@intx/inference`'s `encodeToolName`), and
  * `@corbits/workflow-authoring-tools/<anything>:workflow_source_read`
  * cannot fit OpenAI's 64-character cap. `defineTool` only requires the
- * `@scope/pkg/name` shape; `packages/tool-registry-publish`'s
+ * `@scope/pkg/name` shape; `apps/web/src/tools/registry-publish.test.ts`'s
  * tool-name-limits test is what this id satisfies.
  */
 export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
