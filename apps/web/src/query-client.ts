@@ -92,10 +92,10 @@ export const tenantKeys = {
   routineRunHistories: (tenantId: string) => ["tenant", tenantId, "routine-run-histories"] as const,
   definitions: (tenantId: string) => ["tenant", tenantId, "definitions"] as const,
   agentDirectory: (tenantId: string) => ["tenant", tenantId, "agents", "directory"] as const,
-  /** The sidebar's unified list of agent-DM candidates: own + ancestor
-   * definitions (see `@corbits/agent-directory`'s `listVisibleAgentDefinitions`).
-   * Kept apart from `agentDirectory` above, which is a different surface's
-   * own key. */
+  /** The sidebar's unified list of agent-DM candidates, backed by the
+   * stock `GET /workflows/definitions` listing (see `listAgentDefinitions`
+   * in `agents-api.ts`). Kept apart from `agentDirectory` above, which is
+   * a different surface's own key. */
   visibleAgents: (tenantId: string) => ["tenant", tenantId, "agents", "visible"] as const,
   assets: (tenantId: string) => ["tenant", tenantId, "assets"] as const,
   artifacts: (tenantId: string) => ["tenant", tenantId, "artifacts"] as const,
