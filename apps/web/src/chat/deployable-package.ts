@@ -15,6 +15,10 @@ const AgentDefinitionShape = type({
   systemPrompt: "string",
   "description?": "string",
   "schedule?": "string",
+  // Workspace-catalog server handles this agent binds, the same handles the
+  // Tools page lists — each becomes a definition binding plus a use
+  // requirement, the same as Myra's Exa.
+  "mcpHandles?": "string[]",
 });
 
 /** A cron string this pipeline accepts: exactly five whitespace-separated
@@ -29,6 +33,7 @@ export interface DeployablePackage {
   readonly systemPrompt: string;
   readonly description?: string;
   readonly schedule?: string;
+  readonly mcpHandles?: readonly string[];
 }
 
 export const PACKAGE_MANIFEST_NAME = "package.json";
@@ -97,6 +102,11 @@ function parsePackageFiles(
     systemPrompt: definition.systemPrompt,
     ...(definition.description !== undefined ? { description: definition.description } : {}),
     ...(definition.schedule !== undefined ? { schedule: definition.schedule } : {}),
+    // Trimmed with empties dropped: a stray "" would otherwise fail closed
+    // at deploy against a handle that can never exist.
+    ...(definition.mcpHandles !== undefined
+      ? { mcpHandles: definition.mcpHandles.map((handle) => handle.trim()).filter((h) => h !== "") }
+      : {}),
   };
 }
 
