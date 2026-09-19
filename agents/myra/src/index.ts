@@ -15,6 +15,7 @@ import { mail } from "@intx/tools-mail/sidecar-bundle";
 import { posix } from "@intx/tools-posix/sidecar-bundle";
 import { artifacts } from "@corbits/artifacts/sidecar-bundle";
 import { memory } from "@corbits/memory/sidecar-bundle";
+import { toolSearch } from "@corbits/deferred-tools";
 
 import {
   ASSISTANT_STEP_ID,
@@ -42,7 +43,24 @@ export const MYRA_TOOL_FACTORIES = [
   posix,
   artifacts,
   memory,
+  toolSearch,
 ] as unknown as readonly AnnotatedToolFactory[];
+
+/** The director's tool split, derived from the factories' own declarations so
+ * a renamed tool can never fall out of both lists: mail and posix are what
+ * every turn carries, artifacts and memory are what the model has to search
+ * for. */
+function toolNames(factories: readonly AnnotatedToolFactory[]): string[] {
+  return factories.flatMap((factory) => factory.definitions.map((definition) => definition.name));
+}
+
+export const MYRA_DIRECTOR = {
+  id: "@corbits/deferred-tools/director",
+  config: {
+    visible: toolNames([mail, posix] as unknown as readonly AnnotatedToolFactory[]),
+    deferred: toolNames([artifacts, memory] as unknown as readonly AnnotatedToolFactory[]),
+  },
+} as const;
 
 /** Everything the definition needs that is per-deployment data. */
 export interface MyraWorkflowInput {
@@ -105,6 +123,7 @@ export function buildMyraWorkflow(input: MyraWorkflowInput): WorkflowDefinition 
           description: ASSISTANT_DESCRIPTION,
           systemPrompt: input.systemPrompt,
           toolFactories: MYRA_TOOL_FACTORIES,
+          director: MYRA_DIRECTOR,
           capabilities: [],
           inference: { sources: input.inferencePreferences },
           toolPackagePins: [],

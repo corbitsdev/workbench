@@ -11,6 +11,9 @@
       "path": "./packages/approvals/tsconfig.src.json"
     },
     {
+      "path": "./packages/deferred-tools/tsconfig.src.json"
+    },
+    {
       "path": "./packages/error-sink/tsconfig.src.json"
     },
     {

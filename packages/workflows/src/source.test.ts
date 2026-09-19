@@ -4,6 +4,7 @@ import {
   readWorkflowSourceDefinition,
   renderBundledWorkflowSourceTree,
   RetiredWorkflowEnvelopeError,
+  WORKFLOW_SOURCE_DIRECTORS,
   WORKFLOW_SOURCE_ENTRY,
 } from "./source";
 
@@ -23,24 +24,32 @@ test("the rendered tree is a manifest, the entry, and the definition projection"
   const tree = renderBundledWorkflowSourceTree({
     packageName: "@workbench-agent/research-buddy",
     bundle: "export function build(input) { return input; }",
+    directorsBundle: "export const noop = null;\n",
     buildExport: "build",
     buildInput: { id: "wf_agent_research-buddy" },
     workflowJson: WORKFLOW_JSON,
   });
 
-  expect(Object.keys(tree).sort()).toEqual(["definition.json", "package.json", "workflow.js"]);
+  expect(Object.keys(tree).sort()).toEqual([
+    "definition.json",
+    "directors.js",
+    "package.json",
+    "workflow.js",
+  ]);
   const manifest = JSON.parse(tree["package.json"] as string) as {
     name: string;
-    interchange: { workflow: string };
+    interchange: { workflow: string; directors: string };
   };
   expect(manifest.name).toBe("@workbench-agent/research-buddy");
   expect(manifest.interchange.workflow).toBe(WORKFLOW_SOURCE_ENTRY);
+  expect(manifest.interchange.directors).toBe(WORKFLOW_SOURCE_DIRECTORS);
 });
 
 test("a bundled entry evaluates the bundle's build export and still projects the definition", async () => {
   const tree = renderBundledWorkflowSourceTree({
     packageName: "@workbench-agent/research-buddy",
     bundle: "export function build(input) { return { id: input.id }; }",
+    directorsBundle: "export const noop = null;\n",
     buildExport: "build",
     buildInput: { id: "wf_agent_research-buddy" },
     workflowJson: WORKFLOW_JSON,
@@ -62,6 +71,7 @@ test("reading a source-form asset answers its serialized definition", async () =
   const tree = renderBundledWorkflowSourceTree({
     packageName: "@workbench-agent/research-buddy",
     bundle: "export function build(input) { return input; }",
+    directorsBundle: "export const noop = null;\n",
     buildExport: "build",
     buildInput: { id: "wf_agent_research-buddy" },
     workflowJson: WORKFLOW_JSON,

@@ -1,0 +1,39 @@
+{
+  "name": "@corbits/deferred-tools",
+  "version": "0.0.1",
+  "private": true,
+  "description": "A director that sends the model only its visible tools plus a search tool, and surfaces a deferred tool's definition once the model has searched for it",
+  "license": "LGPL-2.1-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/corbitsdev/workbench.git",
+    "directory": "packages/deferred-tools"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "LICENSE"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/error-sink": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@intx/agent": "0.3.0",
+    "@intx/inference": "0.3.0",
+    "@intx/types": "0.3.0"
+  }
+}

@@ -16,6 +16,7 @@ function renderedTree(): Readonly<Record<string, string>> {
   return renderBundledWorkflowSourceTree({
     packageName: "@workbench-agent/research-buddy",
     bundle: "export function build(input) { return input; }",
+    directorsBundle: "export const noop = null;\n",
     buildExport: "build",
     buildInput: { id: "wf_agent_research-buddy" },
     workflowJson: WORKFLOW_JSON,

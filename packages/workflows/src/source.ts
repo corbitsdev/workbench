@@ -7,6 +7,11 @@
 export const WORKFLOW_SOURCE_ENTRY_PATH = "workflow.js";
 /** The `interchange.workflow` entry a code-sourced deploy names. */
 export const WORKFLOW_SOURCE_ENTRY = `./${WORKFLOW_SOURCE_ENTRY_PATH}`;
+/** The directors module's path inside the asset tree. */
+export const WORKFLOW_SOURCE_DIRECTORS_PATH = "directors.js";
+/** The `interchange.directors` entry the run child loads a definition's
+ * own directors from. */
+export const WORKFLOW_SOURCE_DIRECTORS = `./${WORKFLOW_SOURCE_DIRECTORS_PATH}`;
 /** The manifest's path inside the asset tree. */
 export const WORKFLOW_SOURCE_MANIFEST_PATH = "package.json";
 /** The JSON projection of the definition, for readers. */
@@ -23,7 +28,10 @@ function manifestFor(packageName: string): string {
       version: "0.0.0",
       private: true,
       type: "module",
-      interchange: { workflow: WORKFLOW_SOURCE_ENTRY },
+      interchange: {
+        workflow: WORKFLOW_SOURCE_ENTRY,
+        directors: WORKFLOW_SOURCE_DIRECTORS,
+      },
     },
     null,
     2,
@@ -33,10 +41,14 @@ function manifestFor(packageName: string): string {
 /** The source tree a bundled entry renders into. `bundle` is one
  * self-contained ESM module exporting `buildExport`; the trailing call
  * supplies the per-deploy values and is what the platform evaluates.
+ * `directorsBundle` is the `interchange.directors` module, pushed beside the
+ * entry because the run child loads a definition's own directors from the
+ * closure rather than from the entry's exports.
  * `workflowJson` is the same definition's function-free projection. */
 export function renderBundledWorkflowSourceTree(args: {
   packageName: string;
   bundle: string;
+  directorsBundle: string;
   buildExport: string;
   buildInput: unknown;
   workflowJson: string;
@@ -45,6 +57,7 @@ export function renderBundledWorkflowSourceTree(args: {
   return {
     [WORKFLOW_SOURCE_MANIFEST_PATH]: manifestFor(args.packageName),
     [WORKFLOW_SOURCE_ENTRY_PATH]: `${args.bundle}\nexport default ${call};\n`,
+    [WORKFLOW_SOURCE_DIRECTORS_PATH]: args.directorsBundle,
     [WORKFLOW_SOURCE_DEFINITION_PATH]: `${args.workflowJson}\n`,
   };
 }
