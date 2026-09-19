@@ -20,11 +20,25 @@ connecting a mail account, searching the web, reading a linked repo,
 running a scheduled digest. Anyone can author a new one; Myra reuses an
 existing teammate's capability before duplicating it.
 
+## Three tool surfaces
+
+- **Myra is static.** She carries one small, fixed set: mail, her
+  working tree, artifacts, memory, and web search. Complex work she hands
+  to agents she creates rather than growing her own tool list.
+- **Agents are granular.** A created agent carries exactly the MCP
+  servers its job needs, so its definition stays polished and every
+  remote tool is its own approval decision.
+- **Chat is dynamic.** A chat gets the whole workspace catalog: every
+  tool asks by default, read-only tools are allowed, and the model only
+  sees a tool once it has searched for it.
+
 ## MCP
 
-Myra can also reach any external MCP server: connect one in Tools and
-its tools become callable the same way a native `@corbits/*` tool is,
-with no separate integration per server.
+The workspace has one MCP catalog: connect a server in Tools (Exa is
+there from day one, keyless) and its tools become callable the same way a
+native `@corbits/*` tool is, with no separate integration per server.
+Chat draws from the whole catalog; an agent is given the servers it
+needs.
 
 ## Chat is mail
 

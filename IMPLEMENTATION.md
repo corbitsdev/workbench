@@ -29,6 +29,18 @@ or a fork, with a kill date and ledger row in [VENDORED.md](VENDORED.md).
 The upstream repository is read-only from here — a needed change lands
 upstream first, then gets re-vendored.
 
+## Tool packages
+
+Every tool package exposes Interchange's `sidecar-bundle` entry, a
+synchronous `defineTool` factory the sidecar constructs at agent
+creation. `@corbits/mcp/sidecar-bundle` takes the stored catalog as
+config, so it needs no network at construction; `@corbits/mcp/hub` mounts
+`POST /api/tenants/:t/mcp/discover`. `packages/deferred-tools` ships the
+`tool_search` tool and the director; Myra's deploy pushes a second
+`directors.js` bundle beside `workflow.js` and declares it in the pushed
+package.json. Local Ollama models: qwen2.5:14b searches and calls
+surfaced tools, qwen2.5:7b does not, so deferral needs 14b or better.
+
 ## Deployment
 
 Deployment mechanics are not yet settled:
