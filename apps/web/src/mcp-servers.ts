@@ -3,6 +3,10 @@
 // provider row per server pins the credential handle to that server's origin;
 // the credential's `metadata.mcp` carries the catalog a deploy hands the
 // sidecar bundle, so redeploying never touches the network.
+//
+// The catalog lives once on the workspace (top-level) tenant: every
+// workbench Myra binds it by walking up, so two workbenches share one Exa
+// row and a second workspace sees none of it.
 import { MCP_NO_TOKEN_SENTINEL, MCP_STREAMABLE_HTTP_PROVIDER_KEY } from "@corbits/credential-mcp";
 import {
   EXA_MCP_SERVER,
@@ -75,6 +79,30 @@ function tenantPath(tenantId: string, suffix: string): string {
   return `/api/tenants/${encodeURIComponent(tenantId)}${suffix}`;
 }
 
+/** The only tenant-hierarchy read this module needs: a bench is a
+ * top-level tenant, so the workspace id is the tenant itself when it has no
+ * parent and its parent otherwise. Parsed rather than cast. */
+const TenantParentShape = type({ "parentId?": "string | null" });
+
+/** Resolves the workspace (top-level) tenant for any tenant id: a workspace
+ * resolves to itself, a workbench to its parent. */
+export async function resolveWorkspaceTenantId(
+  tenantId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const response = await fetchImpl(tenantPath(tenantId, ""), {
+    headers: { accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new McpServerError("resolving this workbench's workspace failed");
+  }
+  const parsed = TenantParentShape(await response.json());
+  if (parsed instanceof type.errors) {
+    throw new McpServerError("the workspace response came back an unexpected shape");
+  }
+  return parsed.parentId ?? tenantId;
+}
+
 async function readJson<T>(
   response: Response,
   shape: (value: unknown) => T | type.errors,
@@ -93,9 +121,9 @@ async function listProviders(
 ): Promise<readonly (typeof ProviderShape.infer)[]> {
   const listed = await fetchImpl(tenantPath(tenantId, "/providers"));
   if (!listed.ok) {
-    throw new McpServerError("listing this workbench's providers failed");
+    throw new McpServerError("listing the MCP providers failed");
   }
-  return (await readJson(listed, ProvidersPage, "this workbench's providers")).data;
+  return (await readJson(listed, ProvidersPage, "the MCP providers")).data;
 }
 
 async function listCredentials(
@@ -104,13 +132,13 @@ async function listCredentials(
 ): Promise<readonly (typeof CredentialShape.infer)[]> {
   const listed = await fetchImpl(tenantPath(tenantId, "/credentials"));
   if (!listed.ok) {
-    throw new McpServerError("listing this workbench's credentials failed");
+    throw new McpServerError("listing the MCP credentials failed");
   }
-  return (await readJson(listed, CredentialsPage, "this workbench's credentials")).data;
+  return (await readJson(listed, CredentialsPage, "the MCP credentials")).data;
 }
 
-/** The workbench's MCP servers: the credentials sitting on an MCP provider,
- * with the catalog each one recorded when it was added. */
+/** The MCP servers stored on a tenant: the credentials sitting on an MCP
+ * provider, with the catalog each one recorded when it was added. */
 export async function listMcpServers(
   tenantId: string,
   fetchImpl: typeof fetch = fetch,
@@ -243,7 +271,7 @@ export type AddMcpServerInput = {
 };
 
 /**
- * Adds a server to the workbench: provider, credential, then the catalog read
+ * Adds a server to the tenant: provider, credential, then the catalog read
  * with that credential. The credential is stored first because discovery of a
  * token-protected server needs the hub to hold the secret, and is dropped
  * again if the handshake fails, so a failed add leaves nothing behind.
@@ -313,17 +341,21 @@ export async function removeMcpServer(
   });
 }
 
-/** Every workbench starts with Exa, which needs no account: added once, then
- * left alone so a later removal is not undone by the next start. */
+/** Every workspace starts with Exa, which needs no account: stored once on
+ * the workspace (top-level) tenant, then left alone so a later removal is
+ * not undone by the next start. Callers pass any tenant id — a workbench id
+ * resolves up to its workspace — and each workbench Myra binds the shared
+ * row by walking up. */
 export async function ensureBuiltInMcpServers(
   tenantId: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<readonly McpServer[]> {
-  const existing = await listMcpServers(tenantId, fetchImpl);
+  const workspaceTenantId = await resolveWorkspaceTenantId(tenantId, fetchImpl);
+  const existing = await listMcpServers(workspaceTenantId, fetchImpl);
   if (existing.some((server) => server.handle === EXA_MCP_SERVER.handle)) return existing;
   const added = await addMcpServer(
     {
-      tenantId,
+      tenantId: workspaceTenantId,
       handle: EXA_MCP_SERVER.handle,
       name: EXA_MCP_SERVER.name,
       url: EXA_MCP_SERVER.url,
