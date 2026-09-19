@@ -186,10 +186,12 @@ export async function pushMyraSource(
   const triggerAddress = `assistant@${tenantDomain}`;
   // Half a megabyte of bundled entry text, needed only during setup — kept
   // out of the app's entry chunk the same way the git client is.
-  const { MYRA_BUNDLE_BUILD_EXPORT, MYRA_WORKFLOW_BUNDLE } = await import("@corbits/myra/bundle");
+  const { MYRA_BUNDLE_BUILD_EXPORT, MYRA_DIRECTORS_BUNDLE, MYRA_WORKFLOW_BUNDLE } =
+    await import("@corbits/myra/bundle");
   const tree = renderBundledWorkflowSourceTree({
     packageName: MYRA_SOURCE_CONFIG.packageName,
     bundle: MYRA_WORKFLOW_BUNDLE,
+    directorsBundle: MYRA_DIRECTORS_BUNDLE,
     buildExport: MYRA_BUNDLE_BUILD_EXPORT,
     buildInput: {
       workflowId: ASSISTANT_WORKFLOW_ID,

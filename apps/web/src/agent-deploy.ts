@@ -188,10 +188,12 @@ export async function pushAgentSource(
   },
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
-  const { MYRA_BUNDLE_BUILD_EXPORT, MYRA_WORKFLOW_BUNDLE } = await import("@corbits/myra/bundle");
+  const { MYRA_BUNDLE_BUILD_EXPORT, MYRA_DIRECTORS_BUNDLE, MYRA_WORKFLOW_BUNDLE } =
+    await import("@corbits/myra/bundle");
   const tree = renderBundledWorkflowSourceTree({
     packageName,
     bundle: MYRA_WORKFLOW_BUNDLE,
+    directorsBundle: MYRA_DIRECTORS_BUNDLE,
     buildExport: MYRA_BUNDLE_BUILD_EXPORT,
     buildInput: {
       workflowId: args.slug,
