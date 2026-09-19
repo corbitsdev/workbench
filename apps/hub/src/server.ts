@@ -689,6 +689,15 @@ export async function createHubServer({
           extra: { scheduleId: schedule.id, tenantId: schedule.tenantId },
         });
       },
+      // Waiting is the ordinary gap between an agent's runs, not a fault —
+      // it resolves itself the moment the agent comes back.
+      onScheduleWaiting: (schedule) => {
+        log.info("Cron schedule waiting for agent {definitionName}", {
+          scheduleId: schedule.id,
+          tenantId: schedule.tenantId,
+          definitionName: schedule.definitionName,
+        });
+      },
       // A stopped schedule never fires again and no redeploy resumes it, so
       // the one report it gets has to be durable.
       onScheduleStopped: (schedule) => {
