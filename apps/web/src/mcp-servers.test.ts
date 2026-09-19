@@ -7,7 +7,7 @@ import { EXA_MCP_SERVER, mcpCredentialName, mcpProviderName } from "@corbits/myr
 import { describe, expect, test } from "bun:test";
 
 import {
-  ensureBuiltInMcpServers,
+  ensureWorkspaceMcpServers,
   readOnlyToolNames,
   resolveWorkspaceTenantId,
   toMcpServerDeployment,
@@ -161,10 +161,10 @@ function workspaceCatalogFetch(opts: {
   return { fetchImpl, calls };
 }
 
-describe("ensureBuiltInMcpServers", () => {
+describe("ensureWorkspaceMcpServers", () => {
   test("from a workbench id, an existing workspace Exa is shared with no writes", async () => {
     const { fetchImpl, calls } = workspaceCatalogFetch({ exaPresent: true });
-    const servers = await ensureBuiltInMcpServers(WORKBENCH_ID, fetchImpl);
+    const servers = await ensureWorkspaceMcpServers(WORKBENCH_ID, fetchImpl);
     expect(servers.map((server) => server.handle)).toContain(EXA_MCP_SERVER.handle);
     // Nothing is ever stored on the workbench itself.
     expect(calls.some((call) => call.path.startsWith(`/api/tenants/${WORKBENCH_ID}/`))).toBe(false);
@@ -173,7 +173,7 @@ describe("ensureBuiltInMcpServers", () => {
 
   test("a missing Exa is created on the workspace, not the workbench", async () => {
     const { fetchImpl, calls } = workspaceCatalogFetch({ exaPresent: false });
-    const servers = await ensureBuiltInMcpServers(WORKBENCH_ID, fetchImpl);
+    const servers = await ensureWorkspaceMcpServers(WORKBENCH_ID, fetchImpl);
     expect(servers.map((server) => server.handle)).toContain(EXA_MCP_SERVER.handle);
     const writes = calls.filter((call) => call.method !== "GET");
     expect(writes.length).toBeGreaterThan(0);
@@ -184,7 +184,7 @@ describe("ensureBuiltInMcpServers", () => {
 
   test("a chat's deploy binds every workspace server, not just Exa, with no writes", async () => {
     const { fetchImpl, calls } = workspaceCatalogFetch({ exaPresent: true, linearPresent: true });
-    const servers = await ensureBuiltInMcpServers(WORKBENCH_ID, fetchImpl);
+    const servers = await ensureWorkspaceMcpServers(WORKBENCH_ID, fetchImpl);
     expect(servers.map((server) => server.handle).sort()).toEqual(["exa", "linear"]);
     expect(calls.some((call) => call.method !== "GET")).toBe(false);
   });
