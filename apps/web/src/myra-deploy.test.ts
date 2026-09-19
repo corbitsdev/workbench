@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { MCP_TOOLS_PACKAGE } from "@corbits/myra/workflow-ids";
 
 import { buildMyraDefinitionJson, buildMyraDeployInput, MyraDeployError } from "./myra-deploy";
 import { MYRA_SOURCE_CONFIG } from "./myra-source";
@@ -12,11 +13,56 @@ describe("buildMyraDefinitionJson", () => {
         { provider: "anthropic", model: "claude-sonnet-5" },
       ],
       "crd_000000000000000000000000000000ab",
+      [],
     ) as { steps: Record<string, { agent: { inference: { sources: unknown } } }> };
 
     expect(definition.steps["assistant"]?.agent.inference.sources).toEqual([
       { provider: "openai-compatible", model: "qwen2.5:7b" },
       { provider: "anthropic", model: "claude-sonnet-5" },
+    ]);
+  });
+
+  test("gives each MCP server its own binding and its own credential-use requirement", () => {
+    const definition = buildMyraDefinitionJson(
+      "assistant@alice.example",
+      [{ provider: "openai-compatible", model: "qwen2.5:7b" }],
+      "crd_000000000000000000000000000000ab",
+      [
+        {
+          handle: "exa",
+          url: "https://mcp.example.com/mcp",
+          credentialId: "crd_000000000000000000000000000000cd",
+          providerName: "mcp-exa",
+          credentialName: "mcp-exa",
+          tools: [],
+        },
+      ],
+    ) as {
+      credentialBindings: { package: string; handle: string; name: string }[];
+      grantRequirements: {
+        resource: string;
+        action: string;
+        effect: string;
+        source: string;
+        conditions: { tool: string };
+      }[];
+    };
+
+    expect(definition.credentialBindings.find((binding) => binding.handle === "exa")).toMatchObject(
+      { package: MCP_TOOLS_PACKAGE, name: "mcp-exa" },
+    );
+    expect(
+      definition.grantRequirements.filter(
+        (requirement) => requirement.conditions.tool === `tool:${MCP_TOOLS_PACKAGE}`,
+      ),
+    ).toEqual([
+      {
+        resource: "credential:crd_000000000000000000000000000000cd",
+        action: "use",
+        effect: "allow",
+        source: "creator",
+        conditions: { tool: `tool:${MCP_TOOLS_PACKAGE}` },
+      },
     ]);
   });
 });
