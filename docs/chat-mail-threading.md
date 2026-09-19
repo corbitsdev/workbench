@@ -37,6 +37,17 @@ at send time to narrow the `to` list to just those agents. The token stays
 in the body so the agent sees who was addressed, and the roster block is
 still appended in full, so a narrowed message can still be handed on.
 
+## A person's address is lowercase
+
+A person's address is their auth user id at the workbench domain, and that
+id is mixed case. Small models lowercase an address before replying, so
+`personMailAddress` lowercases it at every point the client derives one —
+the roster, the Participants panel, a schedule's body — and the hub stamps
+the same lowercase form on a person's outbound mail. Mailbox delivery
+matches the local part case-insensitively, so both forms reach the same
+inbox: threads written before this keep their mixed-case addresses, new
+mail carries the lowercase one, and nothing is migrated.
+
 ## Primary-thread root resolution
 
 `readHubSnapshot`'s caller resolves a workbench's primary-thread root from
