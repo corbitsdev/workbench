@@ -13,8 +13,10 @@ import {
   addMcpServer,
   listMcpServers,
   removeMcpServer,
+  signInMcpServer,
   type AddMcpServerInput,
   type McpServer,
+  type SignInMcpServerInput,
 } from "../mcp-servers";
 import { redeployWorkbenchAgent } from "../workbench-create";
 
@@ -107,6 +109,26 @@ export function useRemoveMcpServer(tenantId: string | null) {
         providerId: server.providerId,
       });
       await redeployMyra(id);
+    },
+    onSettled: invalidate,
+  });
+}
+
+/** Browser sign-in for an OAuth catalog server: opens the provider's authorize
+ * page in a new tab, waits for the hub-held login to complete, then redeploys
+ * Myra with the new tools like any other add. */
+export function useSignInMcpServer(tenantId: string | null) {
+  const invalidate = useInvalidateTools(tenantId);
+  return useMutation({
+    mutationFn: async (input: Omit<SignInMcpServerInput, "tenantId">) => {
+      const id = tenantId as string;
+      const server = await signInMcpServer({ tenantId: id, ...input }, fetch, {
+        openAuthorizeUrl: (url) => {
+          window.open(url, "_blank", "noopener");
+        },
+      });
+      await redeployMyra(id);
+      return server;
     },
     onSettled: invalidate,
   });

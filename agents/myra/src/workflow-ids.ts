@@ -155,6 +155,8 @@ export type McpCatalogEntry = {
   readonly name: string;
   readonly url: string;
   readonly auth: "none" | "oauth";
+  /** Where OAuth discovery starts; the server URL itself when omitted. */
+  readonly resourceUrl?: string;
 };
 
 export const EXA_MCP_SERVER: McpCatalogEntry = {
@@ -166,6 +168,18 @@ export const EXA_MCP_SERVER: McpCatalogEntry = {
 
 export const MCP_SERVER_CATALOG: readonly McpCatalogEntry[] = [
   EXA_MCP_SERVER,
-  { handle: "linear", name: "Linear", url: "https://mcp.linear.app/mcp", auth: "oauth" },
-  { handle: "granola", name: "Granola", url: "https://mcp.granola.ai/mcp", auth: "oauth" },
+  {
+    handle: "linear",
+    name: "Linear",
+    url: "https://mcp.linear.app/mcp",
+    auth: "oauth",
+    resourceUrl: "https://mcp.linear.app/mcp",
+  },
+  {
+    handle: "granola",
+    name: "Granola",
+    url: "https://mcp.granola.ai/mcp",
+    auth: "oauth",
+    resourceUrl: "https://mcp.granola.ai/mcp",
+  },
 ];

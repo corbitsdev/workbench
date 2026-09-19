@@ -292,6 +292,217 @@ export async function addMcpServer(
   return { credentialId, providerId, ...mcp };
 }
 
+const McpOAuthLoginStartShape = type({ loginId: "string", authorizeUrl: "string" });
+
+const McpOAuthLoginStateShape = type({
+  status: "'pending' | 'completed' | 'failed'",
+  "credentialId?": "string",
+  "message?": "string",
+});
+
+async function throwMcpResponseError(
+  response: Response,
+  what: string,
+  fallback: string,
+): Promise<never> {
+  const body: unknown = await response.json().catch(() => undefined);
+  const envelope = type({ error: "string" })(body);
+  throw new McpServerError(
+    envelope instanceof type.errors ? fallback : `${what}: ${envelope.error}`,
+  );
+}
+
+/** Asks the hub to start a browser sign-in for an MCP server: discovery and
+ * dynamic registration run there, and the browser only ever sees the login id
+ * plus the authorize URL it must open. */
+export async function startMcpOAuthLogin(
+  args: {
+    readonly tenantId: string;
+    readonly providerId: string;
+    readonly handle: string;
+    readonly name: string;
+    readonly url: string;
+    readonly resourceUrl: string;
+    readonly credentialName: string;
+    readonly scopes?: readonly string[];
+  },
+  fetchImpl: typeof fetch = fetch,
+): Promise<typeof McpOAuthLoginStartShape.infer> {
+  const response = await fetchImpl(tenantPath(args.tenantId, "/mcp/oauth-logins"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      providerId: args.providerId,
+      handle: args.handle,
+      name: args.name,
+      url: args.url,
+      resourceUrl: args.resourceUrl,
+      credentialName: args.credentialName,
+      ...(args.scopes !== undefined ? { scopes: [...args.scopes] } : {}),
+    }),
+  });
+  if (!response.ok) {
+    await throwMcpResponseError(
+      response,
+      "starting sign-in failed",
+      `starting sign-in failed (HTTP ${String(response.status)})`,
+    );
+  }
+  return readJson(response, McpOAuthLoginStartShape, "the MCP sign-in");
+}
+
+/** One poll of a waiting sign-in. */
+export async function readMcpOAuthLogin(
+  args: { readonly tenantId: string; readonly loginId: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<typeof McpOAuthLoginStateShape.infer> {
+  const response = await fetchImpl(
+    tenantPath(args.tenantId, `/mcp/oauth-logins/${encodeURIComponent(args.loginId)}`),
+  );
+  if (!response.ok) {
+    throw new McpServerError("this sign-in is no longer waiting — start it again");
+  }
+  return readJson(response, McpOAuthLoginStateShape, "the MCP sign-in");
+}
+
+/** Withdraws a waiting sign-in; best-effort, so a finished login never fails
+ * the flow that already has its credential. */
+export async function cancelMcpOAuthLogin(
+  args: { readonly tenantId: string; readonly loginId: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  await fetchImpl(
+    tenantPath(args.tenantId, `/mcp/oauth-logins/${encodeURIComponent(args.loginId)}`),
+    { method: "DELETE" },
+  ).catch(() => undefined);
+}
+
+const DEFAULT_SIGN_IN_POLL_INTERVAL_MS = 2000;
+const DEFAULT_SIGN_IN_POLL_TIMEOUT_MS = 330_000;
+
+async function pollMcpOAuthLogin(
+  args: { readonly tenantId: string; readonly loginId: string },
+  fetchImpl: typeof fetch,
+  hooks: {
+    readonly pollIntervalMs: number;
+    readonly pollTimeoutMs: number;
+    readonly sleep: (ms: number) => Promise<void>;
+  },
+): Promise<string> {
+  const startedAt = Date.now();
+  for (;;) {
+    const state = await readMcpOAuthLogin(args, fetchImpl);
+    if (state.status === "completed") {
+      if (state.credentialId === undefined) {
+        throw new McpServerError("the sign-in finished without storing a credential");
+      }
+      return state.credentialId;
+    }
+    if (state.status === "failed") {
+      throw new McpServerError(state.message ?? "signing in failed");
+    }
+    if (Date.now() - startedAt >= hooks.pollTimeoutMs) {
+      throw new McpServerError("the sign-in timed out — try again");
+    }
+    await hooks.sleep(hooks.pollIntervalMs);
+  }
+}
+
+export type SignInMcpServerInput = {
+  readonly tenantId: string;
+  readonly handle: string;
+  readonly name: string;
+  readonly url: string;
+  /** Where OAuth discovery starts; the server URL itself when omitted. */
+  readonly resourceUrl?: string;
+  readonly scopes?: readonly string[];
+};
+
+export type SignInMcpServerHooks = {
+  /** Opens the provider's authorize page; the redirect lands back on the hub. */
+  readonly openAuthorizeUrl: (url: string) => void;
+  readonly sleep?: (ms: number) => Promise<void>;
+  readonly pollIntervalMs?: number;
+  readonly pollTimeoutMs?: number;
+};
+
+/**
+ * Signs a catalog server in: provider row, hub-run OAuth, then the catalog
+ * read with the stored tokens. A first-time add that fails after the tokens
+ * land is rolled back like `addMcpServer`; a re-sign-in keeps the previous
+ * credential, so a failed attempt never drops a working server.
+ */
+export async function signInMcpServer(
+  input: SignInMcpServerInput,
+  fetchImpl: typeof fetch = fetch,
+  hooks: SignInMcpServerHooks,
+): Promise<McpServer> {
+  const sleep = hooks.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const poll = {
+    pollIntervalMs: hooks.pollIntervalMs ?? DEFAULT_SIGN_IN_POLL_INTERVAL_MS,
+    pollTimeoutMs: hooks.pollTimeoutMs ?? DEFAULT_SIGN_IN_POLL_TIMEOUT_MS,
+    sleep,
+  };
+  const providerId = await ensureMcpProvider(input.tenantId, input.handle, input.url, fetchImpl);
+  const preExisting = (await listMcpServers(input.tenantId, fetchImpl)).find(
+    (server) => server.handle === input.handle,
+  );
+  const { loginId, authorizeUrl } = await startMcpOAuthLogin(
+    {
+      tenantId: input.tenantId,
+      providerId,
+      handle: input.handle,
+      name: input.name,
+      url: input.url,
+      resourceUrl: input.resourceUrl ?? input.url,
+      credentialName: mcpCredentialName(input.handle),
+    },
+    fetchImpl,
+  );
+  hooks.openAuthorizeUrl(authorizeUrl);
+  let credentialId: string;
+  try {
+    credentialId = await pollMcpOAuthLogin({ tenantId: input.tenantId, loginId }, fetchImpl, poll);
+  } catch (cause) {
+    await cancelMcpOAuthLogin({ tenantId: input.tenantId, loginId }, fetchImpl);
+    throw cause;
+  }
+  let tools: readonly McpTool[];
+  try {
+    tools = await discoverMcpCatalog(
+      { tenantId: input.tenantId, url: input.url, credentialId },
+      fetchImpl,
+    );
+  } catch (cause) {
+    if (preExisting === undefined) {
+      await deleteCredential(input.tenantId, credentialId, fetchImpl);
+    }
+    throw cause;
+  }
+  const mcp = {
+    handle: input.handle,
+    name: input.name,
+    url: input.url,
+    auth: "oauth" as const,
+    tools,
+  };
+  const patched = await fetchImpl(
+    tenantPath(input.tenantId, `/credentials/${encodeURIComponent(credentialId)}`),
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ metadata: { mcp } }),
+    },
+  );
+  if (!patched.ok) {
+    if (preExisting === undefined) {
+      await deleteCredential(input.tenantId, credentialId, fetchImpl);
+    }
+    throw new McpServerError(`recording the ${input.handle} server's tools failed`);
+  }
+  return { credentialId, providerId, ...mcp };
+}
+
 /** Drops a server and the provider row that existed only for it. */
 export async function removeMcpServer(
   args: {
@@ -353,4 +564,32 @@ export function toMcpServerDeployment(server: McpServer): McpServerDeployment {
     tools: server.tools,
     ...(allowWithoutAsk.length > 0 ? { allowWithoutAsk } : {}),
   };
+}
+
+const TenantShape = type({ id: "string", "parentId?": "string | null" });
+
+/**
+ * The top of a tenant's ancestry. Agents deploy under a child tenant while
+ * the workspace catalog — MCP servers included — lives on the primary, so a
+ * deploy lists servers from the ancestor, not from its own tenant.
+ */
+export async function resolveWorkspaceTenantId(
+  tenantId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const seen = new Set<string>();
+  let current = tenantId;
+  for (;;) {
+    if (seen.has(current)) {
+      throw new McpServerError("resolving this workbench's tenants looped");
+    }
+    seen.add(current);
+    const response = await fetchImpl(`/api/tenants/${encodeURIComponent(current)}`);
+    if (!response.ok) {
+      throw new McpServerError("resolving this workbench failed");
+    }
+    const tenant = await readJson(response, TenantShape, "this workbench");
+    if (tenant.parentId === undefined || tenant.parentId === null) return tenant.id;
+    current = tenant.parentId;
+  }
 }
