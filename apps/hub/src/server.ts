@@ -614,7 +614,9 @@ export async function createHubServer({
         if (principalRow === undefined) {
           throw new Error(`no principal "${principal.principalId}" to address a mailbox sender as`);
         }
-        return `${principalRow.refId}@${tenantRow.domain}`;
+        // A person's refId is mixed case; a small model lowercases an address
+        // before replying, so the canonical stamped form is lowercase.
+        return `${principalRow.refId}@${tenantRow.domain}`.toLowerCase();
       },
       deliver: createMailboxDeliver({ app, persistMail: mailboxLookups.persistMail }),
     });

@@ -13,6 +13,7 @@ import {
 } from "@corbits/myra/workflow-ids";
 
 import { ensureAgentHubCredential } from "./agent-hub-credential";
+import { personMailAddress } from "./mail-address";
 import { resolveExistingOffering } from "./onboarding/provider-connect-step";
 import { isValidSlug, slugify } from "@/lib/slug";
 
@@ -300,7 +301,9 @@ async function resolveDeployerAddress(
     return undefined;
   }
   const parsed = SessionUserShape(body);
-  return parsed instanceof type.errors ? undefined : `${parsed.user.id}@${tenantDomain}`;
+  return parsed instanceof type.errors
+    ? undefined
+    : personMailAddress(parsed.user.id, tenantDomain);
 }
 
 /** Creates a `@corbits/cron` schedule row targeting a deployed agent by its
