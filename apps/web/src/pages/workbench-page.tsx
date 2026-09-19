@@ -288,6 +288,10 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
       agent.address === "" && agent.assetName !== undefined,
   );
   const startingAgent = releasedAgents[0];
+  // Only a live agent can be addressed, so only one can be mentioned.
+  const mentionables = agents
+    .filter((agent) => agent.address.includes("@"))
+    .map((agent) => ({ id: agent.id, name: agent.name }));
   const send = useMutation({
     mutationFn: ({
       content,
@@ -369,6 +373,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                 }
                 busy={send.isPending}
                 disabled={startingAgent !== undefined}
+                mentionables={mentionables}
                 onSend={(text) => send.mutate({ content: text })}
               />
             </PageShell>
@@ -400,6 +405,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
               }
               busy={send.isPending}
               disabled={startingAgent !== undefined}
+              mentionables={mentionables}
               onSend={(text) => send.mutate({ content: text, inReplyTo: opened.messageId })}
             />
           </aside>

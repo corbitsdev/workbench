@@ -28,6 +28,15 @@ workbench. The mail tools have no `cc` field, so the roster also tells
 agents to copy the person on a handoff by naming them as another `to`
 recipient.
 
+## Mentions
+
+A message with no `@Name` token fans out to every live agent in the
+workbench. Typing `@` in the composer opens a roster popover; choosing an
+agent inserts its name as a plain token, which `mentionedAgents` reads back
+at send time to narrow the `to` list to just those agents. The token stays
+in the body so the agent sees who was addressed, and the roster block is
+still appended in full, so a narrowed message can still be handed on.
+
 ## Primary-thread root resolution
 
 `readHubSnapshot`'s caller resolves a workbench's primary-thread root from
