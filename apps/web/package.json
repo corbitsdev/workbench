@@ -18,7 +18,9 @@
   },
   "dependencies": {
     "@corbits/approvals": "workspace:*",
+    "@corbits/credential-mcp": "github:corbitsdev/corbits-credential-mcp#fb9ec3a6754348cd33c388c70c0830b8844c83de",
     "@corbits/error-sink": "workspace:*",
+    "@corbits/mcp": "github:corbitsdev/corbits-mcp#9df1ab81d2f50d798bca2d2f44eb4759c92fac0e",
     "@corbits/myra": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
     "@corbits/url-path": "workspace:*",

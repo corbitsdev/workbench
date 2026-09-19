@@ -5,6 +5,7 @@ import {
   parseWorkflowSourceDefinition,
   WORKFLOW_SOURCE_DEFINITION_PATH,
 } from "@corbits/workflows/client";
+import { MCP_TOOLS_PACKAGE } from "@corbits/myra/workflow-ids";
 import { type } from "arktype";
 
 import { fetchSourceFile } from "./git-fetch";
@@ -14,8 +15,14 @@ export class AgentSourceReadError extends Error {}
 
 const ToolPackagePinShape = type({ name: "string", version: "string" });
 
+const CredentialBindingShape = type({
+  package: "string",
+  handle: "string",
+});
+
 const AgentWorkflowJsonShape = type({
   id: "string",
+  "credentialBindings?": CredentialBindingShape.array(),
   steps: type.Record(
     "string",
     type({
@@ -39,7 +46,8 @@ export type AgentSource = {
 
 export type AgentToolPackagePin = { readonly name: string; readonly version: string };
 
-type AgentWorkflowStep = (typeof AgentWorkflowJsonShape.infer)["steps"][string];
+type AgentWorkflowJson = typeof AgentWorkflowJsonShape.infer;
+type AgentWorkflowStep = AgentWorkflowJson["steps"][string];
 
 // Each reader mints and revokes its own short-lived token rather than
 // holding one open across a batch of assets.
@@ -48,7 +56,7 @@ async function readAgentWorkflowStep(
   assetId: string,
   assetName: string,
   fetchImpl: typeof fetch,
-): Promise<AgentWorkflowStep> {
+): Promise<AgentWorkflowJson> {
   const url = new URL(
     `/api/tenants/${encodeURIComponent(tenantId)}/assets/workflow/${assetName}.git`,
     globalThis.location.origin,
@@ -72,13 +80,21 @@ async function readAgentWorkflowStep(
           `this agent's source came back an unexpected shape: ${parsed.summary}`,
         );
       }
-      const step = Object.values(parsed.steps)[0];
-      if (step === undefined) {
+      if (Object.values(parsed.steps).length === 0) {
         throw new AgentSourceReadError("this agent's source has no steps to read a prompt from");
       }
-      return step;
+      return parsed;
     },
   });
+}
+
+/** The one step every agent this client deploys carries. */
+function onlyStep(definition: AgentWorkflowJson): AgentWorkflowStep {
+  const step = Object.values(definition.steps)[0];
+  if (step === undefined) {
+    throw new AgentSourceReadError("this agent's source has no steps to read a prompt from");
+  }
+  return step;
 }
 
 /** Mints a read-only token, fetches the asset's `main`, and parses out the
@@ -89,7 +105,7 @@ export async function readAgentSource(
   assetName: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<AgentSource> {
-  const step = await readAgentWorkflowStep(tenantId, assetId, assetName, fetchImpl);
+  const step = onlyStep(await readAgentWorkflowStep(tenantId, assetId, assetName, fetchImpl));
   return {
     systemPrompt: step.agent.systemPrompt,
     declaredSources: step.agent.inference.sources,
@@ -104,6 +120,20 @@ export async function readAgentToolPackagePins(
   assetName: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<readonly AgentToolPackagePin[]> {
-  const step = await readAgentWorkflowStep(tenantId, assetId, assetName, fetchImpl);
+  const step = onlyStep(await readAgentWorkflowStep(tenantId, assetId, assetName, fetchImpl));
   return step.agent.toolPackagePins ?? [];
+}
+
+/** The MCP server handles an agent's deployed definition binds, which is what
+ * makes it the carrier of that server rather than the workbench's tenant. */
+export async function readAgentMcpHandles(
+  tenantId: string,
+  assetId: string,
+  assetName: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<readonly string[]> {
+  const definition = await readAgentWorkflowStep(tenantId, assetId, assetName, fetchImpl);
+  return (definition.credentialBindings ?? [])
+    .filter((binding) => binding.package === MCP_TOOLS_PACKAGE)
+    .map((binding) => binding.handle);
 }

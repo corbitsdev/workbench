@@ -201,6 +201,9 @@ export async function pushAgentSource(
       inferencePreferences: args.declaredSources.map((source) => ({ ...source })),
       systemPrompt: args.systemPrompt,
       hubCredentialId: args.hubCredentialId,
+      // A created agent carries no MCP server of its own; the workbench's
+      // servers are Myra's until someone binds one to another agent.
+      mcpServers: [],
     },
     workflowJson: JSON.stringify(
       buildAgentDefinitionJson({

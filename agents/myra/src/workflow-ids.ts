@@ -3,6 +3,10 @@
 // Split from the prompt so the prompt module stays prompt-only, and kept
 // free of the runtime so a browser can import it.
 
+import type { McpTool } from "@corbits/mcp";
+
+export type { McpTool };
+
 export const ASSISTANT_WORKFLOW_ID = "wf_assistant";
 export const ASSISTANT_STEP_ID = "assistant";
 
@@ -89,3 +93,79 @@ export function memoryToolsCredentialUseRequirement(
 ): HubCredentialUseRequirement {
   return hubCredentialUseRequirement(MEMORY_TOOLS_PACKAGE, credentialId);
 }
+
+/** The MCP client bundle; one binding and one requirement per bound server,
+ * each resolving its own credential handle. */
+export const MCP_TOOLS_PACKAGE = "@corbits/mcp/sidecar-bundle";
+
+/** How an MCP server's provider and credential are named, so the deployer and
+ * the definition derive the same rows from a handle alone. */
+export function mcpProviderName(handle: string): string {
+  return `mcp-${handle}`;
+}
+
+export function mcpCredentialName(handle: string): string {
+  return `mcp-${handle}`;
+}
+
+/** One bound MCP server as a deploy carries it: where it lives, the catalog
+ * discovered for it, and the credential rows the binding resolves through. */
+export type McpServerDeployment = {
+  readonly handle: string;
+  readonly url: string;
+  readonly credentialId: string;
+  readonly providerName: string;
+  readonly credentialName: string;
+  readonly tools: readonly McpTool[];
+  readonly allowWithoutAsk?: readonly string[];
+};
+
+/** Unlike the hub credential, an MCP handle is the server's own name, so each
+ * server needs its own binding onto the one MCP package. */
+export function mcpServerCredentialBinding(server: {
+  readonly handle: string;
+  readonly providerName: string;
+  readonly credentialName: string;
+}): HubCredentialBinding {
+  return {
+    package: MCP_TOOLS_PACKAGE,
+    handle: server.handle,
+    provider: server.providerName,
+    name: server.credentialName,
+    locator: "tenant",
+  };
+}
+
+export function mcpServerCredentialUseRequirement(
+  credentialId: string,
+): HubCredentialUseRequirement {
+  return hubCredentialUseRequirement(MCP_TOOLS_PACKAGE, credentialId);
+}
+
+/** The namespace every tool of `handle` falls in; the deferred-tools director
+ * holds a whole server's catalog back behind one pattern. */
+export function mcpToolNamePattern(handle: string): string {
+  return `${handle}.*`;
+}
+
+/** The servers a workbench offers out of the box. Exa is keyless, so it is
+ * added on setup without anyone signing in anywhere. */
+export type McpCatalogEntry = {
+  readonly handle: string;
+  readonly name: string;
+  readonly url: string;
+  readonly auth: "none" | "oauth";
+};
+
+export const EXA_MCP_SERVER: McpCatalogEntry = {
+  handle: "exa",
+  name: "Exa",
+  url: "https://mcp.exa.ai/mcp",
+  auth: "none",
+};
+
+export const MCP_SERVER_CATALOG: readonly McpCatalogEntry[] = [
+  EXA_MCP_SERVER,
+  { handle: "linear", name: "Linear", url: "https://mcp.linear.app/mcp", auth: "oauth" },
+  { handle: "granola", name: "Granola", url: "https://mcp.granola.ai/mcp", auth: "oauth" },
+];
