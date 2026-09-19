@@ -35,7 +35,10 @@ export const CronSchedule = type({
   subject: "string",
   body: "string",
   lastFiredAt: "string | null",
-  /** Set once when the target's deployment is gone; a stopped schedule
+  /** Set once while the agent has no live run to deliver to; cleared on the
+   * next delivery, so a redeploy resumes the schedule on its own. */
+  waitingSince: "string | null",
+  /** Set once when the agent's definition is gone; a stopped schedule
    * never fires again, and a later redeploy does not resume it. */
   stoppedAt: "string | null",
   stoppedReason: "string | null",
@@ -54,12 +57,12 @@ export type NewCronSchedule = {
   readonly body: string;
 };
 
-/** The mount's own rejection when nothing live carries the target's name —
+/** The mount's own rejection when no agent carries the target's name —
  * a distinct type so the form can say so in the person's words. */
-export class NoLiveDeploymentError extends Error {
+export class UnknownDefinitionError extends Error {
   constructor() {
-    super("That agent has no live deployment to schedule.");
-    this.name = "NoLiveDeploymentError";
+    super("No agent here carries that name.");
+    this.name = "UnknownDefinitionError";
   }
 }
 
@@ -77,8 +80,8 @@ export async function createCronSchedule(
   if (response.status === 400) {
     const body: unknown = await response.json().catch(() => undefined);
     const error = type({ error: "string" })(body);
-    if (!(error instanceof type.errors) && error.error === "no_live_deployment") {
-      throw new NoLiveDeploymentError();
+    if (!(error instanceof type.errors) && error.error === "unknown_definition") {
+      throw new UnknownDefinitionError();
     }
   }
   if (!response.ok) {

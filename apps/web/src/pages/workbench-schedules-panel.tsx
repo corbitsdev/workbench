@@ -1,6 +1,6 @@
 // A workbench's cron schedules. A schedule targets an agent by its
-// definition name, so it keeps firing across redeploys — and when the
-// deployment is gone for good the row stops and has to be made again.
+// definition name, so it waits out the gaps between the agent's runs — and
+// only a deleted agent stops the row for good.
 
 import { Button, Input, Select, Skeleton, formatRelativeTime } from "@corbits/react-ui";
 import { cronSentence } from "@corbits/workflows/client";
@@ -11,7 +11,7 @@ import { displayAgentName } from "@/chat/threads-api";
 import type { WorkbenchParticipant } from "@/chat/threads-api";
 import { describeApiError } from "@/lib/api-query";
 import {
-  NoLiveDeploymentError,
+  UnknownDefinitionError,
   createCronSchedule,
   deleteCronSchedule,
   listCronSchedules,
@@ -28,16 +28,16 @@ type FormState = {
 const EMPTY_FORM: FormState = { definitionName: "", expression: "", body: "" };
 
 function scheduleError(cause: unknown): string {
-  if (cause instanceof NoLiveDeploymentError) {
-    return "That agent has no live deployment right now. Open the workbench so it redeploys, then try again.";
+  if (cause instanceof UnknownDefinitionError) {
+    return "No agent here carries that name any more. Pick another agent.";
   }
   return describeApiError(cause, "saving this schedule");
 }
 
 function stoppedNote(schedule: CronSchedule): string {
   const reason =
-    schedule.stoppedReason === "deployment_gone"
-      ? "its agent's deployment is gone"
+    schedule.stoppedReason === "agent_deleted"
+      ? "its agent was deleted"
       : (schedule.stoppedReason ?? "it was stopped");
   return `Stopped — ${reason}. A redeploy doesn't resume it.`;
 }
@@ -130,7 +130,16 @@ export function WorkbenchSchedulesPanel({
                   ? ""
                   : ` · last ran ${formatRelativeTime(schedule.lastFiredAt)}`}
               </span>
-              {schedule.stoppedAt === null ? null : (
+              {schedule.stoppedAt === null ? (
+                schedule.waitingSince === null ? null : (
+                  <>
+                    <br />
+                    <span className="workbench-info-cell-context" role="status">
+                      {`Waiting for its agent to come back — since ${formatRelativeTime(schedule.waitingSince)}.`}
+                    </span>
+                  </>
+                )
+              ) : (
                 <>
                   <br />
                   <span className="workbench-info-cell-context" role="status">

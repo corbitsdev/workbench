@@ -17,7 +17,7 @@
     "@corbits/approvals": "workspace:*",
     "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#4a2a3c22187991a6ce598faf794908fedd252e98",
     "@corbits/codex-provider": "github:corbitsdev/corbits-codex-provider#a1f475f341261c05fa8dade0c82f1246c175b5b3",
-    "@corbits/cron": "github:corbitsdev/corbits-cron#3b45f951b432771384a14fdca4bb481a82ff5f5f",
+    "@corbits/cron": "github:corbitsdev/corbits-cron#872360f4bb55f140e6462208bfb0888f4a7e395a",
     "@corbits/error-sink": "workspace:*",
     "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#65590a85fa143251b3ac20ba2eca92fc35e70e51",
     "@corbits/mcp": "github:corbitsdev/corbits-mcp#9df1ab81d2f50d798bca2d2f44eb4759c92fac0e",
