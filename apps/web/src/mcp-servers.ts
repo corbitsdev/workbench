@@ -341,12 +341,13 @@ export async function removeMcpServer(
   });
 }
 
-/** Every workspace starts with Exa, which needs no account: stored once on
- * the workspace (top-level) tenant, then left alone so a later removal is
- * not undone by the next start. Callers pass any tenant id — a workbench id
- * resolves up to its workspace — and each workbench Myra binds the shared
- * row by walking up. */
-export async function ensureBuiltInMcpServers(
+/** The workspace's whole MCP catalog: every stored server, with the keyless
+ * Exa seeded on first use. Stored once on the workspace (top-level) tenant,
+ * then left alone so a later removal is not undone by the next start.
+ * Callers pass any tenant id — a workbench id resolves up to its workspace —
+ * and each workbench Myra binds the shared rows by walking up, so a chat
+ * carries the full catalog. */
+export async function ensureWorkspaceMcpServers(
   tenantId: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<readonly McpServer[]> {

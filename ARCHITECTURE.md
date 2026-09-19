@@ -71,7 +71,21 @@ catalog is read server-side; a deploy reads the stored catalog and never
 touches the network. Each remote tool becomes an agent tool named
 `<server>.<tool>`, its own grant resource, ask-gated unless the server
 marks it read-only. The catalog belongs to the workspace; chat binds all
-of it, an agent binds only what it needs, Myra's set is fixed.
+of it, an agent binds only what it needs, Myra's set is fixed. Each
+server's namespace stays deferred behind `tool_search`, so turn one
+carries only the core tools no matter how large the catalog grows.
+
+Chat is not its own deployment (CL-8664): every chat is a thread with
+the workbench Myra, which binds the whole workspace catalog at deploy,
+so starting a chat deploys nothing, and a new catalog server reaches the
+next new chat through the catalog write's own Myra redeploy — counted on
+the Tools page — never through a chat-time deploy. The rejected
+alternative, an ephemeral agent per chat, would pay a source push plus a
+deploy before the first message of every thread, pile up dead
+deployments with no thread-delete cleanup hook, and buy no isolation:
+grants never inherit and every remote call is ask-gated anyway. Per-chat
+scoping is by thread, not by deployment; a chat opened with a granular
+agent carries that agent's subset by design.
 
 ## Data
 

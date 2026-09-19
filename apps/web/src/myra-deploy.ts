@@ -16,7 +16,7 @@ import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
 import { type } from "arktype";
 
 import { ensureAgentHubCredential } from "./agent-hub-credential";
-import { ensureBuiltInMcpServers, toMcpServerDeployment } from "./mcp-servers";
+import { ensureWorkspaceMcpServers, toMcpServerDeployment } from "./mcp-servers";
 
 import { MYRA_SOURCE_CONFIG } from "./myra-source";
 import type { WorkflowDeployInput } from "./needs-list";
@@ -275,7 +275,7 @@ export async function deployMyraSource(
   );
   // The catalogs come out of the stored credentials, so a redeploy never
   // reaches an MCP server; only adding one does.
-  const mcpServers = (await ensureBuiltInMcpServers(args.tenantId, fetchImpl)).map(
+  const mcpServers = (await ensureWorkspaceMcpServers(args.tenantId, fetchImpl)).map(
     toMcpServerDeployment,
   );
   const commitSha = await pushMyraSource(
