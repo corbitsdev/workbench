@@ -6,13 +6,17 @@ import {
   ASSISTANT_WORKFLOW_ID,
   artifactToolsCredentialBinding,
   artifactToolsCredentialUseRequirement,
+  mcpServerCredentialBinding,
+  mcpServerCredentialUseRequirement,
   memoryToolsCredentialBinding,
   memoryToolsCredentialUseRequirement,
+  type McpServerDeployment,
 } from "@corbits/myra/workflow-ids";
 import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
 import { type } from "arktype";
 
 import { ensureAgentHubCredential } from "./agent-hub-credential";
+import { ensureBuiltInMcpServers, toMcpServerDeployment } from "./mcp-servers";
 
 import { MYRA_SOURCE_CONFIG } from "./myra-source";
 import type { WorkflowDeployInput } from "./needs-list";
@@ -89,6 +93,7 @@ export function buildMyraDefinitionJson(
   triggerAddress: string,
   declaredSources: readonly DeclaredSource[],
   hubCredentialId: string,
+  mcpServers: readonly McpServerDeployment[],
 ): unknown {
   return {
     id: ASSISTANT_WORKFLOW_ID,
@@ -98,10 +103,12 @@ export function buildMyraDefinitionJson(
     credentialBindings: [
       artifactToolsCredentialBinding(ASSISTANT_WORKFLOW_ID),
       memoryToolsCredentialBinding(ASSISTANT_WORKFLOW_ID),
+      ...mcpServers.map((server) => mcpServerCredentialBinding(server)),
     ],
     grantRequirements: [
       artifactToolsCredentialUseRequirement(hubCredentialId),
       memoryToolsCredentialUseRequirement(hubCredentialId),
+      ...mcpServers.map((server) => mcpServerCredentialUseRequirement(server.credentialId)),
     ],
     // `to` only feeds the deploy-time mail.address/mail.send grants; Myra is
     // actually reached at her run address, minted at deploy time.
@@ -181,6 +188,7 @@ export async function pushMyraSource(
   tenantDomain: string,
   declaredSources: readonly DeclaredSource[],
   hubCredentialId: string,
+  mcpServers: readonly McpServerDeployment[],
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   const triggerAddress = `assistant@${tenantDomain}`;
@@ -199,9 +207,10 @@ export async function pushMyraSource(
       inferencePreferences: declaredSources.map((source) => ({ ...source })),
       systemPrompt: ASSISTANT_SYSTEM_PROMPT,
       hubCredentialId,
+      mcpServers,
     },
     workflowJson: JSON.stringify(
-      buildMyraDefinitionJson(triggerAddress, declaredSources, hubCredentialId),
+      buildMyraDefinitionJson(triggerAddress, declaredSources, hubCredentialId, mcpServers),
     ),
   });
   const url = new URL(
@@ -264,12 +273,18 @@ export async function deployMyraSource(
     { tenantId: args.tenantId, definitionId: ASSISTANT_WORKFLOW_ID, assetId },
     fetchImpl,
   );
+  // The catalogs come out of the stored credentials, so a redeploy never
+  // reaches an MCP server; only adding one does.
+  const mcpServers = (await ensureBuiltInMcpServers(args.tenantId, fetchImpl)).map(
+    toMcpServerDeployment,
+  );
   const commitSha = await pushMyraSource(
     args.tenantId,
     assetId,
     args.tenantDomain,
     args.declaredSources,
     hubCredentialId,
+    mcpServers,
     fetchImpl,
   );
   return buildMyraDeployInput({

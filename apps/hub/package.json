@@ -20,6 +20,7 @@
     "@corbits/cron": "github:corbitsdev/corbits-cron#c60e62e0459fbb48c4eccb2e97b3ceb8e7d0d47e",
     "@corbits/error-sink": "workspace:*",
     "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#65590a85fa143251b3ac20ba2eca92fc35e70e51",
+    "@corbits/mcp": "github:corbitsdev/corbits-mcp#9df1ab81d2f50d798bca2d2f44eb4759c92fac0e",
     "@corbits/memory": "github:corbitsdev/corbits-memory#8be608becc749fa0795a899826277823dca6db3e",
     "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core#3028f8604155eee63f5a1711f0d4022d7984e3f7",
     "@corbits/url-path": "workspace:*",

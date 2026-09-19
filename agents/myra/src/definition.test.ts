@@ -13,6 +13,7 @@ const INPUT = {
   inferencePreferences: [{ provider: "anthropic", model: "claude-test" }],
   systemPrompt: "You are Myra.",
   hubCredentialId: "crd_000000000000000000000000000000ab",
+  mcpServers: [],
 } as const;
 
 function assistantStep(definition: WorkflowDefinition): StepPrimitive {

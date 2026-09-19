@@ -15,14 +15,19 @@ import { mail } from "@intx/tools-mail/sidecar-bundle";
 import { posix } from "@intx/tools-posix/sidecar-bundle";
 import { artifacts } from "@corbits/artifacts/sidecar-bundle";
 import { memory } from "@corbits/memory/sidecar-bundle";
+import { mcpServers } from "@corbits/mcp/sidecar-bundle";
 import { toolSearch } from "@corbits/deferred-tools";
 
 import {
   ASSISTANT_STEP_ID,
   artifactToolsCredentialBinding,
   artifactToolsCredentialUseRequirement,
+  mcpServerCredentialBinding,
+  mcpServerCredentialUseRequirement,
+  mcpToolNamePattern,
   memoryToolsCredentialBinding,
   memoryToolsCredentialUseRequirement,
+  type McpServerDeployment,
 } from "./workflow-ids";
 
 export { ASSISTANT_SYSTEM_PROMPT } from "./system-prompt";
@@ -54,13 +59,20 @@ function toolNames(factories: readonly AnnotatedToolFactory[]): string[] {
   return factories.flatMap((factory) => factory.definitions.map((definition) => definition.name));
 }
 
-export const MYRA_DIRECTOR = {
-  id: "@corbits/deferred-tools/director",
-  config: {
-    visible: toolNames([mail, posix] as unknown as readonly AnnotatedToolFactory[]),
-    deferred: toolNames([artifacts, memory] as unknown as readonly AnnotatedToolFactory[]),
-  },
-} as const;
+export function myraDirector(mcpHandles: readonly string[]) {
+  return {
+    id: "@corbits/deferred-tools/director",
+    config: {
+      visible: toolNames([mail, posix] as unknown as readonly AnnotatedToolFactory[]),
+      deferred: [
+        ...toolNames([artifacts, memory] as unknown as readonly AnnotatedToolFactory[]),
+        // A remote catalog can run to dozens of tools, so a whole server's
+        // namespace stays behind one pattern until the model searches for it.
+        ...mcpHandles.map(mcpToolNamePattern),
+      ],
+    },
+  };
+}
 
 /** Everything the definition needs that is per-deployment data. */
 export interface MyraWorkflowInput {
@@ -78,6 +90,9 @@ export interface MyraWorkflowInput {
    * artifact and memory tools and requires its use on the deployer's
    * authority. */
   readonly hubCredentialId: string;
+  /** The MCP servers this deployment carries, catalogs already discovered.
+   * Each one gets its own credential handle, binding and use requirement. */
+  readonly mcpServers: readonly McpServerDeployment[];
 }
 
 /**
@@ -111,10 +126,12 @@ export function buildMyraWorkflow(input: MyraWorkflowInput): WorkflowDefinition 
     credentialBindings: [
       artifactToolsCredentialBinding(input.workflowId),
       memoryToolsCredentialBinding(input.workflowId),
+      ...input.mcpServers.map((server) => mcpServerCredentialBinding(server)),
     ],
     grantRequirements: [
       artifactToolsCredentialUseRequirement(input.hubCredentialId),
       memoryToolsCredentialUseRequirement(input.hubCredentialId),
+      ...input.mcpServers.map((server) => mcpServerCredentialUseRequirement(server.credentialId)),
     ],
     steps: {
       assistant: step({
@@ -122,8 +139,22 @@ export function buildMyraWorkflow(input: MyraWorkflowInput): WorkflowDefinition 
           id: ASSISTANT_STEP_ID,
           description: ASSISTANT_DESCRIPTION,
           systemPrompt: input.systemPrompt,
-          toolFactories: MYRA_TOOL_FACTORIES,
-          director: MYRA_DIRECTOR,
+          toolFactories: [
+            ...MYRA_TOOL_FACTORIES,
+            // Built per deployment: the factory is configured with the stored
+            // catalogs, so construction stays synchronous and offline.
+            mcpServers({
+              servers: input.mcpServers.map((server) => ({
+                handle: server.handle,
+                url: server.url,
+                tools: [...server.tools],
+                ...(server.allowWithoutAsk !== undefined
+                  ? { allowWithoutAsk: [...server.allowWithoutAsk] }
+                  : {}),
+              })),
+            }) as unknown as AnnotatedToolFactory,
+          ],
+          director: myraDirector(input.mcpServers.map((server) => server.handle)),
           capabilities: [],
           inference: { sources: input.inferencePreferences },
           toolPackagePins: [],

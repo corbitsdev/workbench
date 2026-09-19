@@ -72,6 +72,7 @@ import {
   mountOAuthLogin,
   type OAuthLoginProviders,
 } from "@corbits/oauth-core/hub";
+import { mountMcpDiscovery } from "@corbits/mcp/hub";
 import {
   CODEX_PROVIDER,
   codexOAuthConfig,
@@ -782,6 +783,24 @@ export async function createHubServer({
       },
     });
     oauthTokenRefresher.start();
+  }
+
+  {
+    // The browser never holds an MCP server's token, so the one place a
+    // catalog can be read is here, with the secret decrypted in-process.
+    const mcpApi = new Hono<TenantEnv>();
+    mountMcpDiscovery(mcpApi, {
+      db,
+      cipher: credentialCipher,
+      requireGrant: createRequireGrant({
+        grantStore,
+        conditionRegistry: grantConditionRegistry,
+      })("credential:*", "read"),
+      onError: (error, { url }) => {
+        reportError(error, { operation: "hub.mcp-discover", extra: { url } });
+      },
+    });
+    app.route(TENANT_PREFIX, mcpApi);
   }
 
   await installWebhooks({
