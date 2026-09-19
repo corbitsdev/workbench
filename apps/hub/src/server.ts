@@ -99,6 +99,7 @@ import {
   installWebhooks,
   type HookMailRouter,
 } from "@corbits/webhooks";
+import { mountMcpOAuthLogin } from "./mcp-oauth-login";
 import {
   createProcessSidecarProvisioner,
   readProcessProvisionerConfig,
@@ -825,6 +826,22 @@ export async function createHubServer({
       })("credential:*", "read"),
       onError: (error, { url }) => {
         reportError(error, { operation: "hub.mcp-discover", extra: { url } });
+      },
+    });
+    // Browser-driven OAuth sign-in for MCP servers: discovery + dynamic
+    // registration run here and the tokens land on the server's `api_key`
+    // credential row, so the sidecar binding above needs no changes. It
+    // writes credentials, so it takes the `create` grant the stock OAuth
+    // login route takes rather than discovery's `read`.
+    mountMcpOAuthLogin(mcpApi, {
+      db,
+      cipher: credentialCipher,
+      requireGrant: createRequireGrant({
+        grantStore,
+        conditionRegistry: grantConditionRegistry,
+      })("credential:*", "create"),
+      onError: (error, { handle }) => {
+        reportError(error, { operation: "hub.mcp-oauth-login", extra: { handle } });
       },
     });
     app.route(TENANT_PREFIX, mcpApi);

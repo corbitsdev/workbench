@@ -30,6 +30,7 @@ import {
   useAddMcpServer,
   useMcpServers,
   useRemoveMcpServer,
+  useSignInMcpServer,
   type McpServerRow,
 } from "../tools/mcp-servers-query";
 import { useDeployedToolPackages } from "../tools/deployed-tool-packages";
@@ -106,11 +107,15 @@ function DiscoverCard({
   added,
   onAdd,
   adding,
+  onSignIn,
+  signingIn,
 }: {
   readonly entry: McpCatalogEntry;
   readonly added: boolean;
   readonly onAdd: () => void;
   readonly adding: boolean;
+  readonly onSignIn: () => void;
+  readonly signingIn: boolean;
 }) {
   return (
     <Card className="flex flex-col gap-3 p-4">
@@ -129,14 +134,14 @@ function DiscoverCard({
             Add
           </Button>
         ) : (
-          <Button size="sm" disabled title="Signing in to an MCP server isn't wired up yet.">
+          <Button size="sm" disabled={signingIn} onClick={onSignIn}>
             Sign in
           </Button>
         )}
       </div>
-      {entry.auth !== "none" && !added ? (
+      {entry.auth !== "none" && !added && signingIn ? (
         <p className="text-xs text-muted-foreground">
-          Until sign-in lands, add this server below with a token you already have.
+          Finish signing in on the opened {entry.name} page — this card updates when it completes.
         </p>
       ) : null}
     </Card>
@@ -207,6 +212,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
   const serversQuery = useMcpServers(tenantId);
   const add = useAddMcpServer(tenantId);
   const remove = useRemoveMcpServer(tenantId);
+  const signIn = useSignInMcpServer(tenantId);
   const crumbs = [{ label: "Tools" }];
 
   function stage(body: React.ReactNode) {
@@ -228,6 +234,26 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
     );
   }
 
+  function signInServer(entry: McpCatalogEntry) {
+    signIn.mutate(
+      {
+        handle: entry.handle,
+        name: entry.name,
+        url: entry.url,
+        ...(entry.resourceUrl !== undefined ? { resourceUrl: entry.resourceUrl } : {}),
+      },
+      {
+        onSuccess: (server) => {
+          toast(
+            `${server.name} signed in — Myra was redeployed with its ${String(server.tools.length)} tools.`,
+          );
+        },
+        onError: (cause: unknown) => {
+          toast(describeApiError(cause, "signing in to this server"));
+        },
+      },
+    );
+  }
   function addServer(input: { url: string; name: string; handle: string; token?: string }) {
     add.mutate(input, {
       onSuccess: (server) => {
@@ -287,6 +313,10 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
               onAdd={() => {
                 addServer({ url: entry.url, name: entry.name, handle: entry.handle });
               }}
+              onSignIn={() => {
+                signInServer(entry);
+              }}
+              signingIn={signIn.isPending}
             />
           ))}
           <AddByUrl onAdd={addServer} adding={add.isPending} />
