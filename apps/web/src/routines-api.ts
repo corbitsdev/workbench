@@ -8,7 +8,6 @@ import { WorkflowDeploymentResponse } from "@intx/types";
 import type { APIQuery } from "@/lib/api-query";
 import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@/lib/api-query";
 import { isAgentDeploySourceAssetName } from "@/agent-deploy";
-import { listTopLevelRuns } from "@/agents-api";
 import { MYRA_SOURCE_CONFIG } from "@/myra-source";
 
 export const ScheduledWorkflowDefinition = type({
@@ -30,15 +29,76 @@ export const CronSchedule = type({
   id: "string",
   tenantId: "string",
   expression: "string",
-  toAddress: "string",
+  /** The targeted agent's workflow definition name — stable across
+   * redeploys, unlike the run address the ticker resolves at fire time. */
+  definitionName: "string",
   subject: "string",
   body: "string",
+  lastFiredAt: "string | null",
+  /** Set once when the target's deployment is gone; a stopped schedule
+   * never fires again, and a later redeploy does not resume it. */
+  stoppedAt: "string | null",
+  stoppedReason: "string | null",
   createdAt: "string",
 });
 
 export type CronSchedule = typeof CronSchedule.infer;
 
 const CronSchedulesResponse = type({ schedules: CronSchedule.array() });
+const CreatedCronSchedule = type({ schedule: CronSchedule });
+
+export type NewCronSchedule = {
+  readonly expression: string;
+  readonly definitionName: string;
+  readonly subject: string;
+  readonly body: string;
+};
+
+/** The mount's own rejection when nothing live carries the target's name —
+ * a distinct type so the form can say so in the person's words. */
+export class NoLiveDeploymentError extends Error {
+  constructor() {
+    super("That agent has no live deployment to schedule.");
+    this.name = "NoLiveDeploymentError";
+  }
+}
+
+export async function createCronSchedule(
+  tenantId: string,
+  input: NewCronSchedule,
+): Promise<CronSchedule> {
+  const path = cronPath(tenantId);
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (response.status === 401) throw new UnauthenticatedError();
+  if (response.status === 400) {
+    const body: unknown = await response.json().catch(() => undefined);
+    const error = type({ error: "string" })(body);
+    if (!(error instanceof type.errors) && error.error === "no_live_deployment") {
+      throw new NoLiveDeploymentError();
+    }
+  }
+  if (!response.ok) {
+    throw new ApiQueryError(`The server answered ${response.status}.`, response.status, path);
+  }
+  const parsed = CreatedCronSchedule(await response.json());
+  if (parsed instanceof type.errors) {
+    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
+  }
+  return parsed.schedule;
+}
+
+export async function deleteCronSchedule(tenantId: string, id: string): Promise<void> {
+  const path = `${cronPath(tenantId)}/${encodeURIComponent(id)}`;
+  const response = await fetch(path, { method: "DELETE" });
+  if (response.status === 401) throw new UnauthenticatedError();
+  if (!response.ok) {
+    throw new ApiQueryError(`The server answered ${response.status}.`, response.status, path);
+  }
+}
 
 const DeploymentsSchema = WorkflowDeploymentResponse.array();
 const WorkflowAssetSchema = type({ id: "string", name: "string" });
@@ -87,34 +147,35 @@ function isAgentAssetName(name: string): boolean {
 export async function listScheduledWorkflows(
   tenantId: string,
 ): Promise<readonly ScheduledWorkflowDefinition[]> {
-  const [deployments, assets, runs, schedules] = await Promise.all([
+  const [deployments, assets, schedules] = await Promise.all([
     fetchJSON(deploymentsPath(tenantId), DeploymentsSchema),
     fetchJSON(workflowAssetsPath(tenantId), WorkflowAssetsSchema),
-    listTopLevelRuns(tenantId),
     listCronSchedules(tenantId),
   ]);
   const nameByAssetId = new Map(assets.map((asset) => [asset.id, asset.name]));
-  // A deployment's own id is its anchor run's id (see `chat/threads-api.ts`'s
-  // `listChatAgents`), so this is the same join that resolves a chat agent's
-  // live address.
-  const addressByRunId = new Map(runs.map((run) => [run.id, run.address]));
-  const expressionByAddress = new Map(schedules.map((row) => [row.toAddress, row.expression]));
+  // A schedule names its target by definition name, which is the source
+  // asset's name — so a redeploy keeps the row joined to the same row here.
+  const expressionByDefinitionName = new Map(
+    schedules
+      .filter((row) => row.stoppedAt === null)
+      .map((row) => [row.definitionName, row.expression]),
+  );
   return deployments
     .filter((deployment) => {
       const name = nameByAssetId.get(deployment.definitionAssetId);
       return name === undefined || !isAgentAssetName(name);
     })
     .map((deployment) => {
-      const address = addressByRunId.get(deployment.id);
+      const name = nameByAssetId.get(deployment.definitionAssetId);
       return {
         definitionId: deployment.id,
         assetId: deployment.definitionAssetId,
-        name: nameByAssetId.get(deployment.definitionAssetId) ?? "Untitled workflow",
+        name: name ?? "Untitled workflow",
         tenantId: deployment.tenantId,
         status: deployment.status === "deployed" ? "deployed" : "stopped",
         createdAt: deployment.createdAt,
         updatedAt: deployment.createdAt,
-        schedule: address === undefined ? null : (expressionByAddress.get(address) ?? null),
+        schedule: name === undefined ? null : (expressionByDefinitionName.get(name) ?? null),
       };
     });
 }

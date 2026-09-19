@@ -40,6 +40,7 @@ import { workbenchKeys } from "../chat-path";
 import { tenantKeys } from "../query-client";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { redeployWorkbenchAgent } from "../workbench-create";
+import { WorkbenchSchedulesPanel } from "./workbench-schedules-panel";
 import { workbenchIdFromPath } from "../workbench-path";
 
 function errorText(cause: unknown): string {
@@ -203,6 +204,8 @@ function WorkbenchInfoColumn({
           </ul>
         ) : null}
       </section>
+
+      <WorkbenchSchedulesPanel workbenchTenantId={workbenchTenantId} participants={participants} />
 
       <section className="workbench-info-panel">
         <div className="workbench-info-panel-header">
