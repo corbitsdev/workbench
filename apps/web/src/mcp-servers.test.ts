@@ -6,7 +6,13 @@ import { MCP_STREAMABLE_HTTP_PROVIDER_KEY } from "@corbits/credential-mcp";
 import { EXA_MCP_SERVER, mcpCredentialName, mcpProviderName } from "@corbits/myra/workflow-ids";
 import { describe, expect, test } from "bun:test";
 
-import { ensureBuiltInMcpServers, resolveWorkspaceTenantId } from "./mcp-servers";
+import {
+  ensureBuiltInMcpServers,
+  readOnlyToolNames,
+  resolveWorkspaceTenantId,
+  toMcpServerDeployment,
+  type McpServer,
+} from "./mcp-servers";
 
 const WORKSPACE_ID = "ws-1";
 const WORKBENCH_ID = "wb-1";
@@ -46,7 +52,10 @@ describe("resolveWorkspaceTenantId", () => {
   });
 });
 
-function workspaceCatalogFetch(opts: { readonly exaPresent: boolean }): {
+function workspaceCatalogFetch(opts: {
+  readonly exaPresent: boolean;
+  readonly linearPresent?: boolean;
+}): {
   readonly fetchImpl: typeof fetch;
   readonly calls: Call[];
 } {
@@ -61,15 +70,26 @@ function workspaceCatalogFetch(opts: { readonly exaPresent: boolean }): {
     if (path === `/api/tenants/${WORKSPACE_ID}/providers`) {
       if (method === "GET") {
         return Response.json({
-          data: opts.exaPresent
-            ? [
-                {
-                  id: "p-exa",
-                  name: mcpProviderName(EXA_MCP_SERVER.handle),
-                  plugin: MCP_STREAMABLE_HTTP_PROVIDER_KEY,
-                },
-              ]
-            : [],
+          data: [
+            ...(opts.exaPresent
+              ? [
+                  {
+                    id: "p-exa",
+                    name: mcpProviderName(EXA_MCP_SERVER.handle),
+                    plugin: MCP_STREAMABLE_HTTP_PROVIDER_KEY,
+                  },
+                ]
+              : []),
+            ...(opts.linearPresent === true
+              ? [
+                  {
+                    id: "p-linear",
+                    name: mcpProviderName("linear"),
+                    plugin: MCP_STREAMABLE_HTTP_PROVIDER_KEY,
+                  },
+                ]
+              : []),
+          ],
         });
       }
       return Response.json({
@@ -81,24 +101,51 @@ function workspaceCatalogFetch(opts: { readonly exaPresent: boolean }): {
     if (path === `/api/tenants/${WORKSPACE_ID}/credentials`) {
       if (method === "GET") {
         return Response.json({
-          data: opts.exaPresent
-            ? [
-                {
-                  id: "c-exa",
-                  name: mcpCredentialName(EXA_MCP_SERVER.handle),
-                  providerId: "p-exa",
-                  metadata: {
-                    mcp: {
-                      handle: EXA_MCP_SERVER.handle,
-                      name: EXA_MCP_SERVER.name,
-                      url: EXA_MCP_SERVER.url,
-                      auth: "none",
-                      tools: [],
+          data: [
+            ...(opts.exaPresent
+              ? [
+                  {
+                    id: "c-exa",
+                    name: mcpCredentialName(EXA_MCP_SERVER.handle),
+                    providerId: "p-exa",
+                    metadata: {
+                      mcp: {
+                        handle: EXA_MCP_SERVER.handle,
+                        name: EXA_MCP_SERVER.name,
+                        url: EXA_MCP_SERVER.url,
+                        auth: "none",
+                        tools: [],
+                      },
                     },
                   },
-                },
-              ]
-            : [],
+                ]
+              : []),
+            ...(opts.linearPresent === true
+              ? [
+                  {
+                    id: "c-linear",
+                    name: mcpCredentialName("linear"),
+                    providerId: "p-linear",
+                    metadata: {
+                      mcp: {
+                        handle: "linear",
+                        name: "Linear",
+                        url: "https://mcp.linear.app/mcp",
+                        auth: "oauth",
+                        tools: [
+                          {
+                            name: "list_issues",
+                            inputSchema: {},
+                            annotations: { readOnlyHint: true },
+                          },
+                          { name: "create_issue", inputSchema: {} },
+                        ],
+                      },
+                    },
+                  },
+                ]
+              : []),
+          ],
         });
       }
       return Response.json({ id: "c-exa", name: "x", providerId: "p-exa" });
@@ -133,5 +180,40 @@ describe("ensureBuiltInMcpServers", () => {
     for (const write of writes) {
       expect(write.path.startsWith(`/api/tenants/${WORKSPACE_ID}/`)).toBe(true);
     }
+  });
+
+  test("a chat's deploy binds every workspace server, not just Exa, with no writes", async () => {
+    const { fetchImpl, calls } = workspaceCatalogFetch({ exaPresent: true, linearPresent: true });
+    const servers = await ensureBuiltInMcpServers(WORKBENCH_ID, fetchImpl);
+    expect(servers.map((server) => server.handle).sort()).toEqual(["exa", "linear"]);
+    expect(calls.some((call) => call.method !== "GET")).toBe(false);
+  });
+});
+
+const LINEAR_SERVER: McpServer = {
+  credentialId: "c-linear",
+  providerId: "p-linear",
+  handle: "linear",
+  name: "Linear",
+  url: "https://mcp.linear.app/mcp",
+  auth: "oauth",
+  tools: [
+    { name: "list_issues", inputSchema: {}, annotations: { readOnlyHint: true } },
+    { name: "create_issue", inputSchema: {} },
+  ],
+};
+
+describe("toMcpServerDeployment", () => {
+  test("only the server-annotated read-only tools skip the ask; the rest stay gated", () => {
+    expect(readOnlyToolNames(LINEAR_SERVER)).toEqual(["linear.list_issues"]);
+    expect(toMcpServerDeployment(LINEAR_SERVER).allowWithoutAsk).toEqual(["linear.list_issues"]);
+  });
+
+  test("a server with no read-only tools carries no bypass at all", () => {
+    const deployment = toMcpServerDeployment({
+      ...LINEAR_SERVER,
+      tools: [{ name: "create_issue", inputSchema: {} }],
+    });
+    expect(deployment.allowWithoutAsk).toBeUndefined();
   });
 });
