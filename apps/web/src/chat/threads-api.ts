@@ -9,6 +9,7 @@ import { reportError } from "@corbits/error-sink";
 import { agentSlugFromSourceAssetName } from "../agent-deploy";
 import { listTopLevelRuns } from "../agents-api";
 import { MYRA_SOURCE_CONFIG } from "../myra-source";
+import { mentionedAgents } from "./mentions";
 import { appendRoster } from "./workbench-roster";
 
 export class ChatApiError extends Error {
@@ -801,7 +802,10 @@ export async function sendToWorkbench(input: {
   if (live.length === 0) {
     throw new ChatApiError("No agent is in this workbench yet, so there is nobody to send to.");
   }
-  const to = live.map((agent) => agent.address);
+  // An @mention narrows the fan-out to the agents it names; the roster block
+  // below still lists everyone, so a narrowed message can still be handed on.
+  const mentioned = mentionedAgents(input.content, live);
+  const to = (mentioned.length > 0 ? mentioned : live).map((agent) => agent.address);
   const people = input.participants.filter(
     (participant) => participant.kind === "person" && participant.address.includes("@"),
   );
