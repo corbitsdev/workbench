@@ -67,7 +67,7 @@ describe("chatTitle", () => {
 });
 
 describe("listWorkbenchParticipants", () => {
-  test("a person's address is their refId at the workbench's own domain, never email or bare refId", async () => {
+  test("a person's address is their refId lowercased at the workbench's own domain, never email or bare refId", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
       if (path.includes("/principals")) {
@@ -98,7 +98,7 @@ describe("listWorkbenchParticipants", () => {
       id: "prin_1",
       kind: "person",
       name: "Alice",
-      address: "Mk9tHH@example.com",
+      address: "mk9thh@example.com",
     });
   });
 });

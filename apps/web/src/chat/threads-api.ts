@@ -9,6 +9,7 @@ import { reportError } from "@corbits/error-sink";
 import { agentSlugFromSourceAssetName } from "../agent-deploy";
 import { listTopLevelRuns } from "../agents-api";
 import { MYRA_SOURCE_CONFIG } from "../myra-source";
+import { personMailAddress } from "../mail-address";
 import { mentionedAgents } from "./mentions";
 import { appendRoster } from "./workbench-roster";
 
@@ -646,7 +647,7 @@ export async function listWorkbenchParticipants(
       id: principal.id,
       kind: "person",
       name: principal.displayName,
-      address: `${principal.refId}@${tenantDomain}`,
+      address: personMailAddress(principal.refId, tenantDomain),
     }));
   const agents = chatAgents.map((agent): WorkbenchParticipant => ({
     id: agent.id,
