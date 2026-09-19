@@ -34,6 +34,7 @@
   "peerDependencies": {
     "@intx/agent": "0.3.0",
     "@intx/inference": "0.3.0",
+    "@intx/log": "0.3.0",
     "@intx/types": "0.3.0"
   }
 }

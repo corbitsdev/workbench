@@ -18,18 +18,14 @@ const SearchInput = type({ query: "string" });
 export const TOOL_SEARCH_DEFINITION: ToolDefinition = {
   name: TOOL_SEARCH_NAME,
   description:
-    "Find the tools that are not listed above. This agent has more tools than the ones in this request; " +
-    'call tool_search with a keyword describing what you need (for example "memory", "artifact", "save a note") ' +
-    "and it answers with the name, description and input schema of every matching tool. Those tools become " +
-    "callable on your next turn. Pass an empty query to list them all. Always search before telling the user " +
-    "you cannot do something.",
+    "Search this agent's other tools by keyword. The request lists only some of the tools available; " +
+    "this one answers with the name, description and input schema of every tool matching the query, " +
+    "and those tools become callable on the next turn. An empty query lists them all. Search before " +
+    "saying a thing cannot be done.",
   inputSchema: {
     type: "object",
-    properties: {
-      query: { type: "string", description: "Keywords describing the tool you need." },
-    },
+    properties: { query: { type: "string" } },
     required: ["query"],
-    additionalProperties: false,
   },
 };
 

@@ -9,6 +9,7 @@
 // the authz extension checks calls against the agent's full definitions.
 
 import { defineDirector } from "@intx/agent";
+import { getLogger } from "@intx/log";
 import type { DirectorAgentContext } from "@intx/agent";
 import { createDefaultDirector } from "@intx/inference";
 import type {
@@ -32,6 +33,8 @@ export interface DeferredDirectorConfig {
   readonly visible: readonly string[];
   readonly deferred: readonly string[];
 }
+
+const logger = getLogger(["corbits", "deferred-tools"]);
 
 const DeferredDirectorConfigSchema = type({
   visible: "string[]",
@@ -121,6 +124,9 @@ class DeferredDirector implements ReactorDirector {
   ): Promise<ReactorAction | ReactorAction[]> {
     surfaceFromEvent(event, this.selection);
     const tools = this.selection.tools();
+    // The only place the per-turn tool list is observable; a deferral bug is
+    // otherwise invisible until the model misbehaves.
+    logger.debug`deferred tools on ${event.type}: ${tools.map((tool) => tool.name).join(", ")}`;
     const narrowed: ReactorCapabilities = {
       ...capabilities,
       infer: (options) => capabilities.infer({ ...options, tools }),
