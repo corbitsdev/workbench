@@ -16,9 +16,9 @@ handful of domain packages built on top.
   (author routes) and `agent-directory`. Credentials are stored through
   Interchange's own stock credential routes; nothing in this repo wraps
   or replaces them.
-- **`apps/sidecar`** — a byte-for-byte copy of Interchange's own sidecar.
-  It executes workflow runs and agent turns on the hub's behalf; Workbench
-  makes no local changes to it.
+- **`apps/sidecar`** — a copy of Interchange's own sidecar. It executes
+  workflow runs and agent turns on the hub's behalf; its few local deltas
+  are listed in [VENDORED.md](VENDORED.md) with kill conditions.
 - **`apps/web`** — the React client. On sign-in it converges its own
   tenant, workflow deployments, credentials, and grants over stock hub
   routes; the hub never seeds data for it.
@@ -41,11 +41,37 @@ address.
 ## Agents and workflows
 
 Myra (`agents/myra`) is the only agent Workbench ships. Her tools are
-Interchange's own tool packages — `@intx/tools-mail` over her mail
-transport and `@intx/tools-posix` over her working tree. The platform has
-no notion of an agent calling the hub API, so Workbench ships no
-hub-calling tool package: Myra writes a workflow or agent as code and the
-person deploys it from Workbench through the stock workflow-deploy route.
+`@intx/tools-mail` over her mail transport, `@intx/tools-posix` over her
+working tree, and the `@corbits/artifacts`, `@corbits/memory` and
+`@corbits/mcp` sidecar bundles. A bundle that calls back into the hub or
+out to an MCP server never holds a secret: the web client stores a
+tenant credential, the definition binds it to that one package and
+requires its use on the deployer's authority, and the sidecar hands the
+tool an origin-pinned mediated fetch. Myra writes further workflows and
+agents as code; the person deploys them through the stock deploy route.
+
+## Tool visibility
+
+Interchange sends a model every tool on every turn. Workbench keeps that
+affordable with `@corbits/deferred-tools`: a custom Interchange director
+(shipped in the agent's own package via `interchange.directors`) that
+sends the model its visible tools plus `tool_search`, and appends a whole
+namespace of deferred tools once a search matches it. The list only grows
+within a context, in surfacing order, so each turn's tools block is a
+prefix of the next and prompt caching keeps hitting; compaction is the
+only reset point. Grants are unaffected: authorization checks every call
+against the full definition.
+
+## MCP
+
+An MCP server is a tenant credential on the streamable-HTTP provider,
+with its discovered tool catalog stored in the credential's metadata.
+The hub mounts `@corbits/mcp`'s discovery route so an OAuth-protected
+catalog is read server-side; a deploy reads the stored catalog and never
+touches the network. Each remote tool becomes an agent tool named
+`<server>.<tool>`, its own grant resource, ask-gated unless the server
+marks it read-only. The catalog belongs to the workspace; chat binds all
+of it, an agent binds only what it needs, Myra's set is fixed.
 
 ## Data
 
