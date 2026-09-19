@@ -67,6 +67,7 @@ import {
   createWorkflowStepInvoker,
   hashGrants,
   loadWorkflowLoopFnsFromClosure,
+  loadWorkflowDirectorRegistryFromClosure,
   loadWorkflowPluginFactoriesFromClosure,
   loadWorkflowPluginToolDefinitionsFromClosure,
   type ChildMailboxReader,
@@ -535,6 +536,17 @@ export function createSidecarStepBuildEnv(
   sourcesRef: SourcesSnapshotRef,
   credentialContext?: SidecarStepCredentialContext,
 ) => Promise<StepEnvBase> {
+  // Local delta: the deploy probe already honours a workflow package's own
+  // `interchange.directors`, so the run must resolve the same registry or a
+  // definition naming its director dies at its first step.
+  let closureDirectors: Promise<DirectorRegistry> | undefined;
+  function directors(): Promise<DirectorRegistry> {
+    closureDirectors ??=
+      deps.closurePackageDir === undefined
+        ? Promise.resolve(createDefaultDirectorRegistry())
+        : loadWorkflowDirectorRegistryFromClosure({ packageDir: deps.closurePackageDir });
+    return closureDirectors;
+  }
   return async (
     req: StepInvokeRequest,
     sourcesRef: SourcesSnapshotRef,
@@ -683,7 +695,7 @@ export function createSidecarStepBuildEnv(
       workdir,
       toolCwd: workdir,
       audit: storage,
-      directors: createDefaultDirectorRegistry(),
+      directors: await directors(),
       deps: createDependencies(deps.adapters),
       transport,
       address: deps.mailboxAddress,
