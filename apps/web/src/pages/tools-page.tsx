@@ -1,5 +1,5 @@
-// Two idioms, per DESIGN.md: a data table for what this workbench already
-// carries, and a card catalog for the servers it could add.
+// Two idioms, per DESIGN.md: a data table for what the workspace catalog
+// already carries, and a card catalog for the servers it could add.
 
 import { useState } from "react";
 import {
@@ -230,9 +230,9 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
 
   function addServer(input: { url: string; name: string; handle: string; token?: string }) {
     add.mutate(input, {
-      onSuccess: (server) => {
+      onSuccess: (result) => {
         toast(
-          `${server.name} added — Myra was redeployed with its ${String(server.tools.length)} tools.`,
+          `${result.server.name} added to the workspace catalog — Myra redeployed in ${String(result.redeployed)} ${result.redeployed === 1 ? "workbench" : "workbenches"}.`,
         );
       },
       onError: (cause: unknown) => {
@@ -245,9 +245,9 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
     <div className="flex flex-col gap-8 px-4 pb-5 sm:px-7">
       <Section
         title="MCP servers"
-        description="A server's tools reach the agents whose definitions bind it."
+        description="The workspace catalog, shared by every workbench: a server's tools reach the agents whose definitions bind it."
       >
-        <QueryView query={serversQuery} label="this workbench's MCP servers" skeleton="rows">
+        <QueryView query={serversQuery} label="the workspace's MCP servers" skeleton="rows">
           {(servers) =>
             servers.length === 0 ? (
               <p className="text-sm text-muted-foreground">
@@ -259,8 +259,10 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
                 removing={remove.isPending}
                 onRemove={(server) => {
                   remove.mutate(server, {
-                    onSuccess: () => {
-                      toast(`${server.name} removed — Myra was redeployed without it.`);
+                    onSuccess: (result) => {
+                      toast(
+                        `${server.name} removed from the workspace catalog — Myra redeployed in ${String(result.redeployed)} ${result.redeployed === 1 ? "workbench" : "workbenches"}.`,
+                      );
                     },
                     onError: (cause: unknown) => {
                       toast(describeApiError(cause, "removing this server"));
@@ -273,7 +275,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
         </QueryView>
       </Section>
 
-      <Section title="Discover" description="Servers this workbench can add.">
+      <Section title="Discover" description="Servers the workspace can add.">
         <div className="grid gap-4 sm:grid-cols-2">
           {MCP_SERVER_CATALOG.map((entry) => (
             <DiscoverCard
