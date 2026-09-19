@@ -256,8 +256,8 @@ export type NewAgentInput = {
    * of being re-derived from `name`, so the asset name stays stable. */
   readonly slug?: string;
   /** A five-field cron expression: on success, a `@corbits/cron` schedule
-   * row is created addressed at this deploy's run, so the ticker mails it
-   * on that cadence. */
+   * row is created targeting this agent's definition, so the ticker mails
+   * its live run on that cadence. */
   readonly schedule?: string;
 };
 
@@ -303,13 +303,15 @@ async function resolveDeployerAddress(
   return parsed instanceof type.errors ? undefined : `${parsed.user.id}@${tenantDomain}`;
 }
 
-/** Creates a `@corbits/cron` schedule row addressed at a deployed agent's
- * run — the only way an agent fires on a cadence, since Interchange's
- * `schedule` trigger is reserved but unimplemented. */
+/** Creates a `@corbits/cron` schedule row targeting a deployed agent by its
+ * definition name — the only way an agent fires on a cadence, since
+ * Interchange's `schedule` trigger is reserved but unimplemented. The
+ * ticker resolves that name to the live run at fire time, so the schedule
+ * survives a redeploy. */
 async function scheduleAgentRun(
   tenantId: string,
   expression: string,
-  runAddress: string,
+  definitionName: string,
   tenantDomain: string,
   fetchImpl: typeof fetch,
 ): Promise<void> {
@@ -319,7 +321,7 @@ async function scheduleAgentRun(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       expression,
-      toAddress: runAddress,
+      definitionName,
       subject: "Scheduled run",
       body: buildScheduledRunBody(deployerAddress),
     }),
@@ -411,15 +413,7 @@ export async function deployAgentSource(
     throw new AgentDeployError(`this deployment came back an unexpected shape: ${parsed.summary}`);
   }
   if (args.input.schedule !== undefined) {
-    await scheduleAgentRun(
-      args.tenantId,
-      args.input.schedule,
-      // The deployment id is the top-level run id (already `run_…`), and
-      // the run address is that id at the tenant domain.
-      `${parsed.id}@${tenant.domain}`,
-      tenant.domain,
-      fetchImpl,
-    );
+    await scheduleAgentRun(args.tenantId, args.input.schedule, assetName, tenant.domain, fetchImpl);
   }
   return parsed;
 }

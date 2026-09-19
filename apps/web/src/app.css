@@ -3662,6 +3662,7 @@ tr.insights-row-clickable:hover {
   gap: 0.4rem;
 }
 .workbench-info-approval-list,
+.workbench-info-schedule-list,
 .workbench-info-artifact-list {
   display: flex;
   flex-direction: column;
@@ -3669,6 +3670,11 @@ tr.insights-row-clickable:hover {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+/* A stopped schedule stays listed, dimmed, since only a new one revives it. */
+.workbench-info-schedule-list > li[data-stopped="true"] .workbench-info-cell-primary {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
 }
 .workbench-info-approval-row {
   display: flex;

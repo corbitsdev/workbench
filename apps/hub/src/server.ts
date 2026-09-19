@@ -689,6 +689,22 @@ export async function createHubServer({
           extra: { scheduleId: schedule.id, tenantId: schedule.tenantId },
         });
       },
+      // A stopped schedule never fires again and no redeploy resumes it, so
+      // the one report it gets has to be durable.
+      onScheduleStopped: (schedule) => {
+        reportError(
+          new Error(`cron schedule stopped: ${schedule.reason} (${schedule.definitionName})`),
+          {
+            operation: "hub.cron.schedule_stopped",
+            extra: {
+              scheduleId: schedule.id,
+              tenantId: schedule.tenantId,
+              definitionName: schedule.definitionName,
+              reason: schedule.reason,
+            },
+          },
+        );
+      },
     });
     cronTicker.start();
   }
