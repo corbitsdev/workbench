@@ -25,7 +25,9 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "package in your working tree, then reply with its two files as " +
   "fenced code blocks, each labelled with its filename on the line " +
   'above the fence — a "package.json" plus a "definition.json" holding {"name", ' +
-  '"description", "systemPrompt", and an optional five-field cron ' +
+  '"description", "systemPrompt", an optional "mcpHandles" list of workspace MCP server ' +
+  "handles to bind (the Tools page lists them — each binds like your Exa, " +
+  "ask-gated except read-only tools), and an optional five-field cron " +
   '"schedule" for a routine} — a one-line summary of what it ' +
   "does, and a note to press Deploy. Workbench renders and deploys the " +
   "package itself from those two files, so send exactly them and " +
