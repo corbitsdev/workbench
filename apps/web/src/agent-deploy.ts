@@ -8,12 +8,17 @@ import { reportError } from "@corbits/error-sink";
 import {
   artifactToolsCredentialBinding,
   artifactToolsCredentialUseRequirement,
+  mcpServerCredentialBinding,
+  mcpServerCredentialUseRequirement,
   memoryToolsCredentialBinding,
   memoryToolsCredentialUseRequirement,
+  type McpServerDeployment,
 } from "@corbits/myra/workflow-ids";
 
 import { ensureAgentHubCredential } from "./agent-hub-credential";
 import { personMailAddress } from "./mail-address";
+import { listMcpServers, resolveWorkspaceTenantId, toMcpServerDeployment } from "./mcp-servers";
+import type { McpServer } from "./mcp-servers";
 import { resolveExistingOffering } from "./onboarding/provider-connect-step";
 import { isValidSlug, slugify } from "@/lib/slug";
 
@@ -98,6 +103,10 @@ export function buildAgentDefinitionJson(args: {
   triggerAddress: string;
   declaredSources: readonly { readonly provider: string; readonly model: string }[];
   hubCredentialId: string;
+  /** Workspace-catalog servers this agent binds — the same bindings and use
+   * requirements Myra carries, so remote tools stay ask-gated except the
+   * read-only ones the server itself annotates. */
+  mcpServers: readonly McpServerDeployment[];
 }): unknown {
   const stepId = "run";
   return {
@@ -111,10 +120,12 @@ export function buildAgentDefinitionJson(args: {
     credentialBindings: [
       artifactToolsCredentialBinding(args.slug),
       memoryToolsCredentialBinding(args.slug),
+      ...args.mcpServers.map((server) => mcpServerCredentialBinding(server)),
     ],
     grantRequirements: [
       artifactToolsCredentialUseRequirement(args.hubCredentialId),
       memoryToolsCredentialUseRequirement(args.hubCredentialId),
+      ...args.mcpServers.map((server) => mcpServerCredentialUseRequirement(server.credentialId)),
     ],
     steps: {
       [stepId]: {
@@ -186,6 +197,7 @@ export async function pushAgentSource(
     readonly triggerAddress: string;
     readonly declaredSources: readonly { readonly provider: string; readonly model: string }[];
     readonly hubCredentialId: string;
+    readonly mcpServers: readonly McpServerDeployment[];
   },
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
@@ -202,9 +214,10 @@ export async function pushAgentSource(
       inferencePreferences: args.declaredSources.map((source) => ({ ...source })),
       systemPrompt: args.systemPrompt,
       hubCredentialId: args.hubCredentialId,
-      // A created agent carries no MCP server of its own; the workbench's
-      // servers are Myra's until someone binds one to another agent.
-      mcpServers: [],
+      // The workspace-catalog servers the New Agent dialog (or Myra's
+      // create-agent card) bound to this agent; the bundle wires their tools
+      // behind the deferred director, ask-gated except read-only ones.
+      mcpServers: args.mcpServers,
     },
     workflowJson: JSON.stringify(
       buildAgentDefinitionJson({
@@ -213,6 +226,7 @@ export async function pushAgentSource(
         triggerAddress: args.triggerAddress,
         declaredSources: args.declaredSources,
         hubCredentialId: args.hubCredentialId,
+        mcpServers: args.mcpServers,
       }),
     ),
   });
@@ -256,11 +270,31 @@ export type NewAgentInput = {
    * redeploying or re-joining an existing agent) — used verbatim instead
    * of being re-derived from `name`, so the asset name stays stable. */
   readonly slug?: string;
+  /** Workspace-catalog server handles to bind, as chosen in the New Agent
+   * dialog (or on Myra's create-agent card). Each becomes a definition
+   * binding plus a use requirement, the same as Myra's Exa. */
+  readonly mcpHandles?: readonly string[];
   /** A five-field cron expression: on success, a `@corbits/cron` schedule
    * row is created targeting this agent's definition, so the ticker mails
    * its live run on that cadence. */
   readonly schedule?: string;
 };
+
+/** Maps requested workspace-catalog handles to deployments. Fails closed on
+ * an unknown handle: silently dropping one would deploy an agent that
+ * cannot reach the server the person checked. */
+export function resolveMcpServerDeployments(
+  catalog: readonly McpServer[],
+  handles: readonly string[],
+): readonly McpServerDeployment[] {
+  return handles.map((handle) => {
+    const server = catalog.find((candidate) => candidate.handle === handle);
+    if (server === undefined) {
+      throw new AgentDeployError(`the ${handle} server is not in this workspace's catalog`);
+    }
+    return toMcpServerDeployment(server);
+  });
+}
 
 function cronPath(tenantId: string): string {
   return `/api/tenants/${encodeURIComponent(tenantId)}/cron`;
@@ -377,6 +411,16 @@ export async function deployAgentSource(
     { tenantId: args.tenantId, definitionId: slug, assetId },
     fetchImpl,
   );
+  // The chosen handles bind workspace-catalog servers by ancestor walk, the
+  // same as Myra's Exa; an empty choice deploys a server-less agent.
+  const requestedHandles = args.input.mcpHandles ?? [];
+  const mcpServers =
+    requestedHandles.length === 0
+      ? []
+      : resolveMcpServerDeployments(
+          await listMcpServers(await resolveWorkspaceTenantId(args.tenantId, fetchImpl), fetchImpl),
+          requestedHandles,
+        );
   // Grant configuration only, not a routable address: the hub mints the
   // agent's real address (its run address) at deploy time.
   const triggerAddress = `${slug}@${tenant.domain}`;
@@ -391,6 +435,7 @@ export async function deployAgentSource(
       triggerAddress,
       declaredSources: offering.declaredSources,
       hubCredentialId,
+      mcpServers,
     },
     fetchImpl,
   );

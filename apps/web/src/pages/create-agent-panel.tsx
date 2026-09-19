@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
   IntakeForm,
+  SelectionCheckbox,
   Textarea,
 } from "@corbits/react-ui";
 import type { IntakeField } from "@corbits/react-ui";
@@ -20,6 +21,7 @@ import { ApiQueryError } from "@/lib/api-query";
 
 import type { DeployedAgent } from "../agent-deploy";
 import { useDeployAgentMutation } from "../agents-api";
+import { useMcpServers } from "../tools/mcp-servers-query";
 
 function submitErrorFromCause(
   cause: unknown,
@@ -60,11 +62,22 @@ export function CreateAgentPanel({
 }) {
   const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
   const [systemPrompt, setSystemPrompt] = useState("");
+  // Handles checked below, out of the workspace catalog — each becomes a
+  // definition binding plus a use requirement, the same as Myra's Exa.
+  const [selectedHandles, setSelectedHandles] = useState<readonly string[]>([]);
   const deploy = useDeployAgentMutation(tenantId);
+  const catalog = useMcpServers(tenantId);
+
+  function toggleHandle(handle: string) {
+    setSelectedHandles((current) =>
+      current.includes(handle) ? current.filter((h) => h !== handle) : [...current, handle],
+    );
+  }
 
   function reset() {
     setValues(EMPTY_VALUES);
     setSystemPrompt("");
+    setSelectedHandles([]);
     deploy.reset();
   }
 
@@ -83,7 +96,11 @@ export function CreateAgentPanel({
   function handleSubmit() {
     if (blocked !== null) return;
     deploy.mutate(
-      { name: values.name.trim(), systemPrompt: systemPrompt.trim() },
+      {
+        name: values.name.trim(),
+        systemPrompt: systemPrompt.trim(),
+        ...(selectedHandles.length > 0 ? { mcpHandles: selectedHandles } : {}),
+      },
       {
         onSuccess: (deployment) => {
           reset();
@@ -145,6 +162,42 @@ export function CreateAgentPanel({
           </label>
 
           <div className="mt-3 flex flex-col gap-2">
+            <fieldset disabled={deploy.isPending}>
+              <legend className="create-agent-quiet-field">
+                <span>MCP servers</span>
+              </legend>
+              <p className="text-xs text-muted-foreground">
+                The workspace catalog — checked servers are bound into this agent like Myra&apos;s
+                Exa, ask-gated except read-only tools.
+              </p>
+              {catalog.kind === "loading" ? (
+                <p className="text-xs text-muted-foreground">Loading workspace servers…</p>
+              ) : catalog.kind === "ready" && catalog.data.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No MCP servers in this workspace yet — add them on the Tools page.
+                </p>
+              ) : catalog.kind === "ready" ? (
+                <ul className="mt-1 flex flex-col gap-1">
+                  {catalog.data.map((server) => (
+                    <li key={server.credentialId} className="flex items-center gap-2">
+                      <SelectionCheckbox
+                        checked={selectedHandles.includes(server.handle)}
+                        onToggle={() => toggleHandle(server.handle)}
+                        rowLabel={server.name}
+                        ariaLabel={`Bind the ${server.name} MCP server`}
+                      />
+                      <span className="text-sm">{server.name}</span>
+                      <span className="text-xs text-muted-foreground">{server.handle}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Couldn&apos;t load the workspace catalog — the agent will deploy without MCP
+                  servers.
+                </p>
+              )}
+            </fieldset>
             <Button
               type="button"
               onClick={handleSubmit}

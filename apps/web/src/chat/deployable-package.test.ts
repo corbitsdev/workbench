@@ -90,6 +90,47 @@ describe("deployablePackageFromBody", () => {
     expect(isPackageRejection(result?.outcome ?? null)).toBe(false);
     expect(result?.outcome && "name" in result.outcome ? result.outcome.name : null).toBe("Echo");
   });
+
+  test("passes mcpHandles through trimmed, dropping empties", () => {
+    const body =
+      `package.json\n\`\`\`\n${PACKAGE_JSON}\n\`\`\`\n` +
+      `definition.json\n\`\`\`\n${JSON.stringify({
+        name: "Echo",
+        systemPrompt: "Echo back what you hear.",
+        mcpHandles: ["linear", " exa ", ""],
+      })}\n\`\`\``;
+    const result = deployablePackageFromBody(body);
+    expect(isPackageRejection(result?.outcome ?? null)).toBe(false);
+    expect(
+      result?.outcome && "mcpHandles" in result.outcome ? result.outcome.mcpHandles : null,
+    ).toEqual(["linear", "exa"]);
+  });
+
+  test("omits mcpHandles when definition.json doesn't name it", () => {
+    const body =
+      `package.json\n\`\`\`\n${PACKAGE_JSON}\n\`\`\`\n` +
+      `definition.json\n\`\`\`\n${DEFINITION_JSON}\n\`\`\``;
+    const result = deployablePackageFromBody(body);
+    expect(isPackageRejection(result?.outcome ?? null)).toBe(false);
+    expect(
+      result?.outcome && "mcpHandles" in result.outcome ? result.outcome.mcpHandles : "absent",
+    ).toBe("absent");
+  });
+
+  test("rejects with a plain-words reason when mcpHandles isn't a string array", () => {
+    const body =
+      `package.json\n\`\`\`\n${PACKAGE_JSON}\n\`\`\`\n` +
+      `definition.json\n\`\`\`\n${JSON.stringify({
+        name: "Echo",
+        systemPrompt: "Echo back what you hear.",
+        mcpHandles: "linear",
+      })}\n\`\`\``;
+    const result = deployablePackageFromBody(body);
+    expect(isPackageRejection(result?.outcome ?? null)).toBe(true);
+    expect(result?.outcome && "reason" in result.outcome ? result.outcome.reason : null).toBe(
+      "definition.json's mcpHandles must be an array (was string)",
+    );
+  });
 });
 
 describe("isFiveFieldCron", () => {
