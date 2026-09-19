@@ -22,7 +22,7 @@ import type {
 import { type } from "arktype";
 
 import { publishDeferredCatalog } from "./catalog";
-import { searchDefinitions, selectByPatterns } from "./match";
+import { searchDefinitions, selectByPatterns, toolNamespace } from "./match";
 import { TOOL_SEARCH_DEFINITION, TOOL_SEARCH_NAME } from "./tool-search";
 
 /** Glob-ish name patterns: what the model always sees, and what it has to
@@ -39,10 +39,16 @@ const DeferredDirectorConfigSchema = type({
 });
 
 /** Splits the agent's tools by the config's patterns and tracks which
- * deferred ones the model has searched up. Exported for tests. */
+ * deferred ones the model has searched up. Exported for tests.
+ *
+ * Surfacing is append-only and ordered by when a tool was surfaced, never by
+ * the catalogue's order: the tools block a turn sends is then a prefix of
+ * every later one, so a provider's prompt cache keeps hitting. Nothing is
+ * ever dropped or reordered within a context. */
 export class DeferredToolSelection {
   private readonly deferred: readonly ToolDefinition[];
   private readonly always: readonly ToolDefinition[];
+  /** Insertion-ordered, which is the wire order of the surfaced block. */
   private readonly surfaced = new Set<string>();
 
   constructor(definitions: readonly ToolDefinition[], config: DeferredDirectorConfig) {
@@ -62,19 +68,30 @@ export class DeferredToolSelection {
     return this.deferred;
   }
 
-  /** A `tool_search` query surfaces exactly what it answered with. */
+  /** A `tool_search` query surfaces whole namespaces, not single tools: one
+   * `memory_*` hit brings every `memory_*` tool along, so a server costs one
+   * cache miss rather than one per tool. */
   surface(query: string): void {
-    for (const definition of searchDefinitions(this.deferred, query)) {
-      this.surfaced.add(definition.name);
+    const namespaces = new Set(
+      searchDefinitions(this.deferred, query).map((definition) => toolNamespace(definition.name)),
+    );
+    for (const definition of this.deferred) {
+      if (namespaces.has(toolNamespace(definition.name))) {
+        this.surfaced.add(definition.name);
+      }
     }
   }
 
-  /** What the next inference call is sent. */
+  /** What the next inference call is sent: the fixed block, then the surfaced
+   * tools in the order they were surfaced. */
   tools(): ToolDefinition[] {
-    return [
-      ...this.always,
-      ...this.deferred.filter((definition) => this.surfaced.has(definition.name)),
-    ];
+    const byName = new Map(this.deferred.map((definition) => [definition.name, definition]));
+    const surfaced: ToolDefinition[] = [];
+    for (const name of this.surfaced) {
+      const definition = byName.get(name);
+      if (definition !== undefined) surfaced.push(definition);
+    }
+    return [...this.always, ...surfaced];
   }
 }
 
