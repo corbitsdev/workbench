@@ -54,7 +54,10 @@ const KNOWN_RECENT_ID_PREFIXES = [
   "entity:library:",
 ];
 
-function isKnownRecentId(id: string): boolean {
+// Exported for the recents-drop keeper test: the palette loads through
+// this predicate (`command-palette-recents-drop.test.ts`), so a legacy id
+// the predicate rejects can never render or be selected.
+export function isKnownRecentId(id: string): boolean {
   return KNOWN_RECENT_ID_PREFIXES.some((prefix) => id.startsWith(prefix));
 }
 
