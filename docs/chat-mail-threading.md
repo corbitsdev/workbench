@@ -1,22 +1,8 @@
-# Chat and workbench mail threading
-
-`apps/web/src/chat/threads-api.ts` is the only seam between the chat UI and
-mail: a chat has exactly one agent, and both sides are durable mail — the
-person sends from their own mailbox (keeping a Sent copy), and an agent's
-reply lands in the same mailbox's INBOX. No chat-specific hub route exists.
-
-A chat is keyed by its thread's root turn id (`Sent:<uid>` of the person's
-opening send), found by walking In-Reply-To/References back from every mail
-turn — not the agent's definition asset id, so two separate chats with the
-same agent stay separate instead of merging into one conversation. Sends
-resolve the agent's current live run's address at send time; an agent's
-address set spans every run it has ever had (a hub restart retires the old
-run and redeploys under a new one), which keeps a thread's history readable
-across a redeploy even though the address on later turns changes.
+# Workbench mail threading
 
 A workbench is a child tenant, and its conversation is that tenant's own
-mailbox — reads are the same stock mailbox routes as a chat, scoped to the
-child tenant id.
+mailbox — reads and sends go through the stock mailbox routes scoped to
+the child tenant id. No workbench-specific hub route exists.
 
 ## Workbench send roster
 

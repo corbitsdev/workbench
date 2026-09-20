@@ -26,12 +26,10 @@ Top to bottom:
 
 1. **Brand row** — logo mark and a "New workbench" button (`+`) that
    opens `/new`.
-2. **Bench list** — one recency list of conversations, pins first.
-   Agent DMs (`kind: chat`, one per agent) mix with channels
-   (`kind: workbench`). Not two labeled empty sections, and not
-   a list titled Workbenches. Search is built into the list itself.
+2. **Bench list** — one recency list of workbenches, pins first.
+   Not two labeled empty sections. Search is built into the list itself.
    Nothing page-scoped ever renders in this body; it lists
-   conversations, not product sections.
+   workbenches, not product sections.
 3. **Footer rail** — Mission Control is pinned above the rail as its own
    row. The first-run rail below it is Routines, Files, Skills, Agents,
    Tools, in that order. Insights and Evals join that rail only when
@@ -45,8 +43,8 @@ Top to bottom:
    direct one-click control to Settings, not a menu item — Settings
    never cost two clicks to reach.
 
-A workbench is a conversation tenant — a DM with one agent, or a
-channel with many people and agents. The bench list IS the switcher —
+A workbench is a conversation tenant — a channel with many people
+and agents. The bench list IS the switcher —
 its rows are the primary way to move between those conversations, with
 no separate "switcher" control layered on top. The command palette's
 hidden "Switch workbench" action is a second door onto the same list,
@@ -81,7 +79,8 @@ in-workbench card the workbench itself posts, never a side effect of hosting an
 agent. The card reads live connection state and flips straight to the
 repo pick, so there is one walkthrough, not a separate already-connected
 dialog. The sidebar `+` opens this route. First-run after credential
-does not: `/` hops to Myra's one DM (`openAgentDm` / find-or-reopen).
+does not: `/` hops to the last workbench visited, or the new-workbench
+picker when there is none.
 There is no parallel Myra home route and no Describe door.
 
 **`/inbox` is gone as a page.** The path stays as a redirect

@@ -10,7 +10,7 @@ handful of domain packages built on top.
 - **`apps/hub`** — the Interchange hub server. It mounts stock
   `@intx/hub-api` routes (auth, tenants, principals, grants, workflow
   deploy/run) plus one composition block that adds Corbits libraries —
-  `@corbits/mailbox` (chat), `@corbits/memory` (recall), `@corbits/artifacts`
+  `@corbits/mailbox` (mail), `@corbits/memory` (recall), `@corbits/artifacts`
   (files), `@corbits/cron` (scheduling), `@corbits/webhooks` (inbound
   webhook ingress) — and the remaining in-repo packages: `workflows`
   (author routes) and `agent-directory`. Credentials are stored through
@@ -29,7 +29,7 @@ A workbench is a plain Interchange tenant — there is no separate
 "workbench" tenancy layer. Every user gets a tenant on sign-up; a
 principal is a person or an agent that can act inside one.
 
-## Chat is mail
+## Workbench mail
 
 There is no chat-specific data model. A conversation is a thread in
 `@corbits/mailbox`: `GET /me/inbox/threads` lists threads, `POST
@@ -70,7 +70,7 @@ The hub mounts `@corbits/mcp`'s discovery route so an OAuth-protected
 catalog is read server-side; a deploy reads the stored catalog and never
 touches the network. Each remote tool becomes an agent tool named
 `<server>.<tool>`, its own grant resource, ask-gated unless the server
-marks it read-only. The catalog belongs to the workspace; chat binds all
+marks it read-only. The catalog belongs to the workspace; a workbench binds all
 of it, an agent binds only what it needs, Myra's set is fixed.
 
 ## Data
