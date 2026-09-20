@@ -2,7 +2,7 @@
 
 A multiplayer workspace where people and AI agents share the same threads.
 Workbench is a web client for [Interchange](https://github.com/faremeter/interchange):
-you sign in to a plain Interchange tenant, chat is mail, and Myra, the one
+you sign in to a plain Interchange tenant, converse in workbenches, and Myra, the one
 shipped agent, builds whatever workflows, tools, or skills a job needs.
 
 ## Run it

@@ -8,7 +8,7 @@ paths keep the platform's own names.
 | Product term | Platform term | What it is |
 | ------------- | -------------- | ----------- |
 | **Workspace** | tenant         | The top-level Interchange tenant every signed-up user gets — members, credentials, and grants live here at the root. |
-| **Workbench (bench)** | tenant (child) | A child tenant `/new` creates under the workspace — a DM with one agent, or a channel with many people and agents — with its own deployed agents. |
+| **Workbench (bench)** | tenant (child) | A child tenant `/new` creates under the workspace — a channel with many people and agents — with its own deployed agents. |
 | **User**      | principal      | An identity that can act in a workspace or workbench — human or agent. |
 | **Agent**     | principal (agent) | A named coworker principal, not a template. |
 | **Myra**      | —              | The `assistant` workflow: every workspace's default agent. Given a job it can't already do, she authors a new tool, skill, or workflow as code, deploys it with only the access it needs, and uses it. |
