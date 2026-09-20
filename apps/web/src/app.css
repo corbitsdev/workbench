@@ -3731,11 +3731,6 @@ tr.insights-row-clickable:hover {
   margin: 0;
   color: var(--destructive);
 }
-.chat-deploy-card-link {
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-decoration: underline;
-}
 .chat-package-rejection-icon {
   width: 0.9em;
   height: 0.9em;
@@ -3744,7 +3739,7 @@ tr.insights-row-clickable:hover {
   color: var(--destructive);
 }
 
-/* Sidebar sections: Workbenches above Chats, each with its own label. */
+/* Sidebar sections: the Workbenches label above the bench's workbench list. */
 .shell-panel-section-label {
   padding: 0.25rem 0.5rem;
   font-size: 0.7rem;
@@ -3753,25 +3748,8 @@ tr.insights-row-clickable:hover {
   text-transform: uppercase;
   color: var(--muted-foreground);
 }
-.shell-panel-see-all {
-  padding: 0.25rem 0.5rem;
-  text-align: left;
-  font-size: 0.78rem;
-  color: var(--muted-foreground);
-  background: none;
-  border: 0;
-  cursor: pointer;
-}
-.shell-panel-see-all:hover {
-  color: var(--foreground);
-}
 
-/* A chat: transcript above, composer below. */
-.chat-thread-title {
-  margin: 0 0 1rem;
-  font-size: 1.1rem;
-  font-weight: 600;
-}
+/* A workbench transcript above, composer below. */
 .chat-thread-messages {
   display: flex;
   flex-direction: column;
@@ -3795,14 +3773,6 @@ tr.insights-row-clickable:hover {
   margin: 0.5rem 0;
   font-size: 0.82rem;
   color: var(--destructive);
-}
-.chat-agent-picker {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-  font-size: 0.82rem;
-  color: var(--muted-foreground);
 }
 
 /* Shared composer: transcript-matched text field on the left, a grouped

@@ -41,6 +41,23 @@ const STATIC_COMMANDS = buildStaticCommands(
   NAV_ROUTES.map((route) => ({ path: route.path, label: route.label })),
 );
 
+// Every id prefix `handleSelect` below has a branch for. A recent whose id
+// matches none of these (e.g. `entity:agents:*` from the removed standalone
+// chats) would render and then just close the palette on select, so recents
+// load drops those entries.
+const KNOWN_RECENT_ID_PREFIXES = [
+  "route:",
+  "action:",
+  "entity:workbenches:",
+  "entity:routines:",
+  "entity:skills:",
+  "entity:library:",
+];
+
+function isKnownRecentId(id: string): boolean {
+  return KNOWN_RECENT_ID_PREFIXES.some((prefix) => id.startsWith(prefix));
+}
+
 // Mounted once above `AppShell` so it works from every route, including
 // one that matches no page. Grouping/scope-parsing lives in
 // `@/command-palette`; this file only assembles the app's own sources.
@@ -70,11 +87,14 @@ export function CommandPaletteProvider({
   );
 
   // Recents are per bench: loaded during render when the store changes, so
-  // the palette never opens on the previous bench's entries.
+  // the palette never opens on the previous bench's entries. Entries whose
+  // id no live branch handles (e.g. `entity:agents:*` from the removed
+  // standalone chats) are dropped on load — selecting one would just close
+  // the palette.
   const [recentsFor, setRecentsFor] = useState(recentsStore);
   if (recentsFor !== recentsStore) {
     setRecentsFor(recentsStore);
-    setRecents(recentsStore?.load() ?? []);
+    setRecents((recentsStore?.load() ?? []).filter((entry) => isKnownRecentId(entry.id)));
   }
 
   const pushRecent = useCallback(
@@ -114,8 +134,8 @@ export function CommandPaletteProvider({
   const listWorkbenchesForSearch = useCallback(async () => {
     if (selectedTenantId === null) return [];
     const result = await queryClient.ensureQueryData({
-      queryKey: tenantKeys.workbenches(selectedTenantId, "workbench"),
-      queryFn: () => listWorkbenches(selectedTenantId, "workbench"),
+      queryKey: tenantKeys.workbenches(selectedTenantId),
+      queryFn: () => listWorkbenches(selectedTenantId),
     });
     return result.map((workbench) => ({
       id: workbench.id,
@@ -143,7 +163,7 @@ export function CommandPaletteProvider({
   // A bare `#`/`@` strips to an empty query, which useEntitySearch never
   // fetches for by design — so fetch that scope's raw list directly.
   const bareWorkbenchesQuery = useQuery({
-    queryKey: [...tenantKeys.workbenches(selectedTenantId ?? "", "workbench"), "bare-scope"],
+    queryKey: [...tenantKeys.workbenches(selectedTenantId ?? ""), "bare-scope"],
     enabled: bareScopeKind === "workbenches" && open && selectedTenantId !== null,
     queryFn: listWorkbenchesForSearch,
   });
@@ -291,7 +311,7 @@ export function CommandPaletteProvider({
       },
       {
         id: "workbenches",
-        heading: "Agents & Channels",
+        heading: "Workbenches",
         kind: "workbenches",
         items: workbenchItems,
       },

@@ -3,7 +3,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import { chatKeys } from "../chat-path";
+import { workbenchKeys } from "../chat-path";
 import { createFetchStockHub, findOwnedTenants, type HubTenant } from "../needs-converge";
 
 export type SidebarSections =
@@ -24,7 +24,7 @@ export function useSidebarSections(tenantId: string | null): SidebarSections {
   const enabled = tenantId !== null;
 
   const workbenches = useQuery({
-    queryKey: chatKeys.childTenants(key),
+    queryKey: workbenchKeys.childTenants(key),
     enabled,
     queryFn: () => listChildTenants(key),
   });

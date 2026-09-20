@@ -20,7 +20,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
 
 import { QueryView } from "@/lib/api-query";
-import { chatKeys } from "../chat-path";
+import { tenantKeys } from "../query-client";
 import { isAgentNotRunning, listChatAgents, type ChatAgent } from "@/chat/threads-api";
 import { describeRestartFailure, redeployWorkbenchAgent } from "../workbench-create";
 import { useBench } from "../bench-context";
@@ -48,7 +48,7 @@ export function AgentsRosterList({
   const restart = useMutation({
     mutationFn: (agent: ChatAgent) => redeployWorkbenchAgent(tenantId, agent),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: chatKeys.agents(tenantId) });
+      void queryClient.invalidateQueries({ queryKey: tenantKeys.agents(tenantId) });
     },
     onError: (cause) => {
       reportError(cause, { operation: "agent_restart", tenantId });
@@ -129,7 +129,7 @@ export function AgentsRosterList({
 export function AgentsRoute() {
   const { selectedTenantId } = useBench();
   const agentsQuery = useTenantQuery(
-    chatKeys.agents(selectedTenantId ?? "none"),
+    tenantKeys.agents(selectedTenantId ?? "none"),
     selectedTenantId !== null,
     () => listChatAgents(selectedTenantId as string),
     // Keep polling while any agent is not live, so a released→deployed

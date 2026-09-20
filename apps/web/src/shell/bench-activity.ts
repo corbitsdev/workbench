@@ -32,9 +32,9 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
   const key = tenantId ?? "";
 
   const workbenchesQuery = useQuery({
-    queryKey: tenantKeys.workbenches(key, "workbench"),
+    queryKey: tenantKeys.workbenches(key),
     enabled,
-    queryFn: () => listWorkbenches(key, "workbench"),
+    queryFn: () => listWorkbenches(key),
   });
   const routinesQuery = useQuery({
     queryKey: tenantKeys.routineActivity(key),

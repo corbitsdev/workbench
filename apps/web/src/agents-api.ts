@@ -8,7 +8,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { ApiQueryError } from "@/lib/api-query";
 import { deployAgentSource, type DeployedAgent, type NewAgentInput } from "./agent-deploy";
-import { chatKeys, workbenchKeys } from "./chat-path";
+import { workbenchKeys } from "./chat-path";
 import { tenantKeys } from "./query-client";
 
 export type AgentDefinition = typeof WorkflowDefinitionResponse.infer;
@@ -72,7 +72,7 @@ export function useDeployAgentMutation(tenantId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: tenantKeys.agentDirectory(tenantId) });
       void queryClient.invalidateQueries({ queryKey: tenantKeys.visibleAgents(tenantId) });
-      void queryClient.invalidateQueries({ queryKey: chatKeys.agents(tenantId) });
+      void queryClient.invalidateQueries({ queryKey: tenantKeys.agents(tenantId) });
       // A deploy from a workbench transcript adds a participant to that workbench.
       void queryClient.invalidateQueries({ queryKey: workbenchKeys.participants(tenantId) });
     },

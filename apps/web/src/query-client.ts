@@ -6,7 +6,6 @@ import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 
 import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";
 import { workbenchesQueryKey } from "@/chat/workbench-tenants";
-import type { WorkbenchKind } from "@/chat/workbench-tenants";
 
 // A 404 is a stable answer, not a transient failure, so retrying it three
 // times only delays an honest quiet no-op.
@@ -72,6 +71,10 @@ export const tenantKeys = {
   routineRunHistories: (tenantId: string) => ["tenant", tenantId, "routine-run-histories"] as const,
   definitions: (tenantId: string) => ["tenant", tenantId, "definitions"] as const,
   agentDirectory: (tenantId: string) => ["tenant", tenantId, "agents", "directory"] as const,
+  // The deploy roster (deployments -> runs -> assets join): every surface
+  // that names an agent by address shares this one cached read. Previously
+  // `chatKeys.agents`, re-homed here when standalone chats were removed.
+  agents: (tenantId: string) => ["tenant", tenantId, "agents", "roster"] as const,
   // Kept apart from `agentDirectory` above, which is a different
   // surface's own key.
   visibleAgents: (tenantId: string) => ["tenant", tenantId, "agents", "visible"] as const,
@@ -91,7 +94,7 @@ export const tenantKeys = {
     ["tenant", tenantId, "settings-access", principalId] as const,
   // Delegates to `@/chat`'s own key builder so every workbench-listing
   // surface keys against one shape, not a copy that could drift apart.
-  workbenches: (tenantId: string, kind: WorkbenchKind) => workbenchesQueryKey(tenantId, kind),
+  workbenches: (tenantId: string) => workbenchesQueryKey(tenantId),
   // The `feed=fires` route is gone; the key is kept so a future native
   // fires equivalent has somewhere to rewire.
   routineActivity: (tenantId: string) => ["tenant", tenantId, "routine-activity"] as const,

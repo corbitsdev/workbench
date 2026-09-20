@@ -807,11 +807,9 @@ function InsightsWorkbenchPageRoute({
 
 function useWorkbenchList(tenantId: string | null) {
   const workbenchesOfKind = useTenantQuery(
-    tenantId === null
-      ? ["tenant", "none", "workbenches", "workbench"]
-      : workbenchesQueryKey(tenantId, "workbench"),
+    tenantId === null ? ["tenant", "none", "workbenches"] : workbenchesQueryKey(tenantId),
     tenantId !== null,
-    () => listWorkbenches(tenantId as string, "workbench"),
+    () => listWorkbenches(tenantId as string),
   );
   return {
     workbenches: workbenchesOfKind.kind === "ready" ? workbenchesOfKind.data : [],

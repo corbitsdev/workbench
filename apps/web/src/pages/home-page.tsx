@@ -23,7 +23,7 @@ export function HomeRoute() {
   const navigate = useNavigate();
   const { selectedTenantId, memberships } = useBench();
   const workbenches = useQuery({
-    queryKey: workbenchesQueryKey(selectedTenantId ?? "", "workbench"),
+    queryKey: workbenchesQueryKey(selectedTenantId ?? ""),
     enabled: selectedTenantId !== null,
     queryFn: () => listWorkbenchTenants(selectedTenantId ?? ""),
   });

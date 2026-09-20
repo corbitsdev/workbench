@@ -12,7 +12,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
 
 import { useBench } from "../bench-context";
-import { chatKeys } from "../chat-path";
+import { workbenchKeys } from "../chat-path";
 import { createWorkbench, WorkbenchCreateError } from "../workbench-create";
 import { useNavigate } from "../navigation";
 import { StageTopBar } from "../shell/stage-top-bar";
@@ -119,7 +119,7 @@ export function NewWorkbenchPickerRoute() {
       }),
     onSuccess: (tenantId, variables) => {
       void queryClient.invalidateQueries({
-        queryKey: chatKeys.childTenants(variables.benchTenantId),
+        queryKey: workbenchKeys.childTenants(variables.benchTenantId),
       });
       navigate(workbenchPath(tenantId));
     },
@@ -133,7 +133,7 @@ export function NewWorkbenchPickerRoute() {
       // from the workbench, so go there.
       if (cause instanceof WorkbenchCreateError && cause.tenantId !== undefined) {
         void queryClient.invalidateQueries({
-          queryKey: chatKeys.childTenants(variables.benchTenantId),
+          queryKey: workbenchKeys.childTenants(variables.benchTenantId),
         });
         navigate(workbenchPath(cause.tenantId));
       }
