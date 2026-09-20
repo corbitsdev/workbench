@@ -23,7 +23,6 @@ import {
 import { useState } from "react";
 
 import { useBench } from "../bench-context";
-import { NEW_CHAT_PATH } from "../chat-path";
 import { CreateAgentPanel } from "../pages/create-agent-panel";
 import { AGENTS_PATH_PREFIX } from "../path-ids";
 import { matchesRoute, NEW_WORKBENCH_PATH, SETTINGS_PATH } from "../routes";
@@ -49,7 +48,7 @@ export function Sidebar({
       {/* Owner's shape: logo with "+" on the first row, the search box
           (inside the list) below, then Agents and Channels. No
           header icon cluster — search is the box. The "+" now opens a
-          dropdown (New Agent / New Chat / New Workbench) instead of
+          dropdown (New Agent / New Workbench) instead of
           jumping straight to New chat. */}
       <div className="shell-sidebar-brand-row">
         <SidebarBrandMark />
@@ -72,7 +71,6 @@ export function Sidebar({
             >
               New Agent
             </MenuItem>
-            <MenuItem onSelect={() => onNavigate(NEW_CHAT_PATH)}>New Chat</MenuItem>
             <MenuItem onSelect={() => onNavigate(NEW_WORKBENCH_PATH)}>New Workbench</MenuItem>
           </MenuContent>
         </Menu>

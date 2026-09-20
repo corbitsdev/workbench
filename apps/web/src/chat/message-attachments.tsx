@@ -8,8 +8,6 @@ import { cronSentence } from "@corbits/workflows/client";
 import { WarningCircle } from "@/lib/icons";
 
 import { useDeployAgentMutation } from "../agents-api";
-import { chatPath } from "../chat-path";
-import { Link } from "../navigation";
 import {
   isFiveFieldCron,
   isPackageRejection,
@@ -107,9 +105,7 @@ function DeployPackageCard({
           {deploy.isPending ? "Deploying…" : `Deploy ${pkg.name}`}
         </Button>
       ) : (
-        <Link to={chatPath(deployed.definitionAssetId)} className="chat-deploy-card-link">
-          Open {pkg.name}
-        </Link>
+        <span className="chat-deploy-card-note">{pkg.name} is deployed.</span>
       )}
       {deploy.error === null ? null : (
         <p className="chat-deploy-card-error">{errorText(deploy.error)}</p>

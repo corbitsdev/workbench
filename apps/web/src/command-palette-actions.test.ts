@@ -56,6 +56,11 @@ describe("ACTION_COMMANDS", () => {
     expect(ids.includes("new-thread")).toBe(false);
   });
 
+  test("does not include Talk to Myra — standalone chats are gone", () => {
+    const ids: readonly string[] = ACTION_COMMANDS.map((c) => c.id);
+    expect(ids.includes("talk-to-myra")).toBe(false);
+  });
+
   test("every command has a stable id, title, and subtitle", () => {
     for (const command of ACTION_COMMANDS) {
       expect(command.id.length).toBeGreaterThan(0);

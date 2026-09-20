@@ -38,6 +38,7 @@ import { createFetchStockHub } from "../needs-converge";
 import { usePendingApprovals } from "../pending-approvals";
 import { workbenchKeys } from "../chat-path";
 import { tenantKeys } from "../query-client";
+import { recordLastWorkbenchId } from "../last-workbench";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { redeployWorkbenchAgent } from "../workbench-create";
 import { WorkbenchSchedulesPanel } from "./workbench-schedules-panel";
@@ -418,6 +419,15 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
 export function WorkbenchRoute({ path }: { readonly path: string }) {
   const { selectedTenantId } = useBench();
   const workbenchTenantId = workbenchIdFromPath(path);
+
+  // The recency signal `/` reads: visiting a workbench records it, so home
+  // lands back here. Guarded inside (not an early return) so the hook
+  // order stays stable across renders.
+  useEffect(() => {
+    if (selectedTenantId !== null && workbenchTenantId !== null) {
+      recordLastWorkbenchId(selectedTenantId, workbenchTenantId);
+    }
+  }, [selectedTenantId, workbenchTenantId]);
 
   if (selectedTenantId === null || workbenchTenantId === null) {
     return (

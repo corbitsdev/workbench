@@ -598,7 +598,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   const lastWorkbenchId = selectedTenantId === null ? null : readLastWorkbenchId(selectedTenantId);
   const workbenchScope =
     activity.kind === "ready"
-      ? resolveLibraryWorkbenchScope([...activity.workbenches, ...activity.chats], lastWorkbenchId)
+      ? resolveLibraryWorkbenchScope(activity.workbenches, lastWorkbenchId)
       : null;
   const [scopeOverride, setScopeOverride] = useState<"workbench" | "all" | null>(null);
   const scope = scopeOverride ?? (workbenchScope !== null ? "workbench" : "all");

@@ -17,8 +17,6 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { listChatAgents } from "@/chat/threads-api";
-import { chatPath } from "./chat-path";
 import { ACTION_COMMANDS, runActionCommand, type ActionCommandId } from "./command-palette-actions";
 import {
   openCommandPalette,
@@ -125,21 +123,9 @@ export function CommandPaletteProvider({
     }));
   }, [selectedTenantId, queryClient]);
 
-  // A palette hit opens a chat with the agent, so the search source is the
-  // same chat-partner listing the roster and the Agents page read — its
-  // `id` is exactly what `chatPath` expects.
-  const listAgentsForSearch = useCallback(async () => {
-    if (selectedTenantId === null) return [];
-    const agents = await listChatAgents(selectedTenantId);
-    return agents.map((agent) => ({ id: agent.id, name: agent.name }));
-  }, [selectedTenantId]);
-
   const entitySearchSources = useMemo(
-    () => [
-      { category: "workbenches", fetch: listWorkbenchesForSearch },
-      { category: "agents", fetch: listAgentsForSearch },
-    ],
-    [listWorkbenchesForSearch, listAgentsForSearch],
+    () => [{ category: "workbenches", fetch: listWorkbenchesForSearch }],
+    [listWorkbenchesForSearch],
   );
 
   const strippedQuery = useMemo(() => parsePaletteQuery(query).query, [query]);
@@ -164,17 +150,6 @@ export function CommandPaletteProvider({
   const bareWorkbenches: readonly PaletteResultItem[] = (bareWorkbenchesQuery.data ?? []).map(
     (row) => ({ id: `entity:workbenches:${row.id}`, title: row.name }),
   );
-
-  const bareAgentsQuery = useQuery({
-    queryKey: ["tenant", selectedTenantId ?? "", "agents", "bare-scope"],
-    enabled: bareScopeKind === "people" && open && selectedTenantId !== null,
-    queryFn: listAgentsForSearch,
-  });
-  const bareAgents: readonly PaletteResultItem[] = (bareAgentsQuery.data ?? []).map((row) => ({
-    id: `entity:agents:${row.id}`,
-    title: row.name,
-    subtitle: "Agent",
-  }));
 
   const routinesQuery = useTenantQuery(
     tenantKeys.routines(selectedTenantId ?? ""),
@@ -269,17 +244,6 @@ export function CommandPaletteProvider({
       }));
   }, [results, bareScopeKind, bareWorkbenches]);
 
-  const agentItems = useMemo<readonly PaletteResultItem[]>(() => {
-    if (bareScopeKind === "people") return bareAgents;
-    return results
-      .filter((result) => result.category === "agents")
-      .map((agent) => ({
-        id: `entity:agents:${agent.id}`,
-        title: agent.title,
-        subtitle: "Agent",
-      }));
-  }, [results, bareScopeKind, bareAgents]);
-
   const routineItems = useMemo<readonly PaletteResultItem[]>(
     () =>
       routinesQuery.kind === "ready"
@@ -335,14 +299,8 @@ export function CommandPaletteProvider({
       { id: "routines", heading: "Workflows", items: routineItems },
       { id: "skills", heading: "Skills", items: skillItems },
       { id: "library", heading: "Artifacts", items: libraryItems },
-      {
-        id: "people",
-        heading: "People & agents",
-        kind: "people",
-        items: agentItems,
-      },
     ],
-    [actionItems, workbenchItems, pageItems, routineItems, skillItems, libraryItems, agentItems],
+    [actionItems, workbenchItems, pageItems, routineItems, skillItems, libraryItems],
   );
 
   const recentItems = useMemo<readonly PaletteResultItem[]>(
@@ -405,11 +363,6 @@ export function CommandPaletteProvider({
         const title = workbenchItems.find((item) => item.id === id)?.title ?? workbenchId;
         navigate(`/w/${workbenchId}`);
         pushRecent({ kind: "workbenches", id, title, subtitle: "Workbench" });
-      } else if (id.startsWith("entity:agents:")) {
-        const agentId = id.slice("entity:agents:".length);
-        const title = agentItems.find((item) => item.id === id)?.title ?? agentId;
-        navigate(chatPath(agentId));
-        pushRecent({ kind: "agents", id, title, subtitle: "Agent" });
       } else if (id.startsWith("entity:routines:")) {
         const routineId = id.slice("entity:routines:".length);
         const title = routineItems.find((item) => item.id === id)?.title ?? routineId;
@@ -437,7 +390,6 @@ export function CommandPaletteProvider({
       closeCanvas,
       pushRecent,
       workbenchItems,
-      agentItems,
       routineItems,
       skillItems,
       libraryItems,
@@ -461,7 +413,7 @@ export function CommandPaletteProvider({
         hasMore={hasMore}
         onLoadMore={loadMore}
         placeholder="Search or jump to…"
-        footer="# workbenches · @ people · > actions · / pages"
+        footer="# workbenches · > actions · / pages"
       />
     </>
   );
