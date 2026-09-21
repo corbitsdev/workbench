@@ -125,7 +125,10 @@ const callbackServer: CallbackServer = {
   waitForCode: () => Promise.resolve("auth-code-1"),
 } as unknown as CallbackServer;
 
-function mount(existing: { id: string } | undefined): {
+function mount(
+  existing: { id: string } | undefined,
+  overrides?: { readonly fetchImpl?: FetchLike },
+): {
   app: Hono<TenantEnv>;
   inserted: unknown[];
   updated: unknown[];
@@ -136,7 +139,7 @@ function mount(existing: { id: string } | undefined): {
     db,
     cipher,
     requireGrant,
-    fetchImpl,
+    fetchImpl: overrides?.fetchImpl ?? fetchImpl,
     startCallback: () =>
       Promise.resolve({ server: callbackServer, redirectUri: "http://127.0.0.1:9/callback" }),
   });
@@ -233,5 +236,48 @@ describe("mountMcpOAuthLogin", () => {
       body: JSON.stringify({ ...START_BODY, resourceUrl: "not-a-url" }),
     });
     expect(started.status).toBe(400);
+  });
+
+  test("a link-local resource URL is rejected before discovery", async () => {
+    let fetches = 0;
+    const counting = ((input: string | URL | Request, init?: RequestInit) => {
+      fetches += 1;
+      return fetchImpl(input, init);
+    }) as FetchLike;
+    const { app } = mount(undefined, { fetchImpl: counting });
+    const started = await app.request("/mcp/oauth-logins", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...START_BODY,
+        resourceUrl: "https://169.254.169.254/latest/meta-data/",
+      }),
+    });
+    expect(started.status).toBe(400);
+    expect(fetches).toBe(0);
+  });
+
+  test("plain-http and loopback resource URLs are rejected before discovery", async () => {
+    for (const resourceUrl of [
+      "http://mcp.example.test/mcp",
+      "https://127.0.0.1/mcp",
+      "https://10.0.0.8/mcp",
+      "https://[::ffff:169.254.169.254]/latest/meta-data/",
+      "https://localhost/mcp",
+    ]) {
+      let fetches = 0;
+      const counting = ((input: string | URL | Request, init?: RequestInit) => {
+        fetches += 1;
+        return fetchImpl(input, init);
+      }) as FetchLike;
+      const { app } = mount(undefined, { fetchImpl: counting });
+      const started = await app.request("/mcp/oauth-logins", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...START_BODY, resourceUrl }),
+      });
+      expect(started.status).toBe(400);
+      expect(fetches).toBe(0);
+    }
   });
 });

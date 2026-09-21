@@ -43,6 +43,112 @@ export const MCP_OAUTH_TOKEN_URL_METADATA_KEY = "mcpOAuthTokenUrl";
 /** An abandoned login holds a loopback port, so it is not held long. */
 const DEFAULT_LOGIN_TTL_MS = 5 * 60 * 1000;
 
+/** An IPv4 host whose first octets put it off the public internet:
+ * loopback, private, link-local, shared, documentation and the reserved
+ * ranges a caller must never point discovery at. */
+function isNonPublicIPv4(host: string): boolean {
+  const parts = host.split(".");
+  if (parts.length !== 4) return false;
+  const octets: number[] = [];
+  for (const part of parts) {
+    if (!/^\d+$/.test(part)) return false;
+    const octet = Number(part);
+    if (!Number.isSafeInteger(octet) || octet > 255) return false;
+    octets.push(octet);
+  }
+  const [a, b, c] = octets as [number, number, number, number];
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && (c === 0 || c === 2)) return true;
+  if (a === 192 && b === 88 && c === 99) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a === 198 && b === 51 && c === 100) return true;
+  if (a === 203 && b === 0 && c === 113) return true;
+  if (a >= 224) return true;
+  return false;
+}
+
+/** The last 32 bits of an IPv6 literal as dotted IPv4, or `undefined` when
+ * the tail isn't two parseable hextets. */
+function ipv6Last32AsIPv4(inner: string): string | undefined {
+  const groups = inner.split(":").filter((group) => group !== "");
+  if (groups.length < 2) return undefined;
+  const hi = Number.parseInt(groups[groups.length - 2] ?? "", 16);
+  const lo = Number.parseInt(groups[groups.length - 1] ?? "", 16);
+  if (!Number.isSafeInteger(hi) || !Number.isSafeInteger(lo)) return undefined;
+  return `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
+}
+
+/** A bracketed IPv6 host off the public internet: unspecified, loopback,
+ * link-local, unique-local and multicast. High-zero space is mapped and
+ * compatible territory (`::ffff:a.b.c.d`, `::a.b.c.d` — the serializer hexes
+ * dotted tails), so its last 32 bits are judged as IPv4. */
+function isNonPublicIPv6(host: string): boolean {
+  const bracketed = host.startsWith("[") && host.endsWith("]");
+  let inner = bracketed ? host.slice(1, -1) : host;
+  const zone = inner.indexOf("%");
+  if (zone !== -1) inner = inner.slice(0, zone);
+  inner = inner.toLowerCase();
+  const tail = inner.slice(inner.lastIndexOf(":") + 1);
+  if (tail.includes(".")) return isNonPublicIPv4(tail);
+  if (inner.startsWith("::")) {
+    const rest = inner.slice(2);
+    if (rest === "" || rest === "1") return true;
+    const asIPv4 = ipv6Last32AsIPv4(inner);
+    if (asIPv4 === undefined) return true;
+    return isNonPublicIPv4(asIPv4);
+  }
+  const parts = inner.split(":");
+  if (
+    parts.length === 8 &&
+    parts.slice(0, 7).every((group) => /^0+$/.test(group)) &&
+    (parts[7] === "0" || parts[7] === "1")
+  ) {
+    return true;
+  }
+  const head = Number.parseInt((parts[0] ?? "").padEnd(4, "0").slice(0, 4), 16);
+  if (Number.isNaN(head)) return false;
+  if (head >= 0xfe80 && head <= 0xfebf) return true;
+  if (head >= 0xfc00 && head <= 0xfdff) return true;
+  if (head >= 0xff00) return true;
+  return false;
+}
+
+function isNonPublicIpHost(host: string): boolean {
+  // A colon marks an IPv6 literal (hostnames never carry one); its check
+  // also judges an embedded IPv4 tail, so it must run before the IPv4 test.
+  if (host.includes(":")) return isNonPublicIPv6(host);
+  if (host.includes(".")) return isNonPublicIPv4(host);
+  return false;
+}
+
+/** Why a caller-supplied discovery root is refused, or `undefined` when it
+ * may be fetched. Discovery runs with the hub's network position, so the
+ * root must be a public https URL — never plain http, this machine, or a
+ * private or link-local address. */
+export function resourceUrlRejection(resourceUrl: string): string | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(resourceUrl);
+  } catch {
+    return "the server URL is not a valid URL";
+  }
+  if (parsed.protocol !== "https:") {
+    return "the server URL must be an https URL";
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost")) {
+    return "the server URL must not target this machine";
+  }
+  if (isNonPublicIpHost(host)) {
+    return "the server URL must not target a private or link-local address";
+  }
+  return undefined;
+}
+
 const StartMcpOAuthLogin = type({
   /** The stock `provider` catalog row the credential is filed under. */
   providerId: "string",
@@ -222,6 +328,12 @@ export function mountMcpOAuthLogin(app: Hono<TenantEnv>, opts: MountMcpOAuthLogi
 
     const { tenantId, principalId } = owner(c);
     const scopes = body.scopes ?? [];
+
+    const rejected = resourceUrlRejection(body.resourceUrl);
+    if (rejected !== undefined) {
+      opts.onError?.(new Error(rejected), { handle: body.handle });
+      return c.json({ error: rejected }, 400);
+    }
 
     let entry: McpLoginEntry;
     try {

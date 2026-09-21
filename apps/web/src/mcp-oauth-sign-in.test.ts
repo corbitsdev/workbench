@@ -1,6 +1,6 @@
 // The Tools page's OAuth sign-in runs entirely through fetch: provider row,
-// hub-held login, catalog read, metadata patch. The stub below stands in for
-// the hub so each stage's requests and the rollback rules are pinned.
+// hub-held login, catalog read, metadata read-back and patch. The stub below
+// stands in for the hub so each stage's requests and the rollback rules are pinned.
 
 import { describe, expect, test } from "bun:test";
 
@@ -61,6 +61,24 @@ function baseHandler(polls: unknown[]): (request: RecordedRequest) => Response {
       });
     }
     if (url.startsWith(`${TENANT}/credentials/`) && method === "PATCH") return jsonResponse({});
+    if (url === `${TENANT}/credentials/crd_1` && method === "GET") {
+      return jsonResponse({
+        id: "crd_1",
+        name: "mcp-linear",
+        providerId: "prv_linear",
+        metadata: {
+          mcp: {
+            handle: "linear",
+            name: "Linear",
+            url: "https://mcp.linear.app/mcp",
+            auth: "oauth",
+            tools: [],
+          },
+          mcpOAuthClientId: "dyn-client-1",
+          mcpOAuthTokenUrl: "https://auth.example/token",
+        },
+      });
+    }
     if (url.startsWith(`${TENANT}/credentials/`) && method === "DELETE") return jsonResponse({});
     if (url === `${TENANT}/mcp/oauth-logins/login-1` && method === "DELETE") {
       return new Response(null, { status: 204 });
@@ -118,6 +136,39 @@ describe("signInMcpServer", () => {
     expect(patch?.body).toMatchObject({
       metadata: { mcp: { handle: "linear", auth: "oauth" } },
     });
+  });
+
+  test("OAuth sign-in preserves keys across PATCH", async () => {
+    const recorded: RecordedRequest[] = [];
+    const fetchImpl = stubFetch(
+      baseHandler([{ status: "completed", credentialId: "crd_1" }]),
+      recorded,
+    );
+
+    const server = await signInMcpServer(INPUT, fetchImpl, {
+      openAuthorizeUrl: () => undefined,
+      sleep: () => Promise.resolve(),
+      pollIntervalMs: 0,
+    });
+    expect(server.auth).toBe("oauth");
+
+    // The hub replaces metadata wholesale on PATCH, so the catalog write
+    // must carry the stored OAuth refresh keys along — not just the `mcp`
+    // map — or the next refresh has nothing to redeem.
+    const patch = recorded.find(
+      (request) => request.url === `${TENANT}/credentials/crd_1` && request.method === "PATCH",
+    );
+    const metadata = (patch?.body as { metadata?: Record<string, unknown> } | undefined)?.metadata;
+    expect(metadata).toMatchObject({
+      mcpOAuthClientId: "dyn-client-1",
+      mcpOAuthTokenUrl: "https://auth.example/token",
+      mcp: { handle: "linear", auth: "oauth" },
+    });
+    expect(
+      (metadata?.["mcp"] as { tools?: { name?: unknown }[] } | undefined)?.tools?.map(
+        (tool) => tool.name,
+      ),
+    ).toEqual(["issue-create"]);
   });
 
   test("a failed login surfaces the hub's message and withdraws the login", async () => {

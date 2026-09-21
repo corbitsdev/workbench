@@ -207,6 +207,24 @@ async function deleteCredential(
   });
 }
 
+/** The credential's stored metadata. The hub replaces metadata wholesale on
+ * PATCH, so recording the catalog must read first and write the merged map
+ * back — otherwise the OAuth refresh keys the hub stored at sign-in are
+ * wiped the moment the tools land. */
+async function readCredentialMetadata(
+  args: { readonly tenantId: string; readonly handle: string; readonly credentialId: string },
+  fetchImpl: typeof fetch,
+): Promise<Record<string, unknown>> {
+  const response = await fetchImpl(
+    tenantPath(args.tenantId, `/credentials/${encodeURIComponent(args.credentialId)}`),
+  );
+  if (!response.ok) {
+    throw new McpServerError(`reading the ${args.handle} server's stored sign-in failed`);
+  }
+  const credential = await readJson(response, CredentialShape, "the MCP server's credential");
+  return { ...(credential.metadata ?? {}) };
+}
+
 /** Read a server's catalog through the hub, which is the only side that may
  * hold the bearer. `credentialId` names the stored secret to send. */
 export async function discoverMcpCatalog(
@@ -486,12 +504,26 @@ export async function signInMcpServer(
     auth: "oauth" as const,
     tools,
   };
+  // The hub replaces metadata wholesale on PATCH, so the stored OAuth
+  // refresh keys ride along with the new catalog instead of being wiped.
+  let preservedMetadata: Record<string, unknown>;
+  try {
+    preservedMetadata = await readCredentialMetadata(
+      { tenantId: input.tenantId, handle: input.handle, credentialId },
+      fetchImpl,
+    );
+  } catch (cause) {
+    if (preExisting === undefined) {
+      await deleteCredential(input.tenantId, credentialId, fetchImpl);
+    }
+    throw cause;
+  }
   const patched = await fetchImpl(
     tenantPath(input.tenantId, `/credentials/${encodeURIComponent(credentialId)}`),
     {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ metadata: { mcp } }),
+      body: JSON.stringify({ metadata: { ...preservedMetadata, mcp } }),
     },
   );
   if (!patched.ok) {
