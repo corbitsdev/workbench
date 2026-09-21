@@ -8,6 +8,7 @@
 // workbench Myra binds it by walking up, so two workbenches share one Exa
 // row and a second workspace sees none of it.
 import { MCP_NO_TOKEN_SENTINEL, MCP_STREAMABLE_HTTP_PROVIDER_KEY } from "@corbits/credential-mcp";
+import { reportError } from "@corbits/error-sink";
 import {
   EXA_MCP_SERVER,
   MCP_SERVER_CATALOG,
@@ -85,7 +86,9 @@ function tenantPath(tenantId: string, suffix: string): string {
 const TenantParentShape = type({ "parentId?": "string | null" });
 
 /** Resolves the workspace (top-level) tenant for any tenant id: a workspace
- * resolves to itself, a workbench to its parent. */
+ * resolves to itself, a workbench to its parent. One hop only — workbenches
+ * are always direct children of the workspace that owns them, so a deeper
+ * chain would mean a hierarchy this catalog does not understand. */
 export async function resolveWorkspaceTenantId(
   tenantId: string,
   fetchImpl: typeof fetch = fetch,
@@ -341,16 +344,90 @@ export async function removeMcpServer(
   });
 }
 
+/** Legacy workbench-scoped MCP rows predate the workspace catalog: before it,
+ * every workbench stored its own Exa. Moves the keyless (`auth === "none"`)
+ * rows up to the workspace — their sentinel secret is reconstructible, so
+ * re-adding rediscovers without touching a real credential — deduped by
+ * handle, then drops the workbench rows they came from. A token row carries
+ * a secret the client may never read, so it stays where it is: orphaned but
+ * untouched (accepted — the next redeploy binds the workspace catalog and a
+ * leftover row simply stops taking effect). */
+export async function migrateWorkbenchMcpCatalogToWorkspace(
+  workbenchTenantId: string,
+  workspaceTenantId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  if (workbenchTenantId === workspaceTenantId) return;
+  const [workbenchServers, workspaceServers] = await Promise.all([
+    listMcpServers(workbenchTenantId, fetchImpl),
+    listMcpServers(workspaceTenantId, fetchImpl),
+  ]);
+  const workspaceHandles = new Set(workspaceServers.map((server) => server.handle));
+  for (const server of workbenchServers) {
+    // Only a keyless row can move without its secret; a token row stays
+    // orphaned on the workbench (see above).
+    if (server.auth !== "none") continue;
+    if (!workspaceHandles.has(server.handle)) {
+      const moved = await addMcpServer(
+        {
+          tenantId: workspaceTenantId,
+          handle: server.handle,
+          name: server.name,
+          url: server.url,
+        },
+        fetchImpl,
+      );
+      workspaceHandles.add(moved.handle);
+    }
+    await removeMcpServer(
+      {
+        tenantId: workbenchTenantId,
+        credentialId: server.credentialId,
+        providerId: server.providerId,
+      },
+      fetchImpl,
+    );
+  }
+}
+
+/** Concurrent ensures for one tenant (two Myra deploys racing, a StrictMode
+ * double-invoke) must not each add Exa: one flight per caller id, shared
+ * until it settles. A second workbench racing the first into an empty
+ * workspace can still double-add; the next ensure dedupes by handle. */
+const ensureInFlight = new Map<string, Promise<readonly McpServer[]>>();
+
 /** Every workspace starts with Exa, which needs no account: stored once on
  * the workspace (top-level) tenant, then left alone so a later removal is
  * not undone by the next start. Callers pass any tenant id — a workbench id
  * resolves up to its workspace — and each workbench Myra binds the shared
- * row by walking up. */
-export async function ensureBuiltInMcpServers(
+ * row by walking up. Also moves that caller's legacy workbench rows up,
+ * best-effort: a failed cleanup must not block deploying Myra with the
+ * workspace catalog that is already correct. */
+export function ensureBuiltInMcpServers(
   tenantId: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<readonly McpServer[]> {
+  const inFlight = ensureInFlight.get(tenantId);
+  if (inFlight !== undefined) return inFlight;
+  const flight = runEnsureBuiltInMcpServers(tenantId, fetchImpl);
+  ensureInFlight.set(tenantId, flight);
+  const settle = () => {
+    if (ensureInFlight.get(tenantId) === flight) ensureInFlight.delete(tenantId);
+  };
+  flight.then(settle, settle);
+  return flight;
+}
+
+async function runEnsureBuiltInMcpServers(
+  tenantId: string,
+  fetchImpl: typeof fetch,
+): Promise<readonly McpServer[]> {
   const workspaceTenantId = await resolveWorkspaceTenantId(tenantId, fetchImpl);
+  try {
+    await migrateWorkbenchMcpCatalogToWorkspace(tenantId, workspaceTenantId, fetchImpl);
+  } catch (cause) {
+    reportError(cause, { operation: "mcp_servers_catalog_migration" });
+  }
   const existing = await listMcpServers(workspaceTenantId, fetchImpl);
   if (existing.some((server) => server.handle === EXA_MCP_SERVER.handle)) return existing;
   const added = await addMcpServer(

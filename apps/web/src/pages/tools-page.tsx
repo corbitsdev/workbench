@@ -27,6 +27,7 @@ import { Plugs } from "@/lib/icons";
 import { describeApiError } from "@/lib/api-query";
 import { MCP_SERVER_CATALOG, type McpCatalogEntry, type McpServer } from "../mcp-servers";
 import {
+  describeRedeployResult,
   useAddMcpServer,
   useMcpServers,
   useRemoveMcpServer,
@@ -232,7 +233,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
     add.mutate(input, {
       onSuccess: (result) => {
         toast(
-          `${result.server.name} added to the workspace catalog — Myra redeployed in ${String(result.redeployed)} ${result.redeployed === 1 ? "workbench" : "workbenches"}.`,
+          `${result.server.name} added to the workspace catalog — ${describeRedeployResult(result)}`,
         );
       },
       onError: (cause: unknown) => {
@@ -261,7 +262,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
                   remove.mutate(server, {
                     onSuccess: (result) => {
                       toast(
-                        `${server.name} removed from the workspace catalog — Myra redeployed in ${String(result.redeployed)} ${result.redeployed === 1 ? "workbench" : "workbenches"}.`,
+                        `${server.name} removed from the workspace catalog — ${describeRedeployResult(result)}`,
                       );
                     },
                     onError: (cause: unknown) => {
