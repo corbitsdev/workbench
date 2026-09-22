@@ -17,8 +17,6 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { listChatAgents } from "@/chat/threads-api";
-import { chatPath } from "./chat-path";
 import { ACTION_COMMANDS, runActionCommand, type ActionCommandId } from "./command-palette-actions";
 import {
   openCommandPalette,
@@ -42,6 +40,26 @@ import type { Navigate } from "./navigation";
 const STATIC_COMMANDS = buildStaticCommands(
   NAV_ROUTES.map((route) => ({ path: route.path, label: route.label })),
 );
+
+// Every id prefix `handleSelect` below has a branch for. A recent whose id
+// matches none of these (e.g. `entity:agents:*` from the removed standalone
+// chats) would render and then just close the palette on select, so recents
+// load drops those entries.
+const KNOWN_RECENT_ID_PREFIXES = [
+  "route:",
+  "action:",
+  "entity:workbenches:",
+  "entity:routines:",
+  "entity:skills:",
+  "entity:library:",
+];
+
+// Exported for the recents-drop keeper test: the palette loads through
+// this predicate (`command-palette-recents-drop.test.ts`), so a legacy id
+// the predicate rejects can never render or be selected.
+export function isKnownRecentId(id: string): boolean {
+  return KNOWN_RECENT_ID_PREFIXES.some((prefix) => id.startsWith(prefix));
+}
 
 // Mounted once above `AppShell` so it works from every route, including
 // one that matches no page. Grouping/scope-parsing lives in
@@ -72,11 +90,14 @@ export function CommandPaletteProvider({
   );
 
   // Recents are per bench: loaded during render when the store changes, so
-  // the palette never opens on the previous bench's entries.
+  // the palette never opens on the previous bench's entries. Entries whose
+  // id no live branch handles (e.g. `entity:agents:*` from the removed
+  // standalone chats) are dropped on load — selecting one would just close
+  // the palette.
   const [recentsFor, setRecentsFor] = useState(recentsStore);
   if (recentsFor !== recentsStore) {
     setRecentsFor(recentsStore);
-    setRecents(recentsStore?.load() ?? []);
+    setRecents((recentsStore?.load() ?? []).filter((entry) => isKnownRecentId(entry.id)));
   }
 
   const pushRecent = useCallback(
@@ -116,8 +137,8 @@ export function CommandPaletteProvider({
   const listWorkbenchesForSearch = useCallback(async () => {
     if (selectedTenantId === null) return [];
     const result = await queryClient.ensureQueryData({
-      queryKey: tenantKeys.workbenches(selectedTenantId, "workbench"),
-      queryFn: () => listWorkbenches(selectedTenantId, "workbench"),
+      queryKey: tenantKeys.workbenches(selectedTenantId),
+      queryFn: () => listWorkbenches(selectedTenantId),
     });
     return result.map((workbench) => ({
       id: workbench.id,
@@ -125,21 +146,9 @@ export function CommandPaletteProvider({
     }));
   }, [selectedTenantId, queryClient]);
 
-  // A palette hit opens a chat with the agent, so the search source is the
-  // same chat-partner listing the roster and the Agents page read — its
-  // `id` is exactly what `chatPath` expects.
-  const listAgentsForSearch = useCallback(async () => {
-    if (selectedTenantId === null) return [];
-    const agents = await listChatAgents(selectedTenantId);
-    return agents.map((agent) => ({ id: agent.id, name: agent.name }));
-  }, [selectedTenantId]);
-
   const entitySearchSources = useMemo(
-    () => [
-      { category: "workbenches", fetch: listWorkbenchesForSearch },
-      { category: "agents", fetch: listAgentsForSearch },
-    ],
-    [listWorkbenchesForSearch, listAgentsForSearch],
+    () => [{ category: "workbenches", fetch: listWorkbenchesForSearch }],
+    [listWorkbenchesForSearch],
   );
 
   const strippedQuery = useMemo(() => parsePaletteQuery(query).query, [query]);
@@ -157,24 +166,13 @@ export function CommandPaletteProvider({
   // A bare `#`/`@` strips to an empty query, which useEntitySearch never
   // fetches for by design — so fetch that scope's raw list directly.
   const bareWorkbenchesQuery = useQuery({
-    queryKey: [...tenantKeys.workbenches(selectedTenantId ?? "", "workbench"), "bare-scope"],
+    queryKey: [...tenantKeys.workbenches(selectedTenantId ?? ""), "bare-scope"],
     enabled: bareScopeKind === "workbenches" && open && selectedTenantId !== null,
     queryFn: listWorkbenchesForSearch,
   });
   const bareWorkbenches: readonly PaletteResultItem[] = (bareWorkbenchesQuery.data ?? []).map(
     (row) => ({ id: `entity:workbenches:${row.id}`, title: row.name }),
   );
-
-  const bareAgentsQuery = useQuery({
-    queryKey: ["tenant", selectedTenantId ?? "", "agents", "bare-scope"],
-    enabled: bareScopeKind === "people" && open && selectedTenantId !== null,
-    queryFn: listAgentsForSearch,
-  });
-  const bareAgents: readonly PaletteResultItem[] = (bareAgentsQuery.data ?? []).map((row) => ({
-    id: `entity:agents:${row.id}`,
-    title: row.name,
-    subtitle: "Agent",
-  }));
 
   const routinesQuery = useTenantQuery(
     tenantKeys.routines(selectedTenantId ?? ""),
@@ -269,17 +267,6 @@ export function CommandPaletteProvider({
       }));
   }, [results, bareScopeKind, bareWorkbenches]);
 
-  const agentItems = useMemo<readonly PaletteResultItem[]>(() => {
-    if (bareScopeKind === "people") return bareAgents;
-    return results
-      .filter((result) => result.category === "agents")
-      .map((agent) => ({
-        id: `entity:agents:${agent.id}`,
-        title: agent.title,
-        subtitle: "Agent",
-      }));
-  }, [results, bareScopeKind, bareAgents]);
-
   const routineItems = useMemo<readonly PaletteResultItem[]>(
     () =>
       routinesQuery.kind === "ready"
@@ -327,7 +314,7 @@ export function CommandPaletteProvider({
       },
       {
         id: "workbenches",
-        heading: "Agents & Channels",
+        heading: "Workbenches",
         kind: "workbenches",
         items: workbenchItems,
       },
@@ -335,14 +322,8 @@ export function CommandPaletteProvider({
       { id: "routines", heading: "Workflows", items: routineItems },
       { id: "skills", heading: "Skills", items: skillItems },
       { id: "library", heading: "Artifacts", items: libraryItems },
-      {
-        id: "people",
-        heading: "People & agents",
-        kind: "people",
-        items: agentItems,
-      },
     ],
-    [actionItems, workbenchItems, pageItems, routineItems, skillItems, libraryItems, agentItems],
+    [actionItems, workbenchItems, pageItems, routineItems, skillItems, libraryItems],
   );
 
   const recentItems = useMemo<readonly PaletteResultItem[]>(
@@ -405,11 +386,6 @@ export function CommandPaletteProvider({
         const title = workbenchItems.find((item) => item.id === id)?.title ?? workbenchId;
         navigate(`/w/${workbenchId}`);
         pushRecent({ kind: "workbenches", id, title, subtitle: "Workbench" });
-      } else if (id.startsWith("entity:agents:")) {
-        const agentId = id.slice("entity:agents:".length);
-        const title = agentItems.find((item) => item.id === id)?.title ?? agentId;
-        navigate(chatPath(agentId));
-        pushRecent({ kind: "agents", id, title, subtitle: "Agent" });
       } else if (id.startsWith("entity:routines:")) {
         const routineId = id.slice("entity:routines:".length);
         const title = routineItems.find((item) => item.id === id)?.title ?? routineId;
@@ -437,7 +413,6 @@ export function CommandPaletteProvider({
       closeCanvas,
       pushRecent,
       workbenchItems,
-      agentItems,
       routineItems,
       skillItems,
       libraryItems,
@@ -461,7 +436,7 @@ export function CommandPaletteProvider({
         hasMore={hasMore}
         onLoadMore={loadMore}
         placeholder="Search or jump to…"
-        footer="# workbenches · @ people · > actions · / pages"
+        footer="# workbenches · > actions · / pages"
       />
     </>
   );

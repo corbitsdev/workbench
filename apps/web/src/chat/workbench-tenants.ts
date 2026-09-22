@@ -2,14 +2,10 @@
 // over the stock tenant routes.
 
 import { createFetchStockHub, findOwnedTenants } from "../needs-converge";
-import { listChats } from "./threads-api";
-
-export type WorkbenchKind = "workbench" | "chat";
 
 export type Workbench = {
   readonly id: string;
   readonly title: string;
-  readonly kind: WorkbenchKind;
   readonly slug: string;
   /** A workbench IS its tenant, so every row links to itself. */
   readonly tenancy?: { readonly tenantId: string } | null;
@@ -22,8 +18,8 @@ export function workbenchesQueryKeyPrefix(tenantId: string): readonly unknown[] 
   return ["tenant", tenantId, "workbenches"];
 }
 
-export function workbenchesQueryKey(tenantId: string, kind: WorkbenchKind): readonly unknown[] {
-  return [...workbenchesQueryKeyPrefix(tenantId), kind];
+export function workbenchesQueryKey(tenantId: string): readonly unknown[] {
+  return [...workbenchesQueryKeyPrefix(tenantId)];
 }
 
 export async function listWorkbenchTenants(tenantId: string): Promise<readonly Workbench[]> {
@@ -33,26 +29,14 @@ export async function listWorkbenchTenants(tenantId: string): Promise<readonly W
     .map((tenant) => ({
       id: tenant.id,
       title: tenant.name,
-      kind: "workbench" as const,
       slug: tenant.slug,
       tenancy: { tenantId: tenant.id },
     }));
 }
 
-/** The two listing surfaces behind one call: workbenches are the bench's
- * child tenants, chats are the person's own mail threads. */
-export async function listWorkbenches(
-  tenantId: string,
-  kind: WorkbenchKind,
-): Promise<readonly Workbench[]> {
-  if (kind === "workbench") return listWorkbenchTenants(tenantId);
-  const chats = await listChats(tenantId);
-  return chats.map((chat) => ({
-    id: chat.id,
-    title: chat.title,
-    kind: "chat" as const,
-    slug: chat.id,
-    tenancy: { tenantId },
-    lastActivityAt: chat.lastActivityAt,
-  }));
+/** The one workbench listing: the bench's child tenants. (Standalone chats
+ * used to share this module behind a `kind` parameter; they were removed,
+ * so this is a thin wrapper kept for the shared query-key prefix.) */
+export async function listWorkbenches(tenantId: string): Promise<readonly Workbench[]> {
+  return listWorkbenchTenants(tenantId);
 }

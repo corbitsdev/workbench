@@ -19,8 +19,6 @@ import type { ProfileSubject } from "@/chat";
 import { ArrowsIn, ArrowsOut, ArrowSquareOut, CaretLeft, UserCircle, X } from "@/lib/icons";
 import type { ReactNode } from "react";
 
-import { useBench } from "../bench-context";
-import { NEW_CHAT_PATH } from "../chat-path";
 import type { CanvasArtifactContent, RoutinePanelSubject } from "./canvas-availability";
 import { useInsertIntoComposer } from "./composer-insertion";
 
@@ -81,25 +79,6 @@ export function CanvasColumn({
       </div>
     </div>
   );
-}
-
-/** Messaging someone is composing a chat thread with them: land on the
- * composer rather than minting anything here. */
-function messageAction(
-  tenantId: string | null,
-  profile: ProfileSubject,
-  onNavigate: (path: string) => void,
-  onClose: () => void,
-): () => void {
-  return () => {
-    if (tenantId === null) {
-      toast(`Open a workbench to message @${profile.handle}`);
-      return;
-    }
-    // A DM is a chat thread now: compose it on /chats/new.
-    onNavigate(NEW_CHAT_PATH);
-    onClose();
-  };
 }
 
 /** Insert `@handle` into whichever workbench's composer is on screen — an
@@ -195,17 +174,10 @@ export function CanvasPaneHeader({
 
 function profileActions(
   profile: ProfileSubject,
-  tenantId: string | null,
   onClose: () => void,
   onNavigate: (path: string) => void,
   insertIntoComposer: (text: string) => boolean,
 ): readonly ProfileCardAction[] {
-  const message: ProfileCardAction = {
-    id: "message",
-    label: "Message",
-    tone: "primary",
-    onClick: messageAction(tenantId, profile, onNavigate, onClose),
-  };
   const mention: ProfileCardAction = {
     id: "mention",
     label: "Mention",
@@ -223,7 +195,6 @@ function profileActions(
     // No "Edit agent" hop: `ProfileSubject` carries no workbench id, and
     // the global `/settings/agents` tab this used to target is gone.
     return [
-      message,
       mention,
       {
         id: "view-runs",
@@ -240,7 +211,6 @@ function profileActions(
   // No "Grants" hop: no deep-link filter exists, and landing on the
   // unfiltered everyone's-rules list is worse than not offering it.
   return [
-    message,
     mention,
     {
       id: "view-activity",
@@ -273,7 +243,6 @@ function ProfileCanvasPane({
   readonly onToggleFocus: () => void;
   readonly onNavigate: (path: string) => void;
 }) {
-  const { selectedTenantId } = useBench();
   const insertIntoComposer = useInsertIntoComposer();
   const sharedWorkbenches = useSharedWorkbenches();
 
@@ -286,7 +255,7 @@ function ProfileCanvasPane({
         initials={profile.initials}
         statusLabel={profile.kind === "agent" ? "Agent" : "Member"}
         avatarTone={profile.kind === "agent" ? "agent" : "neutral"}
-        actions={profileActions(profile, selectedTenantId, onClose, onNavigate, insertIntoComposer)}
+        actions={profileActions(profile, onClose, onNavigate, insertIntoComposer)}
         sharedChannels={sharedWorkbenches}
       />
     </div>

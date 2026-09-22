@@ -5,7 +5,6 @@ import { createPendingDialogRequest } from "@/shell/layout";
 import { CHAT_STRINGS } from "@/chat";
 import { WORKBENCH_PATH_PREFIX } from "./workbench-path";
 import { NEW_WORKBENCH_PATH } from "./routes";
-import { NEW_CHAT_PATH } from "./chat-path";
 import { requestLibraryUpload } from "./library-upload";
 import { openFirstRunTour } from "./shell/first-run-tour-store";
 
@@ -27,7 +26,6 @@ export type ActionCommandId =
   | "upload-artifact"
   | "toggle-theme"
   | "close-canvas"
-  | "talk-to-myra"
   | "go-workbenches"
   | "take-tour";
 
@@ -58,14 +56,9 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
     subtitle: "Full-width stage",
   },
   {
-    id: "talk-to-myra",
-    title: "Talk to Myra",
-    subtitle: "Open your personal agent",
-  },
-  {
     id: "go-workbenches",
     title: "Go to workbenches",
-    subtitle: "Home · conversation list",
+    subtitle: "Home · workbench list",
   },
   {
     id: "take-tour",
@@ -114,11 +107,6 @@ export async function runActionCommand(
     }
     case "close-canvas": {
       ctx.closeCanvas();
-      return;
-    }
-    case "talk-to-myra": {
-      // A chat with Myra is a mail thread now, composed on /chats/new.
-      ctx.navigate(NEW_CHAT_PATH);
       return;
     }
     case "go-workbenches": {

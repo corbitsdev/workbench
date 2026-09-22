@@ -3,7 +3,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { agentDeploySourceAssetName } from "../agent-deploy";
 import { MYRA_SOURCE_CONFIG } from "../myra-source";
 import {
-  chatTitle,
   displayAgentName,
   listWorkbenchParticipants,
   resolveAvatarName,
@@ -31,38 +30,6 @@ describe("displayAgentName", () => {
 
   test("falls back to the raw name for anything unrecognized", () => {
     expect(displayAgentName("some-other-asset")).toBe("some-other-asset");
-  });
-});
-
-function meTurn(subject: string, body: string) {
-  return {
-    id: "Sent:1",
-    messageId: "m1",
-    parentId: undefined,
-    address: "run_alice@example.com",
-    author: "me" as const,
-    subject,
-    body,
-    at: "2026-01-01T00:00:00Z",
-    attachments: [],
-  };
-}
-
-describe("chatTitle", () => {
-  test("titles a chat by the agent's display name, never mail metadata", () => {
-    expect(chatTitle([meTurn("Deploy the thing", "hi")], "Echo Bot")).toBe("Echo Bot");
-  });
-
-  test("falls back to the opening turn's subject only when the agent can't be resolved", () => {
-    expect(chatTitle([meTurn("Deploy the thing", "hi")], undefined)).toBe("Deploy the thing");
-  });
-
-  test("falls back further to the opening turn's body when it has no subject", () => {
-    expect(chatTitle([meTurn("", "hello there")], undefined)).toBe("hello there");
-  });
-
-  test("falls back to a generic label when there is no opening turn and no agent name", () => {
-    expect(chatTitle([], undefined)).toBe("Untitled chat");
   });
 });
 

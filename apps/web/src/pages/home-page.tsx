@@ -1,30 +1,35 @@
-// Default land: `/` is a hop onto the person's most recent chat, or the
-// new-chat composer when they have none. Home as a dashboard does not
-// earn its keep — `/` only exists as this hop.
+// Default land: `/` is a hop onto the person's last-visited workbench,
+// or the new-workbench picker when no visit is on record. Home as a
+// dashboard does not earn its keep — `/` only exists as this hop. The
+// workbench listing carries no recency of its own, so array order is never
+// treated as "most recent": an unrecorded or stale last id falls through
+// to the picker instead of guessing.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
 import { useQuery } from "@tanstack/react-query";
 
 import { WorkbenchLoadingState } from "@/chat";
-import { listChats } from "@/chat/threads-api";
+import { listWorkbenchTenants, workbenchesQueryKey } from "@/chat/workbench-tenants";
 
 import { useBench } from "../bench-context";
-import { chatKeys, chatPath, NEW_CHAT_PATH } from "../chat-path";
+import { readLastWorkbenchId } from "../last-workbench";
 import { useNavigate } from "../navigation";
 import { Redirect } from "../redirect";
+import { NEW_WORKBENCH_PATH } from "../routes";
+import { workbenchPath } from "../workbench-path";
 
 export function HomeRoute() {
   const navigate = useNavigate();
   const { selectedTenantId, memberships } = useBench();
-  const chats = useQuery({
-    queryKey: chatKeys.list(selectedTenantId ?? ""),
+  const workbenches = useQuery({
+    queryKey: workbenchesQueryKey(selectedTenantId ?? ""),
     enabled: selectedTenantId !== null,
-    queryFn: () => listChats(selectedTenantId ?? ""),
+    queryFn: () => listWorkbenchTenants(selectedTenantId ?? ""),
   });
 
-  if (memberships.kind === "error" || chats.isError) {
-    const cause: unknown = chats.error;
+  if (memberships.kind === "error" || workbenches.isError) {
+    const cause: unknown = workbenches.error;
     const message =
       memberships.kind === "error"
         ? memberships.message
@@ -35,11 +40,11 @@ export function HomeRoute() {
       <PageShell width="full" className="page-fill">
         <EmptyState
           icon={<WarningCircle />}
-          title="Couldn't load your chats"
+          title="Couldn't load your workbenches"
           description={message}
           action={
-            <Button variant="outline" onClick={() => navigate(NEW_CHAT_PATH)}>
-              Start a new chat
+            <Button variant="outline" onClick={() => navigate(NEW_WORKBENCH_PATH)}>
+              Start a new workbench
             </Button>
           }
         />
@@ -47,9 +52,11 @@ export function HomeRoute() {
     );
   }
 
-  if (chats.data !== undefined) {
-    const newest = chats.data[0];
-    const to = newest === undefined ? NEW_CHAT_PATH : chatPath(newest.id);
+  if (workbenches.data !== undefined) {
+    const lastId = selectedTenantId === null ? null : readLastWorkbenchId(selectedTenantId);
+    const lastStillThere =
+      lastId !== null && workbenches.data.some((workbench) => workbench.id === lastId);
+    const to = lastStillThere && lastId !== null ? workbenchPath(lastId) : NEW_WORKBENCH_PATH;
     return <Redirect to={to} from="/" navigate={navigate} />;
   }
 

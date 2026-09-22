@@ -40,7 +40,7 @@ export {
   workbenchesQueryKey,
   workbenchesQueryKeyPrefix,
 } from "./workbench-tenants";
-export type { Workbench, WorkbenchKind } from "./workbench-tenants";
+export type { Workbench } from "./workbench-tenants";
 
 export { profileSubjectFromParticipant } from "./profile-subject";
 export type { ProfileSubject, ProfileParticipant } from "./profile-subject";

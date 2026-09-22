@@ -800,29 +800,19 @@ function InsightsWorkbenchPageRoute({
   readonly benchTenantId: string | null;
   readonly onOpenRun: (id: string) => void;
 }) {
-  const { workbenches, chats, isLoading } = useWorkbenchAndChatLists(benchTenantId);
-  const resolution = resolveWorkbenchInsightsScope([...workbenches, ...chats], workbenchId);
+  const { workbenches, isLoading } = useWorkbenchList(benchTenantId);
+  const resolution = resolveWorkbenchInsightsScope(workbenches, workbenchId);
   return <InsightsWorkbenchPage workbenchesLoading={isLoading} resolution={resolution} />;
 }
 
-function useWorkbenchAndChatLists(tenantId: string | null) {
+function useWorkbenchList(tenantId: string | null) {
   const workbenchesOfKind = useTenantQuery(
-    tenantId === null
-      ? ["tenant", "none", "workbenches", "workbench"]
-      : workbenchesQueryKey(tenantId, "workbench"),
+    tenantId === null ? ["tenant", "none", "workbenches"] : workbenchesQueryKey(tenantId),
     tenantId !== null,
-    () => listWorkbenches(tenantId as string, "workbench"),
-  );
-  const chatsOfKind = useTenantQuery(
-    tenantId === null
-      ? ["tenant", "none", "workbenches", "chat"]
-      : workbenchesQueryKey(tenantId, "chat"),
-    tenantId !== null,
-    () => listWorkbenches(tenantId as string, "chat"),
+    () => listWorkbenches(tenantId as string),
   );
   return {
     workbenches: workbenchesOfKind.kind === "ready" ? workbenchesOfKind.data : [],
-    chats: chatsOfKind.kind === "ready" ? chatsOfKind.data : [],
-    isLoading: workbenchesOfKind.kind === "loading" || chatsOfKind.kind === "loading",
+    isLoading: workbenchesOfKind.kind === "loading",
   };
 }

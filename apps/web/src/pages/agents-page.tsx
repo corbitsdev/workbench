@@ -1,5 +1,5 @@
-// A roster and nothing else — a chat with the agent is the one action
-// anyone actually used. Create-agent lives in the sidebar's "+" menu.
+// A roster and nothing else: status at a glance, restart when an agent
+// is not running. Create-agent lives in the sidebar's "+" menu.
 
 import {
   Badge,
@@ -20,11 +20,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
 
 import { QueryView } from "@/lib/api-query";
-import { chatKeys, chatPath } from "../chat-path";
+import { tenantKeys } from "../query-client";
 import { isAgentNotRunning, listChatAgents, type ChatAgent } from "@/chat/threads-api";
 import { describeRestartFailure, redeployWorkbenchAgent } from "../workbench-create";
 import { useBench } from "../bench-context";
-import { Link } from "../navigation";
 import { useTenantQuery } from "../routines-api";
 import { StageTopBar } from "../shell/stage-top-bar";
 
@@ -49,7 +48,7 @@ export function AgentsRosterList({
   const restart = useMutation({
     mutationFn: (agent: ChatAgent) => redeployWorkbenchAgent(tenantId, agent),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: chatKeys.agents(tenantId) });
+      void queryClient.invalidateQueries({ queryKey: tenantKeys.agents(tenantId) });
     },
     onError: (cause) => {
       reportError(cause, { operation: "agent_restart", tenantId });
@@ -108,21 +107,16 @@ export function AgentsRosterList({
                 </span>
               </TableCell>
               <TableCell>
-                <span className="inline-flex items-center gap-2">
-                  {status === "not-running" ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={restart.isPending}
-                      onClick={() => restart.mutate(agent)}
-                    >
-                      Restart
-                    </Button>
-                  ) : null}
-                  <Button asChild variant="outline" size="sm">
-                    <Link to={chatPath(agent.id)}>Chat</Link>
+                {status === "not-running" ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={restart.isPending}
+                    onClick={() => restart.mutate(agent)}
+                  >
+                    Restart
                   </Button>
-                </span>
+                ) : null}
               </TableCell>
             </TableRow>
           );
@@ -135,7 +129,7 @@ export function AgentsRosterList({
 export function AgentsRoute() {
   const { selectedTenantId } = useBench();
   const agentsQuery = useTenantQuery(
-    chatKeys.agents(selectedTenantId ?? "none"),
+    tenantKeys.agents(selectedTenantId ?? "none"),
     selectedTenantId !== null,
     () => listChatAgents(selectedTenantId as string),
     // Keep polling while any agent is not live, so a released→deployed

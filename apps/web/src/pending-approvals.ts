@@ -8,7 +8,6 @@ import { type } from "arktype";
 import type { APIQuery } from "@/lib/api-query";
 import { argumentsSummaryFor, headlineFor, toolNameFor } from "@corbits/approvals/headline";
 
-import { chatKeys } from "./chat-path";
 import { listChatAgents } from "./chat/threads-api";
 import { TenantApprovalsSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
@@ -106,12 +105,12 @@ export function usePendingApprovals(
             queryFn: () => fetchAgentName(tenantId, runId),
           })),
   });
-  // The chat roster's join (deployments -> runs -> assets) names an agent by
+  // The roster's join (deployments -> runs -> assets) names an agent by
   // every address it has ever run under, including a just-created one the
   // run view above can't resolve (the approver may lack a read grant on that
-  // run). Same query key the chat page uses, so this is usually a cache hit.
+  // run). Same key the agents page uses, so this is usually a cache hit.
   const roster = useQuery({
-    queryKey: chatKeys.agents(tenantId ?? ""),
+    queryKey: tenantKeys.agents(tenantId ?? ""),
     queryFn: () => listChatAgents(tenantId as string),
     enabled: tenantId !== null,
   });

@@ -16,7 +16,6 @@ export type BenchActivityQuery =
   | {
       readonly kind: "ready";
       readonly workbenches: readonly Workbench[];
-      readonly chats: readonly Workbench[];
       readonly agents: readonly AgentDefinition[];
       readonly routines: readonly RoutineActivityItem[];
     };
@@ -33,14 +32,9 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
   const key = tenantId ?? "";
 
   const workbenchesQuery = useQuery({
-    queryKey: tenantKeys.workbenches(key, "workbench"),
+    queryKey: tenantKeys.workbenches(key),
     enabled,
-    queryFn: () => listWorkbenches(key, "workbench"),
-  });
-  const chatsQuery = useQuery({
-    queryKey: tenantKeys.workbenches(key, "chat"),
-    enabled,
-    queryFn: () => listWorkbenches(key, "chat"),
+    queryFn: () => listWorkbenches(key),
   });
   const routinesQuery = useQuery({
     queryKey: tenantKeys.routineActivity(key),
@@ -55,12 +49,11 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
 
   if (tenantId === null) return { kind: "empty" };
 
-  for (const query of [workbenchesQuery, chatsQuery, routinesQuery, agentsQuery]) {
+  for (const query of [workbenchesQuery, routinesQuery, agentsQuery]) {
     if (query.isError) return { kind: "error", message: errorMessage(query.error) };
   }
   if (
     workbenchesQuery.data === undefined ||
-    chatsQuery.data === undefined ||
     routinesQuery.data === undefined ||
     agentsQuery.data === undefined
   ) {
@@ -70,7 +63,6 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
   return {
     kind: "ready",
     workbenches: workbenchesQuery.data,
-    chats: chatsQuery.data,
     agents: agentsQuery.data,
     routines: routinesQuery.data,
   };
