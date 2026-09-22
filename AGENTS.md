@@ -3,8 +3,8 @@
 Workbench is a client of [Interchange](https://github.com/faremeter/interchange).
 The hub mounts only stock `@intx/hub-api` routes plus a set of Corbits
 libraries, each mounted once (`@corbits/mailbox`, `@corbits/memory`,
-`@corbits/artifacts`, `@corbits/webhooks`, `@corbits/cron`, an OAuth library on
-`@corbits/oauth-core`); any other hub mount is cutover debt with a Linear
+`@corbits/artifacts`, `@corbits/webhooks`, `@corbits/cron`, `@corbits/mcp`, an
+OAuth library on `@corbits/oauth-core`); any other hub mount is cutover debt with a Linear
 issue, never a pattern to extend. A workbench is a plain
 Interchange tenant, nothing more. The web client sets itself up over stock
 routes on start (auth → tenant → definitions/credentials/grants); the hub
