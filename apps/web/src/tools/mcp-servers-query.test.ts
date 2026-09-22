@@ -80,9 +80,7 @@ describe("describeRedeployResult", () => {
     expect(
       describeRedeployResult({
         redeployed: 1,
-        failed: [
-          { tenantId: "wb-a", workbenchName: "Alpha", error: "Something went wrong." },
-        ],
+        failed: [{ tenantId: "wb-a", workbenchName: "Alpha", error: "Something went wrong." }],
       }),
     ).toBe(
       "Myra redeployed in 1 workbench, but the redeploy failed in Alpha — " +

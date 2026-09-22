@@ -52,7 +52,15 @@ type StoredRow = {
   readonly id: string;
   readonly name: string;
   readonly providerId: string;
-  readonly metadata: { readonly mcp: { readonly handle: string; readonly name: string; readonly url: string; readonly auth: string; readonly tools: readonly never[] } };
+  readonly metadata: {
+    readonly mcp: {
+      readonly handle: string;
+      readonly name: string;
+      readonly url: string;
+      readonly auth: string;
+      readonly tools: readonly never[];
+    };
+  };
 };
 
 function exaRow(credentialId: string, providerId: string): StoredRow {
@@ -116,7 +124,8 @@ function workspaceCatalogFetch(opts: {
     const method = init?.method ?? "GET";
     calls.push({ method, path });
 
-    if (path === `/api/tenants/${WORKBENCH_ID}`) return tenantDetailResponse(WORKBENCH_ID, WORKSPACE_ID);
+    if (path === `/api/tenants/${WORKBENCH_ID}`)
+      return tenantDetailResponse(WORKBENCH_ID, WORKSPACE_ID);
     if (path === `/api/tenants/${WORKSPACE_ID}`) return tenantDetailResponse(WORKSPACE_ID, null);
     if (path === `/api/tenants/${WORKBENCH_ID}/providers` && method === "GET") {
       return Response.json({
@@ -188,7 +197,10 @@ function workspaceCatalogFetch(opts: {
         try {
           const parsed = JSON.parse(patchText) as { metadata?: StoredRow["metadata"] };
           if (parsed.metadata !== undefined) {
-            workspaceCredentials.splice(workspaceCredentials.indexOf(row), 1, { ...row, metadata: parsed.metadata });
+            workspaceCredentials.splice(workspaceCredentials.indexOf(row), 1, {
+              ...row,
+              metadata: parsed.metadata,
+            });
           }
         } catch {
           // Keep the placeholder row; discovery recorded nothing new.
@@ -253,9 +265,9 @@ describe("ensureBuiltInMcpServers", () => {
     expect(servers.map((server) => server.handle)).toContain(EXA_MCP_SERVER.handle);
     // No re-add: the workspace already carries Exa, so the workbench twin is
     // just dropped.
-    expect(
-      calls.some((call) => call.method === "POST" && call.path.endsWith("/credentials")),
-    ).toBe(false);
+    expect(calls.some((call) => call.method === "POST" && call.path.endsWith("/credentials"))).toBe(
+      false,
+    );
     expect(
       calls.some(
         (call) =>
@@ -272,9 +284,7 @@ describe("ensureBuiltInMcpServers", () => {
     });
     await ensureBuiltInMcpServers(WORKBENCH_ID, fetchImpl);
     expect(
-      calls.some(
-        (call) => call.method === "DELETE" && call.path.includes("/credentials/c-linear"),
-      ),
+      calls.some((call) => call.method === "DELETE" && call.path.includes("/credentials/c-linear")),
     ).toBe(false);
   });
 
@@ -301,7 +311,8 @@ describe("ensureBuiltInMcpServers", () => {
     expect(second.map((server) => server.handle)).toContain(EXA_MCP_SERVER.handle);
     expect(
       calls.filter(
-        (call) => call.method === "POST" && call.path === `/api/tenants/${WORKSPACE_ID}/credentials`,
+        (call) =>
+          call.method === "POST" && call.path === `/api/tenants/${WORKSPACE_ID}/credentials`,
       ),
     ).toHaveLength(1);
   });
