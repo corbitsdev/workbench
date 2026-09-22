@@ -8,6 +8,7 @@ import { cronSentence } from "@corbits/workflows/client";
 import { WarningCircle } from "@/lib/icons";
 
 import { useDeployAgentMutation } from "../agents-api";
+import { useMcpServers } from "../tools/mcp-servers-query";
 import {
   isFiveFieldCron,
   isPackageRejection,
@@ -75,6 +76,15 @@ function DeployPackageCard({
   const deployed = deploy.data;
   const scheduleValid = pkg.schedule === undefined || isFiveFieldCron(pkg.schedule);
   const sentence = pkg.schedule !== undefined && scheduleValid ? cronSentence(pkg.schedule) : null;
+  // Handles Myra named that are not in this workspace's catalog can never
+  // bind — name them before deploy, where the failure would only read as a
+  // rejected deploy. While the catalog is still loading there is nothing to
+  // check against, so the card stays enabled and deploy fails closed.
+  const catalog = useMcpServers(tenantId);
+  const unknownHandles =
+    catalog.kind === "ready" && pkg.mcpHandles !== undefined
+      ? pkg.mcpHandles.filter((handle) => !catalog.data.some((server) => server.handle === handle))
+      : [];
   return (
     <div className="chat-deploy-card">
       <div className="chat-deploy-card-text">
@@ -88,17 +98,23 @@ function DeployPackageCard({
             {`This package's schedule ("${pkg.schedule}") isn't a valid five-field cron string.`}
           </span>
         ) : null}
+        {unknownHandles.length > 0 ? (
+          <span className="chat-deploy-card-error">
+            {`This package names MCP servers this workspace doesn't have: ${unknownHandles.join(", ")}. Ask Myra to use the Tools page handles.`}
+          </span>
+        ) : null}
       </div>
       {deployed === undefined ? (
         <Button
           variant="primary"
           size="sm"
-          disabled={deploy.isPending || !scheduleValid}
+          disabled={deploy.isPending || !scheduleValid || unknownHandles.length > 0}
           onClick={() =>
             deploy.mutate({
               name: pkg.name,
               systemPrompt: pkg.systemPrompt,
               ...(pkg.schedule !== undefined ? { schedule: pkg.schedule } : {}),
+              ...(pkg.mcpHandles !== undefined ? { mcpHandles: pkg.mcpHandles } : {}),
             })
           }
         >
