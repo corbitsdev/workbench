@@ -10,6 +10,7 @@ import { ensureBuiltInMcpServers, resolveWorkspaceTenantId } from "./mcp-servers
 
 const WORKSPACE_ID = "ws-1";
 const WORKBENCH_ID = "wb-1";
+const SIBLING_WORKBENCH_ID = "wb-2";
 
 function pathOf(input: RequestInfo | URL): string {
   if (typeof input === "string") return input;
@@ -127,6 +128,14 @@ function workspaceCatalogFetch(opts: {
     if (path === `/api/tenants/${WORKBENCH_ID}`)
       return tenantDetailResponse(WORKBENCH_ID, WORKSPACE_ID);
     if (path === `/api/tenants/${WORKSPACE_ID}`) return tenantDetailResponse(WORKSPACE_ID, null);
+    if (path === `/api/tenants/${SIBLING_WORKBENCH_ID}`)
+      return tenantDetailResponse(SIBLING_WORKBENCH_ID, WORKSPACE_ID);
+    if (
+      path === `/api/tenants/${SIBLING_WORKBENCH_ID}/providers` ||
+      path === `/api/tenants/${SIBLING_WORKBENCH_ID}/credentials`
+    ) {
+      return Response.json({ data: [] });
+    }
     if (path === `/api/tenants/${WORKBENCH_ID}/providers` && method === "GET") {
       return Response.json({
         data: workbenchCredentials.map((row) => ({
@@ -309,6 +318,20 @@ describe("ensureBuiltInMcpServers", () => {
     ]);
     expect(first.map((server) => server.handle)).toContain(EXA_MCP_SERVER.handle);
     expect(second.map((server) => server.handle)).toContain(EXA_MCP_SERVER.handle);
+    expect(
+      calls.filter(
+        (call) =>
+          call.method === "POST" && call.path === `/api/tenants/${WORKSPACE_ID}/credentials`,
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("sibling workbenches ensuring at once add the shared Exa once", async () => {
+    const { fetchImpl, calls } = workspaceCatalogFetch({ exaPresent: false });
+    await Promise.all([
+      ensureBuiltInMcpServers(WORKBENCH_ID, fetchImpl),
+      ensureBuiltInMcpServers(SIBLING_WORKBENCH_ID, fetchImpl),
+    ]);
     expect(
       calls.filter(
         (call) =>
