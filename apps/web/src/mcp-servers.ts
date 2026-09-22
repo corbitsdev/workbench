@@ -390,11 +390,10 @@ export async function migrateWorkbenchMcpCatalogToWorkspace(
   }
 }
 
-/** Concurrent ensures for one tenant (two Myra deploys racing, a StrictMode
- * double-invoke) must not each add Exa: one flight per caller id, shared
- * until it settles. A second workbench racing the first into an empty
- * workspace can still double-add; the next ensure dedupes by handle. */
-const ensureInFlight = new Map<string, Promise<readonly McpServer[]>>();
+/** Ensures that land on one workspace (two workbench Myras deploying, a
+ * StrictMode double-invoke) run one after another, so a later one sees the
+ * Exa an earlier one added instead of adding its own. */
+const ensureQueue = new Map<string, Promise<readonly McpServer[]>>();
 
 /** Every workspace starts with Exa, which needs no account: stored once on
  * the workspace (top-level) tenant, then left alone so a later removal is
@@ -403,16 +402,18 @@ const ensureInFlight = new Map<string, Promise<readonly McpServer[]>>();
  * row by walking up. Also moves that caller's legacy workbench rows up,
  * best-effort: a failed cleanup must not block deploying Myra with the
  * workspace catalog that is already correct. */
-export function ensureBuiltInMcpServers(
+export async function ensureBuiltInMcpServers(
   tenantId: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<readonly McpServer[]> {
-  const inFlight = ensureInFlight.get(tenantId);
-  if (inFlight !== undefined) return inFlight;
-  const flight = runEnsureBuiltInMcpServers(tenantId, fetchImpl);
-  ensureInFlight.set(tenantId, flight);
+  const workspaceTenantId = await resolveWorkspaceTenantId(tenantId, fetchImpl);
+  const run = () => runEnsureBuiltInMcpServers(tenantId, workspaceTenantId, fetchImpl);
+  const previous = ensureQueue.get(workspaceTenantId);
+  // A failed earlier ensure already rejected to its own caller; this one runs regardless.
+  const flight = previous === undefined ? run() : previous.then(run, run);
+  ensureQueue.set(workspaceTenantId, flight);
   const settle = () => {
-    if (ensureInFlight.get(tenantId) === flight) ensureInFlight.delete(tenantId);
+    if (ensureQueue.get(workspaceTenantId) === flight) ensureQueue.delete(workspaceTenantId);
   };
   flight.then(settle, settle);
   return flight;
@@ -420,9 +421,9 @@ export function ensureBuiltInMcpServers(
 
 async function runEnsureBuiltInMcpServers(
   tenantId: string,
+  workspaceTenantId: string,
   fetchImpl: typeof fetch,
 ): Promise<readonly McpServer[]> {
-  const workspaceTenantId = await resolveWorkspaceTenantId(tenantId, fetchImpl);
   try {
     await migrateWorkbenchMcpCatalogToWorkspace(tenantId, workspaceTenantId, fetchImpl);
   } catch (cause) {
