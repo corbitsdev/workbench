@@ -63,6 +63,15 @@ relation edges only (blocks, related, duplicate). Inverse edges (for example
 blocked-by created from the other issue) are not included; query the related
 issue to see those.
 
+`linear_list_issues` responses carry a top-level `scope` object describing the
+effective query. `scope.directFilters` echoes the GraphQL `IssueFilter` sent
+(`null` when unfiltered; brief-shaped calls report the post-aliasing filter,
+so `createdAfter` appears as an `updatedAt.gt` bound when `updatedAfter` is
+absent). `scope.teamScope.teamId` is the resolved team id (`null` for
+workspace-wide queries). `scope.savedView` is `{ applied: false }` when no
+saved view scoped the results, or `{ applied: true, id, name }` when one did;
+view-scoped input arrives via CL-8905.
+
 ### Comments and attachments
 
 | Tool                                   | Side effect |

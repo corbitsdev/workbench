@@ -390,10 +390,47 @@ function bucketBriefIssues(
   return buckets;
 }
 
+export type IssueListSavedView = {
+  id: string;
+  name: string;
+};
+
+export type IssueListSavedViewScope =
+  | { applied: false }
+  | ({ applied: true } & IssueListSavedView);
+
+export type IssueListScope = {
+  directFilters: Record<string, unknown> | null;
+  teamScope: { teamId: string | null };
+  savedView: IssueListSavedViewScope;
+};
+
+export type ListIssuesOptions = {
+  savedView?: IssueListSavedView | null;
+};
+
+// CL-8905 seam: no saved-view input exists on the list path yet, so the view
+// scope is unapplied unless the caller supplies an already-resolved view.
+// CL-8905 owns the view arg, filterData merge, and {id, name} resolution and
+// will feed its result through here; CL-8908 owns view id/name validation.
+export function resolveSavedView(
+  resolvedView?: IssueListSavedView | null,
+): IssueListSavedViewScope {
+  if (resolvedView !== undefined && resolvedView !== null) {
+    return {
+      applied: true,
+      id: resolvedView.id,
+      name: resolvedView.name,
+    };
+  }
+  return { applied: false };
+}
+
 export async function listIssues(
   config: LinearToolsConfig,
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
+  options?: ListIssuesOptions,
 ): Promise<unknown> {
   const args = parseArgs(ListIssuesArgsSchema, rawArgs, "linear_list_issues");
   const enabledSources = optionalStringArray(args.enabledSources);
@@ -417,13 +454,25 @@ export async function listIssues(
     explicitOrderBy ??
     (briefShaped && briefCutoff !== null ? "updatedAt" : null);
   const fields = briefShaped ? BRIEF_ISSUE_FIELDS : ISSUE_FIELDS;
-  const shapeResult = (connection: unknown): unknown => {
+  const savedView = resolveSavedView(options?.savedView);
+  const buildScope = (teamScopeId: string | null): IssueListScope => ({
+    directFilters: filter,
+    teamScope: { teamId: teamScopeId },
+    savedView,
+  });
+  const withScope = (result: unknown, scope: IssueListScope): unknown =>
+    isRecord(result) ? { ...result, scope } : result;
+  const shapeResult = (
+    connection: unknown,
+    teamScopeId: string | null,
+  ): unknown => {
+    const scope = buildScope(teamScopeId);
     const shaped = connectionResult(connection);
-    if (!briefShaped) return shaped;
+    if (!briefShaped) return withScope(shaped, scope);
     if (!isRecord(shaped) || !Array.isArray(shaped.nodes)) {
-      return bucketBriefIssues([], briefCutoff);
+      return withScope(bucketBriefIssues([], briefCutoff), scope);
     }
-    return bucketBriefIssues(shaped.nodes, briefCutoff);
+    return withScope(bucketBriefIssues(shaped.nodes, briefCutoff), scope);
   };
 
   const variables: Record<string, unknown> = {
@@ -443,7 +492,7 @@ export async function listIssues(
     if (!isRecord(data.team)) {
       throw new Error(`Linear team not found: ${teamId}`);
     }
-    return shapeResult(data.team.issues);
+    return shapeResult(data.team.issues, resolvedTeamId);
   }
 
   const data = await fetchLinearGraphQL(
@@ -452,7 +501,7 @@ export async function listIssues(
     variables,
     signal,
   );
-  return shapeResult(data.issues);
+  return shapeResult(data.issues, null);
 }
 
 export async function getIssue(
@@ -654,7 +703,7 @@ export async function linkIssues(
 export const LINEAR_LIST_ISSUES_DEFINITION: ToolDefinition = {
   name: "linear_list_issues",
   description:
-    "List Linear issues across the workspace. Read-only. Scope with team, state, assignee, project, cycle, label, priority, or query; supports cursor pagination and orderBy (createdAt|updatedAt). Brief heartbeat calls may pass enabledSources; brief-shaped results are bucketed into newIssues/completedIssues/updatedIssues and default orderBy to updatedAt when a cutoff is present.",
+    "List Linear issues across the workspace. Read-only. Scope with team, state, assignee, project, cycle, label, priority, or query; supports cursor pagination and orderBy (createdAt|updatedAt). Brief heartbeat calls may pass enabledSources; brief-shaped results are bucketed into newIssues/completedIssues/updatedIssues and default orderBy to updatedAt when a cutoff is present. Every response carries a top-level scope object with the effective directFilters (the GraphQL IssueFilter sent, or null), teamScope.teamId (the resolved team id, or null), and savedView ({applied:false} when no saved view scoped the results, otherwise {applied:true,id,name}).",
   inputSchema: {
     type: "object",
     properties: {
