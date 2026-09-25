@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { createToolRunner } from "@intx/agent";
 import { createLinearTools, LINEAR_HUB_TOOLS, type LinearFetch } from "./index";
+import { listIssues } from "./issues";
 import { asConnection, makeRoutingFetchStub } from "./test-helpers";
 
 type FetchStub = LinearFetch & {
@@ -118,7 +119,14 @@ describe("linear_list_issues handler", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
+    expect(JSON.parse(String(result.content))).toEqual({
+      ...asConnection(nodes),
+      scope: {
+        directFilters: null,
+        teamScope: { teamId: null },
+        savedView: { applied: false },
+      },
+    });
 
     const body = lastBody(fetcher);
     expect(body.query).toContain("issues(first:");
@@ -252,6 +260,11 @@ describe("linear_list_issues handler", () => {
       newIssues: [],
       completedIssues: [],
       updatedIssues: nodes,
+      scope: {
+        directFilters: { updatedAt: { gt: "2026-07-01T00:00:00.000Z" } },
+        teamScope: { teamId: null },
+        savedView: { applied: false },
+      },
     });
   });
 
@@ -327,6 +340,11 @@ describe("linear_list_issues handler", () => {
       newIssues: [],
       completedIssues: [],
       updatedIssues: nodes,
+      scope: {
+        directFilters: { updatedAt: { gt: "2026-07-01T00:00:00.000Z" } },
+        teamScope: { teamId: null },
+        savedView: { applied: false },
+      },
     });
   });
 
@@ -346,7 +364,14 @@ describe("linear_list_issues handler", () => {
       new AbortController().signal,
     );
 
-    expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
+    expect(JSON.parse(String(result.content))).toEqual({
+      ...asConnection(nodes),
+      scope: {
+        directFilters: null,
+        teamScope: { teamId: null },
+        savedView: { applied: false },
+      },
+    });
   });
 
   it("returns empty issues for brief-shaped calls when the connection is null", async () => {
@@ -369,6 +394,11 @@ describe("linear_list_issues handler", () => {
       newIssues: [],
       completedIssues: [],
       updatedIssues: [],
+      scope: {
+        directFilters: null,
+        teamScope: { teamId: null },
+        savedView: { applied: false },
+      },
     });
   });
 
@@ -553,6 +583,11 @@ describe("linear_list_issues handler", () => {
       newIssues: [nodes[0]],
       completedIssues: [nodes[1]],
       updatedIssues: [nodes[2]],
+      scope: {
+        directFilters: { updatedAt: { gt: cutoff } },
+        teamScope: { teamId: null },
+        savedView: { applied: false },
+      },
     });
   });
 
@@ -585,6 +620,11 @@ describe("linear_list_issues handler", () => {
       newIssues: [],
       completedIssues: [nodes[0]],
       updatedIssues: [],
+      scope: {
+        directFilters: { updatedAt: { gt: cutoff } },
+        teamScope: { teamId: null },
+        savedView: { applied: false },
+      },
     });
   });
 
@@ -631,7 +671,14 @@ describe("linear_list_issues handler", () => {
       new AbortController().signal,
     );
 
-    expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
+    expect(JSON.parse(String(result.content))).toEqual({
+      ...asConnection(nodes),
+      scope: {
+        directFilters: null,
+        teamScope: { teamId: "team-uuid" },
+        savedView: { applied: false },
+      },
+    });
     const lastCall = fetcher.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
     const body = JSON.parse(String(lastCall?.[1].body)) as {
@@ -741,6 +788,176 @@ describe("linear_list_issues handler", () => {
     );
 
     expect(lastBody(fetcher).variables).toEqual({ first: 10 });
+  });
+});
+
+describe("linear_list_issues scope metadata (CL-8907)", () => {
+  it("echoes the effective direct filters in scope.directFilters", async () => {
+    const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
+    const fetcher = makeFetchStub({ data: { issues: { nodes } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { state: "In Progress", assignee: "Ada" },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(String(result.content));
+    expect(parsed.scope.directFilters).toEqual(
+      lastBody(fetcher).variables.filter,
+    );
+    expect(parsed.scope.directFilters).toEqual({
+      state: { name: { eqIgnoreCase: "In Progress" } },
+      assignee: { name: { eqIgnoreCase: "Ada" } },
+    });
+  });
+
+  it("reports null directFilters and an unapplied savedView when no filters are sent", async () => {
+    const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
+    const fetcher = makeFetchStub({ data: { issues: { nodes } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      { id: "c1", name: "linear_list_issues", arguments: {} },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(String(result.content))).toEqual({
+      ...asConnection(nodes),
+      scope: {
+        directFilters: null,
+        teamScope: { teamId: null },
+        savedView: { applied: false },
+      },
+    });
+  });
+
+  it("carries identical scope on brief-shaped buckets with post-aliasing directFilters", async () => {
+    const cutoff = "2026-07-01T00:00:00.000Z";
+    const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
+    const fetcher = makeFetchStub({ data: { issues: { nodes } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { enabledSources: ["linear"], createdAfter: cutoff },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(String(result.content));
+    expect(parsed.newIssues).toEqual([]);
+    expect(parsed.completedIssues).toEqual([]);
+    expect(parsed.updatedIssues).toEqual(nodes);
+    expect(parsed.scope.directFilters).toEqual(
+      lastBody(fetcher).variables.filter,
+    );
+    expect(parsed.scope.directFilters).toEqual({
+      updatedAt: { gt: cutoff },
+    });
+    expect(parsed.scope.teamScope).toEqual({ teamId: null });
+    expect(parsed.scope.savedView).toEqual({ applied: false });
+  });
+
+  it("reports the resolved team id in scope.teamScope on the team path", async () => {
+    const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
+    const fetcher = makeRoutingFetchStub([
+      {
+        includes: "TeamByName",
+        data: { teams: { nodes: [{ id: "team-uuid" }] } },
+      },
+      {
+        includes: "team(id: $teamId)",
+        data: {
+          team: {
+            issues: {
+              nodes,
+              pageInfo: { endCursor: null, hasNextPage: false },
+            },
+          },
+        },
+      },
+    ]);
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { teamId: "team-uuid" },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(String(result.content));
+    expect(parsed.nodes).toEqual(nodes);
+    expect(parsed.scope).toEqual({
+      directFilters: null,
+      teamScope: { teamId: "team-uuid" },
+      savedView: { applied: false },
+    });
+  });
+
+  it("identifies the applied saved view by id and name on the connection branch", async () => {
+    const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
+    const fetcher = makeFetchStub({ data: { issues: { nodes } } });
+
+    const result = await listIssues(
+      { apiKey: "k", fetcher },
+      {},
+      new AbortController().signal,
+      { savedView: { id: "view-123", name: "My Triage" } },
+    );
+
+    expect(result).toEqual({
+      ...asConnection(nodes),
+      scope: {
+        directFilters: null,
+        teamScope: { teamId: null },
+        savedView: { applied: true, id: "view-123", name: "My Triage" },
+      },
+    });
+  });
+
+  it("carries the identical applied-view scope on brief-shaped buckets", async () => {
+    const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
+    const fetcher = makeFetchStub({ data: { issues: { nodes } } });
+
+    const result = await listIssues(
+      { apiKey: "k", fetcher },
+      { enabledSources: ["linear"] },
+      new AbortController().signal,
+      { savedView: { id: "view-123", name: "My Triage" } },
+    );
+
+    expect(result).toEqual({
+      newIssues: [],
+      completedIssues: [],
+      updatedIssues: nodes,
+      scope: {
+        directFilters: null,
+        teamScope: { teamId: null },
+        savedView: { applied: true, id: "view-123", name: "My Triage" },
+      },
+    });
   });
 });
 
