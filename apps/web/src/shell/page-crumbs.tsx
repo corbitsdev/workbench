@@ -57,6 +57,15 @@ export function usePageCrumbs(crumbs: readonly PageCrumb[]): {
   readonly back: { readonly href: string; readonly name: string } | null;
 } {
   const from = useFromWorkbench();
+  const fromId = useFromBench();
+  // A bare one-level page reads "Workbench / <Page>"; `?from=` swaps the
+  // root for the bench itself.
+  if (fromId === null) {
+    return {
+      crumbs: crumbs.length === 1 ? [{ label: "Workbench" }, ...crumbs] : crumbs,
+      back: null,
+    };
+  }
   if (from === null || from.name === null) return { crumbs, back: null };
   const href = workbenchPath(from.id);
   return {

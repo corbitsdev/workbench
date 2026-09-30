@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 
 import { PageCrumbs, type PageCrumb } from "./page-crumbs";
 import { Chip, type ChipTone } from "./chip";
+import { StageSidebarToggle } from "./sidebar-toggle";
 import { StageSearch, type StageSearchProps } from "./stage-search";
 
 export type StageCrumb = PageCrumb;
@@ -36,6 +37,7 @@ export function StageTopBar({
   const hasSubtitle = subtitle !== undefined && subtitle !== null;
   return (
     <header className="stage-top-bar" data-testid="stage-top-bar">
+      <StageSidebarToggle />
       <div className="stage-top-bar-title">
         <PageCrumbs crumbs={crumbs} />
       </div>

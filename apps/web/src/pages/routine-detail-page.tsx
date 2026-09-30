@@ -1,13 +1,14 @@
 import { PageShell, RichEmptyState, RunNowButton, Skeleton } from "@corbits/react-ui";
 import { type } from "arktype";
 import { useState } from "react";
-import type { ReactNode } from "react";
+import { Clock } from "@/lib/icons";
 
 import { useAPIQuery } from "../api";
 import { useGlobalRoutines, useRoutineActions } from "../global-routines";
 import type { GlobalRoutineRow } from "../global-routines";
-import { Link } from "../navigation";
+import { useNavigate } from "../navigation";
 import { WORKFLOWS_PATH_PREFIX } from "../path-ids";
+import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { RoutinePill, formatWhen, routineState, useRoutineRuns } from "./routine-ui";
 import type { RunRow } from "./routine-ui";
@@ -140,25 +141,28 @@ function RoutineRunsSection({
 function RoutineNotice({
   title,
   description,
-  children,
 }: {
   readonly title: string;
   readonly description: string;
-  readonly children?: ReactNode;
 }) {
+  const navigate = useNavigate();
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
         crumbs={[{ label: "Workflows", href: WORKFLOWS_PATH_PREFIX }, { label: title }]}
       />
-      <PageShell>
-        <p className="m-0 text-sm text-[var(--ui-fg-muted)]">{description}</p>
-        {children ?? (
-          <p className="mt-4">
-            <Link to={WORKFLOWS_PATH_PREFIX}>Back to Workflows</Link>
-          </p>
-        )}
-      </PageShell>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PageLayout title={title}>
+          <RichEmptyState
+            icon={<Clock />}
+            title="Workflow unavailable"
+            description={description}
+            actions={[
+              { label: "Back to Workflows", onClick: () => navigate(WORKFLOWS_PATH_PREFIX) },
+            ]}
+          />
+        </PageLayout>
+      </div>
     </div>
   );
 }

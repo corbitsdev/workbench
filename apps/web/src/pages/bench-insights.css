@@ -1,14 +1,14 @@
-.bi-head {
-  margin-bottom: 1rem;
+/* Card and table labels read as sentence case, like the drawer's tabs. */
+.page-layout .insights-panel h3 {
+  font-size: 0.9rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
 }
-.bi-head h1 {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 700;
-}
-.bi-head p {
-  margin: 0.25rem 0 0;
-  color: var(--muted-foreground);
+.page-layout .bi-table th {
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: none;
 }
 .bi-other {
   background: var(--muted-foreground);

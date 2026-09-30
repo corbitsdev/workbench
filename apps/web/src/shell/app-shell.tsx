@@ -14,6 +14,7 @@ import { useNavigate } from "../navigation";
 import { saveArtifactContent } from "./library-artifacts";
 import { APP_ROUTES, matchesRoute } from "../routes";
 import type { SessionUser } from "../session";
+import { isWorkbenchPath } from "../workbench-path";
 import { StageTopBar } from "./stage-top-bar";
 import {
   useCanvasColumnArtifact,
@@ -26,6 +27,7 @@ import {
   useToggleCanvasFocus,
 } from "./canvas-availability";
 import { Sidebar } from "./sidebar";
+import { isNarrow, SidebarToggleContext, useIsNarrow } from "./sidebar-toggle";
 import { ShellContextMenu } from "./context-menu/shell-context-menu";
 import { FirstRunTour } from "./first-run-tour";
 import "./shell-narrow.css";
@@ -126,6 +128,16 @@ export function AppShell({
   // Keyed by path so any navigation closes the phone-width sidebar.
   const [sidebarOpenFor, setSidebarOpenFor] = useState<string | null>(null);
   const sidebarOpen = sidebarOpenFor === path;
+  // Desktop collapse. The chat and home screens carry no `StageTopBar`, so
+  // they always show the sidebar rather than leave no way back.
+  const [collapsed, setCollapsed] = useState(false);
+  const narrow = useIsNarrow();
+  const collapsible = path !== "/" && !isWorkbenchPath(path);
+  const sidebarCollapsed = collapsed && collapsible;
+  const toggleSidebar = () => {
+    if (isNarrow()) setSidebarOpenFor(sidebarOpen ? null : path);
+    else setCollapsed(!collapsed);
+  };
   useEffect(() => {
     if (!sidebarOpen) return;
     const onKey = (event: KeyboardEvent) => {
@@ -146,61 +158,69 @@ export function AppShell({
         : { tone: "ok" as const, label: "All caught up" };
 
   return (
-    <div className="shell-frame" data-sidebar-open={sidebarOpen}>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="shell-sidebar-toggle"
-        aria-label="Toggle sidebar"
-        aria-expanded={sidebarOpen}
-        onClick={() => setSidebarOpenFor(sidebarOpen ? null : path)}
-      >
-        <PanelLeft />
-      </Button>
+    <SidebarToggleContext
+      value={{ expanded: narrow ? sidebarOpen : !sidebarCollapsed, toggle: toggleSidebar }}
+    >
       <div
-        className="shell-sidebar-scrim"
-        onClick={() => setSidebarOpenFor(null)}
-        aria-hidden="true"
-      />
-      <Sidebar path={path} onNavigate={navigate} />
-      <div className="shell-main" ref={mainRef}>
-        <ScrollToTop key={path} containerRef={mainRef} />
-        <div className="shell-main-content">
-          {routeHasNoStageTopBar(path) ? (
-            <StageTopBar
-              crumbs={[{ label: routeLabel(path) }]}
-              {...(pendingChip !== undefined ? { chip: pendingChip } : {})}
-            />
-          ) : null}
-          <Suspense
-            fallback={
-              <div className="page-fill shell-route-loading">
-                <WorkbenchLoadingState />
-              </div>
-            }
-          >
-            {children}
-          </Suspense>
+        className="shell-frame"
+        data-sidebar-open={sidebarOpen}
+        data-sidebar-collapsed={sidebarCollapsed}
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shell-sidebar-toggle"
+          aria-label="Toggle sidebar"
+          aria-expanded={sidebarOpen}
+          onClick={toggleSidebar}
+        >
+          <PanelLeft />
+        </Button>
+        <div
+          className="shell-sidebar-scrim"
+          onClick={() => setSidebarOpenFor(null)}
+          aria-hidden="true"
+        />
+        <Sidebar path={path} onNavigate={navigate} />
+        <div className="shell-main" ref={mainRef}>
+          <ScrollToTop key={path} containerRef={mainRef} />
+          <div className="shell-main-content">
+            {routeHasNoStageTopBar(path) ? (
+              <StageTopBar
+                crumbs={[{ label: routeLabel(path) }]}
+                {...(pendingChip !== undefined ? { chip: pendingChip } : {})}
+              />
+            ) : null}
+            <Suspense
+              fallback={
+                <div className="page-fill shell-route-loading">
+                  <WorkbenchLoadingState />
+                </div>
+              }
+            >
+              {children}
+            </Suspense>
+          </div>
         </div>
+        {canvasAllowed ? (
+          <Suspense fallback={null}>
+            <CanvasColumn
+              open={canvasOpen}
+              profile={canvasProfile}
+              artifact={canvasArtifact}
+              routine={canvasRoutine}
+              focus={canvasFocus}
+              onClose={closeCanvas}
+              onToggleFocus={toggleCanvasFocus}
+              onNavigate={navigate}
+              artifactSaveState={artifactSaveState}
+              onSaveArtifact={saveArtifact}
+            />
+          </Suspense>
+        ) : null}
+        <ShellContextMenu onSignOut={onSignOut} />
+        <FirstRunTour userId={user.id} />
       </div>
-      {canvasAllowed ? (
-        <Suspense fallback={null}>
-          <CanvasColumn
-            open={canvasOpen}
-            profile={canvasProfile}
-            artifact={canvasArtifact}
-            routine={canvasRoutine}
-            focus={canvasFocus}
-            onClose={closeCanvas}
-            onToggleFocus={toggleCanvasFocus}
-            onNavigate={navigate}
-            artifactSaveState={artifactSaveState}
-            onSaveArtifact={saveArtifact}
-          />
-        </Suspense>
-      ) : null}
-      <ShellContextMenu onSignOut={onSignOut} />
-      <FirstRunTour userId={user.id} />
-    </div>
+    </SidebarToggleContext>
   );
 }
