@@ -20,6 +20,7 @@ import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { CreateAgentPanel } from "./create-agent-panel";
 import { WORKERS_PATH_PREFIX } from "../path-ids";
+import { useWorkerRole } from "../worker-role-query";
 
 export type WorkerTone = "working" | "ready" | "idle";
 
@@ -45,6 +46,18 @@ const PILL_LABEL: Record<WorkerTone, string> = {
   ready: "Needs you",
   idle: "Idle",
 };
+
+export function WorkerRole({
+  tenantId,
+  agent,
+  className,
+}: {
+  readonly tenantId: string;
+  readonly agent: ChatAgent;
+  readonly className?: string;
+}) {
+  return <p className={className}>{useWorkerRole(tenantId, agent)}</p>;
+}
 
 export function StatusPill({ tone }: { readonly tone: WorkerTone }) {
   return (
@@ -161,7 +174,14 @@ export function WorkersRosterList({
               />
               <span className="flex min-w-0 items-center gap-3">
                 <WorkbenchAvatar kind="worker" name={agent.name} size={40} status={status.tone} />
-                <span className="min-w-0 text-[14.5px] font-extrabold">{agent.name}</span>
+                <span className="min-w-0">
+                  <span className="block text-[14.5px] font-extrabold">{agent.name}</span>
+                  <WorkerRole
+                    tenantId={tenantId}
+                    agent={agent}
+                    className="truncate text-[12.5px] text-(--ink-3)"
+                  />
+                </span>
               </span>
               <span className="flex min-w-0 items-center gap-2.5 text-[13.5px]">
                 <StatusPill tone={status.tone} />

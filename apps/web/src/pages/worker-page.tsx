@@ -12,16 +12,11 @@ import { isMyraAgent, listChatAgents, type ChatAgent } from "@/chat/threads-api"
 import { ChatCircle } from "@/lib/icons";
 import { QueryView, describeApiError } from "@/lib/api-query";
 import { listTopLevelRuns } from "../agents-api";
-import {
-  createGrant,
-  listGrants,
-  listPrincipals,
-  revokeGrant,
-  type Grant,
-} from "../settings/tenancy-api";
+import { createGrant, revokeGrant, type Grant } from "../settings/tenancy-api";
 import { agentSlugFromSourceAssetName, deployAgentSource } from "../agent-deploy";
 import { readAgentMcpHandles, readAgentSource } from "../agent-source-read";
-import { applyGrantSnapshot, readGrantSnapshot, saveGrantSnapshot } from "../worker-grants-carry";
+import { readGrantSnapshot, saveGrantSnapshot } from "../worker-grants-carry";
+import { TOOL_PREFIX, readWorkerToolGrants, workerToolGrantsKey } from "../worker-tool-grants";
 import { useBench } from "../bench-context";
 import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
@@ -30,7 +25,7 @@ import { StageTopBar } from "../shell/stage-top-bar";
 import { WORKERS_PATH_PREFIX } from "../path-ids";
 import { workbenchPath } from "../workbench-path";
 import { useWorkerBenches } from "../worker-benches";
-import { StatusPill, workerStatus } from "./workers-page";
+import { StatusPill, WorkerRole, workerStatus } from "./workers-page";
 
 function sourceKey(tenantId: string, agentId: string) {
   return [...tenantKeys.agents(tenantId), "source", agentId] as const;
@@ -139,34 +134,6 @@ const MODES: readonly { readonly effect: GrantEffect; readonly label: string }[]
   { effect: "deny", label: "Deny" },
 ];
 
-const TOOL_PREFIX = "tool:";
-
-/** The worker's live run principal: runtime grants belong to it, and it only
- * exists once the worker has been triggered. */
-async function readWorkerToolGrants(tenantId: string, agent: ChatAgent) {
-  if (agent.liveAddress === null) return null;
-  const [runs, principals] = await Promise.all([
-    listTopLevelRuns(tenantId),
-    listPrincipals(tenantId),
-  ]);
-  const run = runs.find((candidate) => candidate.address === agent.liveAddress);
-  const principal = principals.find(
-    (candidate) => candidate.kind === "workflow" && candidate.refId === run?.id,
-  );
-  if (principal === undefined) return null;
-  const read = async () => {
-    const grants = await listGrants(tenantId, { principalId: principal.id });
-    return grants
-      .filter((grant) => grant.resource.startsWith(TOOL_PREFIX) && grant.action === "invoke")
-      .sort((a, b) => a.resource.localeCompare(b.resource));
-  };
-  let tools = await read();
-  if (await applyGrantSnapshot(tenantId, agent.assetName, principal.id, tools)) {
-    tools = await read();
-  }
-  return { principalId: principal.id, tools };
-}
-
 function PermissionsCard({
   tenantId,
   agent,
@@ -175,7 +142,7 @@ function PermissionsCard({
   readonly agent: ChatAgent;
 }) {
   const queryClient = useQueryClient();
-  const key = [...tenantKeys.grants(tenantId), "worker", agent.id] as const;
+  const key = workerToolGrantsKey(tenantId, agent.id);
   // While a redeploy's permissions are waiting for the new run to start,
   // keep looking for its principal.
   const carrying = readGrantSnapshot(tenantId, agent.assetName) !== null;
@@ -364,9 +331,11 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
                       />
                       <div className="min-w-0 flex-1">
                         <h1 className="text-[24px] font-extrabold">{agent.name}</h1>
-                        {isMyraAgent(agent) ? (
-                          <p className="mt-0.5 text-[14px] text-(--ink-2)">Your assistant</p>
-                        ) : null}
+                        <WorkerRole
+                          tenantId={selectedTenantId}
+                          agent={agent}
+                          className="mt-0.5 text-[14px] text-(--ink-2)"
+                        />
                         <p className="mt-1 flex items-center gap-2 text-[14px] text-(--ink-2)">
                           <StatusPill tone={status.tone} />
                           {status.text}
