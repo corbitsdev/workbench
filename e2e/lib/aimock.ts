@@ -4,6 +4,8 @@
 import { afterAll, beforeAll } from "bun:test";
 import { LLMock } from "@copilotkit/aimock";
 
+export type Fixture = Parameters<LLMock["addFixture"]>[0];
+
 export const MOCK_REPLY = "Hi, I'm Myra. I'll go by Ada here.";
 
 export type BootedAimock = {
@@ -14,8 +16,10 @@ export type BootedAimock = {
 };
 
 /** Call synchronously inside the describe body so teardown registers during collection. */
-export function bootAimock(): () => BootedAimock {
+export function bootAimock(fixtures: Fixture[] = []): () => BootedAimock {
   const mock = new LLMock({ port: 0, host: "127.0.0.1" });
+  // Registered before the catch-all so a scripted turn wins over the default reply.
+  for (const fixture of fixtures) mock.addFixture(fixture);
   mock.addFixture({ match: { predicate: () => true }, response: { content: MOCK_REPLY } });
 
   beforeAll(async () => {
