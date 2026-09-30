@@ -1,0 +1,80 @@
+/* Settings as a dialog: raised card, left section nav + one section body. */
+[data-slot="dialog-content"].settings-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: min(calc(100vw - 2rem), 960px);
+  max-width: none;
+  height: 80vh;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--card, var(--popover));
+  box-shadow: var(--raised);
+}
+
+.settings-dialog-head {
+  padding: 14px 56px 12px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-dialog-title {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.settings-dialog-layout {
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-dialog-body {
+  flex: 1;
+  min-width: 0;
+  padding: 20px;
+}
+
+@media (max-width: 640px) {
+  [data-slot="dialog-content"].settings-dialog {
+    width: 100vw;
+    height: 100dvh;
+    border-radius: 0;
+    top: 0;
+    left: 0;
+    translate: none;
+    max-width: none;
+  }
+
+  .settings-dialog-layout {
+    flex-direction: column;
+  }
+
+  .settings-dialog-layout .settings-nav {
+    width: 100%;
+    flex-direction: row;
+    flex-shrink: 0;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    overflow: auto hidden;
+  }
+
+  .settings-dialog-layout .settings-nav-group {
+    flex-direction: row;
+    flex-shrink: 0;
+    gap: 0.25rem;
+  }
+
+  .settings-dialog-layout .settings-nav [data-slot="sidebar-item-row"] {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .settings-dialog-layout .settings-nav-heading,
+  .settings-dialog-layout .settings-nav-advanced {
+    display: none;
+  }
+}

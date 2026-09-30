@@ -59,9 +59,6 @@ const ToolsRoute = lazy(async () => ({
 const InsightsRoute = lazy(async () => ({
   default: (await import("./pages/insights-page")).InsightsRoute,
 }));
-const SettingsRoute = lazy(async () => ({
-  default: (await import("./pages/settings-page")).SettingsRoute,
-}));
 const SkillDetailRoute = lazy(async () => ({
   default: (await import("./pages/skill-detail-page")).SkillDetailRoute,
 }));
@@ -259,12 +256,12 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <InsightsRoute path={path} />,
   },
   {
+    // Presented as a dialog over the page behind it by `Shell` (app.tsx); the
+    // route exists so the palette and path matching still know Settings.
     path: SETTINGS_PATH,
     label: "Settings",
     icon: <SlidersHorizontal />,
-    render: (path: string, navigate: (to: string) => void) => (
-      <SettingsRoute path={path} navigate={navigate} />
-    ),
+    render: () => <></>,
   },
 ];
 
