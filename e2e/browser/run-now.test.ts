@@ -16,10 +16,12 @@ const TRIGGER_SCRIPT = `(async () => {
   const benchTenant = await json(await fetch("/api/tenants/" + bench));
   const tenants = [bench, benchTenant.body?.parentId].filter(Boolean);
   // Myra deploys asynchronously after setup, so poll for the deployment.
+  let lastListing = null;
   for (let attempt = 0; attempt < 60; attempt++) {
     for (const tenantId of tenants) {
       const listed = await json(await fetch("/api/tenants/" + tenantId + "/workflows/deployments"));
       const deployment = (Array.isArray(listed.body) ? listed.body : []).find((d) => d.status === "deployed");
+      lastListing = { tenantId, status: listed.status, body: listed.body };
       if (!deployment) continue;
       const base = "/api/tenants/" + tenantId + "/workflows/";
       const trigger = await json(await fetch(base + encodeURIComponent(deployment.id) + "/mail", {
@@ -32,7 +34,7 @@ const TRIGGER_SCRIPT = `(async () => {
     }
     await new Promise((r) => setTimeout(r, 1000));
   }
-  return { tenants, lastListing: null };
+  return { tenants, lastListing };
 })()`;
 
 describeBrowser("run now", () => {
@@ -48,6 +50,8 @@ describeBrowser("run now", () => {
         runs?: { body: unknown };
       };
       process.stderr.write(`${JSON.stringify(result)}\n`);
+      if (result.deploymentId === undefined)
+        process.stderr.write(`NO-DEPLOYMENT ${JSON.stringify(result)}\n`);
       expect(result.deploymentId).toBeDefined();
       expect(result.trigger?.status).toBe(202);
       expect(typeof result.trigger?.body?.runId).toBe("string");
