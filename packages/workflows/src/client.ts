@@ -2,21 +2,6 @@
 // no `hono`. A structural check walks the import graph from here.
 export * from "./source";
 export {
-  pickLaunchableDefinition,
-  isFrozen,
-  routineTargetRejection,
-  RoutineTargetUnresolvableError,
-  type LaunchableDefinitionCandidate,
-  type LaunchableDefinitionRejection,
-  type LaunchableDefinitionResolution,
-  type LaunchableDefinitionResolver,
-} from "./launchable/target-rule";
-export {
-  workflowNotLaunchableReason,
-  workflowDetailPath,
-  WorkflowDefinitionDetail,
-} from "./detail/definition-detail";
-export {
   WorkflowTriggerField,
   WORKFLOW_CATALOG,
   isAutomatableWorkflowName,

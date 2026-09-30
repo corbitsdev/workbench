@@ -2,19 +2,12 @@
 // repo's convention for tests that talk to a real Postgres (see
 // `tools/access/test/routes.test.ts`).
 //
-// `recordAgentSessionAtProvision` is the eager write every
-// native launcher makes right after `prepareProvisionedDeployment`
-// returns — this proves it lands the `agent_session` row under the
-// *deploying* principal (the run's own principal does not exist yet)
-// and creates the run's event collector exactly once, idempotently.
 // `ensureRunSession` is a true upsert: once the run's first trigger
-// anchors a real principal onto it, this proves the session moves onto
-// that principal without ever touching the session id when a row
-// already exists, that it creates the row from scratch for a run
-// deployed straight through Interchange's own deployments route (no
-// Workbench launcher ever ran `recordAgentSessionAtProvision` for it),
-// and that a run with no launch spec row is a bug this throws on rather
-// than papering over.
+// anchors a real principal onto it, this proves the session is created on
+// that principal keeping the launch spec's session id, that it works for a
+// run deployed straight through Interchange's own deployments route, and
+// that a run with no launch spec row is a bug this throws on rather than
+// papering over.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 
@@ -23,10 +16,7 @@ import { generateId } from "@intx/hub-common";
 import { resolveRunSessionId } from "@intx/hub-sessions";
 import { dbGate } from "../lib/db-gate";
 
-import {
-  ensureRunSession,
-  recordAgentSessionAtProvision,
-} from "../../packages/workflows/src/launch/agent-session";
+import { ensureRunSession } from "../../packages/workflows/src/launch/agent-session";
 
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
@@ -42,7 +32,7 @@ function dbConfigFromUrl(databaseUrl: string) {
 const databaseUrl = process.env["DATABASE_URL"];
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
-describeIfDb("recordAgentSessionAtProvision / ensureRunSession", () => {
+describeIfDb("ensureRunSession", () => {
   let db: DB;
 
   const tenantId = generateId("tenant");
@@ -102,9 +92,8 @@ describeIfDb("recordAgentSessionAtProvision / ensureRunSession", () => {
       name: "agent-session-test-definition",
     });
 
-    // Born the instant `prepareProvisionedDeployment` returns: a run row
-    // exists, its own principal is still null, and its launch spec names
-    // the session `recordAgentSessionAtProvision` will record.
+    // A run row whose own principal is not yet anchored; its launch spec
+    // names the session.
     await db.db.insert(schema.workflowRun).values({
       id: provisionedRunId,
       definitionId,
@@ -138,12 +127,10 @@ describeIfDb("recordAgentSessionAtProvision / ensureRunSession", () => {
       status: "deployed",
     });
 
-    // Deployed through Interchange's own deployments route rather than a
-    // Workbench launcher: Interchange itself writes the launch spec (it
-    // mints the session id), but nothing ever calls
-    // `recordAgentSessionAtProvision` for this path, so no `agent_session`
-    // row exists yet. Already anchored with its own principal by the time
-    // `ensureRunSession` is reached, same as at persist/dispatch.
+    // Deployed through Interchange's own deployments route: Interchange
+    // writes the launch spec (it mints the session id), so no
+    // `agent_session` row exists yet. Already anchored with its own
+    // principal by the time `ensureRunSession` is reached.
     await db.db.insert(schema.workflowRun).values({
       id: apiDeployedRunId,
       definitionId,
@@ -187,46 +174,7 @@ describeIfDb("recordAgentSessionAtProvision / ensureRunSession", () => {
     await db.db.delete(schema.tenant).where(eq(schema.tenant.id, tenantId));
   });
 
-  test("records the session under the deploying principal and creates the collector once", async () => {
-    const createCalls: unknown[] = [];
-    let hasCollector = false;
-    const eventCollectors = {
-      create: (...args: unknown[]) => {
-        createCalls.push(args);
-        hasCollector = true;
-      },
-      has: () => hasCollector,
-    };
-
-    await recordAgentSessionAtProvision({
-      db: db.db,
-      eventCollectors,
-      runId: provisionedRunId,
-      sessionId,
-      sourceAuthorityPrincipalId: deployingPrincipalId,
-    });
-    // A second call for the same run is a no-op, not a conflict, and
-    // must not create a second collector.
-    await recordAgentSessionAtProvision({
-      db: db.db,
-      eventCollectors,
-      runId: provisionedRunId,
-      sessionId,
-      sourceAuthorityPrincipalId: deployingPrincipalId,
-    });
-
-    expect(createCalls).toEqual([
-      [`${provisionedRunId}@${domain}`, tenantId, sessionId, provisionedRunId],
-    ]);
-
-    const sessionRow = await db.db.query.agentSession.findFirst({
-      where: eq(schema.agentSession.id, sessionId),
-    });
-    expect(sessionRow?.principalId).toBe(deployingPrincipalId);
-    expect(sessionRow?.agentId).toBe(definitionId);
-  });
-
-  test("re-keys the session onto the run principal once Interchange anchors it", async () => {
+  test("creates the session on the run principal once Interchange anchors it", async () => {
     await db.db
       .update(schema.workflowRun)
       .set({ principalId: runPrincipalId, status: "running" })
