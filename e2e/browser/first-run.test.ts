@@ -96,6 +96,20 @@ async function runFlow(page: Page, origin: string): Promise<void> {
   expect(benches).toHaveLength(3);
   for (const name of benches) expect(name.length).toBeLessThanOrEqual(40);
 
+  // (c2) with several benches, "New worker" asks which one.
+  await page.goto(`${origin}/workers`, { waitUntil: "networkidle0" });
+  // Radix opens its menu on pointerdown, which `click()` does not send.
+  await page.waitForFunction(
+    `Array.from(document.querySelectorAll("button[aria-haspopup=menu]")).some((e) => e.textContent.includes("New worker"))`,
+    { timeout: STEP_TIMEOUT },
+  );
+  await page.evaluate(
+    `Array.from(document.querySelectorAll("button[aria-haspopup=menu]")).find((e) => e.textContent.includes("New worker")).dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }))`,
+  );
+  await page.waitForFunction(`document.querySelectorAll("[role=menuitem]").length === 3`, {
+    timeout: STEP_TIMEOUT,
+  });
+
   // (d) no bench shows another's opening message.
   for (const [i, id] of ids.entries()) {
     await page.goto(`${origin}/w/${id}`, { waitUntil: "networkidle0" });
