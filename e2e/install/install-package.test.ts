@@ -1,6 +1,8 @@
 // Proves the client-driven install over stock routes: a package's source goes
 // into a fresh tenant as a workflow asset, deploys, and answers mail. A second
 // install of identical files deploys nothing new. Skips without DATABASE_URL.
+// LightningFS, the browser fs the installer uses, needs IndexedDB.
+import "fake-indexeddb/auto";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import path from "node:path";
 import { type } from "arktype";

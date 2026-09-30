@@ -4,7 +4,7 @@
 // the browser and against an in-process hub.
 import { Buffer } from "buffer";
 import git, { type GitHttpRequest, type GitHttpResponse, type HttpClient } from "isomorphic-git";
-import { createFsFromVolume, Volume } from "memfs";
+import LightningFS from "@isomorphic-git/lightning-fs";
 
 // isomorphic-git reads the Node `Buffer` global; browsers do not ship one.
 globalThis.Buffer ??= Buffer;
@@ -102,7 +102,9 @@ export async function pushSourceTree(args: {
   tree: Readonly<Record<string, string>>;
   message: string;
 }): Promise<{ commitSha: string; changed: boolean }> {
-  const fs = createFsFromVolume(new Volume());
+  // `window.fetch` throws "Illegal invocation" when called as a method of `args`.
+  const fetchImpl = args.fetch.bind(globalThis);
+  const fs = new LightningFS(`workbench-push-${crypto.randomUUID()}`, { wipe: true });
   const dir = "/repo";
   await fs.promises.mkdir(dir);
   await git.init({ fs, dir, defaultBranch: "main" });
@@ -117,14 +119,14 @@ export async function pushSourceTree(args: {
   }
   const treeOid = await git.writeTree({ fs, dir, tree: entries });
 
-  const oldSha = await advertisedMainSha(args.fetch, args.url, args.token);
+  const oldSha = await advertisedMainSha(fetchImpl, args.url, args.token);
   if (oldSha !== ZERO_OID) {
     await git.addRemote({ fs, dir, remote: "origin", url: args.url });
     // The hub's git server advertises no `shallow` capability, so fetch the
     // full branch.
     await git.fetch({
       fs,
-      http: httpThrough(args.fetch),
+      http: httpThrough(fetchImpl),
       dir,
       remote: "origin",
       ref: MAIN_REF,
@@ -159,7 +161,7 @@ export async function pushSourceTree(args: {
   body.set(command, 0);
   body.set(new TextEncoder().encode("0000"), command.length);
   body.set(packfile, command.length + 4);
-  const response = await args.fetch(`${args.url}/git-receive-pack`, {
+  const response = await fetchImpl(`${args.url}/git-receive-pack`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${args.token}`,

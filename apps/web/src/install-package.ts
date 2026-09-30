@@ -95,8 +95,10 @@ async function latestDeploymentId(
 }
 
 export async function installPackage(
-  args: InstallPackageArgs,
+  input: InstallPackageArgs,
 ): Promise<{ assetId: string; commitSha: string; deploymentId: string }> {
+  // `window.fetch` throws "Illegal invocation" when called as a method of `args`.
+  const args = { ...input, fetch: input.fetch.bind(globalThis) };
   const base = `${args.origin}/api/tenants/${encodeURIComponent(args.tenantId)}`;
   const assetId = await ensureWorkflowAsset(args, base);
   const files = typeof args.files === "function" ? await args.files(assetId) : args.files;
