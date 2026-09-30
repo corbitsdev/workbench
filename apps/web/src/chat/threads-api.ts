@@ -512,7 +512,11 @@ export async function sendToWorkbench(input: {
       address: person.address,
       kind: "person" as const,
     })),
-    ...live.map((agent) => ({ name: agent.name, address: agent.address, kind: "agent" as const })),
+    ...live.map((agent) => ({
+      name: agent.name,
+      address: agent.address,
+      kind: "agent" as const,
+    })),
   ]);
   let response: Response;
   try {

@@ -1,6 +1,7 @@
 // A fresh user connects an inference provider served by aimock, creates a
 // bench from /new, and the worker's reply lands in the thread while the
-// bench stops showing "working".
+// bench stops showing "working". The reply names the worker, which then shows
+// everywhere; a rename in the bench drawer survives a reload.
 import { expect, test } from "bun:test";
 import { bootAimock, MOCK_REPLY } from "../lib/aimock";
 import { bootBrowserApp, browserGate } from "../lib/browser";
@@ -9,7 +10,12 @@ import { clickText, STEP_TIMEOUT, waitForText } from "../lib/first-run";
 const describeBrowser = browserGate(import.meta.path);
 
 describeBrowser("worker reply", () => {
-  const aimock = bootAimock();
+  const aimock = bootAimock([
+    {
+      match: { predicate: () => true },
+      response: { content: `${MOCK_REPLY}\n\nName: Ada` },
+    },
+  ]);
   const app = bootBrowserApp();
 
   test("the worker's reply lands in the thread", async () => {
@@ -46,6 +52,45 @@ describeBrowser("worker reply", () => {
         timeout: STEP_TIMEOUT,
       });
       expect(aimock().journal().length).toBeGreaterThan(0);
+
+      // The worker named itself: pill, sidebar and message header show it,
+      // and the marker line is never rendered.
+      const benchUrl = page.url();
+      await page.waitForFunction(
+        `document.querySelector(".bench-pill")?.innerText.includes("Ada")`,
+        {
+          timeout: STEP_TIMEOUT,
+        },
+      );
+      await page.waitForFunction(
+        `document.querySelector("[aria-label='Workbenches and workers']")?.textContent.includes("Ada")`,
+        { timeout: 20_000 },
+      );
+      expect(await page.evaluate("document.body.innerText.includes('Name: Ada')")).toBe(false);
+
+      await page.goto(`${app().origin}/workers`, { waitUntil: "networkidle0" });
+      await waitForText(page, "Ada");
+
+      // Rename from the drawer; the new name persists across a reload.
+      await page.goto(benchUrl, { waitUntil: "networkidle0" });
+      await page.click(".bench-pill");
+      await page.waitForSelector("input[aria-label='Worker name']");
+      await page.evaluate(`document.querySelector("input[aria-label='Worker name']").select()`);
+      await page.type("input[aria-label='Worker name']", "Bea");
+      await clickText(page, "button", "Rename");
+      await page.waitForFunction(
+        `document.querySelector(".bench-pill")?.innerText.includes("Bea ·")`,
+        {
+          timeout: STEP_TIMEOUT,
+        },
+      );
+      await page.reload({ waitUntil: "networkidle0" });
+      await page.waitForFunction(
+        `document.querySelector(".bench-pill")?.innerText.includes("Bea ·")`,
+        {
+          timeout: STEP_TIMEOUT,
+        },
+      );
     } catch (cause) {
       const body = await page.evaluate("document.body.innerText");
       process.stderr.write(

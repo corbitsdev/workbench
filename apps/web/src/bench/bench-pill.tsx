@@ -7,8 +7,8 @@ function statusLine(status: WorkerStatus, workerName: string | undefined): strin
   if (status.text === "Working…") {
     return workerName === undefined ? "Working…" : `${workerName} is working…`;
   }
-  if (status.text === "Live") return "Idle";
-  return status.text;
+  const text = status.text === "Live" ? "Idle" : status.text;
+  return workerName === undefined ? text : `${workerName} · ${text}`;
 }
 
 /** Frosted pill centered over the thread: the bench's worker, its name and

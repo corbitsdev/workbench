@@ -21,6 +21,7 @@ import { benchLink } from "../shell/page-crumbs";
 import type { WorkerStatus } from "../worker-status";
 import "./description.css";
 import { DESCRIPTION_MAX, useBenchDescription } from "./description";
+import { DEFAULT_WORKER_NAME, WORKER_NAME_MAX, useWorkerName } from "./worker-name";
 
 function Section({
   title,
@@ -79,6 +80,39 @@ function AboutSection({ workbenchTenantId }: { readonly workbenchTenantId: strin
   );
 }
 
+function WorkerNameSection({ workbenchTenantId }: { readonly workbenchTenantId: string }) {
+  const { name, save } = useWorkerName(workbenchTenantId);
+  const current = name ?? DEFAULT_WORKER_NAME;
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? current;
+  const dirty = draft !== null && draft.trim() !== current;
+  return (
+    <Section title="Worker">
+      <form
+        className="bench-description-form"
+        data-inline
+        onSubmit={(event) => {
+          event.preventDefault();
+          save.mutate(value.trim(), {
+            onSuccess: () => setDraft(null),
+            onError: (cause) => toast(cause instanceof Error ? cause.message : String(cause)),
+          });
+        }}
+      >
+        <input
+          aria-label="Worker name"
+          maxLength={WORKER_NAME_MAX}
+          value={value}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <Button type="submit" size="sm" disabled={!dirty || save.isPending}>
+          Rename
+        </Button>
+      </form>
+    </Section>
+  );
+}
+
 /** Overview of the bench: what it is, what's happening now, what's waiting
  * on the person, and its live workflows and latest files. */
 export function InformationTab({
@@ -118,6 +152,7 @@ export function InformationTab({
   return (
     <>
       <AboutSection workbenchTenantId={workbenchTenantId} />
+      <WorkerNameSection workbenchTenantId={workbenchTenantId} />
 
       {worker !== undefined && status.tone === "working" ? (
         <Section title="Now">

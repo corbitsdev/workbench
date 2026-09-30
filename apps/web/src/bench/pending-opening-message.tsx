@@ -31,7 +31,12 @@ export function PendingOpeningMessage({
   }, []);
 
   const send = useMutation({
-    mutationFn: (content: string) => sendToWorkbench({ workbenchTenantId, participants, content }),
+    mutationFn: (content: string) =>
+      sendToWorkbench({
+        workbenchTenantId,
+        participants,
+        content,
+      }),
     onSuccess: () => {
       clearOpeningMessage(workbenchTenantId);
       setText(null);

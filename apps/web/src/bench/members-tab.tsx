@@ -5,7 +5,6 @@ import { IdentityAvatar, WorkbenchAvatar } from "@/chat/avatar";
 import type { WorkbenchParticipant } from "@/chat/threads-api";
 import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
-import { useWorkerBenches } from "../worker-benches";
 import { principalLabel } from "../settings/identity";
 import { listPrincipals } from "../settings/tenancy-api";
 
@@ -27,7 +26,6 @@ export function MembersTab({
     queryKey: [...tenantKeys.principals(workbenchTenantId), "members"],
     queryFn: async () => (await listPrincipals(workbenchTenantId)).filter((p) => p.kind === "user"),
   });
-  const { workerIdForAsset } = useWorkerBenches();
   const agents = participants.filter((p) => p.kind === "agent");
 
   return (
@@ -75,8 +73,7 @@ export function MembersTab({
         ) : null}
         <ul className="drawer-list">
           {agents.map((agent) => {
-            const workerId =
-              agent.assetName === undefined ? undefined : workerIdForAsset(agent.assetName);
+            const workerId = agent.assetName === undefined ? undefined : agent.id;
             const body = (
               <>
                 <WorkbenchAvatar kind="worker" name={agent.name} size="md" />

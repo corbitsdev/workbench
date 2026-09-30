@@ -2,21 +2,19 @@
 // the sidebar's "+" menu.
 
 import { useState } from "react";
-import { Button, RichEmptyState } from "@corbits/react-ui";
+import { Button, RichEmptyState, Skeleton } from "@corbits/react-ui";
 import { toast } from "@corbits/react-ui/ui/toast";
 import { Plus, Robot } from "@/lib/icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
 
-import { QueryView } from "@/lib/api-query";
 import { tenantKeys } from "../query-client";
-import { isAgentNotRunning, listChatAgents, type ChatAgent } from "@/chat/threads-api";
+import { isAgentNotRunning, type ChatAgent } from "@/chat/threads-api";
 import { WorkbenchAvatar } from "@/chat/avatar";
 import { describeRestartFailure, redeployWorkbenchAgent } from "../workbench-create";
 import { useBench } from "../bench-context";
-import { useWorkerBenches } from "../worker-benches";
+import { useBenchWorkers, type BenchWorker } from "../worker-benches";
 import { Link } from "../navigation";
-import { useTenantQuery } from "../routines-api";
 import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { CreateAgentPanel } from "./create-agent-panel";
@@ -82,30 +80,23 @@ const FILTERS: readonly (readonly [WorkerTone | "all", string])[] = [
 const ROW_GRID =
   "grid items-center gap-4 md:grid-cols-[minmax(200px,1.2fr)_minmax(220px,1.6fr)_minmax(120px,1fr)_72px]";
 
-export function WorkersRosterList({
-  tenantId,
-  agents,
-}: {
-  readonly tenantId: string;
-  readonly agents: readonly ChatAgent[];
-}) {
-  const { byWorker } = useWorkerBenches();
+export function WorkersRosterList({ workers }: { readonly workers: readonly BenchWorker[] }) {
   const [filter, setFilter] = useState<WorkerTone | "all">("all");
   const [query, setQuery] = useState("");
   const queryClient = useQueryClient();
   const restart = useMutation({
-    mutationFn: (agent: ChatAgent) => redeployWorkbenchAgent(tenantId, agent),
-    onSuccess: () => {
+    mutationFn: ({ agent, bench }: BenchWorker) => redeployWorkbenchAgent(bench.id, agent),
+    onSuccess: (_result, { bench }) => {
       void queryClient.invalidateQueries({
-        queryKey: tenantKeys.agents(tenantId),
+        queryKey: tenantKeys.agents(bench.id),
       });
     },
-    onError: (cause) => {
-      reportError(cause, { operation: "agent_restart", tenantId });
+    onError: (cause, { bench }) => {
+      reportError(cause, { operation: "agent_restart", tenantId: bench.id });
       toast(describeRestartFailure(cause));
     },
   });
-  if (agents.length === 0) {
+  if (workers.length === 0) {
     return (
       <RichEmptyState
         icon={<Robot />}
@@ -114,7 +105,7 @@ export function WorkersRosterList({
       />
     );
   }
-  const rows = agents.map((agent) => ({ agent, status: workerStatus(agent) }));
+  const rows = workers.map((worker) => ({ ...worker, status: workerStatus(worker.agent) }));
   const needle = query.trim().toLowerCase();
   const shown = rows.filter(
     ({ agent, status }) =>
@@ -166,7 +157,7 @@ export function WorkersRosterList({
         </p>
       ) : (
         <ul className="divide-y divide-(--line) border-y border-(--line)">
-          {shown.map(({ agent, status }) => (
+          {shown.map(({ agent, bench, status }) => (
             <li key={agent.id} className={`${ROW_GRID} relative px-3 py-3 hover:bg-(--hover)`}>
               <Link
                 to={workerPath(agent.id)}
@@ -178,7 +169,7 @@ export function WorkersRosterList({
                 <span className="min-w-0">
                   <span className="block text-[14.5px] font-extrabold">{agent.name}</span>
                   <WorkerRole
-                    tenantId={tenantId}
+                    tenantId={bench.id}
                     agent={agent}
                     className="truncate text-[12.5px] text-(--ink-3)"
                   />
@@ -193,20 +184,16 @@ export function WorkersRosterList({
                     size="sm"
                     className="relative"
                     disabled={restart.isPending}
-                    onClick={() => restart.mutate(agent)}
+                    onClick={() => restart.mutate({ agent, bench })}
                   >
-                    {restart.isPending && restart.variables?.id === agent.id
+                    {restart.isPending && restart.variables?.agent.id === agent.id
                       ? "Starting…"
                       : "Restart"}
                   </Button>
                 ) : null}
               </span>
               <span className="flex min-w-0 flex-wrap gap-x-2 text-[12.5px] font-semibold text-(--ink-2)">
-                {(byWorker.get(agent.id) ?? []).map((bench) => (
-                  <span key={bench.id} className="max-w-full truncate">
-                    {bench.name}
-                  </span>
-                ))}
+                <span className="max-w-full truncate">{bench.name}</span>
               </span>
               <span className="text-right text-[12.5px] text-(--ink-3)">
                 {agent.liveAddress === null ? "" : "Now"}
@@ -221,14 +208,7 @@ export function WorkersRosterList({
 
 export function WorkersRoute() {
   const { selectedTenantId } = useBench();
-  const agentsQuery = useTenantQuery(
-    tenantKeys.agents(selectedTenantId ?? "none"),
-    selectedTenantId !== null,
-    () => listChatAgents(selectedTenantId as string),
-    // Keep polling while any worker is not live, so a restart landing is
-    // seen without a reload.
-    (agents) => ((agents?.some((agent) => agent.liveAddress === null) ?? false) ? 3000 : false),
-  );
+  const { workers, loading, error } = useBenchWorkers();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -255,9 +235,15 @@ export function WorkersRoute() {
             />
           ) : (
             <>
-              <QueryView query={agentsQuery} label="your workers" skeleton="rows">
-                {(agents) => <WorkersRosterList tenantId={selectedTenantId} agents={agents} />}
-              </QueryView>
+              {error !== undefined ? (
+                <p role="alert" className="py-12 text-center text-[14px] text-(--danger-ink)">
+                  {error}
+                </p>
+              ) : loading ? (
+                <Skeleton className="h-40 w-full" />
+              ) : (
+                <WorkersRosterList workers={workers} />
+              )}
               <CreateAgentPanel
                 open={createOpen}
                 onOpenChange={setCreateOpen}
