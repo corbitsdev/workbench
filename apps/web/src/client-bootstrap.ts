@@ -49,8 +49,8 @@ export async function ensurePrimaryTenant(
 }
 
 // Resolved from the catalog at runtime, never hardcoded at the call site.
-export function resolveMyraDefinitionRefId(): string | undefined {
-  return WORKFLOW_CATALOG.find((entry) => entry.displayName === "Myra")?.assetName;
+export function resolveWorkerDefinitionRefId(): string | undefined {
+  return WORKFLOW_CATALOG.find((entry) => entry.displayName === "Worker")?.assetName;
 }
 
 export type ClientBootstrapAccount = {
@@ -64,11 +64,11 @@ export type ClientBootstrapDeps = {
   readonly storage: StringStorage;
   /** The hub origin this browser talks to — scopes persisted ids per hub. */
   readonly hubScope: string;
-  /** Override for the catalog-resolved Myra definition refId. */
-  readonly myraDefinitionRefId?: string;
-  /** Exact stock deployment inputs for Myra when she is absent. Caller
+  /** Override for the catalog-resolved Worker definition refId. */
+  readonly workerDefinitionRefId?: string;
+  /** Exact stock deployment inputs for Worker when she is absent. Caller
    * config only — never synthesized here. */
-  readonly myraDeploy?: WorkflowDeployInput;
+  readonly workerDeploy?: WorkflowDeployInput;
 };
 
 export type ClientBootstrapResult =
@@ -106,7 +106,7 @@ export const UPSTREAM_GAP_NOTES: Record<StockHubCapability, string> = {
   "primary-tenant-bootstrap":
     "Sign-in is expected to leave exactly one owned top-level home behind, but this session shows zero or several.",
   "deploy-workflow-inputs":
-    "Myra is absent and the client was not given the exact stock source and offering ids — supply myraDeploy from client config.",
+    "The worker is absent and the client was not given the exact stock source and offering ids — supply workerDeploy from client config.",
   "project-workflow-principal":
     "Stock Interchange cannot carry a workflow identity into a child workbench by refId, so workbench member setup waits on an upstream capability.",
   "principal-roles":
@@ -121,19 +121,19 @@ export async function bootstrapClientSession(
   account: ClientBootstrapAccount,
   deps: ClientBootstrapDeps,
 ): Promise<ClientBootstrapResult> {
-  const myraDefinitionRefId = deps.myraDefinitionRefId ?? resolveMyraDefinitionRefId();
-  if (myraDefinitionRefId === undefined) {
+  const workerDefinitionRefId = deps.workerDefinitionRefId ?? resolveWorkerDefinitionRefId();
+  if (workerDefinitionRefId === undefined) {
     return {
       kind: "error",
       code: "client-config-missing",
       message:
-        "The client catalog names no Myra workflow entry, so the bootstrap cannot identify the top-level Myra.",
+        "The client catalog names no worker workflow entry, so the bootstrap cannot identify the default worker.",
     };
   }
   const manifest = buildNeedsList({
     account: { id: account.id, name: account.name, email: account.email },
-    myraDefinitionRefId,
-    ...(deps.myraDeploy === undefined ? {} : { myraDeploy: deps.myraDeploy }),
+    workerDefinitionRefId,
+    ...(deps.workerDeploy === undefined ? {} : { workerDeploy: deps.workerDeploy }),
   });
   const store = childTenantStore(deps.storage, deps.hubScope, account.id);
   try {
@@ -213,17 +213,17 @@ export function logBootstrapThrown(log: ClientLogger, error: unknown): void {
 export function runPortableClientBootstrap(
   account: ClientBootstrapAccount,
   overrides?: {
-    readonly myraDefinitionRefId?: string;
-    readonly myraDeploy?: WorkflowDeployInput;
+    readonly workerDefinitionRefId?: string;
+    readonly workerDeploy?: WorkflowDeployInput;
   },
 ): Promise<ClientBootstrapResult> {
   return bootstrapClientSession(account, {
     hub: createFetchStockHub(),
     storage: localStorage,
     hubScope: window.location.origin,
-    ...(overrides?.myraDefinitionRefId === undefined
+    ...(overrides?.workerDefinitionRefId === undefined
       ? {}
-      : { myraDefinitionRefId: overrides.myraDefinitionRefId }),
-    ...(overrides?.myraDeploy === undefined ? {} : { myraDeploy: overrides.myraDeploy }),
+      : { workerDefinitionRefId: overrides.workerDefinitionRefId }),
+    ...(overrides?.workerDeploy === undefined ? {} : { workerDeploy: overrides.workerDeploy }),
   });
 }

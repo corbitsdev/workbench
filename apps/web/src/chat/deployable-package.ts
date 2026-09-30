@@ -17,7 +17,7 @@ const AgentDefinitionShape = type({
   "schedule?": "string",
   // Workspace-catalog server handles this agent binds, the same handles the
   // Tools page lists — each becomes a definition binding plus a use
-  // requirement, the same as Myra's Exa.
+  // requirement, the same as Worker's Exa.
   "mcpHandles?": "string[]",
 });
 

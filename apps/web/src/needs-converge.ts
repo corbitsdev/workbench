@@ -3,7 +3,7 @@
 
 import { type } from "arktype";
 
-import { MYRA_SOURCE_CONFIG } from "./myra-source";
+import { WORKER_SOURCE_CONFIG } from "./worker-source";
 import {
   childTenantStore,
   threadLinkStore,
@@ -100,7 +100,7 @@ export type StockHub = {
 
 export type HubSnapshot = {
   primaryTenant: HubTenant;
-  myraDeployed: boolean;
+  workerDeployed: boolean;
   primaryPrincipals: HubPrincipal[];
   childTenants: HubTenant[];
   childPrincipals: Record<string, HubPrincipal[]>;
@@ -171,24 +171,24 @@ export async function readHubSnapshot(hub: StockHub): Promise<HubSnapshot> {
     );
   }
   const childTenants = tenants.filter((tenant) => tenant.parentId === primaryTenant.id);
-  const [primaryPrincipals, childRows, myraDeployed] = await Promise.all([
+  const [primaryPrincipals, childRows, workerDeployed] = await Promise.all([
     hub.listPrincipals(primaryTenant.id),
     Promise.all(
       childTenants.map(async (tenant) => [tenant.id, await hub.listPrincipals(tenant.id)] as const),
     ),
-    hub.hasWorkflowDeployment(primaryTenant.id, MYRA_SOURCE_CONFIG.assetName),
+    hub.hasWorkflowDeployment(primaryTenant.id, WORKER_SOURCE_CONFIG.assetName),
   ]);
   return {
     primaryTenant,
-    myraDeployed,
+    workerDeployed,
     primaryPrincipals,
     childTenants,
     childPrincipals: Object.fromEntries(childRows),
   };
 }
 
-function hasMyra(_manifest: NeedsList, snapshot: HubSnapshot): boolean {
-  return snapshot.myraDeployed;
+function hasWorker(_manifest: NeedsList, snapshot: HubSnapshot): boolean {
+  return snapshot.workerDeployed;
 }
 
 export type ConvergeReport = {
@@ -273,10 +273,10 @@ export async function convergeNeedsList(
   const snapshot = suppliedSnapshot ?? (await readHubSnapshot(hub));
 
   // Gap checks first: nothing is written until every need is satisfiable.
-  if (!hasMyra(manifest, snapshot) && manifest.myra.deploy === undefined) {
+  if (!hasWorker(manifest, snapshot) && manifest.worker.deploy === undefined) {
     throw new StockHubCapabilityError(
       "deploy-workflow-inputs",
-      "Myra is absent and the client was not supplied the exact stock workflow source and offering ids.",
+      "The worker is absent and the client was not supplied the exact stock workflow source and offering ids.",
     );
   }
 
@@ -303,8 +303,8 @@ export async function convergeNeedsList(
     }
   }
 
-  if (!hasMyra(manifest, snapshot) && manifest.myra.deploy !== undefined) {
-    await hub.deployWorkflow(snapshot.primaryTenant.id, manifest.myra.deploy);
+  if (!hasWorker(manifest, snapshot) && manifest.worker.deploy !== undefined) {
+    await hub.deployWorkflow(snapshot.primaryTenant.id, manifest.worker.deploy);
   }
 
   // Writes after gap checks, in needs-list order: child tenant, then its

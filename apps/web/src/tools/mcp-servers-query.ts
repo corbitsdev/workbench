@@ -1,7 +1,7 @@
 // The Tools page's reads and writes over the workspace MCP catalog. The
 // catalog lives once on the workspace (top-level) tenant regardless of which
 // workbench is selected; adding or removing a server changes what every
-// workbench Myra carries, so every write ends in a redeploy of each Myra
+// workbench Worker carries, so every write ends in a redeploy of each Worker
 // whose binding list changed, and the page says how many.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -9,7 +9,7 @@ import { reportError } from "@corbits/error-sink";
 
 import { describeApiError, toAPIQuery, type APIQuery } from "@/lib/api-query";
 
-import { isMyraAgent, listChatAgents } from "../chat/threads-api";
+import { isDefaultWorker, listChatAgents } from "../chat/threads-api";
 import { listWorkbenchTenants } from "../chat/workbench-tenants";
 import { readAgentMcpHandles } from "../agent-source-read";
 import {
@@ -71,13 +71,13 @@ export function useMcpServers(tenantId: string | null): APIQuery<readonly McpSer
   return toAPIQuery(result);
 }
 
-/** Myra binds the whole workspace catalog, so any catalog change alters her
- * binding list in every workbench. Redeploys the workspace's own Myra and
+/** Worker binds the whole workspace catalog, so any catalog change alters her
+ * binding list in every workbench. Redeploys the workspace's own Worker and
  * each child workbench's, and returns how many were redeployed. */
 export type RedeployFailure = {
-  /** The tenant whose Myra did not come back. */
+  /** The tenant whose Worker did not come back. */
   readonly tenantId: string;
-  /** The workbench name the Tools page can show, so a stale Myra is named. */
+  /** The workbench name the Tools page can show, so a stale Worker is named. */
   readonly workbenchName: string;
   /** User-safe copy: status-derived, never a raw path or schema summary. */
   readonly error: string;
@@ -88,25 +88,25 @@ export type RedeployWorkspaceResult = {
   readonly failed: readonly RedeployFailure[];
 };
 
-type MyraRef = { readonly id: string; readonly name: string; readonly assetName: string };
+type WorkerRef = { readonly id: string; readonly name: string; readonly assetName: string };
 
-/** The per-workbench loop behind `redeployWorkspaceMyras`, factored for
+/** The per-workbench loop behind `redeployWorkspaceWorkers`, factored for
  * test: one workbench's failure never stops the rest — the catalog write
  * already landed, so failures come back named instead of failing the whole
  * mutation. */
-export async function redeployMyraTenants(
+export async function redeployWorkerTenants(
   tenants: readonly { readonly id: string; readonly name: string }[],
   deps: {
-    readonly findMyra: (tenantId: string) => Promise<MyraRef | undefined>;
-    readonly redeploy: (tenantId: string, myra: MyraRef) => Promise<void>;
+    readonly findWorker: (tenantId: string) => Promise<WorkerRef | undefined>;
+    readonly redeploy: (tenantId: string, worker: WorkerRef) => Promise<void>;
   },
 ): Promise<RedeployWorkspaceResult> {
   let redeployed = 0;
   const failed: RedeployFailure[] = [];
   for (const tenant of tenants) {
-    let myra: MyraRef | undefined;
+    let worker: WorkerRef | undefined;
     try {
-      myra = await deps.findMyra(tenant.id);
+      worker = await deps.findWorker(tenant.id);
     } catch (cause) {
       failed.push({
         tenantId: tenant.id,
@@ -115,15 +115,15 @@ export async function redeployMyraTenants(
       });
       continue;
     }
-    if (myra === undefined) continue;
+    if (worker === undefined) continue;
     try {
-      await deps.redeploy(tenant.id, myra);
+      await deps.redeploy(tenant.id, worker);
       redeployed += 1;
     } catch (cause) {
       failed.push({
         tenantId: tenant.id,
         workbenchName: tenant.name,
-        error: describeApiError(cause, "redeploying Myra"),
+        error: describeApiError(cause, "redeploying the worker"),
       });
     }
   }
@@ -134,28 +134,30 @@ export async function redeployMyraTenants(
  * the names a failed redeploy left stale. */
 export function describeRedeployResult(result: RedeployWorkspaceResult): string {
   const count = `${String(result.redeployed)} ${result.redeployed === 1 ? "workbench" : "workbenches"}`;
-  if (result.failed.length === 0) return `Myra redeployed in ${count}.`;
+  if (result.failed.length === 0) return `Worker redeployed in ${count}.`;
   const names = result.failed.map((failure) => failure.workbenchName).join(", ");
   return (
-    `Myra redeployed in ${count}, but the redeploy failed in ${names} — ` +
+    `Worker redeployed in ${count}, but the redeploy failed in ${names} — ` +
     `those workbenches still run the old catalog. Try the change again.`
   );
 }
 
-async function redeployWorkspaceMyras(workspaceTenantId: string): Promise<RedeployWorkspaceResult> {
+async function redeployWorkspaceWorkers(
+  workspaceTenantId: string,
+): Promise<RedeployWorkspaceResult> {
   const workbenches = await listWorkbenchTenants(workspaceTenantId);
-  const result = await redeployMyraTenants(
+  const result = await redeployWorkerTenants(
     [
       { id: workspaceTenantId, name: "workspace" },
       ...workbenches.map((workbench) => ({ id: workbench.id, name: workbench.title })),
     ],
     {
-      findMyra: async (tenantId) => (await listChatAgents(tenantId)).find(isMyraAgent),
-      redeploy: (tenantId, myra) => redeployWorkbenchAgent(tenantId, myra),
+      findWorker: async (tenantId) => (await listChatAgents(tenantId)).find(isDefaultWorker),
+      redeploy: (tenantId, worker) => redeployWorkbenchAgent(tenantId, worker),
     },
   );
   for (const failure of result.failed) {
-    reportError(new Error(`redeploying Myra in ${failure.tenantId} failed`), {
+    reportError(new Error(`redeploying the worker in ${failure.tenantId} failed`), {
       operation: "mcp_servers_redeploy",
     });
   }
@@ -176,7 +178,7 @@ function useInvalidateTools(tenantId: string | null) {
 
 export type AddMcpServerResult = {
   readonly server: McpServer;
-  /** How many workbench Myras were redeployed with the new catalog. */
+  /** How many workbench Workers were redeployed with the new catalog. */
   readonly redeployed: number;
   /** The workbenches whose redeploy failed — the catalog write already
    * landed, so these still run the old one. */
@@ -190,7 +192,7 @@ export function useAddMcpServer(tenantId: string | null) {
       const id = tenantId as string;
       const workspaceTenantId = await resolveWorkspaceTenantId(id);
       const server = await addMcpServer({ tenantId: workspaceTenantId, ...input });
-      const redeployed = await redeployWorkspaceMyras(workspaceTenantId);
+      const redeployed = await redeployWorkspaceWorkers(workspaceTenantId);
       return { server, ...redeployed };
     },
     onSettled: invalidate,
@@ -198,7 +200,7 @@ export function useAddMcpServer(tenantId: string | null) {
 }
 
 export type RemoveMcpServerResult = {
-  /** How many workbench Myras were redeployed without the server. */
+  /** How many workbench Workers were redeployed without the server. */
   readonly redeployed: number;
   /** The workbenches whose redeploy failed — the removal already landed,
    * so these still run the old catalog. */
@@ -216,7 +218,7 @@ export function useRemoveMcpServer(tenantId: string | null) {
         credentialId: server.credentialId,
         providerId: server.providerId,
       });
-      return redeployWorkspaceMyras(workspaceTenantId);
+      return redeployWorkspaceWorkers(workspaceTenantId);
     },
     onSettled: invalidate,
   });

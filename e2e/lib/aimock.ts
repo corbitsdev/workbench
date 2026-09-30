@@ -6,7 +6,7 @@ import { LLMock } from "@copilotkit/aimock";
 
 export type Fixture = Parameters<LLMock["addFixture"]>[0];
 
-export const MOCK_REPLY = "Hi, I'm Myra. I'll go by Ada here.";
+export const MOCK_REPLY = "Hey there, I'm your new co-worker. I'll go by Ada here.";
 
 export type BootedAimock = {
   /** Origin the mock listens on, e.g. http://127.0.0.1:41234. */

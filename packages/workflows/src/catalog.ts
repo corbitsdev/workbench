@@ -51,7 +51,7 @@ export type WorkflowCatalogEntry = {
    * A real chat partner a person can open a DM with and converse
    * freely — as opposed to a mail-triggered utility whose only sane
    * input is its declared trigger contract. Only the seeded
-   * `assistant`/Myra definition is `true`.
+   * default worker definition is `true`.
    */
   readonly conversational: boolean;
   /** Where a run's result lands: `"workbench"` posts into the picked
@@ -84,7 +84,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     conversational: true,
     deliveryMode: "workbench",
     whatItDoes:
-      "A general-purpose assistant for the workspace — answers questions, drafts text, and reasons through problems in conversation.",
+      "A co-worker in one workbench — answers questions, drafts text, and gets things done in conversation.",
     requiredConnections: [],
     exampleOutput: "Drafted a short, polite decline you can send as-is",
     typicalDuration: "varies with the conversation",

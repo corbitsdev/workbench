@@ -1,7 +1,7 @@
 // A manual trigger through the stock trigger route (what the Routines page's
 // Run now calls) answers 202 and the run shows up in the stock runs listing.
 // The harness has no scripted inference and no deployed non-agent workflow,
-// so Myra's own deployment is the only thing triggerable and the brief +
+// so Worker's own deployment is the only thing triggerable and the brief +
 // artifact half is not asserted.
 import { expect, test } from "bun:test";
 import { bootBrowserApp, browserGate } from "../lib/browser";
@@ -15,7 +15,7 @@ const TRIGGER_SCRIPT = `(async () => {
   const json = async (r) => ({ status: r.status, body: await r.json().catch(() => null) });
   const benchTenant = await json(await fetch("/api/tenants/" + bench));
   const tenants = [bench, benchTenant.body?.parentId].filter(Boolean);
-  // Myra deploys asynchronously after setup, so poll for the deployment.
+  // Worker deploys asynchronously after setup, so poll for the deployment.
   let lastListing = null;
   for (let attempt = 0; attempt < 60; attempt++) {
     for (const tenantId of tenants) {

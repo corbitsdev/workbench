@@ -7,7 +7,7 @@ import { reportError } from "@corbits/error-sink";
 
 import { agentSlugFromSourceAssetName } from "../agent-deploy";
 import { listTopLevelRuns } from "../agents-api";
-import { MYRA_SOURCE_CONFIG } from "../myra-source";
+import { WORKER_SOURCE_CONFIG } from "../worker-source";
 import { personMailAddress } from "../mail-address";
 import { mentionedAgents } from "./mentions";
 import { appendRoster } from "./workbench-roster";
@@ -55,10 +55,10 @@ export type MailAttachment = {
   readonly text: string;
 };
 
-// Myra's deploy asset name is not a display name anyone should read;
+// Worker's deploy asset name is not a display name anyone should read;
 // every other agent's slug renders title-cased ("echo-bot" -> "Echo Bot").
 export function displayAgentName(definitionName: string): string {
-  if (definitionName === MYRA_SOURCE_CONFIG.assetName) return MYRA_SOURCE_CONFIG.displayName;
+  if (definitionName === WORKER_SOURCE_CONFIG.assetName) return WORKER_SOURCE_CONFIG.displayName;
   const slug = agentSlugFromSourceAssetName(definitionName);
   if (slug === null) return definitionName;
   return slug
@@ -68,9 +68,9 @@ export function displayAgentName(definitionName: string): string {
     .join(" ");
 }
 
-/** Myra is always in a new workbench and never a pickable option. */
-export function isMyraAgent(agent: Pick<ChatAgent, "assetName">): boolean {
-  return agent.assetName === MYRA_SOURCE_CONFIG.assetName;
+/** Worker is always in a new workbench and never a pickable option. */
+export function isDefaultWorker(agent: Pick<ChatAgent, "assetName">): boolean {
+  return agent.assetName === WORKER_SOURCE_CONFIG.assetName;
 }
 
 export function agentInitials(name: string): string {

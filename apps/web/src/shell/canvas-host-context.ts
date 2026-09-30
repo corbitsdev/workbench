@@ -30,7 +30,7 @@ export type RoutinePanelSubject = {
   readonly initialName?: string;
   readonly initialInstruction?: string;
   // Omitted only with no open conversation to bind to, in which case the
-  // panel falls back to this workbench's own default (Myra) — never mints
+  // panel falls back to this workbench's own default (Worker) — never mints
   // a new one.
   readonly workbenchId?: string;
   // The opener's single resolved agent participant, when there was

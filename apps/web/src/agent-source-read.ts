@@ -113,7 +113,7 @@ export async function readAgentSource(
 }
 
 /** Empty for an agent whose tools ride bundled into its `workflow.js`
- * closure instead — see `deployed-tool-packages.ts`'s `MYRA_TOOL_PACKAGES`. */
+ * closure instead — see `deployed-tool-packages.ts`'s `WORKER_TOOL_PACKAGES`. */
 export async function readAgentToolPackagePins(
   tenantId: string,
   assetId: string,

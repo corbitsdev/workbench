@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ensurePrimaryTenant, runPortableClientBootstrap } from "../client-bootstrap";
 import { createFetchStockHub, findOwnedTenants } from "../needs-converge";
-import { deployMyraSource } from "../myra-deploy";
+import { deployWorkerSource } from "../worker-deploy";
 import { useNavigate } from "../navigation";
 import { NEW_WORKBENCH_PATH } from "../routes";
 import { triggerFirstLoginProvisioning } from "../onboarding";
@@ -25,8 +25,8 @@ type GateState =
   | { readonly phase: "checking" }
   | { readonly phase: "resolving-tenant" }
   | { readonly phase: "provider-setup"; readonly tenantId: string }
-  | { readonly phase: "publishing-myra" }
-  | { readonly phase: "installing"; readonly myraDeploy: WorkflowDeployInput }
+  | { readonly phase: "publishing-worker" }
+  | { readonly phase: "installing"; readonly workerDeploy: WorkflowDeployInput }
   | { readonly phase: "ready" }
   | {
       readonly phase: "setup-pending";
@@ -100,7 +100,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
           (existing) => {
             if (cancelled) return;
             if (existing !== null) {
-              setState({ phase: "publishing-myra" });
+              setState({ phase: "publishing-worker" });
               void publishAndInstall(primary.id, primary.domain, existing);
               return;
             }
@@ -139,33 +139,34 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     tenantDomain: string,
     offering: ExistingOffering,
   ): Promise<void> {
-    return deployMyraSource({
+    return deployWorkerSource({
       tenantId,
       tenantDomain,
       sourceOfferingIds: offering.sourceOfferingIds,
       defaultSourceOfferingId: offering.defaultSourceOfferingId,
       declaredSources: offering.declaredSources,
     }).then(
-      (myraDeploy) => setState({ phase: "installing", myraDeploy }),
+      (workerDeploy) => setState({ phase: "installing", workerDeploy }),
       (error: unknown) => {
         setState({
           phase: "error",
-          message: error instanceof Error ? error.message : "Publishing Myra's source hit a snag.",
+          message:
+            error instanceof Error ? error.message : "Publishing your worker's source hit a snag.",
         });
       },
     );
   }
 
-  // Step 4: the installer itself, run once a `myraDeploy` is in hand. A
+  // Step 4: the installer itself, run once a `workerDeploy` is in hand. A
   // converged install hands off to the shell; a stock capability gap or
   // a hard failure surfaces here instead of retrying silently forever.
   useEffect(() => {
     if (state.phase !== "installing") return;
     let cancelled = false;
-    // StrictMode re-runs this effect once; the converge deploys Myra, so a
+    // StrictMode re-runs this effect once; the converge deploys Worker, so a
     // second concurrent run would deploy her twice. Reuse the in-flight one.
     installRef.current ??= runPortableClientBootstrap(user, {
-      myraDeploy: state.myraDeploy,
+      workerDeploy: state.workerDeploy,
     });
     void installRef.current.then(
       (result) => {
@@ -219,7 +220,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
               tenantId={state.tenantId}
               onConnected={(offering) => {
                 const tenantId = state.tenantId;
-                setState({ phase: "publishing-myra" });
+                setState({ phase: "publishing-worker" });
                 // The tenant's domain never changes mid-flow — re-derive
                 // it fresh rather than threading it through state, since
                 // `resolving-tenant` already looked the tenant up once.
@@ -244,14 +245,16 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     );
   }
 
-  if (state.phase === "publishing-myra" || state.phase === "installing") {
+  if (state.phase === "publishing-worker" || state.phase === "installing") {
     return (
       <OnboardingLayout step={2}>
         <div className="onboarding-phase onboarding-phase--loading" key="installing">
           <WorkbenchLoadingState
             delayMs={0}
             title={
-              state.phase === "publishing-myra" ? "Connecting your model…" : "Getting Myra ready…"
+              state.phase === "publishing-worker"
+                ? "Connecting your model…"
+                : "Getting your worker ready…"
             }
           />
         </div>
@@ -263,7 +266,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     return (
       <OnboardingLayout step={3}>
         <div className="onboarding-phase" key="ready">
-          <h1 className="onboarding-title">Myra is ready</h1>
+          <h1 className="onboarding-title">Your worker is ready</h1>
           <p className="onboarding-subtitle">
             Describe the job and your co-worker sets up the rest.
           </p>

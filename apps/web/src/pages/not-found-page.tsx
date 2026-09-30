@@ -12,7 +12,7 @@ export function NotFoundPage() {
         description="This page doesn't exist."
         action={
           <Button asChild variant="outline">
-            <Link to="/">Back to Myra</Link>
+            <Link to="/">Back to your workbench</Link>
           </Button>
         }
       />

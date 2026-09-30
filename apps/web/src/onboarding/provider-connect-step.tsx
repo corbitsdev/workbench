@@ -177,7 +177,7 @@ export type DeclaredSource = {
 export type ExistingOffering = {
   readonly sourceOfferingIds: readonly string[];
   readonly defaultSourceOfferingId: string;
-  /** Same order as `sourceOfferingIds`; Myra declares these so the probe
+  /** Same order as `sourceOfferingIds`; Worker declares these so the probe
    * approves exactly what the offering chain resolves to. */
   readonly declaredSources: readonly DeclaredSource[];
 };

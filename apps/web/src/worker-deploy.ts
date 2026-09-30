@@ -1,4 +1,4 @@
-// Builds and publishes Myra's deployable definition entirely over stock
+// Builds and publishes the worker's deployable definition entirely over stock
 // routes, ending with a `WorkflowDeployInput` pinned to the pushed commit.
 import { WORKER_SYSTEM_PROMPT } from "@corbits/worker/prompt";
 import {
@@ -18,11 +18,11 @@ import { type } from "arktype";
 import { ensureAgentHubCredential } from "./agent-hub-credential";
 import { ensureBuiltInMcpServers, toMcpServerDeployment } from "./mcp-servers";
 
-import { MYRA_SOURCE_CONFIG } from "./myra-source";
+import { WORKER_SOURCE_CONFIG } from "./worker-source";
 import type { WorkflowDeployInput } from "./needs-list";
 import type { DeclaredSource } from "./onboarding/provider-connect-step";
 
-export class MyraDeployError extends Error {}
+export class WorkerDeployError extends Error {}
 
 const AssetCreatedShape = type({ id: "string" });
 const AssetListShape = type({ id: "string", name: "string" }).array();
@@ -38,9 +38,9 @@ async function readErrorBody(response: Response): Promise<string> {
   return envelope instanceof type.errors ? `HTTP ${response.status}` : envelope.error.userMessage;
 }
 
-/** Idempotently ensures the `workflow` asset Myra's source is pushed
+/** Idempotently ensures the `workflow` asset the worker's source is pushed
  * into: create it, or on 409 find the existing one by name. */
-export async function ensureMyraSourceAsset(
+export async function ensureWorkerSourceAsset(
   tenantId: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
@@ -48,48 +48,52 @@ export async function ensureMyraSourceAsset(
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      kind: MYRA_SOURCE_CONFIG.assetKind,
-      name: MYRA_SOURCE_CONFIG.assetName,
-      displayName: MYRA_SOURCE_CONFIG.displayName,
+      kind: WORKER_SOURCE_CONFIG.assetKind,
+      name: WORKER_SOURCE_CONFIG.assetName,
+      displayName: WORKER_SOURCE_CONFIG.displayName,
     }),
   });
   if (created.status === 201) {
     const parsed = AssetCreatedShape(await created.json());
     if (parsed instanceof type.errors) {
-      throw new MyraDeployError(`Myra's source came back an unexpected shape: ${parsed.summary}`);
+      throw new WorkerDeployError(
+        `the worker's source came back an unexpected shape: ${parsed.summary}`,
+      );
     }
     return parsed.id;
   }
   if (created.status !== 409) {
-    throw new MyraDeployError(`preparing Myra's source failed: ${await readErrorBody(created)}`);
+    throw new WorkerDeployError(
+      `preparing the worker's source failed: ${await readErrorBody(created)}`,
+    );
   }
   const listed = await fetchImpl(
-    `/api/tenants/${encodeURIComponent(tenantId)}/assets?kind=${MYRA_SOURCE_CONFIG.assetKind}&inherited=false`,
+    `/api/tenants/${encodeURIComponent(tenantId)}/assets?kind=${WORKER_SOURCE_CONFIG.assetKind}&inherited=false`,
   );
   if (!listed.ok) {
-    throw new MyraDeployError(
+    throw new WorkerDeployError(
       `checking this workbench's setup failed: ${await readErrorBody(listed)}`,
     );
   }
   const parsed = AssetListShape(await listed.json());
   if (parsed instanceof type.errors) {
-    throw new MyraDeployError(
+    throw new WorkerDeployError(
       `this workbench's setup list came back an unexpected shape: ${parsed.summary}`,
     );
   }
-  const existing = parsed.find((asset) => asset.name === MYRA_SOURCE_CONFIG.assetName);
+  const existing = parsed.find((asset) => asset.name === WORKER_SOURCE_CONFIG.assetName);
   if (existing === undefined) {
-    throw new MyraDeployError(
-      "Myra's source reported a name conflict but is not listed on this workbench",
+    throw new WorkerDeployError(
+      "the worker's source reported a name conflict but is not listed on this workbench",
     );
   }
   return existing.id;
 }
 
-// Hand-built rather than calling `buildMyraWorkflow` directly, since that
+// Hand-built rather than calling `buildWorkerWorkflow` directly, since that
 // pulls in a Node-bound runtime a browser bundle can't resolve. See
-// docs/myra-definition-json.md.
-export function buildMyraDefinitionJson(
+// docs/worker-definition-json.md.
+export function buildWorkerDefinitionJson(
   triggerAddress: string,
   declaredSources: readonly DeclaredSource[],
   hubCredentialId: string,
@@ -110,7 +114,7 @@ export function buildMyraDefinitionJson(
       memoryToolsCredentialUseRequirement(hubCredentialId),
       ...mcpServers.map((server) => mcpServerCredentialUseRequirement(server.credentialId)),
     ],
-    // `to` only feeds the deploy-time mail.address/mail.send grants; Myra is
+    // `to` only feeds the deploy-time mail.address/mail.send grants; Worker is
     // actually reached at her run address, minted at deploy time.
     triggers: [{ type: "mail", to: triggerAddress }],
     steps: {
@@ -155,7 +159,7 @@ async function withPushToken<T>(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       // Active token names are unique per user; concurrent attempts must not collide.
-      name: `myra-deploy-${crypto.randomUUID()}`,
+      name: `worker-deploy-${crypto.randomUUID()}`,
       resource: `asset:${assetId}`,
       refPattern: "refs/heads/main",
       // The ref advertisement before a push is a read, so a push-only
@@ -165,11 +169,11 @@ async function withPushToken<T>(
     }),
   });
   if (!minted.ok) {
-    throw new MyraDeployError(`minting a push token failed: ${await readErrorBody(minted)}`);
+    throw new WorkerDeployError(`minting a push token failed: ${await readErrorBody(minted)}`);
   }
   const token = GitTokenMintShape(await minted.json());
   if (token instanceof type.errors) {
-    throw new MyraDeployError(`the push token came back an unexpected shape: ${token.summary}`);
+    throw new WorkerDeployError(`the push token came back an unexpected shape: ${token.summary}`);
   }
   try {
     return await push(token.secret);
@@ -180,9 +184,9 @@ async function withPushToken<T>(
   }
 }
 
-/** Renders Myra's built definition as a source tree and pushes it to the
+/** Renders the worker's built definition as a source tree and pushes it to the
  * asset's `main`. Returns the commit sha the deploy pins to. */
-export async function pushMyraSource(
+export async function pushWorkerSource(
   tenantId: string,
   assetId: string,
   tenantDomain: string,
@@ -191,13 +195,13 @@ export async function pushMyraSource(
   mcpServers: readonly McpServerDeployment[],
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
-  const triggerAddress = `assistant@${tenantDomain}`;
+  const triggerAddress = `worker@${tenantDomain}`;
   // Half a megabyte of bundled entry text, needed only during setup — kept
   // out of the app's entry chunk the same way the git client is.
   const { WORKER_BUNDLE_BUILD_EXPORT, WORKER_DIRECTORS_BUNDLE, WORKER_WORKFLOW_BUNDLE } =
     await import("@corbits/worker/bundle");
   const tree = renderBundledWorkflowSourceTree({
-    packageName: MYRA_SOURCE_CONFIG.packageName,
+    packageName: WORKER_SOURCE_CONFIG.packageName,
     bundle: WORKER_WORKFLOW_BUNDLE,
     directorsBundle: WORKER_DIRECTORS_BUNDLE,
     buildExport: WORKER_BUNDLE_BUILD_EXPORT,
@@ -210,11 +214,11 @@ export async function pushMyraSource(
       mcpServers,
     },
     workflowJson: JSON.stringify(
-      buildMyraDefinitionJson(triggerAddress, declaredSources, hubCredentialId, mcpServers),
+      buildWorkerDefinitionJson(triggerAddress, declaredSources, hubCredentialId, mcpServers),
     ),
   });
   const url = new URL(
-    `/api/tenants/${encodeURIComponent(tenantId)}/assets/${MYRA_SOURCE_CONFIG.assetKind}/${MYRA_SOURCE_CONFIG.assetName}.git`,
+    `/api/tenants/${encodeURIComponent(tenantId)}/assets/${WORKER_SOURCE_CONFIG.assetKind}/${WORKER_SOURCE_CONFIG.assetName}.git`,
     globalThis.location.origin,
   ).toString();
   // Loaded on demand: the git client only runs during setup, so it stays
@@ -231,7 +235,7 @@ export async function pushMyraSource(
           url,
           token,
           tree,
-          message: "Publish Myra's definition",
+          message: "Publish the worker's definition",
         })
       ).commitSha,
   );
@@ -240,17 +244,17 @@ export async function pushMyraSource(
 /** The pure mapping this module exists to get right: the operator's
  * offering pick plus the commit just pushed, turned into the exact
  * `WorkflowDeployInput` `convergeNeedsList` needs. */
-export function buildMyraDeployInput(args: {
+export function buildWorkerDeployInput(args: {
   assetId: string;
   commitSha: string;
   sourceOfferingIds: readonly string[];
   defaultSourceOfferingId: string;
 }): WorkflowDeployInput {
   if (args.sourceOfferingIds.length === 0) {
-    throw new MyraDeployError("at least one source offering id is required to start Myra");
+    throw new WorkerDeployError("at least one source offering id is required to start Worker");
   }
   if (!args.sourceOfferingIds.includes(args.defaultSourceOfferingId)) {
-    throw new MyraDeployError(
+    throw new WorkerDeployError(
       "the default source offering id must be one of the supplied source offering ids",
     );
   }
@@ -260,15 +264,15 @@ export function buildMyraDeployInput(args: {
       assetId: args.assetId,
       package: { format: "source", commitSha: args.commitSha },
     },
-    entry: MYRA_SOURCE_CONFIG.entryPath,
+    entry: WORKER_SOURCE_CONFIG.entryPath,
     sourceOfferingIds: [...args.sourceOfferingIds],
     defaultSourceOfferingId: args.defaultSourceOfferingId,
   };
 }
 
-/** Orchestrates the steps above and returns the `myraDeploy` input
+/** Orchestrates the steps above and returns the `workerDeploy` input
  * ready to hand to `bootstrapClientSession`/`convergeNeedsList`. */
-export async function deployMyraSource(
+export async function deployWorkerSource(
   args: {
     tenantId: string;
     tenantDomain: string;
@@ -278,7 +282,7 @@ export async function deployMyraSource(
   },
   fetchImpl: typeof fetch = fetch,
 ): Promise<WorkflowDeployInput> {
-  const assetId = await ensureMyraSourceAsset(args.tenantId, fetchImpl);
+  const assetId = await ensureWorkerSourceAsset(args.tenantId, fetchImpl);
   // Minted before the push: the definition binds this credential by name
   // and requires its use by id, so it must exist before the source does.
   const hubCredentialId = await ensureAgentHubCredential(
@@ -290,7 +294,7 @@ export async function deployMyraSource(
   const mcpServers = (await ensureBuiltInMcpServers(args.tenantId, fetchImpl)).map(
     toMcpServerDeployment,
   );
-  const commitSha = await pushMyraSource(
+  const commitSha = await pushWorkerSource(
     args.tenantId,
     assetId,
     args.tenantDomain,
@@ -299,7 +303,7 @@ export async function deployMyraSource(
     mcpServers,
     fetchImpl,
   );
-  return buildMyraDeployInput({
+  return buildWorkerDeployInput({
     assetId,
     commitSha,
     sourceOfferingIds: args.sourceOfferingIds,

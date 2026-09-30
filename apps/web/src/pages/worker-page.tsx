@@ -9,7 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { GrantEffect } from "@intx/types";
 
 import { WorkbenchAvatar } from "@/chat/avatar";
-import { isMyraAgent, listChatAgents, type ChatAgent } from "@/chat/threads-api";
+import { isDefaultWorker, listChatAgents, type ChatAgent } from "@/chat/threads-api";
 import { ChatCircle } from "@/lib/icons";
 import { QueryView, describeApiError } from "@/lib/api-query";
 import { listTopLevelRuns } from "../agents-api";
@@ -40,7 +40,7 @@ function InstructionsCard({
   readonly agent: ChatAgent;
 }) {
   const queryClient = useQueryClient();
-  const editable = !isMyraAgent(agent);
+  const editable = !isDefaultWorker(agent);
   const source = useQuery({
     queryKey: sourceKey(tenantId, agent.id),
     queryFn: () => readAgentSource(tenantId, agent.id, agent.assetName),
@@ -120,7 +120,7 @@ function InstructionsCard({
             </div>
           ) : (
             <p className="mt-3 text-[12.5px] text-(--ink-3)">
-              Myra's instructions ship with Workbench and can't be edited here.
+              The default worker's instructions ship with Workbench and can't be edited here.
             </p>
           )}
         </>

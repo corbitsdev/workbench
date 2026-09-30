@@ -1,7 +1,7 @@
 import { CorbitsMark } from "@corbits/react-ui";
 import type { ReactNode } from "react";
 
-const STEP_LABELS = ["Workspace", "Model", "Myra"] as const;
+const STEP_LABELS = ["Workspace", "Model", "Worker"] as const;
 
 /**
  * Single centered column with a step progress bar, matching the onboarding

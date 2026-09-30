@@ -3,23 +3,23 @@
 // can anchor from a browser.
 import { type } from "arktype";
 
-export const MyraSourceConfig = type({
+export const WorkerSourceConfig = type({
   assetKind: "'workflow'",
   assetName: "string > 0",
   displayName: "string > 0",
   packageName: "string > 0",
   entryPath: "string > 0",
 });
-export type MyraSourceConfig = typeof MyraSourceConfig.infer;
+export type WorkerSourceConfig = typeof WorkerSourceConfig.infer;
 
-const parsed = MyraSourceConfig({
+const parsed = WorkerSourceConfig({
   assetKind: "workflow",
-  assetName: "myra-deploy-source",
-  displayName: "Myra",
-  packageName: "@workbench-onboarding/myra",
+  assetName: "worker-deploy-source",
+  displayName: "New worker",
+  packageName: "@workbench/worker",
   entryPath: "./workflow.js",
 });
 if (parsed instanceof type.errors) {
-  throw new Error(`invalid MYRA_SOURCE_CONFIG literal: ${parsed.summary}`);
+  throw new Error(`invalid WORKER_SOURCE_CONFIG literal: ${parsed.summary}`);
 }
-export const MYRA_SOURCE_CONFIG: MyraSourceConfig = parsed;
+export const WORKER_SOURCE_CONFIG: WorkerSourceConfig = parsed;

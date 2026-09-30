@@ -155,7 +155,7 @@ export type PriorityPatch = {
 
 /**
  * One cross-model route for the shared default: the first offering powers
- * Myra and newly created workbenches; the remainder are tried in order when
+ * Worker and newly created workbenches; the remainder are tried in order when
  * a definition does not pin a model of its own. Priority is the durable
  * catalog value the runtime already understands. The explicit tiebreakers
  * keep an untouched, equal-priority seed deterministic in both the UI and

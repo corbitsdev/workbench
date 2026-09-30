@@ -1,13 +1,13 @@
 // Read off what agents actually carry, not a registry that outlives them.
-// Myra's tools are bundled, so her package.json is the source of truth.
+// Worker's tools are bundled, so her package.json is the source of truth.
 
 import { useQuery } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
-import myraPackage from "@corbits/worker/package.json";
+import workerPackage from "@corbits/worker/package.json";
 
 import { toAPIQuery, type APIQuery } from "@/lib/api-query";
 
-import { isMyraAgent, listChatAgents, type ChatAgent } from "../chat/threads-api";
+import { isDefaultWorker, listChatAgents, type ChatAgent } from "../chat/threads-api";
 import { readAgentToolPackagePins } from "../agent-source-read";
 
 export type DeployedToolPackage = {
@@ -17,10 +17,10 @@ export type DeployedToolPackage = {
   readonly agentNames: readonly string[];
 };
 
-/** Myra's bundled tools: every `@intx/tools-*` dependency her package.json
+/** Worker's bundled tools: every `@intx/tools-*` dependency her package.json
  * declares, at the version it pins there. */
-const MYRA_TOOL_PACKAGES: readonly { readonly name: string; readonly version: string }[] =
-  Object.entries(myraPackage.dependencies as Record<string, string>)
+const WORKER_TOOL_PACKAGES: readonly { readonly name: string; readonly version: string }[] =
+  Object.entries(workerPackage.dependencies as Record<string, string>)
     .filter(([name]) => name.startsWith("@intx/tools-"))
     .map(([name, version]) => ({ name, version }));
 
@@ -32,7 +32,7 @@ async function toolPackagesOf(
   tenantId: string,
   agent: ChatAgent,
 ): Promise<readonly { readonly name: string; readonly version: string | null }[]> {
-  if (isMyraAgent(agent)) return MYRA_TOOL_PACKAGES;
+  if (isDefaultWorker(agent)) return WORKER_TOOL_PACKAGES;
   try {
     return await readAgentToolPackagePins(tenantId, agent.id, agent.assetName);
   } catch (error) {

@@ -36,7 +36,7 @@ export async function runFirstRunFlow(page: Page, origin: string): Promise<void>
   await page.type("input[type=password]", "sk-ant-placeholder");
   await clickText(page, "button", "Connect");
 
-  // Connecting installs Myra, then the ready screen hands off to the
+  // Connecting installs Worker, then the ready screen hands off to the
   // new-workbench prompt (a workspace with no workbenches).
   await clickText(page, "button", "Start your first workbench");
   await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });

@@ -21,11 +21,11 @@ function message(
 describe("thread grouping", () => {
   test("groups List-ID members into one M:N thread across subjects", () => {
     const threads = deriveThreads([
-      message("<a@example>", "ada@example.com", ["myra@example.com"], {
+      message("<a@example>", "ada@example.com", ["worker@example.com"], {
         subject: "Atlas kickoff",
         listId: "atlas.example",
       }),
-      message("<b@example>", "myra@example.com", ["ada@example.com"], {
+      message("<b@example>", "worker@example.com", ["ada@example.com"], {
         subject: "Something entirely different",
         listId: "atlas.example",
       }),
@@ -41,10 +41,10 @@ describe("thread grouping", () => {
 
   test("chains In-Reply-To/References replies under their root", () => {
     const threads = deriveThreads([
-      message("<root@example>", "ada@example.com", ["myra@example.com"], {
+      message("<root@example>", "ada@example.com", ["worker@example.com"], {
         subject: "Hello",
       }),
-      message("<reply@example>", "myra@example.com", ["ada@example.com"], {
+      message("<reply@example>", "worker@example.com", ["ada@example.com"], {
         subject: "Re: Hello",
         inReplyTo: "<root@example>",
         references: ["<root@example>"],
@@ -60,13 +60,13 @@ describe("thread grouping", () => {
 
   test("falls back to normalized subject when no List-ID or reply chain exists", () => {
     const threads = deriveThreads([
-      message("<a@example>", "ada@example.com", ["myra@example.com"], {
+      message("<a@example>", "ada@example.com", ["worker@example.com"], {
         subject: "Status update",
       }),
-      message("<b@example>", "myra@example.com", ["ada@example.com"], {
+      message("<b@example>", "worker@example.com", ["ada@example.com"], {
         subject: "Re:  STATUS update",
       }),
-      message("<c@example>", "ada@example.com", ["myra@example.com"], {
+      message("<c@example>", "ada@example.com", ["worker@example.com"], {
         subject: "Unrelated",
       }),
     ]);
@@ -79,8 +79,8 @@ describe("thread grouping", () => {
 
   test("keeps subject-less, link-less messages solo", () => {
     const threads = deriveThreads([
-      message("<a@example>", "ada@example.com", ["myra@example.com"]),
-      message("<b@example>", "ada@example.com", ["myra@example.com"]),
+      message("<a@example>", "ada@example.com", ["worker@example.com"]),
+      message("<b@example>", "ada@example.com", ["worker@example.com"]),
     ]);
 
     expect(threads.map((thread) => thread.messageIds)).toEqual([["<a@example>"], ["<b@example>"]]);
@@ -88,7 +88,7 @@ describe("thread grouping", () => {
 
   test("keeps same-subject messages with distinct correspondents separate", () => {
     const threads = deriveThreads([
-      message("<a@example>", "ada@example.com", ["myra@example.com"], {
+      message("<a@example>", "ada@example.com", ["worker@example.com"], {
         subject: "Hello",
       }),
       message("<b@example>", "ada@example.com", ["reviewer@example.com"], {
@@ -101,10 +101,10 @@ describe("thread grouping", () => {
 
   test("scopes the subject fallback to a single participant set", () => {
     const threads = deriveThreads([
-      message("<a@example>", "ada@example.com", ["myra@example.com"], {
+      message("<a@example>", "ada@example.com", ["worker@example.com"], {
         subject: "Status update",
       }),
-      message("<b@example>", "myra@example.com", ["ada@example.com"], {
+      message("<b@example>", "worker@example.com", ["ada@example.com"], {
         subject: "Re: STATUS update",
       }),
       message("<c@example>", "ada@example.com", ["reviewer@example.com"], {
@@ -125,10 +125,10 @@ describe("DM derivation from participant-filtered threads", () => {
   test("derives one DM per thread between the user and exactly one agent chain", () => {
     const threads = deriveDmThreads(
       [
-        message("<a@example>", "ada@example.com", ["myra@example.com"], {
+        message("<a@example>", "ada@example.com", ["worker@example.com"], {
           subject: "Hi",
         }),
-        message("<b@example>", "myra@example.com", ["ada@example.com"], {
+        message("<b@example>", "worker@example.com", ["ada@example.com"], {
           subject: "Re: Hi",
           inReplyTo: "<a@example>",
           references: ["<a@example>"],
@@ -142,7 +142,7 @@ describe("DM derivation from participant-filtered threads", () => {
 
     expect(threads).toEqual([
       {
-        agentAddress: "myra@example.com",
+        agentAddress: "worker@example.com",
         rootMessageId: "<a@example>",
         messageIds: ["<a@example>", "<b@example>"],
       },
@@ -157,7 +157,7 @@ describe("DM derivation from participant-filtered threads", () => {
   test("keeps distinct 1:1 pairs sharing a subject as separate DMs", () => {
     const threads = deriveDmThreads(
       [
-        message("<a@example>", "ada@example.com", ["myra@example.com"], {
+        message("<a@example>", "ada@example.com", ["worker@example.com"], {
           subject: "Hello",
         }),
         message("<b@example>", "ada@example.com", ["reviewer@example.com"], {
@@ -169,7 +169,7 @@ describe("DM derivation from participant-filtered threads", () => {
 
     expect(threads).toEqual([
       {
-        agentAddress: "myra@example.com",
+        agentAddress: "worker@example.com",
         rootMessageId: "<a@example>",
         messageIds: ["<a@example>"],
       },
@@ -184,9 +184,12 @@ describe("DM derivation from participant-filtered threads", () => {
   test("excludes group threads, user-only threads, and agent-only threads", () => {
     const threads = deriveDmThreads(
       [
-        message("<group@example>", "ada@example.com", ["myra@example.com", "reviewer@example.com"]),
+        message("<group@example>", "ada@example.com", [
+          "worker@example.com",
+          "reviewer@example.com",
+        ]),
         message("<solo@example>", "ada@example.com", ["ada@example.com"]),
-        message("<agents@example>", "myra@example.com", ["reviewer@example.com"]),
+        message("<agents@example>", "worker@example.com", ["reviewer@example.com"]),
       ],
       user,
     );
@@ -197,8 +200,8 @@ describe("DM derivation from participant-filtered threads", () => {
   test("matches addresses case-insensitively across To and Cc", () => {
     const direct = deriveDmThreads(
       [
-        message("<a@example>", "Myra@Example.com", ["ADA@example.com"], {
-          cc: ["MYRA@example.com"],
+        message("<a@example>", "Worker@Example.com", ["ADA@example.com"], {
+          cc: ["WORKER@example.com"],
         }),
       ],
       user,
@@ -206,7 +209,7 @@ describe("DM derivation from participant-filtered threads", () => {
 
     expect(direct).toEqual([
       {
-        agentAddress: "myra@example.com",
+        agentAddress: "worker@example.com",
         rootMessageId: "<a@example>",
         messageIds: ["<a@example>"],
       },
@@ -218,11 +221,11 @@ describe("participants", () => {
   test("unions From, To, and Cc into one membership set", () => {
     expect(
       participantsOf(
-        message("<a@example>", "ada@example.com", ["myra@example.com"], {
+        message("<a@example>", "ada@example.com", ["worker@example.com"], {
           cc: ["bea@example.com"],
         }),
       ),
-    ).toEqual(new Set(["ada@example.com", "myra@example.com", "bea@example.com"]));
+    ).toEqual(new Set(["ada@example.com", "worker@example.com", "bea@example.com"]));
   });
 });
 
