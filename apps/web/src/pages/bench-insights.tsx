@@ -1,12 +1,21 @@
 // The bench-scoped Insights dashboard: every number is computed from the
 // stock `GET /workflows/runs` listing of the bench's own tenant.
 
-import { Badge, RichEmptyState, Skeleton, RUN_STATUS_TONE } from "@corbits/react-ui";
+import { RichEmptyState, Skeleton } from "@corbits/react-ui";
+import { cronSentence } from "@corbits/workflows/client";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 
 import { ApprovalsCard } from "../bench/approvals-insights";
-import { useAPIQuery } from "../api";
-import { insightsTopLevelRunsPath, TopLevelRunsSchema, type InsightsRun } from "../insights-api";
+import { apiQueryOptions, ArtifactListPageSchema, useAPIQuery } from "../api";
+import {
+  insightsRunEventsPath,
+  insightsTopLevelRunsPath,
+  RunEventsSchema,
+  runFailureMessage,
+  TopLevelRunsSchema,
+  type InsightsRun,
+} from "../insights-api";
 import {
   approvalRunsInRange,
   BENCH_RANGES,
@@ -17,6 +26,9 @@ import {
   type BenchDay,
   type BenchRange,
 } from "../insights-stats";
+import { X } from "../lib/icons";
+import { tenantKeys } from "../query-client";
+import { listCronSchedules } from "../routines-api";
 import { formatWhen } from "./insights-page";
 import { useFromBench } from "../shell/page-crumbs";
 import { PageLayout } from "../shell/page-layout";
@@ -50,6 +62,9 @@ export function OutcomeChart({ days }: { readonly days: readonly BenchDay[] }) {
   const max = Math.max(...days.map((d) => d.ok + d.fail + d.other), 1);
   const every = days.length > 30 ? 14 : days.length > 7 ? 5 : 1;
   const shown = active === null ? undefined : days[active];
+  if (days.every((d) => d.ok + d.fail + d.other === 0)) {
+    return <div className="bi-chart-empty">No runs in this range.</div>;
+  }
   return (
     <div className="bi-chart">
       <div className="bi-legend">
@@ -60,10 +75,6 @@ export function OutcomeChart({ days }: { readonly days: readonly BenchDay[] }) {
         <span>
           <i style={{ background: "var(--chart-fail, #A4453D)" }} />
           Failed
-        </span>
-        <span>
-          <i className="bi-other" />
-          Running or stopped
         </span>
       </div>
       <div className="bi-bars" style={{ gap: days.length > 30 ? 1 : 4 }}>
@@ -234,16 +245,41 @@ function InsightsBody({
   const stats = computeBenchInsights(runs.data, range);
   const approvalRuns = approvalRunsInRange(runs.data, range);
   const finished = stats.ok + stats.fail;
+  const artifacts = useAPIQuery(`/api/tenants/${tenantId}/artifacts`, ArtifactListPageSchema);
+  const schedules = useQuery({
+    queryKey: tenantKeys.schedules(tenantId),
+    queryFn: () => listCronSchedules(tenantId),
+  });
+  const scheduleByDefinition = new Map(
+    (schedules.data ?? [])
+      .filter((row) => row.stoppedAt === null)
+      .map((row) => [row.definitionName, row]),
+  );
+  const failureEvents = useQueries({
+    queries: stats.failures.map((run) =>
+      apiQueryOptions(insightsRunEventsPath(tenantId, run.id), RunEventsSchema),
+    ),
+  });
+  const rangeStart = stats.days[0]?.date.getTime() ?? 0;
+  const savedCount =
+    artifacts.kind === "ready"
+      ? formatCount(
+          artifacts.data.artifacts.filter(
+            (a) => a.archivedAt === null && Date.parse(a.createdAt) >= rangeStart,
+          ).length,
+        )
+      : "—";
   const tiles: readonly (readonly [string, string])[] = [
     ["Runs", formatCount(stats.total)],
     ["Succeeded", finished === 0 ? "—" : `${Math.round((stats.ok / finished) * 100)}%`],
     ["Median run", stats.medianMs === null ? "—" : durationLabel(stats.medianMs)],
+    ["Artifacts saved", savedCount],
   ];
 
   return (
-    <div className="insights-layout">
+    <div className="bi-page">
       {runs.nextCursor !== null ? (
-        <p className="insights-note">Figures reflect the 100 most recent runs — more exist.</p>
+        <p className="bi-sub">Figures reflect the 100 most recent runs — more exist.</p>
       ) : null}
 
       <div className="bi-stats">
@@ -255,21 +291,26 @@ function InsightsBody({
         ))}
       </div>
 
-      <section className="insights-panel">
-        <h3>Runs per day</h3>
-        <p className="insights-note">Every run in this workbench, by how it ended.</p>
-        <OutcomeChart days={stats.days} />
-      </section>
+      <div className="bi-grid">
+        <section className="bi-panel">
+          <h3>Runs per day</h3>
+          <p className="bi-sub">
+            Every workflow and conversation run in this workbench, by how it ended.
+          </p>
+          <OutcomeChart days={stats.days} />
+        </section>
+        <ApprovalsCard tenantId={tenantId} runs={approvalRuns.runs} capped={approvalRuns.capped} />
+      </div>
 
-      <ApprovalsCard tenantId={tenantId} runs={approvalRuns.runs} capped={approvalRuns.capped} />
-
-      <section className="insights-panel">
-        <h3>By workflow</h3>
+      <section className="bi-panel bi-panel--flush">
+        <div className="bi-panel-head">
+          <h3>By workflow</h3>
+          <p className="bi-sub">
+            Median time from start to finish. Next run comes from the schedule.
+          </p>
+        </div>
         {stats.workflows.length === 0 ? (
-          <RichEmptyState
-            title="No runs yet"
-            description={`Nothing ran in the last ${range} days.`}
-          />
+          <p className="bi-empty">Nothing ran in the last {range} days.</p>
         ) : (
           <div className="bi-scroll">
             <table className="bi-table">
@@ -280,6 +321,7 @@ function InsightsBody({
                   <th>Succeeded</th>
                   <th>Median</th>
                   <th>Last run</th>
+                  <th>Next run</th>
                 </tr>
               </thead>
               <tbody>
@@ -303,6 +345,14 @@ function InsightsBody({
                       </td>
                       <td>{w.medianMs === null ? "—" : durationLabel(w.medianMs)}</td>
                       <td>{formatWhen(w.lastRun)}</td>
+                      <td>
+                        {(() => {
+                          const row = scheduleByDefinition.get(w.definitionName);
+                          if (row === undefined) return "—";
+                          if (!row.enabled) return <span className="bi-paused">Paused</span>;
+                          return cronSentence(row.expression) ?? row.expression;
+                        })()}
+                      </td>
                     </tr>
                   );
                 })}
@@ -312,28 +362,40 @@ function InsightsBody({
         )}
       </section>
 
-      <section className="insights-panel">
-        <h3>Recent failures</h3>
+      <section className="bi-panel bi-panel--flush">
+        <div className="bi-panel-head">
+          <h3>Recent failures</h3>
+          <p className="bi-sub">Open one to see the run and retry it.</p>
+        </div>
         {stats.failures.length === 0 ? (
-          <p className="insights-note">No failures in the last {range} days.</p>
+          <p className="bi-empty">No failures in the last {range} days.</p>
         ) : (
           <ul className="bi-fails">
-            {stats.failures.map((run) => (
-              <li key={run.id}>
-                <button type="button" onClick={() => onOpenRun(run.id)}>
-                  <Badge tone={RUN_STATUS_TONE.failed}>Failed</Badge>
-                  <strong>{runDisplayName(run)}</strong>
-                  <span>{formatWhen(run.createdAt)}</span>
-                </button>
-              </li>
-            ))}
+            {stats.failures.map((run, i) => {
+              const events = failureEvents[i]?.data?.events;
+              const why = events === undefined ? null : runFailureMessage(events);
+              return (
+                <li key={run.id}>
+                  <button type="button" onClick={() => onOpenRun(run.id)}>
+                    <span className="bi-x-ic">
+                      <X size={16} aria-hidden="true" />
+                    </span>
+                    <span>
+                      <b>{runDisplayName(run)}</b>
+                      <span className="bi-why">{why ?? "The run failed."}</span>
+                    </span>
+                    <span className="bi-when">{formatWhen(run.createdAt)}</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
 
       <section>
         <h3 className="bi-later-h">Coming later</h3>
-        <p className="insights-note">These need usage data the platform doesn't report yet.</p>
+        <p className="bi-sub">These need usage data the platform doesn't report yet.</p>
         <div className="bi-soon">
           {COMING_LATER.map(([title, detail]) => (
             <div key={title}>

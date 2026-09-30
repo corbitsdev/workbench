@@ -462,7 +462,7 @@ function InsightsWorkbenchPage({
 }
 
 // `/insights` with no workbench hops to the last-visited workbench's
-// Insights, or the new-workbench picker when none is on record.
+// Insights, else the first workbench's, else the new-workbench picker.
 function InsightsLandingRedirect({ benchTenantId }: { readonly benchTenantId: string | null }) {
   const navigate = useNavigate();
   const { workbenches, isLoading } = useWorkbenchList(benchTenantId);
@@ -474,10 +474,8 @@ function InsightsLandingRedirect({ benchTenantId }: { readonly benchTenantId: st
     );
   }
   const lastId = benchTenantId === null ? null : readLastWorkbenchId(benchTenantId);
-  const to =
-    lastId !== null && workbenches.some((workbench) => workbench.id === lastId)
-      ? workbenchInsightsPath(lastId)
-      : NEW_WORKBENCH_PATH;
+  const target = workbenches.find((workbench) => workbench.id === lastId) ?? workbenches[0];
+  const to = target === undefined ? NEW_WORKBENCH_PATH : workbenchInsightsPath(target.id);
   return <Redirect to={to} from={INSIGHTS_PATH_PREFIX} navigate={navigate} />;
 }
 

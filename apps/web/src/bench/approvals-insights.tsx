@@ -44,16 +44,16 @@ export function ApprovalsCard({
 }) {
   const tally = useApprovalTally(tenantId, runs);
   return (
-    <section className="insights-panel">
+    <section className="bi-panel">
       <h3>Approvals</h3>
-      <p className="insights-note">
+      <p className="bi-sub">
         How you answered when a worker asked to act.
         {capped ? ` Based on the ${runs.length} most recent runs.` : ""}
       </p>
       {tally.kind === "loading" ? (
         <Skeleton className="h-24 w-full" />
       ) : tally.kind === "error" ? (
-        <p className="insights-note">Couldn't load approvals.</p>
+        <p className="bi-sub">Couldn't load approvals.</p>
       ) : (
         <div className="appr">
           {ROWS.map(([key, label, color]) => {

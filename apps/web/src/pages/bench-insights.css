@@ -1,20 +1,281 @@
-/* Card and table labels read as sentence case, like the drawer's tabs. */
-.page-layout .insights-panel h3 {
-  font-size: 0.9rem;
+/* Bench Insights page and its drawer tab: joined stat strip, raised panels,
+   chart, table, failures and the coming-later trio. */
+.bi-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--raised);
+  overflow: hidden;
+}
+.bi-stat {
+  padding: 16px 20px;
+}
+.bi-stat + .bi-stat {
+  border-left: 1px solid var(--line);
+}
+.bi-stat-v {
+  font-size: 24px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.bi-stat-k {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+
+.bi-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+.bi-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.bi-panel {
+  min-width: 0;
+  padding: 20px;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--raised);
+}
+.bi-panel--flush {
+  padding: 0;
+  overflow: hidden;
+}
+.bi-panel-head {
+  padding: 20px 20px 12px;
+}
+.bi-panel h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 800;
   letter-spacing: 0;
   text-transform: none;
   color: var(--ink);
 }
-.page-layout .bi-table th {
+.bi-sub {
+  margin: 0 0 16px;
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+.bi-panel-head .bi-sub {
+  margin: 0;
+}
+.bi-empty {
+  margin: 0;
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+.bi-panel--flush .bi-empty {
+  padding: 8px 20px 24px;
+}
+
+.bi-chart {
+  position: relative;
+}
+.bi-chart-empty {
+  display: grid;
+  place-items: center;
+  height: 160px;
+  font-size: 13.5px;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--border);
+}
+.bi-legend {
+  display: flex;
+  gap: 1rem;
   font-size: 0.78rem;
-  letter-spacing: 0;
-  text-transform: none;
+  margin-bottom: 0.5rem;
+}
+.bi-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.bi-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+.bi-bars {
+  display: flex;
+  align-items: flex-end;
+  height: 160px;
+  padding-top: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.bi-col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 2px;
+}
+.bi-col i {
+  display: block;
+  width: 100%;
+  max-width: 28px;
+}
+.bi-col:hover i,
+.bi-col:focus-visible i {
+  filter: brightness(1.12);
+}
+.bi-col:focus-visible {
+  outline: 2px solid var(--ring, currentColor);
+  outline-offset: 1px;
 }
 .bi-other {
   background: var(--muted-foreground);
   opacity: 0.55;
 }
-.bi-legend .bi-other {
-  width: 10px;
-  height: 10px;
+.bi-x {
+  display: flex;
+  margin-top: 6px;
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.bi-x span {
+  flex: 1;
+  text-align: center;
+}
+.bi-tip {
+  position: absolute;
+  top: 20px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 5;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  background: var(--popover, var(--card));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.bi-tip b {
+  display: block;
+}
+
+.bi-scroll {
+  overflow-x: auto;
+}
+.bi-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.bi-table th {
+  text-align: left;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+  padding: 8px 20px;
+}
+.bi-table td {
+  padding: 10px 20px;
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.bi-paused {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--surface-sunk);
+  color: var(--ink-3);
+}
+.bi-meter {
+  display: inline-flex;
+  gap: 2px;
+  width: 72px;
+  height: 8px;
+  margin-right: 8px;
+  vertical-align: middle;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--muted);
+}
+.bi-meter i {
+  display: block;
+  height: 100%;
+}
+
+.bi-fails {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bi-fails button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 20px;
+  text-align: left;
+  border-top: 1px solid var(--line);
+}
+.bi-fails button:hover {
+  background: var(--surface-sunk);
+}
+.bi-fails .bi-x-ic {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--danger-wash);
+  color: var(--danger);
+}
+.bi-fails b {
+  display: block;
+  font-size: 13.5px;
+}
+.bi-fails .bi-why,
+.bi-fails .bi-when {
+  display: block;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.bi-later-h {
+  margin: 12px 0 4px;
+  font-size: 16px;
+  font-weight: 800;
+}
+.bi-soon {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.bi-soon > div {
+  padding: 16px;
+  border-radius: var(--r-lg);
+  box-shadow: inset 0 0 0 1px var(--line);
+  background: var(--surface-sunk);
+}
+.bi-soon b {
+  display: block;
+  font-size: 13.5px;
+  margin-bottom: 4px;
+}
+.bi-soon span {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+@media (max-width: 960px) {
+  .bi-soon,
+  .bi-grid {
+    grid-template-columns: 1fr;
+  }
 }
