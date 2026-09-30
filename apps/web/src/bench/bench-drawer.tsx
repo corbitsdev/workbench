@@ -2,7 +2,7 @@ import { Button } from "@corbits/react-ui";
 import "./drawer-narrow.css";
 import { X } from "@/lib/icons";
 import "./drawer.css";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 export const DRAWER_TABS = [
   "Information",
@@ -15,6 +15,9 @@ export const DRAWER_TABS = [
 ] as const;
 
 export type DrawerTab = (typeof DRAWER_TABS)[number];
+
+/** Lets a tab body switch the drawer to another tab. */
+export const DrawerTabContext = createContext<(tab: DrawerTab) => void>(() => undefined);
 
 /** The floating card in the grid column that pushes the thread left. Each
  * tab's body arrives as a prop keyed by tab name; a tab without one shows a
@@ -99,7 +102,13 @@ export function BenchDrawer({
             <h2>{title}</h2>
             {subtitle === undefined || subtitle === "" ? null : <p>{subtitle}</p>}
           </div>
-          <Button variant="ghost" size="sm" aria-label="Close drawer" onClick={onClose}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="drawer-close"
+            aria-label="Close drawer"
+            onClick={onClose}
+          >
             <X size={16} aria-hidden="true" />
           </Button>
         </div>
@@ -118,9 +127,11 @@ export function BenchDrawer({
           ))}
         </div>
         <div className="drawer-body" role="tabpanel">
-          {body ?? (
-            <p className="workbench-info-empty-note">{tab} is coming to this drawer soon.</p>
-          )}
+          <DrawerTabContext.Provider value={setTab}>
+            {body ?? (
+              <p className="workbench-info-empty-note">{tab} is coming to this drawer soon.</p>
+            )}
+          </DrawerTabContext.Provider>
         </div>
       </div>
     </div>

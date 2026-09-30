@@ -19,7 +19,7 @@ export function ArtifactsTab({ workbenchTenantId }: { readonly workbenchTenantId
     <section className="drawer-sec">
       <div className="drawer-sec-head">
         <h3>Files saved here</h3>
-        <Link to={benchLink(ARTIFACTS_PATH_PREFIX, workbenchTenantId)}>See all</Link>
+        <Link to={benchLink(ARTIFACTS_PATH_PREFIX, workbenchTenantId)}>Open all</Link>
       </div>
       {page.kind === "loading" ? <Skeleton className="h-16 w-full" /> : null}
       {page.kind === "error" ? <p className="workbench-info-empty-note">{page.message}</p> : null}
